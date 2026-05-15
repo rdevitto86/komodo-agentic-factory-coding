@@ -2,6 +2,8 @@
 
 Applies to all JavaScript and TypeScript projects. Framework-specific sections override the base rules where they conflict.
 
+**Go testing rules live in [`testing-go.md`](testing-go.md).**
+
 ---
 
 ## 1. File placement and naming

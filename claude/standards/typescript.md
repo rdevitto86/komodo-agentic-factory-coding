@@ -14,7 +14,14 @@ Base TypeScript/JavaScript coding standards for Komodo. Project-level configs ma
 
 ---
 
-## 2. Naming
+## 2. Comments
+
+- Doc comments must not open with the function/method/class name — write `// Returns the order for the given ID` not `// fetchOrder returns the order for the given ID`
+- Error message strings must not contain the function name — put function context in structured log metadata or stack traces, not the message string itself
+
+---
+
+## 3. Naming
 
 | Thing | Convention | Example |
 |-------|-----------|---------|
@@ -27,10 +34,11 @@ Base TypeScript/JavaScript coding standards for Komodo. Project-level configs ma
 
 - Prefix boolean variables/props with `is`, `has`, `can`, `should`: `isLoading`, `hasError`
 - Don't prefix interfaces with `I` — `User` not `IUser`
+- Request variables: `req`; response variables: `res` — applies to API handlers, fetch wrappers, and UI service calls
 
 ---
 
-## 3. Null handling
+## 4. Null handling
 
 - Use optional chaining (`?.`) for potentially undefined access
 - Use nullish coalescing (`??`) for defaults — not `||` (which swallows `0` and `""`)
@@ -39,7 +47,7 @@ Base TypeScript/JavaScript coding standards for Komodo. Project-level configs ma
 
 ---
 
-## 4. Async patterns
+## 5. Async patterns
 
 - Always `async/await` over raw promise chains
 - Every rejected promise must be caught — unhandled rejections are bugs
@@ -49,7 +57,7 @@ Base TypeScript/JavaScript coding standards for Komodo. Project-level configs ma
 
 ---
 
-## 5. Module organization
+## 6. Module organization
 
 - Single responsibility per file — one primary export per module
 - Re-export from barrel `index.ts` files sparingly: they hurt tree-shaking and create circular import risks
@@ -59,7 +67,7 @@ Base TypeScript/JavaScript coding standards for Komodo. Project-level configs ma
 
 ---
 
-## 6. Testing
+## 7. Testing
 
 See `testing.md` for the full standard — file naming, colocation rules, single-file structure, and framework-specific conventions (SvelteKit, Vue).
 
@@ -71,7 +79,7 @@ Summary:
 
 ---
 
-## 7. Frontend / component standards
+## 8. Frontend / component standards
 
 - Components should be pure where possible — derive state rather than sync it
 - No business logic in UI components — use a service or store layer

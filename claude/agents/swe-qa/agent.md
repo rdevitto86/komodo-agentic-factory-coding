@@ -1,8 +1,8 @@
 ---
-name: swe-test
+name: swe-qa
 description: Focused test writer scoped to a single source file or component. Use when writing unit, component, or integration tests for a specific target — not for broad multi-file test suites. Caller must supply: file path, test type (unit/component/integration), and any key interfaces or dependencies. Does not browse the codebase.
 model: sonnet
-color: cyan
+color: teal
 ---
 
 **Trigger:** `[TEST]`

@@ -2,6 +2,12 @@
 
 Shared Claude Code configuration for all Komodo projects. Settings, skills, agents, hooks, and standards live here and are symlinked into `~/.claude/` via `setup.sh`.
 
+## Hard rules
+
+- **Never create git commits.** Only the user commits and merges code. Do not run `git commit` under any circumstances, even when asked to "save" or "finalize" work.
+- **Error strings must not contain the function name.** Function context belongs in metadata objects or stack traces only — not in the error message string itself.
+- **Doc comments must not reference the function/method name.** Write `// Returns the user for the given ID` not `// GetUser returns the user for the given ID`.
+
 ## What this repo is
 
 This is not a product codebase. It is the Claude Code configuration layer — agents, skills, standards, and hooks that are shared across every Komodo project. Changes here affect all projects on the next Claude Code session.
@@ -29,7 +35,7 @@ Spawned by Claude via the `Agent` tool. Defined in `claude/agents/`.
 | `[ADV]` | `advisor` | sonnet | **Default. Consigliere and orchestrator** — advises on strategy/technical/business, auto-dispatches specialist agents, only surfaces decisions that are consequential. |
 | `[ARCH]` | `architect` | opus | Cross-business domain strategy — software, product, commercial, ops, legal. Escalated to by the advisor for formal architecture decisions. |
 | `[SWE]` | `swe` | sonnet | Implementation, code review, debugging, refactoring, CI/CD, security, performance. |
-| `[TEST]` | `swe-test` | sonnet | Focused test writing for a single file/component. Fallback — prefer MCP `qa` agent. |
+| `[TEST]` | `swe-qa` | sonnet | Focused test writing for a single file/component. Fallback — prefer MCP `qa` agent. |
 | `[OPS]` | `devops` | sonnet | CI/CD, infrastructure, deployments, monitoring, incident response. |
 | `[EMB]` | `swe-embedded` | sonnet | Embedded systems — RTOS, bare-metal C/C++, device drivers, safety-critical firmware. |
 | `[EE]` | `electronics` | sonnet | Circuit design, schematic review, PCB layout, power systems, component selection, EMC. |
@@ -66,8 +72,6 @@ These are invoked as MCP tools, not Claude subagents — they run fully outside 
 
 | Skill | When to use |
 |-------|-------------|
-| `/feature-workflow` | Multi-phase: software-architect designs → user approves → parallel implementation dispatch |
-| `/dispatch` | Route a task to multiple domain agents in parallel with isolated context windows |
 | `/git-flow` | Branch naming, commit conventions, PR process |
 | `/new-service` | Scaffold a Go microservice |
 | `/new-migration` | Create a database schema migration |
@@ -88,7 +92,10 @@ Engineering and operational standards in `claude/standards/`. Agents reference t
 | `api-design.md` | URL conventions, HTTP methods, status codes, versioning, OpenAPI |
 | `go.md` | Formatting, error handling, naming, testing, concurrency |
 | `typescript.md` | Type safety, naming, async patterns, module conventions |
+| `python.md` | Versions, typing, error handling, async, testing, design patterns |
 | `testing.md` | JS/TS test file naming (`.x.test.ts`), colocation, single-file structure, SvelteKit and Vue conventions |
+| `testing-go.md` | Go test colocation, table-driven structure, mocking at interface boundaries, coverage, race/timing |
+| `comments.md` | Inline comments stay short, doc comments stay concise; no verbose narration or restating code |
 | `sql.md` | Schema conventions, migrations, indexing, query safety |
 | `logging.md` | Log levels, required fields, what never to log, correlation |
 | `token-efficiency.md` | MCP-first delegation, compaction cadence, lean context passing, model selection |

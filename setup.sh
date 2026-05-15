@@ -17,7 +17,14 @@ for src in "$SOURCE_DIR"/*; do
   dest="$CLAUDE_DIR/$name"
 
   if [ -L "$dest" ]; then
-    echo "  $name — already a symlink, skipping"
+    current="$(readlink "$dest")"
+    if [ "$current" = "$src" ]; then
+      echo "  $name — symlink already correct, skipping"
+    else
+      echo "  $name — stale symlink (→ $current), refreshing"
+      rm "$dest"
+      ln -s "$src" "$dest"
+    fi
   elif [ -e "$dest" ]; then
     echo "  $name — backing up existing to $name.bak"
     mv "$dest" "${dest}.bak"

@@ -68,22 +68,28 @@ Create `src/lib/components/<category>/<Name>.svelte`.
 
 ## Test stub
 
-Unless `--no-test`, create `src/lib/components/<category>/__tests__/<Name>.test.ts`.
+Unless `--no-test`, create `src/lib/components/<category>/<Name>.x.test.ts` — colocated next to the component, per `testing.md`.
 
 ```typescript
 import { render, screen } from '@testing-library/svelte';
 import { describe, it, expect } from 'vitest';
-import <Name> from '../<Name>.svelte';
+import <Name> from './<Name>.svelte';
 
-describe('<Name>', () => {
+describe('unit', () => {
+  // Pure helpers used by <Name>, if any
+});
+
+describe('component', () => {
   it('renders without crashing', () => {
     render(<Name>);
-    // TODO: add meaningful assertions
+    // TODO: assert rendered output and user interactions
   });
 
-  // TODO: test prop variations, edge cases, interactions
+  // TODO: test prop variations, edge cases, accessibility
 });
 ```
+
+Omit the `unit` describe block if the component has no pure logic to cover.
 
 ---
 
