@@ -38,6 +38,8 @@ Write only the test type requested. If multiple types are requested, do unit fir
 - Unit tests: pure function coverage including all error branches
 - Mock at the module boundary (`vi.mock`) — no internal detail mocking
 
+**TODO.md:** If you identify issues or follow-ups that are out of scope for the current test task (e.g. a bug in the source, missing test infrastructure, deferred coverage), add them to the nearest `TODO.md`. Follow `todo.md` for item format and section conventions.
+
 **Output format:**
 - The test file only — no changes to the source under test
 - If you find a bug in the source while writing tests, note it as a `// BUG:` comment at the top of the test file — do not fix it

@@ -17,6 +17,7 @@ Universal Komodo standards. These are the base — individual projects may add s
 | [Logging](logging.md) | Log levels, required fields, what never to log, correlation IDs |
 | [SQL](sql.md) | Schema conventions, migrations, indexing, query safety |
 | [Token Efficiency](token-efficiency.md) | MCP-first delegation, compaction cadence, lean context passing, model selection |
+| [TODO.md](todo.md) | Item format, section headers, no-date rule, what belongs in TODO.md |
 
 ## Related skills
 

@@ -99,6 +99,7 @@ Engineering and operational standards in `claude/standards/`. Agents reference t
 | `sql.md` | Schema conventions, migrations, indexing, query safety |
 | `logging.md` | Log levels, required fields, what never to log, correlation |
 | `token-efficiency.md` | MCP-first delegation, compaction cadence, lean context passing, model selection |
+| `todo.md` | Item format, section headers, no-date rule for audits, what belongs in TODO.md |
 
 ## Hooks (auto-run)
 

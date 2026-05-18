@@ -105,6 +105,5 @@
   },
   "effortLevel": "medium",
   "theme": "light",
-  "agentPushNotifEnabled": true,
-  "model": "opus"
+  "agentPushNotifEnabled": true
 }

@@ -1,6 +1,6 @@
 # Audit TODO — komodo-claude-core
 
-Remaining items from the 2026-05-13 audit.
+Remaining items from audits.
 
 ---
 
@@ -36,3 +36,39 @@ Remaining items from the 2026-05-13 audit.
 ### Add a `statusLine` config
 **Problem:** No status line configured. The `statusline-setup` agent exists for this.
 **Decision:** Want one? If so, what info (git branch, dir, model)?
+
+---
+
+## Agent system — gaps from audit
+
+### Fix dead skill references (`/dispatch`, `/feature-workflow`)
+**Problem:** Both are referenced in `CLAUDE.md` and `advisor/agent.md` but neither file exists under `claude/skills/`. Any invocation silently fails.
+**Action:** Either create the skills or remove the references.
+
+### Add `komodo-context.md` — org-wide stack context for agents
+**Problem:** Agents are fully generic. They reference `principles.md` but know nothing about: Go/SvelteKit/Terraform/AWS stack, what `komodo-forge-sdk-go` / `komodo-forge-sdk-ts` contain, service topology, CI system, DB engine, migration tool, or deployment process.
+**Proposed:** Add `claude/standards/komodo-context.md` with org-wide invariants. Agents reference it the same way they reference `principles.md`. Pair with a project-level `CLAUDE.md` template for per-repo specifics.
+
+### Add project `CLAUDE.md` template
+**Problem:** Agents delegate to project CLAUDE.md for tech-stack overrides, but there's no template specifying what that file must contain. Coverage is inconsistent across projects.
+**Proposed:** Add a `claude/standards/project-claude-template.md` (or similar) covering: stack, service topology, how to run/test/build/deploy, key library choices.
+
+### Add `sveltekit.md` standard
+**Problem:** UI skills scaffold Svelte 5 with runes, and `testing.md` mentions SvelteKit conventions, but no standard covers runes vs. stores, load functions, form actions, or component patterns.
+
+### Add `errors.md` standard
+**Problem:** Hard rule covers error string format, but nothing governs Go error wrapping (`%w`, sentinel errors, structured error types) or TS error handling (Result types vs. throw). The `swe` agent improvises today.
+
+### Fix `post-pr-trello.sh` hook scope
+**Problem:** Hook matcher is `Bash` (fires on every shell command). Should scope to `Bash(gh pr create*)` to avoid running on every `gh` call (issue lookups, PR comments, etc.).
+
+### Add `escalation-levels.md` standard
+**Problem:** Advisor doctrine says "only surface what requires user attention" but there's no shared language for severity across the agent chain. Agents escalate at different thresholds.
+**Proposed:** Brief standard defining FYI / decision-needed / urgent signals so escalation noise is consistent.
+
+### Add `/new-agent` skill
+**Problem:** Skills exist for every scaffold type except creating a new Claude agent or MCP agent definition. This will be used repeatedly as the system grows.
+
+### Add pre-tool-use hook for destructive Bash patterns
+**Problem:** `rm -rf` and `git reset --hard` are permitted by the allowlist with no pre-check. A `PreToolUse(Bash)` hook flagging destructive patterns before execution would catch accidents.
+**Note:** Related to the existing "Tighten broad bash permissions" item above — resolve that first.
