@@ -104,6 +104,7 @@
     "skill-creator@claude-plugins-official": true
   },
   "effortLevel": "medium",
+  "autoMemoryEnabled": false,
   "theme": "light",
   "agentPushNotifEnabled": true
 }

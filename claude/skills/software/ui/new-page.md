@@ -168,3 +168,7 @@ export const load: LayoutServerLoad = async () => {
    - Fill in the `load` function once the backing service is ready.
    - Add E2E test in `e2e/` once the page is functional.
    - For `--auth required` pages: add a Playwright test that confirms unauthenticated users are redirected.
+
+---
+
+**After this, you may need:** `/new-component` to build UI components for the page, `/git-flow` for branch and PR conventions.

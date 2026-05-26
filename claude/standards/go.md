@@ -17,18 +17,20 @@ Base Go coding standards for Komodo. Project-level configs may extend these but 
 ## 2. Error handling
 
 - Always handle error return values — never `_` an error
-- Wrap errors with context using a short noun phrase describing the operation: `fmt.Errorf("fetching user: %w", err)` — never the function name
+- Wrap errors with context using a short descriptive noun phrase: `fmt.Errorf("failed to fetch user: %w", err)` — never the function or method name
+  - Bad: `fmt.Errorf("GetUserCredentials: unmarshal: %w", err)`
+  - Good: `fmt.Errorf("failed to read user credentials response: %w", err)`
 - Return errors up the call stack; don't log and return
 - Log errors once — at the top of the call stack where you stop propagating
 - No `panic` except for truly unrecoverable initialization failures (missing required config at startup)
 - Sentinel errors (`var ErrNotFound = errors.New(...)`) for errors callers need to match; `errors.As`/`errors.Is` for inspection
-- Error string must not contain the function name — put function context in structured log fields or stack traces, not the message
 
 ---
 
 ## 3. Naming
 
-- Exported names must have a doc comment; doc comments must not open with the identifier name — write `// Returns the user for the given ID` not `// GetUser returns the user for the given ID`
+- All exported names must have a doc comment — **one sentence** for most; a second only for a non-obvious contract (side effect, precondition, specific error)
+- Doc comments must not open with the identifier name — `// Returns the user for the given ID` not `// GetUser returns the user for the given ID`. **This intentionally overrides Go's godoc convention.** No multi-line verbose blocks. See `comments.md`.
 - Interfaces named by behavior: `Reader`, `Writer`, `Handler` — not `IReader`, `ReaderInterface`
 - Avoid stutter: `user.Service` not `user.UserService`
 - Unexported identifiers: camelCase, no underscores

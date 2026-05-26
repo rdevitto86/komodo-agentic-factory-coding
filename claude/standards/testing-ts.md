@@ -35,28 +35,38 @@ If individual files within a package are large enough to warrant their own tests
 
 ## 2. Single test file, three test types
 
-Unit, component, and integration tests for a given source file live together in one `.x.test.ts` file, organized by `describe` blocks. Do not split them across separate files.
+Unit, component, and integration tests for a given source file live together in one `.x.test.ts` file. Separate each section with a banner comment followed by a `describe` block. Do not split them across separate files.
+
+**Section banner format** (copy exactly — 72 chars total, em-dash `─` U+2500):
+```
+// ── Unit Tests ──────────────────────────────────────────────────────────
+// ── Component Tests ─────────────────────────────────────────────────────
+// ── Integration Tests ───────────────────────────────────────────────────
+```
 
 ```ts
 // order-service.x.test.ts
 
+// ── Unit Tests ──────────────────────────────────────────────────────────
 describe('unit', () => {
   // Pure logic, no I/O, no network, no DB
   // Test edge cases, error paths, and transformations
 })
 
+// ── Component Tests ─────────────────────────────────────────────────────
 describe('component', () => {
   // Rendered output and user interaction (UI)
   // Or: service layer with mocked external deps (backend)
 })
 
+// ── Integration Tests ───────────────────────────────────────────────────
 describe('integration', () => {
   // Real boundaries — DB, HTTP calls, file system
   // Use a real (test) instance, not mocks
 })
 ```
 
-Only include the sections that are relevant. A pure utility module may only need `unit`. A stateless HTTP handler may only need `component` and `integration`. Omit empty `describe` blocks.
+Only include the sections that are relevant. A pure utility module may only need `unit`. A stateless HTTP handler may only need `component` and `integration`. Omit empty sections entirely.
 
 ---
 

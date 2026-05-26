@@ -29,6 +29,14 @@ Each item uses three labeled lines under a `###` heading:
 
 Use `**Problem:**` + `**Action:**` for clear-cut items. Add `**Decision:**` when a real choice exists. Omit labels that add no information.
 
+For inline list items (e.g. quick follow-ups surfaced mid-task), use a plain bullet:
+
+```markdown
+- **[M]** Relocate `/services/repair` routes — repair booking belongs in reservations-api, not catalog.
+```
+
+**Never use checkboxes (`- [ ]`).** TODO.md is not a task tracker — items are never "checked off" in the file. Remove items only when the user explicitly asks to clear them.
+
 ### Section headers
 
 Group items under `##` section headers by area (e.g. `## Standards`, `## Hooks`, `## Agent system`).

@@ -4,9 +4,11 @@ Shared Claude Code configuration for all Komodo projects. Settings, skills, agen
 
 ## Hard rules
 
-- **Never create git commits.** Only the user commits and merges code. Do not run `git commit` under any circumstances, even when asked to "save" or "finalize" work.
+- **Never create git commits or git branches.** Only the user commits, branches, and merges. Do not run `git commit`, `git branch`, or `git checkout -b` under any circumstances — not even when asked to "save", "finalize", or "start on a feature". Always work on the current branch.
 - **Error strings must not contain the function name.** Function context belongs in metadata objects or stack traces only — not in the error message string itself.
-- **Doc comments must not reference the function/method name.** Write `// Returns the user for the given ID` not `// GetUser returns the user for the given ID`.
+- **Doc comments must start with a verb and must never open with the function/method name.** Write `// Returns the user for the given ID` not `// GetUser returns the user for the given ID`. Follow `comments.md` exactly — verbose multi-line doc blocks, file-level documentation, and name-leading comments are hard violations.
+- **Never document the entire file at the top.** No package/module/file-level doc blocks.
+- **Never expand scope without permission.** If you discover work outside the current task — a bug, a refactor opportunity, an adjacent improvement — stop. Document it in the nearest `TODO.md` and surface it to the user or advisor. Side work is always declined unless explicitly approved.
 
 ## What this repo is
 
@@ -34,8 +36,8 @@ Spawned by Claude via the `Agent` tool. Defined in `claude/agents/`.
 |---------|-------|-------|------|
 | `[ADV]` | `advisor` | sonnet | **Default. Consigliere and orchestrator** — advises on strategy/technical/business, auto-dispatches specialist agents, only surfaces decisions that are consequential. |
 | `[ARCH]` | `architect` | opus | Cross-business domain strategy — software, product, commercial, ops, legal. Escalated to by the advisor for formal architecture decisions. |
-| `[SWE]` | `swe` | sonnet | Implementation, code review, debugging, refactoring, CI/CD, security, performance. |
-| `[TEST]` | `swe-qa` | sonnet | Focused test writing for a single file/component. Fallback — prefer MCP `qa` agent. |
+| `[SWE]` | `swe` | sonnet | Implementation and code design. Secondary: code/architecture review. |
+| `[QA]` | `quality-assurance` | sonnet | Security review, performance review, and test writing. **Primary: MCP `qa` agent.** Claude subagent only when MCP is unavailable. |
 | `[OPS]` | `devops` | sonnet | CI/CD, infrastructure, deployments, monitoring, incident response. |
 | `[EMB]` | `swe-embedded` | sonnet | Embedded systems — RTOS, bare-metal C/C++, device drivers, safety-critical firmware. |
 | `[EE]` | `electronics` | sonnet | Circuit design, schematic review, PCB layout, power systems, component selection, EMC. |
@@ -57,12 +59,14 @@ Spawned by Claude via the `Agent` tool. Defined in `claude/agents/`.
 
 Run on Qwen3 via the komodo bridge (`~/.komodo/bridge`). Served at `http://localhost:8000/sse`. Start with `docker compose up -d` in `~/.komodo/`.
 
-These are invoked as MCP tools, not Claude subagents — they run fully outside Claude's context window.
+These are invoked as MCP tools, not Claude subagents — they run fully outside Claude's context window. **Always prefer MCP agents over Claude agents when an MCP agent can cover the task.**
+
+`pm` and `qa` are the primary MCP agents — invoke them first for planning and QA work. Claude subagents are the fallback when MCP is unavailable.
 
 | Agent | MCP tool | Role |
 |-------|----------|------|
-| `pm` | `analyze_specs` | Task breakdown, sprint planning, delivery risk, stakeholder communication. |
-| `qa` | `generate_test_cases` | Test planning, QA review, bug triage, release gates. |
+| `pm` ⭐ | `analyze_specs` | Task breakdown, sprint planning, delivery risk, stakeholder communication. |
+| `qa` ⭐ | `generate_test_cases` | Security review, performance review, test writing, bug triage, release gates. |
 | `lawyer` | `review_document` | Contract review, compliance, legal research. Not legal advice. |
 | `customer-servicing` | `draft_response` | Customer response drafting, ticket triage, escalation summaries. |
 | `marketing` | `create_content` | Campaign strategy, copywriting, brand messaging. |
@@ -74,12 +78,18 @@ These are invoked as MCP tools, not Claude subagents — they run fully outside 
 |-------|-------------|
 | `/git-flow` | Branch naming, commit conventions, PR process |
 | `/new-service` | Scaffold a Go microservice |
+| `/add-route` | Add a handler + test + OpenAPI stub to an existing Go service |
+| `/new-middleware` | Scaffold HTTP middleware in the forge SDK |
 | `/new-migration` | Create a database schema migration |
 | `/new-tf-module` | Scaffold a Terraform module |
 | `/new-page` | Scaffold a SvelteKit 5 page |
 | `/new-component` | Scaffold a Svelte 5 component |
-
-See `claude/skills/` for the full list.
+| `/new-bom` | Generate or review a Bill of Materials |
+| `/circuit-review` | Review an electrical circuit design |
+| `/design-review` | Review a mechanical design |
+| `/new-ros-node` | Scaffold a ROS 2 node (C++ or Python) |
+| `/crop-analysis` | Generate a crop health report |
+| `/stock-report` | Generate an inventory report |
 
 ## Standards
 
@@ -87,17 +97,21 @@ Engineering and operational standards in `claude/standards/`. Agents reference t
 
 | File | Covers |
 |------|--------|
+| `principles.md` | Hard rules, code reuse priority, DI/testability design doctrine |
+| `comments.md` | Comment rules for all languages: verb-leading doc comments, no file-level docs, section break format |
 | `security.md` | Secrets, input validation, auth, OWASP, incident response |
 | `pull-requests.md` | PR size, descriptions, review duties, merge criteria |
 | `api-design.md` | URL conventions, HTTP methods, status codes, versioning, OpenAPI |
 | `go.md` | Formatting, error handling, naming, testing, concurrency |
 | `typescript.md` | Type safety, naming, async patterns, module conventions |
 | `python.md` | Versions, typing, error handling, async, testing, design patterns |
-| `testing.md` | JS/TS test file naming (`.x.test.ts`), colocation, single-file structure, SvelteKit and Vue conventions |
+| `svelte.md` | Svelte 5 runes, component structure, SvelteKit conventions, accessibility |
+| `testing-ts.md` | JS/TS test file naming (`.x.test.ts`), colocation, single-file structure, SvelteKit and Vue conventions |
 | `testing-go.md` | Go test colocation, table-driven structure, mocking at interface boundaries, coverage, race/timing |
-| `comments.md` | Inline comments stay short, doc comments stay concise; no verbose narration or restating code |
 | `sql.md` | Schema conventions, migrations, indexing, query safety |
 | `logging.md` | Log levels, required fields, what never to log, correlation |
+| `observability.md` | Metrics, distributed traces, trace_id propagation, health checks, alerting |
+| `docker.md` | Multi-stage builds, non-root images, layer caching, secrets, image scanning |
 | `token-efficiency.md` | MCP-first delegation, compaction cadence, lean context passing, model selection |
 | `todo.md` | Item format, section headers, no-date rule for audits, what belongs in TODO.md |
 

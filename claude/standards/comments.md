@@ -1,30 +1,108 @@
 # Comments
 
-Comments are a tax on every future reader. Write them only when they earn their place, and keep them tight.
+These rules apply to all languages. Follow them exactly — verbose comments are a hard violation.
 
-## Inline comments
+## Function / method doc comments
 
-- Default to no comment. Well-named identifiers and small functions explain themselves.
-- When you do comment, keep it to a single short line that says **why** the code is doing what it does — not what it does.
-- Avoid restating the code in prose. `i++ // increment i` is noise.
-- No multi-line inline blocks, no banners, no decorative separators (`// ===== Section =====`).
-- Workarounds, hidden constraints, non-obvious invariants, surprising performance or ordering requirements — these earn a comment. Routine logic does not.
+Every function and method gets a doc comment. Write it in the idiom of the language (Go `//`, JS/TS `/** */`, Python `"""`, C/C++ `///`, Rust `///`).
 
-## Function / method / type doc comments
+**Rules:**
+1. Start with a verb describing the action: `Creates`, `Runs`, `Validates`, `Helper that`, `Fetches`, etc.
+2. Never open with the function or method name — not even paraphrased.
+3. Keep it short: one sentence is the target. A second only when there is a non-obvious contract (error semantics, side effects, preconditions). Never a third.
+4. Never write a multi-paragraph or multi-line verbose block.
+5. Never document the entire file at the top of the file.
 
-- One short paragraph, ideally one or two sentences. Say what the thing does at a high level and any contract that callers must know (preconditions, side effects, error semantics).
-- Do **not** open with the function/method/type name. Write `// Returns the user for the given ID` not `// GetUser returns the user for the given ID`.
-- Do not list every parameter and return value when the signature already makes it obvious. Document only the non-obvious ones.
-- No essays. If a function needs paragraphs to explain, the function is wrong — split it.
-- Do not reference the current task, PR, ticket, or caller ("added for the X flow", "used by Y"). That context belongs in the commit message and rots in the code.
+**Bad:**
+```go
+// ExecuteStatement runs a single SQL statement against the Aurora cluster.
+// Named parameters in input.Parameters are converted to RDS Field values.
+// Result rows are decoded into maps keyed by column name.
+func (c *Client) ExecuteStatement(...) { ... }
+```
+
+**Good:**
+```go
+// Runs a single SQL statement against the Aurora cluster.
+func (c *Client) ExecuteStatement(...) { ... }
+```
+
+**Bad (name-leading):**
+```go
+// VerifyOTP looks up the stored OTP and compares it to the submitted code.
+func (c *CacheClient) VerifyOTP(email, code string) error { ... }
+```
+
+**Good:**
+```go
+// Validates the submitted OTP against the stored value for the given email.
+func (c *CacheClient) VerifyOTP(email, code string) error { ... }
+```
+
+## Inline comments (inside function bodies)
+
+**When to write one:**
+- Calling out unique context on a var/const/struct field/object property — only when the name leaves real ambiguity or carries a non-obvious invariant. Max 125 characters, shorter is better.
+- Labeling a distinct workflow section or significant downstream call: `// make request to payments downstream`, `// fetch user records from Komodo DB`.
+
+**Rules:**
+- Always lowercase, except: the first letter of the comment, acronyms (HTTP, AWS, SQL), and proper nouns.
+- Use proper grammar.
+- No multi-line inline blocks.
+- Never restate what the code already says.
+
+**Bad:**
+```go
+i++ // increment i
+```
+
+**Good:**
+```go
+TransactionID string // optional; ties execution to a BeginTransaction call
+```
+
+```go
+// fetch and decode result rows
+rows, err := decodeRecords(out.Records, out.ColumnMetadata)
+```
+
+## Types, structs, interfaces, vars, consts
+
+No doc comment required on unexported types or simple structs whose fields are self-explanatory. If a field needs a note, put it inline — not in a block comment above the type.
+
+**Bad:**
+```go
+// Config holds all settings required to construct a Client.
+type Config struct {
+    Endpoint string // leave empty in prod; used for component testing
+}
+```
+
+**Good:**
+```go
+type Config struct {
+    Endpoint string // optional; leave empty in prod
+}
+```
+
+## Test files
+
+- Never comment at the file, function, or section level in relation to tests themselves.
+- Inline comments inside test functions are fine for explicit callouts and relevant context.
+- Test helper functions may have a function-level doc comment.
+- Section breaks use this exact format only:
+
+```
+// ── Unit Tests ────────────────────────────────────────────────────────────────────────────────────
+// ── Component Tests ───────────────────────────────────────────────────────────────────────────────
+// ── Integration Tests ─────────────────────────────────────────────────────────────────────────────
+```
 
 ## What never goes in comments
 
-- Change history, author tags, dates — git knows.
-- TODOs without an owner or ticket reference. If it matters, file it; if it doesn't, delete it.
-- Commented-out code. Delete it; git remembers.
-- Apologies, jokes, or editorial commentary.
-
-## Rule of thumb
-
-If removing the comment would not confuse a competent reader who knows the language and the codebase, remove it.
+- File-level package/module documentation blocks
+- Change history, author tags, dates — git knows
+- TODOs without an owner or ticket reference
+- Commented-out code — delete it; git remembers
+- Apologies, jokes, editorial commentary
+- Restating what the code already says

@@ -68,7 +68,7 @@ Create `src/lib/components/<category>/<Name>.svelte`.
 
 ## Test stub
 
-Unless `--no-test`, create `src/lib/components/<category>/<Name>.x.test.ts` — colocated next to the component, per `testing.md`.
+Unless `--no-test`, create `src/lib/components/<category>/<Name>.x.test.ts` — colocated next to the component, per `testing-ts.md`.
 
 ```typescript
 import { render, screen } from '@testing-library/svelte';
@@ -101,3 +101,7 @@ Omit the `unit` describe block if the component has no pure logic to cover.
    - Fill in the prop interface and implementation before shipping.
    - Run `bun run test:unit` to confirm the stub passes.
    - Check contrast ratios if using custom colors.
+
+---
+
+**After this, you may need:** `/new-page` if this component is part of a new route, `/git-flow` for branch and PR conventions.

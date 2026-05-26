@@ -1,0 +1,19 @@
+package client
+
+import "net/http"
+
+// Client is the typed HTTP client for calling komodo-<name>-api.
+// Consuming services inject <NAME>_API_INTERNAL_URL.
+type Client struct {
+	baseURL    string
+	httpClient *http.Client
+}
+
+func NewClient(baseURL string) *Client {
+	return &Client{
+		baseURL:    baseURL,
+		httpClient: &http.Client{},
+	}
+}
+
+// TODO: add typed methods matching the service's routes.

@@ -28,7 +28,9 @@ Base Python standards for Komodo. Builds on `go.md` and `typescript.md` — same
 ## 3. Error handling
 
 - Catch specific exceptions, never bare `except:` or `except Exception:` without re-raise.
-- Wrap and re-raise with context: `raise OrderError("fetching order") from err`. Never the function name in the message — function context belongs in structured log fields.
+- Wrap and re-raise with context using a short descriptive phrase: `raise OrderError("failed to fetch order") from err`. Never the function name in the message — function context belongs in structured log fields.
+  - Bad: `raise OrderError("get_order_by_id: db query failed") from err`
+  - Good: `raise OrderError("failed to query order by ID") from err`
 - Define module-level exception classes that inherit a single project base (`KomodoError`). Callers can `except KomodoError` once.
 - Errors propagate up; log once at the boundary where you stop propagating.
 - No `assert` for runtime checks — `assert` is stripped under `python -O`. Use explicit `raise`.

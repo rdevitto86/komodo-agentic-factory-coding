@@ -17,7 +17,9 @@ Base TypeScript/JavaScript coding standards for Komodo. Project-level configs ma
 ## 2. Comments
 
 - Doc comments must not open with the function/method/class name — write `// Returns the order for the given ID` not `// fetchOrder returns the order for the given ID`
-- Error message strings must not contain the function name — put function context in structured log metadata or stack traces, not the message string itself
+- Error message strings must not contain the function or method name — put function context in structured log metadata or stack traces, not the message string itself
+  - Bad: `throw new Error("fetchOrder: db query failed")`
+  - Good: `throw new Error("failed to query order")`
 
 ---
 
@@ -69,7 +71,7 @@ Base TypeScript/JavaScript coding standards for Komodo. Project-level configs ma
 
 ## 7. Testing
 
-See `testing.md` for the full standard — file naming, colocation rules, single-file structure, and framework-specific conventions (SvelteKit, Vue).
+See `testing-ts.md` for the full standard — file naming, colocation rules, single-file structure, and framework-specific conventions (SvelteKit, Vue).
 
 Summary:
 - Colocate tests with source; use the `.x.test.ts` naming convention

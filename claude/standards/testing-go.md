@@ -1,6 +1,6 @@
 # Testing Standards (Go)
 
-Applies to all Go services and libraries. JS/TS rules live in [`testing.md`](testing.md).
+Applies to all Go services and libraries. JS/TS rules live in [`testing-ts.md`](testing-ts.md).
 
 ---
 
@@ -19,6 +19,31 @@ Applies to all Go services and libraries. JS/TS rules live in [`testing.md`](tes
 - Helper functions take `t *testing.T` as the first arg: `newTestServer(t)`, `mustParseTime(t, s)`.
 - Call `t.Helper()` inside helpers so failure lines point to the caller.
 - Use `t.Cleanup(...)` for teardown; never rely on `defer` inside the test for shared resources.
+
+**Section banner format** — unit, component, and integration tests live together in a single `_test.go` file. Separate each section with this exact banner comment (72 chars total, box-drawing dash `─` U+2500):
+```
+// ── Unit Tests ──────────────────────────────────────────────────────────
+// ── Component Tests ─────────────────────────────────────────────────────
+// ── Integration Tests ───────────────────────────────────────────────────
+```
+
+```go
+// cache_client_test.go
+
+// ── Unit Tests ──────────────────────────────────────────────────────────
+
+func TestCacheClient_VerifyOTP(t *testing.T) { ... }
+
+// ── Component Tests ─────────────────────────────────────────────────────
+
+func TestCacheClient_StoreAndRetrieve(t *testing.T) { ... }
+
+// ── Integration Tests ───────────────────────────────────────────────────
+
+func TestCacheClient_Redis(t *testing.T) { ... }
+```
+
+Only include sections that are relevant — omit empty ones. E2E tests are **not** colocated; they live in a top-level `e2e/` directory and may use a `//go:build e2e` tag.
 
 ```go
 func TestOrderService_Cancel(t *testing.T) {
@@ -73,7 +98,7 @@ func TestOrderService_Cancel(t *testing.T) {
 
 ---
 
-## 7. E2E and integration
+## 7. E2E
 
-- Integration tests live in the same package as the code they exercise, gated by a build tag (`//go:build integration`) so unit runs stay fast.
-- E2E flows that span services live under a top-level `e2e/` directory at the repo root and are not governed by colocation rules.
+- Unit, component, and integration tests all live in the same colocated `_test.go` file, separated by section banners (see §2).
+- E2E flows that span services live under a top-level `e2e/` directory at the repo root and are not governed by colocation rules. Gate them with `//go:build e2e`.
