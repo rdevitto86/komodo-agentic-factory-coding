@@ -1,6 +1,6 @@
 # Go Standards
 
-Base Go coding standards for Komodo. Project-level configs may extend these but should not contradict them.
+High-level Go idioms for Komodo. Cross-cutting doctrine — hard rules, error-string format, design/DI principles, code-reuse priority, comments — lives in `principles.md` and `comments.md`; this file does not restate it. Reuse `komodo-forge-sdk-go` before writing custom Go (`principles.md` §2). Project-level configs may extend these but must not contradict them.
 
 ---
 
@@ -16,12 +16,10 @@ Base Go coding standards for Komodo. Project-level configs may extend these but 
 
 ## 2. Error handling
 
+- Error message format (verb-leading, no function/noun prefix) follows `principles.md` §1 — the single source of truth
 - Always handle error return values — never `_` an error
-- Wrap errors with context using a short descriptive noun phrase: `fmt.Errorf("failed to fetch user: %w", err)` — never the function or method name
-  - Bad: `fmt.Errorf("GetUserCredentials: unmarshal: %w", err)`
-  - Good: `fmt.Errorf("failed to read user credentials response: %w", err)`
-- Return errors up the call stack; don't log and return
-- Log errors once — at the top of the call stack where you stop propagating
+- Wrap with `%w` to preserve the chain: `fmt.Errorf("failed to fetch user: %w", err)`
+- Return errors up the call stack; don't log and return. Log once, at the top of the stack where propagation stops
 - No `panic` except for truly unrecoverable initialization failures (missing required config at startup)
 - Sentinel errors (`var ErrNotFound = errors.New(...)`) for errors callers need to match; `errors.As`/`errors.Is` for inspection
 
@@ -29,8 +27,7 @@ Base Go coding standards for Komodo. Project-level configs may extend these but 
 
 ## 3. Naming
 
-- All exported names must have a doc comment — **one sentence** for most; a second only for a non-obvious contract (side effect, precondition, specific error)
-- Doc comments must not open with the identifier name — `// Returns the user for the given ID` not `// GetUser returns the user for the given ID`. **This intentionally overrides Go's godoc convention.** No multi-line verbose blocks. See `comments.md`.
+- Comments and doc-comment requirements: governed entirely by `comments.md` (the single source of truth; it deliberately overrides Go's godoc naming convention)
 - Interfaces named by behavior: `Reader`, `Writer`, `Handler` — not `IReader`, `ReaderInterface`
 - Avoid stutter: `user.Service` not `user.UserService`
 - Unexported identifiers: camelCase, no underscores
@@ -58,10 +55,10 @@ See [`testing-go.md`](testing-go.md) for the full Go testing standard — coloca
 
 ## 6. Design patterns
 
-- **Dependency injection over package-level singletons** — inject dependencies (`*http.Client`, DB handles, clocks, loggers) into structs via constructors or option functions. Package-level globals make units untestable without real I/O or monkey-patching.
-- **Accept interfaces, return concrete types** — define interfaces at the point of consumption, not at the implementation. Keeps the dependency graph explicit and avoids premature abstraction.
-- **Idiomatic wiring** — use constructor functions (`NewServer(...)`, `NewService(...)`) to assemble the dependency graph. Avoid `init()` side effects, global registries, and auto-registration.
-- **Avoid init-time I/O** — `init()` functions must not make network calls, open files, or connect to databases. Failure in `init` produces unclear error messages and untestable startup sequences.
+Follow the design doctrine in `principles.md` §3–4 (dependency injection, accept interfaces / return concrete types, explicit wiring, composition, testability). Go-specific application:
+
+- Assemble the dependency graph with constructor functions (`NewServer(...)`, `NewService(...)`) — not package-level globals, registries, or `init()` registration
+- `init()` must not perform I/O — no network calls, file opens, or DB connections; init failures produce unclear errors and untestable startup sequences
 
 ---
 
@@ -81,5 +78,5 @@ See [`testing-go.md`](testing-go.md) for the full Go testing standard — coloca
 - Profile before optimizing — `pprof` is built in, use it
 - Avoid premature allocation: prefer stack allocation, reuse slices with `[:0]`, use `strings.Builder`
 - `sync.Pool` for frequently allocated short-lived objects on hot paths
-- Benchmark critical paths with `testing.B`; store benchmarks alongside the code they measure
+- Benchmark critical paths with `testing.B` — see `testing-go.md` §6 for placement and the `benchstat` workflow
 - Database queries: use `EXPLAIN ANALYZE` before adding an index; N+1 queries are a bug

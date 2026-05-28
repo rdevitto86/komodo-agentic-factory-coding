@@ -14,11 +14,7 @@ These are invariants. Treat as non-negotiable.
   - Bad (noun-only prefix — no verb, still wrong): `"otp lookup: %w"`, `"otp: max attempts exceeded"`, `"cache get: %w"`
   - Good: `"failed to read user credentials: %w"`, `"failed to store OTP: %w"`, `"failed to look up OTP: %w"`, `"max OTP attempts exceeded"`
   - The same rule applies to logger message strings: `logger.Error("otp: ...")` and `logger.Error("cache get failed")` are both wrong forms — write `logger.Error("failed to look up OTP", ...)` and pass the error as a structured attribute.
-- **Doc comments must not open with the function/method name, and must not be verbose multi-paragraph blocks.** Every exported function/method/type gets **1–3 sentences**: (1) what the function does, (2) any non-obvious contract (errors, side effects, preconditions), (3) why — only when rare and relevant. Lead with a verb (`Returns`, `Validates`, `Fetches`).
-  - Bad (name-leading + restates signature): `// VerifyOTP looks up the stored OTP for the given email and compares it to the submitted code.\n// On a match, deletes the key immediately — each code is single-use.`
-  - Bad (contract-only, says nothing about what the function does): `// Returns ErrInvalidOTP if the code does not match.`
-  - Good: `// Validates the submitted OTP against the stored value. Returns ErrInvalidOTP on mismatch and deletes the key on success — codes are single-use.`
-  - Good (single sentence): `// Fetches an order from DynamoDB by ID; returns ErrNotFound if no order exists.`
+- **All comments follow `comments.md` exactly.** It is the single source of truth for comment rules across every language and file — including the deliberate override of native godoc/JSDoc naming conventions. Do not restate comment rules or show comment examples here or in any other file.
 
 ---
 

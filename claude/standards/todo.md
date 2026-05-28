@@ -8,7 +8,7 @@ Standards for reading and writing `TODO.md` files across Komodo projects.
 
 Before starting any significant task, check `TODO.md` at the project root and in relevant subdirectories (e.g. `ui/TODO.md`, `api/TODO.md`). These cache deferred work, known debt, and follow-ups. Use them to understand intended scope and avoid duplicating deferred decisions.
 
-Surface completed items to the user so they can check them off. Never silently delete or mark items complete yourself.
+When your task resolves an item listed here, remove it from the file — see *Removing completed items* below.
 
 ---
 
@@ -35,7 +35,7 @@ For inline list items (e.g. quick follow-ups surfaced mid-task), use a plain bul
 - **[M]** Relocate `/services/repair` routes — repair booking belongs in reservations-api, not catalog.
 ```
 
-**Never use checkboxes (`- [ ]`).** TODO.md is not a task tracker — items are never "checked off" in the file. Remove items only when the user explicitly asks to clear them.
+**Never use checkboxes (`- [ ]`).** TODO.md is not a task tracker — items are never "checked off" in the file. A completed item is removed outright (see *Removing completed items*), never marked done in place.
 
 ### Section headers
 
@@ -51,6 +51,16 @@ When adding items from an audit, use `## <Area> — gaps from audit`. **Never in
 ### Preamble
 
 If a file-level preamble line is needed, write `Remaining items from audits.` — not `Remaining items from the YYYY-MM-DD audit.`
+
+---
+
+## Removing completed items
+
+When you finish a task that satisfies an item already in a `TODO.md`, remove that item from the file as the last step of the task. Do not leave completed items for the user to clear, and do not mark them done in place — the file tracks live work only. This saves the user a manual cleanup pass.
+
+- Remove only items your work genuinely completed. A partially-done item stays, with its `**Action:**` updated to reflect what remains.
+- Never remove items unrelated to your task, even if they look stale — flag those to the user instead.
+- Note which items you removed in your task summary, so there is a record outside the file.
 
 ---
 

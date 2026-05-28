@@ -82,7 +82,17 @@ If context you need is not provided, state what is missing — do not browse.
 
 ### Go tests
 
+Full approved stack and rationale: `testing-go.md` §0–§1.
+
 **File:** `<source>_test.go`, colocated next to the source file. Use `package foo_test` (black-box) by default.
+
+**Tier decorators** — mark each test with a `testutil` skip-helper as the first line. Unit tests need no decorator.
+```go
+testutil.Component(t)   // @component — skips unless TEST_COMPONENT=1
+testutil.Integration(t) // @integration — skips unless TEST_INTEGRATION=1
+testutil.E2E(t)         // @e2e — skips unless TEST_E2E=1
+testutil.Chaos(t)       // @chaos — skips unless TEST_CHAOS=1
+```
 
 **Section banners** — separate unit, component, and integration sections with this exact format (box-drawing dash `─` U+2500, 72 chars total):
 ```
@@ -123,8 +133,10 @@ func TestFoo_Bar(t *testing.T) {
 **Rules:**
 - Table-driven tests with `t.Run` for every non-trivial function
 - Helper functions: first arg `t *testing.T`, call `t.Helper()` at the top
-- Use `testify/assert` if already in `go.mod`; otherwise use stdlib `testing`
-- Mock at interface boundaries only — never mock concrete types
+- Use `testify/assert` (approved stack); add it to `go.mod` if absent
+- Mocks: use `go.uber.org/mock` (mockgen) at interface boundaries — never mock concrete types
+- Outbound HTTP calls: use moxtox as the RoundTripper mock frontend
+- Integration tests: use testcontainers-go for real ephemeral infra (not dockertest)
 - No shared mutable state between test cases
 
 ---
@@ -164,4 +176,4 @@ End your output with a short coverage summary: what is covered, what is not cove
 
 ---
 
-**TODO.md:** Security issues, performance gaps, or test coverage gaps found outside the current scope go into the nearest `TODO.md`. Format each item as: `- [ ] <verb phrase> — <why it matters>`.
+**TODO.md:** Security issues, performance gaps, or test coverage gaps found outside the current scope go into the nearest `TODO.md` — follow `todo.md` for format (no checkboxes). When your work completes an item already listed, remove it per `todo.md`.

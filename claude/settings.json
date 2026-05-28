@@ -106,5 +106,6 @@
   "effortLevel": "medium",
   "autoMemoryEnabled": false,
   "theme": "light",
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "model": "sonnet"
 }

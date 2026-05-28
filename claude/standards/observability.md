@@ -22,11 +22,7 @@ Every inbound request must generate or propagate a `trace_id`. This ID flows thr
 
 **In Go (forge SDK):**
 ```go
-// TelemetryMiddleware sets trace_id on the context — do not reinvent.
-// Pass ctx through every function call; never drop it.
 traceID := middleware.TraceIDFromContext(ctx)
-
-// Logger picks up trace_id automatically when using WithContext:
 logger.WithContext(ctx).Info("processing order")
 ```
 

@@ -1,108 +1,87 @@
 # Comments
 
-These rules apply to all languages. Follow them exactly — verbose comments are a hard violation.
+**Scope: every file, every language, no exceptions.** These rules apply to every file you create or edit (`.go`, `.ts`, `.py`, `.svelte`, `.c`, `.rs`, config, scripts, everything). No file type is exempt. The only per-file-type variation is the test-section banner (last row of the table).
 
-## Function / method doc comments
+## The rule
 
-Every function and method gets a doc comment. Write it in the idiom of the language (Go `//`, JS/TS `/** */`, Python `"""`, C/C++ `///`, Rust `///`).
+**Add a comment only where a reader cannot deduce the code's purpose or behavior from the name, signature, and surrounding code.** If the name already says it, the comment is noise — and worse, it drifts: comments are not compiled, not tested, and rot the moment the code changes underneath them. Prefer fewer comments, each carrying real weight.
 
-**Rules:**
-1. Start with a verb describing the action: `Creates`, `Runs`, `Validates`, `Helper that`, `Fetches`, etc.
-2. Never open with the function or method name — not even paraphrased.
-3. Keep it short: one sentence is the target. A second only when there is a non-obvious contract (error semantics, side effects, preconditions). Never a third.
-4. Never write a multi-paragraph or multi-line verbose block.
-5. Never document the entire file at the top of the file.
+A name like `SetCacheItem(...)` or `var worker = NewWorker()` is self-evident — no comment. Reach for one only when there is something the code cannot tell the reader on its own:
 
-**Bad:**
+- a non-obvious contract — errors returned, preconditions, side effects
+- a concurrency or ordering constraint (caller must hold a lock, must run before X)
+- a hidden mutation — it modifies an argument, or shared state, in a way the signature doesn't reveal
+- a surprising performance characteristic, or a workaround for an external quirk
+
+**The bar is identical for every declaration — exported or not, function, type, or var.** Export status creates no obligation to comment; only non-obvious behavior does. When in doubt, leave it out.
+
+**When you do comment, this intentionally overrides each language's native doc convention** (Go godoc, JSDoc, etc.). Those open a doc comment with the identifier name; we do not. If your training says "start the comment with the function name," that is the exact habit these rules override.
+
+---
+
+## Decision table
+
+| You are commenting… | When it's allowed | Form | Hard limit |
+|---------------------|-------------------|------|------------|
+| **Function / method** (exported or not) | Only when the name + signature don't convey purpose, or there's a non-obvious contract (errors, side effects, preconditions, concurrency, hidden mutation) | Verb-leading; 1 sentence, a 2nd only for the non-obvious part | Never open with the name; never 3+ sentences; never multi-paragraph |
+| **Test function** | Only for crucial non-obvious context (known race, external constraint) | One line | Never to describe what it asserts — name + body are the docs |
+| **Type / struct / interface** | Only for a non-obvious invariant/constraint/workaround the name can't convey | One line | Never a block above the declaration; never to restate the name |
+| **Struct field / var / const** | Only for a non-obvious constraint | Inline, after the declaration | ≤125 chars; never a block above it |
+| **Inside a function body (inline)** | Only to label a non-obvious workflow section, or flag a non-obvious step (race, mutation, ordering) | Lowercase | Single line; never restate the code |
+| **File / package / module header** | **Never** | — | Hard violation, no exceptions |
+| **Test-file section banner** | Test files only | Exact box-drawing format (see bottom) | Only form permitted |
+
+---
+
+## Hard violations (reject on sight, in any file)
+
+- **Documenting something whose name already conveys its purpose** — `// SetCacheItem sets a cache item`, `// worker is a worker`. The name is the documentation.
+- **File / package / module-level doc block** — e.g. `// Package foo provides…`. No exceptions.
+- **Opening a comment with the function/type/method name**, even paraphrased — `// Component skips…`, `// Config holds…`.
+- **Multi-line / multi-paragraph doc block** — past 2 sentences, or any block comment sitting above a type/var declaration.
+- **A doc comment on a test function** describing what it asserts.
+- **Restating the code** — `i++ // increment i`.
+- **Change history, author tags, dates, ownerless TODOs, commented-out code, jokes/apologies/editorial.**
+
+---
+
+## Form rules
+
+- **Lead with a verb:** `Creates`, `Fetches`, `Updates`, `Validates`, `Deletes`, `Skips`, etc.
+- **Language idiom:** Go `//`, JS/TS `/** */`, Python `"""`, C/C++ `///`, Rust `///`. Wording rules are identical across all of them.
+- **Inline comments are lowercase**, except the first letter, acronyms (HTTP, AWS, SQL), and proper nouns. Proper grammar. No multi-line inline blocks.
+
+## Examples
+
+**No comment — the name says everything:**
 ```go
-// ExecuteStatement runs a single SQL statement against the Aurora cluster.
-// Named parameters in input.Parameters are converted to RDS Field values.
-// Result rows are decoded into maps keyed by column name.
-func (c *Client) ExecuteStatement(...) { ... }
+func SetCacheItem(key string, val []byte) error { ... }
+
+var worker = NewWorker()
 ```
 
-**Good:**
+**Comment earns its place — non-obvious contract the signature hides:**
 ```go
-// Runs a single SQL statement against the Aurora cluster.
-func (c *Client) ExecuteStatement(...) { ... }
+// Performs the email action for the given email and code only if the code is valid.
+func (c *EmailClient) PerformEmailAction(email string, code string) error { ... }
 ```
 
-**Bad (name-leading):**
+**Comment earns its place — concurrency precondition:**
+```go
+// caller must hold c.mu; mutates items in place
+func (c *cache) evictLocked() { ... }
+```
+
+**Bad — opens with the name (the godoc habit this file overrides):**
 ```go
 // VerifyOTP looks up the stored OTP and compares it to the submitted code.
 func (c *CacheClient) VerifyOTP(email, code string) error { ... }
 ```
 
-**Good:**
-```go
-// Validates the submitted OTP against the stored value for the given email.
-func (c *CacheClient) VerifyOTP(email, code string) error { ... }
-```
-
-## Inline comments (inside function bodies)
-
-**When to write one:**
-- Calling out unique context on a var/const/struct field/object property — only when the name leaves real ambiguity or carries a non-obvious invariant. Max 125 characters, shorter is better.
-- Labeling a distinct workflow section or significant downstream call: `// make request to payments downstream`, `// fetch user records from Komodo DB`.
-
-**Rules:**
-- Always lowercase, except: the first letter of the comment, acronyms (HTTP, AWS, SQL), and proper nouns.
-- Use proper grammar.
-- No multi-line inline blocks.
-- Never restate what the code already says.
-
-**Bad:**
-```go
-i++ // increment i
-```
-
-**Good:**
-```go
-TransactionID string // optional; ties execution to a BeginTransaction call
-```
-
-```go
-// fetch and decode result rows
-rows, err := decodeRecords(out.Records, out.ColumnMetadata)
-```
-
-## Types, structs, interfaces, vars, consts
-
-No doc comment required on unexported types or simple structs whose fields are self-explanatory. If a field needs a note, put it inline — not in a block comment above the type.
-
-**Bad:**
-```go
-// Config holds all settings required to construct a Client.
-type Config struct {
-    Endpoint string // leave empty in prod; used for component testing
-}
-```
-
-**Good:**
-```go
-type Config struct {
-    Endpoint string // optional; leave empty in prod
-}
-```
-
-## Test files
-
-- Never comment at the file, function, or section level in relation to tests themselves.
-- Inline comments inside test functions are fine for explicit callouts and relevant context.
-- Test helper functions may have a function-level doc comment.
-- Section breaks use this exact format only:
+## Test-file section banner — exact format only
 
 ```
-// ── Unit Tests ────────────────────────────────────────────────────────────────────────────────────
-// ── Component Tests ───────────────────────────────────────────────────────────────────────────────
-// ── Integration Tests ─────────────────────────────────────────────────────────────────────────────
+// ── Unit Tests ──────────────────────────────────────────────────────────
+// ── Component Tests ─────────────────────────────────────────────────────
+// ── Integration Tests ───────────────────────────────────────────────────
 ```
-
-## What never goes in comments
-
-- File-level package/module documentation blocks
-- Change history, author tags, dates — git knows
-- TODOs without an owner or ticket reference
-- Commented-out code — delete it; git remembers
-- Apologies, jokes, editorial commentary
-- Restating what the code already says

@@ -6,8 +6,7 @@ Shared Claude Code configuration for all Komodo projects. Settings, skills, agen
 
 - **Never create git commits or git branches.** Only the user commits, branches, and merges. Do not run `git commit`, `git branch`, or `git checkout -b` under any circumstances — not even when asked to "save", "finalize", or "start on a feature". Always work on the current branch.
 - **Error strings must not contain the function name.** Function context belongs in metadata objects or stack traces only — not in the error message string itself.
-- **Doc comments must start with a verb and must never open with the function/method name.** Write `// Returns the user for the given ID` not `// GetUser returns the user for the given ID`. Follow `comments.md` exactly — verbose multi-line doc blocks, file-level documentation, and name-leading comments are hard violations.
-- **Never document the entire file at the top.** No package/module/file-level doc blocks.
+- **All comments follow `comments.md` exactly — it is the single source of truth for comment rules, every language and every file.** No other file defines comment rules or shows comment examples. The hard violations it defines (file/package-level doc blocks, name-leading doc comments, verbose multi-line blocks, commenting a type merely to describe it) are non-negotiable.
 - **Never expand scope without permission.** If you discover work outside the current task — a bug, a refactor opportunity, an adjacent improvement — stop. Document it in the nearest `TODO.md` and surface it to the user or advisor. Side work is always declined unless explicitly approved.
 
 ## What this repo is
@@ -98,7 +97,7 @@ Engineering and operational standards in `claude/standards/`. Agents reference t
 | File | Covers |
 |------|--------|
 | `principles.md` | Hard rules, code reuse priority, DI/testability design doctrine |
-| `comments.md` | Comment rules for all languages: verb-leading doc comments, no file-level docs, section break format |
+| `comments.md` | Single source of truth for all comment rules — every language, every file |
 | `security.md` | Secrets, input validation, auth, OWASP, incident response |
 | `pull-requests.md` | PR size, descriptions, review duties, merge criteria |
 | `api-design.md` | URL conventions, HTTP methods, status codes, versioning, OpenAPI |
