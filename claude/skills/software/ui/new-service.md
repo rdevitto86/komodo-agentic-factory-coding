@@ -15,9 +15,10 @@ Scaffold a new Go microservice in this monorepo following established convention
 ## Before generating anything
 
 1. Read `CLAUDE.md` for the Port Allocation table. Scan existing `docker-compose.yaml` files in sibling service directories to find which ports in the domain block are already taken. Pick the next available anchor port.
-2. Read `apis/komodo-forge-sdk-go/http/server/` to get the exact `srv.Run` signature.
-3. Read `apis/komodo-forge-sdk-go/http/middleware/exports.go` for the middleware list.
-4. Read `apis/komodo-forge-sdk-go/http/errors/` for `httpErr.SendError` signature.
+2. Inspect the published forge SDK from Git — `github.com/rdevitto86/komodo-forge-sdk-go` at the version pinned in the generated `go.mod`, never a local checkout. Pull via raw GitHub or `gh`:
+   - `http/server/` — exact `srv.Run` signature.
+   - `http/middleware/exports.go` — the middleware list.
+   - `http/errors/` — `httpErr.SendError` signature.
 
 ## Files to generate
 

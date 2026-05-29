@@ -5,6 +5,7 @@ Universal Komodo standards. These are the base — individual projects may add s
 | Standard | Description |
 |----------|-------------|
 | [Principles](principles.md) | Hard rules, code-reuse priority, idiomatic/DI/explicit design, testability as a design constraint |
+| [Komodo Context](komodo-context.md) | Org-wide stack invariants — repo shape, languages, forge SDKs, service anatomy, compute, data, IaC |
 | [Security](security.md) | Secrets, input validation, auth, data handling, OWASP baseline, incident response |
 | [Pull Requests](pull-requests.md) | PR size, description requirements, review expectations, merge criteria |
 | [API Design](api-design.md) | REST conventions, status codes, error format, versioning, documentation |

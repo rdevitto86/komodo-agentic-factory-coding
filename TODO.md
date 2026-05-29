@@ -41,14 +41,6 @@ Remaining items from audits.
 
 ## Agent system — gaps from audit
 
-### Fix dead skill references (`/dispatch`, `/feature-workflow`)
-**Problem:** Both are referenced in `CLAUDE.md` and `advisor/agent.md` but neither file exists under `claude/skills/`. Any invocation silently fails.
-**Action:** Either create the skills or remove the references.
-
-### Add `komodo-context.md` — org-wide stack context for agents
-**Problem:** Agents are fully generic. They reference `principles.md` but know nothing about: Go/SvelteKit/Terraform/AWS stack, what `komodo-forge-sdk-go` / `komodo-forge-sdk-ts` contain, service topology, CI system, DB engine, migration tool, or deployment process.
-**Proposed:** Add `claude/standards/komodo-context.md` with org-wide invariants. Agents reference it the same way they reference `principles.md`. Pair with a project-level `CLAUDE.md` template for per-repo specifics.
-
 ### Add project `CLAUDE.md` template
 **Problem:** Agents delegate to project CLAUDE.md for tech-stack overrides, but there's no template specifying what that file must contain. Coverage is inconsistent across projects.
 **Proposed:** Add a `claude/standards/project-claude-template.md` (or similar) covering: stack, service topology, how to run/test/build/deploy, key library choices.

@@ -19,7 +19,7 @@ This is not a product codebase. It is the Claude Code configuration layer — ag
 claude/
 ├── agents/          # Claude Code subagents (spawned via Agent tool)
 │                    # Local MCP agents live in ~/.komodo/bridge/ — not here
-├── skills/          # User-invocable slash commands (/feature-workflow, /dispatch, etc.)
+├── skills/          # User-invocable slash commands (/new-service, /add-route, etc.)
 ├── standards/       # Engineering and operational standards referenced by agents and skills
 ├── hooks/           # Shell scripts triggered automatically by Claude Code events
 └── settings.json    # Global permissions, allowed commands, plugins, hook registration
@@ -52,7 +52,7 @@ Spawned by Claude via the `Agent` tool. Defined in `claude/agents/`.
 **Invoking agents:**
 - **Shorthand prefix:** start your message with the trigger (e.g. `[SWE] add pagination to the orders endpoint`)
 - **Natural language:** "use the swe agent to...", "have the advisor look at..."
-- **Skills:** `/dispatch` for parallel multi-agent routing, `/feature-workflow` for structured design → implementation flow
+- **Orchestration:** the `advisor` agent decomposes work and dispatches specialist agents in parallel natively — no separate routing skill is required. Hand it a goal and it sequences the rest.
 
 ## Local MCP agents
 
@@ -97,6 +97,7 @@ Engineering and operational standards in `claude/standards/`. Agents reference t
 | File | Covers |
 |------|--------|
 | `principles.md` | Hard rules, code reuse priority, DI/testability design doctrine |
+| `komodo-context.md` | Org-wide stack invariants — repo shape, languages, forge SDKs, service anatomy, compute, data, IaC |
 | `comments.md` | Single source of truth for all comment rules — every language, every file |
 | `security.md` | Secrets, input validation, auth, OWASP, incident response |
 | `pull-requests.md` | PR size, descriptions, review duties, merge criteria |

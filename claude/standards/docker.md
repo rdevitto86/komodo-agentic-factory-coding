@@ -19,7 +19,6 @@ Every production Dockerfile must use multi-stage builds. Never ship compilers, b
 
 ```dockerfile
 FROM golang:1.26 AS build
-COPY komodo-forge-sdk-go /komodo-forge-sdk-go
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download

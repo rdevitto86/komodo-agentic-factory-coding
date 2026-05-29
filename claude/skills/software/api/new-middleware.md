@@ -14,7 +14,7 @@ Scaffold a new HTTP middleware in `komodo-forge-sdk-go` following established SD
 - `--auth` — Middleware participates in the auth chain. Must call `next` only after validation passes.
 - `--stateful` — Middleware requires initialization (e.g. in-memory store, Redis client). Generates a constructor instead of a plain handler wrapper.
 
-**Must be run from inside `apis/komodo-forge-sdk-go/`.**
+**Must be run from inside a clone of the `komodo-forge-sdk-go` repo (`github.com/rdevitto86/komodo-forge-sdk-go`)** — this skill modifies the SDK itself, the one case where you work against the SDK source directly rather than the published module.
 
 ---
 
@@ -35,8 +35,8 @@ Scaffold a new HTTP middleware in `komodo-forge-sdk-go` following established SD
 package middleware
 
 import (
-	httpErr "komodo-forge-sdk-go/http/errors"
-	logger "komodo-forge-sdk-go/logging/runtime"
+	httpErr "github.com/rdevitto86/komodo-forge-sdk-go/http/errors"
+	logger "github.com/rdevitto86/komodo-forge-sdk-go/logging/runtime"
 	"net/http"
 )
 

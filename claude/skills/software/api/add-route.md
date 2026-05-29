@@ -23,9 +23,10 @@ Add a new route (handler + test stub + `main.go` wiring + OpenAPI stub) to an ex
 
 1. Read `main.go` — understand the middleware stack names and which `chain`/`mw.Chain` style is used.
 2. Read `internal/handlers/<file>.go` (the target file, or closest resource match) — follow naming conventions already established.
-3. Read `apis/komodo-forge-sdk-go/http/middleware/exports.go` — confirm middleware names.
-4. Read `apis/komodo-forge-sdk-go/http/errors/` — confirm `httpErr.SendError` signature and available error sets.
-5. Read `pkg/v1/models/errors.go` — see what error codes exist; add new ones only if the handler needs them.
+3. Inspect the published forge SDK from Git — `github.com/rdevitto86/komodo-forge-sdk-go` at the version pinned in the service `go.mod`, never a local checkout. Pull via raw GitHub or `gh`:
+   - `http/middleware/exports.go` — confirm middleware names.
+   - `http/errors/` — confirm `httpErr.SendError` signature and available error sets.
+4. Read `pkg/v1/models/errors.go` — see what error codes exist; add new ones only if the handler needs them.
 
 ---
 

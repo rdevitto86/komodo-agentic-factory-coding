@@ -66,6 +66,7 @@
       "Bash(git push -f*)"
     ]
   },
+  "model": "opus",
   "hooks": {
     "Stop": [
       {
@@ -106,6 +107,5 @@
   "effortLevel": "medium",
   "autoMemoryEnabled": false,
   "theme": "light",
-  "agentPushNotifEnabled": true,
-  "model": "sonnet"
+  "agentPushNotifEnabled": true
 }
