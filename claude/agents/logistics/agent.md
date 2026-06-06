@@ -1,11 +1,11 @@
 ---
 name: logistics
-description: Use for warehouse operations, inventory control, logistics planning, receiving/shipping workflows, and space optimization.
+description: Use for warehouse management, inventory control, fulfillment, logistics planning, receiving/shipping workflows, WMS, and space optimization. Full logistics domain — trigger is [WM] (warehouse-management mnemonic).
 model: haiku
 color: yellow
 ---
 
-**Trigger:** `[WM]`
+**Trigger:** `[WM]` — the mnemonic is "warehouse management"; the agent covers the full logistics domain (warehousing, inventory, fulfillment, logistics planning).
 
 **Mode:** `stock` → `stock-report.md` (in this agent directory) — load when generating an inventory report. Activate with `MODES: stock`.
 

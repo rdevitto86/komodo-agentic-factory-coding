@@ -2,6 +2,10 @@
 
 Shared Claude Code configuration for all Komodo projects. Agents, hooks, and settings live here and are symlinked into `~/.claude/` via `setup.sh`. Each agent is a self-contained module that owns its own standards, skills, modes, and docs — there is no global standards or skills directory.
 
+## Token efficiency
+
+Agent usage runs against a shared subscription — treat tokens like money. Prefer MCP agents over Claude agents (MCP runs outside Claude's context window at zero token cost). Pass scoped `MODES:` on every Claude agent spawn. Compact at phase boundaries. Keep delegation lean — summarize before passing context downstream. Full doctrine and all enforcement rules: `~/.claude/agents/advisor/token-efficiency.md`. The advisor is responsible for enforcing this on every dispatch.
+
 ## Hard rules
 
 These are global and non-negotiable. They apply to every agent and override any default behavior.
@@ -14,6 +18,15 @@ These are global and non-negotiable. They apply to every agent and override any 
 ## What this repo is
 
 This is the Claude Code configuration layer — not a product codebase. Changes here affect all projects on the next Claude Code session.
+
+## Working files: `TODO.md` and `MEMORY.md`
+
+Two local, git-ignored files that every agent reads and writes. Neither is ever committed.
+
+- **`TODO.md` — task tracker.** Where agents track outstanding work and its progress across many sessions: deferred work, out-of-scope finds, known debt. Items are removed when done, never checked off. Conventions: `~/.claude/agents/project-manager/todo.md`.
+- **`MEMORY.md` — session cache.** A continuity checkpoint so progress isn't lost when a session ends, compacts, or is interrupted: what's in flight now, the next steps, decisions made this session, and watch-outs. Working state, not history — pruned and overwritten, not appended forever. Conventions: `~/.claude/agents/project-manager/memory.md`.
+
+The split: `TODO.md` is the durable to-do ledger across sessions; `MEMORY.md` is the resume buffer for the work in flight. Read both at session start and reconcile `MEMORY.md` against the real repo state before trusting it. Both are git-ignored (`.gitignore`).
 
 ## Directory layout
 
@@ -29,7 +42,7 @@ claude/
 └── settings.json        # Global permissions, allowed commands, plugins, hook registration
 ```
 
-Encapsulation is the organizing principle: an agent's knowledge lives in its own folder so spawned agents don't bleed context into each other. Cross-cutting coding standards (principles, comments, security, PRs, stack, git-flow, logging) are owned by `swe`, since all coding routes through it; other agents reference them by `~/.claude/agents/swe/<file>.md` path. The self-contained agents (`quality-assurance`, `project-manager`) inline their rules because they also run as MCP agents with no file access.
+Encapsulation is the organizing principle: an agent's knowledge lives in its own folder so spawned agents don't bleed context into each other. Cross-cutting coding standards (principles, comments, security, PRs, stack, git-flow, logging, readme-maintenance) are owned by `swe`, since all coding routes through it; other agents reference them by `~/.claude/agents/swe/<file>.md` path. The self-contained agents (`quality-assurance`, `project-manager`) inline their rules because they also run as MCP agents with no file access.
 
 ## Claude Code agents
 
@@ -37,21 +50,34 @@ Spawned via the `Agent` tool. Defined in `claude/agents/<agent>/agent.md`.
 
 **Default: the `advisor` agent is the entry point for everything.** It is the consigliere and orchestrator — gathers context (user → MCP agents → Claude agents), delegates work autonomously, passes the right modes on each spawn, and insulates the user from operational noise.
 
-| Trigger | Agent | Model | Role |
-|---------|-------|-------|------|
-| `[ADV]` | `advisor` | sonnet | **Default. Consigliere, orchestrator, and cross-domain strategist** — advises on strategy/technical/business, decomposes work, dispatches specialists with scoped modes, surfaces only consequential decisions. |
-| `[PM]` | `project-manager` | sonnet | Story/work-item management (tracker-agnostic: Trello/TODO.md/JIRA) and business-context assembly for other agents. **Primary: MCP `pm`**; Claude subagent fallback. |
-| `[SWE]` | `swe` | sonnet | All software — UI, backend, **non-robotics** embedded, system design, architecture. Code review/debugging. All coding routes here except robotics. |
-| `[QA]` | `quality-assurance` | sonnet | Security review, performance review, test writing. **Primary: MCP `qa`**; Claude subagent fallback. |
-| `[OPS]` | `devops` | sonnet | CI/CD, infrastructure, deployments, monitoring, incident response. Delegates IaC authoring to `swe`. |
-| `[EE]` | `electrical-engineer` | sonnet | Circuit design, schematic review, PCB layout, power systems, component selection, EMC. |
-| `[MECH]` | `mechatronics` | sonnet | **Robotics end to end — hardware AND the robotics software** (firmware, RTOS, ROS 2 nodes), actuator/sensor interfaces, integration, design reviews. |
-| `[BOT]` | `botanist` | haiku | Crop health, plant science, agricultural diagnosis. |
-| `[WM]` | `logistics` | haiku | Inventory control, logistics, warehouse operations. |
+| Trigger | Agent | Model | Primary runtime | Fallback | Role |
+|---------|-------|-------|-----------------|----------|------|
+| `[ADV]` | `advisor` | sonnet | Claude Sonnet | — | **Default. Consigliere, orchestrator, and cross-domain strategist** — advises on strategy/technical/business, decomposes work, dispatches specialists with scoped modes, surfaces only consequential decisions. |
+| `[PM]` | `project-manager` | sonnet | MCP `pm` (`analyze_specs`) | Claude Sonnet | Story/work-item management (tracker-agnostic: Trello/TODO.md/JIRA) and business-context assembly for other agents. |
+| `[SWE]` | `swe` | sonnet | Claude Sonnet | — | All software — UI, backend, **non-robotics** embedded, system design, architecture. Code review/debugging. All coding routes here except robotics. |
+| `[QA]` | `quality-assurance` | sonnet | Claude Sonnet | — | Security review, performance review, test writing. |
+| `[OPS]` | `devops` | sonnet | Claude Sonnet | — | CI/CD, infrastructure, deployments, monitoring, incident response. Delegates IaC authoring to `swe`. |
+| `[DATA]` | `data-analyst` | sonnet | Claude Sonnet | — | Analytics, BI, KPI/metrics definition and interpretation, ad-hoc data investigation, analytical SQL, dashboards/reporting, A/B experiment analysis. Consumes data; does not author pipelines, ETL, schema, or migrations — that routes to `swe`. |
+| `[EE]` | `electrical-engineer` | sonnet | Claude Sonnet | — | Circuit design, schematic review, PCB layout, power systems, component selection, EMC. |
+| `[MECH]` | `mechatronics` | sonnet | Claude Sonnet | — | **Robotics end to end — hardware AND the robotics software** (firmware, RTOS, ROS 2 nodes), actuator/sensor interfaces, integration, design reviews. |
+| `[CAD]` | `machinist` | sonnet | Claude Sonnet | — | CAD / 3D modeling / CAM — parametric part design, DFM for 3D printing and CNC, tolerances/fits, material selection, toolpath and G-code awareness, model review. Tools: Fusion 360, FreeCAD, SolidWorks, AutoCAD, slicers. |
+| `[BOT]` | `botanist` | haiku | Claude Haiku | — | Crop health, plant science, agricultural diagnosis. |
+| `[WM]` | `logistics` | haiku | Claude Haiku | — | Warehouse management, inventory control, fulfillment, logistics planning, receiving/shipping, WMS. Trigger is `[WM]` (warehouse-management mnemonic) — agent name is `logistics` but scope is the full logistics domain. |
+| — | `lawyer` | sonnet | MCP `lawyer` (`review_document`) | Claude Sonnet | Contract review, compliance, legal research. Not legal advice. |
+| — | `customer-servicing` | sonnet | MCP `customer-servicing` (`draft_response`) | Claude Sonnet | Customer response drafting, ticket triage, escalation summaries. |
+| `[SEC]` | `cyber-security` | sonnet | Claude Sonnet | — | Offensive + defensive security — threat modeling, pentest, security architecture, red/blue-team. Dev-time security stays with `swe`; per-file review stays with `qa`. |
+| — | `marketing` | sonnet | MCP `marketing` (`create_content`) | Claude Sonnet | Campaign strategy, copywriting, brand messaging, and sales-content/proposal drafting (supplementing, not replacing, real sellers). |
+| `[TAX]` | `tax` | sonnet | MCP `tax` (`analyze_tax`) | Claude Sonnet | Tax document summarization, exposure/deduction/deadline flagging, first-line due diligence. Not tax advice — escalate to a CPA. |
+
+**Runtime rule:** Claude Sonnet is the universal fallback — if MCP is unreachable, always fall back to the Claude Sonnet subagent. The advisor honors this table at dispatch and never skips MCP for agents where it is the primary runtime.
 
 **Routing notes:**
 - **Robotics → `mechatronics`.** It owns the robotics software side (firmware, control loops, ROS nodes). `swe`'s `cpp` mode is for non-robotics embedded only. The advisor leans to mechatronics for anything robotics.
 - **Cross-domain/architecture strategy → `advisor`** (the former `architect` role folded in). Deep software/system design → `swe` in `design` mode.
+- **CAD/mechanical split:** `machinist` owns part geometry and manufacturability (3D printing, CNC). Finished parts hand off to `mechatronics` for robotics integration and firmware/control. `electrical-engineer` owns PCB layout and electronics-driven enclosure constraints — coordinate with EE when a part must accommodate board mounting or connector cutouts.
+- **Security split — three layers:** `swe` owns dev-time security (input validation, authz, secret handling) per `~/.claude/agents/swe/security.md`. `quality-assurance` owns per-file/per-component security review passes. `cyber-security` owns everything else: cross-cutting threat modeling, security architecture, offensive/pentest, red/blue-team, and deep vulnerability assessment.
+- **Sales duties** fold into `advisor` (commercial strategy), `marketing` (campaigns, copy, and proposal/sales-content drafting), and `data-analyst` (sales-data analysis).
+- **Email is a per-agent mode** (`MODES: email`) on `customer-servicing`, `marketing`, `lawyer`, and `tax`. Each owns its own tone, formatting, and business rules in its `email.md`; Gmail (MCP) is the shared transport. Email is read-first — an agent never sends without explicit per-message user approval, and never bulk-sends through it.
 
 **Model tiers:** `haiku` (simple/lookup/drafting) · `sonnet` (complex technical work, default) · `opus` (highest reasoning).
 
@@ -69,26 +95,15 @@ Each agent's knowledge is split into **modes** — keyword-activated bundles (a 
 - **Mode tables** live in each `agent.md`. Example — `swe`: `go`, `ts`, `python`, `svelte`, `cpp`, `api`, `db`, `infra`, `design`.
 - **Docs are mode-gated:** a mode folder may hold a `docs/` of targeted context that loads with the mode; project-specific context lives in the target repo's `/docs/`.
 
-## Local MCP agents
+Note: "mode" means two different things depending on the agent. For most agents (`swe`, `mechatronics`, `devops`, etc.) a mode is a loadable folder/file bundle activated by keyword. For `quality-assurance`, a mode is the review type (`security` | `performance` | `tests`) — same word, different mechanism.
 
-Run on Qwen3 via the komodo bridge (`~/.komodo/bridge`). Served at `http://localhost:8000/sse`. Start with `docker compose up -d` in `~/.komodo/`. They run fully outside Claude's context window. **Always prefer MCP agents over Claude agents when an MCP agent can cover the task.**
+## MCP bridge
 
-`pm` and `qa` are the primary MCP agents — invoke them first.
-
-| Agent | MCP tool | Role |
-|-------|----------|------|
-| `pm` ⭐ | `analyze_specs` | Story/work-item management (Trello/TODO.md/JIRA), task breakdown, sprint planning, delivery risk, and business-context assembly for other agents. |
-| `qa` ⭐ | `generate_test_cases` | Security review, performance review, test writing, bug triage, release gates. |
-| `lawyer` | `review_document` | Contract review, compliance, legal research. Not legal advice. |
-| `customer-servicing` | `draft_response` | Customer response drafting, ticket triage, escalation summaries. |
-| `marketing` | `create_content` | Campaign strategy, copywriting, brand messaging. |
-| `sales` | `draft_sales_content` | Lead qualification, proposals, negotiation, CRM. |
-
-The `pm` and `qa` Claude subagents in `claude/agents/` are the fallbacks when the MCP bridge is unavailable.
+MCP agents run on Qwen3 via the komodo bridge (`~/.komodo/bridge`). Served at `http://localhost:8000/sse`. Start with `docker compose up -d` in `~/.komodo/`. They run fully outside Claude's context window at zero token cost. MCP tool names and roles are in the routing table above (Primary runtime column). Claude subagents in `claude/agents/` are the fallbacks when the bridge is unreachable.
 
 ## Standards & skills
 
-There is no global standards or skills directory — each is owned by an agent and lives in its folder, grouped by mode. To find a standard or skill, look in the owning agent's folder (or its mode subfolders). Cross-cutting coding standards live under `claude/agents/swe/`.
+There is no global standards or skills directory — each is owned by an agent and lives in its folder, grouped by mode. To find a standard or skill, look in the owning agent's folder (or its mode subfolders). Cross-cutting coding standards live under `claude/agents/swe/`: principles, comments, security, PRs, stack, git-flow, logging, and readme-maintenance.
 
 ## Hooks (auto-run, global)
 

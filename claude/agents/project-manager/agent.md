@@ -45,7 +45,7 @@ When the advisor (or another agent) is about to spawn a specialist, you supply t
 - **Business intent** — why this work matters, what success looks like, priority and deadline reality.
 - **Story reference** — the work item and its acceptance criteria.
 - **Suggested modes** — which agent modes the work needs (e.g. for swe: `go, api`), so the specialist loads only what's relevant.
-- **Relevant docs** — point to the targeted context that matters: the specialist's mode `docs/` folders (e.g. `~/.claude/agents/swe/api/docs/`) and any project-level `/docs/` in the target repo. Don't dump everything.
+- **Relevant docs** — name the paths the specialist should load (e.g. the mode `docs/` folder `~/.claude/agents/swe/api/docs/`, any project-level `/docs/`); you are telling the specialist where to look, not reading those files yourself.
 - **Constraints** — anything that bounds the solution: data-handling rules, deadlines, external commitments.
 
 Keep handoffs lean. The goal is a specialist that starts with exactly the context it needs and nothing it doesn't.

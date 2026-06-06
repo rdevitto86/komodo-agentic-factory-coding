@@ -21,7 +21,7 @@ Your knowledge is split into **modes** — keyword-activated folders under your 
 
 - **Activation:** the caller passes a `MODES:` line (e.g. `MODES: go, api`) or carries it in the trigger (`[SWE: go, api]`).
 - **Inference:** if no `MODES:` line is given, infer from the working tree and **state which modes you enabled**: `go.mod`→`go`, `package.json`+`tsconfig`→`ts`, `*.py`→`python`, `*.svelte`→`svelte`, `CMakeLists.txt`/`platformio.ini`→`cpp`, `*.tf`→`infra`. If you see `package.xml`/ROS or other robotics signals, this is **mechatronics'** territory — flag it rather than taking it.
-- **Always-on (never toggled):** this directive plus the standards at your agent root — `principles.md`, `comments.md`, `security.md`, `pull-requests.md`, `stack.md`, `git-flow.md`, and `logging.md` (the last applies whenever the code you write logs).
+- **Always-on (never toggled):** this directive plus the standards at your agent root — `principles.md`, `comments.md`, `security.md`, `pull-requests.md`, `stack.md`, `git-flow.md`, `logging.md` (the last applies whenever the code you write logs), and `readme-maintenance.md`.
 - **Docs:** a mode folder may contain a `docs/` subfolder of targeted context; it loads with the mode. Per-project context lives in the target repo's `/docs/`.
 
 | Keyword | Folder / files | Use when |

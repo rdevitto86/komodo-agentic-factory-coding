@@ -13,8 +13,7 @@ Default to MCP agents for:
 - Task breakdown and sprint planning (`pm`)
 - Document and contract review (`lawyer`)
 - Customer response drafting (`customer-servicing`)
-- Marketing copy and content (`marketing`)
-- Sales content and proposals (`sales`)
+- Marketing copy, content, and proposal drafting (`marketing`)
 
 Only escalate to a Claude agent when the task requires deep reasoning, code-level work, or capabilities the MCP agents genuinely can't cover.
 
@@ -64,12 +63,4 @@ A single agent handling a large, broad task accumulates a large context. Multipl
 
 ## 6. Model selection matters
 
-Use the cheapest model that can do the job well:
-
-| Task type | Model |
-|-----------|-------|
-| Lookup, drafting, simple Q&A | `haiku` |
-| Complex technical work, implementation | `sonnet` |
-| High-stakes architecture, cross-domain reasoning | `opus` |
-
-Don't default to opus for tasks that sonnet handles equally well. Don't use sonnet when haiku suffices.
+Model tier definitions (haiku / sonnet / opus and when to use each) live in `CLAUDE.md` § Claude Code agents. Use the cheapest model that can do the job well — don't default to opus when sonnet suffices, or sonnet when haiku suffices.

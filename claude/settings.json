@@ -63,7 +63,10 @@
     ],
     "deny": [
       "Bash(git push --force*)",
-      "Bash(git push -f*)"
+      "Bash(git push -f*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout -b:*)"
     ]
   },
   "hooks": {
@@ -107,5 +110,5 @@
   "autoMemoryEnabled": false,
   "theme": "light",
   "agentPushNotifEnabled": true,
-  "model": "opus"
+  "model": "sonnet"
 }
