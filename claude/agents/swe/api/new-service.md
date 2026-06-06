@@ -1,6 +1,6 @@
 # Skill: /new-service
 
-Scaffold a new Go microservice in this monorepo following established conventions.
+Scaffold a new Go microservice in this monorepo following established conventions. This is the **Go specialization of `~/.claude/agents/swe/api/blueprint.md`** — that file defines the language-agnostic shape every API must have; this skill produces it for Go. The generated skeleton must satisfy every applicable row of the blueprint's §2 checklist, with stubs marked per its §3 TODO-pointer convention. After scaffolding, `/api-audit` should report all PASS (stubs aside).
 
 ## Usage
 
@@ -67,4 +67,4 @@ Generate all files under `apis/komodo-<name>-api/`. Read each template from `cla
 
 ---
 
-**After this, you may need:** `/add-route` to register handlers, `/git-flow` for branch and PR conventions.
+**After this, you may need:** `/add-route` to register handlers, `/api-audit` to confirm the skeleton conforms to `~/.claude/agents/swe/api/blueprint.md`, `/git-flow` for branch and PR conventions.

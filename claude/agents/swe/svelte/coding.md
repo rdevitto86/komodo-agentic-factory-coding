@@ -110,11 +110,11 @@ $effect(() => {
 
 ## 8. Testing
 
-Colocate test files per `testing-ts.md`. Component tests use `@testing-library/svelte`.
+Colocate test files per `~/.claude/agents/swe/ts/coding.md`. Component tests use `@testing-library/svelte`.
 
 - Drop the `+` from route file test names: `+page.svelte` → `page.x.test.ts`
 - Render with `render(Component, { props: { ... } })` — not `new Component()`
 - Assert on DOM output and user events; do not reach into component internals
 - Trigger state changes and assert the resulting DOM to test rune-driven reactivity
 
-See `testing-ts.md §4` for full SvelteKit test conventions.
+See `~/.claude/agents/swe/ts/coding.md §4` for full SvelteKit test conventions.

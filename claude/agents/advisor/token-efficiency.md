@@ -47,7 +47,7 @@ Each agent should receive only what it needs — no more.
 
 A single agent handling a large, broad task accumulates a large context. Multiple focused agents with narrow scopes each run cheaper and in parallel.
 
-- Break multi-file tasks into per-file agents (see `testing-ts.md` for the swarming pattern)
+- Break multi-file tasks into per-file agents (see `~/.claude/agents/swe/ts/coding.md` for the swarming pattern)
 - Each agent's prompt should be self-contained and minimal — give it exactly what it needs to do its job
 - Avoid passing full conversation history into agent prompts; summarize the relevant decision or constraint instead
 

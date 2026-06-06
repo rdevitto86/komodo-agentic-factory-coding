@@ -68,7 +68,7 @@ Create `src/lib/components/<category>/<Name>.svelte`.
 
 ## Test stub
 
-Unless `--no-test`, create `src/lib/components/<category>/<Name>.x.test.ts` — colocated next to the component, per `testing-ts.md`.
+Unless `--no-test`, create `src/lib/components/<category>/<Name>.x.test.ts` — colocated next to the component, per `~/.claude/agents/swe/ts/coding.md`.
 
 ```typescript
 import { render, screen } from '@testing-library/svelte';

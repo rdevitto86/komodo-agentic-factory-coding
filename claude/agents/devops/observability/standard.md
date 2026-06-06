@@ -1,6 +1,6 @@
 # Observability Standards
 
-Covers structured logging correlation, metrics, distributed tracing, and health checks. Log levels, required fields, and what not to log are in `logging.md` — this document covers the instrumentation layer.
+Covers structured logging correlation, metrics, distributed tracing, and health checks. Log levels, required fields, and what not to log are in `~/.claude/agents/swe/logging.md` — this document covers the instrumentation layer.
 
 ---
 
@@ -104,5 +104,5 @@ Tighten thresholds over time as you learn the service's baseline. A noisy alert 
 
 - Use the project's observability service (Sentry, Datadog RUM) for error tracking — do not roll custom error collection.
 - Track navigation events and major user flows at INFO level — not every click or keypress.
-- Never log tokens, session data, or PII. See `logging.md`.
+- Never log tokens, session data, or PII. See `~/.claude/agents/swe/logging.md`.
 - Track Web Vitals (LCP, FID, CLS) and alert on regressions between deploys.

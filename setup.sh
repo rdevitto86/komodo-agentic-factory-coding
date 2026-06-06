@@ -12,6 +12,16 @@ echo "komodo-claude: setting up symlinks from $SOURCE_DIR → $CLAUDE_DIR"
 
 mkdir -p "$CLAUDE_DIR"
 
+# Remove stale symlinks from the pre-consolidation layout. Standards, skills, and
+# docs are no longer top-level — they're encapsulated inside each agent's folder.
+for stale in standards skills docs; do
+  link="$CLAUDE_DIR/$stale"
+  if [ -L "$link" ] && [[ "$(readlink "$link")" == "$REPO_DIR"/* ]]; then
+    echo "  $stale — removing stale symlink from old layout"
+    rm "$link"
+  fi
+done
+
 for src in "$SOURCE_DIR"/*; do
   name="$(basename "$src")"
   dest="$CLAUDE_DIR/$name"

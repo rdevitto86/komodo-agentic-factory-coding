@@ -1,6 +1,6 @@
 # Python Standards
 
-Base Python standards for Komodo. Builds on `go.md` and `typescript.md` — same engineering bar, language-specific idioms. Project configs may extend these but should not contradict.
+Base Python standards for Komodo. Builds on `~/.claude/agents/swe/go/coding.md` and `~/.claude/agents/swe/ts/coding.md` — same engineering bar, language-specific idioms. Project configs may extend these but should not contradict.
 
 ---
 
@@ -72,7 +72,7 @@ Base Python standards for Komodo. Builds on `go.md` and `typescript.md` — same
 - **Avoid `__init__.py` side effects.** No I/O, no DB connections, no network at import time — same rule as Go's `init()`.
 - **`@dataclass(frozen=True, slots=True)` by default** for value types — immutable, fast, no surprise.
 
-See `principles.md` for the cross-language version of these rules.
+See `~/.claude/agents/swe/principles.md` for the cross-language version of these rules.
 
 ---
 
