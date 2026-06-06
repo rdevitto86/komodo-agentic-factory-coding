@@ -32,7 +32,7 @@ Symlinks everything in `claude/` into `~/.claude/` and removes stale links from 
 
 ## Agents
 
-Claude subagents (advisor, project-manager, swe, quality-assurance, devops, electrical-engineer, mechatronics, data-analyst, cyber-security, machinist, botanist, logistics), plus MCP-primary agents (`pm`, `qa`, lawyer, marketing, customer-servicing, tax) on the komodo bridge. The advisor is the default orchestrator — it is the entry point for everything and dispatches specialists with scoped modes. Full roster, triggers, and routing notes: [`CLAUDE.md`](CLAUDE.md).
+Claude subagents (advisor, project-manager, swe, quality-assurance, devops, electrical-engineer, mechatronics, data-analyst, cyber-security, machinist, botanist, logistics), plus MCP-primary agents (`pm`, `qa`, lawyer, marketing, customer-servicing, tax-advisor) on the komodo bridge. The advisor is the default orchestrator — it is the entry point for everything and dispatches specialists with scoped modes. Full roster, triggers, and routing notes: [`CLAUDE.md`](CLAUDE.md).
 
 ## Project-level config
 

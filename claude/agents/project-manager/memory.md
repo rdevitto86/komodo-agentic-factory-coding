@@ -7,6 +7,11 @@ a session ends, compacts, or is interrupted. It is git-ignored, local, and
 read/written by every agent. It is not a knowledge base and not a task tracker —
 for work tracked across many sessions use `TODO.md` (see `todo.md`).
 
+It is **per-project and created on demand** — it lives at the root of whatever
+repo the work is happening in, not in the shared config repo. There is no
+canonical `MEMORY.md`; each project gets its own, and each project's `.gitignore`
+should exclude it.
+
 ---
 
 ## Purpose

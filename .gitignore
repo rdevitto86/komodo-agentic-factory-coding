@@ -1,9 +1,6 @@
-# Local working files — never committed. See CLAUDE.md "Working files".
-# Anchored to root so the lowercase convention specs under
-# claude/agents/project-manager/ (todo.md, memory.md) stay tracked even with
-# core.ignorecase=true.
+# Local working files
 /TODO.md
-/MEMORY.md
+TODO.md
 
 # Editor / OS noise
 .DS_Store

@@ -21,7 +21,7 @@ This is the Claude Code configuration layer — not a product codebase. Changes 
 
 ## Working files: `TODO.md` and `MEMORY.md`
 
-Two local, git-ignored files that every agent reads and writes. Neither is ever committed.
+Two local, git-ignored files that every agent reads and writes. Neither is ever committed. They are **per-project, created on demand** — they live in whatever repo the work is happening in, not here. This config repo only ships the conventions (below); it is not where a session cache or task list belongs.
 
 - **`TODO.md` — task tracker.** Where agents track outstanding work and its progress across many sessions: deferred work, out-of-scope finds, known debt. Items are removed when done, never checked off. Conventions: `~/.claude/agents/project-manager/todo.md`.
 - **`MEMORY.md` — session cache.** A continuity checkpoint so progress isn't lost when a session ends, compacts, or is interrupted: what's in flight now, the next steps, decisions made this session, and watch-outs. Working state, not history — pruned and overwritten, not appended forever. Conventions: `~/.claude/agents/project-manager/memory.md`.
@@ -67,7 +67,7 @@ Spawned via the `Agent` tool. Defined in `claude/agents/<agent>/agent.md`.
 | — | `customer-servicing` | sonnet | MCP `customer-servicing` (`draft_response`) | Claude Sonnet | Customer response drafting, ticket triage, escalation summaries. |
 | `[SEC]` | `cyber-security` | sonnet | Claude Sonnet | — | Offensive + defensive security — threat modeling, pentest, security architecture, red/blue-team. Dev-time security stays with `swe`; per-file review stays with `qa`. |
 | — | `marketing` | sonnet | MCP `marketing` (`create_content`) | Claude Sonnet | Campaign strategy, copywriting, brand messaging, and sales-content/proposal drafting (supplementing, not replacing, real sellers). |
-| `[TAX]` | `tax` | sonnet | MCP `tax` (`analyze_tax`) | Claude Sonnet | Tax document summarization, exposure/deduction/deadline flagging, first-line due diligence. Not tax advice — escalate to a CPA. |
+| `[TAX]` | `tax-advisor` | sonnet | MCP `tax` (`analyze_tax`) | Claude Sonnet | Tax document summarization, exposure/deduction/deadline flagging, first-line due diligence. Not tax advice — escalate to a CPA. |
 
 **Runtime rule:** Claude Sonnet is the universal fallback — if MCP is unreachable, always fall back to the Claude Sonnet subagent. The advisor honors this table at dispatch and never skips MCP for agents where it is the primary runtime.
 
@@ -77,7 +77,7 @@ Spawned via the `Agent` tool. Defined in `claude/agents/<agent>/agent.md`.
 - **CAD/mechanical split:** `machinist` owns part geometry and manufacturability (3D printing, CNC). Finished parts hand off to `mechatronics` for robotics integration and firmware/control. `electrical-engineer` owns PCB layout and electronics-driven enclosure constraints — coordinate with EE when a part must accommodate board mounting or connector cutouts.
 - **Security split — three layers:** `swe` owns dev-time security (input validation, authz, secret handling) per `~/.claude/agents/swe/security.md`. `quality-assurance` owns per-file/per-component security review passes. `cyber-security` owns everything else: cross-cutting threat modeling, security architecture, offensive/pentest, red/blue-team, and deep vulnerability assessment.
 - **Sales duties** fold into `advisor` (commercial strategy), `marketing` (campaigns, copy, and proposal/sales-content drafting), and `data-analyst` (sales-data analysis).
-- **Email is a per-agent mode** (`MODES: email`) on `customer-servicing`, `marketing`, `lawyer`, and `tax`. Each owns its own tone, formatting, and business rules in its `email.md`; Gmail (MCP) is the shared transport. Email is read-first — an agent never sends without explicit per-message user approval, and never bulk-sends through it.
+- **Email is a per-agent mode** (`MODES: email`) on `customer-servicing`, `marketing`, `lawyer`, and `tax-advisor`. Each owns its own tone, formatting, and business rules in its `email.md`; Gmail (MCP) is the shared transport. Email is read-first — an agent never sends without explicit per-message user approval, and never bulk-sends through it.
 
 **Model tiers:** `haiku` (simple/lookup/drafting) · `sonnet` (complex technical work, default) · `opus` (highest reasoning).
 
