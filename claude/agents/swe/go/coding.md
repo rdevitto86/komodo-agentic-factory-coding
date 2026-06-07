@@ -4,46 +4,17 @@ High-level Go idioms for Komodo. Cross-cutting doctrine — hard rules, error-st
 
 ---
 
-## 1. Formatting & tooling
+## 1. Komodo Go conventions
 
-- All code formatted with `gofmt` or `goimports` — no exceptions
-- `golangci-lint` must pass before merge; config lives in `.golangci.yaml` at repo root
-- No disabling linter rules without a comment explaining why
-- Run `go vet ./...` as part of CI
-- The `gopls` LSP is the standard editor integration — formatting, lint diagnostics, refs, and rename. Agents should use the LSP tool when available before falling back to `go build` / `go vet` for quick checks; IDEs auto-discover it
+Idiomatic Go — formatting, `%w` wrapping, sentinel errors, naming, package layout, profiling — is assumed. Only the Komodo-specific or non-obvious points:
 
----
-
-## 2. Error handling
-
-- Error message format (verb-leading, no function/noun prefix) follows `~/.claude/agents/swe/principles.md` §1 — the single source of truth
-- Always handle error return values — never `_` an error
-- Wrap with `%w` to preserve the chain: `fmt.Errorf("failed to fetch user: %w", err)`
-- Return errors up the call stack; don't log and return. Log once, at the top of the stack where propagation stops
-- No `panic` except for truly unrecoverable initialization failures (missing required config at startup)
-- Sentinel errors (`var ErrNotFound = errors.New(...)`) for errors callers need to match; `errors.As`/`errors.Is` for inspection
-
----
-
-## 3. Naming
-
-- Comments and doc-comment requirements: governed entirely by `~/.claude/agents/swe/comments.md` (the single source of truth; it deliberately overrides Go's godoc naming convention)
-- Interfaces named by behavior: `Reader`, `Writer`, `Handler` — not `IReader`, `ReaderInterface`
-- Avoid stutter: `user.Service` not `user.UserService`
-- Unexported identifiers: camelCase, no underscores
-- Acronyms: consistent casing — `userID`, `httpURL`, `parseJSON` (all caps or all lower, never mixed)
-- Test helper functions: `newTestServer(t)`, `mustParseTime(t, s)` — take `t *testing.T` as first arg
-- HTTP handler variables: `req` for request objects (e.g. decoded body structs, outgoing `*http.Request`), `res` for response objects (e.g. `*http.Response`, response body structs) — Go handler signatures keep `r *http.Request` and `w http.ResponseWriter` by language convention
-
----
-
-## 4. Package design
-
-- One package per directory
-- Package name = what it provides, singular, lowercase: `order`, `payment`, `middleware`
-- Avoid `util`, `common`, `helpers`, `misc` — if you can't name it, split it differently
-- Internal packages (`internal/`) for code that must not be imported outside the module
-- Minimize exported surface — unexport everything that doesn't need to be consumed externally
+- `golangci-lint` must pass; config at `.golangci.yaml` (repo root), and its `wrapcheck.ignore-package-globs` must include the forge SDK glob. No disabling a rule without a comment saying why. Prefer the `gopls` LSP for quick checks over `go build`/`go vet`.
+- Error-string format: `~/.claude/agents/swe/principles.md` §1. Comment/doc rules: `comments.md` (overrides godoc naming). Log once at the top of the stack — never log-and-return.
+- HTTP handlers: `req` for request bodies / outgoing `*http.Request`, `res` for response objects; keep `r *http.Request` / `w http.ResponseWriter` by Go convention.
+- Test helpers take `t *testing.T` first and call `t.Helper()`.
+- Avoid `util`/`common`/`helpers` packages — split by domain; `internal/` for non-importable code; minimize exported surface.
+- `init()` does no I/O; wire dependencies through constructors (`NewServer`, `NewService`), never package-level globals or `init()` registration.
+- Concurrency: propagate `context.Context` cancellation, manage goroutine lifecycles with `errgroup`/`WaitGroup`, never orphan a `go func()`.
 
 ---
 
@@ -195,30 +166,6 @@ func TestOrderService_Cancel(t *testing.T) {
 
 ---
 
-## 6. Design patterns
+## 6. Design & performance
 
-Follow the design doctrine in `~/.claude/agents/swe/principles.md` §3–4 (dependency injection, accept interfaces / return concrete types, explicit wiring, composition, testability). Go-specific application:
-
-- Assemble the dependency graph with constructor functions (`NewServer(...)`, `NewService(...)`) — not package-level globals, registries, or `init()` registration
-- `init()` must not perform I/O — no network calls, file opens, or DB connections; init failures produce unclear errors and untestable startup sequences
-
----
-
-## 7. Concurrency
-
-- Never share mutable state without synchronization
-- Prefer channels for coordination between goroutines; mutexes for protecting shared state
-- Document goroutine lifetimes — who starts it, what stops it, what happens on error
-- Always propagate and respect `context.Context` cancellation
-- Use `sync.WaitGroup` or `errgroup` for goroutine lifecycle management
-- `go func()` with no done signal is almost always wrong — capture and handle the goroutine
-
----
-
-## 8. Performance
-
-- Profile before optimizing — `pprof` is built in, use it
-- Avoid premature allocation: prefer stack allocation, reuse slices with `[:0]`, use `strings.Builder`
-- `sync.Pool` for frequently allocated short-lived objects on hot paths
-- Benchmark critical paths with `testing.B` — see §5.6 for placement and the `benchstat` workflow
-- Database queries: use `EXPLAIN ANALYZE` before adding an index; N+1 queries are a bug
+Design doctrine (DI, accept-interfaces/return-concrete, composition, testability) is in `~/.claude/agents/swe/principles.md` §3–4. Performance: profile with `pprof` before optimizing; `sync.Pool` for hot-path short-lived allocations; benchmark critical paths with `testing.B` (§5.6, `benchstat` workflow); `EXPLAIN ANALYZE` before adding an index — N+1 is a bug.

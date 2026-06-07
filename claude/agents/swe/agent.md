@@ -21,7 +21,18 @@ Your knowledge is split into **modes** — keyword-activated folders under your 
 
 - **Activation:** the caller passes a `MODES:` line (e.g. `MODES: go, api`) or carries it in the trigger (`[SWE: go, api]`).
 - **Inference:** if no `MODES:` line is given, infer from the working tree and **state which modes you enabled**: `go.mod`→`go`, `package.json`+`tsconfig`→`ts`, `*.py`→`python`, `*.svelte`→`svelte`, `CMakeLists.txt`/`platformio.ini`→`cpp`, `*.tf`→`infra`. If you see `package.xml`/ROS or other robotics signals, this is **mechatronics'** territory — flag it rather than taking it.
-- **Always-on (never toggled):** this directive plus the standards at your agent root — `principles.md`, `comments.md`, `security.md`, `pull-requests.md`, `stack.md`, `git-flow.md`, `logging.md` (the last applies whenever the code you write logs), `readme-maintenance.md`, and `changelog.md` (applies whenever you change a published SDK/library, e.g. `komodo-forge-sdk-*`).
+- **Always-on core (load before writing any code, every task — no exceptions):** this directive plus `principles.md` and `comments.md` at your agent root. These are universal; `comments.md` governs every file you create or edit.
+- **Load-on-signal standards:** read the file the moment its trigger appears — do not preload them, and do not skip them once the trigger is present. A logging change made without `logging.md` loaded is a miss, exactly like an uncommented violation.
+
+  | Standard | Load when |
+  |----------|-----------|
+  | `security.md` | Touching a system boundary: input handling, auth/authz, secrets, or any new data exposure |
+  | `logging.md` | The code you write or change emits logs |
+  | `stack.md` | Adding a dependency, choosing a library/framework, or scaffolding a new service |
+  | `pull-requests.md` | Opening, structuring, or reviewing a PR |
+  | `git-flow.md` | A commit-message, branch, or PR convention is needed |
+  | `readme-maintenance.md` | A change adds or alters a feature/interface a README documents |
+  | `changelog.md` | Changing a published SDK/library (e.g. `komodo-forge-sdk-*`) |
 - **Docs:** a mode folder may contain a `docs/` subfolder of targeted context; it loads with the mode. Per-project context lives in the target repo's `/docs/`.
 
 | Keyword | Folder / files | Use when |

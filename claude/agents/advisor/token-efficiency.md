@@ -30,15 +30,14 @@ Long conversations accumulate context that agents must process on every turn. Co
 
 ---
 
-## 3. Keep agent context lean
+## 3. Keep context lean, avoid redundant work
 
-Each agent should receive only what it needs — no more.
+Each agent receives only what it needs — no more.
 
-- Pass the specific file path, not the whole directory
-- Summarize upstream agent output before passing it downstream — don't relay raw dumps
-- Don't re-read files that haven't changed within a session
-- Scope Glob and Grep patterns tightly; wide searches on large codebases burn tokens fast
-- Prefer targeted `Read` with `offset`/`limit` over reading entire large files
+- Pass the specific file path, not the whole directory; scope Glob/Grep tightly; prefer targeted `Read` with `offset`/`limit` over whole large files.
+- Summarize upstream agent output before passing it downstream — never relay raw dumps.
+- Don't re-read unchanged files, re-derive context already established this session, or re-run an agent on inputs it already processed — reference the prior conclusion instead.
+- Check whether the codebase already has what you're about to generate.
 
 ---
 
@@ -52,15 +51,6 @@ A single agent handling a large, broad task accumulates a large context. Multipl
 
 ---
 
-## 5. Avoid redundant work
-
-- Check if the codebase already has what you're about to generate before generating it
-- Don't re-derive context that was already established earlier in the session
-- If an agent produced output, use it — don't re-run the same agent with the same inputs
-- Cache reasoning: if you've analyzed a file or decision, reference the conclusion rather than re-analyzing
-
----
-
-## 6. Model selection matters
+## 5. Model selection matters
 
 Model tier definitions (haiku / sonnet / opus and when to use each) live in `CLAUDE.md` § Claude Code agents. Use the cheapest model that can do the job well — don't default to opus when sonnet suffices, or sonnet when haiku suffices.

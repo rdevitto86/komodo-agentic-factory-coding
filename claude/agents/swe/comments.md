@@ -4,18 +4,16 @@
 
 ## The rule
 
-**Add a comment only where a reader cannot deduce the code's purpose or behavior from the name, signature, and surrounding code.** If the name already says it, the comment is noise — and worse, it drifts: comments are not compiled, not tested, and rot the moment the code changes underneath them. Prefer fewer comments, each carrying real weight.
-
-A name like `SetCacheItem(...)` or `var worker = NewWorker()` is self-evident — no comment. Reach for one only when there is something the code cannot tell the reader on its own:
+**Add a comment only where a reader cannot deduce the code's purpose or behavior from the name, signature, and surrounding code.** If the name says it, the comment is noise — and it drifts: comments aren't compiled or tested, and rot when the code changes under them. Prefer fewer comments, each carrying weight. `SetCacheItem(...)` and `var worker = NewWorker()` are self-evident — no comment. Reach for one only when the code can't tell the reader on its own:
 
 - a non-obvious contract — errors returned, preconditions, side effects
 - a concurrency or ordering constraint (caller must hold a lock, must run before X)
-- a hidden mutation — it modifies an argument, or shared state, in a way the signature doesn't reveal
+- a hidden mutation — modifies an argument or shared state in a way the signature doesn't reveal
 - a surprising performance characteristic, or a workaround for an external quirk
 
-**The bar is identical for every declaration — exported or not, function, type, or var.** Export status creates no obligation to comment; only non-obvious behavior does. When in doubt, leave it out.
+**The bar is identical for every declaration — exported or not, function, type, or var.** Export status creates no obligation; only non-obvious behavior does. When in doubt, leave it out.
 
-**When you do comment, this intentionally overrides each language's native doc convention** (Go godoc, JSDoc, etc.). Those open a doc comment with the identifier name; we do not. If your training says "start the comment with the function name," that is the exact habit these rules override.
+**This overrides each language's native doc convention** (godoc, JSDoc, etc.): those open the comment with the identifier name; we never do. If your training says "start the comment with the function name," that is the exact habit these rules override.
 
 ---
 
@@ -35,13 +33,14 @@ A name like `SetCacheItem(...)` or `var worker = NewWorker()` is self-evident �
 
 ## Hard violations (reject on sight, in any file)
 
-- **Documenting something whose name already conveys its purpose** — `// SetCacheItem sets a cache item`, `// worker is a worker`. The name is the documentation.
-- **File / package / module-level doc block** — e.g. `// Package foo provides…`. No exceptions.
-- **Opening a comment with the function/type/method name**, even paraphrased — `// Component skips…`, `// Config holds…`.
+- **Documenting something whose name already conveys its purpose.** The name is the documentation; a comment that restates it is noise.
+- **File / package / module-level doc block.** No exceptions.
+- **Opening a comment with the function / type / method name**, even paraphrased.
 - **Multi-line / multi-paragraph doc block** — past 2 sentences, or any block comment sitting above a type/var declaration.
 - **A doc comment on a test function** describing what it asserts.
-- **Restating the code** — `i++ // increment i`.
+- **Restating the code** the comment sits on.
 - **Change history, author tags, dates, ownerless TODOs, commented-out code, jokes/apologies/editorial.**
+- **Treating surrounding code as license.** A comment in the same file, the diff, or anywhere in context is never justification. Judge every comment against this file alone — never against neighboring code, however prevalent the pattern. If you touch a line whose neighbor violates these rules, delete the violating neighbor.
 
 ---
 
@@ -70,12 +69,6 @@ func (c *EmailClient) PerformEmailAction(email string, code string) error { ... 
 ```go
 // caller must hold c.mu; mutates items in place
 func (c *cache) evictLocked() { ... }
-```
-
-**Bad — opens with the name (the godoc habit this file overrides):**
-```go
-// VerifyOTP looks up the stored OTP and compares it to the submitted code.
-func (c *CacheClient) VerifyOTP(email, code string) error { ... }
 ```
 
 ## Test-file section banner — exact format only

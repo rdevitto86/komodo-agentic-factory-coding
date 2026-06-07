@@ -58,8 +58,7 @@ export const load: PageServerLoad = async () => {
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
-  // locals.user is populated by +layout.server.ts if a valid session exists.
-  // Page should degrade gracefully when locals.user is undefined.
+  // locals.user is set by +layout.server.ts only when a valid session exists; degrade when undefined
   return {
     // user: locals.user ?? null,
   };

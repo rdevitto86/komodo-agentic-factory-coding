@@ -1,6 +1,6 @@
 # komodo-claude
 
-Shared Claude Code configuration for all Komodo projects. Agents, hooks, and settings live here and are symlinked into `~/.claude/` via `setup.sh`. Each agent is a self-contained module that owns its own standards, skills, modes, and docs — there is no global standards or skills directory.
+Shared Claude Code configuration for all Komodo projects. Agents, hooks, and settings live here and are symlinked into `~/.claude/` via `setup.sh`. Each agent is a self-contained module that owns its own standards, skills, modes, and docs — there is no global standards or skills directory. This is the config layer, not a product codebase: changes here affect every project on the next Claude Code session.
 
 ## Token efficiency
 
@@ -16,34 +16,15 @@ These are global and non-negotiable. They apply to every agent and override any 
 - **All comments follow `comments.md` exactly — it is the single source of truth for comment rules, every language and every file.** It lives at `claude/agents/swe/comments.md`. No other file defines comment rules or shows comment examples. The hard violations it defines (file/package-level doc blocks, name-leading doc comments, verbose multi-line blocks, commenting a type merely to describe it) are non-negotiable.
 - **Never expand scope without permission.** If you discover work outside the current task — a bug, a refactor opportunity, an adjacent improvement — stop. Document it in the nearest `TODO.md` and surface it to the user or advisor. Side work is always declined unless explicitly approved.
 
-## What this repo is
-
-This is the Claude Code configuration layer — not a product codebase. Changes here affect all projects on the next Claude Code session.
-
 ## Working files: `TODO.md` and `MEMORY.md`
 
-Two local, git-ignored files that every agent reads and writes. Neither is ever committed. They are **per-project, created on demand** — they live in whatever repo the work is happening in, not here. This config repo only ships the conventions (below); it is not where a session cache or task list belongs.
-
-- **`TODO.md` — task tracker.** Where agents track outstanding work and its progress across many sessions: deferred work, out-of-scope finds, known debt. Items are removed when done, never checked off. Conventions: `~/.claude/agents/project-manager/todo.md`.
-- **`MEMORY.md` — session cache.** A continuity checkpoint so progress isn't lost when a session ends, compacts, or is interrupted: what's in flight now, the next steps, decisions made this session, and watch-outs. Working state, not history — pruned and overwritten, not appended forever. Conventions: `~/.claude/agents/project-manager/memory.md`.
-
-The split: `TODO.md` is the durable to-do ledger across sessions; `MEMORY.md` is the resume buffer for the work in flight. Read both at session start and reconcile `MEMORY.md` against the real repo state before trusting it. Both are git-ignored (`.gitignore`).
+Two local, git-ignored, per-project files every agent reads and writes — never committed, created on demand in the work repo (not here). **`TODO.md`** is the durable cross-session task ledger: deferred work, out-of-scope finds, known debt (items removed when done, never checked off). **`MEMORY.md`** is the in-flight session cache: now / next / decisions / watch-outs (pruned and overwritten, not appended). Read both at session start; reconcile `MEMORY.md` against real repo state before trusting it. Conventions: `~/.claude/agents/project-manager/{todo,memory}.md`.
 
 ## Directory layout
 
-```
-claude/
-├── agents/              # Claude Code subagents; each folder is a self-contained module
-│   └── <agent>/
-│       ├── agent.md     # the directive (frontmatter name = agent identity)
-│       ├── <standard>.md# always-on standards owned by this agent
-│       └── <mode>/      # mode folder: standards + skills + docs/ for one mode
-│                        # Local MCP agents live in ~/.komodo/bridge/ — not here
-├── hooks/               # Shell scripts triggered automatically by Claude Code events (global)
-└── settings.json        # Global permissions, allowed commands, plugins, hook registration
-```
+`claude/agents/<agent>/` — each agent is a self-contained module: `agent.md` (the directive; frontmatter `name` = identity), always-on `<standard>.md` files, and `<mode>/` folders (standards + skills + `docs/`). `claude/hooks/` — global event scripts. `settings.json` — permissions, allowed commands, hook registration. Local MCP agents live in `~/.komodo/bridge/`, not here.
 
-Encapsulation is the organizing principle: an agent's knowledge lives in its own folder so spawned agents don't bleed context into each other. Cross-cutting coding standards (principles, comments, security, PRs, stack, git-flow, logging, readme-maintenance) are owned by `swe`, since all coding routes through it; other agents reference them by `~/.claude/agents/swe/<file>.md` path. The self-contained agents (`quality-assurance`, `project-manager`) inline their rules because they also run as MCP agents with no file access.
+Encapsulation is the organizing principle — an agent's knowledge lives in its own folder so spawned agents don't bleed context into each other. Cross-cutting coding standards (principles, comments, security, PRs, stack, git-flow, logging, readme-maintenance, changelog) live under `claude/agents/swe/`; other agents reference them by path. `quality-assurance` and `project-manager` inline their rules because they also run as MCP agents with no file access.
 
 ## Claude Code agents
 
@@ -89,22 +70,17 @@ Spawned via the `Agent` tool. Defined in `claude/agents/<agent>/agent.md`.
 
 ## Modes
 
-Each agent's knowledge is split into **modes** — keyword-activated bundles (a folder, or always-on root files). A spawned agent loads **only** the active modes and ignores the rest, keeping context lean and preventing bleed.
+Each agent's knowledge splits into **modes** — keyword-activated bundles; a spawned agent loads only the active ones, preventing context bleed. Activate with a `MODES:` line on spawn (`MODES: go, api`) or in the trigger (`[SWE: go, api]`); with none given, the agent infers from the working tree and states what it enabled. Mode tables live in each `agent.md` (e.g. `swe`: `go`, `ts`, `python`, `svelte`, `cpp`, `api`, `db`, `infra`, `design`); a mode folder may hold a `docs/` that loads with it.
 
-- **Activation:** pass a `MODES:` line on spawn (e.g. `MODES: go, api`) or carry it in the trigger (`[SWE: go, api]`). The advisor scopes modes to exactly what the task needs.
-- **Inference:** with no `MODES:` line, the agent infers from the working tree and states what it enabled.
-- **Mode tables** live in each `agent.md`. Example — `swe`: `go`, `ts`, `python`, `svelte`, `cpp`, `api`, `db`, `infra`, `design`.
-- **Docs are mode-gated:** a mode folder may hold a `docs/` of targeted context that loads with the mode; project-specific context lives in the target repo's `/docs/`.
-
-Note: "mode" means two different things depending on the agent. For most agents (`swe`, `mechatronics`, `devops`, etc.) a mode is a loadable folder/file bundle activated by keyword. For `quality-assurance`, a mode is the review type (`security` | `performance` | `tests`) — same word, different mechanism.
+Caveat: for most agents a mode is a loadable file bundle; for `quality-assurance` it's the review type (`security` | `performance` | `tests`) — same word, different mechanism.
 
 ## MCP bridge
 
-MCP agents run on Qwen3 via the komodo bridge (`~/.komodo/bridge`). Served at `http://localhost:8000/sse`. Start with `docker compose up -d` in `~/.komodo/`. They run fully outside Claude's context window at zero token cost. MCP tool names and roles are in the routing table above (Primary runtime column). Claude subagents in `claude/agents/` are the fallbacks when the bridge is unreachable.
+MCP agents run on Qwen3 via the komodo bridge (`~/.komodo/bridge`, served at `http://localhost:8000/sse`; start with `docker compose up -d` in `~/.komodo/`). Zero token cost — they run outside Claude's context window. Tool names and roles are in the routing table above (Primary runtime column); Claude subagents are the fallback when the bridge is unreachable.
 
 ## Standards & skills
 
-There is no global standards or skills directory — each is owned by an agent and lives in its folder, grouped by mode. To find a standard or skill, look in the owning agent's folder (or its mode subfolders). Cross-cutting coding standards live under `claude/agents/swe/`: principles, comments, security, PRs, stack, git-flow, logging, and readme-maintenance.
+No global standards or skills directory — each is owned by an agent, in its folder, grouped by mode. Cross-cutting coding standards live under `claude/agents/swe/` (see Directory layout). When editing any config prose in this repo, follow `~/.claude/agents/swe/writing-style.md`.
 
 ## Hooks (auto-run, global)
 

@@ -77,11 +77,7 @@ Browser console output follows additional rules to prevent security leaks:
 - Structured errors from the API (`error.code`, `error.message`) are safe to surface; `error.details` internals are not
 
 ```js
-// Good — enough to triage
 console.error('[checkout] Payment failed', { code: 'CARD_DECLINED', ref: 'ch_xxx' })
-
-// Bad — exposes internals
-console.error('[checkout] Error:', fullApiResponseBody)
 ```
 
 For production browser telemetry, route errors to an observability service (e.g., Sentry) — do not rely on console logs.

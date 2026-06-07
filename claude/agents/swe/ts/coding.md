@@ -4,68 +4,16 @@ Base TypeScript/JavaScript coding standards for Komodo. Project-level configs ma
 
 ---
 
-## 1. Type safety
+## 1. Komodo TypeScript conventions
 
-- `"strict": true` in all `tsconfig.json` files — no exceptions
-- No `any` without a code comment explaining why it's necessary and what would be needed to remove it
-- Use `unknown` over `any` for data from external sources (API responses, parsed JSON, user input)
-- Runtime validation with Zod (or equivalent) at all system boundaries — TypeScript types alone are not runtime guarantees
-- `as` type assertions only when you have verified the type through code logic — not as a way to silence the compiler
+Idiomatic TS is assumed; these are the enforced or non-obvious points:
 
----
-
-## 2. Comments
-
-- Doc comments must not open with the function/method/class name — write `// Returns the order for the given ID` not `// fetchOrder returns the order for the given ID`
-- Error message strings must not contain the function or method name — put function context in structured log metadata or stack traces, not the message string itself
-  - Bad: `throw new Error("fetchOrder: db query failed")`
-  - Good: `throw new Error("failed to query order")`
-
----
-
-## 3. Naming
-
-| Thing | Convention | Example |
-|-------|-----------|---------|
-| Types, interfaces, classes, components | PascalCase | `OrderSummary`, `UserCard` |
-| Variables, functions, methods | camelCase | `fetchOrder`, `isLoading` |
-| True constants | SCREAMING_SNAKE | `MAX_RETRY_COUNT` |
-| Files (modules) | kebab-case | `order-service.ts` |
-| Files (components) | PascalCase | `UserCard.svelte` |
-| Enum values | PascalCase | `OrderStatus.Pending` |
-
-- Prefix boolean variables/props with `is`, `has`, `can`, `should`: `isLoading`, `hasError`
-- Don't prefix interfaces with `I` — `User` not `IUser`
-- Request variables: `req`; response variables: `res` — applies to API handlers, fetch wrappers, and UI service calls
-
----
-
-## 4. Null handling
-
-- Use optional chaining (`?.`) for potentially undefined access
-- Use nullish coalescing (`??`) for defaults — not `||` (which swallows `0` and `""`)
-- Avoid non-null assertions (`!`) — if you use one, add a comment explaining why it's safe
-- Prefer explicit null/undefined checks over truthiness when the distinction matters
-
----
-
-## 5. Async patterns
-
-- Always `async/await` over raw promise chains
-- Every rejected promise must be caught — unhandled rejections are bugs
-- `Promise.all` for parallel independent operations; `Promise.allSettled` when partial failure is acceptable
-- Never `await` in a loop when requests can be parallelized
-- Async functions that can fail should throw typed errors, not return `null` to signal failure
-
----
-
-## 6. Module organization
-
-- Single responsibility per file — one primary export per module
-- Re-export from barrel `index.ts` files sparingly: they hurt tree-shaking and create circular import risks
-- Prefer direct imports over barrel imports for large modules
-- No circular imports — if A imports B and B imports A, extract the shared dependency to C
-- Co-locate tests with the file under test: `order-service.test.ts` next to `order-service.ts`
+- `"strict": true` everywhere. Prefer `unknown` over `any` for external data; no `any` without a justifying comment. Validate at boundaries with Zod — types aren't runtime guarantees.
+- `??` (not `||`) for defaults; no non-null `!` without a comment saying why it's safe.
+- `async/await` over promise chains; `Promise.all` for independent parallel work; never `await` in a loop that could parallelize; throw typed errors, don't return `null` on failure.
+- One primary export per module; no circular imports; barrel `index.ts` sparingly (hurts tree-shaking).
+- Comments and error-string format: `~/.claude/agents/swe/comments.md` and `principles.md` §1 — doc comments never open with the identifier name; error messages carry no function name.
+- Naming: PascalCase types/components, camelCase vars/functions, SCREAMING_SNAKE constants, kebab-case module files, PascalCase component files; boolean prefixes `is/has/can/should`; no `I`-prefix on interfaces; `req`/`res` for request/response.
 
 ---
 
@@ -245,9 +193,7 @@ describe('component', () => {
 
 ## 8. Frontend / component standards
 
-- Components should be pure where possible — derive state rather than sync it
-- No business logic in UI components — use a service or store layer
-- Props should be the minimal set needed — don't pass the entire store object when you need one field
-- Side effects in `$effect` (Svelte) or `useEffect` (React) must have correct dependencies and cleanup
-- Accessibility: interactive elements must be keyboard-navigable; use semantic HTML before ARIA attributes
-- No inline styles — use utility classes; no `!important`
+- No business logic in components — use a service/store layer; derive state rather than sync it; pass minimal props.
+- Effects (`$effect` / `useEffect`) need correct dependencies and cleanup.
+- Accessibility: interactive elements keyboard-navigable; semantic HTML before ARIA.
+- Utility classes only — no inline styles, no `!important`.

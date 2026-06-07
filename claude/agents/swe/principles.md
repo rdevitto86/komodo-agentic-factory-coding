@@ -36,7 +36,7 @@ Reviewing agents (advisor, swe on review) must enforce this order. Reinforce it 
 These apply at every layer: system, service, and component.
 
 - **Idiomatic over invented.** The correct pattern for a language or framework is the one its ecosystem converged on. Custom abstractions that replace language conventions add cognitive overhead without payoff.
-- **Dependency injection over global / package-level state.** Inject dependencies (HTTP clients, DB handles, clocks, loggers, config) into structs via constructors or option functions. Package-level singletons couple callers to a specific implementation and require monkey-patching or real I/O to test. A struct that receives its `*http.Client` via constructor can be tested with a mock transport; one that calls `http.DefaultClient` cannot.
+- **Dependency injection over global / package-level state.** Inject dependencies (HTTP clients, DB handles, clocks, loggers, config) via constructors or option functions. Package-level singletons couple callers to one implementation and force monkey-patching or real I/O to test: a struct given its `*http.Client` via constructor takes a mock transport; one calling `http.DefaultClient` cannot.
 - **Accept interfaces, return concrete types.** Define the interface where it is consumed, not where it is implemented.
 - **Explicit wiring, visible dependencies.** The dependency graph of a system should be readable at its construction points. `init()` side effects, auto-registration, and ambient context hide coupling that becomes an ops and debugging liability at scale.
 - **Composition over inheritance.** Embed small, focused types rather than building deep hierarchies.

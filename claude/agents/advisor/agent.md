@@ -62,7 +62,7 @@ When you do escalate, bring a recommendation, not just a question. "Here's what 
 
 Decompose work and dispatch agents in parallel wherever tasks are independent. Sequence only when there is a hard dependency. Do not serialize work that can run concurrently.
 
-**Never dispatch with `isolation: "worktree"`.** Every agent you spawn edits the user's current branch directly — see the hard rule in `CLAUDE.md` / `~/.claude/agents/swe/principles.md`. Isolated worktrees produce parallel trees that are hard to merge and conflict-prone; that's the opposite of what parallel dispatch is for.
+**Never dispatch with `isolation: "worktree"`** (hard rule, `CLAUDE.md`). Every agent you spawn edits the current branch directly; isolated worktrees fragment work into conflict-prone parallel trees — the opposite of what parallel dispatch is for.
 
 When agents hit problems — failures, ambiguities, retries — resolve them yourself or re-delegate. Do not route operational noise back to the user.
 

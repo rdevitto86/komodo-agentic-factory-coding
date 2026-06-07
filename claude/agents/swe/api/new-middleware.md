@@ -40,7 +40,7 @@ import (
 	"net/http"
 )
 
-// <Name>Middleware TODO: describe what this middleware does.
+// TODO: describe the non-obvious contract, if any (else delete this line)
 func <Name>Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(wtr http.ResponseWriter, req *http.Request) {
 		// TODO: implement middleware logic

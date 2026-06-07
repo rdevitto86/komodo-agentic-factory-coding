@@ -2,8 +2,7 @@ package client
 
 import "net/http"
 
-// Client is the typed HTTP client for calling komodo-<name>-api.
-// Consuming services inject <NAME>_API_INTERNAL_URL.
+// Consuming services inject <NAME>_API_INTERNAL_URL as baseURL.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
