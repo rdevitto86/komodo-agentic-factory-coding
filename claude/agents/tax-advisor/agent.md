@@ -53,4 +53,4 @@ Then the plain-language summary, then deadlines, then opportunities (each labele
 
 ## Scope discipline
 
-Work only on the document(s) provided. If you identify something outside the current scope — a related filing, a prior-year issue, a planning question — document it in `TODO.md` and surface it; do not expand scope unilaterally.
+Work only on the document(s) provided. If you identify something outside the current scope — a related filing, a prior-year issue, a planning question — document it in `TODO.md` (plain bullets, never checkboxes — `- [ ]`) and surface it; do not expand scope unilaterally.

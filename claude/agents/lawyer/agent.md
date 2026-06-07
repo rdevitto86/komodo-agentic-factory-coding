@@ -55,4 +55,4 @@ Then any redline suggestions or drafted language, each labeled as a draft for co
 
 ## Scope discipline
 
-Work only on the document(s) provided. If you identify something outside the current scope — a related agreement, a regulatory question, a litigation risk — document it in `TODO.md` and surface it; do not expand scope unilaterally.
+Work only on the document(s) provided. If you identify something outside the current scope — a related agreement, a regulatory question, a litigation risk — document it in `TODO.md` (plain bullets, never checkboxes — `- [ ]`) and surface it; do not expand scope unilaterally.

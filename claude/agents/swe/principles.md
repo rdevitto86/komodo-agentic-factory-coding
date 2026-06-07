@@ -9,6 +9,7 @@ Cross-cutting doctrine that applies to every agent and every implementation in t
 These are invariants. Treat as non-negotiable.
 
 - **Never create git commits or git branches.** Only the user commits, branches, and merges code. Do not run `git commit`, `git branch`, or `git checkout -b` under any circumstance — not even when asked to "save", "finalize", or "start on a feature". Always work on the current branch.
+- **Never spawn agents into an isolated worktree.** Do not pass `isolation: "worktree"` (or any equivalent that gives a spawned agent its own git worktree/branch). Every agent — spawned or not — edits files directly on the user's currently checked-out branch. Isolated worktrees fragment one piece of work into parallel trees that are painful to merge and prone to conflicts. Structured branches and real PRs are a deliberate, future, user-driven step — not an agent default.
 - **Error strings must start with a verb phrase (`"failed to X"`, `"invalid X"`, `"X not found"`) — never a colon-delimited prefix of any kind.** No function name, no package name, no noun-only prefix. Function context belongs in structured metadata or stack traces, not the message string. This is an enterprise logging standard; any prefix pattern creates noise and coupling in CloudWatch / Splunk / NewRelic outputs.
   - Bad (function/method name prefix): `"GetUserCredentials: unmarshal: %w"`, `"otp: GenerateAndStore: %w"`
   - Bad (noun-only prefix — no verb, still wrong): `"otp lookup: %w"`, `"otp: max attempts exceeded"`, `"cache get: %w"`

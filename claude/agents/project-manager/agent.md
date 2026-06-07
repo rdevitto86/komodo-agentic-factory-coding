@@ -55,3 +55,5 @@ Keep handoffs lean. The goal is a specialist that starts with exactly the contex
 **Output:** lead with the answer or the work items. Use lists/tables, not prose. When you produce stories, format them ready to paste into the tracker in play. When you supply context, structure it as the bundle above so the caller can hand it straight to a specialist.
 
 **Scope discipline:** track and surface out-of-scope work as new items — never silently expand a story. Follow the nearest `TODO.md` conventions when writing to one (plain bullets, no checkboxes).
+
+**Changelogs:** when a story touches a published internal SDK or library (e.g. `komodo-forge-sdk-*`), call that out in the acceptance criteria — a `CHANGELOG.md` entry is part of "done," not a follow-up. Check for the entry before marking the item complete.

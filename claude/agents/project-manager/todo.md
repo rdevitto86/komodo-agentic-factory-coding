@@ -35,7 +35,14 @@ For inline list items (e.g. quick follow-ups surfaced mid-task), use a plain bul
 - **[M]** Relocate `/services/repair` routes — repair booking belongs in reservations-api, not catalog.
 ```
 
-**Never use checkboxes (`- [ ]`).** TODO.md is not a task tracker — items are never "checked off" in the file. A completed item is removed outright (see *Removing completed items*), never marked done in place.
+**Never use checkboxes (`- [ ]`)** — on the heading line, the inline-bullet form, or anywhere else in the file. TODO.md is not a task tracker — items are never "checked off" in place; a finished item is deleted outright (see *Removing completed items*).
+
+```
+✗  - [ ] **H** Implement wire-protocol SQL client (`client.go`, `errors.go` are still stubs — pgx + `database/sql`)
+✓  - **H** Implement wire-protocol SQL client (`client.go`, `errors.go` are still stubs — pgx + `database/sql`)
+```
+
+The checkbox is the whole defect — strip it and keep the rest of the line as-is (priority label, description).
 
 ### Section headers
 
@@ -56,7 +63,7 @@ If a file-level preamble line is needed, write `Remaining items from audits.` �
 
 ## Removing completed items
 
-When you finish a task that satisfies an item already in a `TODO.md`, remove that item from the file as the last step of the task. Do not leave completed items for the user to clear, and do not mark them done in place — the file tracks live work only. This saves the user a manual cleanup pass.
+When you finish a task that satisfies an item already in a `TODO.md`, remove that item from the file yourself, as the last step of the task — don't mark it done in place, don't leave it for the user to clear, and don't ask the user to check it off. Removal is your job, not theirs; the whole point of this convention is that the file never accumulates resolved noise for someone else to sweep up.
 
 - Remove only items your work genuinely completed. A partially-done item stays, with its `**Action:**` updated to reflect what remains.
 - Never remove items unrelated to your task, even if they look stale — flag those to the user instead.

@@ -18,28 +18,27 @@ Branch from `main` for features, fixes, and chores. Branch from the relevant `re
 
 ## Commit messages
 
-Conventional commits — required on all commits:
+Single-line, ≤256 characters total. No body, no footer — the diff is the detail and the ticket lives in the PR, not the commit.
 
 ```
-<type>(<scope>): <subject>
-
-[optional body]
+<type>[(<scope>)]: <short change> [+ <type>[(<scope>)]: <short change> ...]
 ```
 
-**Types:** `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`
-
-**Rules:**
-- Subject line ≤72 characters, lowercase, no trailing period
-- Scope is the affected service or module (optional but encouraged)
-- Body explains *why*, not *what* — the diff shows the what
+- **Type prefix is optional** — use it when it adds signal (a larger or mixed change benefits from labeling each part); omit it for small, single-purpose changes where it'd just be noise.
+- **Scope** is the affected service/module — optional, in parens, only on the segments where it helps.
+- **Multiple distinct changes in one commit** are joined with ` + `, each getting its own type/scope if useful. Prefer one logical change per commit when you can — the `+` form is for when a commit unavoidably bundles a few small, related changes.
+- **Types** follow the common convention: `feat`, `fix` (or `bug`), `chore`, `docs`, `refactor`, `test`, `ci`. Lowercase, no trailing period.
+- **No issue/ticket links here** — link the Trello card / JIRA / issue number in the PR title or description, not the commit message.
 
 **Examples:**
 ```
-feat(auth): add refresh token rotation
 fix(checkout): handle nil cart on guest session
-chore: upgrade golangci-lint to v1.57
-refactor(orders): extract pricing logic into service layer
+chore: bump golangci-lint to v1.57 + bump go-sdk to v2.3
+update lint config + remove dead helper
+feat(auth): add refresh rotation + fix: session leak on logout + chore(deps): bump jwt lib
 ```
+
+**When an agent drafts one:** agents never commit (see hard rules) — they draft a message and hand it to the user to commit. Draft one proactively when wrapping up a long, planned multi-step task (the kind tracked across `TaskCreate`/`TODO.md`/`MEMORY.md`) so the whole arc lands as one coherent commit instead of overlapping piecemeal ones. For small asks, give a quick one-liner in this same format on request — don't over-produce them.
 
 ---
 

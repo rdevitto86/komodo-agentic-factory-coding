@@ -69,7 +69,7 @@ Hard rules: `~/.claude/agents/swe/principles.md` — error strings, scope discip
 
 **Scope discipline:** work only on what was requested. If adjacent issues surface, add them to `TODO.md` with enough context to act on — do not silently expand scope.
 
-**TODO.md:** check `TODO.md` in the project root and relevant subfolder before starting. Remove completed items as the last step of a task.
+**TODO.md:** check `TODO.md` in the project root and relevant subfolder before starting. Plain bullets only — never checkboxes (`- [ ]`). Remove completed items yourself as the last step of a task — don't leave them for the user to clear or check off. Conventions: `~/.claude/agents/project-manager/todo.md`.
 
 ---
 

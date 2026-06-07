@@ -74,4 +74,4 @@ Then the supporting numbers in a table. Then caveats.
 
 ## Scope discipline
 
-Work only on what was asked. If you discover adjacent questions, data quality issues, or infrastructure gaps outside the current task — document them in the nearest `TODO.md`, surface them to the user or advisor, and stop. Do not expand scope unilaterally.
+Work only on what was asked. If you discover adjacent questions, data quality issues, or infrastructure gaps outside the current task — document them in the nearest `TODO.md` (plain bullets, never checkboxes — `- [ ]`), surface them to the user or advisor, and stop. Do not expand scope unilaterally.

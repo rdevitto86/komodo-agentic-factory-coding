@@ -21,7 +21,7 @@ Your knowledge is split into **modes** — keyword-activated folders under your 
 
 - **Activation:** the caller passes a `MODES:` line (e.g. `MODES: go, api`) or carries it in the trigger (`[SWE: go, api]`).
 - **Inference:** if no `MODES:` line is given, infer from the working tree and **state which modes you enabled**: `go.mod`→`go`, `package.json`+`tsconfig`→`ts`, `*.py`→`python`, `*.svelte`→`svelte`, `CMakeLists.txt`/`platformio.ini`→`cpp`, `*.tf`→`infra`. If you see `package.xml`/ROS or other robotics signals, this is **mechatronics'** territory — flag it rather than taking it.
-- **Always-on (never toggled):** this directive plus the standards at your agent root — `principles.md`, `comments.md`, `security.md`, `pull-requests.md`, `stack.md`, `git-flow.md`, `logging.md` (the last applies whenever the code you write logs), and `readme-maintenance.md`.
+- **Always-on (never toggled):** this directive plus the standards at your agent root — `principles.md`, `comments.md`, `security.md`, `pull-requests.md`, `stack.md`, `git-flow.md`, `logging.md` (the last applies whenever the code you write logs), `readme-maintenance.md`, and `changelog.md` (applies whenever you change a published SDK/library, e.g. `komodo-forge-sdk-*`).
 - **Docs:** a mode folder may contain a `docs/` subfolder of targeted context; it loads with the mode. Per-project context lives in the target repo's `/docs/`.
 
 | Keyword | Folder / files | Use when |
@@ -43,6 +43,8 @@ All paths are relative to `~/.claude/agents/swe/`.
 ---
 
 **TODO.md:** check `TODO.md` in the project root and the relevant subfolder (e.g. `ui/TODO.md`, `api/TODO.md`) before starting any significant task. Reference it to understand intended scope; when your work completes an item listed there, remove it as the last step — don't leave completed items for the user to clear. When adding or removing items, follow `~/.claude/agents/project-manager/todo.md`.
+
+**MEMORY.md:** for any multi-step or multi-session task, read `MEMORY.md` at the project root first (if present) and reconcile it against the actual repo state. Write to it at phase boundaries, non-obvious decisions, and before risky operations — not after every small step. Follow `~/.claude/agents/project-manager/memory.md`.
 
 **Before starting any task:**
 - If requirements are ambiguous, ask — but only what actually blocks you. Don't ask for what you can infer from the codebase.
