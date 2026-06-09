@@ -4,13 +4,15 @@ Standards for the `MEMORY.md` session cache across Komodo projects.
 
 `MEMORY.md` is a session-continuity cache: it exists so progress is not lost when
 a session ends, compacts, or is interrupted. It is git-ignored, local, and
-read/written by every agent. It is not a knowledge base and not a task tracker —
-for work tracked across many sessions use `TODO.md` (see `todo.md`).
+per-project — at the root of the work repo, not the shared config repo. Not a
+knowledge base and not a task tracker — for work tracked across many sessions use
+`TODO.md` (see `todo.md`).
 
-It is **per-project and created on demand** — it lives at the root of whatever
-repo the work is happening in, not in the shared config repo. There is no
-canonical `MEMORY.md`; each project gets its own, and each project's `.gitignore`
-should exclude it.
+**Its existence is the on/off switch.** File present = memory enabled: agents read
+it at session start and write it at checkpoints. File absent = memory disabled:
+agents operate without it and **never create it**. Only the user enables memory,
+by creating the file (and excluding it in `.gitignore`). A blank file counts as
+enabled-but-empty.
 
 ---
 
@@ -22,17 +24,20 @@ re-deriving where things stood. Treat it as working state, not history.
 
 ## Reading
 
-At the start of a session (or after a compaction), read `MEMORY.md` at the
-project root first. It tells you what was in flight, what was decided, and what
-comes next. Reconcile it against the actual repo state before trusting it — it is
-a cache, not ground truth.
+If `MEMORY.md` is absent, memory is disabled — skip it and proceed; do not create
+it. If it exists, read it at the start of a session (or after a compaction): it
+tells you what was in flight, what was decided, and what comes next. Reconcile
+against actual repo state before trusting it — a cache, not ground truth. A blank
+file means enabled but not yet checkpointed; rebuild context from the repo and
+write the first checkpoint.
 
 ## Writing
 
-Update `MEMORY.md` whenever you reach a checkpoint worth not losing: a phase
-boundary, a non-obvious decision, a partially-done change, or before a long or
-risky operation. Keep it short and current — overwrite stale entries rather than
-appending forever.
+**Only when the file already exists** — never create `MEMORY.md`; its absence
+means the user has memory off. When it exists, update it at any checkpoint worth
+not losing: a phase boundary, a non-obvious decision, a partially-done change, or
+before a long or risky operation. Keep it short and current — overwrite stale
+entries rather than appending forever.
 
 Use four sections:
 - **Now** — what is in progress right now and how far it got.

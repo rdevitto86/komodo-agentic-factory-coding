@@ -61,7 +61,7 @@ Generate all files under `apis/komodo-<name>-api/`. Read each template from `cla
 1. Remind the developer to:
    - Add the service to `infra/local/services.jsonc` under the correct profile group
    - Add a profile entry in `infra/local/docker-compose.yml` if not auto-included
-   - Update the port allocation table in root `CLAUDE.md` and `MEMORY.md`
+   - Update the port allocation table in root `CLAUDE.md` (and `MEMORY.md` if it exists)
    - Run `go mod tidy` from inside the service directory
 2. Print the allocated port and full service name.
 

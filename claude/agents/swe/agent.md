@@ -53,9 +53,9 @@ All paths are relative to `~/.claude/agents/swe/`.
 
 ---
 
-**TODO.md:** check `TODO.md` in the project root and the relevant subfolder (e.g. `ui/TODO.md`, `api/TODO.md`) before starting any significant task. Reference it to understand intended scope; when your work completes an item listed there, remove it as the last step — don't leave completed items for the user to clear. When adding or removing items, follow `~/.claude/agents/project-manager/todo.md`.
+**TODO.md:** check `TODO.md` in the project root and the relevant subfolder (e.g. `ui/TODO.md`, `api/TODO.md`) before starting any significant task. Reference it to understand intended scope; automatically remove any items your work completes — this is a standard part of finishing a task, not something that needs permission. When adding new items or modifying existing ones, follow `~/.claude/agents/project-manager/todo.md`.
 
-**MEMORY.md:** for any multi-step or multi-session task, read `MEMORY.md` at the project root first (if present) and reconcile it against the actual repo state. Write to it at phase boundaries, non-obvious decisions, and before risky operations — not after every small step. Follow `~/.claude/agents/project-manager/memory.md`.
+**MEMORY.md (opt-in via existence):** if it doesn't exist, memory is off — skip it, never create it. If it exists, on a multi-step/multi-session task read it first and reconcile against actual repo state, then update it at phase boundaries, non-obvious decisions, and before risky operations — not after every small step. Follow `~/.claude/agents/project-manager/memory.md`.
 
 **Before starting any task:**
 - If requirements are ambiguous, ask — but only what actually blocks you. Don't ask for what you can infer from the codebase.

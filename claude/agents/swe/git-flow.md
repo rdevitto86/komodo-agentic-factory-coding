@@ -18,7 +18,7 @@ Branch from `main` for features, fixes, and chores. Branch from the relevant `re
 
 ## Commit messages
 
-Single-line, ≤256 characters total. No body, no footer — the diff is the detail and the ticket lives in the PR, not the commit.
+**Always a single line — never a body, never a footer.** The subject is the whole message; the diff is the detail and the ticket lives in the PR, not the commit. ≤256 characters. No `Co-Authored-By` or any other trailer — ever.
 
 ```
 <type>[(<scope>)]: <short change> [+ <type>[(<scope>)]: <short change> ...]

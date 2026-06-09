@@ -18,7 +18,7 @@ These are global and non-negotiable. They apply to every agent and override any 
 
 ## Working files: `TODO.md` and `MEMORY.md`
 
-Two local, git-ignored, per-project files every agent reads and writes — never committed, created on demand in the work repo (not here). **`TODO.md`** is the durable cross-session task ledger: deferred work, out-of-scope finds, known debt (items removed when done, never checked off). **`MEMORY.md`** is the in-flight session cache: now / next / decisions / watch-outs (pruned and overwritten, not appended). Read both at session start; reconcile `MEMORY.md` against real repo state before trusting it. Conventions: `~/.claude/agents/project-manager/{todo,memory}.md`.
+Two local, git-ignored, per-project files in the work repo (not here), never committed. **`TODO.md`** — durable cross-session task ledger (deferred work, out-of-scope finds, known debt; items removed when done, never checked off); created on demand. Agents and the advisor read and **write autonomously** — no per-request permission needed to add/remove items. **`MEMORY.md`** — in-flight session cache (now / next / decisions / watch-outs; pruned and overwritten, not appended); **opt-in via its existence** — present = agents read/write it, absent = memory off and agents never create it. Read both at session start; reconcile `MEMORY.md` against real repo state. Conventions: `~/.claude/agents/project-manager/{todo,memory}.md`.
 
 ## Directory layout
 
@@ -50,8 +50,9 @@ Spawned via the `Agent` tool. Defined in `claude/agents/<agent>/agent.md`.
 | `[SEC]` | `cyber-security` | sonnet | Claude Sonnet | — | Offensive + defensive security — threat modeling, pentest, security architecture, red/blue-team. Dev-time security stays with `swe`; per-file review stays with `qa`. |
 | — | `marketing` | sonnet | MCP `marketing` (`create_content`) | Claude Sonnet | Campaign strategy, copywriting, brand messaging, and sales-content/proposal drafting (supplementing, not replacing, real sellers). |
 | `[TAX]` | `tax-advisor` | sonnet | MCP `tax` (`analyze_tax`) | Claude Sonnet | Tax document summarization, exposure/deduction/deadline flagging, first-line due diligence. Not tax advice — escalate to a CPA. |
+| — | `summarizer` | — | MCP `summarizer` (`summarize`) | none | **MCP-exclusive.** Condenses raw context (files, logs, transcripts, search dumps) into a faithful digest. Pure compression — no judgment, preserves identifiers/paths/errors verbatim. The advisor calls it to shrink material before any expensive handoff. No Claude fallback by design; if the bridge is down, the caller summarizes inline. |
 
-**Runtime rule:** Claude Sonnet is the universal fallback — if MCP is unreachable, always fall back to the Claude Sonnet subagent. The advisor honors this table at dispatch and never skips MCP for agents where it is the primary runtime.
+**Runtime rule:** Claude Sonnet is the universal fallback — if MCP is unreachable, always fall back to the Claude Sonnet subagent. The advisor honors this table at dispatch and never skips MCP for agents where it is the primary runtime. The one exception is `summarizer`, which is MCP-exclusive by design (spending Claude tokens to compress context defeats its purpose); when the bridge is down, the caller summarizes inline rather than spawning a subagent.
 
 **Routing notes:**
 - **Robotics → `mechatronics`.** It owns the robotics software side (firmware, control loops, ROS nodes). `swe`'s `cpp` mode is for non-robotics embedded only. The advisor leans to mechatronics for anything robotics.
@@ -59,6 +60,7 @@ Spawned via the `Agent` tool. Defined in `claude/agents/<agent>/agent.md`.
 - **CAD/mechanical split:** `machinist` owns part geometry and manufacturability (3D printing, CNC). Finished parts hand off to `mechatronics` for robotics integration and firmware/control. `electrical-engineer` owns PCB layout and electronics-driven enclosure constraints — coordinate with EE when a part must accommodate board mounting or connector cutouts.
 - **Security split — three layers:** `swe` owns dev-time security (input validation, authz, secret handling) per `~/.claude/agents/swe/security.md`. `quality-assurance` owns per-file/per-component security review passes. `cyber-security` owns everything else: cross-cutting threat modeling, security architecture, offensive/pentest, red/blue-team, and deep vulnerability assessment.
 - **Sales duties** fold into `advisor` (commercial strategy), `marketing` (campaigns, copy, and proposal/sales-content drafting), and `data-analyst` (sales-data analysis).
+- **Context compression → `summarizer` (MCP, zero-cost).** Before any expensive handoff, the advisor pipes large raw material (file dumps, logs, transcripts) through `summarize` and passes only the digest downstream. It has no file access, so fetching and summarizing stay separate: a cheap `Explore` pass (or the advisor) gathers the raw material, then the MCP summarizer compresses it. Pure transform — never route judgment, analysis, or decisions to it.
 - **Email is a per-agent mode** (`MODES: email`) on `customer-servicing`, `marketing`, `lawyer`, and `tax-advisor`. Each owns its own tone, formatting, and business rules in its `email.md`; Gmail (MCP) is the shared transport. Email is read-first — an agent never sends without explicit per-message user approval, and never bulk-sends through it.
 
 **Model tiers:** `haiku` (simple/lookup/drafting) · `sonnet` (complex technical work, default) · `opus` (highest reasoning).

@@ -18,7 +18,7 @@ Skills live in mode folders under `~/.claude/agents/electrical-engineer/`. Load 
 
 Firmware that runs on this hardware is **coding** → delegate to `swe` with `MODES: cpp`. Full mechatronic integration → `mechatronics`.
 
-**TODO.md:** check it at the project root before starting significant work — it caches deferred design follow-ups and known debt. When your work completes a listed item, remove it yourself as the last step; plain bullets only, never checkboxes (`- [ ]`). Conventions: `~/.claude/agents/project-manager/todo.md`.
+**TODO.md:** check it at the project root before starting significant work — it caches deferred design follow-ups and known debt. Automatically remove completed items — this is a standard part of finishing a task, not something that needs permission. Plain bullets only, never checkboxes (`- [ ]`). Conventions: `~/.claude/agents/project-manager/todo.md`.
 
 ---
 

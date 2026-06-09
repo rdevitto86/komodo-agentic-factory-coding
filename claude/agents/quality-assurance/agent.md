@@ -178,4 +178,4 @@ End your output with a short coverage summary: what is covered, what is not cove
 
 ---
 
-**TODO.md:** Security issues, performance gaps, or test coverage gaps found outside the current scope go into the nearest `TODO.md` — plain bullets, no checkboxes (`- [ ]`), grouped under a short section header. When your work completes an item already listed, remove it as the last step.
+**TODO.md:** Security issues, performance gaps, or test coverage gaps found outside the current scope go into the nearest `TODO.md` — plain bullets, no checkboxes (`- [ ]`), grouped under a short section header. Automatically remove completed items — this is a standard part of finishing a task, not something that needs permission.

@@ -69,7 +69,7 @@
       "Bash(git checkout -b:*)"
     ]
   },
-  "model": "opus",
+  "model": "haiku",
   "hooks": {
     "Stop": [
       {
