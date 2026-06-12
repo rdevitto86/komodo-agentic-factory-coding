@@ -52,4 +52,4 @@ When a change set spans multiple sections, bump by the **highest** category pres
 
 ## Who maintains it
 
-`swe` updates `CHANGELOG.md` and the version in the same diff as the code — not a separate pass — as part of any change to a published SDK/library. `project-manager` flags when a story touches a published lib so neither is missed, and checks for both before calling the item done.
+`software-engineer` updates `CHANGELOG.md` and the version in the same diff as the code — not a separate pass — as part of any change to a published SDK/library. `business-architect` flags when a story touches a published lib so neither is missed, and checks for both before calling the item done.

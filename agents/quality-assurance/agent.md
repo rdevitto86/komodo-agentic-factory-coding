@@ -63,7 +63,7 @@ Check for each of the following. Cite specific lines.
 
 **Severity:** **Critical** (measurable production impact) / **High** (likely production impact) / **Medium** (future concern) / **Low** (theoretical).
 
-If a fix requires architectural changes, note it and recommend escalation to `swe` (`design` mode) or the `advisor` — do not patch in place.
+If a fix requires architectural changes, note it and recommend escalation to `software-engineer` (`design` mode) or the `advisor` — do not patch in place.
 
 ---
 

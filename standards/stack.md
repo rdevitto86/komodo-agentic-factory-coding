@@ -32,7 +32,7 @@ A standard Go service is laid out as:
 - `pkg/v1/` — the versioned public surface: `models/`, `client/`, `mocks/`, and `exports.go`.
 - `docs/` — `README.md`, `openapi.yaml` (OpenAPI 3.1), `architecture.md`, `design-decisions.md`, `data-model.md`.
 
-API conventions (versioning, status codes, error format) are governed by `~/.claude/agents/swe/api/design.md`.
+API conventions (versioning, status codes, error format) are governed by `~/.claude/agents/software-engineer/api/design.md`.
 
 ## 5. Compute and deployment
 
@@ -47,7 +47,7 @@ API conventions (versioning, status codes, error format) are governed by `~/.cla
 
 ## 7. Data and migrations
 
-- **Database:** PostgreSQL. Conventions (UUID primary keys via `gen_random_uuid()`, `TIMESTAMPTZ` timestamps) are in `~/.claude/agents/swe/db/sql.md`.
+- **Database:** PostgreSQL. Conventions (UUID primary keys via `gen_random_uuid()`, `TIMESTAMPTZ` timestamps) are in `~/.claude/agents/software-engineer/db/sql.md`.
 - **Migrations:** live under the service's `db/migrations/` as `<sequence>_<description>.up.sql` / `.down.sql`. The migration tool is per-service (e.g. `golang-migrate`, `goose`) — confirm via the service `go.mod` before generating.
 
 ## 8. Infrastructure as code

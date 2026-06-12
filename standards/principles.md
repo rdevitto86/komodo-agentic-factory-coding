@@ -27,7 +27,7 @@ Before writing any non-trivial logic, check in this order:
 2. **Well-vetted open-source library second** — if the SDK doesn't cover it, a proven library beats custom code. Prefer broad adoption, active maintenance, clear licensing.
 3. **Custom code last** — only when neither the SDK nor a suitable library exists. If new custom code is general-purpose, surface it as a candidate for SDK extraction.
 
-Reviewing agents (advisor, swe on review) must enforce this order. Reinforce it when it wasn't followed.
+Reviewing agents (advisor, software-engineer on review) must enforce this order. Reinforce it when it wasn't followed.
 
 ---
 
