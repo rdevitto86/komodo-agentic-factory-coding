@@ -1,0 +1,18 @@
+package client
+
+import "net/http"
+
+// Consuming services inject <NAME>_API_INTERNAL_URL as baseURL.
+type Client struct {
+	baseURL    string
+	httpClient *http.Client
+}
+
+func NewClient(baseURL string) *Client {
+	return &Client{
+		baseURL:    baseURL,
+		httpClient: &http.Client{},
+	}
+}
+
+// TODO: add typed methods matching the service's routes.

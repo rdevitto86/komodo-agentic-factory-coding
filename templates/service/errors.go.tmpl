@@ -1,0 +1,14 @@
+package models
+
+import httpErr "github.com/rdevitto86/komodo-forge-sdk-go/http/errors"
+
+var Err = struct {
+	// TODO: define service-specific errors
+	// Example:
+	// NotFound httpErr.ErrorCode
+}{
+	// NotFound: httpErr.ErrorCode{...},
+}
+
+// keeps the forge SDK error types linked for handler use
+var _ = httpErr.Global
