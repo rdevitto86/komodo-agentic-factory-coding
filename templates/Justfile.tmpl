@@ -1,0 +1,39 @@
+set shell := ["bash", "-cu"]
+
+help:
+    @just --list --unsorted
+
+bootstrap:
+    #!/usr/bin/env bash
+    which brew > /dev/null || (echo "Install Homebrew first: https://brew.sh" && exit 1)
+    brew bundle
+    just claude-sync
+
+claude-sync:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KOMODO_CLAUDE="${KOMODO_CLAUDE_DIR:-$HOME/komodo/ai/komodo-ai-agents}"
+    if [ ! -d "$KOMODO_CLAUDE" ]; then
+        echo "komodo-ai-agents not found at $KOMODO_CLAUDE"
+        echo "Clone it there or set KOMODO_CLAUDE_DIR to its path, then re-run."
+        exit 1
+    fi
+    bash "$KOMODO_CLAUDE/setup.sh"
+
+init-hooks:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    CORE="${KOMODO_CLAUDE_DIR:-$HOME/komodo/ai/komodo-ai-agents}"
+    HOOKS="$CORE/scripts/hooks/git"
+    if [ ! -d "$HOOKS" ]; then
+        echo "git hooks not found at $HOOKS"
+        exit 1
+    fi
+    {
+        echo '#!/usr/bin/env bash'
+        echo 'set -euo pipefail'
+        printf 'bash "%s/pre-commit-no-comments"\n' "$HOOKS"
+        printf 'bash "%s/pre-commit-lint"\n' "$HOOKS"
+    } > .git/hooks/pre-commit
+    chmod +x .git/hooks/pre-commit
+    echo "pre-commit hook installed"

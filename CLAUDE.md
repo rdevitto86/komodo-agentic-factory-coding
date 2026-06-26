@@ -13,7 +13,7 @@ These are global and non-negotiable. They apply to every agent and override any 
 - **Never create git commits or git branches.** Only the user commits, branches, and merges. Do not run `git commit`, `git branch`, or `git checkout -b` under any circumstances — not even when asked to "save", "finalize", or "start on a feature". Always work on the current branch.
 - **Never spawn agents into an isolated worktree.** Do not use `isolation: "worktree"` (or any equivalent) when dispatching agents. Every agent edits files directly on the user's current branch — isolated worktrees fragment work into parallel trees that are painful to merge and prone to conflicts. Real branches and PRs are a deliberate future step the user takes, not an agent default.
 - **Error strings must not contain the function name.** Function context belongs in metadata objects or stack traces only — not in the error message string itself.
-- **Comments: fewer, highly-targeted — default is none, including on functions.** `comments.md` is the single source of truth for every language and every file; it lives at `standards/comments.md` and no other file defines comment rules. A function doc requires one of three licenses — the *why* (business/compliance/non-obvious approach), *public API* consumed outside the repo, or an *edge case* — and stays ≤2 sentences in the native idiom. Name-restating docs ("X is a function that…") and behavioral enumerations are banned. Every other declaration (type, struct, interface, field, var, const — exported or not) gets no comment, and file/package/module headers are banned in every language including scripts. Machine directives, test banners, explicit user requests, and humans' existing comments are exempt.
+- **Zero comments. Ever. No exceptions.** `comments.md` is the single source of truth for every language, every file, and every agent — `standards/comments.md`, no other file defines comment rules. No function/method/class docs, no declaration comments (type, struct, interface, field, var, const — exported or not), no file/package/module headers, no inline or trailing notes — in any language, including scripts. The "why / public API / edge case" licenses are retired; if it needs to survive, it goes in `TODO.md` or a PR description, not in code. Only machine directives, test-file section banners, explicit user requests, and humans' existing comments are exempt.
 - **Never expand scope without permission.** If you discover work outside the current task — a bug, a refactor opportunity, an adjacent improvement — stop. Document it in the nearest `TODO.md` and surface it to the user or advisor. Side work is always declined unless explicitly approved.
 
 ## Working files: `TODO.md` and `MEMORY.md`
@@ -27,6 +27,7 @@ Two local, git-ignored, per-project files in the work repo (not here), never com
 - **`modes/`** — language blueprints, keyed by language: `go/`, `ts/`, `python/`, `cpp/`, `svelte/`, `vue/`. Shared across any agent that writes code in that language (e.g. `software-engineer` and `hardware-engineer` both reference `modes/cpp/coding.md`).
 - **`templates/`** — file templates referenced by skills (e.g. `templates/service/*.tmpl` for the `software-engineer` `api` mode's `/new-service`).
 - **`platforms/<tool>/`** — tool-specific adapters. `platforms/claude/` holds `settings.json` (permissions, allowed commands, hook registration) and `hooks/` (event scripts), symlinked to `~/.claude/settings.json` and `~/.claude/hooks/` respectively.
+- **`profile/`** — global `~/.claude/` entrypoints, symlinked to `~/.claude/AGENTS.md` and `~/.claude/CLAUDE.md`. `AGENTS.md` is the universal, tool-agnostic root directive; `CLAUDE.md` is the Claude adapter that imports `AGENTS.md` plus the advisor agent's full context (`@~/.claude/agents/advisor/agent.md`) so every session opens as the advisor.
 - **`scripts/`** — repo maintenance (`validate-refs.sh`) and portable git hook templates (`scripts/hooks/git/`).
 
 Local MCP agents live in `~/.komodo/bridge/`, not here.
@@ -94,7 +95,7 @@ Hooks are registered globally in `~/.claude/settings.json` (symlinked from `plat
 
 | Hook | Trigger | What it does |
 |------|---------|--------------|
-| `~/.claude/hooks/no-comments-guard.sh` | After Edit or Write | Blocks (exit 2) inserted comments that violate `comments.md` (declaration comments, file headers, >2-line function docs, name-restating filler docs, multi-line prose). Rule logic is shared with the git hook via `scripts/lib/comment-rules.awk`. Scans only the inserted text, so pre-existing comments are untouched. |
+| `~/.claude/hooks/no-comments-guard.sh` | After Edit or Write | Blocks (exit 2) any inserted comment of any kind — function/method docs, declaration comments, file headers, inline and trailing notes — except machine directives and test-file section banners. Rule logic is shared with the git hook via `scripts/lib/comment-rules.awk`. Scans only the inserted text, so pre-existing comments are untouched. |
 | `~/.claude/hooks/git-guard.sh` | Before any `Bash` command | Blocks (exit 2) `git commit`, `git branch`, `git checkout -b`, `git switch -c`, `git reset --hard`, `git clean -f`/`-fd`/`-fdx`, and `git push` combined with `--force`/`-f`/`--force-with-lease` — anywhere in the command string, regardless of `&&`/`;`/`\|` chaining or `sh -c` wrapping. Enforces the "only the user commits, branches, and merges" hard rule. |
 | `~/.claude/hooks/stop-summary.sh` | Session end | Shows git diff summary if uncommitted changes exist |
 
@@ -108,6 +109,6 @@ Run once after cloning:
 bash setup.sh
 ```
 
-Symlinks `agents/`, `standards/`, `modes/`, `templates/`, `platforms/claude/settings.json`, and `platforms/claude/hooks/` into `~/.claude/` and removes stale links from the old layout. Restart Claude Code after running.
+Symlinks `agents/`, `standards/`, `modes/`, `templates/`, `platforms/claude/settings.json`, `platforms/claude/hooks/`, `profile/AGENTS.md`, and `profile/CLAUDE.md` into `~/.claude/` and removes stale links from the old layout. Restart Claude Code after running.
 
 For commit-time enforcement outside Claude Code — the model-agnostic floor that catches any agent (GPT, Gemini, local) in any IDE — install the portable git hooks under `scripts/hooks/git/` into the target repo's `.git/hooks/pre-commit` (komodo-ecom: `just init-hooks`; see README §Git hooks).

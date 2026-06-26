@@ -15,7 +15,7 @@ These are invariants. Treat as non-negotiable.
   - Bad (noun-only prefix — no verb, still wrong): `"otp lookup: %w"`, `"otp: max attempts exceeded"`, `"cache get: %w"`
   - Good: `"failed to read user credentials: %w"`, `"failed to store OTP: %w"`, `"failed to look up OTP: %w"`, `"max OTP attempts exceeded"`
   - The same rule applies to logger message strings: `logger.Error("otp: ...")` and `logger.Error("cache get failed")` are both wrong forms — write `logger.Error("failed to look up OTP", ...)` and pass the error as a structured attribute.
-- **All comments follow `~/.claude/standards/comments.md` exactly.** It is the single source of truth for comment rules across every language and file — including the default of no function docs without one of its three licenses. Do not restate comment rules or show comment examples here or in any other file.
+- **All comments follow `~/.claude/standards/comments.md` exactly.** It is the single source of truth for comment rules across every language and file — zero comments, including function docs, with no exceptions. Do not restate comment rules or show comment examples here or in any other file.
 
 ---
 

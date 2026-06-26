@@ -16,7 +16,7 @@ Builds on `~/.claude/modes/go/coding.md` and `~/.claude/modes/ts/coding.md` — 
 ## 2. Conventions
 
 - Errors: catch specific exceptions (never bare `except:`); wrap with a descriptive phrase carrying no function name — `raise OrderError("failed to query order by ID") from err` (format: `principles.md` §1). Inherit one project base (`KomodoError`); log once at the propagation boundary. No `assert` for runtime checks (stripped under `-O`).
-- Docstrings: default none; only with a `comments.md` license (why / public API / edge case), ≤2 sentences, never name-restating. Boolean prefixes `is_/has_/can_/should_`; `req`/`res` for HTTP request/response.
+- Docstrings: never — per `comments.md`, zero comments anywhere, no exceptions. Boolean prefixes `is_/has_/can_/should_`; `req`/`res` for HTTP request/response.
 - Naming: `lower_snake_case` modules, `PascalCase` classes/aliases, `snake_case` functions/vars, `SCREAMING_SNAKE` constants, leading `_` for private.
 - Minimal `__init__.py` (no logic, no import-time I/O); avoid `utils`/`common`/`helpers`; no circular or wildcard imports. DI over module-level singletons (`principles.md` §3).
 

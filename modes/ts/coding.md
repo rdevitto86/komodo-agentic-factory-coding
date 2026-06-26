@@ -12,7 +12,7 @@ Idiomatic TS is assumed; these are the enforced or non-obvious points:
 - `??` (not `||`) for defaults; no non-null `!` without a comment saying why it's safe.
 - `async/await` over promise chains; `Promise.all` for independent parallel work; never `await` in a loop that could parallelize; throw typed errors, don't return `null` on failure.
 - One primary export per module; no circular imports; barrel `index.ts` sparingly (hurts tree-shaking).
-- Comments and error-string format: `~/.claude/standards/comments.md` and `principles.md` §1 — default no JSDoc; a function doc needs a license (why / public API / edge case), ≤2 sentences, never name-restating; no other declaration comments; error messages carry no function name.
+- Comments and error-string format: `~/.claude/standards/comments.md` and `principles.md` §1 — zero JSDoc, zero comments anywhere, no exceptions; error messages carry no function name.
 - Naming: PascalCase types/components, camelCase vars/functions, SCREAMING_SNAKE constants, kebab-case module files, PascalCase component files; boolean prefixes `is/has/can/should`; no `I`-prefix on interfaces; `req`/`res` for request/response.
 
 ---

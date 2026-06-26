@@ -104,6 +104,7 @@ Regardless of environment or log level configuration:
 - PII in raw form: SSNs, full addresses, DOBs (use masked or reference IDs)
 - Full request/response bodies unless explicitly needed for a debug session and stripped before commit
 - Internal infrastructure details (internal IPs, DB connection strings) in production logs
+- Implementation plan/phase/stage labels ("Phase 3b", "stage 4 TODO") — meaningless outside the current dev cycle and rot immediately
 
 ---
 

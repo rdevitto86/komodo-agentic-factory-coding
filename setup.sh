@@ -41,10 +41,12 @@ done
 # once its live counterpart is already a correct symlink into this repo — the
 # original file has been superseded. Runs before the link loop so a .bak created
 # this run (the user's only copy of a pre-existing file) is never touched.
-for name in "${LINK_DIRS[@]}" settings.json hooks; do
+for name in "${LINK_DIRS[@]}" settings.json hooks AGENTS.md CLAUDE.md; do
   src="$REPO_DIR/$name"
   [ "$name" = "settings.json" ] && src="$REPO_DIR/platforms/claude/settings.json"
   [ "$name" = "hooks" ] && src="$REPO_DIR/platforms/claude/hooks"
+  [ "$name" = "AGENTS.md" ] && src="$REPO_DIR/profile/AGENTS.md"
+  [ "$name" = "CLAUDE.md" ] && src="$REPO_DIR/profile/CLAUDE.md"
   bak="$CLAUDE_DIR/$name.bak"
   link="$CLAUDE_DIR/$name"
   if [ -e "$bak" ] && [ -L "$link" ] && [ "$(readlink "$link")" = "$src" ]; then
@@ -104,6 +106,8 @@ done
 # but Claude Code only loads them from ~/.claude/settings.json and ~/.claude/hooks/.
 link_one "$REPO_DIR/platforms/claude/settings.json" "settings.json"
 link_one "$REPO_DIR/platforms/claude/hooks" "hooks"
+link_one "$REPO_DIR/profile/AGENTS.md" "AGENTS.md"
+link_one "$REPO_DIR/profile/CLAUDE.md" "CLAUDE.md"
 
 echo ""
 

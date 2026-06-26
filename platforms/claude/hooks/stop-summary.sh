@@ -6,6 +6,10 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
   exit 0
 fi
 
+if ! git rev-parse HEAD > /dev/null 2>&1; then
+  exit 0
+fi
+
 UNSTAGED=$(git diff --stat HEAD 2>/dev/null)
 STAGED=$(git diff --cached --stat 2>/dev/null)
 

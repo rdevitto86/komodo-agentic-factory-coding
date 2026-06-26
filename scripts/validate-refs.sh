@@ -8,7 +8,7 @@ dead=()
 
 while IFS= read -r line; do
   src_file="${line%%:*}"
-  ref="$(printf '%s' "$line" | grep -oE '~/.claude/(agents|standards|modes|templates)/[^`\)\ ]+' | head -1)"
+  ref="$(printf '%s' "$line" | grep -oE '~/.claude/(agents|standards|modes|templates)/[^`\)\ ]*' | head -1)"
   [ -z "$ref" ] && continue
 
   # Skip illustrative patterns: a literal "..." glob, a brace-expansion group

@@ -2,19 +2,33 @@
 
 Org-wide stack invariants every agent can assume without rediscovery. This file answers "what is the Komodo stack and how is it shaped" so agents stop re-deriving it per task. It does **not** restate engineering rules — those live in `~/.claude/standards/principles.md` and the language/topic standards.
 
-Per-repo specifics (exact port table, run/test/build/deploy commands, CI pipeline) live in each project's `CLAUDE.md`. If a project `CLAUDE.md` conflicts with this file, the project file wins.
+Per-repo specifics (exact port, run/test/build/deploy commands, CI pipeline) live in each project's `CLAUDE.md`. If a project `CLAUDE.md` conflicts with this file, the project file wins.
 
 ---
 
 ## 1. Repository shape
 
-- **Monorepo.** Backend services under `apis/`, infrastructure under `infra/`, frontend in its own SvelteKit project. The forge SDKs (`komodo-forge-sdk-go`, `komodo-forge-sdk-ts`) sit alongside services in `apis/`.
+- **Multi-repo.** Repos live under `~/komodo/<domain>/` grouped by business domain. Each service, SDK, UI, and tool is its own git repository.
+
+| Domain | Path | Contents |
+|--------|------|----------|
+| `commerce/` | storefront-ui, cart, order, order-reservations, search, shop-items, shop-inventory, shop-promotions, user | Customer-facing commerce |
+| `platform/` | auth, events, features, insights, ssr-engine-svelte, statistics | Shared platform services |
+| `payments/` | payments | Payment processing |
+| `fulfillment/` | address, shipping | Logistics and geo |
+| `customer/` | communications, loyalty, support, customer-servicing-ui | Post-sale CX |
+| `dashboards/` | api-dashboard, feature-toggles-dashboard | Internal tooling |
+| `sdk/` | forge-sdk-go, forge-sdk-ts | Shared libraries |
+| `ai/` | ai-agents (this repo), ai-guardrails | Agent config and AI services |
+| `agtech/` | agtech-ahr | Agriculture vertical |
+| `inventory/` | inventory-management-engine | Warehouse/inventory |
+
 - **Service naming.** A backend service is `komodo-<name>-api` (e.g. `komodo-cart-api`). The short `<name>` is used for ports, secret prefixes, and migration paths.
 
 ## 2. Languages and runtimes
 
 - **Backend:** Go 1.26. Primary language for all services.
-- **Frontend:** TypeScript + SvelteKit 5 (runes). See `~/.claude/modes/svelte/coding.md` and `~/.claude/modes/ts/coding.md`. Some projects (e.g. `komodo-ecom`) use Vue 3 + Composition API instead — see `~/.claude/modes/vue/coding.md`. The project's own `CLAUDE.md` is authoritative on which frontend framework is in use, per the "project file wins" note above.
+- **Frontend:** TypeScript + SvelteKit 5 (runes). See `~/.claude/modes/svelte/coding.md` and `~/.claude/modes/ts/coding.md`. Some projects use Vue 3 + Composition API instead — see `~/.claude/modes/vue/coding.md`. The project's own `CLAUDE.md` is authoritative on which frontend framework is in use, per the "project file wins" note above.
 - **Python:** tooling and data/ML work only — not a service language. See `~/.claude/modes/python/coding.md`.
 
 ## 3. Forge SDKs — reuse before building
@@ -27,10 +41,32 @@ The SDKs are published and consumed as external dependencies — **always import
 
 A standard Go service is laid out as:
 
-- `main.go` — bootstrap (logger, secrets) then `srv.Run`.
-- `internal/handlers/` — HTTP handlers, including `health.go`.
-- `pkg/v1/` — the versioned public surface: `models/`, `client/`, `mocks/`, and `exports.go`.
-- `docs/` — `README.md`, `openapi.yaml` (OpenAPI 3.1), `architecture.md`, `design-decisions.md`, `data-model.md`.
+```
+komodo-<name>-api/
+├── cmd/
+│   ├── public/main.go      # Customer-facing entrypoint
+│   └── private/main.go     # Service-to-service entrypoint
+├── internal/               # Handlers, domain logic, DB adapters
+│   └── clients/<svc>client/ # Generated downstream clients (oapi-codegen)
+├── openapi.yaml            # Contract source of truth (OpenAPI 3.1)
+├── docs/
+│   ├── README.md           # Routes, port, env, commands
+│   ├── architecture.md
+│   ├── design-decisions.md
+│   └── data-model.md
+└── docker-compose.yaml     # Joins external komodo-network
+```
+
+**Entrypoint convention** — services split binaries by audience via `cmd/`:
+
+| Dir | Audience | Middleware stack |
+|-----|----------|-----------------|
+| `cmd/public/` | Browser / customer-facing | RequestID, Telemetry, RateLimiter, CORS, SecurityHeaders, Auth, CSRF, Normalization, Sanitization |
+| `cmd/private/` | Service-to-service | RequestID, Telemetry, Auth, Scope |
+
+A service may be public-only (cart, support), private-only (event-bus, communications), or both (auth, user, order). No flat `main.go` at service root. Rust services use `src/bin/public.rs`/`private.rs`. Lambda: same `cmd/` convention, one binary per function.
+
+**OpenAPI and codegen** — `openapi.yaml` at the service root is the contract source of truth. Each consumer generates downstream clients into its own `internal/clients/<service>client/` via `oapi-codegen`, sourcing the provider's `openapi.yaml` by relative path. No shared client package. Error code ranges: `komodo-forge-sdk-go/http/errors/ranges.go`; read `codes.go` before defining new codes.
 
 API conventions (versioning, status codes, error format) are governed by `~/.claude/agents/software-engineer/api/design.md`.
 
@@ -58,7 +94,25 @@ API conventions (versioning, status codes, error format) are governed by `~/.cla
 ## 9. Local development
 
 - Each service ships a `docker-compose.yaml` joined to the external `komodo-network`, exposing a `/health` endpoint for the container healthcheck.
-- Ports are allocated in domain-grouped blocks; the authoritative port table lives in the project `CLAUDE.md`.
+- Ports are allocated in domain-grouped blocks of 10 — anchor is `public`, anchor+1 is `private`, remaining slots are reserved. 7000 is reserved.
+
+| Port | Service | Domain |
+|------|---------|--------|
+| 7001 | ui (storefront) | Frontend |
+| 7002 | events | Platform |
+| 7003 | ssr-engine-svelte | Platform |
+| 7011/7012 | auth pub/priv | Platform |
+| 7022 | features | Platform |
+| 7023 | ai-guardrails | AI |
+| 7031 | address | Fulfillment |
+| 7041–7045 | shop-items / search / cart / inventory / promotions | Commerce |
+| 7051/7052 | user pub/priv | Commerce |
+| 7061–7064 | order pub/priv / reservations / shipping | Orders + Fulfillment |
+| 7071 | payments | Payments |
+| 7081 | communications | Customer |
+| 7091 | loyalty | Customer |
+| 7101 | support | Customer |
+| 7111/7112, 7114 | statistics pub/priv, insights | Platform |
 
 ## 10. Observability
 

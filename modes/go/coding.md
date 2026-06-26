@@ -9,7 +9,7 @@ High-level Go idioms for Komodo. Cross-cutting doctrine — hard rules, error-st
 Idiomatic Go — formatting, `%w` wrapping, sentinel errors, naming, package layout, profiling — is assumed. Only the Komodo-specific or non-obvious points:
 
 - `golangci-lint` must pass; config at `.golangci.yaml` (repo root), and its `wrapcheck.ignore-package-globs` must include the forge SDK glob. No disabling a rule without a comment saying why. Prefer the `gopls` LSP for quick checks over `go build`/`go vet`.
-- Error-string format: `~/.claude/standards/principles.md` §1. Comment/doc rules: `comments.md` — default no godoc; a doc needs one of the three licenses (why / public API / edge case), ≤2 sentences, never name-restating. Log once at the top of the stack — never log-and-return.
+- Error-string format: `~/.claude/standards/principles.md` §1. Comment/doc rules: `comments.md` — zero godoc, zero comments anywhere, no exceptions. Log once at the top of the stack — never log-and-return.
 - HTTP handlers: `req` for request bodies / outgoing `*http.Request`, `res` for response objects; keep `r *http.Request` / `w http.ResponseWriter` by Go convention.
 - Test helpers take `t *testing.T` first and call `t.Helper()`.
 - Avoid `util`/`common`/`helpers` packages — split by domain; `internal/` for non-importable code; minimize exported surface.

@@ -25,6 +25,8 @@
       "Bash(python3:*)",
       "Bash(find:*)",
       "Bash(grep:*)",
+      "Bash(egrep:*)",
+      "Bash(fgrep:*)",
       "Bash(ls:*)",
       "Bash(echo:*)",
       "Bash(mkdir:*)",
@@ -110,8 +112,9 @@
     "gopls-lsp@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "autoMemoryEnabled": false,
   "theme": "light",
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "tui": "fullscreen"
 }

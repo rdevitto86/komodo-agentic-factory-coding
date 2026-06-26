@@ -57,7 +57,7 @@ Each row is a required property of a conformant API. **Governed by** names the s
 | X2 | Non-trivial logic reuses the forge SDK before a library before custom code | `~/.claude/standards/principles.md` §2, `~/.claude/standards/stack.md` §3 | all |
 | X3 | Config read through the SDK `config` surface; secrets via Secrets Manager bootstrap | `~/.claude/standards/stack.md` §6, `~/.claude/standards/security.md` | all |
 | X4 | Structured logging through the SDK; `trace_id` propagated | `~/.claude/standards/logging.md`, `~/.claude/agents/devops/observability/standard.md` | all |
-| X5 | Comments conform — no function docs without a license (why / public API / edge case); no declaration comments or file headers | `~/.claude/standards/comments.md` | all |
+| X5 | Comments conform — zero comments anywhere: no function docs, no declaration comments, no file headers | `~/.claude/standards/comments.md` | all |
 
 ### Documentation & tests
 

@@ -30,11 +30,10 @@ if [ -n "$VIOLATIONS" ]; then
     echo "In $(basename "$FILE"):"
     echo "$VIOLATIONS"
     echo ""
-    echo "Allowed: function/method docs up to 2 sentences (native idiom, may open"
-    echo "with the name), sparse single-line lowercase inline notes, machine"
-    echo "directives, test banners. Banned: comments on type/struct/interface/"
-    echo "field/var/const declarations, file or package headers, multi-line prose"
-    echo "blocks, behavioral enumerations. Fix the line(s) and retry."
+    echo "Zero comments, full stop — no function/method docs, no declaration"
+    echo "comments, no inline or trailing notes, no file/package headers."
+    echo "Only machine directives and test-file section banners are exempt."
+    echo "Remove the line(s) and retry."
   } >&2
   exit 2
 fi
