@@ -12,7 +12,8 @@ RULES=(
   'git switch -c:::\bgit[[:space:]]+switch[[:space:]]+-c([[:space:]]|$)'
   'git reset --hard:::\bgit[[:space:]]+reset[[:space:]]+--hard([[:space:]]|$)'
   'git clean -f:::\bgit[[:space:]]+clean[[:space:]]+-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$)'
-  'git push --force:::\bgit[[:space:]]+push\b.*(--force-with-lease|--force([[:space:]]|$)|[[:space:]]-f([[:space:]]|$))'
+  'git push:::\bgit[[:space:]]+push([[:space:]]|$)'
+  'git merge:::\bgit[[:space:]]+merge([[:space:]]|$)'
 )
 
 for RULE in "${RULES[@]}"; do
