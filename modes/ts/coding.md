@@ -19,22 +19,22 @@ Idiomatic TS is assumed; these are the enforced or non-obvious points:
 
 ## 7. Testing
 
-Full JS/TS testing standard — file naming, colocation, single-file structure, and framework-specific conventions (SvelteKit, Vue). Go testing rules live in `~/.claude/modes/go/coding.md` §5.
+Full JS/TS testing standard — file naming, colocation for unit only, the `test/` tier tree for everything else, path-alias imports, and framework-specific conventions (SvelteKit, Vue). Go testing rules live in `~/.claude/modes/go/coding.md` §5.
 
 ### 7.1 File placement and naming
 
-Tests are **colocated** with the file or package they test — never in a separate `__tests__/` directory.
+**Only unit tests are colocated** with the file or package they test. Everything else — component, integration, e2e — moves to a top-level test root (§7.2).
 
 **Naming convention: `.x.test.ts` (or `.x.test.js`)**
 
-| Source | Test file |
+| Source | Unit test file |
 |--------|-----------|
 | `order-service.ts` | `order-service.x.test.ts` |
 | `utils.ts` | `utils.x.test.ts` |
 | `UserCard.svelte` | `UserCard.x.test.ts` |
 | `Button.vue` | `Button.x.test.ts` |
 
-**Package / library folder:** when multiple source files form a cohesive unit (e.g. `src/lib/auth/`), place one test file at the root of that folder named after the folder:
+**Package / library folder:** when multiple source files form a cohesive unit (e.g. `src/lib/auth/`), place one unit test file at the root of that folder named after the folder:
 
 ```
 src/lib/auth/
@@ -44,42 +44,41 @@ src/lib/auth/
 └── auth.x.test.ts      ← named after the folder
 ```
 
-If individual files within a package are large enough to warrant their own tests, colocate a test file per file using the file-name convention above.
+If individual files within a package are large enough to warrant their own unit tests, colocate a test file per file using the file-name convention above.
 
-### 7.2 Single test file, three test types
+### 7.2 Test root: component, integration, e2e
 
-Unit, component, and integration tests for a given source file live together in one `.x.test.ts` file. Separate each section with a banner comment followed by a `describe` block. Do not split them across separate files.
+Component, integration, and e2e tests move out of colocation into a top-level test root — `test/` or `tests/`; pick one spelling per repo and stay consistent within it, neither is canonical org-wide. One subfolder per tier, flat by feature (do not mirror the `src/` tree):
 
-**Section banner format** (copy exactly — 72 chars total, em-dash `─` U+2500):
 ```
-// ── Unit Tests ──────────────────────────────────────────────────────────
-// ── Component Tests ─────────────────────────────────────────────────────
-// ── Integration Tests ───────────────────────────────────────────────────
+test/
+├── component/
+│   └── order-service.x.test.ts
+├── integration/
+│   └── order.x.test.ts
+└── e2e/
+    └── checkout.x.test.ts
 ```
+
+TS has no evidence-backed use case for perf or chaos tiers at this layer (k6 load testing is used for HTTP-serving Go components, §5.6 in `~/.claude/modes/go/coding.md` — not called for from the TS/Svelte/Vue side today). Add `test/perf/` or `test/chaos/` only if a real need shows up; don't scaffold them speculatively.
+
+Each moved-out file keeps the same `.x.test.ts` naming and a single `describe` block for its own tier — it no longer needs to share a file with the other tiers, so the old three-block-per-file structure is gone. Section banners (`Setup`, `Helpers` only) are still fine inside a file for structure, just not for tier separation — see `~/.claude/standards/comments.md`.
 
 ```ts
-// order-service.x.test.ts
+// test/component/order-service.x.test.ts
+import { OrderService } from '$lib/order/order-service'
 
-// ── Unit Tests ──────────────────────────────────────────────────────────
-describe('unit', () => {
-  // Pure logic, no I/O, no network, no DB
-  // Test edge cases, error paths, and transformations
-})
-
-// ── Component Tests ─────────────────────────────────────────────────────
 describe('component', () => {
   // Rendered output and user interaction (UI)
   // Or: service layer with mocked external deps (backend)
 })
-
-// ── Integration Tests ───────────────────────────────────────────────────
-describe('integration', () => {
-  // Real boundaries — DB, HTTP calls, file system
-  // Use a real (test) instance, not mocks
-})
 ```
 
-Only include the sections that are relevant. A pure utility module may only need `unit`. A stateless HTTP handler may only need `component` and `integration`. Omit empty sections entirely.
+**Import path alias — required once tests move out of colocation.** A file under `test/` importing from `src/` would otherwise need a fragile relative path (`../../../src/lib/order/order-service`). Use the project's path alias instead:
+- **SvelteKit:** `$lib` (maps to `src/lib`) — `import { OrderService } from '$lib/order/order-service'`
+- **Vue:** `@/` (maps to `src/`) — `import Button from '@/components/Button.vue'`
+
+Confirm the alias is wired in both the bundler config (`vite.config.ts` / `tsconfig.json` paths) and the test runner config (§7.6) — a passing build with a failing test resolve usually means the alias is missing from one of the two.
 
 **Tier selection.** Tiers form the same ordered, cumulative ladder used company-wide (see `~/.claude/modes/go/coding.md` §5.1), selected by one env var, `TEST_TIER`:
 
@@ -88,20 +87,20 @@ unit < component < integration < e2e < chaos
 ```
 
 - **unit and component are always-on** — fast, hermetic (pure logic, mocked module boundaries, rendered components). No gate.
-- **integration, e2e, and chaos touch real boundaries or span services.** Gate the `describe` block with `skipIf` against the active tier.
+- **integration and e2e touch real boundaries or span services.** Gate the `describe` block with `skipIf` against the active tier. Folder placement already scopes a targeted run (`vitest run test/integration`); the gate matters for an unscoped sweep across the whole `test/` tree.
 
 ```ts
+// test/integration/order.x.test.ts
 const TIERS = ['unit', 'component', 'integration', 'e2e', 'chaos'] as const
 const active = TIERS.indexOf((process.env.TEST_TIER ?? 'unit') as typeof TIERS[number])
 const tierBelow = (t: typeof TIERS[number]) => active < TIERS.indexOf(t)
 
-// ── Integration Tests ───────────────────────────────────────────────────
 describe.skipIf(tierBelow('integration'))('integration', () => {
   // Real boundaries — DB, HTTP, file system
 })
 ```
 
-Setting a tier runs it and everything below it. The default (no env var) is `unit`; e2e/chaos run only on release stages. Cross-service E2E (Playwright) is exempt — it lives in `e2e/` per §7.6, not colocated.
+Setting a tier runs it and everything below it. The default (no env var) is `unit`; e2e runs only on release stages. Cross-service E2E (Playwright) lives in `test/e2e/` (or `tests/e2e/`) per §7.6.
 
 ### 7.3 Base rules (plain TS/JS)
 
@@ -124,18 +123,23 @@ SvelteKit reserves the `+` prefix for route files. Drop it from test filenames.
 | `+layout.svelte` | `layout.x.test.ts` |
 | `UserCard.svelte` | `UserCard.x.test.ts` |
 
-**Component tests** (`component` block): use `@testing-library/svelte`. Render the component, assert on DOM output and user events. Test rune-driven reactivity by triggering state changes and asserting the resulting DOM.
+Unit tests for a route (pure helpers/stores it uses) stay colocated using the table above. Component and server (integration) tests move to `test/component/` and `test/integration/`, flat by feature, importing the source via `$lib`.
 
-**Server tests** (`integration` block for `+page.server.ts` / `+server.ts`): call `load` or request handler functions directly. Mock only at the external boundary (e.g. DB client, fetch).
+**Component tests** (`test/component/`): use `@testing-library/svelte`. Render the component, assert on DOM output and user events. Test rune-driven reactivity by triggering state changes and asserting the resulting DOM.
+
+**Server tests** (`test/integration/`, for `+page.server.ts` / `+server.ts`): call `load` or request handler functions directly. Mock only at the external boundary (e.g. DB client, fetch).
 
 ```ts
-// page.x.test.ts
-import { render, screen, fireEvent } from '@testing-library/svelte'
-import Page from './+page.svelte'
-
+// page.x.test.ts (colocated, unit)
 describe('unit', () => {
   // Pure helpers or stores used by the page
 })
+```
+
+```ts
+// test/component/page.x.test.ts
+import { render, screen } from '@testing-library/svelte'
+import Page from '$lib/routes/checkout/+page.svelte'
 
 describe('component', () => {
   it('renders the submit button', () => {
@@ -143,6 +147,11 @@ describe('component', () => {
     expect(screen.getByRole('button', { name: /submit/i })).toBeInTheDocument()
   })
 })
+```
+
+```ts
+// test/integration/page.server.x.test.ts
+import { load } from '$lib/routes/checkout/+page.server'
 
 describe('integration', () => {
   // load() function or form action tests
@@ -151,23 +160,28 @@ describe('integration', () => {
 
 ### 7.5 Vue
 
-| Source | Test file |
+| Source | Unit test file |
 |--------|-----------|
 | `Button.vue` | `Button.x.test.ts` |
 | `useAuth.ts` (composable) | `useAuth.x.test.ts` |
 
-**Component tests** (`component` block): use `@vue/test-utils` (`mount` / `shallowMount`). Assert on rendered output, emitted events, and slot content. Prefer `mount` over `shallowMount` unless child components are heavy or irrelevant.
+Composable unit tests (pure logic, no rendering) stay colocated. Component tests move to `test/component/`, importing the source via `@/`.
 
-**Composable tests** (`unit` block): call the composable directly inside `withSetup` or `mount` a minimal host component. Test reactive state changes.
+**Component tests** (`test/component/`): use `@vue/test-utils` (`mount` / `shallowMount`). Assert on rendered output, emitted events, and slot content. Prefer `mount` over `shallowMount` unless child components are heavy or irrelevant.
+
+**Composable tests** (colocated, `unit`): call the composable directly inside `withSetup` or `mount` a minimal host component. Test reactive state changes.
 
 ```ts
-// Button.x.test.ts
-import { mount } from '@vue/test-utils'
-import Button from './Button.vue'
-
+// useAuth.x.test.ts (colocated, unit)
 describe('unit', () => {
-  // Pure logic used inside the component
+  // Pure logic used inside the composable
 })
+```
+
+```ts
+// test/component/Button.x.test.ts
+import { mount } from '@vue/test-utils'
+import Button from '@/components/Button.vue'
 
 describe('component', () => {
   it('emits click when not disabled', async () => {
@@ -181,13 +195,18 @@ describe('component', () => {
 ### 7.6 Test runner configuration
 
 - Vitest config lives in `vite.config.ts` (or `vitest.config.ts` if separated)
-- The glob pattern must match `.x.test.ts` / `.x.test.js` files:
+- The glob pattern must pick up both the colocated unit tests and the moved-out tiers:
   ```ts
   test: {
-    include: ['src/**/*.x.test.{ts,js}'],
+    include: [
+      'src/**/*.x.test.{ts,js}',
+      'test/**/*.x.test.{ts,js}',
+    ],
   }
   ```
-- E2E tests (Playwright) are **not** colocated — they live in `e2e/` or `tests/` at the project root and are not governed by this standard
+  (swap `test/` for `tests/` to match whichever spelling the repo picked, §7.2)
+- Confirm the alias (`$lib` / `@/`) used by files under `test/` is resolvable by the test runner, not just the app build — Vitest inherits Vite's `resolve.alias` when using the same config file, but a separate `vitest.config.ts` needs the alias declared explicitly.
+- E2E tests (Playwright) live in `test/e2e/` or `tests/e2e/` at the project root, same spelling as the rest of the tree — not a bare top-level `e2e/`
 
 ---
 

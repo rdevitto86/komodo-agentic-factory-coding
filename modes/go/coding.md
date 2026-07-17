@@ -44,35 +44,35 @@ Full Go testing standard — colocation, table-driven structure, mocking at inte
 
 ### 5.1 Test tiers
 
-All tiers coexist in the same colocated `_test.go` file. Tiers form a single ordered ladder, each one including every tier below it:
+Tiers form a single ordered ladder, each one including every tier below it:
 
 ```
 unit < component < integration < e2e < chaos
 ```
 
-The active tier is selected by one env var, `TEST_TIER`, read by `testutil` skip-helpers from the SDK. There is no per-tier boolean and no build tag.
+Each test file now belongs to exactly one tier — tier membership is determined by which folder the file lives in (§5.2), not by an in-file marker. `TEST_TIER` and the `testutil` skip-helpers still exist, but their job has narrowed: they no longer separate tiers within a file (folders do that), they control which folders a **default, unscoped `go test ./...` sweep** touches.
 
-- **unit is always-on** — the fast, hermetic default (pure logic). It carries no marker and runs on every invocation.
-- **component, integration, e2e, and chaos are opt-in.** Gate each with the matching `testutil` helper as the first line of the test body. Component uses in-process mocks (`httptest`, moxtox, mockgen); integration, e2e, and chaos touch real infrastructure or span services.
+- **unit is always-on** — the fast, hermetic default (pure logic), colocated with its source, runs on every invocation with no gate.
+- **component, integration, e2e, and chaos live in their own folders under `test/`** (§5.2). Running `go test ./test/integration/...` directly already scopes to that tier — no gate needed for a targeted run. The `testutil` helper still matters for `go test ./...`, which walks every package including `test/...`: without a gate, a bare `go test ./...` would attempt to spin up real infrastructure. Keep one gate call per test file, first line of the body, naming the tier the folder already implies:
 
 ```go
-func TestFoo_PureLogic(t *testing.T) {
-    // unit — always runs
-}
-
-func TestFoo_WithMocks(t *testing.T) {
+// test/component/order_service_test.go
+func TestOrderService_WithMocks(t *testing.T) {
     testutil.Component(t)
 }
 
-func TestFoo_WithRedis(t *testing.T) {
+// test/integration/order_test.go
+func TestOrder_WithPostgres(t *testing.T) {
     testutil.Integration(t)
 }
 
-func TestFoo_Contract(t *testing.T) {
+// test/e2e/checkout_test.go
+func TestCheckout_Contract(t *testing.T) {
     testutil.E2E(t)
 }
 
-func TestFoo_FaultInjection(t *testing.T) {
+// test/chaos/order_test.go
+func TestOrder_FaultInjection(t *testing.T) {
     testutil.Chaos(t)
 }
 ```
@@ -82,21 +82,35 @@ Selection is cumulative — setting a tier runs it and everything below it. `-sh
 | Invocation | Tiers that run | Stage |
 |------------|----------------|-------|
 | `go test -short ./...` | unit | quick inner loop |
-| `go test ./...` | unit | every commit |
+| `go test ./...` | unit (others self-skip via the gate) | every commit |
+| `go test ./test/component/...` | component only, ungated by choice of path | local/CI targeted run |
 | `TEST_TIER=component go test ./...` | unit + component | pre-push / PR |
 | `TEST_TIER=integration go test ./...` | … + integration | merge to main |
 | `TEST_TIER=e2e go test ./...` | … + e2e | release tags |
 | `TEST_TIER=chaos go test ./...` | … + chaos | release tags |
 
-**Identifying component tests.** Gate each component test with `testutil.Component(t)` as the first line of the body, and group them under the `// ── Component Tests ──` section banner (see §5.3). The marker is the source of truth for tier membership; the banner aids readability.
-
 The skip-helpers (`Component`, `Integration`, `E2E`, `Chaos`) live in the SDK `testutil` package — a single ordered comparison against `TEST_TIER`, not independent env vars. Do not redefine them per service.
 
 ### 5.2 File placement and naming
 
-- Tests are colocated with the file under test: `order_service_test.go` next to `order_service.go`.
-- Use the `_test` package (black-box) by default. Drop the `_test` suffix only when internal behavior genuinely must be tested.
-- Test binaries and fixtures live under `testdata/` (Go ignores this directory for builds).
+- **Unit tests stay colocated**: `order_service_test.go` next to `order_service.go`. Use the `_test` package (black-box) by default. Drop the `_test` suffix only when internal behavior genuinely must be tested.
+- **Component, integration, e2e, and chaos tests move to a top-level test root** — `test/` or `tests/`; pick one spelling per repo and stay consistent within it, neither spelling is canonical org-wide. One subfolder per tier:
+
+```
+test/
+├── component/
+├── integration/
+├── perf/
+├── chaos/
+└── e2e/
+```
+
+- **Flat by feature inside each tier folder** — do not mirror the source package tree. `test/integration/order_test.go`, not `test/integration/internal/order/service_test.go`. Name the file after the feature/domain under test, not the source file path.
+- Test binaries and fixtures live under `testdata/` (Go ignores this directory for builds); a `test/testdata/` (or `test/<tier>/testdata/`) works the same way for the moved-out tiers.
+
+**SDK-internal micro-benchmark exception.** `testing.B` benchmarks for SDK hot paths (sanitization, redaction, JWT, ratelimit — §5.6) sometimes need same-package access to unexported internals for allocation-level measurement. A black-box `test/perf/` file in package `foo_test` cannot reach those unexported symbols. Two options, in order of preference:
+1. Export a minimal test hook (a thin wrapper or exported constructor) so the benchmark can live black-box in `test/perf/` like everything else — preferred, keeps the layout uniform.
+2. If exporting a hook would leak internals into the public API surface for no reason beyond testing, keep that specific benchmark colocated as `<file>_bench_test.go` in the internal package, and note in the file (via `TODO.md`, not a comment) why it's an exception. If it needs to be visually separated from the unit tests in that file, use a plain single-line comment (e.g. `// Benchmarks`), not a banner — this is not a structural `Setup`/`Helpers` section. Treat this as a documented carve-out, not a default — most perf work still belongs in `test/perf/`.
 
 ### 5.3 Structure
 
@@ -106,7 +120,7 @@ The skip-helpers (`Component`, `Integration`, `E2E`, `Chaos`) live in the SDK `t
 - Call `t.Helper()` inside helpers so failure lines point to the caller.
 - Use `t.Cleanup(...)` for teardown; never rely on `defer` inside the test for shared resources.
 
-**Section banners** — unit, component, and integration tests live together in a single `_test.go` file, gated per §5.1, with each tier separated by a section banner. The exact banner format is defined in `~/.claude/standards/comments.md`; use it verbatim. Only include sections that are relevant — omit empty ones. E2E tests that span multiple services live in a top-level `e2e/` directory; colocated E2E tests use the `testutil.E2E(t)` helper.
+**Section banners** are reserved for `Setup` and `Helpers` only — not tiers (each file has exactly one tier by virtue of its folder or, for unit tests, its colocation with the source) and not any other label. Format is defined in `~/.claude/standards/comments.md`; use it verbatim. Only include sections that are relevant — omit empty ones. Any other section label is a plain comment, not a banner.
 
 ```go
 func TestOrderService_Cancel(t *testing.T) {
@@ -142,8 +156,8 @@ func TestOrderService_Cancel(t *testing.T) {
 
 ### 5.6 Benchmarks and load testing
 
-- `testing.B` benchmarks live alongside the code they measure: `order_service_bench_test.go` or in the same `_test.go`. Use for SDK hot paths (sanitization, redaction, JWT, ratelimit) where allocation counts and µs-level latency matter.
-- For HTTP-serving components (moxtox/server, API endpoints), use k6 load tests — not `testing.B`.
+- `testing.B` benchmarks live in `test/perf/`, flat by feature (`test/perf/order_bench_test.go`), black-box (`package foo_test`) by default. Use for SDK hot paths (sanitization, redaction, JWT, ratelimit) where allocation counts and µs-level latency matter. See §5.2 for the documented exception when a benchmark genuinely needs unexported access.
+- For HTTP-serving components (moxtox/server, API endpoints), use k6 load tests under `test/perf/` — not `testing.B`.
 - Benchmark only on stable critical paths; speculative benchmarks rot.
 - Compare with `benchstat` against a baseline before claiming a performance change.
 
@@ -155,13 +169,13 @@ func TestOrderService_Cancel(t *testing.T) {
 
 ### 5.8 Contract and E2E
 
-- E2E flows that span services live under a top-level `e2e/` directory at the repo root and are not governed by colocation rules. Mark them with `testutil.E2E(t)`.
-- Use `pact-go` for consumer-driven contract tests. Exchange via file-based pacts — no Pact Broker required. Mark contract tests with `testutil.E2E(t)`; they run on release tags.
+- E2E flows that span services live under `test/e2e/` (or `tests/e2e/`), flat by feature, not under a bare top-level `e2e/`. Mark them with `testutil.E2E(t)`.
+- Use `pact-go` for consumer-driven contract tests, also under `test/e2e/`. Exchange via file-based pacts — no Pact Broker required. Mark contract tests with `testutil.E2E(t)`; they run on release tags.
 
 ### 5.9 Chaos and resilience
 
 - Use Toxiproxy (`github.com/shopify/toxiproxy/v2`) for fault injection tests: latency, jitter, connection drops.
-- Spin Toxiproxy via testcontainers-go; wrap the Go client in a `testing/chaos` package.
+- Spin Toxiproxy via testcontainers-go; place chaos tests flat by feature under `test/chaos/` (the Go client wrapper itself can live in an internal `testing/chaos` helper package, imported by files under `test/chaos/`).
 - Mark chaos tests with `testutil.Chaos(t)`; they run on release tags only.
 
 ---

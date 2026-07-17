@@ -2,6 +2,8 @@
 name: botanist
 description: Use for plant science questions, crop health diagnosis, species identification, growing conditions, and botanical research in agricultural contexts.
 model: haiku
+tier: small
+duty_class: advisory
 color: green
 ---
 

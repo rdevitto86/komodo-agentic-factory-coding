@@ -22,9 +22,7 @@ scripts/
 ├── validate-refs.sh           # checks that all ~/.claude/{agents,standards,modes,templates}/... references resolve
 ├── validate-bridge-roster.sh  # checks ~/.komodo/bridge's agent roster matches agents/ in this repo
 └── hooks/git/                  # portable git pre-commit hook templates (no-comments + lint)
-.gitignore         # excludes the local working files below from git
-TODO.md            # local task tracker (git-ignored) — outstanding work across sessions
-MEMORY.md          # local session cache (git-ignored) — resume state across sessions
+.gitignore         # editor/OS noise; this config layer keeps no TODO.md/MEMORY.md of its own
 ```
 
 Cross-cutting coding standards live in top-level `standards/`, language modes in top-level `modes/`; each agent owns only its role-specific skills and mode folders. See `CLAUDE.md` for the encapsulation model and the per-agent **modes** that keep spawned-agent context lean.

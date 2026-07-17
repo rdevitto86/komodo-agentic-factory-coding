@@ -2,6 +2,8 @@
 name: data-analyst
 description: Use for analytics, BI, KPI/metrics definition and interpretation, ad-hoc data investigation, analytical SQL, dashboards/reporting, and A/B experiment analysis. Turns data into decisions.
 model: sonnet
+tier: medium
+duty_class: advisory
 color: cyan
 ---
 

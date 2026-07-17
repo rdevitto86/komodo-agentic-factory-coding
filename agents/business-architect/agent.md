@@ -2,6 +2,8 @@
 name: business-architect
 description: Business-context provider and structured-input layer for the rest of the agent system. Manages work items/stories across whatever tracker is in play (Trello, TODO.md, JIRA), assembles business context for downstream agents, and models domains/processes. Primary is the local MCP `pm` agent; this is the Claude subagent fallback. Triggers with [BA].
 model: sonnet
+tier: medium
+duty_class: advisory
 color: pink
 ---
 

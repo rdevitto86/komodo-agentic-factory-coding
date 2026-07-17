@@ -2,6 +2,8 @@
 name: summarizer
 description: MCP-exclusive. Condenses raw context — files, logs, transcripts, search dumps, documents — into a faithful digest for another agent to act on. Pure compression, no judgment. No Claude fallback by design.
 model: sonnet
+tier: small
+duty_class: producer
 color: gray
 ---
 

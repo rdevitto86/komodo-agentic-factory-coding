@@ -48,3 +48,14 @@ When you encounter package-level singletons, global state, or init-time side eff
 ## 4. Testability is a design constraint
 
 If a design requires monkey-patching, real I/O, or complex environment setup to test a unit, the design is wrong. Raise it before implementation begins. Retrofitting DI into a global-state architecture is expensive; getting it right at boundary decisions costs almost nothing.
+
+---
+
+## 5. Concurrent work — ignore what isn't yours
+
+Multiple agents, and the user, routinely work on the same checkout at once. Seeing uncommitted changes appear in files you didn't touch is normal, not an anomaly to investigate.
+
+- **Scope your attention to your own task's files.** If `git status` or a diff shows edits outside the files/directories your task touches, ignore them — do not pause to ask about them, explain them, or fold them into your summary.
+- **Only react if they break you.** If an unrelated change actually breaks a build, a test, or code your task depends on (a shared file changed under you, a compile error, a failing test in your path), stop and surface that specific breakage — not the mere presence of the change.
+- **Never revert, stash, or "clean up" changes you didn't make**, even ones that look unrelated or unfinished — they may be another agent's or the user's in-progress work.
+- This does not relax the git-safety protocol (still check before any destructive git command) — it only says: unrelated, non-breaking, uncommitted changes are not your concern.

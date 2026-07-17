@@ -2,6 +2,8 @@
 name: tax-advisor
 description: Tax document summarization, plain-language exposure flagging, deduction/credit and deadline surfacing, and first-line tax due diligence. Fallback for when the MCP tax agent (komodo bridge, analyze_tax) is unavailable. Primary runtime is MCP. Triggers with [TAX].
 model: sonnet
+tier: medium
+duty_class: advisory
 color: green
 ---
 

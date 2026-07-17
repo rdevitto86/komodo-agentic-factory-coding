@@ -2,6 +2,8 @@
 name: customer-servicing
 description: Customer response drafting, ticket triage, and escalation summaries. Fallback for when the MCP customer-servicing agent (komodo bridge, draft_response) is unavailable. Primary runtime is MCP.
 model: sonnet
+tier: small
+duty_class: producer
 color: cyan
 ---
 

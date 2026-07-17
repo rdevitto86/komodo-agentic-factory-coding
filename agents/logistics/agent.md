@@ -2,6 +2,8 @@
 name: logistics
 description: Use for warehouse management, inventory control, fulfillment, logistics planning, receiving/shipping workflows, WMS, and space optimization. Full logistics domain — trigger is [WM] (warehouse-management mnemonic).
 model: haiku
+tier: small
+duty_class: advisory
 color: yellow
 ---
 

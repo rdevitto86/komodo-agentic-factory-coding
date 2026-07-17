@@ -2,6 +2,8 @@
 name: hardware-engineer
 description: Use for hardware engineering end to end — circuit design, schematic review, BOM, PCB layout, 3D/CAD modeling and CAM (DFM for print/CNC), and robotics integration including the robotics software side (firmware, RTOS control loops, ROS 2 nodes). Triggers with [HWE].
 model: sonnet
+tier: large
+duty_class: producer
 color: yellow
 ---
 

@@ -27,9 +27,7 @@ fi
 
 do_run mkdir -p "$CLAUDE_DIR"
 
-# Remove stale symlinks from superseded layouts. Skills/docs were folded into
-# agent folders; "skills" and "docs" no longer exist as top-level link targets.
-for stale in skills docs; do
+for stale in docs; do
   link="$CLAUDE_DIR/$stale"
   if [ -L "$link" ] && [[ "$(readlink "$link")" == "$REPO_DIR"/* ]]; then
     echo "  $stale — removing stale symlink from old layout"
@@ -41,10 +39,11 @@ done
 # once its live counterpart is already a correct symlink into this repo — the
 # original file has been superseded. Runs before the link loop so a .bak created
 # this run (the user's only copy of a pre-existing file) is never touched.
-for name in "${LINK_DIRS[@]}" settings.json hooks AGENTS.md CLAUDE.md; do
+for name in "${LINK_DIRS[@]}" settings.json hooks skills AGENTS.md CLAUDE.md; do
   src="$REPO_DIR/$name"
   [ "$name" = "settings.json" ] && src="$REPO_DIR/platforms/claude/settings.json"
   [ "$name" = "hooks" ] && src="$REPO_DIR/platforms/claude/hooks"
+  [ "$name" = "skills" ] && src="$REPO_DIR/platforms/claude/skills"
   [ "$name" = "AGENTS.md" ] && src="$REPO_DIR/profile/AGENTS.md"
   [ "$name" = "CLAUDE.md" ] && src="$REPO_DIR/profile/CLAUDE.md"
   bak="$CLAUDE_DIR/$name.bak"
@@ -106,6 +105,7 @@ done
 # but Claude Code only loads them from ~/.claude/settings.json and ~/.claude/hooks/.
 link_one "$REPO_DIR/platforms/claude/settings.json" "settings.json"
 link_one "$REPO_DIR/platforms/claude/hooks" "hooks"
+link_one "$REPO_DIR/platforms/claude/skills" "skills"
 link_one "$REPO_DIR/profile/AGENTS.md" "AGENTS.md"
 link_one "$REPO_DIR/profile/CLAUDE.md" "CLAUDE.md"
 
@@ -127,6 +127,12 @@ if bash "$REPO_DIR/scripts/validate-bridge-roster.sh"; then
   echo "Bridge roster validation passed."
 else
   echo "WARNING: bridge roster drift found (see above). Fix them before the next session."
+fi
+
+if bash "$REPO_DIR/scripts/doctor.sh"; then
+  echo "Doctor passed — all ~/.claude links resolve."
+else
+  echo "WARNING: dangling ~/.claude links found (see above). Fix them before the next session."
 fi
 
 echo ""

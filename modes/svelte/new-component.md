@@ -68,16 +68,12 @@ Create `src/lib/components/<category>/<Name>.svelte`.
 
 ## Test stub
 
-Unless `--no-test`, create `src/lib/components/<category>/<Name>.x.test.ts` — colocated next to the component, per `~/.claude/modes/ts/coding.md`.
+Unless `--no-test`, create `test/component/<Name>.x.test.ts` (or `tests/component/<Name>.x.test.ts`, whichever the repo uses) — flat by feature, importing the component via the `$lib` alias, per `~/.claude/modes/ts/coding.md §7`.
 
 ```typescript
 import { render, screen } from '@testing-library/svelte';
 import { describe, it, expect } from 'vitest';
-import <Name> from './<Name>.svelte';
-
-describe('unit', () => {
-  // Pure helpers used by <Name>, if any
-});
+import <Name> from '$lib/components/<category>/<Name>.svelte';
 
 describe('component', () => {
   it('renders without crashing', () => {
@@ -89,7 +85,7 @@ describe('component', () => {
 });
 ```
 
-Omit the `unit` describe block if the component has no pure logic to cover.
+If `<Name>` has pure helper logic worth covering in isolation, colocate a unit test at `src/lib/components/<category>/<Name>.x.test.ts` per `~/.claude/modes/ts/coding.md §7`.
 
 ---
 

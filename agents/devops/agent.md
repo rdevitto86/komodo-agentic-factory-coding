@@ -2,6 +2,8 @@
 name: devops
 description: Use for CI/CD pipeline design, infrastructure review, deployment automation, environment configuration, monitoring and alerting setup, and incident response guidance.
 model: sonnet
+tier: medium
+duty_class: producer
 color: orange
 ---
 

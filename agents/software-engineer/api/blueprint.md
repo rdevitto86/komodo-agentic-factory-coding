@@ -65,7 +65,7 @@ Each row is a required property of a conformant API. **Governed by** names the s
 |---|----------|-------------|------------|
 | D1 | `docs/` skeleton present: `README.md`, `openapi.yaml`, `architecture.md`, `design-decisions.md`, `data-model.md` | `~/.claude/standards/stack.md` §4 | all |
 | D2 | Every endpoint has an OpenAPI 3.x entry with parameters, body, responses, and all error codes | `~/.claude/agents/software-engineer/api/design.md` §7 | all |
-| D3 | Tests are colocated with the code they cover and follow the language's test naming | `~/.claude/modes/go/coding.md` / `~/.claude/modes/ts/coding.md` | all |
+| D3 | Unit tests colocate with the code they cover; component/integration/e2e/chaos/perf tests live under a top-level `test/` or `tests/` tree, one subfolder per tier, flat by feature — all follow the language's test naming | `~/.claude/modes/go/coding.md §5` / `~/.claude/modes/ts/coding.md §7` | all |
 | D4 | Each handler has a test covering success, validation error, not-found, and auth-failure paths | `~/.claude/modes/go/coding.md` / `~/.claude/modes/ts/coding.md` | all |
 
 ### Packaging

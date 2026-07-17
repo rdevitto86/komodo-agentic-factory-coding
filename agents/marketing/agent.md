@@ -2,6 +2,8 @@
 name: marketing
 description: Campaign strategy, copywriting, brand messaging, and sales-content/proposal drafting. Fallback for when the MCP marketing agent (komodo bridge, create_content) is unavailable. Primary runtime is MCP.
 model: sonnet
+tier: medium
+duty_class: producer
 color: orange
 ---
 

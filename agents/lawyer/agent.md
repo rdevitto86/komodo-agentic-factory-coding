@@ -2,6 +2,8 @@
 name: lawyer
 description: Contract and legal document summarization, plain-language risk flagging, redlining, and first-line due diligence. Fallback for when the MCP lawyer agent (komodo bridge, review_document) is unavailable. Primary runtime is MCP.
 model: sonnet
+tier: medium
+duty_class: advisory
 color: blue
 ---
 

@@ -28,13 +28,13 @@ If you find yourself reaching for a comment, that's a signal the name or the str
 
 ## Test-file section banner
 
-Structural dividers only — a short section label, never prose. Form: `// ── <Label> ── …`. `<Label>` names a section: a test tier (`Unit Tests`, `Component Tests`, `Integration Tests`), or a support section (`Setup`, `Helpers`, `Fake: <Type>`), optionally qualified by the subject under test. It labels a section; it must not explain code or carry a "why".
+Reserved for exactly two structural sections, never prose. Form: `// ── <Label> ── …`, and `<Label>` is `Setup` or `Helpers` — nothing else gets the heavy banner treatment. Test tiers (unit, component, integration, e2e, perf, chaos) live in separate files/folders (a top-level `test/`/`tests/` tree, one subfolder per tier — see `~/.claude/modes/go/coding.md` §5.2 and `~/.claude/modes/ts/coding.md` §7.2) or, for unit tests, colocated with the source; either way a single file holds one tier, so banners are never used to separate tiers within a file.
 
 ```
-// ── Unit Tests ──────────────────────────────────────────────────────────
-// ── Component Tests: OAuthTokenHandler ───────────────────────────────────
-// ── Integration Tests ───────────────────────────────────────────────────
 // ── Setup ────────────────────────────────────────────────────────────────
 // ── Helpers ─────────────────────────────────────────────────────────────
-// ── Fake: CacheClientCallers ─────────────────────────────────────────────
 ```
+
+Any other section label — naming a fake/mock block, grouping a cluster of tests by subject — is a plain single-line comment, not a banner: `// Fake: CacheClientCallers` or `// OAuthTokenHandler`, no box-drawing. Use one only when the folder or file name doesn't already make the grouping obvious; don't over-index on labeling sections that are already implied by where the file lives.
+
+**Placement of helpers/setup.** Keep helper functions and setup/fixture code in the test file that uses them — don't split them into a separate file just to hold them. One `Setup`/`Helpers` section near the top (or bottom) of the file holds everything shared across tests in that file. Only break helpers/setup into their own file (a `_test_helpers`/`suite` file) when the volume genuinely warrants it — many shared fixtures reused across multiple test files in the package — not as a default.

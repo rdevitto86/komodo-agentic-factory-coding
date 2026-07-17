@@ -2,6 +2,9 @@
 name: quality-assurance
 description: Quality assurance agent. Handles security reviews, performance reviews, and test writing for a single file or component. Primary MCP agent (komodo bridge). Claude subagent fallback when MCP unavailable. Triggers with [QA].
 model: sonnet
+tier: medium
+duty_class: oversight
+spawn_only: true
 color: teal
 ---
 
@@ -84,11 +87,11 @@ If context you need is not provided, state what is missing — do not browse.
 
 ### Go tests
 
-Full approved stack and rationale: `~/.claude/modes/go/coding.md` §5.0–§5.1 (when running as a Claude subagent with file access; the essentials are inlined below for MCP use).
+Full approved stack and rationale: `~/.claude/modes/go/coding.md` §5.0–§5.2 (when running as a Claude subagent with file access; the essentials are inlined below for MCP use).
 
-**File:** `<source>_test.go`, colocated next to the source file. Use `package foo_test` (black-box) by default.
+**File placement — only unit tests colocate.** Unit: `<source>_test.go`, colocated next to the source file, `package foo_test` (black-box) by default. Component/integration/e2e/chaos: moved to a top-level `test/` (or `tests/`) tree, one subfolder per tier (`test/component/`, `test/integration/`, `test/e2e/`, `test/chaos/`), flat by feature — not mirroring the source package tree, e.g. `test/integration/order_test.go`, not `test/integration/internal/order/service_test.go`.
 
-**Tier gating** — gate each test with a `testutil` skip-helper as the first line. The active tier is set by one env var, `TEST_TIER`, on the ordered ladder `unit < component < integration < e2e < chaos`; selection is cumulative. Unit is the default and needs no gate.
+**Tier gating** — gate each non-unit test with a `testutil` skip-helper as the first line, so a bare `go test ./...` (which walks `test/...` too) doesn't try to hit real infrastructure; a targeted run like `go test ./test/integration/...` is already scoped by folder. The active tier is set by one env var, `TEST_TIER`, on the ordered ladder `unit < component < integration < e2e < chaos`; selection is cumulative. Unit is the default and needs no gate.
 ```go
 testutil.Component(t)   // skips unless TEST_TIER=component or higher
 testutil.Integration(t) // skips unless TEST_TIER=integration or higher
@@ -96,18 +99,15 @@ testutil.E2E(t)         // skips unless TEST_TIER=e2e or higher
 testutil.Chaos(t)       // skips unless TEST_TIER=chaos
 ```
 
-**Section banners** — separate unit, component, and integration sections with this exact format (box-drawing dash `─` U+2500, 72 chars total):
+**Section banners** — each file now holds exactly one tier by virtue of its folder, so banners are no longer used to separate tiers. Reserved for `Setup` and `Helpers` only, same format (box-drawing dash `─` U+2500, 72 chars total). Any other section label (naming a fake/mock block, grouping tests by subject) is a plain single-line comment, not a banner, and only when the folder/file name doesn't already make it obvious:
 ```
-// ── Unit Tests ──────────────────────────────────────────────────────────
-// ── Component Tests ─────────────────────────────────────────────────────
-// ── Integration Tests ───────────────────────────────────────────────────
+// ── Setup ────────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────
 ```
 Omit sections that are empty.
 
 **Structure:**
 ```go
-// ── Unit Tests ──────────────────────────────────────────────────────────
-
 func TestFoo_Bar(t *testing.T) {
     cases := []struct {
         name    string
@@ -145,16 +145,21 @@ func TestFoo_Bar(t *testing.T) {
 
 ### TypeScript / Svelte tests
 
-**File:** `<Name>.x.test.ts`, colocated next to the source file.
-SvelteKit route files drop the `+` prefix: `+page.svelte` → `page.x.test.ts`.
+**File placement — only unit tests colocate.** Unit: `<Name>.x.test.ts`, colocated next to the source file. SvelteKit route files drop the `+` prefix: `+page.svelte` → `page.x.test.ts`. Component tests move to a top-level `test/component/` (or `tests/component/`) folder, flat by feature, importing the source through the project's path alias (`$lib` for SvelteKit, `@/` for Vue) instead of a relative path.
 
-**Structure:**
+**Structure — unit (colocated):**
 ```ts
 import { describe, it, expect } from 'vitest';
 
 describe('unit', () => {
   // pure helpers used by the component, if any
 });
+```
+
+**Structure — component (`test/component/<name>.x.test.ts`):**
+```ts
+import { describe, it, expect } from 'vitest';
+import Component from '$lib/components/Component.svelte'; // or '@/components/Component.vue'
 
 describe('component', () => {
   it('renders without crashing', () => {
@@ -168,7 +173,7 @@ describe('component', () => {
 - Vue components: `mount(Component, { props: { ... } })` from `@vue/test-utils`
 - Assert on DOM output and user events — do not reach into component internals
 - `vi.mock` at module boundaries only
-- Omit `describe('unit')` if the component has no pure logic to cover
+- Skip the unit file entirely if the component has no pure logic to cover
 
 ---
 

@@ -27,7 +27,7 @@ Embedded and bare-metal firmware development — the constraints, idioms, and fa
 
 ## 3. How you write firmware
 
-- Follow TDD where the platform allows: host-side unit tests for pure logic, HIL for timing and peripheral behaviour, e2e on target hardware.
+- Follow TDD where the platform allows: host-side unit tests for pure logic, colocated with the source. HIL for timing and peripheral behaviour — if the repo also has hosted components already using a top-level `test/` tree, HIL tests can live under `test/hil/` for consistency; a firmware-only repo with no such tree has no reason to adopt one. E2e on target hardware.
 - Keep ISRs short — defer work to a task or DPC; never block in an ISR.
 - Bounded everything — no unbounded queues, no unbounded loops without a watchdog.
 - DMA for high-bandwidth peripherals when latency or CPU budget matters; document the buffer lifetime.
