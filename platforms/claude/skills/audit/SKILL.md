@@ -14,7 +14,9 @@ The brief states the app's purpose, its target state, and the decision to render
 
 - Re-derive everything from the code as it is now. No prior run, score, or ledger carries forward.
 - Review the code as-is. Do not assume it needs changes.
+- Run the repo's own stated gate (build, vet, test, lint) before static review. A red gate is itself evidence, and any claim about build/test status — including from prior audit rounds — is re-verified by execution, not by reading.
 - Before auditing, load `TODO.md` at the repo root and in relevant subdirectories — it is the planned-work docket. A finding that matches a docket item is tagged `[tracked]` and keeps its tier; it is known work, not a new discovery. Tracking never clears the bar: a tracked Blocker still blocks.
+- Also load ADRs and decision logs. Designs recorded there as accepted or rejected are settled — do not resurface them as findings.
 - Every finding carries `file:line` evidence. No pointer, no finding.
 - Report only findings you hold at Medium confidence or higher. A Blocker requires High confidence; if evidence is incomplete, state exactly what would confirm it and keep it out of the verdict.
 - Prerequisites outside this repo's control (DNS, certs, account provisioning, deploy roles, sibling services) never move the verdict. List them once under **External prerequisites**.
@@ -52,5 +54,5 @@ Missing business logic, features, or improvement ideas are welcome — file them
 1. **Verdict** — one line answering the brief's decision, plus the single deciding reason.
 2. **Blockers** — the finite list that must clear to change the verdict (empty if none). Each: what it is, `file:line`, and which of the four bar clauses it meets.
 3. **Findings** — every non-blocking item, tiered **High / Medium / Low** severity, sorted by confidence within tier. One line each: `[Sev/Conf] what — file:line — why it matters`, with `[tracked]` appended when it matches a TODO.md item.
-4. **Docket deltas** — new findings worth adding to TODO.md (one line each, ready to paste), and TODO.md items the code shows are already done.
+4. **Docket updates** — applied to TODO.md directly, not pasted for the user: merge new findings in place continuing the docket's existing numbering/phase scheme, and close items the code shows are already done with a dated annotation. Report the list of changes made.
 5. **External prerequisites** — outside-repo launch needs, not counted in the verdict.
