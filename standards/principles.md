@@ -16,6 +16,7 @@ These are invariants. Treat as non-negotiable.
   - Good: `"failed to read user credentials: %w"`, `"failed to store OTP: %w"`, `"failed to look up OTP: %w"`, `"max OTP attempts exceeded"`
   - The same rule applies to logger message strings: `logger.Error("otp: ...")` and `logger.Error("cache get failed")` are both wrong forms — write `logger.Error("failed to look up OTP", ...)` and pass the error as a structured attribute.
 - **All comments follow `~/.claude/standards/comments.md` exactly.** It is the single source of truth for comment rules across every language and file — zero comments, including function docs, with no exceptions. Do not restate comment rules or show comment examples here or in any other file.
+- **Never resolve a conflict or capability gap by unverified judgment call.** Before concluding a library, SDK, or system "doesn't support X," verify against the actual source or docs — do not rely on recall. If verification still leaves you without what you need, stop and escalate (agent → advisor → user) before implementing a workaround. Full rule, including the escalation path and SDK-gap handling: `~/.claude/standards/assumptions.md`.
 
 ---
 
@@ -23,7 +24,7 @@ These are invariants. Treat as non-negotiable.
 
 Before writing any non-trivial logic, check in this order:
 
-1. **`komodo-forge-sdk-*` first** — `komodo-forge-sdk-go` / `komodo-forge-sdk-ts`. If the SDK covers it, use it. Do not reimplement SDK functionality. Flag SDK gaps so they can be filled upstream.
+1. **`komodo-forge-sdk-*` first** — `komodo-forge-sdk-go` / `komodo-forge-sdk-ts`. If the SDK covers it, use it. Do not reimplement SDK functionality. A claimed gap must be verified against the SDK's actual source/docs before it's treated as real (`assumptions.md`); once confirmed, flag it so it can be filled upstream instead of quietly working around it.
 2. **Well-vetted open-source library second** — if the SDK doesn't cover it, a proven library beats custom code. Prefer broad adoption, active maintenance, clear licensing.
 3. **Custom code last** — only when neither the SDK nor a suitable library exists. If new custom code is general-purpose, surface it as a candidate for SDK extraction.
 

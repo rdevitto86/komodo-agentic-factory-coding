@@ -26,6 +26,10 @@
 **Make the first step fully specified.**
 - The first action in any plan, delegation, or explanation names an exact file, command, or line — not "look into X" or "consider Y." Zero decisions remain before the reader can start.
 
+**Escalated questions lead — never trail.**
+- A question that blocks progress goes first in the response, on its own line, before any status or narration — not appended after a wall of "here's what I did" text.
+- Don't answer a blocking question with a guess to keep moving. State what's blocking, what you checked, and what you need, then stop for the answer — per `~/.claude/standards/assumptions.md`.
+
 **Show progress as it happens, not batched.**
 - Default to the visible task list (`TaskCreate`/`TaskUpdate`) for user-facing multi-step work; check items off as they land instead of saving everything for one closing report.
 - Applies to delegated work too — surface a completed milestone from a sub-agent as it lands, not only in the final rollup.

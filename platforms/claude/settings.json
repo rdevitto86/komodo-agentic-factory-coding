@@ -72,6 +72,7 @@
       "Bash(git merge*)"
     ]
   },
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -115,6 +116,5 @@
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "theme": "light",
-  "agentPushNotifEnabled": true,
-  "model": "sonnet"
+  "agentPushNotifEnabled": true
 }

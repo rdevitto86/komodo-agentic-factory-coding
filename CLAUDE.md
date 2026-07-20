@@ -45,23 +45,25 @@ Spawned via the `Agent` tool. Defined in `agents/<agent>/agent.md`.
 
 **Default: the `advisor` agent is the entry point for everything.** It is the consigliere and orchestrator — gathers context (user → MCP agents → Claude agents), delegates work autonomously, passes the right modes on each spawn, and insulates the user from operational noise. It also carries an **edit leash**: small/low-risk/SKIP-tier work (a README tweak, a config change, a one-file edit) it implements inline, no spawn; large or high-stakes work still gets a tiered spawn or a separate oversight profile. Full dispatch logic: `agents/advisor/agent.md` § Duty classes and dispatch decision flow.
 
-| Trigger | Agent | Model | Primary runtime | Fallback | Role |
-|---------|-------|-------|-----------------|----------|------|
-| `[ADV]` | `advisor` | sonnet | Claude Sonnet | — | **Default.** Consigliere/orchestrator (full role: its own `agent.md`). |
-| `[BA]` | `business-architect` | sonnet | MCP `pm` (`analyze_specs`) | Claude Sonnet | Business-context assembly and work-item/story management — structured-input layer under `advisor`'s cross-domain strategy (full role: its own `agent.md`). |
-| `[SWE]` | `software-engineer` | sonnet | Claude Sonnet | — | All software implementation and design (full role: its own `agent.md`). **All coding routes here except robotics.** |
-| `[QA]` | `quality-assurance` | sonnet | Claude Sonnet | — | Security review, performance review, test writing. |
-| `[OPS]` | `devops` | sonnet | Claude Sonnet | — | CI/CD, infrastructure, deployments, monitoring, incident response (full role: its own `agent.md`). **Delegates IaC authoring to `software-engineer`.** |
-| `[DATA]` | `data-analyst` | sonnet | Claude Sonnet | — | Analytics, BI, metrics, dashboards, experiment analysis (full role: its own `agent.md`). **Consumes data; does not author pipelines, ETL, schema, or migrations — that routes to `software-engineer`.** |
-| `[HWE]` | `hardware-engineer` | sonnet | Claude Sonnet | — | Hardware end to end incl. robotics software (full role: its own `agent.md`). |
-| `[BOT]` | `botanist` | haiku | Claude Haiku | — | Crop health, plant science, agricultural diagnosis. |
-| `[WM]` | `logistics` | haiku | Claude Haiku | — | Warehouse management, inventory, fulfillment, logistics planning, WMS. Trigger is `[WM]` (warehouse-management mnemonic) — agent name is `logistics` but scope is the full logistics domain. |
-| — | `lawyer` | sonnet | MCP `lawyer` (`review_document`) | Claude Sonnet | Contract review, compliance, legal research. Not legal advice. |
-| — | `customer-servicing` | sonnet | MCP `customer-servicing` (`draft_response`) | Claude Sonnet | Customer response drafting, ticket triage, escalation summaries. |
-| `[SEC]` | `cyber-security` | sonnet | Claude Sonnet | — | Offensive + defensive security (full role: its own `agent.md`). **Dev-time security stays with `software-engineer`; per-file review stays with `qa`.** |
-| — | `marketing` | sonnet | MCP `marketing` (`create_content`) | Claude Sonnet | Campaign strategy, copywriting, brand messaging, and sales-content/proposal drafting (supplementing, not replacing, real sellers). |
-| `[TAX]` | `tax-advisor` | sonnet | MCP `tax` (`analyze_tax`) | Claude Sonnet | Tax document summarization and first-line due diligence (full role: its own `agent.md`). **Not tax advice — escalate to a CPA.** |
-| — | `summarizer` | — | MCP `summarizer` (`summarize`) | none | **MCP-exclusive**, no judgment. Condenses raw context into a faithful digest before an expensive handoff. No Claude fallback by design; if the bridge is down, the caller summarizes inline. |
+Every agent's own description is auto-injected into each session by the runtime. This table carries only what that listing lacks — trigger prefix, model, runtime routing, and the routing constraints below. Full role: each agent's own `agent.md`.
+
+| Trigger | Agent | Model | Primary runtime | Fallback | Routing constraint |
+|---------|-------|-------|-----------------|----------|--------------------|
+| `[ADV]` | `advisor` | sonnet | Claude Sonnet | — | **Default entry point for everything.** |
+| `[BA]` | `business-architect` | sonnet | MCP `pm` (`analyze_specs`) | Claude Sonnet | Structured-input layer under `advisor`'s cross-domain strategy. |
+| `[SWE]` | `software-engineer` | sonnet | Claude Sonnet | — | **All coding routes here except robotics.** |
+| `[QA]` | `quality-assurance` | sonnet | Claude Sonnet | — | Per-file/per-component review only. |
+| `[OPS]` | `devops` | sonnet | Claude Sonnet | — | **Delegates IaC authoring to `software-engineer`.** |
+| `[DATA]` | `data-analyst` | sonnet | Claude Sonnet | — | **Consumes data; never authors pipelines, ETL, schema, or migrations — those route to `software-engineer`.** |
+| `[HWE]` | `hardware-engineer` | sonnet | Claude Sonnet | — | Owns the robotics software side too, not just hardware. |
+| `[BOT]` | `botanist` | haiku | Claude Haiku | — | — |
+| `[WM]` | `logistics` | haiku | Claude Haiku | — | Name is `logistics`; scope is the full logistics domain. |
+| — | `lawyer` | sonnet | MCP `lawyer` (`review_document`) | Claude Sonnet | **Not legal advice.** |
+| — | `customer-servicing` | sonnet | MCP `customer-servicing` (`draft_response`) | Claude Sonnet | — |
+| `[SEC]` | `cyber-security` | sonnet | Claude Sonnet | — | **Dev-time security stays with `software-engineer`; per-file review stays with `qa`.** |
+| — | `marketing` | sonnet | MCP `marketing` (`create_content`) | Claude Sonnet | Supplements real sellers, never replaces them. |
+| `[TAX]` | `tax-advisor` | sonnet | MCP `tax` (`analyze_tax`) | Claude Sonnet | **Not tax advice — escalate to a CPA.** |
+| — | `summarizer` | — | MCP `summarizer` (`summarize`) | none | **MCP-exclusive, no judgment.** Never route analysis or decisions to it. |
 
 **Runtime rule:** Claude Sonnet is the universal fallback — if MCP is unreachable, always fall back to the Claude Sonnet subagent. The advisor honors this table at dispatch and never skips MCP for agents where it is the primary runtime. The one exception is `summarizer`, which is MCP-exclusive by design (spending Claude tokens to compress context defeats its purpose); when the bridge is down, the caller summarizes inline rather than spawning a subagent.
 

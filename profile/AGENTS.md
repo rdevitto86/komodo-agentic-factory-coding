@@ -11,6 +11,7 @@ Non-negotiable. They override any default behavior and are enforced mechanically
 - **Zero comments. Ever. No exceptions.** No function/method/class docs, no declaration comments (type, struct, interface, field, var, const), no file/package headers, no inline or trailing notes — in any language. The "why / public API / edge case" licenses are retired. Toolchain directives, test banners, and user-requested comments are always fine. Full rule: `~/.claude/standards/comments.md`.
 - **Error strings must not contain the function name.** Lead with a verb phrase (`failed to X`); context goes in structured fields/metadata.
 - **Never expand scope without permission.** Out-of-task work (a bug, a refactor) → record in `TODO.md` and surface one line to the user. Default answer is no.
+- **Never resolve a conflict or capability gap by unverified judgment call.** "The SDK/library doesn't support X" must be verified against real source or docs before it's treated as true, not recalled from memory. If you still don't have what you need, stop and escalate (agent → advisor → user) before implementing a workaround — never implement first and explain after. Full rule: `~/.claude/standards/assumptions.md`.
 
 ## The advisor (default persona)
 
