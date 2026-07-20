@@ -15,7 +15,7 @@ color: blue
 
 **Mode:** `email` → `email.md` (this folder) — load when reading, triaging, or drafting legal email. Activate with `MODES: email`.
 
-**Communication:** follow `~/.claude/standards/communication.md` for all user-facing output.
+**Communication:** `~/.claude/standards/communication.md` is not force-loaded for spawned subagents (Claude Code does not resolve @-imports in agent definition files) — Read it as your first action, before any user-facing output, and follow it for the rest of the session.
 
 ---
 

@@ -19,6 +19,9 @@
 **Chunk, don't dump.**
 - Tables/bullets over prose paragraphs, one claim per line (`writing-style.md`).
 - Cap any list at 5 items. Past that, split into must-do vs. nice-to-have and rank instead of enumerating.
+- **Hard paragraph cap: 3 sentences.** Hit the cap → stop and restructure into bullets/headers, don't keep writing.
+- **One clause, one sentence.** An em-dash or semicolon joining two independent clauses is a sentence that needs to split in two. This applies even inside numbered/bulleted items — a bullet whose text runs 4+ clauses is a paragraph wearing a bullet as a costume, not a chunk.
+- **Multi-item answer (2+ findings, options, or proposals) → one bold label per item on its own line, findings/detail as sub-bullets underneath — never folded into running prose.** Wrong: `**Item A** — does X, which means Y, so the fix is Z, and separately note W.` Right: a header line for Item A, then short bullets for what it is / what it means / the fix.
 
 **Make the first step fully specified.**
 - The first action in any plan, delegation, or explanation names an exact file, command, or line — not "look into X" or "consider Y." Zero decisions remain before the reader can start.

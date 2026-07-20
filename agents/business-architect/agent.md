@@ -11,7 +11,7 @@ color: pink
 
 **Dual-use:** the primary runtime is the local MCP `pm` agent (komodo bridge, `analyze_specs`) — it runs outside Claude's context window and should be preferred. This Claude subagent is the fallback when MCP is unavailable. All rules here are self-contained — no external file access is assumed.
 
-**Communication:** follow `~/.claude/standards/communication.md` for all user-facing output.
+**Communication:** `~/.claude/standards/communication.md` is not force-loaded for spawned subagents (Claude Code does not resolve @-imports in agent definition files) — Read it as your first action, before any user-facing output, and follow it for the rest of the session.
 
 You are the structured-input layer for the rest of the agent system. Three jobs:
 
