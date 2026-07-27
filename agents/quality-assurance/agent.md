@@ -94,14 +94,19 @@ Full approved stack and rationale: `~/.claude/modes/go/coding.md` §5.0–§5.2 
 **File placement — only unit tests colocate.** Unit: `<source>_test.go`, colocated next to the source file, `package foo_test` (black-box) by default. Component/integration/e2e/chaos: moved to a top-level `test/` (or `tests/`) tree, one subfolder per tier (`test/component/`, `test/integration/`, `test/e2e/`, `test/chaos/`), flat by feature — not mirroring the source package tree, e.g. `test/integration/order_test.go`, not `test/integration/internal/order/service_test.go`.
 
 **Tier gating** — gate each non-unit test with a `testutil` skip-helper as the first line, so a bare `go test ./...` (which walks `test/...` too) doesn't try to hit real infrastructure; a targeted run like `go test ./test/integration/...` is already scoped by folder. The active tier is set by one env var, `TEST_TIER`, on the ordered ladder `unit < component < integration < e2e < chaos`; selection is cumulative. Unit is the default and needs no gate.
-```go
-testutil.Component(t)   // skips unless TEST_TIER=component or higher
-testutil.Integration(t) // skips unless TEST_TIER=integration or higher
-testutil.E2E(t)         // skips unless TEST_TIER=e2e or higher
-testutil.Chaos(t)       // skips unless TEST_TIER=chaos
-```
 
-**Section banners** — each file now holds exactly one tier by virtue of its folder, so banners are no longer used to separate tiers. Reserved for `Setup` and `Helpers` only, same format (box-drawing dash `─` U+2500, 72 chars total). Any other section label (naming a fake/mock block, grouping tests by subject) is a plain single-line comment, not a banner, and only when the folder/file name doesn't already make it obvious:
+| Gate call, first line of the body | Runs when |
+|---|---|
+| `testutil.Component(t)` | `TEST_TIER=component` or higher |
+| `testutil.Integration(t)` | `TEST_TIER=integration` or higher |
+| `testutil.E2E(t)` | `TEST_TIER=e2e` or higher |
+| `testutil.Chaos(t)` | `TEST_TIER=chaos` |
+
+**Layers** (`~/.claude/standards/testing.md`): unit + component + integration are the **DEV layer** and block the merge to main — `TEST_TIER=integration` runs that whole set. Integration is mocks or throwaway local containers, never a deployed service. `e2e` (live dependency) and `chaos` need a deployed environment and run post-deploy only. Performance is not `TEST_TIER`-gated — it runs as its own STG job via `-bench`. Component is discretionary; unit and integration are not.
+
+**Coverage floors** (`testing.md` §3): 90% minimum on new code, 100% preferred; **100% required** in SDKs and common libraries; 100% on security-critical paths.
+
+**Section banners** — each file now holds exactly one tier by virtue of its folder, so banners are no longer used to separate tiers. Reserved for `Setup` and `Helpers` only, same format (box-drawing dash `─` U+2500, 72 chars total). These two labels are the **only** comments allowed in a test file: every other grouping (a fake/mock block, tests clustered by subject) gets no comment at all, banner or plain — `~/.claude/standards/comments.md` has no carve-out beyond these two, and the enforcement hook blocks anything else. Express the grouping through identifier names or a separate file.
 ```
 // ── Setup ────────────────────────────────────────────────────────────────
 // ── Helpers ─────────────────────────────────────────────────────────────

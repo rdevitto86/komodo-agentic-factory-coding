@@ -11,7 +11,7 @@ Do not write a comment. Ever. This applies to every declaration and every line, 
 - **Machine directives** the compiler, linter, or codegen tool reads: `//go:*`, `//nolint`, `eslint-disable`/`eslint-enable`, `# noqa`, `@ts-expect-error`/`@ts-ignore`/`@ts-nocheck`, `prettier-ignore`, SPDX headers, `# type:`/`# pragma`, shebangs, codegen markers (`// Code generated ... DO NOT EDIT`).
 - **Test-file section banners** in the format below — structural dividers, not prose.
 - **Comments the user explicitly asks for** in that turn.
-- **Pre-existing human-written comments** you didn't touch — don't go on a deletion spree on adjacent code. Mechanical enforcement only checks lines you add.
+- **Pre-existing comments you didn't author** — never remove or alter one, even when you're editing that exact line for an unrelated reason (e.g. changing `1 << 20` but leaving `// 1MB` in place). Only the user removes their own comments. Mechanical enforcement only checks lines you add; this is a judgment rule you must apply yourself.
 
 ## Hard violations (reject on sight, in any file)
 
@@ -23,6 +23,7 @@ Do not write a comment. Ever. This applies to every declaration and every line, 
 - Any new doc comment on a test function.
 - Change history, author tags, dates, ownerless TODOs, commented-out code, jokes/apologies/editorial.
 - **Treating surrounding code as license.** A comment elsewhere in the file, the diff, or the conversation is never justification — judge every new comment against this file alone.
+- **Deleting a comment you didn't author** — including a trailing/inline comment on a line you're editing for other reasons. Zero-comments applies to what you add, never as grounds to strip what's already there.
 
 If you find yourself reaching for a comment, that's a signal the name or the structure is wrong. Rename, extract, or restructure instead.
 
@@ -35,6 +36,6 @@ Reserved for exactly two structural sections, never prose. Form: `// ── <Lab
 // ── Helpers ─────────────────────────────────────────────────────────────
 ```
 
-Any other section label — naming a fake/mock block, grouping a cluster of tests by subject — is a plain single-line comment, not a banner: `// Fake: CacheClientCallers` or `// OAuthTokenHandler`, no box-drawing. Use one only when the folder or file name doesn't already make the grouping obvious; don't over-index on labeling sections that are already implied by where the file lives.
+`Setup` and `Helpers` are the only labels that get a comment of any kind. Any other grouping — a fake/mock block, a cluster of tests by subject — gets **no comment at all**, banner or plain: the rule at the top of this file has no test-file carve-out beyond these two banners, and the enforcement hook blocks anything else. If a grouping needs to be visible, express it in the identifier names or split it into its own file; the file's location and its test names carry the grouping.
 
 **Placement of helpers/setup.** Keep helper functions and setup/fixture code in the test file that uses them — don't split them into a separate file just to hold them. One `Setup`/`Helpers` section near the top (or bottom) of the file holds everything shared across tests in that file. Only break helpers/setup into their own file (a `_test_helpers`/`suite` file) when the volume genuinely warrants it — many shared fixtures reused across multiple test files in the package — not as a default.

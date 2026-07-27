@@ -17,7 +17,7 @@ These are per-project working files that live in the **consumer work repo** an a
 ## Directory layout
 
 - **`agents/<agent>/`** — each agent is a self-contained module: `agent.md` (the directive; frontmatter `name` = identity), plus role-specific `<mode>/` folders (skills + `docs/`). `software-engineer` keeps only its role modes here (`api/`, `db/`, `design/`, `infra/`); language modes live under top-level `modes/`.
-- **`standards/`** — cross-cutting coding standards shared by every agent: `principles.md`, `comments.md`, `security.md`, `logging.md`, `git-flow.md`, `pull-requests.md`, `stack.md`, `writing-style.md`, `readme-maintenance.md`, `changelog.md`. Agents reference these by path (`~/.claude/standards/<name>.md`).
+- **`standards/`** — cross-cutting coding standards shared by every agent: `principles.md`, `comments.md`, `security.md`, `logging.md`, `testing.md`, `git-flow.md`, `pull-requests.md`, `stack.md`, `writing-style.md`, `readme-maintenance.md`, `changelog.md`. Agents reference these by path (`~/.claude/standards/<name>.md`).
 - **`modes/`** — language blueprints, keyed by language: `go/`, `ts/`, `python/`, `cpp/`, `svelte/`, `vue/`. Shared across any agent that writes code in that language (e.g. `software-engineer` and `hardware-engineer` both reference `modes/cpp/coding.md`).
 - **`templates/`** — file templates referenced by skills (e.g. `templates/service/*.tmpl` for the `software-engineer` `api` mode's `/new-service`).
 - **`platforms/<tool>/`** — tool-specific adapters. `platforms/claude/` holds `settings.json` (permissions, allowed commands, hook registration), `hooks/` (event scripts), and `skills/` (user-invocable slash skills), symlinked to `~/.claude/settings.json`, `~/.claude/hooks/`, and `~/.claude/skills/` respectively.

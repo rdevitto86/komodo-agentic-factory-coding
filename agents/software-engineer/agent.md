@@ -38,6 +38,7 @@ Your knowledge is split into **modes** — keyword-activated folders. Language m
   |----------|-----------|
   | `security.md` | Touching a system boundary: input handling, auth/authz, secrets, or any new data exposure |
   | `logging.md` | The code you write or change emits logs |
+  | `testing.md` | Writing or changing any test — owns the tier definitions, coverage floors, and which tiers block the merge |
   | `stack.md` | Adding a dependency, choosing a library/framework, or scaffolding a new service |
   | `pull-requests.md` | Opening, structuring, or reviewing a PR |
   | `git-flow.md` | A commit-message, branch, or PR convention is needed |

@@ -84,23 +84,28 @@ Confirm the alias is wired in both the bundler config (`vite.config.ts` / `tscon
 
 ```
 unit < component < integration < e2e < chaos
+        └──── DEV layer ────┘   └── STG layer ──┘
+         blocks merge to main    post-deploy only
 ```
 
-- **unit and component are always-on** — fast, hermetic (pure logic, mocked module boundaries, rendered components). No gate.
-- **integration and e2e touch real boundaries or span services.** Gate the `describe` block with `skipIf` against the active tier. Folder placement already scopes a targeted run (`vitest run test/integration`); the gate matters for an unscoped sweep across the whole `test/` tree.
+- **unit is always-on** — fast, hermetic pure logic, no gate.
+- **component is gated but discretionary** (`testing.md` §2.2) — rendered components and mocked module boundaries. Write them where they earn their keep, not for every change.
+- **integration is gated and mandatory.** Mocks or throwaway local containers only — never a deployed service. Still DEV-layer, still merge-gating.
+- **e2e (live dependency) and chaos need a deployed environment** and never run locally.
+
+Gate each non-unit `describe` block with `skipIf` against the active tier. Folder placement already scopes a targeted run (`vitest run test/integration`); the gate matters for an unscoped sweep across the whole `test/` tree.
 
 ```ts
-// test/integration/order.x.test.ts
 const TIERS = ['unit', 'component', 'integration', 'e2e', 'chaos'] as const
 const active = TIERS.indexOf((process.env.TEST_TIER ?? 'unit') as typeof TIERS[number])
 const tierBelow = (t: typeof TIERS[number]) => active < TIERS.indexOf(t)
 
 describe.skipIf(tierBelow('integration'))('integration', () => {
-  // Real boundaries — DB, HTTP, file system
+  expect(await repo.findOrder(seeded.id)).toEqual(seeded)
 })
 ```
 
-Setting a tier runs it and everything below it. The default (no env var) is `unit`; e2e runs only on release stages. Cross-service E2E (Playwright) lives in `test/e2e/` (or `tests/e2e/`) per §7.6.
+Setting a tier runs it and everything below it. The default (no env var) is `unit`. `TEST_TIER=integration` is the DEV-layer gate that blocks the merge to main; e2e and chaos run post-deploy. Cross-service E2E (Playwright) lives in `test/e2e/` (or `tests/e2e/`) per §7.6.
 
 ### 7.3 Base rules (plain TS/JS)
 
@@ -110,6 +115,7 @@ Setting a tier runs it and everything below it. The default (no env var) is `uni
 - **Test names:** describe behavior — `"returns 404 when order does not exist"`, not `"test fetchOrder"`
 - **Isolation:** each test must be independently runnable; no shared mutable state between tests
 - **Snapshots:** acceptable for UI output when reviewed carefully; never for business logic
+- **Coverage** (`~/.claude/standards/testing.md` §3): 90% minimum on new code and 100% preferred; **100% required** in SDKs and shared libraries. Measured on unit tests, which are mandatory for all code. A number reached by asserting nothing fails review.
 
 ### 7.4 SvelteKit
 

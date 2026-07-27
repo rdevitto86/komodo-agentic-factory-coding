@@ -19,7 +19,7 @@ Universal security baseline for all Komodo services and projects.
 - Validate and sanitize all user-supplied input at system boundaries (API edge, message queue consumer, file upload handlers)
 - Server-side validation is mandatory — client-side validation is a UX concern only
 - Validate: type, format, length, range, and allowed character set
-- Reject unexpected fields rather than silently ignoring them
+- Reject unexpected fields rather than silently ignoring them — this applies at untrusted external edges (public API, upload, webhook). Internal service-to-service and versioned payloads instead tolerate unknown fields for forward compatibility (`principles.md` §11): reject at the perimeter, tolerate behind it
 - Never pass unvalidated input to a database query, shell command, or template renderer
 
 ---
