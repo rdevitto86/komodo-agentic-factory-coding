@@ -1,0 +1,88 @@
+---
+name: go
+description: Go standards — idioms, domain modelling, concurrency, errors, performance. Load before reading or writing any .go, go.mod, or go.sum file.
+user-invocable: false
+---
+
+# Go
+
+Zero comments, zero godoc. Error strings lead with a verb phrase and never name the function.
+
+## Conventions
+
+- **`golangci-lint` must pass.** Config at `.golangci.yaml`. A suppression is a bare `//nolint:<rule>` directive with no appended prose; the reason goes in `TODO.md`, never in a comment. Prefer fixing the finding.
+- **Naming**: `req` for request bodies and outgoing `*http.Request`, `res` for response objects. Keep `r *http.Request` / `w http.ResponseWriter`.
+- **No `util` / `common` / `helpers` packages.** Split by domain. `internal/` for non-importable code. Minimise exported surface.
+- **`init()` does no I/O.** Wire through constructors (`NewServer`, `NewService`) — never package-level globals or `init()` registration.
+- **Log once, at the top of the stack.** Never log-and-return.
+- **Avoid vague names** — `processData`, `handleStuff`, `doWork`. A name you cannot make specific usually marks a function that should not exist.
+
+**A single-call-site function must earn its place** as one of: dependent setup/wiring (`NewX`, option functions), a cohesive subset of functionality, a concurrency unit (goroutine or worker-loop body), or a deliberate abstraction seam (an interface swapped for a fake). Sequencing a handful of statements is not a subset of functionality — it is the call site. A long wiring function is normal Go, not a smell.
+
+## Types and boundaries
+
+- **Named types carry domain meaning** — `type UserID string`, `type TimeoutMS int`. Catches argument-order bugs at compile time.
+- **Parse at the edge.** Decode into a request DTO, convert once into the domain type, and let the service layer accept only the domain type. A method taking `map[string]any` or a raw `*http.Request` has no boundary.
+- **Fallible constructors return `(T, error)`** — never a zero value plus a `Valid()` the caller may forget.
+- **Distinct types over bool flags** and optional fields only meaningful in combination. Two mutually exclusive states are two types or a sealed constant set.
+- **Zero values are usable or impossible.** Either the zero value works, or the type is unexported behind a constructor. One that compiles and panics is the worst of both.
+- **Explicit JSON struct tags** on every serialised field. `DisallowUnknownFields` only at untrusted external edges.
+- **Interfaces stay small and live at the consumer.** One or two methods, declared in the calling package. Never publish an interface beside its only implementation.
+
+## Concurrency, state, resources
+
+- **`ctx context.Context` is the first parameter** of anything doing I/O or blocking work. Never in a struct field, never `nil`.
+- **Every blocking call gets a deadline.** `defer cancel()` goes on the line after `WithTimeout`/`WithCancel`. A context without a deadline crossing a network boundary is a defect.
+- **`defer` releases in the same scope that acquires** — `rows.Close()`, `resp.Body.Close()`, `mu.Unlock()`.
+- **Bound every channel and worker pool.** Explicit capacity, worker counts from config. Define behaviour at capacity — block, drop, or error.
+- **`errgroup.WithContext` for fan-out** so the first failure cancels its siblings. A bare `go func()` with no lifecycle owner is a leak.
+- **Do not mutate caller-owned slices or maps.** `append` aliasing on a shared backing array corrupts silently.
+- **A mutex or `sync/atomic` — never "it is just one field."** Run `go test -race`; a race is a bug even when tests pass.
+- **Guard the mutex, not the method.** Never make a network or disk call while holding a lock.
+
+## Errors and resilience
+
+- **Wrap with `%w`, match with `errors.Is` / `errors.As`.** Never string-compare error text. Sentinels for expected conditions, typed errors when the caller needs structure.
+- **Never discard an error with `_`** outside a `defer` where the failure is genuinely unactionable.
+- **`panic` is for programmer error only.** Recover only at the top-level server or goroutine boundary, and log the stack there.
+- **Retries carry exponential backoff, jitter, and a cap.** Only idempotent operations, only genuinely transient errors — never a 4xx or a validation failure.
+- **Idempotency keys on state-changing handlers**, so a retry converges instead of double-writing.
+- **Graceful shutdown**: catch `SIGTERM`/`SIGINT`, `server.Shutdown(ctx)` with a bounded drain, close pools in reverse dependency order.
+- **`crypto/subtle.ConstantTimeCompare`** for tokens, signatures, and secrets — never `==` or `bytes.Equal`.
+
+## Performance
+
+Measure first. An optimisation without a before/after number is unreviewable.
+
+- **Profile with `pprof`** before optimising; benchmark hot paths with `testing.B` and compare via `benchstat`.
+- **Pre-size** with `make([]T, 0, n)` and `make(map[K]V, n)` whenever the count is known — the largest low-effort win.
+- **`sync.Pool` only on measured hot paths.** It costs clarity everywhere else.
+- **`strings.Builder`** for repeated concatenation in a loop. Large structs by pointer, small ones by value.
+- **Batch queries.** `EXPLAIN ANALYZE` before adding an index. N+1 is a bug, not a tuning opportunity.
+
+## Evolution
+
+Exported API and schema changes are additive. New optional fields and new functions are safe; renaming, removing, or retyping an exported symbol breaks every service of yours that imports it and needs a version bump. Add to a struct rather than changing a signature; use functional options so a constructor can grow.
+
+## Repo layout — `go-api`
+
+```
+cmd/server/main.go
+internal/
+docs/
+test/
+deploy/
+openapi.yaml
+docker-compose.yaml
+Dockerfile
+go.mod
+```
+
+One generic entrypoint at `cmd/server/main.go`, or `cmd/main.go` as the alternative — never a `cmd/public` / `cmd/private` split, which is a dead convention. Audience-specific middleware (browser-facing vs service-to-service) is a routing concern inside `internal/`, not a second binary.
+
+**No `db/` unless the user says the service owns one.** Most do not. When it does, add `db/migrations/` and follow the `stack` skill's migration naming.
+
+## Reference material
+
+- **[reference.md](reference.md)** — a complete comment-free vertical slice: service aggregate, handler, two-tier repository, outbound client, wiring, component test.
+- **[testing.md](testing.md)** — the approved test stack, the tier ladder, file placement, coverage floors. Gate/floor definitions there defer to the `sdlc` skill.

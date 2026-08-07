@@ -1,0 +1,60 @@
+# {{NAME}}
+
+{{ONE_LINE_PURPOSE}}
+
+Global rules live in `~/.claude/AGENTS.md` and always apply. This file adds project context only. Where the two conflict, this file wins.
+
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Language | {{LANGUAGE}} |
+| Framework | {{FRAMEWORK}} |
+| Datastore | {{DATASTORE}} |
+| Deploy target | {{DEPLOY}} |
+
+## Layout
+
+```
+{{TREE}}
+```
+
+## Commands
+
+| Task | Command |
+|---|---|
+| Run | `{{RUN}}` |
+| Lint | `{{LINT}}` |
+| Build | `{{BUILD}}` |
+
+## Tests
+
+Tier definitions live in the `sdlc` skill, stage ordering in `ci-cd`. These are this repo's invocations — the pipeline runs exactly these.
+
+| Tier | Command | Stage |
+|---|---|---|
+| unit | `{{TEST_UNIT}}` | DEV inner loop · CI gate |
+| component | `{{TEST_COMPONENT}}` | DEV · CI gate |
+| contract | `{{TEST_CONTRACT}}` | DEV · CI gate |
+| smoke | `{{TEST_SMOKE}}` | DEV · STG, first and fast-fail |
+| integration | `{{TEST_INTEGRATION}}` | DEV · STG, after the flip |
+| e2e | `{{TEST_E2E}}` | DEV for debugging · STG prerelease |
+
+**Every tier runs locally.** `-mock` is the default target; add `{{LIVE_FLAG}}` to resolve against STG. PROD is never a valid target and the run aborts if one resolves.
+
+Nothing runs on save or edit. `pre-commit` is lint only; `pre-push` runs delta unit tests with a coverage check.
+
+## Local
+
+- **Port**: {{PORT}}
+- **Health**: `GET /health`
+- **Env**: copy `.env.example` to `.env`; never commit it
+
+## Conventions
+
+- {{CONVENTION_1}}
+- {{CONVENTION_2}}
+
+## Watch out for
+
+- {{GOTCHA_1}}

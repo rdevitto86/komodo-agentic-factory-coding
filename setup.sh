@@ -1,143 +1,95 @@
 #!/usr/bin/env bash
-
+#
+# setup.sh - install this repo into ~/.claude.
+#
+# Run:     bash setup.sh              link, then test and verify
+#          bash setup.sh --dry-run    print every action, change nothing
+#
+# What it does, in order:
+#   1. prune    removes symlinks left by the old layout (STALE_LINKS)
+#   2. link     symlinks every home/* entry to ~/.claude/<name>
+#   3. verify   runs test-hooks.sh then doctor.sh
+#
+# Nothing is copied. ~/.claude/<name> is a symlink back into this repo,
+# so editing a file here takes effect in the next session with no
+# reinstall. An existing real file is moved to <name>.bak-<timestamp>
+# rather than overwritten.
+#
+# Restart Claude Code afterwards; settings.json and hooks load at start.
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDE_DIR="$HOME/.claude"
-LINK_DIRS=(agents standards modes templates)
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE="$REPO_ROOT/home"
+TARGET="$HOME/.claude"
+STAMP="$(date +%Y%m%d-%H%M%S)"
 
-DRY_RUN=false
-for arg in "$@"; do
-  [ "$arg" = "--dry-run" ] && DRY_RUN=true
-done
+DRY_RUN=0
 
-do_run() {
-  if $DRY_RUN; then
-    echo "    [dry-run] would run: $*"
+case "${1:-}" in
+  --dry-run) DRY_RUN=1 ;;
+  "") ;;
+  *) printf 'usage: setup.sh [--dry-run]\n' >&2; exit 2 ;;
+esac
+
+STALE_LINKS=(standards modes templates profile orchestration docs)
+
+say() { printf '%s\n' "$*"; }
+run() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    say "    would: $*"
   else
     "$@"
   fi
 }
 
-if $DRY_RUN; then
-  echo "komodo-claude: DRY RUN — no changes will be made"
-else
-  echo "komodo-claude: setting up symlinks from $REPO_DIR → $CLAUDE_DIR"
-fi
+[ -d "$SOURCE" ] || { say "missing $SOURCE"; exit 1; }
 
-do_run mkdir -p "$CLAUDE_DIR"
+say ""
+say "installing agent config"
+say "  from  $SOURCE"
+say "  into  $TARGET"
+say ""
 
-for stale in docs; do
-  link="$CLAUDE_DIR/$stale"
-  if [ -L "$link" ] && [[ "$(readlink "$link")" == "$REPO_DIR"/* ]]; then
-    echo "  $stale — removing stale symlink from old layout"
-    do_run rm "$link"
+run mkdir -p "$TARGET"
+
+say "  pruning stale links from the previous layout"
+for name in "${STALE_LINKS[@]}"; do
+  path="$TARGET/$name"
+  if [ -L "$path" ]; then
+    say "    unlink $name"
+    run rm -f "$path"
+  elif [ -e "$path" ]; then
+    say "    kept   $name (real directory, left alone)"
   fi
 done
 
-# Prune obsolete .bak files left by an earlier migration. A backup is obsolete
-# once its live counterpart is already a correct symlink into this repo — the
-# original file has been superseded. Runs before the link loop so a .bak created
-# this run (the user's only copy of a pre-existing file) is never touched.
-for name in "${LINK_DIRS[@]}" settings.json hooks skills AGENTS.md CLAUDE.md; do
-  src="$REPO_DIR/$name"
-  [ "$name" = "settings.json" ] && src="$REPO_DIR/platforms/claude/settings.json"
-  [ "$name" = "hooks" ] && src="$REPO_DIR/platforms/claude/hooks"
-  [ "$name" = "skills" ] && src="$REPO_DIR/platforms/claude/skills"
-  [ "$name" = "AGENTS.md" ] && src="$REPO_DIR/profile/AGENTS.md"
-  [ "$name" = "CLAUDE.md" ] && src="$REPO_DIR/profile/CLAUDE.md"
-  bak="$CLAUDE_DIR/$name.bak"
-  link="$CLAUDE_DIR/$name"
-  if [ -e "$bak" ] && [ -L "$link" ] && [ "$(readlink "$link")" = "$src" ]; then
-    echo "  $name.bak — removing obsolete migration backup"
-    do_run rm -rf "$bak"
-  fi
-done
-
-# Warn about old-layout project snapshots (e.g. ~/.claude/<project>/CLAUDE.md).
-# Claude Code never loads these; they only drift from the repo's real CLAUDE.md.
-# Not auto-deleted — removing arbitrary dirs under ~/.claude is too destructive
-# for a setup script, and a false positive could nuke real Claude Code data.
-for dir in "$CLAUDE_DIR"/*/; do
-  [ -d "$dir" ] || continue
-  [ -e "${dir}CLAUDE.md" ] || continue
-  name="$(basename "$dir")"
-  # Known Claude Code dirs that legitimately exist — never flag these.
-  case "$name" in
-    agents|hooks|skills|standards|docs|projects|plugins|tasks|plans|cache|\
-    backups|sessions|session-env|telemetry|shell-snapshots|file-history|\
-    paste-cache|downloads|debug|ide) continue ;;
-  esac
-  echo "  WARNING: $name/ looks like an old project snapshot (has CLAUDE.md) — Claude Code does not load it; remove manually if stale: rm -rf \"$dir\""
-done
-
-link_one() {
-  local src="$1" name="$2"
-  local dest="$CLAUDE_DIR/$name"
+say ""
+say "  linking"
+for entry in "$SOURCE"/*; do
+  [ -e "$entry" ] || continue
+  name="$(basename "$entry")"
+  dest="$TARGET/$name"
 
   if [ -L "$dest" ]; then
-    local current
-    current="$(readlink "$dest")"
-    if [ "$current" = "$src" ]; then
-      # Already points at the correct source — no action needed, even on re-run.
-      echo "  $name — symlink already correct, skipping"
-    else
-      echo "  $name — stale symlink (→ $current), refreshing"
-      do_run rm "$dest"
-      do_run ln -s "$src" "$dest"
-    fi
+    run rm -f "$dest"
   elif [ -e "$dest" ]; then
-    echo "  $name — backing up existing to $name.bak"
-    do_run mv "$dest" "${dest}.bak"
-    do_run ln -s "$src" "$dest"
-    echo "  $name — linked"
-  else
-    do_run ln -s "$src" "$dest"
-    echo "  $name — linked"
+    say "    backup $name -> $name.bak-$STAMP"
+    run mv "$dest" "$dest.bak-$STAMP"
   fi
-}
 
-for name in "${LINK_DIRS[@]}"; do
-  link_one "$REPO_DIR/$name" "$name"
+  say "    link   $name"
+  run ln -s "$entry" "$dest"
 done
 
-# Tool-adapter platform: settings.json and hooks live under platforms/claude/
-# but Claude Code only loads them from ~/.claude/settings.json and ~/.claude/hooks/.
-link_one "$REPO_DIR/platforms/claude/settings.json" "settings.json"
-link_one "$REPO_DIR/platforms/claude/hooks" "hooks"
-link_one "$REPO_DIR/platforms/claude/skills" "skills"
-link_one "$REPO_DIR/profile/AGENTS.md" "AGENTS.md"
-link_one "$REPO_DIR/profile/CLAUDE.md" "CLAUDE.md"
-
-echo ""
-
-if bash "$REPO_DIR/scripts/validate-refs.sh"; then
-  echo "Reference validation passed."
-else
-  echo "WARNING: dead references found (see above). Fix them before the next session."
+if [ "$DRY_RUN" -eq 1 ]; then
+  say ""
+  say "dry run complete, nothing changed"
+  exit 0
 fi
 
-if bash "$REPO_DIR/scripts/test-comment-rules.sh"; then
-  echo "Comment rules test suite passed."
-else
-  echo "WARNING: comment rules test suite failed (see above). Fix them before the next session."
-fi
+say ""
+bash "$REPO_ROOT/scripts/test-hooks.sh"
+bash "$REPO_ROOT/scripts/doctor.sh"
 
-if bash "$REPO_DIR/scripts/validate-bridge-roster.sh"; then
-  echo "Bridge roster validation passed."
-else
-  echo "WARNING: bridge roster drift found (see above). Fix them before the next session."
-fi
-
-if bash "$REPO_DIR/scripts/doctor.sh"; then
-  echo "Doctor passed — all ~/.claude links resolve."
-else
-  echo "WARNING: dangling ~/.claude links found (see above). Fix them before the next session."
-fi
-
-echo ""
-if $DRY_RUN; then
-  echo "Dry run complete. No changes were made."
-else
-  echo "Done. Restart Claude Code to pick up the new settings."
-fi
+say "restart Claude Code to pick up settings.json and hooks"
+say ""

@@ -1,52 +1,100 @@
-# komodo-ai-agents
+# komodo-agentic-config
 
-Shared agent configuration for all Komodo projects — agents, standards, modes, templates, and tool-platform adapters symlinked into `~/.claude/` so every project inherits them.
+Agent configuration shared across every Komodo project. `home/` mirrors `~/.claude/` one-to-one and is symlinked there.
 
-The authoritative description of the system (agent roster, modes, MCP agents, hard rules) lives in [`CLAUDE.md`](CLAUDE.md). This README is just the quick start.
+Three ideas hold it together:
+
+1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments, git, and edit scope are checked before the write, never after.
+2. **Base context stays tiny.** ~70 lines of always-on rules; everything else is a skill that loads only when needed.
+3. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
+
+## Setup
+
+```bash
+bash setup.sh --dry-run    # preview
+bash setup.sh              # link, then run the tests and doctor
+```
+
+Restart Claude Code afterwards so `settings.json` and the hooks take effect.
 
 ## Structure
 
 ```
-agents/            # one self-contained folder per agent (agent.md + its role-mode skills/docs)
-standards/         # cross-cutting coding standards (principles, comments, security, stack, git-flow, ...)
-modes/             # language blueprints (go, ts, python, cpp, svelte) shared across agents
-templates/         # file templates referenced by skills (e.g. templates/service/*.tmpl)
-platforms/
-├── claude/
-│   ├── settings.json  # global permissions, plugins, allowed commands, hook registration
-│   └── hooks/         # global shell hooks triggered by Claude Code events
-└── komodo-bridge/
-    ├── .mcp.json.tmpl   # copy-paste MCP server registration for new projects
-    └── agent-roster.md  # bridge roster contract (loadSystemPrompt, expected agents, bind mount)
-scripts/
-├── validate-refs.sh           # checks that all ~/.claude/{agents,standards,modes,templates}/... references resolve
-├── validate-bridge-roster.sh  # checks ~/.komodo/bridge's agent roster matches agents/ in this repo
-└── hooks/git/                  # portable git pre-commit hook templates (no-comments + lint)
-.gitignore         # editor/OS noise; this config layer keeps no TODO.md/MEMORY.md of its own
+home/                 mirrors ~/.claude exactly
+├── AGENTS.md         the universal rules — always loaded
+├── CLAUDE.md         @AGENTS.md
+├── settings.json     permissions + hook registration
+├── agents/           engineering, business — read-only research only
+├── hooks/            comment_guard.py, git_guard.py, scope_guard.py
+└── skills/           24 skills, lazily loaded
+templates/project/    AGENTS.md / CLAUDE.md / TODO.md for a new repo
+platforms/komodo-bridge/   local LLM MCP bridge config
+scripts/              doctor.sh, test-hooks.sh, portable git hooks
 ```
 
-Cross-cutting coding standards live in top-level `standards/`, language modes in top-level `modes/`; each agent owns only its role-specific skills and mode folders. See `CLAUDE.md` for the encapsulation model and the per-agent **modes** that keep spawned-agent context lean.
+## The guards
 
-## Setup
+All three run as `PreToolUse`, so a violation never reaches disk.
 
-Run once after cloning:
+| Guard | Denies | Asks |
+|---|---|---|
+| `comment_guard.py` | Any newly added comment | Before deleting one it did not add |
+| `git_guard.py` | State-changing git, in-place rewrites | — |
+| `scope_guard.py` | — | Before a second file in one turn |
+
+`comment_guard.py` compares **comment multisets** rather than diff hunks. Editing the line a comment sits on, or reindenting it, is not a change. Deleting it is.
+
+### The two comment exceptions
+
+**An exemption the agent can satisfy on its own is a bypass, not an exception.** A content allowlist fails on that alone — whatever token you exempt, the model prepends it. Both exceptions here are things the agent cannot fabricate.
+
+- **Provenance — you send `+comments`.** A `UserPromptSubmit` hook writes a session-scoped grant that lifts the block for that turn; the next prompt without the sigil clears it. Only your keystrokes set it, and a `// +comments` written into a file grants nothing.
+- **Structure — a use-manual under a shebang.** A contiguous run of comment lines starting immediately after `#!`, ending at the first blank or code line. It cannot reach a function body, because position is not forgeable.
+
+Deletions still `ask` under a grant, and the guard still fails closed.
 
 ```bash
-bash setup.sh
+bash scripts/test-hooks.sh    # 49 regression cases
 ```
 
-Symlinks `agents/`, `standards/`, `modes/`, `templates/`, `platforms/claude/settings.json`, and `platforms/claude/hooks/` into `~/.claude/` and removes stale links from the previous layout. Also validates cross-agent references (`scripts/validate-refs.sh`); pass `--dry-run` to preview what would be linked without making changes. Restart Claude Code afterward.
+## Skills
 
-## Git hooks (model-agnostic enforcement floor)
+**The loader accepts exactly eight frontmatter keys** — `name`, `description`, `model`, `allowed-tools`, `disallowed-tools`, `argument-hint`, `disable-model-invocation`, `user-invocable`. Any other key silently rejects the whole file.
 
-`scripts/hooks/git/` holds portable pre-commit checks that catch **any** agent or human in any IDE — not just Claude Code: `pre-commit-no-comments` (enforces `standards/comments.md` on staged changes; shares its rule logic with the Claude hook via `scripts/lib/comment-rules.awk`) and `pre-commit-lint` (`golangci-lint` / `tsc --noEmit` on staged files). Install per repo by writing a `.git/hooks/pre-commit` that invokes both by absolute path and `chmod +x` it — komodo-ecom automates this with `just init-hooks`.
+| Kind | Frontmatter | Loads when |
+|---|---|---|
+| Knowledge | `user-invocable: false` | Its description matches the task |
+| Workflow | `disable-model-invocation: true` | You type `/name` |
+| Both | neither key | Either route |
 
-## Agents
+**There is no path-glob auto-load.** Every knowledge skill's description therefore states *when to load it* — "Load before reading or writing any `.go` file" — because that sentence is the entire trigger mechanism.
 
-Claude subagents (advisor, business-architect, software-engineer, quality-assurance, devops, hardware-engineer, data-analyst, cyber-security, botanist, logistics), plus MCP-primary agents (`pm`, `qa`, lawyer, marketing, customer-servicing, tax-advisor) on the komodo bridge. The advisor is the default orchestrator — it is the entry point for everything and dispatches specialists with scoped modes. Full roster, triggers, and routing notes: [`CLAUDE.md`](CLAUDE.md).
+Workflow skills: `/plan` `/generate-repo` `/audit` `/wrap-up` `/accessibility`
 
-The bridge reads agent system prompts directly from this repo's `agents/` (bind-mounted, not copied); registration template and roster contract: [`platforms/komodo-bridge/`](platforms/komodo-bridge/).
+## Output formatting
 
-## Project-level config
+The always-on contract lives in `home/AGENTS.md` § 3 — nine rules, ~15 lines, applied to every turn. The full ADHD standard — chunking, emoji protocol, table shape, code-answer order, document typography, and the research behind each — lives in the `accessibility` skill and loads only when authoring something longer than a screen.
 
-Projects keep only project-specific overrides in their own `.claude/settings.json`. Global permissions and agents live here and are not duplicated per-project.
+Both subagents (`engineering`, `business`) carry the same contract as a mandatory output template.
+
+## Budget
+
+```bash
+bash scripts/doctor.sh
+```
+
+Verifies every symlink, validates every skill and agent against the loader's frontmatter schema, and **fails above 2,000 tokens** of base context.
+
+A new skill costs ~30 tokens of listing. A new line in `home/AGENTS.md` costs its full length on every session, forever — put it in a skill unless it must always apply.
+
+## Git hooks for other repos
+
+`scripts/hooks/git/pre-commit-comments` runs the same `comment_guard.py` against staged files, so any tool in any editor hits the same rule. That one belongs here — it enforces an agent rule, not a toolchain.
+
+**Lint and test hooks do not live here.** `pre-commit` (format + lint) and `pre-push` (delta unit tests + coverage) ship with the language SDK — `komodo-forge-sdk-go` for Go. The `ci-cd` skill states the contract they must satisfy; the SDK decides how.
+
+Install per repo:
+
+```bash
+git config core.hooksPath .githooks
+```

@@ -2,5 +2,9 @@
 /TODO.md
 TODO.md
 
+# Python bytecode from the hooks
+__pycache__/
+*.pyc
+
 # Editor / OS noise
 .DS_Store

@@ -1,53 +1,97 @@
 # Komodo Bridge Agent Roster
 
-Reference for how `~/.komodo/bridge` loads agent system prompts from this repo.
+How `~/.komodo/bridge` loads agent system prompts from this repo, and why the roster is small and code-only.
+
+## The constraint that decides placement
+
+**A bridge agent is text-in, text-out, single-shot.** `agentDef` in `agents.go` is a system prompt, a model, and a `buildPrompt` function — no file access, no tool calls, no multi-step loop. Whatever it needs, the caller passes as a string argument.
+
+That fact alone decides where an agent lives:
+
+| Needs file/shell/web access to do its job | Lives in |
+|---|---|
+| No — pure text transform | The bridge (`platforms/komodo-bridge/agents/`) |
+| Yes — has to read, search, or browse | Claude only (`home/agents/`) |
+
+`home/agents/engineering.md` and `home/agents/business.md` read files and run searches — they cannot become bridge agents without the bridge growing a tool-use loop it does not have. They stay Claude-only, not by preference but by architecture.
+
+## The roster
+
+| Bridge agent | Tool | Why it's here, not on Claude |
+|---|---|---|
+| `completion` | `complete_code` | Inline autocomplete needs the lowest latency in the system — a local call, not a round trip |
+| `quality-assurance` | `review_code` | Independent review only means something on a **different** model from the one that wrote the code. Claude reviewing Claude's own work is not a second set of eyes |
+| `summarizer` | `summarize` | Zero-reasoning compression. Spending a Claude token to shrink context defeats the point of shrinking it |
+
+Each maps to `platforms/komodo-bridge/agents/<name>/agent.md` — flat frontmatter (`name`, `model`), body is the system prompt verbatim.
 
 ## Loading mechanism
 
-`agents.go`'s `loadSystemPrompt(name string)` reads `agents/<name>/agent.md` relative to the bridge's CWD, strips the YAML frontmatter, and uses the body as that agent's system prompt. Missing file → `log.Fatalf`, which crashes the whole bridge.
+`agents.go`'s `loadSystemPrompt(name)` reads `agents/<name>/agent.md` relative to the container's working directory, strips YAML frontmatter, uses the body as the system prompt.
 
-## Expected roster
+**A missing file calls `log.Fatalf` and takes the whole bridge down.** Every name in `allAgents()` must have a matching file.
 
-The bridge's `allAgents()` registers exactly these 7 names, 1:1 with this repo's `agents/` directory:
+## Bind mount
 
-- `business-architect`
-- `quality-assurance`
-- `lawyer`
-- `customer-servicing`
-- `marketing`
-- `summarizer`
-- `tax-advisor`
+```yaml
+# ~/.komodo/docker-compose.yaml
+volumes:
+  - ${HOME}/komodo/ai/komodo-agentic-config/platforms/komodo-bridge/agents:/app/agents:ro
+```
 
-Each name maps to `agents/<name>/agent.md` in this repo.
+This repo is the single source of truth — agents are never copied into `~/.komodo`. Edits here take effect on the next bridge restart.
 
-## Source of truth
+## Two agent directories, never merged
 
-`~/.komodo/`'s docker-compose bind-mounts `${HOME}/komodo-ai-agents/agents` into the container at `/app/agents` (read-only). Agents are not duplicated or copied into `~/.komodo` — this repo is the single source of truth. Edits to `agents/<name>/agent.md` here take effect on the next bridge restart.
+| Directory | Consumer | Layout |
+|---|---|---|
+| `home/agents/` | Claude Code subagents | flat `<name>.md` |
+| `platforms/komodo-bridge/agents/` | The bridge | `<name>/agent.md` |
+
+Claude Code requires the flat form; the bridge's loader requires the nested form. A symlink cannot satisfy both.
 
 ## Model routing
 
-Each agent in `agents.go` carries a default model in its `agentDef.model` field, set via `modelFor("<SUFFIX>", "<default>")`. Resolution precedence, highest first:
+`agentDef.model` resolves highest-first:
 
-1. **`OLLAMA_MODEL_<SUFFIX>`** — per-agent override env var. If set and non-empty, wins outright.
-2. **Compiled-in default** (the table below) — used when the per-agent env var is unset or empty.
-3. **`OLLAMA_MODEL`** — global fallback, applied inside `OllamaClient.Generate` only if the resolved model string is empty (i.e. every agent has a default, so this tier is a safety net for future agents added without one).
+1. **`OLLAMA_MODEL_<SUFFIX>`** — per-agent override, wins when non-empty
+2. **Compiled-in default**
+3. **`OLLAMA_MODEL`** — global fallback
 
-| Agent (Go func) | agent.md name | Env var suffix | Default model |
+| agent.md name | Env suffix | Model | Why |
 |---|---|---|---|
-| `businessArchitectAgent` | business-architect | `OLLAMA_MODEL_BA` | `deepseek-r1:14b` |
-| `qaAgent` | quality-assurance | `OLLAMA_MODEL_QA` | `qwen3-coder-next:latest` |
-| `lawyerAgent` | lawyer | `OLLAMA_MODEL_LAWYER` | `deepseek-r1:14b` |
-| `taxAdvisorAgent` | tax-advisor | `OLLAMA_MODEL_TAX` | `deepseek-r1:14b` |
-| `customerServicingAgent` | customer-servicing | `OLLAMA_MODEL_CUSTOMER_SERVICING` | `qwen3:4B` |
-| `marketingAgent` | marketing | `OLLAMA_MODEL_MARKETING` | `qwen3:4B` |
-| `summarizerAgent` | summarizer | `OLLAMA_MODEL_SUMMARIZER` | `qwen3:1.7B` |
+| `completion` | `OLLAMA_MODEL_COMPLETION` | `qwen3-coder-next:latest` | Code-shaped output, needs to be fast |
+| `quality-assurance` | `OLLAMA_MODEL_QA` | `qwen3-coder-next:latest` | Same family as completion — both read code |
+| `summarizer` | `OLLAMA_MODEL_SUMMARIZER` | `qwen3:1.7B` | No reasoning required, smallest model wins |
 
-`~/.komodo/docker-compose.yaml` sets all 7 override vars explicitly under `komodo-bridge`'s `environment`, alongside the pre-existing global `OLLAMA_MODEL`. They currently match the compiled-in defaults — kept explicit so the routing is visible and editable from compose without touching Go source. To change an agent's model, edit its `OLLAMA_MODEL_<SUFFIX>` value in compose and restart the bridge; no rebuild required.
+Change a model by editing its `OLLAMA_MODEL_<SUFFIX>` in compose and restarting. No rebuild.
 
-## Drift check
+## Where the old roles went
 
-`scripts/validate-bridge-roster.sh` extracts every `loadSystemPrompt("<name>")` call from `~/.komodo/bridge/agents.go` and confirms `agents/<name>/agent.md` exists in this repo. No-ops if `~/.komodo/bridge` isn't present.
+Every agent that is no longer here was absorbed, not dropped. Nothing needs recreating.
 
-## New project setup
+| Former agent | Now |
+|---|---|
+| `advisor` | The default session |
+| `software-engineer` | `engineering` subagent |
+| `business-architect`, `marketing` | `business` subagent, `plan` skill |
+| `lawyer`, `tax-advisor` | `legal`, `tax` skills |
+| `customer-servicing`, `logistics` | `business` subagent, `logistics` skill |
+| `hardware-engineer` | `hardware` skill |
 
-Copy `platforms/komodo-bridge/.mcp.json.tmpl` to `.mcp.json` at the new project's root to register the bridge as an MCP server.
+The advisory roles had no reason to run off Claude — they were never code review. The three that remain are here because each needs a *different* model than the one calling it.
+
+## Adding a bridge agent
+
+Add it here only if it is a pure text transform. If it needs to read a file or browse the web, it belongs in `home/agents/` instead.
+
+1. Create `platforms/komodo-bridge/agents/<name>/agent.md`.
+2. Register it in `allAgents()` with a `modelFor("<SUFFIX>", "<default>")`.
+3. Set `OLLAMA_MODEL_<SUFFIX>` in compose.
+4. Restart the bridge.
+
+Skipping step 1 crashes the bridge on next start.
+
+## Registering the bridge with a project
+
+Copy `.mcp.json.tmpl` to `.mcp.json` at the project root.
