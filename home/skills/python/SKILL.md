@@ -37,9 +37,20 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 ## Testing
 
 - **`pytest` only**, never `unittest`.
-- **Unit tests colocate** as `test_<name>.py` in the same package. Everything else moves to a top-level `test/integration/`, flat by feature (`test/integration/test_order.py`) — do not mirror the package tree.
-- **Fixtures over class inheritance.** `@pytest.mark.parametrize` over in-test loops.
+- **Unit tests colocate** as `test_<name>.py` beside the module they cover. This requires `importmode = "importlib"` under `[tool.pytest.ini_options]` — with the default `prepend` mode, two same-named test modules in different packages collide.
+- **Every other tier lives under a top-level `tests/`** — plural, the root pytest and the packaging tools expect. One optional subfolder per tier (`component`, `contract`, `integration`, `e2e`, `smoke`, `perf`, `chaos`), created only when that tier has tests. Flat by feature inside each; do not mirror the package tree.
+- **Helper placement maps to pytest's own scoping**: one file → bottom of that file, private, under `# --- Helpers ---`; one directory → that directory's `conftest.py`; everywhere → the root `conftest.py` or a `tests/helpers.py`.
+- **Descriptions are `#` comments, never docstrings.** A docstring in a test is still a banned comment; a one-or-two-line note above the `def` is the permitted form, and it is optional.
+- **Parallel is preferred for unit, component, and contract — never mandatory** — via `pytest-xdist` (`-n auto`). A case that cannot share a worker carries `@pytest.mark.serial` and runs in its own pass; a suite left fully serial is fine.
+- **Serial for smoke, integration, e2e, and chaos** — drop `-n` entirely for those tiers, since they call deployed infrastructure that the fan-out would load.
+- **Fixtures over class inheritance.** `@pytest.mark.parametrize` over in-test loops. Never `setup_method` / `teardown_method` — a requested fixture is already lazy and explicit, which the xUnit hooks are not.
+- **`autouse=True` is the thing to avoid**, not fixtures generally. It reintroduces the implicit per-case hook every other language is trying to escape, firing for tests that never asked for it.
+- **Scope by cost, not by habit.** Connection pools, mock servers, and base config are `scope="session"` and treated as read-only; only genuinely mutated state stays `scope="function"`. A case needing a mutated copy does `dataclasses.replace` or `copy.deepcopy` locally.
+- **`pytest-xdist` runs processes, not threads** — which is exactly why `monkeypatch.setenv` is safe under it and why a threaded runner would not be. That isolation costs per-worker startup; it is worth it.
+- **Poll, never `time.sleep`.** A tight loop against a hard deadline (or `tenacity` with a short wait) returns as soon as the condition holds; a fixed delay is both slower and flaky under CI load.
+- **Cheapen the test config, not the code** — bcrypt/Argon2 at the minimum work factor, `httpx` timeouts at 50–100ms, and logging routed to a null handler, all injected through the constructor rather than branched on an env check inside the module under test.
+- **Roll back instead of truncating.** Bind the session to an outer `connection.begin()` and roll it back in fixture teardown; per-case cleanup goes from hundreds of milliseconds to near zero and cannot leave orphan rows behind a crashed test.
 - **Mock at module boundaries** (`monkeypatch`, `unittest.mock`), never internals.
 - **Async via `pytest-asyncio`** with `asyncio_mode = "auto"`.
 - **DB-touching code gets integration tests** against ephemeral instances (`testcontainers`, `pytest-postgresql`).
-- **Tier definitions, merge/release gates, and coverage floors are owned by the `sdlc` skill** (90% minimum on new code, 100% on SDKs/shared libraries and security-critical paths) — this section covers Python mechanics only.
+- **Tier definitions, merge/release gates, and coverage floors are owned by the `sdlc` skill** (100% the target on new code, 85% the hard minimum, 100% required on SDKs/shared libraries and security-critical paths) — this section covers Python mechanics only.

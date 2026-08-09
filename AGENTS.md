@@ -27,14 +27,17 @@ All three are `PreToolUse` — they run **before** the write, so nothing lands o
 
 `comment_guard.py` compares comment multisets, so adjacency and reindentation are irrelevant. It fails closed — an unparseable payload denies rather than silently passing.
 
-It carries exactly two exceptions, both unforgeable by the agent:
+It carries exactly three exceptions:
 
 | Exception | Granted by | Scope |
 |---|---|---|
 | `+comments` in your message | `UserPromptSubmit` | That turn only |
 | Use-manual under a shebang | Position in the file | The header block |
+| Banner and test description | Path plus position | Test paths only |
 
-A content allowlist would be a third, and would not work — the agent writes the content, so it can always emit the exempt token. Never add one.
+An open content allowlist would be a fourth, and would not work — the agent writes the content, so it can always emit the exempt token. Never add one.
+
+The third exception survives that objection by being structural, not semantic. The description slot matches on **position** — at most 2 line comments, under 200 characters, sitting directly above a test declaration, inside a path the guard recognises as a test path. The `Helpers` banner is the guard's one content match, bounded to a single fixed label and only inside a test path. Neither slot lets arbitrary prose through anywhere else in the file.
 
 ## Skill contract
 
@@ -63,7 +66,7 @@ Workflow skills: `/plan` · `/generate-repo` · `/audit` · `/wrap-up` · `/acce
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 49 guard regression cases
+bash scripts/test-hooks.sh    # 63 guard regression cases
 bash scripts/doctor.sh        # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above

@@ -149,7 +149,19 @@ EXEMPT_SUBSTRINGS = (
 )
 
 TEST_FILE_MARKERS = ("_test.", ".test.", ".spec.", "test_", "_spec.")
+TEST_DIR_SEGMENTS = ("test", "tests", "__tests__", "testdata", "spec", "specs")
 BANNER_GLYPHS = "─━═-=*#/"
+BANNER_LABELS = ("helpers",)
+DESCRIPTION_MAX_LINES = 2
+DESCRIPTION_MAX_CHARS = 200
+ATTRIBUTE_LINE = re.compile(r"^(?:#\[|@)")
+FUNC_DECL = re.compile(r"^(?:pub\s+)?(?:async\s+)?fn\s+\w+|^(?:async\s+)?def\s+\w+")
+TEST_DECL = re.compile(
+    r"^func\s+(?:Test|Benchmark|Fuzz|Example)\w*"
+    r"|^(?:async\s+)?def\s+test_\w*"
+    r"|^(?:export\s+)?(?:async\s+)?function\s+\w*[Tt]est\w*"
+    r"|^(?:it|test|describe|context|bench|suite)(?:\.\w+)*\s*[(<]"
+)
 WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]")
 GRANT_SIGIL = re.compile(r"(?<![A-Za-z0-9_])\+comments(?![A-Za-z0-9_])", re.IGNORECASE)
@@ -170,8 +182,51 @@ def resolve_family(path):
 
 
 def is_test_file(path):
-    base = os.path.basename(path or "").lower()
-    return any(marker in base for marker in TEST_FILE_MARKERS)
+    normalized = (path or "").replace("\\", "/").lower()
+    segments = normalized.split("/")
+    base = segments[-1]
+    if any(marker in base for marker in TEST_FILE_MARKERS):
+        return True
+    return any(segment in TEST_DIR_SEGMENTS for segment in segments[:-1])
+
+
+def declares_test(line, after_attribute):
+    if TEST_DECL.match(line):
+        return True
+    return bool(after_attribute and FUNC_DECL.match(line))
+
+
+def description_comments(text, family):
+    line_marker = FAMILY_SYNTAX[family][0]
+    if not line_marker:
+        return set()
+    lines = text.splitlines()
+    total = len(lines)
+    found = set()
+    index = 0
+    while index < total:
+        if not lines[index].strip().startswith(line_marker):
+            index += 1
+            continue
+        start = index
+        while index < total and lines[index].strip().startswith(line_marker):
+            index += 1
+        run = [lines[position].strip() for position in range(start, index)]
+        cursor = index
+        while cursor < total and ATTRIBUTE_LINE.match(lines[cursor].strip()):
+            cursor += 1
+        if cursor >= total or not declares_test(lines[cursor].strip(), cursor > index):
+            continue
+        if len(run) > DESCRIPTION_MAX_LINES:
+            continue
+        bodies = [comment_body(normalize(item)) for item in run]
+        if sum(len(body) for body in bodies) > DESCRIPTION_MAX_CHARS:
+            continue
+        if not all(bodies):
+            continue
+        for item in run:
+            found.add(normalize(item))
+    return found
 
 
 def scan_comments(text, family):
@@ -288,7 +343,7 @@ def is_exempt(normalized, path):
             return True
     if is_test_file(path):
         stripped = body.strip(BANNER_GLYPHS + " ")
-        if stripped.lower() in ("setup", "helpers") or not stripped:
+        if stripped.lower() in BANNER_LABELS or not stripped:
             return True
     return False
 
@@ -332,7 +387,12 @@ def compare(old_text, new_text, family, path):
     added = list((new_counts - old_counts).elements())
     removed = list((old_counts - new_counts).elements())
     header = header_comments(new_text, family)
-    added = [item for item in added if not is_exempt(item, path) and item not in header]
+    described = description_comments(new_text, family) if is_test_file(path) else set()
+    added = [
+        item
+        for item in added
+        if not is_exempt(item, path) and item not in header and item not in described
+    ]
     removed = [item for item in removed if not is_exempt(item, path)]
     return added, removed
 
@@ -402,7 +462,9 @@ def format_addition_reason(path, added):
     lines.extend([
         "",
         "Code must be self-documenting. No inline comments, block comments,",
-        "docstrings, or JSDoc. Only machine directives and test banners are exempt.",
+        "docstrings, or JSDoc. Machine directives are always exempt. Inside a test",
+        "path, so are the Helpers banner and an optional 1-2 line description sitting",
+        "directly above a test declaration, under 200 characters, line comments only.",
         "Remove the comment text and retry the same edit.",
         "",
         "Do NOT resolve this by deleting any other comment in the file.",

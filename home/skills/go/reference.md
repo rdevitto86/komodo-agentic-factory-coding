@@ -16,7 +16,7 @@ One endpoint end to end. Copy the **structure**, not the names — `widget`/`thi
 | Middleware | `[]func(http.Handler) http.Handler` slices composed via the SDK's `Chain`; appended for stricter route variants |
 | Handler | a method on `*Service`; client errors via the SDK error emitter; success via a single local `writeJSON` |
 | Config/secrets | fetched once at boot from the SDK secrets surface; hot-reloaded via the SDK watcher |
-| Tests | colocated `_test.go` for unit (`-short`); `test/<tier>/` with build tags for the rest; component builds the real `*Service` with generated mocks + per-run RSA keys; `TestMain` for setup; `t.Helper()` on helpers |
+| Tests | colocated `_test.go` for unit (`-short`); `test/<tier>/` with a `testutil` gate call for the rest; component builds the real `*Service` with generated mocks + per-run RSA keys; `TestMain` for setup; `t.Helper()` on helpers |
 | Codegen | `oapi-codegen` per target with its own config; mocks via `//go:generate mockgen` into `test/mocks/`; a freshness gate in CI |
 
 

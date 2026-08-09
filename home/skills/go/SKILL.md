@@ -16,6 +16,8 @@ Zero comments, zero godoc. Error strings lead with a verb phrase and never name 
 - **`init()` does no I/O.** Wire through constructors (`NewServer`, `NewService`) — never package-level globals or `init()` registration.
 - **Log once, at the top of the stack.** Never log-and-return.
 - **Avoid vague names** — `processData`, `handleStuff`, `doWork`. A name you cannot make specific usually marks a function that should not exist.
+- **Bare `{ }` blocks narrow scope, they don't replace extraction.** Use one to isolate a short-lived variable or a lock/defer pair from the rest of the function. Past ~5 lines, it's a function, not a block.
+- **Prefer a closure over a new type or extra parameter** when it captures state a caller already has in scope — `sort.Slice`'s comparator, a middleware wrapping `http.Handler`, an `errgroup` task body. Skip it on a hot path: each closure is a heap allocation once it escapes, and a captured loop variable reused across iterations is a classic bug. Measure before choosing a closure over a struct method in code `pprof` already flags.
 
 **A single-call-site function must earn its place** as one of: dependent setup/wiring (`NewX`, option functions), a cohesive subset of functionality, a concurrency unit (goroutine or worker-loop body), or a deliberate abstraction seam (an interface swapped for a fake). Sequencing a handful of statements is not a subset of functionality — it is the call site. A long wiring function is normal Go, not a smell.
 

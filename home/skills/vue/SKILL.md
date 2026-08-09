@@ -95,7 +95,7 @@ watchEffect((onCleanup) => {
 
 `@vue/test-utils` with `mount` / `shallowMount`. Test files follow `.x.test.ts` naming. Unit tests colocate; component tests live in `test/component/`, flat by feature.
 
-Test tiers, gates, and coverage floors follow the `typescript` skill's folder scheme, defined by the `sdlc` skill.
+Test tiers, folder scheme, suites, helper placement, and descriptions follow the `typescript` skill; gates and coverage floors are defined by the `sdlc` skill.
 
 ## Repo layout — `vue-ui`
 

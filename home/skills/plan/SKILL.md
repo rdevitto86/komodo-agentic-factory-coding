@@ -95,7 +95,7 @@ Show the plan and **wait for approval**. Do not write to `TODO.md` yet.
 
 ## Step 6 — Write on approval only
 
-Once the user approves, merge into `TODO.md` in the format in `AGENTS.md` §7 — open work only, no completed section, no dates in headings.
+Once the user approves, merge into `TODO.md` in the format defined by the `todo` skill — open work only, no completed section, no dates in headings.
 
 - **Append under the right target state and group**, preserving existing phase numbering.
 - **Never renumber existing phases.**

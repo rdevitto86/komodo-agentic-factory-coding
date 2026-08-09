@@ -88,7 +88,7 @@ $effect(() => {
 - **`@testing-library/svelte`**, rendering with `render(Component, { props: { ... } })` — never `new Component()`.
 - **Drop the `+` from route test names**: `+page.svelte` becomes `page.x.test.ts`.
 - **Assert on DOM output and user events.** Never reach into component internals.
-- **Test tiers, gates, and coverage floors** follow the `typescript` skill's folder scheme, defined by the `sdlc` skill.
+- **Test tiers, folder scheme, suites, helper placement, and descriptions** follow the `typescript` skill; gates and coverage floors are defined by the `sdlc` skill.
 
 ## Repo layout — `svelte-ui`
 

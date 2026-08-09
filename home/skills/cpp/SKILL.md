@@ -33,6 +33,8 @@ Ask rather than assume — a wrong guess here costs a hardware revision.
 - **Static allocation by default.** Heap allocation needs a justification.
 - **DMA for high-bandwidth peripherals** when latency or CPU budget matters — establish the buffer lifetime explicitly.
 - **Host-side unit tests for pure logic**, colocated. HIL for timing and peripheral behaviour. On-target runs for end-to-end.
+- **No `test/` tier scheme here.** Firmware has no deployed environment, so the hosted-software tier folders would have nothing behind them; HIL and on-target runs are the substitute. A host-side suite needing its own root uses `test/`, flat by feature.
+- **Helpers sit at the bottom of the file**, `static`, under `// --- Helpers ---`. A one-or-two-line description above a test case is optional and reserved for non-obvious timing or hardware context.
 - **Merge/release gate structure follows the `sdlc` skill** where hosted-software tiers apply; HIL and on-target runs are the embedded substitute for the deployed-environment tiers.
 
 ## Flag aggressively

@@ -183,6 +183,74 @@ printf '{"hook_event_name":"PreToolUse","session_id":"%s-other","tool_name":"Edi
 
 grant_prompt '"reset"' | python3 "$HOOK" >/dev/null 2>&1
 
+expect "C22 the Helpers banner is exempt in a test file" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Helpers ----------------------------------------------------\n\nfunc newFixture(t *testing.T) {}"}}
+JSON
+
+expect "C23 the Setup banner is no longer exempt" deny \
+  "Setup" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Setup ---\n\nfunc newFixture(t *testing.T) {}"}}
+JSON
+
+expect "C24 the Helpers banner outside a test path is denied" deny \
+  "Helpers" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// --- Helpers ---\n\nfunc bar() {}"}}
+JSON
+
+expect "C25 a description directly above a Go test is exempt" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// the shipped branch is unreachable through the public API\nfunc TestCancel(t *testing.T) {}"}}
+JSON
+
+expect "C26 the same text above a non-test func is denied" deny \
+  "unreachable" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func newOrder() {}","new_string":"// the shipped branch is unreachable through the public API\nfunc newOrder() {}"}}
+JSON
+
+expect "C27 a three-line description exceeds the cap" deny \
+  "third sentence" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// first sentence on the boundary\n// second sentence on the boundary\n// third sentence on the boundary\nfunc TestCancel(t *testing.T) {}"}}
+JSON
+
+expect "C28 a description over 200 characters is denied" deny \
+  "config default" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// the retry ceiling interacts with the jitter window in a way the public API cannot express, so this case pins the exact boundary that a reader would otherwise have to derive from three separate files and a config default\nfunc TestCancel(t *testing.T) {}"}}
+JSON
+
+expect "C29 a blank line breaks the description slot" deny \
+  "degraded default" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestZero(t *testing.T) {}","new_string":"// checks the degraded default\n\nfunc TestZero(t *testing.T) {}"}}
+JSON
+
+expect "C30 a block comment above a test is denied" deny \
+  "degraded default" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestZero(t *testing.T) {}","new_string":"/* checks the degraded default */\nfunc TestZero(t *testing.T) {}"}}
+JSON
+
+expect "C31 a plain helper file under test/ gets the banner" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/test/integration/helpers.go","old_string":"func Seed() {}","new_string":"func Seed() {}\n\n// --- Helpers ---\n\nfunc reset() {}"}}
+JSON
+
+expect "C32 an arbitrary comment in a test file is still denied" deny \
+  "bump the counter" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"count++","new_string":"// bump the counter\ncount++"}}
+JSON
+
+expect "C32b a description above a truncated signature is exempt" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestNew","new_string":"// the cookie is only checked on unsafe methods\nfunc TestNew"}}
+JSON
+
+expect "C33 a description above a decorated pytest test is exempt" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/test_order.py","old_string":"def test_retry(n):\n    pass","new_string":"# pins the retry ceiling at the documented boundary\n@pytest.mark.parametrize(\"n\", [1, 2])\ndef test_retry(n):\n    pass"}}
+JSON
+
+expect "C34 a description above a Rust #[test] is exempt" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/tests/limits.rs","old_string":"fn saturates_at_cap() {}","new_string":"// the saturating add is only reachable at usize::MAX\n#[test]\nfn saturates_at_cap() {}"}}
+JSON
+
+expect "C35 a description above a Vitest case is exempt" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/order.x.test.ts","old_string":"it(\"rejects an expired card\", () => {","new_string":"// the 402 branch cannot be reached through the public client\nit(\"rejects an expired card\", () => {"}}
+JSON
+
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
 printf '\ngit guard\n\n'

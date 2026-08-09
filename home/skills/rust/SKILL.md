@@ -46,8 +46,16 @@ Zero comments, zero doc comments (`///`, `//!`). Error strings lead with a verb 
 
 ## Testing
 
-- **Unit tests colocate** in a `#[cfg(test)] mod tests` block.
-- **Integration tests live in `tests/`**, flat by feature.
+- **Unit tests colocate** in a `#[cfg(test)] mod tests` block, helpers private at the bottom of that block.
+- **Every other tier lives under `tests/`** — cargo's mandated root, plural. A subfolder becomes a test target only when it holds a `main.rs`; declare its cases from there with `mod order;`. Optional subfolders: `component`, `contract`, `integration`, `e2e`, `smoke`, `perf`, `chaos`.
+- **Shared fixtures go in `tests/<tier>/helpers.rs`**, or `tests/common/mod.rs` when they span tiers.
+- **No banner and no description inside a colocated `mod tests`.** The source file is not a test path, so the zero-comment rule applies to it in full. Files under `tests/` take both.
+- **`cargo test` already runs one thread per test.** A case that cannot share the process takes `serial_test::serial`.
+- **Deployed tiers run serial** — `tests/smoke`, `tests/integration`, `tests/e2e`, and `tests/chaos` take `--test-threads=1`, since a parallel fan-out loads the very infrastructure under test.
+- **No lifecycle hooks, and none are wanted.** A `let ctx = test_context();` at the top of the case is the idiom already — never reach for a `rstest` fixture to smuggle implicit per-case setup back in.
+- **Poll, never `thread::sleep` or `tokio::time::sleep`.** Loop the condition on a tight interval inside `tokio::time::timeout`, so it returns the instant the condition holds instead of always paying the delay.
+- **Cheapen the test config, not the code** — the minimum bcrypt/Argon2 cost, `reqwest` timeouts at 50–100ms, and `tracing_subscriber::fmt().with_test_writer()` so log output is captured per case and printed only on failure. All injected, never selected by a `cfg!(test)` branch inside the code under test.
+- **Roll back instead of truncating.** Hand each case a `sqlx::Transaction` and never commit it — the drop rolls back, so cleanup is near-free and a panicking test leaves nothing behind.
 - **`proptest` for parsers and codecs** where the input space is large.
 - **`cargo test` runs clean under `--all-features`.**
-- **Tier definitions, merge/release gates, and coverage floors are owned by the `sdlc` skill** (90% minimum on new code, 100% on SDKs/shared libraries and security-critical paths) — this section covers Rust mechanics only.
+- **Tier definitions, merge/release gates, and coverage floors are owned by the `sdlc` skill** (100% the target on new code, 85% the hard minimum, 100% required on SDKs/shared libraries and security-critical paths) — this section covers Rust mechanics only.

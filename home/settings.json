@@ -104,6 +104,7 @@
       "Read(./**/credentials)"
     ]
   },
+  "model": "haiku",
   "hooks": {
     "PreToolUse": [
       {
@@ -176,7 +177,7 @@
     "skill-creator@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "theme": "light",

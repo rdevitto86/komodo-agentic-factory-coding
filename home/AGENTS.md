@@ -16,6 +16,8 @@ There is one user and one agent here. No other teams, no downstream consumers, n
 
 **Exempt** — these are code, not commentary: machine directives (`//go:build`, `//nolint`, `# noqa`, `# type:`, `@ts-expect-error`, `eslint-disable`, SPDX, codegen markers), shebangs, and a use-manual block directly under a shebang.
 
+**Exempt in test paths only** — a `--- Helpers ---` banner, and an optional 1–2 line description directly above a test declaration. Both are defined by the `sdlc` skill. Nowhere else, nothing else.
+
 **Only the user lifts the rule**, by sending `+comments`. It grants that turn alone. Never ask for it — if they wanted comments they would have said so.
 
 ---
