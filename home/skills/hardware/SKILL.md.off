@@ -1,12 +1,12 @@
 ---
 name: hardware
-description: Hardware and robotics: circuit review, PCB layout, BOM, robotics integration.
+description: Hardware and robotics — circuit review, PCB layout, BOM, robotics integration. Load before reviewing a schematic, PCB, BOM, or robot control loop.
 user-invocable: false
 ---
 
 # Hardware
 
-Physical design and integration. **Firmware code rules live in the `cpp` skill** — this covers everything upstream of it.
+Physical design and integration. Firmware code rules live in the `cpp` skill — this covers everything upstream of it.
 
 ## Confirm before designing
 

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+# pre-commit - dispatcher. Runs every pre-commit-* sibling in this directory.
+#
+# Install (per repo):  bash scripts/hooks/git/install.sh /path/to/repo
+#
+# Every check runs even if an earlier one fails, so a single commit
+# attempt reports every problem at once. Exit 1 if any check failed.
+#
+# Skip one check:  SKIP=gofmt git commit ...      (comma-separated suffixes)
+# Skip all:        git commit --no-verify
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKIP="${SKIP:-}"
+FAILED=0
+
+for check in "$HOOK_DIR"/pre-commit-*; do
+  [ -x "$check" ] || continue
+  name="$(basename "$check")"
+  suffix="${name#pre-commit-}"
+
+  case ",$SKIP," in
+    *",$suffix,"*) printf 'pre-commit: skipped %s\n' "$suffix" >&2; continue ;;
+  esac
+
+  "$check" || FAILED=1
+done
+
+exit "$FAILED"

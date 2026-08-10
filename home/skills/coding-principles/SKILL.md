@@ -12,7 +12,7 @@ Language-independent doctrine. The language skills express these in their own id
 
 Before writing any non-trivial logic, check in this order:
 
-1. **`komodo-forge-sdk-*` first.** If the SDK covers it, use it. A claimed gap must be verified against the SDK's actual source before it is treated as real — then flagged so it can be filled upstream, not quietly worked around.
+1. **The language's shared SDK first.** If it covers the concern, use it. A claimed gap must be verified against the SDK's actual source before it is treated as real — then flagged so it can be filled upstream, not quietly worked around. The language skill names the package.
 2. **A well-vetted library second.** Broad adoption, active maintenance, clear licence.
 3. **Custom code last.** If new custom code is general-purpose, name it as a candidate for SDK extraction.
 4. **Never add a dependency the project doesn't already use without asking first.**

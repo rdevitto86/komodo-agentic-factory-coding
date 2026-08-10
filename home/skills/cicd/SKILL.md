@@ -1,5 +1,5 @@
 ---
-name: ci-cd
+name: cicd
 description: Pipeline stages, merge vs release gates, ephemeral CI infra, blue/green, rollback, feature flags.
 user-invocable: false
 ---
@@ -15,7 +15,7 @@ Platform-neutral. Every repo declares its pipeline in a build config; a CI/CD se
 | Stage | Where | Runs | Gates |
 |---|---|---|---|
 | **1 · DEV** | The developer's machine | unit, component, contract, smoke, integration | **The commit and the push**, via local hooks |
-| **2 · CI** | Ephemeral runner, per PR | unit, component, contract — full | The merge |
+| **2 · CI** | Ephemeral runner, per PR | unit, component, contract — full, plus the security scans | The merge |
 | **3 · STG** | Deployed, post-merge | smoke → integration → e2e → perf (flagged) | The release |
 | **4 · PROD** | Deployed, on approval | smoke | Nothing after it |
 
@@ -40,14 +40,14 @@ Stage 1 gates its own output. These are the only gates before a remote runner se
 
 | Hook | Gates | Runs | Mandatory |
 |---|---|---|---|
-| **pre-commit** | The commit | Language formatter and linter on staged files. **Never tests** | Yes |
-| **pre-push** | The push | Unit tests + coverage, delta-scoped to the changed files' packages | No |
+| **pre-commit** | The commit | Language formatter and linter on staged files, plus a secret scan of the staged diff. **Never tests** | Yes |
+| **pre-push** | The push | Unit tests + coverage, delta-scoped to the changed files | No |
 
-Go reports coverage per package, so the pre-push delta is the set of packages containing changed files — the tightest scope the toolchain supports.
+**Delta scope is whatever unit the language's coverage tool reports on** — the package, module, or file set containing the changes. Take the tightest scope the toolchain supports; the language skill names the tool.
 
 **Both are local-only.** No remote container, no runner, no network. A hook that needs infrastructure belongs in Stage 2.
 
-**The hooks ship with the language SDK, not with a repo and not with agent config.** `komodo-forge-sdk-go` owns the Go implementation — `gofmt`, `goimports`, `golangci-lint` on commit; delta `go test -cover` on push. A repo installs from the SDK and points `core.hooksPath` at it; never hand-write a per-repo copy, and never reimplement one because the SDK's is inconvenient. The contract above is what the hook must do; the SDK decides how.
+**The hooks ship with the language SDK, not with a repo and not with agent config.** A repo installs from the SDK and points `core.hooksPath` at it; never hand-write a per-repo copy, and never reimplement one because the SDK's is inconvenient. **This skill states what the hook must do; the language skill names the formatter, linter, and test command; the SDK decides how.**
 
 ## Stage 2 — CI
 
@@ -57,6 +57,23 @@ Go reports coverage per package, so the pre-push delta is the set of packages co
 - **Hermetic.** Stage 2 never reaches STG. A STG outage must not block every open PR, and PR runners must not hold production-adjacent credentials.
 - **LocalStack stands in for secret fetching** and any AWS-shaped dependency, so the run needs no real credentials at all.
 - **Runs unit, component, and contract in full.** Contract verifies both sides in-process against file-based pacts — no broker.
+
+### Security gates
+
+Three scans, all blocking on the merge. Thresholds are stated here so the gate is enforceable without loading anything else.
+
+| Scan | Blocks on |
+|---|---|
+| **Secret** | Any verified live credential — including one only reachable in the branch's history |
+| **Dependency** | A High or Critical advisory with no recorded exception |
+| **Static analysis** | A High or Critical rule, on changed files only |
+
+- **The command belongs to the language skill** — it names the vulnerability scanner and the linter's security rule set. This file owns only which stage runs it and what fails the merge.
+- **Path filters never skip the security scans.** A docs-only PR skips the test pipeline; a lockfile or workflow change never does.
+- **Draft PRs run the secret scan.** The other two wait for ready-for-review with the rest of the stage.
+- **Scan the built image too**, not just the manifest — base-layer CVEs do not appear in a dependency lockfile.
+- **An exception is a committed record** with an owner, an expiry, and a compensating control. An expired exception fails the gate again; a permanent suppression is not an exception.
+- **A finding blocks the merge without needing triage.** Load the `security` skill only when deciding whether a finding is genuinely exploitable or an exception is justified — never to run the gate.
 
 ### Runner rules
 
@@ -137,6 +154,23 @@ Nothing here rides a merge. Each is triggered on its own.
 - **The same artifact is promoted.** No rebuild, no code difference, no contract difference between STG and PROD.
 - **Blue/green, same as STG** — deploy inactive, smoke, flip.
 - **Express releases are the one exception**, auto-approved by the rule above.
+
+### Approval gate
+
+**The SCM host holds the pause, not a custom engine.** The build's source-control host pauses the run using its own native reviewer-gate feature — GitHub's required reviewers today, whatever the equivalent is on another host tomorrow. A paused job burns no compute and costs nothing to leave waiting, so nothing purpose-built is needed to hold it open. This repo's own job is narrower: notify the right people, and make sure the wait can't go on forever.
+
+| When | What fires |
+|---|---|
+| PROD-ready, gate opens | `deployment.awaiting_approval` — approvers notified by email and Slack |
+| 18h with no decision (default) | `deployment.approval_expired` — the run is cancelled at the SCM host, approvers notified it auto-failed |
+
+- **18 hours is the default timeout**, declared in the build config and overridable per repo — long enough for a normal approval cycle, short enough that a release never sits forgotten. No mid-window reminder: one notification when the gate opens, one if it expires.
+- **Expiry is final.** Once cancelled, a late approval is a no-op — the run no longer exists to promote. Shipping after expiry means re-triggering the release from STG, not resuming the old one. This avoids a race between a last-second click and the cancel job.
+- **A crash between approval and timer-cancellation is harmless.** The expiry handler checks the run's actual status before acting — cancelling an already-finished run is a no-op, not a bug.
+
+### STG-only releases
+
+A build-config flag marks a release as STG-only. Stage 4 never starts for that run — no gate, no timers, no notifications. This isn't "reach the gate and auto-skip it"; there is no PROD-bound release to approve, so nothing about Stage 4 fires at all. Use this for changes that are deliberately staging-scoped, so they never sit blocking on an approval nobody intends to give.
 
 ## Rollback
 

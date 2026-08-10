@@ -1,36 +1,35 @@
 ---
 name: wrap-up
-description: Report finished phased or scoped task work as a PR-style summary — commit message, changed files, test scenarios by tier, follow-ups.
+description: Report finished work as a commit message plus what changed.
 argument-hint: []
 disable-model-invocation: true
 ---
 
 # Wrap-up
 
-**Only at the end of phased work or a scoped task** — not after every file edit, not mid-plan. **Only inside a git repository** — if the working directory isn't one, say so and stop.
+**At the end of a scoped task or a phase** — not after a single edit, not mid-plan. **Inside a git repository only** — if the working directory isn't one, say so and stop.
+
+Read the diff before writing this. Every line comes from what actually changed, never from the plan you intended to execute.
 
 ## Output
 
 ```markdown
-## ✅ <task/phase/plan name>
-**Commit message**: <type>(<scope>): <summary>
+## ✅ <task or phase name>
+
+**<type>(<scope>): <summary>**
 
 ### Changed
-- <file/area> — <what changed, ≤5 sentences>
+- **<file or area>** — <what changed, one sentence>
 
-### Tests
-#### Unit
-- <scenario covered>
-#### Component
-- <scenario covered>
-#### Integration
-- <scenario covered>
+### Verified
+- <command run> — <result>
 
 ### Follow-ups
-- <deferred item, if any> → added to TODO.md
+- <deferred item> → TODO.md
 ```
 
-- **Commit message** follows conventional-commit style even if nothing is actually committed.
-- **Only include tier subheadings that have scenarios.** No empty `### Component` when nothing discretionary was added.
-- **Tests lists scenarios, not tier names** — a reviewer should know what broke if one of these regresses.
-- **Follow-ups is omitted entirely when there are none** — no "N/A" filler.
+- **Conventional-commit style**, even though nothing is being committed. Subject line only; no body, no footer.
+- **Changed lists areas, not every file.** Ten files in one package is one line.
+- **Verified is what you actually ran** — the test command and its real result. A failure goes here stated plainly, not softened and not omitted.
+- **Omit any section that is empty.** No "N/A", no empty heading.
+- **No test-tier breakdown.** `sdlc` owns tier definitions; repeating them here turns a summary into a report.

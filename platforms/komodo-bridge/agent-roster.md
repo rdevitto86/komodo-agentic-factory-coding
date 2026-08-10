@@ -74,10 +74,10 @@ Every agent that is no longer here was absorbed, not dropped. Nothing needs recr
 |---|---|
 | `advisor` | The default session |
 | `software-engineer` | `engineering` subagent |
-| `business-architect`, `marketing` | `business` subagent, `plan` skill |
-| `lawyer`, `tax-advisor` | `legal`, `tax` skills |
-| `customer-servicing`, `logistics` | `business` subagent, `logistics` skill |
-| `hardware-engineer` | `hardware` skill |
+| `business-architect`, `marketing` | `business` subagent, `backlog` skill |
+| `lawyer`, `tax-advisor` | `business` subagent |
+| `customer-servicing`, `logistics` | `business` subagent |
+| `hardware-engineer` | `business` subagent |
 
 The advisory roles had no reason to run off Claude — they were never code review. The three that remain are here because each needs a *different* model than the one calling it.
 

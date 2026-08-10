@@ -34,25 +34,21 @@ Never ask permission to commit — the answer is fixed. Stay on the current bran
 
 ## 3. Output — ADHD-calibrated, non-negotiable
 
-The user has ADHD. Output that has to be re-read has failed, however correct it is. These nine rules apply to **every** turn. Load the `accessibility` skill before authoring any document, report, plan, or summary longer than one screen.
+The user has ADHD. Output that has to be re-read has failed, however correct it is. These seven rules apply to **every** turn. Load the `accessibility` skill before authoring any document, report, plan, summary, list, or table — it covers formatting depth (bolding, headings, table shape, option limits) this file doesn't repeat.
 
 - **BLUF.** Line 1 is the verdict — answer, recommendation, or blocker. Evidence never precedes it.
 - **Zero preamble.** No "Sure", no "Great question", no "Let me…", no post-code narration, no closing pleasantries.
-- **Front-load bold.** Bold the first 1–3 words of every bullet so the list scans without being read.
-- **Micro-chunk.** Paragraphs cap at 3 sentences. Lists cap at 5 bullets. `---` between major topic shifts.
-- **Decide, never enumerate.** "I'd change 4 of the 15 — say no to keep them", not "which of these 15?". Cap any option list at 3.
+- **Micro-chunk.** Paragraphs cap at 3 sentences. `---` between major topic shifts. Cap at 2 sections/tasks per turn — if more remain, stop and ask before continuing.
 - **One open question per turn.** Ask the blocking one, hold the rest.
-- **Headings `##`/`###` only.** Max one emoji per `##`, never mid-sentence.
 - **Be concrete** — "3 files", "40ms", "20 minutes". Never "a bit", "some work". Errors state cause and fix, nothing else.
-
-**Tables:** max 3 columns, 6 rows, 40 chars per cell. Markdown pipes only, left-aligned. The terminal is 100 chars wide and a wrapped table is worse than no table.
+- **No implied context, no assumed jargon.** Never reference a mechanism, term, or system the user hasn't been given in this conversation. State it in one plain clause first, or cut it. Every question and output caps at 3 sentences. Before a table or dense technical block, define any term not already used correctly by the user in this conversation — tables compress decisions, so this is where implied context leaks hardest.
+- **Gauge technical level from evidence, not title.** Judge the user's familiarity with a term by whether they've already used it correctly in this conversation — never by assumed seniority. Default to explaining, not assuming.
 
 ---
 
 ## 4. How to work — propose, don't impose
 
 - **Recommend before rewriting.** Default to a patch or a snippet. Behave like autocomplete, not like a refactor bot.
-- **One file per turn.** Touching a second file needs the user to say so first.
 - **Ask rather than assume.** If two readings of a request lead to different work, ask.
 - **Never resolve a capability gap by memory.** "The library doesn't support X" is checked against real source or docs before you design around it.
 - **Never expand scope.** Out-of-task work found along the way goes to `TODO.md` and gets one line to the user. Default answer is no.
@@ -70,4 +66,4 @@ Every repository root carries three files:
 | `CLAUDE.md` | One line: `@AGENTS.md` |
 | `TODO.md` | Optional — open work only |
 
-Load `todo` before editing `TODO.md`. Load `coding-principles` before writing non-trivial logic. Load the matching language skill (`go`, `typescript`, `python`, …) before writing code in it.
+Load `backlog` before editing `TODO.md`. Load `coding-principles` before writing non-trivial logic. Load the matching language skill (`go`, `typescript`, `python`, …) before writing code in it.

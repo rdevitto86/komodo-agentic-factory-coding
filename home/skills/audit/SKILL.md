@@ -50,7 +50,7 @@ Missing features and improvement ideas are welcome as low-severity findings unle
 
 ## Output — report only
 
-**Never write to `TODO.md`.** Report findings; the user decides what becomes a story. Offer at the end: "Want any of these turned into stories? Run `/plan`."
+**Never write to `TODO.md`.** Report findings; the user decides what becomes a story. Offer at the end: "Want any of these turned into stories? Run `/backlog`."
 
 ```markdown
 ## 🔍 Verdict

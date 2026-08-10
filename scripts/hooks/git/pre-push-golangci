@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#
+# pre-push-golangci - full-module lint gate for Go repos.
+#
+# No go.mod at the repo root means this is not a Go repo; exits 0.
+#
+# It also compares the repo's .golangci.yaml against the canonical
+# template and prints a warning on drift. Drift warns, never blocks:
+# a repo with genuine local exclusions is legitimate. A config that
+# fails to load is caught by the lint run itself, which does block.
+#
+# Override the canonical location with KOMODO_GOLANGCI_TEMPLATE.
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -f "$REPO_ROOT/go.mod" ] || exit 0
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="${KOMODO_GOLANGCI_TEMPLATE:-$HOOK_DIR/../../../templates/go/.golangci.yaml}"
+CONFIG="$REPO_ROOT/.golangci.yaml"
+
+command -v golangci-lint >/dev/null 2>&1 || {
+  printf 'pre-push-golangci: golangci-lint not found on PATH\n' >&2
+  printf 'Install: brew install golangci-lint\n' >&2
+  exit 1
+}
+
+if [ ! -f "$CONFIG" ]; then
+  printf 'pre-push-golangci: no .golangci.yaml at repo root\n' >&2
+  printf 'Seed it from the canonical template:\n  cp %s %s\n' "$TEMPLATE" "$CONFIG" >&2
+  exit 1
+fi
+
+if [ -f "$TEMPLATE" ] && ! diff -q "$TEMPLATE" "$CONFIG" >/dev/null 2>&1; then
+  printf 'pre-push-golangci: .golangci.yaml differs from the canonical template.\n' >&2
+  printf 'Review with:  diff %s %s\n\n' "$TEMPLATE" "$CONFIG" >&2
+fi
+
+cd "$REPO_ROOT" || exit 1
+golangci-lint run ./... || {
+  printf '\npre-push-golangci: lint failed. Fix the issues above or push with --no-verify.\n' >&2
+  exit 1
+}
+exit 0

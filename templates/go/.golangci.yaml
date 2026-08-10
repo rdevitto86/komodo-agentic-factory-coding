@@ -1,0 +1,71 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - misspell
+    - gosec
+    - cyclop
+    - gocognit
+    - wrapcheck
+    - errorlint
+    - contextcheck
+
+  settings:
+    cyclop:
+      max-complexity: 15
+
+    gocognit:
+      min-complexity: 20
+
+    gosec:
+      excludes:
+        - G115
+
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: var-naming
+          disabled: true
+        - name: error-return
+          disabled: false
+
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/rdevitto86/komodo-forge-sdk-go/*
+
+    errorlint:
+      errorf: true
+      comparison: true
+
+  exclusions:
+    rules:
+      - path: "_test\\.go"
+        linters:
+          - wrapcheck
+          - gosec
+          - errcheck
+
+      - path: "main\\.go"
+        linters:
+          - contextcheck
+
+      - linters:
+          - contextcheck
+        text: "->emit` should pass the context parameter"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

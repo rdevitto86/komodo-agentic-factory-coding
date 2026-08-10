@@ -78,7 +78,7 @@ TEST_TIER=integration TEST_TARGET=live go test ./test/integration/...
 
 **A resolved target on a PROD host aborts the run.** That check lives in the shared test setup, not in each test.
 
-Tier definitions and coverage floors are owned by the `sdlc` skill; stage ordering, express releases, and failure handling by the `ci-cd` skill. This section only covers the Go mechanics.
+Tier definitions and coverage floors are owned by the `sdlc` skill; stage ordering, express releases, and failure handling by the `cicd` skill. This section only covers the Go mechanics.
 
 **Performance is not `TEST_TIER`-gated.** `testing.B` benchmarks don't run under `go test` without `-bench`, and k6 isn't a Go test at all, so both are invoked by their own STG pipeline job (`go test -bench=. ./test/perf/...`) rather than through the ladder. There is no `testutil.Perf` helper and none should be added.
 
@@ -218,7 +218,7 @@ The tier is named **live dependency** in the `sdlc` skill; `e2e` stays the on-di
 - **Happy paths only.** They answer "is it working end to end," not "is every branch correct" — depth belongs in the merge-gating tiers.
 - Flows that span services live under `test/e2e/`, flat by feature, not under a bare top-level `e2e/`. Mark them with `testutil.E2E(t)`.
 - **Seed what you need, tear down what you seeded**, namespaced per run. Never depend on data another run left behind.
-- **Classify each dependency hard or soft.** A hard dependency down fails the test; a soft one skips it with an explicit outage reason — see the `ci-cd` skill. Never let an unreachable dependency produce a pass.
+- **Classify each dependency hard or soft.** A hard dependency down fails the test; a soft one skips it with an explicit outage reason — see the `cicd` skill. Never let an unreachable dependency produce a pass.
 
 ## Parallel and serial
 

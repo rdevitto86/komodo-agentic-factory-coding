@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# pre-commit-gofmt - fails when a staged Go file is not gofmt-clean.
+#
+# Checks and reports; it never rewrites or re-stages your files. A hook
+# that runs `gofmt -w` on a partially staged file silently pulls the
+# unstaged remainder into the commit, so this one refuses to write.
+#
+# Fix what it reports with:  gofmt -w <files>
+set -uo pipefail
+
+command -v gofmt >/dev/null 2>&1 || {
+  printf 'pre-commit-gofmt: gofmt not found on PATH\n' >&2
+  exit 1
+}
+
+STAGED="$(git diff --cached --name-only --diff-filter=ACM -- '*.go')"
+[ -z "$STAGED" ] && exit 0
+
+UNFORMATTED=""
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  [ -f "$file" ] || continue
+  if [ -n "$(git show ":0:$file" | gofmt -l /dev/stdin 2>/dev/null)" ]; then
+    UNFORMATTED="$UNFORMATTED  $file"$'\n'
+  fi
+done <<< "$STAGED"
+
+[ -z "$UNFORMATTED" ] && exit 0
+
+printf 'pre-commit-gofmt: staged files are not gofmt-clean:\n%s\n' "$UNFORMATTED" >&2
+printf 'Fix with: gofmt -w%s\n' "$(printf '%s' "$UNFORMATTED" | tr -s '\n ' ' ')" >&2
+exit 1

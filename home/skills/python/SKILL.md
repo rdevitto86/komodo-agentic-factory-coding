@@ -10,8 +10,9 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 
 ## Tooling and types
 
-- **Python 3.12+**, pinned in `pyproject.toml` (`requires-python = ">=3.12,<3.13"`). Dependencies via `uv` (preferred) or `poetry` — never raw `pip`.
+- **The version floor is declared in `pyproject.toml` under `requires-python`.** Read it rather than assuming a release. Dependencies via `uv` (preferred) or `poetry` — never raw `pip`.
 - **`ruff format`, `ruff check`, `mypy --strict`** (or strict `pyright`). No `black`/`isort`/`flake8`/`pylint` stack. Type errors block merge.
+- **Vulnerability scanning** — `pip-audit` (or `uv pip audit`) against the resolved lockfile is the gate. Enable ruff's `S` (bandit) rules for the static half, excluded from test paths. `cicd` defines the gate; the `security` skill states the bar.
 - **`from __future__ import annotations`** at the top of every module. Annotate every signature and module-level binding. No bare `Any`.
 - **`typing.Protocol` for boundary interfaces**; ABCs only for genuine nominal subtyping.
 - **Validate external boundaries** with `pydantic` v2 or `attrs`. Prefer `TypedDict` / `dataclass` / `BaseModel` over `dict[str, Any]`. Value types are `@dataclass(frozen=True, slots=True)`.
@@ -33,6 +34,20 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 - **`httpx.AsyncClient` over `aiohttp`.**
 - **CPU-bound work goes to `ProcessPoolExecutor`**, not threads — the GIL makes threads useless here.
 - **`contextvars`** for per-task context.
+
+## Quick-reference fields
+
+The field set a Python repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
+
+| Field | Source on disk |
+|---|---|
+| Version floor | `requires-python` |
+| Package name | `pyproject.toml` |
+| Dependency manager | lockfile present |
+| Entrypoint | `project.scripts` |
+| Run + test | `pyproject.toml` |
+
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `tech-stack`, or `sdlc` already states by name.
 
 ## Testing
 

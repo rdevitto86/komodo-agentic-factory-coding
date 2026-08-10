@@ -6,7 +6,9 @@ user-invocable: false
 
 # SDLC
 
-Defines the tiers and what each one is for, language-agnostically. Every language skill (`go`, `typescript`, `python`, …) owns its own tooling, folder mechanics, and repo-scaffold layout, and must not contradict this. When each tier runs, and what happens when it fails, is owned by the `ci-cd` skill.
+Defines the tiers and what each one is for, language-agnostically. Every language skill (`go`, `typescript`, `python`, …) owns its own tooling, folder mechanics, and repo-scaffold layout, and must not contradict this. When each tier runs, and what happens when it fails, is owned by the `cicd` skill.
+
+**This file names no framework.** The approved stack per tier lives in the language skill's testing reference — `go/testing.md` and `typescript/testing.md`; `python` carries its own inline. Read the one matching the repo before choosing a test tool.
 
 ## Where each tier runs
 
@@ -143,7 +145,7 @@ Three settings dominate a suite's wall-clock time. Each is **a value the test su
 - **A tier that only runs in CI is broken.** Every tier a developer can usefully run has a local invocation, using the same code the pipeline uses.
 - **Component is the only discretionary tier.**
 - **Never let a lower tier depend on a higher one.** Unit tests pass with no infrastructure present.
-- **A test that did not run never reports as passed.** Skipped-on-outage is its own visible state — see the hard/soft dependency rule in the `ci-cd` skill.
+- **A test that did not run never reports as passed.** Skipped-on-outage is its own visible state — see the hard/soft dependency rule in the `cicd` skill.
 - **Parallelism is preferred, never mandatory.** Prefer it for unit, component, and contract, where the only cost is the discipline of owning your own fixtures. A suite that stays serial is not a defect and needs no apology.
 - **Never add it in bulk.** Parallel tests resume together inside one process, so a package with mutable package-level state or environment writes breaks the moment it is switched on — and the failure is intermittent, not immediate. Add it per package, then prove it under a repeated race run.
 - **Serial is the default for smoke, integration, e2e, and chaos.** These call real deployed infrastructure. Fanning them out loads the environment under test, so a timeout stops meaning "the code is slow" and starts meaning "the suite competed with itself" — and on a freshly flipped deployment that load lands exactly when the service is least able to absorb it.

@@ -9,7 +9,7 @@ description: ADHD-calibrated output formatting. Load before authoring any docume
 
 Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1986), Gestalt proximity, and WCAG 2.2 cognitive guidelines.
 
-`AGENTS.md` § 3 carries the nine always-on rules. This skill is the depth behind them plus everything that only applies to authored documents.
+`AGENTS.md` § 3 carries the seven always-on rules. This skill is the depth behind them plus everything that only applies to authored documents.
 
 ---
 
@@ -36,6 +36,8 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 | Options offered | 3 |
 
 **Over a cap means restructure, not shrink.** A 9-bullet list becomes three groups of three under bold sub-headings. A 5-column table becomes a 3-column table plus bullets underneath.
+
+**Decide, never enumerate.** "I'd change 4 of the 15 — say no to keep them", not "which of these 15?". Cap any option list at 3.
 
 **Numbered lists only for sequential dependency.** If order does not matter, bullets — numbers imply a sequence the reader will try to hold.
 

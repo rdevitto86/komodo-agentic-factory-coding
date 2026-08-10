@@ -90,6 +90,20 @@ $effect(() => {
 - **Assert on DOM output and user events.** Never reach into component internals.
 - **Test tiers, folder scheme, suites, helper placement, and descriptions** follow the `typescript` skill; gates and coverage floors are defined by the `sdlc` skill.
 
+## Quick-reference fields
+
+The field set a Svelte repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
+
+| Field | Source on disk |
+|---|---|
+| Framework + floor | `package.json` |
+| Package name | `package.json` |
+| Dev port | `vite.config.ts` |
+| Adapter | `svelte.config.js` |
+| Path alias | `svelte.config.js` |
+
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `typescript`, or `uiux` already states by name.
+
 ## Repo layout — `svelte-ui`
 
 ```

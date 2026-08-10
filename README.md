@@ -25,8 +25,8 @@ home/                 mirrors ~/.claude exactly
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions + hook registration
 ├── agents/           engineering, business — read-only research only
-├── hooks/            comment_guard.py, git_guard.py, scope_guard.py
-└── skills/           24 skills, lazily loaded
+├── hooks/            comment_guard.py, git_guard.py
+└── skills/           20 skills, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / TODO.md for a new repo
 platforms/komodo-bridge/   local LLM MCP bridge config
 scripts/              doctor.sh, test-hooks.sh, portable git hooks
@@ -34,13 +34,12 @@ scripts/              doctor.sh, test-hooks.sh, portable git hooks
 
 ## The guards
 
-All three run as `PreToolUse`, so a violation never reaches disk.
+Both run as `PreToolUse`, so a violation never reaches disk.
 
 | Guard | Denies | Asks |
 |---|---|---|
 | `comment_guard.py` | Any newly added comment | Before deleting one it did not add |
 | `git_guard.py` | State-changing git, in-place rewrites | — |
-| `scope_guard.py` | — | Before a second file in one turn |
 
 `comment_guard.py` compares **comment multisets** rather than diff hunks. Editing the line a comment sits on, or reindenting it, is not a change. Deleting it is.
 
@@ -91,7 +90,7 @@ A new skill costs ~30 tokens of listing. A new line in `home/AGENTS.md` costs it
 
 `scripts/hooks/git/pre-commit-comments` runs the same `comment_guard.py` against staged files, so any tool in any editor hits the same rule. That one belongs here — it enforces an agent rule, not a toolchain.
 
-**Lint and test hooks do not live here.** `pre-commit` (format + lint) and `pre-push` (delta unit tests + coverage) ship with the language SDK — `komodo-forge-sdk-go` for Go. The `ci-cd` skill states the contract they must satisfy; the SDK decides how.
+**Lint and test hooks do not live here.** `pre-commit` (format + lint) and `pre-push` (delta unit tests + coverage) ship with the language SDK — `komodo-forge-sdk-go` for Go. The `cicd` skill states the contract they must satisfy; the SDK decides how.
 
 Install per repo:
 

@@ -8,6 +8,14 @@ user-invocable: false
 
 Zero comments, zero godoc. Error strings lead with a verb phrase and never name the function.
 
+## Toolchain
+
+- **Version floor is whatever `go.mod` declares.** Read it; never assume a release.
+- **Formatting and linting** — `gofmt` and `goimports` on commit, `golangci-lint` as the gate. These are the tools the pre-commit hook runs; `cicd` defines when.
+- **Vulnerability scanning** — `govulncheck ./...` is the gate; it reports reachability, so triage by call path, not by CVE score alone. Enable `gosec` in `.golangci.yaml` for the static half. `cicd` defines the gate; the `security` skill states the bar.
+- **Coverage delta is per package** — Go reports at package granularity, so the pre-push scope is the set of packages containing changed files.
+- **Forge SDK** — module path `github.com/rdevitto86/komodo-forge-sdk-go`, subpackaged by concern. Import the published module at a pinned version; never a `replace` directive pointing at a local checkout. Read its package tree before concluding it lacks something.
+
 ## Conventions
 
 - **`golangci-lint` must pass.** Config at `.golangci.yaml`. A suppression is a bare `//nolint:<rule>` directive with no appended prose; the reason goes in `TODO.md`, never in a comment. Prefer fixing the finding.
@@ -82,7 +90,21 @@ go.mod
 
 One generic entrypoint at `cmd/server/main.go`, or `cmd/main.go` as the alternative — never a `cmd/public` / `cmd/private` split, which is a dead convention. Audience-specific middleware (browser-facing vs service-to-service) is a routing concern inside `internal/`, not a second binary.
 
-**No `db/` unless the user says the service owns one.** Most do not. When it does, add `db/migrations/` and follow the `stack` skill's migration naming.
+**No `db/` unless the user says the service owns one.** Most do not. When it does, add `db/migrations/` and follow the `tech-stack` skill's migration naming.
+
+## Quick-reference fields
+
+The field set a Go repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
+
+| Field | Source on disk |
+|---|---|
+| Language + floor | `go.mod` |
+| Module path | `go.mod` |
+| Port(s) | `docker-compose.yaml`, config |
+| Contract | `openapi.yaml` if present |
+| Entrypoint | `cmd/server/main.go` |
+
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `tech-stack`, or `sdlc` already states by name.
 
 ## Reference material
 

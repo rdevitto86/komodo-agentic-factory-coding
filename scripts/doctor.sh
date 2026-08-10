@@ -8,7 +8,7 @@
 #
 # Checks, in order:
 #   1. links        every home/* is symlinked into ~/.claude
-#   2. hooks        all three guards parse as valid Python
+#   2. hooks        both guards parse as valid Python
 #   3. frontmatter  every skill/agent uses only loader-known keys
 #   4. budget       AGENTS.md + skill listing under BUDGET tokens
 #
@@ -55,7 +55,7 @@ for entry in "$SOURCE"/*; do
 done
 
 printf '\n  hooks\n'
-for hook in comment_guard scope_guard git_guard; do
+for hook in comment_guard git_guard; do
   path="$SOURCE/hooks/$hook.py"
   if python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$path" 2>/dev/null; then
     printf '    ok        %s.py\n' "$hook"

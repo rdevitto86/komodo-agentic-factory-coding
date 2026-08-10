@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test-hooks.sh - regression suite for the three guards.
+# test-hooks.sh - regression suite for the two guards.
 #
 # Run:     bash scripts/test-hooks.sh
 # Exit 0:  every case passed
@@ -10,7 +10,7 @@
 # permissionDecision that comes back, optionally checking that the
 # reason text does or does not contain a given string.
 #
-# Case IDs: C* comment guard, G* git guard, S* scope guard.
+# Case IDs: C* comment guard, G* git guard.
 #
 # Writing a case:
 #   heredoc form  literal JSON, use \n for a newline inside a string
@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOOKS="$REPO_ROOT/home/hooks"
 WORKDIR="$(mktemp -d)"
 SESSION="hooktest$$"
-trap 'rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-scope-$SESSION.json" "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION"' EXIT
+trap 'rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION"' EXIT
 
 RESULTS="$WORKDIR/results"
 : > "$RESULTS"
@@ -278,23 +278,6 @@ bash_case "G21 git config get is allowed"            allow 'git config --get use
 bash_case "G22 perl -i is blocked"                   deny  "perl -pi -e 's/a/b/' main.go" "bypassing the comment guard"
 bash_case "G23 append redirect to code is blocked"   deny  'echo x >> util.ts'           "bypasses the comment guard"
 bash_case "G18 git clean is blocked"                 deny  'git clean -fdx'               "git clean"
-
-# ────────────────────────────────  scope guard  ────────────────────────────
-HOOK="$HOOKS/scope_guard.py"
-printf '\nscope guard\n\n'
-
-scope_payload() {
-  python3 -c "import json,sys; print(json.dumps({'hook_event_name':sys.argv[1],'session_id':sys.argv[2],'tool_name':'Edit','tool_input':{'file_path':sys.argv[3]}}))" "$1" "$SESSION" "${2:-/x/a.go}"
-}
-
-scope_payload UserPromptSubmit | python3 "$HOOK" >/dev/null 2>&1
-
-scope_payload PreToolUse /x/a.go | expect "S1  first file of the turn is allowed" allow
-scope_payload PostToolUse /x/a.go | python3 "$HOOK" >/dev/null 2>&1
-scope_payload PreToolUse /x/a.go | expect "S2  same file again is allowed" allow
-scope_payload PreToolUse /x/b.go | expect "S3  second distinct file asks" ask "a.go"
-scope_payload UserPromptSubmit | python3 "$HOOK" >/dev/null 2>&1
-scope_payload PreToolUse /x/b.go | expect "S4  new turn resets the budget" allow
 
 PASS="$(grep -c '^PASS$' "$RESULTS" || true)"
 FAIL="$(grep -c '^FAIL$' "$RESULTS" || true)"

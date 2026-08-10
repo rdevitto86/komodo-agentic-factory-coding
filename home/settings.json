@@ -8,8 +8,8 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:docs.aws.amazon.com)",
       "WebFetch(domain:pkg.go.dev)",
-      "WebFetch(domain:registry.terraform.io)",
       "WebFetch(domain:svelte.dev)",
+      "WebFetch(domain:vuejs.org)",
       "WebFetch(domain:developer.atlassian.com)",
       "Skill(update-config)",
       "Bash(git log:*)",
@@ -42,7 +42,7 @@
       "Bash(wc:*)",
       "Bash(gh:*)",
       "Bash(aws:*)",
-      "Bash(terraform:*)",
+      "Bash(cdk:*)",
       "Bash(docker:*)",
       "Bash(docker-compose:*)",
       "Bash(golangci-lint:*)",
@@ -104,7 +104,6 @@
       "Read(./**/credentials)"
     ]
   },
-  "model": "haiku",
   "hooks": {
     "PreToolUse": [
       {
@@ -124,36 +123,12 @@
             "command": "python3 ~/.claude/hooks/comment_guard.py"
           }
         ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/scope_guard.py"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/scope_guard.py"
-          }
-        ]
       }
     ],
     "UserPromptSubmit": [
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/scope_guard.py"
-          },
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/comment_guard.py"
@@ -177,9 +152,10 @@
     "skill-creator@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "theme": "light",
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "model": "haiku"
 }
