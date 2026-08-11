@@ -23,7 +23,7 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$REPO_ROOT/home"
-TARGET="$HOME/.claude"
+TARGET="${AGENT_HOME:-$HOME/.claude}"
 BUDGET=2000
 
 problems=0
@@ -72,9 +72,11 @@ import os, sys
 source = sys.argv[1]
 
 SKILL_KEYS = {
-    "name", "description", "model",
+    "name", "description", "when_to_use", "model", "effort",
     "allowed-tools", "disallowed-tools", "argument-hint",
-    "disable-model-invocation", "user-invocable",
+    "disable-model-invocation", "user-invocable", "paths",
+    "context", "agent", "background", "hooks", "metadata", "shell",
+    "license", "compatibility",
 }
 AGENT_KEYS = {"name", "description", "tools", "model"}
 
@@ -161,6 +163,12 @@ for name in ("AGENTS.md", "CLAUDE.md"):
         always_on += count
         print("    %-24s %5d tokens" % (name, count))
 
+overrides = {}
+settings_path = os.path.join(source, "settings.json")
+if os.path.exists(settings_path):
+    import json
+    overrides = json.load(open(settings_path, encoding="utf-8")).get("skillOverrides", {})
+
 listing = 0
 skills_dir = os.path.join(source, "skills")
 skill_count = 0
@@ -173,8 +181,12 @@ if os.path.isdir(skills_dir):
         head = body.split("---")[1] if body.startswith("---") else ""
         if re.search(r"^disable-model-invocation:\s*(true|yes|on|1)", head, re.M | re.I):
             continue
+        state = overrides.get(entry, "on")
+        if state in ("off", "user-invocable-only"):
+            continue
         described = re.search(r"^description:\s*(.+)$", head, re.M)
-        listing += tokens(entry + (described.group(1) if described else ""))
+        text = entry if state == "name-only" else entry + (described.group(1) if described else "")
+        listing += tokens(text)
         skill_count += 1
 
 print("    %-24s %5d tokens (%d listed to the model)" % ("skill listing", listing, skill_count))

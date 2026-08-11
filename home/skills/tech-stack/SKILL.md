@@ -1,7 +1,6 @@
 ---
 name: tech-stack
 description: Komodo stack facts: repo layout, service naming, SDK imports, service anatomy, ports, deployment.
-user-invocable: false
 ---
 
 # Tech stack

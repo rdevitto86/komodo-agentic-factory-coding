@@ -2,6 +2,7 @@
 name: svelte
 description: Svelte 5 and SvelteKit — runes, component structure, effects, routing. Load before reading or writing any .svelte, +page.ts, +page.server.ts, +layout.ts, or +server.ts file.
 user-invocable: false
+paths: "**/*.svelte, **/+page.ts, **/+page.server.ts, **/+layout.ts, **/+layout.server.ts, **/+server.ts"
 ---
 
 # Svelte 5

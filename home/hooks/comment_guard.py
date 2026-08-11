@@ -111,7 +111,6 @@ EXEMPT_PREFIXES = (
     "line ",
     "lint:",
     "mypy:",
-    "no-op",
     "noinspection",
     "nolint",
     "noqa",
@@ -148,24 +147,24 @@ EXEMPT_SUBSTRINGS = (
     "v8 ignore",
 )
 
-TEST_FILE_MARKERS = ("_test.", ".test.", ".spec.", "test_", "_spec.")
-TEST_DIR_SEGMENTS = ("test", "tests", "__tests__", "testdata", "spec", "specs")
-BANNER_GLYPHS = "─━═-=*#/"
-BANNER_LABELS = ("helpers",)
-DESCRIPTION_MAX_LINES = 2
-DESCRIPTION_MAX_CHARS = 200
-ATTRIBUTE_LINE = re.compile(r"^(?:#\[|@)")
-FUNC_DECL = re.compile(r"^(?:pub\s+)?(?:async\s+)?fn\s+\w+|^(?:async\s+)?def\s+\w+")
-TEST_DECL = re.compile(
-    r"^func\s+(?:Test|Benchmark|Fuzz|Example)\w*"
-    r"|^(?:async\s+)?def\s+test_\w*"
-    r"|^(?:export\s+)?(?:async\s+)?function\s+\w*[Tt]est\w*"
-    r"|^(?:it|test|describe|context|bench|suite)(?:\.\w+)*\s*[(<]"
+STEP_MAX_CHARS = 80
+BANNER_MAX_LABEL = 40
+BANNER = re.compile(r"^-{3,}\s*([^\s-][^-]{0,%d})\s*-{3,}$" % (BANNER_MAX_LABEL - 1))
+DECL_NAME = (
+    re.compile(r"^func\s+\([^)]*\)\s*(\w+)"),
+    re.compile(
+        r"^(?:export\s+)?(?:default\s+)?(?:public\s+|private\s+|protected\s+)?"
+        r"(?:static\s+)?(?:abstract\s+)?(?:readonly\s+)?(?:async\s+)?"
+        r"(?:pub(?:\([^)]*\))?\s+)?"
+        r"(?:func|function|def|class|type|const|var|let|interface|struct|enum|impl|fn|trait)"
+        r"\s+(\w+)"
+    ),
 )
 WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]")
 GRANT_SIGIL = re.compile(r"(?<![A-Za-z0-9_])\+comments(?![A-Za-z0-9_])", re.IGNORECASE)
 PROMPT_EVENTS = ("UserPromptSubmit", "SessionStart")
+LEDGER_LIMIT = 400
 
 
 def resolve_family(path):
@@ -181,28 +180,13 @@ def resolve_family(path):
     return EXTENSION_FAMILY.get(ext.lower())
 
 
-def is_test_file(path):
-    normalized = (path or "").replace("\\", "/").lower()
-    segments = normalized.split("/")
-    base = segments[-1]
-    if any(marker in base for marker in TEST_FILE_MARKERS):
-        return True
-    return any(segment in TEST_DIR_SEGMENTS for segment in segments[:-1])
-
-
-def declares_test(line, after_attribute):
-    if TEST_DECL.match(line):
-        return True
-    return bool(after_attribute and FUNC_DECL.match(line))
-
-
-def description_comments(text, family):
+def comment_runs(text, family):
     line_marker = FAMILY_SYNTAX[family][0]
     if not line_marker:
-        return set()
+        return []
     lines = text.splitlines()
     total = len(lines)
-    found = set()
+    runs = []
     index = 0
     while index < total:
         if not lines[index].strip().startswith(line_marker):
@@ -211,21 +195,46 @@ def description_comments(text, family):
         start = index
         while index < total and lines[index].strip().startswith(line_marker):
             index += 1
-        run = [lines[position].strip() for position in range(start, index)]
-        cursor = index
-        while cursor < total and ATTRIBUTE_LINE.match(lines[cursor].strip()):
-            cursor += 1
-        if cursor >= total or not declares_test(lines[cursor].strip(), cursor > index):
+        following = lines[index].strip() if index < total else ""
+        runs.append((lines[start:index], following))
+    return runs
+
+
+def declared_name(line):
+    for pattern in DECL_NAME:
+        match = pattern.match(line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def slot_comments(text, family):
+    found = set()
+    for run, _following in comment_runs(text, family):
+        if len(run) != 1:
             continue
-        if len(run) > DESCRIPTION_MAX_LINES:
+        raw = run[0]
+        body = comment_body(normalize(raw))
+        if not body:
             continue
-        bodies = [comment_body(normalize(item)) for item in run]
-        if sum(len(body) for body in bodies) > DESCRIPTION_MAX_CHARS:
+        if BANNER.match(body):
+            found.add(normalize(raw))
             continue
-        if not all(bodies):
+        if raw[:1] in (" ", "\t") and len(body) <= STEP_MAX_CHARS:
+            found.add(normalize(raw))
+    return found
+
+
+def name_echoes(text, family):
+    found = set()
+    for run, following in comment_runs(text, family):
+        name = declared_name(following)
+        if not name:
             continue
-        for item in run:
-            found.add(normalize(item))
+        body = comment_body(normalize(run[0]))
+        first = body.split(" ")[0].strip("*(),.:;'\"`") if body else ""
+        if first and first == name:
+            found.add(normalize(run[0]))
     return found
 
 
@@ -328,7 +337,7 @@ def comment_body(normalized):
     return body.strip().lstrip("*").strip()
 
 
-def is_exempt(normalized, path):
+def is_exempt(normalized):
     if normalized.startswith("#!"):
         return True
     lowered = normalized.lower()
@@ -341,20 +350,39 @@ def is_exempt(normalized, path):
     for prefix in EXEMPT_PREFIXES:
         if body.startswith(prefix):
             return True
-    if is_test_file(path):
-        stripped = body.strip(BANNER_GLYPHS + " ")
-        if stripped.lower() in BANNER_LABELS or not stripped:
-            return True
     return False
 
 
-def grant_path(session_id):
+def state_path(kind, session_id):
     token = SAFE_NAME.sub("_", session_id or "unknown")
-    return os.path.join(tempfile.gettempdir(), "claude-comment-grant-%s" % token)
+    return os.path.join(tempfile.gettempdir(), "claude-comment-%s-%s" % (kind, token))
+
+
+def grant_path(session_id):
+    return state_path("grant", session_id)
 
 
 def has_grant(session_id):
     return os.path.exists(grant_path(session_id))
+
+
+def ledger_load(session_id):
+    try:
+        with open(state_path("ledger", session_id), "r", encoding="utf-8") as handle:
+            return set(line.rstrip("\n") for line in handle if line.strip())
+    except OSError:
+        return set()
+
+
+def ledger_add(session_id, items):
+    existing = ledger_load(session_id)
+    merged = list(existing) + [item for item in items if item not in existing]
+    try:
+        with open(state_path("ledger", session_id), "w", encoding="utf-8") as handle:
+            for item in merged[-LEDGER_LIMIT:]:
+                handle.write(item + "\n")
+    except OSError:
+        pass
 
 
 def header_comments(text, family):
@@ -381,20 +409,26 @@ def extract(text, family, path):
     return [item for item in items if item]
 
 
-def compare(old_text, new_text, family, path):
+def compare(old_text, new_text, family, path, moved):
     old_counts = Counter(extract(old_text, family, path))
     new_counts = Counter(extract(new_text, family, path))
     added = list((new_counts - old_counts).elements())
     removed = list((old_counts - new_counts).elements())
     header = header_comments(new_text, family)
-    described = description_comments(new_text, family) if is_test_file(path) else set()
+    slots = slot_comments(new_text, family)
+    echoed = name_echoes(new_text, family)
+    echoes = [item for item in added if item in echoed and not is_exempt(item)]
     added = [
         item
         for item in added
-        if not is_exempt(item, path) and item not in header and item not in described
+        if not is_exempt(item)
+        and item not in header
+        and item not in slots
+        and item not in moved
+        and item not in echoed
     ]
-    removed = [item for item in removed if not is_exempt(item, path)]
-    return added, removed
+    removed = [item for item in removed if not is_exempt(item)]
+    return added, removed, echoes
 
 
 def read_file(path):
@@ -452,22 +486,47 @@ def allow():
     sys.exit(0)
 
 
+def format_echo_reason(path, echoes):
+    lines = [
+        "BLOCKED. A comment restates the name of the thing it sits above.",
+        "",
+        "In %s:" % os.path.basename(path),
+    ]
+    lines.extend("    %s" % item for item in echoes)
+    lines.extend([
+        "",
+        "A comment whose first word is the identifier declared on the next line",
+        "carries no information. Delete it; do not reword it.",
+        "",
+        "+comments does NOT lift this rule.",
+    ])
+    return "\n".join(lines)
+
+
 def format_addition_reason(path, added):
     lines = [
-        "BLOCKED by the zero-comment rule. Nothing was written to disk.",
+        "BLOCKED. Nothing was written to disk.",
         "",
         "New comment(s) in %s:" % os.path.basename(path),
     ]
     lines.extend("    %s" % item for item in added)
     lines.extend([
         "",
-        "Code must be self-documenting. No inline comments, block comments,",
-        "docstrings, or JSDoc. Machine directives are always exempt. Inside a test",
-        "path, so are the Helpers banner and an optional 1-2 line description sitting",
-        "directly above a test declaration, under 200 characters, line comments only.",
-        "Remove the comment text and retry the same edit.",
+        "No docs on func, type, const, var, package, or struct. No block comments,",
+        "docstrings, or JSDoc. Code must be self-documenting.",
         "",
+        "Three forms are allowed, all single-line:",
+        "    step marker   indented, inside a body, %d chars or fewer" % STEP_MAX_CHARS,
+        "    section break --- Label --- with a label of %d chars or fewer" % BANNER_MAX_LABEL,
+        "    script manual line comments directly under a #! shebang, any length",
+        "Machine directives (go:, nolint, eslint-disable, noqa, ...) are always exempt.",
+        "",
+        "Remove the comment text and retry the same edit.",
         "Do NOT resolve this by deleting any other comment in the file.",
+        "",
+        "Moving existing code? Delete it from the source file FIRST. Approving that",
+        "deletion records the comment for this session and lets you re-add it here",
+        "verbatim. Adding at the destination before deleting at the source fails.",
         "",
         "Only the user can lift this, by sending a message containing +comments.",
         "Do not ask them to; if they wanted comments they would have said so.",
@@ -485,6 +544,10 @@ def format_removal_reason(path, removed):
         "",
         "Approve only if you intended to remove them. Deny to keep them verbatim,",
         "then re-apply the change with the comment lines left untouched.",
+        "",
+        "If you are moving this code to another file, approve: the exact text above",
+        "is recorded for this session and may be re-added verbatim at the new site.",
+        "Reworded text will not be accepted.",
     ])
     return "\n".join(lines)
 
@@ -514,15 +577,22 @@ def handle_pre(payload):
     family = resolve_family(path)
     if family is None or not pairs:
         allow()
+    session_id = payload.get("session_id")
+    moved = ledger_load(session_id)
     added = []
     removed = []
+    echoes = []
     for old_text, new_text in pairs:
-        pair_added, pair_removed = compare(old_text, new_text, family, path)
+        pair_added, pair_removed, pair_echoes = compare(old_text, new_text, family, path, moved)
         added.extend(pair_added)
         removed.extend(pair_removed)
-    if added and not has_grant(payload.get("session_id")):
+        echoes.extend(pair_echoes)
+    if echoes:
+        respond("deny", format_echo_reason(path, echoes))
+    if added and not has_grant(session_id):
         respond("deny", format_addition_reason(path, added))
     if removed:
+        ledger_add(session_id, removed)
         respond("ask", format_removal_reason(path, removed))
     allow()
 

@@ -2,6 +2,7 @@
 name: python
 description: Python standards — tooling, typing, error handling, async, pytest. Load before reading or writing any .py, .pyi, or pyproject.toml file.
 user-invocable: false
+paths: "**/*.py, **/*.pyi, **/pyproject.toml"
 ---
 
 # Python

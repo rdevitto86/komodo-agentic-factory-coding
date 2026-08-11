@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOOKS="$REPO_ROOT/home/hooks"
 WORKDIR="$(mktemp -d)"
 SESSION="hooktest$$"
-trap 'rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION"' EXIT
+trap 'rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION" "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION" "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION-move"' EXIT
 
 RESULTS="$WORKDIR/results"
 : > "$RESULTS"
@@ -187,17 +187,16 @@ expect "C22 the Helpers banner is exempt in a test file" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Helpers ----------------------------------------------------\n\nfunc newFixture(t *testing.T) {}"}}
 JSON
 
-expect "C23 the Setup banner is no longer exempt" deny \
-  "Setup" <<'JSON'
+expect "C23 any --- Label --- banner is a section break" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Setup ---\n\nfunc newFixture(t *testing.T) {}"}}
 JSON
 
-expect "C24 the Helpers banner outside a test path is denied" deny \
-  "Helpers" <<'JSON'
+expect "C24 a banner is allowed outside a test path too" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// --- Helpers ---\n\nfunc bar() {}"}}
 JSON
 
-expect "C25 a description directly above a Go test is exempt" allow <<'JSON'
+expect "C25 a description above a Go test has no slot" deny \
+  "shipped branch" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// the shipped branch is unreachable through the public API\nfunc TestCancel(t *testing.T) {}"}}
 JSON
 
@@ -235,20 +234,109 @@ expect "C32 an arbitrary comment in a test file is still denied" deny \
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"count++","new_string":"// bump the counter\ncount++"}}
 JSON
 
-expect "C32b a description above a truncated signature is exempt" allow <<'JSON'
+expect "C32b a description above a truncated signature is denied" deny \
+  "cookie is only checked" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestNew","new_string":"// the cookie is only checked on unsafe methods\nfunc TestNew"}}
 JSON
 
-expect "C33 a description above a decorated pytest test is exempt" allow <<'JSON'
+expect "C33 a description above a pytest test is denied" deny \
+  "retry ceiling" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/test_order.py","old_string":"def test_retry(n):\n    pass","new_string":"# pins the retry ceiling at the documented boundary\n@pytest.mark.parametrize(\"n\", [1, 2])\ndef test_retry(n):\n    pass"}}
 JSON
 
-expect "C34 a description above a Rust #[test] is exempt" allow <<'JSON'
+expect "C34 a description above a Rust #[test] is denied" deny \
+  "saturating add" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/tests/limits.rs","old_string":"fn saturates_at_cap() {}","new_string":"// the saturating add is only reachable at usize::MAX\n#[test]\nfn saturates_at_cap() {}"}}
 JSON
 
-expect "C35 a description above a Vitest case is exempt" allow <<'JSON'
+expect "C35 a description above a Vitest case is denied" deny \
+  "402 branch" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order.x.test.ts","old_string":"it(\"rejects an expired card\", () => {","new_string":"// the 402 branch cannot be reached through the public client\nit(\"rejects an expired card\", () => {"}}
+JSON
+
+expect "C36 a comment restating the func name is denied" deny \
+  "restates the name" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// InitStore inits a store\nfunc InitStore() {}"}}
+JSON
+
+expect "C36b the same rule catches a Go method receiver" deny \
+  "restates the name" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/sink.go","old_string":"func (s *Sink) Send(e Event) error {","new_string":"// Send sends the event to the HTTP sink.\nfunc (s *Sink) Send(e Event) error {"}}
+JSON
+
+expect "C36c the same rule catches a TypeScript class" deny \
+  "restates the name" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/cart.ts","old_string":"export class CartService {","new_string":"// CartService is a service for carts\nexport class CartService {"}}
+JSON
+
+expect "C37 a step marker inside a body is allowed" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// init runtime logger\n\tboot()"}}
+JSON
+
+expect "C38 a step marker over 80 chars is denied" deny \
+  "self-documenting" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// initialise the runtime logger so that downstream calls can resolve their credentials from AWS\n\tboot()"}}
+JSON
+
+expect "C39 a step marker at column zero is denied" deny \
+  "init runtime logger" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"var boot = 1","new_string":"// init runtime logger\nvar boot = 1"}}
+JSON
+
+expect "C40 a multi-line run inside a body is denied" deny \
+  "self-documenting" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// init the logger\n\t// then boot\n\tboot()"}}
+JSON
+
+expect "C41 a box-glyph banner is not a banner" deny \
+  "Helpers" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// ── Helpers ──────────────\n\nfunc newFixture(t *testing.T) {}"}}
+JSON
+
+expect "C42 a banner label over 40 chars is denied" deny \
+  "Helpers" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Helpers: shared fixtures, builders and assertion utilities ---\n\nfunc newFixture(t *testing.T) {}"}}
+JSON
+
+expect "C43 a bare rule with no label is not a banner" deny \
+  "self-documenting" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// ------------------------------\n\nfunc bar() {}"}}
+JSON
+
+expect "C44 a banner cannot smuggle prose past the hyphens" deny \
+  "self-documenting" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// --- this helper exists because the upstream client retries twice ---\n\nfunc bar() {}"}}
+JSON
+
+MOVE="$SESSION-move"
+printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/from.go","old_string":"// Preloads all the required dependencies.\\nfunc Boot() {}","new_string":""}}' "$MOVE" \
+  | expect "C45 removing a comment asks and records it" ask "Preloads all the required"
+
+printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the required dependencies.\\nfunc Boot() {}"}}' "$MOVE" \
+  | expect "C46 the recorded comment may be re-added verbatim" allow
+
+printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the dependencies the server needs.\\nfunc Boot() {}"}}' "$MOVE" \
+  | expect "C47 a reworded version is not a move" deny "Preloads all the dependencies"
+
+printf '{"hook_event_name":"PreToolUse","session_id":"%s-none","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the required dependencies.\\nfunc Boot() {}"}}' "$MOVE" \
+  | expect "C48 another session cannot claim the move" deny "Preloads all the required"
+
+grant_prompt '"go ahead +comments"' | python3 "$HOOK" >/dev/null 2>&1
+printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// InitStore inits a store\\nfunc InitStore() {}"}}' "$SESSION" \
+  | expect "C49 +comments does not license a name-echo" deny "restates the name"
+
+printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// Creates the store and seeds it from disk.\\nfunc InitStore() {}"}}' "$SESSION" \
+  | expect "C50 +comments does license an ordinary doc" allow
+
+grant_prompt '"reset"' | python3 "$HOOK" >/dev/null 2>&1
+
+expect "C51 a script manual under a shebang is still exempt" allow <<'JSON'
+{"tool_name":"Write","tool_input":{"file_path":"/x/deploy.sh","content":"#!/usr/bin/env bash\n#\n# deploy.sh - ships the current build to staging.\n#\n# Usage:  bash deploy.sh [--dry-run]\n#\n# Exit 0: shipped\n# Exit 1: refused\nset -euo pipefail\n"}}
+JSON
+
+expect "C52 a manual not under a shebang is denied" deny \
+  "ships the current build" <<'JSON'
+{"tool_name":"Write","tool_input":{"file_path":"/x/deploy.sh","content":"set -euo pipefail\n#\n# deploy.sh - ships the current build to staging.\n#\necho hi\n"}}
 JSON
 
 # ─────────────────────────────────  git guard  ─────────────────────────────

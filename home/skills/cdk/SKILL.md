@@ -2,6 +2,7 @@
 name: cdk
 description: CDK and AWS — stack layout, SDK constructs, exports, safety rules. Load before writing any .ts CDK stack file.
 user-invocable: false
+paths: "**/cdk/**, **/infra/**, **/infrastructure/**, **/*-stack.ts, **/*.stack.ts"
 ---
 
 # CDK

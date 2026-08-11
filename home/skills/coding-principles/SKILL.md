@@ -1,7 +1,6 @@
 ---
 name: coding-principles
 description: Engineering doctrine: reuse order, DI, domain modelling, decomposition, resilience, API evolution.
-user-invocable: false
 ---
 
 # Principles

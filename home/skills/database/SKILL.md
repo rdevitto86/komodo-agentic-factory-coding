@@ -2,6 +2,7 @@
 name: database
 description: Database standards across engines — naming, keys, migrations, indexes, access patterns, security. Load before reading or writing any .sql file, schema, query, or anything under migrations/.
 user-invocable: false
+paths: "**/*.sql, **/migrations/**, **/schema/**"
 ---
 
 # Database

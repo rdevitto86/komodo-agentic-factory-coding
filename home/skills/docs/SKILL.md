@@ -1,6 +1,7 @@
 ---
 name: docs
 description: Fixed section templates for docs/prd.md and docs/sdd.md — requirement-ID cross-reference, jargon rule, length budget. Load before creating/editing either file, or writing a PRD, SDD, or design doc.
+paths: "**/docs/**, **/prd.md, **/sdd.md"
 ---
 
 # PRD / SDD standard

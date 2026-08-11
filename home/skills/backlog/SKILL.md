@@ -2,6 +2,7 @@
 name: backlog
 description: TODO.md format and backlog planning — hierarchy, severity, sizing, merge discipline. Load before reading or editing any TODO.md. Invoke as /backlog to turn a goal into a phased V1/V2 breakdown.
 argument-hint: [what you want to build]
+paths: "**/TODO.md"
 ---
 
 # Backlog

@@ -2,6 +2,7 @@
 name: go
 description: Go standards — idioms, domain modelling, concurrency, errors, performance. Load before reading or writing any .go, go.mod, or go.sum file.
 user-invocable: false
+paths: "**/*.go, **/go.mod, **/go.sum"
 ---
 
 # Go

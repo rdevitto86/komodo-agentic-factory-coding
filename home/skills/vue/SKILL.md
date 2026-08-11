@@ -2,6 +2,7 @@
 name: vue
 description: Vue 3 — Composition API, Pinia setup stores, reactivity pitfalls. Load before reading or writing any .vue file or a Pinia store.
 user-invocable: false
+paths: "**/*.vue, **/stores/**"
 ---
 
 # Vue 3

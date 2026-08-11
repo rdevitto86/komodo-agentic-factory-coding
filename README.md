@@ -88,7 +88,7 @@ A new skill costs ~30 tokens of listing. A new line in `home/AGENTS.md` costs it
 
 ## Git hooks for other repos
 
-`scripts/hooks/git/pre-commit-comments` runs the same `comment_guard.py` against staged files, so any tool in any editor hits the same rule. That one belongs here — it enforces an agent rule, not a toolchain.
+**No comment hook ships here.** A comment must never block a commit, a push, a linter, or a release. `comment_guard.py` runs only as a `PreToolUse` hook, before the write reaches disk — by the time git sees a file, the dispute is already settled or was never the agent's to have.
 
 **Lint and test hooks do not live here.** `pre-commit` (format + lint) and `pre-push` (delta unit tests + coverage) ship with the language SDK — `komodo-forge-sdk-go` for Go. The `cicd` skill states the contract they must satisfy; the SDK decides how.
 

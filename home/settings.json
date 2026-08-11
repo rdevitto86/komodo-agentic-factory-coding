@@ -104,6 +104,24 @@
       "Read(./**/credentials)"
     ]
   },
+  "skillOverrides": {
+    "security": "name-only",
+    "observability": "name-only",
+    "cicd": "name-only",
+    "coding-principles": "name-only",
+    "tech-stack": "name-only",
+    "go": "name-only",
+    "python": "name-only",
+    "typescript": "name-only",
+    "svelte": "name-only",
+    "vue": "name-only",
+    "cdk": "name-only",
+    "uiux": "name-only",
+    "database": "name-only",
+    "docs": "name-only",
+    "sdlc": "name-only",
+    "backlog": "name-only"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -157,5 +175,5 @@
   "autoMemoryEnabled": true,
   "theme": "light",
   "agentPushNotifEnabled": true,
-  "model": "haiku"
+  "model": "opus"
 }

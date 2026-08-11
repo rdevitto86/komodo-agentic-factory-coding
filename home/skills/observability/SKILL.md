@@ -1,7 +1,7 @@
 ---
 name: observability
 description: Logs, metrics, and traces — levels, required fields, cardinality, sampling, what never to emit. Load before adding a log line, metric, span, or debugging a production incident.
-user-invocable: false
+paths: "**/*log*, **/logging/**, **/logger*, **/telemetry/**, **/metrics/**, **/tracing/**, **/observability/**, **/otel*, **/*metric*, **/*trace*"
 ---
 
 # Observability

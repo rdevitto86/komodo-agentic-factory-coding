@@ -1,7 +1,7 @@
 ---
 name: security
 description: Security baseline benchmarked on the OWASP Top 10 — secrets, injection and XSS, CSRF, authn/JWT, authz, crypto, PII, dependencies. Load before touching an auth path, a query, a template, a secret, a dependency manifest, or any external boundary, and before any security review or bug sweep.
-user-invocable: false
+paths: "**/auth/**, **/*auth*, **/middleware/**, **/session*, **/token*, **/crypto/**, **/.env*, **/secrets/**, **/*.sql, **/migrations/**, **/api/**, **/handlers/**, **/routes/**, **/package.json, **/go.mod, **/requirements.txt, **/pyproject.toml, **/Gemfile, **/*.tf"
 ---
 
 # Security

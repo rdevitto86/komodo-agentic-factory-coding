@@ -2,6 +2,7 @@
 name: sdlc
 description: SDLC standard shared across every language — test tiers, merge/release gates, coverage floors. Load before reading or writing any test file.
 user-invocable: false
+paths: "**/*_test.*, **/*.test.*, **/*.spec.*, **/test/**, **/tests/**, **/__tests__/**, **/e2e/**"
 ---
 
 # SDLC

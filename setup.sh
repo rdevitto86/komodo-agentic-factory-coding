@@ -20,16 +20,29 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE="$REPO_ROOT/home"
-TARGET="$HOME/.claude"
+TARGET="${AGENT_HOME:-$HOME/.claude}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 DRY_RUN=0
 
-case "${1:-}" in
-  --dry-run) DRY_RUN=1 ;;
-  "") ;;
-  *) printf 'usage: setup.sh [--dry-run]\n' >&2; exit 2 ;;
-esac
+usage() {
+  printf 'usage: setup.sh [--dry-run] [--target DIR]\n' >&2
+  printf '  --target DIR   install into DIR instead of %s\n' "$TARGET" >&2
+  printf '  AGENT_HOME=DIR does the same as an environment variable\n' >&2
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=1; shift ;;
+    --target) [ "$#" -ge 2 ] || { usage; exit 2; }; TARGET="$2"; shift 2 ;;
+    --target=*) TARGET="${1#--target=}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage; exit 2 ;;
+  esac
+done
+
+[ -n "$TARGET" ] || { printf 'setup.sh: empty target\n' >&2; exit 2; }
+export AGENT_HOME="$TARGET"
 
 STALE_LINKS=(standards modes templates profile orchestration docs)
 

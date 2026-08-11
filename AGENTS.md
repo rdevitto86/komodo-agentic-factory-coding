@@ -26,23 +26,30 @@ Both are `PreToolUse` — they run **before** the write, so nothing lands on dis
 
 `comment_guard.py` compares comment multisets, so adjacency and reindentation are irrelevant. It fails closed — an unparseable payload denies rather than silently passing.
 
-It carries exactly three exceptions:
+An added comment is allowed only if it fills a **slot**, and every slot is defined by position and size, never by wording:
 
-| Exception | Granted by | Scope |
+| Slot | Test | Why prose cannot use it |
 |---|---|---|
-| `+comments` in your message | `UserPromptSubmit` | That turn only |
-| Use-manual under a shebang | Position in the file | The header block |
-| Banner and test description | Path plus position | Test paths only |
+| Step marker | 1 line, indented inside a body, ≤80 chars | A paragraph does not fit in 80 chars |
+| Section break | 1 line, `--- Label ---`, label ≤40 chars and hyphen-free | The label slot is 40 chars between two hyphen runs |
+| Script manual | Line comments directly under a `#!` shebang | Only one block per file, only at the top |
+| Machine directive | Prefix match against a fixed list | The list holds no prose token |
 
-An open content allowlist would be a fourth, and would not work — the agent writes the content, so it can always emit the exempt token. Never add one.
+Everything else denies, declaration docs included. **A name-echo denies even under `+comments`** — a comment whose first word is the identifier on the next line carries no information.
 
-The third exception survives that objection by being structural, not semantic. The description slot matches on **position** — at most 2 line comments, under 200 characters, sitting directly above a test declaration, inside a path the guard recognises as a test path. The `Helpers` banner is the guard's one content match, bounded to a single fixed label and only inside a test path. Neither slot lets arbitrary prose through anywhere else in the file.
+Deleting a comment returns `ask`, never `deny`: a hard deny would make ordinary refactors impossible. Approving records the exact text in a per-session **move ledger**, so the same comment may be re-added verbatim at a new site. Reworded text is not a move and is denied.
+
+An open content allowlist would be another slot, and would not work — the agent writes the content, so it can always emit the exempt token. Never add one. `no-op` was removed from the directive list for exactly this reason: it read as prose and let declaration docs through.
+
+**No comment rule may ever block a commit, push, lint, or release.** The guard is `PreToolUse` only.
 
 ## Skill contract
 
 **The loader accepts exactly these frontmatter keys.** Any other key makes it reject the file silently — the skill simply does not exist at runtime.
 
-`name` · `description` · `model` · `allowed-tools` · `disallowed-tools` · `argument-hint` · `disable-model-invocation` · `user-invocable`
+`name` · `description` · `when_to_use` · `model` · `effort` · `allowed-tools` · `disallowed-tools` · `argument-hint` · `disable-model-invocation` · `user-invocable` · `paths` · `context` · `agent` · `background` · `hooks` · `metadata` · `shell` · `license` · `compatibility`
+
+`paths` values must be quoted — a bare glob starts with `*`, which YAML reads as an alias.
 
 | Kind | Frontmatter | Reaches the model | User types `/name` |
 |---|---|---|---|
@@ -50,7 +57,7 @@ The third exception survives that objection by being structural, not semantic. T
 | Workflow | `disable-model-invocation: true` | No, costs zero context | Yes |
 | Both | neither key | Yes | Yes |
 
-**There is no path-based auto-load.** A knowledge skill fires only because its `description` names the trigger — so every description states *when to load it*, not just what it contains. `doctor.sh` fails the build on an unknown key.
+**Activation is path-based, not description-based.** `paths:` globs in a skill's frontmatter make the runtime load it when a matching file is touched. `skillOverrides` in `home/settings.json` then collapses that skill to `name-only`, so its description costs nothing in the always-on listing. The pair is how a skill hot-swaps in: **`paths` decides when, `skillOverrides` decides cost.** A skill with neither pays its full description on every turn forever — reserve that for triggers no glob can express. `doctor.sh` fails the build on an unknown key.
 
 Workflow skills: `/generate-repo` · `/audit` · `/wrap-up` · `/accessibility`
 
