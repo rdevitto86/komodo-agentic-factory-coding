@@ -1,46 +1,49 @@
 ---
 name: backlog
-description: TODO.md format and backlog planning — hierarchy, severity, sizing, merge discipline. Load before reading or editing any TODO.md. Invoke as /backlog to turn a goal into a phased V1/V2 breakdown.
-argument-hint: [what you want to build]
+description: TODO.md format and backlog planning — hierarchy, severity, sizing, merge discipline. Load before reading or editing any TODO.md. Invoke as /backlog to turn a goal into a phased V1/V2 breakdown, or to normalize an existing messy file into this shape.
+argument-hint: [what you want to build, or a messy file/path to normalize]
 paths: "**/TODO.md"
 ---
 
 # Backlog
 
-**A sprint dashboard, not a log.** Open work only. No dates, no completed items, no history — git carries that.
+**A sprint dashboard, not a log.** Open work only. No dates, no completed items, no history, no checkboxes — git carries that.
 
-Part 1 is the file contract, and applies any time `TODO.md` is touched. Part 2 is the planning workflow, and runs only on `/backlog`.
+Part 1 is the file contract, and applies any time `TODO.md` is touched. Part 2 is the planning workflow, and runs only on `/backlog`. Part 3 is the normalize workflow, for turning an existing unstructured file into Part 1's shape.
 
 ---
 
 # Part 1 — The file
 
-Hierarchy is fixed: **target state → group → phase → item.**
+Hierarchy is fixed: **target state (version) → group (domain/feature) → phase → item.**
 
 ```markdown
 # TODO
-Severity: [C] Critical · [H] High · [M] Medium · [L] Low · Status: `[ ]`/`[~]`
+Severity: [C] Critical · [H] High · [M] Medium · [L] Low · In progress: `[WIP]`
 
 ## Now — V1
 ### Orders API
 #### Phase 1 · Create + fetch
-- [ ] [C] Idempotent POST /orders · M
-- [ ] [M] Tests: unit + component coverage · S
+- [C] Idempotent POST /orders · M
+- [M] Tests: unit + component coverage · S
 #### Phase 2 · Post-merge validation
-- [ ] [M] e2e: order lifecycle · M
+- [M] e2e: order lifecycle · M
 ```
 
 ## Rules
 
+- **No checkboxes, ever.** `- [ ]`/`- [x]` are never written here — a line's mere presence means it's open. Marking one "done" instead of deleting it is the exact drift this file exists to prevent.
 - **Target states** are `## Now — V1`, `## Next`, `## Later`. Nothing is scheduled by date.
 - **Groups** are `Cross-Cutting` or a feature/subfolder name, holding numbered phases.
 - **Phases** are sprint-sized slices, sequential unless marked `(parallel with Phase N)`.
 - **Every behavior phase carries a tests item** — `Tests: unit + component (+ contract) coverage`. That is the merge gate; integration, smoke, e2e, and perf land in a later phase per group. `sdlc` defines the tiers.
 - **Every item carries a severity tag** (`[C]`/`[H]`/`[M]`/`[L]`) and a relative size (`S`/`M`/`L`). Break an XL down before writing it.
+- **Active work carries `[WIP]` right after the severity tag** — `- [C][WIP] Idempotent POST /orders · M`. No tag means not started. Remove `[WIP]` the same change the item's line is deleted, never leave it dangling on a finished item.
 
 ## Discipline
 
-- **Delete the line in the same change that completes it.** A checked box is noise; an absent line is truth.
+- **Work one phase to completion before starting the next.** A phase "blocked" by a missing SDK capability is never a reason to skip ahead — fix the SDK directly, per `coding-principles`' reuse order, and finish the phase you're on.
+- **Delete the line in the same change that verifies it complete.** Marking it done and leaving it is noise; an absent line is the record — `git log TODO.md` carries the history.
 - **Never dump audit or review findings straight in.** Report them, the user decides what becomes a line.
 - **Never duplicate an existing line.** Read the file before adding to it.
 - **One line per item.** If it needs two, it is two items or a phase.
@@ -127,3 +130,26 @@ Show the plan and **wait for approval**. Do not write to `TODO.md` yet.
 ## Step 6 — Write on approval only
 
 Merge into `TODO.md` per Part 1. Never write before approval.
+
+---
+
+# Part 3 — Normalizing an existing file
+
+Same command, different ask: **$ARGUMENTS** names a messy or unstructured file — a `TODO.md` with no hierarchy, checkboxes, dates, or already-done items; scattered `// TODO` comments; a plain notes file — instead of a new goal.
+
+## Step 1 — Read everything, invent nothing
+
+Read the source file(s) in full. Every line becomes exactly one of:
+
+- **A genuinely open item** → keep, rewritten to Part 1's shape, no `[WIP]` unless the source says work is active.
+- **Something already done** (phrased as done, or contradicted by the current code) → drop. Verify against the code before dropping — never drop on the comment's word alone.
+- **A date, a name, a status log entry, a checked box** → drop; git already carries that history.
+- **Too vague to act on** (no acceptance condition derivable) → keep as a `[L]` item naming exactly what's unclear. Never invent detail the source didn't state.
+
+## Step 2 — Sort into the hierarchy
+
+Assign each surviving item a target state (default `## Now — V1` unless the source clearly marks it future work), a group (the domain/feature it belongs to — infer from the file's path or the item's own text, never a new taxonomy), and a phase (sequential, sized per Step 4's caps above).
+
+## Step 3 — Present, then stop
+
+Show the normalized file as a diff against the source and **wait for approval** before writing — this replaces the user's existing file, so it is never silent.

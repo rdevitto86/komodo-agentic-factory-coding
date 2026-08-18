@@ -8,6 +8,8 @@ paths: "**/docs/**, **/prd.md, **/sdd.md"
 
 Every repo's `docs/prd.md` and `docs/sdd.md` follow the same fixed sections, in the same order, so a reader who has read one repo's pair can navigate any other repo's pair cold. This skill exists because three repos already drifted into three different formats — mirroring an existing file is not a substitute for this template, even a good-looking one.
 
+**Load this before touching either file at all** — editing an already-open doc mid-session counts the same as creating one. Loading it partway through means anything read or written before that point wasn't checked against the contract below.
+
 **Both docs must be readable start to finish in 15 minutes.** That's the design constraint behind every rule below: fixed section order (skim without hunting), a length budget (no open-ended elaboration), tables over prose (scannable), and zero unexplained jargon (no re-reading a sentence three times to parse one term).
 
 ## The split
@@ -132,7 +134,8 @@ This is a reporting check, not an auto-fix — a real orphan might mean the PRD 
 
 ## Formatting rules that apply to both docs
 
-- **`NEEDS DECISION`** — the exact marker for any target, metric, or scope point that hasn't actually been decided. Never fabricate a plausible-sounding number (a "99.9% uptime target" nobody set) and never silently drop the row.
+- **`NEEDS DECISION`** — the exact marker for any target, metric, or scope point that hasn't actually been decided. Never fabricate a plausible-sounding number (a "99.9% uptime target" nobody set) and never silently drop the row. Resolving one: replace the marker with the real value and append `(decided <YYYY-MM-DD>)` — that date is the only provenance the PRD carries, since it has no decisions table like SDD §7. Example — before: `**NEEDS DECISION**` in §7 Success Metrics for throughput; after: `10 RPS sustained (decided 2026-08-15)`.
+- **`BLOCKED ON: <specific thing>`** — use instead of `NEEDS DECISION` when someone has already started triaging the gap but it can't be resolved yet, e.g. `BLOCKED ON: CI/CD pipeline review`. This distinguishes "nobody has looked at this" (`NEEDS DECISION`) from "actively being worked, waiting on X" (`BLOCKED ON`) — a reader of the doc alone should never have to ask which one it is. Once unblocked, resolve it the same way as `NEEDS DECISION` above.
 - **Tables over prose** wherever the content has rows — requirements, risks, roles, threats, decisions. Prose is for the handful of sections that are inherently narrative (§2 The Solution, §1 Architecture's lead-in).
 - **Diagrams are linked images**, not inline ASCII: `![System context](diagrams/system-context.png)`, files under `docs/diagrams/`.
 - **Strict section order, every section present.** A section with nothing to say still appears, marked `N/A` with one line saying why — never silently omitted. This is what makes the "read one repo's pair, navigate any repo's pair" property hold.
@@ -141,3 +144,9 @@ This is a reporting check, not an auto-fix — a real orphan might mean the PRD 
 ## Encountering an existing doc that doesn't conform
 
 Don't rewrite it unasked — that's scope expansion past whatever the user actually asked for. Flag the specific deviation (wrong section order, missing requirement IDs, jargon with no glossary entry, orphaned cross-reference) in one line to the user, same as any other out-of-scope finding, and let them decide whether it's worth fixing now.
+
+**If the user does ask for a migration**, fix in this order — each step is the join key or precondition for the next:
+1. Requirement IDs in PRD §6 — the SDD cross-reference contract hangs off this key, so nothing downstream can be checked until it exists.
+2. Section order and missing/`N/A` sections in both docs.
+3. Glossary entries for any undefined jargon.
+4. Cross-reference contract — run the orphan check now that IDs and sections are in place.

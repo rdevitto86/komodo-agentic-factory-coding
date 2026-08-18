@@ -55,6 +55,20 @@ komodo-<service>-<env>-<resource>
 
 TypeScript can run natively on Node with no build step (`cdk.json` invoking `node bin/app.ts` directly). If a repo does this: internal imports need explicit `.ts` extensions, and type-only imports must use `import type` — nothing is transpiling first, so Node runs the source exactly as written.
 
+## Repo layout — `cdk-infra`
+
+```
+bin/app.ts
+lib/
+config/
+test/
+cdk.json
+package.json
+tsconfig.json
+```
+
+`bin/app.ts` is the sole entrypoint (see Stack layout). `lib/` holds one file per stack. `config/` holds the single environment-resolution file (see Config authority) — never more than one.
+
 ## Quick-reference fields
 
 The field set a CDK repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.

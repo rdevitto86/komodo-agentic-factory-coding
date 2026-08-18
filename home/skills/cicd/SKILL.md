@@ -1,7 +1,7 @@
 ---
 name: cicd
 description: Pipeline stages, merge vs release gates, ephemeral CI infra, blue/green, rollback, feature flags.
-paths: ".github/workflows/**, **/Dockerfile*, **/docker-compose*, **/buildspec.yml, **/.gitlab-ci.yml, **/Jenkinsfile, **/.circleci/**, **/Makefile, **/Taskfile*, **/*.pipeline.yml"
+paths: "cicd.yaml, .github/workflows/**, **/Dockerfile*, **/docker-compose*, **/buildspec.yml, **/.gitlab-ci.yml, **/Jenkinsfile, **/.circleci/**, **/Makefile, **/Taskfile*, **/*.pipeline.yml"
 ---
 
 # CI/CD
@@ -193,7 +193,7 @@ A smoke failure before the flip needs no rollback at all: the flip simply never 
 
 ## Build config
 
-Each repo carries a build config declaring its pipeline; the CI/CD service consumes it and executes the stages. What belongs in it:
+**Each repo carries the build config at repo-root `cicd.yaml`.** One canonical path, no fallback lookup — the CI/CD service, the build CLI, and any agent all resolve it the same way. It declares the pipeline; the CI/CD service consumes it and executes the stages. What belongs in it:
 
 | Declares | Examples |
 |---|---|
