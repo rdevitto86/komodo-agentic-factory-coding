@@ -1,66 +1,23 @@
 ---
 name: backlog
-description: TODO.md format and backlog planning — hierarchy, severity, sizing, merge discipline. Load before reading or editing any TODO.md. Invoke as /backlog to turn a goal into a phased V1/V2 breakdown, or to normalize an existing messy file into this shape.
+description: Turn a goal into a domain-scoped Target State breakdown in BACKLOG.md, or normalize an existing messy file into that shape.
 argument-hint: [what you want to build, or a messy file/path to normalize]
-paths: "**/TODO.md"
+disable-model-invocation: true
 ---
 
-# Backlog
+# Backlog planning
 
-**A sprint dashboard, not a log.** Open work only. No dates, no completed items, no history, no checkboxes — git carries that.
+**The file format is not here — `worklog` owns it.** Load `worklog` before writing anything; this skill is the planning run only.
 
-Part 1 is the file contract, and applies any time `TODO.md` is touched. Part 2 is the planning workflow, and runs only on `/backlog`. Part 3 is the normalize workflow, for turning an existing unstructured file into Part 1's shape.
-
----
-
-# Part 1 — The file
-
-Hierarchy is fixed: **target state (version) → group (domain/feature) → phase → item.**
-
-```markdown
-# TODO
-Severity: [C] Critical · [H] High · [M] Medium · [L] Low · In progress: `[WIP]`
-
-## Now — V1
-### Orders API
-#### Phase 1 · Create + fetch
-- [C] Idempotent POST /orders · M
-- [M] Tests: unit + component coverage · S
-#### Phase 2 · Post-merge validation
-- [M] e2e: order lifecycle · M
-```
-
-## Rules
-
-- **No checkboxes, ever.** `- [ ]`/`- [x]` are never written here — a line's mere presence means it's open. Marking one "done" instead of deleting it is the exact drift this file exists to prevent.
-- **Target states** are `## Now — V1`, `## Next`, `## Later`. Nothing is scheduled by date.
-- **Groups** are `Cross-Cutting` or a feature/subfolder name, holding numbered phases.
-- **Phases** are sprint-sized slices, sequential unless marked `(parallel with Phase N)`.
-- **Every behavior phase carries a tests item** — `Tests: unit + component (+ contract) coverage`. That is the merge gate; integration, smoke, e2e, and perf land in a later phase per group. `sdlc` defines the tiers.
-- **Every item carries a severity tag** (`[C]`/`[H]`/`[M]`/`[L]`) and a relative size (`S`/`M`/`L`). Break an XL down before writing it.
-- **Active work carries `[WIP]` right after the severity tag** — `- [C][WIP] Idempotent POST /orders · M`. No tag means not started. Remove `[WIP]` the same change the item's line is deleted, never leave it dangling on a finished item.
-
-## Discipline
-
-- **Work one phase to completion before starting the next.** A phase "blocked" by a missing SDK capability is never a reason to skip ahead — fix the SDK directly, per `coding-principles`' reuse order, and finish the phase you're on.
-- **Delete the line in the same change that verifies it complete.** Marking it done and leaving it is noise; an absent line is the record — `git log TODO.md` carries the history.
-- **Never dump audit or review findings straight in.** Report them, the user decides what becomes a line.
-- **Never duplicate an existing line.** Read the file before adding to it.
-- **One line per item.** If it needs two, it is two items or a phase.
-
-## Merging into an existing file
-
-- **Append under the right target state and group.** Never create a second group with the same name.
-- **Never renumber existing phases.** A phase number is a reference someone may already be using.
-- **Never remove an item you did not add** unless the user says so.
-
----
-
-# Part 2 — The planning run
-
-**`/backlog` only.** Target: **$ARGUMENTS**
+Target: **$ARGUMENTS**
 
 You are planning, not building. Write no implementation code during this skill.
+
+**If `$ARGUMENTS` names a messy or unstructured file** rather than a new goal, skip to Part 2.
+
+---
+
+# Part 1 — The planning run
 
 ## Step 1 — Ask before assuming
 
@@ -81,7 +38,8 @@ If the repo answers a question, do not ask it. If nothing is genuinely unclear, 
 
 Before proposing anything:
 
-- **Read the existing `TODO.md`.** Never duplicate a story already in it.
+- **Read `docs/sdd.md` §10 if it exists.** Slices are the authoritative decomposition; a planning run that ignores them invents a second, conflicting one. Map slice to story per `docs`.
+- **Read the existing `BACKLOG.md`.** Never duplicate a story already in it.
 - **Read the code that this work touches.** The current state beats any ledger.
 - **Read the project `AGENTS.md`** for stack and conventions.
 
@@ -98,15 +56,16 @@ Anything beyond V2 is speculation and does not belong in a plan. **A planning ru
 
 ## Step 4 — Decompose
 
-Part 1 governs shape. Three constraints are the planning run's own:
+`worklog` governs shape. Four constraints are the planning run's own:
 
-- **Cap each run at 3 groups and 4 phases per group.** If the work genuinely exceeds that, plan V1 only and say V2 needs its own pass. An unbounded dump is what made the old ledger useless.
-- **A phase is one shippable slice** — mergeable on its own, with a visible result. Sequential by default; mark `(parallel with Phase N)` only where there is genuinely no dependency.
-- **Every item names its acceptance condition** in one line. An item nobody else can check is not planned, it is hoped for.
+- **Cap each run at 3 domains and 6 stories per domain.** If the work genuinely exceeds that, plan V1 only and say V2 needs its own pass. An unbounded dump is what made the old ledger useless.
+- **The four closeout stories are structural, not planned content** — exempt from the cap, and never write them yourself; they already live in the template's `Cross-Cutting` domain.
+- **Default every story to parallel** — mark `(after: <slice-id>)` only where the slice's `Depends on` names a genuine dependency, never to impose an arbitrary order.
+- **Every story carries a `Done when` command.** A story nobody else can check is not planned, it is hoped for. If no command can prove it, that is the finding — say so.
 
 ## Step 5 — Present, then stop
 
-Show the plan and **wait for approval**. Do not write to `TODO.md` yet.
+Show the plan and **wait for approval**. Do not write to `BACKLOG.md` yet.
 
 ```markdown
 ## 🎯 Target states
@@ -114,11 +73,10 @@ Show the plan and **wait for approval**. Do not write to `TODO.md` yet.
 - **V2** — <one line>
 
 ## 📋 Plan
-### <group>
-#### Phase 1 · <slice>
-| Item `[sev]` `size` | Done when |
-|---|---|
-| <what> `[H]` `M` | <checkable condition> |
+### <domain>
+| Story `[sev]` `size` | Slice | Done when |
+|---|---|---|
+| <what> `[H]` `M` | `S2` | `<command>` |
 
 ## ⚠️ Risks
 - **<thing>** — why it could bite
@@ -129,26 +87,34 @@ Show the plan and **wait for approval**. Do not write to `TODO.md` yet.
 
 ## Step 6 — Write on approval only
 
-Merge into `TODO.md` per Part 1. Never write before approval.
+Merge into `BACKLOG.md` per `worklog`. Never write before approval.
+
+- **Append under the right target state and domain.** Never create a second domain with the same name.
+- **Never remove a story you did not add** unless the user says so.
+- **Never rewrite another story's `(after: ...)` tag** — that dependency was true when someone else wrote it; if it is stale, ask instead of silently dropping it.
 
 ---
 
-# Part 3 — Normalizing an existing file
+# Part 2 — Normalizing an existing file
 
-Same command, different ask: **$ARGUMENTS** names a messy or unstructured file — a `TODO.md` with no hierarchy, checkboxes, dates, or already-done items; scattered `// TODO` comments; a plain notes file — instead of a new goal.
+Same command, different ask: **$ARGUMENTS** names a messy or unstructured file — a backlog with no hierarchy, checkboxes, dates, or already-done items; scattered `// TODO` comments; a plain notes file.
 
 ## Step 1 — Read everything, invent nothing
 
 Read the source file(s) in full. Every line becomes exactly one of:
 
-- **A genuinely open item** → keep, rewritten to Part 1's shape, no `[WIP]` unless the source says work is active.
-- **Something already done** (phrased as done, or contradicted by the current code) → drop. Verify against the code before dropping — never drop on the comment's word alone.
+- **A genuinely open story** → keep, rewritten to the `worklog` shape, no `[WIP]` unless the source says work is active.
+- **Something already done** (phrased as done, or contradicted by the current code) → drop, and add it to `CHANGELOG.md` if it is not already recorded. Verify against the code before dropping — never drop on the comment's word alone.
 - **A date, a name, a status log entry, a checked box** → drop; git already carries that history.
-- **Too vague to act on** (no acceptance condition derivable) → keep as a `[L]` item naming exactly what's unclear. Never invent detail the source didn't state.
+- **Too vague to act on** (no `Done when` command derivable) → keep as a `[L]` story naming exactly what is unclear. Never invent detail the source did not state.
 
 ## Step 2 — Sort into the hierarchy
 
-Assign each surviving item a target state (default `## Now — V1` unless the source clearly marks it future work), a group (the domain/feature it belongs to — infer from the file's path or the item's own text, never a new taxonomy), and a phase (sequential, sized per Step 4's caps above).
+Assign each surviving story a target state (default `## Now — V1` unless the source clearly marks it future work) and a domain (the feature or route it belongs to — infer from the file's path or the story's own text, never a new taxonomy, never another service's name).
+
+Where `docs/sdd.md` §10 exists, attach the matching slice ID. A story with no matching slice keeps its line and is flagged — it may be undocumented scope.
+
+If a target state's `Cross-Cutting` domain is missing any of the four closeout stories, add the missing ones.
 
 ## Step 3 — Present, then stop
 

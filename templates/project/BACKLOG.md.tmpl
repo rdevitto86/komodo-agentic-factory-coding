@@ -1,0 +1,20 @@
+# Backlog
+Severity: [C] Critical · [H] High · [M] Medium · [L] Low · In progress: `[WIP]`
+
+Open work only. Format and rules live in the `worklog` skill — load it before editing this file.
+
+## Now — V1
+
+### Cross-Cutting
+- [H] Wire the health endpoint and the extended check smoke depends on · S → `{{HEALTH_CHECK}}`
+- [M] Install the SDK git hooks and point `core.hooksPath` at them · S → `git config --get core.hooksPath`
+- [H] PR pipeline: lint → unit → component → contract → secret/dependency/SAST scans · M → `{{CI_LOCAL}}`
+- [H] Release pipeline: build → deploy green → smoke → flip → integration → e2e · M → `{{RELEASE_DRYRUN}}`
+- [H] Security review: run `/security-review` · S → findings triaged
+- [H] Bug sweep: run `/code-review` · S → findings triaged
+- [M] Code smell: run `/simplify` · S → findings triaged
+- [M] Performance: run the perf suite · S → `{{PERF}}`
+
+## Next — V2
+
+_Nothing planned yet. Run `/backlog` to fill this in._

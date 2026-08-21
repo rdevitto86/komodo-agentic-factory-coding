@@ -8,7 +8,7 @@
 # What it does, in order:
 #   1. prune    removes symlinks left by the old layout (STALE_LINKS)
 #   2. link     symlinks every home/* entry to ~/.claude/<name>
-#   3. verify   runs test-hooks.sh then doctor.sh
+#   3. verify   runs test-hooks.sh then validate.sh
 #
 # Nothing is copied. ~/.claude/<name> is a symlink back into this repo,
 # so editing a file here takes effect in the next session with no
@@ -102,7 +102,7 @@ fi
 
 say ""
 bash "$REPO_ROOT/scripts/test-hooks.sh"
-bash "$REPO_ROOT/scripts/doctor.sh"
+bash "$REPO_ROOT/scripts/validate.sh"
 
 say "restart Claude Code to pick up settings.json and hooks"
 say ""

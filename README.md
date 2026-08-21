@@ -2,17 +2,18 @@
 
 Agent configuration shared across every Komodo project. `home/` mirrors `~/.claude/` one-to-one and is symlinked there.
 
-Three ideas hold it together:
+Four ideas hold it together:
 
-1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments, git, and edit scope are checked before the write, never after.
-2. **Base context stays tiny.** ~70 lines of always-on rules; everything else is a skill that loads only when needed.
-3. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
+1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
+2. **Base context stays tiny.** ~1,045 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+3. **Work state lives on disk, not in the conversation.** Four documents per repo mean a compaction cannot lose the plan.
+4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
 ## Setup
 
 ```bash
 bash setup.sh --dry-run    # preview
-bash setup.sh              # link, then run the tests and doctor
+bash setup.sh              # link, then run the tests and validate
 ```
 
 Restart Claude Code afterwards so `settings.json` and the hooks take effect.
@@ -23,23 +24,42 @@ Restart Claude Code afterwards so `settings.json` and the hooks take effect.
 home/                 mirrors ~/.claude exactly
 ├── AGENTS.md         the universal rules — always loaded
 ├── CLAUDE.md         @AGENTS.md
-├── settings.json     permissions + hook registration
-├── agents/           engineering, business — read-only research only
-├── hooks/            comment_guard.py, git_guard.py
-└── skills/           20 skills, lazily loaded
-templates/project/    AGENTS.md / CLAUDE.md / TODO.md for a new repo
+├── settings.json     permissions, hook registration, skillOverrides
+├── agents/           implementer, planner, engineering, business, scout
+├── hooks/            comment_guard, git_guard, verify_gate, context_injector
+└── skills/           27 active, 3 parked, lazily loaded
+templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 platforms/komodo-bridge/   local LLM MCP bridge config
-scripts/              doctor.sh, test-hooks.sh, portable git hooks
+scripts/              validate.sh, test-hooks.sh, portable git hooks
 ```
 
-## The guards
+## The lifecycle
 
-Both run as `PreToolUse`, so a violation never reaches disk.
+`/lifecycle` is the default working mode for anything bigger than a one-line fix. Five phases: **spec → decompose → execute → consolidate → complete.**
 
-| Guard | Denies | Asks |
+The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/lifecycle open <topic>` skips the machine for design work, where a script produces worse output than judgement.
+
+Each repo carries four documents. `docs` owns the two frozen specs; `worklog` owns the two mutable records.
+
+| File | Holds | Mutable |
 |---|---|---|
-| `comment_guard.py` | Any newly added comment | Before deleting one it did not add |
-| `git_guard.py` | State-changing git, in-place rewrites | — |
+| `docs/prd.md` | What and why | Frozen at approval |
+| `docs/sdd.md` | How, and §10's slices | Frozen at approval |
+| `BACKLOG.md` | Open work | Yes |
+| `CHANGELOG.md` | What shipped, and the version | Append-only |
+
+## The hooks
+
+Two guards run as `PreToolUse`, so a violation never reaches disk. Two more run at the session's edges.
+
+| Hook | Fires on | Does | On error |
+|---|---|---|---|
+| `comment_guard.py` | Edit, Write, MultiEdit | Denies an added comment; asks before deleting one | **Closed** |
+| `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites | **Closed** |
+| `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
+| `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
+
+**The failure policy is inverted on purpose.** The guards fail closed because a missed comment reaches disk. The other two fail open because neither may be able to brick a session.
 
 `comment_guard.py` compares **comment multisets** rather than diff hunks. Editing the line a comment sits on, or reindenting it, is not a change. Deleting it is.
 
@@ -47,44 +67,48 @@ Both run as `PreToolUse`, so a violation never reaches disk.
 
 **An exemption the agent can satisfy on its own is a bypass, not an exception.** A content allowlist fails on that alone — whatever token you exempt, the model prepends it. Both exceptions here are things the agent cannot fabricate.
 
-- **Provenance — you send `+comments`.** A `UserPromptSubmit` hook writes a session-scoped grant that lifts the block for that turn; the next prompt without the sigil clears it. Only your keystrokes set it, and a `// +comments` written into a file grants nothing.
-- **Structure — a use-manual under a shebang.** A contiguous run of comment lines starting immediately after `#!`, ending at the first blank or code line. It cannot reach a function body, because position is not forgeable.
+- **Structure — a use-manual under a shebang.** A contiguous run of comment lines starting immediately after `#!`. It cannot reach a function body, because position is not forgeable.
+- **Template — a fixed shape the prose cannot fit.** A banner's label is 40 chars between two hyphen runs; a step marker is one indented line of 80. `comment-rules` lists all four.
 
-Deletions still `ask` under a grant, and the guard still fails closed.
+**There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 49 regression cases
+bash scripts/test-hooks.sh    # 98 regression cases
 ```
 
 ## Skills
 
-**The loader accepts exactly eight frontmatter keys** — `name`, `description`, `model`, `allowed-tools`, `disallowed-tools`, `argument-hint`, `disable-model-invocation`, `user-invocable`. Any other key silently rejects the whole file.
+**The loader accepts exactly 19 frontmatter keys** — any other key silently rejects the whole file, so the skill simply does not exist at runtime. `validate.sh` fails the build on an unknown one.
 
-| Kind | Frontmatter | Loads when |
-|---|---|---|
-| Knowledge | `user-invocable: false` | Its description matches the task |
-| Workflow | `disable-model-invocation: true` | You type `/name` |
-| Both | neither key | Either route |
+| Kind | Frontmatter | Reaches the model | You type `/name` |
+|---|---|---|---|
+| Knowledge | `user-invocable: false` | Yes | No |
+| Workflow | `disable-model-invocation: true` | No, costs zero context | Yes |
+| Both | neither key | Yes | Yes |
 
-**There is no path-glob auto-load.** Every knowledge skill's description therefore states *when to load it* — "Load before reading or writing any `.go` file" — because that sentence is the entire trigger mechanism.
+**Activation is path-based.** A `paths:` glob makes the runtime load a skill when a matching file is touched; `skillOverrides` in `settings.json` then collapses it to `name-only` so its description costs nothing in the always-on listing. **`paths` decides when, `skillOverrides` decides cost.**
 
-Workflow skills: `/plan` `/generate-repo` `/audit` `/wrap-up` `/accessibility`
+**There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
+
+Workflow skills, all free: `/lifecycle` `/decompose` `/implement` `/consolidate` `/backlog` `/generate-repo` `/audit` `/readme` `/risk-assessment` `/complete`
+
+**`context: fork` is the only way to reclaim context.** A skill declaring it runs its body *and* its work inside a subagent, returning only the result. The three lifecycle phases use it. Pairing `argument-hint` with it requires `disable-model-invocation: true` — omit that and the skill is silently rejected.
 
 ## Output formatting
 
-The always-on contract lives in `home/AGENTS.md` § 3 — nine rules, ~15 lines, applied to every turn. The full ADHD standard — chunking, emoji protocol, table shape, code-answer order, document typography, and the research behind each — lives in the `accessibility` skill and loads only when authoring something longer than a screen.
+The always-on contract lives in `home/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `accessibility` skill and loads only when authoring something longer than a screen.
 
-Both subagents (`engineering`, `business`) carry the same contract as a mandatory output template.
+Every subagent carries the same contract as a mandatory output template.
 
 ## Budget
 
 ```bash
-bash scripts/doctor.sh
+bash scripts/validate.sh
 ```
 
 Verifies every symlink, validates every skill and agent against the loader's frontmatter schema, and **fails above 2,000 tokens** of base context.
 
-A new skill costs ~30 tokens of listing. A new line in `home/AGENTS.md` costs its full length on every session, forever — put it in a skill unless it must always apply.
+A skill listed by name costs 1–4 tokens. A new line in `home/AGENTS.md` costs its full length on every session, forever — put it in a skill unless it must always apply.
 
 ## Git hooks for other repos
 

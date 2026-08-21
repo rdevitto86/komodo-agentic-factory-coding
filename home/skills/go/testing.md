@@ -107,7 +107,7 @@ test/
 
 **SDK-internal micro-benchmark exception.** `testing.B` benchmarks for SDK hot paths (sanitization, redaction, JWT, ratelimit — see **Benchmarks and load testing**) sometimes need same-package access to unexported internals for allocation-level measurement. A black-box `test/perf/` file in package `foo_test` cannot reach those unexported symbols. Two options, in order of preference:
 1. Export a minimal test hook (a thin wrapper or exported constructor) so the benchmark can live black-box in `test/perf/` like everything else — preferred, keeps the layout uniform.
-2. If exporting a hook would leak internals into the public API surface for no reason beyond testing, keep that specific benchmark colocated as `<file>_bench_test.go` in the internal package, and record why it's an exception in `TODO.md` — not in a comment. The `_bench_test.go` filename is the separation; no comment marks the section. Treat this as a documented carve-out, not a default — most perf work still belongs in `test/perf/`.
+2. If exporting a hook would leak internals into the public API surface for no reason beyond testing, keep that specific benchmark colocated as `<file>_bench_test.go` in the internal package, and record why it's an exception in `BACKLOG.md` — not in a comment. The `_bench_test.go` filename is the separation; no comment marks the section. Treat this as a documented carve-out, not a default — most perf work still belongs in `test/perf/`.
 
 ## Structure
 
@@ -195,7 +195,7 @@ require.Eventually(t, func() bool {
 }, time.Second, 10*time.Millisecond)
 ```
 
-- Tests that depend on real wall-clock time must use an injected clock (`clockwork`, custom interface) — see the `coding-principles` skill on dependency injection.
+- Tests that depend on real wall-clock time must use an injected clock (`clockwork`, custom interface) rather than the system clock.
 
 ## Contract
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# doctor.sh - health check for the installed config.
+# validate.sh - health check for the installed config.
 #
-# Run:     bash scripts/doctor.sh
+# Run:     bash scripts/validate.sh
 # Exit 0:  everything healthy
 # Exit 1:  one or more checks failed
 #
@@ -28,7 +28,7 @@ BUDGET=2000
 
 problems=0
 
-printf '\ndoctor\n\n'
+printf '\nvalidate\n\n'
 printf '  links\n'
 for entry in "$SOURCE"/*; do
   [ -e "$entry" ] || continue
@@ -55,7 +55,7 @@ for entry in "$SOURCE"/*; do
 done
 
 printf '\n  hooks\n'
-for hook in comment_guard git_guard; do
+for hook in comment_guard git_guard verify_gate context_injector; do
   path="$SOURCE/hooks/$hook.py"
   if python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$path" 2>/dev/null; then
     printf '    ok        %s.py\n' "$hook"
@@ -78,7 +78,12 @@ SKILL_KEYS = {
     "context", "agent", "background", "hooks", "metadata", "shell",
     "license", "compatibility",
 }
-AGENT_KEYS = {"name", "description", "tools", "model"}
+AGENT_KEYS = {
+    "name", "description", "tools", "disallowedTools", "model",
+    "permissionMode", "maxTurns", "skills", "mcpServers", "hooks",
+    "memory", "background", "effort", "isolation", "color",
+    "initialPrompt",
+}
 
 failures = 0
 
@@ -137,6 +142,37 @@ for entry in sorted(os.listdir(agents_dir)) if os.path.isdir(agents_dir) else []
 
 if failures == 0:
     print("    ok        every skill and agent parses against the loader schema")
+sys.exit(1 if failures else 0)
+PY
+[ $? -eq 0 ] || problems=$((problems + 1))
+
+printf '\n  document names\n'
+python3 - "$SOURCE" "$REPO_ROOT" <<'PY'
+import os, re, sys
+
+source, repo_root = sys.argv[1], sys.argv[2]
+STALE = re.compile(r"\bTODO\.md\b")
+roots = [source, os.path.join(repo_root, "templates")]
+failures = 0
+
+for root in roots:
+    for base, _, names in os.walk(root):
+        for name in names:
+            if not name.endswith((".md", ".tmpl", ".off")):
+                continue
+            path = os.path.join(base, name)
+            try:
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    body = handle.read()
+            except OSError:
+                continue
+            if STALE.search(body):
+                label = os.path.relpath(path, repo_root)
+                print("    BROKEN    %s still names TODO.md — the file is BACKLOG.md" % label)
+                failures += 1
+
+if failures == 0:
+    print("    ok        no skill or template names a renamed document")
 sys.exit(1 if failures else 0)
 PY
 [ $? -eq 0 ] || problems=$((problems + 1))

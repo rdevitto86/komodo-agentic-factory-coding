@@ -9,6 +9,10 @@ paths: "**/*.py, **/*.pyi, **/pyproject.toml"
 
 Zero comments, zero docstrings. Errors lead with a verb phrase and never name the function.
 
+## Comment discipline
+
+`comment-rules` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `# noqa`, `# type: ignore`, `# pylint:`, `# mypy:`, `# pyright:`, `# ruff:`, `# isort:`, `-*- coding` on line 1. **A docstring is scanned like any other comment** — the guard parses the file's AST, so it catches module, function, and class docstrings, not just `#` lines. Anything outside those prompts for approval.
+
 ## Tooling and types
 
 - **The version floor is declared in `pyproject.toml` under `requires-python`.** Read it rather than assuming a release. Dependencies via `uv` (preferred) or `poetry` — never raw `pip`.
@@ -36,20 +40,6 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 - **CPU-bound work goes to `ProcessPoolExecutor`**, not threads — the GIL makes threads useless here.
 - **`contextvars`** for per-task context.
 
-## Quick-reference fields
-
-The field set a Python repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
-
-| Field | Source on disk |
-|---|---|
-| Version floor | `requires-python` |
-| Package name | `pyproject.toml` |
-| Dependency manager | lockfile present |
-| Entrypoint | `project.scripts` |
-| Run + test | `pyproject.toml` |
-
-Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `tech-stack`, or `sdlc` already states by name.
-
 ## Testing
 
 - **`pytest` only**, never `unittest`.
@@ -70,3 +60,17 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact this
 - **Async via `pytest-asyncio`** with `asyncio_mode = "auto"`.
 - **DB-touching code gets integration tests** against ephemeral instances (`testcontainers`, `pytest-postgresql`).
 - **Tier definitions, merge/release gates, and coverage floors are owned by the `sdlc` skill** (100% the target on new code, 85% the hard minimum, 100% required on SDKs/shared libraries and security-critical paths) — this section covers Python mechanics only.
+
+## Quick-reference fields
+
+The field set a Python repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
+
+| Field | Source on disk |
+|---|---|
+| Version floor | `requires-python` |
+| Package name | `pyproject.toml` |
+| Dependency manager | lockfile present |
+| Entrypoint | `project.scripts` |
+| Run + test | `pyproject.toml` |
+
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill or `sdlc` already states by name.

@@ -16,7 +16,7 @@ The brief states the app's purpose, its target state, and the decision to render
 - **Re-derive everything from the code as it is now.** No prior run, score, or ledger carries forward.
 - **Review the code as-is.** Do not assume it needs changing.
 - **Run the repo's own gate first** — build, vet, test, lint. A red gate is itself evidence, and **any claim about build or test status is re-verified by execution, never by reading.**
-- **Load `TODO.md` first.** A finding matching an open story is tagged `[tracked]` and keeps its tier. Tracking never clears the bar — a tracked Blocker still blocks.
+- **Load `BACKLOG.md` first.** A finding matching an open story is tagged `[tracked]` and keeps its tier. Tracking never clears the bar — a tracked Blocker still blocks.
 - **Every finding carries `file:line` evidence.** No pointer, no finding.
 - **Report only findings you hold at medium confidence or higher.** A Blocker needs high confidence; if evidence is incomplete, state what would confirm it and keep it out of the verdict.
 - **Prerequisites outside this repo never move the verdict.** List them once, separately.
@@ -50,7 +50,7 @@ Missing features and improvement ideas are welcome as low-severity findings unle
 
 ## Output — report only
 
-**Never write to `TODO.md`.** Report findings; the user decides what becomes a story. Offer at the end: "Want any of these turned into stories? Run `/backlog`."
+**Never write to `BACKLOG.md`.** Report findings; the user decides what becomes a story. Offer at the end: "Want any of these turned into stories? Run `/backlog`."
 
 ```markdown
 ## 🔍 Verdict

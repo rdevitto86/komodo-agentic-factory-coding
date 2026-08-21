@@ -9,6 +9,12 @@ paths: "**/*.vue, **/stores/**"
 
 Composition API with `<script setup lang="ts">`, always. The Options API is never correct here.
 
+**Load `typescript` alongside this skill.** `typescript` stays framework-agnostic on purpose — its own `paths:` never names `.vue`, so nothing auto-loads it here. Invoke it explicitly; its conventions, toolchain, and Quick-reference fields apply to every `<script>` block without restatement.
+
+## Comment discipline
+
+`typescript`'s directives apply inside `<script>`. **The template's `<!-- -->` markup comments are scanned on the same terms as `//`** — a banner or a `WHY:` note is allowed there too, a narrative comment is not.
+
 ## Composition API only
 
 | Use | Never use |
@@ -105,7 +111,6 @@ The field set a Vue repo's `AGENTS.md` Quick-reference table carries. Every valu
 | Field | Source on disk |
 |---|---|
 | Framework + floor | `package.json` |
-| Package name | `package.json` |
 | Dev port | `vite.config.ts` |
 | Router mode | router entry file |
 | Path alias | `vite.config.ts` |
@@ -123,3 +128,10 @@ deploy/
 package.json
 vite.config.ts
 ```
+
+## Seed backlog — `vue-ui`
+
+Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+
+- [H] Build out the starter page's components · M
+- [H] Accessibility: WCAG AA pass (`uiux`) · S

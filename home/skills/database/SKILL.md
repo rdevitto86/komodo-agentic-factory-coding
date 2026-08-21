@@ -11,6 +11,10 @@ Engine-agnostic rules first, then what changes per engine. Generic hygiene — p
 
 **Read the repo before assuming an engine.** The dependency manifest and the migrations directory say which one is in use; more than one may be.
 
+## Comment discipline
+
+`comment-rules` carries the shared template contract. `.sql` has no engine-specific machine directive in the guard's list — every comment is judged only against the generic templates (banner, `WHY:`/`NOTE:`/`FIXME:`/`HACK:`, `TODO(user):`, indented step marker). A comment describing what a query does prompts for approval like any other narrative comment.
+
 ---
 
 ## Universal rules

@@ -51,6 +51,16 @@ expect() {
   local label="$1" want="$2" must_contain="${3:-}" must_not_contain="${4:-}"
   local payload out got reason problem=""
   payload="$(cat)"
+  payload="$(printf '%s' "$payload" | python3 -c '
+import json, sys
+raw = sys.stdin.read()
+try:
+    p = json.loads(raw)
+except ValueError:
+    sys.stdout.write(raw); raise SystemExit(0)
+p.setdefault("hook_event_name", "PreToolUse")
+sys.stdout.write(json.dumps(p))
+')"
   out="$(printf '%s' "$payload" | python3 "$HOOK" 2>/dev/null)"
   got="$(decision_of "$out")"
   reason="$(reason_of "$out")"
@@ -84,7 +94,7 @@ bash_case() {
 HOOK="$HOOKS/comment_guard.py"
 printf '\ncomment guard\n\n'
 
-expect "C1  new comment beside user block flags only the new line" deny \
+expect "C1  new comment beside user block flags only the new line" ask \
   "agent added this" "user note one" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note one\n// user note two\nfunc Foo() {","new_string":"// user note one\n// user note two\n// agent added this\nfunc Foo() {"}}
 JSON
@@ -98,13 +108,13 @@ expect "C3  deleting a user comment asks instead of proceeding" ask \
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note\nfunc Foo() {}","new_string":"func Foo() {}"}}
 JSON
 
-expect "C4  MultiEdit cannot smuggle a comment through" deny \
+expect "C4  MultiEdit cannot smuggle a comment through" ask \
   "smuggled" <<'JSON'
 {"tool_name":"MultiEdit","tool_input":{"file_path":"/x/svc.go","edits":[{"old_string":"a := 1","new_string":"a := 2"},{"old_string":"b := 1","new_string":"// smuggled\nb := 2"}]}}
 JSON
 
 printf '{"tool_name":"Write","tool_input":{"file_path":"%s/fresh.go","content":"// package header\\npackage main\\n"}}' "$WORKDIR" \
-  | expect "C5  Write to a brand-new file denies its comments" deny "package header"
+  | expect "C5  Write to a brand-new file asks about its comments" ask "package header"
 
 expect "C6a machine directives are exempt (go)" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"package main","new_string":"//go:build linux\n//nolint:gocyclo\npackage main"}}
@@ -114,7 +124,7 @@ expect "C6b machine directives are exempt (shell)" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/run.sh","old_string":"echo hi","new_string":"#!/usr/bin/env bash\n# shellcheck disable=SC2086\necho hi"}}
 JSON
 
-expect "C7  python docstrings are comments and are denied" deny \
+expect "C7  python docstrings are comments and prompt for approval" ask \
   "Return one" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/mod.py","old_string":"def f():\n    return 1","new_string":"def f():\n    \"\"\"Return one.\"\"\"\n    return 1"}}
 JSON
@@ -140,7 +150,7 @@ expect "C12 docstring survives a body-only edit" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/mod.py","old_string":"def f():\n    \"\"\"Return one.\"\"\"\n    return 1","new_string":"def f():\n    \"\"\"Return one.\"\"\"\n    return 2"}}
 JSON
 
-expect "C13 sql line comments are caught" deny "backfill" <<'JSON'
+expect "C13 sql line comments are caught" ask "backfill" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/001_init.sql","old_string":"ALTER TABLE orders ADD COLUMN tenant_id uuid;","new_string":"-- backfill later\nALTER TABLE orders ADD COLUMN tenant_id uuid;"}}
 JSON
 
@@ -148,40 +158,27 @@ expect "C14 shebang header block is exempt" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/doctor.sh","old_string":"#!/usr/bin/env bash\nset -e","new_string":"#!/usr/bin/env bash\n#\n# doctor.sh - health check.\n#\n# Run: bash doctor.sh\n\nset -e"}}
 JSON
 
-expect "C15 a shebang does not exempt the rest of the file" deny \
+expect "C15 a shebang does not exempt the rest of the file" ask \
   "retry twice" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/doctor.sh","old_string":"#!/usr/bin/env bash\n# manual line\n\nrun_checks","new_string":"#!/usr/bin/env bash\n# manual line\n\n# retry twice\nrun_checks"}}
 JSON
 
-expect "C16 a header block without a shebang is still denied" deny \
+expect "C16 a header block without a shebang still prompts" ask \
   "orders service" <<'JSON'
 {"tool_name":"Write","tool_input":{"file_path":"/x/svc.go","content":"// orders service\npackage main\n"}}
 JSON
 
-grant_prompt() {
-  printf '{"hook_event_name":"UserPromptSubmit","session_id":"%s","prompt":%s}' "$SESSION" "$1"
-}
-
-grant_prompt '"tidy this up please"' | python3 "$HOOK" >/dev/null 2>&1
 printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// explain Foo\\nfunc Foo() {}"}}' "$SESSION" \
-  | expect "C17 without the sigil a comment is denied" deny "explain Foo"
+  | expect "C17 a doc comment on a func prompts for approval" ask "explain Foo"
 
-grant_prompt '"add a header here +comments"' | python3 "$HOOK" >/dev/null 2>&1
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// explain Foo\\nfunc Foo() {}"}}' "$SESSION" \
-  | expect "C18 +comments in the user prompt grants the turn" allow
-
-grant_prompt '"now carry on"' | python3 "$HOOK" >/dev/null 2>&1
 printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Bar() {}","new_string":"// explain Bar\\nfunc Bar() {}"}}' "$SESSION" \
-  | expect "C19 the grant expires on the next prompt" deny "explain Bar"
+  | expect "C19 an ordinary doc comment prompts for approval" ask "explain Bar"
 
-grant_prompt '"add a header here +comments"' | python3 "$HOOK" >/dev/null 2>&1
 printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note\\nfunc Foo() {}","new_string":"func Foo() {}"}}' "$SESSION" \
-  | expect "C20 a grant never licenses deleting a comment" ask "user note"
+  | expect "C20 deleting a comment asks, never proceeds" ask "user note"
 
 printf '{"hook_event_name":"PreToolUse","session_id":"%s-other","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// +comments\\n// explain Foo\\nfunc Foo() {}"}}' "$SESSION" \
-  | expect "C21 the agent cannot grant itself by writing the sigil" deny "explain Foo"
-
-grant_prompt '"reset"' | python3 "$HOOK" >/dev/null 2>&1
+  | expect "C21 the agent cannot grant itself by writing the sigil" ask "explain Foo"
 
 expect "C22 the Helpers banner is exempt in a test file" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Helpers ----------------------------------------------------\n\nfunc newFixture(t *testing.T) {}"}}
@@ -195,32 +192,32 @@ expect "C24 a banner is allowed outside a test path too" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// --- Helpers ---\n\nfunc bar() {}"}}
 JSON
 
-expect "C25 a description above a Go test has no slot" deny \
+expect "C25 a description above a Go test has no slot" ask \
   "shipped branch" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// the shipped branch is unreachable through the public API\nfunc TestCancel(t *testing.T) {}"}}
 JSON
 
-expect "C26 the same text above a non-test func is denied" deny \
+expect "C26 the same text above a non-test func prompts" ask \
   "unreachable" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func newOrder() {}","new_string":"// the shipped branch is unreachable through the public API\nfunc newOrder() {}"}}
 JSON
 
-expect "C27 a three-line description exceeds the cap" deny \
+expect "C27 a three-line description exceeds the cap" ask \
   "third sentence" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// first sentence on the boundary\n// second sentence on the boundary\n// third sentence on the boundary\nfunc TestCancel(t *testing.T) {}"}}
 JSON
 
-expect "C28 a description over 200 characters is denied" deny \
+expect "C28 a description over 200 characters prompts" ask \
   "config default" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// the retry ceiling interacts with the jitter window in a way the public API cannot express, so this case pins the exact boundary that a reader would otherwise have to derive from three separate files and a config default\nfunc TestCancel(t *testing.T) {}"}}
 JSON
 
-expect "C29 a blank line breaks the description slot" deny \
+expect "C29 a blank line breaks the description slot" ask \
   "degraded default" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestZero(t *testing.T) {}","new_string":"// checks the degraded default\n\nfunc TestZero(t *testing.T) {}"}}
 JSON
 
-expect "C30 a block comment above a test is denied" deny \
+expect "C30 a block comment above a test prompts" ask \
   "degraded default" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestZero(t *testing.T) {}","new_string":"/* checks the degraded default */\nfunc TestZero(t *testing.T) {}"}}
 JSON
@@ -229,42 +226,42 @@ expect "C31 a plain helper file under test/ gets the banner" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/test/integration/helpers.go","old_string":"func Seed() {}","new_string":"func Seed() {}\n\n// --- Helpers ---\n\nfunc reset() {}"}}
 JSON
 
-expect "C32 an arbitrary comment in a test file is still denied" deny \
+expect "C32 an arbitrary comment in a test file still prompts" ask \
   "bump the counter" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"count++","new_string":"// bump the counter\ncount++"}}
 JSON
 
-expect "C32b a description above a truncated signature is denied" deny \
+expect "C32b a description above a truncated signature prompts" ask \
   "cookie is only checked" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestNew","new_string":"// the cookie is only checked on unsafe methods\nfunc TestNew"}}
 JSON
 
-expect "C33 a description above a pytest test is denied" deny \
+expect "C33 a description above a pytest test prompts" ask \
   "retry ceiling" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/test_order.py","old_string":"def test_retry(n):\n    pass","new_string":"# pins the retry ceiling at the documented boundary\n@pytest.mark.parametrize(\"n\", [1, 2])\ndef test_retry(n):\n    pass"}}
 JSON
 
-expect "C34 a description above a Rust #[test] is denied" deny \
+expect "C34 a description above a Rust #[test] prompts" ask \
   "saturating add" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/tests/limits.rs","old_string":"fn saturates_at_cap() {}","new_string":"// the saturating add is only reachable at usize::MAX\n#[test]\nfn saturates_at_cap() {}"}}
 JSON
 
-expect "C35 a description above a Vitest case is denied" deny \
+expect "C35 a description above a Vitest case prompts" ask \
   "402 branch" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/order.x.test.ts","old_string":"it(\"rejects an expired card\", () => {","new_string":"// the 402 branch cannot be reached through the public client\nit(\"rejects an expired card\", () => {"}}
 JSON
 
-expect "C36 a comment restating the func name is denied" deny \
+expect "C36 a comment restating the func name prompts as an echo" ask \
   "restates the name" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// InitStore inits a store\nfunc InitStore() {}"}}
 JSON
 
-expect "C36b the same rule catches a Go method receiver" deny \
+expect "C36b the same rule catches a Go method receiver" ask \
   "restates the name" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/sink.go","old_string":"func (s *Sink) Send(e Event) error {","new_string":"// Send sends the event to the HTTP sink.\nfunc (s *Sink) Send(e Event) error {"}}
 JSON
 
-expect "C36c the same rule catches a TypeScript class" deny \
+expect "C36c the same rule catches a TypeScript class" ask \
   "restates the name" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/cart.ts","old_string":"export class CartService {","new_string":"// CartService is a service for carts\nexport class CartService {"}}
 JSON
@@ -273,37 +270,37 @@ expect "C37 a step marker inside a body is allowed" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// init runtime logger\n\tboot()"}}
 JSON
 
-expect "C38 a step marker over 80 chars is denied" deny \
+expect "C38 a step marker over 80 chars prompts" ask \
   "self-documenting" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// initialise the runtime logger so that downstream calls can resolve their credentials from AWS\n\tboot()"}}
 JSON
 
-expect "C39 a step marker at column zero is denied" deny \
+expect "C39 a step marker at column zero prompts" ask \
   "init runtime logger" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"var boot = 1","new_string":"// init runtime logger\nvar boot = 1"}}
 JSON
 
-expect "C40 a multi-line run inside a body is denied" deny \
+expect "C40 a multi-line run inside a body prompts" ask \
   "self-documenting" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// init the logger\n\t// then boot\n\tboot()"}}
 JSON
 
-expect "C41 a box-glyph banner is not a banner" deny \
+expect "C41 a box-glyph banner is not a banner" ask \
   "Helpers" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// ── Helpers ──────────────\n\nfunc newFixture(t *testing.T) {}"}}
 JSON
 
-expect "C42 a banner label over 40 chars is denied" deny \
+expect "C42 a banner label over 40 chars prompts" ask \
   "Helpers" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Helpers: shared fixtures, builders and assertion utilities ---\n\nfunc newFixture(t *testing.T) {}"}}
 JSON
 
-expect "C43 a bare rule with no label is not a banner" deny \
+expect "C43 a bare rule with no label is not a banner" ask \
   "self-documenting" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// ------------------------------\n\nfunc bar() {}"}}
 JSON
 
-expect "C44 a banner cannot smuggle prose past the hyphens" deny \
+expect "C44 a banner cannot smuggle prose past the hyphens" ask \
   "self-documenting" <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// --- this helper exists because the upstream client retries twice ---\n\nfunc bar() {}"}}
 JSON
@@ -313,28 +310,31 @@ printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","to
   | expect "C45 removing a comment asks and records it" ask "Preloads all the required"
 
 printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the required dependencies.\\nfunc Boot() {}"}}' "$MOVE" \
-  | expect "C46 the recorded comment may be re-added verbatim" allow
+  | expect "C46 re-adding it at the destination still prompts" ask "Preloads all the required"
 
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the dependencies the server needs.\\nfunc Boot() {}"}}' "$MOVE" \
-  | expect "C47 a reworded version is not a move" deny "Preloads all the dependencies"
-
-printf '{"hook_event_name":"PreToolUse","session_id":"%s-none","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the required dependencies.\\nfunc Boot() {}"}}' "$MOVE" \
-  | expect "C48 another session cannot claim the move" deny "Preloads all the required"
-
-grant_prompt '"go ahead +comments"' | python3 "$HOOK" >/dev/null 2>&1
 printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// InitStore inits a store\\nfunc InitStore() {}"}}' "$SESSION" \
-  | expect "C49 +comments does not license a name-echo" deny "restates the name"
+  | expect "C49 a name-echo prompts as an echo" ask "restates the name"
 
 printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// Creates the store and seeds it from disk.\\nfunc InitStore() {}"}}' "$SESSION" \
-  | expect "C50 +comments does license an ordinary doc" allow
-
-grant_prompt '"reset"' | python3 "$HOOK" >/dev/null 2>&1
+  | expect "C50 an ordinary doc comment prompts for approval" ask "self-documenting"
 
 expect "C51 a script manual under a shebang is still exempt" allow <<'JSON'
 {"tool_name":"Write","tool_input":{"file_path":"/x/deploy.sh","content":"#!/usr/bin/env bash\n#\n# deploy.sh - ships the current build to staging.\n#\n# Usage:  bash deploy.sh [--dry-run]\n#\n# Exit 0: shipped\n# Exit 1: refused\nset -euo pipefail\n"}}
 JSON
 
-expect "C52 a manual not under a shebang is denied" deny \
+expect "C53 an HTML narrative comment in a Vue template prompts" ask <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/Widget.vue","old_string":"<div>hi</div>","new_string":"<!-- explains the widget --> \n<div>hi</div>"}}
+JSON
+
+expect "C54 a WHY note in a Svelte template's HTML comment is allowed" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/Widget.svelte","old_string":"<div>hi</div>","new_string":"<!-- WHY: Safari needs this wrapper -->\n<div>hi</div>"}}
+JSON
+
+expect "C55 a banner in an HTML comment is allowed" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/Widget.vue","old_string":"<div>hi</div>","new_string":"<!-- --- Header --- -->\n<div>hi</div>"}}
+JSON
+
+expect "C52 a manual not under a shebang prompts" ask \
   "ships the current build" <<'JSON'
 {"tool_name":"Write","tool_input":{"file_path":"/x/deploy.sh","content":"set -euo pipefail\n#\n# deploy.sh - ships the current build to staging.\n#\necho hi\n"}}
 JSON
@@ -366,6 +366,95 @@ bash_case "G21 git config get is allowed"            allow 'git config --get use
 bash_case "G22 perl -i is blocked"                   deny  "perl -pi -e 's/a/b/' main.go" "bypassing the comment guard"
 bash_case "G23 append redirect to code is blocked"   deny  'echo x >> util.ts'           "bypasses the comment guard"
 bash_case "G18 git clean is blocked"                 deny  'git clean -fdx'               "git clean"
+bash_case "G24 an ASCII arrow is not a redirect"     allow 'echo "step 1 -> main.go done"'
+bash_case "G25 the word tee in a string is not tee"  allow 'echo "redirect/tee cases" && ls scripts/test-hooks.sh'
+bash_case "G26 real tee into a code file is blocked" deny  'go test ./... | tee results.go' "tee writing to"
+bash_case "G27 a quoted redirect is data"            allow 'echo "write it with > handler.go"'
+bash_case "G28 a heredoc body is data"               allow 'python3 - <<'"'"'PY'"'"'
+print("emit > handler.go here")
+PY'
+bash_case "G29 a redirect on the heredoc opener still blocks" deny 'cat <<'"'"'EOF'"'"' > handler.go
+package main
+EOF' "bypasses the comment guard"
+bash_case "G30 numeric fd redirect is not a code path" allow 'go build ./... 2>&1'
+
+# --- Context injector ---
+printf '\ncontext injector\n\n'
+
+inject_case() {
+  local label="$1" root="$2" must_contain="${3:-}" must_not_contain="${4:-}"
+  local out problem=""
+  out="$(INJECT_ROOT="$root" python3 -c '
+import os, sys, io
+sys.path.insert(0, os.environ["HOOKS"])
+import context_injector as ci
+ci.repo_root = lambda start: os.environ["INJECT_ROOT"] or None
+buf = io.StringIO()
+sys.stdout = buf
+try:
+    ci.main()
+except SystemExit:
+    pass
+except BaseException:
+    sys.stdout = sys.__stdout__
+    print("CRASHED")
+    raise SystemExit(0)
+sys.stdout = sys.__stdout__
+print(buf.getvalue(), end="")
+' 2>/dev/null)"
+
+  if [[ "$out" == *CRASHED* ]]; then
+    problem="hook crashed instead of failing open"
+  fi
+  if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$out" != *"$must_contain"* ]]; then
+    problem="output missing: $must_contain"
+  fi
+  if [ -z "$problem" ] && [ -n "$must_not_contain" ] && [[ "$out" == *"$must_not_contain"* ]]; then
+    problem="output leaked: $must_not_contain"
+  fi
+
+  if [ -z "$problem" ]; then
+    printf '  PASS  %s\n' "$label"
+    printf 'PASS\n' >> "$RESULTS"
+  else
+    printf '  FAIL  %s\n        %s\n' "$label" "$problem"
+    [ -n "$out" ] && printf '%s\n' "$out" | sed 's/^/        | /'
+    printf 'FAIL\n' >> "$RESULTS"
+  fi
+}
+
+export HOOKS
+
+FIX="$WORKDIR/inject"
+mkdir -p "$FIX/empty" "$FIX/full" "$FIX/nested/docs" "$FIX/junk"
+
+printf '%s\n' '# Backlog' '## Now — V1' '### Create + fetch' \
+  '- [C][WIP] Idempotent POST /orders · M · S2 → `go test ./orders/...`' \
+  '- [H] POST /orders/:id/refund · M · S4 → `go test ./refund/...`' \
+  '- [H][BLOCKED] Refund idempotency · M · S4 → `go test ./refund/...`' \
+  '  - Blocked: the SDK exposes no idempotency key at the pinned version.' \
+  > "$FIX/full/BACKLOG.md"
+
+printf '%s\n' '# Changelog' '## [Unreleased]' '## [0.4.2] — 2026-08-20' \
+  '### Added' '- Something.' > "$FIX/full/CHANGELOG.md"
+
+printf '%s\n' '# Backlog' '- [M] a nested story · S → `true`' \
+  > "$FIX/nested/docs/BACKLOG.md"
+
+printf '%s\n' 'not a backlog at all' > "$FIX/junk/BACKLOG.md"
+
+inject_case "I1  reports the WIP story"            "$FIX/full" "Idempotent POST /orders"
+inject_case "I2  counts blocked stories"           "$FIX/full" "3 open, 1 BLOCKED"
+inject_case "I3  reports the released version"     "$FIX/full" "Released version: 0.4.2"
+inject_case "I4  skips the Unreleased heading"     "$FIX/full" "" "version: Unreleased"
+inject_case "I5  an indented note is not a story"  "$FIX/full" "" "Blocked: the SDK"
+inject_case "I6  no verify target is stated"       "$FIX/full" "Verify gate: none declared"
+inject_case "I7  silent when no backlog exists"    "$FIX/empty" "" "Work state"
+inject_case "I8  finds a backlog under docs/"      "$FIX/nested" "docs/BACKLOG.md"
+inject_case "I9  a backlog with no stories is fine" "$FIX/junk" "Nothing marked [WIP]"
+inject_case "I10 no version line without a changelog" "$FIX/nested" "" "Released version"
+inject_case "I11 outside a repo it stays silent"   "" "" "Work state"
+inject_case "I12 a missing root does not crash"    "/nonexistent/repo" "" "Work state"
 
 PASS="$(grep -c '^PASS$' "$RESULTS" || true)"
 FAIL="$(grep -c '^FAIL$' "$RESULTS" || true)"

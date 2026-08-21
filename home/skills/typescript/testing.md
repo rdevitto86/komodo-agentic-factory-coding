@@ -2,7 +2,7 @@
 
 Full TS/JS testing standard — the approved stack, file placement, suite structure, runner configuration, and cost control. Go rules live in the `go` skill; Python rules in the `python` skill.
 
-**This file owns mechanics only.** Tier definitions, merge and release gates, and coverage floors are owned by the `sdlc` skill. Which tier runs at which pipeline stage, and on what infrastructure, is owned by the `cicd` skill. Repo shape and service anatomy come from `tech-stack`. Nothing here restates any of them.
+**This file owns mechanics only.** Tier definitions, merge and release gates, and coverage floors are owned by the `sdlc` skill. Which tier runs at which pipeline stage, and on what infrastructure, is owned by the `cicd` skill. Repo shape and service anatomy come from the framework skill in use (`svelte`, `vue`) or the repo's own `AGENTS.md`. Nothing here restates any of them.
 
 ## Approved testing stack
 

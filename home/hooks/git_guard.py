@@ -64,7 +64,9 @@ GIT_GLOBAL_FLAGS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namesp
 SHELL_WRAPPERS = ("sh", "bash", "zsh", "dash", "ksh", "env")
 
 SEGMENT_SPLIT = re.compile(r"&&|\|\||[;\n|]")
-REDIRECT = re.compile(r">>?\s*([^\s;&|>]+)")
+REDIRECT = re.compile(r"(?<![-=<0-9&])>>?\s*([^\s;&|>]+)")
+HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n)(.*?)(^\s*\2\s*$)", re.S | re.M)
+QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 INPLACE_SED = re.compile(r"\bsed\b[^;|&]*?(?:\s-[a-zA-Z]*i\b|\s--in-place\b)")
 INPLACE_PERL = re.compile(r"\bperl\b[^;|&]*?\s-[a-zA-Z]*i\b")
 PYTHON_WRITE = re.compile(r"\bpython3?\b[^;|&]*?-c\b.*?open\s*\([^)]*['\"][wa]")
@@ -77,6 +79,16 @@ def is_code_path(token):
         return True
     _, ext = os.path.splitext(base)
     return ext.lower() in EXTENSION_FAMILY
+
+
+def blank(text):
+    return re.sub(r"[^\n]", " ", text)
+
+
+def mask_data(command):
+    # heredoc bodies and quoted spans are data, not shell syntax
+    masked = HEREDOC.sub(lambda m: m.group(1) + blank(m.group(3)) + m.group(4), command)
+    return QUOTED.sub(lambda m: blank(m.group(0)), masked)
 
 
 def tokenize(segment):
@@ -148,6 +160,12 @@ def scan_segment(segment, findings):
             if token == "-c" and index + 1 < len(tokens):
                 scan_command(tokens[index + 1], findings)
         return
+    if command == "tee":
+        for token in tokens[1:]:
+            if is_code_path(token):
+                findings.append("tee writing to %s bypasses the comment guard" % token)
+                break
+        return
     if command == "git":
         subcommand, args = git_subcommand(tokens)
         violation = git_violation(subcommand, args)
@@ -169,14 +187,9 @@ def scan_command(command, findings):
     if PYTHON_WRITE.search(command):
         findings.append("python -c opening a file for writing bypasses the comment guard")
 
-    for target in REDIRECT.findall(command):
+    for target in REDIRECT.findall(mask_data(command)):
         if is_code_path(target):
             findings.append("redirecting output into %s bypasses the comment guard" % target)
-    if re.search(r"\btee\b", command):
-        for token in tokenize(command):
-            if is_code_path(token):
-                findings.append("tee writing to %s bypasses the comment guard" % token)
-                break
 
 
 def respond_deny(reason):

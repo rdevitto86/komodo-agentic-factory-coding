@@ -9,6 +9,10 @@ paths: "**/*.go, **/go.mod, **/go.sum"
 
 Zero comments, zero godoc. Error strings lead with a verb phrase and never name the function.
 
+## Comment discipline
+
+`comment-rules` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `go:build`, `go:generate` (matches the `go:` prefix), `cgo` pragmas, `//nolint:<rule>`. Anything else — including godoc on an exported symbol — prompts for approval.
+
 ## Toolchain
 
 - **Version floor is whatever `go.mod` declares.** Read it; never assume a release.
@@ -19,7 +23,7 @@ Zero comments, zero godoc. Error strings lead with a verb phrase and never name 
 
 ## Conventions
 
-- **`golangci-lint` must pass.** Config at `.golangci.yaml`. A suppression is a bare `//nolint:<rule>` directive with no appended prose; the reason goes in `TODO.md`, never in a comment. Prefer fixing the finding.
+- **`golangci-lint` must pass.** Config at `.golangci.yaml`. A suppression is a bare `//nolint:<rule>` directive with no appended prose; the reason goes in `BACKLOG.md`, never in a comment. Prefer fixing the finding.
 - **Naming**: `req` for request bodies and outgoing `*http.Request`, `res` for response objects. Keep `r *http.Request` / `w http.ResponseWriter`.
 - **No `util` / `common` / `helpers` packages.** Split by domain. `internal/` for non-importable code. Minimise exported surface.
 - **`init()` does no I/O.** Wire through constructors (`NewServer`, `NewService`) — never package-level globals or `init()` registration.
@@ -75,6 +79,20 @@ Measure first. An optimisation without a before/after number is unreviewable.
 
 Exported API and schema changes are additive. New optional fields and new functions are safe; renaming, removing, or retyping an exported symbol breaks every service of yours that imports it and needs a version bump. Add to a struct rather than changing a signature; use functional options so a constructor can grow.
 
+## Quick-reference fields
+
+The field set a Go repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
+
+| Field | Source on disk |
+|---|---|
+| Language + floor | `go.mod` |
+| Module path | `go.mod` |
+| Port(s) | `docker-compose.yaml`, config |
+| Contract | `openapi.yaml` if present |
+| Entrypoint | `cmd/server/main.go` |
+
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill or `sdlc` already states by name.
+
 ## Repo layout — `go-api`
 
 ```
@@ -91,21 +109,13 @@ go.mod
 
 One generic entrypoint at `cmd/server/main.go`, or `cmd/main.go` as the alternative — never a `cmd/public` / `cmd/private` split, which is a dead convention. Audience-specific middleware (browser-facing vs service-to-service) is a routing concern inside `internal/`, not a second binary.
 
-**No `db/` unless the user says the service owns one.** Most do not. When it does, add `db/migrations/` and follow the `tech-stack` skill's migration naming.
+**No `db/` unless the user says the service owns one.** Most do not. When it does, add `db/migrations/` and follow the `database` skill's migration naming.
 
-## Quick-reference fields
+## Seed backlog — `go-api`
 
-The field set a Go repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
+Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
-| Field | Source on disk |
-|---|---|
-| Language + floor | `go.mod` |
-| Module path | `go.mod` |
-| Port(s) | `docker-compose.yaml`, config |
-| Contract | `openapi.yaml` if present |
-| Entrypoint | `cmd/server/main.go` |
-
-Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `tech-stack`, or `sdlc` already states by name.
+- [M] Flesh out `openapi.yaml` beyond the `/health` stub as routes land · S
 
 ## Reference material
 

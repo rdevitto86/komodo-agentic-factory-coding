@@ -9,6 +9,12 @@ paths: "**/*.svelte, **/+page.ts, **/+page.server.ts, **/+layout.ts, **/+layout.
 
 Runes only. Legacy Svelte 4 patterns are never correct here — model training skews toward them, so check every reactive construct against the table below.
 
+**Load `typescript` alongside this skill.** `typescript` stays framework-agnostic on purpose — its own `paths:` never names `.svelte`, so nothing auto-loads it here. Invoke it explicitly; its conventions, toolchain, and Quick-reference fields apply to every `<script>` block without restatement.
+
+## Comment discipline
+
+`typescript`'s directives apply inside `<script>`. **The template's `<!-- -->` markup comments are scanned on the same terms as `//`** — a banner or a `WHY:` note is allowed there too, a narrative comment is not.
+
 ## Runes — non-negotiable
 
 | Use | Never use |
@@ -98,7 +104,6 @@ The field set a Svelte repo's `AGENTS.md` Quick-reference table carries. Every v
 | Field | Source on disk |
 |---|---|
 | Framework + floor | `package.json` |
-| Package name | `package.json` |
 | Dev port | `vite.config.ts` |
 | Adapter | `svelte.config.js` |
 | Path alias | `svelte.config.js` |
@@ -116,3 +121,10 @@ deploy/
 package.json
 vite.config.ts
 ```
+
+## Seed backlog — `svelte-ui`
+
+Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+
+- [H] Build out the starter page's components · M
+- [H] Accessibility: WCAG AA pass (`uiux`) · S

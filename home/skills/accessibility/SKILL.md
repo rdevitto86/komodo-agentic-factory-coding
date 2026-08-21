@@ -9,11 +9,21 @@ description: ADHD-calibrated output formatting. Load before authoring any docume
 
 Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1986), Gestalt proximity, and WCAG 2.2 cognitive guidelines.
 
-`AGENTS.md` § 3 carries the seven always-on rules. This skill is the depth behind them plus everything that only applies to authored documents.
+`AGENTS.md` § 2 carries the eight always-on rules. This skill is the depth behind them plus everything that only applies to authored documents.
 
 ---
 
-## 1. Structure — the reader must never hold a map
+## 1. Learning mode
+
+**Hands-on and visual over textual and conceptual.** The user learns by doing and seeing, not by reading a description of the mechanism.
+
+- **Show, don't tell.** A runnable snippet, a rendered diagram, or a before/after outranks a prose walkthrough of the same thing.
+- **Concrete over abstract.** State the rule in one line, then show it working on a real example — never leave a concept to stand alone.
+- **Prefer a demo to a description.** If a feature can be run, run it. If a mechanism can be diagrammed, diagram it (`artifact-diagramming`, `dataviz`).
+
+---
+
+## 2. Structure — the reader must never hold a map
 
 **Two heading levels, three at absolute most.** `##` for major sections, `###` for sub-topics. Nested outlines (`1.1.2.a`) force the reader to maintain a mental position in a hierarchy, which is exactly the resource they lack.
 
@@ -25,7 +35,7 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 ---
 
-## 2. Density caps
+## 3. Density caps
 
 | Unit | Hard cap |
 |---|---|
@@ -43,7 +53,7 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 ---
 
-## 3. Emoji protocol
+## 4. Emoji protocol
 
 **Emoji are functional category markers, never decoration.** A relevant icon is pre-attentive: it routes attention before reading. An irrelevant one is foveal noise that costs a fixation.
 
@@ -60,7 +70,7 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 ---
 
-## 4. Prose tone
+## 5. Prose tone
 
 **Imperative, active voice.** "Check log files daily", never "it is recommended that log files should be checked". Passive voice adds a clause the reader must unwind to find the actor.
 
@@ -70,9 +80,17 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 **No hedging on findings.** State it, or state that you could not determine it. "It may possibly be the case that" is a full clause carrying no information.
 
+**Judge familiarity by what the user has already used correctly**, never by assumed seniority. A term they have not been given in this conversation gets one plain clause of definition before its first use, or it gets cut. Seniority predicts nothing about whether they have seen *this* mechanism.
+
+**An error states cause and fix, nothing else.** No apology, no restatement of what was attempted, no speculation about what else might be wrong.
+
+**Never attach an unrequested caution.** A warning nobody asked for reads as hedging and costs the reader a paragraph to discard.
+
+**Disagreement is one sentence with evidence** — no hedge, and no apology folded into it. Then do it their way and never re-argue.
+
 ---
 
-## 5. Code answers
+## 6. Code answers
 
 **Order is fixed:** what it does → the code → why it matters. Never prose-then-code-then-explanation.
 
@@ -87,12 +105,12 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 ```
 
 - **Show the diff, not the file.** Only the changed block plus the minimum surrounding context to place it. Never dump an unchanged file.
-- **Never annotate the code with comments.** `AGENTS.md` § 1 overrides every "add explanatory comments" instinct, including the one in most formatting guides. Explanation goes in the `**Why:**` block underneath, outside the code fence.
+- **Never annotate the code with comments.** The `comment-rules` skill overrides every "add explanatory comments" instinct, including the one in most formatting guides. Explanation goes in the `**Why:**` block underneath, outside the code fence.
 - **Language-tag every fence.** Untagged fences lose syntax colour, which is a free pre-attentive channel.
 
 ---
 
-## 6. Document typography
+## 7. Document typography
 
 Applies when the output is a rendered document — HTML, an artifact, a README, a slide — not terminal text.
 
@@ -105,7 +123,7 @@ Applies when the output is a rendered document — HTML, an artifact, a README, 
 
 ---
 
-## 7. Self-check
+## 8. Self-check
 
 Run this before sending anything longer than five lines.
 
@@ -120,7 +138,7 @@ Run this before sending anything longer than five lines.
 
 ---
 
-## 8. Worked example
+## 9. Worked example
 
 **❌ Uncalibrated**
 

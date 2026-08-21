@@ -11,22 +11,7 @@ Defines the tiers and what each one is for, language-agnostically. Every languag
 
 **This file names no framework.** The approved stack per tier lives in the language skill's testing reference — `go/testing.md` and `typescript/testing.md`; `python` carries its own inline. Read the one matching the repo before choosing a test tool.
 
-## Where each tier runs
-
-| Tier | DEV (local) | CI (PR) | STG (post-merge) |
-|---|---|---|---|
-| unit | ✓ | **gate** | — |
-| component | ✓ | **gate** | — |
-| contract | ✓ | **gate** | — |
-| smoke | ✓ | — | ✓ first, fast-fail |
-| integration | ✓ | — | ✓ |
-| live-dependency (e2e) | debugging only | — | ✓ |
-| performance | — | — | flagged only |
-| chaos | — | — | scheduled or on demand |
-
-**CI is the merge gate**, and it is hermetic — it never reaches a deployed environment. STG gates the release, not the merge.
-
-**A developer can run every STG-scoped tier locally.** That is the point: a defect found before the PR exists costs one command, and the same defect found post-merge costs a build failure and a rollback. Local runs use the same tests, seeding, setup, and teardown as the pipeline — there is no local-only variant.
+**[reference.md](reference.md)** carries execution — where each tier runs, parallelism, isolation, environment cost. Load it for a pipeline or suite-design question. **Writing a test needs only this file.**
 
 ## Targets
 
@@ -66,15 +51,6 @@ test/
 - **Every subfolder is optional.** Create one when that tier has tests; never scaffold an empty tier.
 - **A tier may fold back into the unit files** when the language demands it. Go component tests needing unexported access are the standard case, and they keep their tier gate call.
 - **Flat by feature inside each folder.** Never mirror the source tree.
-
-## Suites
-
-Scope comes from position in the tree, not from nesting inside the file.
-
-- **Directory sets domain scope** — app, then feature.
-- **File targets one module**, named for the unit under test.
-- **Cases group flat, 0–1 levels deep.** One level of subtests under a suite is the ceiling; a subtest inside a subtest is never correct.
-- **Titles state a scenario** — "rejects an expired card", not "test cancel error".
 
 ## Helpers and setup
 
@@ -121,40 +97,12 @@ Where hooks are the idiom (`beforeEach`/`beforeAll`, `setUp`, fixture scopes):
 
 Measured on unit tests. **Coverage is a floor, not a goal** — high coverage with weak assertions is worse than an honest gap, and a number hit by asserting nothing fails review.
 
-## Test environment cost
-
-Three settings dominate a suite's wall-clock time. Each is **a value the test supplies to the same code path**, never a second path selected by a test flag. If the code under test has to read `IS_TEST` to pick a number, the knob is in the wrong place — move it to the constructor and inject it.
-
-- **Work factors drop to the legal minimum.** Bcrypt, Argon2, and PBKDF2 are designed to burn CPU: a factor of 10–12 costs ~100ms per hash. Inject the lowest the algorithm accepts (bcrypt 4) and an auth suite routinely loses 80–90% of its runtime.
-- **Client timeouts drop to 50–100ms.** The 30-second default parks a worker for half a minute on every retry, backoff, and connection-failure case.
-- **Loggers write to a null sink.** Thousands of lines to stdout is measurable IO. Buffer and emit only when the test fails.
-
-**Production defaults are unchanged in all three cases.** Verifying the real work factor, the real timeout, and the real log destination is its own small test against the configuration, not a reason to keep the expensive value everywhere else.
-
-## Isolation and teardown
-
-- **Roll back rather than clean up.** Wrap a database-touching test in a transaction and roll it back at teardown. It drops per-case cleanup from hundreds of milliseconds to near zero, and it cannot leave residue.
-- **Reset at the start, not only at the end.** A test that panics or times out skips its teardown, and the next run inherits the mess. Make state self-contained with a per-run namespace, or reset during setup so a crashed predecessor cannot poison you.
-- **Never sleep to synchronise.** A fixed delay is simultaneously slower than needed and flaky under CI load. Poll the condition on a tight interval against a hard deadline, or wait on a signal the system already emits.
-- **Substitute in-memory at the hermetic tiers.** An in-process fake or an in-memory engine avoids socket setup entirely; a container belongs to component and above.
-
 ## Rules
 
 - **Nothing that needs a deployed service gates a merge.** The CI stage is hermetic; a test needing a deployed endpoint belongs to a STG tier, whatever folder it sits in.
-- **Depth lives at the gate.** Unit, component, and contract are where behaviour is proven exhaustively. Every STG tier is deliberately narrow — integration is limited-scope, e2e is happy-path.
-- **Nothing runs on edit or save.** No watchers, no save hooks. The developer decides when tests run.
-- **A tier that only runs in CI is broken.** Every tier a developer can usefully run has a local invocation, using the same code the pipeline uses.
-- **Component is the only discretionary tier.**
+- **Depth lives at the gate.** Unit, component, and contract prove behaviour exhaustively. Every STG tier is deliberately narrow.
 - **Never let a lower tier depend on a higher one.** Unit tests pass with no infrastructure present.
-- **A test that did not run never reports as passed.** Skipped-on-outage is its own visible state — see the hard/soft dependency rule in the `cicd` skill.
-- **Parallelism is preferred, never mandatory.** Prefer it for unit, component, and contract, where the only cost is the discipline of owning your own fixtures. A suite that stays serial is not a defect and needs no apology.
-- **Never add it in bulk.** Parallel tests resume together inside one process, so a package with mutable package-level state or environment writes breaks the moment it is switched on — and the failure is intermittent, not immediate. Add it per package, then prove it under a repeated race run.
-- **Serial is the default for smoke, integration, e2e, and chaos.** These call real deployed infrastructure. Fanning them out loads the environment under test, so a timeout stops meaning "the code is slow" and starts meaning "the suite competed with itself" — and on a freshly flipped deployment that load lands exactly when the service is least able to absorb it.
-- **Opting a deployed-tier suite into parallel is a deliberate, per-suite decision.** It needs a per-run data namespace, an isolated dependency, and a stated reason. Absent all three, keep it serial.
-- **Either way, serial is declared, never accidental.** A test that must not run alongside others says so itself, never relying on run order or a single-worker flag.
-- **Process isolation is what makes environment writes safe.** Thread- and goroutine-based runners share one process, so a case writing an env var or a package-level global corrupts its siblings. A process-pool runner isolates that at the cost of per-worker startup — choose the pool to match what the suite mutates, rather than assuming the default is safe.
-- **Namespace every run's data.** Seeding, setup, and teardown are owned by the suite and scoped per run, so concurrent runs against the same environment do not collide.
+- **Component is the only discretionary tier.**
+- **A test that did not run never reports as passed.** Skipped-on-outage is its own visible state.
 
-## Why this split
-
-The merge gate is the seconds-scale, infrastructure-free set — fast, cheap, collision-free, and the stage where defects are meant to be caught. Everything deployed moves behind the merge, where an environment exists to support it and a failure rolls back instead of blocking every open PR.
+**Execution rules — when tiers run, parallelism, isolation, environment cost — live in [reference.md](reference.md).** Read it for a pipeline or suite-design question, not to write a test.

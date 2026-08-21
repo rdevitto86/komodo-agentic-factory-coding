@@ -20,10 +20,21 @@ That fact alone decides where an agent lives:
 | Bridge agent | Tool | Why it's here, not on Claude |
 |---|---|---|
 | `completion` | `complete_code` | Inline autocomplete needs the lowest latency in the system — a local call, not a round trip |
-| `quality-assurance` | `review_code` | Independent review only means something on a **different** model from the one that wrote the code. Claude reviewing Claude's own work is not a second set of eyes |
 | `summarizer` | `summarize` | Zero-reasoning compression. Spending a Claude token to shrink context defeats the point of shrinking it |
 
+## The ceiling, and why `quality-assurance` was retired
+
+**No request sets `num_ctx` or `num_predict`.** `generateRequest` carries exactly `model`, `system`, `prompt`, `stream` — no `options` object. Every call silently inherits whatever context window the Ollama Modelfile defines, so a large payload is truncated server-side with no error reaching the caller.
+
+**That falls hardest on exactly the two tools built to take large inputs.** A review tool that silently drops half its input returns confident findings about code it never saw, which is worse than no review.
+
+`quality-assurance` is therefore gone from `allAgents()`. Its job is now split: deterministic scanners in CI catch what a checklist catches, and `/code-review` on a fresh context handles judgement. `summarize` remains, and should be treated as best-effort on bounded input until the bridge sets a context size.
+
+**A bridge call is never a gate.** Any loop step that calls it treats an unreachable server as a skipped optional step, never a blocker — the hybrid is there for cheap help, not to add a dependency that can stall a build.
+
 Each maps to `platforms/komodo-bridge/agents/<name>/agent.md` — flat frontmatter (`name`, `model`), body is the system prompt verbatim.
+
+**`model:` in that frontmatter is decorative.** `loadSystemPrompt` discards the frontmatter block entirely and returns only the body; real selection is `modelFor(<SUFFIX>, <compiled default>)`. Editing `model:` in an `agent.md` changes nothing — set `OLLAMA_MODEL_<SUFFIX>` in compose instead.
 
 ## Loading mechanism
 
@@ -61,7 +72,6 @@ Claude Code requires the flat form; the bridge's loader requires the nested form
 | agent.md name | Env suffix | Model | Why |
 |---|---|---|---|
 | `completion` | `OLLAMA_MODEL_COMPLETION` | `qwen3-coder-next:latest` | Code-shaped output, needs to be fast |
-| `quality-assurance` | `OLLAMA_MODEL_QA` | `qwen3-coder-next:latest` | Same family as completion — both read code |
 | `summarizer` | `OLLAMA_MODEL_SUMMARIZER` | `qwen3:1.7B` | No reasoning required, smallest model wins |
 
 Change a model by editing its `OLLAMA_MODEL_<SUFFIX>` in compose and restarting. No rebuild.

@@ -97,12 +97,15 @@
       "Read(./**/credentials)"
     ]
   },
+  "model": "sonnet",
   "skillOverrides": {
+    "accessibility": "name-only",
+    "comment-rules": "name-only",
+    "worklog": "name-only",
     "security": "name-only",
     "observability": "name-only",
     "cicd": "name-only",
-    "coding-principles": "name-only",
-    "tech-stack": "name-only",
+    "c": "name-only",
     "go": "name-only",
     "python": "name-only",
     "typescript": "name-only",
@@ -112,8 +115,7 @@
     "uiux": "name-only",
     "database": "name-only",
     "docs": "name-only",
-    "sdlc": "name-only",
-    "backlog": "name-only"
+    "sdlc": "name-only"
   },
   "hooks": {
     "PreToolUse": [
@@ -136,29 +138,30 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/comment_guard.py"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/comment_guard.py"
+            "command": "python3 ~/.claude/hooks/context_injector.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/verify_gate.py"
           }
         ]
       }
     ]
   },
+  "enableWorkflows": true,
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true
@@ -170,35 +173,7 @@
   "agentPushNotifEnabled": true,
   "autoMode": {
     "allow": [
-      "$defaults",
-      "Bash(golangci-lint:*) in rdevitto86/komodo-auth-api — routine lint tool used frequently in this project",
-      "Bash(gofmt:*) in rdevitto86/komodo-auth-api — routine formatting tool"
-    ],
-    "environment": [
-      "### Org-wide",
-      "**Organization**: None configured",
-      "**Cloud provider(s)**: AWS (Fargate, Secrets Manager; local dev via AWS_ENDPOINT/localstack)",
-      "**Repository visibility**: Private — `rdevitto86/komodo-auth-api` (via gh)",
-      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
-      "**Secrets management**: AWS Secrets Manager (`AWS_SECRET_PATH=komodo/local/auth-api` locally)",
-      "**Default / protected branches**: `main` (default). No classic branch protection listed; rulesets not queryable here — do not assume unprotected",
-      "**CI/CD deploy targets**: None configured",
-      "**Network posture**: None configured",
-      "**Source control**: The trusted repo (`rdevitto86/komodo-auth-api`) and its remote only (no additional orgs configured)",
-      "**Trusted internal domains**: None configured",
-      "**Trusted cloud buckets**: None configured",
-      "**Key internal services**: Komodo internal services reached via this auth service (OAuth/JWT issuance and validation for other Komodo services) — no specific hostnames configured",
-      "**Internal package registry**: None configured",
-      "**Sensitive data locations & audiences**: `.env`, `.env.*` (excluding `.env.example`), `*.key` files, and any AWS Secrets Manager entries under `komodo/local/auth-api` or similar paths — credentials and JWT signing material; share only with audiences cleared at the [named+specifics] bar",
-      "**Data retention / declassification**: None configured",
-      "**Sensitive remote targets**: any namespace, host, or container whose name carries `prod` or `production` as a whole word or name segment",
-      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
-      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment (CDK-based AWS provisioning noted in README)",
-      "### User-specific",
-      "**Primary use of Claude Code**: software development (Go OAuth 2.0 authorization server)",
-      "**Trusted repo**: `rdevitto86/komodo-auth-api` (private) and its configured remote (github.com) — confidential material OK to commit here; secrets and sensitive data are never cleared into the repo by its visibility",
-      "**Org-specific CLIs**: None configured",
-      "routine under this repo's `cmd/`, `Makefile`, and Docker Compose workflows (build/test/lint) treated as ordinary local development"
+      "$defaults"
     ]
   }
 }

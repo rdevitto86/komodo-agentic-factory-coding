@@ -1,7 +1,7 @@
 ---
 name: security
-description: Security baseline benchmarked on the OWASP Top 10 — secrets, injection and XSS, CSRF, authn/JWT, authz, crypto, PII, dependencies. Load before touching an auth path, a query, a template, a secret, a dependency manifest, or any external boundary, and before any security review or bug sweep.
-paths: "**/auth/**, **/*auth*, **/middleware/**, **/session*, **/token*, **/crypto/**, **/.env*, **/secrets/**, **/*.sql, **/migrations/**, **/api/**, **/handlers/**, **/routes/**, **/package.json, **/go.mod, **/requirements.txt, **/pyproject.toml, **/Gemfile, **/*.tf"
+description: Security baseline benchmarked on the OWASP Top 10 — secrets, injection and XSS, CSRF, authn/JWT, authz, crypto, PII, dependencies. Load before touching an auth path, a query, a template, a secret, or any external boundary, and before any security review, bug sweep, or dependency review.
+paths: "**/auth/**, **/*auth*, **/middleware/**, **/session*, **/token*, **/crypto/**, **/.env*, **/secrets/**, **/*.sql, **/migrations/**, **/*.tf"
 ---
 
 # Security
@@ -58,6 +58,8 @@ paths: "**/auth/**, **/*auth*, **/middleware/**, **/session*, **/token*, **/cryp
 - **Compare secrets in constant time** — tokens, HMACs, reset codes, signatures.
 
 ## Dependencies
+
+**A dependency manifest no longer auto-loads this skill.** Touching `go.mod` or `package.json` is not a security event — a scanner reads the manifest better than a model does, and loading a 90-line skill on every manifest edit cost far more than it caught. Load this deliberately for a dependency review.
 
 - **Vulnerability and secret scanning in CI on every change.** The command belongs to the language skill (`go`, `typescript`, `python`); `cicd` defines the gate it blocks.
 - **No merging with known high or critical CVEs** without a recorded exception carrying an owner, an expiry, and a compensating control.

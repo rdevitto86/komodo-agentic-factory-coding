@@ -27,12 +27,9 @@ The point of Stage 1 is that a developer can run **STG-scoped tests before the P
 
 ### Targets
 
-- **`-mock` is the default** for every tier that has one. Mock responses come from LocalStack or an HTTP interceptor.
-- **`-live` is explicit opt-in** and points at STG. It needs real STG credentials, loaded through the SDK Secrets Manager client the same way the service loads them.
-- **PROD is never a local test target.** The check is mechanical — a resolved target on a PROD host aborts the run, not a convention anyone can forget.
-- **e2e locally is a debugging tool, not a gate.** It works under `-live`; the Stage 3 run is still the authority.
+**`sdlc` owns the target rules** — `-mock` default, `-live` opt-in, PROD never a local target, and the local run being the same code as the STG run. Read them there; they are not restated here.
 
-**The local run is the same code as the STG run** — same tests, same seeding, same setup, same teardown. There is no local-only variant to drift.
+One rule is this skill's own: **e2e locally is a debugging tool, not a gate.** It works under `-live`; the Stage 3 run is still the authority.
 
 ### Local hooks — the first gates
 
@@ -95,12 +92,14 @@ deploy inactive stack → smoke → flip → integration → e2e → [perf] → 
                           └ fail → no flip, roll back to last stable
 ```
 
-| Sub-stage | What it is |
+**`sdlc` defines what each tier is and how it runs.** What belongs here is only what the *pipeline* does with it:
+
+| Sub-stage | Its role in the release |
 |---|---|
-| **smoke** | Extended health checks proving STG endpoints are ready to be tested. Fast-fail, fully parallel, seconds. Decides hard/soft dependency backout, and starts the inactive→active flip |
-| **integration** | Real or mocked endpoints, **limited scope**. Not exhaustive — that was Stage 2's job |
-| **e2e** | Happy paths only, **all real endpoints and real data** |
-| **perf** | Only when the build config or the PR flags it on. Never automatic |
+| **smoke** | Decides hard/soft dependency backout, and starts the inactive→active flip |
+| **integration** | Limited scope — exhaustive coverage was Stage 2's job |
+| **e2e** | Gates the prerelease |
+| **perf** | Runs only when the build config or the PR flags it on. Never automatic |
 
 **Seed before, tear down after**, owned by the suite that needs it and namespaced per run.
 

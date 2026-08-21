@@ -13,10 +13,41 @@ Global rules live in `~/.claude/AGENTS.md` and always apply. This file adds proj
 | Contract | {{CONTRACT}} |
 | Entrypoint | {{ENTRYPOINT}} |
 
-## Docs
+## Commands
 
-`docs/` holds architecture, PRD, SDD, and ADRs (see the `docs` skill for structure) — read on demand before design work, never pre-loaded.
+Every command an agent would otherwise have to guess or discover. Wrong here is worse than absent.
+
+| Do | Run |
+|---|---|
+| Verify (the Stop gate runs this) | `{{VERIFY}}` |
+| Test | `{{TEST}}` |
+| Build | `{{BUILD}}` |
+| Run locally | `{{RUN}}` |
+| Lint | `{{LINT}}` |
+
+## Where things are
+
+Only the paths that are not obvious from the language skill's standard layout. A repo matching it leaves this section out.
+
+{{NON_OBVIOUS_PATHS}}
+
+## Gotchas
+
+Non-obvious behaviour that has already cost someone a debugging session. One line each, empirical only — never a restatement of a global rule.
+
+{{GOTCHAS}}
+
+## Documents
+
+| File | Holds |
+|---|---|
+| `docs/prd.md` | What this builds and why. **Frozen — needs approval to change.** |
+| `docs/sdd.md` | How it works, and §10's implementation slices |
+| `BACKLOG.md` | Open work, one story per line |
+| `CHANGELOG.md` | What shipped, and the current version |
+
+Design decisions live in SDD §7, never a separate `adr/` directory. Read on demand — never pre-load these.
 
 ## Deviations
 
-{{DEVIATIONS_FROM_STACK_SKILL}}
+{{DEVIATIONS_FROM_LANGUAGE_SKILL}}

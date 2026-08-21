@@ -9,6 +9,10 @@ paths: "**/*.ts, **/*.tsx, **/*.js, **/*.jsx, **/*.mjs, **/package.json, **/tsco
 
 Zero comments, zero JSDoc. Error messages lead with a verb phrase and never name the function.
 
+## Comment discipline
+
+`comment-rules` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `// eslint-disable`, `// eslint-enable`, `// @ts-expect-error`, `// @ts-ignore`, `// @ts-nocheck`, `// prettier-ignore`, `// biome-ignore`, `// istanbul ignore`, `"use client"`, `"use server"`. Anything else — including JSDoc on an exported symbol — prompts for approval.
+
 ## Toolchain
 
 - **Versions come from `package.json`.** Read it; never assume a major.
@@ -27,6 +31,10 @@ Zero comments, zero JSDoc. Error messages lead with a verb phrase and never name
 - **Naming**: PascalCase types and components, camelCase variables and functions, SCREAMING_SNAKE constants, kebab-case module files, PascalCase component files. Booleans take `is` / `has` / `can` / `should`. No `I` prefix on interfaces. `req` / `res` for request and response.
 - **Prefer a closure over a new class or extra parameter** when it captures scope the caller already has — an event handler, a memoized selector, a factory returning configured functions. Skip it inside a render loop or a hot path: a closure allocated per call/render defeats memoization (`useCallback`/`useMemo`, referential equality checks) and adds GC pressure. Measure before choosing a closure over a plain function in code a profiler already flags.
 
+## Testing
+
+**Unit tests colocate as `.x.test.ts`; every other tier lives under a top-level `test/`.** The stack, folder scheme, suite structure, and runner config are in [testing.md](testing.md). Tier definitions, gates, and coverage floors are owned by the `sdlc` skill.
+
 ## Quick-reference fields
 
 The field set a TypeScript repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed. A UI repo uses `svelte` or `vue` instead; a CDK repo uses `cdk`.
@@ -39,11 +47,7 @@ The field set a TypeScript repo's `AGENTS.md` Quick-reference table carries. Eve
 | Build + test | `package.json` scripts |
 | Path alias | `tsconfig.json` paths |
 
-Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `tech-stack`, or `sdlc` already states by name.
-
-## Testing
-
-**Unit tests colocate as `.x.test.ts`; every other tier lives under a top-level `test/`.** The stack, folder scheme, suite structure, and runner config are in [testing.md](testing.md). Tier definitions, gates, and coverage floors are owned by the `sdlc` skill.
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill or `sdlc` already states by name.
 
 ## Reference material
 
