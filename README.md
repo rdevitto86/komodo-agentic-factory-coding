@@ -5,8 +5,8 @@ Agent configuration for software/hardware engineering, shared across every Komod
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~1,045 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
-3. **Work state lives on disk, not in the conversation.** Four documents per repo mean a compaction cannot lose the plan.
+2. **Base context stays tiny.** ~1,242 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
 ## Setup
@@ -27,22 +27,23 @@ claude-code/          mirrors ~/.claude exactly
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           implementer, planner, engineering, scout
 ├── hooks/            comment_guard, git_guard, verify_gate, context_injector
-└── skills/           27 active, 3 parked, lazily loaded
+└── skills/           33 active, 3 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, portable git hooks
 ```
 
-## The lifecycle
+## The workflow loop
 
-`/lifecycle` is the default working mode for anything bigger than a one-line fix. Five phases: **spec → decompose → execute → consolidate → complete.**
+`/workflow-loop` is the default working mode for anything bigger than a one-line fix. Five phases: **spec → decompose → execute → consolidate → complete.**
 
-The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/lifecycle open <topic>` skips the machine for design work, where a script produces worse output than judgement.
+The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
 
-Each repo carries four documents. `docs` owns the two frozen specs; `worklog` owns the two mutable records.
+Each repo carries five documents. `generate-readme` owns the entry point; `generate-prd` and `generate-sdd` own the two frozen specs; `generate-backlog` and `generate-changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both.
 
 | File | Holds | Mutable |
 |---|---|---|
+| `README.md` | Entry point — what it is, how to run it | Yes, refreshed as it drifts |
 | `docs/prd.md` | What and why | Frozen at approval |
 | `docs/sdd.md` | How, and §10's slices | Frozen at approval |
 | `BACKLOG.md` | Open work | Yes |
@@ -68,7 +69,7 @@ Two guards run as `PreToolUse`, so a violation never reaches disk. Two more run 
 **An exemption the agent can satisfy on its own is a bypass, not an exception.** A content allowlist fails on that alone — whatever token you exempt, the model prepends it. Both exceptions here are things the agent cannot fabricate.
 
 - **Structure — a use-manual under a shebang.** A contiguous run of comment lines starting immediately after `#!`. It cannot reach a function body, because position is not forgeable.
-- **Template — a fixed shape the prose cannot fit.** A banner's label is 40 chars between two hyphen runs; a step marker is one indented line of 80. `comment-rules` lists all four.
+- **Template — a fixed shape the prose cannot fit.** A banner's label is 40 chars between two hyphen runs; a step marker is one indented line of 80. `rules-commenting` lists all four.
 
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
@@ -90,13 +91,15 @@ bash scripts/test-hooks.sh    # 98 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/lifecycle` `/decompose` `/implement` `/consolidate` `/backlog` `/generate-repo` `/audit` `/readme` `/risk-assessment` `/complete`
+Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/generate-backlog` `/generate-changelog` `/generate-repo` `/assess-readiness` `/generate-readme` `/assess-change-risk` `/assess-code-quality` `/assess-security` `/assess-bugs` `/workflow-complete`
 
-**`context: fork` is the only way to reclaim context.** A skill declaring it runs its body *and* its work inside a subagent, returning only the result. The three lifecycle phases use it. Pairing `argument-hint` with it requires `disable-model-invocation: true` — omit that and the skill is silently rejected.
+`/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
+
+**`context: fork` is the only way to reclaim context.** A skill declaring it runs its body *and* its work inside a subagent, returning only the result. The three workflow-loop phases use it. Pairing `argument-hint` with it requires `disable-model-invocation: true` — omit that and the skill is silently rejected.
 
 ## Output formatting
 
-The always-on contract lives in `claude-code/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `adhd-format` skill and loads only when authoring something longer than a screen.
+The always-on contract lives in `claude-code/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `config-accessibility-output` skill and loads only when authoring something longer than a screen.
 
 Every subagent carries the same contract as a mandatory output template.
 
@@ -114,7 +117,7 @@ A skill listed by name costs 1–4 tokens. A new line in `claude-code/AGENTS.md`
 
 **No comment hook ships here.** A comment must never block a commit, a push, a linter, or a release. `comment_guard.py` runs only as a `PreToolUse` hook, before the write reaches disk — by the time git sees a file, the dispute is already settled or was never the agent's to have.
 
-**Lint and test hooks do not live here.** `pre-commit` (format + lint) and `pre-push` (delta unit tests + coverage) ship with the language SDK — `komodo-forge-sdk-go` for Go. The `cicd` skill states the contract they must satisfy; the SDK decides how.
+**Lint and test hooks do not live here.** `pre-commit` (format + lint) and `pre-push` (delta unit tests + coverage) ship with the language SDK — `komodo-forge-sdk-go` for Go. The `standards-cicd` skill states the contract they must satisfy; the SDK decides how.
 
 Install per repo:
 

@@ -72,27 +72,41 @@ An open content allowlist would be another slot, and would not work — the agen
 
 **Activation is path-based, not description-based.** `paths:` globs in a skill's frontmatter make the runtime load it when a matching file is touched. `skillOverrides` in `claude-code/settings.json` then collapses that skill to `name-only`, so its description costs nothing in the always-on listing. The pair is how a skill hot-swaps in: **`paths` decides when, `skillOverrides` decides cost.** A skill with neither pays its full description on every turn forever — reserve that for triggers no glob can express. `validate.sh` fails the build on an unknown key.
 
-Workflow skills: `/lifecycle` · `/decompose` · `/implement` · `/consolidate` · `/backlog` · `/generate-repo` · `/audit` · `/readme` · `/risk-assessment` · `/complete`
+Typed-only workflow skills: `/generate-backlog` · `/assess-readiness` · `/generate-readme` · `/assess-change-risk` · `/assess-code-quality` · `/assess-security` · `/assess-bugs`. These stay `disable-model-invocation: true` — a human decision to normalize a backlog, run an audit, or refresh a README should start from the user, not the model's own judgement.
 
-**A forked skill is the only way to reclaim context.** `context: fork` + `agent: <name>` + `background: false` runs the skill's body *and* its work inside a subagent and returns only the result — the calling window pays nothing for either. `/decompose`, `/implement`, and `/consolidate` are the lifecycle's three forked phases.
+`assess-performance` and `generate-commit-message` are the two command skills that carry neither key: `/assess-code-quality` invokes the first internally as part of its conventions pass, `/workflow-complete` invokes the second for its message block, and a `disable-model-invocation: true` skill cannot be reached by another skill's instructions — only by the user typing its name. The trade is the same one `generate-repo` makes below: each pays full description cost so it stays callable by name.
 
-**`argument-hint` combined with `context: fork` silently rejects the file unless `disable-model-invocation: true` is also set.** Verified by probe: the same skill registers with the pair, and vanishes without it. `$ARGUMENTS` does reach a forked skill, and `background: false` does return inline — both confirmed the same way.
+**Skill naming follows the same five buckets, front-loaded so related skills tab-complete and sort together:**
 
-**`/lifecycle` is the spine.** Spec → decompose → execute → consolidate → complete, each phase naming what ends it. It exists so the build process is not re-derived every session, and so a delegated phase arrives with a brief that stands alone. `ways/sdlc.md` fills in what the gates mean for code; a second way of working is a second file, not a second machine.
+| Bucket | Shape | Reason | Examples |
+|---|---|---|---|
+| Command — produces an artifact | `generate-<noun>` | User invokes it to create/refresh a deliverable | `generate-repo`, `generate-backlog`, `generate-readme`, `generate-prd`, `generate-sdd`, `generate-adr`, `generate-runbook`, `generate-changelog`, `generate-commit-message` |
+| Command — renders a verdict | `assess-<noun>` | User invokes it to score or judge, never to fix | `assess-change-risk`, `assess-readiness`, `assess-code-quality`, `assess-security`, `assess-bugs`, `assess-performance` |
+| Autoloaded rule — governs agent behavior | `rules-<topic>` | Loaded via `paths`/description, not typed; states what the agent must/must not do while writing | `rules-commenting` |
+| Autoloaded config — governs session/output behavior | `config-<topic>` | Loaded via description, not path-triggered; states how the agent must present itself, not what it writes | `config-accessibility-output` |
+| Autoloaded knowledge — domain facts | `standards-<noun>` | Loaded via `paths`/description; states what is true about a language, tool, or process | `standards-go`, `standards-security`, `standards-sdlc`, `standards-worklog` |
+
+`workflow-<phase>` is its own fixed prefix for the five loop phases and is never reused outside it. A new skill picks its bucket by what it's *for* — produces vs. judges vs. governs vs. informs — not by its `disable-model-invocation`/`user-invocable` mechanics, which can differ within a bucket (`generate-prd` autoloads via `paths` same as a knowledge skill; `generate-backlog` is typed-only) as long as the name still says what the skill does.
+
+**Every skill an autonomous `/workflow-loop` run needs to invoke mid-loop carries neither key**, so an agent can call it by name via the Skill tool the moment its phase is reached: `/workflow-loop` itself (must also be reachable by plain-language request — "build this end to end" — not just the typed command), its phases `/workflow-decompose`, `/workflow-implement`, `/workflow-consolidate`, `/workflow-complete`, and `/generate-repo` (invoked from P2.1 when a task's `Done when` calls for a new repo's skeleton). Each still declares `context: fork` + `agent: <name>` where it writes or does heavy reading — that isolation, not `disable-model-invocation`, is what keeps its work out of the orchestrating session's window. The forked ones cannot pause to ask, so whatever invokes them (a queue task, a `BACKLOG.md` story) must supply every fact the skill would otherwise ask for up front. `$ARGUMENTS` reaches a forked skill normally, and `background: false` returns its result inline — both confirmed directly against `generate-repo`, `workflow-decompose`, `workflow-implement`, and `workflow-consolidate`, which all carry `argument-hint` + `context: fork` with no `disable-model-invocation` key and register and invoke cleanly.
+
+**A forked skill is the only way to reclaim context.** `context: fork` + `agent: <name>` + `background: false` runs the skill's body *and* its work inside a subagent and returns only the result — the calling window pays nothing for either. `/workflow-decompose`, `/workflow-implement`, and `/workflow-consolidate` are the workflow loop's three forked phases.
+
+**`/workflow-loop` is the spine.** Spec → decompose → execute → consolidate → complete, each phase naming what ends it. It exists so the build process is not re-derived every session, and so a delegated phase arrives with a brief that stands alone. `ways/sdlc.md` fills in what the gates mean for code; a second way of working is a second file, not a second machine.
 
 **The phase that reads a lot and returns a little runs in a fork.** There is no way to unload a skill body once it is in the window, so a separate context window is the only way to reclaim one.
 
 **A fork needs an agent, and that agent's output template is the phase's return contract.** `implementer` exists because the read-only agents cannot write; `planner` exists because `engineering` returns a research report and a decompose phase must return a queue. Adding a phase means asking which existing contract fits before adding a fifth agent.
 
-**`docs` owns the two frozen specs; `worklog` owns the two mutable records.** Splitting them means a phase that only records work never pays for the spec templates — `/consolidate` dropped from 3,095 tokens to 1,580. **The PRD and SDD are frozen at approval**, which is why slice status never writes back into SDD §10.
+**`generate-prd` and `generate-sdd` own the two frozen specs; `generate-backlog` and `generate-changelog` own the format of the two mutable records — `standards-worklog` is only the read/write directive shared across both, never their shape.** Splitting the specs from the records means a phase that only records work never pays for the spec templates — `/workflow-consolidate` dropped from 3,095 tokens to 1,580. Splitting the two records' formats the same way means a phase touching only one of them never pays for the other's. **The PRD and SDD are frozen at approval**, which is why slice status never writes back into SDD §10.
 
-**`adr` owns the decision records those specs point at.** Split out for the same reason: editing `prd.md` or `sdd.md` should never pay for the ADR template, and touching a file under `docs/adrs/` should never pay for the PRD/SDD section skeletons.
+**`generate-adr` owns the decision records those specs point at; `generate-runbook` owns the operational procedures they point at.** Split out for the same reason: editing `prd.md` or `sdd.md` should never pay for the ADR or runbook template, and touching a file under `docs/adrs/` or `docs/runbooks/` should never pay for the PRD/SDD section skeletons.
 
-**A skill with a procedure half gets a sibling file.** `docs/authoring.md`, `sdlc/reference.md`, `go/reference.md`, `security/review.md` — the rule stays in `SKILL.md`, the how-to loads only when someone is doing that job.
+**A skill with a procedure half gets a sibling file.** `generate-prd/authoring.md`, `generate-sdd/authoring.md`, `standards-sdlc/reference.md`, `standards-go/reference.md`, `standards-security/review.md` — the rule stays in `SKILL.md`, the how-to loads only when someone is doing that job.
 
-**A skill directory with no `SKILL.md` is invisible.** `rust/`, `cpp/`, and `hardware/` are parked as `SKILL.md.off` — no listing cost, no loader entry, content preserved for when those domains land. Rename back to activate.
+**A skill directory with no `SKILL.md` is invisible.** `standards-rust/`, `standards-cpp/`, and `standards-hardware/` are parked as `SKILL.md.off` — no listing cost, no loader entry, content preserved for when those domains land. Rename back to activate.
 
-**There is no `requires:` frontmatter key, and the dependency direction matters.** `cdk`'s files are already `.ts`, so `typescript` co-loads for free off its own unmodified glob — no coupling needed either direction. `svelte`/`vue` are different: their files aren't `.ts`, and `typescript`'s `paths` must never be widened to name them — that would make the framework-agnostic root skill declare awareness of frameworks it doesn't need and can't shed. Instead `svelte`/`vue` each carry an explicit instruction telling the agent to invoke `typescript` by name. This is a weaker guarantee (it relies on the agent following the instruction, not a deterministic glob match) but it keeps the dependency declared on the dependent's side, where it belongs. Either way, the framework skill never restates a fact — naming, toolchain, Quick-reference rows — that `typescript` already owns.
+**There is no `requires:` frontmatter key, and the dependency direction matters.** `standards-cdk`'s files are already `.ts`, so `standards-typescript` co-loads for free off its own unmodified glob — no coupling needed either direction. `standards-svelte`/`standards-vue` are different: their files aren't `.ts`, and `standards-typescript`'s `paths` must never be widened to name them — that would make the framework-agnostic root skill declare awareness of frameworks it doesn't need and can't shed. Instead `standards-svelte`/`standards-vue` each carry an explicit instruction telling the agent to invoke `standards-typescript` by name. This is a weaker guarantee (it relies on the agent following the instruction, not a deterministic glob match) but it keeps the dependency declared on the dependent's side, where it belongs. Either way, the framework skill never restates a fact — naming, toolchain, Quick-reference rows — that `standards-typescript` already owns.
 
 ## No static references
 
@@ -106,15 +120,15 @@ The replacement is always the same shape — **state the rule, then name where t
 | `Go 1.26` | "the floor `go.mod` declares" |
 | The SDK's package list | "read its package tree at the pinned version" |
 
-**Language-agnostic skills name no tools.** `cicd` and `sdlc` state the contract — what a hook must gate, what a tier must cover. The linter, formatter, test command, SDK package, version floor, and reuse doctrine (SDK first, vetted library second, custom last) belong in `go`, `typescript`, `python`, and the other language skills, which are allowed to be concrete because they are already scoped to one toolchain.
+**Language-agnostic skills name no tools.** `standards-cicd` and `standards-sdlc` state the contract — what a hook must gate, what a tier must cover. The linter, formatter, test command, SDK package, version floor, and reuse doctrine (SDK first, vetted library second, custom last) belong in `standards-go`, `standards-typescript`, `standards-python`, and the other language skills, which are allowed to be concrete because they are already scoped to one toolchain.
 
 ## Context budget
 
 `AGENTS.md` plus every model-visible skill description is paid on **every turn of every session, forever**. `validate.sh` fails above **2,000 tokens** — the ceiling the runtime itself enforces by truncating descriptions past ~1% of the context window.
 
-- **A skill listed `name-only` costs 1–4 tokens.** With a full description it costs ~30–70. **Every skill here is now name-only or invisible** — run `scripts/validate.sh` for the current base-context total.
+- **A skill listed `name-only` costs 1–4 tokens.** With a full description it costs ~30–70. Run `scripts/validate.sh` for the current base-context total.
 - **A new line in `claude-code/AGENTS.md` costs its full length**, always. Put it in a skill unless it must apply unconditionally.
-- **Workflow skills cost nothing** — `disable-model-invocation: true` keeps them out of the listing.
+- **Typed-only workflow skills cost nothing** — `disable-model-invocation: true` keeps `/generate-backlog`, `/assess-readiness`, `/generate-readme`, `/assess-change-risk`, `/assess-code-quality`, `/assess-security`, and `/assess-bugs` out of the listing. The mid-loop phases (`/workflow-decompose`, `/workflow-implement`, `/workflow-consolidate`, `/workflow-complete`, `/generate-repo`) carry neither key and do pay full description cost — the orchestrator has to reach them by name via the Skill tool. `/assess-performance` and `/generate-commit-message` pay the same cost for the same reason: `/assess-code-quality` and `/workflow-complete` reach them by name.
 
 ## Working on this repo
 
@@ -128,4 +142,4 @@ bash .claude/verify.sh        # what the Stop gate runs: both of the above
 
 `.claude/verify.sh` is this repo's own opt-in for `verify_gate.py`. Editing anything here and ending the turn runs it, so the config repo is gated by the same mechanism it ships.
 
-Git hooks are **not** in this repo — `pre-commit` and `pre-push` ship with the language SDK (`komodo-forge-sdk-go`). The `cicd` skill states the contract they must satisfy.
+Git hooks are **not** in this repo — `pre-commit` and `pre-push` ship with the language SDK (`komodo-forge-sdk-go`). The `standards-cicd` skill states the contract they must satisfy.
