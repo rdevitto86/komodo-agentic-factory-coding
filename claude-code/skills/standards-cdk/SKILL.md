@@ -19,6 +19,8 @@ For any AWS CDK repo — the deliberate, opt-in exception to the Terraform stand
 
 TypeScript can run natively on Node with no build step (`cdk.json` invoking `node bin/app.ts` directly). If a repo does this: internal imports need explicit `.ts` extensions, and type-only imports must use `import type` — nothing is transpiling first, so Node runs the source exactly as written.
 
+**`Makefile`'s `verify` target is the merge gate**, delegating to `package.json` scripts (`lint`, `typecheck`, `test`, `build` — here `build` means `cdk synth`, asserting every stack synthesizes cleanly). `context_injector.py` reads this target directly; a repo without it has no gate.
+
 ## Stack layout
 
 - One class per stack, one file per stack, kebab-case filename holding a PascalCase class.
@@ -97,6 +99,7 @@ test/
 cdk.json
 package.json
 tsconfig.json
+Makefile
 ```
 
 `bin/app.ts` is the sole entrypoint (see Stack layout). `lib/` holds one file per stack. `config/` holds the single environment-resolution file (see Config authority) — never more than one.
@@ -107,3 +110,4 @@ Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if mi
 
 - [H] Instantiate the first stack · M
 - [M] Observability: wire logging/metrics/tracing (`standards-observability`) · S
+- [M] Tests: unit + component coverage · S → `make test`

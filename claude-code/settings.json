@@ -115,6 +115,8 @@
     "standards-cdk": "name-only",
     "standards-uiux": "name-only",
     "standards-database": "name-only",
+    "standards-docker": "name-only",
+    "standards-docs": "name-only",
     "generate-prd": "name-only",
     "generate-sdd": "name-only",
     "generate-changelog": "name-only",

@@ -32,7 +32,7 @@ The SDD sections a code build actually depends on:
 
 ## P2.3 · Review
 
-`/code-review` against the task. The lenses that matter:
+`/code-review` against the task. **Invoke it with the task text and which `standards-*` skills the touched files load** (the language skill at minimum; `standards-docker` for a touched `Dockerfile`/`docker-compose.yaml`, `standards-security` for a touched auth/secret/boundary path) — an unbriefed review picks its own lenses, which is not a repeatable gate. The lenses that matter:
 
 - **Correctness** — does it do what the story said, including the edge the story named
 - **Security** — new boundary, new query, new secret handling

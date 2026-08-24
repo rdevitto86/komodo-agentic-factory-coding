@@ -1,0 +1,70 @@
+---
+name: standards-{{LANGUAGE_OR_FRAMEWORK}}
+description: {{ONE_LINE_SCOPE}}. Load before reading or writing any {{FILE_GLOB_DESCRIPTION}}.
+user-invocable: false
+paths: "{{GLOB_LIST}}"
+---
+
+# {{DISPLAY_NAME}}
+
+{{COMMENT_DISCIPLINE_OPENING_LINE}}
+
+## Comment discipline
+
+{{MACHINE_DIRECTIVE_LIST}}
+
+## Toolchain
+
+{{VERSION_FLOOR_SOURCE}}, {{FORMATTER_LINTER}}, {{VULNERABILITY_SCAN_GATE}}, {{SDK_IMPORT_RULE}}.
+
+## Conventions
+
+{{NAMING_AND_IDIOM_RULES}}
+
+<!--
+Domain-specific sections go here, between Conventions and Testing —
+whatever this language/framework needs that no other section covers
+(concurrency, types and boundaries, async, memory and resources,
+component structure, stack layout, and so on). Order among themselves
+is free; they must not appear before Conventions or after Testing.
+-->
+
+## Testing
+
+{{APPROVED_TEST_STACK}}. Tier definitions, merge/release gates, and coverage floors are owned by `standards-sdlc` — this section covers mechanics only.
+
+## Quick-reference fields
+
+The field set a {{DISPLAY_NAME}} repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
+
+| Field | Source on disk |
+|---|---|
+| {{FIELD}} | {{SOURCE_ON_DISK}} |
+
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill or `standards-sdlc` already states by name.
+
+<!--
+Everything below this line applies ONLY to a skill `generate-repo` can
+target directly (a `Repo layout — <token>` entry in that skill's Create
+table). A skill that is scaffold-only, or that only ever loads alongside
+another framework skill, stops at Quick-reference fields above.
+-->
+
+## Repo layout — `{{REPO_TYPE_TOKEN}}`
+
+```
+{{DIRECTORY_AND_FILE_TREE}}
+```
+
+{{LAYOUT_NOTES}}
+
+## Seed backlog — `{{REPO_TYPE_TOKEN}}`
+
+Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+
+- [M] Tests: unit + component coverage · S → `{{TEST_COMMAND}}`
+- {{OTHER_SEED_STORIES}}
+
+## Reference material
+
+- {{OPTIONAL_SIBLING_FILES — reference.md, testing.md, review.md, whatever this skill's procedure half needs}}

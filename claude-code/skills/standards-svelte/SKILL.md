@@ -15,6 +15,14 @@ Runes only. Legacy Svelte 4 patterns are never correct here — model training s
 
 `standards-typescript`'s directives apply inside `<script>`. **The template's `<!-- -->` markup comments are scanned on the same terms as `//`** — a banner or a `WHY:` note is allowed there too, a narrative comment is not.
 
+## Toolchain
+
+`standards-typescript`'s Toolchain section applies unchanged — versions from `package.json`, `npm audit` as the vulnerability gate, the Forge SDK import rule. This section names only what's Svelte-specific:
+
+- **`eslint-plugin-svelte`** alongside the base ESLint config `standards-typescript` names.
+- **`svelte-check`** for typechecking — `tsc` alone does not understand `.svelte` files.
+- **`Makefile`'s `verify` target is the merge gate**, delegating to `package.json` scripts (`lint`, `typecheck`, `test`, `build`). `context_injector.py` reads this target directly; a repo without it has no gate.
+
 ## Runes — non-negotiable
 
 | Use | Never use |
@@ -120,6 +128,7 @@ test/
 deploy/
 package.json
 vite.config.ts
+Makefile
 ```
 
 ## Seed backlog — `svelte-ui`
@@ -128,3 +137,4 @@ Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if mi
 
 - [H] Build out the starter page's components · M
 - [H] Accessibility: WCAG AA pass (`standards-uiux`) · S
+- [M] Tests: unit + component coverage · S → `make test`

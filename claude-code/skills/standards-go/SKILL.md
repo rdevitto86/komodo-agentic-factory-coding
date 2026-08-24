@@ -16,6 +16,7 @@ Zero comments, zero godoc. Error strings lead with a verb phrase and never name 
 ## Toolchain
 
 - **Version floor is whatever `go.mod` declares.** Read it; never assume a release.
+- **`Makefile`'s `verify` target is the merge gate** — `gofmt -l`, `go vet`, `golangci-lint run`, `go test -race -cover`, `go build`, in that order. `context_injector.py` reads this target directly; a repo without it has no gate.
 - **Formatting and linting** — `gofmt` and `goimports` on commit, `golangci-lint` as the gate. These are the tools the pre-commit hook runs; `standards-cicd` defines when.
 - **Vulnerability scanning** — `govulncheck ./...` is the gate; it reports reachability, so triage by call path, not by CVE score alone. Enable `gosec` in `.golangci.yaml` for the static half. `standards-cicd` defines the gate; the `standards-security` skill states the bar.
 - **Coverage delta is per package** — Go reports at package granularity, so the pre-push scope is the set of packages containing changed files.
@@ -104,6 +105,9 @@ deploy/
 openapi.yaml
 docker-compose.yaml
 Dockerfile
+.dockerignore
+.gitignore
+Makefile
 go.mod
 ```
 
@@ -116,6 +120,7 @@ One generic entrypoint at `cmd/server/main.go`, or `cmd/main.go` as the alternat
 Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [M] Flesh out `openapi.yaml` beyond the `/health` stub as routes land · S
+- [M] Tests: unit + component coverage · S → `make test`
 
 ## Repo layout — `go-mcp`
 
@@ -128,6 +133,9 @@ deploy/
 tools.md
 docker-compose.yaml
 Dockerfile
+.dockerignore
+.gitignore
+Makefile
 go.mod
 ```
 
@@ -140,6 +148,7 @@ Same shape as `go-api` — one entrypoint at `cmd/server/main.go`, no audience-s
 Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [M] Flesh out `tools.md` and the tool registry beyond the `/health` stub as tools land · S
+- [M] Tests: unit + component coverage · S → `make test`
 
 ## Reference material
 

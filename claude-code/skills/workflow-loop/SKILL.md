@@ -33,6 +33,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **One fork per task is what stops context drift.** A fork returns a result; it never returns its reasoning.
 
+**A phase ends only when its named skill actually ran.** State on disk that merely looks satisfied — files that exist, a build that passes — is not a substitute for running the phase; inheriting it and reporting the phase complete is the exact drift this machine exists to prevent.
+
 **A fork cannot see this conversation.** Everything it needs goes in `$ARGUMENTS` or is on disk. Never write "as discussed".
 
 ---
@@ -59,6 +61,10 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — fixing it means going back to P0 with the user, not improvising in P2.
 
+**A `BACKLOG.md` holding only `generate-repo`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the PRD/SDD — run the fork rather than treating an unread backlog as if P1 already happened.
+
+**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `generate-repo`'s Create already ran for this repo — trust the tree.** Re-invoke `/generate-repo` only when a Foundation-edge story is still open in `BACKLOG.md` (`generate-backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
+
 **Ends when:** every task has a `Done when` command and a `Depends on` edge.
 
 ---
@@ -71,6 +77,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Pick tasks that share no dependency edge and no file.** Two tasks touching one file are one task.
 
+**A task `[BLOCKED]` on something outside this run is not a phase halt.** Pick the next task with no dependency edge to the blocked one and continue — the blocker still surfaces, in P4's report, not as a stopped loop. Only stop here if every remaining task is transitively blocked.
+
 **Ends when:** one task is named `[WIP]` and the rest are written down.
 
 ### P2.1 · Implement
@@ -78,6 +86,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 **Run `/workflow-implement <task text and Done when command>`**, once per task.
 
 **Pass the command explicitly.** The fork cannot see the queue — a task arriving without its `Done when` stops rather than guessing one.
+
+**Run the fork even when the code already appears to exist on disk.** Verifying inherited state is not implementing it — the fork is what actually re-derives whether that state is correct, tested, and matches the task, rather than this session taking a build's exit code on faith.
 
 **Ends when:** the task's `Done when` command exits zero.
 
@@ -126,6 +136,8 @@ It writes the changelog entry, bumps the version, syncs the manifest, clears the
 - **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `generate-backlog`.
 - **Backing out is a rewrite.** Capture `git diff` before a risky write; `rules-source-control` owns handing the user the recovery command.
 - **The bridge is optional, never blocking.** An unreachable MCP server is a skipped step. Never branch a phase on whether it is up.
+- **Never poll a delegated phase.** A fork and a background `/code-review` both re-invoke this session the moment they finish. A scheduled check burns a full turn even when it lands on time, and can fire *stale* — after the work already completed — re-running dead instructions against state that already moved on.
+- **A P2.3 finding that needs standards verification goes back to a fork, never re-loaded into this window.** Loading `standards-*` skills here to re-check a finding the reviewer already grounded is the exact context drift forking exists to prevent — if it genuinely needs re-verifying, that is P2.1's job, not this session's.
 
 ---
 

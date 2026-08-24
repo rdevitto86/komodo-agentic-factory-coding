@@ -177,6 +177,74 @@ sys.exit(1 if failures else 0)
 PY
 [ $? -eq 0 ] || problems=$((problems + 1))
 
+printf '\n  standards section order\n'
+python3 - "$SOURCE" <<'PY'
+import os, re, sys
+
+source = sys.argv[1]
+
+# Skills a .go/.py/.vue/etc glob loads. templates/skills/standards.md.tmpl
+# names the canonical order this enforces; process/rule skills (cicd, sdlc,
+# security, database, worklog, docs) are a different shape on purpose and
+# are not in this list.
+LANGUAGE_SKILLS = [
+    "standards-go", "standards-typescript", "standards-python",
+    "standards-c", "standards-vue", "standards-svelte", "standards-cdk",
+]
+
+# Anchors, in required relative order. A skill may omit any anchor (a
+# scaffold-only skill has no Repo layout/Seed backlog; a base skill like
+# standards-typescript has no Repo layout at all) — this checks that the
+# anchors actually present never appear out of order, not that all exist.
+ANCHORS = [
+    "Comment discipline", "Toolchain", "Conventions", "Testing",
+    "Quick-reference fields", "Repo layout", "Seed backlog",
+    "Reference material",
+]
+
+HEADING = re.compile(r"^##\s+(.+?)\s*$", re.M)
+
+failures = 0
+for name in LANGUAGE_SKILLS:
+    path = os.path.join(source, "skills", name, "SKILL.md")
+    if not os.path.exists(path):
+        continue
+    headings = HEADING.findall(open(path, encoding="utf-8").read())
+    indices = []
+    for h in headings:
+        h = h.strip("`")
+        for i, anchor in enumerate(ANCHORS):
+            if h == anchor or h.startswith(anchor + " "):
+                indices.append((i, anchor))
+                break
+    # 0-4 (Comment discipline..Quick-reference fields) must be non-decreasing.
+    # 5-6 (Repo layout, Seed backlog) may alternate any number of times —
+    # one pair per repo type a skill supports (standards-go has go-api and
+    # go-mcp). 7 (Reference material) must come after every such pair.
+    last_pre, in_layout, seen_reference, broken = -1, False, False, False
+    for i, anchor in indices:
+        if i <= 4:
+            if in_layout or seen_reference or i < last_pre:
+                broken = True
+                break
+            last_pre = i
+        elif i in (5, 6):
+            if seen_reference:
+                broken = True
+                break
+            in_layout = True
+        else:
+            seen_reference = True
+    if broken:
+        print("    BROKEN    %s: section order violates the canonical shape" % name)
+        failures += 1
+
+if failures == 0:
+    print("    ok        every language/framework skill follows the canonical section order")
+sys.exit(1 if failures else 0)
+PY
+[ $? -eq 0 ] || problems=$((problems + 1))
+
 printf '\n  base context budget\n'
 python3 - "$SOURCE" "$BUDGET" <<'PY'
 import os, re, sys

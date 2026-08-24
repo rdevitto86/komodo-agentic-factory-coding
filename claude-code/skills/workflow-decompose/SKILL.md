@@ -20,6 +20,7 @@ Scope: **$ARGUMENTS** — a target state. Empty means the current `## Now` state
 3. **Drop anything already in `CHANGELOG.md`.** A story recorded there has shipped.
 4. **A story with no `Done when` command is a gap** — report it, don't invent one.
 5. **Check the queue for a chain** before returning.
+6. **Mark transitive blocks.** A story that names a `Depends on`/`(after: ...)` edge to a `[BLOCKED]` story is itself blocked, even if nothing marks it so directly — carry that forward so P2.0 can pick around the whole chain instead of discovering it task by task.
 
 **If `BACKLOG.md` is absent**, say so in `## Gaps` and stop. Creating it is the caller's job, not yours.
 

@@ -13,7 +13,7 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 
 `rules-commenting` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `# noqa`, `# type: ignore`, `# pylint:`, `# mypy:`, `# pyright:`, `# ruff:`, `# isort:`, `-*- coding` on line 1. **A docstring is scanned like any other comment** — the guard parses the file's AST, so it catches module, function, and class docstrings, not just `#` lines. Anything outside those prompts for approval.
 
-## Tooling and types
+## Toolchain
 
 - **The version floor is declared in `pyproject.toml` under `requires-python`.** Read it rather than assuming a release. Dependencies via `uv` (preferred) or `poetry` — never raw `pip`.
 - **`ruff format`, `ruff check`, `mypy --strict`** (or strict `pyright`). No `black`/`isort`/`flake8`/`pylint` stack. Type errors block merge.
@@ -59,7 +59,7 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 - **Mock at module boundaries** (`monkeypatch`, `unittest.mock`), never internals.
 - **Async via `pytest-asyncio`** with `asyncio_mode = "auto"`.
 - **DB-touching code gets integration tests** against ephemeral instances (`testcontainers`, `pytest-postgresql`).
-- **Tier definitions, merge/release gates, and coverage floors are owned by the `standards-sdlc` skill** (100% the target on new code, 85% the hard minimum, 100% required on SDKs/shared libraries and security-critical paths) — this section covers Python mechanics only.
+- **Tier definitions, merge/release gates, and coverage floors are owned by the `standards-sdlc` skill** — this section covers Python mechanics only.
 
 ## Quick-reference fields
 

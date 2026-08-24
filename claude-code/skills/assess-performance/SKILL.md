@@ -2,6 +2,7 @@
 name: assess-performance
 description: Score the current diff's performance risk (Low → Critical) — latency, algorithmic complexity, build/runtime cost — with a one-paragraph cited rationale.
 argument-hint: []
+disable-model-invocation: true
 ---
 
 # Performance risk assessment

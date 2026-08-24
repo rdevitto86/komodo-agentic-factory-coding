@@ -1,0 +1,10 @@
+.git
+.github/
+docs/
+.claude/
+*.md
+.gitignore
+.golangci.yaml
+/bin/
+/{{MODULE_BINARY_NAME}}
+tmp/
