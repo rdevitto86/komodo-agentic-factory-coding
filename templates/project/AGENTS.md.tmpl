@@ -15,7 +15,7 @@ Global rules live in `~/.claude/AGENTS.md` and always apply. This file adds proj
 
 ## Commands
 
-Every command an agent would otherwise have to guess or discover. Wrong here is worse than absent.
+Every command an agent would otherwise have to guess or discover. Wrong here is worse than absent. Drop a row the repo genuinely has no equivalent for — never fill one with a guess.
 
 | Do | Run |
 |---|---|
@@ -23,6 +23,7 @@ Every command an agent would otherwise have to guess or discover. Wrong here is 
 | Test | `{{TEST}}` |
 | Build | `{{BUILD}}` |
 | Run locally | `{{RUN}}` |
+| Deploy | `{{DEPLOY}}` |
 | Lint | `{{LINT}}` |
 
 ## Where things are
@@ -39,15 +40,14 @@ Non-obvious behaviour that has already cost someone a debugging session. One lin
 
 ## Documents
 
-| File | Holds |
-|---|---|
-| `docs/prd.md` | What this builds and why. **Frozen — needs approval to change.** |
-| `docs/sdd.md` | How it works, and §10's implementation slices |
-| `BACKLOG.md` | Open work, one story per line |
-| `CHANGELOG.md` | What shipped, and the current version |
+Only files that exist in this repo. A row is added the day its file is created — never listed in advance.
 
-Design decisions live in SDD §7, never a separate `adr/` directory. Read on demand — never pre-load these.
+{{DOCUMENTS_TABLE}}
+
+Design decisions live in SDD §11; a decision that earned a full write-up has an ADR under `docs/adrs/`, linked from SDD §14. Read on demand — never pre-load these.
 
 ## Deviations
 
-{{DEVIATIONS_FROM_LANGUAGE_SKILL}}
+Where this repo diverges from a skill it would otherwise follow — language, `sdlc`, `cicd`, `security`, or any other — tagged with which skill it departs from. Refresh-only; a new repo has no drift yet.
+
+{{DEVIATIONS}}

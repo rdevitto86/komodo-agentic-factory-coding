@@ -7,7 +7,7 @@
 # Exit 1:  one or more checks failed
 #
 # Checks, in order:
-#   1. links        every home/* is symlinked into ~/.claude
+#   1. links        every claude-code/* is symlinked into ~/.claude
 #   2. hooks        both guards parse as valid Python
 #   3. frontmatter  every skill/agent uses only loader-known keys
 #   4. budget       AGENTS.md + skill listing under BUDGET tokens
@@ -22,7 +22,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOURCE="$REPO_ROOT/home"
+SOURCE="$REPO_ROOT/claude-code"
 TARGET="${AGENT_HOME:-$HOME/.claude}"
 BUDGET=2000
 

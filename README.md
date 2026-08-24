@@ -1,6 +1,6 @@
 # komodo-agentic-config
 
-Agent configuration shared across every Komodo project. `home/` mirrors `~/.claude/` one-to-one and is symlinked there.
+Agent configuration for software/hardware engineering, shared across every Komodo project. `claude-code/` mirrors `~/.claude/` one-to-one and is symlinked there.
 
 Four ideas hold it together:
 
@@ -21,15 +21,15 @@ Restart Claude Code afterwards so `settings.json` and the hooks take effect.
 ## Structure
 
 ```
-home/                 mirrors ~/.claude exactly
+claude-code/          mirrors ~/.claude exactly
 ├── AGENTS.md         the universal rules — always loaded
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions, hook registration, skillOverrides
-├── agents/           implementer, planner, engineering, business, scout
+├── agents/           implementer, planner, engineering, scout
 ├── hooks/            comment_guard, git_guard, verify_gate, context_injector
 └── skills/           27 active, 3 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
-platforms/komodo-bridge/   local LLM MCP bridge config
+bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, portable git hooks
 ```
 
@@ -96,7 +96,7 @@ Workflow skills, all free: `/lifecycle` `/decompose` `/implement` `/consolidate`
 
 ## Output formatting
 
-The always-on contract lives in `home/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `accessibility` skill and loads only when authoring something longer than a screen.
+The always-on contract lives in `claude-code/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `adhd-format` skill and loads only when authoring something longer than a screen.
 
 Every subagent carries the same contract as a mandatory output template.
 
@@ -108,7 +108,7 @@ bash scripts/validate.sh
 
 Verifies every symlink, validates every skill and agent against the loader's frontmatter schema, and **fails above 2,000 tokens** of base context.
 
-A skill listed by name costs 1–4 tokens. A new line in `home/AGENTS.md` costs its full length on every session, forever — put it in a skill unless it must always apply.
+A skill listed by name costs 1–4 tokens. A new line in `claude-code/AGENTS.md` costs its full length on every session, forever — put it in a skill unless it must always apply.
 
 ## Git hooks for other repos
 

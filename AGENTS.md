@@ -1,19 +1,19 @@
 # komodo-agentic-config
 
-Shared agent configuration. `home/` mirrors `~/.claude/` one-to-one and is symlinked there by `setup.sh`. Changing anything under `home/` changes every project's next session.
+Shared agent configuration for software/hardware engineering. `claude-code/` mirrors `~/.claude/` one-to-one and is symlinked there by `setup.sh`. Changing anything under `claude-code/` changes every project's next session.
 
 ## Layout
 
 | Path | Becomes | Contents |
 |---|---|---|
-| `home/AGENTS.md` | `~/.claude/AGENTS.md` | The universal rules, always loaded |
-| `home/CLAUDE.md` | `~/.claude/CLAUDE.md` | One line: `@AGENTS.md` |
-| `home/settings.json` | `~/.claude/settings.json` | Permissions and hook registration |
-| `home/agents/` | `~/.claude/agents/` | `implementer` writes; `planner`, `engineering`, `business`, `scout` are read-only |
-| `home/hooks/` | `~/.claude/hooks/` | Two guards, plus the Stop gate and the session injector |
-| `home/skills/` | `~/.claude/skills/` | Domain knowledge, lazily loaded |
+| `claude-code/AGENTS.md` | `~/.claude/AGENTS.md` | The universal rules, always loaded |
+| `claude-code/CLAUDE.md` | `~/.claude/CLAUDE.md` | One line: `@AGENTS.md` |
+| `claude-code/settings.json` | `~/.claude/settings.json` | Permissions and hook registration |
+| `claude-code/agents/` | `~/.claude/agents/` | `implementer` writes; `planner`, `engineering`, `scout` are read-only |
+| `claude-code/hooks/` | `~/.claude/hooks/` | Two guards, plus the Stop gate and the session injector |
+| `claude-code/skills/` | `~/.claude/skills/` | Domain knowledge, lazily loaded |
 
-Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANGELOG.md`) and `platforms/komodo-bridge/` (local LLM MCP bridge).
+Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANGELOG.md`) and `bridges/komodo-bridge/` (local LLM MCP bridge).
 
 ## The hooks
 
@@ -70,7 +70,7 @@ An open content allowlist would be another slot, and would not work — the agen
 | Workflow | `disable-model-invocation: true` | No, costs zero context | Yes |
 | Both | neither key | Yes | Yes |
 
-**Activation is path-based, not description-based.** `paths:` globs in a skill's frontmatter make the runtime load it when a matching file is touched. `skillOverrides` in `home/settings.json` then collapses that skill to `name-only`, so its description costs nothing in the always-on listing. The pair is how a skill hot-swaps in: **`paths` decides when, `skillOverrides` decides cost.** A skill with neither pays its full description on every turn forever — reserve that for triggers no glob can express. `validate.sh` fails the build on an unknown key.
+**Activation is path-based, not description-based.** `paths:` globs in a skill's frontmatter make the runtime load it when a matching file is touched. `skillOverrides` in `claude-code/settings.json` then collapses that skill to `name-only`, so its description costs nothing in the always-on listing. The pair is how a skill hot-swaps in: **`paths` decides when, `skillOverrides` decides cost.** A skill with neither pays its full description on every turn forever — reserve that for triggers no glob can express. `validate.sh` fails the build on an unknown key.
 
 Workflow skills: `/lifecycle` · `/decompose` · `/implement` · `/consolidate` · `/backlog` · `/generate-repo` · `/audit` · `/readme` · `/risk-assessment` · `/complete`
 
@@ -86,6 +86,8 @@ Workflow skills: `/lifecycle` · `/decompose` · `/implement` · `/consolidate` 
 
 **`docs` owns the two frozen specs; `worklog` owns the two mutable records.** Splitting them means a phase that only records work never pays for the spec templates — `/consolidate` dropped from 3,095 tokens to 1,580. **The PRD and SDD are frozen at approval**, which is why slice status never writes back into SDD §10.
 
+**`adr` owns the decision records those specs point at.** Split out for the same reason: editing `prd.md` or `sdd.md` should never pay for the ADR template, and touching a file under `docs/adrs/` should never pay for the PRD/SDD section skeletons.
+
 **A skill with a procedure half gets a sibling file.** `docs/authoring.md`, `sdlc/reference.md`, `go/reference.md`, `security/review.md` — the rule stays in `SKILL.md`, the how-to loads only when someone is doing that job.
 
 **A skill directory with no `SKILL.md` is invisible.** `rust/`, `cpp/`, and `hardware/` are parked as `SKILL.md.off` — no listing cost, no loader entry, content preserved for when those domains land. Rename back to activate.
@@ -94,7 +96,7 @@ Workflow skills: `/lifecycle` · `/decompose` · `/implement` · `/consolidate` 
 
 ## No static references
 
-**A skill records rules. It never records inventory.** Nothing in `home/skills/` may name a live repo, a port assignment, a URL, a version number, an env var, or a file path inside another codebase. Those drift silently: the skill keeps asserting a fact months after it stopped being true, and an agent trusts it over the disk.
+**A skill records rules. It never records inventory.** Nothing in `claude-code/skills/` may name a live repo, a port assignment, a URL, a version number, an env var, or a file path inside another codebase. Those drift silently: the skill keeps asserting a fact months after it stopped being true, and an agent trusts it over the disk.
 
 The replacement is always the same shape — **state the rule, then name where to read the current value.**
 
@@ -106,14 +108,12 @@ The replacement is always the same shape — **state the rule, then name where t
 
 **Language-agnostic skills name no tools.** `cicd` and `sdlc` state the contract — what a hook must gate, what a tier must cover. The linter, formatter, test command, SDK package, version floor, and reuse doctrine (SDK first, vetted library second, custom last) belong in `go`, `typescript`, `python`, and the other language skills, which are allowed to be concrete because they are already scoped to one toolchain.
 
-**Domain knowledge belonging to one subagent lives in that agent's file, not a skill.** `home/agents/business.md` carries legal, tax, logistics, and hardware inline — loaded only when that agent spawns, so it costs nothing in the main session.
-
 ## Context budget
 
 `AGENTS.md` plus every model-visible skill description is paid on **every turn of every session, forever**. `validate.sh` fails above **2,000 tokens** — the ceiling the runtime itself enforces by truncating descriptions past ~1% of the context window.
 
 - **A skill listed `name-only` costs 1–4 tokens.** With a full description it costs ~30–70. **Every skill here is now name-only or invisible** — run `scripts/validate.sh` for the current base-context total.
-- **A new line in `home/AGENTS.md` costs its full length**, always. Put it in a skill unless it must apply unconditionally.
+- **A new line in `claude-code/AGENTS.md` costs its full length**, always. Put it in a skill unless it must apply unconditionally.
 - **Workflow skills cost nothing** — `disable-model-invocation: true` keeps them out of the listing.
 
 ## Working on this repo

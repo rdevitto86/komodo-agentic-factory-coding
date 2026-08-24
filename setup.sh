@@ -7,7 +7,7 @@
 #
 # What it does, in order:
 #   1. prune    removes symlinks left by the old layout (STALE_LINKS)
-#   2. link     symlinks every home/* entry to ~/.claude/<name>
+#   2. link     symlinks every claude-code/* entry to ~/.claude/<name>
 #   3. verify   runs test-hooks.sh then validate.sh
 #
 # Nothing is copied. ~/.claude/<name> is a symlink back into this repo,
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE="$REPO_ROOT/home"
+SOURCE="$REPO_ROOT/claude-code"
 TARGET="${AGENT_HOME:-$HOME/.claude}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 

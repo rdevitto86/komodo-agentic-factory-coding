@@ -22,7 +22,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOOKS="$REPO_ROOT/home/hooks"
+HOOKS="$REPO_ROOT/claude-code/hooks"
 WORKDIR="$(mktemp -d)"
 SESSION="hooktest$$"
 trap 'rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION" "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION" "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION-move"' EXIT
