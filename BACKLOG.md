@@ -6,7 +6,6 @@ Open work only. Format and rules live in the `generate-backlog` skill — load i
 ## Now — V1
 
 ### Cross-Cutting
-- [M] Performance: run the perf suite · S → performance story defined once one is scoped
 - [M] Bridge: set `options.num_ctx` in `generateRequest` so large summarizer payloads stop truncating silently · S → bridge request carries the option
 - [L] git_guard: `strip_leading_flags` fallback heuristic can misfire when an unrecognized flag's value exactly equals a bare monitored-command name with no extension (e.g. `time --output sh actualtool arg`) — contrived/low-likelihood edge case, `claude-code/hooks/git_guard.py` · S → decision recorded or fixed
 - [M] Bridge: migrate `.mcp.json.tmpl` from deprecated SSE to streamable HTTP transport · S → bridge reachable via new transport

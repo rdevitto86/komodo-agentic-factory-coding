@@ -25,6 +25,8 @@ Judges backlog validity against current repo state. Never a fixer — `generate-
 | Duplicate | Overlaps another open line's scope |
 | Ambiguous | No `Done when` derivable, or the command it names no longer resolves to anything |
 
+Absence of contradiction is not validity. A line naming no file, command, or artifact — a `Done when` like "once X is scoped" — can't be checked against current repo state at all; "nothing in the repo contradicts it" looks identical whether the line is a live placeholder or a dead fragment nothing ever backed. For any line in this shape, `git blame`/`git log -S '<line text>'` its introduction and check `CHANGELOG.md` for whether the thing it references (the suite, the tool, the flag) was ever real. No commit ever built it → **Stale**, not Valid.
+
 3. For any `[BLOCKED]` line in scope, test its `Recheck:` condition against current state — flag if it now passes.
 
 ## Report
