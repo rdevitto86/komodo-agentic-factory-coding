@@ -47,7 +47,7 @@ Each maps to `bridges/komodo-bridge/agents/<name>/agent.md` — flat frontmatter
 ```yaml
 # ~/.komodo/docker-compose.yaml
 volumes:
-  - ${HOME}/komodo/ai/komodo-agentic-tools-code/bridges/komodo-bridge/agents:/app/agents:ro
+  - ${HOME}/komodo/ai/komodo-agentic-toolkit-coding/bridges/komodo-bridge/agents:/app/agents:ro
 ```
 
 This repo is the single source of truth — agents are never copied into `~/.komodo`. Edits here take effect on the next bridge restart.

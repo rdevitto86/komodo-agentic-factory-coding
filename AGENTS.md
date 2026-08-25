@@ -1,4 +1,4 @@
-# komodo-agentic-tools-code
+# komodo-agentic-toolkit-coding
 
 Shared agent configuration for software/hardware engineering. `claude-code/` mirrors `~/.claude/` one-to-one and is symlinked there by `setup.sh`. Changing anything under `claude-code/` changes every project's next session.
 

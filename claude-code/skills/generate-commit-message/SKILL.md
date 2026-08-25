@@ -1,6 +1,6 @@
 ---
 name: generate-commit-message
-description: Write a copy-pastable commit message for the current diff — capped concise message, comma/plus-delimited secondary description.
+description: Write a copy-pastable commit message for the current diff — capped concise message, bulleted secondary description.
 argument-hint: []
 ---
 
@@ -20,9 +20,9 @@ argument-hint: []
 
 - **The commit message is the concise explanation, not the detail dump.** It names *what* changed in one glance — a plain phrase (`added foundation for api`) and a typed one (`feat: api foundations`) are equally valid wording; either way it has to say something, never just a bare type tag. If you do use a type prefix, keep it to `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci` — the same taxonomy `rules-source-control` uses for branch names.
 - **Commit message caps at 72 characters.** Imperative mood, no trailing period. Anything that doesn't fit moves to the secondary description — never truncate mid-thought to squeeze it in.
-- **The secondary description is where detail goes**, one flowing line, never bullets. Distinct changes are delimited by `,`. A change with multiple parts is delimited by `+` within its own comma-separated segment — `made a change here + here, wrote tests to validate all changes`.
-- **Omit the secondary description entirely when the message already says it all** — a single-concern, single-file change gets nothing below it. Never pad with a segment that just restates the message.
-- **One comma-segment per distinct concern, not per file.** Ten files in one mechanical rename is one segment (`+` for the pieces if it's worth naming them); a hand-written function is its own segment even if it shares a file with something else.
+- **The secondary description is where detail goes**, formatted as a `-`-prefixed bulleted list, one bullet per distinct concern. A bullet with multiple parts is delimited by `+` within itself — `added route scaffolding + auth middleware`.
+- **Omit the secondary description entirely when the message already says it all** — a single-concern, single-file change gets nothing below it. Never pad with a bullet that just restates the message.
+- **One bullet per distinct concern, not per file.** Ten files in one mechanical rename is one bullet (`+` for the pieces if it's worth naming them); a hand-written function is its own bullet even if it shares a file with something else.
 - **No trailer lines.** No co-author, no generated-by, no issue footer unless the user asked for one.
 
 ## Examples
@@ -38,14 +38,17 @@ fix: stop context_injector crashing on a missing BACKLOG.md
 ```
 added foundation for api
 
-added route scaffolding + auth middleware, wrote tests to validate all changes
+- added route scaffolding + auth middleware
+- wrote tests to validate all changes
 ```
 
-**Typed message, several areas, multi-part segments:**
+**Typed message, several areas, multi-part bullets:**
 ```
 refactor: bucket-prefixed skill rename
 
-renamed skills to bucket prefixes across generate + assess + standards + rules + config + workflow, updated settings.json + generate-repo + README + AGENTS.md to match, added assess-performance and wired it into assess-code-quality
+- renamed skills to bucket prefixes across generate + assess + standards + rules + config + workflow
+- updated settings.json + generate-repo + README + AGENTS.md to match
+- added assess-performance and wired it into assess-code-quality
 ```
 
 ## Output

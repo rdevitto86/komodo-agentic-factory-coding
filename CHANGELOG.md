@@ -1,6 +1,27 @@
 # Changelog
 
-Notable changes to komodo-agentic-tools-code. Format follows Keep a Changelog; versions follow SemVer.
+Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
+
+## [0.24.1] — 2026-08-25
+
+### Changed
+- Repo renamed `komodo-agentic-tools-code` → `komodo-agentic-toolkit-coding` on GitHub; local refs updated in `README.md`, `AGENTS.md`, `CHANGELOG.md`, `bridges/komodo-bridge/agent-roster.md`, the working directory itself, and the git remote.
+- `generate-commit-message` — secondary description switched from a comma/`+`-delimited flowing line to a `-`-prefixed bulleted list, one bullet per distinct concern.
+
+## [0.24.0] — 2026-08-25
+
+### Added
+- `audit-changelog`, `audit-readme`, `audit-sdd`, `audit-testing` — four typed-only audit skills scoring `CHANGELOG.md`, `README.md`, `docs/sdd.md`, and the test suite against their respective generator/standards skills, findings filed to `BACKLOG.md` unless `--report` is passed.
+- `generate-changelog` — a "Tag sync" section: before appending a version heading, check `.git/refs/tags/`/`.git/packed-refs` for a matching tag and hand the user a ready-to-run `git tag` line if one's missing (tagging stays hard-denied to the agent).
+
+### Changed
+- `standards-cicd`, `standards-docs`, `standards-observability`, `standards-security`, `standards-worklog` marked `user-invocable: false` — autoloaded knowledge, not meant to be typed directly.
+- `generate-readme` switched from `disable-model-invocation: true` to `paths: "**/README.md"`, so it now loads automatically the instant README.md is touched instead of requiring the typed command.
+- `claude-code/settings.json`'s `skillOverrides` gained `name-only` entries for the mid-loop phases, `generate-repo`, `generate-readme`, and the audit/commit-message command skills, matching `AGENTS.md`'s reachable-by-name list.
+- `AGENTS.md`'s skill-contract section rewritten: bucket table and typed-only list gained the four new audits, and the context-budget section replaced its by-hand skill enumeration with the general "reached only by an explicit name is `name-only`" rule.
+
+### Removed
+- `CHANGELOG.md`'s stale 2026-08-24 backfill note and empty `## [Unreleased]` heading.
 
 ## [0.23.1] — 2026-08-24
 
