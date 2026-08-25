@@ -18,4 +18,4 @@ Open work only. Format and rules live in the `generate-backlog` skill — load i
 
 ## Next — V2
 
-_Nothing planned yet. Run `/generate-backlog` to fill this in._
+- [M] Git identity: agent-run commits and PRs are authored as the user's own GitHub account (`gh auth`'s session token + local `git config user.name`), not a distinct identity — create a machine-user account or GitHub App and wire its token into `gh`/`git` for agent-run operations · M → PR and commit authorship shows the bot identity, not the user's
