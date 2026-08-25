@@ -2,7 +2,7 @@
 name: generate-readme
 description: Generate or refresh a repo's README.md against a fixed, concise template.
 argument-hint: [target repo path, defaults to cwd]
-disable-model-invocation: true
+paths: "**/README.md"
 ---
 
 # README

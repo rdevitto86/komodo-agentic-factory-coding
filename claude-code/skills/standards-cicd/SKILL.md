@@ -1,6 +1,7 @@
 ---
 name: standards-cicd
 description: Pipeline stages, merge vs release gates, ephemeral CI infra, blue/green, rollback, feature flags.
+user-invocable: false
 paths: "cicd.yaml, .github/workflows/**, **/Dockerfile*, **/docker-compose*, **/buildspec.yml, **/.gitlab-ci.yml, **/Jenkinsfile, **/.circleci/**, **/Makefile, **/Taskfile*, **/*.pipeline.yml"
 ---
 

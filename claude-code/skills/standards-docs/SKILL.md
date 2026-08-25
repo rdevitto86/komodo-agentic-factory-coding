@@ -1,6 +1,7 @@
 ---
 name: standards-docs
 description: Read/write directive shared across docs/ — the frozen-spec vs. satellite-record split, jargon-free/tables-over-prose bar, and the SDD-as-hub cross-reference contract. Not any file's format; see generate-prd, generate-sdd, generate-adr, generate-runbook for that.
+user-invocable: false
 paths: "**/docs/**"
 ---
 

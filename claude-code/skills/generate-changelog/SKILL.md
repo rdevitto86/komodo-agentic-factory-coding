@@ -38,3 +38,13 @@ Notable changes to this project. Format follows Keep a Changelog; versions follo
 | Satisfies a PRD requirement ID | Minor |
 | Fixes behavior, no new requirement ID | Patch |
 | Breaks a published contract | Major |
+
+## Tag sync
+
+A released section isn't real until it's both committed and tagged. `git tag` is hard-denied for the agent (`settings.json`'s deny list blocks the whole subcommand, list included) — tagging is always a command handed to the user, never run here, same as the commit message itself.
+
+**Before appending a new version section**, check whether the section directly below `[Unreleased]` (the most recently released one) already has a matching tag:
+
+- List existing tags by reading `.git/refs/tags/` and `.git/packed-refs` directly — never `git tag -l`, it's blocked.
+- If it's missing, find the commit that introduced that heading: `git log -p --follow -- CHANGELOG.md`, the commit whose diff adds that exact `## [X.Y.Z]` line. If no commit has it yet, the section itself is still uncommitted — skip silently, this resolves itself next time this check runs.
+- Otherwise hand the user a ready-to-run line: `git tag -a vX.Y.Z <hash> -m "<one-line summary>"`, alongside whatever else you're doing.

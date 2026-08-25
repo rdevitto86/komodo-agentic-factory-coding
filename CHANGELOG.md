@@ -2,12 +2,6 @@
 
 Notable changes to komodo-agentic-tools-code. Format follows Keep a Changelog; versions follow SemVer.
 
-Append-only — a released section is never rewritten. Format rules live in the `standards-worklog` skill.
-
-Versions below were backfilled retroactively on 2026-08-24 from commit history — nothing had ever been git-tagged, so the pre-existing 0.1.0/0.1.1/0.2.0 labels were provisional and are renumbered here into their true chronological sequence rather than preserved as prior releases.
-
-## [Unreleased]
-
 ## [0.23.1] — 2026-08-24
 
 ### Added

@@ -1,6 +1,7 @@
 ---
 name: standards-worklog
 description: Read/write directive shared by the two mutable work records — BACKLOG.md and CHANGELOG.md. Not their format; see generate-backlog and generate-changelog for that.
+user-invocable: false
 paths: "**/BACKLOG.md, **/CHANGELOG.md"
 ---
 
