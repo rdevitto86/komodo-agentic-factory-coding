@@ -4,9 +4,16 @@ Notable changes to komodo-agentic-tools-code. Format follows Keep a Changelog; v
 
 Append-only — a released section is never rewritten. Format rules live in the `standards-worklog` skill.
 
+Versions below were backfilled retroactively on 2026-08-24 from commit history — nothing had ever been git-tagged, so the pre-existing 0.1.0/0.1.1/0.2.0 labels were provisional and are renumbered here into their true chronological sequence rather than preserved as prior releases.
+
 ## [Unreleased]
 
-## [0.2.0] — 2026-08-24
+## [0.23.1] — 2026-08-24
+
+### Added
+- `audit-backlog` — a verdict rule for backlog lines that name no checkable file, command, or artifact (a `Done when` like "once X is scoped"): `git blame`/`git log -S '<line text>'` its introduction and check `CHANGELOG.md` for whether the thing it references was ever real. No commit ever built it → Stale, not Valid. Closes the gap where "nothing in the repo contradicts it" read as Valid for a dead placeholder indistinguishable from a live one.
+
+## [0.23.0] — 2026-08-24
 
 ### Added
 - `.github/workflows/ci.yml` — runs `scripts/test-hooks.sh` and `scripts/validate.sh` on push/PR, closing the gap where the hook and budget regressions only ran locally.
@@ -16,14 +23,14 @@ Append-only — a released section is never rewritten. Format rules live in the 
 ### Fixed
 - `comment_guard.py` — `handle_pre` no longer recomputes `scan_comments` a second time in `check_echoes`'s caller; the result is cached as `scope_scanned` and reused for both the removed-comment check and echo suppression.
 
-## [0.1.1] — 2026-08-24
+## [0.22.1] — 2026-08-24
 
 ### Fixed
 - `git_guard.py` — `cp`/`mv` now scan their destination against `is_code_path` (plain and `-t`/`--target-directory` forms, including a not-yet-existing directory target), closing the bypass where copying a staged file over a code path skipped `comment_guard`. `scripts/test-hooks.sh` grew from 98 to 118 cases (G31–G47).
 - `git_guard.py` — recurses into `eval`/`time`/`command`/`xargs`/`nohup` wrappers with flag-aware value stripping, so `time git commit` and similar wrapped invocations no longer dodge the guard.
 - `comment_guard.py` — `check_echoes` suppression now scopes against the specific edit's own `old_string`/`old_text` context instead of a file-wide comment union, so a genuine new echo-comment violation is no longer masked by identical text existing elsewhere in the file.
 
-## [0.1.0] — 2026-08-24
+## [0.22.0] — 2026-08-24
 
 ### Added
 - `standards-docker` skill — base image pinning, distroless healthcheck pattern (a binary `healthcheck` subcommand, since a distroless runtime has no shell), `stop_grace_period` above the app's own drain timeout, `.dockerignore`, non-root, multi-stage layering. `generate-repo` Step 5's container-practice bullets now point at it.
@@ -40,3 +47,187 @@ Append-only — a released section is never rewritten. Format rules live in the 
 ### Deviations from the original plan
 - The scaffold-freshness signal landed as the manifest-file check above, not the originally proposed `.claude/scaffold.json` marker with a version-bumped "contract" integer — `generate-repo`'s existing Scaffold/Refresh drift-detection against the language skill's `Repo layout` tree already covers invalidation, so the extra state would have been unused machinery.
 - `c` was documented as scaffold-only alongside `typescript`/`python` in `generate-repo`, rather than given a new `Repo layout` tree.
+
+## [0.21.2] — 2026-08-24
+
+### Changed
+- Skills renamed to bucket prefixes (`standards-go`, `standards-python`, `standards-sdlc`, `standards-security`, `standards-svelte`, `standards-typescript`, `standards-uiux`, `standards-vue`, `workflow-*`); `worklog` split into `standards-worklog` so records and specs stop sharing one skill.
+
+## [0.21.1] — 2026-08-23
+
+### Changed
+- `home/` renamed to `claude-code/`; the business-domain agent (`home/agents/business.md`) and the `decompose` skill removed — final narrowing of scope to software/hardware engineering only.
+
+## [0.21.0] — 2026-08-21
+
+### Added
+- `home/skills/lifecycle/ways/sdlc.md`, `home/skills/worklog/SKILL.md`, `home/skills/risk-assessment/SKILL.md`, `templates/project/{BACKLOG,CHANGELOG}.md.tmpl`.
+
+### Changed
+- `scripts/doctor.sh` renamed to `scripts/validate.sh` and expanded; `scripts/test-hooks.sh` grew substantially.
+
+### Removed
+- `home/skills/wrap-up/SKILL.md`, `home/skills/tech-stack/SKILL.md`, the standalone QA agent file.
+
+## [0.20.0] — 2026-08-18
+
+### Added
+- `home/skills/readme/SKILL.md`; `generate-repo` gained a Create branch.
+
+### Changed
+- `backlog` skill gained a normalize mode; `[WIP]` tags replaced checkbox-style TODO items.
+
+## [0.19.0] — 2026-08-10
+
+### Added
+- `comment_guard.py` positional-slot model (step marker, banner, structured note, script manual, machine directive) replacing free-text heuristics; `paths:`-based skill auto-activation.
+
+### Removed
+- `scripts/hooks/git/pre-commit-comments` — superseded by `comment_guard.py`.
+
+## [0.18.0] — 2026-08-10
+
+### Added
+- `scripts/hooks/git/{pre-commit,pre-commit-gofmt,pre-push,pre-push-golangci,install.sh}` — installable git hook scripts; `templates/go/.golangci.yaml`; `home/skills/tech-stack/SKILL.md`, `typescript/testing.md`, `uiux/SKILL.md`.
+
+### Removed
+- `home/skills/{sql,stack,tailwind,tax,terraform,todo,wcag}/SKILL.md` folded away or superseded.
+
+## [0.17.0] — 2026-08-08
+
+### Changed
+- Config restructured into `home/` as a literal mirror of `~/.claude/`; `comment_guard` rewritten from shell (`no-comments-guard.sh`) to Python (`home/hooks/comment_guard.py`); `go`/`python`/`svelte`/`typescript`/`vue` unified into `home/skills/*/SKILL.md`.
+
+### Added
+- `templates/project/AGENTS.md.tmpl`, `templates/project/CLAUDE.md.tmpl`, `templates/project/TODO.md.tmpl`, `scripts/test-hooks.sh`.
+
+## [0.16.0] — 2026-07-27
+
+### Added
+- Senior-engineering doctrine + decomposition rule in `standards/principles.md`.
+
+### Fixed
+- `no-comments-guard.sh` no longer blocked a restored (previously deleted) comment.
+
+### Changed
+- `standards/testing.md` tier model rewritten.
+
+## [0.15.0] — 2026-07-20
+
+### Added
+- `standards/assumptions.md` — when to assume vs. ask.
+
+### Changed
+- `CLAUDE.md`/`advisor`/`software-engineer` agents trimmed for context bloat.
+
+## [0.14.0] — 2026-07-20
+
+### Added
+- `standards/communication.md` — ADHD-calibrated output rules, pulled into every agent's context.
+
+## [0.13.0] — 2026-07-17
+
+### Added
+- `docs/orchestration.md` design spec (tier/profile/mode taxonomy, duty classes, model tier map), `audit`/`story` skills, `komodo-bridge/registry.generated.json`, `scripts/gen-bridge-registry.sh`, `scripts/set-runtime.sh`, `scripts/doctor.sh`.
+
+### Changed
+- Tests moved out of colocation into a per-tier `test/` tree (component/integration/e2e/chaos/perf).
+
+## [0.12.0] — 2026-07-06
+
+### Fixed
+- `git-guard.sh` hard-blocked all `git push`/`git merge`, not just force-push — closed a bypass.
+
+### Added
+- `standards/findings.md` — mandatory confidence/source/why fields on every reported finding, to cut audit noise.
+
+## [0.11.0] — 2026-06-26
+
+### Added
+- `profile/AGENTS.md` / `profile/CLAUDE.md` — universal cross-model directive split out from Claude-specific config; `standards/testing.md` (environment/tier matrix), `templates/Justfile.tmpl`.
+
+### Changed
+- `advisor` agent role rewritten as orchestrator with a defined cross-review gate.
+
+## [0.10.0] — 2026-06-12
+
+### Changed
+- Repo flattened: dropped the `claude/` prefix, top-level `agents/`/`standards/`/`templates/`; hooks ported to `platforms/claude/hooks/*.sh` so the config is no longer Claude-only in structure.
+
+### Added
+- Comment-rule regression fixtures + `scripts/test-comment-rules.sh`, `scripts/validate-bridge-roster.sh`.
+
+## [0.9.0] — 2026-06-09
+
+### Added
+- `swe/changelog.md` — first CHANGELOG/version-bump standard in the repo's own history.
+
+### Changed
+- `swe/git-flow.md` commit format redefined as short `+`-joined types; agent directives tidied for token usage; worktree isolation banned in `principles.md`.
+
+## [0.8.0] — 2026-06-06
+
+### Added
+- `cyber-security`, `data-analyst`, `lawyer`, `machinist`, `marketing`, `tax-advisor` agents (each with an `email.md` companion where applicable), `project-manager/memory.md`.
+- `.gitignore`, `scripts/validate-refs.sh`.
+
+### Fixed
+- `MEMORY.md` accidentally committed to the repo — removed and gitignored.
+
+## [0.7.0] — 2026-06-06
+
+### Changed
+- Standalone `claude/standards/*.md` files folded into per-agent `claude/agents/swe/<domain>/` subtrees (`go/coding.md`, `python/coding.md`, `svelte/coding.md`, `ts/coding.md`, `db/sql.md`, etc.) — replaced a flat standards library with domain-scoped agent modes.
+
+### Added
+- `mechatronics/cpp/coding.md`, `swe/api/audit.md`, `swe/api/blueprint.md`, `swe/design/design.md`, `project-manager` docs.
+- `_testing-go.md`/`_testing-ts.md` retired in favor of expanded `go/coding.md`/`ts/coding.md`.
+
+## [0.6.0] — 2026-05-28
+
+### Added
+- Go service scaffold templates (`Dockerfile.tmpl`, `client.go.tmpl`, `main-fargate.go.tmpl`, etc.) under `claude/skills/templates/service/`.
+- `standards/docker.md`, `standards/observability.md`, `standards/svelte.md`, `standards/komodo-context.md`.
+
+### Changed
+- `standards/comments.md` and `standards/testing-go.md` substantially rewritten; `testing.md` renamed to `testing-ts.md` to pair with the new Go-specific standard.
+
+## [0.5.0] — 2026-05-18
+
+### Added
+- `advisor` agent, `swe-test` agent, `standards/testing.md`, `standards/token-efficiency.md`, `standards/comments.md`, `standards/todo.md`, `standards/principles.md`, `standards/python.md`, `standards/testing-go.md`.
+
+## [0.4.0] — 2026-04-08
+
+### Removed
+- `customer-servicing`, `lawyer`, `marketing`, `sales`, most of `project-manager`, `quality-assurance`, `robotics` agents and their skills — first pass at narrowing scope off the original multi-industry roster.
+
+### Added
+- `swe-embedded` agent.
+
+### Changed
+- `CLAUDE.md` reworked to drop MCP-agent references now that the roster is trimmed.
+
+## [0.3.1] — 2026-03-31
+
+### Added
+- Brief TODO-tracking and SDK-usage notes appended to `project-manager`/`swe` agent files.
+
+## [0.3.0] — 2026-03-28
+
+### Added
+- `claude/standards/` — `api-design.md`, `go.md`, `logging.md`, `pull-requests.md`, `security.md`, `sql.md`, `typescript.md`, plus a standards `README.md` index.
+- `git-flow.md` skill, `project-management/trello.md` skill.
+
+## [0.2.0] — 2026-03-24
+
+### Added
+- Skills spanning agriculture, customer service, marketing, sales, project workflows, and engineering subfields (electrical, hardware BOM, mechanical, robotics ROS, API middleware, DB migration, Terraform) — the repo's original scope was cross-industry, not software/hardware-only.
+
+### Changed
+- Software UI skills (`add-route`, `new-component`, `new-page`, `new-service`) relocated under `engineering/software/ui/`.
+
+## [0.1.0] — 2026-03-24
+
+### Added
+- `setup.sh` symlink installer, `claude/settings.json`, first skill set (`add-route`, `new-component`, `new-page`, `new-service`) under `claude/skills/`.
