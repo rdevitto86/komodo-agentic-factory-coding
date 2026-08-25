@@ -2,6 +2,17 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.25.0] — 2026-08-25
+
+### Added
+- `generate-pr-description` skill + `.github/PULL_REQUEST_TEMPLATE.md` — fills a PR body from the real diff against the repo's own template.
+
+### Changed
+- `git_guard.py` + `settings.json` — replaced the blanket git-mutation deny with protected-ref enforcement; the agent may now branch, commit, push its own branch, and open a pull request, still barred from `main`/`master`/`trunk`/`prod`/`production`/`release/*`/`hotfix/*` and from history rewrites and merges.
+- `rules-source-control` — rewritten for the new capabilities, the protected-ref list, the `PUBLISH_ENABLED` kill switch, and `git merge --ff-only`/`git pull --ff-only` recovery.
+- `generate-changelog` — tag creation is fully the user's now; dropped the agent tag-creation instruction.
+- `config-accessibility-output` — added the fixed ✅/❌/⚠️ turn-end change summary schema.
+
 ## [0.24.2] — 2026-08-25
 
 ### Changed

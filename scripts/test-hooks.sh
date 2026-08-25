@@ -386,7 +386,7 @@ bash_case "G6  sh -c wrapper is unwrapped"           deny  'sh -c "git push orig
 bash_case "G7  sed -i is blocked"                    deny  "sed -i '' 's/a/b/' main.go"   "bypassing the comment guard"
 bash_case "G8  redirect into a code file is blocked" deny  'cat > handler.go'             "bypasses the comment guard"
 bash_case "G9  chained read-only git is allowed"     allow 'git status && git diff --stat'
-bash_case "G10 chained commit is caught"             deny  'git diff && git commit -m x'  "git commit"
+bash_case_at "G10 chained commit is caught"          deny  "$ON_MAIN" 'git diff && git commit -m x' "git commit"
 bash_case "G11 bare git branch lists and is allowed" allow 'git branch -a'
 bash_case "G12 an off-taxonomy branch name is blocked" deny 'git branch feature/x'        "must match <type>/<kebab-case>"
 bash_case "G13 git stash push is allowed"            allow 'git stash'
@@ -415,15 +415,15 @@ bash_case "G31 cp over a code path is blocked"       deny  'cp /tmp/staged.go ha
 bash_case "G32 mv over a code path is blocked"       deny  'mv /tmp/staged.go handler.go'  "bypasses the comment guard"
 bash_case "G33 cp between non-code paths is allowed" allow 'cp /tmp/a.txt /tmp/b.txt'
 bash_case "G34 mv of a directory listing is allowed" allow 'mv build/ dist/'
-bash_case "G35 time git commit is caught"            deny  'time git commit -m x'          "git commit"
-bash_case "G36 command git commit is caught"         deny  'command git commit -m x'        "git commit"
-bash_case "G37 xargs git commit is caught"           deny  'xargs -I{} git commit -m x'     "git commit"
+bash_case_at "G35 time git commit is caught"         deny  "$ON_MAIN" 'time git commit -m x' "git commit"
+bash_case_at "G36 command git commit is caught"      deny  "$ON_MAIN" 'command git commit -m x' "git commit"
+bash_case_at "G37 xargs git commit is caught"        deny  "$ON_MAIN" 'xargs -I{} git commit -m x' "git commit"
 bash_case "G38 nohup git push is caught"             deny  'nohup git push origin main &'   "git push"
-bash_case "G39 eval of a git string is caught"       deny  'eval "git commit -m x"'         "git commit"
+bash_case_at "G39 eval of a git string is caught"    deny  "$ON_MAIN" 'eval "git commit -m x"' "git commit"
 bash_case "G40 time go test is allowed"              allow 'time go test ./...'
 mkdir -p "$WORKDIR/somedir"
-bash_case "G41 an unlisted long value-flag on a passthrough wrapper doesn't hide the wrapped command" \
-  deny  'time --output logfile.py git commit -am msg' "git commit"
+bash_case_at "G41 an unlisted long value-flag on a passthrough wrapper doesn't hide the wrapped command" \
+  deny  "$ON_MAIN" 'time --output logfile.py git commit -am msg' "git commit"
 bash_case "G42 mv into a trailing-slash directory destination is blocked" \
   deny  'mv payload.py somedir/' "bypasses the comment guard"
 bash_case "G43 cp into an existing bare-name directory destination is blocked" \

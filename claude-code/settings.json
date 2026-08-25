@@ -134,7 +134,8 @@
     "audit-security": "name-only",
     "audit-simplify": "name-only",
     "audit-performance": "name-only",
-    "generate-commit-message": "name-only"
+    "generate-commit-message": "name-only",
+    "generate-pr-description": "name-only"
   },
   "hooks": {
     "PreToolUse": [
