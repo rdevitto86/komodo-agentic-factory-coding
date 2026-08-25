@@ -32,7 +32,7 @@ The SDD sections a code build actually depends on:
 
 ## P2.3 · Review
 
-`/code-review` against the task. **Invoke it with the task text and which `standards-*` skills the touched files load** (the language skill at minimum; `standards-docker` for a touched `Dockerfile`/`docker-compose.yaml`, `standards-security` for a touched auth/secret/boundary path) — an unbriefed review picks its own lenses, which is not a repeatable gate. The lenses that matter:
+`/audit-bugs` against the task, always. Add `/audit-security` when the touched surface includes an auth/secret/boundary path. **Invoke each with the task text and which `standards-*` skills the touched files load** (the language skill at minimum; `standards-docker` for a touched `Dockerfile`/`docker-compose.yaml`, `standards-security` for a touched auth/secret/boundary path) — an unbriefed review picks its own lenses, which is not a repeatable gate. The lenses that matter:
 
 - **Correctness** — does it do what the story said, including the edge the story named
 - **Security** — new boundary, new query, new secret handling
@@ -40,7 +40,17 @@ The SDD sections a code build actually depends on:
 - **Idiom** — does it read like the code around it
 - **Comment discipline** — the guard blocks additions at write time; a review still catches one smuggled through an allowed slot
 
-**Findings on correctness, security, or a stated requirement return to P2.1. Everything else is optional.**
+**Neither call takes `--report` here** — each files its findings to `BACKLOG.md` like any standalone run. Findings on correctness, security, or a stated requirement are folded straight into P2.0's pick and become the next P2.1 task, in this same pass. Everything else is optional and stays filed for later.
+
+---
+
+## P2.4 · Closeout
+
+**Once per band, not per-task** — after every task in the current pick is green, before `/workflow-consolidate` runs. Clears the target state's four standing closeout stories.
+
+`/audit-bugs`, `/audit-security`, `/audit-simplify` against the whole band's diff, then confirm the perf suite ran. **Never a fork of this session** — same reason as P2.3: a fork that saw the reasoning behind the code will agree with it. **No `--report` here either** — each files to `BACKLOG.md`. Every story a call just filed is folded into P2.0's pick and resolved in this same pass: fixed via `/workflow-implement`, or explicitly declined and removed with the reason noted. None of it waits for the next `/workflow-loop` run.
+
+**Ends when:** the four closeout stories' findings are fixed or explicitly declined — that satisfies their `Done when: findings triaged`, so `/workflow-consolidate` deletes them like any other finished story.
 
 ---
 

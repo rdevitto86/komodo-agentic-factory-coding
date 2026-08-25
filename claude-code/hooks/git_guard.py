@@ -62,6 +62,19 @@ READ_ONLY_MODES = {"stash": ("list", "show")}
 GIT_GLOBAL_FLAGS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path")
 
 SHELL_WRAPPERS = ("sh", "bash", "zsh", "dash", "ksh", "env")
+PASSTHROUGH_WRAPPERS = ("time", "command", "nohup", "xargs")
+PASSTHROUGH_VALUE_FLAGS = {
+    "time": ("-f", "-o"),
+    "command": (),
+    "nohup": (),
+    "xargs": ("-I", "-n", "-P", "-L", "-s", "-a", "-d", "-E"),
+}
+
+# Names strip_leading_flags treats as "this must be the wrapped command,
+# not a flag's value" when it meets an option it doesn't recognize.
+MONITORED_COMMANDS = SHELL_WRAPPERS + PASSTHROUGH_WRAPPERS + ("git", "cp", "mv", "tee", "eval")
+
+CP_MV_TARGET_FLAGS = ("-t", "--target-directory")
 
 SEGMENT_SPLIT = re.compile(r"&&|\|\||[;\n|]")
 REDIRECT = re.compile(r"(?<![-=<0-9&])>>?\s*([^\s;&|>]+)")
@@ -70,6 +83,31 @@ QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 INPLACE_SED = re.compile(r"\bsed\b[^;|&]*?(?:\s-[a-zA-Z]*i\b|\s--in-place\b)")
 INPLACE_PERL = re.compile(r"\bperl\b[^;|&]*?\s-[a-zA-Z]*i\b")
 PYTHON_WRITE = re.compile(r"\bpython3?\b[^;|&]*?-c\b.*?open\s*\([^)]*['\"][wa]")
+
+
+def parse_cp_mv_target(tokens):
+    # cp/mv -t DIR (or --target-directory[=DIR]) names the real
+    # destination out of order; everything else stays positional.
+    index = 0
+    target_dir = None
+    positional = []
+    while index < len(tokens):
+        token = tokens[index]
+        if token in CP_MV_TARGET_FLAGS:
+            if index + 1 < len(tokens):
+                target_dir = tokens[index + 1]
+            index += 2
+            continue
+        if token.startswith("--target-directory="):
+            target_dir = token.split("=", 1)[1]
+            index += 1
+            continue
+        if token.startswith("-") and token != "-":
+            index += 1
+            continue
+        positional.append(token)
+        index += 1
+    return target_dir, positional
 
 
 def is_code_path(token):
@@ -102,6 +140,26 @@ def strip_env_assignments(tokens):
     index = 0
     while index < len(tokens) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[index]):
         index += 1
+    return tokens[index:]
+
+
+def strip_leading_flags(tokens, value_flags):
+    index = 0
+    while index < len(tokens) and tokens[index].startswith("-"):
+        flag = tokens[index]
+        index += 1
+        if flag in value_flags:
+            index += 1
+            continue
+        if "=" in flag:
+            continue
+        # An option we don't have on record: if what follows doesn't look
+        # like the wrapped command itself, assume it's this flag's value
+        # rather than mis-starting the inner command at that token.
+        if index < len(tokens):
+            nxt = tokens[index]
+            if not nxt.startswith("-") and os.path.basename(nxt) not in MONITORED_COMMANDS:
+                index += 1
     return tokens[index:]
 
 
@@ -160,11 +218,52 @@ def scan_segment(segment, findings):
             if token == "-c" and index + 1 < len(tokens):
                 scan_command(tokens[index + 1], findings)
         return
+    if command == "eval":
+        inner = tokens[1:]
+        if inner:
+            scan_command(" ".join(inner), findings)
+        return
+    if command in PASSTHROUGH_WRAPPERS:
+        inner = strip_leading_flags(tokens[1:], PASSTHROUGH_VALUE_FLAGS[command])
+        if inner:
+            scan_command(" ".join(inner), findings)
+        return
     if command == "tee":
         for token in tokens[1:]:
             if is_code_path(token):
                 findings.append("tee writing to %s bypasses the comment guard" % token)
                 break
+        return
+    if command in ("cp", "mv"):
+        target_dir, positional = parse_cp_mv_target(tokens[1:])
+        if target_dir is not None:
+            if is_code_path(target_dir):
+                findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
+                return
+            for source in positional:
+                if is_code_path(source):
+                    findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
+                    break
+            return
+        if not positional:
+            return
+        destination = positional[-1]
+        sources = positional[:-1]
+        dest_clean = destination.strip("\"'")
+        stripped = dest_clean.rstrip("/")
+        _, dest_ext = os.path.splitext(stripped)
+        dest_is_dir = (
+            dest_clean.endswith("/")
+            or (bool(stripped) and os.path.isdir(stripped))
+            or (bool(stripped) and not dest_ext and not os.path.isfile(stripped))
+        )
+        if dest_is_dir:
+            for source in sources:
+                if is_code_path(source):
+                    findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
+                    break
+        elif is_code_path(destination):
+            findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
         return
     if command == "git":
         subcommand, args = git_subcommand(tokens)

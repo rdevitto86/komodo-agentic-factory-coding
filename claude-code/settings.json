@@ -97,7 +97,6 @@
       "Read(./**/credentials)"
     ]
   },
-  "model": "sonnet",
   "skillOverrides": {
     "config-accessibility-output": "name-only",
     "rules-commenting": "name-only",
@@ -141,6 +140,17 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/comment_guard.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/auto_format.py"
           }
         ]
       }

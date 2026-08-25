@@ -1,11 +1,11 @@
 ---
-name: assess-readiness
-description: Full-repo readiness audit against a mission brief. Severity-ranked, evidence-backed findings and a single verdict.
-argument-hint: <mission brief — purpose, target state, decision to render>
+name: audit-readiness
+description: Full-repo readiness audit against a mission brief. Severity-ranked, evidence-backed findings and a single verdict, filed as BACKLOG.md stories. Pass --report to skip the write.
+argument-hint: <mission brief — purpose, target state, decision to render> [--report]
 disable-model-invocation: true
 ---
 
-# Audit
+# Readiness audit
 
 Mission brief: **$ARGUMENTS**
 
@@ -16,7 +16,7 @@ The brief states the app's purpose, its target state, and the decision to render
 - **Re-derive everything from the code as it is now.** No prior run, score, or ledger carries forward.
 - **Review the code as-is.** Do not assume it needs changing.
 - **Run the repo's own gate first** — build, vet, test, lint. A red gate is itself evidence, and **any claim about build or test status is re-verified by execution, never by reading.**
-- **Load `BACKLOG.md` first.** A finding matching an open story is tagged `[tracked]` and keeps its tier. Tracking never clears the bar — a tracked Blocker still blocks.
+- **Load `BACKLOG.md` first.** A finding matching an open story is tagged `[tracked]` and keeps its tier — never filed twice. Tracking never clears the bar — a tracked Blocker still blocks.
 - **Every finding carries `file:line` evidence.** No pointer, no finding.
 - **Report only findings you hold at medium confidence or higher.** A Blocker needs high confidence; if evidence is incomplete, state what would confirm it and keep it out of the verdict.
 - **Prerequisites outside this repo never move the verdict.** List them once, separately.
@@ -48,9 +48,7 @@ Apply each only to surfaces that actually exist here.
 
 Missing features and improvement ideas are welcome as low-severity findings unless they hide a real defect.
 
-## Output — report only
-
-**Never write to `BACKLOG.md`.** Report findings; the user decides what becomes a story. Offer at the end: "Want any of these turned into stories? Run `/generate-backlog`."
+## Output
 
 ```markdown
 ## 🔍 Verdict
@@ -68,3 +66,7 @@ Missing features and improvement ideas are welcome as low-severity findings unle
 ```
 
 Cap the findings table at 15 rows. Past that, report the top 15 by severity and state how many were omitted — an unbounded finding dump is noise, not an audit.
+
+## Findings → backlog
+
+Every Blocker and every `📋 Findings` row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <what> · S → \`file:line\` no longer holds`. A row already `[tracked]` against an open story is skipped, not duplicated. Append under the current target state (the first `##` heading) and the domain matching the finding's area, or `Cross-Cutting` if none fits — full story-line rules live in `generate-backlog`. `--report` prints the verdict and tables only; nothing is written.

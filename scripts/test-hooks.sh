@@ -339,6 +339,19 @@ expect "C52 a manual not under a shebang prompts" ask \
 {"tool_name":"Write","tool_input":{"file_path":"/x/deploy.sh","content":"set -euo pipefail\n#\n# deploy.sh - ships the current build to staging.\n#\necho hi\n"}}
 JSON
 
+expect "C56 a pre-existing echo comment already in old_string doesn't re-prompt" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"// InitStore inits a store\nfunc InitStore() {}\nfoo()","new_string":"// InitStore inits a store\nfunc InitStore() {}\nbar()"}}
+JSON
+
+expect "C56b a new echo comment on an untouched neighbor line still prompts" ask \
+  "restates the name" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"foo()","new_string":"// InitStore inits a store\nfunc InitStore() {}\nfoo()"}}
+JSON
+
+printf '// Helper does the work\nfunc Other() {}\nfoo()\n' > "$WORKDIR/helper.go"
+printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/helper.go","old_string":"foo()","new_string":"// Helper does the work\\nfunc Helper() {}\\nfoo()"}}' "$WORKDIR" \
+  | expect "C56c an echo comment whose exact text already exists elsewhere in the file still prompts" ask "restates the name"
+
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
 printf '\ngit guard\n\n'
@@ -377,6 +390,98 @@ bash_case "G29 a redirect on the heredoc opener still blocks" deny 'cat <<'"'"'E
 package main
 EOF' "bypasses the comment guard"
 bash_case "G30 numeric fd redirect is not a code path" allow 'go build ./... 2>&1'
+bash_case "G31 cp over a code path is blocked"       deny  'cp /tmp/staged.go handler.go'  "bypasses the comment guard"
+bash_case "G32 mv over a code path is blocked"       deny  'mv /tmp/staged.go handler.go'  "bypasses the comment guard"
+bash_case "G33 cp between non-code paths is allowed" allow 'cp /tmp/a.txt /tmp/b.txt'
+bash_case "G34 mv of a directory listing is allowed" allow 'mv build/ dist/'
+bash_case "G35 time git commit is caught"            deny  'time git commit -m x'          "git commit"
+bash_case "G36 command git commit is caught"         deny  'command git commit -m x'        "git commit"
+bash_case "G37 xargs git commit is caught"           deny  'xargs -I{} git commit -m x'     "git commit"
+bash_case "G38 nohup git push is caught"             deny  'nohup git push origin main &'   "git push"
+bash_case "G39 eval of a git string is caught"       deny  'eval "git commit -m x"'         "git commit"
+bash_case "G40 time go test is allowed"              allow 'time go test ./...'
+mkdir -p "$WORKDIR/somedir"
+bash_case "G41 an unlisted long value-flag on a passthrough wrapper doesn't hide the wrapped command" \
+  deny  'time --output logfile.py git commit -am msg' "git commit"
+bash_case "G42 mv into a trailing-slash directory destination is blocked" \
+  deny  'mv payload.py somedir/' "bypasses the comment guard"
+bash_case "G43 cp into an existing bare-name directory destination is blocked" \
+  deny  "cp payload.py $WORKDIR/somedir" "bypasses the comment guard"
+bash_case "G44 cp -t names the real target out of position" \
+  deny  'cp -t module.py staged.txt' "bypasses the comment guard"
+bash_case "G45 cp -t DIR still checks the sources being placed" \
+  deny  'cp -t somedir payload.go' "bypasses the comment guard"
+bash_case "G46 mv -t DIR/ still checks the sources being placed" \
+  deny  'mv -t assets/ handler.go' "bypasses the comment guard"
+bash_case "G47 mv into a directory created earlier in the same command" \
+  deny  'mkdir -p brandnewdir && mv payload.go brandnewdir' "bypasses the comment guard"
+
+# ──────────────────────────────  auto format  ──────────────────────────────
+HOOK="$HOOKS/auto_format.py"
+printf '\nauto format\n\n'
+
+auto_format_case() {
+  local label="$1" want_changed="$2" file="$3" tool="$4" path_override="${5:-}"
+  local before after
+  before="$(cat "$file")"
+  if [ -n "$path_override" ]; then
+    PATH="$path_override" printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
+      | PATH="$path_override" python3 "$HOOK" > /dev/null 2>&1
+  else
+    printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
+      | python3 "$HOOK" > /dev/null 2>&1
+  fi
+  local rc=$?
+  after="$(cat "$file")"
+  local problem=""
+  if [ "$rc" -ne 0 ]; then
+    problem="hook exited $rc instead of 0"
+  elif [ "$want_changed" = "yes" ] && [ "$before" = "$after" ]; then
+    problem="file was not reformatted"
+  elif [ "$want_changed" = "no" ] && [ "$before" != "$after" ]; then
+    problem="file was reformatted when it should have been left alone"
+  fi
+  if [ -z "$problem" ]; then
+    printf '  PASS  %s\n' "$label"
+    printf 'PASS\n' >> "$RESULTS"
+  else
+    printf '  FAIL  %s\n        %s\n' "$label" "$problem"
+    printf 'FAIL\n' >> "$RESULTS"
+  fi
+}
+
+FMT="$WORKDIR/fmt"
+EMPTYBIN="$WORKDIR/emptybin"
+mkdir -p "$FMT" "$EMPTYBIN"
+ln -s "$(command -v python3)" "$EMPTYBIN/python3"
+
+printf 'package main\n\nfunc  main() {}\n' > "$FMT/main.go"
+auto_format_case "F1  gofmt reformats a .go file when gofmt is present" \
+  yes "$FMT/main.go" "Write"
+
+printf 'package main\n\nfunc  main() {}\n' > "$FMT/nogofmt.go"
+auto_format_case "F2  no-ops silently when gofmt isn't on PATH" \
+  no "$FMT/nogofmt.go" "Write" "$EMPTYBIN"
+
+printf 'const   x = 1;\n' > "$FMT/widget.ts"
+auto_format_case "F3  no-ops silently when prettier isn't on PATH" \
+  no "$FMT/widget.ts" "Edit" "$EMPTYBIN"
+
+printf 'not a real config file\n' > "$FMT/notes.txt"
+auto_format_case "F4  an extension with no formatter is left alone" \
+  no "$FMT/notes.txt" "Write"
+
+expect "F5  MultiEdit is not in scope and never blocks" allow <<JSON
+{"tool_name":"MultiEdit","tool_input":{"file_path":"$FMT/main.go"}}
+JSON
+
+expect "F6  a missing file_path never blocks" allow <<'JSON'
+{"tool_name":"Write","tool_input":{}}
+JSON
+
+expect "F7  a malformed payload fails open, not closed" allow <<'JSON'
+{"tool_name":"Write","tool_input":
+JSON
 
 # --- Context injector ---
 printf '\ncontext injector\n\n'

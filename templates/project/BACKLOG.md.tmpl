@@ -10,9 +10,9 @@ Open work only. Format and rules live in the `worklog` skill — load it before 
 - [M] Install the SDK git hooks and point `core.hooksPath` at them · S → `git config --get core.hooksPath`
 - [H] PR pipeline: lint → unit → component → contract → secret/dependency/SAST scans · M → `{{CI_LOCAL}}`
 - [H] Release pipeline: build → deploy green → smoke → flip → integration → e2e · M → `{{RELEASE_DRYRUN}}`
-- [H] Security review: run `/security-review` · S → findings triaged
-- [H] Bug sweep: run `/code-review` · S → findings triaged
-- [M] Code smell: run `/simplify` · S → findings triaged
+- [H] Security review: run `/audit-security` · S → findings triaged
+- [H] Bug sweep: run `/audit-bugs` · S → findings triaged
+- [M] Code smell: run `/audit-simplify` · S → findings triaged
 - [M] Performance: run the perf suite · S → `{{PERF}}`
 
 ## Next — V2

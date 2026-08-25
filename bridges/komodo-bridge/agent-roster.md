@@ -28,7 +28,7 @@ That fact alone decides where an agent lives:
 
 **That falls hardest on exactly the two tools built to take large inputs.** A review tool that silently drops half its input returns confident findings about code it never saw, which is worse than no review.
 
-`quality-assurance` is therefore gone from `allAgents()`. Its job is now split: deterministic scanners in CI catch what a checklist catches, and `/code-review` on a fresh context handles judgement. `summarize` remains, and should be treated as best-effort on bounded input until the bridge sets a context size.
+`quality-assurance` is therefore gone from `allAgents()`. Its job is now split: deterministic scanners in CI catch what a checklist catches, and `/audit-bugs`/`/audit-security`/`/audit-simplify` on a fresh context handle judgement — model-agnostic by design, so a bridge-only run still has a review path. `summarize` remains, and should be treated as best-effort on bounded input until the bridge sets a context size.
 
 **A bridge call is never a gate.** Any loop step that calls it treats an unreachable server as a skipped optional step, never a blocker — the hybrid is there for cheap help, not to add a dependency that can stall a build.
 
@@ -47,7 +47,7 @@ Each maps to `bridges/komodo-bridge/agents/<name>/agent.md` — flat frontmatter
 ```yaml
 # ~/.komodo/docker-compose.yaml
 volumes:
-  - ${HOME}/komodo/ai/komodo-agentic-config/bridges/komodo-bridge/agents:/app/agents:ro
+  - ${HOME}/komodo/ai/komodo-agentic-tools-code/bridges/komodo-bridge/agents:/app/agents:ro
 ```
 
 This repo is the single source of truth — agents are never copied into `~/.komodo`. Edits here take effect on the next bridge restart.

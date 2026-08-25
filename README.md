@@ -1,11 +1,11 @@
-# komodo-agentic-config
+# komodo-agentic-tools-code
 
 Agent configuration for software/hardware engineering, shared across every Komodo project. `claude-code/` mirrors `~/.claude/` one-to-one and is symlinked there.
 
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~1,242 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+2. **Base context stays tiny.** ~1,582 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
@@ -26,11 +26,12 @@ claude-code/          mirrors ~/.claude exactly
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           implementer, planner, engineering, scout
-├── hooks/            comment_guard, git_guard, verify_gate, context_injector
-└── skills/           33 active, 3 parked, lazily loaded
+├── hooks/            comment_guard, git_guard, verify_gate, context_injector, auto_format
+└── skills/           41 active, 3 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
-scripts/              validate.sh, test-hooks.sh, portable git hooks
+scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
+.github/workflows/    CI — runs test-hooks.sh and validate.sh on push/PR
 ```
 
 ## The workflow loop
@@ -51,7 +52,7 @@ Each repo carries five documents. `generate-readme` owns the entry point; `gener
 
 ## The hooks
 
-Two guards run as `PreToolUse`, so a violation never reaches disk. Two more run at the session's edges.
+Two guards run as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
 
 | Hook | Fires on | Does | On error |
 |---|---|---|---|
@@ -59,8 +60,9 @@ Two guards run as `PreToolUse`, so a violation never reaches disk. Two more run 
 | `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites | **Closed** |
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
+| `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |
 
-**The failure policy is inverted on purpose.** The guards fail closed because a missed comment reaches disk. The other two fail open because neither may be able to brick a session.
+**The failure policy is inverted on purpose.** The guards fail closed because a missed comment reaches disk. The other three fail open because none of them may be able to brick a session.
 
 `comment_guard.py` compares **comment multisets** rather than diff hunks. Editing the line a comment sits on, or reindenting it, is not a change. Deleting it is.
 
@@ -74,7 +76,7 @@ Two guards run as `PreToolUse`, so a violation never reaches disk. Two more run 
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 98 regression cases
+bash scripts/test-hooks.sh    # 125 regression cases
 ```
 
 ## Skills
@@ -91,7 +93,7 @@ bash scripts/test-hooks.sh    # 98 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/generate-backlog` `/generate-changelog` `/generate-repo` `/assess-readiness` `/generate-readme` `/assess-change-risk` `/assess-code-quality` `/assess-security` `/assess-bugs` `/workflow-complete`
+Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/generate-backlog` `/generate-changelog` `/generate-repo` `/generate-commit-message` `/audit-readiness` `/generate-readme` `/audit-backlog` `/audit-change-risk` `/audit-code-quality` `/audit-bugs` `/audit-security` `/audit-simplify` `/audit-performance` `/workflow-complete`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 

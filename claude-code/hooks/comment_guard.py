@@ -168,15 +168,15 @@ def scan_comments(text, family, ext=None):
 
     return found
 
-def check_echoes(lines, family):
+def check_echoes(lines, family, old_comments=frozenset()):
     """Detect comments where first word matches the function/type name right below it."""
     line_marker = FAMILY_SYNTAX[family][0]
     if not line_marker: return set()
     echoes = set()
-    
+
     for i in range(len(lines) - 1):
         curr, nxt = lines[i].strip(), lines[i+1].strip()
-        if curr.startswith(line_marker):
+        if curr.startswith(line_marker) and curr not in old_comments:
             for pattern in DECL_NAME:
                 match = pattern.match(nxt)
                 if match:
@@ -218,9 +218,10 @@ def handle_pre(payload):
         new_scanned.extend((d, False, False) for d in scan_docstrings(new_text) if d not in old_docs)
 
     scope = prior if prior.strip() else old_text
+    scope_scanned = scan_comments(scope, family, ext)
     surviving = Counter(c[0] for c in new_scanned)
     removed = []
-    for body, count in Counter(c[0] for c in scan_comments(scope, family, ext)).items():
+    for body, count in Counter(c[0] for c in scope_scanned).items():
         if count > surviving.get(body, 0):
             removed.append(body)
 
@@ -230,7 +231,10 @@ def handle_pre(payload):
                 + "\n\nApprove only if the removal is intended. Moving code? "
                   "Re-add each line verbatim at the destination.")
 
-    echoes = check_echoes(new_text.splitlines(), family)
+    # scoped to the edit's own prior context, not the whole file — a comment
+    # that merely happens to already exist elsewhere is still a fresh echo
+    edit_old_comments = set(c[0] for c in scope_scanned)
+    echoes = check_echoes(new_text.splitlines(), family, edit_old_comments)
     if echoes:
         respond("ask", f"This comment restates the name of the identifier below it, in {os.path.basename(path)} — code should be self-documenting:\n"
                 + "\n".join(echoes)

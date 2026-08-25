@@ -1,10 +1,27 @@
 # Changelog
 
-Notable changes to komodo-agentic-config. Format follows Keep a Changelog; versions follow SemVer.
+Notable changes to komodo-agentic-tools-code. Format follows Keep a Changelog; versions follow SemVer.
 
 Append-only — a released section is never rewritten. Format rules live in the `standards-worklog` skill.
 
 ## [Unreleased]
+
+## [0.2.0] — 2026-08-24
+
+### Added
+- `.github/workflows/ci.yml` — runs `scripts/test-hooks.sh` and `scripts/validate.sh` on push/PR, closing the gap where the hook and budget regressions only ran locally.
+- `auto_format.py` — new `PostToolUse` hook on Edit/Write, running `gofmt`/`.go` and `prettier`/JS-TS-CSS-etc after every write; no-ops (exit 0) when the formatter isn't on `PATH`, matching the fail-open policy of `verify_gate.py`/`context_injector.py`. Registered in `settings.json`; `scripts/test-hooks.sh` grew F1–F7 (118 → 125 passing).
+- `standards-python` — a "Repo layout" section noting `generate-repo` Create is unsupported for Python (no `templates/python/` needed, matching the other unsupported languages).
+
+### Fixed
+- `comment_guard.py` — `handle_pre` no longer recomputes `scan_comments` a second time in `check_echoes`'s caller; the result is cached as `scope_scanned` and reused for both the removed-comment check and echo suppression.
+
+## [0.1.1] — 2026-08-24
+
+### Fixed
+- `git_guard.py` — `cp`/`mv` now scan their destination against `is_code_path` (plain and `-t`/`--target-directory` forms, including a not-yet-existing directory target), closing the bypass where copying a staged file over a code path skipped `comment_guard`. `scripts/test-hooks.sh` grew from 98 to 118 cases (G31–G47).
+- `git_guard.py` — recurses into `eval`/`time`/`command`/`xargs`/`nohup` wrappers with flag-aware value stripping, so `time git commit` and similar wrapped invocations no longer dodge the guard.
+- `comment_guard.py` — `check_echoes` suppression now scopes against the specific edit's own `old_string`/`old_text` context instead of a file-wide comment union, so a genuine new echo-comment violation is no longer masked by identical text existing elsewhere in the file.
 
 ## [0.1.0] — 2026-08-24
 

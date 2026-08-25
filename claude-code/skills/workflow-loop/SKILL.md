@@ -21,11 +21,12 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | Phase | Runs as | Fork agent |
 |---|---|---|
 | P0 Spec | Here — dialogue cannot be forked | — |
-| P1 Decompose | **`/workflow-decompose`** | `planner` |
+| P1 Decompose | **`/audit-backlog` then `/workflow-decompose`** | `planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
-| P2.3 Review | `/code-review` — isolated by construction | — |
+| P2.3 Review | `/audit-bugs` (+ `/audit-security`) — isolated by construction | — |
+| P2.4 Closeout | `/audit-bugs`, `/audit-security`, `/audit-simplify`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`** | `implementer` |
 | P4 Complete | Here — short output | — |
 
@@ -55,7 +56,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ## P1 · Decompose
 
-**Run `/workflow-decompose [target state]`.** It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue.
+**Run `/audit-backlog [scope]` first, on the same scope `$ARGUMENTS` names.** It's the cheap pass — stale, resolved, duplicate, or now-cleared `[BLOCKED]` lines surface here without the fork's full repo+changelog re-derivation. Carry its findings into `/workflow-decompose`'s brief; an unflagged backlog still runs the fork, but arrives with nothing left to recheck.
+
+**Run `/workflow-decompose [target state] [scope]`, forwarding `$ARGUMENTS` as the scope if it names one** — a domain or a story substring. Default with no scope: every story in the current target state that isn't `[BLOCKED]` after the fork's own recheck pass. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue.
 
 **If it reports `BACKLOG.md` missing**, create it here from `templates/project/BACKLOG.md.tmpl` and run it again. The fork is read-only by design.
 
@@ -74,6 +77,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 ### P2.0 · Align
 
 **Confirm and order P1's list.** Do not regenerate it — P1 already paid for those reads.
+
+**After a P2.3 or P2.4 audit call files new `BACKLOG.md` stories, fold them into this list before re-entering P2.1** — same domain, same pass. That is what keeps an audit finding from becoming stale backlog debt: it is picked up before this run ends, not left for the next `/workflow-loop` invocation to discover.
 
 **Pick tasks that share no dependency edge and no file.** Two tasks touching one file are one task.
 
@@ -103,19 +108,29 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ### P2.3 · Review
 
-**`/code-review`.** Never a fork of this session — a fork saw the reasoning that produced the code and will agree with it.
+**`/audit-bugs`, plus `/audit-security` when the touched surface warrants it** (the `ways/` file names the trigger). Never a fork of this session — a fork saw the reasoning that produced the code and will agree with it.
 
 **Review against the task, not the diff.** Did every acceptance condition land, and did anything outside the task change?
 
-**Findings that affect correctness, security, or a stated requirement return to P2.1.** Everything else is optional — a reviewer asked to find gaps will always find some, and chasing all of them produces defensive code and tests for cases that cannot happen.
+**Each call files its findings straight to `BACKLOG.md`, no `--report`.** Findings that affect correctness, security, or a stated requirement are folded into P2.0's pick and become the next P2.1 task in this same pass — not deferred. Everything else is optional and stays filed for a later pass — a reviewer asked to find gaps will always find some, and chasing all of them produces defensive code and tests for cases that cannot happen.
 
-**Ends when:** findings are fixed or explicitly declined. Green ends the task; loop back to P2.0 for the next one.
+**Ends when:** every story the calls filed for this task is fixed or confirmed genuinely optional. Green ends the task; loop back to P2.0 for the next one.
+
+### P2.4 · Closeout
+
+**`/audit-bugs`, `/audit-security`, `/audit-simplify` against the whole band, once, plus the perf suite.** Runs after every task in the pick is green, before P3 — never per-task, never a fork, same reasoning as P2.3.
+
+**Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story a call just filed for this band is folded into P2.0's pick and resolved in this same pass — fixed via `/workflow-implement`, or explicitly declined and removed from `BACKLOG.md` with the reason noted for P4's report. A closeout finding left open past this phase is exactly the pile-up this step exists to prevent.
+
+**Clears the target state's four standing closeout stories.** This is what stops them sitting open forever: they are never picked as ordinary P2.1 tasks — the `implementer` fork has no `Skill` tool and cannot invoke an audit skill — they are cleared here instead.
+
+**Ends when:** every story the closeout calls filed is fixed or explicitly declined — that satisfies the four stories' `Done when`, so P3 deletes them like any other finished story.
 
 ---
 
 ## P3 · Consolidate
 
-**Run `/workflow-consolidate <the task summaries that went green>`** once the whole band is done, not after each task.
+**Run `/workflow-consolidate <the task summaries that went green>`** once the whole band is done and P2.4 has cleared, not after each task.
 
 It writes the changelog entry, bumps the version, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the PRD or SDD** — those are frozen, and a change either needs comes back to you as a finding.
 
@@ -136,8 +151,8 @@ It writes the changelog entry, bumps the version, syncs the manifest, clears the
 - **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `generate-backlog`.
 - **Backing out is a rewrite.** Capture `git diff` before a risky write; `rules-source-control` owns handing the user the recovery command.
 - **The bridge is optional, never blocking.** An unreachable MCP server is a skipped step. Never branch a phase on whether it is up.
-- **Never poll a delegated phase.** A fork and a background `/code-review` both re-invoke this session the moment they finish. A scheduled check burns a full turn even when it lands on time, and can fire *stale* — after the work already completed — re-running dead instructions against state that already moved on.
-- **A P2.3 finding that needs standards verification goes back to a fork, never re-loaded into this window.** Loading `standards-*` skills here to re-check a finding the reviewer already grounded is the exact context drift forking exists to prevent — if it genuinely needs re-verifying, that is P2.1's job, not this session's.
+- **Never poll a delegated phase.** A fork and a backgrounded review both re-invoke this session the moment they finish. A scheduled check burns a full turn even when it lands on time, and can fire *stale* — after the work already completed — re-running dead instructions against state that already moved on.
+- **A P2.3 or P2.4 finding that needs standards verification goes back to a fork, never re-loaded into this window.** Loading `standards-*` skills here to re-check a finding the reviewer already grounded is the exact context drift forking exists to prevent — if it genuinely needs re-verifying, that is P2.1's job, not this session's.
 
 ---
 

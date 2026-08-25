@@ -53,7 +53,7 @@ Story line shape: `- [SEV][WIP] <text> · <size> · <req-id, optional> → \`<do
 - **Every story carries a severity tag and a relative size** (`S`/`M`/`L`). Break an XL down before writing it.
 - **`[WIP]` sits right after the severity tag** — `- [C][WIP] Idempotent POST /orders · M · S2 → ...`. Remove it in the same change that deletes the line.
 - **Delete the line in the same change that verifies it complete.** An absent line is the record.
-- **Never dump audit or review findings straight in.** Report them; the user decides what becomes a line.
+- **An `audit-*` skill files its own findings straight in** — that is its own `Findings → backlog` step, not this skill's. This skill's own runs (a planning pass, a normalize pass) never invent a line from a finding it did not itself derive from the repo or the source file being normalized.
 
 ### Foundation and Deploy edges
 
@@ -65,23 +65,27 @@ Story line shape: `- [SEV][WIP] <text> · <size> · <req-id, optional> → \`<do
 
   ```markdown
   - [H][BLOCKED] STG rollout + smoke · S → `...`
-    - Blocked: depends on the infra repo's stack for this service, which has
-      its own open `[BLOCKED]` story. See that repo's `BACKLOG.md`.
+    - Blocked (2026-08-24): depends on the infra repo's stack for this
+      service, which has its own open `[BLOCKED]` story. See that repo's
+      `BACKLOG.md`.
+    - Recheck: the infra repo's `BACKLOG.md` no longer lists that story as
+      `[BLOCKED]`.
   ```
 
 ### A blocked story
 
-**Stopping is a result, not a failure to report.** Keep the line, add `[BLOCKED]`, and indent the reason directly beneath it:
+**Stopping is a result, not a failure to report.** Keep the line, add `[BLOCKED]`, and indent a dated reason plus a `Recheck:` line directly beneath it — `Recheck:` names a cheap, testable condition, which is what lets `/workflow-decompose` clear the block on a later pass automatically instead of it sitting blocked forever:
 
 ```markdown
 - [H][BLOCKED] POST /orders/:id/refund · M · CP3 → `go test ./refund/...`
-  - Blocked: the SDK's `refund.Client` has no idempotency-key parameter at the
-    pinned version, so a retry double-refunds. Confirmed at
-    `vendor/forge/refund/client.go:88`. Needs an SDK change or a written
-    decision to accept the risk.
+  - Blocked (2026-08-24): the SDK's `refund.Client` has no idempotency-key
+    parameter at the pinned version, so a retry double-refunds. Confirmed at
+    `vendor/forge/refund/client.go:88`.
+  - Recheck: `grep -A2 'func.*Refund' vendor/forge/refund/client.go` shows an
+    idempotency-key param, or a written risk-acceptance decision is recorded.
 ```
 
-**Four sentences maximum, and it must carry a `file:line`.** A blocked note without a citation is a guess.
+**The `Blocked:` line is four sentences maximum and must carry a `file:line`.** A blocked note without a citation is a guess. **`Recheck:` is one line, one command or one condition** — if nothing testable exists, the block is a decision for the user, not a story state; say so instead of inventing a condition.
 
 ---
 
