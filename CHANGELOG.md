@@ -2,6 +2,11 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.24.2] — 2026-08-25
+
+### Changed
+- `git_guard.py` — `git tag` creation (lightweight and annotated) is now allowed for the agent; `-d`/`-D`/`--delete`/`-f`/`--force` stay denied. `settings.json` moved `Bash(git tag:*)` from deny to allow and added `Bash(bash setup.sh:*)`. `scripts/test-hooks.sh` grew G48–G51 covering the new split (125 → 129 passing). `generate-changelog` and `audit-changelog` updated to stop describing `git tag` as hard-denied.
+
 ## [0.24.1] — 2026-08-25
 
 ### Changed

@@ -14,7 +14,7 @@ Load `generate-changelog` first — every check below tests against rules it own
 ## Process
 
 1. **Read `CHANGELOG.md` in full**, every released section plus `[Unreleased]`.
-2. **List existing tags** by reading `.git/refs/tags/` and `.git/packed-refs` directly — never `git tag -l`, it's blocked. Flag any released section with no matching tag, and any tag with no matching section.
+2. **List existing tags** with `git tag -l`, or by reading `.git/refs/tags/` and `.git/packed-refs` directly. Flag any released section with no matching tag, and any tag with no matching section.
 3. **Check version ordering** — strictly descending below `[Unreleased]`, dates non-increasing top to bottom.
 4. **Check each release's bump against the rule table** (Minor needs a cited PRD requirement ID, Patch needs none, Major implies a broken contract) — flag a section whose bump size the cited entries don't support.
 5. **Check manifest sync** — if the repo has a language manifest (`package.json` and so on), its version field must match the most recent released heading. Go repos have none; skip.

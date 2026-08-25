@@ -62,7 +62,9 @@
       "Bash(source:*)",
       "Bash(export:*)",
       "Bash(true:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(git tag:*)",
+      "Bash(bash setup.sh:*)"
     ],
     "deny": [
       "Bash(git push:*)",
@@ -83,7 +85,6 @@
       "Bash(git mv:*)",
       "Bash(git apply:*)",
       "Bash(git worktree:*)",
-      "Bash(git tag:*)",
       "Bash(git am:*)",
       "Bash(git filter-branch:*)",
       "Bash(git update-ref:*)",

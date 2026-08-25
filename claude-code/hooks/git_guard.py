@@ -52,7 +52,7 @@ READ_ONLY_GIT = {
 
 MUTATING_FLAGS = {
     "branch": ("-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy", "--edit-description", "--set-upstream-to", "-u", "--unset-upstream"),
-    "tag": ("-d", "-D", "--delete", "-a", "-s", "-f", "--force", "-m", "--annotate", "--sign"),
+    "tag": ("-d", "-D", "--delete", "-f", "--force"),
     "remote": ("add", "remove", "rm", "rename", "set-url", "set-head", "set-branches", "prune"),
     "config": ("--unset", "--unset-all", "--add", "--replace-all", "--rename-section", "--remove-section", "--edit", "-e"),
 }
@@ -201,10 +201,6 @@ def git_violation(subcommand, args):
         positional = [arg for arg in args if not arg.startswith("-")]
         if positional:
             return "git branch %s creates a branch" % positional[0]
-    if subcommand == "tag":
-        positional = [arg for arg in args if not arg.startswith("-")]
-        if positional:
-            return "git tag %s creates a tag" % positional[0]
     return None
 
 

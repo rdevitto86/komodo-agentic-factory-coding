@@ -415,6 +415,12 @@ bash_case "G46 mv -t DIR/ still checks the sources being placed" \
   deny  'mv -t assets/ handler.go' "bypasses the comment guard"
 bash_case "G47 mv into a directory created earlier in the same command" \
   deny  'mkdir -p brandnewdir && mv payload.go brandnewdir' "bypasses the comment guard"
+bash_case "G48 git tag creating an annotated tag is allowed" \
+  allow 'git tag -a v1.2.3 abc123 -m "release"'
+bash_case "G49 git tag creating a lightweight tag is allowed" \
+  allow 'git tag v1.2.3 abc123'
+bash_case "G50 git tag -d is blocked"                deny  'git tag -d v1.2.3'            "changes repository state"
+bash_case "G51 git tag -f is blocked"                deny  'git tag -f v1.2.3 abc123'     "changes repository state"
 
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
