@@ -30,7 +30,7 @@ Destination and force-push conventions are owned by `standards-git`. The enforce
 
 ## Opening the PR
 
-`write-pr` runs `gh pr create`/`gh pr edit` directly once the branch is pushed — `workflow-loop`'s P4 (Publish) is the normal call site. `git_guard.py`'s `gh` allowlist scopes `pr edit`/`pr comment` to the current branch's own PR number; it cannot reach or touch anyone else's.
+`git-create-pr` runs `gh pr create`/`gh pr edit` directly once the branch is pushed — `workflow-loop`'s P4 (Publish) is the normal call site. `git_guard.py`'s `gh` allowlist scopes `pr edit`/`pr comment` to the current branch's own PR number; it cannot reach or touch anyone else's.
 
 ## Merging
 
