@@ -190,7 +190,7 @@ source = sys.argv[1]
 LANGUAGE_SKILLS = [
     "standards-go", "standards-typescript", "standards-python",
     "standards-c", "standards-vue", "standards-svelte", "standards-cdk",
-    "standards-shell", "standards-csharp",
+    "standards-shell",
 ]
 
 # Anchors, in required relative order. A skill may omit any anchor (a
