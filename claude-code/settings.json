@@ -136,8 +136,9 @@
     "audit-vulnerabilities": "name-only",
     "audit-dependencies": "name-only",
     "write-commit-message": "name-only",
-    "write-git-issue": "name-only",
-    "write-pr": "name-only"
+    "write-pr": "name-only",
+    "git-create-issue": "name-only",
+    "git-create-pr": "name-only"
   },
   "hooks": {
     "PreToolUse": [
