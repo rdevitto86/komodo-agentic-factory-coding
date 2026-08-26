@@ -1,6 +1,6 @@
 ---
 name: generate-repo
-description: Create a new repo's full skeleton, or scaffold/refresh its CLAUDE.md/AGENTS.md and the five standard documents.
+description: Create a new repo's full skeleton, or scaffold/refresh its CLAUDE.md/AGENTS.md and the four standard documents.
 argument-hint: [repo-type: go-api|go-mcp|vue-ui|svelte-ui|cdk-infra] [target path, defaults to cwd]
 context: fork
 agent: implementer
@@ -27,11 +27,12 @@ Claude Code auto-loads `CLAUDE.md` only, on every session, never `AGENTS.md` dir
 |---|---|
 | `CLAUDE.md`, `AGENTS.md` | `templates/project/*.tmpl` |
 | `BACKLOG.md`, `CHANGELOG.md` | `templates/project/*.tmpl` |
-| `docs/prd.md` | The `generate-prd` skill's section skeleton |
 | `docs/sdd.md` | The `generate-sdd` skill's section skeleton |
 | `README.md` | The `generate-readme` skill's fixed template |
 
-**The split is not arbitrary.** A `.tmpl` exists where the file ships with *seeded content* — closeout stories, an initial version heading. The PRD and SDD ship as pure section skeletons with nothing filled in, so duplicating them into a `.tmpl` would give the format two owners and let them drift.
+A PRD is a fifth, optional document — a Google Doc in Drive (`standards-prd`), never scaffolded here since it isn't a repo file.
+
+**The split is not arbitrary.** A `.tmpl` exists where the file ships with *seeded content* — closeout stories, an initial version heading. The SDD ships as a pure section skeleton with nothing filled in, so duplicating it into a `.tmpl` would give the format two owners and let them drift.
 
 This skill fills placeholders and writes the result — it never re-describes a shape in prose. If a placeholder changes, edit the `.tmpl`; if a seed story changes, edit the language skill's `Seed backlog` section.
 
@@ -51,13 +52,13 @@ A line only belongs in a generated `AGENTS.md` if it is a fact that `standards-s
 
 | Branch | Condition | What it writes |
 |---|---|---|
-| Create | Target path missing or empty | Full skeleton, `AGENTS.md`, all five documents |
+| Create | Target path missing or empty | Full skeleton, `AGENTS.md`, all four documents |
 | Scaffold | Target has code but no `AGENTS.md` | `AGENTS.md`; `README.md` if missing; appends seed stories to an existing `BACKLOG.md` |
 | Refresh | `AGENTS.md` exists | All sections, Deviations included; `README.md` scaffolded or refreshed; appends seed stories |
 
-**Only Create writes the five documents from scratch.** `BACKLOG.md` and `CHANGELOG.md` come from their `.tmpl`, with the repo type's `Seed backlog` stories spliced into `Cross-Cutting`. `docs/prd.md` and `docs/sdd.md` are written as empty section skeletons from `generate-prd` and `generate-sdd` — every section present, every body `NEEDS DECISION`. `README.md` is written by the `generate-readme` skill from Step 3's facts — the one document of the five with real content on day one, since it describes what already exists rather than what's planned.
+**Only Create writes the four documents from scratch.** `BACKLOG.md` and `CHANGELOG.md` come from their `.tmpl`, with the repo type's `Seed backlog` stories spliced into `Cross-Cutting`. `docs/sdd.md` is written as an empty section skeleton from `generate-sdd` — every section present, every body `NEEDS DECISION`. `README.md` is written by the `generate-readme` skill from Step 3's facts — the one document of the four with real content on day one, since it describes what already exists rather than what's planned.
 
-**Never fill a PRD or SDD section during generation.** A generated repo hands the user two skeletons to complete, not a spec invented from a repo type. That gate is the whole point of the document set.
+**Never fill an SDD section during generation.** A generated repo hands the user a skeleton to complete, not a spec invented from a repo type. That gate is the whole point of the document set. A PRD is out of scope here entirely — it's optional, external, and never authored from a coding session at all.
 
 **Scaffold and Refresh never create or restructure `BACKLOG.md`** — its domains and stories stay `generate-backlog`'s territory. When one already exists, the only touch either branch makes is appending seed stories not already present under `Cross-Cutting`, matched by text. Nothing else is read, reordered, or rewritten.
 
@@ -104,12 +105,12 @@ Walk every entry in the repo type's `Repo layout` tree:
 
 ## Step 6 — Write the documents
 
-Load `generate-prd` and `generate-sdd` for the spec skeletons, `generate-changelog` for `CHANGELOG.md`, and `generate-readme` for `README.md`. Splicing seed stories into `BACKLOG.md` needs only the story line shape — `- [SEV][WIP] <text> · <size> · <req-id, optional> → \`<done when>\`` — the full ruleset lives in `generate-backlog`, not needed for a splice.
+Load `generate-sdd` for the spec skeleton, `generate-changelog` for `CHANGELOG.md`, and `generate-readme` for `README.md`. Splicing seed stories into `BACKLOG.md` needs only the story line shape — `- [SEV][WIP] <text> · <size> · <req-id, optional> → \`<done when>\`` — the full ruleset lives in `generate-backlog`, not needed for a splice.
 
 - `CLAUDE.md` missing → write `templates/project/CLAUDE.md.tmpl` verbatim.
-- `AGENTS.md` missing → fill `templates/project/AGENTS.md.tmpl` from Step 3's values. Its Commands table drops any row the repo has no equivalent for (e.g. no "Run locally" for a `cdk-infra` repo) rather than guessing. Its Documents table is built fresh each time from what's actually on disk — `README.md`, `docs/prd.md`, `docs/sdd.md`, `BACKLOG.md`, `CHANGELOG.md` each get a row only if that file exists; on Create all five already exist by the time this step runs, so all five appear.
+- `AGENTS.md` missing → fill `templates/project/AGENTS.md.tmpl` from Step 3's values. Its Commands table drops any row the repo has no equivalent for (e.g. no "Run locally" for a `cdk-infra` repo) rather than guessing. Its Documents table is built fresh each time from what's actually on disk — `README.md`, `docs/sdd.md`, `BACKLOG.md`, `CHANGELOG.md` each get a row only if that file exists; on Create all four already exist by the time this step runs, so all four appear. A PRD never gets a row — it isn't a repo file.
 - **Create only** → copy `templates/project/BACKLOG.md.tmpl` and `templates/project/CHANGELOG.md.tmpl`, then splice Step 2's `Seed backlog` stories into `Cross-Cutting`.
-- **Create only** → write `docs/prd.md` and `docs/sdd.md` as full section skeletons from `generate-prd` and `generate-sdd`, every body `NEEDS DECISION`. Name them in the closing report as the user's next step; they gate everything downstream.
+- **Create only** → write `docs/sdd.md` as a full section skeleton from `generate-sdd`, every body `NEEDS DECISION`. Name it in the closing report as the user's next step; it gates everything downstream.
 - **`README.md` missing (any branch)** → hand off to `generate-readme`'s own Scaffold path using Step 3's facts. On Create, this runs after the tree is materialized (Step 5) so there's an entrypoint and commands to describe, not an empty skeleton.
 - **`README.md` exists (Scaffold / Refresh)** → hand off to `generate-readme`'s own Refresh path — it diffs and confirms itself; this skill doesn't duplicate that logic.
 - **Any branch, when `BACKLOG.md` already exists** → append only the seed stories not already present, matched by text, under `Cross-Cutting`. Read the whole file first; touch nothing else.

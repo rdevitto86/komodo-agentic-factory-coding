@@ -5,7 +5,7 @@ Agent configuration for software/hardware engineering, shared across every Komod
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~1,582 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+2. **Base context stays tiny.** ~894 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
@@ -27,7 +27,7 @@ claude-code/          mirrors ~/.claude exactly
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           implementer, planner, engineering, scout
 ├── hooks/            comment_guard, git_guard, verify_gate, context_injector, auto_format
-└── skills/           41 active, 3 parked, lazily loaded
+└── skills/           50 active, 3 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
@@ -40,12 +40,11 @@ scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
 
 The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
 
-Each repo carries five documents. `generate-readme` owns the entry point; `generate-prd` and `generate-sdd` own the two frozen specs; `generate-backlog` and `generate-changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both.
+Each repo carries four documents plus an optional PRD. `generate-readme` owns the entry point; `generate-sdd` owns the one frozen spec that lives in the repo; `generate-backlog` and `generate-changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. A PRD, when one exists, is a Google Doc in Drive — read-only via `standards-prd`, never a repo file.
 
 | File | Holds | Mutable |
 |---|---|---|
 | `README.md` | Entry point — what it is, how to run it | Yes, refreshed as it drifts |
-| `docs/prd.md` | What and why | Frozen at approval |
 | `docs/sdd.md` | How, and §10's slices | Frozen at approval |
 | `BACKLOG.md` | Open work | Yes |
 | `CHANGELOG.md` | What shipped, and the version | Append-only |
@@ -76,7 +75,7 @@ Two guards run as `PreToolUse`, so a violation never reaches disk. Three more ru
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 125 regression cases
+bash scripts/test-hooks.sh    # 127 regression cases
 ```
 
 ## Skills

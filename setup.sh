@@ -8,12 +8,21 @@
 # What it does, in order:
 #   1. prune    removes symlinks left by the old layout (STALE_LINKS)
 #   2. link     symlinks every claude-code/* entry to ~/.claude/<name>
-#   3. verify   runs test-hooks.sh then validate.sh
+#   3. overlay  copies settings.local.json.tmpl -> settings.local.json
+#               and CLAUDE.local.md.tmpl -> CLAUDE.local.md, each once,
+#               only if the personal overlay does not exist yet
+#   4. verify   runs test-hooks.sh then validate.sh
 #
-# Nothing is copied. ~/.claude/<name> is a symlink back into this repo,
-# so editing a file here takes effect in the next session with no
-# reinstall. An existing real file is moved to <name>.bak-<timestamp>
-# rather than overwritten.
+# Everything else is a symlink, not a copy. ~/.claude/<name> is a
+# symlink back into this repo, so editing a file here takes effect in
+# the next session with no reinstall. An existing real file is moved
+# to <name>.bak-<timestamp> rather than overwritten. settings.local.json
+# and CLAUDE.local.md are the exceptions: each is a real, untracked,
+# gitignored-by-convention copy so personal prefs (model, theme,
+# effortLevel, the single-user/ADHD conversation rules, ...) never land
+# in this repo. Claude Code's own settings precedence merges the former
+# over settings.json at runtime, and CLAUDE.md's `@CLAUDE.local.md`
+# import pulls in the latter.
 #
 # Restart Claude Code afterwards; settings.json and hooks load at start.
 set -euo pipefail
@@ -94,6 +103,18 @@ for entry in "$SOURCE"/*; do
   run ln -s "$entry" "$dest"
 done
 
+say ""
+say "  personal overlay"
+for name in settings.local.json CLAUDE.local.md; do
+  local_dest="$TARGET/$name"
+  if [ -e "$local_dest" ]; then
+    say "    kept   $name (already present)"
+  else
+    say "    copy   $name.tmpl -> $name"
+    run cp "$SOURCE/$name.tmpl" "$local_dest"
+  fi
+done
+
 if [ "$DRY_RUN" -eq 1 ]; then
   say ""
   say "dry run complete, nothing changed"
@@ -104,5 +125,9 @@ say ""
 bash "$REPO_ROOT/scripts/test-hooks.sh"
 bash "$REPO_ROOT/scripts/validate.sh"
 
+VERSION="$(cd "$REPO_ROOT" && git describe --tags --abbrev=0 2>/dev/null)" \
+  || VERSION="$(cd "$REPO_ROOT" && git rev-parse --short HEAD 2>/dev/null)" \
+  || VERSION="unknown"
+say "installed $VERSION"
 say "restart Claude Code to pick up settings.json and hooks"
 say ""

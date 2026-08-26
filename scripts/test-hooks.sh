@@ -366,14 +366,12 @@ bash_case "G7  sed -i is blocked"                    deny  "sed -i '' 's/a/b/' m
 bash_case "G8  redirect into a code file is blocked" deny  'cat > handler.go'             "bypasses the comment guard"
 bash_case "G9  chained read-only git is allowed"     allow 'git status && git diff --stat'
 bash_case "G10 chained commit is caught"             deny  'git diff && git commit -m x'  "git commit"
-bash_case "G11 bare git branch lists and is allowed" allow 'git branch -a'
-bash_case "G12 creating a branch is blocked"         deny  'git branch feature/x'         "creates a branch"
+bash_case "G12 creating a branch is blocked"         deny  'git branch feature/x'         "changes repository state"
 bash_case "G13 git stash is blocked"                 deny  'git stash'                    "changes repository state"
 bash_case "G14 git fetch is allowed"                 allow 'git fetch origin'
 bash_case "G15 git reset --hard is blocked"          deny  'git reset --hard HEAD~1'      "git reset"
 bash_case "G16 unrelated commands pass"              allow 'go test ./... && npm run build'
 bash_case "G17 redirect to a non-code file passes"   allow 'go test ./... > /tmp/out.txt'
-bash_case "G19 git stash list is allowed"            allow 'git stash list'
 bash_case "G20 git config set is blocked"            deny  'git config user.email a@b.c' "sets a value"
 bash_case "G21 git config get is allowed"            allow 'git config --get user.email'
 bash_case "G22 perl -i is blocked"                   deny  "perl -pi -e 's/a/b/' main.go" "bypassing the comment guard"

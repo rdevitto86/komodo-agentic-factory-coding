@@ -64,3 +64,7 @@ The field set a C repo's `AGENTS.md` Quick-reference table carries. Every value 
 | Entrypoint | The `main()` translation unit |
 
 Drop a row whose value the repo genuinely lacks.
+
+## Repo layout
+
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for C** in `generate-repo` — no repo type token maps here. Use `generate-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.
