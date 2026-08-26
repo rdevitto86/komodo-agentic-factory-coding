@@ -64,22 +64,23 @@
       "Bash(true:*)",
       "Bash(test:*)",
       "Bash(git tag:*)",
-      "Bash(bash setup.sh:*)"
+      "Bash(bash setup.sh:*)",
+      "Bash(git add:*)",
+      "Bash(git switch:*)",
+      "Bash(git branch:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git stash:*)"
     ],
     "deny": [
-      "Bash(git push:*)",
-      "Bash(git commit:*)",
       "Bash(git merge:*)",
       "Bash(git rebase:*)",
       "Bash(git pull:*)",
-      "Bash(git branch:*)",
       "Bash(git checkout:*)",
-      "Bash(git switch:*)",
       "Bash(git restore:*)",
       "Bash(git reset:*)",
       "Bash(git revert:*)",
       "Bash(git cherry-pick:*)",
-      "Bash(git stash:*)",
       "Bash(git clean:*)",
       "Bash(git rm:*)",
       "Bash(git mv:*)",
@@ -134,7 +135,8 @@
     "audit-security": "name-only",
     "audit-simplify": "name-only",
     "audit-performance": "name-only",
-    "generate-commit-message": "name-only"
+    "generate-commit-message": "name-only",
+    "generate-pr": "name-only"
   },
   "hooks": {
     "PreToolUse": [
