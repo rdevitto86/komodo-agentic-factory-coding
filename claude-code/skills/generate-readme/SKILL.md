@@ -13,14 +13,14 @@ One fixed skeleton, applicable whether the repo is an API, a UI, a background se
 
 `# <repo-name>` as the H1, then five numbered `##` sections: **1. Overview · 2. Setup · 3. Usage · 4. Testing · 5. References.**
 
-**Concise by default.** A README is an entry point, not the documentation. Depth belongs in `docs/prd.md` / `docs/sdd.md` (see `generate-prd` / `generate-sdd`) — this file links to them rather than restating them. Target a few screens, not hundreds of lines; tables and links over prose.
+**Concise by default.** A README is an entry point, not the documentation. Depth belongs in `docs/sdd.md` (see `generate-sdd`), and in the PRD when one exists in Drive — this file links to them rather than restating them. Target a few screens, not hundreds of lines; tables and links over prose.
 
 ---
 
 ## Step 1 — Load the facts
 
 - Detect the language from the repo root (`go.mod`, `package.json`, `pyproject.toml`) and load the matching language skill for its layout and Quick-reference fields (port, entrypoint, build/run/test commands).
-- If `docs/prd.md` / `docs/sdd.md` exist, load `generate-prd` / `generate-sdd` and pull from them — never invent what they don't state.
+- If `docs/sdd.md` exists, load `generate-sdd` and pull from it — never invent what it doesn't state.
 - If `BACKLOG.md` exists, check for open Blocker-tier items.
 
 ## Step 2 — Read the repo, don't invent
@@ -40,7 +40,7 @@ Every fact in the README must trace to something actually in the repo: a Makefil
   - Hardware → interface/pinout table + how to drive it
   A repo can have more than one facet (e.g. a service that's also a library) — combine only when the repo genuinely has both, never speculatively.
 - **4. Testing** — test tiers and the commands that run them, sourced from the Makefile/scripts, not invented tier names.
-- **5. References** — pointer table to what exists: `docs/prd.md`, `docs/sdd.md`, `BACKLOG.md`, `CHANGELOG.md`, `openapi.yaml` or equivalent contract file. List only files present in this repo. **Never list individual `docs/adrs/` files** — the SDD §14 References section already links them; the README points at the SDD, not around it.
+- **5. References** — pointer table to what exists: `docs/sdd.md`, `BACKLOG.md`, `CHANGELOG.md`, `openapi.yaml` or equivalent contract file. List only files present in this repo. **Never list individual `docs/adrs/` files** — the SDD §14 References section already links them; the README points at the SDD, not around it.
 
 No section beyond these five. Deep design rationale, infra diagrams, and endpoint-by-endpoint request/response detail belong in `docs/sdd.md`, linked from §5 — not inlined here.
 
@@ -55,4 +55,4 @@ No section beyond these five. Deep design rationale, infra diagrams, and endpoin
 
 ## Step 5 — Flag, don't fabricate
 
-Any section with no source data (no `docs/prd.md` for the purpose paragraph, no discoverable config for env vars) is flagged to the user as a gap, not filled with a plausible-sounding placeholder.
+Any section with no source data (no `docs/sdd.md` for the purpose paragraph, no discoverable config for env vars) is flagged to the user as a gap, not filled with a plausible-sounding placeholder.

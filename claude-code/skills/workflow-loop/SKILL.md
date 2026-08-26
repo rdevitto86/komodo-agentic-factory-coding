@@ -10,7 +10,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 `$ARGUMENTS` names the task. **If it begins with `open`, skip the whole machine** — see The open hatch at the bottom.
 
-**Load the matching way of working before P0**: `ways/sdlc.md` for code. It defines what the gates mean in that domain; this file defines the machine.
+**Load the matching way of working before P0**: `ways/sdlc.md` for code, `ways/debugging.md` when the task reads as diagnostic ("why is X broken", "debug", "investigate a failure") rather than build-something. It defines what the gates mean in that domain; this file defines the machine.
 
 ---
 
@@ -42,15 +42,17 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ## P0 · Spec — the human gate
 
-**Requires `docs/prd.md`, `docs/sdd.md`, and `README.md`.** Load `generate-prd` and `generate-sdd` for the specs' shape and `generate-readme` for README's.
+**Requires `docs/sdd.md` and `README.md`.** Load `generate-sdd` for the spec's shape and `generate-readme` for README's.
+
+**When a PRD backs this repo, fetch its §4, §7, and §10 while drafting the SDD** — scope boundary, requirement priorities, phase split, none of which the SDD holds. Load `standards-prd` for how; this is one of only three fetch points in the whole loop. **A PRD is optional and this phase never blocks on one** — no PRD means those answers come from the user in this same dialogue, which is what P0 is for.
 
 **On any run after the first, the check is existence only.** One `test -f` each, then go to P1. Never re-read or re-validate them — they are frozen, and re-reading them every loop is exactly the token burn this design removes.
 
-**On the first run, read `README.md` before drafting the PRD/SDD, not after.** It is the fastest source of the high-level framing (what the repo is, who it's for) that a spec written from nothing would otherwise have to invent from the task description alone — pull from it, never duplicate its wording verbatim.
+**On the first run, read `README.md` before drafting the SDD, not after.** It is the fastest source of the high-level framing (what the repo is, who it's for) that a spec written from nothing would otherwise have to invent from the task description alone — pull from it, never duplicate its wording verbatim.
 
-**If any is missing or the PRD/SDD still carry `NEEDS DECISION` in a section this work depends on**, draft what you can and stop. **This is the one phase allowed to block with nothing delivered** — building on an unapproved spec is the guessing the whole machine exists to prevent.
+**If `docs/sdd.md` or `README.md` is missing, or the SDD still carries `NEEDS DECISION` in a section this work depends on**, draft what you can and stop. **This is the one phase allowed to block with nothing delivered** — building on an unapproved spec is the guessing the whole machine exists to prevent.
 
-**Ends when:** all three files exist and the PRD/SDD have the user's approval.
+**Ends when:** both files exist and the SDD has the user's approval.
 
 ---
 
@@ -64,7 +66,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — fixing it means going back to P0 with the user, not improvising in P2.
 
-**A `BACKLOG.md` holding only `generate-repo`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the PRD/SDD — run the fork rather than treating an unread backlog as if P1 already happened.
+**A `BACKLOG.md` holding only `generate-repo`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the SDD — run the fork rather than treating an unread backlog as if P1 already happened.
 
 **A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `generate-repo`'s Create already ran for this repo — trust the tree.** Re-invoke `/generate-repo` only when a Foundation-edge story is still open in `BACKLOG.md` (`generate-backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
 
@@ -132,7 +134,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Run `/workflow-consolidate <the task summaries that went green>`** once the whole band is done and P2.4 has cleared, not after each task.
 
-It writes the changelog entry, bumps the version, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the PRD or SDD** — those are frozen, and a change either needs comes back to you as a finding.
+It writes the changelog entry, bumps the version, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — that's frozen, and a change it needs comes back to you as a finding.
 
 **Ends when:** the changelog entry exists and the backlog no longer lists finished work.
 

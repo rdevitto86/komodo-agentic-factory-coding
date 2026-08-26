@@ -17,7 +17,7 @@ Load `generate-readme` first — every check below tests against rules it owns, 
 2. **Check the fixed shape** — `# <repo-name>` H1, then exactly the five numbered sections in order (Overview, Setup, Usage, Testing, References). A missing or extra section is a finding.
 3. **Check every fact traces to a source** — a Setup command not in the actual build tooling, an env var/config key the repo doesn't read, a Usage route/export/job not found in the code, a Testing command not in the Makefile/scripts. An unsourced claim is a finding, not a style note.
 4. **Check the Overview status line** — present and pointing at `BACKLOG.md` iff an open Blocker-tier item exists there; present on a clean backlog, or absent with one open, is a finding.
-5. **Check §5 References** — lists only files actually present (`docs/prd.md`, `docs/sdd.md`, `BACKLOG.md`, `CHANGELOG.md`, an API contract file); never lists an individual `docs/adrs/` file — the SDD §14 already links them.
+5. **Check §5 References** — lists only files actually present (`docs/sdd.md`, `BACKLOG.md`, `CHANGELOG.md`, an API contract file); never lists `docs/prd.md` — the PRD, when one exists, is a Google Doc in Drive, not a repo file; never lists an individual `docs/adrs/` file — the SDD §14 already links them.
 6. **Check for restated depth** — design rationale, infra diagrams, or endpoint-by-endpoint detail that belongs in `docs/sdd.md` and should be a link, not inlined prose.
 
 ## Report

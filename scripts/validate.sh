@@ -55,7 +55,7 @@ for entry in "$SOURCE"/*; do
 done
 
 printf '\n  hooks\n'
-for hook in comment_guard git_guard verify_gate context_injector; do
+for hook in comment_guard git_guard verify_gate context_injector auto_format; do
   path="$SOURCE/hooks/$hook.py"
   if python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$path" 2>/dev/null; then
     printf '    ok        %s.py\n' "$hook"
@@ -190,6 +190,7 @@ source = sys.argv[1]
 LANGUAGE_SKILLS = [
     "standards-go", "standards-typescript", "standards-python",
     "standards-c", "standards-vue", "standards-svelte", "standards-cdk",
+    "standards-shell",
 ]
 
 # Anchors, in required relative order. A skill may omit any anchor (a

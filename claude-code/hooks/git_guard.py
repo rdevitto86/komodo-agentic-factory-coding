@@ -13,7 +13,6 @@ from comment_guard import EXTENSION_FAMILY, FILENAME_FAMILY
 READ_ONLY_GIT = {
     "annotate",
     "blame",
-    "branch",
     "cat-file",
     "check-ignore",
     "cherry",
@@ -41,7 +40,6 @@ READ_ONLY_GIT = {
     "show",
     "show-branch",
     "show-ref",
-    "stash",
     "status",
     "tag",
     "var",
@@ -56,8 +54,6 @@ MUTATING_FLAGS = {
     "remote": ("add", "remove", "rm", "rename", "set-url", "set-head", "set-branches", "prune"),
     "config": ("--unset", "--unset-all", "--add", "--replace-all", "--rename-section", "--remove-section", "--edit", "-e"),
 }
-
-READ_ONLY_MODES = {"stash": ("list", "show")}
 
 GIT_GLOBAL_FLAGS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path")
 
@@ -182,11 +178,6 @@ def git_violation(subcommand, args):
         return None
     if subcommand not in READ_ONLY_GIT:
         return "git %s changes repository state" % subcommand
-    allowed_modes = READ_ONLY_MODES.get(subcommand)
-    if allowed_modes is not None:
-        positional = [arg for arg in args if not arg.startswith("-")]
-        if not positional or positional[0] not in allowed_modes:
-            return "git %s changes repository state" % subcommand
     if subcommand == "config":
         positional = [arg for arg in args if not arg.startswith("-")]
         if len(positional) >= 2:
