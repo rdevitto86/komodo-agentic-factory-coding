@@ -1,5 +1,5 @@
 ---
-name: planner
+name: workflow-planner
 description: Reads a repo's spec and backlog and returns an executable task queue. Use as the fork target for the decompose phase. Reads only; never edits, never invents scope.
 tools: Read, Grep, Glob, Bash
 model: sonnet

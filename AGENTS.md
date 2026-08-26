@@ -9,7 +9,7 @@ Shared agent configuration for software/hardware engineering. `claude-code/` mir
 | `claude-code/AGENTS.md` | `~/.claude/AGENTS.md` | The universal rules, always loaded |
 | `claude-code/CLAUDE.md` | `~/.claude/CLAUDE.md` | One line: `@AGENTS.md` |
 | `claude-code/settings.json` | `~/.claude/settings.json` | Permissions and hook registration |
-| `claude-code/agents/` | `~/.claude/agents/` | `implementer` writes; `planner`, `engineering`, `scout` are read-only |
+| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only |
 | `claude-code/hooks/` | `~/.claude/hooks/` | Two guards, plus the Stop gate and the session injector |
 | `claude-code/skills/` | `~/.claude/skills/` | Domain knowledge, lazily loaded |
 
@@ -96,13 +96,13 @@ Typed-only workflow skills: `/write-backlog` · `/audit-readiness` · `/audit-ch
 
 **The phase that reads a lot and returns a little runs in a fork.** There is no way to unload a skill body once it is in the window, so a separate context window is the only way to reclaim one.
 
-**A fork needs an agent, and that agent's output template is the phase's return contract.** `implementer` exists because the read-only agents cannot write; `planner` exists because `engineering` returns a research report and a decompose phase must return a queue. Adding a phase means asking which existing contract fits before adding a fifth agent.
+**A fork needs an agent, and that agent's output template is the phase's return contract.** `workflow-implementer` exists because the read-only agents cannot write; `workflow-planner` exists because `engineering` returns a research report and a decompose phase must return a queue. Adding a phase means asking which existing contract fits before adding a fifth agent.
 
 **`write-backlog` and `write-changelog` own the format of the two mutable local records — `standards-worklog` is only the read/write directive shared across both, never their shape.** Splitting the two records' formats out means a phase touching only one of them never pays for the other's. **The SDD is never written locally at all** — it is a Google Doc in Drive, `standards-specs` owns its read-only fetch contract, and slice status never writes back into it.
 
 **`write-runbook` owns the operational procedures the SDD points at.** Editing a file under `docs/runbooks/` should never pay for the SDD's fetch contract, and vice versa — the decisions a design earns live as appended sections inside the SDD's own §11, in Drive, never as a separate file.
 
-**No fork ever reaches Drive or any other MCP tool.** `planner` and `implementer` declare no MCP tools, so a forked phase cannot fetch even if it wanted to — whatever it needs arrives in `$ARGUMENTS`. Nothing fetches at session start either, the same rule that keeps `context_injector.py` off the bridge.
+**No fork ever reaches Drive or any other MCP tool.** `workflow-planner` and `workflow-implementer` declare no MCP tools, so a forked phase cannot fetch even if it wanted to — whatever it needs arrives in `$ARGUMENTS`. Nothing fetches at session start either, the same rule that keeps `context_injector.py` off the bridge.
 
 **A skill with a procedure half gets a sibling file.** `standards-sdlc/reference.md`, `standards-go/reference.md`, `standards-security/review.md` — the rule stays in `SKILL.md`, the how-to loads only when someone is doing that job.
 

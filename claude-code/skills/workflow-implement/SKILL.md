@@ -3,7 +3,7 @@ name: workflow-implement
 description: Execute one task to completion in a fork — write the code, write the tests it names, run its Done when command.
 argument-hint: <task text and its Done when command>
 context: fork
-agent: implementer
+agent: workflow-implementer
 background: false
 ---
 

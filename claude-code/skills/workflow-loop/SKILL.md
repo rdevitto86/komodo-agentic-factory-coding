@@ -21,13 +21,13 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | Phase | Runs as | Fork agent |
 |---|---|---|
 | P0 Spec | Here — dialogue cannot be forked | — |
-| P1 Decompose | **`/audit-backlog` then `/workflow-decompose`**, then branch here | `planner` |
+| P1 Decompose | **`/audit-backlog` then `/workflow-decompose`**, then branch here | `workflow-planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
-| P2.1 Implement | **`/workflow-implement`, once per task** | `implementer` |
+| P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
 | P2.3 Review | `/audit-bugs` (+ `/audit-security`), then commit here | — |
 | P2.4 Closeout | `/audit-bugs`, `/audit-security`, `/audit-simplify`, once per band | — |
-| P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta here | `implementer` |
+| P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta here | `workflow-implementer` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-create-pr` | — |
 
 **The forked phases carry their own instructions.** Each declares `context: fork` in its frontmatter, so neither the phase's rules nor the work it does ever enters this window — only its returned result. That is why this file is short: the detail lives where it is paid for.
@@ -126,7 +126,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story a call just filed for this band is folded into P2.0's pick and resolved in this same pass — fixed via `/workflow-implement`, or explicitly declined and removed from `BACKLOG.md` with the reason noted for P4's report. A closeout finding left open past this phase is exactly the pile-up this step exists to prevent.
 
-**Clears the target state's four standing closeout stories.** This is what stops them sitting open forever: they are never picked as ordinary P2.1 tasks — an `implementer` fork wrote the code and can't also review it cold, `audit-*` calls stay this session's job — they are cleared here instead.
+**Clears the target state's four standing closeout stories.** This is what stops them sitting open forever: they are never picked as ordinary P2.1 tasks — a `workflow-implementer` fork wrote the code and can't also review it cold, `audit-*` calls stay this session's job — they are cleared here instead.
 
 **Ends when:** every story the closeout calls filed is fixed or explicitly declined — that satisfies the four stories' `Done when`, so P3 deletes them like any other finished story.
 
@@ -138,7 +138,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 It writes the changelog entry, bumps the version, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — that's frozen, and a change it needs comes back to you as a finding.
 
-**Commit here once it returns — its own delta only.** `workflow-consolidate` runs as `implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is just consolidate's changelog/version/backlog-cleanup output. Run `/write-commit-message` against that delta, then `git add` + `git commit`.
+**Commit here once it returns — its own delta only.** `workflow-consolidate` runs as `workflow-implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is just consolidate's changelog/version/backlog-cleanup output. Run `/write-commit-message` against that delta, then `git add` + `git commit`.
 
 **Ends when:** the changelog entry exists, the backlog no longer lists finished work, and consolidate's delta is committed.
 

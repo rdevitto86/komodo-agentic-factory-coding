@@ -3,7 +3,7 @@ name: workflow-consolidate
 description: Record finished work in a fork — changelog entry, version bump, doc refresh, backlog cleanup.
 argument-hint: <the task summaries that just went green>
 context: fork
-agent: implementer
+agent: workflow-implementer
 background: false
 ---
 
@@ -13,15 +13,15 @@ Completed: **$ARGUMENTS**
 
 **You cannot see the calling conversation.** The list above is what shipped. If it is empty, stop and say so.
 
-**Load `generate-changelog`** for the changelog format and the version rules. **Never load `generate-sdd`** — this phase does not touch the spec, and paying for its template here is waste.
+**Load `write-changelog`** for the changelog format and the version rules. **Never fetch the SDD** — this phase does not touch the spec, and paying for a Drive round trip here is waste.
 
 ## Order
 
 1. **Read `CHANGELOG.md`** for the current version and existing entries.
-2. **Append a new version section** at the bump the shipped stories earn, citing PRD requirement IDs where they carry them.
+2. **Append a new version section** at the bump the shipped stories earn.
 3. **Sync the language manifest** to the new heading, never the reverse. No manifest means no sync — the heading is the version and the user tags it.
 4. **Delete the completed stories from `BACKLOG.md`.** Leave `[BLOCKED]` stories in place, and never delete a story you cannot confirm shipped.
-5. **Refresh `README.md` only where this change invalidated it** — a new endpoint, a changed command, a new environment variable. Load `generate-readme` for its shape. Never rewrite it wholesale.
+5. **Refresh `README.md` only where this change invalidated it** — a new endpoint, a changed command, a new environment variable. Load `write-readme` for its shape. Never rewrite it wholesale.
 
 **Never rewrite a released changelog section.** A correction is a new entry.
 
