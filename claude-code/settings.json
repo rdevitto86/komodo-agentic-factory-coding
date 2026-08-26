@@ -135,7 +135,7 @@
     "audit-simplify": "name-only",
     "audit-performance": "name-only",
     "generate-commit-message": "name-only",
-    "generate-pr-description": "name-only"
+    "generate-pr": "name-only"
   },
   "hooks": {
     "PreToolUse": [

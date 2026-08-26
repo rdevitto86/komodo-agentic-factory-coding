@@ -5,7 +5,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ## [0.25.0] — 2026-08-25
 
 ### Added
-- `generate-pr-description` skill + `.github/PULL_REQUEST_TEMPLATE.md` — fills a PR body from the real diff against the repo's own template.
+- `generate-pr` skill (renamed from `generate-pr-description`) + `.github/PULL_REQUEST_TEMPLATE.md` — opens a PR directly via `gh pr create`/`gh pr edit`, filling title, body, and a single label (`bug`/`documentation`/`duplicate`/`enhancement`/`do not merge`/`skill`) from the real diff against the repo's own template.
 
 ### Changed
 - `git_guard.py` + `settings.json` — replaced the blanket git-mutation deny with protected-ref enforcement; the agent may now branch, commit, push its own branch, and open a pull request, still barred from `main`/`master`/`trunk`/`prod`/`production`/`release/*`/`hotfix/*` and from history rewrites and merges.

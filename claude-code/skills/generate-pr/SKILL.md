@@ -1,6 +1,6 @@
 ---
-name: generate-pr-description
-description: Open the PR for the current branch, body filled from the real diff against the repo's own PR template — not the CLI, not a text dump.
+name: generate-pr
+description: Open the PR for the current branch — title, body filled from the repo's own PR template, and a label — as one action, not a text dump.
 argument-hint: [--draft]
 ---
 
@@ -8,7 +8,7 @@ argument-hint: [--draft]
 
 **Inside a git repository, on a non-default branch with at least one commit ahead of the base** — if any of those isn't true, say so and stop.
 
-**It is an action, not a text dump.** `rules-source-control` already permits `gh pr create` — this skill runs it directly. Never print the filled body to the terminal for the user to paste; the terminal is not where a PR description belongs.
+**It is an action, not a text dump.** `rules-source-control` already permits `gh pr create` and `gh pr edit` — this skill runs them directly. Never print the filled body to the terminal for the user to paste; the terminal is not where a PR description belongs.
 
 ## Fill the template, not the commit log
 
@@ -24,14 +24,27 @@ Read every commit ahead of the base (`git log <base>..HEAD`) and the full diff (
 
 Title: `<type>: <summary>` — the same convention `generate-commit-message` uses, max 72 chars, imperative, no trailing period. Use the most recent commit's subject if it already fits; otherwise write one that names the overall change.
 
+## Label it
+
+Pick exactly one label from what the repo's own `gh label list` returns — never invent a label name or create one. Map from the diff, in this priority order:
+
+1. **Skill** — the diff's primary content is under a skill directory (new skill, rewrite, split, or rename).
+2. **Documentation** — every changed file is a doc (`.md`, `docs/`, comments) with no functional or config change riding along.
+3. Otherwise, by the commit type prefix (`generate-commit-message`'s taxonomy): `fix` → **Bug**, `feat`/`chore`/`refactor`/`perf`/`build`/`ci`/`test` → **Enhancement**.
+
+**Duplicate** and **Do not merge** are never inferred — apply one only when the user says so or you find a genuinely open PR this duplicates (`gh pr list`), and name which PR in your report either way.
+
 ## Run it
 
+New PR:
 ```
-gh pr create --title "<title>" --body "<filled body>"
+gh pr create --title "<title>" --body "<filled body>" --label "<label>"
 ```
 
-Add `--draft` when the caller passed it. Never add a trailer — no co-author line, no generated-by line.
+Existing PR (description/label edit only, no new commits): `gh pr edit <number> --body "<filled body>" --add-label "<label>"`.
+
+Add `--draft` to `gh pr create` when the caller passed it. Never add a trailer — no co-author line, no generated-by line.
 
 ## Return
 
-The `gh pr create` output (it prints the PR URL) — nothing else.
+The `gh pr create`/`gh pr edit` output (it prints the PR URL) — nothing else.
