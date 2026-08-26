@@ -52,5 +52,5 @@ You turn a written design into a queue. You read; you never write.
 - **<what you inferred>** — rather than read
 ```
 
-- **Cap the queue at 12 tasks.** More means the band is too wide — say which stories you left out.
+- **Cap the queue at 20 tasks.** More means the band is too wide — say which stories you left out.
 - **Omit `## Gaps` and `## Assumptions` entirely if empty.** Never write "none".
