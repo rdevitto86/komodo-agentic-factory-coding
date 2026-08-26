@@ -6,7 +6,7 @@ argument-hint: [--draft]
 
 # Open PR
 
-**Inside a git repository, on a non-default branch with at least one commit ahead of the base** — if any of those isn't true, say so and stop.
+**Inside a git repository, on a non-default branch with at least one commit ahead of the base** — if any of those isn't true, say so and stop. `git_guard.py`'s `gh` allowlist scopes `pr edit`/`pr comment` to the current branch's own PR number — it has no way to touch anyone else's.
 
 **It is an action, not a text dump.** `rules-source-control` already permits `gh pr create` and `gh pr edit` — this skill runs them directly. Never print the filled body to the terminal for the user to paste; the terminal is not where a PR description belongs.
 
@@ -26,11 +26,13 @@ Title: `<type>: <summary>` — the same convention `generate-commit-message` use
 
 ## Label it
 
-Pick exactly one label from what the repo's own `gh label list` returns — never invent a label name or create one. Map from the diff, in this priority order:
+Pick exactly one category label from what the repo's own `gh label list` returns — never invent a label name or create one. Map from the diff, in this priority order:
 
 1. **Skill** — the diff's primary content is under a skill directory (new skill, rewrite, split, or rename).
 2. **Documentation** — every changed file is a doc (`.md`, `docs/`, comments) with no functional or config change riding along.
 3. Otherwise, by the commit type prefix (`generate-commit-message`'s taxonomy): `fix` → **Bug**, `feat`/`chore`/`refactor`/`perf`/`build`/`ci`/`test` → **Enhancement**.
+
+**Also add the authorship label, if the repo has one.** This skill only ever runs agent-side, so if the label set includes `@agent` (or an equivalently-named "opened by an agent" label), always add it alongside the category label — it's a fact about who's calling, not a judgment call.
 
 **Duplicate** and **Do not merge** are never inferred — apply one only when the user says so or you find a genuinely open PR this duplicates (`gh pr list`), and name which PR in your report either way.
 
@@ -38,10 +40,10 @@ Pick exactly one label from what the repo's own `gh label list` returns — neve
 
 New PR:
 ```
-gh pr create --title "<title>" --body "<filled body>" --label "<label>"
+gh pr create --title "<title>" --body "<filled body>" --label "<category label>" --label "<authorship label>"
 ```
 
-Existing PR (description/label edit only, no new commits): `gh pr edit <number> --body "<filled body>" --add-label "<label>"`.
+Existing PR (description/label edit only, no new commits): `gh pr edit <number> --body "<filled body>" --add-label "<category label>" --add-label "<authorship label>"`.
 
 Add `--draft` to `gh pr create` when the caller passed it. Never add a trailer — no co-author line, no generated-by line.
 

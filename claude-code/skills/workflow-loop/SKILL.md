@@ -21,14 +21,14 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | Phase | Runs as | Fork agent |
 |---|---|---|
 | P0 Spec | Here — dialogue cannot be forked | — |
-| P1 Decompose | **`/audit-backlog` then `/workflow-decompose`** | `planner` |
+| P1 Decompose | **`/audit-backlog` then `/workflow-decompose`**, then branch here | `planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
-| P2.3 Review | `/audit-bugs` (+ `/audit-security`) — isolated by construction | — |
+| P2.3 Review | `/audit-bugs` (+ `/audit-security`), then commit here | — |
 | P2.4 Closeout | `/audit-bugs`, `/audit-security`, `/audit-simplify`, once per band | — |
-| P3 Consolidate | **`/workflow-consolidate`**, then commit here | `implementer` |
-| P4 Publish | Here — push + `/generate-pr` | — |
+| P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta here | `implementer` |
+| P4 Publish | **`/workflow-complete`** — push + `/generate-pr` | — |
 
 **The forked phases carry their own instructions.** Each declares `context: fork` in its frontmatter, so neither the phase's rules nor the work it does ever enters this window — only its returned result. That is why this file is short: the detail lives where it is paid for.
 
@@ -70,7 +70,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `generate-repo`'s Create already ran for this repo — trust the tree.** Re-invoke `/generate-repo` only when a Foundation-edge story is still open in `BACKLOG.md` (`generate-backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
 
-**Ends when:** every task has a `Done when` command and a `Depends on` edge.
+**Once the queue is confirmed, branch here** — `git switch -c <type>/<short-kebab-description>` per `rules-source-control`'s naming rule, `type` and description drawn from the band's dominant concern. **Resuming a `[WIP]` story reuses its existing branch** (`git switch <existing-branch>`) instead of creating a second one — check the story text for a branch name before assuming none exists.
+
+**Ends when:** every task has a `Done when` command and a `Depends on` edge, and the band's branch is checked out.
 
 ---
 
@@ -116,7 +118,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Findings that affect correctness, security, or a stated requirement are folded into P2.0's pick and become the next P2.1 task in this same pass — not deferred. Everything else is optional and stays filed for a later pass — a reviewer asked to find gaps will always find some, and chasing all of them produces defensive code and tests for cases that cannot happen.
 
-**Ends when:** every story the calls filed for this task is fixed or confirmed genuinely optional. Green ends the task; loop back to P2.0 for the next one.
+**Commit here once the task's findings are clean.** Run `/generate-commit-message` against this task's diff alone (not the whole band), then `git add` + `git commit` with its result — one commit per task, including any P2.3 fix-commits the task itself spawned. This is what keeps a dropped session from losing more than the one task in flight; the previous tasks are already durable.
+
+**Ends when:** every story the calls filed for this task is fixed or confirmed genuinely optional, and the task is committed. Green ends the task; loop back to P2.0 for the next one.
 
 ### P2.4 · Closeout
 
@@ -136,15 +140,15 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 It writes the changelog entry, bumps the version, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — that's frozen, and a change it needs comes back to you as a finding.
 
-**Commit here once it returns, not inside the fork.** `workflow-consolidate` runs as `implementer`, which is read-only git by design — the commit happens in this session. Run `/generate-commit-message` against the full band diff (every P2.1 task plus consolidate's own doc changes), then `git add` + `git commit` with its result.
+**Commit here once it returns — its own delta only.** `workflow-consolidate` runs as `implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is just consolidate's changelog/version/backlog-cleanup output. Run `/generate-commit-message` against that delta, then `git add` + `git commit`.
 
-**Ends when:** the changelog entry exists, the backlog no longer lists finished work, and the band is committed.
+**Ends when:** the changelog entry exists, the backlog no longer lists finished work, and consolidate's delta is committed.
 
 ---
 
 ## P4 · Publish
 
-**Push the branch** — `git push -u origin <branch>` — **then run `/generate-pr`** to open or update the pull request for this band.
+**`/workflow-complete`.** Pushes the branch and runs `/generate-pr` to open or update the pull request for this band.
 
 **Ends when:** the branch is pushed and `/generate-pr` has returned the PR URL.
 

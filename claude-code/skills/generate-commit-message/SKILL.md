@@ -8,7 +8,7 @@ argument-hint: []
 
 **Inside a git repository only** — if the working directory isn't one, say so and stop. Read the diff before writing this; every line comes from what actually changed, never from a plan.
 
-**It is output, not an action.** The user pastes it — `rules-source-control` owns why you never stage or commit it yourself. Invoked directly, or internally by `/workflow-complete` when it closes out a task or phase.
+**It is text, not the commit itself.** `workflow-loop`'s P2/P3 run `git commit` with this output directly — `rules-source-control` owns the branch/protected-ref rules governing when that's allowed. Invoked directly, or internally by the loop when a task or band closes out.
 
 ## Format
 
