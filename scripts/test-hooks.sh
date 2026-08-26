@@ -387,21 +387,21 @@ printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/helper.go","old_string
 HOOK="$HOOKS/git_guard.py"
 printf '\ngit guard\n\n'
 
-bash_case_at "$FIXTURE_MAIN" "G1a committing directly on a protected branch is blocked" deny 'git commit -m "wip"' "protected branch"
+bash_case_at "$FIXTURE_MAIN" "G1a committing directly on a protected branch is blocked" deny 'git commit -m "wip"' "create a branch first"
 bash_case_at "$FIXTURE_FEAT" "G1b committing on a feature branch is allowed"            allow 'git commit -m "wip"'
 bash_case "G2  git log is allowed"                   allow 'git log --oneline -20'
 bash_case "G3  git restore is blocked"               deny  'git restore src/main.go'      "git restore"
 bash_case "G4  git checkout -- is blocked"           deny  'git checkout -- src/main.go'  "git checkout"
 bash_case "G5  echo of a git string is not a match"  allow 'echo "git commit -m x"'
-bash_case "G6  sh -c wrapper is unwrapped"           deny  'sh -c "git push origin main"' "protected branch"
+bash_case "G6  sh -c wrapper is unwrapped"           deny  'sh -c "git push origin main"' "open a pull request instead"
 bash_case "G7  sed -i is blocked"                    deny  "sed -i '' 's/a/b/' main.go"   "bypassing the comment guard"
 bash_case "G8  redirect into a code file is blocked" deny  'cat > handler.go'             "bypasses the comment guard"
 bash_case "G9  chained read-only git is allowed"     allow 'git status && git diff --stat'
-bash_case_at "$FIXTURE_MAIN" "G10 chained commit on a protected branch is caught" deny 'git diff && git commit -m x' "protected branch"
+bash_case_at "$FIXTURE_MAIN" "G10 chained commit on a protected branch is caught" deny 'git diff && git commit -m x' "create a branch first"
 bash_case "G11 bare git branch lists and is allowed" allow 'git branch -a'
 bash_case "G12a creating a conventionally-named branch is allowed" allow 'git branch feat/x'
-bash_case "G12b creating a badly-named branch is blocked"          deny  'git branch feature/x' "short-kebab-description"
-bash_case "G12c naming a protected branch is blocked"              deny  'git branch main'       "short-kebab-description"
+bash_case "G12b creating a badly-named branch is blocked"          deny  'git branch feature/x' "kebab-case"
+bash_case "G12c naming a protected branch is blocked"              deny  'git branch main'       "kebab-case"
 bash_case "G13a bare git stash (push-equivalent) is allowed" allow 'git stash'
 bash_case "G13b git stash drop is blocked"                   deny  'git stash drop' "discards saved state"
 bash_case "G14 git fetch is allowed"                 allow 'git fetch origin'
@@ -457,26 +457,26 @@ bash_case "G49 git tag creating a lightweight tag is allowed" \
 bash_case "G50 git tag -d is blocked"                deny  'git tag -d v1.2.3'            "changes repository state"
 bash_case "G51 git tag -f is blocked"                deny  'git tag -f v1.2.3 abc123'     "changes repository state"
 bash_case "G52 git switch -c with a conventional name is allowed" allow 'git switch -c feat/redesign'
-bash_case "G53 git switch -c with a bad name is blocked"          deny  'git switch -c badname' "short-kebab-description"
-bash_case "G54 git switch -c naming a protected branch is blocked" deny 'git switch -c main'    "short-kebab-description"
+bash_case "G53 git switch -c with a bad name is blocked"          deny  'git switch -c badname' "kebab-case"
+bash_case "G54 git switch -c naming a protected branch is blocked" deny 'git switch -c main'    "kebab-case"
 bash_case "G55 git switch to an existing branch is allowed"      allow 'git switch main'
-bash_case "G56 git switch --detach is blocked"                    deny  'git switch --detach HEAD' "discards or detaches"
+bash_case "G56 git switch --detach is blocked"                    deny  'git switch --detach HEAD' "is denied"
 bash_case_at "$FIXTURE_FEAT" "G57 git push on a feature branch is allowed" allow 'git push -u origin feat/test-branch'
-bash_case "G58 git push to main is blocked"                      deny  'git push origin main' "protected branch"
-bash_case "G59 git push --force is blocked"                      deny  'git push --force origin feat/x' "rewrites remote history"
+bash_case "G58 git push to main is blocked"                      deny  'git push origin main' "open a pull request instead"
+bash_case "G59 git push --force is blocked"                      deny  'git push --force origin feat/x' "rewrites published history"
 bash_case "G60 git add -A is allowed"                            allow 'git add -A'
-bash_case "G61 git add -p is blocked"                            deny  'git add -p' "interactive input"
+bash_case "G61 git add -p is blocked"                            deny  'git add -p' "interactive"
 bash_case "G62 a commit with a co-author trailer is blocked" deny 'git commit -m "fix: x
 
 Co-Authored-By: bot <b@b.com>"' "trailer"
-bash_case "G63 git commit --amend is blocked"                    deny  'git commit --amend -m x' "bypasses review"
+bash_case "G63 git commit --amend is blocked"                    deny  'git commit --amend -m x' "rewrites a commit"
 bash_case "G64 gh pr create is allowed"                          allow 'gh pr create --title x --body y'
-bash_case "G65 gh pr merge is blocked"                           deny  'gh pr merge 5' "not on the allowlist"
-bash_case "G66 gh label create is blocked"                       deny  'gh label create foo' "not on the allowlist"
+bash_case "G65 gh pr merge is blocked"                           deny  'gh pr merge 5' "is denied"
+bash_case "G66 gh label create is blocked"                       deny  'gh label create foo' "is denied"
 bash_case "G67 gh label list is allowed"                         allow 'gh label list'
-bash_case "G68 gh api with a write flag is blocked"              deny  'gh api repos/x/y -X DELETE' "bypassing every other check"
+bash_case "G68 gh api with a write flag is blocked"              deny  'gh api repos/x/y -X DELETE' "write requests are denied"
 bash_case "G69 gh api read is allowed"                           allow 'gh api repos/x/y/dependabot/alerts'
-bash_case "G70 gh release create is blocked"                     deny  'gh release create v1.0' "not on the allowlist"
+bash_case "G70 gh release create is blocked"                     deny  'gh release create v1.0' "is denied"
 bash_case_at "$FIXTURE_FEAT" "G71 merging the protected base into a feature branch is allowed" allow 'git merge origin/main'
 bash_case_at "$FIXTURE_FEAT" "G72 merging the bare base name is allowed"          allow 'git merge main'
 bash_case_at "$FIXTURE_MAIN" "G73 merging into a protected branch is blocked"     deny  'git merge feat/test-branch' "landing into it"
@@ -484,7 +484,42 @@ bash_case_at "$FIXTURE_FEAT" "G74 merging a non-base branch is blocked"         
 bash_case_at "$FIXTURE_FEAT" "G75 merge -X ours is blocked"                       deny  'git merge origin/main -X ours' "without a visible conflict"
 bash_case_at "$FIXTURE_FEAT" "G76 merge --abort is allowed"                       allow 'git merge --abort'
 bash_case "G77 git rebase is blocked"                            deny  'git rebase main' "changes repository state"
-bash_case "G78 git pull is blocked"                              deny  'git pull origin main' "changes repository state"
+bash_case "G78 git pull without --ff-only is blocked"            deny  'git pull origin main' "only with --ff-only"
+bash_case "G78b git pull --ff-only is allowed"                   allow 'git pull --ff-only origin main'
+
+# ---  PUBLISH_ENABLED=0 restores the pre-publishing blanket deny  ---
+# Env-var driven, so this flips the running hook directly rather than
+# patching a copy on disk.
+off_case() {
+  local label="$1" want="$2" command="$3" must_contain="${4:-}"
+  local payload out got reason problem=""
+  payload="$(printf '%s' "$command" | python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":sys.stdin.read()}}))')"
+  out="$(printf '%s' "$payload" | PUBLISH_ENABLED=0 python3 "$HOOK" 2>/dev/null)"
+  got="$(decision_of "$out")"
+  reason="$(reason_of "$out")"
+  [ "$got" != "$want" ] && problem="decision=$got want=$want"
+  if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
+    problem="reason missing: $must_contain"
+  fi
+  if [ -z "$problem" ]; then
+    printf '  PASS  %s\n' "$label"
+    printf 'PASS\n' >> "$RESULTS"
+  else
+    printf '  FAIL  %s\n        %s\n' "$label" "$problem"
+    [ -n "$reason" ] && printf '%s\n' "$reason" | sed 's/^/        | /'
+    printf 'FAIL\n' >> "$RESULTS"
+  fi
+}
+
+off_case "G79 off: push is blocked"                  deny  'git push -u origin feat/x'     "changes repository state"
+off_case "G80 off: commit is blocked"                deny  'git commit -m x'               "changes repository state"
+off_case "G81 off: switch -c is blocked"             deny  'git switch -c feat/x'          "changes repository state"
+off_case "G82 off: branch creation is blocked"       deny  'git branch feat/x'             "creates a branch"
+off_case "G83 off: stash push is blocked"            deny  'git stash'                     "changes repository state"
+off_case "G84 off: merge --ff-only is still blocked" deny  'git merge --ff-only origin/main' "changes repository state"
+off_case "G85 off: git add is blocked"               deny  'git add .'                     "changes repository state"
+off_case "G86 off: read-only git still works"        allow 'git log --oneline -5'
+off_case "G87 off: gh pr merge stays blocked"        deny  'gh pr merge 12'                "is denied"
 
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"

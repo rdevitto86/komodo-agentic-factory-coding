@@ -2,6 +2,42 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.26.0] — 2026-08-26
+
+### Added
+- `generate-pr` skill (renamed from `generate-pr-description`) + `.github/PULL_REQUEST_TEMPLATE.md` — opens a PR directly via `gh pr create`/`gh pr edit`, filling title, body, and a single label (`bug`/`documentation`/`duplicate`/`enhancement`/`do not merge`/`skill`) from the real diff against the repo's own template.
+
+### Changed
+- `git_guard.py` + `settings.json` — replaced the blanket git-mutation deny with protected-ref enforcement; the agent may now branch, commit, push its own branch, sync its branch with its protected base via `git merge`, and open a pull request, still barred from `main`/`master`/`trunk`/`prod`/`production`/`release/*`/`hotfix/*` and from history rewrites and landing into a protected branch.
+- `rules-source-control` — rewritten for the new capabilities, the protected-ref list, the `PUBLISH_ENABLED` kill switch, and `git merge`/`git pull --ff-only` recovery.
+- `generate-changelog` — tag creation is fully the user's now; dropped the agent tag-creation instruction.
+- `config-accessibility-output` — added the fixed ✅/❌/⚠️ turn-end change summary schema.
+- `workflow-loop` P3/P4 — P3 now commits the band here (`generate-commit-message`, then `git commit`) once `workflow-consolidate`'s read-only fork returns; P4 is renamed Publish and pushes + runs `generate-pr` instead of printing a commit message to paste.
+- `workflow-complete` — rewritten to match: pushes the branch and runs `generate-pr`, no longer generates or prints a commit message.
+
+## [0.25.0] — 2026-08-26
+
+### Added
+- `generate-git-issue` — files a finding as a GitHub issue via `gh issue create`, confirming with the user first; uses `--title-file`/`--body-file` to avoid shell injection.
+- `audit-vulnerabilities` — CVE-focused sweep: Dependabot triage first, falling back to `govulncheck`/`npm audit`/`pip-audit` per the relevant `standards-*` skill.
+- `audit-dependencies` — staleness/deprecation/EOL sweep, explicitly scoped clear of `audit-vulnerabilities`' CVE focus.
+- `standards-shell` — shellcheck, `set -euo pipefail`, quoting; added to `scripts/validate.sh`'s `LANGUAGE_SKILLS` list.
+- `standards-prd` — the PRD's read contract (section map, fetch rule, requirement-ID scheme). A PRD is now a Google Drive doc, read-only from this toolkit, never a repo file.
+- `workflow-loop/ways/debugging.md` and `workflow-debug-hypothesize` (planner-backed fork) — a debugging way of working, dispatched from `workflow-loop/SKILL.md` for diagnostic-phrased tasks.
+- `claude-code/settings.local.json.tmpl` and `claude-code/CLAUDE.local.md.tmpl` — personal-prefs overlay, copied to `~/.claude/` by `setup.sh` only if absent.
+- `setup.sh` — resolves and reports the latest git tag as the installed version (falls back to short SHA, then "unknown").
+
+### Changed
+- **PRD moved out of the repo.** `generate-prd` and its `authoring.md` are removed; `docs/sdd.md` is now the sole frozen spec that lives in a repo and stands on its own (never blocked on a PRD existing). `generate-sdd`/`authoring.md` rewritten so PRD requirement IDs are cited only when a PRD has been supplied as context, never invented. `AGENTS.md` gained a "PRD and Google Drive" section stating there is no fallback tier from SDD to PRD — three fetch points only (`workflow-loop` P0, `generate-backlog`, `audit-sdd`), all in the main session, since no fork carries MCP tools to reach Drive.
+- `claude-code/settings.json` split: personal prefs (`model`, `theme`, `effortLevel`, `modelSettings`, `tui`, `autoMemoryEnabled`, `autoCompactEnabled`, `remoteControlAtStartup`, `agentPushNotifEnabled`, `autoMode`, `env`) moved to `settings.local.json.tmpl`; `skillOverrides` gained the new skills above.
+- `claude-code/AGENTS.md`'s single-user statement and full §2 ADHD-conversation section moved to `claude-code/CLAUDE.local.md.tmpl`, wired via a new `@CLAUDE.local.md` import in `claude-code/CLAUDE.md`.
+- `bridges/komodo-bridge/.mcp.json.tmpl` — migrated from SSE (`type: sse`, `/sse`) to streamable HTTP (`type: http`, `/mcp`).
+- `standards-typescript`, `standards-c` gained `## Repo layout` sections stating Create is unsupported, matching `standards-python`'s existing pattern.
+
+### Fixed
+- `git_guard.py` — dropped dead-code read-only allowances for `git branch`/`git stash`; `settings.json` already denies both at the permission layer before the hook runs. `scripts/test-hooks.sh` updated to match (127 passing).
+- `scripts/validate.sh` — the hooks-check loop now includes `auto_format.py`, which was previously silently skipped.
+
 ## [0.24.2] — 2026-08-25
 
 ### Changed

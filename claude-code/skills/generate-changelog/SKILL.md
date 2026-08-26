@@ -26,7 +26,7 @@ Notable changes to this project. Format follows Keep a Changelog; versions follo
 
 - **Append-only.** Never rewrite a released section; a correction is a new entry.
 - **Group under `Added` / `Changed` / `Fixed` / `Removed` / `Security`.** Omit any group with no entries.
-- **Cite the PRD requirement ID where the shipped story carried one.** That keeps the trace from shipped code back to the reason it exists — load `generate-prd` if `docs/prd.md` doesn't exist yet.
+- **Cite the PRD requirement ID where the shipped story carried one.** That keeps the trace from shipped code back to the reason it exists. **Take the ID off the story line — never fetch the PRD for it**; the ID is already there, and SDD §1/§11 carries every one besides. No PRD means no citation, never an invented one.
 - **One line per entry**, written for someone who did not do the work.
 
 ## Versioning
@@ -41,10 +41,10 @@ Notable changes to this project. Format follows Keep a Changelog; versions follo
 
 ## Tag sync
 
-A released section isn't real until it's both committed and tagged. Creating a tag is allowed for the agent (`git tag -a vX.Y.Z <hash> -m "..."` or lightweight); deleting or force-moving one (`-d`/`-D`/`--delete`/`-f`/`--force`) stays hard-denied — those change what a tag already meant to someone, so they're still handed to the user, same as the commit message itself.
+A released section isn't real until it's both merged and tagged. **Tag writes are denied to you** — a tag names a commit on the default branch, and you never work there. Every tag is the user's to create.
 
 **Before appending a new version section**, check whether the section directly below `[Unreleased]` (the most recently released one) already has a matching tag:
 
 - List existing tags with `git tag -l`, or by reading `.git/refs/tags/` and `.git/packed-refs` directly.
 - If it's missing, find the commit that introduced that heading: `git log -p --follow -- CHANGELOG.md`, the commit whose diff adds that exact `## [X.Y.Z]` line. If no commit has it yet, the section itself is still uncommitted — skip silently, this resolves itself next time this check runs.
-- Otherwise run `git tag -a vX.Y.Z <hash> -m "<one-line summary>"` directly and report it, alongside whatever else you're doing.
+- Otherwise hand the user the exact line — `git tag -a vX.Y.Z <hash> -m "<one-line summary>"` — alongside whatever else you're reporting.

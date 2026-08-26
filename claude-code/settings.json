@@ -1,7 +1,4 @@
 {
-  "env": {
-    "AWS_DEFAULT_REGION": "us-east-1"
-  },
   "permissions": {
     "allow": [
       "WebSearch",
@@ -21,6 +18,14 @@
       "Bash(git ls-files:*)",
       "Bash(git fetch:*)",
       "Bash(git config --get:*)",
+      "Bash(git add:*)",
+      "Bash(git switch:*)",
+      "Bash(git branch:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git stash:*)",
+      "Bash(git merge:*)",
+      "Bash(git pull --ff-only:*)",
       "Bash(go:*)",
       "Bash(bun:*)",
       "Bash(npm:*)",
@@ -64,18 +69,10 @@
       "Bash(true:*)",
       "Bash(test:*)",
       "Bash(git tag:*)",
-      "Bash(bash setup.sh:*)",
-      "Bash(git add:*)",
-      "Bash(git switch:*)",
-      "Bash(git branch:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(git stash:*)",
-      "Bash(git merge:*)"
+      "Bash(bash setup.sh:*)"
     ],
     "deny": [
       "Bash(git rebase:*)",
-      "Bash(git pull:*)",
       "Bash(git checkout:*)",
       "Bash(git restore:*)",
       "Bash(git reset:*)",
@@ -86,6 +83,7 @@
       "Bash(git mv:*)",
       "Bash(git apply:*)",
       "Bash(git worktree:*)",
+      "Bash(git tag:*)",
       "Bash(git am:*)",
       "Bash(git filter-branch:*)",
       "Bash(git update-ref:*)",
@@ -110,6 +108,7 @@
     "standards-c": "name-only",
     "standards-go": "name-only",
     "standards-python": "name-only",
+    "standards-shell": "name-only",
     "standards-typescript": "name-only",
     "standards-svelte": "name-only",
     "standards-vue": "name-only",
@@ -118,13 +117,14 @@
     "standards-database": "name-only",
     "standards-docker": "name-only",
     "standards-docs": "name-only",
-    "generate-prd": "name-only",
+    "standards-prd": "name-only",
     "generate-sdd": "name-only",
     "generate-changelog": "name-only",
     "standards-sdlc": "name-only",
     "generate-adr": "name-only",
     "generate-runbook": "name-only",
     "workflow-decompose": "name-only",
+    "workflow-debug-hypothesize": "name-only",
     "workflow-implement": "name-only",
     "workflow-consolidate": "name-only",
     "workflow-complete": "name-only",
@@ -135,7 +135,10 @@
     "audit-security": "name-only",
     "audit-simplify": "name-only",
     "audit-performance": "name-only",
+    "audit-vulnerabilities": "name-only",
+    "audit-dependencies": "name-only",
     "generate-commit-message": "name-only",
+    "generate-git-issue": "name-only",
     "generate-pr": "name-only"
   },
   "hooks": {
@@ -197,17 +200,5 @@
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true
-  },
-  "effortLevel": "high",
-  "tui": "fullscreen",
-  "autoMemoryEnabled": true,
-  "theme": "auto",
-  "autoCompactEnabled": true,
-  "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": true,
-  "autoMode": {
-    "allow": [
-      "$defaults"
-    ]
   }
 }

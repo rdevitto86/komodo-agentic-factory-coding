@@ -1,24 +1,24 @@
 ---
 name: workflow-complete
-description: Publish the finished, committed band — push its branch and open or update the PR via generate-pr.
+description: Publish the finished, committed band — push the branch and open or update its PR via generate-pr.
 argument-hint: []
 ---
 
 # Workflow Complete — Publish
 
-**On a non-protected branch, with the band already committed** — if either isn't true, say so and stop. Committing is P2.3/P3's job (one commit per task, one for `workflow-consolidate`'s own delta); this phase never generates a commit message and never runs `git commit` itself.
+**Inside a git repository, on a non-default branch, with the band already committed** — if any of those isn't true, say so and stop. Committing is P3's job (`workflow-loop`'s P3 runs `/generate-commit-message` and commits once `workflow-consolidate` returns); this phase never generates a commit message or runs `git commit`.
 
 ## Order
 
 1. **Push** — `git push -u origin <branch>` (`git rev-parse --abbrev-ref HEAD` for the branch name).
-2. **Run `/generate-pr`.** No PR exists yet for this branch → opens one. A PR already exists (loop resumed, or this is an update) → `generate-pr`'s `gh pr edit` path updates it in place.
+2. **Run `/generate-pr`.** If a PR already exists for this branch, that skill's `gh pr edit` path updates it in place instead of opening a new one.
 
 ## Output
 
 ````markdown
-## ✅ <band name> — published
+## ✅ <task or phase name> — published
 
 <the generate-pr output — the PR URL>
 ````
 
-Nothing else here — the per-task and per-band summaries already happened in P2.3/P3. This phase reports one thing: is it published, and where.
+- **Nothing else.** No commit message here, no changed/verified/follow-ups breakdown — that already happened in P3's report. This phase reports one thing: is it published, and where.

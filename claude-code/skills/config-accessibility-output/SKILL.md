@@ -35,7 +35,44 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 ---
 
-## 3. Density caps
+## 3. Turn-end change summary
+
+**Use this exact three-bucket schema whenever a turn changed something and the turn is ending.** No other heading text substitutes for it — a status sentence never replaces the literal heading.
+
+| Bucket | Heading | Contents |
+|---|---|---|
+| Landed and verified | `## ✅ Successful Changes` | Merged code, passing tests, a completed task |
+| Attempted, could not complete | `## ❌ Blocked Changes` | A hard stop, an error, a missing input |
+| Landed but needs attention | `## ⚠️ Flagged Changes` | A workaround, a risk, a follow-up |
+
+- **Fixed heading text, always.** The heading is always the literal label above — never a summary sentence standing in for it.
+- **Omit an empty bucket entirely.** Never print a bucket with nothing under it.
+- **The verdict goes inside the bucket, not the heading.** Put it as the first bullet, table row, or list item under the heading.
+- **Order is fixed:** ✅ before ❌ before ⚠️, whichever subset is present.
+- **Contents are tables, bullets, or numbered lists** — never a paragraph standing in for structure.
+
+**❌ Chaotic** (freeform per-heading verdicts, no fixed bucket)
+
+> - 📌 Loop is untouched, skill is typed-only
+> - ⚠️ Two contradictions the guard change created — both fixed
+> - 📌 What's still not built
+> - ✅ Scoped — 185/185, verify green
+
+**✅ Fixed schema**
+
+> ## ✅ Successful Changes
+> - **Guard change** — two contradictions found and fixed
+> - **Scope** — 185/185, verify green
+>
+> ## ⚠️ Flagged Changes
+> - **Loop** — untouched; skill stays typed-only
+>
+> ## ❌ Blocked Changes
+> - **Not built** — `<item>`, waiting on `<input>`
+
+---
+
+## 4. Density caps
 
 | Unit | Hard cap |
 |---|---|
@@ -53,7 +90,7 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 ---
 
-## 4. Emoji protocol
+## 5. Emoji protocol
 
 **Emoji are functional category markers, never decoration.** A relevant icon is pre-attentive: it routes attention before reading. An irrelevant one is foveal noise that costs a fixation.
 
@@ -70,7 +107,7 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 ---
 
-## 5. Prose tone
+## 6. Prose tone
 
 **Imperative, active voice.** "Check log files daily", never "it is recommended that log files should be checked". Passive voice adds a clause the reader must unwind to find the actor.
 
@@ -90,7 +127,7 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 ---
 
-## 6. Code answers
+## 7. Code answers
 
 **Order is fixed:** what it does → the code → why it matters. Never prose-then-code-then-explanation.
 
@@ -110,7 +147,7 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 
 ---
 
-## 7. Document typography
+## 8. Document typography
 
 Applies when the output is a rendered document — HTML, an artifact, a README, a slide — not terminal text.
 
@@ -123,7 +160,7 @@ Applies when the output is a rendered document — HTML, an artifact, a README, 
 
 ---
 
-## 8. Self-check
+## 9. Self-check
 
 Run this before sending anything longer than five lines.
 
@@ -135,10 +172,11 @@ Run this before sending anything longer than five lines.
 - [ ] **Options capped at 3**, with a stated recommendation
 - [ ] **One open question**, maximum
 - [ ] **Zero emoji outside `##` headings**
+- [ ] **A turn-end change summary uses the fixed ✅/❌/⚠️ buckets**, never a freeform heading
 
 ---
 
-## 9. Worked example
+## 10. Worked example
 
 **❌ Uncalibrated**
 

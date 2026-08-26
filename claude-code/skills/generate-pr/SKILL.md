@@ -1,52 +1,50 @@
 ---
 name: generate-pr
-description: Open or update the pull request for the current branch directly via gh — title, body, and a label picked from the diff.
+description: Open the PR for the current branch — title, body filled from the repo's own PR template, and a label — as one action, not a text dump.
 argument-hint: [--draft]
 ---
 
 # Open PR
 
-**Inside a git repository, on a non-protected branch with at least one commit ahead of its base** — if any of those isn't true, say so and stop. `git_guard.py` only ever lets this run against the current branch's own PR — it has no way to touch anyone else's.
+**Inside a git repository, on a non-default branch with at least one commit ahead of the base** — if any of those isn't true, say so and stop. `git_guard.py`'s `gh` allowlist scopes `pr edit`/`pr comment` to the current branch's own PR number — it has no way to touch anyone else's.
 
-**It runs `gh pr create`/`gh pr edit`.** `rules-source-control` is what makes that call available; this skill is what fills it in. Never print the body to the terminal for the user to paste — the terminal isn't where a PR description lives.
+**It is an action, not a text dump.** `rules-source-control` already permits `gh pr create` and `gh pr edit` — this skill runs them directly. Never print the filled body to the terminal for the user to paste; the terminal is not where a PR description belongs.
 
-## Fill the body from the diff, not the commit log
+## Fill the template, not the commit log
 
-Read every commit ahead of the base (`git log <base>..HEAD`) and the full diff (`git diff <base>..HEAD`). The body describes the *change*, not a list of commit subjects.
+Read every commit ahead of the base (`git log <base>..HEAD`) and the full diff (`git diff <base>..HEAD`) — the body describes the *change*, not the commit history.
 
-**Repo has `.github/PULL_REQUEST_TEMPLATE.md`:** fill it section-for-section as written on disk, dropping nothing. **No template:** use this shape instead —
+- **Repo has `.github/PULL_REQUEST_TEMPLATE.md`:** fill it section-for-section as written on disk — do not paraphrase the template's own headings or drop a section. Populate:
+  - `Summary`: one or two sentences on what the PR is for. Never a file list.
+  - `Changes`: one bullet per area (not per file), `**<area>** — <what changed>`, with the PRD requirement ID appended in parens where the story carried one.
+  - `Validation Evidence`: only what a green CI run can't show — a live-dependency happy path, a cURL against STG, a behavior with no automated coverage yet. `Covered by CI` is a complete answer; never paste unit/component/contract results here.
+  - `Dependencies`: numbered, in landing order — another PR in this repo or a sibling repo (internal), or a package/service/API version this PR requires (external). Omit the whole section when there are none; never write `none` as a list item.
+  - Leave the template's HTML comments in place — they're instructions to a human filling the form by hand, and this is filling the same form, just automated. Strip a comment only if the repo's own template already omits it.
+- **Repo has no PR template:** fall back to a `## Summary` + `## Changes` body in the same shape (a sentence, then bulleted areas) — never dump raw commit subjects as the body.
 
-- `## Summary` — one or two sentences on what the PR is for, never a file list.
-- `## Changes` — one bullet per area, not per file: `**<area>** — <what changed>`.
-- `## Validation Evidence` — only what CI can't already show: a live-dependency happy path, a behavior with no automated coverage. `Covered by CI` is a complete answer on its own.
-
-Title: `<type>: <summary>` — `generate-commit-message`'s own convention, max 72 chars, imperative, no trailing period. Reuse the branch's own commit subject if one already fits.
+Title: `<type>: <summary>` — the same convention `generate-commit-message` uses, max 72 chars, imperative, no trailing period. Use the most recent commit's subject if it already fits; otherwise write one that names the overall change.
 
 ## Label it
 
-**Always run `gh label list` first** — every label applied has to come from its actual output; never invent a name, never create one (`git_guard.py`'s `gh` allowlist doesn't grant `label create` for exactly this reason: this skill has no legitimate use for it).
+Pick exactly one label from what the repo's own `gh label list` returns — never invent a label name or create one. Map from the diff, in this priority order:
 
-Two independent dimensions, not one label:
+1. **Skill** — the diff's primary content is under a skill directory (new skill, rewrite, split, or rename).
+2. **Documentation** — every changed file is a doc (`.md`, `docs/`, comments) with no functional or config change riding along.
+3. Otherwise, by the commit type prefix (`generate-commit-message`'s taxonomy): `fix` → **Bug**, `feat`/`chore`/`refactor`/`perf`/`build`/`ci`/`test` → **Enhancement**.
 
-- **Authorship, if the repo tracks it.** This skill only ever runs agent-side, so if the label set has an `agent pr` (or equivalently-named "opened by an agent") label, always add it — it's a fact about who's calling, not a judgment call.
-- **Category, exactly one.** Priority order: **skill** when the diff's primary content sits under a skill directory; **documentation** when every changed file is a doc with no functional change riding along; otherwise map the commit type prefix (`fix` → **bug**, everything else → **enhancement**).
-
-If the repo's label set has no match for a dimension, skip it — never force a name that isn't there.
+**Duplicate** and **Do not merge** are never inferred — apply one only when the user says so or you find a genuinely open PR this duplicates (`gh pr list`), and name which PR in your report either way.
 
 ## Run it
 
-No open PR for this branch yet:
+New PR:
 ```
-gh pr create --title "<title>" --body "<body>" [--label "<category>"] [--label "<authorship>"] [--draft]
-```
-
-PR already exists (description/label edit only):
-```
-gh pr edit <number> --body "<body>" [--add-label "<category>"] [--add-label "<authorship>"]
+gh pr create --title "<title>" --body "<filled body>" --label "<label>"
 ```
 
-Never add a trailer to the body — no co-author line, no generated-by line, matching `generate-commit-message`'s own rule.
+Existing PR (description/label edit only, no new commits): `gh pr edit <number> --body "<filled body>" --add-label "<label>"`.
+
+Add `--draft` to `gh pr create` when the caller passed it. Never add a trailer — no co-author line, no generated-by line.
 
 ## Return
 
-The `gh pr create`/`gh pr edit` output (it prints the URL) — nothing else.
+The `gh pr create`/`gh pr edit` output (it prints the PR URL) — nothing else.

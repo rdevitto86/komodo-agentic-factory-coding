@@ -2,20 +2,24 @@
 
 Read this when *writing* the SDD. `SKILL.md` carries the section list, which is all a reader needs.
 
-## Producing one from an approved PRD
+## Producing one, PRD optional
 
-**Never draft an SDD against an unapproved PRD.** The SDD follows the same no-invention rule as the PRD, sourced from the approved PRD plus the technical decisions the user makes — it is not elicited independently of it.
+**The SDD is elicited directly — it is never blocked on an approved PRD existing.** The SDD is the source of truth for a code repo. A PRD, when the user has one, lives in Google Drive (`standards-prd`) and can inform this doc; when it does, never draft against an unapproved one — pull only its confirmed decisions, same no-invention rule as everywhere else. With no PRD, elicit the technical decisions directly from the user instead.
+
+**Fetch §4, §7, and §10 when a PRD exists** — the scope boundary, requirement priorities, and phase split that this doc has nowhere to hold and would otherwise invent. `standards-prd` carries the fetch rule; that is the whole of the PRD's role here.
 
 **Anything the user did not say is `NEEDS DECISION`.** An empty marker is a working document; a confident invention is a false one that gets built. Work section by section, in order — §1 Architecture and §2 Data Model first, since later sections (§5 Security, §6 Testing) cite decisions made there.
 
 **Ask in batches, not one at a time.** Then draft, then hand it back for approval — the doc is not the agent's to approve.
 
-## Cross-reference contract with the PRD
+## Cross-reference contract with the PRD (when one exists)
 
-Every requirement ID minted in `docs/prd.md` §7 must appear at least once in §1 or §11 here. This is the mechanism that keeps the two docs from silently going stale relative to each other — a reader can trace *why* (PRD) to *how* (SDD) for any requirement without either doc drifting unnoticed.
+**Skip this whole section when no PRD backs this repo.** There is nothing to cross-reference against, and requirement IDs are never invented to fill the gap.
 
-**When creating or substantially editing the SDD, run the check:**
-1. Collect every ID in `docs/prd.md` §7 (pattern: 2–3 letters + digits, e.g. `CP1`) — load `generate-prd` if the file doesn't exist yet.
+Every requirement ID minted in the PRD's §7 must appear at least once in §1 or §11 here. This is the mechanism that keeps the two docs from silently going stale relative to each other — a reader can trace *why* (PRD) to *how* (SDD) for any requirement without either doc drifting unnoticed.
+
+**When creating or substantially editing the SDD against a known PRD, run the check:**
+1. Collect every ID in the PRD's §7 (pattern: 2–3 letters + digits, e.g. `CP1`) — load `standards-prd` to read the Drive doc.
 2. Grep this doc's §1 and §11 for each one.
 3. Any PRD ID with zero hits here is an orphan — flag it to the user; don't silently invent a citation to make the check pass.
 4. Any capability described in §1/§11 that cites no PRD ID at all is worth a second look — it may be undocumented scope. Flag it, don't delete it unasked.
@@ -37,7 +41,7 @@ This is a reporting check, not an auto-fix — a real orphan might mean the PRD 
 Don't rewrite it unasked — that's scope expansion past whatever the user actually asked for. Flag the specific deviation (wrong section order, orphaned cross-reference, jargon with no §0 entry) in one line to the user, same as any other out-of-scope finding, and let them decide whether it's worth fixing now.
 
 **If the user does ask for a migration**, fix in this order — each step is the join key or precondition for the next:
-1. Confirm `docs/prd.md` §7 has requirement IDs — the cross-reference contract hangs off this key. Load `generate-prd`'s authoring.md if it needs migrating too.
+1. When a PRD backs this repo, confirm its §7 has requirement IDs — the cross-reference contract hangs off this key. A PRD missing them is a finding for the people who own it, never something this session fixes. With no PRD, skip to step 2.
 2. Section order and missing/`N/A` sections here.
 3. §0 Glossary entries for any undefined jargon used with real weight below it.
 4. Cross-reference contract — run the orphan check now that IDs and sections are in place.

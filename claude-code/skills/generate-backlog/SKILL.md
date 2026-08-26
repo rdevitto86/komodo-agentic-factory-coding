@@ -39,7 +39,7 @@ Severity: [C] Critical · [H] High · [M] Medium · [L] Low · In progress: `[WI
 
 Story line shape: `- [SEV][WIP] <text> · <size> · <req-id, optional> → \`<done when>\``
 
-**A story with no PRD requirement ID omits it** — chores, closeout stories, and anything with no PRD-traceable business ask. The `Done when` command is never optional.
+**A story with no PRD requirement ID omits it** — chores, closeout stories, and anything with no PRD-traceable business ask. The PRD, when one exists, is a Google Doc in Drive (`standards-prd`); a repo with no PRD simply carries no requirement-ID citations at all. The `Done when` command is never optional.
 
 ### Rules
 
@@ -110,7 +110,8 @@ If the repo answers a question, do not ask it. If nothing is genuinely unclear, 
 
 Before proposing anything:
 
-- **Read `docs/sdd.md` if it exists** for architecture, data model, and interface context. It informs the plan; it does not hand you a ready-made decomposition — that is this skill's own job.
+- **Read `docs/sdd.md` if it exists** for architecture, data model, and interface context — the source of truth for a code repo. It informs the plan; it does not hand you a ready-made decomposition — that is this skill's own job.
+- **Fetch the PRD's §7 priorities and §10 phase split if a PRD backs this repo** — load `standards-prd` for how. This is the one place in the loop where a PRD genuinely changes the output: §7's Must/Should/Could grounds each story's severity tag, and §10's V1/V2 split grounds its target state. Both are otherwise the planner's guess. **No PRD means no fetch and no gap** — assign severity and target state from the SDD and the user's answers instead, and never invent a requirement ID to fill the column.
 - **Read the existing `BACKLOG.md`.** Never duplicate a story already in it.
 - **Read the code that this work touches.** The current state beats any ledger.
 - **Read the project `AGENTS.md`** for stack and conventions.
@@ -184,7 +185,7 @@ Read the source file(s) in full. Every line becomes exactly one of:
 
 Assign each surviving story a target state (default `## Now — V1` unless the source clearly marks it future work) and a domain (the feature or route it belongs to — infer from the file's path or the story's own text, never a new taxonomy, never another service's name).
 
-Where the story satisfies a PRD requirement, attach that requirement ID. A story with no traceable requirement keeps its line and is flagged — it may be undocumented scope.
+Where the story satisfies a PRD requirement, attach that requirement ID — read it from SDD §1/§11, which already carries every ID, rather than re-fetching the PRD. A story with no traceable requirement keeps its line and is flagged — it may be undocumented scope, or the repo may simply have no PRD.
 
 If a target state's `Cross-Cutting` domain is missing any of the four closeout stories, add the missing ones.
 
