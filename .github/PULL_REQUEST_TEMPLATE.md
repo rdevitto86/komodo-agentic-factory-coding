@@ -25,9 +25,3 @@ post it as a comment.
      cURL against STG, a behaviour with no automated coverage yet. Unit,
      component, and contract results are Stage 2's job — do not paste them.
      "Covered by CI" is a complete answer. -->
-
----
-
-- [ ] Every file in the diff belongs to a bullet under **Changes** — nothing rode along
-- [ ] Scope matches the `BACKLOG.md` stories this PR closes
-- [ ] No suppressed check, no `--no-verify`, no widened type to pass a gate
