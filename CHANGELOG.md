@@ -2,6 +2,18 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.29.0] — 2026-08-26
+
+### Added
+- `standards-dotnet`, `standards-react`, `standards-java` — new domain skills following the standard `standards-<noun>` section order.
+- `standards-uiux-security`, `standards-api-security` — security domain skills distinct from `standards-uiux`'s WCAG/Tailwind scope and `standards-security`'s general OWASP baseline.
+
+### Changed
+- `workflow-planner`'s queue cap raised from 12 to 20 tasks.
+
+### Removed
+- `standards-csharp`, `standards-gcp`, `standards-azure` parked as `SKILL.md.off` — not used yet, no listing cost, content preserved for when those domains land.
+
 ## [0.28.0] — 2026-08-26
 
 ### Added

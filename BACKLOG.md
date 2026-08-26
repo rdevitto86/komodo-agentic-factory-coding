@@ -14,15 +14,6 @@ Open work only. Format and rules live in the `write-backlog` skill — load it b
 - 1.1.6 | L | No `standards-<language>` skill documents an outdated-dependency/deprecation/EOL tool (only CVE scanners: `govulncheck`, `npm audit`, `pip-audit`) — `audit-dependencies` currently falls back to bare `go list -u -m all`/`npm outdated`/`pip list --outdated` with no documented convention to point to · M → each relevant `standards-<language>` skill names its outdated-dependency tool and `bash scripts/validate.sh` passes
 - 1.1.7 | M | Bridge: set `options.num_ctx` in `generateRequest` so large summarizer payloads stop truncating silently
   `[BLOCKED]` no file to edit — the bridge server (`generateRequest`, `agents.go`) lives in the separate `~/.komodo/bridge` deploy, not this repo; `bridges/komodo-bridge/` here holds only prompt files and docs. Recheck: reopens once bridge source is vendored into or reachable from this repo. · S → bridge request carries the option
-### 1.3 Language standards
-- 1.3.2 | L | `standards-dotnet` — .NET framework/runtime conventions (paired with `standards-csharp` the way `standards-cdk` pairs with `standards-typescript`) · M → same shape
-- 1.3.3 | L | `standards-react` — React conventions, deferring UI/WCAG rules to `standards-uiux` · M → same shape
-- 1.3.4 | L | `standards-java` — Java conventions · M → same shape
-
-### 1.4 Security standards
-- 1.4.1 | L | `standards-uiux-security` — UI/UX-specific security (clickjacking, CSP, dark patterns, tapjacking) distinct from `standards-uiux`'s Tailwind/WCAG scope and from `standards-security`'s general OWASP baseline · M → `claude-code/skills/standards-uiux-security/SKILL.md` exists, `bash scripts/validate.sh` passes
-- 1.4.2 | L | `standards-api-security` — API-specific security (rate limiting, versioning, auth schemes, input contracts) distinct from `standards-security`'s general OWASP baseline · M → same shape
-
 ## Next — V2
 
 ### 2.1 Cross-Cutting
