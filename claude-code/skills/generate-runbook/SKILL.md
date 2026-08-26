@@ -17,7 +17,7 @@ Write one only when at least one is true:
 
 ## File location
 
-`docs/runbooks/<slug>.md` — colocated with `docs/prd.md` and `docs/sdd.md`, never a top-level `/runbooks`. `<slug>` is kebab-case, naming the failure mode or procedure, not the ticket (`db-failover`, not `incident-2026-08`).
+`docs/runbooks/<slug>.md` — colocated with `docs/sdd.md`, never a top-level `/runbooks`. `<slug>` is kebab-case, naming the failure mode or procedure, not the ticket (`db-failover`, not `incident-2026-08`).
 
 Every runbook needs a citing link from SDD §14 References — owned by `generate-sdd`, not restated here.
 

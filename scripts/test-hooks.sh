@@ -389,12 +389,11 @@ bash_case "G9  chained read-only git is allowed"     allow 'git status && git di
 bash_case_at "G10 chained commit is caught"          deny  "$ON_MAIN" 'git diff && git commit -m x' "git commit"
 bash_case "G11 bare git branch lists and is allowed" allow 'git branch -a'
 bash_case "G12 an off-taxonomy branch name is blocked" deny 'git branch feature/x'        "must match <type>/<kebab-case>"
-bash_case "G13 git stash push is allowed"            allow 'git stash'
+bash_case "G13 git stash is blocked"                 deny  'git stash'                    "changes repository state"
 bash_case "G14 git fetch is allowed"                 allow 'git fetch origin'
 bash_case "G15 git reset --hard is blocked"          deny  'git reset --hard HEAD~1'      "git reset"
 bash_case "G16 unrelated commands pass"              allow 'go test ./... && npm run build'
 bash_case "G17 redirect to a non-code file passes"   allow 'go test ./... > /tmp/out.txt'
-bash_case "G19 git stash list is allowed"            allow 'git stash list'
 bash_case "G20 git config set is blocked"            deny  'git config user.email a@b.c' "sets a value"
 bash_case "G21 git config get is allowed"            allow 'git config --get user.email'
 bash_case "G22 perl -i is blocked"                   deny  "perl -pi -e 's/a/b/' main.go" "bypassing the comment guard"
@@ -436,12 +435,12 @@ bash_case "G46 mv -t DIR/ still checks the sources being placed" \
   deny  'mv -t assets/ handler.go' "bypasses the comment guard"
 bash_case "G47 mv into a directory created earlier in the same command" \
   deny  'mkdir -p brandnewdir && mv payload.go brandnewdir' "bypasses the comment guard"
-bash_case "G48 git tag creating an annotated tag is blocked" \
-  deny  'git tag -a v1.2.3 abc123 -m "release"' "tags belong to the default branch"
-bash_case "G49 git tag creating a lightweight tag is blocked" \
-  deny  'git tag v1.2.3 abc123'                 "tags belong to the default branch"
-bash_case "G50 git tag -d is blocked"                deny  'git tag -d v1.2.3'            "tags belong to the default branch"
-bash_case "G51 git tag -f is blocked"                deny  'git tag -f v1.2.3 abc123'     "tags belong to the default branch"
+bash_case "G48 git tag creating an annotated tag is allowed" \
+  allow 'git tag -a v1.2.3 abc123 -m "release"'
+bash_case "G49 git tag creating a lightweight tag is allowed" \
+  allow 'git tag v1.2.3 abc123'
+bash_case "G50 git tag -d is blocked"                deny  'git tag -d v1.2.3'            "changes repository state"
+bash_case "G51 git tag -f is blocked"                deny  'git tag -f v1.2.3 abc123'     "changes repository state"
 bash_case "G52 git tag -l lists and is allowed"      allow 'git tag -l "v*"'
 
 # ---  publishing policy: push  ---
@@ -485,8 +484,12 @@ bash_case "G79 a valid branch name is allowed"       allow 'git branch chore/too
 bash_case "G80 git add is allowed"                   allow 'git add claude-code/hooks/git_guard.py'
 bash_case "G81 git add -p is interactive"            deny  'git add -p'                    "interactive"
 bash_case "G82 merge --ff-only is allowed"           allow 'git merge --ff-only origin/main'
-bash_case "G83 a real merge is blocked"              deny  'git merge origin/main'         "only with --ff-only"
+bash_case "G83 a real merge of the protected base syncs the branch" allow 'git merge origin/main'
+bash_case "G83b a real merge of a non-base branch is blocked" deny 'git merge some-other-branch' "protected base branch"
+bash_case "G83c merge -X ours is blocked"            deny  'git merge origin/main -X ours' "without a visible conflict"
+bash_case "G83d merge --abort is allowed"            allow 'git merge --abort'
 bash_case "G84 pull --ff-only is allowed"            allow 'git pull --ff-only origin main'
+bash_case "G84b a real pull stays --ff-only only"    deny  'git pull origin main'          "only with --ff-only"
 bash_case "G85 rebase stays blocked"                 deny  'git rebase origin/main'        "changes repository state"
 bash_case "G86 stash drop is blocked"                deny  'git stash drop'                "changes repository state"
 

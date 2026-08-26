@@ -14,7 +14,6 @@ from comment_guard import EXTENSION_FAMILY, FILENAME_FAMILY
 READ_ONLY_GIT = {
     "annotate",
     "blame",
-    "branch",
     "cat-file",
     "check-ignore",
     "cherry",
@@ -42,7 +41,6 @@ READ_ONLY_GIT = {
     "show",
     "show-branch",
     "show-ref",
-    "stash",
     "status",
     "tag",
     "var",
@@ -57,8 +55,6 @@ MUTATING_FLAGS = {
     "remote": ("add", "remove", "rm", "rename", "set-url", "set-head", "set-branches", "prune"),
     "config": ("--unset", "--unset-all", "--add", "--replace-all", "--rename-section", "--remove-section", "--edit", "-e"),
 }
-
-READ_ONLY_MODES = {"stash": ("list", "show")}
 
 GIT_GLOBAL_FLAGS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path")
 
@@ -95,9 +91,6 @@ TRAILER_FINDING = "the commit message carries a co-author or generated-by traile
 # on the message's third line never reaches the tokenized args. The raw
 # command is the only place the whole message is still intact.
 GIT_COMMIT = re.compile(r"\bgit\b[^\n;|&]*\bcommit\b")
-
-TAG_WRITE_FLAGS = ("-a", "-s", "-m", "-u", "--annotate", "--sign", "--message", "--file", "-F")
-TAG_LIST_FLAGS = ("-l", "--list", "-n", "--contains", "--no-contains", "--points-at", "--merged", "--no-merged", "--sort", "--format")
 
 GH_GLOBAL_VALUE_FLAGS = ("-R", "--repo")
 GH_ALLOWED = {
@@ -321,16 +314,6 @@ def switch_violation(args):
     return None
 
 
-def tag_violation(args):
-    if any(arg in TAG_LIST_FLAGS or arg.startswith("--sort=") or arg.startswith("--format=") for arg in args):
-        return None
-    if any(arg in TAG_WRITE_FLAGS for arg in args):
-        return "git tag writes are denied — tags belong to the default branch"
-    if any(not arg.startswith("-") for arg in args):
-        return "git tag writes are denied — tags belong to the default branch"
-    return None
-
-
 def git_violation(subcommand, args, cwd, has_cd):
     if subcommand is None:
         return None
@@ -373,19 +356,16 @@ def git_violation(subcommand, args, cwd, has_cd):
         if not is_protected(bare):
             return "git merge %s isn't the protected base branch" % target
         return None
+    if subcommand == "branch":
+        positional = [arg for arg in args if not arg.startswith("-")]
+        for flag in MUTATING_FLAGS["branch"]:
+            if flag in args:
+                return "git branch %s changes repository state" % flag
+        if positional and not BRANCH_NAME.match(positional[0]):
+            return "branch name '%s' must match <type>/<kebab-case>" % positional[0]
+        return None
     if subcommand not in READ_ONLY_GIT:
         return "git %s changes repository state" % subcommand
-    if subcommand == "tag":
-        return tag_violation(args)
-    allowed_modes = READ_ONLY_MODES.get(subcommand)
-    if allowed_modes is not None:
-        if subcommand == "stash" and PUBLISH_ENABLED:
-            allowed_modes = allowed_modes + ("push", "pop", "apply", "save")
-        positional = [arg for arg in args if not arg.startswith("-")]
-        if not positional and not PUBLISH_ENABLED:
-            return "git %s changes repository state" % subcommand
-        if positional and positional[0] not in allowed_modes:
-            return "git %s %s changes repository state" % (subcommand, positional[0])
     if subcommand == "config":
         positional = [arg for arg in args if not arg.startswith("-")]
         if len(positional) >= 2:
@@ -396,10 +376,6 @@ def git_violation(subcommand, args, cwd, has_cd):
     for arg in args:
         if arg in mutators:
             return "git %s %s changes repository state" % (subcommand, arg)
-    if subcommand == "branch":
-        positional = [arg for arg in args if not arg.startswith("-")]
-        if positional and not BRANCH_NAME.match(positional[0]):
-            return "branch name '%s' must match <type>/<kebab-case>" % positional[0]
     return None
 
 

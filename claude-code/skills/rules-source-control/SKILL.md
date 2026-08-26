@@ -6,7 +6,7 @@ user-invocable: false
 
 # Source Control Rules
 
-`git_guard.py` decides every git command deterministically. You may stage, commit, create a `<type>/<kebab>` branch, switch between branches, push that branch, and open a pull request. You may never reach a protected ref (`main`, `master`, `trunk`, `prod`, `production`, `release/*`, `hotfix/*`), rewrite history, or merge. Still denied outright: checkout, restore, reset, revert, rebase, cherry-pick, clean, rm, mv, apply, worktree, tag, am, and `gh pr merge`/`close`/`review`/`release`.
+`git_guard.py` decides every git command deterministically. You may stage, commit, create a `<type>/<kebab>` branch, switch between branches, push that branch, merge your protected base into your own branch to resolve conflicts, and open a pull request. You may never reach a protected ref (`main`, `master`, `trunk`, `prod`, `production`, `release/*`, `hotfix/*`) or rewrite history. Still denied outright: checkout, restore, reset, revert, rebase, cherry-pick, clean, rm, mv, apply, worktree, tag, am, and `gh pr merge`/`close`/`review`/`release`.
 
 **The capability ships behind a single switch.** `PUBLISH_ENABLED` at the top of `git_guard.py` returns every verb above to a blanket deny when flipped to `False`. If a command below is refused and the guard's reason reads "changes repository state", that switch is off — say so rather than working around it.
 
@@ -34,7 +34,7 @@ Name a branch `<type>/<short-kebab-description>`, using the same `type` taxonomy
 
 ## Recovery
 
-A stale branch updates with `git merge --ff-only` or `git pull --ff-only`; anything needing a real merge or a rebase is the user's. `git stash push -u` and `git stash pop` are available for moving uncommitted work out of the way — `drop` and `clear` are not.
+A stale branch updates with `git merge <main-or-equivalent>` (bare name or `origin/`-prefixed) from your own non-protected branch — the one merge direction allowed, purely to surface conflicts before a human merges the PR. A strategy flag that auto-resolves without a visible conflict (`-X`, `--strategy`, `-s`, `--squash`) is denied; `--abort`/`--continue` are open. Resolve by editing the marked files, `git add` each, then `git commit --no-edit` (a bare `git commit` here opens an editor and hangs). `git pull` stays `--ff-only`-only; a rebase is still entirely the user's. `git stash push -u` and `git stash pop` are available for moving uncommitted work out of the way — `drop` and `clear` are not.
 
 **A conflict is a stop, not a puzzle.** Say what conflicts, hand over the command, and wait.
 

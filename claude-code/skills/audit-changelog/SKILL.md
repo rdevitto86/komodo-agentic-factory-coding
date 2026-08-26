@@ -16,11 +16,11 @@ Load `generate-changelog` first — every check below tests against rules it own
 1. **Read `CHANGELOG.md` in full**, every released section plus `[Unreleased]`.
 2. **List existing tags** with `git tag -l`, or by reading `.git/refs/tags/` and `.git/packed-refs` directly. Flag any released section with no matching tag, and any tag with no matching section.
 3. **Check version ordering** — strictly descending below `[Unreleased]`, dates non-increasing top to bottom.
-4. **Check each release's bump against the rule table** (Minor needs a cited PRD requirement ID, Patch needs none, Major implies a broken contract) — flag a section whose bump size the cited entries don't support.
+4. **Check each release's bump against the rule table** (Minor needs a cited PRD requirement ID when a PRD backs this repo, Patch needs none, Major implies a broken contract) — flag a section whose bump size the cited entries don't support. With no PRD for this repo, never flag a Minor bump for lacking a citation.
 5. **Check manifest sync** — if the repo has a language manifest (`package.json` and so on), its version field must match the most recent released heading. Go repos have none; skip.
 6. **Find backfill candidates** — for the gap below each released section (down to the tag before it, or to repo start for the oldest), walk `git log --oneline <range>` for commits representing user-visible behavior with no matching bullet in that section's entries. Cite the commit hash.
 7. **Find append-only violations** — `git log -p --follow -- CHANGELOG.md`; a hunk that edits or removes a line under an already-released heading (not the most-recently-added section) rewrote shipped history. Cite the commit hash.
-8. **Find format drift** — an entry not grouped under `Added`/`Changed`/`Fixed`/`Removed`/`Security`, or a Minor-bump section missing its PRD requirement ID citation.
+8. **Find format drift** — an entry not grouped under `Added`/`Changed`/`Fixed`/`Removed`/`Security`, or a Minor-bump section missing its PRD requirement ID citation when a PRD backs this repo.
 
 ## Report
 

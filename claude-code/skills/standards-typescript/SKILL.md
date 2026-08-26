@@ -49,6 +49,10 @@ The field set a TypeScript repo's `AGENTS.md` Quick-reference table carries. Eve
 
 Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill or `standards-sdlc` already states by name.
 
+## Repo layout
+
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for TypeScript** in `generate-repo` — no repo type token maps here. Use `generate-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.
+
 ## Reference material
 
 - **[testing.md](testing.md)** — approved stack, placement, suites, parallelism, Vitest and Playwright configuration.

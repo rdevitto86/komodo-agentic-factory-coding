@@ -19,7 +19,7 @@ Otherwise the SDD §11 row alone is enough. Most decisions never earn an ADR —
 
 ## File location and numbering
 
-`docs/adrs/NNN-slug.md` — colocated with `docs/prd.md` and `docs/sdd.md`, never a top-level `/adrs`.
+`docs/adrs/NNN-slug.md` — colocated with `docs/sdd.md`, never a top-level `/adrs`.
 
 - **`NNN`** — 3-digit, zero-padded, sequential across the whole folder regardless of status. Read the existing files, take the highest number, add 1. **Never reused, never renumbered** — a Rejected or Superseded ADR keeps its number forever; the sequence is an audit trail, not a live index.
 - **`slug`** — kebab-case, 2-5 words naming the decision, not the ticket (`rs256-signing-key-rotation`, not `auth-changes`).

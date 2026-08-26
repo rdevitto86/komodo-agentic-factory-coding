@@ -13,7 +13,7 @@ Completed: **$ARGUMENTS**
 
 **You cannot see the calling conversation.** The list above is what shipped. If it is empty, stop and say so.
 
-**Load `generate-changelog`** for the changelog format and the version rules. **Never load `generate-prd` or `generate-sdd`** — this phase does not touch the specs, and paying for their templates here is waste.
+**Load `generate-changelog`** for the changelog format and the version rules. **Never load `generate-sdd`** — this phase does not touch the spec, and paying for its template here is waste.
 
 ## Order
 
