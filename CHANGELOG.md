@@ -2,6 +2,14 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.27.0] — 2026-08-26
+
+### Removed
+- `.github/workflows/ci.yml` — CI ran `scripts/test-hooks.sh`/`scripts/validate.sh` on every push and PR; moved local instead.
+
+### Added
+- `scripts/hooks/git/pre-push-verify` — runs a repo's own `.claude/verify.sh` on push when one exists, no-op otherwise (same presence-gated pattern as `pre-push-golangci`). Picked up automatically by the existing `pre-push` dispatcher once `core.hooksPath` points at this directory.
+
 ## [0.26.0] — 2026-08-26
 
 ### Added
