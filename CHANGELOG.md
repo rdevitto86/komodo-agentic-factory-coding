@@ -2,6 +2,20 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.28.0] — 2026-08-26
+
+### Added
+- `rules-merge-conflicts` — autoloaded rule governing merge-conflict resolution: what to resolve unattended, what to escalate, what never gets silently dropped.
+- `git-create-issue`, `git-create-pr` — split out of the prior combined git-issue-filing/git-PR-opening skills, each invocable by the agent or the human directly.
+- `standards-git` — git branch/commit/push/merge/protected-ref domain knowledge, split out of `rules-source-control`.
+- `standards-aws`, `standards-gcp`, `standards-azure`, `standards-csharp` — new domain skills following the standard `standards-<noun>` section order.
+
+### Changed
+- `rules-source-control` — trimmed to enforcement only; convention content moved to `standards-git`.
+- Every reference to the retired `write-git-issue`/`write-pr` naming updated to `git-create-issue`/`git-create-pr` across `workflow-loop` and other skills that cite them.
+- `claude-code/agents/implementer.md` → `workflow-implementer.md` and `claude-code/agents/planner.md` → `workflow-planner.md`, with all cross-references updated.
+- `scripts/validate.sh`'s `LANGUAGE_SKILLS` and `claude-code/settings.json`'s `skillOverrides` extended to register the new skills.
+
 ## [0.27.0] — 2026-08-26
 
 ### Removed
@@ -13,20 +27,20 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ## [0.26.0] — 2026-08-26
 
 ### Added
-- `generate-pr` skill (renamed from `generate-pr-description`) + `.github/PULL_REQUEST_TEMPLATE.md` — opens a PR directly via `gh pr create`/`gh pr edit`, filling title, body, and a single label (`bug`/`documentation`/`duplicate`/`enhancement`/`do not merge`/`skill`) from the real diff against the repo's own template.
+- `write-pr` skill (renamed from `generate-pr-description`) + `.github/PULL_REQUEST_TEMPLATE.md` — opens a PR directly via `gh pr create`/`gh pr edit`, filling title, body, and a single label (`bug`/`documentation`/`duplicate`/`enhancement`/`do not merge`/`skill`) from the real diff against the repo's own template.
 
 ### Changed
 - `git_guard.py` + `settings.json` — replaced the blanket git-mutation deny with protected-ref enforcement; the agent may now branch, commit, push its own branch, sync its branch with its protected base via `git merge`, and open a pull request, still barred from `main`/`master`/`trunk`/`prod`/`production`/`release/*`/`hotfix/*` and from history rewrites and landing into a protected branch.
 - `rules-source-control` — rewritten for the new capabilities, the protected-ref list, the `PUBLISH_ENABLED` kill switch, and `git merge`/`git pull --ff-only` recovery.
-- `generate-changelog` — tag creation is fully the user's now; dropped the agent tag-creation instruction.
+- `write-changelog` — tag creation is fully the user's now; dropped the agent tag-creation instruction.
 - `config-accessibility-output` — added the fixed ✅/❌/⚠️ turn-end change summary schema.
-- `workflow-loop` P3/P4 — P3 now commits the band here (`generate-commit-message`, then `git commit`) once `workflow-consolidate`'s read-only fork returns; P4 is renamed Publish and pushes + runs `generate-pr` instead of printing a commit message to paste.
-- `workflow-complete` — rewritten to match: pushes the branch and runs `generate-pr`, no longer generates or prints a commit message.
+- `workflow-loop` P3/P4 — P3 now commits the band here (`write-commit-message`, then `git commit`) once `workflow-consolidate`'s read-only fork returns; P4 is renamed Publish and pushes + runs `write-pr` instead of printing a commit message to paste.
+- `workflow-complete` — rewritten to match: pushes the branch and runs `write-pr`, no longer generates or prints a commit message.
 
 ## [0.25.0] — 2026-08-26
 
 ### Added
-- `generate-git-issue` — files a finding as a GitHub issue via `gh issue create`, confirming with the user first; uses `--title-file`/`--body-file` to avoid shell injection.
+- `write-git-issue` — files a finding as a GitHub issue via `gh issue create`, confirming with the user first; uses `--title-file`/`--body-file` to avoid shell injection.
 - `audit-vulnerabilities` — CVE-focused sweep: Dependabot triage first, falling back to `govulncheck`/`npm audit`/`pip-audit` per the relevant `standards-*` skill.
 - `audit-dependencies` — staleness/deprecation/EOL sweep, explicitly scoped clear of `audit-vulnerabilities`' CVE focus.
 - `standards-shell` — shellcheck, `set -euo pipefail`, quoting; added to `scripts/validate.sh`'s `LANGUAGE_SKILLS` list.
@@ -36,7 +50,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - `setup.sh` — resolves and reports the latest git tag as the installed version (falls back to short SHA, then "unknown").
 
 ### Changed
-- **PRD moved out of the repo.** `generate-prd` and its `authoring.md` are removed; `docs/sdd.md` is now the sole frozen spec that lives in a repo and stands on its own (never blocked on a PRD existing). `generate-sdd`/`authoring.md` rewritten so PRD requirement IDs are cited only when a PRD has been supplied as context, never invented. `AGENTS.md` gained a "PRD and Google Drive" section stating there is no fallback tier from SDD to PRD — three fetch points only (`workflow-loop` P0, `generate-backlog`, `audit-sdd`), all in the main session, since no fork carries MCP tools to reach Drive.
+- **PRD moved out of the repo.** `generate-prd` and its `authoring.md` are removed; `docs/sdd.md` is now the sole frozen spec that lives in a repo and stands on its own (never blocked on a PRD existing). `write-sdd`/`authoring.md` rewritten so PRD requirement IDs are cited only when a PRD has been supplied as context, never invented. `AGENTS.md` gained a "PRD and Google Drive" section stating there is no fallback tier from SDD to PRD — three fetch points only (`workflow-loop` P0, `write-backlog`, `audit-sdd`), all in the main session, since no fork carries MCP tools to reach Drive.
 - `claude-code/settings.json` split: personal prefs (`model`, `theme`, `effortLevel`, `modelSettings`, `tui`, `autoMemoryEnabled`, `autoCompactEnabled`, `remoteControlAtStartup`, `agentPushNotifEnabled`, `autoMode`, `env`) moved to `settings.local.json.tmpl`; `skillOverrides` gained the new skills above.
 - `claude-code/AGENTS.md`'s single-user statement and full §2 ADHD-conversation section moved to `claude-code/CLAUDE.local.md.tmpl`, wired via a new `@CLAUDE.local.md` import in `claude-code/CLAUDE.md`.
 - `bridges/komodo-bridge/.mcp.json.tmpl` — migrated from SSE (`type: sse`, `/sse`) to streamable HTTP (`type: http`, `/mcp`).
@@ -49,24 +63,24 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ## [0.24.2] — 2026-08-25
 
 ### Changed
-- `git_guard.py` — `git tag` creation (lightweight and annotated) is now allowed for the agent; `-d`/`-D`/`--delete`/`-f`/`--force` stay denied. `settings.json` moved `Bash(git tag:*)` from deny to allow and added `Bash(bash setup.sh:*)`. `scripts/test-hooks.sh` grew G48–G51 covering the new split (125 → 129 passing). `generate-changelog` and `audit-changelog` updated to stop describing `git tag` as hard-denied.
+- `git_guard.py` — `git tag` creation (lightweight and annotated) is now allowed for the agent; `-d`/`-D`/`--delete`/`-f`/`--force` stay denied. `settings.json` moved `Bash(git tag:*)` from deny to allow and added `Bash(bash setup.sh:*)`. `scripts/test-hooks.sh` grew G48–G51 covering the new split (125 → 129 passing). `write-changelog` and `audit-changelog` updated to stop describing `git tag` as hard-denied.
 
 ## [0.24.1] — 2026-08-25
 
 ### Changed
 - Repo renamed `komodo-agentic-tools-code` → `komodo-agentic-toolkit-coding` on GitHub; local refs updated in `README.md`, `AGENTS.md`, `CHANGELOG.md`, `bridges/komodo-bridge/agent-roster.md`, the working directory itself, and the git remote.
-- `generate-commit-message` — secondary description switched from a comma/`+`-delimited flowing line to a `-`-prefixed bulleted list, one bullet per distinct concern.
+- `write-commit-message` — secondary description switched from a comma/`+`-delimited flowing line to a `-`-prefixed bulleted list, one bullet per distinct concern.
 
 ## [0.24.0] — 2026-08-25
 
 ### Added
 - `audit-changelog`, `audit-readme`, `audit-sdd`, `audit-testing` — four typed-only audit skills scoring `CHANGELOG.md`, `README.md`, `docs/sdd.md`, and the test suite against their respective generator/standards skills, findings filed to `BACKLOG.md` unless `--report` is passed.
-- `generate-changelog` — a "Tag sync" section: before appending a version heading, check `.git/refs/tags/`/`.git/packed-refs` for a matching tag and hand the user a ready-to-run `git tag` line if one's missing (tagging stays hard-denied to the agent).
+- `write-changelog` — a "Tag sync" section: before appending a version heading, check `.git/refs/tags/`/`.git/packed-refs` for a matching tag and hand the user a ready-to-run `git tag` line if one's missing (tagging stays hard-denied to the agent).
 
 ### Changed
 - `standards-cicd`, `standards-docs`, `standards-observability`, `standards-security`, `standards-worklog` marked `user-invocable: false` — autoloaded knowledge, not meant to be typed directly.
-- `generate-readme` switched from `disable-model-invocation: true` to `paths: "**/README.md"`, so it now loads automatically the instant README.md is touched instead of requiring the typed command.
-- `claude-code/settings.json`'s `skillOverrides` gained `name-only` entries for the mid-loop phases, `generate-repo`, `generate-readme`, and the audit/commit-message command skills, matching `AGENTS.md`'s reachable-by-name list.
+- `write-readme` switched from `disable-model-invocation: true` to `paths: "**/README.md"`, so it now loads automatically the instant README.md is touched instead of requiring the typed command.
+- `claude-code/settings.json`'s `skillOverrides` gained `name-only` entries for the mid-loop phases, `write-repo`, `write-readme`, and the audit/commit-message command skills, matching `AGENTS.md`'s reachable-by-name list.
 - `AGENTS.md`'s skill-contract section rewritten: bucket table and typed-only list gained the four new audits, and the context-budget section replaced its by-hand skill enumeration with the general "reached only by an explicit name is `name-only`" rule.
 
 ### Removed
@@ -82,7 +96,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ### Added
 - `.github/workflows/ci.yml` — runs `scripts/test-hooks.sh` and `scripts/validate.sh` on push/PR, closing the gap where the hook and budget regressions only ran locally.
 - `auto_format.py` — new `PostToolUse` hook on Edit/Write, running `gofmt`/`.go` and `prettier`/JS-TS-CSS-etc after every write; no-ops (exit 0) when the formatter isn't on `PATH`, matching the fail-open policy of `verify_gate.py`/`context_injector.py`. Registered in `settings.json`; `scripts/test-hooks.sh` grew F1–F7 (118 → 125 passing).
-- `standards-python` — a "Repo layout" section noting `generate-repo` Create is unsupported for Python (no `templates/python/` needed, matching the other unsupported languages).
+- `standards-python` — a "Repo layout" section noting `write-repo` Create is unsupported for Python (no `templates/python/` needed, matching the other unsupported languages).
 
 ### Fixed
 - `comment_guard.py` — `handle_pre` no longer recomputes `scan_comments` a second time in `check_echoes`'s caller; the result is cached as `scope_scanned` and reused for both the removed-comment check and echo suppression.
@@ -97,20 +111,20 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ## [0.22.0] — 2026-08-24
 
 ### Added
-- `standards-docker` skill — base image pinning, distroless healthcheck pattern (a binary `healthcheck` subcommand, since a distroless runtime has no shell), `stop_grace_period` above the app's own drain timeout, `.dockerignore`, non-root, multi-stage layering. `generate-repo` Step 5's container-practice bullets now point at it.
+- `standards-docker` skill — base image pinning, distroless healthcheck pattern (a binary `healthcheck` subcommand, since a distroless runtime has no shell), `stop_grace_period` above the app's own drain timeout, `.dockerignore`, non-root, multi-stage layering. `write-repo` Step 5's container-practice bullets now point at it.
 - Canonical `standards-*` section order (root `AGENTS.md` §Skill contract), `templates/skills/standards.md.tmpl` to start a new one from, and a `scripts/validate.sh` check enforcing it across `standards-go`, `standards-typescript`, `standards-python`, `standards-c`, `standards-vue`, `standards-svelte`, `standards-cdk`.
 - `Makefile` in every layout-bearing `standards-*` skill's `Repo layout` (go-api, go-mcp, vue-ui, svelte-ui, cdk-infra) — `verify` chains lint → typecheck/vet → test → build, and is what `context_injector.py` already looks for as a repo's merge gate. `templates/go/Makefile` and `templates/node/Makefile` ship the concrete targets.
 - `Toolchain` sections for `standards-vue` and `standards-svelte` — previously absent, which left those repos' `standards-cicd`-mandated CI security scans with no command to run.
-- `templates/go/.gitignore` and `templates/go/.dockerignore`, wired into `generate-repo` Step 5, added to `standards-go`'s two `Repo layout` trees.
-- A `Tests:` seed story in every layout-bearing `standards-*` skill (go-api, go-mcp, vue-ui, svelte-ui, cdk-infra), and `test/` now materializes as `standards-sdlc`'s tier subtree on Create instead of an empty directory — closes the gap where a generated repo violated `generate-backlog`'s "every domain with behavior stories carries its own `Tests:` story" rule from the moment it was created.
-- `generate-repo` Step 8 — a Create run now runs its own `make verify` and confirms every Step 2 seed story actually landed in `BACKLOG.md`, reporting either failure plainly instead of a closing report that assumes success.
-- `workflow-loop` guardrails: a phase is complete only when its named skill actually ran (inherited on-disk state is not a pass); P1 treats a backlog holding only `generate-repo`'s seed stories as undecomposed; P2.1 runs its fork even when code already appears to exist; P2.0/`workflow-decompose` treat a transitively-`[BLOCKED]` task as one to route around, not a full loop halt; never poll a delegated phase with `ScheduleWakeup`; a P2.3 finding needing standards verification returns to a fork rather than being re-checked in the orchestrating window.
+- `templates/go/.gitignore` and `templates/go/.dockerignore`, wired into `write-repo` Step 5, added to `standards-go`'s two `Repo layout` trees.
+- A `Tests:` seed story in every layout-bearing `standards-*` skill (go-api, go-mcp, vue-ui, svelte-ui, cdk-infra), and `test/` now materializes as `standards-sdlc`'s tier subtree on Create instead of an empty directory — closes the gap where a generated repo violated `write-backlog`'s "every domain with behavior stories carries its own `Tests:` story" rule from the moment it was created.
+- `write-repo` Step 8 — a Create run now runs its own `make verify` and confirms every Step 2 seed story actually landed in `BACKLOG.md`, reporting either failure plainly instead of a closing report that assumes success.
+- `workflow-loop` guardrails: a phase is complete only when its named skill actually ran (inherited on-disk state is not a pass); P1 treats a backlog holding only `write-repo`'s seed stories as undecomposed; P2.1 runs its fork even when code already appears to exist; P2.0/`workflow-decompose` treat a transitively-`[BLOCKED]` task as one to route around, not a full loop halt; never poll a delegated phase with `ScheduleWakeup`; a P2.3 finding needing standards verification returns to a fork rather than being re-checked in the orchestrating window.
 - `ways/sdlc.md` P2.3 now states `/code-review` is invoked with the task text and which `standards-*` skills apply, rather than left to choose its own review lenses.
-- `workflow-loop` P1 trusts a language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) as the zero-token signal that Create already ran, re-invoking `/generate-repo` only for an open Foundation-edge story or an explicit Scaffold/Refresh ask.
+- `workflow-loop` P1 trusts a language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) as the zero-token signal that Create already ran, re-invoking `/write-repo` only for an open Foundation-edge story or an explicit Scaffold/Refresh ask.
 
 ### Deviations from the original plan
-- The scaffold-freshness signal landed as the manifest-file check above, not the originally proposed `.claude/scaffold.json` marker with a version-bumped "contract" integer — `generate-repo`'s existing Scaffold/Refresh drift-detection against the language skill's `Repo layout` tree already covers invalidation, so the extra state would have been unused machinery.
-- `c` was documented as scaffold-only alongside `typescript`/`python` in `generate-repo`, rather than given a new `Repo layout` tree.
+- The scaffold-freshness signal landed as the manifest-file check above, not the originally proposed `.claude/scaffold.json` marker with a version-bumped "contract" integer — `write-repo`'s existing Scaffold/Refresh drift-detection against the language skill's `Repo layout` tree already covers invalidation, so the extra state would have been unused machinery.
+- `c` was documented as scaffold-only alongside `typescript`/`python` in `write-repo`, rather than given a new `Repo layout` tree.
 
 ## [0.21.2] — 2026-08-24
 
@@ -136,7 +150,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ## [0.20.0] — 2026-08-18
 
 ### Added
-- `home/skills/readme/SKILL.md`; `generate-repo` gained a Create branch.
+- `home/skills/readme/SKILL.md`; `write-repo` gained a Create branch.
 
 ### Changed
 - `backlog` skill gained a normalize mode; `[WIP]` tags replaced checkbox-style TODO items.
