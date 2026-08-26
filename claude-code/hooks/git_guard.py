@@ -353,8 +353,25 @@ def git_violation(subcommand, args, cwd, has_cd):
                 return "git add %s is interactive and cannot complete here" % arg
         return None
     if subcommand in ("merge", "pull"):
-        if "--ff-only" not in args:
-            return "git %s is allowed only with --ff-only" % subcommand
+        if "--ff-only" in args:
+            return None
+        if subcommand == "pull":
+            return "git pull is allowed only with --ff-only — use git fetch + git merge for a real sync"
+        if "--abort" in args or "--continue" in args:
+            return None
+        for flag in ("-X", "--strategy-option", "-s", "--strategy", "--squash"):
+            if flag in args:
+                return "git merge %s auto-resolves without a visible conflict" % flag
+        branch = current_branch(cwd)
+        if branch and is_protected(branch):
+            return "git merge on %s, a protected branch — landing into it stays the user's job" % branch
+        positional = [arg for arg in args if not arg.startswith("-")]
+        if len(positional) != 1:
+            return "git merge only takes one target: the protected base branch, to sync before a human merges the PR"
+        target = positional[0]
+        bare = target[len("origin/"):] if target.startswith("origin/") else target
+        if not is_protected(bare):
+            return "git merge %s isn't the protected base branch" % target
         return None
     if subcommand not in READ_ONLY_GIT:
         return "git %s changes repository state" % subcommand

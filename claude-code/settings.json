@@ -27,7 +27,7 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(git stash:*)",
-      "Bash(git merge --ff-only:*)",
+      "Bash(git merge:*)",
       "Bash(git pull --ff-only:*)",
       "Bash(go:*)",
       "Bash(bun:*)",
