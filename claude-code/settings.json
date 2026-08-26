@@ -106,6 +106,7 @@
     "standards-observability": "name-only",
     "standards-cicd": "name-only",
     "standards-c": "name-only",
+    "standards-csharp": "name-only",
     "standards-go": "name-only",
     "standards-python": "name-only",
     "standards-shell": "name-only",
@@ -116,20 +117,17 @@
     "standards-uiux": "name-only",
     "standards-database": "name-only",
     "standards-docker": "name-only",
-    "standards-docs": "name-only",
-    "standards-prd": "name-only",
-    "generate-sdd": "name-only",
-    "generate-changelog": "name-only",
+    "standards-specs": "name-only",
+    "write-changelog": "name-only",
     "standards-sdlc": "name-only",
-    "generate-adr": "name-only",
-    "generate-runbook": "name-only",
+    "write-runbook": "name-only",
     "workflow-decompose": "name-only",
-    "workflow-debug-hypothesize": "name-only",
+    "workflow-debug": "name-only",
     "workflow-implement": "name-only",
     "workflow-consolidate": "name-only",
     "workflow-complete": "name-only",
-    "generate-repo": "name-only",
-    "generate-readme": "name-only",
+    "write-repo": "name-only",
+    "write-readme": "name-only",
     "audit-backlog": "name-only",
     "audit-bugs": "name-only",
     "audit-security": "name-only",
@@ -137,9 +135,9 @@
     "audit-performance": "name-only",
     "audit-vulnerabilities": "name-only",
     "audit-dependencies": "name-only",
-    "generate-commit-message": "name-only",
-    "generate-git-issue": "name-only",
-    "generate-pr": "name-only"
+    "write-commit-message": "name-only",
+    "write-git-issue": "name-only",
+    "write-pr": "name-only"
   },
   "hooks": {
     "PreToolUse": [
@@ -200,5 +198,11 @@
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true
-  }
+  },
+  "modelSettings": {
+    "claude-sonnet-5": {
+      "effortLevel": "medium"
+    }
+  },
+  "agentPushNotifEnabled": true
 }
