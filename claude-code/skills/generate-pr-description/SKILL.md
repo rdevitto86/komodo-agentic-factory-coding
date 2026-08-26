@@ -15,10 +15,10 @@ argument-hint: [--draft]
 Read every commit ahead of the base (`git log <base>..HEAD`) and the full diff (`git diff <base>..HEAD`) — the body describes the *change*, not the commit history.
 
 - **Repo has `.github/PULL_REQUEST_TEMPLATE.md`:** fill it section-for-section as written on disk — do not paraphrase the template's own headings or drop a section. Populate:
-  - `Depends on`: the PR # this depends on, or `none`.
   - `Summary`: one or two sentences on what the PR is for. Never a file list.
   - `Changes`: one bullet per area (not per file), `**<area>** — <what changed>`, with the PRD requirement ID appended in parens where the story carried one.
   - `Validation Evidence`: only what a green CI run can't show — a live-dependency happy path, a cURL against STG, a behavior with no automated coverage yet. `Covered by CI` is a complete answer; never paste unit/component/contract results here.
+  - `Dependencies`: numbered, in landing order — another PR in this repo or a sibling repo (internal), or a package/service/API version this PR requires (external). Omit the whole section when there are none; never write `none` as a list item.
   - Leave the template's HTML comments in place — they're instructions to a human filling the form by hand, and this is filling the same form, just automated. Strip a comment only if the repo's own template already omits it.
 - **Repo has no PR template:** fall back to a `## Summary` + `## Changes` body in the same shape (a sentence, then bulleted areas) — never dump raw commit subjects as the body.
 
