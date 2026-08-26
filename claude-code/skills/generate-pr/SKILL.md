@@ -24,20 +24,25 @@ Title: `<type>: <summary>` — `generate-commit-message`'s own convention, max 7
 
 ## Label it
 
-Pick exactly one label from `gh label list`'s actual output — never invent a name, never create one (`git_guard.py`'s `gh` allowlist doesn't grant `label create` for exactly this reason: this skill has no legitimate use for it).
+**Always run `gh label list` first** — every label applied has to come from its actual output; never invent a name, never create one (`git_guard.py`'s `gh` allowlist doesn't grant `label create` for exactly this reason: this skill has no legitimate use for it).
 
-Priority order: **skill** when the diff's primary content sits under a skill directory; **documentation** when every changed file is a doc with no functional change riding along; otherwise map the commit type prefix (`fix` → **bug**, everything else → **enhancement**). If the repo's label set doesn't have a matching name, skip `--label` entirely rather than force one.
+Two independent dimensions, not one label:
+
+- **Authorship, if the repo tracks it.** This skill only ever runs agent-side, so if the label set has an `agent pr` (or equivalently-named "opened by an agent") label, always add it — it's a fact about who's calling, not a judgment call.
+- **Category, exactly one.** Priority order: **skill** when the diff's primary content sits under a skill directory; **documentation** when every changed file is a doc with no functional change riding along; otherwise map the commit type prefix (`fix` → **bug**, everything else → **enhancement**).
+
+If the repo's label set has no match for a dimension, skip it — never force a name that isn't there.
 
 ## Run it
 
 No open PR for this branch yet:
 ```
-gh pr create --title "<title>" --body "<body>" [--label "<label>"] [--draft]
+gh pr create --title "<title>" --body "<body>" [--label "<category>"] [--label "<authorship>"] [--draft]
 ```
 
 PR already exists (description/label edit only):
 ```
-gh pr edit <number> --body "<body>" [--add-label "<label>"]
+gh pr edit <number> --body "<body>" [--add-label "<category>"] [--add-label "<authorship>"]
 ```
 
 Never add a trailer to the body — no co-author line, no generated-by line, matching `generate-commit-message`'s own rule.
