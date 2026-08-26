@@ -6,7 +6,7 @@ user-invocable: false
 
 # Source Control Rules
 
-`git_guard.py` lets you branch, add, commit, push, stash, and open/update a PR — never on `main`/`master`/`trunk`/`prod`/`production`/`release/*`/`hotfix/*`, and never a merge, rebase, pull, checkout, restore, reset, revert, cherry-pick, force-push, `--amend`, `--no-verify`, `--no-gpg-sign`, or a commit trailer. `PUBLISH_ENABLED=0` in the environment reverts all of that to a blanket deny with no source edit. This skill is what to do with the capability, not a second copy of the block.
+`git_guard.py` lets you branch, add, commit, push, stash, sync your branch with its protected base, and open/update a PR — never on `main`/`master`/`trunk`/`prod`/`production`/`release/*`/`hotfix/*`, and never a rebase, pull, checkout, restore, reset, revert, cherry-pick, force-push, `--amend`, `--no-verify`, `--no-gpg-sign`, or a commit trailer. `PUBLISH_ENABLED=0` in the environment reverts all of that to a blanket deny with no source edit. This skill is what to do with the capability, not a second copy of the block.
 
 ## Never route around the block
 
@@ -36,7 +36,11 @@ Committing on a protected branch is always denied, regardless of `PUBLISH_ENABLE
 
 ## Merging
 
-Never. `git merge`, `git rebase`, `git pull` (fast-forward or not) all stay denied regardless of `PUBLISH_ENABLED` — landing a branch into `main` is the one step that stays entirely the user's, whether through the PR's merge button or their own CLI.
+**One direction only: the protected base into your branch, never your branch into the base.** `git merge <main-or-equivalent>` (bare name or `origin/`-prefixed) is allowed from a non-protected branch, purely to pull in the base's latest and surface conflicts before a human merges the PR. `--abort`/`--continue` are open as escape hatches; a strategy flag that auto-resolves without a visible conflict (`-X`, `--strategy`, `-s`, `--squash`) is denied — the point is to see the conflict, not paper over it.
+
+Resolve conflicts by editing the marked files directly, `git add` each one, then `git commit --no-edit` (accepts git's own merge message, non-interactive — a bare `git commit` here opens an editor and hangs). Push normally afterward; a merge commit is a fast-forward from the remote's point of view, so it never needs force.
+
+Landing your branch into `main` itself is never yours — that's still entirely the user's, through the PR's merge button or their own CLI. `git rebase` and `git pull` (fast-forward or not) stay denied regardless of `PUBLISH_ENABLED`: rebase rewrites history and would need a force-push to publish; use `git fetch` (already unrestricted) plus this merge instead of pull's ambiguous default mode.
 
 ## Stashing
 

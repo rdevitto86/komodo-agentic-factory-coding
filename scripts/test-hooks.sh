@@ -477,6 +477,14 @@ bash_case "G67 gh label list is allowed"                         allow 'gh label
 bash_case "G68 gh api with a write flag is blocked"              deny  'gh api repos/x/y -X DELETE' "bypassing every other check"
 bash_case "G69 gh api read is allowed"                           allow 'gh api repos/x/y/dependabot/alerts'
 bash_case "G70 gh release create is blocked"                     deny  'gh release create v1.0' "not on the allowlist"
+bash_case_at "$FIXTURE_FEAT" "G71 merging the protected base into a feature branch is allowed" allow 'git merge origin/main'
+bash_case_at "$FIXTURE_FEAT" "G72 merging the bare base name is allowed"          allow 'git merge main'
+bash_case_at "$FIXTURE_MAIN" "G73 merging into a protected branch is blocked"     deny  'git merge feat/test-branch' "landing into it"
+bash_case_at "$FIXTURE_FEAT" "G74 merging a non-base branch is blocked"           deny  'git merge some-other-branch' "protected base branch"
+bash_case_at "$FIXTURE_FEAT" "G75 merge -X ours is blocked"                       deny  'git merge origin/main -X ours' "without a visible conflict"
+bash_case_at "$FIXTURE_FEAT" "G76 merge --abort is allowed"                       allow 'git merge --abort'
+bash_case "G77 git rebase is blocked"                            deny  'git rebase main' "changes repository state"
+bash_case "G78 git pull is blocked"                              deny  'git pull origin main' "changes repository state"
 
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
