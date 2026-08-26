@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -49,13 +50,64 @@ READ_ONLY_GIT = {
 }
 
 MUTATING_FLAGS = {
-    "branch": ("-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy", "--edit-description", "--set-upstream-to", "-u", "--unset-upstream"),
+    "branch": ("-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy", "--edit-description", "--set-upstream-to", "--unset-upstream"),
     "tag": ("-d", "-D", "--delete", "-f", "--force"),
     "remote": ("add", "remove", "rm", "rename", "set-url", "set-head", "set-branches", "prune"),
     "config": ("--unset", "--unset-all", "--add", "--replace-all", "--rename-section", "--remove-section", "--edit", "-e"),
 }
 
 GIT_GLOBAL_FLAGS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path")
+
+# --- Publishing policy -------------------------------------------------
+#
+# The agent branches, commits, pushes its own branch, and opens a PR.
+# It never reaches a protected ref, never rewrites history, and never
+# merges. Everything below is the deterministic half of that rule; the
+# `rules-source-control` skill carries the reasoning.
+
+# Flip to False to retire the whole capability: every state-changing verb
+# below goes back to a blanket deny, and no other file needs reverting.
+# The gh restrictions are strictly tighter than what shipped before this,
+# so they stay on either way.
+PUBLISH_ENABLED = True
+
+PUBLISH_VERBS = ("push", "commit", "switch", "add", "merge", "pull")
+
+PROTECTED_BRANCHES = {"main", "master", "trunk", "prod", "production"}
+PROTECTED_PREFIXES = ("release/", "hotfix/")
+
+BRANCH_NAME = re.compile(r"^(feat|fix|chore|docs|test|refactor|perf|build|ci)/[a-z0-9][a-z0-9-]*$")
+
+PUSH_FORCE_FLAGS = ("-f", "--force", "--force-with-lease", "--force-if-includes")
+PUSH_BANNED_FLAGS = ("--mirror", "--all", "--tags", "--follow-tags", "--delete", "-d", "--prune")
+COMMIT_BANNED_FLAGS = ("-n", "--no-verify", "--amend", "--no-gpg-sign")
+ADD_BANNED_FLAGS = ("-i", "--interactive", "-p", "--patch")
+SWITCH_BANNED_FLAGS = ("-C", "--force-create", "--orphan", "-d", "--detach", "--discard-changes")
+
+BANNED_TRAILER = re.compile(r"co-authored-by\s*:|generated with|\U0001F916", re.I)
+TRAILER_FINDING = "the commit message carries a co-author or generated-by trailer"
+
+# A -m body spans newlines, and SEGMENT_SPLIT breaks on them — so a trailer
+# on the message's third line never reaches the tokenized args. The raw
+# command is the only place the whole message is still intact.
+GIT_COMMIT = re.compile(r"\bgit\b[^\n;|&]*\bcommit\b")
+
+GH_GLOBAL_VALUE_FLAGS = ("-R", "--repo")
+GH_ALLOWED = {
+    "pr": {"create", "view", "list", "diff", "status", "checks", "comment", "edit", "ready"},
+    "issue": {"view", "list", "create", "comment"},
+    "repo": {"view"},
+    "run": {"list", "view", "watch"},
+    "label": {"list", "create"},
+    "auth": {"status"},
+    "stack": None,
+    "search": None,
+    "browse": None,
+    "status": None,
+    "version": None,
+    "extension": {"list"},
+}
+GH_API_WRITE_FLAGS = ("-X", "--method", "-f", "--raw-field", "-F", "--field", "--input")
 
 SHELL_WRAPPERS = ("sh", "bash", "zsh", "dash", "ksh", "env")
 PASSTHROUGH_WRAPPERS = ("time", "command", "nohup", "xargs")
@@ -68,7 +120,7 @@ PASSTHROUGH_VALUE_FLAGS = {
 
 # Names strip_leading_flags treats as "this must be the wrapped command,
 # not a flag's value" when it meets an option it doesn't recognize.
-MONITORED_COMMANDS = SHELL_WRAPPERS + PASSTHROUGH_WRAPPERS + ("git", "cp", "mv", "tee", "eval")
+MONITORED_COMMANDS = SHELL_WRAPPERS + PASSTHROUGH_WRAPPERS + ("git", "gh", "cp", "mv", "tee", "eval")
 
 CP_MV_TARGET_FLAGS = ("-t", "--target-directory")
 
@@ -159,11 +211,11 @@ def strip_leading_flags(tokens, value_flags):
     return tokens[index:]
 
 
-def git_subcommand(tokens):
+def subcommand_of(tokens, value_flags):
     index = 1
     while index < len(tokens):
         token = tokens[index]
-        if token in GIT_GLOBAL_FLAGS_WITH_VALUE:
+        if token in value_flags:
             index += 2
             continue
         if token.startswith("-"):
@@ -173,8 +225,144 @@ def git_subcommand(tokens):
     return None, []
 
 
-def git_violation(subcommand, args):
+def leading_word(segment):
+    tokens = strip_env_assignments(tokenize(segment))
+    return os.path.basename(tokens[0]) if tokens else ""
+
+
+def current_branch(cwd):
+    if not cwd or not os.path.isdir(cwd):
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "symbolic-ref", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def is_protected(ref):
+    ref = ref.strip().strip("\"'")
+    if ref.startswith("refs/heads/"):
+        ref = ref[len("refs/heads/"):]
+    if ref in PROTECTED_BRANCHES:
+        return True
+    return ref.startswith(PROTECTED_PREFIXES)
+
+
+def push_violation(args, cwd):
+    positional = []
+    for arg in args:
+        if arg in PUSH_FORCE_FLAGS or arg.startswith("--force-with-lease=") or arg.startswith("--force-if-includes="):
+            return "git push %s rewrites published history" % arg
+        if arg in PUSH_BANNED_FLAGS:
+            return "git push %s is denied" % arg
+        if not arg.startswith("-"):
+            positional.append(arg)
+    if len(positional) < 2:
+        return "git push needs an explicit remote and branch — git push -u origin <branch>"
+    for spec in positional[1:]:
+        if spec.startswith("+"):
+            return "a + refspec force-pushes; push without it"
+        if spec.startswith(":"):
+            return "git push :<ref> deletes a remote branch"
+        source, _, destination = spec.partition(":")
+        destination = destination or source
+        if destination in ("HEAD", ""):
+            destination = current_branch(cwd) or ""
+            if not destination:
+                return "cannot resolve HEAD to a branch — name the destination explicitly"
+        if is_protected(destination):
+            return "git push to %s is denied — open a pull request instead" % destination
+    return None
+
+
+def commit_violation(args, cwd, has_cd):
+    for arg in args:
+        if arg in COMMIT_BANNED_FLAGS:
+            return "git commit %s skips a gate or rewrites a commit" % arg
+    if BANNED_TRAILER.search(" ".join(args)):
+        return TRAILER_FINDING
+    if has_cd:
+        return "a cd earlier in this command makes the current branch unknowable"
+    branch = current_branch(cwd)
+    if branch is None:
+        return "cannot resolve the current branch — refusing to commit"
+    if is_protected(branch):
+        return "git commit on %s is denied — create a branch first" % branch
+    return None
+
+
+def switch_violation(args):
+    created = None
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in SWITCH_BANNED_FLAGS:
+            return "git switch %s is denied" % arg
+        if arg in ("-c", "--create"):
+            created = args[index + 1] if index + 1 < len(args) else ""
+            index += 2
+            continue
+        index += 1
+    if created is not None and not BRANCH_NAME.match(created):
+        return "branch name '%s' must match <type>/<kebab-case>" % created
+    return None
+
+
+def git_violation(subcommand, args, cwd, has_cd):
     if subcommand is None:
+        return None
+    if not PUBLISH_ENABLED:
+        if subcommand in PUBLISH_VERBS:
+            return "git %s changes repository state" % subcommand
+        if subcommand == "branch":
+            positional = [arg for arg in args if not arg.startswith("-")]
+            if positional:
+                return "git branch %s creates a branch" % positional[0]
+    if subcommand == "push":
+        return push_violation(args, cwd)
+    if subcommand == "commit":
+        return commit_violation(args, cwd, has_cd)
+    if subcommand == "switch":
+        return switch_violation(args)
+    if subcommand == "add":
+        for arg in args:
+            if arg in ADD_BANNED_FLAGS:
+                return "git add %s is interactive and cannot complete here" % arg
+        return None
+    if subcommand in ("merge", "pull"):
+        if "--ff-only" in args:
+            return None
+        if subcommand == "pull":
+            return "git pull is allowed only with --ff-only — use git fetch + git merge for a real sync"
+        if "--abort" in args or "--continue" in args:
+            return None
+        for flag in ("-X", "--strategy-option", "-s", "--strategy", "--squash"):
+            if flag in args:
+                return "git merge %s auto-resolves without a visible conflict" % flag
+        branch = current_branch(cwd)
+        if branch and is_protected(branch):
+            return "git merge on %s, a protected branch — landing into it stays the user's job" % branch
+        positional = [arg for arg in args if not arg.startswith("-")]
+        if len(positional) != 1:
+            return "git merge only takes one target: the protected base branch, to sync before a human merges the PR"
+        target = positional[0]
+        bare = target[len("origin/"):] if target.startswith("origin/") else target
+        if not is_protected(bare):
+            return "git merge %s isn't the protected base branch" % target
+        return None
+    if subcommand == "branch":
+        positional = [arg for arg in args if not arg.startswith("-")]
+        for flag in MUTATING_FLAGS["branch"]:
+            if flag in args:
+                return "git branch %s changes repository state" % flag
+        if positional and not BRANCH_NAME.match(positional[0]):
+            return "branch name '%s' must match <type>/<kebab-case>" % positional[0]
         return None
     if subcommand not in READ_ONLY_GIT:
         return "git %s changes repository state" % subcommand
@@ -188,14 +376,30 @@ def git_violation(subcommand, args):
     for arg in args:
         if arg in mutators:
             return "git %s %s changes repository state" % (subcommand, arg)
-    if subcommand == "branch":
-        positional = [arg for arg in args if not arg.startswith("-")]
-        if positional:
-            return "git branch %s creates a branch" % positional[0]
     return None
 
 
-def scan_segment(segment, findings):
+def gh_violation(tokens):
+    group, rest = subcommand_of(tokens, GH_GLOBAL_VALUE_FLAGS)
+    if group is None:
+        return None
+    if group == "api":
+        for token in tokens:
+            if token in GH_API_WRITE_FLAGS or token.startswith("--method="):
+                return "gh api write requests are denied"
+        return None
+    if group not in GH_ALLOWED:
+        return "gh %s is denied" % group
+    allowed = GH_ALLOWED[group]
+    if allowed is None:
+        return None
+    subcommand = next((arg for arg in rest if not arg.startswith("-")), "")
+    if subcommand not in allowed:
+        return "gh %s %s is denied" % (group, subcommand or "<none>")
+    return None
+
+
+def scan_segment(segment, findings, cwd, has_cd):
     tokens = strip_env_assignments(tokenize(segment))
     if not tokens:
         return
@@ -203,17 +407,17 @@ def scan_segment(segment, findings):
     if command in SHELL_WRAPPERS:
         for index, token in enumerate(tokens):
             if token == "-c" and index + 1 < len(tokens):
-                scan_command(tokens[index + 1], findings)
+                scan_command(tokens[index + 1], findings, cwd)
         return
     if command == "eval":
         inner = tokens[1:]
         if inner:
-            scan_command(" ".join(inner), findings)
+            scan_command(" ".join(inner), findings, cwd)
         return
     if command in PASSTHROUGH_WRAPPERS:
         inner = strip_leading_flags(tokens[1:], PASSTHROUGH_VALUE_FLAGS[command])
         if inner:
-            scan_command(" ".join(inner), findings)
+            scan_command(" ".join(inner), findings, cwd)
         return
     if command == "tee":
         for token in tokens[1:]:
@@ -253,19 +457,31 @@ def scan_segment(segment, findings):
             findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
         return
     if command == "git":
-        subcommand, args = git_subcommand(tokens)
-        violation = git_violation(subcommand, args)
+        subcommand, args = subcommand_of(tokens, GIT_GLOBAL_FLAGS_WITH_VALUE)
+        scoped = cwd
+        for index, token in enumerate(tokens):
+            if token == "-C" and index + 1 < len(tokens):
+                scoped = tokens[index + 1]
+        violation = git_violation(subcommand, args, scoped, has_cd)
+        if violation:
+            findings.append(violation)
+        return
+    if command == "gh":
+        violation = gh_violation(tokens)
         if violation:
             findings.append(violation)
         return
 
 
-def scan_command(command, findings):
-    for segment in SEGMENT_SPLIT.split(command):
-        segment = segment.strip()
-        if segment:
-            scan_segment(segment, findings)
+def scan_command(command, findings, cwd):
+    segments = [segment.strip() for segment in SEGMENT_SPLIT.split(command)]
+    segments = [segment for segment in segments if segment]
+    has_cd = any(leading_word(segment) == "cd" for segment in segments)
+    for segment in segments:
+        scan_segment(segment, findings, cwd, has_cd)
 
+    if GIT_COMMIT.search(command) and BANNED_TRAILER.search(command):
+        findings.append(TRAILER_FINDING)
     if INPLACE_SED.search(command):
         findings.append("sed -i rewrites files in place, bypassing the comment guard")
     if INPLACE_PERL.search(command):
@@ -299,7 +515,7 @@ def main():
         sys.exit(0)
 
     findings = []
-    scan_command(command, findings)
+    scan_command(command, findings, payload.get("cwd") or os.getcwd())
     if not findings:
         sys.exit(0)
 
@@ -312,8 +528,9 @@ def main():
     lines.extend("    %s" % item for item in unique)
     lines.extend([
         "",
-        "Only you commit, push, branch, merge, or otherwise change git state.",
-        "Reading history is fine: log, diff, show, status, blame, rev-parse.",
+        "You may branch, commit, push your own branch, and open a pull request.",
+        "You may never reach a protected ref, rewrite history, or merge.",
+        "Reading history is always fine: log, diff, show, status, blame, rev-parse.",
         "In-place file rewrites must go through Edit or Write so the comment",
         "guard can see them. Run this yourself if you intended it.",
     ])

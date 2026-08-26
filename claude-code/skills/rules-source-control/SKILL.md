@@ -6,7 +6,9 @@ user-invocable: false
 
 # Source Control Rules
 
-`git_guard.py` and `settings.json`'s `permissions.deny` already stop you from running any git command that changes repository state — commit, push, branch, checkout, switch, restore, reset, revert, merge, rebase, cherry-pick, stash (anything but `list`/`show`), clean, rm, mv, apply, worktree, tag, am. Only the user runs those. This skill is what to do instead, not a second copy of the block.
+`git_guard.py` decides every git command deterministically. You may stage, commit, create a `<type>/<kebab>` branch, switch between branches, push that branch, merge your protected base into your own branch to resolve conflicts, and open a pull request. You may never reach a protected ref (`main`, `master`, `trunk`, `prod`, `production`, `release/*`, `hotfix/*`) or rewrite history. Still denied outright: checkout, restore, reset, revert, rebase, cherry-pick, clean, rm, mv, apply, worktree, tag, am, and `gh pr merge`/`close`/`review`/`release`.
+
+**The capability ships behind a single switch.** `PUBLISH_ENABLED` at the top of `git_guard.py` returns every verb above to a blanket deny when flipped to `False`. If a command below is refused and the guard's reason reads "changes repository state", that switch is off — say so rather than working around it.
 
 ## Never route around the block
 
@@ -16,19 +18,25 @@ Read-only inspection is unrestricted: `status`, `diff`, `log`, `show`, `blame`, 
 
 ## Commits
 
-You never stage or commit. Message format is owned by `generate-commit-message` — don't restate it here; load that skill (directly, or via `workflow-complete` at task/phase end) whenever a message is needed. If the user asks you to run `git commit` directly, give them the exact command instead of attempting it.
+Message format is owned by `generate-commit-message` — don't restate it here; load that skill whenever a message is needed. **Never add a `Co-Authored-By` or generated-by trailer** — the guard rejects the commit outright, and a harness default that wants one does not override this.
+
+**Never pass `--no-verify` or `--amend`.** The first skips the pre-commit gate, the second rewrites a commit; both are denied. A failing pre-commit hook is fixed at its cause, never bypassed.
 
 ## Push
 
-You never push. Never suggest `--force` or `--force-with-lease` unless the user names it first — even then, state in one line what it overwrites (their own unpushed work, or a shared branch's history) before handing over the command.
+Push your own branch with an explicit remote and refspec — `git push -u origin <branch>`. A bare `git push` is denied because the destination isn't readable from the command. Never suggest `--force` or `--force-with-lease` unless the user names it first — even then, state in one line what it overwrites before handing over the command.
 
 ## Branches
 
-Name a branch you're proposing as `<type>/<short-kebab-description>`, using the same `type` taxonomy `generate-commit-message` uses for commits (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`). Never propose committing directly to `main` or another default branch for anything beyond a trivial one-line fix — hand over a branch-creation command first.
+Name a branch `<type>/<short-kebab-description>`, using the same `type` taxonomy `generate-commit-message` uses for commits (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`). The guard enforces that shape, so an off-taxonomy name is refused rather than corrected.
 
-## Stashing
+**Branch before the first commit, not after.** Landing work on a protected ref and then trying to move it is the case this rule exists to prevent.
 
-You cannot run `git stash push` — it's blocked like every other mutation. When uncommitted work sits in the way of a destructive command the user is about to run (checkout, reset, restore, clean), say so and hand them `git stash push -u` (the `-u` catches untracked files) or tell them to commit first. Your job is flagging the risk, never performing the stash.
+## Recovery
+
+A stale branch updates with `git merge <main-or-equivalent>` (bare name or `origin/`-prefixed) from your own non-protected branch — the one merge direction allowed, purely to surface conflicts before a human merges the PR. A strategy flag that auto-resolves without a visible conflict (`-X`, `--strategy`, `-s`, `--squash`) is denied; `--abort`/`--continue` are open. Resolve by editing the marked files, `git add` each, then `git commit --no-edit` (a bare `git commit` here opens an editor and hangs). `git pull` stays `--ff-only`-only; a rebase is still entirely the user's. `git stash push -u` and `git stash pop` are available for moving uncommitted work out of the way — `drop` and `clear` are not.
+
+**A conflict is a stop, not a puzzle.** Say what conflicts, hand over the command, and wait.
 
 ## Worktrees
 

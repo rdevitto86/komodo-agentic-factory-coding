@@ -1,6 +1,6 @@
 ---
 name: workflow-loop
-description: The end-to-end execution loop — spec, decompose, execute, consolidate, complete. Run it for any change bigger than a one-line fix, including when the user asks in plain language to build, ship, or implement something end to end rather than typing the slash command.
+description: The end-to-end execution loop — spec, decompose, execute, consolidate, publish. Run it for any change bigger than a one-line fix, including when the user asks in plain language to build, ship, or implement something end to end rather than typing the slash command.
 argument-hint: [task, or "open <topic>" for the unscripted path]
 ---
 
@@ -27,8 +27,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
 | P2.3 Review | `/audit-bugs` (+ `/audit-security`) — isolated by construction | — |
 | P2.4 Closeout | `/audit-bugs`, `/audit-security`, `/audit-simplify`, once per band | — |
-| P3 Consolidate | **`/workflow-consolidate`** | `implementer` |
-| P4 Complete | Here — short output | — |
+| P3 Consolidate | **`/workflow-consolidate`**, then commit here | `implementer` |
+| P4 Publish | Here — push + `/generate-pr` | — |
 
 **The forked phases carry their own instructions.** Each declares `context: fork` in its frontmatter, so neither the phase's rules nor the work it does ever enters this window — only its returned result. That is why this file is short: the detail lives where it is paid for.
 
@@ -136,15 +136,17 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 It writes the changelog entry, bumps the version, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — that's frozen, and a change it needs comes back to you as a finding.
 
-**Ends when:** the changelog entry exists and the backlog no longer lists finished work.
+**Commit here once it returns, not inside the fork.** `workflow-consolidate` runs as `implementer`, which is read-only git by design — the commit happens in this session. Run `/generate-commit-message` against the full band diff (every P2.1 task plus consolidate's own doc changes), then `git add` + `git commit` with its result.
+
+**Ends when:** the changelog entry exists, the backlog no longer lists finished work, and the band is committed.
 
 ---
 
-## P4 · Complete
+## P4 · Publish
 
-**`/workflow-complete`.** Outputs a copy-pastable conventional commit for the user to paste.
+**Push the branch** — `git push -u origin <branch>` — **then run `/generate-pr`** to open or update the pull request for this band.
 
-**The user commits.** `rules-source-control` owns why and what you do instead.
+**Ends when:** the branch is pushed and `/generate-pr` has returned the PR URL.
 
 ---
 
