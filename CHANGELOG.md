@@ -12,6 +12,8 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - `rules-source-control` — rewritten for the new capabilities, the protected-ref list, the `PUBLISH_ENABLED` kill switch, and `git merge --ff-only`/`git pull --ff-only` recovery.
 - `generate-changelog` — tag creation is fully the user's now; dropped the agent tag-creation instruction.
 - `config-accessibility-output` — added the fixed ✅/❌/⚠️ turn-end change summary schema.
+- `workflow-loop` P3/P4 — P3 now commits the band here (`generate-commit-message`, then `git commit`) once `workflow-consolidate`'s read-only fork returns; P4 is renamed Publish and pushes + runs `generate-pr` instead of printing a commit message to paste.
+- `workflow-complete` — rewritten to match: pushes the branch and runs `generate-pr`, no longer generates or prints a commit message.
 
 ## [0.24.2] — 2026-08-25
 
