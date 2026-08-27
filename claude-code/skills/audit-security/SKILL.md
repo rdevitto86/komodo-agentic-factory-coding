@@ -8,13 +8,13 @@ argument-hint: <task text or band summary> [standards-* skills that apply] [--re
 
 Reviewing: **$ARGUMENTS**
 
-Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Load `standards-security` first — it states the OWASP-benchmarked bar this reviews against. Never a fork of the session that wrote the code. Findings only, never fixes.
+Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Load `standards-security-api` first — it states the OWASP-benchmarked bar this reviews against for any server-side boundary. Add `standards-security-ui` when the diff touches a rendered surface (`.svelte`/`.vue`/`.tsx`/`.jsx`/`.html`) — it owns XSS, clickjacking, and dark-pattern findings. Never a fork of the session that wrote the code. Findings only, never fixes.
 
 ## Process
 
 1. **Read `git diff` for the band.**
-2. **Walk every touched external boundary** — an endpoint, a query, a file path, a shell command, a deserialization, a secret or credential, an auth check. A file with none of those is out of scope.
-3. **Test each boundary against `standards-security`'s checklist**: injection (SQL/command/template), auth bypass, secret exposure (logged, committed, hardcoded), missing input validation, broken access control, insecure deserialization.
+2. **Walk every touched external boundary** — an endpoint, a query, a file path, a shell command, a deserialization, a secret or credential, an auth check, a rendered template. A file with none of those is out of scope.
+3. **Test each boundary against the loaded skill(s)' checklist**: injection (SQL/command/template), auth bypass, secret exposure (logged, committed, hardcoded), missing input validation, broken access control, insecure deserialization, and — for a rendered surface — XSS, clickjacking, and dark patterns.
 4. **A finding needs a concrete exploit path**, not a hypothetical. "Could theoretically" is not a finding; "input X reaches Y unvalidated, sink Z executes it" is.
 
 ## Report
@@ -29,4 +29,4 @@ No findings: state that plainly, one line, and stop. **Never invent a finding to
 
 ## Findings → backlog
 
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <claim> · S → \`/audit-security <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `generate-backlog`. `--report` prints the table only; nothing is written.
+Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <claim> · S → \`/audit-security <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `write-backlog`. `--report` prints the table only; nothing is written.

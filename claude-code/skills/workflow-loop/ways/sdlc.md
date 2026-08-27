@@ -32,7 +32,7 @@ The SDD sections a code build actually depends on:
 
 ## P2.3 · Review
 
-`/audit-bugs` against the task, always. Add `/audit-security` when the touched surface includes an auth/secret/boundary path. **Invoke each with the task text and which `standards-*` skills the touched files load** (the language skill at minimum; `standards-docker` for a touched `Dockerfile`/`docker-compose.yaml`, `standards-security` for a touched auth/secret/boundary path) — an unbriefed review picks its own lenses, which is not a repeatable gate. The lenses that matter:
+`/audit-bugs` against the task, always. Add `/audit-security` when the touched surface includes an auth/secret/boundary path. **Invoke each with the task text and which `standards-*` skills the touched files load** (the language skill at minimum; `standards-docker` for a touched `Dockerfile`/`docker-compose.yaml`, `standards-security-api` for a touched auth/secret/boundary path, `standards-security-ui` for a touched rendered surface) — an unbriefed review picks its own lenses, which is not a repeatable gate. The lenses that matter:
 
 - **Correctness** — does it do what the story said, including the edge the story named
 - **Security** — new boundary, new query, new secret handling

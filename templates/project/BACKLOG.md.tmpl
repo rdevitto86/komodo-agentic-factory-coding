@@ -1,20 +1,52 @@
-# Backlog
-Severity: [C] Critical · [H] High · [M] Medium · [L] Low · In progress: `[WIP]`
+# Project Backlog
 
-Open work only. Format and rules live in the `worklog` skill — load it before editing this file.
+## Convention Legend
+* **Priority Tagging:** `[C]` Critical | `[H]` High | `[M]` Medium | `[L]` Low
+* **Status Indicators:** `[TODO]` | `[IN_PROGRESS]` | `[BLOCKED]` | `[DONE]`
+* **Hierarchy ID:** `EPIC-XX` -> `TG-XX.Y` (Task Group) -> `TSK-XX.Y.Z` (Task) -> `SUB-XX.Y.Z.N` (Subtask)
 
-## Now — V1
+---
 
-### Cross-Cutting
-- [H] Wire the health endpoint and the extended check smoke depends on · S → `{{HEALTH_CHECK}}`
-- [M] Install the SDK git hooks and point `core.hooksPath` at them · S → `git config --get core.hooksPath`
-- [H] PR pipeline: lint → unit → component → contract → secret/dependency/SAST scans · M → `{{CI_LOCAL}}`
-- [H] Release pipeline: build → deploy green → smoke → flip → integration → e2e · M → `{{RELEASE_DRYRUN}}`
-- [H] Security review: run `/audit-security` · S → findings triaged
-- [H] Bug sweep: run `/audit-bugs` · S → findings triaged
-- [M] Code smell: run `/audit-simplify` · S → findings triaged
-- [M] Performance: run the perf suite · S → `{{PERF}}`
+## [EPIC-01] <First Epic Title / High-Level Initiative>
+*Goal: <Describe the high-level goal or business outcome for this epic.>*
 
-## Next — V2
+### [TG-01.1] <First Feature / Module / Infrastructure Focus>
+* **Target Release:** <vX.Y or Milestone Name>
 
-_Nothing planned yet. Run `/generate-backlog` to fill this in._
+#### [TSK-01.1.1] <Completed Deliverable> [P: C] [DONE]
+* [x] **SUB-01.1.1.1** [P: C] <Completed setup step>
+* [x] **SUB-01.1.1.2** [P: H] <Completed core logic step>
+
+#### [TSK-01.1.2] <Active Deliverable> [P: H] [IN_PROGRESS]
+* [x] **SUB-01.1.2.1** [P: H] <Completed step>
+* [ ] **SUB-01.1.2.2** [P: M] <In-progress step>
+* [ ] **SUB-01.1.2.3** [P: L] <Pending verification step>
+
+#### [TSK-01.1.3] <Blocked Deliverable> [P: M] [BLOCKED]
+* **Blocked By:** `TSK-01.1.2` (<Reason for block>)
+* [ ] **SUB-01.1.3.1** [P: M] <Subtask description>
+
+### [TG-01.2] <Second Feature / Module / Infrastructure Focus>
+* **Target Release:** <vX.Y or Milestone Name>
+
+#### [TSK-01.2.1] <Pending Task> [P: L] [TODO]
+* [ ] **SUB-01.2.1.1** [P: L] <Subtask description>
+
+---
+
+## [EPIC-02] <Second Epic Title / High-Level Initiative>
+*Goal: <Describe the high-level goal or business outcome for this epic.>*
+
+### [TG-02.1] <Feature / Module Focus>
+* **Target Release:** <vX.Y or Milestone Name>
+
+#### [TSK-02.1.1] <Task Name> [P: M] [TODO]
+* [ ] **SUB-02.1.1.1** [P: M] <Subtask description>
+
+---
+
+## Archive
+*Note: Use this section strictly for abandoned, shelved, or deprecated initiatives to keep them separate from active work without losing historical ideas.*
+
+### [EPIC-00] <Shelved / Deprecated Initiative>
+* [ ] **TSK-00.0.1** [P: L] <Cancelled experiment or deprecated requirement>

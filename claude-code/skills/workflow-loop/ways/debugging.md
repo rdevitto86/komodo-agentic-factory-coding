@@ -24,7 +24,7 @@ The gates for the phases that run in **this** session, when the task is "find wh
 
 ## P1 · Hypothesize
 
-**Runs as `/workflow-debug-hypothesize <repro + characterization from P0>` instead of `/workflow-decompose`** — the fork target is `planner`, same as decompose, but the contract is a ranked hypothesis queue, not a backlog-derived task queue. See that skill for its read order.
+**Runs as `/workflow-debug <repro + characterization from P0>` instead of `/workflow-decompose`** — the fork target is `workflow-planner`, same as decompose, but the contract is a ranked hypothesis queue, not a backlog-derived task queue. See that skill for its read order.
 
 **Ends when:** every hypothesis carries a `Done when` command and a rank.
 
@@ -52,7 +52,7 @@ The gates for the phases that run in **this** session, when the task is "find wh
 
 ## P2.4-equivalent · Closeout
 
-**Runs as `/workflow-implement` writing a runbook entry, instead of `/workflow-consolidate`.** The task: draft `docs/runbooks/<slug>.md` from `generate-runbook`'s template, `<slug>` naming the failure mode. `Done when`: the file exists and its Trigger/Diagnosis/Resolution sections cite the confirmed root cause and the fix from P2.1/P2.2 — no changelog entry, no version bump, this phase never touches either.
+**Runs as `/workflow-implement` writing a runbook entry, instead of `/workflow-consolidate`.** The task: draft `docs/runbooks/<slug>.md` from `write-runbook`'s template, `<slug>` naming the failure mode. `Done when`: the file exists and its Trigger/Diagnosis/Resolution sections cite the confirmed root cause and the fix from P2.1/P2.2 — no changelog entry, no version bump, this phase never touches either.
 
 **A code fix that shipped still needs its own changelog entry** — that's `/workflow-consolidate`, run once through the normal `sdlc.md` gates for the fix itself; this closeout only produces the operational record of the incident.
 

@@ -106,7 +106,7 @@ Makefile
 
 ## Seed backlog — `cdk-infra`
 
-Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+Stories `write-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [H] Instantiate the first stack · M
 - [M] Observability: wire logging/metrics/tracing (`standards-observability`) · S

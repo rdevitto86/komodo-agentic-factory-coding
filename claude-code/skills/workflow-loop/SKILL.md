@@ -21,14 +21,14 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | Phase | Runs as | Fork agent |
 |---|---|---|
 | P0 Spec | Here — dialogue cannot be forked | — |
-| P1 Decompose | **`/audit-backlog` then `/workflow-decompose`**, then branch here | `planner` |
+| P1 Decompose | **`/audit-backlog` then `/workflow-decompose`**, then branch here | `workflow-planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
-| P2.1 Implement | **`/workflow-implement`, once per task** | `implementer` |
+| P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
 | P2.3 Review | `/audit-bugs` (+ `/audit-security`), then commit here | — |
 | P2.4 Closeout | `/audit-bugs`, `/audit-security`, `/audit-simplify`, once per band | — |
-| P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta here | `implementer` |
-| P4 Publish | **`/workflow-complete`** — push + `/generate-pr` | — |
+| P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta here | `workflow-implementer` |
+| P4 Publish | **`/workflow-complete`** — push + `/git-pr` | — |
 
 **The forked phases carry their own instructions.** Each declares `context: fork` in its frontmatter, so neither the phase's rules nor the work it does ever enters this window — only its returned result. That is why this file is short: the detail lives where it is paid for.
 
@@ -42,17 +42,15 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ## P0 · Spec — the human gate
 
-**Requires `docs/sdd.md` and `README.md`.** Load `generate-sdd` for the spec's shape and `generate-readme` for README's.
+**Requires the SDD (a Google Doc in Drive) and `README.md`.** Load `standards-specs` for the SDD's fetch contract and section map, and `write-readme` for README's shape. This phase never drafts the SDD — it isn't authored by this toolkit at all, only fetched and read.
 
-**When a PRD backs this repo, fetch its §4, §7, and §10 while drafting the SDD** — scope boundary, requirement priorities, phase split, none of which the SDD holds. Load `standards-prd` for how; this is one of only three fetch points in the whole loop. **A PRD is optional and this phase never blocks on one** — no PRD means those answers come from the user in this same dialogue, which is what P0 is for.
+**On any run after the first, the check is existence only.** One `test -f` for `README.md`, one MCP fetch to confirm the SDD still resolves — then go to P1. Never re-read the full SDD body every loop; that's the token burn this design removes.
 
-**On any run after the first, the check is existence only.** One `test -f` each, then go to P1. Never re-read or re-validate them — they are frozen, and re-reading them every loop is exactly the token burn this design removes.
+**On the first run, read `README.md` before fetching the SDD, not after.** It is the fastest source of the high-level framing (what the repo is, who it's for) that would otherwise have to be reconstructed from the task description alone — pull from it, never duplicate its wording verbatim.
 
-**On the first run, read `README.md` before drafting the SDD, not after.** It is the fastest source of the high-level framing (what the repo is, who it's for) that a spec written from nothing would otherwise have to invent from the task description alone — pull from it, never duplicate its wording verbatim.
+**If `README.md` is missing, the SDD doesn't resolve, or the fetched SDD still carries `NEEDS DECISION` in a section this work depends on**, draft what you can and stop. **This is the one phase allowed to block with nothing delivered** — building on an unapproved spec is the guessing the whole machine exists to prevent.
 
-**If `docs/sdd.md` or `README.md` is missing, or the SDD still carries `NEEDS DECISION` in a section this work depends on**, draft what you can and stop. **This is the one phase allowed to block with nothing delivered** — building on an unapproved spec is the guessing the whole machine exists to prevent.
-
-**Ends when:** both files exist and the SDD has the user's approval.
+**Ends when:** `README.md` exists, the SDD resolves, and it has the user's approval.
 
 ---
 
@@ -66,9 +64,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — fixing it means going back to P0 with the user, not improvising in P2.
 
-**A `BACKLOG.md` holding only `generate-repo`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the SDD — run the fork rather than treating an unread backlog as if P1 already happened.
+**A `BACKLOG.md` holding only `write-repo`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the SDD — run the fork rather than treating an unread backlog as if P1 already happened.
 
-**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `generate-repo`'s Create already ran for this repo — trust the tree.** Re-invoke `/generate-repo` only when a Foundation-edge story is still open in `BACKLOG.md` (`generate-backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
+**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `write-repo`'s Create already ran for this repo — trust the tree.** Re-invoke `/write-repo` only when a Foundation-edge story is still open in `BACKLOG.md` (`write-backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
 
 **Once the queue is confirmed, branch here** — `git switch -c <type>/<short-kebab-description>` per `rules-source-control`'s naming rule, `type` and description drawn from the band's dominant concern. **Resuming a `[WIP]` story reuses its existing branch** (`git switch <existing-branch>`) instead of creating a second one — check the story text for a branch name before assuming none exists.
 
@@ -118,7 +116,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Findings that affect correctness, security, or a stated requirement are folded into P2.0's pick and become the next P2.1 task in this same pass — not deferred. Everything else is optional and stays filed for a later pass — a reviewer asked to find gaps will always find some, and chasing all of them produces defensive code and tests for cases that cannot happen.
 
-**Commit here once the task's findings are clean.** Run `/generate-commit-message` against this task's diff alone (not the whole band), then `git add` + `git commit` with its result — one commit per task, including any P2.3 fix-commits the task itself spawned. This is what keeps a dropped session from losing more than the one task in flight; the previous tasks are already durable.
+**Commit here once the task's findings are clean.** Run `/git-commit-message` against this task's diff alone (not the whole band), then `git add` + `git commit` with its result — one commit per task, including any P2.3 fix-commits the task itself spawned. This is what keeps a dropped session from losing more than the one task in flight; the previous tasks are already durable.
 
 **Ends when:** every story the calls filed for this task is fixed or confirmed genuinely optional, and the task is committed. Green ends the task; loop back to P2.0 for the next one.
 
@@ -128,7 +126,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story a call just filed for this band is folded into P2.0's pick and resolved in this same pass — fixed via `/workflow-implement`, or explicitly declined and removed from `BACKLOG.md` with the reason noted for P4's report. A closeout finding left open past this phase is exactly the pile-up this step exists to prevent.
 
-**Clears the target state's four standing closeout stories.** This is what stops them sitting open forever: they are never picked as ordinary P2.1 tasks — the `implementer` fork has no `Skill` tool and cannot invoke an audit skill — they are cleared here instead.
+**Clears the target state's four standing closeout stories.** This is what stops them sitting open forever: they are never picked as ordinary P2.1 tasks — a `workflow-implementer` fork wrote the code and can't also review it cold, `audit-*` calls stay this session's job — they are cleared here instead.
 
 **Ends when:** every story the closeout calls filed is fixed or explicitly declined — that satisfies the four stories' `Done when`, so P3 deletes them like any other finished story.
 
@@ -140,7 +138,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 It writes the changelog entry, bumps the version, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — that's frozen, and a change it needs comes back to you as a finding.
 
-**Commit here once it returns — its own delta only.** `workflow-consolidate` runs as `implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is just consolidate's changelog/version/backlog-cleanup output. Run `/generate-commit-message` against that delta, then `git add` + `git commit`.
+**Commit here once it returns — its own delta only.** `workflow-consolidate` runs as `workflow-implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is just consolidate's changelog/version/backlog-cleanup output. Run `/git-commit-message` against that delta, then `git add` + `git commit`.
 
 **Ends when:** the changelog entry exists, the backlog no longer lists finished work, and consolidate's delta is committed.
 
@@ -148,15 +146,15 @@ It writes the changelog entry, bumps the version, syncs the manifest, clears the
 
 ## P4 · Publish
 
-**`/workflow-complete`.** Pushes the branch and runs `/generate-pr` to open or update the pull request for this band.
+**`/workflow-complete`.** Pushes the branch and runs `/git-pr` to open or update the pull request for this band.
 
-**Ends when:** the branch is pushed and `/generate-pr` has returned the PR URL.
+**Ends when:** the branch is pushed and `/git-pr` has returned the PR URL.
 
 ---
 
 ## Guardrails
 
-- **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `generate-backlog`.
+- **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `write-backlog`.
 - **Backing out is a rewrite.** Capture `git diff` before a risky write; `rules-source-control` owns handing the user the recovery command.
 - **The bridge is optional, never blocking.** An unreachable MCP server is a skipped step. Never branch a phase on whether it is up.
 - **Never poll a delegated phase.** A fork and a backgrounded review both re-invoke this session the moment they finish. A scheduled check burns a full turn even when it lands on time, and can fire *stale* — after the work already completed — re-running dead instructions against state that already moved on.
