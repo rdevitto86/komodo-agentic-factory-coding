@@ -89,33 +89,6 @@ Format and rules live in the `write-backlog` skill — load it before editing th
 
 #### [TSK-02.2.14] Rename config-accessibility-output to config-accessibility [P: L] [TODO]
 
-### [TG-02.3] Docs & Specs
-* **Target Release:** V2
-
-#### [TSK-02.3.1] Scaffold the local /docs/spec, /docs/adr, /docs/runbook layout + MkDocs Material config as reusable templates [P: H] [TODO]
-* [ ] **SUB-02.3.1.1** add `templates/project/docs/spec/`, `templates/project/docs/adr/`, `templates/project/docs/runbook/` each with a starter template file (this config repo itself is excluded — these are templates other repos scaffold from, not local docs for this repo) · Done when: the three directories exist with a non-empty starter file each and `bash scripts/validate.sh` passes
-* [ ] **SUB-02.3.1.2** add `templates/project/mkdocs.yml.tmpl` configured for the Material theme, rendering the repo's local `/docs/*` · Done when: the file exists, names `mkdocs-material` as its theme, and `bash scripts/validate.sh` passes
-* [ ] **SUB-02.3.1.3** update `write-repo`'s Create path to scaffold `/docs/spec`, `/docs/adr`, `/docs/runbook`, and the MkDocs config into any new project repo (this config repo excluded per `write-repo`'s own scope) · Done when: `claude-code/skills/write-repo/SKILL.md`'s Create section names all four, and `bash scripts/validate.sh` passes
-
-#### [TSK-02.3.2] Update standards-specs for the local /docs/spec layout [P: M] [TODO] (after: "Scaffold the local /docs/spec, /docs/adr, /docs/runbook layout + MkDocs Material config as reusable templates")
-* [ ] **SUB-02.3.2.1** replace the current Drive-fetch contract in `claude-code/skills/standards-specs/SKILL.md` with a reference to the local `/docs/spec` layout · Done when: the skill contains no Drive/Google Doc fetch instructions and `bash scripts/validate.sh` passes
-* [ ] **SUB-02.3.2.2** document MkDocs Material as the doc-site toolchain `/docs/spec` is paired with · Done when: `standards-specs/SKILL.md` names MkDocs Material and `bash scripts/validate.sh` passes
-
-#### [TSK-02.3.3] Create /sdd skill [P: M] [TODO] (after: "Scaffold the local /docs/spec, /docs/adr, /docs/runbook layout + MkDocs Material config as reusable templates")
-* [ ] **SUB-02.3.3.1** add `claude-code/skills/sdd/SKILL.md` merging SDD authoring (create + edit) and `audit-sdd`'s auditing into one skill against the local `/docs/spec` layout, removing `claude-code/skills/audit-sdd/` once its content is folded in · Done when: `claude-code/skills/sdd/SKILL.md` exists, `claude-code/skills/audit-sdd/` no longer exists, and `bash scripts/validate.sh` passes
-
-#### [TSK-02.3.4] Create /prd skill [P: M] [TODO] (after: "Scaffold the local /docs/spec, /docs/adr, /docs/runbook layout + MkDocs Material config as reusable templates")
-* [ ] **SUB-02.3.4.1** add `claude-code/skills/prd/SKILL.md` merging PRD authoring (create + edit) and `audit-prd`'s auditing into one skill against the local `/docs/spec` layout, removing `claude-code/skills/audit-prd/` once its content is folded in · Done when: `claude-code/skills/prd/SKILL.md` exists, `claude-code/skills/audit-prd/` no longer exists, and `bash scripts/validate.sh` passes
-
-#### [TSK-02.3.5] Create /adr skill [P: M] [TODO] (after: "Scaffold the local /docs/spec, /docs/adr, /docs/runbook layout + MkDocs Material config as reusable templates")
-* [ ] **SUB-02.3.5.1** add `claude-code/skills/adr/SKILL.md` with merged authoring (create + edit) and audit instructions, one template, against the local `/docs/adr` layout — no existing ADR skill to fold in, greenfield · Done when: `claude-code/skills/adr/SKILL.md` exists and `bash scripts/validate.sh` passes
-
-#### [TSK-02.3.6] Create /runbook skill, replacing write-runbook [P: M] [TODO] (after: "Scaffold the local /docs/spec, /docs/adr, /docs/runbook layout + MkDocs Material config as reusable templates")
-* [ ] **SUB-02.3.6.1** add `claude-code/skills/runbook/SKILL.md` merging `write-runbook`'s authoring with new audit instructions into one skill against the local `/docs/runbook` layout, removing `claude-code/skills/write-runbook/` and repointing its callers (`workflow-loop`'s P0, `/workflow-consolidate`'s README-refresh step, `/write-repo`'s Scaffold/Refresh path) once folded in · Done when: `claude-code/skills/runbook/SKILL.md` exists, `claude-code/skills/write-runbook/` no longer exists, no remaining reference to `write-runbook` outside `CHANGELOG.md`, and `bash scripts/validate.sh` passes
-
-#### [TSK-02.3.7] Repoint stale Drive-fetch references left after standards-specs' local-file move [P: M] [TODO] (after: "Update standards-specs for the local /docs/spec layout")
-* [ ] **SUB-02.3.7.1** update `claude-code/agents/workflow-implementer.md`, `claude-code/skills/write-repo/SKILL.md` (3 mentions), `claude-code/skills/write-backlog/SKILL.md`, `claude-code/skills/workflow-loop/SKILL.md`, `claude-code/skills/audit-testing/SKILL.md`, `claude-code/skills/workflow-consolidate/SKILL.md`, and `claude-code/skills/write-readme/SKILL.md` to describe the SDD/PRD as local `docs/spec/` repo files per the new `standards-specs` contract, not Google-Drive-fetched — `audit-sdd`, `audit-prd`, and `write-runbook`'s own Drive mentions are out of scope here since TSK-02.3.3/.4/.6 replace those files outright · Done when: `grep -rniE "google doc|drive" --include="*.md" claude-code/` matches none of the seven files above (outside `CHANGELOG.md`) and `bash scripts/validate.sh` passes
-
 ---
 
 ## Archive
