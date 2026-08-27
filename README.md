@@ -40,7 +40,7 @@ scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
 
 The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
 
-Each repo carries three local documents. `write-readme` owns the entry point; `write-backlog` and `write-changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. The SDD (and, when one exists, the PRD) is a Google Doc in Drive, fetched read-only via MCP — `standards-specs` owns that contract — never a repo file.
+Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `write-readme` owns the entry point; `write-backlog` and `write-changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
 
 | File | Holds | Mutable |
 |---|---|---|
