@@ -6,7 +6,7 @@ user-invocable: false
 
 # The SDD and PRD — repo files under docs/spec/
 
-Both documents live as repo files: `docs/spec/SDD.md` and `docs/spec/PRD.md`, scaffolded from `templates/project/docs/spec/SDD.md` and `templates/project/docs/spec/PRD.md` by `write-repo`. No skill in this toolkit authors either one or resolves a `NEEDS DECISION` inside them — authoring happens with stakeholders directly in the repo, same as any other tracked file. This toolkit reads them like any other repo file, with the plain Read tool — no fetch step, no MCP tool, no distinction between the main session and a fork.
+Both documents live as repo files: `docs/spec/SDD.md` and `docs/spec/PRD.md`, scaffolded from `templates/project/docs/spec/SDD.md` and `templates/project/docs/spec/PRD.md` by `write-repo`. `write-repo` only ever writes the empty stub — content-level authoring, editing, and audit against the section map below is the `sdd`/`prd` skills' job, done with stakeholders, never invented from nothing. This toolkit reads them like any other repo file, with the plain Read tool — no fetch step, no MCP tool, no distinction between the main session and a fork.
 
 ## Doc site — MkDocs Material
 

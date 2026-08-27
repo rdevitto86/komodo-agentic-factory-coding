@@ -57,7 +57,7 @@ A line only belongs in a generated `AGENTS.md` if it is a fact that `standards-s
 
 **Only Create writes the three documents from scratch.** `BACKLOG.md` and `CHANGELOG.md` come from their `.tmpl`, with the repo type's `Seed backlog` stories spliced into `Cross-Cutting`. `README.md` is written by the `write-readme` skill from Step 3's facts — the one document of the three with real content on day one, since it describes what already exists rather than what's planned.
 
-**Only scaffold the SDD's stub, never author its content.** Step 6 copies `templates/project/docs/spec/SDD.md` verbatim on Create; filling in the architecture, data model, and decisions is the user's job afterward, done directly in the repo like any other tracked file.
+**Only scaffold the SDD's stub, never author its content.** Step 6 copies `templates/project/docs/spec/SDD.md` verbatim on Create; filling in the architecture, data model, and decisions is done afterward with the `sdd` skill (`prd` for the optional PRD), not this one.
 
 **Scaffold and Refresh never create or restructure `BACKLOG.md`** — its domains and stories stay `write-backlog`'s territory. When one already exists, the only touch either branch makes is appending seed stories not already present under `Cross-Cutting`, matched by text. Nothing else is read, reordered, or rewritten.
 
