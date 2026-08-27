@@ -28,7 +28,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P2.3 Review | `/audit-bugs` (+ `/audit-security`), then commit here | — |
 | P2.4 Closeout | `/audit-bugs`, `/audit-security`, `/audit-simplify`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta here | `workflow-implementer` |
-| P4 Publish | **`/workflow-complete`** — push + `/git-create-pr` | — |
+| P4 Publish | **`/workflow-complete`** — push + `/git-pr` | — |
 
 **The forked phases carry their own instructions.** Each declares `context: fork` in its frontmatter, so neither the phase's rules nor the work it does ever enters this window — only its returned result. That is why this file is short: the detail lives where it is paid for.
 
@@ -116,7 +116,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Findings that affect correctness, security, or a stated requirement are folded into P2.0's pick and become the next P2.1 task in this same pass — not deferred. Everything else is optional and stays filed for a later pass — a reviewer asked to find gaps will always find some, and chasing all of them produces defensive code and tests for cases that cannot happen.
 
-**Commit here once the task's findings are clean.** Run `/write-commit-message` against this task's diff alone (not the whole band), then `git add` + `git commit` with its result — one commit per task, including any P2.3 fix-commits the task itself spawned. This is what keeps a dropped session from losing more than the one task in flight; the previous tasks are already durable.
+**Commit here once the task's findings are clean.** Run `/git-commit-message` against this task's diff alone (not the whole band), then `git add` + `git commit` with its result — one commit per task, including any P2.3 fix-commits the task itself spawned. This is what keeps a dropped session from losing more than the one task in flight; the previous tasks are already durable.
 
 **Ends when:** every story the calls filed for this task is fixed or confirmed genuinely optional, and the task is committed. Green ends the task; loop back to P2.0 for the next one.
 
@@ -138,7 +138,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 It writes the changelog entry, bumps the version, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — that's frozen, and a change it needs comes back to you as a finding.
 
-**Commit here once it returns — its own delta only.** `workflow-consolidate` runs as `workflow-implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is just consolidate's changelog/version/backlog-cleanup output. Run `/write-commit-message` against that delta, then `git add` + `git commit`.
+**Commit here once it returns — its own delta only.** `workflow-consolidate` runs as `workflow-implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is just consolidate's changelog/version/backlog-cleanup output. Run `/git-commit-message` against that delta, then `git add` + `git commit`.
 
 **Ends when:** the changelog entry exists, the backlog no longer lists finished work, and consolidate's delta is committed.
 
@@ -146,9 +146,9 @@ It writes the changelog entry, bumps the version, syncs the manifest, clears the
 
 ## P4 · Publish
 
-**`/workflow-complete`.** Pushes the branch and runs `/git-create-pr` to open or update the pull request for this band.
+**`/workflow-complete`.** Pushes the branch and runs `/git-pr` to open or update the pull request for this band.
 
-**Ends when:** the branch is pushed and `/git-create-pr` has returned the PR URL.
+**Ends when:** the branch is pushed and `/git-pr` has returned the PR URL.
 
 ---
 

@@ -123,7 +123,7 @@ The field set a Vue repo's `AGENTS.md` Quick-reference table carries. Every valu
 | Router mode | router entry file |
 | Path alias | `vite.config.ts` |
 
-Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `standards-typescript`, or `standards-uiux` already states by name.
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `standards-typescript`, or `standards-design-ui` already states by name.
 
 ## Repo layout — `vue-ui`
 
@@ -140,8 +140,8 @@ Makefile
 
 ## Seed backlog — `vue-ui`
 
-Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+Stories `write-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [H] Build out the starter page's components · M
-- [H] Accessibility: WCAG AA pass (`standards-uiux`) · S
+- [H] Accessibility: WCAG AA pass (`standards-design-ui`) · S
 - [M] Tests: unit + component coverage · S → `make test`

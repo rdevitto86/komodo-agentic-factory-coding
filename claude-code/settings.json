@@ -102,7 +102,6 @@
     "rules-commenting": "name-only",
     "rules-source-control": "name-only",
     "standards-worklog": "name-only",
-    "standards-security": "name-only",
     "standards-observability": "name-only",
     "standards-cicd": "name-only",
     "standards-c": "name-only",
@@ -116,7 +115,9 @@
     "standards-dotnet": "name-only",
     "standards-java": "name-only",
     "standards-react": "name-only",
-    "standards-uiux": "name-only",
+    "standards-design-ui": "name-only",
+    "standards-security-ui": "name-only",
+    "standards-security-api": "name-only",
     "standards-database": "name-only",
     "standards-docker": "name-only",
     "standards-specs": "name-only",
@@ -137,10 +138,9 @@
     "audit-performance": "name-only",
     "audit-vulnerabilities": "name-only",
     "audit-dependencies": "name-only",
-    "write-commit-message": "name-only",
-    "write-pr": "name-only",
-    "git-create-issue": "name-only",
-    "git-create-pr": "name-only"
+    "git-commit-message": "name-only",
+    "git-issue": "name-only",
+    "git-pr": "name-only"
   },
   "hooks": {
     "PreToolUse": [

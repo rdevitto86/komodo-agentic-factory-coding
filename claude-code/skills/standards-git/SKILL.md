@@ -1,12 +1,12 @@
 ---
 name: standards-git
-description: Git branch, push, merge, and protected-ref conventions — what the conventions ARE, not their enforcement (see rules-source-control) or commit message format (see write-commit-message). Load before running or advising on any git operation.
+description: Git branch, push, merge, and protected-ref conventions — what the conventions ARE, not their enforcement (see rules-source-control) or commit message format (see git-commit-message). Load before running or advising on any git operation.
 user-invocable: false
 ---
 
 # Git conventions
 
-This is domain knowledge — the shape a branch, a push, or a merge is supposed to take. `rules-source-control` is the enforcement layer: what `git_guard.py` actually blocks and how to avoid routing around it. `write-commit-message` owns commit message format. Load whichever of the three answers the question at hand; this skill never restates their content.
+This is domain knowledge — the shape a branch, a push, or a merge is supposed to take. `rules-source-control` is the enforcement layer: what `git_guard.py` actually blocks and how to avoid routing around it. `git-commit-message` owns commit message format. Load whichever of the three answers the question at hand; this skill never restates their content.
 
 ## Protected refs
 
@@ -14,13 +14,13 @@ This is domain knowledge — the shape a branch, a push, or a merge is supposed 
 
 ## Branch naming
 
-`<type>/<short-kebab-description>` — the same `type` taxonomy `write-commit-message` uses for commit prefixes: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`. Create the branch before the first commit, not after — work should never land on a protected ref and then need to be moved.
+`<type>/<short-kebab-description>` — the same `type` taxonomy `git-commit-message` uses for commit prefixes: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`. Create the branch before the first commit, not after — work should never land on a protected ref and then need to be moved.
 
 **Resuming a `[WIP]` band reuses its existing branch**, never a second branch cut for work already in flight. Match the branch name to the story already underway, not to whatever happens to be checked out.
 
 ## Commits
 
-Message format — subject line, body, trailers — is owned entirely by `write-commit-message`; this skill states no format of its own. The one convention that lives here rather than there: a commit never carries `--amend`, never skips hooks with `--no-verify`, and never adds a co-author or generated-by trailer, on any branch, under any circumstance.
+Message format — subject line, body, trailers — is owned entirely by `git-commit-message`; this skill states no format of its own. The one convention that lives here rather than there: a commit never carries `--amend`, never skips hooks with `--no-verify`, and never adds a co-author or generated-by trailer, on any branch, under any circumstance.
 
 ## Push
 

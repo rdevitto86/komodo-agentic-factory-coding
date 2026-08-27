@@ -16,7 +16,7 @@ Zero comments, zero JSDoc. Error messages lead with a verb phrase and never name
 ## Toolchain
 
 - **Versions come from `package.json`.** Read it; never assume a major.
-- **Vulnerability scanning** — `npm audit --omit=dev --audit-level=high` (or the pnpm/yarn equivalent) is the gate. Install with `npm ci` so the lockfile is honoured. Enable `eslint-plugin-security` for the static half. `standards-cicd` defines the gate; the `standards-security` skill states the bar.
+- **Vulnerability scanning** — `npm audit --omit=dev --audit-level=high` (or the pnpm/yarn equivalent) is the gate. Install with `npm ci` so the lockfile is honoured. Enable `eslint-plugin-security` for the static half. `standards-cicd` defines the gate; the `standards-security-api` skill states the bar.
 - **Forge SDK** — published as `@komodo-forge-sdk/typescript`, including the shared CDK construct toolkit. Import the published package at a pinned version; never a relative path into a local checkout. Read its exports before concluding it lacks something.
 
 ## Conventions
@@ -51,7 +51,7 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact this
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for TypeScript** in `generate-repo` — no repo type token maps here. Use `generate-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for TypeScript** in `write-repo` — no repo type token maps here. Use `write-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.
 
 ## Reference material
 

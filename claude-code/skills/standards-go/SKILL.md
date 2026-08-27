@@ -18,7 +18,7 @@ Zero comments, zero godoc. Error strings lead with a verb phrase and never name 
 - **Version floor is whatever `go.mod` declares.** Read it; never assume a release.
 - **`Makefile`'s `verify` target is the merge gate** — `gofmt -l`, `go vet`, `golangci-lint run`, `go test -race -cover`, `go build`, in that order. `context_injector.py` reads this target directly; a repo without it has no gate.
 - **Formatting and linting** — `gofmt` and `goimports` on commit, `golangci-lint` as the gate. These are the tools the pre-commit hook runs; `standards-cicd` defines when.
-- **Vulnerability scanning** — `govulncheck ./...` is the gate; it reports reachability, so triage by call path, not by CVE score alone. Enable `gosec` in `.golangci.yaml` for the static half. `standards-cicd` defines the gate; the `standards-security` skill states the bar.
+- **Vulnerability scanning** — `govulncheck ./...` is the gate; it reports reachability, so triage by call path, not by CVE score alone. Enable `gosec` in `.golangci.yaml` for the static half. `standards-cicd` defines the gate; the `standards-security-api` skill states the bar.
 - **Coverage delta is per package** — Go reports at package granularity, so the pre-push scope is the set of packages containing changed files.
 - **Forge SDK** — module path `github.com/rdevitto86/komodo-forge-sdk-go`, subpackaged by concern. Import the published module at a pinned version; never a `replace` directive pointing at a local checkout. Read its package tree before concluding it lacks something.
 
@@ -117,7 +117,7 @@ One generic entrypoint at `cmd/server/main.go`, or `cmd/main.go` as the alternat
 
 ## Seed backlog — `go-api`
 
-Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+Stories `write-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [M] Flesh out `openapi.yaml` beyond the `/health` stub as routes land · S
 - [M] Tests: unit + component coverage · S → `make test`
@@ -141,11 +141,11 @@ go.mod
 
 Same shape as `go-api` — one entrypoint at `cmd/server/main.go`, no audience-split binaries — with `tools.md` replacing `openapi.yaml` as the contract file: a running list of registered MCP tools (name, input schema, output shape), not a REST route table. `internal/` holds tool implementations; a tool is a routing concern the same way a handler is in `go-api`, never a second binary.
 
-**No established Go MCP SDK is recorded here yet.** `generate-repo`'s Step 5 stops and asks rather than guessing an import path — see that skill for the rule. Once one is confirmed for a real build, it belongs in `reference.md`'s wiring section, not re-decided per repo.
+**No established Go MCP SDK is recorded here yet.** `write-repo`'s Step 5 stops and asks rather than guessing an import path — see that skill for the rule. Once one is confirmed for a real build, it belongs in `reference.md`'s wiring section, not re-decided per repo.
 
 ## Seed backlog — `go-mcp`
 
-Stories `generate-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+Stories `write-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [M] Flesh out `tools.md` and the tool registry beyond the `/health` stub as tools land · S
 - [M] Tests: unit + component coverage · S → `make test`

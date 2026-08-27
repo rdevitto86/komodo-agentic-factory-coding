@@ -12,10 +12,9 @@ post it as a comment.
 ## Changes
 
 <!-- What changed, not how you got there. One bullet per area, not per file —
-     ten files in one package is one bullet. Append the PRD requirement ID in
-     parentheses where the story carried one. -->
+     ten files in one package is one bullet. -->
 
-- **<area>** — <what changed> (<req-id>)
+- **<area>** — <what changed>
 
 ## Validation Evidence
 

@@ -638,17 +638,17 @@ export HOOKS
 FIX="$WORKDIR/inject"
 mkdir -p "$FIX/empty" "$FIX/full" "$FIX/nested/docs" "$FIX/junk"
 
-printf '%s\n' '# Backlog' '## Now — V1' '### Create + fetch' \
-  '- [C][WIP] Idempotent POST /orders · M · S2 → `go test ./orders/...`' \
-  '- [H] POST /orders/:id/refund · M · S4 → `go test ./refund/...`' \
-  '- [H][BLOCKED] Refund idempotency · M · S4 → `go test ./refund/...`' \
+printf '%s\n' '# Backlog' '## Now — V1' '### 1.1 Create + fetch' \
+  '- 1.1.1 | C | [WIP] Idempotent POST /orders · M · S2 → `go test ./orders/...`' \
+  '- 1.1.2 | H | POST /orders/:id/refund · M · S4 → `go test ./refund/...`' \
+  '- 1.1.3 | H | [BLOCKED] Refund idempotency · M · S4 → `go test ./refund/...`' \
   '  - Blocked: the SDK exposes no idempotency key at the pinned version.' \
   > "$FIX/full/BACKLOG.md"
 
 printf '%s\n' '# Changelog' '## [Unreleased]' '## [0.4.2] — 2026-08-20' \
   '### Added' '- Something.' > "$FIX/full/CHANGELOG.md"
 
-printf '%s\n' '# Backlog' '- [M] a nested story · S → `true`' \
+printf '%s\n' '# Backlog' '- 1.1.1 | M | a nested story · S → `true`' \
   > "$FIX/nested/docs/BACKLOG.md"
 
 printf '%s\n' 'not a backlog at all' > "$FIX/junk/BACKLOG.md"
