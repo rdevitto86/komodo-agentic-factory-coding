@@ -42,15 +42,15 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ## P0 · Spec — the human gate
 
-**Requires the SDD (a Google Doc in Drive) and `README.md`.** Load `standards-specs` for the SDD's fetch contract and section map, and `write-readme` for README's shape. This phase never drafts the SDD — it isn't authored by this toolkit at all, only fetched and read.
+**Requires the SDD (a repo file under `docs/spec/SDD.md`) and `README.md`.** Load `standards-specs` for the SDD's section map, and `write-readme` for README's shape. This phase never drafts the SDD — authoring happens with stakeholders directly in the repo, not by this toolkit.
 
-**On any run after the first, the check is existence only.** One `test -f` for `README.md`, one MCP fetch to confirm the SDD still resolves — then go to P1. Never re-read the full SDD body every loop; that's the token burn this design removes.
+**On any run after the first, the check is existence only.** One `test -f` for `README.md`, one for `docs/spec/SDD.md` — then go to P1. Never re-read the full SDD body every loop; that's the token burn this design removes.
 
-**On the first run, read `README.md` before fetching the SDD, not after.** It is the fastest source of the high-level framing (what the repo is, who it's for) that would otherwise have to be reconstructed from the task description alone — pull from it, never duplicate its wording verbatim.
+**On the first run, read `README.md` before reading the SDD, not after.** It is the fastest source of the high-level framing (what the repo is, who it's for) that would otherwise have to be reconstructed from the task description alone — pull from it, never duplicate its wording verbatim.
 
-**If `README.md` is missing, the SDD doesn't resolve, or the fetched SDD still carries `NEEDS DECISION` in a section this work depends on**, draft what you can and stop. **This is the one phase allowed to block with nothing delivered** — building on an unapproved spec is the guessing the whole machine exists to prevent.
+**If `README.md` is missing, `docs/spec/SDD.md` is missing, or it still carries `NEEDS DECISION` in a section this work depends on**, draft what you can and stop. **This is the one phase allowed to block with nothing delivered** — building on an unapproved spec is the guessing the whole machine exists to prevent.
 
-**Ends when:** `README.md` exists, the SDD resolves, and it has the user's approval.
+**Ends when:** `README.md` exists, `docs/spec/SDD.md` exists, and it has the user's approval.
 
 ---
 

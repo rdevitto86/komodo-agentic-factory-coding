@@ -98,9 +98,9 @@ Typed-only workflow skills: `/write-backlog` · `/audit-readiness` · `/audit-ch
 
 **A fork needs an agent, and that agent's output template is the phase's return contract.** `workflow-implementer` exists because the read-only agents cannot write; `workflow-planner` exists because `engineering` returns a research report and a decompose phase must return a queue. Adding a phase means asking which existing contract fits before adding a fifth agent.
 
-**`write-backlog` and `write-changelog` own the format of the two mutable local records — `standards-worklog` is only the read/write directive shared across both, never their shape.** Splitting the two records' formats out means a phase touching only one of them never pays for the other's. **The SDD is never written locally at all** — it is a Google Doc in Drive, `standards-specs` owns its read-only fetch contract, and slice status never writes back into it.
+**`write-backlog` and `write-changelog` own the format of the two mutable local records — `standards-worklog` is only the read/write directive shared across both, never their shape.** Splitting the two records' formats out means a phase touching only one of them never pays for the other's. **No skill in this toolkit authors the SDD** — it lives at `docs/spec/SDD.md`, `standards-specs` owns its read contract and section map, and slice status never writes back into it.
 
-**`write-runbook` owns the operational procedures the SDD points at.** Editing a file under `docs/runbooks/` should never pay for the SDD's fetch contract, and vice versa — the decisions a design earns live as appended sections inside the SDD's own §11, in Drive, never as a separate file.
+**`write-runbook` owns the operational procedures the SDD points at.** Editing a file under `docs/runbooks/` should never pay for the SDD's read contract, and vice versa — the decisions a design earns live as appended sections inside the SDD's own §11, in `docs/spec/SDD.md`, never as a separate file.
 
 **No fork ever reaches Drive or any other MCP tool.** `workflow-planner` and `workflow-implementer` declare no MCP tools, so a forked phase cannot fetch even if it wanted to — whatever it needs arrives in `$ARGUMENTS`. Nothing fetches at session start either, the same rule that keeps `context_injector.py` off the bridge.
 

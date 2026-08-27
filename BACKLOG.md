@@ -113,6 +113,9 @@ Format and rules live in the `write-backlog` skill — load it before editing th
 #### [TSK-02.3.6] Create /runbook skill, replacing write-runbook [P: M] [TODO] (after: "Scaffold the local /docs/spec, /docs/adr, /docs/runbook layout + MkDocs Material config as reusable templates")
 * [ ] **SUB-02.3.6.1** add `claude-code/skills/runbook/SKILL.md` merging `write-runbook`'s authoring with new audit instructions into one skill against the local `/docs/runbook` layout, removing `claude-code/skills/write-runbook/` and repointing its callers (`workflow-loop`'s P0, `/workflow-consolidate`'s README-refresh step, `/write-repo`'s Scaffold/Refresh path) once folded in · Done when: `claude-code/skills/runbook/SKILL.md` exists, `claude-code/skills/write-runbook/` no longer exists, no remaining reference to `write-runbook` outside `CHANGELOG.md`, and `bash scripts/validate.sh` passes
 
+#### [TSK-02.3.7] Repoint stale Drive-fetch references left after standards-specs' local-file move [P: M] [TODO] (after: "Update standards-specs for the local /docs/spec layout")
+* [ ] **SUB-02.3.7.1** update `claude-code/agents/workflow-implementer.md`, `claude-code/skills/write-repo/SKILL.md` (3 mentions), `claude-code/skills/write-backlog/SKILL.md`, `claude-code/skills/workflow-loop/SKILL.md`, `claude-code/skills/audit-testing/SKILL.md`, `claude-code/skills/workflow-consolidate/SKILL.md`, and `claude-code/skills/write-readme/SKILL.md` to describe the SDD/PRD as local `docs/spec/` repo files per the new `standards-specs` contract, not Google-Drive-fetched — `audit-sdd`, `audit-prd`, and `write-runbook`'s own Drive mentions are out of scope here since TSK-02.3.3/.4/.6 replace those files outright · Done when: `grep -rniE "google doc|drive" --include="*.md" claude-code/` matches none of the seven files above (outside `CHANGELOG.md`) and `bash scripts/validate.sh` passes
+
 ---
 
 ## Archive

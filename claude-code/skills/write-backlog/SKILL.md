@@ -129,7 +129,7 @@ If the repo answers a question, do not ask it. If nothing is genuinely unclear, 
 
 Before proposing anything:
 
-- **Fetch the SDD (a Google Doc in Drive — see `standards-specs`) if one exists** for architecture, data model, and interface context — the source of truth for a code repo. It informs the plan; it does not hand you a ready-made decomposition — that is this skill's own job.
+- **Read the SDD (a repo file under `docs/spec/SDD.md` — see `standards-specs`) if one exists** for architecture, data model, and interface context — the source of truth for a code repo. It informs the plan; it does not hand you a ready-made decomposition — that is this skill's own job.
 - **Read the existing `BACKLOG.md`.** Never duplicate a task already in it.
 - **Read the code that this work touches.** The current state beats any ledger.
 - **Read the project `AGENTS.md`** for stack and conventions.

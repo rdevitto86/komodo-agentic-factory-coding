@@ -13,7 +13,7 @@ Completed: **$ARGUMENTS**
 
 **You cannot see the calling conversation.** The list above is what shipped. If it is empty, stop and say so.
 
-**Load `write-changelog`** for the changelog format and the version rules. **Never fetch the SDD** — this phase does not touch the spec, and paying for a Drive round trip here is waste.
+**Load `write-changelog`** for the changelog format and the version rules. **Never read the SDD** — this phase does not touch the spec, and there is nothing here that needs it.
 
 ## Order
 
