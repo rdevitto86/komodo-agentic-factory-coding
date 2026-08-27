@@ -2,6 +2,21 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.30.0] — 2026-08-26
+
+### Added
+- `standards-security-api`, `standards-security-ui` — split out of `standards-security` for API and UI-surface security conventions respectively.
+- `audit-prd`, `backlog-prioritize` — new typed-only skills; the former audits a fetched PRD, the latter reorders/re-prioritizes existing `BACKLOG.md` tasks without inventing new ones.
+- `BACKLOG.md` and `templates/project/BACKLOG.md.tmpl` migrated to the `EPIC-XX` → `TG-XX.Y` → `TSK-XX.Y.Z` → `SUB-XX.Y.Z.N` hierarchy; `write-backlog`'s format section rewritten to match, replacing the old flat `T.D.S` numbering.
+
+### Changed
+- Skills renamed to bucket prefixes: `generate-backlog`→`write-backlog`, `generate-readme`→`write-readme`, `generate-runbook`→`write-runbook`, `git-create-issue`→`git-issue`, `git-create-pr`→`git-pr`; `standards-uiux`→`standards-design-ui`. Cross-references updated across `AGENTS.md`, `README.md`, `workflow-loop`, and the affected `standards-*`/`audit-*` skills.
+- `standards-security` split into `standards-security-api` + `standards-security-ui`.
+
+### Removed
+- `generate-adr`, `generate-sdd` (+ its `authoring.md`), `generate-repo`, `standards-docs`, `standards-prd`, `workflow-debug-hypothesize` — superseded or unused.
+- `standards-security` removed after its split into `standards-security-api`/`standards-security-ui`.
+
 ## [0.29.0] — 2026-08-26
 
 ### Added

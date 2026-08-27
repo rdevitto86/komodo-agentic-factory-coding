@@ -89,13 +89,6 @@ Format and rules live in the `write-backlog` skill — load it before editing th
 
 #### [TSK-02.2.14] Rename config-accessibility-output to config-accessibility [P: L] [TODO]
 
-#### [TSK-02.2.15] Migrate BACKLOG.md to the EPIC/TG/TSK/SUB hierarchy [P: H] [DONE]
-* [x] **SUB-02.2.15.1** template supplied by the user, written to `templates/project/BACKLOG.md.tmpl` verbatim
-* [x] **SUB-02.2.15.2** `write-backlog`'s format section, rules, and examples rewritten to the new hierarchy — old "no checkboxes, ever" rule and flat `T.D.S` numbering dropped outright
-
-#### [TSK-02.2.16] Create /backlog-prioritize skill [P: M] [DONE]
-* [x] **SUB-02.2.16.1** reorders/re-prioritizes existing `BACKLOG.md` tasks (priority, ordering, epic placement) without inventing new ones, distinct from `/backlog`'s create+edit+audit role
-
 ### [TG-02.3] Docs & Specs
 * **Target Release:** V2
 
