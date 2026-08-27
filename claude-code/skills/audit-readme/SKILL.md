@@ -25,7 +25,7 @@ Load `write-readme` first — every check below tests against rules it owns, not
 | Kind | Where | Finding | Evidence |
 |---|---|---|---|
 | Unsourced claim | §2 Setup | env var `FOO_TIMEOUT` not read anywhere | grep, no hits |
-| Stale reference | §5 References | links `docs/runbooks/failover.md`, file deleted | `docs/runbooks/` listing |
+| Stale reference | §5 References | links `docs/runbook/failover.md`, file deleted | `docs/runbook/` listing |
 | Missing status | §1 Overview | open Blocker in `BACKLOG.md`, no status line | `BACKLOG.md` line |
 
 **Sev**: Critical (a Setup/Usage command or route that doesn't exist — actively misleads a new reader) · High (missing required section, a References entry pointing at a deleted file, wrong Blocker status) · Medium (restated SDD depth, a drifted Testing command) · Low (wording, ordering nits).

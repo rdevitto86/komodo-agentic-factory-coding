@@ -123,7 +123,7 @@
     "standards-specs": "name-only",
     "write-changelog": "name-only",
     "standards-sdlc": "name-only",
-    "write-runbook": "name-only",
+    "runbook": "name-only",
     "workflow-decompose": "name-only",
     "workflow-debug": "name-only",
     "workflow-implement": "name-only",
