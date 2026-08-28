@@ -8,7 +8,7 @@ argument-hint: []
 
 **Inside a git repository only** — if the working directory isn't one, say so and stop. Read the diff before writing this; every line comes from what actually changed, never from a plan.
 
-**It is text, not the commit itself.** `workflow-loop`'s P2/P3 run `git commit` with this output directly — `rules-source-control` owns the branch/protected-ref rules governing when that's allowed. Invoked directly, or internally by the loop when a task or band closes out.
+**It is text, not the commit itself.** `workflow-loop`'s P2/P3 run `git commit` with this output directly — `git-pr-create` owns the branch/protected-ref rules governing when that's allowed. Invoked directly, or internally by the loop when a task or band closes out.
 
 ## Format
 
@@ -18,7 +18,7 @@ argument-hint: []
 <secondary description>
 ```
 
-- **The commit message is the concise explanation, not the detail dump.** It names *what* changed in one glance — a plain phrase (`added foundation for api`) and a typed one (`feat: api foundations`) are equally valid wording; either way it has to say something, never just a bare type tag. If you do use a type prefix, keep it to `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci` — the same taxonomy `rules-source-control` uses for branch names.
+- **The commit message is the concise explanation, not the detail dump.** It names *what* changed in one glance — a plain phrase (`added foundation for api`) and a typed one (`feat: api foundations`) are equally valid wording; either way it has to say something, never just a bare type tag. If you do use a type prefix, keep it to `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci` — the same taxonomy `git-pr-create` uses for branch names.
 - **Commit message caps at 72 characters.** Imperative mood, no trailing period. Anything that doesn't fit moves to the secondary description — never truncate mid-thought to squeeze it in.
 - **The secondary description is where detail goes**, formatted as a `-`-prefixed bulleted list, one bullet per distinct concern. A bullet with multiple parts is delimited by `+` within itself — `added route scaffolding + auth middleware`.
 - **Omit the secondary description entirely when the message already says it all** — a single-concern, single-file change gets nothing below it. Never pad with a bullet that just restates the message.

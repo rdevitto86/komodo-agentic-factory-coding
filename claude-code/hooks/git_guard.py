@@ -63,7 +63,7 @@ GIT_GLOBAL_FLAGS_WITH_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namesp
 # The agent branches, commits, pushes its own branch, opens a PR, and
 # may sync its branch with its protected base to resolve conflicts
 # before a human merges — it never reaches a protected ref, never
-# rewrites history, and never lands into one. `rules-source-control`
+# rewrites history, and never lands into one. `git-pr-create`
 # carries the reasoning, this is only the deterministic half of the rule.
 #
 # Externalized rather than a bare constant: flip with

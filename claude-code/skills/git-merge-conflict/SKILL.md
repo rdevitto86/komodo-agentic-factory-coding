@@ -6,7 +6,7 @@ user-invocable: false
 
 # Merge Conflict Rules
 
-`rules-source-control` already covers *when* a merge is allowed and *how* to close it out (`git add` each resolved file, `git commit --no-edit`). This skill governs the resolution itself, once `<<<<<<<`/`=======`/`>>>>>>>` markers land in a file.
+`git-pr-create` already covers *when* a merge is allowed and *how* to close it out (`git add` each resolved file, `git commit --no-edit`). This skill governs the resolution itself, once `<<<<<<<`/`=======`/`>>>>>>>` markers land in a file.
 
 ## Never silently drop a side
 
@@ -17,7 +17,7 @@ A deleted-vs-modified conflict (one branch removed a file, the other kept editin
 ## Resolve without asking
 
 - **Mechanical conflicts** — both sides touch the same region but the changes are disjoint and additive (two new imports, two new struct fields, two new test cases appended near each other). Merge both, in the order that keeps the file's existing ordering convention.
-- **Formatting-only conflicts** — whitespace, line-wrap, or import-sort differences with no semantic change on either side. Take the version that matches the file's existing style; run the formatter after resolving, per `rules-source-control` and the language skill's toolchain section.
+- **Formatting-only conflicts** — whitespace, line-wrap, or import-sort differences with no semantic change on either side. Take the version that matches the file's existing style; run the formatter after resolving, per `git-pr-create` and the language skill's toolchain section.
 - **Identical intent expressed differently** — both sides renamed the same symbol to the same name, or both independently fixed the same bug the same way. Collapse to one copy; do not keep a duplicate.
 - **Generated or lockfiles** — never hand-merge conflict markers inside a lockfile or other generated artifact. Resolve by deleting the file's markers and regenerating it with the tool that produced it (per the language skill's toolchain section), then re-add.
 
@@ -31,3 +31,5 @@ A deleted-vs-modified conflict (one branch removed a file, the other kept editin
 ## Closing out
 
 No conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`) may reach a commit — grep the resolved files before `git add` if there is any doubt. `comment_guard.py` still applies to whatever the resolution writes: a leftover "// keep ours" or "// merged" note is a banned implementation narrative, not an exempt directive — see `rules-commenting`.
+
+Branch/push/merge/protected-ref conventions and what `git_guard.py` enforces for each live in `git-pr-create` — load it rather than restating them here.

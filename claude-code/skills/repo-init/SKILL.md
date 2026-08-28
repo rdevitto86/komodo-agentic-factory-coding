@@ -130,4 +130,4 @@ The ceiling is deliberately generous. This file is read on every turn in this re
 
 ## Out of scope
 
-No cross-repo scanning — this skill only ever touches the one target repo in a single run. No `git init`, no first commit, no push — it writes files only; putting them under version control is the user's call, per `rules-source-control`.
+No cross-repo scanning — this skill only ever touches the one target repo in a single run. No `git init`, no first commit, no push — it writes files only; putting them under version control is the user's call, per `git-pr-create`.

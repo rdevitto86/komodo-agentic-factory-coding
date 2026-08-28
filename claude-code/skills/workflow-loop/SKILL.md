@@ -28,7 +28,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P2.3 Review | `/audit-bugs` (+ `/audit-security`), then commit here | — |
 | P2.4 Closeout | `/audit-bugs`, `/audit-security`, `/audit-simplify`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta here | `workflow-implementer` |
-| P4 Publish | **`/workflow-complete`** — push + `/git-pr` | — |
+| P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` | — |
 
 **The forked phases carry their own instructions.** Each declares `context: fork` in its frontmatter, so neither the phase's rules nor the work it does ever enters this window — only its returned result. That is why this file is short: the detail lives where it is paid for.
 
@@ -68,7 +68,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `repo-init`'s Create already ran for this repo — trust the tree.** Re-invoke `/repo-init` only when a Foundation-edge story is still open in `BACKLOG.md` (`backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
 
-**Once the queue is confirmed, branch here** — `git switch -c <type>/<short-kebab-description>` per `rules-source-control`'s naming rule, `type` and description drawn from the band's dominant concern. **Resuming a `[WIP]` story reuses its existing branch** (`git switch <existing-branch>`) instead of creating a second one — check the story text for a branch name before assuming none exists.
+**Once the queue is confirmed, branch here** — `git switch -c <type>/<short-kebab-description>` per `git-pr-create`'s naming rule, `type` and description drawn from the band's dominant concern. **Resuming a `[WIP]` story reuses its existing branch** (`git switch <existing-branch>`) instead of creating a second one — check the story text for a branch name before assuming none exists.
 
 **Ends when:** every task has a `Done when` command and a `Depends on` edge, and the band's branch is checked out.
 
@@ -146,16 +146,16 @@ It writes the changelog entry, bumps the version, syncs the manifest, clears the
 
 ## P4 · Publish
 
-**`/workflow-complete`.** Pushes the branch and runs `/git-pr` to open or update the pull request for this band.
+**`/workflow-complete`.** Pushes the branch and runs `/git-pr-create` to open or update the pull request for this band.
 
-**Ends when:** the branch is pushed and `/git-pr` has returned the PR URL.
+**Ends when:** the branch is pushed and `/git-pr-create` has returned the PR URL.
 
 ---
 
 ## Guardrails
 
 - **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `backlog`.
-- **Backing out is a rewrite.** Capture `git diff` before a risky write; `rules-source-control` owns handing the user the recovery command.
+- **Backing out is a rewrite.** Capture `git diff` before a risky write; `git-pr-create` owns handing the user the recovery command.
 - **The bridge is optional, never blocking.** An unreachable MCP server is a skipped step. Never branch a phase on whether it is up.
 - **Never poll a delegated phase.** A fork and a backgrounded review both re-invoke this session the moment they finish. A scheduled check burns a full turn even when it lands on time, and can fire *stale* — after the work already completed — re-running dead instructions against state that already moved on.
 - **A P2.3 or P2.4 finding that needs standards verification goes back to a fork, never re-loaded into this window.** Loading `standards-*` skills here to re-check a finding the reviewer already grounded is the exact context drift forking exists to prevent — if it genuinely needs re-verifying, that is P2.1's job, not this session's.

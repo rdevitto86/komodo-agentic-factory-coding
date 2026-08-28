@@ -1,10 +1,10 @@
 ---
-name: git-issue
+name: git-issue-create
 description: File a repo's major findings or open questions as GitHub issues via `gh issue create`, after confirming the exact title/body with the user.
 argument-hint: [finding or question to file, or "review" to scan recent findings]
 ---
 
-# Git issue
+# Git issue create
 
 Scoping: **$ARGUMENTS** (default: ask which finding/question to file)
 

@@ -100,7 +100,6 @@
   "skillOverrides": {
     "config-accessibility": "name-only",
     "rules-commenting": "name-only",
-    "rules-source-control": "name-only",
     "standards-worklog": "name-only",
     "standards-observability": "name-only",
     "standards-cicd": "name-only",
@@ -143,8 +142,11 @@
     "audit-vulnerabilities": "name-only",
     "audit-dependencies": "name-only",
     "git-commit-message": "name-only",
-    "git-issue": "name-only",
-    "git-pr": "name-only"
+    "git-issue-create": "name-only",
+    "git-issue-review": "name-only",
+    "git-pr-create": "name-only",
+    "git-pr-review": "name-only",
+    "git-pr-comment": "name-only"
   },
   "hooks": {
     "PreToolUse": [
