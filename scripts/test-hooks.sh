@@ -486,6 +486,8 @@ bash_case_at "$FIXTURE_FEAT" "G76 merge --abort is allowed"                     
 bash_case "G77 git rebase is blocked"                            deny  'git rebase main' "changes repository state"
 bash_case "G78 git pull without --ff-only is blocked"            deny  'git pull origin main' "only with --ff-only"
 bash_case "G78b git pull --ff-only is allowed"                   allow 'git pull --ff-only origin main'
+bash_case "G88 time --output naming a shell-wrapper value doesn't hide the real wrapped command" \
+  deny  'time --output sh git rebase main' "git rebase"
 
 # ---  PUBLISH_ENABLED=0 restores the pre-publishing blanket deny  ---
 # Env-var driven, so this flips the running hook directly rather than

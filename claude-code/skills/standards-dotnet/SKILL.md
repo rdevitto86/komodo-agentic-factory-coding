@@ -51,7 +51,7 @@ Allowed only: a compiler/linter directive (always allowed); a step marker (inden
 
 ## Security standards
 
-Framework/runtime-layer insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-csharp` covers the language-mechanics half (deserialization, XXE, `Process.Start`) once it exists.
+Framework/runtime-layer insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-csharp` covers the language-mechanics half (deserialization, XXE, `Process.Start`) once it exists.
 
 - **`AddCors` policies never combine `AllowAnyOrigin()` with `AllowCredentials()`** — that combination is rejected by the spec for a reason; a wildcard origin serving credentialed requests defeats CORS entirely.
 - **Anti-forgery tokens (`[ValidateAntiForgeryToken]`/`IAntiforgery`) are required on every state-changing endpoint reachable from a browser session**, not just ones a form happens to post to.

@@ -12,7 +12,7 @@ argument-hint: []
 
 1. **Push** — `git push -u origin <branch>` (`git rev-parse --abbrev-ref HEAD` for the branch name).
 2. **Run `/git-pr-create`**, forwarding P3's already-decided labels as `--labels`. If a PR already exists for this branch, that skill's `gh pr edit` path updates it in place instead of opening a new one.
-3. **Check the tag, now that the push has landed.** Run `changelog`'s own "Tag sync" check against the section this band just released: `git tag -l` (or read `.git/refs/tags/` / `.git/packed-refs`) for whether it already has a matching tag. If not, include the exact `git tag -a vX.Y.Z <hash> -m "<summary>"` command in this phase's output — tag creation itself stays the user's, unchanged.
+3. **Tag the release, now that the push has landed.** Run `changelog`'s own "Tag sync" check against the section this band just released: `git tag -l` (or read `.git/refs/tags/` / `.git/packed-refs`) for whether it already has a matching tag. If not, create and push it yourself — `git tag -a vX.Y.Z <hash> -m "<summary>"` then `git push origin vX.Y.Z` — the hash being the commit on this branch that introduced that `## [X.Y.Z]` heading (`workflow-consolidate`'s own commit from P3). Both are permitted to the agent; neither commits to nor pushes a protected branch.
 
 ## Output
 
@@ -21,7 +21,7 @@ argument-hint: []
 
 <the git-pr-create output — the PR URL>
 
-<the git tag command, only if the released section has no matching tag yet>
+<the tag you created and pushed, e.g. "Tagged and pushed v0.34.0.">
 ````
 
-- **Nothing else.** No commit message here, no changed/verified/follow-ups breakdown — that already happened in P3's report. This phase reports two things: is it published and where, and whether the release still needs a tag.
+- **Nothing else.** No commit message here, no changed/verified/follow-ups breakdown — that already happened in P3's report. This phase reports two things: is it published and where, and the tag it just created.

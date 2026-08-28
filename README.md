@@ -34,11 +34,73 @@ scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
 .github/workflows/    CI — runs test-hooks.sh and validate.sh on push/PR
 ```
 
-## The workflow loop
+## The Agentic Workflow Loop
 
 `/workflow-loop` is the default working mode for anything bigger than a one-line fix. Five phases: **spec → decompose → execute → consolidate → complete.**
 
 The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
+
+**Diagram exception:** this file normally follows the `readme` skill's fixed 6-section template, which pushes diagrams to the SDD. This repo has no `docs/spec/SDD.md` of its own — it *is* the tool the diagram documents — so the flow below is a deliberate, one-off carve-out.
+
+```mermaid
+flowchart TD
+    Start(["/workflow-loop &lt;task&gt;"]) --> OpenCheck{"$ARGUMENTS starts with 'open'?"}
+    OpenCheck -->|yes| OpenHatch["Open hatch — skip every phase.\nFor design/exploration, where\njudgement beats a script."]
+    OpenCheck -->|no| P0
+
+    subgraph P0["P0 · Spec (dialogue only, never forked)"]
+        direction TB
+        P0a{"BACKLOG.md exists?"}
+        P0a -->|yes| P0b["Read SDD/PRD for framing (optional)"]
+        P0a -->|"no, SDD exists"| P0c["/backlog plan — build backlog\nfrom the SDD, user approves"]
+        P0a -->|"no, no SDD"| P0stop(["STOP — nothing to build from.\nOnly phase allowed to exit\nwith nothing delivered."])
+    end
+    P0b --> P1
+    P0c --> P1
+
+    subgraph P1["P1 · Decompose (fork: workflow-planner)"]
+        direction TB
+        P1a["/backlog audit — cheap stale/dup pass"] --> P1b["/workflow-decompose → task queue"]
+        P1b --> P1c["Read the queue's Gaps section"]
+        P1c --> P1d["Group queue into PR-sized bands"]
+        P1d --> P1e["Branch: git switch -c type/desc\n(or resume a [WIP] story's branch)"]
+    end
+    P1 --> P20
+
+    subgraph P2["P2 · Execute — loops once per task, once per band"]
+        direction TB
+        P20["P2.0 Align — pick tasks sharing\nno file/dependency edge, mark [WIP]"] --> P21
+        P21["P2.1 Implement\nfork: workflow-implementer"] --> P22
+        P22{"P2.2 Verify\nverify_gate.py exits zero?"}
+        P22 -->|no| P22fail{"Same failure\ntwice running?"}
+        P22fail -->|no, retry| P21
+        P22fail -->|"yes"| Blocked(["Mark task [BLOCKED],\nreason + file:line.\nBack to P2.0 for next\nunblocked task."])
+        Blocked --> P20
+        P22 -->|yes| P23["P2.3 Review\nassess-bugs (+assess-security)\nfindings → BACKLOG.md → new P2.0 pick\ncommit this task's diff"]
+        P23 -->|more tasks in band| P20
+        P23 -->|band fully green| P24["P2.4 Closeout — once per band\nassess-bugs, assess-security, assess-simplify\nfindings resolved or declined\nchangelog write"]
+    end
+    P24 --> P3
+    P20 -.->|"every remaining task\ntransitively blocked"| P2halt(["Phase halt —\nreported in P4, not silent"])
+
+    subgraph P3["P3 · Consolidate (fork: workflow-implementer)"]
+        direction TB
+        P3a["/workflow-consolidate — release\nchangelog, sync manifest, clear stories"] --> P3b["Decide this PR's labels"]
+        P3b --> P3c["Commit consolidate's own delta"]
+    end
+    P3 --> P4
+
+    subgraph P4["P4 · Publish"]
+        direction TB
+        P4a["/workflow-complete — push branch"] --> P4b["/git-pr-create → PR URL"]
+        P4b --> P4c["Tag check"]
+    end
+    P4 --> Done(["Loop ends: PR URL returned"])
+
+    OpenHatch -.-> EndOpen(["Loop ends: judgement-driven,\nno phases run"])
+```
+
+Two escape routes exist outside the five-phase happy path: the **open hatch** (`open <topic>`) bypasses the machine entirely before P0 ever runs, and the **task-level `[BLOCKED]` exit** inside P2 lets one stuck task drop out — via two failed verify attempts on the same check — without halting the rest of the band; only every remaining task being transitively blocked halts P2 itself, and even then P4 still reports it rather than the run silently vanishing. P0's "nothing to build from" stop is the sole point allowed to end the whole loop with nothing delivered.
 
 Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `readme` owns the entry point; `backlog` and `changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
 
@@ -48,7 +110,7 @@ Each repo carries three local documents, plus the SDD (and, when one exists, the
 | `BACKLOG.md` | Open work | Yes |
 | `CHANGELOG.md` | What shipped, and the version | Append-only |
 
-## The hooks
+## The Hooks
 
 Two guards run as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
 
@@ -91,13 +153,13 @@ bash scripts/test-hooks.sh    # 127 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/backlog` `/changelog` `/repo-init` `/git-commit-message` `/audit-readiness` `/readme` `/audit-change-risk` `/audit-code-quality` `/audit-bugs` `/audit-security` `/audit-simplify` `/audit-performance` `/workflow-complete`
+Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 
 **`context: fork` is the only way to reclaim context.** A skill declaring it runs its body *and* its work inside a subagent, returning only the result. The three workflow-loop phases use it. Pairing `argument-hint` with it requires `disable-model-invocation: true` — omit that and the skill is silently rejected.
 
-## Output formatting
+## Output Formatting
 
 The always-on contract lives in `claude-code/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `config-accessibility` skill and loads only when authoring something longer than a screen.
 

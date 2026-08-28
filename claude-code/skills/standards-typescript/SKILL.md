@@ -23,6 +23,7 @@ This language's exempt machine directives, verified against the guard's own list
 
 - **Versions come from `package.json`.** Read it; never assume a major.
 - **Vulnerability scanning** — `npm audit --omit=dev --audit-level=high` (or the pnpm/yarn equivalent) is the gate. Install with `npm ci` so the lockfile is honoured. Enable `eslint-plugin-security` for the static half. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
+- **Outdated dependencies** — `npm outdated` (or the pnpm/yarn equivalent) lists packages behind their declared range, no CVE required to surface. Advisory only, never a merge gate; bump one package at a time and re-run the test suite, rather than a blanket `npm update`.
 - **Forge SDK** — published as `@komodo-forge-sdk/typescript`, including the shared CDK construct toolkit. Import the published package at a pinned version; never a relative path into a local checkout. Read its exports before concluding it lacks something.
 
 ## Conventions
@@ -39,7 +40,7 @@ This language's exempt machine directives, verified against the guard's own list
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-ui-security` owns the broader rendered-surface bar this narrows to TypeScript/JavaScript mechanics.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-ui-security` owns the broader rendered-surface bar this narrows to TypeScript/JavaScript mechanics.
 
 - **`eval`/`new Function(...)` on any request- or user-derived string is code execution**, not a shortcut — no upstream validation makes it safe.
 - **`dangerouslySetInnerHTML`/`innerHTML`/`v-html` with unsanitized content is stored/reflected XSS** — run untrusted HTML through a sanitizer (e.g. DOMPurify) first, or avoid the raw-HTML sink entirely.

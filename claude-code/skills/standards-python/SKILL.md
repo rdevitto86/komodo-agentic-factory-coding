@@ -24,6 +24,7 @@ This language's exempt machine directives, verified against the guard's own list
 - **The version floor is declared in `pyproject.toml` under `requires-python`.** Read it rather than assuming a release. Dependencies via `uv` (preferred) or `poetry` — never raw `pip`.
 - **`ruff format`, `ruff check`, `mypy --strict`** (or strict `pyright`). No `black`/`isort`/`flake8`/`pylint` stack. Type errors block merge.
 - **Vulnerability scanning** — `pip-audit` (or `uv pip audit`) against the resolved lockfile is the gate. Enable ruff's `S` (bandit) rules for the static half, excluded from test paths. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
+- **Outdated dependencies** — `uv pip list --outdated` (or `pip list --outdated`) lists packages behind the latest release, no CVE required to surface. Advisory only, never a merge gate; bump one package at a time and re-run the test suite, rather than a blanket upgrade.
 - **`from __future__ import annotations`** at the top of every module. Annotate every signature and module-level binding. No bare `Any`.
 - **`typing.Protocol` for boundary interfaces**; ABCs only for genuine nominal subtyping.
 - **Validate external boundaries** with `pydantic` v2 or `attrs`. Prefer `TypedDict` / `dataclass` / `BaseModel` over `dict[str, Any]`. Value types are `@dataclass(frozen=True, slots=True)`.
@@ -48,7 +49,7 @@ This language's exempt machine directives, verified against the guard's own list
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
 
 - **`yaml.safe_load`, never `yaml.load`, on untrusted input.** The default `Loader` can instantiate arbitrary Python objects — an insecure-deserialization sink.
 - **`pickle`/`marshal`/`shelve` never deserialize data from outside the process.** Unpickling is arbitrary code execution by design; there is no safe-mode flag to reach for instead.

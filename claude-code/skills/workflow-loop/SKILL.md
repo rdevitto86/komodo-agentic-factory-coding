@@ -25,8 +25,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
-| P2.3 Review | `/audit-bugs` (+ `/audit-security`), then commit here | — |
-| P2.4 Closeout | `/audit-bugs`, `/audit-security`, `/audit-simplify`, `/changelog write`, once per band | — |
+| P2.3 Review | `/assess-bugs` (+ `/assess-security`), then commit here | — |
+| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog write`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `workflow-implementer` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` + tag check | — |
 
@@ -114,7 +114,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ### P2.3 · Review
 
-**`/audit-bugs`, plus `/audit-security` when the touched surface warrants it** (the `ways/` file names the trigger). Never a fork of this session — a fork saw the reasoning that produced the code and will agree with it.
+**`/assess-bugs`, plus `/assess-security` when the touched surface warrants it** (the `ways/` file names the trigger). Never a fork of this session — a fork saw the reasoning that produced the code and will agree with it.
 
 **Review against the task, not the diff.** Did every acceptance condition land, and did anything outside the task change?
 
@@ -126,11 +126,11 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ### P2.4 · Closeout
 
-**`/audit-bugs`, `/audit-security`, `/audit-simplify` against the whole band, once, plus the perf suite.** Runs after every task in the pick is green, before P3 — never per-task, never a fork, same reasoning as P2.3.
+**`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band, once, plus the perf suite.** Runs after every task in the pick is green, before P3 — never per-task, never a fork, same reasoning as P2.3.
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story a call just filed for this band is folded into P2.0's pick and resolved in this same pass — fixed via `/workflow-implement`, or explicitly declined and removed from `BACKLOG.md` with the reason noted for P4's report. A closeout finding left open past this phase is exactly the pile-up this step exists to prevent.
 
-**Clears the target state's four standing closeout stories.** This is what stops them sitting open forever: they are never picked as ordinary P2.1 tasks — a `workflow-implementer` fork wrote the code and can't also review it cold, `audit-*` calls stay this session's job — they are cleared here instead.
+**Clears the target state's four standing closeout stories.** This is what stops them sitting open forever: they are never picked as ordinary P2.1 tasks — a `workflow-implementer` fork wrote the code and can't also review it cold, `assess-*` calls stay this session's job — they are cleared here instead.
 
 **Once every closeout finding is fixed or declined, run `/changelog write` for the whole band** — one pass covering every task that shipped, grouped per that skill's own format. This is the only point the band's behavior is both complete and verified, which is why it lands here rather than per-task in P2.3: a per-task entry risks describing work a later finding in this same band still changes, and a per-task pass adds context switching a single end-of-band pass doesn't. P3 then only releases what this step already wrote — it never authors a new bullet.
 

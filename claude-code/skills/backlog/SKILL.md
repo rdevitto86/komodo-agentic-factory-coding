@@ -81,7 +81,7 @@ Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]`. Subtask line sh
 - **Every task group with behavior tasks carries its own `Tests:` task.** That is the merge gate; integration, smoke, e2e, and perf get their own task. `standards-sdlc` defines the tiers.
 - **In a repo `repo-init` scaffolds as an app/service/infra type** (`go-api`, `go-mcp`, `vue-ui`, `svelte-ui`, `cdk-infra` — see `repo-init`), **every epic's `Cross-Cutting` task group carries four standing closeout tasks** — `Security review`, `Bug sweep`, `Code smell`, `Performance`. They run last, after any Deploy tasks (see below): delete the epic's heading only once every other task is gone and these four are too (or swept, if left `[DONE]`). **A skill/config/doc-only repo — one `repo-init` never scaffolds as one of those types, this toolkit included — carries none of the four**; there is no runtime surface for a security scan, a perf suite, or a code-smell pass to cover, so `Cross-Cutting` in that kind of repo ends at whatever real tasks it holds.
 - **Every task carries a `[P: SEV]` tag.** The task's own text names what the work is; each `SUB-` line's `Done when:` command is what states what "done" means for that piece — write it concretely enough that someone else can run it, not so vague it can only be judged by the person who wrote it.
-- **An `audit-*` skill files its own findings straight in** — that is its own `Findings → backlog` step, not this skill's Parts 1/2. Those runs (a planning pass, a normalize pass) never invent a task from a finding it did not itself derive from the repo or the source file being normalized.
+- **An `assess-*` skill files its own findings straight in** — that is its own `Findings → backlog` step, not this skill's Parts 1/2. Those runs (a planning pass, a normalize pass) never invent a task from a finding it did not itself derive from the repo or the source file being normalized.
 
 ### Foundation and Deploy edges
 
@@ -234,7 +234,7 @@ Show the normalized file as a diff against the source and **wait for approval** 
 
 Scoping: **$ARGUMENTS**, minus the `audit` token (default: every open line in `BACKLOG.md`)
 
-Judges backlog validity against current repo state and applies the verdict directly — same as the other `audit-*` skills write their findings straight to `BACKLOG.md`, this mode edits `BACKLOG.md` itself rather than filing a new story about it. Parts 1 and 2 above stay reserved for the one-time planning run (a fresh target-state decomposition) and for normalizing an unstructured source file — not for routine maintenance of an already-shaped `BACKLOG.md`, which this mode (and the other audits) handle directly.
+Judges backlog validity against current repo state and applies the verdict directly — same as the other `assess-*` skills write their findings straight to `BACKLOG.md`, this mode edits `BACKLOG.md` itself rather than filing a new story about it. Parts 1 and 2 above stay reserved for the one-time planning run (a fresh target-state decomposition) and for normalizing an unstructured source file — not for routine maintenance of an already-shaped `BACKLOG.md`, which this mode (and the other assessments) handle directly.
 
 **Lighter-weight than a full `/workflow-decompose` re-derivation.** `/workflow-loop`'s P1 runs this before the decompose fork, on the same scope — an already-valid backlog skips the fork's full repo+changelog re-derivation; only what this flags needs decompose's attention.
 

@@ -82,7 +82,7 @@ Measure first. An optimisation without a before/after number is unreviewable.
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
 
 - **`PreparedStatement` with bound parameters, never `Statement` with a concatenated query string.**
 - **`ObjectInputStream.readObject()` on untrusted input is Java's classic insecure-deserialization sink** — restrict it to a trusted class allowlist (`ObjectInputFilter`) or avoid native Java serialization for external data entirely.

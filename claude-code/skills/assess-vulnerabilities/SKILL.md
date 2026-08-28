@@ -1,21 +1,21 @@
 ---
-name: audit-vulnerabilities
+name: assess-vulnerabilities
 description: Triage known-CVE dependency exposure — Dependabot alerts first, a language-native scanner otherwise — and file them as BACKLOG.md stories. Model-agnostic finder; never a fixer. Pass --report to skip the write.
 argument-hint: <task text or band summary> [standards-* skills that apply] [--report]
 ---
 
-# Vulnerability audit
+# Vulnerability assessment
 
 Reviewing: **$ARGUMENTS**
 
-Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Scoped to known-CVE dependency exposure, never a fixer. Complements `audit-security`: that skill reviews the diff for *injected* defects (new boundary, new query, new secret handling); this one never re-reads the diff for code-level bugs, only checks what a dependency already carries a published CVE for.
+Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Scoped to known-CVE dependency exposure, never a fixer. Complements `assess-security`: that skill reviews the diff for *injected* defects (new boundary, new query, new secret handling); this one never re-reads the diff for code-level bugs, only checks what a dependency already carries a published CVE for.
 
 ## Process
 
 1. **Triage Dependabot first.** Try `gh api /repos/{owner}/{repo}/dependabot/alerts --jq '.[] | select(.state=="open")'`; if that 404s or errors (Dependabot not enabled, insufficient scope), fall back to `gh issue list --label dependabot --state open`. Either result standing in for step 2 — skip straight to Report.
 2. **Scan the manifest/lockfile when Dependabot yields nothing usable.** Load whichever `standards-<language>` skill(s) this repo's languages trigger and run the exact tool it documents — never invent one: `govulncheck ./...` (Go), `npm audit --omit=dev --audit-level=high` (or the pnpm/yarn equivalent, TS/JS), `pip-audit` (Python). No matching language skill: fall back to `osv-scanner` against the lockfile if it's installed; otherwise report that no scanner was available and stop.
 3. **Read each hit's severity and reachability**, not just its CVE score — `govulncheck` and `npm audit` both report whether the vulnerable symbol is actually called; an unreachable high-severity CVE is still worth recording but ranks lower than a reachable one.
-4. **A finding needs the CVE/GHSA ID and the affected package@version**, not a vague "dependency X is old" — that belongs to `audit-dependencies`, not this skill.
+4. **A finding needs the CVE/GHSA ID and the affected package@version**, not a vague "dependency X is old" — that belongs to `assess-dependencies`, not this skill.
 
 ## Report
 
@@ -29,4 +29,4 @@ No findings: state that plainly, one line, and stop. **Never invent a finding to
 
 ## Findings → backlog
 
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <claim> · S → \`/audit-vulnerabilities <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.
+Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <claim> · S → \`/assess-vulnerabilities <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.

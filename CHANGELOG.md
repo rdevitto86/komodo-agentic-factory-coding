@@ -2,6 +2,24 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [Unreleased]
+
+## [0.34.0] — 2026-08-28
+
+### Added
+- `readme` skill gains a Features section (`##2`) and an optional table of contents, both sourced from the new `templates/project/README.md.tmpl` reference skeleton.
+- Documented an "Outdated dependencies" convention (`go list -u -m all`, `npm outdated`, `uv pip list --outdated`) alongside the existing CVE-scanner convention in `standards-go`, `standards-typescript`, `standards-python`.
+
+### Changed
+- `changelog`'s "Tag sync" step and `workflow-complete`'s P4 now create and push the release tag themselves (`git tag -a` + `git push origin <tag>`) instead of just handing the user a ready-to-run command — tagging a release is now an agent action, same as opening and labeling its PR.
+- Renamed `audit-*` skills to `assess-*` (`audit-bugs` → `assess-bugs`, etc.) and `audit-readme` to `readme-audit`, across `AGENTS.md`, `settings.json`, `workflow-implementer`, and every skill/doc that referenced the old names — "audit" implied scoring against a fixed schema, while these skills' actual output is an open-ended judgement call, which "assess" states plainly.
+
+### Fixed
+- `claude-code/settings.json` listed `Bash(git tag:*)` in both `allow` and `deny` — deny silently won, so the agent could never actually create a release tag despite `git_guard.py`'s own logic already permitting non-destructive tag creation. Removed the stale `deny` entry.
+- `AGENTS.md` falsely claimed git hooks are absent from this repo; it now describes the real `pre-commit`/`pre-push` dispatchers under `scripts/hooks/git/`, installed via `install.sh`.
+- `git_guard.py`: `time --output sh <cmd>` (or any `PASSTHROUGH_WRAPPERS` flag whose unrecognized value collided with a `MONITORED_COMMANDS` name) let the guard misidentify the flag's value as the wrapped command, silently skipping its scan of the real inner command. `time`'s long-form `--format`/`--output` flags are now recognized as value-taking, closing that path.
+- `README.md`'s "Workflow skills, all free" list had drifted to 16 entries against 32 actual free skills; refreshed to match.
+
 ## [0.33.0] — 2026-08-27
 
 ### Added
