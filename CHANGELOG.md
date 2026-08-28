@@ -2,6 +2,30 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.33.0] — 2026-08-27
+
+### Added
+- `standards-api-design` — new API shape/contract conventions skill (resource naming, schema/pagination/error-shape conventions, idempotency-key and versioning design), sibling to `standards-api-security`'s security-only scope.
+- `git-pr-review`, `git-pr-comment`, `git-issue-review` — new skills covering merge-readiness review, PR status comments, and open-issue triage, none of which existed before this band.
+- "Security standards" sections (language-specific insecure-usage patterns) added to `standards-go`, `standards-python`, `standards-typescript`, `standards-java`, `standards-c`, `standards-dotnet`, `standards-shell`, `standards-csharp` (parked `.off`), for `audit-security` to pull from.
+
+### Changed
+- `changelog` merges `write-changelog` + `audit-changelog` (`write`/`audit` modes), same shape as the prior `backlog` merge.
+- `standards-design-ui`/`standards-security-ui` renamed to `standards-ui-design`/`standards-ui-security`; `standards-security-api` renamed to `standards-api-security`; `rules-merge-conflicts` renamed to `git-merge-conflict`; `write-repo` renamed to `repo-init`; `config-accessibility-output` renamed to `config-accessibility`.
+- `git-pr` split into `git-pr-create` (open/edit) + `git-pr-review` + `git-pr-comment`; `git-issue` split into `git-issue-create` + `git-issue-review`.
+- `rules-source-control` and `standards-git` folded into `git-pr-create`'s new "Git lifecycle" section (branch/push/merge/protected-ref conventions merged with what `git_guard.py` actually enforces for each), since it's the skill that walks branch → commit → push → PR.
+- Each `standards-<language>` skill's Comment discipline section now carries the full banned/allowed comment-template contract inline, instead of pointing at a shared `rules-commenting` skill.
+- `audit-testing` now detects and loads every language manifest present in a repo, not just one; `audit-security` now also loads whichever `standards-<language>` skill(s) touched files trigger.
+
+### Removed
+- `write-changelog`, `audit-changelog` — folded into `changelog`.
+- `rules-source-control`, `standards-git` — folded into `git-pr-create`.
+- `git-pr`, `git-issue` — split into their `-create`/`-review`/`-comment` successors.
+- `rules-commenting` — inlined into each `standards-<language>` skill.
+
+### Known gap
+- `AGENTS.md`'s `rules-<topic>` naming bucket now has no example skill (its sole example, `rules-commenting`, was removed) — left as-is pending a human decision on whether the bucket stays documented with no live example or a future skill should fill it.
+
 ## [0.32.0] — 2026-08-27
 
 ### Changed
