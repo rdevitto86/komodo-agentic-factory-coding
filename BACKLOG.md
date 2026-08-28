@@ -47,24 +47,16 @@ Format and rules live in the `backlog` skill — load it before editing this fil
 * **SUB-01.1.7.1** fix `generateRequest`'s payload truncation against `num_ctx` in the bridge server once its source is reachable from this repo
   * **Done when:** a large summarizer payload no longer silently truncates against `num_ctx` in `~/.komodo/bridge`
 
----
-
-## [EPIC-02] Next, V2
-*Goal: restructure the skill set for clarity, and move spec/doc authoring local.*
-
-### [TG-02.1] Cross-Cutting
-* **Target Release:** V2
-
-#### [TSK-02.1.1] Machine identity for agent-run git/PR operations [P: M] [TODO]
-* **SUB-02.1.1.1** agent-run commits and PRs currently authored as the user's own GitHub account (`gh auth`'s session token + local `git config user.name`) — create a machine-user account or GitHub App and wire its token into `gh`/`git` for agent-run operations
+#### [TSK-01.1.8] Machine identity for agent-run git/PR operations [P: M] [TODO]
+* **SUB-01.1.8.1** agent-run commits and PRs currently authored as the user's own GitHub account (`gh auth`'s session token + local `git config user.name`) — create a machine-user account or GitHub App and wire its token into `gh`/`git` for agent-run operations
   * **Done when:** `gh auth status` inside an agent run shows the machine identity, not the user's own account, and a test commit/PR is authored under it
 
-#### [TSK-02.1.2] Model `/git-commit-tag` from `changelog` + `workflow-complete` [P: L] [TODO]
-* **SUB-02.1.2.1** the git-tag-sync check (list tags, find the commit that introduced the just-released `CHANGELOG.md` heading, hand the user the exact `git tag -a` command) currently lives split across `changelog`'s "Tag sync" section and `workflow-complete`'s P4 post-push step — consolidate into a standalone command skill once that logic grows, so tag-readiness can be checked on demand outside the loop too
+#### [TSK-01.1.9] Model `/git-commit-tag` from `changelog` + `workflow-complete` [P: L] [TODO]
+* **SUB-01.1.9.1** the git-tag-sync check (list tags, find the commit that introduced the just-released `CHANGELOG.md` heading, hand the user the exact `git tag -a` command) currently lives split across `changelog`'s "Tag sync" section and `workflow-complete`'s P4 post-push step — consolidate into a standalone command skill once that logic grows, so tag-readiness can be checked on demand outside the loop too
   * **Done when:** `ls claude-code/skills/ | grep -q git-commit-tag` exits 0, and `changelog`'s "Tag sync" section plus `workflow-complete`'s P4 step both invoke it by name instead of restating the logic
 
-#### [TSK-02.1.3] Split `backlog` into `backlog-audit` and `backlog-modify` [P: L] [TODO]
-* **SUB-02.1.3.1** `backlog`'s three modes split unevenly by intent — Part 3 (`audit`) judges and applies verdicts against existing repo/file state, while Parts 1 (`plan`) and 2 (`normalize`) are both authoring-shaped (originate or reshape `BACKLOG.md`'s content); extract Part 3 into `backlog-audit` (`disable-model-invocation: true`, matching the typed-only human-decision precedent set for `audit-readme` etc.) and fold Parts 1+2 into `backlog-modify`, then update `AGENTS.md`'s naming-bucket table and every skill that invokes `backlog plan`/`backlog audit`/`backlog normalize` by mode string (`workflow-loop` P0/P1, `repo-init`, and any other caller)
+#### [TSK-01.1.10] Split `backlog` into `backlog-audit` and `backlog-modify` [P: L] [TODO]
+* **SUB-01.1.10.1** `backlog`'s three modes split unevenly by intent — Part 3 (`audit`) judges and applies verdicts against existing repo/file state, while Parts 1 (`plan`) and 2 (`normalize`) are both authoring-shaped (originate or reshape `BACKLOG.md`'s content); extract Part 3 into `backlog-audit` (`disable-model-invocation: true`, matching the typed-only human-decision precedent set for `audit-readme` etc.) and fold Parts 1+2 into `backlog-modify`, then update `AGENTS.md`'s naming-bucket table and every skill that invokes `backlog plan`/`backlog audit`/`backlog normalize` by mode string (`workflow-loop` P0/P1, `repo-init`, and any other caller)
   * **Done when:** `ls claude-code/skills/ | grep -E 'backlog-(audit|modify)'` returns both, `claude-code/skills/backlog/` no longer exists, and `grep -rn "backlog plan\|backlog audit\|backlog normalize" claude-code/skills/ AGENTS.md` returns no hits
 
 ---
