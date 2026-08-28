@@ -121,7 +121,7 @@
     "standards-database": "name-only",
     "standards-docker": "name-only",
     "standards-specs": "name-only",
-    "write-changelog": "name-only",
+    "changelog": "name-only",
     "standards-sdlc": "name-only",
     "sdd": "name-only",
     "prd": "name-only",

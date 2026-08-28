@@ -40,7 +40,7 @@ scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
 
 The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
 
-Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `write-readme` owns the entry point; `backlog` and `write-changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
+Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `write-readme` owns the entry point; `backlog` and `changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
 
 | File | Holds | Mutable |
 |---|---|---|
@@ -91,7 +91,7 @@ bash scripts/test-hooks.sh    # 127 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/backlog` `/write-changelog` `/write-repo` `/git-commit-message` `/audit-readiness` `/write-readme` `/audit-change-risk` `/audit-code-quality` `/audit-bugs` `/audit-security` `/audit-simplify` `/audit-performance` `/workflow-complete`
+Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/backlog` `/changelog` `/write-repo` `/git-commit-message` `/audit-readiness` `/write-readme` `/audit-change-risk` `/audit-code-quality` `/audit-bugs` `/audit-security` `/audit-simplify` `/audit-performance` `/workflow-complete`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 

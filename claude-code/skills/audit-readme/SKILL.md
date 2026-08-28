@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # README audit
 
-Findings only, never edits `README.md` — `write-readme` owns the format and is the only skill that writes it. This locates structural drift, unsourced claims, and stale references, same division of labor `audit-changelog` keeps with `write-changelog`.
+Findings only, never edits `README.md` — `write-readme` owns the format and is the only skill that writes it. This locates structural drift, unsourced claims, and stale references, same division of labor `changelog`'s audit mode keeps with its own write mode.
 
 Load `write-readme` first — every check below tests against rules it owns, not rules restated here.
 
