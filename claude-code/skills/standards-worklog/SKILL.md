@@ -1,6 +1,6 @@
 ---
 name: standards-worklog
-description: Read/write directive shared by the two mutable work records — BACKLOG.md and CHANGELOG.md. Not their format; see write-backlog and write-changelog for that.
+description: Read/write directive shared by the two mutable work records — BACKLOG.md and CHANGELOG.md. Not their format; see backlog and write-changelog for that.
 user-invocable: false
 paths: "**/BACKLOG.md, **/CHANGELOG.md"
 ---
@@ -9,7 +9,7 @@ paths: "**/BACKLOG.md, **/CHANGELOG.md"
 
 `BACKLOG.md` is what is still open. `CHANGELOG.md` is what shipped. Both live at the repo root, both are written during a build, and both are mutable — unlike the frozen SDD, which is a Drive doc this toolkit never writes at all.
 
-**Structure is not here.** `write-backlog` defines the `BACKLOG.md` format; `write-changelog` defines the `CHANGELOG.md` format. Load whichever one you're about to write before writing it — this skill is the behavior shared across both, not either one's shape.
+**Structure is not here.** `backlog` defines the `BACKLOG.md` format; `write-changelog` defines the `CHANGELOG.md` format. Load whichever one you're about to write before writing it — this skill is the behavior shared across both, not either one's shape.
 
 ## Directives
 

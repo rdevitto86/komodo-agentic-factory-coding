@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Changelog audit
 
-Findings only, never edits `CHANGELOG.md` — `write-changelog` owns the format and is the only skill that writes it. This locates backfill candidates, format inconsistencies, and version/tag misalignment, and hands the fix to the user or a follow-up `/write-changelog` pass, same division of labor `audit-backlog` keeps with `write-backlog`.
+Findings only, never edits `CHANGELOG.md` — `write-changelog` owns the format and is the only skill that writes it. This locates backfill candidates, format inconsistencies, and version/tag misalignment, and hands the fix to the user or a follow-up `/write-changelog` pass, same division of labor `backlog`'s audit mode keeps with its own planning/normalize modes.
 
 Load `write-changelog` first — every check below tests against rules it owns (grouping, versioning, tag sync), not rules restated here.
 
@@ -36,4 +36,4 @@ No findings: state that plainly, one line, and stop. **Never invent a finding to
 
 ## Findings → backlog
 
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <finding> · S → \`/audit-changelog\` reports it clear`. Append under the current target state's `Cross-Cutting` domain — full story-line rules live in `write-backlog`. `--report` prints the table only; nothing is written.
+Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <finding> · S → \`/audit-changelog\` reports it clear`. Append under the current target state's `Cross-Cutting` domain — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.

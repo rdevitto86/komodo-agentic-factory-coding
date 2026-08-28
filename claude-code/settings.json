@@ -134,7 +134,7 @@
     "workflow-complete": "name-only",
     "write-repo": "name-only",
     "write-readme": "name-only",
-    "audit-backlog": "name-only",
+    "backlog": "name-only",
     "audit-bugs": "name-only",
     "audit-security": "name-only",
     "audit-simplify": "name-only",

@@ -21,7 +21,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | Phase | Runs as | Fork agent |
 |---|---|---|
 | P0 Spec | Here — dialogue cannot be forked | — |
-| P1 Decompose | **`/audit-backlog` then `/workflow-decompose`**, then branch here | `workflow-planner` |
+| P1 Decompose | **`/backlog audit` then `/workflow-decompose`**, then branch here | `workflow-planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
@@ -56,7 +56,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ## P1 · Decompose
 
-**Run `/audit-backlog [scope]` first, on the same scope `$ARGUMENTS` names.** It's the cheap pass — stale, resolved, duplicate, or now-cleared `[BLOCKED]` lines surface here without the fork's full repo+changelog re-derivation. Carry its findings into `/workflow-decompose`'s brief; an unflagged backlog still runs the fork, but arrives with nothing left to recheck.
+**Run `/backlog audit [scope]` first, on the same scope `$ARGUMENTS` names.** It's the cheap pass — stale, resolved, duplicate, or now-cleared `[BLOCKED]` lines surface here without the fork's full repo+changelog re-derivation. Carry its findings into `/workflow-decompose`'s brief; an unflagged backlog still runs the fork, but arrives with nothing left to recheck.
 
 **Run `/workflow-decompose [target state] [scope]`, forwarding `$ARGUMENTS` as the scope if it names one** — a domain or a story substring. Default with no scope: every story in the current target state that isn't `[BLOCKED]` after the fork's own recheck pass. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue.
 
@@ -66,7 +66,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A `BACKLOG.md` holding only `write-repo`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the SDD — run the fork rather than treating an unread backlog as if P1 already happened.
 
-**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `write-repo`'s Create already ran for this repo — trust the tree.** Re-invoke `/write-repo` only when a Foundation-edge story is still open in `BACKLOG.md` (`write-backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
+**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `write-repo`'s Create already ran for this repo — trust the tree.** Re-invoke `/write-repo` only when a Foundation-edge story is still open in `BACKLOG.md` (`backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
 
 **Once the queue is confirmed, branch here** — `git switch -c <type>/<short-kebab-description>` per `rules-source-control`'s naming rule, `type` and description drawn from the band's dominant concern. **Resuming a `[WIP]` story reuses its existing branch** (`git switch <existing-branch>`) instead of creating a second one — check the story text for a branch name before assuming none exists.
 
@@ -154,7 +154,7 @@ It writes the changelog entry, bumps the version, syncs the manifest, clears the
 
 ## Guardrails
 
-- **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `write-backlog`.
+- **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `backlog`.
 - **Backing out is a rewrite.** Capture `git diff` before a risky write; `rules-source-control` owns handing the user the recovery command.
 - **The bridge is optional, never blocking.** An unreachable MCP server is a skipped step. Never branch a phase on whether it is up.
 - **Never poll a delegated phase.** A fork and a backgrounded review both re-invoke this session the moment they finish. A scheduled check burns a full turn even when it lands on time, and can fire *stale* — after the work already completed — re-running dead instructions against state that already moved on.

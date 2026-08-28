@@ -16,7 +16,7 @@ Scope: **$ARGUMENTS** — a target state, optionally narrowed to one domain or s
 ## Order
 
 1. **Read the sources** in your standing order, stopping at the first one missing.
-2. **Story line shape**: `- [SEV][WIP] <text> · <size> · <req-id, optional> → \`<done when>\`` — full rules live in `write-backlog`, not needed here to parse the queue.
+2. **Story line shape**: `- [SEV][WIP] <text> · <size> · <req-id, optional> → \`<done when>\`` — full rules live in `backlog`, not needed here to parse the queue.
 3. **Drop anything already in `CHANGELOG.md`.** A story recorded there has shipped.
 4. **A story with no `Done when` command is a gap** — report it, don't invent one.
 5. **If `$ARGUMENTS` names a domain or story substring, narrow to matching stories** before the checks below. No match named: every story in the target state is in scope.

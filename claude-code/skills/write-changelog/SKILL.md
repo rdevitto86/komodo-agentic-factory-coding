@@ -6,7 +6,7 @@ paths: "**/CHANGELOG.md"
 
 # CHANGELOG.md — the shipped record
 
-Repo root, not `docs/` — it is a published artifact, and release tooling and readers both expect it there. `BACKLOG.md` is what is still open; this file is what shipped. `write-backlog` owns the former.
+Repo root, not `docs/` — it is a published artifact, and release tooling and readers both expect it there. `BACKLOG.md` is what is still open; this file is what shipped. `backlog` owns the former.
 
 ```markdown
 # Changelog
