@@ -15,15 +15,15 @@ Format and rules live in the `backlog` skill — load it before editing this fil
 ### [TG-01.1] Cross-Cutting
 * **Target Release:** V1
 
-#### [TSK-01.1.1] git_guard `strip_leading_flags` fallback edge case [P: L] [TODO]
+#### [TSK-01.1.1] git_guard `strip_leading_flags` fallback edge case [P: L] [DONE]
 * **SUB-01.1.1.1** decide whether the misfire (an unrecognized flag's value exactly equals a bare monitored-command name with no extension, e.g. `time --output sh actualtool arg`) in `claude-code/hooks/git_guard.py` is worth fixing given how contrived it is
-  * **Done when:** a written decision (fix or won't-fix, with reasoning) is recorded in this task or its commit message
+  * **Done when:** a written decision (fix or won't-fix, with reasoning) is recorded in this task or its commit message — decision: FIX, this was a real bypass (see commit history), not merely contrived; `time`'s long-form `--format`/`--output` flags are now recognized as value-taking
 
 #### [TSK-01.1.2] Commit-time check for this repo's own hooks [P: M] [TODO]
 * **SUB-01.1.2.1** `scripts/hooks/git/` has no commit-time check for `git_guard.py`/`comment_guard.py` — `pre-push-verify` covers push (runs `.claude/verify.sh` when present), but a staged syntax error still passes `git commit` uncaught
   * **Done when:** staging a syntax-broken `git_guard.py` or `comment_guard.py` and running `git commit` is blocked by a new `scripts/hooks/git/pre-commit-*` check, verified by `ls scripts/hooks/git/pre-commit-*` showing the new entry and a manual bad-syntax commit attempt failing
 
-#### [TSK-01.1.3] AGENTS.md git-hooks statement vs. disk [P: L] [TODO]
+#### [TSK-01.1.3] AGENTS.md git-hooks statement vs. disk [P: L] [DONE]
 * **SUB-01.1.3.1** AGENTS.md states "Git hooks are **not** in this repo — `pre-commit` and `pre-push` ship with the language SDK", contradicted by `scripts/hooks/git/` holding both dispatchers and `install.sh`
   * **Done when:** `grep -n "Git hooks are" AGENTS.md` no longer contradicts `ls scripts/hooks/git/`
 
@@ -31,11 +31,11 @@ Format and rules live in the `backlog` skill — load it before editing this fil
 * **SUB-01.1.4.1** confirmed this fails the overall exit code (`problems` increments, non-zero `problems` triggers `exit 1`) for a bare checkout with no `~/.claude` symlinks, not just a warning — decide if that's the desired behavior, `scripts/validate.sh`
   * **Done when:** a written decision is recorded (keep as a hard failure, or downgrade the `missing`/`dangling` cases to a warning that doesn't increment `problems`), and `scripts/validate.sh` matches it
 
-#### [TSK-01.1.5] README's "Workflow skills, all free" list is stale [P: L] [TODO]
+#### [TSK-01.1.5] README's "Workflow skills, all free" list is stale [P: L] [DONE]
 * **SUB-01.1.5.1** add the missing skills (`git-pr-create`, `git-issue-create`, `assess-vulnerabilities`, `assess-dependencies`, `runbook`, `sdd`, `prd`, `adr`, `assess-readiness`, `assess-change-risk`, `assess-testing`, `standards-worklog`, `standards-specs`, etc.)
   * **Done when:** every `user-invocable`, non-`disable-model-invocation` skill under `claude-code/skills/` with no cost implication appears in `README.md`'s workflow-skills list, confirmed by diffing `ls claude-code/skills/` against the list
 
-#### [TSK-01.1.6] No documented outdated-dependency tool per language [P: L] [TODO]
+#### [TSK-01.1.6] No documented outdated-dependency tool per language [P: L] [DONE]
 * **SUB-01.1.6.1** only CVE scanners are documented (`govulncheck`, `npm audit`, `pip-audit`) — `assess-dependencies` currently falls back to bare `go list -u -m all`/`npm outdated`/`pip list --outdated` with no documented convention to point to
   * **Done when:** `grep -n "outdated" claude-code/skills/standards-go/SKILL.md claude-code/skills/standards-typescript/SKILL.md claude-code/skills/standards-python/SKILL.md` returns a documented convention for each
 
@@ -58,6 +58,10 @@ Format and rules live in the `backlog` skill — load it before editing this fil
 #### [TSK-01.1.10] Split `backlog` into `backlog-audit` and `backlog-modify` [P: L] [TODO]
 * **SUB-01.1.10.1** `backlog`'s three modes split unevenly by intent — Part 3 (`audit`) judges and applies verdicts against existing repo/file state, while Parts 1 (`plan`) and 2 (`normalize`) are both authoring-shaped (originate or reshape `BACKLOG.md`'s content); extract Part 3 into `backlog-audit` (`disable-model-invocation: true`, matching the typed-only human-decision precedent set for `readme-audit` etc.) and fold Parts 1+2 into `backlog-modify`, then update `AGENTS.md`'s naming-bucket table and every skill that invokes `backlog plan`/`backlog audit`/`backlog normalize` by mode string (`workflow-loop` P0/P1, `repo-init`, and any other caller)
   * **Done when:** `ls claude-code/skills/ | grep -E 'backlog-(audit|modify)'` returns both, `claude-code/skills/backlog/` no longer exists, and `grep -rn "backlog plan\|backlog audit\|backlog normalize" claude-code/skills/ AGENTS.md` returns no hits
+
+#### [TSK-01.1.11] git_guard: same MONITORED_COMMANDS-collision bypass may reach xargs/command/nohup [P: L] [TODO]
+* **SUB-01.1.11.1** TSK-01.1.1 fixed the confirmed exploit path for `time` (`--format`/`--output` now recognized), but `PASSTHROUGH_VALUE_FLAGS` for `command` (`()`), `nohup` (`()`), and `xargs` (`("-I", "-n", "-P", "-L", "-s", "-a", "-d", "-E")`, `claude-code/hooks/git_guard.py:126-131`) still lists only short flags — GNU `xargs`'s long forms (`--replace`, `--max-args`, `--max-procs`, `--max-lines`, `--arg-file`, `--delimiter`) aren't recognized as value-taking, so the same `strip_leading_flags` fallback could misidentify a flag's value as the wrapped command when that value collides with a `MONITORED_COMMANDS` name — same shape as the `time` bug, just harder to trigger organically (no plausible accidental cause, only a deliberately constructed value)
+  * **Done when:** a written decision is recorded (fix by recognizing `xargs`'s long-form value flags, or won't-fix given the harder-to-trigger, purely-deliberate construction), and `claude-code/hooks/git_guard.py` matches it
 
 ---
 

@@ -124,7 +124,7 @@ GH_PR_SCOPED_ACTIONS = {"edit", "comment"}
 SHELL_WRAPPERS = ("sh", "bash", "zsh", "dash", "ksh", "env")
 PASSTHROUGH_WRAPPERS = ("time", "command", "nohup", "xargs")
 PASSTHROUGH_VALUE_FLAGS = {
-    "time": ("-f", "-o"),
+    "time": ("-f", "-o", "--format", "--output"),
     "command": (),
     "nohup": (),
     "xargs": ("-I", "-n", "-P", "-L", "-s", "-a", "-d", "-E"),
