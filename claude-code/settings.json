@@ -98,7 +98,7 @@
     ]
   },
   "skillOverrides": {
-    "config-accessibility-output": "name-only",
+    "config-accessibility": "name-only",
     "rules-commenting": "name-only",
     "rules-source-control": "name-only",
     "standards-worklog": "name-only",

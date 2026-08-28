@@ -7,7 +7,7 @@ paths: "**/*.css, **/*.svelte, **/*.vue, **/*.tsx, **/*.jsx"
 
 # UI/UX
 
-Framework-agnostic. Framework mechanics live in the `standards-svelte` and `standards-vue` skills; document formatting lives in `config-accessibility-output`.
+Framework-agnostic. Framework mechanics live in the `standards-svelte` and `standards-vue` skills; document formatting lives in `config-accessibility`.
 
 ## Tailwind
 

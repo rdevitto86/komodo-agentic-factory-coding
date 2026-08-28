@@ -187,7 +187,7 @@ For the browser-facing response header set (HSTS, `nosniff`, CSP, `frame-ancesto
 
 ## Output
 
-Report against `SKILL.md`'s rules and the OWASP category names. Load the `config-accessibility-output` skill before writing the report.
+Report against `SKILL.md`'s rules and the OWASP category names. Load the `config-accessibility` skill before writing the report.
 
 ```markdown
 ## 🔒 Verdict

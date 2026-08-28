@@ -99,7 +99,7 @@ Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflo
 
 ## Output formatting
 
-The always-on contract lives in `claude-code/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `config-accessibility-output` skill and loads only when authoring something longer than a screen.
+The always-on contract lives in `claude-code/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `config-accessibility` skill and loads only when authoring something longer than a screen.
 
 Every subagent carries the same contract as a mandatory output template.
 

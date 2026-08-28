@@ -1,5 +1,5 @@
 ---
-name: config-accessibility-output
+name: config-accessibility
 description: ADHD-calibrated output formatting. Load before authoring any document, report, plan, audit, summary, README, or PR body — anything longer than one screen. Covers chunking, front-loaded bolding, emoji protocol, table shape, code-answer structure, and document typography.
 ---
 
