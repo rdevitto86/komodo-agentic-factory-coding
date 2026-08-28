@@ -51,7 +51,7 @@ No section beyond these five. Deep design rationale, infra diagrams, and endpoin
 | Scaffold | No `README.md` | Write all applicable sections fresh |
 | Refresh | `README.md` exists | Diff proposed content against what's there section by section |
 
-**Refresh never overwrites silently.** Show the diff, apply only on confirmation — same propose-don't-impose rule as `write-repo`. A section already present and accurate is left untouched, not rewritten to match this template's wording.
+**Refresh never overwrites silently.** Show the diff, apply only on confirmation — same propose-don't-impose rule as `repo-init`. A section already present and accurate is left untouched, not rewritten to match this template's wording.
 
 ## Step 5 — Flag, don't fabricate
 

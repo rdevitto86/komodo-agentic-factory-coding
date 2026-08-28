@@ -133,7 +133,7 @@ Makefile
 
 ## Seed backlog — `svelte-ui`
 
-Stories `write-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+Stories `repo-init` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [H] Build out the starter page's components · M
 - [H] Accessibility: WCAG AA pass (`standards-ui-design`) · S

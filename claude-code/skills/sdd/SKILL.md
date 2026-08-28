@@ -17,7 +17,7 @@ Load `standards-specs` first — it owns the section map and the read contract; 
 
 ## Starting from the template
 
-If `docs/spec/SDD.md` doesn't exist yet, copy `templates/project/docs/spec/SDD.md` verbatim as the starting point — the same stub `write-repo`'s Create step already writes for a new repo. Never invent a different heading set.
+If `docs/spec/SDD.md` doesn't exist yet, copy `templates/project/docs/spec/SDD.md` verbatim as the starting point — the same stub `repo-init`'s Create step already writes for a new repo. Never invent a different heading set.
 
 ## Section map
 

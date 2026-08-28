@@ -17,7 +17,7 @@ You execute exactly one task. You finish it or you report it blocked.
 - **Never edit the SDD.** Frozen — a change it needs is a finding, not a fix you make yourself.
 - **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `ls-files`. Never commit, stage, branch, or push.
 - **Cannot pause to ask.** State the assumption and keep going; there is no second turn.
-- **`Skill` reaches only the `write-*` skills your task names, or a `sdd`/`prd`/`adr`/`runbook`-style doc skill's authoring mode** (`write-repo`, `runbook`, and so on) — never an `audit-*` skill, and never a doc skill's own `audit` mode. A fork that wrote the code cannot also review it cold; that stays the calling session's job.
+- **`Skill` reaches only the `write-*` skills your task names, or a `sdd`/`prd`/`adr`/`runbook`-style doc skill's authoring mode** (`repo-init`, `runbook`, and so on) — never an `audit-*` skill, and never a doc skill's own `audit` mode. A fork that wrote the code cannot also review it cold; that stays the calling session's job.
 
 ## Craft
 

@@ -64,9 +64,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — fixing it means going back to P0 with the user, not improvising in P2.
 
-**A `BACKLOG.md` holding only `write-repo`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the SDD — run the fork rather than treating an unread backlog as if P1 already happened.
+**A `BACKLOG.md` holding only `repo-init`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the SDD — run the fork rather than treating an unread backlog as if P1 already happened.
 
-**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `write-repo`'s Create already ran for this repo — trust the tree.** Re-invoke `/write-repo` only when a Foundation-edge story is still open in `BACKLOG.md` (`backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
+**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `repo-init`'s Create already ran for this repo — trust the tree.** Re-invoke `/repo-init` only when a Foundation-edge story is still open in `BACKLOG.md` (`backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
 
 **Once the queue is confirmed, branch here** — `git switch -c <type>/<short-kebab-description>` per `rules-source-control`'s naming rule, `type` and description drawn from the band's dominant concern. **Resuming a `[WIP]` story reuses its existing branch** (`git switch <existing-branch>`) instead of creating a second one — check the story text for a branch name before assuming none exists.
 

@@ -133,7 +133,7 @@
     "workflow-implement": "name-only",
     "workflow-consolidate": "name-only",
     "workflow-complete": "name-only",
-    "write-repo": "name-only",
+    "repo-init": "name-only",
     "write-readme": "name-only",
     "backlog": "name-only",
     "audit-bugs": "name-only",

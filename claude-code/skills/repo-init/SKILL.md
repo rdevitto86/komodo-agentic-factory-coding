@@ -1,5 +1,5 @@
 ---
-name: write-repo
+name: repo-init
 description: Create a new repo's full skeleton, or scaffold/refresh its CLAUDE.md/AGENTS.md and the three standard local documents.
 argument-hint: [repo-type: go-api|go-mcp|vue-ui|svelte-ui|cdk-infra] [target path, defaults to cwd]
 context: fork

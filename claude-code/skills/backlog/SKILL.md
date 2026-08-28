@@ -80,7 +80,7 @@ Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]`. Subtask line sh
 
 `Cross-Cutting` has two fixed edges. Neither changes the rules above — same flat task list, same `(after:)` sequencing, same four closeout tasks last.
 
-- **Foundation, first.** Repo skeleton, toolchain floor, container build, health endpoint — what `write-repo` Create already seeds. On Scaffold/Refresh of a pre-existing repo these surface as real open tasks instead of pre-satisfied ones.
+- **Foundation, first.** Repo skeleton, toolchain floor, container build, health endpoint — what `repo-init` Create already seeds. On Scaffold/Refresh of a pre-existing repo these surface as real open tasks instead of pre-satisfied ones.
 - **Deploy, last — before the four closeout tasks.** CI deploy pipeline, STG rollout, PROD rollout. The task-group rule still applies: a service repo's Deploy tasks cover *becoming deployable* (build, push, wire the pipeline). The cloud infra itself is a task in the infra repo's own `Cross-Cutting`, never this one.
 - **A Deploy task blocked on something outside this repo is still `[BLOCKED]`, same shape as any other** — the citation just points at the other repo's record instead of a code defect:
 
