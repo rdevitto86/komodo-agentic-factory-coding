@@ -9,7 +9,7 @@ paths: "**/BACKLOG.md, **/CHANGELOG.md"
 
 `BACKLOG.md` is what is still open. `CHANGELOG.md` is what shipped. Both live at the repo root, both are written during a build, and both are mutable — unlike the frozen SDD, which is a Drive doc this toolkit never writes at all.
 
-**Structure is not here.** `backlog` defines the `BACKLOG.md` format; `changelog` defines the `CHANGELOG.md` format. Load whichever one you're about to write before writing it — this skill is the behavior shared across both, not either one's shape.
+**Structure is not here.** `backlog-modify` defines the `BACKLOG.md` format; `changelog` defines the `CHANGELOG.md` format. Load whichever one you're about to write before writing it — this skill is the behavior shared across both, not either one's shape.
 
 ## Directives
 

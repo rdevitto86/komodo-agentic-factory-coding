@@ -20,8 +20,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 | Phase | Runs as | Fork agent |
 |---|---|---|
-| P0 Spec | Here — dialogue cannot be forked; `/backlog plan` when a backlog has to be built | — |
-| P1 Decompose | **`/backlog audit` then `/workflow-decompose`**, then plan the run's PRs and branch here | `workflow-planner` |
+| P0 Spec | Here — dialogue cannot be forked; `/backlog-modify plan` when a backlog has to be built | — |
+| P1 Decompose | **`/backlog-audit` then `/workflow-decompose`**, then plan the run's PRs and branch here | `workflow-planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
@@ -42,17 +42,17 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ## P0 · Spec — context gathering, blocking only when nothing exists to build from
 
-**This phase's one job is confirming `BACKLOG.md` exists before P1 tries to decompose it.** It is never where a backlog gets decomposed into tasks (P1's job) or audited (P1 runs `/backlog audit` itself) — P0 either finds a backlog already there, builds one, or stops.
+**This phase's one job is confirming `BACKLOG.md` exists before P1 tries to decompose it.** It is never where a backlog gets decomposed into tasks (P1's job) or audited (P1 runs `/backlog-audit` itself) — P0 either finds a backlog already there, builds one, or stops.
 
 **`README.md` missing** → run `/readme` to create it (cheap, and never the blocker) rather than stopping the phase for it.
 
 **`BACKLOG.md` exists** → `docs/spec/SDD.md` and `docs/spec/PRD.md` are both optional context here, never a blocker. Read them if present, for framing only (`standards-specs` owns their section maps) — same token-budget rule as before: full read on the first run of a session, `test -f` existence-only on every run after. Go to P1.
 
-**`BACKLOG.md` missing, `docs/spec/SDD.md` exists** → build the backlog now, from the SDD. Run `/backlog plan <goal>`, the goal drawn from the SDD (and `docs/spec/PRD.md` if present) plus whatever `$ARGUMENTS` names — its own Step 1 is where the user gets asked for refinement; never invent a second round of questions here. Write on the user's approval, exactly as that skill's own gate already requires, then go to P1.
+**`BACKLOG.md` missing, `docs/spec/SDD.md` exists** → build the backlog now, from the SDD. Run `/backlog-modify plan <goal>`, the goal drawn from the SDD (and `docs/spec/PRD.md` if present) plus whatever `$ARGUMENTS` names — its own Step 1 is where the user gets asked for refinement; never invent a second round of questions here. Write on the user's approval, exactly as that skill's own gate already requires, then go to P1.
 
 **`BACKLOG.md` missing and `docs/spec/SDD.md` missing** — nothing exists to build a backlog from. **This is the one condition allowed to exit the loop with nothing delivered.** Say so and stop; drafting an SDD from nothing is a stakeholder conversation this toolkit doesn't run on its own.
 
-**Ends when:** `BACKLOG.md` exists — either it already did, or `/backlog plan` just wrote it with the user's approval.
+**Ends when:** `BACKLOG.md` exists — either it already did, or `/backlog-modify plan` just wrote it with the user's approval.
 
 ---
 
@@ -60,7 +60,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Requires `BACKLOG.md` to already exist.** P0 owns creating it — if this phase somehow starts without one on disk, that is P0's contract broken, not something to paper over here: exit the loop rather than templating or planning a backlog from inside this phase.
 
-**Run `/backlog audit [scope]` first, on the same scope `$ARGUMENTS` names.** It's the cheap pass — stale, resolved, duplicate, or now-cleared `[BLOCKED]` lines surface here without the fork's full repo+changelog re-derivation. Carry its findings into `/workflow-decompose`'s brief; an unflagged backlog still runs the fork, but arrives with nothing left to recheck.
+**Run `/backlog-audit [scope]` first, on the same scope `$ARGUMENTS` names.** It's the cheap pass — stale, resolved, duplicate, or now-cleared `[BLOCKED]` lines surface here without the fork's full repo+changelog re-derivation. Carry its findings into `/workflow-decompose`'s brief; an unflagged backlog still runs the fork, but arrives with nothing left to recheck.
 
 **Run `/workflow-decompose [target state] [scope]`, forwarding `$ARGUMENTS` as the scope if it names one** — a domain or a story substring. Default with no scope: every story in the current target state that isn't `[BLOCKED]` after the fork's own recheck pass. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue — this is what "scope which tasks are being worked on via the backlog" means concretely: the queue names the exact `TSK-` IDs in scope for this run, not just task text.
 
@@ -68,7 +68,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A `BACKLOG.md` holding only `repo-init`'s seed stories is not a decomposed queue.** Those seed stories are scaffolding, not work derived from the SDD — run the fork rather than treating an unread backlog as if P1 already happened.
 
-**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `repo-init`'s Create already ran for this repo — trust the tree.** Re-invoke `/repo-init` only when a Foundation-edge story is still open in `BACKLOG.md` (`backlog` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
+**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `repo-init`'s Create already ran for this repo — trust the tree.** Re-invoke `/repo-init` only when a Foundation-edge story is still open in `BACKLOG.md` (`backlog-modify` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
 
 **Plan the run's PRs before branching — this is a plan, not an action: no branch, no commit, no `gh pr create` happens here.** Group the confirmed queue into one or more PR-sized bands against `git-pr-create`'s sizing rule of thumb — split only where tasks already partition cleanly (separate domains, no shared file, no dependency edge crossing the split); a queue that's one entangled change (shared files, a refactor every task depends on) stays one band regardless of size, since the split only pays off when the tasks were already independent. Present the grouping as a short table (PR # · `TSK-` IDs in it · why this grouping) before moving on. **Only this run's first planned PR gets built out through P2–P4** — later ones stay queued in `BACKLOG.md`, ordered by dependency, for a future run. This is also the only point a split is cheap: once commits land on a branch, `git-pr-create`'s own sizing check can flag an oversized PR but `git_guard.py` blocks the rebase a post-hoc split would need.
 
@@ -162,7 +162,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 
 ## Guardrails
 
-- **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `backlog`.
+- **Stopping is judgement, not a counter.** The same check failing twice with the same error ends the attempt. Mark the story `[BLOCKED]`, indent the reason beneath it, four sentences maximum, with a `file:line` — full shape in `backlog-modify`.
 - **Backing out is a rewrite.** Capture `git diff` before a risky write; `git-pr-create` owns handing the user the recovery command.
 - **The bridge is optional, never blocking.** An unreachable MCP server is a skipped step. Never branch a phase on whether it is up.
 - **Never poll a delegated phase.** A fork and a backgrounded review both re-invoke this session the moment they finish. A scheduled check burns a full turn even when it lands on time, and can fire *stale* — after the work already completed — re-running dead instructions against state that already moved on.

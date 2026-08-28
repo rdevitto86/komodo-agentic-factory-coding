@@ -16,7 +16,7 @@ Scope: **$ARGUMENTS** — a target state, optionally narrowed to one domain or s
 ## Order
 
 1. **Read the sources** in your standing order, stopping at the first one missing.
-2. **Task shape**: each task's `SUB-` lines each carry their own nested `* **Done when:**` bullet — a subtask is the acceptance criterion, not a separate list from it. Full rules live in `backlog`, not needed here to parse the queue.
+2. **Task shape**: each task's `SUB-` lines each carry their own nested `* **Done when:**` bullet — a subtask is the acceptance criterion, not a separate list from it. Full rules live in `backlog-modify`, not needed here to parse the queue.
 3. **Drop anything already in `CHANGELOG.md`.** A story recorded there has shipped.
 4. **A task with no `SUB-` lines, or any `SUB-` line missing a `Done when:` bullet (or whose bullets are prose, not commands), is a gap** — report it, don't invent one.
 5. **If `$ARGUMENTS` names a domain or story substring, narrow to matching stories** before the checks below. No match named: every story in the target state is in scope.

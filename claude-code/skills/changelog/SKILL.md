@@ -13,13 +13,13 @@ argument-hint: [write <entry> | audit [scope]]
 
 If `$ARGUMENTS` is empty or names no mode token, treat it as `audit` with no scope (its own default already covers that case).
 
-Part 1 is the only mode that writes `CHANGELOG.md`. Part 2 never edits it — findings only, same division `backlog`'s audit mode keeps with its own planning/normalize modes.
+Part 1 is the only mode that writes `CHANGELOG.md`. Part 2 never edits it — findings only, same division `backlog-audit` keeps with `backlog-modify`'s planning/normalize modes.
 
 ---
 
 # Part 1 — Write (`write <entry>`)
 
-Repo root, not `docs/` — it is a published artifact, and release tooling and readers both expect it there. `BACKLOG.md` is what is still open; this file is what shipped. `backlog` owns the former.
+Repo root, not `docs/` — it is a published artifact, and release tooling and readers both expect it there. `BACKLOG.md` is what is still open; this file is what shipped. `backlog-modify` owns the former.
 
 ```markdown
 # Changelog
@@ -61,7 +61,7 @@ Notable changes to this project. Format follows Keep a Changelog; versions follo
 
 Scoping: **$ARGUMENTS**, minus the `audit` token (default: the whole file)
 
-Findings only, never edits `CHANGELOG.md` — Part 1 owns the format and is the only mode that writes it. This locates backfill candidates, format inconsistencies, and version/tag misalignment, and hands the fix to the user or a follow-up `/changelog write` pass, same division of labor `backlog`'s audit mode keeps with its own planning/normalize modes.
+Findings only, never edits `CHANGELOG.md` — Part 1 owns the format and is the only mode that writes it. This locates backfill candidates, format inconsistencies, and version/tag misalignment, and hands the fix to the user or a follow-up `/changelog write` pass, same division of labor `backlog-audit` keeps with `backlog-modify`'s planning/normalize modes.
 
 Every check below tests against Part 1's own rules (grouping, versioning, tag sync), not rules restated here.
 
@@ -90,5 +90,5 @@ No findings: state that plainly, one line, and stop. **Never invent a finding to
 
 ## Findings → backlog
 
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <finding> · S → \`/changelog audit\` reports it clear`. Append under the current target state's `Cross-Cutting` domain — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.
+Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <finding> · S → \`/changelog audit\` reports it clear`. Append under the current target state's `Cross-Cutting` domain — full story-line rules live in `backlog-modify`. `--report` prints the table only; nothing is written.
 </content>
