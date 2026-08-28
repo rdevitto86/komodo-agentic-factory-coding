@@ -39,7 +39,7 @@ This language's exempt machine directives, verified against the guard's own list
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-ui-security` owns the broader rendered-surface bar this narrows to TypeScript/JavaScript mechanics.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-ui-security` owns the broader rendered-surface bar this narrows to TypeScript/JavaScript mechanics.
 
 - **`eval`/`new Function(...)` on any request- or user-derived string is code execution**, not a shortcut — no upstream validation makes it safe.
 - **`dangerouslySetInnerHTML`/`innerHTML`/`v-html` with unsanitized content is stored/reflected XSS** — run untrusted HTML through a sanitizer (e.g. DOMPurify) first, or avoid the raw-HTML sink entirely.

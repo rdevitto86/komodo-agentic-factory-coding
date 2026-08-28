@@ -48,7 +48,7 @@ This language's exempt machine directives, verified against the guard's own list
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
 
 - **`yaml.safe_load`, never `yaml.load`, on untrusted input.** The default `Loader` can instantiate arbitrary Python objects — an insecure-deserialization sink.
 - **`pickle`/`marshal`/`shelve` never deserialize data from outside the process.** Unpickling is arbitrary code execution by design; there is no safe-mode flag to reach for instead.

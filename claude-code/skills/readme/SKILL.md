@@ -9,9 +9,11 @@ paths: "**/README.md"
 
 Target: **$ARGUMENTS** (defaults to the current working directory).
 
-One fixed skeleton, applicable whether the repo is an API, a UI, a background service, a job runner, an SDK/library, or hardware firmware. Repo-kind detail lives in exactly one section (Usage); everything else is shared.
+One fixed skeleton, applicable whether the repo is an API, a UI, a background service, a job runner, an SDK/library, or hardware firmware. Repo-kind detail lives in exactly one section (Usage); everything else is shared. The skeleton itself — heading order and placeholder tokens — lives in `templates/project/README.md.tmpl`; this file states the rules for what fills each slot, not a second copy of the shape.
 
-`# <repo-name>` as the H1, then five numbered `##` sections: **1. Overview · 2. Setup · 3. Usage · 4. Testing · 5. References.**
+`# <repo-name>` as the H1, an optional table of contents, then six numbered `##` sections: **1. Overview · 2. Features · 3. Setup · 4. Usage · 5. Testing · 6. References.**
+
+**`templates/project/README.md.tmpl` is reference-only, never copied-and-filled.** Unlike `AGENTS.md.tmpl`/`BACKLOG.md.tmpl`/`CHANGELOG.md.tmpl`, it ships no seed content — `repo-init` never touches it. Every value in a real README is sourced live from the repo (see Step 2), so the `.tmpl` exists purely so the skeleton is one file to diff against, not a second prose description to keep in sync.
 
 **Concise by default.** A README is an entry point, not the documentation. Depth belongs in the SDD (`docs/spec/SDD.md` — see `standards-specs`) — this file points at it rather than restating it. Target a few screens, not hundreds of lines; tables and links over prose.
 
@@ -30,29 +32,31 @@ Every fact in the README must trace to something actually in the repo: a Makefil
 ## Step 3 — Fixed sections, in order
 
 - **`# <repo-name>`** — H1 title, nothing else on that line.
+- **Table of contents (optional)** — a flat list linking the six `##` headers below, nothing deeper. Include it once the page is long enough to earn one (Features carrying several subsections is the usual trigger); leave it out of a short README — it's a convenience, not a required slot.
 - **1. Overview** — one paragraph on what it is. If there's a common misreading of its role (e.g. it looks like it does X but actually only does Y), one line stating what it deliberately is *not*. If `BACKLOG.md` has an open Blocker, one status line here too, pointing at `BACKLOG.md` — omit entirely on a clean repo.
-- **2. Setup** — install and run, in copy-pasteable commands, sourced from the actual build tooling. Then env vars / config keys the repo actually reads, table form (name, required, description) — omit the table if the repo has none.
-- **3. Usage** — how to actually use the thing once it's running, sourced from the code. Shape varies by repo kind, pick whichever apply:
+- **2. Features** — the repo's major capabilities, one `###` subsection each, sourced from what the code actually does. Each subsection: a short paragraph on what it does and why it exists, an optional diagram, an optional bullet list of subfeatures. High-level only — this section explains *what's in the repo and why a reader should care*, not how to invoke it (that's Usage) or its design rationale (that's the SDD). Omit a feature no code backs, and omit the whole section on a repo genuinely too small to have distinct features (a single-purpose script, say).
+- **3. Setup** — install and run, in copy-pasteable commands, sourced from the actual build tooling. Then env vars / config keys the repo actually reads, table form (name, required, description) — omit the table if the repo has none.
+- **4. Usage** — how to actually use the thing once it's running, sourced from the code. Shape varies by repo kind, pick whichever apply:
   - API service → routes table (method, path, one-line description) + runnable `curl` examples for the primary flows
   - SDK / library → package or export table (one line per public package/module) + a code snippet per major package showing the call shape
   - UI → screens or top-level components + how to reach them locally
   - Job / worker → job or schedule table (trigger, cadence, what it does)
   - Hardware → interface/pinout table + how to operate it
   A repo can have more than one facet (e.g. a service that's also a library) — combine only when the repo genuinely has both, never speculatively.
-- **4. Testing** — test tiers and the commands that run them, sourced from the Makefile/scripts, not invented tier names.
-- **5. References** — pointer table to what exists: `BACKLOG.md`, `CHANGELOG.md`, `docs/spec/SDD.md` (and `docs/spec/PRD.md`, when one exists), `openapi.yaml` or equivalent contract file. List only files present in this repo.
+- **5. Testing** — test tiers and the commands that run them, sourced from the Makefile/scripts, not invented tier names.
+- **6. References** — pointer table to what exists: `BACKLOG.md`, `CHANGELOG.md`, `docs/spec/SDD.md` (and `docs/spec/PRD.md`, when one exists), `openapi.yaml` or equivalent contract file. List only files present in this repo.
 
-No section beyond these five. Deep design rationale, infra diagrams, and endpoint-by-endpoint request/response detail belong in the SDD — not inlined here.
+No section beyond these six. Deep design rationale, infra diagrams, and endpoint-by-endpoint request/response detail belong in the SDD — not inlined here, Features included: a feature subsection stays a paragraph, not a design writeup.
 
 ## Step 4 — Scaffold vs refresh
 
 | Branch | Condition | Behavior |
 |---|---|---|
-| Scaffold | No `README.md` | Write all applicable sections fresh |
+| Scaffold | No `README.md` | Write all applicable sections fresh, starting from `templates/project/README.md.tmpl`'s skeleton |
 | Refresh | `README.md` exists | Diff proposed content against what's there section by section |
 
 **Refresh never overwrites silently.** Show the diff, apply only on confirmation — same propose-don't-impose rule as `repo-init`. A section already present and accurate is left untouched, not rewritten to match this template's wording.
 
 ## Step 5 — Flag, don't fabricate
 
-Any section with no source data (no SDD to draw the purpose paragraph from, no discoverable config for env vars) is flagged to the user as a gap, not filled with a plausible-sounding placeholder.
+Any section with no source data (no SDD to draw the purpose paragraph from, no discoverable config for env vars, no code path backing a feature worth naming) is flagged to the user as a gap, not filled with a plausible-sounding placeholder.

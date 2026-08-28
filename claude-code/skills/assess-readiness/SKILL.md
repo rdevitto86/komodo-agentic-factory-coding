@@ -1,11 +1,11 @@
 ---
-name: audit-readiness
-description: Full-repo readiness audit against a mission brief. Severity-ranked, evidence-backed findings and a single verdict, filed as BACKLOG.md stories. Pass --report to skip the write.
+name: assess-readiness
+description: Full-repo readiness assessment against a mission brief. Severity-ranked, evidence-backed findings and a single verdict, filed as BACKLOG.md stories. Pass --report to skip the write.
 argument-hint: <mission brief — purpose, target state, decision to render> [--report]
 disable-model-invocation: true
 ---
 
-# Readiness audit
+# Readiness assessment
 
 Mission brief: **$ARGUMENTS**
 
@@ -65,7 +65,7 @@ Missing features and improvement ideas are welcome as low-severity findings unle
 - <outside this repo, not counted in the verdict>
 ```
 
-Cap the findings table at 15 rows. Past that, report the top 15 by severity and state how many were omitted — an unbounded finding dump is noise, not an audit.
+Cap the findings table at 15 rows. Past that, report the top 15 by severity and state how many were omitted — an unbounded finding dump is noise, not an assessment.
 
 ## Findings → backlog
 

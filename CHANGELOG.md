@@ -2,6 +2,14 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [Unreleased]
+
+### Fixed
+- `claude-code/settings.json` listed `Bash(git tag:*)` in both `allow` and `deny` — deny silently won, so the agent could never actually create a release tag despite `git_guard.py`'s own logic already permitting non-destructive tag creation. Removed the stale `deny` entry.
+
+### Changed
+- `changelog`'s "Tag sync" step and `workflow-complete`'s P4 now create and push the release tag themselves (`git tag -a` + `git push origin <tag>`) instead of just handing the user a ready-to-run command — tagging a release is now an agent action, same as opening and labeling its PR.
+
 ## [0.33.0] — 2026-08-27
 
 ### Added

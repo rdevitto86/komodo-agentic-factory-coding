@@ -27,11 +27,11 @@ Claude Code auto-loads `CLAUDE.md` only, on every session, never `AGENTS.md` dir
 |---|---|
 | `CLAUDE.md`, `AGENTS.md` | `templates/project/*.tmpl` |
 | `BACKLOG.md`, `CHANGELOG.md` | `templates/project/*.tmpl` |
-| `README.md` | The `readme` skill's fixed template |
+| `README.md` | The `readme` skill, skeleton in `templates/project/README.md.tmpl` |
 
 The SDD (and, when one exists, the PRD) is a repo file under `docs/spec/` — its shape comes from `templates/project/docs/spec/*.tmpl`, scaffolded as an empty stub on Create (Step 6). `standards-specs` owns the read contract and section maps once content lands.
 
-**The split is not arbitrary.** A `.tmpl` exists where the file ships with *seeded content* — closeout stories, an initial version heading.
+**The split is not arbitrary.** A `.tmpl` this skill copies-and-fills exists where the file ships with *seeded content* — closeout stories, an initial version heading. `README.md.tmpl` is the one exception: it holds no seed content, only placeholder tokens for the skeleton, and this skill never touches it — `readme` reads it for shape and fills every value from the live repo (see Step 1 below).
 
 This skill fills placeholders and writes the result — it never re-describes a shape in prose. If a placeholder changes, edit the `.tmpl`; if a seed story changes, edit the language skill's `Seed backlog` section.
 

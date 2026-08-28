@@ -1,7 +1,7 @@
 <!--
 Title: <type>: <summary>  — max 72 chars, imperative, no trailing period.
 Types: feat fix chore docs test refactor perf build ci
-Risk tier is a label, not a section. Run /audit-change-risk --report and
+Risk tier is a label, not a section. Run /assess-change-risk --report and
 post it as a comment.
 -->
 

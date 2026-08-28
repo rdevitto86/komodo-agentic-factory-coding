@@ -32,11 +32,11 @@ Format and rules live in the `backlog` skill — load it before editing this fil
   * **Done when:** a written decision is recorded (keep as a hard failure, or downgrade the `missing`/`dangling` cases to a warning that doesn't increment `problems`), and `scripts/validate.sh` matches it
 
 #### [TSK-01.1.5] README's "Workflow skills, all free" list is stale [P: L] [TODO]
-* **SUB-01.1.5.1** add the missing skills (`git-pr-create`, `git-issue-create`, `audit-vulnerabilities`, `audit-dependencies`, `runbook`, `sdd`, `prd`, `adr`, `audit-readiness`, `audit-change-risk`, `audit-testing`, `standards-worklog`, `standards-specs`, etc.)
+* **SUB-01.1.5.1** add the missing skills (`git-pr-create`, `git-issue-create`, `assess-vulnerabilities`, `assess-dependencies`, `runbook`, `sdd`, `prd`, `adr`, `assess-readiness`, `assess-change-risk`, `assess-testing`, `standards-worklog`, `standards-specs`, etc.)
   * **Done when:** every `user-invocable`, non-`disable-model-invocation` skill under `claude-code/skills/` with no cost implication appears in `README.md`'s workflow-skills list, confirmed by diffing `ls claude-code/skills/` against the list
 
 #### [TSK-01.1.6] No documented outdated-dependency tool per language [P: L] [TODO]
-* **SUB-01.1.6.1** only CVE scanners are documented (`govulncheck`, `npm audit`, `pip-audit`) — `audit-dependencies` currently falls back to bare `go list -u -m all`/`npm outdated`/`pip list --outdated` with no documented convention to point to
+* **SUB-01.1.6.1** only CVE scanners are documented (`govulncheck`, `npm audit`, `pip-audit`) — `assess-dependencies` currently falls back to bare `go list -u -m all`/`npm outdated`/`pip list --outdated` with no documented convention to point to
   * **Done when:** `grep -n "outdated" claude-code/skills/standards-go/SKILL.md claude-code/skills/standards-typescript/SKILL.md claude-code/skills/standards-python/SKILL.md` returns a documented convention for each
 
 #### [TSK-01.1.7] Bridge: `num_ctx` truncation on large summarizer payloads [P: M] [BLOCKED]
@@ -56,7 +56,7 @@ Format and rules live in the `backlog` skill — load it before editing this fil
   * **Done when:** `ls claude-code/skills/ | grep -q git-commit-tag` exits 0, and `changelog`'s "Tag sync" section plus `workflow-complete`'s P4 step both invoke it by name instead of restating the logic
 
 #### [TSK-01.1.10] Split `backlog` into `backlog-audit` and `backlog-modify` [P: L] [TODO]
-* **SUB-01.1.10.1** `backlog`'s three modes split unevenly by intent — Part 3 (`audit`) judges and applies verdicts against existing repo/file state, while Parts 1 (`plan`) and 2 (`normalize`) are both authoring-shaped (originate or reshape `BACKLOG.md`'s content); extract Part 3 into `backlog-audit` (`disable-model-invocation: true`, matching the typed-only human-decision precedent set for `audit-readme` etc.) and fold Parts 1+2 into `backlog-modify`, then update `AGENTS.md`'s naming-bucket table and every skill that invokes `backlog plan`/`backlog audit`/`backlog normalize` by mode string (`workflow-loop` P0/P1, `repo-init`, and any other caller)
+* **SUB-01.1.10.1** `backlog`'s three modes split unevenly by intent — Part 3 (`audit`) judges and applies verdicts against existing repo/file state, while Parts 1 (`plan`) and 2 (`normalize`) are both authoring-shaped (originate or reshape `BACKLOG.md`'s content); extract Part 3 into `backlog-audit` (`disable-model-invocation: true`, matching the typed-only human-decision precedent set for `readme-audit` etc.) and fold Parts 1+2 into `backlog-modify`, then update `AGENTS.md`'s naming-bucket table and every skill that invokes `backlog plan`/`backlog audit`/`backlog normalize` by mode string (`workflow-loop` P0/P1, `repo-init`, and any other caller)
   * **Done when:** `ls claude-code/skills/ | grep -E 'backlog-(audit|modify)'` returns both, `claude-code/skills/backlog/` no longer exists, and `grep -rn "backlog plan\|backlog audit\|backlog normalize" claude-code/skills/ AGENTS.md` returns no hits
 
 ---

@@ -40,7 +40,7 @@ This language's exempt machine directives, verified against the guard's own list
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
 
 - **An unquoted variable reaching `eval`, a command substitution, or a subshell is command injection** — the quoting rule above is a correctness rule and a security control at once; there is no separate "sanitize for security" pass.
 - **`curl <url> | bash` (or `| sh`) executes an unreviewed remote script with the invoking user's privileges** — download, verify (checksum or signature), then run, never pipe straight into a shell.

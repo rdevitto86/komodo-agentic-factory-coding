@@ -1,10 +1,10 @@
 ---
-name: audit-security
+name: assess-security
 description: Read the diff against the OWASP baseline for injected security defects — new boundary, new query, new secret handling — and file them as BACKLOG.md stories. Model-agnostic finder; never a fixer. Pass --report to skip the write.
 argument-hint: <task text or band summary> [standards-* skills that apply] [--report]
 ---
 
-# Security audit
+# Security assessment
 
 Reviewing: **$ARGUMENTS**
 
@@ -29,4 +29,4 @@ No findings: state that plainly, one line, and stop. **Never invent a finding to
 
 ## Findings → backlog
 
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <claim> · S → \`/audit-security <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.
+Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <claim> · S → \`/assess-security <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.

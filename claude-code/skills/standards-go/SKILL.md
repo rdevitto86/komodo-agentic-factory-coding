@@ -88,7 +88,7 @@ Exported API and schema changes are additive. New optional fields and new functi
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
 
 - **`html/template` for anything rendered to a browser, never `text/template`.** `text/template` performs no contextual escaping — interpolating request-derived data into it is stored/reflected XSS.
 - **`os/exec` with an argument slice, never a shell string.** `exec.Command("sh", "-c", userInput)` is command injection; build `exec.Command(bin, arg1, arg2)` instead.

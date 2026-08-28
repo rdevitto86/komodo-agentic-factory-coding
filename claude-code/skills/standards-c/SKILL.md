@@ -53,7 +53,7 @@ This language's exempt machine directives, verified against the guard's own list
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
 
 - **`system()`/`popen()` with any input derived from outside the process is command injection** — a shell interprets the string, so validation upstream does not close it.
 - **A format string must never be attacker-influenced.** `printf(user_input)` reads/writes memory through `%n`/`%s` in the input; always `printf("%s", user_input)`.
