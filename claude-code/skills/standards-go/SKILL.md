@@ -25,6 +25,7 @@ This language's exempt machine directives, verified against the guard's own list
 - **`Makefile`'s `verify` target is the merge gate** — `gofmt -l`, `go vet`, `golangci-lint run`, `go test -race -cover`, `go build`, in that order. `context_injector.py` reads this target directly; a repo without it has no gate.
 - **Formatting and linting** — `gofmt` and `goimports` on commit, `golangci-lint` as the gate. These are the tools the pre-commit hook runs; `standards-cicd` defines when.
 - **Vulnerability scanning** — `govulncheck ./...` is the gate; it reports reachability, so triage by call path, not by CVE score alone. Enable `gosec` in `.golangci.yaml` for the static half. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
+- **Outdated dependencies** — `go list -u -m all` flags modules that are outdated, no CVE required to surface. Advisory only, never a merge gate; bump with `go get -u <module>` then `go mod tidy`, one module at a time rather than a blanket `go get -u ./...`.
 - **Coverage delta is per package** — Go reports at package granularity, so the pre-push scope is the set of packages containing changed files.
 - **Forge SDK** — module path `github.com/rdevitto86/komodo-forge-sdk-go`, subpackaged by concern. Import the published module at a pinned version; never a `replace` directive pointing at a local checkout. Read its package tree before concluding it lacks something.
 
