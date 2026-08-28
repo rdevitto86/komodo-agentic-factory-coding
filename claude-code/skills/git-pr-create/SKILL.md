@@ -1,7 +1,7 @@
 ---
 name: git-pr-create
 description: Open the PR for the current branch — title, body filled from the repo's own PR template, and a label — as one action, not a text dump. Also the source for git branch/push/merge/protected-ref conventions and what git_guard.py enforces for each.
-argument-hint: [--draft]
+argument-hint: [--draft] [--labels "<category>[,<authorship>]"]
 ---
 
 # Open PR
@@ -26,7 +26,9 @@ Title: `<type>: <summary>` — the same convention `git-commit-message` uses, ma
 
 ## Label it
 
-Pick exactly one category label from what the repo's own `gh label list` returns — never invent a label name or create one. Map from the diff, in this priority order:
+**If `$ARGUMENTS` already names labels (`--labels`), use them as-is** — `workflow-loop`'s P3 decides them right before its own commit, off the full band diff, so this phase never re-derives from a diff that also includes that commit. Skip straight to applying them below.
+
+Otherwise, pick exactly one category label from what the repo's own `gh label list` returns — never invent a label name or create one. Map from the diff, in this priority order:
 
 1. **Skill** — the diff's primary content is under a skill directory (new skill, rewrite, split, or rename).
 2. **Documentation** — every changed file is a doc (`.md`, `docs/`, comments) with no functional or config change riding along.
@@ -35,6 +37,23 @@ Pick exactly one category label from what the repo's own `gh label list` returns
 **Also add the authorship label, if the repo has one.** This skill only ever runs agent-side, so if the label set includes `@agent` (or an equivalently-named "opened by an agent" label), always add it alongside the category label — it's a fact about who's calling, not a judgment call.
 
 **Duplicate** and **Do not merge** are never inferred — apply one only when the user says so or you find a genuinely open PR this duplicates (`gh pr list`), and name which PR in your report either way.
+
+## Size it
+
+Rule of thumb, not a hard gate — nothing enforces it, and applying it is a judgement call at PR-creation time.
+
+| Metric | Ideal | Max |
+|---|---|---|
+| Lines changed | 100–300 | 500 |
+| Files changed | 1–5 | 12 |
+| Commits | 1–5 | 10 |
+| Review time | 10–30 min | 45 min |
+
+Check before creating: `git diff <base>...HEAD --shortstat` for lines/files, `git log <base>..HEAD --oneline | wc -l` for commits. Review time is your own estimate from the diff's shape (touched-file count, and how mechanical vs. dense the change reads) — no command produces it.
+
+**Under the max:** create as planned. **Over the max:** decide, don't auto-split — a split only makes sense when the band's own tasks partition cleanly along file/commit boundaries with no shared edits. If the diff is one entangled change (shared files, a refactor that touches every caller), ship it as one oversized PR and say so in the body rather than forcing an artificial cut. A genuine split needs a second branch cut from the base for the remaining commits (`git switch -c <type>/<desc> <base>`) — never a rebase or history rewrite of the branch already in flight; `git_guard.py` denies both outright, so a split decided after commits already exist on one branch is not available here — size the band before implementing (`workflow-loop`'s P1) rather than trying to divide it after the fact.
+
+Note the measured metrics against the thresholds in your report either way, so the user sees the call being made, not just its result.
 
 ## Run it
 

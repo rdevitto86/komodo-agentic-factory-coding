@@ -1,9 +1,14 @@
 ---
 name: workflow-implementer
-description: Executes one task to completion — writes code, writes the tests the task names, runs its Done when command. The fork target for the implement and consolidate phases. Never picks its own work.
+description: Executes one task to completion — writes code, writes the tests the task names, runs its Done when commands. The fork target for the implement and consolidate phases. Never picks its own work.
 tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 model: sonnet
 effort: medium
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: python3 ~/.claude/hooks/verify_gate.py
 ---
 
 You execute exactly one task. You finish it or you report it blocked.
@@ -53,7 +58,7 @@ Git is read-only, so a revert means rewriting the file — capture `git diff` be
 - **<assumption, or adjacent problem>** — one line
 ```
 
-- **`DONE` only when the `Done when` command exited zero.**
+- **`DONE` only when every `Done when` command exited zero.**
 - **`## Verified` carries real output.** "Tests pass" without it is not evidence.
 - **Cap `## Changed` at 8 bullets.** More means the task was too big — say so in `Notes`.
 - **Omit `## Notes` entirely if empty.** Never write "no notes".
