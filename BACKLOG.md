@@ -27,9 +27,9 @@ Format and rules live in the `backlog` skill — load it before editing this fil
 * **SUB-01.1.3.1** AGENTS.md states "Git hooks are **not** in this repo — `pre-commit` and `pre-push` ship with the language SDK", contradicted by `scripts/hooks/git/` holding both dispatchers and `install.sh`
   * **Done when:** `grep -n "Git hooks are" AGENTS.md` no longer contradicts `ls scripts/hooks/git/`
 
-#### [TSK-01.1.4] validate.sh "links" check on a bare checkout [P: L] [TODO]
+#### [TSK-01.1.4] validate.sh "links" check on a bare checkout [P: L] [DONE]
 * **SUB-01.1.4.1** confirmed this fails the overall exit code (`problems` increments, non-zero `problems` triggers `exit 1`) for a bare checkout with no `~/.claude` symlinks, not just a warning — decide if that's the desired behavior, `scripts/validate.sh`
-  * **Done when:** a written decision is recorded (keep as a hard failure, or downgrade the `missing`/`dangling` cases to a warning that doesn't increment `problems`), and `scripts/validate.sh` matches it
+  * **Done when:** a written decision is recorded (keep as a hard failure, or downgrade the `missing`/`dangling` cases to a warning that doesn't increment `problems`), and `scripts/validate.sh` matches it — decision: KEEP as a hard failure, no code change. `validate.sh` can only meaningfully run once Claude Code has loaded skills from `~/.claude`, which itself requires `setup.sh` to have already run — the only way to hit the bare-checkout case is running the script manually right after cloning, where "run setup.sh" is exactly the right actionable signal. Downgrading to a warning would let a genuinely unlinked install report "all checks passed."
 
 #### [TSK-01.1.5] README's "Workflow skills, all free" list is stale [P: L] [DONE]
 * **SUB-01.1.5.1** add the missing skills (`git-pr-create`, `git-issue-create`, `assess-vulnerabilities`, `assess-dependencies`, `runbook`, `sdd`, `prd`, `adr`, `assess-readiness`, `assess-change-risk`, `assess-testing`, `standards-worklog`, `standards-specs`, etc.)
