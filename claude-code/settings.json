@@ -140,6 +140,7 @@
     "assess-vulnerabilities": "name-only",
     "assess-dependencies": "name-only",
     "git-commit-message": "name-only",
+    "git-commit-tag": "name-only",
     "git-issue-create": "name-only",
     "git-issue-review": "name-only",
     "git-pr-create": "name-only",

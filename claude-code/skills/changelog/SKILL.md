@@ -53,13 +53,7 @@ Notable changes to this project. Format follows Keep a Changelog; versions follo
 
 ## Tag sync
 
-A released section isn't real until it's both merged and tagged. **Tag creation is allowed to you** — `git_guard.py` permits `git tag` (lightweight or annotated); only `-d`/`-D`/`--delete`/`-f`/`--force` stay denied. Creating one is not committing to or pushing a protected branch, so it carries none of that restriction.
-
-**Before appending a new version section**, check whether the section directly below `[Unreleased]` (the most recently released one) already has a matching tag:
-
-- List existing tags with `git tag -l`, or by reading `.git/refs/tags/` and `.git/packed-refs` directly.
-- If it's missing, find the commit that introduced that heading: `git log -p --follow -- CHANGELOG.md`, the commit whose diff adds that exact `## [X.Y.Z]` line. If no commit has it yet, the section itself is still uncommitted — skip silently, this resolves itself next time this check runs.
-- Otherwise, create and push it yourself: `git tag -a vX.Y.Z <hash> -m "<one-line summary>"` then `git push origin vX.Y.Z` — report the tag you created alongside whatever else you're reporting, rather than handing the user a command you were able to run.
+**Before appending a new version section**, invoke `git-commit-tag` by name — it checks whether the section directly below `[Unreleased]` (the most recently released one) already has a matching tag, and creates + pushes it if not.
 
 ---
 

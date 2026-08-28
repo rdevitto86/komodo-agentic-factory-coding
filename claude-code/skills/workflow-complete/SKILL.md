@@ -12,7 +12,7 @@ argument-hint: []
 
 1. **Push** — `git push -u origin <branch>` (`git rev-parse --abbrev-ref HEAD` for the branch name).
 2. **Run `/git-pr-create`**, forwarding P3's already-decided labels as `--labels`. If a PR already exists for this branch, that skill's `gh pr edit` path updates it in place instead of opening a new one.
-3. **Tag the release, now that the push has landed.** Run `changelog`'s own "Tag sync" check against the section this band just released: `git tag -l` (or read `.git/refs/tags/` / `.git/packed-refs`) for whether it already has a matching tag. If not, create and push it yourself — `git tag -a vX.Y.Z <hash> -m "<summary>"` then `git push origin vX.Y.Z` — the hash being the commit on this branch that introduced that `## [X.Y.Z]` heading (`workflow-consolidate`'s own commit from P3). Both are permitted to the agent; neither commits to nor pushes a protected branch.
+3. **Tag the release, now that the push has landed.** Invoke `git-commit-tag` by name against the section this band just released — the commit it needs is `workflow-consolidate`'s own commit from P3, the one that introduced that band's `## [X.Y.Z]` heading.
 
 ## Output
 
