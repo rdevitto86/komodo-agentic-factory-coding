@@ -153,7 +153,7 @@ bash scripts/test-hooks.sh    # 127 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/backlog` `/changelog` `/repo-init` `/git-commit-message` `/assess-readiness` `/readme` `/assess-change-risk` `/assess-code-quality` `/assess-bugs` `/assess-security` `/assess-simplify` `/assess-performance` `/workflow-complete`
+Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 
