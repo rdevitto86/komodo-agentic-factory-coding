@@ -1,5 +1,5 @@
 ---
-name: standards-design-ui
+name: standards-ui-design
 description: UI standards — Tailwind utilities and the WCAG AA component bar. Load before writing any interactive component, Tailwind class, .svelte, .vue, .tsx, .jsx, or .css file.
 user-invocable: false
 paths: "**/*.css, **/*.svelte, **/*.vue, **/*.tsx, **/*.jsx"

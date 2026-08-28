@@ -69,7 +69,7 @@ Three scans, all blocking on the merge. Thresholds are stated here so the gate i
 - **Draft PRs run the secret scan.** The other two wait for ready-for-review with the rest of the stage.
 - **Scan the built image too**, not just the manifest — base-layer CVEs do not appear in a dependency lockfile.
 - **An exception's shape is owned by `standards-security-api`** — a committed record with an owner, an expiry, and a compensating control. An expired exception fails the gate again; a permanent suppression is not an exception.
-- **A finding blocks the merge without needing triage.** Load the `standards-security-api` skill (or `standards-security-ui` for a rendered-surface finding) only when deciding whether a finding is genuinely exploitable or an exception is justified — never to run the gate.
+- **A finding blocks the merge without needing triage.** Load the `standards-security-api` skill (or `standards-ui-security` for a rendered-surface finding) only when deciding whether a finding is genuinely exploitable or an exception is justified — never to run the gate.
 
 ### Runner rules
 

@@ -1,13 +1,13 @@
 ---
-name: standards-security-ui
-description: Rendered-surface security — output encoding and XSS, CSP and browser response headers, clickjacking, tapjacking, frame/embed hardening, postMessage origin checks, and dark patterns. Distinct from standards-design-ui's Tailwind/WCAG scope and standards-security-api's server-side OWASP baseline. Load before writing an iframe, an embed, a postMessage handler, a consent/permission flow, a raw-HTML escape hatch, or any UI that overlays, renders, or intercepts input.
+name: standards-ui-security
+description: Rendered-surface security — output encoding and XSS, CSP and browser response headers, clickjacking, tapjacking, frame/embed hardening, postMessage origin checks, and dark patterns. Distinct from standards-ui-design's Tailwind/WCAG scope and standards-security-api's server-side OWASP baseline. Load before writing an iframe, an embed, a postMessage handler, a consent/permission flow, a raw-HTML escape hatch, or any UI that overlays, renders, or intercepts input.
 user-invocable: false
 paths: "**/*.svelte, **/*.vue, **/*.tsx, **/*.jsx, **/*.html"
 ---
 
 # UI/UX security
 
-The attack surface is the rendered surface — a user clicking, tapping, trusting, or being shown what they see. `standards-design-ui` owns how a component looks and whether it's usable; `standards-security-api` owns the server-side OWASP baseline (injection, authn, secrets, crypto). This skill is the layer between them: the ways an interface itself becomes the exploit.
+The attack surface is the rendered surface — a user clicking, tapping, trusting, or being shown what they see. `standards-ui-design` owns how a component looks and whether it's usable; `standards-security-api` owns the server-side OWASP baseline (injection, authn, secrets, crypto). This skill is the layer between them: the ways an interface itself becomes the exploit.
 
 ## Output encoding and XSS
 
