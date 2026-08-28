@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Scoping: **$ARGUMENTS** (default: the repo's full test suite)
 
-Findings only, never writes a test — a coverage or placement gap routes back to implementation. Load `standards-sdlc` and the repo's language skill (detected from its manifest) first; every check below tests against tiers, layout, and coverage rules they own, not rules restated here. If an SDD exists (`docs/spec/SDD.md`, see `standards-specs`), its §6 Testing Strategy table is a citation of the same rules, not a second source — flag it as drift if the numbers disagree with `standards-sdlc`.
+Findings only, never writes a test — a coverage or placement gap routes back to implementation. Load `standards-sdlc` and every language skill the repo's manifests indicate first — detect each one present (`go.mod`, `package.json`, `pyproject.toml`, `pom.xml`/`build.gradle`, `*.csproj`, and so on), not just the first found, so a polyglot repo gets audited in one pass across every language it actually contains; every check below tests against tiers, layout, and coverage rules they own, not rules restated here. If an SDD exists (`docs/spec/SDD.md`, see `standards-specs`), its §6 Testing Strategy table is a citation of the same rules, not a second source — flag it as drift if the numbers disagree with `standards-sdlc`.
 
 ## Process
 

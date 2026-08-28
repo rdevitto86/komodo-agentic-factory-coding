@@ -80,6 +80,17 @@ Measure first. An optimisation without a before/after number is unreviewable.
 - **`StringBuilder`** for repeated concatenation in a loop.
 - **Batch queries.** `EXPLAIN ANALYZE` before adding an index. N+1 is a bug, not a tuning opportunity.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`PreparedStatement` with bound parameters, never `Statement` with a concatenated query string.**
+- **`ObjectInputStream.readObject()` on untrusted input is Java's classic insecure-deserialization sink** — restrict it to a trusted class allowlist (`ObjectInputFilter`) or avoid native Java serialization for external data entirely.
+- **`DocumentBuilderFactory`/`XMLInputFactory`/`SAXParserFactory` process external entities by default** — disable DTDs and external entity resolution (`FEATURE_SECURE_PROCESSING`, `disallow-doctype-decl`) before parsing any externally sourced XML, or it's an XXE sink.
+- **`Runtime.exec`/`ProcessBuilder` with a single interpolated command string is command injection** — pass the argument list form instead.
+- **`SecureRandom`, never `java.util.Random`, for a token, key, or session ID.**
+- **A template engine's expression language (OGNL, SpEL, Thymeleaf) evaluating a request-derived string is template/expression injection**, not a formatting convenience.
+
 ## Testing
 
 - **JUnit 5 (Jupiter) only**, run via `mvn test`/`./gradlew test`. `@ParameterizedTest` with `@MethodSource`/`@CsvSource` over hand-rolled loops for parameterised cases.

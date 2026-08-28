@@ -38,6 +38,15 @@ This language's exempt machine directives, verified against the guard's own list
 - **Exit codes are deliberate**: `0` success, `1` a check failed, `2` a usage/argument error. `setup.sh`'s `usage()` + `exit 2` on a bad flag is the pattern to match.
 - **A trap for cleanup**, not a manual `rm` at every exit path — `test-hooks.sh`'s `trap 'rm -rf "$WORKDIR"; ...' EXIT` is the reference.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **An unquoted variable reaching `eval`, a command substitution, or a subshell is command injection** — the quoting rule above is a correctness rule and a security control at once; there is no separate "sanitize for security" pass.
+- **`curl <url> | bash` (or `| sh`) executes an unreviewed remote script with the invoking user's privileges** — download, verify (checksum or signature), then run, never pipe straight into a shell.
+- **A predictable temp path (`/tmp/$$`, `/tmp/myapp-$RANDOM`) is a symlink/race target.** Use `mktemp`/`mktemp -d` so the name and the file's existence are both attacker-unpredictable.
+- **`set -x`/`bash -x` echoes every expanded command, secrets included, to whatever captures stdout/stderr** — never enable it in a script that ever sees a credential or token.
+
 ## Testing
 
 - **No `bats` or other shell test framework is in use** — this repo's own bash surface (`claude-code/hooks/*.py` are Python; `scripts/*.sh` and `setup.sh` are the actual shell) is tested by a hand-rolled harness, `scripts/test-hooks.sh`: a plain bash script that feeds each hook a JSON payload on stdin and asserts the returned decision, no external test runner.

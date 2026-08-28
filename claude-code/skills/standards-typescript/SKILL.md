@@ -37,6 +37,18 @@ This language's exempt machine directives, verified against the guard's own list
 - **Naming**: PascalCase types and components, camelCase variables and functions, SCREAMING_SNAKE constants, kebab-case module files, PascalCase component files. Booleans take `is` / `has` / `can` / `should`. No `I` prefix on interfaces. `req` / `res` for request and response.
 - **Prefer a closure over a new class or extra parameter** when it captures scope the caller already has — an event handler, a memoized selector, a factory returning configured functions. Skip it inside a render loop or a hot path: a closure allocated per call/render defeats memoization (`useCallback`/`useMemo`, referential equality checks) and adds GC pressure. Measure before choosing a closure over a plain function in code a profiler already flags.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-ui-security` owns the broader rendered-surface bar this narrows to TypeScript/JavaScript mechanics.
+
+- **`eval`/`new Function(...)` on any request- or user-derived string is code execution**, not a shortcut — no upstream validation makes it safe.
+- **`dangerouslySetInnerHTML`/`innerHTML`/`v-html` with unsanitized content is stored/reflected XSS** — run untrusted HTML through a sanitizer (e.g. DOMPurify) first, or avoid the raw-HTML sink entirely.
+- **`child_process.exec` with an interpolated string is command injection; `execFile`/`spawn` with an argument array is not.**
+- **A recursive merge/`Object.assign` over untrusted JSON is a prototype-pollution vector** if a `__proto__`/`constructor`/`prototype` key reaches it unguarded — reject or strip those keys before merging.
+- **A parameterized query builder or ORM binding, never a template literal building SQL/NoSQL query text** from request input.
+- **`crypto.randomBytes`/`crypto.getRandomValues`, never `Math.random()`, for a token, key, or session ID.**
+- **A JWT verify call must pin the expected algorithm** — accepting `alg: none` or letting the token's own header pick the algorithm lets an attacker forge a signature-free token.
+
 ## Testing
 
 **Unit tests colocate as `.x.test.ts`; every other tier lives under a top-level `test/`.** The stack, folder scheme, suite structure, and runner config are in [testing.md](testing.md). Tier definitions, gates, and coverage floors are owned by the `standards-sdlc` skill.

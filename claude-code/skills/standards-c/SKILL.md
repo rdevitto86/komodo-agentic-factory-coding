@@ -51,6 +51,16 @@ This language's exempt machine directives, verified against the guard's own list
 - **Never ignore a fallible return value.** A call whose failure is genuinely irrelevant still gets an explicit `(void)` cast, so the omission reads as a decision, not an oversight.
 - **Errors propagate up; only the top of the call stack logs.** Log-and-return duplicates one root cause into multiple log lines.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`system()`/`popen()` with any input derived from outside the process is command injection** — a shell interprets the string, so validation upstream does not close it.
+- **A format string must never be attacker-influenced.** `printf(user_input)` reads/writes memory through `%n`/`%s` in the input; always `printf("%s", user_input)`.
+- **`strcpy`/`strcat`/`sprintf`/`gets` are exploitable buffer overflows, not just crash bugs** — the Memory and resources section above states the bounded-function replacement; this is the same rule read as a security control, not a stability one.
+- **An integer overflow feeding an allocation size is a heap-overflow primitive** — check the multiplication/addition against `SIZE_MAX` before it reaches `malloc`/`calloc`.
+- **`rand()`/`srand()` are not a CSPRNG.** A token, key, or nonce needs `/dev/urandom`, `getrandom(2)`, or the platform's crypto library.
+
 ## Testing
 
 - **Unity or CMocka, whichever the project already uses** — Unity for pure unit tests, CMocka when a syscall or library boundary needs mocking.

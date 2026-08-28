@@ -86,6 +86,18 @@ Measure first. An optimisation without a before/after number is unreviewable.
 
 Exported API and schema changes are additive. New optional fields and new functions are safe; renaming, removing, or retyping an exported symbol breaks every service of yours that imports it and needs a version bump. Add to a struct rather than changing a signature; use functional options so a constructor can grow.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`html/template` for anything rendered to a browser, never `text/template`.** `text/template` performs no contextual escaping — interpolating request-derived data into it is stored/reflected XSS.
+- **`os/exec` with an argument slice, never a shell string.** `exec.Command("sh", "-c", userInput)` is command injection; build `exec.Command(bin, arg1, arg2)` instead.
+- **`database/sql` placeholders (`?`/`$1`), never string-built queries.** `fmt.Sprintf` into a query string is SQL injection regardless of how the value was validated upstream.
+- **`encoding/gob` and `encoding/json` into `interface{}`/`any` from an untrusted source is an insecure-deserialization surface** — decode into a concrete, field-limited struct instead.
+- **`filepath.Clean` plus a prefix check after `filepath.Join`** on any user-supplied path segment — `Join` alone does not stop `../` traversal out of the intended root.
+- **`crypto/rand`, never `math/rand`, for a token, key, or nonce.** `math/rand` is seeded and predictable.
+- **`InsecureSkipVerify: true` on a `tls.Config` disables certificate validation** — a debug-only flag that must never reach a committed default.
+
 ## Quick-reference fields
 
 The field set a Go repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.

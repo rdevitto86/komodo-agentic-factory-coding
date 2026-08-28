@@ -77,6 +77,16 @@ Measure first. An optimisation without a before/after number is unreviewable.
 - **`StringBuilder`** for repeated concatenation in a loop. Pass large structs `in`, not by value.
 - **Batch queries and use `AsNoTracking()` for read-only EF Core queries.** N+1 is a bug, not a tuning opportunity.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`FromSqlRaw`/`ExecuteSqlRaw` with an interpolated string is SQL injection**; use the parameterized overload (`FromSqlInterpolated` or explicit `SqlParameter`s) instead.
+- **`BinaryFormatter`/`ObjectStateFormatter`/`SoapFormatter` are unsafe on untrusted input** — .NET's own deserialization advisories name them directly; use a data-only serializer (`System.Text.Json`) for anything crossing a trust boundary.
+- **`XmlDocument`/`XmlReaderSettings` with `DtdProcessing.Parse` and external entity resolution enabled is an XXE sink** — set `DtdProcessing.Prohibit` (or `XmlResolver = null`) before parsing externally sourced XML.
+- **`Process.Start` with a single interpolated command-line string is command injection** — populate `ProcessStartInfo.ArgumentList` instead.
+- **`RandomNumberGenerator`, never `System.Random`, for a token, key, or session ID.**
+
 ## Testing
 
 - **xUnit only**, run via `dotnet test`. `[Theory]`/`[InlineData]` over hand-rolled loops for parameterised cases.

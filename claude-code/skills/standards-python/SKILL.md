@@ -46,6 +46,18 @@ This language's exempt machine directives, verified against the guard's own list
 - **CPU-bound work goes to `ProcessPoolExecutor`**, not threads — the GIL makes threads useless here.
 - **`contextvars`** for per-task context.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`yaml.safe_load`, never `yaml.load`, on untrusted input.** The default `Loader` can instantiate arbitrary Python objects — an insecure-deserialization sink.
+- **`pickle`/`marshal`/`shelve` never deserialize data from outside the process.** Unpickling is arbitrary code execution by design; there is no safe-mode flag to reach for instead.
+- **`eval`/`exec` on any request-derived string is code execution**, not a shortcut — no amount of upstream validation makes it safe.
+- **`subprocess` with `shell=True` and an interpolated string is command injection.** Pass an argument list with `shell=False` (the default) instead.
+- **Jinja2 autoescaping stays on; the `|safe` filter and `Markup()` never wrap untrusted data** — either bypasses the auto-escaping that prevents template-driven XSS/SSTI.
+- **DB-API parameter placeholders (`%s`, `?`), never an f-string or `.format()` building the query text** — string-built SQL is injectable independent of the driver.
+- **`secrets`, never `random`, for a token, key, or password-reset code.** `random` is a Mersenne Twister — predictable once enough output is observed.
+
 ## Testing
 
 - **`pytest` only**, never `unittest`.

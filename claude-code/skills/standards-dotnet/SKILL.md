@@ -49,6 +49,15 @@ Allowed only: a compiler/linter directive (always allowed); a step marker (inden
 - **A container base image's tag matches the `TargetFramework`'s runtime version exactly** (`mcr.microsoft.com/dotnet/aspnet:<version>`, never `:latest`) — `standards-docker` states the rest of the image contract.
 - **`global.json` travels with the repo, not just the CI config** — pinning the SDK only in a pipeline YAML lets a local `dotnet build` drift onto a different SDK than CI uses.
 
+## Security standards
+
+Framework/runtime-layer insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-csharp` covers the language-mechanics half (deserialization, XXE, `Process.Start`) once it exists.
+
+- **`AddCors` policies never combine `AllowAnyOrigin()` with `AllowCredentials()`** — that combination is rejected by the spec for a reason; a wildcard origin serving credentialed requests defeats CORS entirely.
+- **Anti-forgery tokens (`[ValidateAntiForgeryToken]`/`IAntiforgery`) are required on every state-changing endpoint reachable from a browser session**, not just ones a form happens to post to.
+- **A committed `appsettings*.json` never carries a real connection string, API key, or signing secret** — the Conventions section above states where those live instead; a leaked one is a security incident, not a config oversight.
+- **`RequireHttpsMetadata` stays `true` outside local development** — disabling it lets a token be validated over a downgraded, unencrypted channel.
+
 ## Testing
 
 - **Integration tests against the host use `WebApplicationFactory<T>`**, spinning up the real DI container and middleware pipeline against an in-memory test server — never a hand-rolled `HttpClient` pointed at a separately launched process.
