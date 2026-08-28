@@ -2,6 +2,56 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.33.0] — 2026-08-27
+
+### Added
+- `standards-api-design` — new API shape/contract conventions skill (resource naming, schema/pagination/error-shape conventions, idempotency-key and versioning design), sibling to `standards-api-security`'s security-only scope.
+- `git-pr-review`, `git-pr-comment`, `git-issue-review` — new skills covering merge-readiness review, PR status comments, and open-issue triage, none of which existed before this band.
+- "Security standards" sections (language-specific insecure-usage patterns) added to `standards-go`, `standards-python`, `standards-typescript`, `standards-java`, `standards-c`, `standards-dotnet`, `standards-shell`, `standards-csharp` (parked `.off`), for `audit-security` to pull from.
+
+### Changed
+- `changelog` merges `write-changelog` + `audit-changelog` (`write`/`audit` modes), same shape as the prior `backlog` merge.
+- `standards-design-ui`/`standards-security-ui` renamed to `standards-ui-design`/`standards-ui-security`; `standards-security-api` renamed to `standards-api-security`; `rules-merge-conflicts` renamed to `git-merge-conflict`; `write-repo` renamed to `repo-init`; `config-accessibility-output` renamed to `config-accessibility`.
+- `git-pr` split into `git-pr-create` (open/edit) + `git-pr-review` + `git-pr-comment`; `git-issue` split into `git-issue-create` + `git-issue-review`.
+- `rules-source-control` and `standards-git` folded into `git-pr-create`'s new "Git lifecycle" section (branch/push/merge/protected-ref conventions merged with what `git_guard.py` actually enforces for each), since it's the skill that walks branch → commit → push → PR.
+- Each `standards-<language>` skill's Comment discipline section now carries the full banned/allowed comment-template contract inline, instead of pointing at a shared `rules-commenting` skill.
+- `audit-testing` now detects and loads every language manifest present in a repo, not just one; `audit-security` now also loads whichever `standards-<language>` skill(s) touched files trigger.
+
+### Removed
+- `write-changelog`, `audit-changelog` — folded into `changelog`.
+- `rules-source-control`, `standards-git` — folded into `git-pr-create`.
+- `git-pr`, `git-issue` — split into their `-create`/`-review`/`-comment` successors.
+- `rules-commenting` — inlined into each `standards-<language>` skill.
+
+### Known gap
+- `AGENTS.md`'s `rules-<topic>` naming bucket now has no example skill (its sole example, `rules-commenting`, was removed) — left as-is pending a human decision on whether the bucket stays documented with no live example or a future skill should fill it.
+
+## [0.32.0] — 2026-08-27
+
+### Changed
+- `write-backlog`, `audit-backlog` merged into `backlog` (`plan`/`normalize`/`audit` modes over one `BACKLOG.md` format); frontmatter carries neither `disable-model-invocation` nor `user-invocable` so it stays callable by name from `workflow-loop`'s P1.
+- 25 cross-referencing files (`AGENTS.md`, `README.md`, `claude-code/settings.json`, and 22 skills) repointed from `write-backlog`/`audit-backlog` to `backlog`/`backlog audit`.
+
+### Removed
+- `write-backlog`, `audit-backlog` — folded into `backlog`.
+
+## [0.31.0] — 2026-08-26
+
+### Added
+- Local docs layout: `templates/project/docs/{spec,adr,runbook}/` starter files (`docs/spec/SDD.md`, `docs/spec/PRD.md`, `docs/adr/template.md`, `docs/runbook/template.md`) and `templates/project/mkdocs.yml.tmpl` (MkDocs Material theme); `write-repo`'s Create path now scaffolds all four into every new project repo.
+- `sdd`, `prd` — merged authoring + audit skills for `docs/spec/SDD.md`/`docs/spec/PRD.md`, replacing `audit-sdd`/`audit-prd`.
+- `adr` — authoring + audit skill for `docs/adr/`, greenfield (no prior generator existed).
+- `runbook` — merged authoring + audit skill for `docs/runbook/`, replacing `write-runbook`.
+
+### Changed
+- `standards-specs` moved off its Drive-fetch contract to read `docs/spec/SDD.md` and `docs/spec/PRD.md` as local repo files, and documents MkDocs Material as the paired doc-site toolchain.
+- Stale Drive/Google-Doc references repointed to the local `docs/spec/` contract across `workflow-implementer.md`, `write-repo`, `write-backlog`, `workflow-loop`, `audit-testing`, `workflow-consolidate`, `write-readme`, `AGENTS.md`, and `README.md`.
+- `claude-code/settings.json`'s `skillOverrides` gained `sdd`/`prd`/`adr` as `name-only`, matching `runbook`/`write-readme`.
+- `AGENTS.md` documents the new "authors and audits one local doc type" skill bucket.
+
+### Removed
+- `audit-sdd`, `audit-prd`, `write-runbook` — folded into `sdd`, `prd`, `runbook` respectively; all callers repointed.
+
 ## [0.30.0] — 2026-08-26
 
 ### Added

@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # README audit
 
-Findings only, never edits `README.md` — `write-readme` owns the format and is the only skill that writes it. This locates structural drift, unsourced claims, and stale references, same division of labor `audit-changelog` keeps with `write-changelog`.
+Findings only, never edits `README.md` — `write-readme` owns the format and is the only skill that writes it. This locates structural drift, unsourced claims, and stale references, same division of labor `changelog`'s audit mode keeps with its own write mode.
 
 Load `write-readme` first — every check below tests against rules it owns, not rules restated here.
 
@@ -25,7 +25,7 @@ Load `write-readme` first — every check below tests against rules it owns, not
 | Kind | Where | Finding | Evidence |
 |---|---|---|---|
 | Unsourced claim | §2 Setup | env var `FOO_TIMEOUT` not read anywhere | grep, no hits |
-| Stale reference | §5 References | links `docs/runbooks/failover.md`, file deleted | `docs/runbooks/` listing |
+| Stale reference | §5 References | links `docs/runbook/failover.md`, file deleted | `docs/runbook/` listing |
 | Missing status | §1 Overview | open Blocker in `BACKLOG.md`, no status line | `BACKLOG.md` line |
 
 **Sev**: Critical (a Setup/Usage command or route that doesn't exist — actively misleads a new reader) · High (missing required section, a References entry pointing at a deleted file, wrong Blocker status) · Medium (restated SDD depth, a drifted Testing command) · Low (wording, ordering nits).
@@ -34,4 +34,4 @@ No findings: state that plainly, one line, and stop. **Never invent a finding to
 
 ## Findings → backlog
 
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <finding> · S → \`/audit-readme\` reports it clear`. Append under the current target state's `Cross-Cutting` domain — full story-line rules live in `write-backlog`. `--report` prints the table only; nothing is written.
+Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <finding> · S → \`/audit-readme\` reports it clear`. Append under the current target state's `Cross-Cutting` domain — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.

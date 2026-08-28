@@ -13,14 +13,14 @@ One fixed skeleton, applicable whether the repo is an API, a UI, a background se
 
 `# <repo-name>` as the H1, then five numbered `##` sections: **1. Overview · 2. Setup · 3. Usage · 4. Testing · 5. References.**
 
-**Concise by default.** A README is an entry point, not the documentation. Depth belongs in the SDD (a Google Doc in Drive — see `standards-specs`) — this file points at it rather than restating it. Target a few screens, not hundreds of lines; tables and links over prose.
+**Concise by default.** A README is an entry point, not the documentation. Depth belongs in the SDD (`docs/spec/SDD.md` — see `standards-specs`) — this file points at it rather than restating it. Target a few screens, not hundreds of lines; tables and links over prose.
 
 ---
 
 ## Step 1 — Load the facts
 
 - Detect the language from the repo root (`go.mod`, `package.json`, `pyproject.toml`) and load the matching language skill for its layout and Quick-reference fields (port, entrypoint, build/run/test commands).
-- If an SDD exists in Drive, load `standards-specs`, fetch it, and pull from it — never invent what it doesn't state.
+- If `docs/spec/SDD.md` exists, load `standards-specs` and read it, pulling from it — never invent what it doesn't state.
 - If `BACKLOG.md` exists, check for open Blocker-tier items.
 
 ## Step 2 — Read the repo, don't invent
@@ -37,10 +37,10 @@ Every fact in the README must trace to something actually in the repo: a Makefil
   - SDK / library → package or export table (one line per public package/module) + a code snippet per major package showing the call shape
   - UI → screens or top-level components + how to reach them locally
   - Job / worker → job or schedule table (trigger, cadence, what it does)
-  - Hardware → interface/pinout table + how to drive it
+  - Hardware → interface/pinout table + how to operate it
   A repo can have more than one facet (e.g. a service that's also a library) — combine only when the repo genuinely has both, never speculatively.
 - **4. Testing** — test tiers and the commands that run them, sourced from the Makefile/scripts, not invented tier names.
-- **5. References** — pointer table to what exists: `BACKLOG.md`, `CHANGELOG.md`, `openapi.yaml` or equivalent contract file. List only files present in this repo — the SDD (and PRD, when one exists) is a Google Doc in Drive, never listed here since it isn't a repo file.
+- **5. References** — pointer table to what exists: `BACKLOG.md`, `CHANGELOG.md`, `docs/spec/SDD.md` (and `docs/spec/PRD.md`, when one exists), `openapi.yaml` or equivalent contract file. List only files present in this repo.
 
 No section beyond these five. Deep design rationale, infra diagrams, and endpoint-by-endpoint request/response detail belong in the SDD — not inlined here.
 
@@ -51,7 +51,7 @@ No section beyond these five. Deep design rationale, infra diagrams, and endpoin
 | Scaffold | No `README.md` | Write all applicable sections fresh |
 | Refresh | `README.md` exists | Diff proposed content against what's there section by section |
 
-**Refresh never overwrites silently.** Show the diff, apply only on confirmation — same propose-don't-impose rule as `write-repo`. A section already present and accurate is left untouched, not rewritten to match this template's wording.
+**Refresh never overwrites silently.** Show the diff, apply only on confirmation — same propose-don't-impose rule as `repo-init`. A section already present and accurate is left untouched, not rewritten to match this template's wording.
 
 ## Step 5 — Flag, don't fabricate
 

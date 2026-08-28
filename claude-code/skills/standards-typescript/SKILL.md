@@ -11,12 +11,18 @@ Zero comments, zero JSDoc. Error messages lead with a verb phrase and never name
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `// eslint-disable`, `// eslint-enable`, `// @ts-expect-error`, `// @ts-ignore`, `// @ts-nocheck`, `// prettier-ignore`, `// biome-ignore`, `// istanbul ignore`, `"use client"`, `"use server"`. Anything else — including JSDoc on an exported symbol — prompts for approval.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and JSDoc are scanned the same way.
+
+Banned: a name echo (the comment's first word repeats the function/variable/type name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant JSDoc block for an internal/private utility not explicitly requested.
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+This language's exempt machine directives, verified against the guard's own list: `// eslint-disable`, `// eslint-enable`, `// @ts-expect-error`, `// @ts-ignore`, `// @ts-nocheck`, `// prettier-ignore`, `// biome-ignore`, `// istanbul ignore`, `"use client"`, `"use server"`. Anything else — including JSDoc on an exported symbol — prompts for approval.
 
 ## Toolchain
 
 - **Versions come from `package.json`.** Read it; never assume a major.
-- **Vulnerability scanning** — `npm audit --omit=dev --audit-level=high` (or the pnpm/yarn equivalent) is the gate. Install with `npm ci` so the lockfile is honoured. Enable `eslint-plugin-security` for the static half. `standards-cicd` defines the gate; the `standards-security-api` skill states the bar.
+- **Vulnerability scanning** — `npm audit --omit=dev --audit-level=high` (or the pnpm/yarn equivalent) is the gate. Install with `npm ci` so the lockfile is honoured. Enable `eslint-plugin-security` for the static half. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
 - **Forge SDK** — published as `@komodo-forge-sdk/typescript`, including the shared CDK construct toolkit. Import the published package at a pinned version; never a relative path into a local checkout. Read its exports before concluding it lacks something.
 
 ## Conventions
@@ -30,6 +36,18 @@ Zero comments, zero JSDoc. Error messages lead with a verb phrase and never name
 - **One primary export per module.** No circular imports. Barrel `index.ts` sparingly — it hurts tree-shaking.
 - **Naming**: PascalCase types and components, camelCase variables and functions, SCREAMING_SNAKE constants, kebab-case module files, PascalCase component files. Booleans take `is` / `has` / `can` / `should`. No `I` prefix on interfaces. `req` / `res` for request and response.
 - **Prefer a closure over a new class or extra parameter** when it captures scope the caller already has — an event handler, a memoized selector, a factory returning configured functions. Skip it inside a render loop or a hot path: a closure allocated per call/render defeats memoization (`useCallback`/`useMemo`, referential equality checks) and adds GC pressure. Measure before choosing a closure over a plain function in code a profiler already flags.
+
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-ui-security` owns the broader rendered-surface bar this narrows to TypeScript/JavaScript mechanics.
+
+- **`eval`/`new Function(...)` on any request- or user-derived string is code execution**, not a shortcut — no upstream validation makes it safe.
+- **`dangerouslySetInnerHTML`/`innerHTML`/`v-html` with unsanitized content is stored/reflected XSS** — run untrusted HTML through a sanitizer (e.g. DOMPurify) first, or avoid the raw-HTML sink entirely.
+- **`child_process.exec` with an interpolated string is command injection; `execFile`/`spawn` with an argument array is not.**
+- **A recursive merge/`Object.assign` over untrusted JSON is a prototype-pollution vector** if a `__proto__`/`constructor`/`prototype` key reaches it unguarded — reject or strip those keys before merging.
+- **A parameterized query builder or ORM binding, never a template literal building SQL/NoSQL query text** from request input.
+- **`crypto.randomBytes`/`crypto.getRandomValues`, never `Math.random()`, for a token, key, or session ID.**
+- **A JWT verify call must pin the expected algorithm** — accepting `alg: none` or letting the token's own header pick the algorithm lets an attacker forge a signature-free token.
 
 ## Testing
 
@@ -51,7 +69,7 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact this
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for TypeScript** in `write-repo` — no repo type token maps here. Use `write-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for TypeScript** in `repo-init` — no repo type token maps here. Use `repo-init`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.
 
 ## Reference material
 

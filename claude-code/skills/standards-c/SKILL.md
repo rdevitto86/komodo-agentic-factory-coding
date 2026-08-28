@@ -13,7 +13,13 @@ Zero comments, zero header doc-blocks. Errors lead with a verb phrase and never 
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `// clang-format off`, `// clang-format on`, `// NOLINT`, `// NOLINTNEXTLINE` (matches the `nolint` prefix). Anything else — including a header-comment block above a function — prompts for approval.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and docstrings are scanned the same way.
+
+Banned: a name echo (the comment's first word repeats the function/variable/type name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant docstring/Doxygen block for an internal/private utility not explicitly requested.
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+This language's exempt machine directives, verified against the guard's own list: `// clang-format off`, `// clang-format on`, `// NOLINT`, `// NOLINTNEXTLINE` (matches the `nolint` prefix). Anything else — including a header-comment block above a function — prompts for approval.
 
 ## Toolchain
 
@@ -45,6 +51,16 @@ Zero comments, zero header doc-blocks. Errors lead with a verb phrase and never 
 - **Never ignore a fallible return value.** A call whose failure is genuinely irrelevant still gets an explicit `(void)` cast, so the omission reads as a decision, not an oversight.
 - **Errors propagate up; only the top of the call stack logs.** Log-and-return duplicates one root cause into multiple log lines.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`system()`/`popen()` with any input derived from outside the process is command injection** — a shell interprets the string, so validation upstream does not close it.
+- **A format string must never be attacker-influenced.** `printf(user_input)` reads/writes memory through `%n`/`%s` in the input; always `printf("%s", user_input)`.
+- **`strcpy`/`strcat`/`sprintf`/`gets` are exploitable buffer overflows, not just crash bugs** — the Memory and resources section above states the bounded-function replacement; this is the same rule read as a security control, not a stability one.
+- **An integer overflow feeding an allocation size is a heap-overflow primitive** — check the multiplication/addition against `SIZE_MAX` before it reaches `malloc`/`calloc`.
+- **`rand()`/`srand()` are not a CSPRNG.** A token, key, or nonce needs `/dev/urandom`, `getrandom(2)`, or the platform's crypto library.
+
 ## Testing
 
 - **Unity or CMocka, whichever the project already uses** — Unity for pure unit tests, CMocka when a syscall or library boundary needs mocking.
@@ -67,4 +83,4 @@ Drop a row whose value the repo genuinely lacks.
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for C** in `write-repo` — no repo type token maps here. Use `write-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for C** in `repo-init` — no repo type token maps here. Use `repo-init`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.

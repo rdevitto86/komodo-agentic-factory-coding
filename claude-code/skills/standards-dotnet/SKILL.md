@@ -13,7 +13,13 @@ For any .NET repo — the framework and runtime layer: hosting, configuration, p
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract; `standards-csharp` states the exempt machine directive for `.cs` files (`#pragma warning disable/restore <rule>`). The other files this skill matches carry a different comment syntax, or none: the guard scans an XML comment (`<!-- -->`) in a `.csproj`, `Directory.Build.props`, or `Directory.Packages.props` under the same rules as any other comment — no XML-specific directive is exempt. `appsettings*.json` and `global.json` carry no native comment syntax at all, so nothing to guard there.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and XML comments (`<!-- -->`) are scanned the same way.
+
+Banned: a name echo (the comment's first word repeats the identifier or element below it); an implementation narrative (explaining *what* the file is doing, or describing standard syntax).
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+`standards-csharp` states the exempt machine directive for `.cs` files (`#pragma warning disable/restore <rule>`). The other files this skill matches carry a different comment syntax, or none: the guard scans an XML comment (`<!-- -->`) in a `.csproj`, `Directory.Build.props`, or `Directory.Packages.props` under the same rules above — no XML-specific directive is exempt. `appsettings*.json` and `global.json` carry no native comment syntax at all, so nothing to guard there.
 
 ## Toolchain
 
@@ -43,6 +49,15 @@ For any .NET repo — the framework and runtime layer: hosting, configuration, p
 - **A container base image's tag matches the `TargetFramework`'s runtime version exactly** (`mcr.microsoft.com/dotnet/aspnet:<version>`, never `:latest`) — `standards-docker` states the rest of the image contract.
 - **`global.json` travels with the repo, not just the CI config** — pinning the SDK only in a pipeline YAML lets a local `dotnet build` drift onto a different SDK than CI uses.
 
+## Security standards
+
+Framework/runtime-layer insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-csharp` covers the language-mechanics half (deserialization, XXE, `Process.Start`) once it exists.
+
+- **`AddCors` policies never combine `AllowAnyOrigin()` with `AllowCredentials()`** — that combination is rejected by the spec for a reason; a wildcard origin serving credentialed requests defeats CORS entirely.
+- **Anti-forgery tokens (`[ValidateAntiForgeryToken]`/`IAntiforgery`) are required on every state-changing endpoint reachable from a browser session**, not just ones a form happens to post to.
+- **A committed `appsettings*.json` never carries a real connection string, API key, or signing secret** — the Conventions section above states where those live instead; a leaked one is a security incident, not a config oversight.
+- **`RequireHttpsMetadata` stays `true` outside local development** — disabling it lets a token be validated over a downgraded, unencrypted channel.
+
 ## Testing
 
 - **Integration tests against the host use `WebApplicationFactory<T>`**, spinning up the real DI container and middleware pipeline against an in-memory test server — never a hand-rolled `HttpClient` pointed at a separately launched process.
@@ -64,4 +79,4 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact `sta
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for .NET** in `write-repo` — no repo type token maps here yet, the same gap `standards-csharp` records. Use `write-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here once a repo type is confirmed.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for .NET** in `repo-init` — no repo type token maps here yet, the same gap `standards-csharp` records. Use `repo-init`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here once a repo type is confirmed.

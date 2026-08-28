@@ -11,14 +11,20 @@ Zero comments, zero Javadoc. Exception messages lead with a verb phrase and neve
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. No Java-specific machine directive is registered in the guard's own exempt-prefix list — a `// CHECKSTYLE:OFF` line, a `@SuppressWarnings` annotation (not a comment, so the guard never sees it), or a `/** */` Javadoc block on a public member all prompt for approval the same as any other comment.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and Javadoc are scanned the same way.
+
+Banned: a name echo (the comment's first word repeats the method/field/type name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant Javadoc block for an internal/private utility not explicitly requested.
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a method body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+No Java-specific machine directive is registered in the guard's own exempt-prefix list — a `// CHECKSTYLE:OFF` line, a `@SuppressWarnings` annotation (not a comment, so the guard never sees it), or a `/** */` Javadoc block on a public member all prompt for approval the same as any other comment.
 
 ## Toolchain
 
 - **Version floor is whatever the build file declares** — `<maven.compiler.release>` (or `<java.version>`) in `pom.xml`, or `sourceCompatibility`/`toolchain.languageVersion` in `build.gradle`/`build.gradle.kts`. Read it; never assume a release.
 - **`Makefile`'s (or `Taskfile`'s) `verify` target is the merge gate** — `mvn -q verify` (or `./gradlew check`) chaining formatter check, static analysis, build, and test in that order. `context_injector.py` reads this target directly; a repo without it has no gate.
 - **Formatting and linting** — `google-java-format` (or Spotless wrapping it) on commit, Checkstyle plus SpotBugs (with the `findsecbugs` plugin) as the gate. These are the tools the pre-commit hook runs; `standards-cicd` defines when.
-- **Vulnerability scanning** — `mvn org.owasp:dependency-check-maven:check` (or the OWASP Dependency-Check Gradle plugin) against the resolved dependency tree is the gate; triage by whether the vulnerable path is actually reachable, not by CVE score alone. `standards-cicd` defines the gate; the `standards-security-api` skill states the bar.
+- **Vulnerability scanning** — `mvn org.owasp:dependency-check-maven:check` (or the OWASP Dependency-Check Gradle plugin) against the resolved dependency tree is the gate; triage by whether the vulnerable path is actually reachable, not by CVE score alone. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
 - **Dependencies** via Maven `<dependency>` coordinates or Gradle `implementation`/`api` at a pinned version — never a local multi-module hack standing in for a published artifact outside the build's own modules.
 
 ## Conventions
@@ -74,6 +80,17 @@ Measure first. An optimisation without a before/after number is unreviewable.
 - **`StringBuilder`** for repeated concatenation in a loop.
 - **Batch queries.** `EXPLAIN ANALYZE` before adding an index. N+1 is a bug, not a tuning opportunity.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`PreparedStatement` with bound parameters, never `Statement` with a concatenated query string.**
+- **`ObjectInputStream.readObject()` on untrusted input is Java's classic insecure-deserialization sink** — restrict it to a trusted class allowlist (`ObjectInputFilter`) or avoid native Java serialization for external data entirely.
+- **`DocumentBuilderFactory`/`XMLInputFactory`/`SAXParserFactory` process external entities by default** — disable DTDs and external entity resolution (`FEATURE_SECURE_PROCESSING`, `disallow-doctype-decl`) before parsing any externally sourced XML, or it's an XXE sink.
+- **`Runtime.exec`/`ProcessBuilder` with a single interpolated command string is command injection** — pass the argument list form instead.
+- **`SecureRandom`, never `java.util.Random`, for a token, key, or session ID.**
+- **A template engine's expression language (OGNL, SpEL, Thymeleaf) evaluating a request-derived string is template/expression injection**, not a formatting convenience.
+
 ## Testing
 
 - **JUnit 5 (Jupiter) only**, run via `mvn test`/`./gradlew test`. `@ParameterizedTest` with `@MethodSource`/`@CsvSource` over hand-rolled loops for parameterised cases.
@@ -99,4 +116,4 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact this
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for Java** in `write-repo` — no repo type token maps here yet. Use `write-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here once a repo type is confirmed.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for Java** in `repo-init` — no repo type token maps here yet. Use `repo-init`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here once a repo type is confirmed.

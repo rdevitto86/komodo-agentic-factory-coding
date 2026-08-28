@@ -11,14 +11,20 @@ Zero comments, zero godoc. Error strings lead with a verb phrase and never name 
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `go:build`, `go:generate` (matches the `go:` prefix), `cgo` pragmas, `//nolint:<rule>`. Anything else — including godoc on an exported symbol — prompts for approval.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note.
+
+Banned: a name echo (the comment's first word repeats the function/variable/type name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant godoc comment for an internal/private utility not explicitly requested.
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+This language's exempt machine directives, verified against the guard's own list: `go:build`, `go:generate` (matches the `go:` prefix), `cgo` pragmas, `//nolint:<rule>`. Anything else — including godoc on an exported symbol — prompts for approval.
 
 ## Toolchain
 
 - **Version floor is whatever `go.mod` declares.** Read it; never assume a release.
 - **`Makefile`'s `verify` target is the merge gate** — `gofmt -l`, `go vet`, `golangci-lint run`, `go test -race -cover`, `go build`, in that order. `context_injector.py` reads this target directly; a repo without it has no gate.
 - **Formatting and linting** — `gofmt` and `goimports` on commit, `golangci-lint` as the gate. These are the tools the pre-commit hook runs; `standards-cicd` defines when.
-- **Vulnerability scanning** — `govulncheck ./...` is the gate; it reports reachability, so triage by call path, not by CVE score alone. Enable `gosec` in `.golangci.yaml` for the static half. `standards-cicd` defines the gate; the `standards-security-api` skill states the bar.
+- **Vulnerability scanning** — `govulncheck ./...` is the gate; it reports reachability, so triage by call path, not by CVE score alone. Enable `gosec` in `.golangci.yaml` for the static half. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
 - **Coverage delta is per package** — Go reports at package granularity, so the pre-push scope is the set of packages containing changed files.
 - **Forge SDK** — module path `github.com/rdevitto86/komodo-forge-sdk-go`, subpackaged by concern. Import the published module at a pinned version; never a `replace` directive pointing at a local checkout. Read its package tree before concluding it lacks something.
 
@@ -80,6 +86,18 @@ Measure first. An optimisation without a before/after number is unreviewable.
 
 Exported API and schema changes are additive. New optional fields and new functions are safe; renaming, removing, or retyping an exported symbol breaks every service of yours that imports it and needs a version bump. Add to a struct rather than changing a signature; use functional options so a constructor can grow.
 
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`html/template` for anything rendered to a browser, never `text/template`.** `text/template` performs no contextual escaping — interpolating request-derived data into it is stored/reflected XSS.
+- **`os/exec` with an argument slice, never a shell string.** `exec.Command("sh", "-c", userInput)` is command injection; build `exec.Command(bin, arg1, arg2)` instead.
+- **`database/sql` placeholders (`?`/`$1`), never string-built queries.** `fmt.Sprintf` into a query string is SQL injection regardless of how the value was validated upstream.
+- **`encoding/gob` and `encoding/json` into `interface{}`/`any` from an untrusted source is an insecure-deserialization surface** — decode into a concrete, field-limited struct instead.
+- **`filepath.Clean` plus a prefix check after `filepath.Join`** on any user-supplied path segment — `Join` alone does not stop `../` traversal out of the intended root.
+- **`crypto/rand`, never `math/rand`, for a token, key, or nonce.** `math/rand` is seeded and predictable.
+- **`InsecureSkipVerify: true` on a `tls.Config` disables certificate validation** — a debug-only flag that must never reach a committed default.
+
 ## Quick-reference fields
 
 The field set a Go repo's `AGENTS.md` Quick-reference table carries. Every value is read from the repo, never assumed.
@@ -117,7 +135,7 @@ One generic entrypoint at `cmd/server/main.go`, or `cmd/main.go` as the alternat
 
 ## Seed backlog — `go-api`
 
-Stories `write-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+Stories `repo-init` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [M] Flesh out `openapi.yaml` beyond the `/health` stub as routes land · S
 - [M] Tests: unit + component coverage · S → `make test`
@@ -141,11 +159,11 @@ go.mod
 
 Same shape as `go-api` — one entrypoint at `cmd/server/main.go`, no audience-split binaries — with `tools.md` replacing `openapi.yaml` as the contract file: a running list of registered MCP tools (name, input schema, output shape), not a REST route table. `internal/` holds tool implementations; a tool is a routing concern the same way a handler is in `go-api`, never a second binary.
 
-**No established Go MCP SDK is recorded here yet.** `write-repo`'s Step 5 stops and asks rather than guessing an import path — see that skill for the rule. Once one is confirmed for a real build, it belongs in `reference.md`'s wiring section, not re-decided per repo.
+**No established Go MCP SDK is recorded here yet.** `repo-init`'s Step 5 stops and asks rather than guessing an import path — see that skill for the rule. Once one is confirmed for a real build, it belongs in `reference.md`'s wiring section, not re-decided per repo.
 
 ## Seed backlog — `go-mcp`
 
-Stories `write-repo` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+Stories `repo-init` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [M] Flesh out `tools.md` and the tool registry beyond the `/health` stub as tools land · S
 - [M] Tests: unit + component coverage · S → `make test`

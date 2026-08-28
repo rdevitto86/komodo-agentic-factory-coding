@@ -5,7 +5,7 @@
 * **Status Indicators:** `[TODO]` | `[IN_PROGRESS]` | `[BLOCKED]` | `[DONE]`
 * **Hierarchy ID:** `EPIC-XX` -> `TG-XX.Y` (Task Group) -> `TSK-XX.Y.Z` (Task) -> `SUB-XX.Y.Z.N` (Subtask)
 
-Format and rules live in the `write-backlog` skill — load it before editing this file. `[DONE]` tasks stay until a sweep (`/audit-backlog`) moves them to `CHANGELOG.md` and removes them — this is not a log to hand-curate.
+Format and rules live in the `backlog` skill — load it before editing this file. `[DONE]` tasks stay until a sweep (`/backlog audit`) moves them to `CHANGELOG.md` and removes them — this is not a log to hand-curate.
 
 ---
 
@@ -46,72 +46,6 @@ Format and rules live in the `write-backlog` skill — load it before editing th
 
 #### [TSK-02.1.1] Machine identity for agent-run git/PR operations [P: M] [TODO]
 * [ ] **SUB-02.1.1.1** agent-run commits and PRs currently authored as the user's own GitHub account (`gh auth`'s session token + local `git config user.name`) — create a machine-user account or GitHub App and wire its token into `gh`/`git` for agent-run operations
-
-### [TG-02.2] Skill Restructuring
-* **Target Release:** V2
-
-#### [TSK-02.2.1] Merge write-backlog + audit-backlog into /backlog [P: M] [TODO]
-* [ ] **SUB-02.2.1.1** single skill with create + edit + audit instructions, one template
-
-#### [TSK-02.2.2] Merge write-changelog + audit-changelog into /changelog [P: M] [TODO]
-* [ ] **SUB-02.2.2.1** single skill with create + edit + audit instructions, one template
-
-#### [TSK-02.2.3] Rename standards-design-ui + standards-security-ui to standards-ui-* [P: L] [TODO]
-* [ ] **SUB-02.2.3.1** e.g. `standards-ui-design`, `standards-ui-security`
-
-#### [TSK-02.2.4] Remove rules-source-control, redistribute its rules [P: M] [TODO]
-* [ ] **SUB-02.2.4.1** redistribute into whichever skill already owns that concern (`standards-git`, `git-pr`, `git-issue`, etc.)
-
-#### [TSK-02.2.5] Remove standards-git, redistribute its content [P: M] [TODO]
-* [ ] **SUB-02.2.5.1** redistribute into its constituent skills
-
-#### [TSK-02.2.6] Rename standards-security-api to standards-api-security [P: L] [TODO]
-
-#### [TSK-02.2.7] Create standards-api-design skill [P: M] [TODO]
-* [ ] **SUB-02.2.7.1** API shape/contract conventions, distinct from `standards-api-security`
-
-#### [TSK-02.2.8] Rename rules-merge-conflicts to git-merge-conflict [P: L] [TODO]
-
-#### [TSK-02.2.9] Rename write-repo to repo-init [P: L] [TODO]
-
-#### [TSK-02.2.10] Split git-pr into create/review/comment [P: M] [TODO]
-* [ ] **SUB-02.2.10.1** `git-pr-create`, `git-pr-review`, `git-pr-comment`
-
-#### [TSK-02.2.11] Split git-issue into create/review [P: M] [TODO]
-* [ ] **SUB-02.2.11.1** `git-issue-create`, `git-issue-review`
-
-#### [TSK-02.2.12] Parse rules-commenting into each standards-<language> skill [P: M] [TODO]
-* [ ] **SUB-02.2.12.1** every language standard carries its own comment-discipline section
-
-#### [TSK-02.2.13] audit-* skills load every relevant standards-<language> [P: M] [TODO]
-* [ ] **SUB-02.2.13.1** audit across all relevant languages in one pass, not one fixed language
-* [ ] **SUB-02.2.13.2** each `standards-<language>` skill gains an optional security-standards section (language-specific insecure-usage patterns) for the security auditors to pull from
-
-#### [TSK-02.2.14] Rename config-accessibility-output to config-accessibility [P: L] [TODO]
-
-### [TG-02.3] Docs & Specs
-* **Target Release:** V2
-
-#### [TSK-02.3.1] Move PRD/SDD/ADR authoring local, stand up a doc site [P: H] [TODO]
-* [ ] **SUB-02.3.1.1** move authoring off Google Drive and into each project repo (excluding this config repo) as local files
-* [ ] **SUB-02.3.1.2** stand up an internal doc site per repo (MkDocs, Docusaurus/Starlight, or GitHub Pages) rendering a local `/docs/*`
-* [ ] **SUB-02.3.1.3** enforce `/docs/spec`, `/docs/adr`, and `/docs/runbook` as the new standard layout
-
-#### [TSK-02.3.2] Update standards-specs for the local /docs/spec layout [P: M] [TODO] (after: "Move PRD/SDD/ADR authoring local, stand up a doc site")
-* [ ] **SUB-02.3.2.1** reference the new local `/docs/spec` layout instead of the current Drive-fetch contract
-* [ ] **SUB-02.3.2.2** document the doc-site toolchain choice it's paired with
-
-#### [TSK-02.3.3] Create /sdd skill [P: M] [TODO] (after: "Move PRD/SDD/ADR authoring local, stand up a doc site")
-* [ ] **SUB-02.3.3.1** merge SDD authoring and auditing (create + edit + audit instructions, one template) against the new local `/docs/spec` layout
-
-#### [TSK-02.3.4] Create /prd skill [P: M] [TODO] (after: "Move PRD/SDD/ADR authoring local, stand up a doc site")
-* [ ] **SUB-02.3.4.1** merge PRD authoring and auditing (create + edit + audit instructions, one template) against the new local `/docs/spec` layout
-
-#### [TSK-02.3.5] Create /adr skill [P: M] [TODO] (after: "Move PRD/SDD/ADR authoring local, stand up a doc site")
-* [ ] **SUB-02.3.5.1** merge ADR authoring and auditing (create + edit + audit instructions, one template) against the new local `/docs/adr` layout
-
-#### [TSK-02.3.6] Create /runbook skill, replacing write-runbook [P: M] [TODO] (after: "Move PRD/SDD/ADR authoring local, stand up a doc site")
-* [ ] **SUB-02.3.6.1** merge runbook authoring and auditing (create + edit + audit instructions, one template) against the new local `/docs/runbook` layout
 
 ---
 

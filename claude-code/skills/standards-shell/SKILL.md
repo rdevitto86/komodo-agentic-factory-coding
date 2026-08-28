@@ -11,7 +11,13 @@ Zero comments below the header block. Error messages lead with a verb phrase and
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `shellcheck disable=`. The "Script manual" slot — line comments directly under a `#!` shebang — is this language's usual home for a run/exit-code summary; see `setup.sh` and `scripts/*.sh` in this repo for the lived shape. Anything past that header block prompts for approval.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note.
+
+Banned: a name echo (the comment's first word repeats the function/variable name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax).
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix; a script manual — line comments directly under a `#!` shebang, this file's only place for a contiguous block.
+
+This language's exempt machine directives, verified against the guard's own list: `shellcheck disable=`. The "Script manual" slot — line comments directly under a `#!` shebang — is this language's usual home for a run/exit-code summary; see `setup.sh` and `scripts/*.sh` in this repo for the lived shape. Anything past that header block prompts for approval.
 
 ## Toolchain
 
@@ -31,6 +37,15 @@ Zero comments below the header block. Error messages lead with a verb phrase and
 - **Resolve the script's own directory** with `"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` rather than assuming the caller's `cwd` — every script in `scripts/` and `setup.sh` does this.
 - **Exit codes are deliberate**: `0` success, `1` a check failed, `2` a usage/argument error. `setup.sh`'s `usage()` + `exit 2` on a bad flag is the pattern to match.
 - **A trap for cleanup**, not a manual `rm` at every exit path — `test-hooks.sh`'s `trap 'rm -rf "$WORKDIR"; ...' EXIT` is the reference.
+
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **An unquoted variable reaching `eval`, a command substitution, or a subshell is command injection** — the quoting rule above is a correctness rule and a security control at once; there is no separate "sanitize for security" pass.
+- **`curl <url> | bash` (or `| sh`) executes an unreviewed remote script with the invoking user's privileges** — download, verify (checksum or signature), then run, never pipe straight into a shell.
+- **A predictable temp path (`/tmp/$$`, `/tmp/myapp-$RANDOM`) is a symlink/race target.** Use `mktemp`/`mktemp -d` so the name and the file's existence are both attacker-unpredictable.
+- **`set -x`/`bash -x` echoes every expanded command, secrets included, to whatever captures stdout/stderr** — never enable it in a script that ever sees a credential or token.
 
 ## Testing
 
@@ -52,7 +67,7 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact this
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for shell** in `write-repo` — a shell script is glue around another language's repo, never a repo type of its own, so no repo type token maps here.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for shell** in `repo-init` — a shell script is glue around another language's repo, never a repo type of its own, so no repo type token maps here.
 
 ## Reference material
 

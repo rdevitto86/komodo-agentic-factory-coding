@@ -40,7 +40,7 @@ scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
 
 The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
 
-Each repo carries three local documents. `write-readme` owns the entry point; `write-backlog` and `write-changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. The SDD (and, when one exists, the PRD) is a Google Doc in Drive, fetched read-only via MCP — `standards-specs` owns that contract — never a repo file.
+Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `write-readme` owns the entry point; `backlog` and `changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
 
 | File | Holds | Mutable |
 |---|---|---|
@@ -69,7 +69,7 @@ Two guards run as `PreToolUse`, so a violation never reaches disk. Three more ru
 **An exemption the agent can satisfy on its own is a bypass, not an exception.** A content allowlist fails on that alone — whatever token you exempt, the model prepends it. Both exceptions here are things the agent cannot fabricate.
 
 - **Structure — a use-manual under a shebang.** A contiguous run of comment lines starting immediately after `#!`. It cannot reach a function body, because position is not forgeable.
-- **Template — a fixed shape the prose cannot fit.** A banner's label is 40 chars between two hyphen runs; a step marker is one indented line of 80. `rules-commenting` lists all four.
+- **Template — a fixed shape the prose cannot fit.** A banner's label is 40 chars between two hyphen runs; a step marker is one indented line of 80. Each `standards-<language>` skill's own Comment discipline section lists all four.
 
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
@@ -91,7 +91,7 @@ bash scripts/test-hooks.sh    # 127 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/write-backlog` `/write-changelog` `/write-repo` `/git-commit-message` `/audit-readiness` `/write-readme` `/audit-backlog` `/audit-change-risk` `/audit-code-quality` `/audit-bugs` `/audit-security` `/audit-simplify` `/audit-performance` `/workflow-complete`
+Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflow-consolidate` `/backlog` `/changelog` `/repo-init` `/git-commit-message` `/audit-readiness` `/write-readme` `/audit-change-risk` `/audit-code-quality` `/audit-bugs` `/audit-security` `/audit-simplify` `/audit-performance` `/workflow-complete`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 
@@ -99,7 +99,7 @@ Workflow skills, all free: `/workflow-decompose` `/workflow-implement` `/workflo
 
 ## Output formatting
 
-The always-on contract lives in `claude-code/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `config-accessibility-output` skill and loads only when authoring something longer than a screen.
+The always-on contract lives in `claude-code/AGENTS.md` § 2 and applies to every turn. The full ADHD standard — learning mode, chunking, emoji protocol, table shape, code-answer order, document typography — lives in the `config-accessibility` skill and loads only when authoring something longer than a screen.
 
 Every subagent carries the same contract as a mandatory output template.
 

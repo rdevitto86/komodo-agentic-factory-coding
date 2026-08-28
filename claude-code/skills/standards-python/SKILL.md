@@ -11,13 +11,19 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `# noqa`, `# type: ignore`, `# pylint:`, `# mypy:`, `# pyright:`, `# ruff:`, `# isort:`, `-*- coding` on line 1. **A docstring is scanned like any other comment** — the guard parses the file's AST, so it catches module, function, and class docstrings, not just `#` lines. Anything outside those prompts for approval.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note.
+
+Banned: a name echo (the comment's first word repeats the function/variable/class name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant docstring for an internal/private utility not explicitly requested.
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+This language's exempt machine directives, verified against the guard's own list: `# noqa`, `# type: ignore`, `# pylint:`, `# mypy:`, `# pyright:`, `# ruff:`, `# isort:`, `-*- coding` on line 1. **A docstring is scanned like any other comment** — the guard parses the file's AST, so it catches module, function, and class docstrings, not just `#` lines. Anything outside those prompts for approval.
 
 ## Toolchain
 
 - **The version floor is declared in `pyproject.toml` under `requires-python`.** Read it rather than assuming a release. Dependencies via `uv` (preferred) or `poetry` — never raw `pip`.
 - **`ruff format`, `ruff check`, `mypy --strict`** (or strict `pyright`). No `black`/`isort`/`flake8`/`pylint` stack. Type errors block merge.
-- **Vulnerability scanning** — `pip-audit` (or `uv pip audit`) against the resolved lockfile is the gate. Enable ruff's `S` (bandit) rules for the static half, excluded from test paths. `standards-cicd` defines the gate; the `standards-security-api` skill states the bar.
+- **Vulnerability scanning** — `pip-audit` (or `uv pip audit`) against the resolved lockfile is the gate. Enable ruff's `S` (bandit) rules for the static half, excluded from test paths. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
 - **`from __future__ import annotations`** at the top of every module. Annotate every signature and module-level binding. No bare `Any`.
 - **`typing.Protocol` for boundary interfaces**; ABCs only for genuine nominal subtyping.
 - **Validate external boundaries** with `pydantic` v2 or `attrs`. Prefer `TypedDict` / `dataclass` / `BaseModel` over `dict[str, Any]`. Value types are `@dataclass(frozen=True, slots=True)`.
@@ -39,6 +45,18 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 - **`httpx.AsyncClient` over `aiohttp`.**
 - **CPU-bound work goes to `ProcessPoolExecutor`**, not threads — the GIL makes threads useless here.
 - **`contextvars`** for per-task context.
+
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`yaml.safe_load`, never `yaml.load`, on untrusted input.** The default `Loader` can instantiate arbitrary Python objects — an insecure-deserialization sink.
+- **`pickle`/`marshal`/`shelve` never deserialize data from outside the process.** Unpickling is arbitrary code execution by design; there is no safe-mode flag to reach for instead.
+- **`eval`/`exec` on any request-derived string is code execution**, not a shortcut — no amount of upstream validation makes it safe.
+- **`subprocess` with `shell=True` and an interpolated string is command injection.** Pass an argument list with `shell=False` (the default) instead.
+- **Jinja2 autoescaping stays on; the `|safe` filter and `Markup()` never wrap untrusted data** — either bypasses the auto-escaping that prevents template-driven XSS/SSTI.
+- **DB-API parameter placeholders (`%s`, `?`), never an f-string or `.format()` building the query text** — string-built SQL is injectable independent of the driver.
+- **`secrets`, never `random`, for a token, key, or password-reset code.** `random` is a Mersenne Twister — predictable once enough output is observed.
 
 ## Testing
 
@@ -77,4 +95,4 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact this
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for Python** in `write-repo` — no repo type token maps here. Use `write-repo`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for Python** in `repo-init` — no repo type token maps here. Use `repo-init`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here first.

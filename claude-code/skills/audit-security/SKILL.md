@@ -8,7 +8,7 @@ argument-hint: <task text or band summary> [standards-* skills that apply] [--re
 
 Reviewing: **$ARGUMENTS**
 
-Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Load `standards-security-api` first — it states the OWASP-benchmarked bar this reviews against for any server-side boundary. Add `standards-security-ui` when the diff touches a rendered surface (`.svelte`/`.vue`/`.tsx`/`.jsx`/`.html`) — it owns XSS, clickjacking, and dark-pattern findings. Never a fork of the session that wrote the code. Findings only, never fixes.
+Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Load `standards-api-security` first — it states the OWASP-benchmarked bar this reviews against for any server-side boundary. Add `standards-ui-security` when the diff touches a rendered surface (`.svelte`/`.vue`/`.tsx`/`.jsx`/`.html`) — it owns XSS, clickjacking, and dark-pattern findings. Load whichever `standards-<language>` skill(s) the touched files trigger — `standards-go`, `standards-python`, `standards-typescript`, `standards-java`, `standards-c`, `standards-dotnet`, `standards-shell`, and so on — and pull from each one's own Security standards section, where it carries one, alongside the checklist below: a language-specific insecure-usage pattern (Go's `text/template` vs `html/template`, Python's `pickle`/`yaml.load`, a Java deserialization boundary) is this same pass's job, not a second review. Never a fork of the session that wrote the code. Findings only, never fixes.
 
 ## Process
 
@@ -29,4 +29,4 @@ No findings: state that plainly, one line, and stop. **Never invent a finding to
 
 ## Findings → backlog
 
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <claim> · S → \`/audit-security <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `write-backlog`. `--report` prints the table only; nothing is written.
+Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <claim> · S → \`/audit-security <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.

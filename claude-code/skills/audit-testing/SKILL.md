@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Scoping: **$ARGUMENTS** (default: the repo's full test suite)
 
-Findings only, never writes a test — a coverage or placement gap routes back to implementation. Load `standards-sdlc` and the repo's language skill (detected from its manifest) first; every check below tests against tiers, layout, and coverage rules they own, not rules restated here. If an SDD exists in Drive (`standards-specs`), its §6 Testing Strategy table is a citation of the same rules, not a second source — flag it as drift if the numbers disagree with `standards-sdlc`.
+Findings only, never writes a test — a coverage or placement gap routes back to implementation. Load `standards-sdlc` and every language skill the repo's manifests indicate first — detect each one present (`go.mod`, `package.json`, `pyproject.toml`, `pom.xml`/`build.gradle`, `*.csproj`, and so on), not just the first found, so a polyglot repo gets audited in one pass across every language it actually contains; every check below tests against tiers, layout, and coverage rules they own, not rules restated here. If an SDD exists (`docs/spec/SDD.md`, see `standards-specs`), its §6 Testing Strategy table is a citation of the same rules, not a second source — flag it as drift if the numbers disagree with `standards-sdlc`.
 
 ## Process
 
@@ -34,4 +34,4 @@ No findings: state that plainly, one line, and stop. **Never invent a finding to
 
 ## Findings → backlog
 
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <finding> · S → \`/audit-testing <scope>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `write-backlog`. `--report` prints the table only; nothing is written.
+Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <finding> · S → \`/audit-testing <scope>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog`. `--report` prints the table only; nothing is written.

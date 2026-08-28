@@ -11,7 +11,13 @@ Zero comments, zero XML doc comments. Exception messages lead with a verb phrase
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `#pragma warning disable/restore <rule>` (matches the `pragma` prefix). Anything else — including a `///` XML doc comment on a public member — prompts for approval; the guard scans a triple-slash doc comment the same way it scans any other comment.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and XML doc comments are scanned the same way.
+
+Banned: a name echo (the comment's first word repeats the function/variable/type name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant XML doc comment for an internal/private utility not explicitly requested.
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+This language's exempt machine directives, verified against the guard's own list: `#pragma warning disable/restore <rule>` (matches the `pragma` prefix). Anything else — including a `///` XML doc comment on a public member — prompts for approval; the guard scans a triple-slash doc comment the same way it scans any other comment.
 
 ## Toolchain
 
@@ -70,6 +76,16 @@ Measure first. An optimisation without a before/after number is unreviewable.
 - **`ArrayPool<T>`/`ObjectPool<T>` only on measured hot paths.** They cost clarity everywhere else.
 - **`StringBuilder`** for repeated concatenation in a loop. Pass large structs `in`, not by value.
 - **Batch queries and use `AsNoTracking()` for read-only EF Core queries.** N+1 is a bug, not a tuning opportunity.
+
+## Security standards
+
+Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist.
+
+- **`FromSqlRaw`/`ExecuteSqlRaw` with an interpolated string is SQL injection**; use the parameterized overload (`FromSqlInterpolated` or explicit `SqlParameter`s) instead.
+- **`BinaryFormatter`/`ObjectStateFormatter`/`SoapFormatter` are unsafe on untrusted input** — .NET's own deserialization advisories name them directly; use a data-only serializer (`System.Text.Json`) for anything crossing a trust boundary.
+- **`XmlDocument`/`XmlReaderSettings` with `DtdProcessing.Parse` and external entity resolution enabled is an XXE sink** — set `DtdProcessing.Prohibit` (or `XmlResolver = null`) before parsing externally sourced XML.
+- **`Process.Start` with a single interpolated command-line string is command injection** — populate `ProcessStartInfo.ArgumentList` instead.
+- **`RandomNumberGenerator`, never `System.Random`, for a token, key, or session ID.**
 
 ## Testing
 

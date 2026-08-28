@@ -41,4 +41,4 @@ Score the **highest tier any touched file reaches** — one Critical-tier file o
 
 ## Findings → backlog
 
-At Med-High or above, file one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] Performance risk: <TIER> — <driving factor> · S → \`/audit-performance\` scores Med or below`. Sev maps Med-High→`[M]`, High→`[H]`, Critical→`[C]`. Below Med-High, nothing is filed — there's no action to track. Append under the current target state's `Cross-Cutting` domain — full story-line rules live in `write-backlog`. `--report` prints the score only; nothing is written.
+At Med-High or above, file one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] Performance risk: <TIER> — <driving factor> · S → \`/audit-performance\` scores Med or below`. Sev maps Med-High→`[M]`, High→`[H]`, Critical→`[C]`. Below Med-High, nothing is filed — there's no action to track. Append under the current target state's `Cross-Cutting` domain — full story-line rules live in `backlog`. `--report` prints the score only; nothing is written.
