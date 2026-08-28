@@ -1,5 +1,5 @@
 ---
-name: rules-merge-conflicts
+name: git-merge-conflict
 description: How to resolve a merge conflict once git surfaces one — what to resolve unattended, what to escalate, and what never gets silently dropped. Load before resolving any conflict marker.
 user-invocable: false
 ---
