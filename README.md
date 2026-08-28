@@ -69,7 +69,7 @@ Two guards run as `PreToolUse`, so a violation never reaches disk. Three more ru
 **An exemption the agent can satisfy on its own is a bypass, not an exception.** A content allowlist fails on that alone — whatever token you exempt, the model prepends it. Both exceptions here are things the agent cannot fabricate.
 
 - **Structure — a use-manual under a shebang.** A contiguous run of comment lines starting immediately after `#!`. It cannot reach a function body, because position is not forgeable.
-- **Template — a fixed shape the prose cannot fit.** A banner's label is 40 chars between two hyphen runs; a step marker is one indented line of 80. `rules-commenting` lists all four.
+- **Template — a fixed shape the prose cannot fit.** A banner's label is 40 chars between two hyphen runs; a step marker is one indented line of 80. Each `standards-<language>` skill's own Comment discipline section lists all four.
 
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 

@@ -142,7 +142,7 @@ Grounded in Cognitive Load Theory (Sweller, 1988), Dual-Coding Theory (Paivio, 1
 ```
 
 - **Show the diff, not the file.** Only the changed block plus the minimum surrounding context to place it. Never dump an unchanged file.
-- **Never annotate the code with comments.** The `rules-commenting` skill overrides every "add explanatory comments" instinct, including the one in most formatting guides. Explanation goes in the `**Why:**` block underneath, outside the code fence.
+- **Never annotate the code with comments.** The write guard's comment discipline overrides every "add explanatory comments" instinct, including the one in most formatting guides. Explanation goes in the `**Why:**` block underneath, outside the code fence.
 - **Language-tag every fence.** Untagged fences lose syntax colour, which is a free pre-attentive channel.
 
 ---

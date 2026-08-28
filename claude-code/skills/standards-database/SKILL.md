@@ -13,7 +13,13 @@ Engine-agnostic rules first, then what changes per engine. Generic hygiene — p
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. `.sql` has no engine-specific machine directive in the guard's list — every comment is judged only against the generic templates (banner, `WHY:`/`NOTE:`/`FIXME:`/`HACK:`, `TODO(user):`, indented step marker). A comment describing what a query does prompts for approval like any other narrative comment.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note.
+
+Banned: a name echo (the comment's first word repeats the table/column/procedure name below it); an implementation narrative (explaining *what* a query does, or describing standard SQL syntax).
+
+Allowed only: a step marker (indented, inside a function/procedure body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, `FIXME:`, `HACK:`, or `TODO(user):` prefix.
+
+`.sql` has no engine-specific machine directive in the guard's list — every comment is judged only against the generic templates above. A comment describing what a query does prompts for approval like any other narrative comment.
 
 ---
 

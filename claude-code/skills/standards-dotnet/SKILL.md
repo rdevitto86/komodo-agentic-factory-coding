@@ -13,7 +13,13 @@ For any .NET repo — the framework and runtime layer: hosting, configuration, p
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract; `standards-csharp` states the exempt machine directive for `.cs` files (`#pragma warning disable/restore <rule>`). The other files this skill matches carry a different comment syntax, or none: the guard scans an XML comment (`<!-- -->`) in a `.csproj`, `Directory.Build.props`, or `Directory.Packages.props` under the same rules as any other comment — no XML-specific directive is exempt. `appsettings*.json` and `global.json` carry no native comment syntax at all, so nothing to guard there.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and XML comments (`<!-- -->`) are scanned the same way.
+
+Banned: a name echo (the comment's first word repeats the identifier or element below it); an implementation narrative (explaining *what* the file is doing, or describing standard syntax).
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+`standards-csharp` states the exempt machine directive for `.cs` files (`#pragma warning disable/restore <rule>`). The other files this skill matches carry a different comment syntax, or none: the guard scans an XML comment (`<!-- -->`) in a `.csproj`, `Directory.Build.props`, or `Directory.Packages.props` under the same rules above — no XML-specific directive is exempt. `appsettings*.json` and `global.json` carry no native comment syntax at all, so nothing to guard there.
 
 ## Toolchain
 

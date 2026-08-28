@@ -11,7 +11,13 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 
 ## Comment discipline
 
-`rules-commenting` carries the shared template contract. This language's exempt machine directives, verified against the guard's own list: `# noqa`, `# type: ignore`, `# pylint:`, `# mypy:`, `# pyright:`, `# ruff:`, `# isort:`, `-*- coding` on line 1. **A docstring is scanned like any other comment** — the guard parses the file's AST, so it catches module, function, and class docstrings, not just `#` lines. Anything outside those prompts for approval.
+You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note.
+
+Banned: a name echo (the comment's first word repeats the function/variable/class name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant docstring for an internal/private utility not explicitly requested.
+
+Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
+
+This language's exempt machine directives, verified against the guard's own list: `# noqa`, `# type: ignore`, `# pylint:`, `# mypy:`, `# pyright:`, `# ruff:`, `# isort:`, `-*- coding` on line 1. **A docstring is scanned like any other comment** — the guard parses the file's AST, so it catches module, function, and class docstrings, not just `#` lines. Anything outside those prompts for approval.
 
 ## Toolchain
 

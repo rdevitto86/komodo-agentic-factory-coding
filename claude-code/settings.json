@@ -99,7 +99,6 @@
   },
   "skillOverrides": {
     "config-accessibility": "name-only",
-    "rules-commenting": "name-only",
     "standards-worklog": "name-only",
     "standards-observability": "name-only",
     "standards-cicd": "name-only",
