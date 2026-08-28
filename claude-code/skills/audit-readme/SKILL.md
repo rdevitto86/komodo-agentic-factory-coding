@@ -1,19 +1,19 @@
 ---
 name: audit-readme
-description: Audit README.md against write-readme's fixed template — missing/extra sections, facts with no source, restated SDD depth, stale References — filed as BACKLOG.md stories. Pass --report to skip the write.
+description: Audit README.md against readme's fixed template — missing/extra sections, facts with no source, restated SDD depth, stale References — filed as BACKLOG.md stories. Pass --report to skip the write.
 argument-hint: [--report]
 disable-model-invocation: true
 ---
 
 # README audit
 
-Findings only, never edits `README.md` — `write-readme` owns the format and is the only skill that writes it. This locates structural drift, unsourced claims, and stale references, same division of labor `changelog`'s audit mode keeps with its own write mode.
+Findings only, never edits `README.md` — `readme` owns the format and is the only skill that writes it. This locates structural drift, unsourced claims, and stale references, same division of labor `changelog`'s audit mode keeps with its own write mode.
 
-Load `write-readme` first — every check below tests against rules it owns, not rules restated here.
+Load `readme` first — every check below tests against rules it owns, not rules restated here.
 
 ## Process
 
-1. **Read `README.md` in full.** No file at all is itself a finding — cite `write-readme`'s Scaffold branch, don't draft one.
+1. **Read `README.md` in full.** No file at all is itself a finding — cite `readme`'s Scaffold branch, don't draft one.
 2. **Check the fixed shape** — `# <repo-name>` H1, then exactly the five numbered sections in order (Overview, Setup, Usage, Testing, References). A missing or extra section is a finding.
 3. **Check every fact traces to a source** — a Setup command not in the actual build tooling, an env var/config key the repo doesn't read, a Usage route/export/job not found in the code, a Testing command not in the Makefile/scripts. An unsourced claim is a finding, not a style note.
 4. **Check the Overview status line** — present and pointing at `BACKLOG.md` iff an open Blocker-tier item exists there; present on a clean backlog, or absent with one open, is a finding.

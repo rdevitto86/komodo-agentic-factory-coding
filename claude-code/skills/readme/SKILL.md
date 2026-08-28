@@ -1,5 +1,5 @@
 ---
-name: write-readme
+name: readme
 description: Generate or refresh a repo's README.md against a fixed, concise template.
 argument-hint: [target repo path, defaults to cwd]
 paths: "**/README.md"
