@@ -1,6 +1,6 @@
 # Rendered-surface security review
 
-The procedure for reviewing the exploits an interface itself enables — XSS, clickjacking, dark patterns. `SKILL.md` states the rules this file hunts for violations of. **Scope enumeration, the severity bar, and the report shape are shared with the backend review** — see `standards-security-api/review.md` §§1–2 and Output; this file adds only the rendered-surface vector that skill's §3 (Injection) explicitly excludes.
+The procedure for reviewing the exploits an interface itself enables — XSS, clickjacking, dark patterns. `SKILL.md` states the rules this file hunts for violations of. **Scope enumeration, the severity bar, and the report shape are shared with the backend review** — see `standards-api-security/review.md` §§1–2 and Output; this file adds only the rendered-surface vector that skill's §3 (Injection) explicitly excludes.
 
 ## XSS
 
@@ -20,4 +20,4 @@ Flag on the same footing as a security bug — the exploit is the user's own jud
 
 ## Output
 
-Use `standards-security-api/review.md`'s report shape. A rendered-surface finding cites the OWASP category the same way a backend one does — XSS files under **Injection** (or **Software and data integrity failures** where relevant); clickjacking and dark patterns file under **Security misconfiguration** absent a more specific category in the current OWASP edition.
+Use `standards-api-security/review.md`'s report shape. A rendered-surface finding cites the OWASP category the same way a backend one does — XSS files under **Injection** (or **Software and data integrity failures** where relevant); clickjacking and dark patterns file under **Security misconfiguration** absent a more specific category in the current OWASP edition.

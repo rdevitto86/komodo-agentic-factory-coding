@@ -1,5 +1,5 @@
 ---
-name: standards-security-api
+name: standards-api-security
 description: Backend/API security — the OWASP baseline (secrets, injection, authn/JWT, authz, crypto, dependencies, PII, SSRF) plus API-specific concerns — rate limiting, versioning and deprecation, auth scheme selection (API key, OAuth scopes, mTLS), and input-contract enforcement (schema validation, payload/pagination limits, idempotency). Distinct from standards-ui-security's rendered-surface scope (XSS, clickjacking, dark patterns). Load before touching an auth path, a query, a secret, an endpoint, or any server-side external boundary.
 user-invocable: false
 paths: "**/api/**, **/routes/**, **/controllers/**, **/*.proto, **/openapi*, **/swagger*, **/graphql/**, **/*.graphql, **/handlers/**, **/auth/**, **/*auth*, **/middleware/**, **/session*, **/token*, **/crypto/**, **/.env*, **/secrets/**, **/*.sql, **/migrations/**, **/*.tf"

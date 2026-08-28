@@ -18,7 +18,7 @@ Zero comments, zero Javadoc. Exception messages lead with a verb phrase and neve
 - **Version floor is whatever the build file declares** — `<maven.compiler.release>` (or `<java.version>`) in `pom.xml`, or `sourceCompatibility`/`toolchain.languageVersion` in `build.gradle`/`build.gradle.kts`. Read it; never assume a release.
 - **`Makefile`'s (or `Taskfile`'s) `verify` target is the merge gate** — `mvn -q verify` (or `./gradlew check`) chaining formatter check, static analysis, build, and test in that order. `context_injector.py` reads this target directly; a repo without it has no gate.
 - **Formatting and linting** — `google-java-format` (or Spotless wrapping it) on commit, Checkstyle plus SpotBugs (with the `findsecbugs` plugin) as the gate. These are the tools the pre-commit hook runs; `standards-cicd` defines when.
-- **Vulnerability scanning** — `mvn org.owasp:dependency-check-maven:check` (or the OWASP Dependency-Check Gradle plugin) against the resolved dependency tree is the gate; triage by whether the vulnerable path is actually reachable, not by CVE score alone. `standards-cicd` defines the gate; the `standards-security-api` skill states the bar.
+- **Vulnerability scanning** — `mvn org.owasp:dependency-check-maven:check` (or the OWASP Dependency-Check Gradle plugin) against the resolved dependency tree is the gate; triage by whether the vulnerable path is actually reachable, not by CVE score alone. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
 - **Dependencies** via Maven `<dependency>` coordinates or Gradle `implementation`/`api` at a pinned version — never a local multi-module hack standing in for a published artifact outside the build's own modules.
 
 ## Conventions

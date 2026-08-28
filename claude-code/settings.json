@@ -117,7 +117,7 @@
     "standards-react": "name-only",
     "standards-ui-design": "name-only",
     "standards-ui-security": "name-only",
-    "standards-security-api": "name-only",
+    "standards-api-security": "name-only",
     "standards-database": "name-only",
     "standards-docker": "name-only",
     "standards-specs": "name-only",

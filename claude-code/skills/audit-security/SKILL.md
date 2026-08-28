@@ -8,7 +8,7 @@ argument-hint: <task text or band summary> [standards-* skills that apply] [--re
 
 Reviewing: **$ARGUMENTS**
 
-Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Load `standards-security-api` first — it states the OWASP-benchmarked bar this reviews against for any server-side boundary. Add `standards-ui-security` when the diff touches a rendered surface (`.svelte`/`.vue`/`.tsx`/`.jsx`/`.html`) — it owns XSS, clickjacking, and dark-pattern findings. Never a fork of the session that wrote the code. Findings only, never fixes.
+Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Load `standards-api-security` first — it states the OWASP-benchmarked bar this reviews against for any server-side boundary. Add `standards-ui-security` when the diff touches a rendered surface (`.svelte`/`.vue`/`.tsx`/`.jsx`/`.html`) — it owns XSS, clickjacking, and dark-pattern findings. Never a fork of the session that wrote the code. Findings only, never fixes.
 
 ## Process
 
