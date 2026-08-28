@@ -5,7 +5,7 @@
 * **Status Indicators:** `[TODO]` | `[IN_PROGRESS]` | `[BLOCKED]` | `[DONE]`
 * **Hierarchy ID:** `EPIC-XX` -> `TG-XX.Y` (Task Group) -> `TSK-XX.Y.Z` (Task) -> `SUB-XX.Y.Z.N` (Subtask)
 
-Format and rules live in the `write-backlog` skill — load it before editing this file. `[DONE]` tasks stay until a sweep (`/audit-backlog`) moves them to `CHANGELOG.md` and removes them — this is not a log to hand-curate.
+Format and rules live in the `backlog` skill — load it before editing this file. `[DONE]` tasks stay until a sweep (`/backlog audit`) moves them to `CHANGELOG.md` and removes them — this is not a log to hand-curate.
 
 ---
 
@@ -50,44 +50,41 @@ Format and rules live in the `write-backlog` skill — load it before editing th
 ### [TG-02.2] Skill Restructuring
 * **Target Release:** V2
 
-#### [TSK-02.2.1] Merge write-backlog + audit-backlog into /backlog [P: M] [TODO]
+#### [TSK-02.2.1] Merge write-changelog + audit-changelog into /changelog [P: M] [TODO]
 * [ ] **SUB-02.2.1.1** single skill with create + edit + audit instructions, one template
 
-#### [TSK-02.2.2] Merge write-changelog + audit-changelog into /changelog [P: M] [TODO]
-* [ ] **SUB-02.2.2.1** single skill with create + edit + audit instructions, one template
+#### [TSK-02.2.2] Rename standards-design-ui + standards-security-ui to standards-ui-* [P: L] [TODO]
+* [ ] **SUB-02.2.2.1** e.g. `standards-ui-design`, `standards-ui-security`
 
-#### [TSK-02.2.3] Rename standards-design-ui + standards-security-ui to standards-ui-* [P: L] [TODO]
-* [ ] **SUB-02.2.3.1** e.g. `standards-ui-design`, `standards-ui-security`
+#### [TSK-02.2.3] Remove rules-source-control, redistribute its rules [P: M] [TODO]
+* [ ] **SUB-02.2.3.1** redistribute into whichever skill already owns that concern (`standards-git`, `git-pr`, `git-issue`, etc.)
 
-#### [TSK-02.2.4] Remove rules-source-control, redistribute its rules [P: M] [TODO]
-* [ ] **SUB-02.2.4.1** redistribute into whichever skill already owns that concern (`standards-git`, `git-pr`, `git-issue`, etc.)
+#### [TSK-02.2.4] Remove standards-git, redistribute its content [P: M] [TODO]
+* [ ] **SUB-02.2.4.1** redistribute into its constituent skills
 
-#### [TSK-02.2.5] Remove standards-git, redistribute its content [P: M] [TODO]
-* [ ] **SUB-02.2.5.1** redistribute into its constituent skills
+#### [TSK-02.2.5] Rename standards-security-api to standards-api-security [P: L] [TODO]
 
-#### [TSK-02.2.6] Rename standards-security-api to standards-api-security [P: L] [TODO]
+#### [TSK-02.2.6] Create standards-api-design skill [P: M] [TODO]
+* [ ] **SUB-02.2.6.1** API shape/contract conventions, distinct from `standards-api-security`
 
-#### [TSK-02.2.7] Create standards-api-design skill [P: M] [TODO]
-* [ ] **SUB-02.2.7.1** API shape/contract conventions, distinct from `standards-api-security`
+#### [TSK-02.2.7] Rename rules-merge-conflicts to git-merge-conflict [P: L] [TODO]
 
-#### [TSK-02.2.8] Rename rules-merge-conflicts to git-merge-conflict [P: L] [TODO]
+#### [TSK-02.2.8] Rename write-repo to repo-init [P: L] [TODO]
 
-#### [TSK-02.2.9] Rename write-repo to repo-init [P: L] [TODO]
+#### [TSK-02.2.9] Split git-pr into create/review/comment [P: M] [TODO]
+* [ ] **SUB-02.2.9.1** `git-pr-create`, `git-pr-review`, `git-pr-comment`
 
-#### [TSK-02.2.10] Split git-pr into create/review/comment [P: M] [TODO]
-* [ ] **SUB-02.2.10.1** `git-pr-create`, `git-pr-review`, `git-pr-comment`
+#### [TSK-02.2.10] Split git-issue into create/review [P: M] [TODO]
+* [ ] **SUB-02.2.10.1** `git-issue-create`, `git-issue-review`
 
-#### [TSK-02.2.11] Split git-issue into create/review [P: M] [TODO]
-* [ ] **SUB-02.2.11.1** `git-issue-create`, `git-issue-review`
+#### [TSK-02.2.11] Parse rules-commenting into each standards-<language> skill [P: M] [TODO]
+* [ ] **SUB-02.2.11.1** every language standard carries its own comment-discipline section
 
-#### [TSK-02.2.12] Parse rules-commenting into each standards-<language> skill [P: M] [TODO]
-* [ ] **SUB-02.2.12.1** every language standard carries its own comment-discipline section
+#### [TSK-02.2.12] audit-* skills load every relevant standards-<language> [P: M] [TODO]
+* [ ] **SUB-02.2.12.1** audit across all relevant languages in one pass, not one fixed language
+* [ ] **SUB-02.2.12.2** each `standards-<language>` skill gains an optional security-standards section (language-specific insecure-usage patterns) for the security auditors to pull from
 
-#### [TSK-02.2.13] audit-* skills load every relevant standards-<language> [P: M] [TODO]
-* [ ] **SUB-02.2.13.1** audit across all relevant languages in one pass, not one fixed language
-* [ ] **SUB-02.2.13.2** each `standards-<language>` skill gains an optional security-standards section (language-specific insecure-usage patterns) for the security auditors to pull from
-
-#### [TSK-02.2.14] Rename config-accessibility-output to config-accessibility [P: L] [TODO]
+#### [TSK-02.2.13] Rename config-accessibility-output to config-accessibility [P: L] [TODO]
 
 ---
 

@@ -2,6 +2,15 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [0.32.0] — 2026-08-27
+
+### Changed
+- `write-backlog`, `audit-backlog` merged into `backlog` (`plan`/`normalize`/`audit` modes over one `BACKLOG.md` format); frontmatter carries neither `disable-model-invocation` nor `user-invocable` so it stays callable by name from `workflow-loop`'s P1.
+- 25 cross-referencing files (`AGENTS.md`, `README.md`, `claude-code/settings.json`, and 22 skills) repointed from `write-backlog`/`audit-backlog` to `backlog`/`backlog audit`.
+
+### Removed
+- `write-backlog`, `audit-backlog` — folded into `backlog`.
+
 ## [0.31.0] — 2026-08-26
 
 ### Added
