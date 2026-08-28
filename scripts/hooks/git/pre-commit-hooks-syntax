@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# pre-commit-hooks-syntax - fails when a staged copy of this repo's own
+# git_guard.py or comment_guard.py has a Python syntax error.
+#
+# Checks the staged content (git show :<path>), not the working-tree
+# file, so a syntax error hidden behind an unstaged fix still blocks the
+# commit. Only claude-code/hooks/git_guard.py and comment_guard.py exist
+# in this repo, so the check exits 0 for any other repo installing this
+# dispatcher.
+set -uo pipefail
+
+command -v python3 >/dev/null 2>&1 || {
+  printf 'pre-commit-hooks-syntax: python3 not found on PATH\n' >&2
+  exit 1
+}
+
+FILES=(claude-code/hooks/git_guard.py claude-code/hooks/comment_guard.py)
+BROKEN=()
+
+CHECK='
+import ast, sys
+try:
+    ast.parse(sys.stdin.read())
+except SyntaxError as e:
+    print(e, file=sys.stderr)
+    sys.exit(1)
+'
+
+for file in "${FILES[@]}"; do
+  git cat-file -e ":$file" 2>/dev/null || continue
+
+  ERR="$(git show ":$file" | python3 -c "$CHECK" 2>&1)"
+  if [ -n "$ERR" ]; then
+    BROKEN+=("$file: $ERR")
+  fi
+done
+
+[ "${#BROKEN[@]}" -eq 0 ] && exit 0
+
+printf 'pre-commit-hooks-syntax: staged file has a Python syntax error:\n' >&2
+printf '  %s\n' "${BROKEN[@]}" >&2
+exit 1

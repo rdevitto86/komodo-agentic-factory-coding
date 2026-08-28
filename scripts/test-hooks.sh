@@ -488,6 +488,8 @@ bash_case "G78 git pull without --ff-only is blocked"            deny  'git pull
 bash_case "G78b git pull --ff-only is allowed"                   allow 'git pull --ff-only origin main'
 bash_case "G88 time --output naming a shell-wrapper value doesn't hide the real wrapped command" \
   deny  'time --output sh git rebase main' "git rebase"
+bash_case "G89 xargs --delimiter naming a monitored command as its value doesn't hide the real wrapped command" \
+  deny  'xargs --delimiter git git push --force origin main' "git push --force"
 
 # ---  PUBLISH_ENABLED=0 restores the pre-publishing blanket deny  ---
 # Env-var driven, so this flips the running hook directly rather than

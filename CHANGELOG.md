@@ -4,6 +4,18 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.35.0] — 2026-08-28
+
+### Added
+- `scripts/hooks/git/pre-commit-hooks-syntax`, auto-discovered by the existing dispatcher, blocks `git commit` when the staged `git_guard.py`/`comment_guard.py` has a Python syntax error.
+
+### Changed
+- Extracted the tag-sync check duplicated across `changelog`'s "Tag sync" section and `workflow-complete`'s P4 step into a standalone `git-commit-tag` skill; both now invoke it by name.
+- Split the `backlog` skill into `backlog-modify` (plan/normalize authoring modes plus the `BACKLOG.md` format spec) and `backlog-audit` (the verdict/audit mode, which edits `BACKLOG.md` directly rather than filing findings) — every caller across `claude-code/skills/`, `AGENTS.md`, `README.md`, and `settings.json` updated to match.
+
+### Fixed
+- `git_guard.py`: `PASSTHROUGH_VALUE_FLAGS["xargs"]` only recognized short-form value flags, so a deliberately constructed flag value colliding with a `MONITORED_COMMANDS` name (e.g. `xargs --delimiter git git push --force ...`) could hide the real wrapped command from scanning — same shape as the earlier `time` bug. `xargs`'s long-form value flags are now recognized too.
+
 ## [0.34.0] — 2026-08-28
 
 ### Added

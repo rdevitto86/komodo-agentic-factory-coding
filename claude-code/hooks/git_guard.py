@@ -127,7 +127,16 @@ PASSTHROUGH_VALUE_FLAGS = {
     "time": ("-f", "-o", "--format", "--output"),
     "command": (),
     "nohup": (),
-    "xargs": ("-I", "-n", "-P", "-L", "-s", "-a", "-d", "-E"),
+    "xargs": (
+        "-I", "--replace",
+        "-n", "--max-args",
+        "-P", "--max-procs",
+        "-L", "--max-lines",
+        "-s", "--max-chars",
+        "-a", "--arg-file",
+        "-d", "--delimiter",
+        "-E",
+    ),
 }
 
 # Names strip_leading_flags treats as "this must be the wrapped command,

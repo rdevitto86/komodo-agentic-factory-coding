@@ -69,4 +69,4 @@ Cap the findings table at 15 rows. Past that, report the top 15 by severity and 
 
 ## Findings → backlog
 
-Every Blocker and every `📋 Findings` row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <what> · S → \`file:line\` no longer holds`. A row already `[tracked]` against an open story is skipped, not duplicated. Append under the current target state (the first `##` heading) and the domain matching the finding's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog`. `--report` prints the verdict and tables only; nothing is written.
+Every Blocker and every `📋 Findings` row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <what> · S → \`file:line\` no longer holds`. A row already `[tracked]` against an open story is skipped, not duplicated. Append under the current target state (the first `##` heading) and the domain matching the finding's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog-modify`. `--report` prints the verdict and tables only; nothing is written.

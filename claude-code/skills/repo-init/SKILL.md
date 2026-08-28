@@ -59,7 +59,7 @@ A line only belongs in a generated `AGENTS.md` if it is a fact that `standards-s
 
 **Only scaffold the SDD's stub, never author its content.** Step 6 copies `templates/project/docs/spec/SDD.md` verbatim on Create; filling in the architecture, data model, and decisions is done afterward with the `sdd` skill (`prd` for the optional PRD), not this one.
 
-**Scaffold and Refresh never create or restructure `BACKLOG.md`** — its domains and stories stay `backlog`'s territory. When one already exists, the only touch either branch makes is appending seed stories not already present under `Cross-Cutting`, matched by text. Nothing else is read, reordered, or rewritten.
+**Scaffold and Refresh never create or restructure `BACKLOG.md`** — its domains and stories stay `backlog-modify`'s territory. When one already exists, the only touch either branch makes is appending seed stories not already present under `Cross-Cutting`, matched by text. Nothing else is read, reordered, or rewritten.
 
 **Neither Create nor Scaffold writes a Deviations section.** Nothing has had a chance to drift yet, and an empty header is still a cost.
 
@@ -104,7 +104,7 @@ Walk every entry in the repo type's `Repo layout` tree:
 
 ## Step 6 — Write the documents
 
-Load `changelog` for `CHANGELOG.md` and `readme` for `README.md`. Splicing seed stories into `BACKLOG.md` needs only the story line shape — `- T.D.S | SEV | [WIP] <text> · <size> → \`<done when>\`` — the full ruleset lives in `backlog`, not needed for a splice. After splicing, renumber `Cross-Cutting`'s `T.D`/`T.D.S` tags so the spliced stories stay contiguous with what was already there — same rule `backlog` states for its own merge step.
+Load `changelog` for `CHANGELOG.md` and `readme` for `README.md`. Splicing seed stories into `BACKLOG.md` needs only the story line shape — `- T.D.S | SEV | [WIP] <text> · <size> → \`<done when>\`` — the full ruleset lives in `backlog-modify`, not needed for a splice. After splicing, renumber `Cross-Cutting`'s `T.D`/`T.D.S` tags so the spliced stories stay contiguous with what was already there — same rule `backlog-modify` states for its own merge step.
 
 - `CLAUDE.md` missing → write `templates/project/CLAUDE.md.tmpl` verbatim.
 - `AGENTS.md` missing → fill `templates/project/AGENTS.md.tmpl` from Step 3's values. Its Commands table drops any row the repo has no equivalent for (e.g. no "Run locally" for a `cdk-infra` repo) rather than guessing. Its Documents table is built fresh each time from what's actually on disk — `README.md`, `BACKLOG.md`, `CHANGELOG.md` each get a row only if that file exists; on Create all three already exist by the time this step runs, so all three appear.

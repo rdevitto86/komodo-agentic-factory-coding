@@ -1,20 +1,19 @@
 ---
-name: backlog
-description: Create, edit, and audit BACKLOG.md — turn a goal into an epic-scoped breakdown, normalize an existing messy file into that shape, or verdict every open task against current repo state and apply the verdicts directly. Owns the BACKLOG.md format.
-argument-hint: [plan <goal> | normalize <file> | audit [scope]]
+name: backlog-modify
+description: Create or reshape BACKLOG.md — turn a goal into an epic-scoped breakdown, or normalize an existing messy file into that shape. Owns the BACKLOG.md format.
+argument-hint: [plan <goal> | normalize <file>]
 ---
 
 # Backlog — BACKLOG.md
 
-**Three modes, one file.** The first token in `$ARGUMENTS` picks the mode:
+**Two modes, one file.** The first token in `$ARGUMENTS` picks the mode:
 
 - **`plan <goal>`** → Part 1, the planning run. Turn a goal into an epic-scoped breakdown.
 - **`normalize <file>`** → Part 2, normalizing an existing file. Turn a messy or unstructured file into the shape below.
-- **`audit [scope]`** → Part 3, the audit. Verdict every open task against current repo state and apply the verdicts directly. Default scope is every open line in `BACKLOG.md`.
 
-If `$ARGUMENTS` names a messy or unstructured file with no mode token, treat it as `normalize`. If `$ARGUMENTS` is empty or names no file, treat it as `audit` with no scope (its own default already covers that case).
+If `$ARGUMENTS` names a messy or unstructured file with no mode token, treat it as `normalize`.
 
-Parts 1 and 2 are planning — write no implementation code during either. Part 3 judges and edits `BACKLOG.md` directly; it never writes implementation code either.
+Both modes are planning — write no implementation code during either. Verdicting existing tasks against current repo state (audit) is `backlog-audit`'s job, not this skill's — see that skill for edits to already-shaped content.
 
 ---
 
@@ -70,9 +69,9 @@ Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]`. Subtask line sh
 ### Rules
 
 - **No checkboxes, on any line.** A task's own state is its `[STATUS]` tag; a subtask carries no `[STATUS]` tag of its own — its `Done when:` command is what proves it, not a state written down separately. `CHANGELOG.md` is the completed-work record; `BACKLOG.md` tracking the same completion a second way (a checked box that then gets deleted anyway on sweep) is a distinction with no lasting value.
-- **Every task carries at least one `SUB-` line, and every `SUB-` line carries its own `Done when:` bullet** with one or more literal commands, not a description — a command that exits zero, not "tests pass." `[DONE]` requires every one of a task's subtasks' commands to have exited zero; `workflow-implement` runs the whole set and reports each one's output. A subtask whose completion can only be judged by reading the code, not running something, is Ambiguous — see Part 3 — not plannable as-is. Subtasks are never invented just to fill the level out — one is enough for a task too small to need more.
+- **Every task carries at least one `SUB-` line, and every `SUB-` line carries its own `Done when:` bullet** with one or more literal commands, not a description — a command that exits zero, not "tests pass." `[DONE]` requires every one of a task's subtasks' commands to have exited zero; `workflow-implement` runs the whole set and reports each one's output. A subtask whose completion can only be judged by reading the code, not running something, is Ambiguous — see `backlog-audit` — not plannable as-is. Subtasks are never invented just to fill the level out — one is enough for a task too small to need more.
 - **`[P: SEV]` then `[STATUS]` sit at the end of the `TSK-` heading line, in that order, always present** — `#### [TSK-01.1.1] <text> [P: C] [TODO]`. `[TODO]` is the default for anything not started; move to `[IN_PROGRESS]` the moment work starts on it, `[BLOCKED]` per the shape below, `[DONE]` once every `SUB-` line's `Done when:` command is verified against the repo.
-- **`[DONE]` is a pending sweep, not a resting state.** The task stays on the page — visible, but not counted as open — until `/backlog audit` moves it into `CHANGELOG.md` and deletes it. Never hand-delete a `[DONE]` task yourself; that's the sweep's job, and it's what confirms the entry lands in `CHANGELOG.md` first.
+- **`[DONE]` is a pending sweep, not a resting state.** The task stays on the page — visible, but not counted as open — until `/backlog-audit` moves it into `CHANGELOG.md` and deletes it. Never hand-delete a `[DONE]` task yourself; that's the sweep's job, and it's what confirms the entry lands in `CHANGELOG.md` first.
 - **Epics** are `## [EPIC-01] Now, V1`, `## [EPIC-02] Next, V2` — every epic carries a one-line `*Goal: ...*` directly beneath its heading. Nothing is scheduled by date. A third, active epic is possible but rare — plan runs stick to V1/V2 (see Part 1).
 - **Task groups** are `Cross-Cutting` or a feature/route/screen/stack/queue name **inside this one service** — never another service's name. Every task group carries a `* **Target Release:**` bullet directly beneath its heading, naming the version or milestone it ships with.
 - **Tasks are flat under their task group** — no phase. Default is parallel.
@@ -227,59 +226,3 @@ If the repo is an app/service/infra type (see the `Cross-Cutting` rule above) an
 ## Step 3 — Present, then stop
 
 Show the normalized file as a diff against the source and **wait for approval** before writing — this replaces the user's existing file, so it is never silent.
-
----
-
-# Part 3 — Audit (`audit [scope]`)
-
-Scoping: **$ARGUMENTS**, minus the `audit` token (default: every open line in `BACKLOG.md`)
-
-Judges backlog validity against current repo state and applies the verdict directly — same as the other `assess-*` skills write their findings straight to `BACKLOG.md`, this mode edits `BACKLOG.md` itself rather than filing a new story about it. Parts 1 and 2 above stay reserved for the one-time planning run (a fresh target-state decomposition) and for normalizing an unstructured source file — not for routine maintenance of an already-shaped `BACKLOG.md`, which this mode (and the other assessments) handle directly.
-
-**Lighter-weight than a full `/workflow-decompose` re-derivation.** `/workflow-loop`'s P1 runs this before the decompose fork, on the same scope — an already-valid backlog skips the fork's full repo+changelog re-derivation; only what this flags needs decompose's attention.
-
-## Process
-
-1. Read `BACKLOG.md` in full — every open task, every `[BLOCKED]` task's `Blocked By:` bullet, every `[DONE]` task, within scope.
-2. For each task, check it against the current repo (code, `CHANGELOG.md`, the file's other tasks) and verdict it:
-
-| Verdict | Test |
-|---|---|
-| Valid | Still accurate, still open, still concretely checkable |
-| Resolved | Already true in the code — should have been deleted, not left open |
-| Stale | Repo state moved past what the task describes; it no longer makes sense as written |
-| Duplicate | Overlaps another open task's scope |
-| Ambiguous | A `SUB-` line missing a `Done when:` bullet, or one whose bullets are prose rather than runnable commands |
-
-Absence of contradiction is not validity. A task naming no file, command, or artifact — text like "once X is scoped" — can't be checked against current repo state at all; "nothing in the repo contradicts it" looks identical whether the task is a live placeholder or a dead fragment nothing ever backed. For any task in this shape, `git blame`/`git log -S '<task text>'` its introduction and check `CHANGELOG.md` for whether the thing it references (the suite, the tool, the flag) was ever real. No commit ever built it → **Stale**, not Valid.
-
-3. For any `[BLOCKED]` task in scope, test its `Blocked By:` bullet's `Recheck:` clause against current state — flag if it now passes.
-4. For any `[DONE]` task in scope, run every command in every `SUB-` line's `Done when:` bullet and confirm each still exits zero before sweeping it; a `[DONE]` tag someone set without that being true is Ambiguous, not swept.
-
-## Findings → backlog
-
-Verdicting *is* the edit — apply each one directly to `BACKLOG.md`, not by filing a new task:
-
-| Verdict | Applied as |
-|---|---|
-| Valid | No edit |
-| Resolved | Delete the task. If the change it describes isn't already recorded in `CHANGELOG.md`, add it there — `standards-worklog` covers the read/write directive. |
-| Stale | Delete the task — it no longer describes anything the repo can act on. |
-| Duplicate | Delete the weaker of the two tasks (less specific text, or the one added later per `git log`) and keep the other. |
-| Ambiguous | Leave the task as-is. This is a human call, not an edit this mode makes on its own — flag it in the report instead. |
-| `[BLOCKED]` whose `Recheck:` now passes | Set the task's status back to `[TODO]` or `[IN_PROGRESS]` and remove its `Blocked By:` bullet. |
-| `[DONE]`, confirmed true in the repo | Delete the task, its `Blocked By:` bullet, and its `SUB-` lines (each with its nested `Done when:` bullet). If not already recorded, add it to `CHANGELOG.md` — `standards-worklog` covers the read/write directive. |
-
-Never invent a new task from a verdict — verdicting "this task is stale" means deleting that task, never filing a fresh one describing the staleness. That circularity is exactly what stays out of scope here.
-
-## Report
-
-After applying edits, report what changed:
-
-| Task | Verdict | Action | Why |
-|---|---|---|---|
-| `[TSK-E.T.S] <text>` | Stale | Deleted | `<file:line or command that proves it>` |
-| `[TSK-E.T.S] <text>` | Ambiguous | Left open — needs a human call | `<why nothing here is checkable>` |
-
-No findings (every task valid, no `[BLOCKED]` recheck cleared, nothing edited): state that plainly, one line, and stop. **Never invent a finding to have something to report or to edit.**
-</content>

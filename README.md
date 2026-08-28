@@ -52,7 +52,7 @@ flowchart TD
         direction TB
         P0a{"BACKLOG.md exists?"}
         P0a -->|yes| P0b["Read SDD/PRD for framing (optional)"]
-        P0a -->|"no, SDD exists"| P0c["/backlog plan — build backlog\nfrom the SDD, user approves"]
+        P0a -->|"no, SDD exists"| P0c["/backlog-modify plan — build backlog\nfrom the SDD, user approves"]
         P0a -->|"no, no SDD"| P0stop(["STOP — nothing to build from.\nOnly phase allowed to exit\nwith nothing delivered."])
     end
     P0b --> P1
@@ -60,7 +60,7 @@ flowchart TD
 
     subgraph P1["P1 · Decompose (fork: workflow-planner)"]
         direction TB
-        P1a["/backlog audit — cheap stale/dup pass"] --> P1b["/workflow-decompose → task queue"]
+        P1a["/backlog-audit — cheap stale/dup pass"] --> P1b["/workflow-decompose → task queue"]
         P1b --> P1c["Read the queue's Gaps section"]
         P1c --> P1d["Group queue into PR-sized bands"]
         P1d --> P1e["Branch: git switch -c type/desc\n(or resume a [WIP] story's branch)"]
@@ -102,7 +102,7 @@ flowchart TD
 
 Two escape routes exist outside the five-phase happy path: the **open hatch** (`open <topic>`) bypasses the machine entirely before P0 ever runs, and the **task-level `[BLOCKED]` exit** inside P2 lets one stuck task drop out — via two failed verify attempts on the same check — without halting the rest of the band; only every remaining task being transitively blocked halts P2 itself, and even then P4 still reports it rather than the run silently vanishing. P0's "nothing to build from" stop is the sole point allowed to end the whole loop with nothing delivered.
 
-Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `readme` owns the entry point; `backlog` and `changelog` own the format of the two mutable records, with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
+Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `readme` owns the entry point; `backlog-modify` and `changelog` own the format of the two mutable records (`backlog-audit` verdicts and edits `BACKLOG.md`'s existing tasks directly), with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
 
 | File | Holds | Mutable |
 |---|---|---|
@@ -153,7 +153,7 @@ bash scripts/test-hooks.sh    # 127 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement`
+Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 

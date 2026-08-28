@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Driver: **$ARGUMENTS** (default: re-sort strictly by the file's own `[P: SEV]` tags and existing `(after: ...)` edges, no external driver)
 
-Reorders what's already in `BACKLOG.md`. Never writes a new task, never edits a task's own text — that's `backlog`'s planning/normalize role (or its own audit mode's verdict role for validity, not priority). This skill only moves tasks: which epic a task sits under, where it falls within its task group's file order, and its `[P: SEV]` tag when the driver in `$ARGUMENTS` justifies a change.
+Reorders what's already in `BACKLOG.md`. Never writes a new task, never edits a task's own text — that's `backlog-modify`'s planning/normalize role (or `backlog-audit`'s verdict role for validity, not priority). This skill only moves tasks: which epic a task sits under, where it falls within its task group's file order, and its `[P: SEV]` tag when the driver in `$ARGUMENTS` justifies a change.
 
 ## Process
 
@@ -19,13 +19,13 @@ Reorders what's already in `BACKLOG.md`. Never writes a new task, never edits a 
 4. **Re-sort within each task group** by priority (`C` → `H` → `M` → `L`), honoring step 3's ordering constraints. Two tasks of equal priority with no dependency between them keep their relative file order — never invent a tiebreak the driver didn't supply.
 5. **Re-rank `[P: SEV]` only when `$ARGUMENTS` gives a concrete reason to** (a task now blocks a named deadline, an incident elevated it, the user named it directly) — cite the reason next to the change in the report. Never bump priority on a hunch.
 6. **Move a task to a different epic only when the driver justifies it** — pulling V2 work into V1 because it's now urgent, or pushing a V1 task to V2 because something outranked it. `[BLOCKED]` tasks move only if the block itself is what's being deprioritized, never silently.
-7. **Never touch `[DONE]` tasks** — those are pending a `/backlog audit` sweep, not live priority.
-8. **Never touch the four standing closeout tasks' position** — `Security review`, `Bug sweep`, `Code smell`, `Performance` stay last in their epic's `Cross-Cutting` task group, per `backlog`'s fixed edges.
+7. **Never touch `[DONE]` tasks** — those are pending a `/backlog-audit` sweep, not live priority.
+8. **Never touch the four standing closeout tasks' position** — `Security review`, `Bug sweep`, `Code smell`, `Performance` stay last in their epic's `Cross-Cutting` task group, per `backlog-modify`'s fixed edges.
 
 ## Applying the reorder
 
 - **Move tasks, don't rewrite them.** A relocated task keeps its exact heading text, `[P: SEV]` (unless step 5 applies), `[STATUS]` tag, and any `Blocked By:`/`SUB-` lines beneath it.
-- **Renumber `EPIC-`/`TG-`/`TSK-`/`SUB-` IDs after the move** so they stay contiguous in the new file order — `backlog`'s numbering rule applies here exactly as it does after an edit.
+- **Renumber `EPIC-`/`TG-`/`TSK-`/`SUB-` IDs after the move** so they stay contiguous in the new file order — `backlog-modify`'s numbering rule applies here exactly as it does after an edit.
 - **Never create a new task group** to hold a moved task — if no existing task group fits, that's a finding for the user, not a decision this skill makes on its own.
 - **Never merge or split task groups.**
 
