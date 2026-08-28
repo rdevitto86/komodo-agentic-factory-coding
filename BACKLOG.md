@@ -15,29 +15,9 @@ Format and rules live in the `backlog` skill — load it before editing this fil
 ### [TG-01.1] Cross-Cutting
 * **Target Release:** V1
 
-#### [TSK-01.1.1] git_guard `strip_leading_flags` fallback edge case [P: L] [DONE]
-* **SUB-01.1.1.1** decide whether the misfire (an unrecognized flag's value exactly equals a bare monitored-command name with no extension, e.g. `time --output sh actualtool arg`) in `claude-code/hooks/git_guard.py` is worth fixing given how contrived it is
-  * **Done when:** a written decision (fix or won't-fix, with reasoning) is recorded in this task or its commit message — decision: FIX, this was a real bypass (see commit history), not merely contrived; `time`'s long-form `--format`/`--output` flags are now recognized as value-taking
-
 #### [TSK-01.1.2] Commit-time check for this repo's own hooks [P: M] [TODO]
 * **SUB-01.1.2.1** `scripts/hooks/git/` has no commit-time check for `git_guard.py`/`comment_guard.py` — `pre-push-verify` covers push (runs `.claude/verify.sh` when present), but a staged syntax error still passes `git commit` uncaught
   * **Done when:** staging a syntax-broken `git_guard.py` or `comment_guard.py` and running `git commit` is blocked by a new `scripts/hooks/git/pre-commit-*` check, verified by `ls scripts/hooks/git/pre-commit-*` showing the new entry and a manual bad-syntax commit attempt failing
-
-#### [TSK-01.1.3] AGENTS.md git-hooks statement vs. disk [P: L] [DONE]
-* **SUB-01.1.3.1** AGENTS.md states "Git hooks are **not** in this repo — `pre-commit` and `pre-push` ship with the language SDK", contradicted by `scripts/hooks/git/` holding both dispatchers and `install.sh`
-  * **Done when:** `grep -n "Git hooks are" AGENTS.md` no longer contradicts `ls scripts/hooks/git/`
-
-#### [TSK-01.1.4] validate.sh "links" check on a bare checkout [P: L] [DONE]
-* **SUB-01.1.4.1** confirmed this fails the overall exit code (`problems` increments, non-zero `problems` triggers `exit 1`) for a bare checkout with no `~/.claude` symlinks, not just a warning — decide if that's the desired behavior, `scripts/validate.sh`
-  * **Done when:** a written decision is recorded (keep as a hard failure, or downgrade the `missing`/`dangling` cases to a warning that doesn't increment `problems`), and `scripts/validate.sh` matches it — decision: KEEP as a hard failure, no code change. `validate.sh` can only meaningfully run once Claude Code has loaded skills from `~/.claude`, which itself requires `setup.sh` to have already run — the only way to hit the bare-checkout case is running the script manually right after cloning, where "run setup.sh" is exactly the right actionable signal. Downgrading to a warning would let a genuinely unlinked install report "all checks passed."
-
-#### [TSK-01.1.5] README's "Workflow skills, all free" list is stale [P: L] [DONE]
-* **SUB-01.1.5.1** add the missing skills (`git-pr-create`, `git-issue-create`, `assess-vulnerabilities`, `assess-dependencies`, `runbook`, `sdd`, `prd`, `adr`, `assess-readiness`, `assess-change-risk`, `assess-testing`, `standards-worklog`, `standards-specs`, etc.)
-  * **Done when:** every `user-invocable`, non-`disable-model-invocation` skill under `claude-code/skills/` with no cost implication appears in `README.md`'s workflow-skills list, confirmed by diffing `ls claude-code/skills/` against the list
-
-#### [TSK-01.1.6] No documented outdated-dependency tool per language [P: L] [DONE]
-* **SUB-01.1.6.1** only CVE scanners are documented (`govulncheck`, `npm audit`, `pip-audit`) — `assess-dependencies` currently falls back to bare `go list -u -m all`/`npm outdated`/`pip list --outdated` with no documented convention to point to
-  * **Done when:** `grep -n "outdated" claude-code/skills/standards-go/SKILL.md claude-code/skills/standards-typescript/SKILL.md claude-code/skills/standards-python/SKILL.md` returns a documented convention for each
 
 #### [TSK-01.1.7] Bridge: `num_ctx` truncation on large summarizer payloads [P: M] [BLOCKED]
 * **Blocked By:** `external`

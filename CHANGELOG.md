@@ -4,6 +4,8 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-08-28
+
 ### Added
 - `readme` skill gains a Features section (`##2`) and an optional table of contents, both sourced from the new `templates/project/README.md.tmpl` reference skeleton.
 - Documented an "Outdated dependencies" convention (`go list -u -m all`, `npm outdated`, `uv pip list --outdated`) alongside the existing CVE-scanner convention in `standards-go`, `standards-typescript`, `standards-python`.
