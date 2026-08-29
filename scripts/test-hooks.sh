@@ -493,6 +493,8 @@ bash_case "G69 gh api read is allowed"                           allow 'gh api r
 bash_case "G70 gh release create is blocked"                     deny  'gh release create v1.0' "is denied"
 bash_case_at "$FIXTURE_FEAT" "G71 merging the protected base into a feature branch is allowed" allow 'git merge origin/main'
 bash_case_at "$FIXTURE_FEAT" "G72 merging the bare base name is allowed"          allow 'git merge main'
+bash_case_at "$FIXTURE_FEAT" "G72b a trailing stderr redirect doesn't miscount the merge target" allow 'git merge main 2>&1'
+bash_case_at "$FIXTURE_FEAT" "G72c a trailing stdout redirect doesn't miscount the merge target"  allow 'git merge main > out.txt'
 bash_case_at "$FIXTURE_MAIN" "G73 merging into a protected branch is blocked"     deny  'git merge feat/test-branch' "landing into it"
 bash_case_at "$FIXTURE_FEAT" "G74 merging a non-base branch is blocked"           deny  'git merge some-other-branch' "protected base branch"
 bash_case_at "$FIXTURE_FEAT" "G75 merge -X ours is blocked"                       deny  'git merge origin/main -X ours' "without a visible conflict"
