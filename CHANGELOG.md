@@ -4,7 +4,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
-## [0.36.0] — 2026-08-28
+## [0.37.0] — 2026-08-28
 
 ### Added
 - `scripts/install.py`: cross-platform installer for Windows, resolving the working `python3`/`python`/`py -3` interpreter and generating `settings.json` with an absolute, tilde-free hook `"command"` string instead of the static `"python3 ~/.claude/hooks/x.py"` that only worked on macOS/Linux. Symlinks `claude-code/` into the target the same way `setup.sh` does, falling back to a copy (with Developer Mode + re-sync guidance printed) when symlink creation fails.
@@ -17,6 +17,16 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ### Fixed
 - `scripts/install.py`'s generated hook `"command"` string only double-quoted the hook path when it contained a space, with no other shell-metacharacter escaping — now quoted unconditionally with `shlex.quote()`, closing a command-injection-adjacent gap where a metacharacter-bearing path could reach `settings.json` unescaped and execute on every future hook invocation.
 - `scripts/install.py`'s symlink calls never passed `target_is_directory`, which on Windows creates a broken file-type reparse point for a directory entry instead of a functional directory symlink.
+- `comment_guard.py`'s Windows CI check asserted the wrong decision (`deny` instead of the real, tested `ask`) for an unallowed added comment; `context_injector.py`'s `docs/BACKLOG.md` display string baked in `os.path.join`'s native separator, rendering as `docs\BACKLOG.md` on Windows; the `test-hooks.sh` formatter no-op cases relied on an `ln -s` shim that needs the same symlink privilege this whole effort works around — now invokes the resolved interpreter by its full path instead.
+
+## [0.36.0] — 2026-08-28
+
+### Added
+- `claude-code/skills/backlog-plan/SKILL.md` — new skill, the planning-run mode extracted from `backlog-modify`.
+
+### Changed
+- `backlog-modify` is now normalize-only; `workflow-loop`'s P0 invokes `backlog-plan` instead of `backlog-modify plan`.
+- `claude-code/settings.json`'s `skillOverrides` adds `backlog-plan` as `name-only`; `AGENTS.md` documents the exception.
 
 ## [0.35.0] — 2026-08-28
 
