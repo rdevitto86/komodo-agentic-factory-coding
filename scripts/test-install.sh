@@ -91,6 +91,18 @@ else
   pass "I5 symlinked directory entry is created with directory semantics"
 fi
 
+TARGET6="$WORKDIR/home6\$(evil)/.claude"
+mkdir -p "$(dirname "$TARGET6")"
+out="$("$REAL_PYTHON3" "$INSTALL" --target "$TARGET6" 2>&1)"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  fail "I6 hook_path with a shell metacharacter is single-quoted, not left bare" "exit $rc: $out"
+elif ! grep -Eq "\"command\": \"[a-zA-Z0-9_]+ '[^']*home6\\\$\\(evil\\)[^']*git_guard\\.py'\"" "$TARGET6/settings.json"; then
+  fail "I6 hook_path with a shell metacharacter is single-quoted, not left bare" "generated command did not wrap the metacharacter-bearing path in single quotes: $(grep '"command"' "$TARGET6/settings.json" | head -1)"
+else
+  pass "I6 hook_path with a shell metacharacter is single-quoted, not left bare"
+fi
+
 PASS="$(grep -c '^PASS$' "$RESULTS" || true)"
 FAIL="$(grep -c '^FAIL$' "$RESULTS" || true)"
 printf '\n  %d passed, %d failed\n\n' "$PASS" "$FAIL"

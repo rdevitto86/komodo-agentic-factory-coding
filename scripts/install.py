@@ -22,6 +22,7 @@ import datetime
 import json
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -56,9 +57,8 @@ def resolve_interpreter():
 
 
 def hook_command(interpreter, hook_path):
-    if " " in hook_path:
-        hook_path = '"%s"' % hook_path
-    return " ".join(interpreter + [hook_path])
+    # WHY: shlex.quote is POSIX-only; PowerShell-only dispatch is a known residual gap.
+    return " ".join(shlex.quote(part) for part in interpreter + [hook_path])
 
 
 def build_settings(source_settings_path, hooks_dir, interpreter):
