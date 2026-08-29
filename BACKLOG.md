@@ -37,6 +37,14 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.13.1** resolve the naming conflict against `AGENTS.md`'s "two modes, one file" rule before implementing — either update `AGENTS.md` to document the new exception, or close this task as won't-do
   * **Done when:** `grep -q 'backlog-plan' claude-code/AGENTS.md` exits 0
 
+#### [TSK-01.1.14] `context_injector.py`'s "full" fixture produces empty output on the Windows Git Bash CI runner [P: M] [BLOCKED]
+* **Blocked By:** `external`
+  * **Reason (2026-08-28):** `windows-hooks.yml`'s `test-hooks.sh (Git Bash)` job failed I1/I2/I3/I6 with completely empty stdout for the `inject_case` "full" fixture (a root with both `BACKLOG.md` and `CHANGELOG.md`), while the "nested"/"junk"/"empty" fixtures in the same run behaved correctly. Empty stdout with no `CRASHED` marker means `ci.main()` hit its own early `sys.exit(0)` — i.e. `find_backlog(root)` returned `None` for the "full" root even though the file demonstrably exists (created moments earlier in the same Git Bash session). No local reproduction is possible without a Windows runner; guessing a fix without verifying against the actual failure would risk masking the real cause.
+  * **Citation:** run `33225168080`, job `hooks (PowerShell fallback)`/`test-hooks.sh (Git Bash)` on `feat/windows-cross-platform-install`; `claude-code/hooks/context_injector.py:58` (`find_backlog`)
+  * **Recheck:** re-run `test-hooks.sh (Git Bash)` on a Windows runner after adding temporary debug output to `find_backlog` (e.g. printing `root` and `os.path.isfile(...)` results to stderr) and inspect the actual value `INJECT_ROOT` resolves to inside the native Windows Python process
+* **SUB-01.1.14.1** diagnose and fix why `find_backlog` can't see the "full" fixture's `BACKLOG.md` on the Windows Git Bash runner
+  * **Done when:** `test-hooks.sh (Git Bash)` and `hooks (PowerShell fallback)` both pass on a Windows CI run
+
 ---
 
 ## Archive

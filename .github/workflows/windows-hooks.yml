@@ -14,6 +14,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.x"
       - name: Run hook regression suite via Git Bash
         shell: bash
         run: bash scripts/test-hooks.sh
@@ -26,7 +29,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - name: comment_guard.py denies an unallowed added comment
+      - name: comment_guard.py flags an unallowed added comment
         shell: pwsh
         run: |
           $payload = @{
@@ -42,8 +45,8 @@ jobs:
           $out = $payload | python claude-code/hooks/comment_guard.py
           Write-Host $out
           $decision = ($out | ConvertFrom-Json).hookSpecificOutput.permissionDecision
-          if ($decision -ne "deny") {
-            Write-Error "expected comment_guard.py to deny an unallowed added comment, got decision=$decision"
+          if ($decision -ne "ask") {
+            Write-Error "expected comment_guard.py to ask about an unallowed added comment, got decision=$decision"
             exit 1
           }
 

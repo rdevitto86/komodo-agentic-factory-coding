@@ -24,7 +24,7 @@ import subprocess
 import sys
 
 MAX_STORY_CHARS = 160
-BACKLOG_NAMES = ("BACKLOG.md", os.path.join("docs", "BACKLOG.md"))
+BACKLOG_NAMES = ("BACKLOG.md", "docs/BACKLOG.md")
 STORY = re.compile(r"^\s*-\s*\d+\.\d+\.\d+\s*\|\s*([CHML])\s*\|\s*(\[[A-Z]+\])?\s*(.+?)\s*$")
 VERSION = re.compile(r"^##\s*\[([^\]]+)\]")
 

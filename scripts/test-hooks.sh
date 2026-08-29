@@ -529,16 +529,18 @@ off_case "G87 off: gh pr merge stays blocked"        deny  'gh pr merge 12'     
 HOOK="$HOOKS/auto_format.py"
 printf '\nauto format\n\n'
 
+PY="$(command -v python3)"
+
 auto_format_case() {
   local label="$1" want_changed="$2" file="$3" tool="$4" path_override="${5:-}"
   local before after
   before="$(cat "$file")"
   if [ -n "$path_override" ]; then
-    PATH="$path_override" printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
-      | PATH="$path_override" python3 "$HOOK" > /dev/null 2>&1
+    printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
+      | PATH="$path_override" "$PY" "$HOOK" > /dev/null 2>&1
   else
     printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
-      | python3 "$HOOK" > /dev/null 2>&1
+      | "$PY" "$HOOK" > /dev/null 2>&1
   fi
   local rc=$?
   after="$(cat "$file")"
@@ -562,7 +564,6 @@ auto_format_case() {
 FMT="$WORKDIR/fmt"
 EMPTYBIN="$WORKDIR/emptybin"
 mkdir -p "$FMT" "$EMPTYBIN"
-ln -s "$(command -v python3)" "$EMPTYBIN/python3"
 
 printf 'package main\n\nfunc  main() {}\n' > "$FMT/main.go"
 auto_format_case "F1  gofmt reformats a .go file when gofmt is present" \
