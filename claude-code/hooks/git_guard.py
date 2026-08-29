@@ -205,6 +205,29 @@ def tokenize(segment):
         return segment.split()
 
 
+REDIRECT_OP = re.compile(r"^(&>{1,2}|\d*>{1,2}(&\d+)?|\d*<)")
+
+
+def strip_redirects(tokens):
+    # shlex has no concept of shell redirection, so `git merge main 2>&1`
+    # tokenizes "2>&1" as an ordinary word — miscounting positional args
+    # for anything downstream that checks how many a subcommand got.
+    result = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        match = REDIRECT_OP.match(token)
+        if match is None:
+            result.append(token)
+            continue
+        if match.end() != len(token):
+            continue
+        skip_next = True
+    return result
+
+
 def strip_env_assignments(tokens):
     index = 0
     while index < len(tokens) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[index]):
@@ -456,7 +479,7 @@ def gh_violation(tokens):
 
 
 def scan_segment(segment, findings, cwd, has_cd):
-    tokens = strip_env_assignments(tokenize(segment))
+    tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
         return
     command = os.path.basename(tokens[0])
