@@ -37,13 +37,15 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.13.1** resolve the naming conflict against `AGENTS.md`'s "two modes, one file" rule before implementing — either update `AGENTS.md` to document the new exception, or close this task as won't-do
   * **Done when:** `grep -q 'backlog-plan' claude-code/AGENTS.md` exits 0
 
-#### [TSK-01.1.14] `context_injector.py`'s "full" fixture produces empty output on the Windows Git Bash CI runner [P: M] [BLOCKED]
+#### [TSK-01.1.14] Two Windows Git Bash CI failures need live diagnosis: `find_backlog`'s empty output, `gofmt` unresolved despite being on PATH [P: M] [BLOCKED]
 * **Blocked By:** `external`
-  * **Reason (2026-08-28):** `windows-hooks.yml`'s `test-hooks.sh (Git Bash)` job failed I1/I2/I3/I6 with completely empty stdout for the `inject_case` "full" fixture (a root with both `BACKLOG.md` and `CHANGELOG.md`), while the "nested"/"junk"/"empty" fixtures in the same run behaved correctly. Empty stdout with no `CRASHED` marker means `ci.main()` hit its own early `sys.exit(0)` — i.e. `find_backlog(root)` returned `None` for the "full" root even though the file demonstrably exists (created moments earlier in the same Git Bash session). No local reproduction is possible without a Windows runner; guessing a fix without verifying against the actual failure would risk masking the real cause.
-  * **Citation:** run `33225168080`, job `hooks (PowerShell fallback)`/`test-hooks.sh (Git Bash)` on `feat/windows-cross-platform-install`; `claude-code/hooks/context_injector.py:58` (`find_backlog`)
-  * **Recheck:** re-run `test-hooks.sh (Git Bash)` on a Windows runner after adding temporary debug output to `find_backlog` (e.g. printing `root` and `os.path.isfile(...)` results to stderr) and inspect the actual value `INJECT_ROOT` resolves to inside the native Windows Python process
+  * **Reason (2026-08-28):** `windows-hooks.yml`'s `test-hooks.sh (Git Bash)` job has two remaining failures across runs `33225168080` and `33228948540`. (1) I1/I2/I3/I6: completely empty stdout for the `inject_case` "full" fixture (a root with both `BACKLOG.md` and `CHANGELOG.md`), while "nested"/"junk"/"empty" behave correctly in the same run — no `CRASHED` marker, so `ci.main()` hit its own early `sys.exit(0)`, meaning `find_backlog(root)` returned `None` even though the file demonstrably exists. (2) F1: still "file was not reformatted" after adding `actions/setup-go@v5` — the run log confirms "Added go to the path" for `C:\hostedtoolcache\windows\go\1.26.7\x64`, yet `shutil.which("gofmt")` inside `auto_format.py` apparently still can't resolve it. Both need a live Windows shell to inspect actual `PATH`/`os.environ` contents inside the spawned Python process; guessing further fixes without verifying against the real failure risks masking the actual cause or silently breaking the passing macOS/Linux suite.
+  * **Citation:** runs `33225168080` and `33228948540`, job `test-hooks.sh (Git Bash)` on `feat/windows-cross-platform-install`; `claude-code/hooks/context_injector.py:58` (`find_backlog`); `claude-code/hooks/auto_format.py:51` (`shutil.which`)
+  * **Recheck:** re-run `test-hooks.sh (Git Bash)` on a Windows runner after adding temporary debug output — for I1/I2/I3/I6, print `root` and `os.path.isfile(...)` results inside `find_backlog`; for F1, print `os.environ.get("PATH")` and `shutil.which("gofmt")`'s result directly before the hook's own check — and inspect the actual values inside the native Windows Python process
 * **SUB-01.1.14.1** diagnose and fix why `find_backlog` can't see the "full" fixture's `BACKLOG.md` on the Windows Git Bash runner
-  * **Done when:** `test-hooks.sh (Git Bash)` and `hooks (PowerShell fallback)` both pass on a Windows CI run
+  * **Done when:** `test-hooks.sh (Git Bash)`'s I1, I2, I3, I6 cases pass on a Windows CI run
+* **SUB-01.1.14.2** diagnose and fix why `auto_format.py` can't resolve `gofmt` via `shutil.which` despite `actions/setup-go` adding it to `PATH`
+  * **Done when:** `test-hooks.sh (Git Bash)`'s F1 case passes on a Windows CI run
 
 ---
 
