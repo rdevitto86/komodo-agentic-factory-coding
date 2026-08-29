@@ -27,6 +27,16 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.8.1** agent-run commits and PRs currently authored as the user's own GitHub account (`gh auth`'s session token + local `git config user.name`) — create a machine-user account or GitHub App and wire its token into `gh`/`git` for agent-run operations
   * **Done when:** `gh auth status` inside an agent run shows the machine identity, not the user's own account, and a test commit/PR is authored under it
 
+#### [TSK-01.1.9] Speed up scripts/test-hooks.sh subprocess overhead [P: L] [TODO]
+* **SUB-01.1.9.1** collapse each test-case helper's 2-3 separate python3 subprocess calls (payload encode, hook invocation, result decode) into a single python3 invocation per case
+  * **Done when:** `bash scripts/test-hooks.sh` exits 0 with `172 passed, 0 failed`
+* **SUB-01.1.9.2** give each case its own isolated SESSION id and parallelize case execution with a bounded worker pool, moving RESULTS collection from shared append to per-worker temp files concatenated at the end
+  * **Done when:** `time bash scripts/test-hooks.sh` exits 0 with `172 passed, 0 failed` and wall time is at most half the pre-change baseline (~11.5s)
+
+#### [TSK-01.1.13] `/backlog-plan` skill — extract `backlog-modify`'s plan mode into its own typed command [P: L] [TODO]
+* **SUB-01.1.13.1** resolve the naming conflict against `AGENTS.md`'s "two modes, one file" rule before implementing — either update `AGENTS.md` to document the new exception, or close this task as won't-do
+  * **Done when:** `grep -q 'backlog-plan' claude-code/AGENTS.md` exits 0
+
 ---
 
 ## Archive
