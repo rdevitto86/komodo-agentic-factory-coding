@@ -3,7 +3,6 @@ name: Windows hook dispatch
 on:
   push:
     branches: [main]
-  pull_request:
 
 jobs:
   git-bash-dispatch:
