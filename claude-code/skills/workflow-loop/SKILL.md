@@ -20,7 +20,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 | Phase | Runs as | Fork agent |
 |---|---|---|
-| P0 Spec | Here — dialogue cannot be forked; `/backlog-modify plan` when a backlog has to be built | — |
+| P0 Spec | Here — dialogue cannot be forked; `/backlog-plan` when a backlog has to be built | — |
 | P1 Decompose | **`/backlog-audit` then `/workflow-decompose`**, then plan the run's PRs and branch here | `workflow-planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
@@ -48,11 +48,11 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **`BACKLOG.md` exists** → `docs/spec/SDD.md` and `docs/spec/PRD.md` are both optional context here, never a blocker. Read them if present, for framing only (`standards-specs` owns their section maps) — same token-budget rule as before: full read on the first run of a session, `test -f` existence-only on every run after. Go to P1.
 
-**`BACKLOG.md` missing, `docs/spec/SDD.md` exists** → build the backlog now, from the SDD. Run `/backlog-modify plan <goal>`, the goal drawn from the SDD (and `docs/spec/PRD.md` if present) plus whatever `$ARGUMENTS` names — its own Step 1 is where the user gets asked for refinement; never invent a second round of questions here. Write on the user's approval, exactly as that skill's own gate already requires, then go to P1.
+**`BACKLOG.md` missing, `docs/spec/SDD.md` exists** → build the backlog now, from the SDD. Run `/backlog-plan <goal>`, the goal drawn from the SDD (and `docs/spec/PRD.md` if present) plus whatever `$ARGUMENTS` names — its own Step 1 is where the user gets asked for refinement; never invent a second round of questions here. Write on the user's approval, exactly as that skill's own gate already requires, then go to P1.
 
 **`BACKLOG.md` missing and `docs/spec/SDD.md` missing** — nothing exists to build a backlog from. **This is the one condition allowed to exit the loop with nothing delivered.** Say so and stop; drafting an SDD from nothing is a stakeholder conversation this toolkit doesn't run on its own.
 
-**Ends when:** `BACKLOG.md` exists — either it already did, or `/backlog-modify plan` just wrote it with the user's approval.
+**Ends when:** `BACKLOG.md` exists — either it already did, or `/backlog-plan` just wrote it with the user's approval.
 
 ---
 

@@ -4,6 +4,15 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-08-28
+
+### Added
+- `claude-code/skills/backlog-plan/SKILL.md` — new skill, the planning-run mode extracted from `backlog-modify`.
+
+### Changed
+- `backlog-modify` is now normalize-only; `workflow-loop`'s P0 invokes `backlog-plan` instead of `backlog-modify plan`.
+- `claude-code/settings.json`'s `skillOverrides` adds `backlog-plan` as `name-only`; `AGENTS.md` documents the exception.
+
 ## [0.35.0] — 2026-08-28
 
 ### Added

@@ -1,19 +1,16 @@
 ---
 name: backlog-modify
-description: Create or reshape BACKLOG.md — turn a goal into an epic-scoped breakdown, or normalize an existing messy file into that shape. Owns the BACKLOG.md format.
-argument-hint: [plan <goal> | normalize <file>]
+description: Reshape BACKLOG.md — normalize an existing messy file into the format this skill owns.
+argument-hint: normalize <file>
 ---
 
 # Backlog — BACKLOG.md
 
-**Two modes, one file.** The first token in `$ARGUMENTS` picks the mode:
-
-- **`plan <goal>`** → Part 1, the planning run. Turn a goal into an epic-scoped breakdown.
-- **`normalize <file>`** → Part 2, normalizing an existing file. Turn a messy or unstructured file into the shape below.
+**One mode: `normalize <file>`.** Turn a messy or unstructured file into the shape below. Turning a goal into a new epic-scoped breakdown is `backlog-plan`'s job now, not this skill's — see that skill.
 
 If `$ARGUMENTS` names a messy or unstructured file with no mode token, treat it as `normalize`.
 
-Both modes are planning — write no implementation code during either. Verdicting existing tasks against current repo state (audit) is `backlog-audit`'s job, not this skill's — see that skill for edits to already-shaped content.
+This mode is planning — write no implementation code. Verdicting existing tasks against current repo state (audit) is `backlog-audit`'s job, not this skill's — see that skill for edits to already-shaped content.
 
 ---
 
@@ -72,7 +69,7 @@ Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]`. Subtask line sh
 - **Every task carries at least one `SUB-` line, and every `SUB-` line carries its own `Done when:` bullet** with one or more literal commands, not a description — a command that exits zero, not "tests pass." `[DONE]` requires every one of a task's subtasks' commands to have exited zero; `workflow-implement` runs the whole set and reports each one's output. A subtask whose completion can only be judged by reading the code, not running something, is Ambiguous — see `backlog-audit` — not plannable as-is. Subtasks are never invented just to fill the level out — one is enough for a task too small to need more.
 - **`[P: SEV]` then `[STATUS]` sit at the end of the `TSK-` heading line, in that order, always present** — `#### [TSK-01.1.1] <text> [P: C] [TODO]`. `[TODO]` is the default for anything not started; move to `[IN_PROGRESS]` the moment work starts on it, `[BLOCKED]` per the shape below, `[DONE]` once every `SUB-` line's `Done when:` command is verified against the repo.
 - **`[DONE]` is a pending sweep, not a resting state.** The task stays on the page — visible, but not counted as open — until `/backlog-audit` moves it into `CHANGELOG.md` and deletes it. Never hand-delete a `[DONE]` task yourself; that's the sweep's job, and it's what confirms the entry lands in `CHANGELOG.md` first.
-- **Epics** are `## [EPIC-01] Now, V1`, `## [EPIC-02] Next, V2` — every epic carries a one-line `*Goal: ...*` directly beneath its heading. Nothing is scheduled by date. A third, active epic is possible but rare — plan runs stick to V1/V2 (see Part 1).
+- **Epics** are `## [EPIC-01] Now, V1`, `## [EPIC-02] Next, V2` — every epic carries a one-line `*Goal: ...*` directly beneath its heading. Nothing is scheduled by date. A third, active epic is possible but rare — plan runs stick to V1/V2 (see `backlog-plan`).
 - **Task groups** are `Cross-Cutting` or a feature/route/screen/stack/queue name **inside this one service** — never another service's name. Every task group carries a `* **Target Release:**` bullet directly beneath its heading, naming the version or milestone it ships with.
 - **Tasks are flat under their task group** — no phase. Default is parallel.
 - **Numbering is four levels deep, for reference, not for sequencing.** `EPIC-XX` (`01` for Now/V1, `02` for Next/V2, in file order). `TG-XX.Y`, `Y` numbered within its epic, in file order. `TSK-XX.Y.Z`, `Z` numbered within its task group, in file order — so V1's Cross-Cutting's first task is `TSK-01.1.1`. `SUB-XX.Y.Z.N`, `N` numbered within its task. Renumber whenever an epic, task group, task, or subtask is added, deleted, or reordered, so the numbers stay contiguous — this is a display convenience for saying "do TSK-01.1.1–TSK-01.1.4," never an ID stored anywhere else or referenced across files.
@@ -80,7 +77,7 @@ Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]`. Subtask line sh
 - **Every task group with behavior tasks carries its own `Tests:` task.** That is the merge gate; integration, smoke, e2e, and perf get their own task. `standards-sdlc` defines the tiers.
 - **In a repo `repo-init` scaffolds as an app/service/infra type** (`go-api`, `go-mcp`, `vue-ui`, `svelte-ui`, `cdk-infra` — see `repo-init`), **every epic's `Cross-Cutting` task group carries four standing closeout tasks** — `Security review`, `Bug sweep`, `Code smell`, `Performance`. They run last, after any Deploy tasks (see below): delete the epic's heading only once every other task is gone and these four are too (or swept, if left `[DONE]`). **A skill/config/doc-only repo — one `repo-init` never scaffolds as one of those types, this toolkit included — carries none of the four**; there is no runtime surface for a security scan, a perf suite, or a code-smell pass to cover, so `Cross-Cutting` in that kind of repo ends at whatever real tasks it holds.
 - **Every task carries a `[P: SEV]` tag.** The task's own text names what the work is; each `SUB-` line's `Done when:` command is what states what "done" means for that piece — write it concretely enough that someone else can run it, not so vague it can only be judged by the person who wrote it.
-- **An `assess-*` skill files its own findings straight in** — that is its own `Findings → backlog` step, not this skill's Parts 1/2. Those runs (a planning pass, a normalize pass) never invent a task from a finding it did not itself derive from the repo or the source file being normalized.
+- **An `assess-*` skill files its own findings straight in** — that is its own `Findings → backlog` step, not this skill's `normalize`, nor `backlog-plan`'s planning run. Those runs (a planning pass, a normalize pass) never invent a task from a finding it did not itself derive from the repo or the source file being normalized.
 
 ### Foundation and Deploy edges
 
@@ -116,95 +113,11 @@ Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]`. Subtask line sh
 
 **A blocked note without a citation is a guess.** If nothing testable exists for `Recheck:`, the block is a decision for the user, not a task state; say so instead of inventing a condition.
 
----
-
-# Part 1 — The planning run (`plan <goal>`)
-
-Target: **$ARGUMENTS**, minus the `plan` token.
-
-You are planning, not building. Write no implementation code during this mode.
-
-## Step 1 — Ask before assuming
-
-**Ask your questions first, in one batch, before producing any plan.** A plan built on a guess wastes more time than a question costs.
-
-Ask only what changes the plan. Skip anything you can determine by reading the repo — read it instead.
-
-Typical unknowns worth asking:
-
-- **Scope boundary** — what is explicitly *not* in V1?
-- **Existing surface** — is this extending something already built, or greenfield?
-- **Hard constraints** — a deadline, a dependency that must land first, a decision already made.
-- **Done condition** — what has to be true for this to ship?
-
-
-If the repo answers a question, do not ask it. If nothing is genuinely unclear, say so and move on.
-
-## Step 2 — Read the ground truth
-
-Before proposing anything:
-
-- **Read the SDD (a repo file under `docs/spec/SDD.md` — see `standards-specs`) if one exists** for architecture, data model, and interface context — the source of truth for a code repo. It informs the plan; it does not hand you a ready-made decomposition — that is this mode's own job.
-- **Read the existing `BACKLOG.md`.** Never duplicate a task already in it.
-- **Read the code that this work touches.** The current state beats any ledger.
-- **Read the project `AGENTS.md`** for stack and conventions.
-
-State plainly if the repo contradicts what the user described. That contradiction is usually the most valuable output of the whole exercise.
-
-## Step 3 — Name the epics
-
-Two epics, no more:
-
-- **V1** — the smallest thing that is genuinely usable. Not a prototype, not feature-complete. Lands under `## [EPIC-01] Now, V1`.
-- **V2** — the next coherent increment. Lands under `## [EPIC-02] Next, V2`.
-
-Anything beyond V2 is speculation and does not belong in a plan. **A planning run never writes a third active epic** — that's parked work the user put there themselves.
-
-## Step 4 — Decompose
-
-The format above governs shape. Four constraints are the planning run's own:
-
-- **Cap each run at 3 task groups and 6 tasks per task group.** If the work genuinely exceeds that, plan V1 only and say V2 needs its own pass. An unbounded dump is what made the old ledger useless.
-- **In an app/service/infra repo (see the `Cross-Cutting` rule above), the four closeout tasks are structural, not planned content** — exempt from the cap, and never write them yourself during a planning run; `normalize` (Part 2) is what adds them if a `Cross-Cutting` group is missing any. A skill/config/doc-only repo carries none of the four — don't add them there either.
-- **Default every task to parallel** — mark `(after: "<task text>")` only where one task genuinely cannot start before another lands, never to impose an arbitrary order.
-- **Every task carries at least one `SUB-` line, and every `SUB-` line carries a `Done when:` command.** A task nobody else can run is not planned, it is hoped for. If nothing runnable can be named, that is the finding — say so.
-
-## Step 5 — Present, then stop
-
-Show the plan and **wait for approval**. Do not write to `BACKLOG.md` yet.
-
-```markdown
-## 🎯 Epics
-- **V1** — <one line>
-- **V2** — <one line>
-
-## 📋 Plan
-### [TG-E.T] <task group>
-| Task `[TSK-E.T.S] [P: sev]` | Done when |
-|---|---|
-| <what> `[TSK-E.T.S] [P: H]` | `<command 1>`; `<command 2>` |
-
-Each `Done when` cell collapses that task's `SUB-` lines' commands into one row for this preview; Step 6 writes them out as the actual nested `SUB-`/`Done when:` bullets, one subtask per command.
-
-## ⚠️ Risks
-- **<thing>** — why it could bite
-
-## ❓ Open
-- <anything still unresolved>
-```
-
-## Step 6 — Write on approval only
-
-Merge into `BACKLOG.md` per the format above. Never write before approval.
-
-- **Append under the right epic and task group.** Never create a second task group with the same name.
-- **Renumber the file's `TG-`/`TSK-`/`SUB-` tags after merging** so they stay contiguous — a new task group, task, or subtask never leaves a gap or reuses a number already on the page.
-- **Never remove a task you did not add** unless the user says so.
-- **Never rewrite another task's `(after: ...)` tag** — that dependency was true when someone else wrote it; if it is stale, ask instead of silently dropping it.
+**Turning a goal into a new epic-scoped breakdown lives in `backlog-plan` now** — a separate skill, extracted from this one's former planning-run mode. This file keeps only `normalize`.
 
 ---
 
-# Part 2 — Normalizing an existing file (`normalize <file>`)
+# Normalizing an existing file (`normalize <file>`)
 
 Same command family, different ask: **$ARGUMENTS**, minus the `normalize` token, names a messy or unstructured file — a backlog with no hierarchy, dates, or already-done items; scattered `// TODO` comments; a plain notes file.
 

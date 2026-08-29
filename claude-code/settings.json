@@ -133,6 +133,7 @@
     "repo-init": "name-only",
     "readme": "name-only",
     "backlog-modify": "name-only",
+    "backlog-plan": "name-only",
     "backlog-audit": "name-only",
     "assess-bugs": "name-only",
     "assess-security": "name-only",

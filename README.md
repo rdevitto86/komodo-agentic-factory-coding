@@ -52,7 +52,7 @@ flowchart TD
         direction TB
         P0a{"BACKLOG.md exists?"}
         P0a -->|yes| P0b["Read SDD/PRD for framing (optional)"]
-        P0a -->|"no, SDD exists"| P0c["/backlog-modify plan — build backlog\nfrom the SDD, user approves"]
+        P0a -->|"no, SDD exists"| P0c["/backlog-plan — build backlog\nfrom the SDD, user approves"]
         P0a -->|"no, no SDD"| P0stop(["STOP — nothing to build from.\nOnly phase allowed to exit\nwith nothing delivered."])
     end
     P0b --> P1
@@ -153,7 +153,7 @@ bash scripts/test-hooks.sh    # 127 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement`
+Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-plan` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 
