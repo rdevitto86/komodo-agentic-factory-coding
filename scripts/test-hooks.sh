@@ -717,6 +717,8 @@ printf '%s\n' '# Project Backlog' '## [EPIC-01] Now, V1' '### [TG-01.1] Cross-Cu
   '* **Blocked By:** `external`' \
   '  * **Reason:** the SDK exposes no idempotency key at the pinned version.' \
   '* **Done when:** `go test ./refund/...`' \
+  '#### [TSK-01.1.4] Fix flaky test [P: L] [DONE]' \
+  '* **Done when:** `go test ./flaky/...`' \
   > "$FIX/full/BACKLOG.md"
 
 printf '%s\n' '# Changelog' '## [Unreleased]' '## [0.4.2] — 2026-08-20' \
@@ -751,6 +753,7 @@ inject_case "I10 no version line without a changelog" "$FIX/nested" "" "Released
 inject_case "I11 outside a repo it stays silent"   "" "" "Work state"
 inject_case "I12 a missing root does not crash"    "/nonexistent/repo" "" "Work state"
 inject_case "I13 counts a non-zero open tally for a heading-format backlog" "$FIX/full" "Backlog: 3 open"
+inject_case "I14 a DONE story is excluded from the open tally"    "$FIX/full" "Backlog: 3 open" "Fix flaky test"
 
 wait
 

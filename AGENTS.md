@@ -151,7 +151,7 @@ The replacement is always the same shape — **state the rule, then name where t
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 175 hook regression cases
+bash scripts/test-hooks.sh    # 176 hook regression cases
 bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above

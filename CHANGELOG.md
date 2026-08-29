@@ -4,6 +4,18 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- `scripts/validate.sh`: a `hooksPath` check that fails when `core.hooksPath` is set but doesn't resolve to a real directory, so a dangling path can't silently disable every git hook again.
+- `scripts/validate.sh`'s budget pass now also reports the repo-root `AGENTS.md`'s token cost as a separate, ungated `root AGENTS.md` row (previously unmeasured entirely) — the BUDGET-gated total stays scoped to `claude-code/AGENTS.md`, the file actually loaded on every turn everywhere.
+
+### Changed
+- Corrected six stale facts in root `AGENTS.md`: the hook-regression-case count, a hooks table missing `auto_format.py`, a typed-only-skill list missing `backlog-prioritize`, a parked-skill list naming three of six `SKILL.md.off` skills, and a "stays full-description" claim naming only `workflow-loop` instead of it plus `standards-aws`/`git-merge-conflict`. Dropped a dead `write-*` skill grant from `claude-code/agents/workflow-implementer.md` — no `write-*` skill exists.
+
+### Fixed
+- `context_injector.py`'s `STORY` regex matched a pipe-delimited format nothing in this repo produces, so the `SessionStart` hook always reported "Backlog: 0 open" regardless of actual backlog state. Now matches the real `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]` heading, uses `[IN_PROGRESS]` instead of the nonexistent `[WIP]` token, and excludes `[DONE]` stories from the open tally.
+- `scripts/test-hooks.sh` ran ~11.5s serially with 2-3 subprocess calls per case; collapsed payload encode/decode into fewer subprocess calls and parallelized case execution behind a bounded worker pool (`TEST_HOOKS_PARALLEL`, default 8) with per-case isolated session ids and per-worker result files, cutting runtime to ~2s. The pool's initial `wait -n` throttle silently disabled itself on bash 3.2 (macOS's default `/bin/bash` doesn't support `wait -n`), letting every case run fully unthrottled; replaced with a portable busy-poll.
+- This repo's `core.hooksPath` pointed at a pre-rename path that no longer exists, silently disabling `pre-commit-gofmt`, `pre-commit-hooks-syntax`, and `pre-push-verify`; repointed to the real in-repo `scripts/hooks/git`.
+
 ## [0.37.0] — 2026-08-28
 
 ### Added
