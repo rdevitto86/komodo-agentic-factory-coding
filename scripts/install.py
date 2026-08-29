@@ -85,6 +85,13 @@ def backup_existing(dest):
     os.rename(dest, dest + ".bak-" + stamp)
 
 
+def prepare_dest(dest):
+    if os.path.islink(dest):
+        os.unlink(dest)
+    else:
+        backup_existing(dest)
+
+
 def link_or_copy_entries(source, target, force_copy):
     fallback_used = False
     for name in sorted(os.listdir(source)):
@@ -93,10 +100,7 @@ def link_or_copy_entries(source, target, force_copy):
         entry = os.path.join(source, name)
         dest = os.path.join(target, name)
 
-        if os.path.islink(dest):
-            os.unlink(dest)
-        else:
-            backup_existing(dest)
+        prepare_dest(dest)
 
         is_dir = os.path.isdir(entry)
         try:
@@ -115,10 +119,7 @@ def link_or_copy_entries(source, target, force_copy):
 
 def write_settings(target, settings):
     dest = os.path.join(target, "settings.json")
-    if os.path.islink(dest):
-        os.unlink(dest)
-    else:
-        backup_existing(dest)
+    prepare_dest(dest)
     with open(dest, "w", encoding="utf-8") as fh:
         json.dump(settings, fh, indent=2)
         fh.write("\n")
