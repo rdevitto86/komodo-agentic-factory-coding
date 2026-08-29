@@ -11,10 +11,21 @@ Four ideas hold it together:
 
 ## Setup
 
+### macOS / Linux
+
 ```bash
 bash setup.sh --dry-run    # preview
 bash setup.sh              # link, then run the tests and validate
 ```
+
+### Windows
+
+```
+python3 scripts/install.py --dry-run    # preview
+python3 scripts/install.py              # link (or copy, if symlinks aren't available), then generate settings.json
+```
+
+Substitute `python` or `py -3` for `python3`, whichever resolves on your machine. See [docs/windows-install.md](docs/windows-install.md) for a full walkthrough — Python/Git prerequisites, enabling Developer Mode for real symlinks, and what to do if it falls back to copy mode instead.
 
 Restart Claude Code afterwards so `settings.json` and the hooks take effect.
 
