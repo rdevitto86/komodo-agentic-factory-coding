@@ -2,7 +2,6 @@
 name: readme-audit
 description: Audit README.md against readme's fixed template — missing/extra sections, facts with no source, restated SDD depth, stale References — filed as BACKLOG.md stories. Pass --report to skip the write.
 argument-hint: [--report]
-disable-model-invocation: true
 ---
 
 # README audit
