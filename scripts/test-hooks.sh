@@ -17,6 +17,11 @@
 #   printf form   needed only when the payload must interpolate a
 #                 shell variable; escape newlines as \\n there
 #
+# Cases run concurrently in a bounded worker pool (TEST_HOOKS_PARALLEL
+# caps it, default 8). Each case gets its own session id and its own
+# result file under WORKDIR/results, concatenated at the end - no
+# case may depend on another case's timing or on a shared file.
+#
 # No hook may touch the real filesystem outside WORKDIR and the
 # session state files the trap on line 8 removes.
 set -uo pipefail
@@ -25,10 +30,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOOKS="$REPO_ROOT/claude-code/hooks"
 WORKDIR="$(mktemp -d)"
 SESSION="hooktest$$"
-trap 'rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION" "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION" "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION-move"' EXIT
+trap 'wait 2>/dev/null; rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION"* "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION"*' EXIT
 
-RESULTS="$WORKDIR/results"
-: > "$RESULTS"
+RESULTS_DIR="$WORKDIR/results"
+mkdir -p "$RESULTS_DIR"
+JOB_IDX=0
+MAX_PARALLEL="${TEST_HOOKS_PARALLEL:-8}"
 HOOK=""
 
 # TSK-01.1.14: a handful of cases fail on the Windows Git Bash CI runner in
@@ -45,63 +52,99 @@ skip_case() {
   printf '  SKIP  %s\n        %s (TSK-01.1.14)\n' "$1" "$2"
 }
 
-decision_of() {
+# --- isolation + scheduling helpers ---
+
+# RANDOM, not a counter, so this stays safe to call from a command
+# substitution (a subshell) without needing to propagate a mutation back.
+next_session() {
+  printf '%s-%s%s' "$SESSION" "$RANDOM" "$RANDOM"
+}
+
+throttle() {
+  local n pid
+  while :; do
+    n=0
+    for pid in $(jobs -rp); do n=$((n + 1)); done
+    [ "$n" -lt "$MAX_PARALLEL" ] && return
+    sleep 0.02
+  done
+}
+
+report() {
+  local outfile="$1" label="$2" problem="$3" extra="${4:-}"
+  if [ -z "$problem" ]; then
+    printf '  PASS  %s\n' "$label" > "$outfile"
+  else
+    {
+      printf '  FAIL  %s\n        %s\n' "$label" "$problem"
+      [ -n "$extra" ] && printf '%s\n' "$extra" | sed 's/^/        | /'
+    } > "$outfile"
+  fi
+}
+
+# decision_reason_of prints "decision<RS>reason" for one hook stdout blob -
+# a single decode pass instead of two, and a pure-bash short-circuit for
+# the common empty-stdout (implicit allow) case that skips python entirely.
+decision_reason_of() {
   local out="$1"
   if [ -z "$out" ]; then
-    printf 'allow'
+    printf 'allow\x1e'
     return
   fi
-  printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecision"])' 2>/dev/null \
-    || printf 'malformed'
-}
-
-reason_of() {
-  local out="$1"
-  [ -z "$out" ] && return
-  printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' 2>/dev/null
-}
-
-expect() {
-  local label="$1" want="$2" must_contain="${3:-}" must_not_contain="${4:-}"
-  local payload out got reason problem=""
-  payload="$(cat)"
-  payload="$(printf '%s' "$payload" | python3 -c '
+  printf '%s' "$out" | python3 -c '
 import json, sys
 raw = sys.stdin.read()
 try:
-    p = json.loads(raw)
-except ValueError:
-    sys.stdout.write(raw); raise SystemExit(0)
-p.setdefault("hook_event_name", "PreToolUse")
-sys.stdout.write(json.dumps(p))
-')"
-  out="$(printf '%s' "$payload" | python3 "$HOOK" 2>/dev/null)"
-  got="$(decision_of "$out")"
-  reason="$(reason_of "$out")"
+    d = json.loads(raw)["hookSpecificOutput"]
+    sys.stdout.write(d["permissionDecision"] + "\x1e" + d.get("permissionDecisionReason", ""))
+except Exception:
+    sys.stdout.write("malformed\x1e")
+' 2>/dev/null
+}
 
-  [ "$got" != "$want" ] && problem="decision=$got want=$want"
-  if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
-    problem="reason missing: $must_contain"
-  fi
-  if [ -z "$problem" ] && [ -n "$must_not_contain" ] && [[ "$reason" == *"$must_not_contain"* ]]; then
-    problem="reason leaked: $must_not_contain"
-  fi
+# expect reads a JSON payload on stdin, injects a default hook_event_name
+# in pure bash (no subprocess), and runs the case in the background - the
+# only subprocess left in the common path is the hook invocation itself.
+expect() {
+  local label="$1" want="$2" must_contain="${3:-}" must_not_contain="${4:-}"
+  local payload; payload="$(cat)"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local body out got reason problem="" decoded
+    body="${payload#*\{}"
+    body="{\"hook_event_name\":\"PreToolUse\",$body"
+    out="$(printf '%s' "$body" | python3 "$HOOK" 2>/dev/null)"
+    decoded="$(decision_reason_of "$out")"
+    got="${decoded%%$'\x1e'*}"
+    reason="${decoded#*$'\x1e'}"
 
-  if [ -z "$problem" ]; then
-    printf '  PASS  %s\n' "$label"
-    printf 'PASS\n' >> "$RESULTS"
-  else
-    printf '  FAIL  %s\n        %s\n' "$label" "$problem"
-    [ -n "$reason" ] && printf '%s\n' "$reason" | sed 's/^/        | /'
-    printf 'FAIL\n' >> "$RESULTS"
-  fi
+    [ "$got" != "$want" ] && problem="decision=$got want=$want"
+    if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
+      problem="reason missing: $must_contain"
+    fi
+    if [ -z "$problem" ] && [ -n "$must_not_contain" ] && [[ "$reason" == *"$must_not_contain"* ]]; then
+      problem="reason leaked: $must_not_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$reason"
+  ) &
+}
+
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\r'/\\r}"
+  printf '%s' "$s"
 }
 
 bash_case() {
   local label="$1" want="$2" command="$3" must_contain="${4:-}"
-  printf '%s' "$command" \
-    | python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":sys.stdin.read()}}))' \
-    | expect "$label" "$want" "$must_contain"
+  local escaped; escaped="$(json_escape "$command")"
+  expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
 }
 
 # git_guard.py's current_branch() shells out to `git rev-parse` in the
@@ -116,23 +159,23 @@ git init -q -b main "$FIXTURE_FEAT"
 
 bash_case_at() {
   local dir="$1" label="$2" want="$3" command="$4" must_contain="${5:-}"
-  local payload out got reason problem=""
-  payload="$(printf '%s' "$command" | python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":sys.stdin.read()}}))')"
-  out="$(cd "$dir" && printf '%s' "$payload" | python3 "$HOOK" 2>/dev/null)"
-  got="$(decision_of "$out")"
-  reason="$(reason_of "$out")"
-  [ "$got" != "$want" ] && problem="decision=$got want=$want"
-  if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
-    problem="reason missing: $must_contain"
-  fi
-  if [ -z "$problem" ]; then
-    printf '  PASS  %s\n' "$label"
-    printf 'PASS\n' >> "$RESULTS"
-  else
-    printf '  FAIL  %s\n        %s\n' "$label" "$problem"
-    [ -n "$reason" ] && printf '%s\n' "$reason" | sed 's/^/        | /'
-    printf 'FAIL\n' >> "$RESULTS"
-  fi
+  local escaped; escaped="$(json_escape "$command")"
+  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out got reason problem="" decoded
+    out="$(cd "$dir" && printf '%s' "$payload" | python3 "$HOOK" 2>/dev/null)"
+    decoded="$(decision_reason_of "$out")"
+    got="${decoded%%$'\x1e'*}"
+    reason="${decoded#*$'\x1e'}"
+    [ "$got" != "$want" ] && problem="decision=$got want=$want"
+    if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
+      problem="reason missing: $must_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$reason"
+  ) &
 }
 
 # ─────────────────────────────  comment guard  ─────────────────────────────
@@ -158,8 +201,8 @@ expect "C4  MultiEdit cannot smuggle a comment through" ask \
 {"tool_name":"MultiEdit","tool_input":{"file_path":"/x/svc.go","edits":[{"old_string":"a := 1","new_string":"a := 2"},{"old_string":"b := 1","new_string":"// smuggled\nb := 2"}]}}
 JSON
 
-printf '{"tool_name":"Write","tool_input":{"file_path":"%s/fresh.go","content":"// package header\\npackage main\\n"}}' "$WORKDIR" \
-  | expect "C5  Write to a brand-new file asks about its comments" ask "package header"
+C5_PAYLOAD="$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s/fresh.go","content":"// package header\\npackage main\\n"}}' "$WORKDIR")"
+expect "C5  Write to a brand-new file asks about its comments" ask "package header" <<< "$C5_PAYLOAD"
 
 expect "C6a machine directives are exempt (go)" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"package main","new_string":"//go:build linux\n//nolint:gocyclo\npackage main"}}
@@ -213,17 +256,21 @@ expect "C16 a header block without a shebang still prompts" ask \
 {"tool_name":"Write","tool_input":{"file_path":"/x/svc.go","content":"// orders service\npackage main\n"}}
 JSON
 
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// explain Foo\\nfunc Foo() {}"}}' "$SESSION" \
-  | expect "C17 a doc comment on a func prompts for approval" ask "explain Foo"
+C17_SESSION="$(next_session)"
+C17_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// explain Foo\\nfunc Foo() {}"}}' "$C17_SESSION")"
+expect "C17 a doc comment on a func prompts for approval" ask "explain Foo" <<< "$C17_PAYLOAD"
 
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Bar() {}","new_string":"// explain Bar\\nfunc Bar() {}"}}' "$SESSION" \
-  | expect "C19 an ordinary doc comment prompts for approval" ask "explain Bar"
+C19_SESSION="$(next_session)"
+C19_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Bar() {}","new_string":"// explain Bar\\nfunc Bar() {}"}}' "$C19_SESSION")"
+expect "C19 an ordinary doc comment prompts for approval" ask "explain Bar" <<< "$C19_PAYLOAD"
 
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note\\nfunc Foo() {}","new_string":"func Foo() {}"}}' "$SESSION" \
-  | expect "C20 deleting a comment asks, never proceeds" ask "user note"
+C20_SESSION="$(next_session)"
+C20_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note\\nfunc Foo() {}","new_string":"func Foo() {}"}}' "$C20_SESSION")"
+expect "C20 deleting a comment asks, never proceeds" ask "user note" <<< "$C20_PAYLOAD"
 
-printf '{"hook_event_name":"PreToolUse","session_id":"%s-other","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// +comments\\n// explain Foo\\nfunc Foo() {}"}}' "$SESSION" \
-  | expect "C21 the agent cannot grant itself by writing the sigil" ask "explain Foo"
+C21_SESSION="$(next_session)"
+C21_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s-other","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// +comments\\n// explain Foo\\nfunc Foo() {}"}}' "$C21_SESSION")"
+expect "C21 the agent cannot grant itself by writing the sigil" ask "explain Foo" <<< "$C21_PAYLOAD"
 
 expect "C22 the Helpers banner is exempt in a test file" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Helpers ----------------------------------------------------\n\nfunc newFixture(t *testing.T) {}"}}
@@ -350,18 +397,20 @@ expect "C44 a banner cannot smuggle prose past the hyphens" ask \
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// --- this helper exists because the upstream client retries twice ---\n\nfunc bar() {}"}}
 JSON
 
-MOVE="$SESSION-move"
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/from.go","old_string":"// Preloads all the required dependencies.\\nfunc Boot() {}","new_string":""}}' "$MOVE" \
-  | expect "C45 removing a comment asks and records it" ask "Preloads all the required"
+MOVE="$(next_session)-move"
+C45_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/from.go","old_string":"// Preloads all the required dependencies.\\nfunc Boot() {}","new_string":""}}' "$MOVE")"
+expect "C45 removing a comment asks and records it" ask "Preloads all the required" <<< "$C45_PAYLOAD"
 
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the required dependencies.\\nfunc Boot() {}"}}' "$MOVE" \
-  | expect "C46 re-adding it at the destination still prompts" ask "Preloads all the required"
+C46_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the required dependencies.\\nfunc Boot() {}"}}' "$MOVE")"
+expect "C46 re-adding it at the destination still prompts" ask "Preloads all the required" <<< "$C46_PAYLOAD"
 
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// InitStore inits a store\\nfunc InitStore() {}"}}' "$SESSION" \
-  | expect "C49 a name-echo prompts as an echo" ask "restates the name"
+C49_SESSION="$(next_session)"
+C49_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// InitStore inits a store\\nfunc InitStore() {}"}}' "$C49_SESSION")"
+expect "C49 a name-echo prompts as an echo" ask "restates the name" <<< "$C49_PAYLOAD"
 
-printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// Creates the store and seeds it from disk.\\nfunc InitStore() {}"}}' "$SESSION" \
-  | expect "C50 an ordinary doc comment prompts for approval" ask "self-documenting"
+C50_SESSION="$(next_session)"
+C50_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// Creates the store and seeds it from disk.\\nfunc InitStore() {}"}}' "$C50_SESSION")"
+expect "C50 an ordinary doc comment prompts for approval" ask "self-documenting" <<< "$C50_PAYLOAD"
 
 expect "C51 a script manual under a shebang is still exempt" allow <<'JSON'
 {"tool_name":"Write","tool_input":{"file_path":"/x/deploy.sh","content":"#!/usr/bin/env bash\n#\n# deploy.sh - ships the current build to staging.\n#\n# Usage:  bash deploy.sh [--dry-run]\n#\n# Exit 0: shipped\n# Exit 1: refused\nset -euo pipefail\n"}}
@@ -394,8 +443,8 @@ expect "C56b a new echo comment on an untouched neighbor line still prompts" ask
 JSON
 
 printf '// Helper does the work\nfunc Other() {}\nfoo()\n' > "$WORKDIR/helper.go"
-printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/helper.go","old_string":"foo()","new_string":"// Helper does the work\\nfunc Helper() {}\\nfoo()"}}' "$WORKDIR" \
-  | expect "C56c an echo comment whose exact text already exists elsewhere in the file still prompts" ask "restates the name"
+C56C_PAYLOAD="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/helper.go","old_string":"foo()","new_string":"// Helper does the work\\nfunc Helper() {}\\nfoo()"}}' "$WORKDIR")"
+expect "C56c an echo comment whose exact text already exists elsewhere in the file still prompts" ask "restates the name" <<< "$C56C_PAYLOAD"
 
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
@@ -512,23 +561,23 @@ bash_case "G89 xargs --delimiter naming a monitored command as its value doesn't
 # patching a copy on disk.
 off_case() {
   local label="$1" want="$2" command="$3" must_contain="${4:-}"
-  local payload out got reason problem=""
-  payload="$(printf '%s' "$command" | python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":sys.stdin.read()}}))')"
-  out="$(printf '%s' "$payload" | PUBLISH_ENABLED=0 python3 "$HOOK" 2>/dev/null)"
-  got="$(decision_of "$out")"
-  reason="$(reason_of "$out")"
-  [ "$got" != "$want" ] && problem="decision=$got want=$want"
-  if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
-    problem="reason missing: $must_contain"
-  fi
-  if [ -z "$problem" ]; then
-    printf '  PASS  %s\n' "$label"
-    printf 'PASS\n' >> "$RESULTS"
-  else
-    printf '  FAIL  %s\n        %s\n' "$label" "$problem"
-    [ -n "$reason" ] && printf '%s\n' "$reason" | sed 's/^/        | /'
-    printf 'FAIL\n' >> "$RESULTS"
-  fi
+  local escaped; escaped="$(json_escape "$command")"
+  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out got reason problem="" decoded
+    out="$(printf '%s' "$payload" | PUBLISH_ENABLED=0 python3 "$HOOK" 2>/dev/null)"
+    decoded="$(decision_reason_of "$out")"
+    got="${decoded%%$'\x1e'*}"
+    reason="${decoded#*$'\x1e'}"
+    [ "$got" != "$want" ] && problem="decision=$got want=$want"
+    if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
+      problem="reason missing: $must_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$reason"
+  ) &
 }
 
 off_case "G79 off: push is blocked"                  deny  'git push -u origin feat/x'     "changes repository state"
@@ -549,32 +598,30 @@ PY="$(command -v python3)"
 
 auto_format_case() {
   local label="$1" want_changed="$2" file="$3" tool="$4" path_override="${5:-}"
-  local before after
-  before="$(cat "$file")"
-  if [ -n "$path_override" ]; then
-    printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
-      | PATH="$path_override" "$PY" "$HOOK" > /dev/null 2>&1
-  else
-    printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
-      | "$PY" "$HOOK" > /dev/null 2>&1
-  fi
-  local rc=$?
-  after="$(cat "$file")"
-  local problem=""
-  if [ "$rc" -ne 0 ]; then
-    problem="hook exited $rc instead of 0"
-  elif [ "$want_changed" = "yes" ] && [ "$before" = "$after" ]; then
-    problem="file was not reformatted"
-  elif [ "$want_changed" = "no" ] && [ "$before" != "$after" ]; then
-    problem="file was reformatted when it should have been left alone"
-  fi
-  if [ -z "$problem" ]; then
-    printf '  PASS  %s\n' "$label"
-    printf 'PASS\n' >> "$RESULTS"
-  else
-    printf '  FAIL  %s\n        %s\n' "$label" "$problem"
-    printf 'FAIL\n' >> "$RESULTS"
-  fi
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local before after problem=""
+    before="$(cat "$file")"
+    if [ -n "$path_override" ]; then
+      printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
+        | PATH="$path_override" "$PY" "$HOOK" > /dev/null 2>&1
+    else
+      printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$file" \
+        | "$PY" "$HOOK" > /dev/null 2>&1
+    fi
+    local rc=$?
+    after="$(cat "$file")"
+    if [ "$rc" -ne 0 ]; then
+      problem="hook exited $rc instead of 0"
+    elif [ "$want_changed" = "yes" ] && [ "$before" = "$after" ]; then
+      problem="file was not reformatted"
+    elif [ "$want_changed" = "no" ] && [ "$before" != "$after" ]; then
+      problem="file was reformatted when it should have been left alone"
+    fi
+    report "$outfile" "$label" "$problem"
+  ) &
 }
 
 FMT="$WORKDIR/fmt"
@@ -617,10 +664,16 @@ JSON
 # --- Context injector ---
 printf '\ncontext injector\n\n'
 
+export HOOKS
+
 inject_case() {
   local label="$1" root="$2" must_contain="${3:-}" must_not_contain="${4:-}"
-  local out problem=""
-  out="$(INJECT_ROOT="$root" python3 -c '
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out problem=""
+    out="$(INJECT_ROOT="$root" python3 -c '
 import os, sys, io
 sys.path.insert(0, os.environ["HOOKS"])
 import context_injector as ci
@@ -639,42 +692,40 @@ sys.stdout = sys.__stdout__
 print(buf.getvalue(), end="")
 ' 2>/dev/null)"
 
-  if [[ "$out" == *CRASHED* ]]; then
-    problem="hook crashed instead of failing open"
-  fi
-  if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$out" != *"$must_contain"* ]]; then
-    problem="output missing: $must_contain"
-  fi
-  if [ -z "$problem" ] && [ -n "$must_not_contain" ] && [[ "$out" == *"$must_not_contain"* ]]; then
-    problem="output leaked: $must_not_contain"
-  fi
-
-  if [ -z "$problem" ]; then
-    printf '  PASS  %s\n' "$label"
-    printf 'PASS\n' >> "$RESULTS"
-  else
-    printf '  FAIL  %s\n        %s\n' "$label" "$problem"
-    [ -n "$out" ] && printf '%s\n' "$out" | sed 's/^/        | /'
-    printf 'FAIL\n' >> "$RESULTS"
-  fi
+    if [[ "$out" == *CRASHED* ]]; then
+      problem="hook crashed instead of failing open"
+    fi
+    if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$out" != *"$must_contain"* ]]; then
+      problem="output missing: $must_contain"
+    fi
+    if [ -z "$problem" ] && [ -n "$must_not_contain" ] && [[ "$out" == *"$must_not_contain"* ]]; then
+      problem="output leaked: $must_not_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$out"
+  ) &
 }
-
-export HOOKS
 
 FIX="$WORKDIR/inject"
 mkdir -p "$FIX/empty" "$FIX/full" "$FIX/nested/docs" "$FIX/junk"
 
-printf '%s\n' '# Backlog' '## Now — V1' '### 1.1 Create + fetch' \
-  '- 1.1.1 | C | [WIP] Idempotent POST /orders · M · S2 → `go test ./orders/...`' \
-  '- 1.1.2 | H | POST /orders/:id/refund · M · S4 → `go test ./refund/...`' \
-  '- 1.1.3 | H | [BLOCKED] Refund idempotency · M · S4 → `go test ./refund/...`' \
-  '  - Blocked: the SDK exposes no idempotency key at the pinned version.' \
+printf '%s\n' '# Project Backlog' '## [EPIC-01] Now, V1' '### [TG-01.1] Cross-Cutting' \
+  '#### [TSK-01.1.1] Idempotent POST /orders [P: C] [IN_PROGRESS]' \
+  '* **Done when:** `go test ./orders/...`' \
+  '#### [TSK-01.1.2] POST /orders/:id/refund [P: H] [TODO]' \
+  '* **Done when:** `go test ./refund/...`' \
+  '#### [TSK-01.1.3] Refund idempotency [P: H] [BLOCKED]' \
+  '* **Blocked By:** `external`' \
+  '  * **Reason:** the SDK exposes no idempotency key at the pinned version.' \
+  '* **Done when:** `go test ./refund/...`' \
+  '#### [TSK-01.1.4] Fix flaky test [P: L] [DONE]' \
+  '* **Done when:** `go test ./flaky/...`' \
   > "$FIX/full/BACKLOG.md"
 
 printf '%s\n' '# Changelog' '## [Unreleased]' '## [0.4.2] — 2026-08-20' \
   '### Added' '- Something.' > "$FIX/full/CHANGELOG.md"
 
-printf '%s\n' '# Backlog' '- 1.1.1 | M | a nested story · S → `true`' \
+printf '%s\n' '# Project Backlog' '#### [TSK-01.1.1] a nested story [P: M] [TODO]' \
+  '* **Done when:** `true`' \
   > "$FIX/nested/docs/BACKLOG.md"
 
 printf '%s\n' 'not a backlog at all' > "$FIX/junk/BACKLOG.md"
@@ -689,7 +740,7 @@ else
   inject_case "I3  reports the released version"     "$FIX/full" "Released version: 0.4.2"
 fi
 inject_case "I4  skips the Unreleased heading"     "$FIX/full" "" "version: Unreleased"
-inject_case "I5  an indented note is not a story"  "$FIX/full" "" "Blocked: the SDK"
+inject_case "I5  an indented note is not a story"  "$FIX/full" "" "SDK exposes no idempotency key"
 if [ "$IS_WINDOWS" -eq 1 ]; then
   skip_case "I6  no verify target is stated"     "same empty-stdout failure as I1 - only the \"full\" fixture is affected"
 else
@@ -697,12 +748,26 @@ else
 fi
 inject_case "I7  silent when no backlog exists"    "$FIX/empty" "" "Work state"
 inject_case "I8  finds a backlog under docs/"      "$FIX/nested" "docs/BACKLOG.md"
-inject_case "I9  a backlog with no stories is fine" "$FIX/junk" "Nothing marked [WIP]"
+inject_case "I9  a backlog with no stories is fine" "$FIX/junk" "Nothing marked [IN_PROGRESS]"
 inject_case "I10 no version line without a changelog" "$FIX/nested" "" "Released version"
 inject_case "I11 outside a repo it stays silent"   "" "" "Work state"
 inject_case "I12 a missing root does not crash"    "/nonexistent/repo" "" "Work state"
+inject_case "I13 counts a non-zero open tally for a heading-format backlog" "$FIX/full" "Backlog: 3 open"
+inject_case "I14 a DONE story is excluded from the open tally"    "$FIX/full" "Backlog: 3 open" "Fix flaky test"
 
-PASS="$(grep -c '^PASS$' "$RESULTS" || true)"
-FAIL="$(grep -c '^FAIL$' "$RESULTS" || true)"
+wait
+
+PASS=0
+FAIL=0
+for f in "$RESULTS_DIR"/*.out; do
+  [ -e "$f" ] || continue
+  cat "$f"
+  if head -n1 "$f" | grep -q '^  PASS  '; then
+    PASS=$((PASS + 1))
+  elif head -n1 "$f" | grep -q '^  FAIL  '; then
+    FAIL=$((FAIL + 1))
+  fi
+done
+
 printf '\n  %d passed, %d failed\n\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

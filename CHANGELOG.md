@@ -4,6 +4,33 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.37.2] — 2026-08-31
+
+### Changed
+- Risk-accepted (not closed) the gap where allowlisted `Bash(grep:*)`/`Bash(sed:*)`/`Bash(awk:*)` and unrestricted `Bash(curl:*)` can read/exfiltrate the same secret-path files (`.env`, `*.pem`, `id_rsa*`, `credentials`) that `Read`'s deny list protects: Claude Code's `Bash(...)` permission matching is a fixed-prefix, wildcard-only-at-the-end language with no syntax for "this verb, wherever a secret path appears in its arguments" — a workable deny pattern for grep/sed/awk/curl would need real argument parsing (the same gap `git_guard.py` exists to close for git) which is new hook engineering, not a `settings.json` change. Mitigated today by Claude Code's own auto-mode classifier, this repo's single-operator (non-hosted, non-multi-tenant) threat model, and the absence of any live `.env`/`*.pem`/`id_rsa*`/`credentials` file in this repo's own tree.
+
+### Removed
+- `.github/workflows/windows-hooks.yml` — dropped GitHub Actions CI from this repo entirely; the local `scripts/hooks/git/pre-push-verify` dispatcher already runs this repo's own `.claude/verify.sh` (`test-hooks.sh` + `validate.sh`), the same coverage the workflow ran, so nothing regresses.
+
+### Fixed
+- `README.md`'s "Git hooks for other repos" section told a reader to run `git config core.hooksPath .githooks` — no `.githooks` directory has ever existed in this toolkit, silently disabling hooks rather than installing them. Replaced with the real `scripts/hooks/git/install.sh` usage.
+- `README.md`'s "Diagram exception" note claimed only the embedded mermaid diagram was a deliberate carve-out from the `readme` skill's 6-section template, when the whole document's structure diverges. Rewrote it into a "Template exception" note naming every diverging section and why.
+- `README.md`'s base-context token figure ("~894 tokens") and skill counts ("50 active, 3 parked") were stale against `bash scripts/validate.sh`'s current output and the real skill-directory count; updated to 1069 tokens and 60 active / 6 parked.
+
+## [0.37.1] — 2026-08-29
+
+### Added
+- `scripts/validate.sh`: a `hooksPath` check that fails when `core.hooksPath` is set but doesn't resolve to a real directory, so a dangling path can't silently disable every git hook again.
+- `scripts/validate.sh`'s budget pass now also reports the repo-root `AGENTS.md`'s token cost as a separate, ungated `root AGENTS.md` row (previously unmeasured entirely) — the BUDGET-gated total stays scoped to `claude-code/AGENTS.md`, the file actually loaded on every turn everywhere.
+
+### Changed
+- Corrected six stale facts in root `AGENTS.md`: the hook-regression-case count, a hooks table missing `auto_format.py`, a typed-only-skill list missing `backlog-prioritize`, a parked-skill list naming three of six `SKILL.md.off` skills, and a "stays full-description" claim naming only `workflow-loop` instead of it plus `standards-aws`/`git-merge-conflict`. Dropped a dead `write-*` skill grant from `claude-code/agents/workflow-implementer.md` — no `write-*` skill exists.
+
+### Fixed
+- `context_injector.py`'s `STORY` regex matched a pipe-delimited format nothing in this repo produces, so the `SessionStart` hook always reported "Backlog: 0 open" regardless of actual backlog state. Now matches the real `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]` heading, uses `[IN_PROGRESS]` instead of the nonexistent `[WIP]` token, and excludes `[DONE]` stories from the open tally.
+- `scripts/test-hooks.sh` ran ~11.5s serially with 2-3 subprocess calls per case; collapsed payload encode/decode into fewer subprocess calls and parallelized case execution behind a bounded worker pool (`TEST_HOOKS_PARALLEL`, default 8) with per-case isolated session ids and per-worker result files, cutting runtime to ~2s. The pool's initial `wait -n` throttle silently disabled itself on bash 3.2 (macOS's default `/bin/bash` doesn't support `wait -n`), letting every case run fully unthrottled; replaced with a portable busy-poll.
+- This repo's `core.hooksPath` pointed at a pre-rename path that no longer exists, silently disabling `pre-commit-gofmt`, `pre-commit-hooks-syntax`, and `pre-push-verify`; repointed to the real in-repo `scripts/hooks/git`.
+
 ## [0.37.0] — 2026-08-28
 
 ### Added

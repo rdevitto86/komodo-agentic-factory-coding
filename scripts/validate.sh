@@ -10,7 +10,8 @@
 #   1. links        every claude-code/* is symlinked into ~/.claude
 #   2. hooks        both guards parse as valid Python
 #   3. frontmatter  every skill/agent uses only loader-known keys
-#   4. budget       AGENTS.md + skill listing under BUDGET tokens
+#   4. hooksPath    core.hooksPath, if set, resolves to a real directory
+#   5. budget       claude-code/AGENTS.md + skill listing under BUDGET tokens
 #
 # Check 3 is the one that matters most. The skill loader silently
 # rejects any SKILL.md carrying a key it does not know, so a single
@@ -19,6 +20,10 @@
 #
 # Tune: BUDGET is the always-on token ceiling, paid every turn of
 # every session. Prefer moving content into a skill over raising it.
+# The budget pass also reports repo-root AGENTS.md as a separate,
+# ungated row — it costs tokens only while working in this repo (via
+# CLAUDE.md's @AGENTS.md), not on every turn everywhere, so it is
+# never folded into the BUDGET-gated total.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -246,11 +251,22 @@ sys.exit(1 if failures else 0)
 PY
 [ $? -eq 0 ] || problems=$((problems + 1))
 
+printf '\n  hooksPath\n'
+hooks_path="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
+if [ -z "$hooks_path" ]; then
+  printf '    ok        core.hooksPath is unset\n'
+elif [ -d "$hooks_path" ] || [ -d "$REPO_ROOT/$hooks_path" ]; then
+  printf '    ok        core.hooksPath -> %s\n' "$hooks_path"
+else
+  printf '    BROKEN    core.hooksPath -> %s does not resolve to a directory\n' "$hooks_path"
+  problems=$((problems + 1))
+fi
+
 printf '\n  base context budget\n'
-python3 - "$SOURCE" "$BUDGET" <<'PY'
+python3 - "$SOURCE" "$REPO_ROOT" "$BUDGET" <<'PY'
 import os, re, sys
 
-source, budget = sys.argv[1], int(sys.argv[2])
+source, repo_root, budget = sys.argv[1], sys.argv[2], int(sys.argv[3])
 
 
 def tokens(text):
@@ -296,12 +312,20 @@ if os.path.isdir(skills_dir):
 
 print("    %-24s %5d tokens (%d listed to the model)" % ("skill listing", listing, skill_count))
 total = always_on + listing
-print("    %-24s %5d tokens" % ("TOTAL", total))
+print("    %-24s %5d tokens" % ("TOTAL (always-on)", total))
 print()
 if total > budget:
     print("    OVER BUDGET by %d tokens (limit %d)" % (total - budget, budget))
     sys.exit(1)
 print("    within budget (limit %d, %d free)" % (budget, budget - total))
+
+root_agents_path = os.path.join(repo_root, "AGENTS.md")
+if os.path.exists(root_agents_path):
+    root_tokens = tokens(open(root_agents_path, encoding="utf-8").read())
+    print()
+    print("    %-24s %5d tokens (this repo's project doc, loaded via CLAUDE.md's @AGENTS.md" % ("root AGENTS.md", root_tokens))
+    print("                                    only while working in this repo — not part of the always-on budget above)")
+    print("    %-24s %5d tokens" % ("TOTAL incl. project doc", total + root_tokens))
 PY
 [ $? -eq 0 ] || problems=$((problems + 1))
 

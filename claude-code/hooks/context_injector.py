@@ -6,7 +6,7 @@
 #
 # It emits at most a dozen lines:
 #
-#   1. the [WIP] story from BACKLOG.md, and its Done when command
+#   1. the [IN_PROGRESS] story from BACKLOG.md, and its Done when command
 #   2. how many stories are open, and how many are blocked
 #   3. the current version, from the first CHANGELOG.md heading
 #   4. whether this repo declares a verify gate
@@ -25,7 +25,7 @@ import sys
 
 MAX_STORY_CHARS = 160
 BACKLOG_NAMES = ("BACKLOG.md", "docs/BACKLOG.md")
-STORY = re.compile(r"^\s*-\s*\d+\.\d+\.\d+\s*\|\s*([CHML])\s*\|\s*(\[[A-Z]+\])?\s*(.+?)\s*$")
+STORY = re.compile(r"^####\s*\[TSK-[\w.]+\]\s*(.+?)\s*\[P:\s*[A-Z]+\]\s*\[([A-Z_]+)\]\s*$")
 VERSION = re.compile(r"^##\s*\[([^\]]+)\]")
 
 
@@ -70,18 +70,20 @@ def clip(text):
 
 
 def scan_stories(lines):
-    wip, blocked, total = [], 0, 0
+    in_progress, blocked, total = [], 0, 0
     for line in lines:
         match = STORY.match(line)
         if match is None:
             continue
+        status = match.group(2).upper()
+        if status == "DONE":
+            continue
         total += 1
-        tag = (match.group(2) or "").upper()
-        if tag == "[WIP]":
-            wip.append(clip(match.group(3)))
-        elif tag == "[BLOCKED]":
+        if status == "IN_PROGRESS":
+            in_progress.append(clip(match.group(1)))
+        elif status == "BLOCKED":
             blocked += 1
-    return wip, blocked, total
+    return in_progress, blocked, total
 
 
 def current_version(root):
@@ -122,15 +124,15 @@ def main():
     if lines is None:
         sys.exit(0)
 
-    wip, blocked, total = scan_stories(lines)
+    in_progress, blocked, total = scan_stories(lines)
     report = ["Work state, read from disk at session start:", ""]
 
-    if wip:
+    if in_progress:
         report.append("In progress (%s):" % name)
-        for story in wip[:3]:
+        for story in in_progress[:3]:
             report.append("  - %s" % story)
     else:
-        report.append("Nothing marked [WIP] in %s." % name)
+        report.append("Nothing marked [IN_PROGRESS] in %s." % name)
 
     tally = "%d open" % total
     if blocked:

@@ -5,7 +5,7 @@ Agent configuration for software/hardware engineering, shared across every Komod
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~894 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+2. **Base context stays tiny.** ~1069 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
@@ -38,11 +38,10 @@ claude-code/          mirrors ~/.claude exactly
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           workflow-implementer, workflow-planner, engineering, scout
 ├── hooks/            comment_guard, git_guard, verify_gate, context_injector, auto_format
-└── skills/           50 active, 3 parked, lazily loaded
+└── skills/           60 active, 6 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
-.github/workflows/    CI — runs test-hooks.sh and validate.sh on push/PR
 ```
 
 ## The Agentic Workflow Loop
@@ -51,7 +50,7 @@ scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
 
 The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
 
-**Diagram exception:** this file normally follows the `readme` skill's fixed 6-section template, which pushes diagrams to the SDD. This repo has no `docs/spec/SDD.md` of its own — it *is* the tool the diagram documents — so the flow below is a deliberate, one-off carve-out.
+**Template exception:** the `readme` skill mandates a fixed 6-section template (Overview, Features, Setup, Usage, Testing, References). This repo has no `docs/spec/SDD.md` of its own — it *is* the tool the rest of that template would otherwise point at — so every section below Setup departs from that skeleton by name, as a deliberate, one-off carve-out for this repo's shape: **Structure** (would be Features, but the directory tree is the more direct fact source than prose feature subsections), **The Agentic Workflow Loop** (Features/Usage content merged, including the diagram the template would otherwise push to an SDD that doesn't exist here), **The Hooks** (Features detail, kept adjacent to the loop it gates), **Skills** (Features detail, kept adjacent to the loop that invokes them), **Output Formatting** (has no template slot — states a session-level contract, not a repo feature), **Budget** (Testing-adjacent — it's a check `scripts/validate.sh` runs, but scoped to context budget rather than a test tier), and **Git hooks for other repos** (Usage detail — the one thing another repo actually invokes from this one).
 
 ```mermaid
 flowchart TD
@@ -147,7 +146,7 @@ Two guards run as `PreToolUse`, so a violation never reaches disk. Three more ru
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 127 regression cases
+bash scripts/test-hooks.sh    # 176 regression cases
 ```
 
 ## Skills
@@ -195,5 +194,9 @@ A skill listed by name costs 1–4 tokens. A new line in `claude-code/AGENTS.md`
 Install per repo:
 
 ```bash
-git config core.hooksPath .githooks
+bash scripts/hooks/git/install.sh /path/to/repo         # one repo
+bash scripts/hooks/git/install.sh ~/komodo/*/*          # many repos, skips non-repos
+bash scripts/hooks/git/install.sh --status /path/...    # report only, change nothing
 ```
+
+`install.sh` sets `core.hooksPath` to its own directory's absolute path — nothing is copied, so editing a hook there takes effect in every installed repo on the next commit.
