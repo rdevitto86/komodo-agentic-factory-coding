@@ -42,7 +42,6 @@ claude-code/          mirrors ~/.claude exactly
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
-.github/workflows/    CI — runs test-hooks.sh and validate.sh on push/PR
 ```
 
 ## The Agentic Workflow Loop
