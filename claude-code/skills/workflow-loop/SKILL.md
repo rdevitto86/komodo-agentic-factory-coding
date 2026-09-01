@@ -104,6 +104,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Run the fork even when the code already appears to exist on disk.** Verifying inherited state is not implementing it — the fork is what actually re-derives whether that state is correct, tested, and matches the task, rather than this session taking a build's exit code on faith.
 
+**A fork returns a result, never its reasoning — except `## Comment Candidates`.** Retain each task's non-empty `## Comment Candidates` entries verbatim across the band, the same way a P2.3/P2.4 filed finding folds into P2.0's next pick — this is what lets P3's `/write-comments` call see the live WHY-context captured at implementation time instead of reconstructing it cold.
+
 **Ends when:** every one of the task's `Done when` commands exits zero.
 
 ### P2.2 · Verify
@@ -152,9 +154,11 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 
 **Right before this commit, decide the PR's labels** — category label + authorship label, per `git-pr-create`'s "Label it" priority order, read off `git diff <base>...HEAD --stat` for the band so far (before this commit lands). Carry that decision into P4 rather than having `git-pr-create` re-derive it from a diff that also includes this commit.
 
-**Commit here once it returns — its own delta only.** `workflow-consolidate` runs as `workflow-implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is just consolidate's version/manifest/backlog-cleanup output. Run `/git-commit-message` against that delta, then `git add` + `git commit`.
+**Run `/git-commit-message` against consolidate's delta to draft the message, then run `/write-comments` before committing anything — never after.** `write-comments` splices straight into files on disk; committing consolidate's delta first would mean either a second, trivial-looking commit for its splices or an amend, and this repo's rule is new commits only, never amends. Feed it the band's diff (`git diff` for everything that landed this band, before this commit), the band's `BACKLOG.md` task stories, the drafted commit message, every task's accumulated Comment Candidates entries from P2.1, and `.claude/state/removed-comments.jsonl`. Once it returns, truncate `.claude/state/removed-comments.jsonl` yourself so a future band never sees this one's stale entries — `write-comments` only reads that log, it does not own clearing it.
 
-**Ends when:** the changelog section is released, the backlog no longer lists finished work, this commit's PR labels are decided, and consolidate's delta is committed.
+**Commit here once both have run — consolidate's delta and `write-comments`' own splices land together, one commit.** `workflow-consolidate` runs as `workflow-implementer`, which never commits by design (a fork's diff has to clear this session's judgment before it lands, not before). Every task's own diff already has its own commit from P2.3; this commit is consolidate's version/manifest/backlog-cleanup output plus whatever `write-comments` spliced plus the now-truncated removed-comments log, all under the message already drafted above. `git add` + `git commit`.
+
+**Ends when:** the changelog section is released, the backlog no longer lists finished work, this commit's PR labels are decided, `/write-comments` has run for the band with `.claude/state/removed-comments.jsonl` truncated after it, and consolidate's delta together with any spliced comments is committed.
 
 ---
 
