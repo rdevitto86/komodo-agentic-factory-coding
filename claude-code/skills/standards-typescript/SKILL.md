@@ -11,13 +11,7 @@ Zero comments, zero JSDoc. Error messages lead with a verb phrase and never name
 
 ## Comment discipline
 
-You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and JSDoc are scanned the same way.
-
-Banned: a name echo (the comment's first word repeats the function/variable/type name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant JSDoc block for an internal/private utility not explicitly requested.
-
-Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix.
-
-This language's exempt machine directives, verified against the guard's own list: `// eslint-disable`, `// eslint-enable`, `// @ts-expect-error`, `// @ts-ignore`, `// @ts-nocheck`, `// prettier-ignore`, `// biome-ignore`, `// istanbul ignore`, `"use client"`, `"use server"`. Anything else — including JSDoc on an exported symbol — prompts for approval.
+The real rules live in `claude-code/hooks/comment_guard.py` and its shared rules module `claude-code/hooks/lib/comment_rules.py`, not here. Comments are never authored directly — they are only ever added via the `write-comments` skill.
 
 ## Toolchain
 
