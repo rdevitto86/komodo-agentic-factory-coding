@@ -71,7 +71,7 @@ def handle_pre(payload):
                   "Comments are only ever added through the write-comments skill (not yet built as of this task — for now there is no path to add a narrative comment inline).")
 
     added_unallowed = []
-    for raw_norm, is_indented, in_manual in new_scanned:
+    for raw_norm, _, in_manual in new_scanned:
         if raw_norm in old_comments:
             continue
         if not is_mechanically_exempt(raw_norm, in_manual):

@@ -1,25 +1,9 @@
 #!/usr/bin/env python3
 #
 # comment_removal_log.py - PostToolUse hook for Edit/Write/MultiEdit/
-# NotebookEdit. Records every comment an approved write actually removed,
-# so a later P3 pass can review what left the codebase this band.
+# NotebookEdit. Records approved comment removals for a later pass.
 #
-# comment_guard.py (PreToolUse) already asks before a removal lands; this
-# hook only runs after the write, so it never sees the user's answer
-# directly. It infers approval from the write having landed at all, then
-# diffs the edit's own before/after comment sets and appends anything
-# missing to .claude/state/removed-comments.jsonl, one JSON line per
-# removed comment.
-#
-# "Before" is the tool_input's old_string/edits[].old_string, the same
-# pre-image comment_guard.py reads - a PostToolUse hook has no separate
-# pre-image of its own, since the file on disk is already the new content.
-# A Write with no old_string therefore logs nothing, which is correct: a
-# whole-file overwrite has no prior text for this hook to diff against.
-#
-# This hook FAILS OPEN, like auto_format.py. A crash or a missing repo
-# root must never be able to block a write comment_guard.py already let
-# through.
+# This hook FAILS OPEN, like auto_format.py.
 
 import json
 import os
