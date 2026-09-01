@@ -72,6 +72,14 @@ def resolve_proposal_path(file_field, repo_root):
     return os.path.join(repo_root, file_field)
 
 
+def is_within_repo_root(full_path, repo_root):
+    real_path = os.path.realpath(full_path)
+    real_root = os.path.realpath(repo_root)
+    if real_path == real_root:
+        return True
+    return real_path.startswith(real_root + os.sep)
+
+
 def prevalidate_proposal(proposal, repo_root):
     if not isinstance(proposal, dict):
         return None, None, None, "proposal is not a JSON object"
@@ -91,6 +99,9 @@ def prevalidate_proposal(proposal, repo_root):
         return None, None, None, "missing or invalid 'text'"
 
     full_path = resolve_proposal_path(file_field, repo_root)
+    if not is_within_repo_root(full_path, repo_root):
+        return None, None, None, f"resolved path is outside repo root: {file_field!r}"
+
     family = resolve_family(full_path)
     if not family:
         return None, None, None, f"unresolvable file family for {file_field!r}"

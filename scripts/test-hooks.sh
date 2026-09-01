@@ -746,6 +746,10 @@ validator_case "V1  an off-template proposal is dropped and a valid WHY: proposa
   '[{"file":"svc.go","line":4,"template_type":"WHY","text":"// WHY: seeds the retry counter"},{"file":"svc.go","line":3,"template_type":"BANNER","text":"// just some prose"}]' \
   "WHY: seeds the retry counter" "does not match the BANNER template shape" "WHY: seeds the retry counter"
 
+validator_case "V2  a proposal whose file escapes repo_root via ../ segments is dropped, not spliced" \
+  '[{"file":"../../../../../../etc/escape-me.go","line":1,"template_type":"WHY","text":"// WHY: should never land outside the repo"}]' \
+  "" "outside repo root"
+
 printf '\nend-to-end comment pipeline\n\n'
 
 e2e_pipeline_case() {
