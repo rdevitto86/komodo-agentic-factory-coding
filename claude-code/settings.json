@@ -147,7 +147,8 @@
     "git-issue-review": "name-only",
     "git-pr-create": "name-only",
     "git-pr-review": "name-only",
-    "git-pr-comment": "name-only"
+    "git-pr-comment": "name-only",
+    "write-comments": "name-only"
   },
   "hooks": {
     "PreToolUse": [
