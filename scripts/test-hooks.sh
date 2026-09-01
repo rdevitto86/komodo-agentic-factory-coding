@@ -661,6 +661,48 @@ expect "F7  a malformed payload fails open, not closed" allow <<'JSON'
 {"tool_name":"Write","tool_input":
 JSON
 
+# ────────────────────────────  comment removal log  ────────────────────────
+HOOK="$HOOKS/comment_removal_log.py"
+printf '\ncomment removal log\n\n'
+
+FIXTURE_LOG="$WORKDIR/fixture-commentlog"
+git init -q -b main "$FIXTURE_LOG"
+(cd "$FIXTURE_LOG" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+printf 'package main\n\nfunc Boot() {}\n' > "$FIXTURE_LOG/svc.go"
+
+comment_log_case() {
+  local label="$1" want="$2" tool_input="$3" must_contain="${4:-}" must_not_be_file="${5:-}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local payload out problem="" logfile
+    payload="{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Edit\",\"tool_input\":$tool_input}"
+    out="$(cd "$FIXTURE_LOG" && printf '%s' "$payload" | python3 "$HOOK" 2>&1)"
+    logfile="$FIXTURE_LOG/.claude/state/removed-comments.jsonl"
+    if [ "$want" = "logged" ]; then
+      if [ ! -f "$logfile" ]; then
+        problem="log file was not created"
+      elif [ -n "$must_contain" ] && ! grep -q "$must_contain" "$logfile"; then
+        problem="removed comment text missing from log"
+      fi
+    else
+      if [ -f "$logfile" ] && [ -n "$must_not_be_file" ] && grep -q "$must_not_be_file" "$logfile" 2>/dev/null; then
+        problem="unexpected entry appeared in log"
+      fi
+    fi
+    report "$outfile" "$label" "$problem" "$out"
+  ) &
+}
+
+comment_log_case "L1  an approved comment removal is appended to the per-band log" logged \
+  '{"file_path":"'"$FIXTURE_LOG"'/svc.go","old_string":"// Preloads all the required dependencies.\nfunc Boot() {}","new_string":"func Boot() {}"}' \
+  "Preloads all the required dependencies"
+
+comment_log_case "L2  a Write with no old_string logs nothing" no-log \
+  '{"file_path":"'"$FIXTURE_LOG"'/svc.go","content":"// brand new\nfunc Fresh() {}"}' \
+  "" "brand new"
+
 # --- Context injector ---
 printf '\ncontext injector\n\n'
 

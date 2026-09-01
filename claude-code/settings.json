@@ -179,6 +179,15 @@
             "command": "python3 ~/.claude/hooks/auto_format.py"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/comment_removal_log.py"
+          }
+        ]
       }
     ],
     "SessionStart": [

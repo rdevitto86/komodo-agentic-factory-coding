@@ -6,5 +6,8 @@ TODO.md
 __pycache__/
 *.pyc
 
+# Per-band comment-removal log (TSK-01.2.3)
+.claude/state/
+
 # Editor / OS noise
 .DS_Store
