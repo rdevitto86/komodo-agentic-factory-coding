@@ -710,7 +710,38 @@ comment_log_case "L2  a Write with no old_string logs nothing" no-log \
   '{"file_path":"'"$FIXTURE_LOG"'/svc.go","content":"// brand new\nfunc Fresh() {}"}' \
   "" "brand new"
 
-# --- Context injector ---
+VALIDATOR="$HOOKS/write_comments_validator.py"
+printf '\nwrite-comments validator\n\n'
+
+FIXTURE_VALIDATOR="$WORKDIR/fixture-validator"
+mkdir -p "$FIXTURE_VALIDATOR"
+printf 'package main\n\nfunc Run() {\n\tx := 1\n\treturn x\n}\n' > "$FIXTURE_VALIDATOR/svc.go"
+
+validator_case() {
+  local label="$1" proposals="$2" must_spliced="${3:-}" must_dropped="${4:-}" must_in_file="${5:-}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out problem=""
+    out="$(printf '%s' "$proposals" | python3 "$VALIDATOR" --repo-root "$FIXTURE_VALIDATOR" 2>/dev/null)"
+    if [ -n "$must_spliced" ] && [[ "$out" != *"\"spliced\""*"$must_spliced"* ]]; then
+      problem="spliced result missing: $must_spliced"
+    fi
+    if [ -z "$problem" ] && [ -n "$must_dropped" ] && [[ "$out" != *"\"dropped\""*"$must_dropped"* ]]; then
+      problem="dropped reason missing: $must_dropped"
+    fi
+    if [ -z "$problem" ] && [ -n "$must_in_file" ] && ! grep -qF "$must_in_file" "$FIXTURE_VALIDATOR/svc.go"; then
+      problem="fixture file does not contain: $must_in_file"
+    fi
+    report "$outfile" "$label" "$problem" "$out"
+  ) &
+}
+
+validator_case "V1  an off-template proposal is dropped and a valid WHY: proposal is spliced" \
+  '[{"file":"svc.go","line":4,"template_type":"WHY","text":"// WHY: seeds the retry counter"},{"file":"svc.go","line":3,"template_type":"BANNER","text":"// just some prose"}]' \
+  "WHY: seeds the retry counter" "does not match the BANNER template shape" "WHY: seeds the retry counter"
+
 printf '\ncontext injector\n\n'
 
 export HOOKS
