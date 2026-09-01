@@ -453,6 +453,10 @@ printf '// Helper does the work\nfunc Other() {}\nfoo()\n' > "$WORKDIR/helper.go
 C56C_PAYLOAD="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/helper.go","old_string":"foo()","new_string":"// Helper does the work\\nfunc Helper() {}\\nfoo()"}}' "$WORKDIR")"
 expect "C56c an echo comment whose exact text already exists elsewhere in the file still prompts" deny "restates the name" <<< "$C56C_PAYLOAD"
 
+C57_SESSION="$(next_session)"
+C57_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"// old cleanup note\\nfunc InitStore() {}","new_string":"// WHY: retries twice before giving up\\nfunc InitStore() {}"}}' "$C57_SESSION")"
+expect "C57 a single edit removing one comment and adding a narrative comment denies, not asks" deny "retries twice before giving up" <<< "$C57_PAYLOAD"
+
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
 printf '\ngit guard\n\n'
@@ -741,6 +745,56 @@ validator_case() {
 validator_case "V1  an off-template proposal is dropped and a valid WHY: proposal is spliced" \
   '[{"file":"svc.go","line":4,"template_type":"WHY","text":"// WHY: seeds the retry counter"},{"file":"svc.go","line":3,"template_type":"BANNER","text":"// just some prose"}]' \
   "WHY: seeds the retry counter" "does not match the BANNER template shape" "WHY: seeds the retry counter"
+
+printf '\nend-to-end comment pipeline\n\n'
+
+e2e_pipeline_case() {
+  JOB_IDX=$((JOB_IDX + 1)); local outfile1="$RESULTS_DIR/$JOB_IDX.out"
+  JOB_IDX=$((JOB_IDX + 1)); local outfile2="$RESULTS_DIR/$JOB_IDX.out"
+  JOB_IDX=$((JOB_IDX + 1)); local outfile3="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-e2e"
+    git init -q -b main "$fixture"
+    (cd "$fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc Boot() {}\n' > "$fixture/svc.go"
+
+    local payload1 out1 decoded1 got1 reason1 problem1=""
+    payload1="$(printf '{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"%s/svc.go","old_string":"// old cleanup note\\nfunc Boot() {}","new_string":"// explains the retry\\nfunc Boot() {}"}}' "$fixture")"
+    out1="$(printf '%s' "$payload1" | python3 "$HOOKS/comment_guard.py" 2>/dev/null)"
+    decoded1="$(decision_reason_of "$out1")"
+    got1="${decoded1%%$'\x1e'*}"
+    reason1="${decoded1#*$'\x1e'}"
+    [ "$got1" != "deny" ] && problem1="decision=$got1 want=deny"
+    if [ -z "$problem1" ] && [[ "$reason1" != *"explains the retry"* ]]; then
+      problem1="reason missing: explains the retry"
+    fi
+    report "$outfile1" "E1  a removal-plus-addition edit denies the addition, a deny always outranking the removal-ask" "$problem1" "$reason1"
+
+    local payload2 out2 problem2="" logfile
+    payload2='{"hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"'"$fixture"'/svc.go","old_string":"// old cleanup note\nfunc Boot() {}","new_string":"func Boot() {}"}}'
+    out2="$(printf '%s' "$payload2" | python3 "$HOOKS/comment_removal_log.py" 2>&1)"
+    logfile="$fixture/.claude/state/removed-comments.jsonl"
+    if [ ! -f "$logfile" ]; then
+      problem2="log file was not created"
+    elif ! grep -q "old cleanup note" "$logfile"; then
+      problem2="removed comment text missing from log"
+    fi
+    report "$outfile2" "E2  the same removal, approved on its own, lands in the shared fixture's log" "$problem2" "$out2"
+
+    local proposals3 out3 problem3=""
+    proposals3='[{"file":"svc.go","line":3,"template_type":"WHY","text":"// WHY: covers the invariant a write-comments pass would leave for this band"}]'
+    out3="$(printf '%s' "$proposals3" | python3 "$HOOKS/write_comments_validator.py" --repo-root "$fixture" 2>/dev/null)"
+    if [[ "$out3" != *"\"spliced\""*"covers the invariant a write-comments pass would leave"* ]]; then
+      problem3="spliced result missing expected text"
+    elif ! grep -qF "WHY: covers the invariant a write-comments pass would leave" "$fixture/svc.go"; then
+      problem3="fixture file does not contain the spliced WHY comment"
+    fi
+    report "$outfile3" "E3  a valid WHY: proposal splices into the same fixture file the pipeline just touched" "$problem3" "$out3"
+  ) &
+}
+
+e2e_pipeline_case
 
 printf '\ncontext injector\n\n'
 

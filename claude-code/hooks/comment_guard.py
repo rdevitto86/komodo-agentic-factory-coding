@@ -52,8 +52,9 @@ def handle_pre(payload):
         if count > surviving.get(body, 0):
             removed.append(body)
 
+    removed_reason = ""
     if removed:
-        respond("ask", "This edit removes comment(s) it did not add:\n"
+        removed_reason = ("This edit removes comment(s) it did not add:\n"
                 + "\n".join(f"  - {c}" for c in removed)
                 + "\n\nApprove only if the removal is intended. Moving code? "
                   "Re-add each line verbatim at the destination.")
@@ -62,8 +63,9 @@ def handle_pre(payload):
     # that merely happens to already exist elsewhere is still a fresh echo
     edit_old_comments = set(c[0] for c in scope_scanned)
     echoes = check_echoes(new_text.splitlines(), family, edit_old_comments)
+    echo_reason = ""
     if echoes:
-        respond("deny", f"This comment restates the name of the identifier below it, in {os.path.basename(path)} — code should be self-documenting:\n"
+        echo_reason = (f"This comment restates the name of the identifier below it, in {os.path.basename(path)} — code should be self-documenting:\n"
                 + "\n".join(echoes)
                 + "\n\nThis is a hard block, not a prompt: no comment content the coding agent writes gets past this check. "
                   "Comments are only ever added through the write-comments skill (not yet built as of this task — for now there is no path to add a narrative comment inline).")
@@ -75,8 +77,9 @@ def handle_pre(payload):
         if not is_mechanically_exempt(raw_norm, in_manual):
             added_unallowed.append(raw_norm)
 
+    added_reason = ""
     if added_unallowed:
-        reason = (
+        added_reason = (
             f"Comment(s) added to {os.path.basename(path)} are denied — code should be self-documenting:\n"
             + "\n".join(f"  - {c}" for c in added_unallowed)
             + "\n\nOnly a machine directive (// eslint-disable, # noqa, //go:, //nolint:, etc.) passes this check silently. "
@@ -85,7 +88,13 @@ def handle_pre(payload):
             + "\nThis is a hard block, not a prompt: no comment content the coding agent writes gets past this check. "
               "Comments are only ever added through the write-comments skill (not yet built as of this task — for now there is no path to add a narrative comment inline)."
         )
-        respond("deny", reason)
+
+    deny_reasons = [r for r in (echo_reason, added_reason) if r]
+    if deny_reasons:
+        respond("deny", "\n\n".join(deny_reasons))
+
+    if removed_reason:
+        respond("ask", removed_reason)
 
     sys.exit(0)
 
