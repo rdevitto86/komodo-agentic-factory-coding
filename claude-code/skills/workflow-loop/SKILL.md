@@ -21,12 +21,12 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | Phase | Runs as | Fork agent |
 |---|---|---|
 | P0 Spec | Here — dialogue cannot be forked; `/backlog-plan` when a backlog has to be built | — |
-| P1 Decompose | **`/backlog-audit` then `/workflow-decompose`**, then plan the run's PRs and branch here | `workflow-planner` |
+| P1 Decompose | Pick next task group here, then **`/workflow-decompose`**, then plan the run's PRs and branch here | `workflow-planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
 | P2.3 Review | `/assess-bugs` (+ `/assess-security`), then commit here | — |
-| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog write`, once per band | — |
+| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog write`, `/backlog-audit`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `workflow-implementer` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` + tag check | — |
 
@@ -60,9 +60,13 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Requires `BACKLOG.md` to already exist.** P0 owns creating it — if this phase somehow starts without one on disk, that is P0's contract broken, not something to paper over here: exit the loop rather than templating or planning a backlog from inside this phase.
 
-**Run `/backlog-audit [scope]` first, on the same scope `$ARGUMENTS` names.** It's the cheap pass — stale, resolved, duplicate, or now-cleared `[BLOCKED]` lines surface here without the fork's full repo+changelog re-derivation. Carry its findings into `/workflow-decompose`'s brief; an unflagged backlog still runs the fork, but arrives with nothing left to recheck.
+**P0 passing is the guarantee this phase leans on — a working backlog, not a freshly re-verified one.** No audit runs here. `/backlog-audit` runs at P2.4 instead, once per band regardless of how many times `/workflow-loop` fires in a session — it realigns the backlog after work lands rather than gatekeeping before it starts.
 
-**Run `/workflow-decompose [target state] [scope]`, forwarding `$ARGUMENTS` as the scope if it names one** — a domain or a story substring. Default with no scope: every story in the current target state that isn't `[BLOCKED]` after the fork's own recheck pass. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue — this is what "scope which tasks are being worked on via the backlog" means concretely: the queue names the exact `TSK-` IDs in scope for this run, not just task text.
+**Pick the next task group before invoking anything — this is what decides which tasks get worked on when `$ARGUMENTS` names no scope.** `BACKLOG.md`'s file order already *is* its priority order: `backlog-modify` sorts every task group and task by `[P: SEV]` and `(after:)` edges when it writes the file, and `backlog-prioritize` keeps it that way. Walk the target state top to bottom — `## Now, V1` by default, or whichever epic `$ARGUMENTS` names — and take the first task group holding at least one task that is neither `[DONE]` nor `[BLOCKED]`. `$ARGUMENTS` overrides this pick outright when it names a domain, task group, or story substring instead.
+
+**No task group left with open, unblocked work in the target state** → say so and stop. A later epic or the archive is not this phase's problem to open on its own.
+
+**Run `/workflow-decompose [target state] [scope]`**, `scope` being the task group just picked, or `$ARGUMENTS`'s override. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue scoped to that one group — this is what "gather backlog items" means concretely: the queue names the exact `TSK-` IDs in scope for this run, drawn from one already-bounded slice of the backlog rather than the whole file read and mostly discarded.
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — fixing it means going back to P0 with the user, not improvising in P2.
 
@@ -70,7 +74,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `repo-init`'s Create already ran for this repo — trust the tree.** Re-invoke `/repo-init` only when a Foundation-edge story is still open in `BACKLOG.md` (`backlog-modify` owns that edge), or when Scaffold/Refresh is what the task explicitly asks for. Checking the manifest's presence is the zero-token signal; re-running generation to confirm it worked is not.
 
-**Plan the run's PRs before branching — this is a plan, not an action: no branch, no commit, no `gh pr create` happens here.** Group the confirmed queue into one or more PR-sized bands against `git-pr-create`'s sizing rule of thumb — split only where tasks already partition cleanly (separate domains, no shared file, no dependency edge crossing the split); a queue that's one entangled change (shared files, a refactor every task depends on) stays one band regardless of size, since the split only pays off when the tasks were already independent. Present the grouping as a short table (PR # · `TSK-` IDs in it · why this grouping) before moving on. **Only this run's first planned PR gets built out through P2–P4** — later ones stay queued in `BACKLOG.md`, ordered by dependency, for a future run. This is also the only point a split is cheap: once commits land on a branch, `git-pr-create`'s own sizing check can flag an oversized PR but `git_guard.py` blocks the rebase a post-hoc split would need.
+**Plan the run's PRs before branching — this is a plan, not an action: no branch, no commit, no `gh pr create` happens here.** A task group is already one domain by definition (`backlog-modify`'s own rule: never another service's or route's name), so the queue is usually already one PR-sized band against `git-pr-create`'s sizing rule of thumb. Split further only if the group itself is large enough to partition cleanly within itself (no shared file, no dependency edge crossing the split); an entangled group (shared files, a refactor every task depends on) stays one band regardless of size. Present the grouping as a short table (PR # · `TSK-` IDs in it · why this grouping) before moving on. **Only this run's first planned PR gets built out through P2–P4** — a group large enough to need a second band leaves it queued in `BACKLOG.md`, ordered by dependency, for a future run. This is also the only point a split is cheap: once commits land on a branch, `git-pr-create`'s own sizing check can flag an oversized PR but `git_guard.py` blocks the rebase a post-hoc split would need.
 
 **Once the plan's first PR is confirmed, branch here** — `git switch -c <type>/<short-kebab-description>` per `git-pr-create`'s naming rule, `type` and description drawn from that PR's dominant concern. **Resuming a `[WIP]` story reuses its existing branch** (`git switch <existing-branch>`) instead of creating a second one — check the story text for a branch name before assuming none exists.
 
@@ -134,7 +138,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Once every closeout finding is fixed or declined, run `/changelog write` for the whole band** — one pass covering every task that shipped, grouped per that skill's own format. This is the only point the band's behavior is both complete and verified, which is why it lands here rather than per-task in P2.3: a per-task entry risks describing work a later finding in this same band still changes, and a per-task pass adds context switching a single end-of-band pass doesn't. P3 then only releases what this step already wrote — it never authors a new bullet.
 
-**Ends when:** every story the closeout calls filed is fixed or explicitly declined, and `CHANGELOG.md`'s `[Unreleased]` section reflects the band — that satisfies the four stories' `Done when`, so P3 deletes them like any other finished story.
+**Once the changelog is written, run `/backlog-audit` over the whole file, no scope.** This is the one point per band the backlog gets realigned against what actually shipped — stale tasks this band's changes overtook, duplicates, and `[BLOCKED]` stories whose `Recheck:` this band's work just satisfied elsewhere in the file. `CHANGELOG.md` already carries this band's own entries by the time this runs, so audit's "Resolved" verdict never has to author one — it only verifies and sweeps. Running it here, once per band, is also what removes P1's old cost problem: a `/workflow-loop` invoked twice in one session no longer pays for two audits of a backlog that barely moved between them.
+
+**Ends when:** every story the closeout calls filed is fixed or explicitly declined, `/backlog-audit` has applied its verdicts, and `CHANGELOG.md`'s `[Unreleased]` section reflects the band — that satisfies the four stories' `Done when`, so P3 deletes them like any other finished story.
 
 ---
 
