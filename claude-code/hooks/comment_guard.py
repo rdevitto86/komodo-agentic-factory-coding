@@ -6,7 +6,7 @@ from collections import Counter
 
 from lib.comment_rules import (
     check_echoes,
-    is_exempt_or_template,
+    is_mechanically_exempt,
     resolve_family,
     scan_comments,
     scan_docstrings,
@@ -63,29 +63,29 @@ def handle_pre(payload):
     edit_old_comments = set(c[0] for c in scope_scanned)
     echoes = check_echoes(new_text.splitlines(), family, edit_old_comments)
     if echoes:
-        respond("ask", f"This comment restates the name of the identifier below it, in {os.path.basename(path)} — code should be self-documenting:\n"
+        respond("deny", f"This comment restates the name of the identifier below it, in {os.path.basename(path)} — code should be self-documenting:\n"
                 + "\n".join(echoes)
-                + "\n\nDirectives are provisional; approve only if this one is actually wanted.")
+                + "\n\nThis is a hard block, not a prompt: no comment content the coding agent writes gets past this check. "
+                  "Comments are only ever added through the write-comments skill (not yet built as of this task — for now there is no path to add a narrative comment inline).")
 
     added_unallowed = []
     for raw_norm, is_indented, in_manual in new_scanned:
         if raw_norm in old_comments:
             continue
-        if not is_exempt_or_template(raw_norm, is_indented, in_manual):
+        if not is_mechanically_exempt(raw_norm, in_manual):
             added_unallowed.append(raw_norm)
 
     if added_unallowed:
         reason = (
-            f"Comment(s) added to {os.path.basename(path)} don't match an allowed style — code should be self-documenting:\n"
+            f"Comment(s) added to {os.path.basename(path)} are denied — code should be self-documenting:\n"
             + "\n".join(f"  - {c}" for c in added_unallowed)
-            + "\n\nAllowed styles:\n"
-            + "  - Machine directives (// eslint-disable, # noqa, //go:, //nolint:)\n"
-            + "  - Banners (// --- Title ---)\n"
-            + "  - Structured Notes (// WHY: ..., // NOTE: ..., // TODO(user): ...)\n"
-            + "  - Short indented step markers (// 1. Process batch)\n"
-            + "\nDirectives are provisional — approve if this one is actually wanted, deny if not."
+            + "\n\nOnly a machine directive (// eslint-disable, # noqa, //go:, //nolint:, etc.) passes this check silently. "
+              "Everything else — a banner, a WHY:/NOTE:/FIXME:/HACK:/TODO(user): note, a step marker, any other narrative "
+              "comment — is denied, with no ask.\n"
+            + "\nThis is a hard block, not a prompt: no comment content the coding agent writes gets past this check. "
+              "Comments are only ever added through the write-comments skill (not yet built as of this task — for now there is no path to add a narrative comment inline)."
         )
-        respond("ask", reason)
+        respond("deny", reason)
 
     sys.exit(0)
 

@@ -82,7 +82,7 @@ def comment_body(normalized):
     elif body.endswith("*/"): body = body[:-2]
     return body.strip().lstrip("*").strip()
 
-def is_exempt_or_template(normalized, is_indented=False, in_manual=False):
+def is_mechanically_exempt(normalized, in_manual=False):
     if normalized.startswith("#!") or in_manual:
         return True
     body = comment_body(normalized)
@@ -93,6 +93,13 @@ def is_exempt_or_template(normalized, is_indented=False, in_manual=False):
     body_lower = body.lower()
     if any(body_lower.startswith(p) for p in EXEMPT_PREFIXES):
         return True
+
+    return False
+
+def is_narrative_template(normalized, is_indented=False):
+    body = comment_body(normalized)
+    if not body:
+        return False
 
     # Check Regex Templates (WHY:, NOTE:, Banners, TODOs)
     if any(pattern.match(body) for pattern in TEMPLATE_PATTERNS):
