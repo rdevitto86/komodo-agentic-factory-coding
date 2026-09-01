@@ -21,11 +21,12 @@ The two `PreToolUse` guards run **before** the write, so nothing lands on disk a
 
 | Hook | Registered on | Fires on | Does |
 |---|---|---|---|
-| `comment_guard.py` | `~/.claude/settings.json` | Edit, Write, MultiEdit | Denies an added comment; asks before one is deleted |
+| `comment_guard.py` | `~/.claude/settings.json` | Edit, Write, MultiEdit, NotebookEdit | Flat-denies any added narrative comment, no exceptions beyond machine directives/shebang-manual; asks before one is deleted |
 | `git_guard.py` | `~/.claude/settings.json` | Bash | Allowlists read-only git, denies in-place rewrites |
 | `context_injector.py` | `~/.claude/settings.json` | SessionStart | Injects the `[WIP]` story, backlog tally, version, verify target |
 | `verify_gate.py` | `claude-code/agents/workflow-implementer.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
+| `comment_removal_log.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write\|MultiEdit\|NotebookEdit` | Logs every `comment_guard.py`-approved removal to `.claude/state/removed-comments.jsonl` for a later pass to consume |
 
 **`verify_gate.py` is declared on the agent, not in global `settings.json`, on purpose.** A `Stop` hook in an agent's own frontmatter only runs while that agent is active as a subagent, and Claude Code auto-converts it to `SubagentStop` — so it fires when a `workflow-implementer` fork (the `workflow-implement`/`workflow-consolidate` phases) finishes, and never in the primary interactive session. A verification gate on every casual turn burns tokens re-running a repo's test suite for edits nobody asked to be gated; scoping it to the fork means it only fires on work that came through `/workflow-loop`.
 
@@ -37,23 +38,22 @@ It is opt-in per repo and silent otherwise. A repo declares its check as `.claud
 
 `comment_guard.py` compares comment multisets, so adjacency and reindentation are irrelevant. It fails closed — an unparseable payload denies rather than silently passing.
 
-An added comment is allowed only if it fills a **slot**, and every slot is defined by position and size, never by wording:
+An added comment passes silently only if it is **mechanically exempt**, and only two shapes qualify — neither is judged by wording:
 
-| Slot | Test | Why prose cannot use it |
+| Passing shape | Test | Why prose cannot use it |
 |---|---|---|
-| Step marker | 1 line, indented, ≤80 chars, **not adjacent to another comment** | A run of short lines is prose split across lines |
-| Banner | 1 line, `--- Label ---`, label ≤40 chars and hyphen-free | The label slot is 40 chars between two hyphen runs |
-| Structured note | `WHY:`, `NOTE:`, `FIXME:`, `HACK:`, `TODO(user):` + text | The prefix declares intent, not narration |
 | Script manual | Line comments directly under a `#!` shebang | Only one block per file, only at the top |
 | Machine directive | Prefix match against a fixed list | The list holds no prose token |
+
+Every other added comment is a **flat deny, with no ask** — a banner, a `WHY:`/`NOTE:`/`FIXME:`/`HACK:`/`TODO(user):` note, and a step marker are no longer distinct passing slots; those template shapes now deny exactly like unstructured prose. There is currently no path for the coding agent to add a narrative comment inline at all — that path is reserved for the (not yet built, as of this writing) write-comments skill, which will call `write_comments_validator.py` to check a proposed comment's shape against the same templates before it is ever written.
 
 **Block comments and Python docstrings are scanned too**, not just line comments — a `/* */` or `""" """` is denied on the same terms.
 
 Everything else denies, declaration docs included. **A name-echo denies outright** — a comment whose first word is the identifier on the next line carries no information.
 
-Deleting a comment returns `ask`, never `deny`: a hard deny would make ordinary refactors impossible. **The deletion check is scoped to the edit itself** — an Edit's `old_string`, a MultiEdit's `edits[]` — so untouched comments elsewhere in the file never register as removed.
+Deleting a comment returns `ask`, never `deny`: a hard deny would make ordinary refactors impossible. **The deletion check is scoped to the edit itself** — an Edit's `old_string`, a MultiEdit's `edits[]` — so untouched comments elsewhere in the file never register as removed. An approved removal is then recorded by `comment_removal_log.py`, a `PostToolUse` hook, as one JSON line per removed comment appended to `.claude/state/removed-comments.jsonl`, for a later pass to consume; it never affects `comment_guard.py`'s own ask.
 
-**There is no move ledger and no `+comments` grant.** Both were removed with the guard rewrite. Moving a comment therefore takes two approvals: the deletion asks, and re-adding it at the destination denies unless it fits a template.
+**There is no move ledger and no `+comments` grant.** Both were removed with the guard rewrite. Moving a comment therefore takes two approvals: the deletion asks, and re-adding it at the destination is a flat deny — no template exempts it.
 
 An open content allowlist would be another slot, and would not work — the agent writes the content, so it can always emit the exempt token. Never add one. `no-op` was removed from the directive list for exactly this reason: it read as prose and let declaration docs through.
 
