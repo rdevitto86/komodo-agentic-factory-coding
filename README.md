@@ -5,7 +5,7 @@ Agent configuration for software/hardware engineering, shared across every Komod
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~1069 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+2. **Base context stays tiny.** ~1181 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
@@ -37,8 +37,8 @@ claude-code/          mirrors ~/.claude exactly
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           workflow-implementer, workflow-planner, engineering, scout
-├── hooks/            comment_guard, git_guard, verify_gate, context_injector, auto_format
-└── skills/           60 active, 6 parked, lazily loaded
+├── hooks/            comment_guard, git_guard, verify_gate, context_injector, auto_format, comment_removal_log
+└── skills/           62 active, 6 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
@@ -122,17 +122,18 @@ Each repo carries three local documents, plus the SDD (and, when one exists, the
 
 ## The Hooks
 
-Two guards run as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
+Two guards run as `PreToolUse`, so a violation never reaches disk. Four more run at the session's edges or after the write.
 
 | Hook | Fires on | Does | On error |
 |---|---|---|---|
-| `comment_guard.py` | Edit, Write, MultiEdit | Denies an added comment; asks before deleting one | **Closed** |
+| `comment_guard.py` | Edit, Write, MultiEdit | Flat-denies any narrative comment addition; asks before deleting one | **Closed** |
 | `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites | **Closed** |
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
 | `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |
+| `comment_removal_log.py` | Edit, Write, MultiEdit (`PostToolUse`) | Logs every approved comment removal to `.claude/state/removed-comments.jsonl` | **Open** |
 
-**The failure policy is inverted on purpose.** The guards fail closed because a missed comment reaches disk. The other three fail open because none of them may be able to brick a session.
+**The failure policy is inverted on purpose.** The guards fail closed because a missed comment reaches disk. The other four fail open because none of them may be able to brick a session.
 
 `comment_guard.py` compares **comment multisets** rather than diff hunks. Editing the line a comment sits on, or reindenting it, is not a change. Deleting it is.
 
@@ -146,7 +147,7 @@ Two guards run as `PreToolUse`, so a violation never reaches disk. Three more ru
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 176 regression cases
+bash scripts/test-hooks.sh    # 184 regression cases
 ```
 
 ## Skills
@@ -163,7 +164,7 @@ bash scripts/test-hooks.sh    # 176 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-plan` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement`
+Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-plan` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement` `/write-comments`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 

@@ -4,6 +4,23 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.38.0] — 2026-09-01
+
+### Added
+- `write-comments` skill + dedicated agent — the only path that can add a code comment now; drafts proposals and splices them itself via a new deterministic validator, `write_comments_validator.py`, rather than editing files directly.
+- `comment_removal_log.py` — a new `PostToolUse` hook that logs every approved comment removal to `.claude/state/removed-comments.jsonl` for later review.
+- `workflow-implementer` gained an optional `## Comment Candidates` field for capturing live WHY-context at implementation time instead of writing an inline comment.
+
+### Changed
+- `comment_guard.py` now flat-denies any narrative comment addition (banner/`WHY`/`NOTE`/`FIXME`/`HACK`/`TODO`/step-marker) — no ask, no approval path; only a machine directive or the shebang-manual case still passes silently.
+- Extracted comment-shape rules out of `comment_guard.py` into a shared module, `claude-code/hooks/lib/comment_rules.py`, so the guard and the new validator share one source of truth.
+- `workflow-loop`'s P3 now runs `write-comments` once per band before its consolidate commit, fed the band diff, backlog stories, drafted commit message, and accumulated Comment Candidates, and clears the removal log afterward.
+- `AGENTS.md`'s hook documentation and `standards-go`/`standards-python`'s comment-rule sections rewritten to match the new flat-deny behavior, replacing stale text describing the old ask-based guard.
+
+### Fixed
+- A same-edit comment removal previously short-circuited `comment_guard.py`'s deny checks, letting a narrative comment addition land unevaluated whenever the same edit also removed an existing comment — the single most common real-world case this redesign was meant to close.
+- `write_comments_validator.py` rejected proposals whose `file` path resolved outside the target repo root (a `../`-escaping or absolute path could otherwise have been written to).
+
 ## [0.37.2] — 2026-08-31
 
 ### Changed

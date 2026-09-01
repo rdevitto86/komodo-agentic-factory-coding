@@ -90,6 +90,7 @@ def handle_post(payload):
     before_text = tool_input.get("old_string") or "\n".join(
         e.get("old_string", "") for e in edits
     )
+    # WHY: a Write has no old_string/edits, so before_text is empty here -- a PostToolUse hook gets no pre-image of its own, and a whole-file overwrite leaves nothing prior to diff against, so skipping is correct, not a bug.
     if not before_text.strip():
         sys.exit(0)
 
