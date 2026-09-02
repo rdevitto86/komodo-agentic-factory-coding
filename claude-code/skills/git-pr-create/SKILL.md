@@ -12,7 +12,7 @@ argument-hint: [--draft] [--labels "<category>[,<authorship>]"]
 
 ## Fill the template, not the commit log
 
-Read every commit ahead of the base (`git log <base>..HEAD`) and the full diff (`git diff <base>..HEAD`) — the body describes the *change*, not the commit history.
+Read every commit ahead of the base (`git log <base>..HEAD`) and `git diff <base>..HEAD --stat` — the body describes the *change*, not the commit history. Open a single file's diff only when its stat line and the commit messages leave the change genuinely ambiguous.
 
 - **Repo has `.github/PULL_REQUEST_TEMPLATE.md`:** fill it section-for-section as written on disk — do not paraphrase the template's own headings or drop a section. Populate:
   - `Summary`: one or two sentences on what the PR is for. Never a file list.
