@@ -156,7 +156,7 @@ PYTHON_WRITE = re.compile(r"\bpython3?\b[^;|&]*?-c\b.*?open\s*\([^)]*['\"][wa]")
 SEGMENT_BOUNDARY_CHARS = ";\n|"
 
 
-def find_backtick_end(command, start):
+def scan_masked_span(command, start, is_terminator):
     index = start
     length = len(command)
     in_squote = False
@@ -187,10 +187,14 @@ def find_backtick_end(command, start):
             in_dquote = True
             index += 1
             continue
-        if char == "`":
+        if is_terminator(char):
             return index
         index += 1
     return length
+
+
+def find_backtick_end(command, start):
+    return scan_masked_span(command, start, lambda char: char == "`")
 
 
 def unescape_nested_backticks(text):
@@ -198,49 +202,30 @@ def unescape_nested_backticks(text):
 
 
 def find_paren_end(command, start):
-    index = start
-    length = len(command)
-    depth = 1
-    in_squote = False
-    in_dquote = False
-    while index < length:
-        char = command[index]
-        if in_squote:
-            if char == "'":
-                in_squote = False
-            index += 1
-            continue
-        if in_dquote:
-            if char == "\\" and index + 1 < length:
-                index += 2
-                continue
-            if char == '"':
-                in_dquote = False
-            index += 1
-            continue
-        if char == "\\" and index + 1 < length:
-            index += 2
-            continue
-        if char == "'":
-            in_squote = True
-            index += 1
-            continue
-        if char == '"':
-            in_dquote = True
-            index += 1
-            continue
+    depth = [1]
+
+    def is_terminator(char):
         if char == "(":
-            depth += 1
-            index += 1
-            continue
+            depth[0] += 1
+            return False
         if char == ")":
-            depth -= 1
-            if depth == 0:
-                return index
-            index += 1
-            continue
-        index += 1
-    return length
+            depth[0] -= 1
+            return depth[0] == 0
+        return False
+
+    return scan_masked_span(command, start, is_terminator)
+
+
+def capture_and_mask(command, masked, substitutions, index, finder, offset, unescape=None):
+    length = len(command)
+    end = finder(command, index + offset)
+    text = command[index + offset:end]
+    substitutions.append(unescape(text) if unescape else text)
+    stop = min(end + 1, length)
+    for i in range(index, stop):
+        if masked[i] != "\n":
+            masked[i] = " "
+    return stop
 
 
 def extract_substitutions(command):
@@ -267,22 +252,10 @@ def extract_substitutions(command):
                 index += 1
                 continue
             if char == "`":
-                end = find_backtick_end(command, index + 1)
-                substitutions.append(unescape_nested_backticks(command[index + 1:end]))
-                stop = min(end + 1, length)
-                for i in range(index, stop):
-                    if masked[i] != "\n":
-                        masked[i] = " "
-                index = stop
+                index = capture_and_mask(command, masked, substitutions, index, find_backtick_end, 1, unescape_nested_backticks)
                 continue
             if char == "$" and command.startswith("$(", index):
-                end = find_paren_end(command, index + 2)
-                substitutions.append(command[index + 2:end])
-                stop = min(end + 1, length)
-                for i in range(index, stop):
-                    if masked[i] != "\n":
-                        masked[i] = " "
-                index = stop
+                index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2)
                 continue
             index += 1
             continue
@@ -307,22 +280,10 @@ def extract_substitutions(command):
             index += 2
             continue
         if char == "`":
-            end = find_backtick_end(command, index + 1)
-            substitutions.append(unescape_nested_backticks(command[index + 1:end]))
-            stop = min(end + 1, length)
-            for i in range(index, stop):
-                if masked[i] != "\n":
-                    masked[i] = " "
-            index = stop
+            index = capture_and_mask(command, masked, substitutions, index, find_backtick_end, 1, unescape_nested_backticks)
             continue
         if char == "$" and command.startswith("$(", index):
-            end = find_paren_end(command, index + 2)
-            substitutions.append(command[index + 2:end])
-            stop = min(end + 1, length)
-            for i in range(index, stop):
-                if masked[i] != "\n":
-                    masked[i] = " "
-            index = stop
+            index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2)
             continue
         index += 1
     return "".join(masked), substitutions
