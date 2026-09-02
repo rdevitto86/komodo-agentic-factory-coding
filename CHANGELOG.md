@@ -4,6 +4,14 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.1] — 2026-09-01
+
+### Changed
+- `claude-code/skills/config-accessibility/SKILL.md` trimmed from 2,445 to 793 tokens, dropping sections that duplicated `CLAUDE.local.md`'s always-on rules while keeping the turn-end summary schema, density caps, emoji protocol, code-answer format, document typography, and self-check.
+
+### Fixed
+- `~/.claude/CLAUDE.local.md`'s dead `config-accessibility-output` skill reference (no such skill existed since a rename) corrected to `config-accessibility`, so the skill actually loads when the local file points to it.
+
 ## [0.39.0] — 2026-09-01
 
 ### Added
