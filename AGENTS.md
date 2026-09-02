@@ -63,7 +63,7 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 176 hook regression cases
+bash scripts/test-hooks.sh    # 179 hook regression cases
 bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above

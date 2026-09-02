@@ -20,29 +20,16 @@
 
 import os
 import re
-import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from lib.git import repo_root
 
 MAX_STORY_CHARS = 160
 BACKLOG_NAMES = ("BACKLOG.md", "docs/BACKLOG.md")
 STORY = re.compile(r"^####\s*\[TSK-[\w.]+\]\s*(.+?)\s*\[P:\s*[A-Z]+\]\s*\[([A-Z_]+)\]\s*$")
 VERSION = re.compile(r"^##\s*\[([^\]]+)\]")
-
-
-def repo_root(start):
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=start,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
 
 
 def read_lines(path):

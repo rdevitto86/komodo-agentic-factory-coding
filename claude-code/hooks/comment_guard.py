@@ -3,11 +3,14 @@ import ast
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import textwrap
 from collections import Counter
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from lib.git import repo_root
 
 # --- Language Classification ---
 C_FAMILY, HASH_FAMILY, DASH_FAMILY, BLOCK_FAMILY = "c", "hash", "dash", "block"
@@ -68,21 +71,6 @@ DECL_NAME = (
     re.compile(r"^(?:export\s+)?(?:pub\s+)?(?:async\s+)?(?:func|function|def|class|type|struct|enum|fn|const|var|let)\s+(\w+)"),
 )
 WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
-
-def repo_root(start):
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=start,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
 
 def check_reviewer_scope(path, cwd):
     base = cwd or os.getcwd()
