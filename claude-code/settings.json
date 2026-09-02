@@ -164,7 +164,8 @@
     "workflow-authoring": "name-only",
     "security-review": "name-only",
     "simplify": "name-only",
-    "code-review": "name-only"
+    "code-review": "name-only",
+    "write-comments": "name-only"
   },
   "hooks": {
     "PreToolUse": [
@@ -194,6 +195,15 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/auto_format.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/comment_removal_log.py"
           }
         ]
       }

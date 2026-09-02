@@ -11,7 +11,7 @@ Design rationale for the decisions below lives in `docs/design-decisions.md`, no
 | `claude-code/AGENTS.md` | `~/.claude/AGENTS.md` | The universal rules, always loaded |
 | `claude-code/CLAUDE.md` | `~/.claude/CLAUDE.md` | One line: `@AGENTS.md` |
 | `claude-code/settings.json` | `~/.claude/settings.json` | Permissions and hook registration |
-| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` edits only `BACKLOG.md` |
+| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` edits only `BACKLOG.md`; `write-comments` never edits directly, splicing only via `write_comments_validator.py` |
 | `claude-code/hooks/` | `~/.claude/hooks/` | Two guards, plus the Stop gate and the session injector |
 | `claude-code/skills/` | `~/.claude/skills/` | Domain knowledge, lazily loaded |
 
@@ -21,13 +21,23 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 
 | Hook | Registered on | Fires on | Does |
 |---|---|---|---|
-| `comment_guard.py` | `~/.claude/settings.json` | Edit, Write, MultiEdit | Denies an added comment; asks before one is deleted |
+| `comment_guard.py` | `~/.claude/settings.json` | Edit, Write, MultiEdit, NotebookEdit | Flat-denies any added narrative comment, no exceptions beyond machine directives/shebang-manual; asks before one is deleted |
 | `git_guard.py` | `~/.claude/settings.json` | Bash | Allowlists read-only git, denies in-place rewrites |
 | `context_injector.py` | `~/.claude/settings.json` | SessionStart | Injects the `[WIP]` story, backlog tally, version, verify target |
 | `verify_gate.py` | `claude-code/agents/workflow-implementer.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
+| `comment_removal_log.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write\|MultiEdit\|NotebookEdit` | Logs every `comment_guard.py`-approved removal to `.claude/state/removed-comments.jsonl` for a later pass to consume |
 
 **The two `PreToolUse` guards fail closed** — an unparseable payload denies. **`verify_gate.py` and `context_injector.py` fail open** — any internal error exits 0.
+
+**Comment guard passing shapes** — an added comment passes silently only if mechanically exempt, exactly two shapes:
+
+| Passing shape | Test |
+|---|---|
+| Script manual | Line comments directly under a `#!` shebang |
+| Machine directive | Prefix match against a fixed list |
+
+Everything else is a flat deny, no ask — a banner, a `WHY:`/`NOTE:`/`FIXME:`/`HACK:`/`TODO(user):` note, and a step marker all deny exactly like unstructured prose. Block comments and Python docstrings are scanned too. A name-echo (first word matches the identifier below it) denies outright. Deleting a comment returns `ask`, scoped to the edit itself; an approved removal is logged by `comment_removal_log.py` to `.claude/state/removed-comments.jsonl`. No move ledger or `+comments` grant — moving a comment needs two approvals (the deletion asks, re-adding denies unless it fits a shape). No comment rule ever blocks a commit, push, lint, or release — `comment_guard.py` is `PreToolUse` only. The `write-comments` skill is the only path to add a narrative comment inline; it calls `write_comments_validator.py` to check a proposed comment's shape before it's ever written.
 
 ## Skill contract
 
@@ -63,7 +73,7 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 179 hook regression cases
+bash scripts/test-hooks.sh    # 187 hook regression cases
 bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above

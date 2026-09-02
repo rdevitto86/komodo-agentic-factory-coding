@@ -60,7 +60,7 @@ for entry in "$SOURCE"/*; do
 done
 
 printf '\n  hooks\n'
-for hook in comment_guard git_guard verify_gate context_injector auto_format; do
+for hook in comment_guard git_guard verify_gate context_injector auto_format comment_removal_log; do
   path="$SOURCE/hooks/$hook.py"
   if python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$path" 2>/dev/null; then
     printf '    ok        %s.py\n' "$hook"
