@@ -446,6 +446,16 @@ printf '// Helper does the work\nfunc Other() {}\nfoo()\n' > "$WORKDIR/helper.go
 C56C_PAYLOAD="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/helper.go","old_string":"foo()","new_string":"// Helper does the work\\nfunc Helper() {}\\nfoo()"}}' "$WORKDIR")"
 expect "C56c an echo comment whose exact text already exists elsewhere in the file still prompts" ask "restates the name" <<< "$C56C_PAYLOAD"
 
+C57_PAYLOAD="$(printf '{"tool_name":"Edit","agent_type":"reviewer","cwd":"%s","tool_input":{"file_path":"%s/BACKLOG.md","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
+expect "C57 the reviewer agent editing BACKLOG.md is not scope-denied" allow <<< "$C57_PAYLOAD"
+
+C58_PAYLOAD="$(printf '{"tool_name":"Edit","agent_type":"reviewer","cwd":"%s","tool_input":{"file_path":"%s/claude-code/hooks/git_guard.py","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
+expect "C58 the reviewer agent editing any other file is denied" deny \
+  "the reviewer agent may only edit BACKLOG.md" <<< "$C58_PAYLOAD"
+
+C59_PAYLOAD="$(printf '{"tool_name":"Edit","cwd":"%s","tool_input":{"file_path":"%s/claude-code/hooks/git_guard.py","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
+expect "C59 an orchestrator-session edit with no agent_type is unaffected" allow <<< "$C59_PAYLOAD"
+
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
 printf '\ngit guard\n\n'

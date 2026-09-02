@@ -316,8 +316,12 @@ print("    %-24s %5d tokens" % ("TOTAL (always-on)", total))
 print()
 if total > budget:
     print("    OVER BUDGET by %d tokens (limit %d)" % (total - budget, budget))
+    print("    NOTE: this total excludes bundled and plugin skills — skillOverrides is the only")
+    print("    lever for bundled ones, /plugin for plugin ones; /context's Skills row is the real listing size.")
     sys.exit(1)
 print("    within budget (limit %d, %d free)" % (budget, budget - total))
+print("    NOTE: this total excludes bundled and plugin skills — skillOverrides is the only")
+print("    lever for bundled ones, /plugin for plugin ones; /context's Skills row is the real listing size.")
 
 root_agents_path = os.path.join(repo_root, "AGENTS.md")
 if os.path.exists(root_agents_path):

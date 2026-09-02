@@ -25,8 +25,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
-| P2.3 Review | `/assess-bugs` (+ `/assess-security`), then commit here | — |
-| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog write`, `/backlog-audit`, once per band | — |
+| P2.3 Review | `/assess-bugs` (+ `/assess-security`), then commit here | `reviewer` |
+| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog write`, `/backlog-audit`, once per band | `reviewer` (assess-*), `workflow-implementer` (backlog-audit) |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `workflow-implementer` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` + tag check | — |
 
@@ -118,7 +118,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ### P2.3 · Review
 
-**`/assess-bugs`, plus `/assess-security` when the touched surface warrants it** (the `ways/` file names the trigger). Never a fork of this session — a fork saw the reasoning that produced the code and will agree with it.
+**`/assess-bugs`, plus `/assess-security` when the touched surface warrants it** (the `ways/` file names the trigger). Each runs as a `reviewer` fork.
 
 **Review against the task, not the diff.** Did every acceptance condition land, and did anything outside the task change?
 
@@ -130,7 +130,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ### P2.4 · Closeout
 
-**`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band, once, plus the perf suite.** Runs after every task in the pick is green, before P3 — never per-task, never a fork, same reasoning as P2.3.
+**`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band, once, plus the perf suite.** Runs after every task in the pick is green, before P3 — never per-task, each as a `reviewer` fork, same as P2.3.
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story a call just filed for this band is folded into P2.0's pick and resolved in this same pass — fixed via `/workflow-implement`, or explicitly declined and removed from `BACKLOG.md` with the reason noted for P4's report. A closeout finding left open past this phase is exactly the pile-up this step exists to prevent.
 
@@ -172,7 +172,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **Backing out is a rewrite.** Capture `git diff` before a risky write; `git-pr-create` owns handing the user the recovery command.
 - **The bridge is optional, never blocking.** An unreachable MCP server is a skipped step. Never branch a phase on whether it is up.
 - **Never poll a delegated phase.** A fork and a backgrounded review both re-invoke this session the moment they finish. A scheduled check burns a full turn even when it lands on time, and can fire *stale* — after the work already completed — re-running dead instructions against state that already moved on.
-- **A P2.3 or P2.4 finding that needs standards verification goes back to a fork, never re-loaded into this window.** Loading `standards-*` skills here to re-check a finding the reviewer already grounded is the exact context drift forking exists to prevent — if it genuinely needs re-verifying, that is P2.1's job, not this session's.
+- **Standards verification happens inside the review or implement fork, never in this window.** If a P2.3 or P2.4 finding genuinely needs re-verifying, that is P2.1's job, not this session's.
 
 ---
 
@@ -182,7 +182,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 |---|---|
 | Read-only research across many files | `engineering` |
 | "Where is X" — a path list | `scout` |
-| Grading work this session produced | Fresh subagent — **never a fork** |
+| Grading work this session produced | Fresh subagent — **never a `subagent_type: fork` Agent call.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) is a different, legitimate kind of fresh execution — it runs the `reviewer` agent, not this session, and is exactly how P2.3/P2.4 grade the diff. |
 
 **Parallel writers need `isolation: worktree`.** Two agents editing one checkout collide; read-only fan-out needs none.
 

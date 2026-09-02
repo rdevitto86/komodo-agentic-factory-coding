@@ -147,7 +147,24 @@
     "git-issue-review": "name-only",
     "git-pr-create": "name-only",
     "git-pr-review": "name-only",
-    "git-pr-comment": "name-only"
+    "git-pr-comment": "name-only",
+    "claude-api": "name-only",
+    "dataviz": "name-only",
+    "design": "name-only",
+    "artifact-design": "name-only",
+    "artifact-diagramming": "name-only",
+    "artifact-capabilities": "name-only",
+    "update-config": "name-only",
+    "keybindings-help": "name-only",
+    "schedule": "name-only",
+    "loop": "name-only",
+    "run": "name-only",
+    "init": "name-only",
+    "fewer-permission-prompts": "name-only",
+    "workflow-authoring": "name-only",
+    "security-review": "name-only",
+    "simplify": "name-only",
+    "code-review": "name-only"
   },
   "hooks": {
     "PreToolUse": [
@@ -193,7 +210,7 @@
       }
     ]
   },
-  "enableWorkflows": true,
+  "enableWorkflows": false,
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true

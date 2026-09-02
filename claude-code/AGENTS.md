@@ -2,7 +2,7 @@
 
 Universal directive for every model and every tool — Claude, GPT, Gemini, Qwen, Kimi, Llama, hosted or local. Plain markdown, no tool-specific syntax. Scoped to software and hardware engineering — the same rules apply whether the session is writing Go, wiring CDK infrastructure, or reviewing firmware.
 
-**This file reaches the primary session only.** A subagent spawned via the Task/Agent tool never inherits it — it sees only its own agent-definition file. Any rule a forked agent must follow has to live in that agent's own file, restated, not assumed.
+**This file reaches every custom agent and every forked skill, not just the primary session.** A non-fork subagent and a `context: fork` skill both load the full CLAUDE.md hierarchy at startup, this file included — so a rule stated here never needs restating in an agent body.
 
 ---
 

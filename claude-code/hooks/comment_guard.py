@@ -3,6 +3,7 @@ import ast
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -67,6 +68,32 @@ DECL_NAME = (
     re.compile(r"^(?:export\s+)?(?:pub\s+)?(?:async\s+)?(?:func|function|def|class|type|struct|enum|fn|const|var|let)\s+(\w+)"),
 )
 WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+def repo_root(start):
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=start,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+def check_reviewer_scope(path, cwd):
+    base = cwd or os.getcwd()
+    root = repo_root(base)
+    if root is None:
+        respond("deny", "BLOCKED: the reviewer agent may only edit BACKLOG.md, "
+                "and the repo root could not be resolved to confirm this write is in-scope.")
+    target = os.path.realpath(path if os.path.isabs(path) else os.path.join(base, path))
+    allowed = os.path.realpath(os.path.join(root, "BACKLOG.md"))
+    if target != allowed:
+        respond("deny", f"BLOCKED: the reviewer agent may only edit BACKLOG.md, not {path}.")
 
 def resolve_family(path):
     if not path: return None
@@ -194,6 +221,10 @@ def handle_pre(payload):
 
     tool_input = payload.get("tool_input") or {}
     path = tool_input.get("file_path") or tool_input.get("notebook_path", "")
+
+    if payload.get("agent_type") == "reviewer":
+        check_reviewer_scope(path, payload.get("cwd"))
+
     family = resolve_family(path)
     if not family:
         sys.exit(0)

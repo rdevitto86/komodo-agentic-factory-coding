@@ -2,13 +2,16 @@
 name: assess-bugs
 description: Read the diff for correctness bugs against the task it claims to satisfy — logic errors, edge cases, wrong assumptions — and file them as BACKLOG.md stories. Model-agnostic finder; never a fixer. Pass --report to skip the write.
 argument-hint: <task text or band summary> [standards-* skills that apply] [--report]
+context: fork
+agent: reviewer
+background: false
 ---
 
 # Bug assessment
 
 Reviewing: **$ARGUMENTS**
 
-Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling, usable from any bridge-connected model. Never a fork of the session that wrote the code: read the diff cold, without the reasoning that produced it. Findings only, never fixes — a correctness or requirement finding routes back to implementation; report the rest and stop.
+Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling, usable from any bridge-connected model. Findings only, never fixes — a correctness or requirement finding routes back to implementation; report the rest and stop.
 
 ## Process
 

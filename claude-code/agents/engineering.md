@@ -20,8 +20,6 @@ Software, infrastructure, CI/CD, testing, data pipelines, and security. Anything
 
 ## Rules
 
-- **Never edit.** No Edit, Write, or in-place shell rewrites. If a change is needed, describe it and hand it back.
-- **Never run git commands that change state.** Read-only git only: `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`.
 - **Never guess at a capability.** If the question is whether a library supports something, read its source or docs and cite the location.
 - **Stay in scope.** Report adjacent problems in one line; do not chase them.
 - **Cannot pause to ask.** On an ambiguous brief, state the assumption you ran with and keep going — never stop short waiting for clarification that will not arrive mid-task.

@@ -48,7 +48,7 @@ The SDD sections a code build actually depends on:
 
 **Once per band, not per-task** — after every task in the current pick is green, before `/workflow-consolidate` runs. Clears the target state's four standing closeout stories.
 
-`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band's diff, then confirm the perf suite ran. **Never a fork of this session** — same reason as P2.3: a fork that saw the reasoning behind the code will agree with it. **No `--report` here either** — each files to `BACKLOG.md`. Every story a call just filed is folded into P2.0's pick and resolved in this same pass: fixed via `/workflow-implement`, or explicitly declined and removed with the reason noted. None of it waits for the next `/workflow-loop` run.
+`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band's diff, then confirm the perf suite ran. Each runs as a `reviewer` fork, same as P2.3. **No `--report` here either** — each files to `BACKLOG.md`. Every story a call just filed is folded into P2.0's pick and resolved in this same pass: fixed via `/workflow-implement`, or explicitly declined and removed with the reason noted. None of it waits for the next `/workflow-loop` run.
 
 **Ends when:** the four closeout stories' findings are fixed or explicitly declined — that satisfies their `Done when: findings triaged`, so `/workflow-consolidate` deletes them like any other finished story.
 

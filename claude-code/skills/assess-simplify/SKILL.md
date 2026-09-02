@@ -2,6 +2,9 @@
 name: assess-simplify
 description: Read the changed code for reuse, simplification, and efficiency cleanups, and file them as BACKLOG.md stories. Model-agnostic; quality only — never hunts for bugs or security defects. Pass --report to skip the write.
 argument-hint: <task text or band summary> [standards-* skills that apply] [--report]
+context: fork
+agent: reviewer
+background: false
 ---
 
 # Simplify assessment
