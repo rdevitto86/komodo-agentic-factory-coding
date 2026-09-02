@@ -251,30 +251,6 @@ sys.exit(1 if failures else 0)
 PY
 [ $? -eq 0 ] || problems=$((problems + 1))
 
-printf '\n  skill compaction cap\n'
-python3 - "$SOURCE" <<'PY'
-import os, sys
-
-source = sys.argv[1]
-CAP = 5000
-
-failures = 0
-skills_dir = os.path.join(source, "skills")
-for entry in sorted(os.listdir(skills_dir)) if os.path.isdir(skills_dir) else []:
-    path = os.path.join(skills_dir, entry, "SKILL.md")
-    if not os.path.exists(path):
-        continue
-    count = len(open(path, encoding="utf-8").read()) // 4
-    if count > CAP:
-        print("    BROKEN    skills/%s/SKILL.md: %d tokens, over the %d compaction re-attach cap" % (entry, count, CAP))
-        failures += 1
-
-if failures == 0:
-    print("    ok        every SKILL.md is within the %d-token compaction re-attach cap" % CAP)
-sys.exit(1 if failures else 0)
-PY
-[ $? -eq 0 ] || problems=$((problems + 1))
-
 printf '\n  hooksPath\n'
 hooks_path="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
 if [ -z "$hooks_path" ]; then
@@ -291,6 +267,7 @@ python3 - "$SOURCE" "$REPO_ROOT" "$BUDGET" <<'PY'
 import os, re, sys
 
 source, repo_root, budget = sys.argv[1], sys.argv[2], int(sys.argv[3])
+CAP = 5000
 
 
 def tokens(text):
@@ -317,12 +294,16 @@ if os.path.exists(settings_path):
 listing = 0
 skills_dir = os.path.join(source, "skills")
 skill_count = 0
+cap_failures = []
 if os.path.isdir(skills_dir):
     for entry in sorted(os.listdir(skills_dir)):
         skill = os.path.join(skills_dir, entry, "SKILL.md")
         if not os.path.exists(skill):
             continue
         body = open(skill, encoding="utf-8").read()
+        cap_count = tokens(body)
+        if cap_count > CAP:
+            cap_failures.append((entry, cap_count))
         head = body.split("---")[1] if body.startswith("---") else ""
         if re.search(r"^disable-model-invocation:\s*(true|yes|on|1)", head, re.M | re.I):
             continue
@@ -340,10 +321,21 @@ print("    %-24s %5d tokens" % ("TOTAL (always-on)", total))
 print()
 print("    NOTE: this total excludes bundled and plugin skills — skillOverrides is the only")
 print("    lever for bundled ones, /plugin for plugin ones; /context's Skills row is the real listing size.")
-if total > budget:
+over_budget = total > budget
+if over_budget:
     print("    OVER BUDGET by %d tokens (limit %d)" % (total - budget, budget))
+else:
+    print("    within budget (limit %d, %d free)" % (budget, budget - total))
+
+print()
+print("  skill compaction cap")
+for entry, cap_count in cap_failures:
+    print("    BROKEN    skills/%s/SKILL.md: %d tokens, over the %d compaction re-attach cap" % (entry, cap_count, CAP))
+if not cap_failures:
+    print("    ok        every SKILL.md is within the %d-token compaction re-attach cap" % CAP)
+
+if over_budget or cap_failures:
     sys.exit(1)
-print("    within budget (limit %d, %d free)" % (budget, budget - total))
 
 root_agents_path = os.path.join(repo_root, "AGENTS.md")
 if os.path.exists(root_agents_path):

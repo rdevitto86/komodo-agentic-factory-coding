@@ -4,6 +4,14 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-09-01
+
+### Changed
+- `workflow-loop`'s `SKILL.md` trimmed from ~5,077 to ~3,487 tokens (justification prose cut, every rule/table-row/`Ends when` line kept) so the file survives Claude Code's 5,000-token compaction re-attach cap; added a Guardrails bullet to re-read the active `ways/` file after any context compaction, since it loads via `Read`, not skill invocation.
+
+### Added
+- `scripts/validate.sh`: a "skill compaction cap" check that fails any `SKILL.md` exceeding 5,000 estimated tokens, reusing the existing base-context-budget check's shared directory walk and token estimator.
+
 ## [0.39.0] — 2026-09-01
 
 ### Added
