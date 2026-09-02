@@ -4,6 +4,11 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.39.1] — 2026-09-01
+
+### Changed
+- `git-pr-create`'s P4 read now uses `git diff <base>..HEAD --stat` instead of the full diff, opening a single file's diff only when the stat line and commit messages leave the change genuinely ambiguous — cuts the orchestrator's per-band token cost at publish time.
+
 ## [0.39.0] — 2026-09-01
 
 ### Added
