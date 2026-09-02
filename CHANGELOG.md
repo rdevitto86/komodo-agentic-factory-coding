@@ -4,6 +4,21 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-09-01
+
+### Added
+- `claude-code/agents/reviewer.md`: a new agent that reads a diff cold and files findings to `BACKLOG.md`, edit-restricted to that file only (enforced by a new `comment_guard.py` check, not just agent prose). `assess-bugs`, `assess-security`, and `assess-simplify` now fork into it instead of running in the orchestrator's own window; `backlog-audit` now forks into `workflow-implementer` the same way.
+- `claude-code/hooks/lib/git.py`: a shared `repo_root()`, single-sourcing what `comment_guard.py`, `context_injector.py`, and `verify_gate.py` each previously defined separately.
+
+### Changed
+- Root `AGENTS.md` cut from ~7,157 to ~1,416 tokens — every "why it was decided this way" paragraph moved verbatim into new `docs/design-decisions.md`, keeping only what a session needs to act.
+- `claude-code/AGENTS.md`'s claim that a subagent never inherits it was corrected — every custom agent and every forked skill actually receives it, and the four affected agent bodies (`engineering.md`, `scout.md`, `workflow-implementer.md`) had their genuinely-redundant restatements trimmed while keeping the "read-only git" rule each still needs (`git_guard.py` permits ordinary git verbs globally; it doesn't gate by agent identity).
+- 17 bundled/plugin skill descriptions (`claude-api`, `dataviz`, `design`, and others) collapsed to `name-only` in `claude-code/settings.json`'s `skillOverrides`; `enableWorkflows` disabled since nothing in this toolkit uses the `Workflow` tool.
+- `scripts/validate.sh` now states in its own output that its token total excludes bundled and plugin skills; the same caveat was added to `AGENTS.md`.
+
+### Fixed
+- `scripts/validate.sh` printed its bundled-skill NOTE twice (once per branch of the same budget check) — now prints once, unconditionally.
+
 ## [0.38.0] — 2026-09-01
 
 ### Added

@@ -29,6 +29,10 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from lib.git import repo_root
+
 TIMEOUT_SECONDS = 300
 MAX_OUTPUT_CHARS = 4000
 
@@ -41,13 +45,6 @@ def run(args, cwd):
         text=True,
         timeout=TIMEOUT_SECONDS,
     )
-
-
-def repo_root(start):
-    result = run(["git", "rev-parse", "--show-toplevel"], start)
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
 
 
 def target_exists(path, pattern):

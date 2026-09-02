@@ -4,6 +4,9 @@ import os
 import sys
 from collections import Counter
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from lib.git import repo_root
 from lib.comment_rules import (
     check_echoes,
     is_mechanically_exempt,
@@ -14,6 +17,17 @@ from lib.comment_rules import (
 
 WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
+def check_reviewer_scope(path, cwd):
+    base = cwd or os.getcwd()
+    root = repo_root(base)
+    if root is None:
+        respond("deny", "BLOCKED: the reviewer agent may only edit BACKLOG.md, "
+                "and the repo root could not be resolved to confirm this write is in-scope.")
+    target = os.path.realpath(path if os.path.isabs(path) else os.path.join(base, path))
+    allowed = os.path.realpath(os.path.join(root, "BACKLOG.md"))
+    if target != allowed:
+        respond("deny", f"BLOCKED: the reviewer agent may only edit BACKLOG.md, not {path}.")
+
 def handle_pre(payload):
     tool_name = payload.get("tool_name", "")
     if tool_name not in WRITE_TOOLS:
@@ -21,6 +35,10 @@ def handle_pre(payload):
 
     tool_input = payload.get("tool_input") or {}
     path = tool_input.get("file_path") or tool_input.get("notebook_path", "")
+
+    if payload.get("agent_type") == "reviewer":
+        check_reviewer_scope(path, payload.get("cwd"))
+
     family = resolve_family(path)
     if not family:
         sys.exit(0)

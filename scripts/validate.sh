@@ -314,6 +314,8 @@ print("    %-24s %5d tokens (%d listed to the model)" % ("skill listing", listin
 total = always_on + listing
 print("    %-24s %5d tokens" % ("TOTAL (always-on)", total))
 print()
+print("    NOTE: this total excludes bundled and plugin skills — skillOverrides is the only")
+print("    lever for bundled ones, /plugin for plugin ones; /context's Skills row is the real listing size.")
 if total > budget:
     print("    OVER BUDGET by %d tokens (limit %d)" % (total - budget, budget))
     sys.exit(1)

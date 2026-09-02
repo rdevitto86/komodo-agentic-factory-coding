@@ -457,6 +457,16 @@ C57_SESSION="$(next_session)"
 C57_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"// old cleanup note\\nfunc InitStore() {}","new_string":"// WHY: retries twice before giving up\\nfunc InitStore() {}"}}' "$C57_SESSION")"
 expect "C57 a single edit removing one comment and adding a narrative comment denies, not asks" deny "retries twice before giving up" <<< "$C57_PAYLOAD"
 
+C57_PAYLOAD="$(printf '{"tool_name":"Edit","agent_type":"reviewer","cwd":"%s","tool_input":{"file_path":"%s/BACKLOG.md","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
+expect "C57 the reviewer agent editing BACKLOG.md is not scope-denied" allow <<< "$C57_PAYLOAD"
+
+C58_PAYLOAD="$(printf '{"tool_name":"Edit","agent_type":"reviewer","cwd":"%s","tool_input":{"file_path":"%s/claude-code/hooks/git_guard.py","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
+expect "C58 the reviewer agent editing any other file is denied" deny \
+  "the reviewer agent may only edit BACKLOG.md" <<< "$C58_PAYLOAD"
+
+C59_PAYLOAD="$(printf '{"tool_name":"Edit","cwd":"%s","tool_input":{"file_path":"%s/claude-code/hooks/git_guard.py","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
+expect "C59 an orchestrator-session edit with no agent_type is unaffected" allow <<< "$C59_PAYLOAD"
+
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
 printf '\ngit guard\n\n'

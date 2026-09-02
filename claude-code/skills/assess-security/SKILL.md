@@ -2,13 +2,16 @@
 name: assess-security
 description: Read the diff against the OWASP baseline for injected security defects — new boundary, new query, new secret handling — and file them as BACKLOG.md stories. Model-agnostic finder; never a fixer. Pass --report to skip the write.
 argument-hint: <task text or band summary> [standards-* skills that apply] [--report]
+context: fork
+agent: reviewer
+background: false
 ---
 
 # Security assessment
 
 Reviewing: **$ARGUMENTS**
 
-Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Load `standards-api-security` first — it states the OWASP-benchmarked bar this reviews against for any server-side boundary. Add `standards-ui-security` when the diff touches a rendered surface (`.svelte`/`.vue`/`.tsx`/`.jsx`/`.html`) — it owns XSS, clickjacking, and dark-pattern findings. Load whichever `standards-<language>` skill(s) the touched files trigger — `standards-go`, `standards-python`, `standards-typescript`, `standards-java`, `standards-c`, `standards-dotnet`, `standards-shell`, and so on — and pull from each one's own Security standards section, where it carries one, alongside the checklist below: a language-specific insecure-usage pattern (Go's `text/template` vs `html/template`, Python's `pickle`/`yaml.load`, a Java deserialization boundary) is this same pass's job, not a second review. Never a fork of the session that wrote the code. Findings only, never fixes.
+Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Load `standards-api-security` first — it states the OWASP-benchmarked bar this reviews against for any server-side boundary. Add `standards-ui-security` when the diff touches a rendered surface (`.svelte`/`.vue`/`.tsx`/`.jsx`/`.html`) — it owns XSS, clickjacking, and dark-pattern findings. Load whichever `standards-<language>` skill(s) the touched files trigger — `standards-go`, `standards-python`, `standards-typescript`, `standards-java`, `standards-c`, `standards-dotnet`, `standards-shell`, and so on — and pull from each one's own Security standards section, where it carries one, alongside the checklist below: a language-specific insecure-usage pattern (Go's `text/template` vs `html/template`, Python's `pickle`/`yaml.load`, a Java deserialization boundary) is this same pass's job, not a second review. Findings only, never fixes.
 
 ## Process
 
