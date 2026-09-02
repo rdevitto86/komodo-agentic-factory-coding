@@ -251,6 +251,30 @@ sys.exit(1 if failures else 0)
 PY
 [ $? -eq 0 ] || problems=$((problems + 1))
 
+printf '\n  skill compaction cap\n'
+python3 - "$SOURCE" <<'PY'
+import os, sys
+
+source = sys.argv[1]
+CAP = 5000
+
+failures = 0
+skills_dir = os.path.join(source, "skills")
+for entry in sorted(os.listdir(skills_dir)) if os.path.isdir(skills_dir) else []:
+    path = os.path.join(skills_dir, entry, "SKILL.md")
+    if not os.path.exists(path):
+        continue
+    count = len(open(path, encoding="utf-8").read()) // 4
+    if count > CAP:
+        print("    BROKEN    skills/%s/SKILL.md: %d tokens, over the %d compaction re-attach cap" % (entry, count, CAP))
+        failures += 1
+
+if failures == 0:
+    print("    ok        every SKILL.md is within the %d-token compaction re-attach cap" % CAP)
+sys.exit(1 if failures else 0)
+PY
+[ $? -eq 0 ] || problems=$((problems + 1))
+
 printf '\n  hooksPath\n'
 hooks_path="$(git -C "$REPO_ROOT" config --get core.hooksPath 2>/dev/null || true)"
 if [ -z "$hooks_path" ]; then
