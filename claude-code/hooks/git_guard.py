@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from comment_guard import EXTENSION_FAMILY, FILENAME_FAMILY
+from lib.comment_rules import EXTENSION_FAMILY, FILENAME_FAMILY
 
 READ_ONLY_GIT = {
     "annotate",

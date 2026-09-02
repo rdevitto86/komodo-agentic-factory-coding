@@ -38,6 +38,13 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.4.1** fix `generateRequest`'s payload truncation against `num_ctx` in the bridge server once its source is reachable from this repo
   * **Done when:** a large summarizer payload no longer silently truncates against `num_ctx` in `~/.komodo/bridge`
 
+### [TG-01.2] Comment Guard Core
+* **Target Release:** V1
+
+#### [TSK-01.2.1] write-comments splices bypass the repo's formatter [P: L] [TODO]
+* **SUB-01.2.1.1** found in band closeout review, declined for this band: `write_comments_validator.py` writes files via raw I/O, so unlike every Edit/Write-tool write in this toolkit, a splice never triggers `auto_format.py` afterward — indentation is a best-effort copy of the target line's own leading whitespace, not a guaranteed-correct format. Declined here because it needs the same formatter-detection `auto_format.py` already owns and duplicating or extracting that logic is more than this band's scope warrants; filed for a follow-up pass instead of blocking this one.
+  * **Done when:** after a splice, the touched file is run through the same formatter `auto_format.py` would have applied to a normal edit on that file type
+
 ---
 
 ## Archive
