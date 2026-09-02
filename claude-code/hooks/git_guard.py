@@ -216,6 +216,7 @@ def find_paren_end(command, start):
     return scan_masked_span(command, start, is_terminator)
 
 
+# WHY: blanks captured substitution text in place instead of a placeholder token -- nothing downstream needs a stand-in, and blanking keeps offsets aligned for split_segments
 def capture_and_mask(command, masked, substitutions, index, finder, offset, unescape=None):
     length = len(command)
     end = finder(command, index + offset)
@@ -766,6 +767,7 @@ def scan_command(command, findings, cwd):
     has_cd = any(leading_word(segment) == "cd" for segment in segments)
     for segment in segments:
         scan_segment(segment, findings, cwd, has_cd)
+    # WHY: recursing into each captured substitution is what catches a mutating command hidden inside backticks or $() -- skipping it would let those slip past as inert segment text
     for substitution in substitutions:
         if substitution.strip():
             scan_command(substitution, findings, cwd)

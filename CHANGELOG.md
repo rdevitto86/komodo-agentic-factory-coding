@@ -4,6 +4,17 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.2] — 2026-09-01
+
+### Fixed
+- `git_guard.py` denied a `grep`/similar command whose pattern text merely mentioned a git verb inside backticks (e.g. a single-quoted pattern containing `` `git log` ``), wrongly reading the quoted text as a real command-substitution boundary. Replaced the quote-blind regex segmenter with a quote/comment/substitution-aware char-by-char scanner.
+
+### Security
+- Fixing the above false-positive surfaced and closed four Critical bypasses in `git_guard.py`'s command scanner: a `#` shell comment could swallow the quote-tracking state across a newline and hide a following mutating command; backtick and `$(...)` command substitution weren't recognized as segment boundaries at all, so a mutating `git` command hidden inside either form was invisible to the scanner; single-vs-double-quote suppression semantics were backwards (only single quotes suppress substitution in real bash — double quotes do not); and an old-style backslash-escaped nested backtick could hide a mutating command inside an outer substitution. `scripts/test-hooks.sh` gained cases `G90`–`G98` (196 total, up from 187) covering all of it.
+
+### Changed
+- `git_guard.py`'s `extract_substitutions` had its four near-identical backtick/`$(...)` capture-and-mask blocks collapsed into one shared `capture_and_mask` helper, and `find_backtick_end`/`find_paren_end` unified onto one `scan_masked_span` scanner parameterized by a terminator predicate — no behavior change, `scripts/test-hooks.sh`'s `G90`-`G98` cases still pass.
+
 ## [0.39.0] — 2026-09-01
 
 ### Added
