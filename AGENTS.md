@@ -73,7 +73,7 @@ Everything else is a flat deny, no ask — a banner, a `WHY:`/`NOTE:`/`FIXME:`/`
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 187 hook regression cases
+bash scripts/test-hooks.sh    # 196 hook regression cases
 bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above

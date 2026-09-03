@@ -576,6 +576,25 @@ bash_case "G88 time --output naming a shell-wrapper value doesn't hide the real 
   deny  'time --output sh git rebase main' "git rebase"
 bash_case "G89 xargs --delimiter naming a monitored command as its value doesn't hide the real wrapped command" \
   deny  'xargs --delimiter git git push --force origin main' "git push --force"
+bash_case "G90 a single-quoted grep pattern with a backtick alternation naming git log is allowed" \
+  allow 'grep -n -E '"'"'foo`|git log`'"'"' file.txt'
+bash_case "G91 a quote-escaped single-quoted pattern with a backtick and git log is allowed" \
+  allow 'grep -n -E '"'"'a'"'"'"'"'"'"'"'"'b`|git log`'"'"' file.txt'
+bash_case "G92 a single-quoted grep pattern with backtick git log text still lets a real segment after it deny" \
+  deny  'grep -n '"'"'note: `git log`'"'"' file.txt; git push origin main' "open a pull request instead"
+bash_case "G93 a quote inside a shell comment doesn't swallow the next line's real command" \
+  deny  'git status # '"'"'
+git push --force' "rewrites published history"
+bash_case_at "$FIXTURE_FEAT" "G94 a # inside a quoted commit message isn't misread as a comment opener" \
+  allow 'git commit -m "see issue #42"'
+bash_case "G95 a double-quoted dollar-paren substitution running git push --force is denied" \
+  deny  'echo "note: $(git push --force) is not real here"' "rewrites published history"
+bash_case "G96 a real unquoted backtick substitution running git push --force is denied" \
+  deny  'echo `git push --force`' "rewrites published history"
+bash_case "G97 a real unquoted dollar-paren substitution running git push --force is denied" \
+  deny  'echo $(git push --force)' "rewrites published history"
+bash_case "G98 old-style backslash-escaped nested backticks hiding git push --force is denied" \
+  deny  'echo `echo \`git push --force\`` ' "rewrites published history"
 
 # ---  PUBLISH_ENABLED=0 restores the pre-publishing blanket deny  ---
 # Env-var driven, so this flips the running hook directly rather than

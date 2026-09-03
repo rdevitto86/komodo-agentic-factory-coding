@@ -145,13 +145,221 @@ MONITORED_COMMANDS = SHELL_WRAPPERS + PASSTHROUGH_WRAPPERS + ("git", "gh", "cp",
 
 CP_MV_TARGET_FLAGS = ("-t", "--target-directory")
 
-SEGMENT_SPLIT = re.compile(r"&&|\|\||[;\n|]")
 REDIRECT = re.compile(r"(?<![-=<0-9&])>>?\s*([^\s;&|>]+)")
 HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n)(.*?)(^\s*\2\s*$)", re.S | re.M)
 QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 INPLACE_SED = re.compile(r"\bsed\b[^;|&]*?(?:\s-[a-zA-Z]*i\b|\s--in-place\b)")
 INPLACE_PERL = re.compile(r"\bperl\b[^;|&]*?\s-[a-zA-Z]*i\b")
 PYTHON_WRITE = re.compile(r"\bpython3?\b[^;|&]*?-c\b.*?open\s*\([^)]*['\"][wa]")
+
+
+SEGMENT_BOUNDARY_CHARS = ";\n|"
+
+
+def scan_masked_span(command, start, is_terminator):
+    index = start
+    length = len(command)
+    in_squote = False
+    in_dquote = False
+    while index < length:
+        char = command[index]
+        if in_squote:
+            if char == "'":
+                in_squote = False
+            index += 1
+            continue
+        if in_dquote:
+            if char == "\\" and index + 1 < length:
+                index += 2
+                continue
+            if char == '"':
+                in_dquote = False
+            index += 1
+            continue
+        if char == "\\" and index + 1 < length:
+            index += 2
+            continue
+        if char == "'":
+            in_squote = True
+            index += 1
+            continue
+        if char == '"':
+            in_dquote = True
+            index += 1
+            continue
+        if is_terminator(char):
+            return index
+        index += 1
+    return length
+
+
+def find_backtick_end(command, start):
+    return scan_masked_span(command, start, lambda char: char == "`")
+
+
+def unescape_nested_backticks(text):
+    return text.replace("\\`", "`")
+
+
+def find_paren_end(command, start):
+    depth = [1]
+
+    def is_terminator(char):
+        if char == "(":
+            depth[0] += 1
+            return False
+        if char == ")":
+            depth[0] -= 1
+            return depth[0] == 0
+        return False
+
+    return scan_masked_span(command, start, is_terminator)
+
+
+# WHY: blanks captured substitution text in place instead of a placeholder token -- nothing downstream needs a stand-in, and blanking keeps offsets aligned for split_segments
+def capture_and_mask(command, masked, substitutions, index, finder, offset, unescape=None):
+    length = len(command)
+    end = finder(command, index + offset)
+    text = command[index + offset:end]
+    substitutions.append(unescape(text) if unescape else text)
+    stop = min(end + 1, length)
+    for i in range(index, stop):
+        if masked[i] != "\n":
+            masked[i] = " "
+    return stop
+
+
+def extract_substitutions(command):
+    masked = list(command)
+    substitutions = []
+    in_squote = False
+    in_dquote = False
+    in_comment = False
+    index = 0
+    length = len(command)
+    while index < length:
+        char = command[index]
+        if in_squote:
+            if char == "'":
+                in_squote = False
+            index += 1
+            continue
+        if in_dquote:
+            if char == "\\" and index + 1 < length:
+                index += 2
+                continue
+            if char == '"':
+                in_dquote = False
+                index += 1
+                continue
+            if char == "`":
+                index = capture_and_mask(command, masked, substitutions, index, find_backtick_end, 1, unescape_nested_backticks)
+                continue
+            if char == "$" and command.startswith("$(", index):
+                index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2)
+                continue
+            index += 1
+            continue
+        if in_comment:
+            if char == "\n":
+                in_comment = False
+            index += 1
+            continue
+        if char == "#":
+            in_comment = True
+            index += 1
+            continue
+        if char == "'":
+            in_squote = True
+            index += 1
+            continue
+        if char == '"':
+            in_dquote = True
+            index += 1
+            continue
+        if char == "\\" and index + 1 < length:
+            index += 2
+            continue
+        if char == "`":
+            index = capture_and_mask(command, masked, substitutions, index, find_backtick_end, 1, unescape_nested_backticks)
+            continue
+        if char == "$" and command.startswith("$(", index):
+            index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2)
+            continue
+        index += 1
+    return "".join(masked), substitutions
+
+
+def split_segments(command):
+    segments = []
+    current = []
+    in_squote = False
+    in_dquote = False
+    in_comment = False
+    index = 0
+    length = len(command)
+    while index < length:
+        char = command[index]
+        if in_squote:
+            current.append(char)
+            if char == "'":
+                in_squote = False
+            index += 1
+            continue
+        if in_dquote:
+            current.append(char)
+            if char == "\\" and index + 1 < length:
+                current.append(command[index + 1])
+                index += 2
+                continue
+            if char == '"':
+                in_dquote = False
+            index += 1
+            continue
+        if in_comment:
+            if char == "\n":
+                in_comment = False
+                segments.append("".join(current))
+                current = []
+                index += 1
+                continue
+            current.append(char)
+            index += 1
+            continue
+        if char == "#":
+            in_comment = True
+            current.append(char)
+            index += 1
+            continue
+        if char == "'":
+            in_squote = True
+            current.append(char)
+            index += 1
+            continue
+        if char == '"':
+            in_dquote = True
+            current.append(char)
+            index += 1
+            continue
+        if char == "\\" and index + 1 < length:
+            current.append(char)
+            current.append(command[index + 1])
+            index += 2
+            continue
+        if command.startswith("&&", index) or command.startswith("||", index):
+            segments.append("".join(current))
+            current = []
+            index += 2
+            continue
+        if char in SEGMENT_BOUNDARY_CHARS:
+            segments.append("".join(current))
+            current = []
+            index += 1
+            continue
+        current.append(char)
+        index += 1
+    segments.append("".join(current))
+    return segments
 
 
 def parse_cp_mv_target(tokens):
@@ -553,11 +761,16 @@ def scan_segment(segment, findings, cwd, has_cd):
 
 
 def scan_command(command, findings, cwd):
-    segments = [segment.strip() for segment in SEGMENT_SPLIT.split(command)]
+    masked, substitutions = extract_substitutions(command)
+    segments = [segment.strip() for segment in split_segments(masked)]
     segments = [segment for segment in segments if segment]
     has_cd = any(leading_word(segment) == "cd" for segment in segments)
     for segment in segments:
         scan_segment(segment, findings, cwd, has_cd)
+    # WHY: recursing into each captured substitution is what catches a mutating command hidden inside backticks or $() -- skipping it would let those slip past as inert segment text
+    for substitution in substitutions:
+        if substitution.strip():
+            scan_command(substitution, findings, cwd)
 
     if GIT_MESSAGE_CALL.search(command) and BANNED_TRAILER.search(command):
         findings.append(TRAILER_FINDING)
