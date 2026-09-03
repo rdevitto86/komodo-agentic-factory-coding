@@ -387,13 +387,17 @@ def parse_cp_mv_target(tokens):
     return target_dir, positional
 
 
+GIT_GUARD_ONLY_EXTENSIONS = {".json", ".md"}
+
+
 def is_code_path(token):
     cleaned = token.strip("\"'")
     base = os.path.basename(cleaned)
     if base in FILENAME_FAMILY:
         return True
     _, ext = os.path.splitext(base)
-    return ext.lower() in EXTENSION_FAMILY
+    ext = ext.lower()
+    return ext in EXTENSION_FAMILY or ext in GIT_GUARD_ONLY_EXTENSIONS
 
 
 def blank(text):

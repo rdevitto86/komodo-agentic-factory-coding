@@ -15,10 +15,6 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 ### [TG-01.1] Cross-Cutting
 * **Target Release:** V1
 
-#### [TSK-01.1.1] Machine identity for agent-run git/PR operations [P: M] [TODO]
-* **SUB-01.1.1.1** agent-run commits and PRs currently authored as the user's own GitHub account (`gh auth`'s session token + local `git config user.name`) — create a machine-user account or GitHub App and wire its token into `gh`/`git` for agent-run operations
-  * **Done when:** `gh auth status` inside an agent run shows the machine identity, not the user's own account, and a test commit/PR is authored under it
-
 #### [TSK-01.1.2] Bridge: `num_ctx` truncation on large summarizer payloads [P: M] [BLOCKED]
 * **Blocked By:** `external`
   * **Reason (2026-08-28):** No file to edit in this repo — the bridge server (`generateRequest`, `agents.go`) lives in the separate `~/.komodo/bridge` deploy; `bridges/komodo-bridge/` here holds only prompt files and docs.
@@ -27,14 +23,14 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.2.1** fix `generateRequest`'s payload truncation against `num_ctx` in the bridge server once its source is reachable from this repo
   * **Done when:** a large summarizer payload no longer silently truncates against `num_ctx` in `~/.komodo/bridge`
 
-#### [TSK-01.1.3] `reviewer` agent's Bash grant can write outside BACKLOG.md unexamined [P: M] [TODO]
+#### [TSK-01.1.3] `reviewer` agent's Bash grant can write outside BACKLOG.md unexamined [P: M] [DONE]
 * **SUB-01.1.3.2** [Medium] `reviewer`'s `Edit`/`Write`/`MultiEdit`/`NotebookEdit` path to non-`BACKLOG.md` files is now hook-enforced (`comment_guard.py`'s `check_reviewer_scope`, added 2026-09-01) — but its `Bash` grant is a separate, still-open bypass: `claude-code/settings.json`'s allow list permits `echo`, `printf`, and `tee` globally, and `git_guard.py`'s own redirect/`tee`/`cp`/`mv` protections gate only on `is_code_path()`, whose `EXTENSION_FAMILY` map (`comment_guard.py`) has no entry for `.json` or `.md`. `echo '{...}' > claude-code/settings.json` therefore reaches disk unexamined by either guard — `comment_guard.py` never fires (its matcher is `Edit|Write|MultiEdit|NotebookEdit`, not `Bash`), and `git_guard.py`'s redirect check treats `.json`/`.md` as a non-code path and skips it. This isn't new in this diff (the extension map is untouched here), but this band is what first hands an unattended, diff-reading fork the `Bash` tool needed to exercise it — settings.json is the file that stores which hooks even run, so this path can silently strip `comment_guard`/`git_guard`'s own `PreToolUse` registration for the rest of the session.
   * **Done when:** `is_code_path()` (or an equivalent check reachable from `git_guard.py`'s redirect/`tee`/`cp`/`mv` guards) covers `.json` and `.md`, so a shell redirect into `claude-code/settings.json` or `BACKLOG.md` is flagged the same way a redirect into a `.py`/`.go` file already is
 
 ### [TG-01.2] Comment Guard Core
 * **Target Release:** V1
 
-#### [TSK-01.2.1] write-comments splices bypass the repo's formatter [P: L] [TODO]
+#### [TSK-01.2.1] write-comments splices bypass the repo's formatter [P: L] [DONE]
 * **SUB-01.2.1.1** found in band closeout review, declined for this band: `write_comments_validator.py` writes files via raw I/O, so unlike every Edit/Write-tool write in this toolkit, a splice never triggers `auto_format.py` afterward — indentation is a best-effort copy of the target line's own leading whitespace, not a guaranteed-correct format. Declined here because it needs the same formatter-detection `auto_format.py` already owns and duplicating or extracting that logic is more than this band's scope warrants; filed for a follow-up pass instead of blocking this one.
   * **Done when:** after a splice, the touched file is run through the same formatter `auto_format.py` would have applied to a normal edit on that file type
 
