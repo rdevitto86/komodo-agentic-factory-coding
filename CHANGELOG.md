@@ -12,6 +12,19 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ### Fixed
 - `~/.claude/CLAUDE.local.md`'s dead `config-accessibility-output` skill reference (no such skill existed since a rename) corrected to `config-accessibility`, so the skill actually loads when the local file points to it.
 
+## [0.40.0] — 2026-09-01
+
+### Changed
+- `workflow-loop`'s `SKILL.md` trimmed from ~5,077 to ~3,487 tokens (justification prose cut, every rule/table-row/`Ends when` line kept) so the file survives Claude Code's 5,000-token compaction re-attach cap; added a Guardrails bullet to re-read the active `ways/` file after any context compaction, since it loads via `Read`, not skill invocation.
+
+### Added
+- `scripts/validate.sh`: a "skill compaction cap" check that fails any `SKILL.md` exceeding 5,000 estimated tokens, reusing the existing base-context-budget check's shared directory walk and token estimator.
+
+## [0.39.1] — 2026-09-01
+
+### Changed
+- `git-pr-create`'s P4 read now uses `git diff <base>..HEAD --stat` instead of the full diff, opening a single file's diff only when the stat line and commit messages leave the change genuinely ambiguous — cuts the orchestrator's per-band token cost at publish time.
+
 ## [0.39.0] — 2026-09-01
 
 ### Added
