@@ -390,7 +390,7 @@ def parse_cp_mv_target(tokens):
 GIT_GUARD_ONLY_EXTENSIONS = {".json", ".md"}
 
 
-def is_code_path(token):
+def is_guarded_path(token):
     cleaned = token.strip("\"'")
     base = os.path.basename(cleaned)
     if base in FILENAME_FAMILY:
@@ -712,18 +712,18 @@ def scan_segment(segment, findings, cwd, has_cd):
         return
     if command == "tee":
         for token in tokens[1:]:
-            if is_code_path(token):
+            if is_guarded_path(token):
                 findings.append("tee writing to %s bypasses the comment guard" % token)
                 break
         return
     if command in ("cp", "mv"):
         target_dir, positional = parse_cp_mv_target(tokens[1:])
         if target_dir is not None:
-            if is_code_path(target_dir):
+            if is_guarded_path(target_dir):
                 findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
                 return
             for source in positional:
-                if is_code_path(source):
+                if is_guarded_path(source):
                     findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
                     break
             return
@@ -741,10 +741,10 @@ def scan_segment(segment, findings, cwd, has_cd):
         )
         if dest_is_dir:
             for source in sources:
-                if is_code_path(source):
+                if is_guarded_path(source):
                     findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
                     break
-        elif is_code_path(destination):
+        elif is_guarded_path(destination):
             findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
         return
     if command == "git":
@@ -786,7 +786,7 @@ def scan_command(command, findings, cwd):
         findings.append("python -c opening a file for writing bypasses the comment guard")
 
     for target in REDIRECT.findall(mask_data(command)):
-        if is_code_path(target):
+        if is_guarded_path(target):
             findings.append("redirecting output into %s bypasses the comment guard" % target)
 
 
