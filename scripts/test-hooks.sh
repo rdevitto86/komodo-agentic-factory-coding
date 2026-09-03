@@ -511,6 +511,8 @@ EOF' "bypasses the comment guard"
 bash_case "G30 numeric fd redirect is not a code path" allow 'go build ./... 2>&1'
 bash_case "G31 cp over a code path is blocked"       deny  'cp /tmp/staged.go handler.go'  "bypasses the comment guard"
 bash_case "G32 mv over a code path is blocked"       deny  'mv /tmp/staged.go handler.go'  "bypasses the comment guard"
+bash_case "G99 redirect into a .json file is blocked"  deny  'echo x > claude-code/settings.json' "bypasses the comment guard"
+bash_case "G100 redirect into a .md file is blocked"   deny  'echo x > BACKLOG.md'                "bypasses the comment guard"
 bash_case "G33 cp between non-code paths is allowed" allow 'cp /tmp/a.txt /tmp/b.txt'
 bash_case "G34 mv of a directory listing is allowed" allow 'mv build/ dist/'
 bash_case "G35 time git rebase is caught"            deny  'time git rebase main'          "git rebase"
@@ -778,6 +780,60 @@ validator_case "V1  an off-template proposal is dropped and a valid WHY: proposa
 validator_case "V2  a proposal whose file escapes repo_root via ../ segments is dropped, not spliced" \
   '[{"file":"../../../../../../etc/escape-me.go","line":1,"template_type":"WHY","text":"// WHY: should never land outside the repo"}]' \
   "" "outside repo root"
+
+validator_formatter_case() {
+  local label="$1"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-validator-fmt"
+    mkdir -p "$fixture"
+    printf 'package main\n\nfunc Run() {\n\tx := 1\n\treturn x\n}\n' > "$fixture/svc.go"
+    local out problem=""
+    out="$(HOOKS="$HOOKS" FIXTURE_VALIDATOR="$fixture" python3 -c '
+import io
+import os
+import sys
+
+sys.path.insert(0, os.environ["HOOKS"])
+import write_comments_validator as wcv
+
+calls = []
+wcv.run_formatter = lambda path: calls.append(path)
+
+fixture = os.environ["FIXTURE_VALIDATOR"]
+proposals = [{
+    "file": "svc.go",
+    "line": 4,
+    "template_type": "WHY",
+    "text": "// WHY: confirms run_formatter fires after a splice",
+}]
+
+buf = io.StringIO()
+sys.stdout = buf
+try:
+    wcv.process_proposals(proposals, fixture)
+except BaseException:
+    sys.stdout = sys.__stdout__
+    print("CRASHED")
+    raise SystemExit(0)
+sys.stdout = sys.__stdout__
+
+expected = os.path.join(fixture, "svc.go")
+if calls != [expected]:
+    print(f"run_formatter calls={calls!r} want=[{expected!r}]")
+else:
+    print("OK")
+' 2>&1)"
+    if [ "$out" != "OK" ]; then
+      problem="run_formatter was not invoked with the spliced file's path"
+    fi
+    report "$outfile" "$label" "$problem" "$out"
+  ) &
+}
+
+validator_formatter_case "V3  a successful splice calls the shared auto_format.run_formatter on the touched file"
 
 printf '\nend-to-end comment pipeline\n\n'
 

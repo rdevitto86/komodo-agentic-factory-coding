@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from auto_format import run_formatter
 from lib.comment_rules import (
     FAMILY_SYNTAX,
     TEMPLATE_PATTERNS,
@@ -191,6 +192,7 @@ def process_proposals(proposals, repo_root):
                 new_text += "\n"
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(new_text)
+            run_formatter(full_path)
 
     return [s for s in spliced if s is not None], [d for d in dropped if d is not None]
 

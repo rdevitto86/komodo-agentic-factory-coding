@@ -4,6 +4,14 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.3] — 2026-09-02
+
+### Security
+- `git_guard.py`'s redirect/`tee`/`cp`/`mv` guards (`is_guarded_path`, renamed this band from `is_code_path`) now also cover `.json` and `.md`, closing a side door where the `reviewer` agent's `Bash` grant could overwrite `claude-code/settings.json` or `BACKLOG.md` unexamined by `comment_guard.py`'s Edit/Write-only scoping — `settings.json` is the file that registers `comment_guard`/`git_guard` as hooks in the first place. `scripts/test-hooks.sh` gained `G99`/`G100` (199 total, up from 197).
+
+### Added
+- `claude-code/hooks/auto_format.py`'s formatter selection and invocation logic was extracted into a `run_formatter(path)` function; `write_comments_validator.py` now calls it after every successful comment splice, so a spliced comment gets the same `gofmt`/`prettier` pass a normal Edit/Write on that file type would already trigger. `scripts/test-hooks.sh` gained `V3`.
+
 ## [0.40.2] — 2026-09-01
 
 ### Fixed

@@ -36,6 +36,19 @@ def formatter_for(path):
     return None, None
 
 
+def run_formatter(path):
+    binary, command = formatter_for(path)
+    if binary is None:
+        return
+    if shutil.which(binary) is None:
+        return
+
+    try:
+        subprocess.run(command, capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def main():
     payload = json.loads(sys.stdin.read())
     if payload.get("tool_name") not in ("Edit", "Write"):
@@ -45,16 +58,7 @@ def main():
     if not file_path or not os.path.isfile(file_path):
         sys.exit(0)
 
-    binary, command = formatter_for(file_path)
-    if binary is None:
-        sys.exit(0)
-    if shutil.which(binary) is None:
-        sys.exit(0)
-
-    try:
-        subprocess.run(command, capture_output=True, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    run_formatter(file_path)
 
     sys.exit(0)
 
