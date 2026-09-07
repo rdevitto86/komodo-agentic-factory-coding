@@ -3,7 +3,7 @@ name: write-comments
 description: Draft and splice comment proposals for a finished band's diff, running each through write_comments_validator.py's shape check.
 argument-hint: <band summary, path to the diff, and the workflow-implementer Comment Candidates it carried>
 context: fork
-agent: write-comments
+agent: commentor
 background: false
 ---
 
