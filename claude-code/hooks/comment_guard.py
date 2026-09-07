@@ -86,7 +86,9 @@ def handle_pre(payload):
         echo_reason = (f"This comment restates the name of the identifier below it, in {os.path.basename(path)} — code should be self-documenting:\n"
                 + "\n".join(echoes)
                 + "\n\nThis is a hard block, not a prompt: no comment content the coding agent writes gets past this check. "
-                  "Comments are only ever added through the write-comments skill (not yet built as of this task — for now there is no path to add a narrative comment inline).")
+                  "Comments are only ever added through the write-comments skill, never inline — invoke `/write-comments` yourself "
+                  "(with the diff and your reasoning) if a comment is genuinely warranted; write_comments_validator.py is the only "
+                  "thing that can splice one in.")
 
     added_unallowed = []
     for raw_norm, _, in_manual in new_scanned:
@@ -104,7 +106,9 @@ def handle_pre(payload):
               "Everything else — a banner, a WHY:/NOTE:/FIXME:/HACK:/TODO(user): note, a step marker, any other narrative "
               "comment — is denied, with no ask.\n"
             + "\nThis is a hard block, not a prompt: no comment content the coding agent writes gets past this check. "
-              "Comments are only ever added through the write-comments skill (not yet built as of this task — for now there is no path to add a narrative comment inline)."
+              "Comments are only ever added through the write-comments skill, never inline — invoke `/write-comments` yourself "
+              "(with the diff and your reasoning) if a comment is genuinely warranted; write_comments_validator.py is the only "
+              "thing that can splice one in."
         )
 
     deny_reasons = [r for r in (echo_reason, added_reason) if r]

@@ -11,7 +11,7 @@ Design rationale for the decisions below lives in `docs/design-decisions.md`, no
 | `claude-code/AGENTS.md` | `~/.claude/AGENTS.md` | The universal rules, always loaded |
 | `claude-code/CLAUDE.md` | `~/.claude/CLAUDE.md` | One line: `@AGENTS.md` |
 | `claude-code/settings.json` | `~/.claude/settings.json` | Permissions and hook registration |
-| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` edits only `BACKLOG.md`; `write-comments` never edits directly, splicing only via `write_comments_validator.py` |
+| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` edits only `BACKLOG.md`; `commentor` never edits directly, splicing only via `write_comments_validator.py` |
 | `claude-code/hooks/` | `~/.claude/hooks/` | Two guards, plus the Stop gate and the session injector |
 | `claude-code/skills/` | `~/.claude/skills/` | Domain knowledge, lazily loaded |
 
