@@ -18,11 +18,23 @@ The two guards fail closed — an unparseable payload denies, because a missed c
 
 Block comments and Python docstrings are scanned too, not just line comments — a `/* */` or `""" """` is denied on the same terms. Everything else denies, declaration docs included. A name-echo denies outright — a comment whose first word is the identifier on the next line carries no information.
 
-Deleting a comment returns `ask`, never `deny`: a hard deny would make ordinary refactors impossible. The deletion check is scoped to the edit itself — an Edit's `old_string`, a MultiEdit's `edits[]` — so untouched comments elsewhere in the file never register as removed.
+Deleting a comment used to return `ask`, on the reasoning that a hard deny would make ordinary refactors impossible. That turned out to be the wrong trade: `comment_removal_log.py` already runs unconditionally on `PostToolUse`, independent of whatever `comment_guard.py` decided on `PreToolUse` — it diffs before/after itself and logs every removal regardless. The `ask` was never the actual safety net; the log was, and `commentor` already consults it. So the `ask` was pure per-edit friction with no corresponding loss in safety when removed — deletion now proceeds silently, scoped to the edit itself (an Edit's `old_string`, a MultiEdit's `edits[]`) exactly as before, and the log is what `commentor` checks for anything worth restoring.
 
-There is no move ledger and no `+comments` grant. Both were removed with the guard rewrite. Moving a comment therefore takes two approvals: the deletion asks, and re-adding it at the destination denies unless it fits a template.
+There is no move ledger and no `+comments` grant. Both were removed with the guard rewrite. Moving a comment still takes `write-comments` to re-add it at the destination — that add denies unless it fits a template — but the deletion half no longer requires a separate approval.
 
 No comment rule may ever block a commit, push, lint, or release. `comment_guard.py` is `PreToolUse` only. The `Stop` gate blocks a turn, never a git operation.
+
+## The DOC carve-out is deliberately narrow, and gated by extension for a real reason
+
+`comment_guard.py` allows exactly one shape of comment through inline: `DOC` (godoc-style, name-first, one sentence, on a newly-added exported top-level declaration). Every other type — `WHY`, `HACK`, `NOTE`, `FIXME`, `TODO`, `BANNER`, `STEP`, `FIELD` — still needs a diff, a `BACKLOG.md` story, or a commit message to judge whether it's warranted at all; a `PreToolUse` hook sees none of that, only the one edit in front of it. `DOC` is different: whether an exported Go declaration should carry a doc comment is close to pre-answered by Go convention itself, and the shape (name-first, one sentence, capped, top-level, exported) is fully mechanical to check. That's the line — mechanical shape-checking can replace judgment only where the judgment call itself barely exists.
+
+The `.go`-only gate is not incidental. `DOC_DECL_PATTERN` matches on keywords (`func`, `type`, `const`, `var`, `package`), and `func`/`var`/`const` are also valid top-level Go-*and*-Swift-*and*-JS/TS syntax. Without the extension gate, a `const MaxRetries = 3` in a `.ts` file would pass the exact same shape check and get treated as legitimate Go-style godoc, which was never the intent — TypeScript has its own doc-comment convention (JSDoc block comments) that this taxonomy doesn't model at all. The gate is enforced twice, once in `comment_guard.py` and once in `write_comments_validator.py`'s `prevalidate_proposal`, both reading the same `DOC_LANGUAGE_EXTENSIONS` constant from `comment_rules.py` rather than each hardcoding `.go` separately.
+
+## Trailing comments were a real blind spot, not a theoretical one
+
+`scan_comments()` only ever checked `stripped.startswith(line_marker)` — a comment that starts a line. A comment appended to the end of a line with real code on it (`Timeout time.Duration // optional`) was invisible to `comment_guard.py`'s add/remove diffing and to `comment_removal_log.py`'s removal log, from the day both were written. It stayed academic only because nothing gave a session agent a reason to reach for a trailing comment specifically — until `FIELD` existed as a named, legitimate category for exactly that position. At that point the blind spot became a live bypass: a session agent could append a `FIELD`-shaped comment directly, with the guard never even registering it as an addition.
+
+The fix is `find_comment_start()` in `comment_rules.py` — a small per-line tokenizer that tracks quote state (including Go's backtick raw strings, via the `raw_quotes` field `FAMILY_SYNTAX` had carried unused since the family-syntax table was first written) and returns the index of the first line-comment marker that isn't inside a string. `comment_guard.py` and `comment_removal_log.py` both use it now, alongside the original line-start scan, so a trailing comment is exactly as visible as a leading one on both the add and the remove side. Block comments (`/* */`) never had this gap — `scan_blocks()` already searched the raw text for delimiter pairs regardless of what shared their line, so the blind spot was specific to single-line markers (`//`, `#`, `--`).
 
 ## The no-op directive anecdote
 
@@ -106,6 +118,36 @@ Every `standards-<language>`/`standards-<framework>` skill follows the same sect
 ## A skill directory with no SKILL.md is invisible
 
 `standards-gcp/`, `standards-azure/`, `standards-rust/`, `standards-csharp/`, `standards-hardware/`, and `standards-cpp/` are parked as `SKILL.md.off` — no listing cost, no loader entry, content preserved for when those domains land. Rename back to activate.
+
+## Which compiled language, for which class of problem
+
+Komodo builds hardware plus the software layer on top of it — AgTech, Manufacturing Tech, Warehousing Tech: sensors, cameras, lidar, robotic arms, printers, network hubs/controllers — with no OS work and no game development. The four compiled languages this toolkit carries (`standards-go`, and the parked `standards-rust`/`standards-c`/`standards-cpp`) are assigned by functional role, deterministically, with no gray area between any two of them:
+
+1. **Go — the language/communications layer.** The API/server layer; every web service Komodo runs is Go. Settled, unrelated to the hardware/network layers below. This is why `standards-go` is the one active language skill; nothing else has landed yet.
+2. **C — the nervous system.** Bare-metal/MCU firmware: no OS, tight resource budget, hard real-time, vendor HAL is typically C-only. Reflexive, low-level device control, wherever it appears in the stack — including underneath a C++-owned device, where the motor/sensor board's own firmware is still C.
+3. **C++ — the muscles and peripherals.** The default for actuation and perception hardware: robotic arms, cameras, lidar, printers, and comparable complex peripherals. Chosen by domain fit, not by a per-device SDK check — this is where the mature ecosystem lives (OpenCV, PCL, ROS2, motion-planning libraries, manufacturer SDKs), and C++'s complexity is earned there rather than incidental. This is the default for the actuation/perception tier, not an override or an exception carved out of something else.
+4. **Rust — the vocals.** The network layer only: hubs, controllers, routers, high-bandwidth communication devices. Memory-safe without a GC, scoped specifically to networking — not a general-purpose default for Linux-class hardware compute outside that role.
+
+The boundary is drawn by what a device *does*, not by its compute class or toolchain availability: reflexive low-level control is C, actuation/perception intelligence is C++, network transport is Rust, server/API is Go.
+
+This hierarchy is a single axis — hardware role — and it only ever evaluates device/firmware software. It says nothing about tooling that targets no device at all.
+
+### Rust's second axis: toolchain and dev-tooling binaries
+
+A CLI, linter, formatter, compiler, or language server is judged on a different axis entirely: **distribution shape**, not hardware role. A long-running process serving requests is Go, unconditionally — that is `standards-go`'s charter and this doesn't reopen it. A standalone binary that a developer or CI job runs directly — where a single static binary with no runtime, fast cold start, and CLI-grade throughput matter more than the web-service ecosystem Go is chosen for — is Rust's second use case. `ripgrep`, `ruff`, `swc`/`oxc`, and `biome` are the shape this targets: the modern answer to "make an existing slow dev tool fast" is Rust, not C/C++, both for the memory-safety case already made for the network layer and because `cargo` gives it a package manager and cross-compilation story neither C nor C++ has out of the box.
+
+The two axes never collide because they never compete for the same artifact: hardware role only applies to firmware/device software, distribution shape only applies to software with no device target. A web service is never a candidate for Rust on this axis — that territory stays Go's — and a device's network firmware is never judged by distribution shape. Nothing here widens `standards-go`'s "every web service Komodo runs" charter, and nothing here makes Rust a general-purpose application language; outside a device's network role or a standalone dev-tooling binary, it has no claim.
+
+### Why Rust over C++ specifically at the network layer
+
+This is the one boundary in the hierarchy where memory safety outweighs C++'s ecosystem case, for reasons specific to networking and not to the actuation/perception tier:
+
+- **Attack surface.** A hub/controller/router's core job is parsing untrusted, potentially adversarial input off the wire — packet parsers, protocol state machines, variable-length buffers. That is exactly the bug class (buffer overflow, use-after-free, double-free) that dominates CVE history in C/C++ network stacks; both Microsoft's and Chrome's security teams independently found roughly 70% of their memory-safety CVEs sit in this kind of code. Rust's borrow checker removes that class at compile time rather than relying on fuzzing or review to catch it after the fact.
+- **Concurrency.** Network devices are inherently many-connections-at-once. Rust's ownership model catches data races at compile time too ("fearless concurrency"); C++ has no compiler-enforced answer to this, only TSan and review — and races are often load/timing-dependent, so they tend to surface in production traffic rather than in test.
+- **Performance is a wash.** Both are AOT-compiled, zero-cost-abstraction, LLVM-backed languages, and network throughput is bottlenecked by I/O and syscalls, not language overhead — so this is not a reason to prefer either.
+- **No equivalent ecosystem lock-in.** Unlike cameras/lidar/robotic arms, there's no mature C++-only SDK forcing the choice at the network layer. Rust's networking stack (`smoltcp` for embedded/no_std TCP/IP, `tokio` for async I/O) is mature and arguably purpose-built for hub/controller/router firmware specifically, so choosing Rust here gives up nothing the way skipping C++ elsewhere might.
+
+This hierarchy — hardware role plus Rust's toolchain axis above — is why `standards-rust`/`standards-c`/`standards-cpp` sit parked rather than deleted — the domains are real and expected to land, just not yet active.
 
 ## No requires: frontmatter key — dependency direction matters
 

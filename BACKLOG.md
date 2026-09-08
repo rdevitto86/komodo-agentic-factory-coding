@@ -94,6 +94,12 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.12.4** register the skill's listing cost per whichever choice SUB-01.1.12.3 lands on (`disable-model-invocation` or a `skillOverrides` `name-only` entry) and confirm the always-on budget still fits
   * **Done when:** `bash scripts/validate.sh`
 
+#### [TSK-01.1.13] `standards-go`'s magic-number rule (SUB-01.1.6 area) covers when to extract a numeric/string literal to a `const`, but never distinguishes a compile-time `const` (zero runtime cost at any scope) from a runtime-initialized `var` (`errors.New(...)`, `regexp.MustCompile(...)`, a struct literal holding a func field or requiring setup) — a real sweep in `komodo-forge-sdk-go` applied the const-inlining rule to `var`s too, deleting exported sentinel errors and inlining them per-call (breaking `errors.Is`/`==` comparisons across 4 packages, confirmed by a failing `go test ./...`) and rebuilding a `websocket.Upgrader` on every connection instead of once at package level [P: H] [TODO]
+* **SUB-01.1.13.1** state the const/var distinction explicitly: a `const` costs nothing regardless of where it's declared, so scope it to the narrowest lexical scope that needs it; a `var` whose initializer runs code (not a literal) costs an allocation or computation *every time that declaration executes*, so its scope must match how often it should be constructed, not how many call sites reference it
+  * **Done when:** `grep -qi "zero-cost at any scope" claude-code/skills/standards-go/SKILL.md`
+* **SUB-01.1.13.2** state that a sentinel error or any value compared by `==`/`errors.Is`/`errors.As` must stay a single, stable instance (package-level `var`, regardless of call-site count) — moving it into a function body creates a new instance per call and silently breaks every identity comparison against it, and deleting an exported sentinel to do so is also a breaking API change per the existing Evolution section
+  * **Done when:** `grep -qi "identity comparison" claude-code/skills/standards-go/SKILL.md`
+
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
 * **Context (2026-09-02, updated post-shipped review-fork/AGENTS.md-trim/bundled-skill-collapse/git-pr-create-diff-stat/workflow-loop-compaction-cap/config-accessibility-fix/git_guard-backtick-fix/git_guard-dedup work):** the always-on budget is healthy (`scripts/validate.sh`: 1,155 of 2,000 tokens). Root `AGENTS.md` was cut from 7,157 to 1,416 tokens, `assess-bugs`/`assess-security`/`assess-simplify`/`backlog-audit` now run as `reviewer`/`workflow-implementer` forks instead of the orchestrator window, `git-pr-create`'s P4 read now uses `--stat` instead of the full diff, `workflow-loop/SKILL.md` was trimmed under the compaction re-attach cap with a `scripts/validate.sh` check enforcing it, `config-accessibility` was shrunk with its dead `CLAUDE.local.md` reference fixed, and the `git_guard.py` backtick false-positive was fixed alongside four Critical substitution-scanner bypasses it surfaced, plus a follow-up dedup refactor (all shipped; `backlog-audit` renumbered the remaining task below). Remaining scope: further adversarial hardening of `git_guard.py`'s shell-parsing.
@@ -101,6 +107,55 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 #### [TSK-01.2.1] git_guard.py's shell-parsing is not exhaustively adversarial-hardened against every quoting/escaping/substitution combination [P: L] [TODO]
 * **SUB-01.2.1.1** the 2026-09-01 band that fixed the `git_guard.py` backtick false-positive (and, in review, caught and fixed three unrelated Critical bypasses along the way — a `#`-comment quote-state swallow, missing backtick/`$()` substitution detection entirely, and an escaped-nested-backtick gap) deliberately stopped hardening `claude-code/hooks/git_guard.py`'s `extract_substitutions`/`split_segments` once those four were closed, rather than continuing to chase further shell-quoting edge cases in the same pass — hand-parsing arbitrary POSIX shell quoting/escaping/substitution semantics to zero residual risk is open-ended, the same reasoning already applied to the risk-accepted `grep`/`sed`/`awk`/`curl` secret-exfiltration gap in `CHANGELOG.md`'s `[0.37.2]` entry. Untested-but-plausible remaining edge cases: `$(...)` containing backslash-escaped backticks, deeper mixed single/double-quote/substitution nesting, and other exotic POSIX escaping shapes. `scripts/test-hooks.sh` now covers `G90`-`G98` for the shapes found so far.
   * **Done when:** a dedicated, systematic pass (ideally against a real shell-grammar reference or fuzzer, not ad hoc cases) audits `extract_substitutions`/`split_segments`/`find_backtick_end`/`find_paren_end` against the POSIX shell quoting grammar and either closes every gap found or explicitly risk-accepts each one in `CHANGELOG.md`, matching the existing `[0.37.2]` pattern
+
+### [TG-01.3] Skill Namespace & Assess Refactor
+* **Target Release:** V1
+
+#### [TSK-01.3.1] Rename `repo-assess` to `assess-repo`, moving the full-repo orchestrator into the `/assess-*` namespace it aggregates [P: M] [TODO]
+* **SUB-01.3.1.1** create `claude-code/skills/assess-repo/SKILL.md` with `repo-assess`'s content verbatim (frontmatter `name: assess-repo`, `disable-model-invocation: true` retained), then delete `claude-code/skills/repo-assess/`
+  * **Done when:** `test -f claude-code/skills/assess-repo/SKILL.md && ! test -d claude-code/skills/repo-assess`
+* **SUB-01.3.1.2** confirm no reference to the old name survives anywhere in the toolkit
+  * **Done when:** `! grep -rl "repo-assess" claude-code/ templates/ scripts/`
+* **SUB-01.3.1.3** re-run the full validator
+  * **Done when:** `bash scripts/validate.sh`
+
+#### [TSK-01.3.2] Rename `repo-init` to `git-repo-init` across the toolkit [P: M] [TODO]
+* **SUB-01.3.2.1** rename `claude-code/skills/repo-init/` to `claude-code/skills/git-repo-init/`, updating its own `name:` frontmatter field
+  * **Done when:** `test -f claude-code/skills/git-repo-init/SKILL.md && ! test -d claude-code/skills/repo-init`
+* **SUB-01.3.2.2** update every cross-reference across `claude-code/agents/workflow-implementer.md` and the ~18 `claude-code/skills/*/SKILL.md` files naming `repo-init` (`standards-vue`, `standards-specs`, `standards-shell`, `standards-go`, `standards-cdk`, `standards-java`, `runbook`, `workflow-loop`, `readme`/`readme-modify`, `standards-python`, `standards-c`, `standards-dotnet`, `standards-svelte`, `sdd`, `prd`, `standards-react`, `backlog-modify`, `git-pr-create`, `git-commit-message`)
+  * **Done when:** `! grep -rl "\brepo-init\b" claude-code/ templates/ scripts/ | grep -v git-repo-init`
+* **SUB-01.3.2.3** update the `repo-init` key in `claude-code/settings.json`'s `skillOverrides` to `git-repo-init`
+  * **Done when:** `grep -q '"git-repo-init"' claude-code/settings.json`
+* **SUB-01.3.2.4** re-run the full validator and the hook regression suite
+  * **Done when:** `bash scripts/validate.sh`; `bash scripts/test-hooks.sh`
+
+#### [TSK-01.3.3] Split `changelog` into `changelog-write` and `changelog-audit`, matching the `backlog-modify`/`backlog-audit` precedent [P: M] [TODO]
+* **SUB-01.3.3.1** create `claude-code/skills/changelog-write/SKILL.md` from `changelog/SKILL.md`'s Part 1 (`write <entry>` mode) content, dropping the mode-selection preamble
+  * **Done when:** `test -f claude-code/skills/changelog-write/SKILL.md`
+* **SUB-01.3.3.2** create `claude-code/skills/changelog-audit/SKILL.md` from `changelog/SKILL.md`'s Part 2 (`audit [scope]` mode) content, matching `readme-audit`'s shape (findings-only, `--report` flag)
+  * **Done when:** `test -f claude-code/skills/changelog-audit/SKILL.md`
+* **SUB-01.3.3.3** delete `claude-code/skills/changelog/`, reclassifying each of the 7 cross-reference sites (`backlog-audit`, `readme-audit`, `workflow-loop`, `workflow-consolidate`, `git-commit-tag`, `standards-worklog`, `git-repo-init`) to call `/changelog-write` or `/changelog-audit` individually per which mode each site actually invokes — never a blind find-replace
+  * **Done when:** `! test -d claude-code/skills/changelog && ! grep -rl "\`changelog\`\|/changelog write\|/changelog audit" claude-code/ templates/`
+* **SUB-01.3.3.4** update `claude-code/settings.json`'s `changelog: name-only` entry into the two new skill names (or drop, per the token budget)
+  * **Done when:** `bash scripts/validate.sh`
+
+#### [TSK-01.3.4] Rename `readme` to `readme-modify`, pairing its name with the existing `readme-audit` [P: L] [TODO]
+* **SUB-01.3.4.1** rename `claude-code/skills/readme/` to `claude-code/skills/readme-modify/`, updating its `name:` frontmatter field (`paths: "**/README.md"` trigger unchanged)
+  * **Done when:** `test -f claude-code/skills/readme-modify/SKILL.md && ! test -d claude-code/skills/readme`
+* **SUB-01.3.4.2** update the 3 cross-reference sites (`workflow-loop`, `workflow-consolidate`, `git-repo-init`) to `readme-modify`
+  * **Done when:** `! grep -rl "\`readme\`\|/readme\b" claude-code/ templates/ | grep -v readme-audit`
+* **SUB-01.3.4.3** update the `readme: name-only` key in `claude-code/settings.json`'s `skillOverrides` to `readme-modify`
+  * **Done when:** `grep -q '"readme-modify"' claude-code/settings.json`
+* **SUB-01.3.4.4** re-run the full validator
+  * **Done when:** `bash scripts/validate.sh`
+
+#### [TSK-01.3.5] Trim `write-comments` to remove judgment content duplicated in `commentor.md`, keeping it solely as the fork-invocation entry point [P: M] [TODO]
+* **SUB-01.3.5.1** remove `write-comments/SKILL.md`'s "Default: write nothing" section (bar plus good/bad examples) — owned solely by `commentor.md`'s fuller "Judgment: when a comment is warranted" section from here on
+  * **Done when:** `! grep -q "Default: write nothing" claude-code/skills/write-comments/SKILL.md`
+* **SUB-01.3.5.2** keep the "You cannot see the calling conversation" contract paragraph naming exactly what must arrive in `$ARGUMENTS`, and the numbered Order of operations — this is the skill's own entry-point contract, not duplicated in `commentor.md`
+  * **Done when:** `grep -q "cannot see the calling conversation" claude-code/skills/write-comments/SKILL.md`
+* **SUB-01.3.5.3** confirm the file still parses and the always-on budget is unaffected
+  * **Done when:** `bash scripts/validate.sh`
 
 ---
 

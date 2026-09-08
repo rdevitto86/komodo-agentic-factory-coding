@@ -8,35 +8,29 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from auto_format import run_formatter
 from lib.comment_rules import (
+    DOC_LANGUAGE_EXTENSIONS,
     FAMILY_SYNTAX,
+    FIELD_MAX_CHARS,
+    NARRATIVE_MAX_CHARS,
+    STEP_MAX_CHARS,
     TEMPLATE_PATTERNS,
+    BANNER_LABEL,
     check_echoes,
     comment_body,
-    is_narrative_template,
+    find_comment_start,
+    is_plain_body,
     normalize,
     resolve_family,
     scan_comments,
+    trailing_comment_echoes_field,
+    validate_doc_shape,
 )
 
-TEMPLATE_TYPE_PATTERN_INDEX = {
-    "BANNER": 0,
-    "WHY": 1,
-    "NOTE": 1,
-    "FIXME": 1,
-    "HACK": 1,
-    "TODO": 2,
-    "STEP": 3,
-}
+ADJACENT_WINDOW = 2
+KNOWN_TEMPLATE_TYPES = ("BANNER", "WHY", "HACK", "NOTE", "FIXME", "TODO", "STEP", "DOC", "FIELD")
 
 
-def classify_template_index(body):
-    for idx, pattern in enumerate(TEMPLATE_PATTERNS):
-        if pattern.match(body):
-            return idx
-    return None
-
-
-def validate_comment_shape(text, template_type, family, is_indented):
+def validate_comment_shape(text, template_type, family, is_indented, decl_line=None):
     line_marker = FAMILY_SYNTAX[family][0]
     if not line_marker:
         return False, f"the {family!r} family has no line-comment marker"
@@ -49,22 +43,45 @@ def validate_comment_shape(text, template_type, family, is_indented):
     if not body:
         return False, "comment body is empty"
 
-    expected_idx = TEMPLATE_TYPE_PATTERN_INDEX.get(template_type)
-    if expected_idx is None:
+    if template_type not in KNOWN_TEMPLATE_TYPES:
         return False, f"unknown template_type {template_type!r}"
 
-    matched_idx = classify_template_index(body)
+    if template_type in ("NOTE", "FIXME", "TODO"):
+        if not TEMPLATE_PATTERNS[template_type].match(body):
+            return False, f"text does not match the {template_type} template shape"
+        if len(body) > NARRATIVE_MAX_CHARS:
+            return False, f"comment body is {len(body)} chars, over the {NARRATIVE_MAX_CHARS}-char cap -- state one fact, not several"
+        return True, ""
+
+    if template_type == "BANNER":
+        if not TEMPLATE_PATTERNS["BANNER"].match(body):
+            return False, f"a banner label must be exactly {BANNER_LABEL!r}"
+        return True, ""
 
     if template_type == "STEP":
-        if matched_idx is not None and matched_idx != expected_idx:
-            return False, "text matches a different template shape than the claimed STEP"
-    elif matched_idx != expected_idx:
-        return False, f"text does not match the {template_type} template shape"
+        if not TEMPLATE_PATTERNS["STEP"].match(body):
+            return False, "text does not match the STEP template shape"
+        if not is_indented:
+            return False, "a STEP marker only belongs inside an indented function body"
+        if len(body) > STEP_MAX_CHARS:
+            return False, f"step body is {len(body)} chars, over the {STEP_MAX_CHARS}-char cap"
+        return True, ""
 
-    if not is_narrative_template(normalized, is_indented=is_indented):
-        return False, f"text does not match the {template_type} template shape"
+    if template_type in ("WHY", "HACK"):
+        if not is_plain_body(body):
+            return False, "text must be a plain sentence with no marker prefix"
+        if len(body) > NARRATIVE_MAX_CHARS:
+            return False, f"comment body is {len(body)} chars, over the {NARRATIVE_MAX_CHARS}-char cap -- state one fact, not several"
+        return True, ""
 
-    return True, ""
+    if template_type == "FIELD":
+        if not is_plain_body(body):
+            return False, "text must be a plain clause with no marker prefix"
+        if len(body) > FIELD_MAX_CHARS:
+            return False, f"field comment is {len(body)} chars, over the {FIELD_MAX_CHARS}-char cap"
+        return True, ""
+
+    return validate_doc_shape(body, decl_line, is_indented)
 
 
 def resolve_proposal_path(file_field, repo_root):
@@ -94,7 +111,7 @@ def prevalidate_proposal(proposal, repo_root):
         return None, None, None, "missing or invalid 'file'"
     if not isinstance(line_no, int) or isinstance(line_no, bool):
         return None, None, None, "missing or invalid 'line'"
-    if not template_type or template_type not in TEMPLATE_TYPE_PATTERN_INDEX:
+    if not template_type or template_type not in KNOWN_TEMPLATE_TYPES:
         return None, None, None, f"missing or unknown template_type {template_type!r}"
     if not text or not isinstance(text, str):
         return None, None, None, "missing or invalid 'text'"
@@ -102,6 +119,12 @@ def prevalidate_proposal(proposal, repo_root):
     full_path = resolve_proposal_path(file_field, repo_root)
     if not is_within_repo_root(full_path, repo_root):
         return None, None, None, f"resolved path is outside repo root: {file_field!r}"
+
+    if template_type == "BANNER" and not os.path.basename(full_path).endswith("_test.go"):
+        return None, None, None, "a BANNER comment is only allowed in a _test.go file"
+
+    if template_type == "DOC" and not full_path.endswith(DOC_LANGUAGE_EXTENSIONS):
+        return None, None, None, f"a DOC comment is only allowed in {DOC_LANGUAGE_EXTENSIONS!r} files"
 
     family = resolve_family(full_path)
     if not family:
@@ -113,10 +136,38 @@ def prevalidate_proposal(proposal, repo_root):
     return full_path, family, ext, None
 
 
-def apply_proposal_to_lines(proposal, family, lines, old_comment_set):
+def apply_field_proposal(proposal, family, lines):
+    line_no = proposal["line"]
+    text = proposal["text"]
+
+    if line_no < 1 or line_no > len(lines):
+        return None, f"line {line_no} is out of range ({len(lines)} lines) -- a FIELD comment appends to an existing line"
+
+    target = lines[line_no - 1]
+    if not target.strip():
+        return None, "a FIELD comment must attach to a non-blank line"
+
+    if find_comment_start(target, family) is not None:
+        return None, "this line already carries a trailing comment"
+
+    ok, reason = validate_comment_shape(text, "FIELD", family, is_indented=False)
+    if not ok:
+        return None, reason
+
+    if trailing_comment_echoes_field(target, text):
+        return None, "this comment would echo the field name it trails"
+
+    lines[line_no - 1] = target.rstrip() + "  " + normalize(text)
+    return lines[line_no - 1], None
+
+
+def apply_proposal_to_lines(proposal, family, lines, old_comment_set, accepted_lines=()):
     line_no = proposal["line"]
     template_type = proposal["template_type"]
     text = proposal["text"]
+
+    if template_type == "FIELD":
+        return apply_field_proposal(proposal, family, lines)
 
     if line_no < 1 or line_no > len(lines) + 1:
         return None, f"line {line_no} is out of range ({len(lines)} lines)"
@@ -125,16 +176,21 @@ def apply_proposal_to_lines(proposal, family, lines, old_comment_set):
     indent = ref_line[: len(ref_line) - len(ref_line.lstrip())]
     is_indented = len(indent) > 0
 
-    ok, reason = validate_comment_shape(text, template_type, family, is_indented)
+    ok, reason = validate_comment_shape(text, template_type, family, is_indented, decl_line=ref_line)
     if not ok:
         return None, reason
 
+    near = next((ln for ln in accepted_lines if abs(ln - line_no) <= ADJACENT_WINDOW), None)
+    if near is not None:
+        return None, f"a comment already lands within {ADJACENT_WINDOW} lines of this one, at line {near} -- one comment per site, not a stack"
+
     indented_text = indent + normalize(text)
 
-    trial = lines[: line_no - 1] + [indented_text] + lines[line_no - 1 :]
-    echoes = check_echoes(trial, family, old_comment_set)
-    if indented_text.strip() in echoes:
-        return None, "inserting this comment would echo the identifier on the following line"
+    if template_type != "DOC":
+        trial = lines[: line_no - 1] + [indented_text] + lines[line_no - 1 :]
+        echoes = check_echoes(trial, family, old_comment_set)
+        if indented_text.strip() in echoes:
+            return None, "inserting this comment would echo the identifier on the following line"
 
     lines[line_no - 1 : line_no - 1] = [indented_text]
     return indented_text, None
@@ -169,8 +225,11 @@ def process_proposals(proposals, repo_root):
         items.sort(key=lambda pair: pair[1]["line"], reverse=True)
 
         touched = False
+        accepted_lines = []
         for idx, proposal in items:
-            result, reason = apply_proposal_to_lines(proposal, family, lines, old_comment_set)
+            result, reason = apply_proposal_to_lines(proposal, family, lines, old_comment_set, accepted_lines)
+            if not reason and proposal["template_type"] != "FIELD":
+                accepted_lines.append(proposal["line"])
             if reason:
                 dropped[idx] = {
                     "file": proposal["file"],
