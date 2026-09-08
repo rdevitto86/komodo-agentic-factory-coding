@@ -191,8 +191,7 @@ expect "C2  trailing comment survives an edit to its own line" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"x := 1 << 20 // 1MB","new_string":"x := 1 << 21 // 1MB"}}
 JSON
 
-expect "C3  deleting a user comment asks instead of proceeding" ask \
-  "user note" <<'JSON'
+expect "C3  deleting a user comment proceeds silently, logging is the safety net now" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note\nfunc Foo() {}","new_string":"func Foo() {}"}}
 JSON
 
@@ -266,7 +265,7 @@ expect "C19 an ordinary doc comment prompts for approval" deny "explain Bar" <<<
 
 C20_SESSION="$(next_session)"
 C20_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note\\nfunc Foo() {}","new_string":"func Foo() {}"}}' "$C20_SESSION")"
-expect "C20 deleting a comment asks, never proceeds" ask "user note" <<< "$C20_PAYLOAD"
+expect "C20 deleting a comment proceeds silently, never grants an addition" allow <<< "$C20_PAYLOAD"
 
 C21_SESSION="$(next_session)"
 C21_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s-other","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// +comments\\n// explain Foo\\nfunc Foo() {}"}}' "$C21_SESSION")"
@@ -354,6 +353,10 @@ JSON
 
 expect "C36b the same rule catches a Go method receiver" deny \
   "restates the name" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/sink.go","old_string":"func (s *Sink) Send(e Event) error {","new_string":"// Send sends the event to the HTTP sink\nfunc (s *Sink) Send(e Event) error {"}}
+JSON
+
+expect "C36d a genuinely DOC-shaped comment on an exported method is allowed inline" allow <<'JSON'
 {"tool_name":"Edit","tool_input":{"file_path":"/x/sink.go","old_string":"func (s *Sink) Send(e Event) error {","new_string":"// Send sends the event to the HTTP sink.\nfunc (s *Sink) Send(e Event) error {"}}
 JSON
 
@@ -404,7 +407,7 @@ JSON
 
 MOVE="$(next_session)-move"
 C45_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/from.go","old_string":"// Preloads all the required dependencies.\\nfunc Boot() {}","new_string":""}}' "$MOVE")"
-expect "C45 removing a comment asks and records it" ask "Preloads all the required" <<< "$C45_PAYLOAD"
+expect "C45 removing a comment proceeds silently, the PostToolUse log records it" allow <<< "$C45_PAYLOAD"
 
 C46_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the required dependencies.\\nfunc Boot() {}"}}' "$MOVE")"
 expect "C46 re-adding it at the destination still prompts" deny "Preloads all the required" <<< "$C46_PAYLOAD"
@@ -466,6 +469,43 @@ expect "C58 the reviewer agent editing any other file is denied" deny \
 
 C59_PAYLOAD="$(printf '{"tool_name":"Edit","cwd":"%s","tool_input":{"file_path":"%s/claude-code/hooks/git_guard.py","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
 expect "C59 an orchestrator-session edit with no agent_type is unaffected" allow <<< "$C59_PAYLOAD"
+
+expect "C60 a new trailing comment is caught, closing the old blind spot" deny \
+  "trailing" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"Timeout time.Duration","new_string":"Timeout time.Duration // optional; 0 disables the deadline"}}
+JSON
+
+expect "C61 a // inside a string literal is not mistaken for a trailing comment" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"logger.Info(\"boot\")","new_string":"logger.Info(\"processing http://example.com\")"}}
+JSON
+
+expect "C62 a newly added trailing machine directive is exempt" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"x := compute()","new_string":"x := compute() // nolint:varcheck"}}
+JSON
+
+expect "C63 a trailing comment that echoes the field name it trails is denied" deny \
+  "restates the name" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"Timeout time.Duration","new_string":"Timeout time.Duration // Timeout is the timeout"}}
+JSON
+
+expect "C64 a DOC comment on a package declaration is allowed inline" allow <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"package main","new_string":"// Package main runs the demo server.\npackage main"}}
+JSON
+
+expect "C65 a DOC comment on an unexported func is still denied" deny \
+  "restates the name" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func helper() {}","new_string":"// helper does something small.\nfunc helper() {}"}}
+JSON
+
+expect "C66 a name-first single-sentence comment above a matching const in a TypeScript file is still denied -- DOC is Go-only" deny \
+  "restates the name" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/config.ts","old_string":"const MaxRetries = 3;","new_string":"// MaxRetries is the retry ceiling.\nconst MaxRetries = 3;"}}
+JSON
+
+expect "C67 a two-line comment block above a declaration is denied even though line 2 alone would be DOC-valid" deny \
+  "self-documenting" <<'JSON'
+{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Upgrade() {}","new_string":"// worth documenting\n// Upgrade promotes a websocket.\nfunc Upgrade() {}"}}
+JSON
 
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
@@ -745,6 +785,10 @@ comment_log_case "L2  a Write with no old_string logs nothing" no-log \
   '{"file_path":"'"$FIXTURE_LOG"'/svc.go","content":"// brand new\nfunc Fresh() {}"}' \
   "" "brand new"
 
+comment_log_case "L3  a removed trailing comment reaches the log too, not just leading ones" logged \
+  '{"file_path":"'"$FIXTURE_LOG"'/svc.go","old_string":"Timeout time.Duration // zero disables the deadline entirely","new_string":"Timeout time.Duration"}' \
+  "zero disables the deadline entirely"
+
 VALIDATOR="$HOOKS/write_comments_validator.py"
 printf '\nwrite-comments validator\n\n'
 
@@ -773,13 +817,121 @@ validator_case() {
   ) &
 }
 
-validator_case "V1  an off-template proposal is dropped and a valid WHY: proposal is spliced" \
-  '[{"file":"svc.go","line":4,"template_type":"WHY","text":"// WHY: seeds the retry counter"},{"file":"svc.go","line":3,"template_type":"BANNER","text":"// just some prose"}]' \
-  "WHY: seeds the retry counter" "does not match the BANNER template shape" "WHY: seeds the retry counter"
+validator_case "V1  a BANNER outside a _test.go file is dropped and a valid plain WHY proposal is spliced" \
+  '[{"file":"svc.go","line":4,"template_type":"WHY","text":"// seeds the retry counter"},{"file":"svc.go","line":3,"template_type":"BANNER","text":"// --- Setup ---"}]' \
+  "seeds the retry counter" "only allowed in a _test.go file" "seeds the retry counter"
 
 validator_case "V2  a proposal whose file escapes repo_root via ../ segments is dropped, not spliced" \
   '[{"file":"../../../../../../etc/escape-me.go","line":1,"template_type":"WHY","text":"// WHY: should never land outside the repo"}]' \
   "" "outside repo root"
+
+validator_own_fixture_case() {
+  local label="$1" proposals="$2" must_spliced="${3:-}" must_dropped="${4:-}" must_in_file="${5:-}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-validator-$JOB_IDX"
+    mkdir -p "$fixture"
+    printf 'package main\n\nfunc Run() {\n\tx := 1\n\treturn x\n}\n' > "$fixture/svc.go"
+    local out problem=""
+    out="$(printf '%s' "$proposals" | python3 "$VALIDATOR" --repo-root "$fixture" 2>/dev/null)"
+    if [ -n "$must_spliced" ] && [[ "$out" != *"\"spliced\""*"$must_spliced"* ]]; then
+      problem="spliced result missing: $must_spliced"
+    fi
+    if [ -z "$problem" ] && [ -n "$must_dropped" ] && [[ "$out" != *"\"dropped\""*"$must_dropped"* ]]; then
+      problem="dropped reason missing: $must_dropped"
+    fi
+    if [ -z "$problem" ] && [ -n "$must_in_file" ] && ! grep -qF "$must_in_file" "$fixture/svc.go"; then
+      problem="fixture file does not contain: $must_in_file"
+    fi
+    report "$outfile" "$label" "$problem" "$out"
+  ) &
+}
+
+validator_own_fixture_case "V4  a plain WHY body over the 120-char cap is dropped, not spliced" \
+  '[{"file":"svc.go","line":4,"template_type":"WHY","text":"// this sentence is deliberately padded well past the one hundred and twenty character cap so the validator has to drop it outright"}]' \
+  "" "over the 120-char cap"
+
+validator_own_fixture_case "V5  a second proposal within 2 lines of an already-spliced one is dropped as a stack" \
+  '[{"file":"svc.go","line":4,"template_type":"WHY","text":"// first comment at this site"},{"file":"svc.go","line":5,"template_type":"NOTE","text":"// NOTE: second comment stacked too close"}]' \
+  "second comment stacked too close" "one comment per site, not a stack"
+
+validator_own_fixture_case "V6  a WHY proposal with the deprecated WHY: marker prefix is dropped" \
+  '[{"file":"svc.go","line":4,"template_type":"WHY","text":"// WHY: seeds the retry counter"}]' \
+  "" "plain sentence with no marker prefix"
+
+validator_own_fixture_case "V7  a TODO proposal with the deprecated TODO(user) form is dropped" \
+  '[{"file":"svc.go","line":4,"template_type":"TODO","text":"// TODO(rad): fix this later"}]' \
+  "" "does not match the TODO template shape"
+
+validator_own_fixture_case "V8  a DOC comment lands name-first on an exported func and is not flagged as an echo" \
+  '[{"file":"svc.go","line":3,"template_type":"DOC","text":"// Run seeds the retry counter and starts the loop."}]' \
+  "Run seeds the retry counter" "" "Run seeds the retry counter"
+
+validator_own_fixture_case "V9  a DOC comment inside a function body is dropped, not top-level" \
+  '[{"file":"svc.go","line":4,"template_type":"DOC","text":"// x holds the seed value."}]' \
+  "" "top-level func/type/const/var/package declaration"
+
+V9B_FIXTURE="$WORKDIR/fixture-validator-v9b"
+mkdir -p "$V9B_FIXTURE"
+printf 'package main\n\nfunc helper() {}\n' > "$V9B_FIXTURE/svc.go"
+validator_v9b_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out problem=""
+    out="$(printf '[{"file":"svc.go","line":3,"template_type":"DOC","text":"// helper does something small."}]' | python3 "$VALIDATOR" --repo-root "$V9B_FIXTURE" 2>/dev/null)"
+    if [[ "$out" != *"\"dropped\""*"exported (capitalized) declaration"* ]]; then
+      problem="dropped reason missing: exported (capitalized) declaration"
+    fi
+    report "$outfile" "V9b a DOC comment on an unexported top-level declaration is dropped" "$problem" "$out"
+  ) &
+}
+validator_v9b_case
+
+validator_own_fixture_case "V10  a multi-sentence DOC comment is dropped" \
+  '[{"file":"svc.go","line":3,"template_type":"DOC","text":"// Run seeds the counter. It also starts the loop."}]' \
+  "" "exactly one sentence"
+
+V11_FIXTURE="$WORKDIR/fixture-validator-v11"
+mkdir -p "$V11_FIXTURE"
+printf 'package main\n\ntype Config struct {\n\tTimeout time.Duration\n\tAPIKey  string\n}\n' > "$V11_FIXTURE/svc.go"
+validator_v11_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out problem=""
+    out="$(printf '[{"file":"svc.go","line":4,"template_type":"FIELD","text":"// zero disables the deadline entirely"},{"file":"svc.go","line":5,"template_type":"FIELD","text":"// pulled from env at boot"}]' | python3 "$VALIDATOR" --repo-root "$V11_FIXTURE" 2>/dev/null)"
+    if [[ "$out" != *"\"spliced\""*"zero disables the deadline entirely"*"pulled from env at boot"* ]] && [[ "$out" != *"pulled from env at boot"*"zero disables the deadline entirely"* ]]; then
+      problem="both adjacent FIELD proposals should splice, neither treated as a stack: $out"
+    elif ! grep -qF "// zero disables the deadline entirely" "$V11_FIXTURE/svc.go"; then
+      problem="fixture file missing the spliced Timeout field comment"
+    fi
+    report "$outfile" "V11 two adjacent FIELD proposals both splice -- FIELD is exempt from the stacking rule" "$problem" "$out"
+  ) &
+}
+validator_v11_case
+
+V12_FIXTURE="$WORKDIR/fixture-validator-v12"
+mkdir -p "$V12_FIXTURE"
+printf 'package main\n\nfunc TestFoo(t *testing.T) {}\n' > "$V12_FIXTURE/svc_test.go"
+validator_v12_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out problem=""
+    out="$(printf '[{"file":"svc_test.go","line":3,"template_type":"BANNER","text":"// --- Setup ---"}]' | python3 "$VALIDATOR" --repo-root "$V12_FIXTURE" 2>/dev/null)"
+    if [[ "$out" != *"\"spliced\""*"--- Setup ---"* ]]; then
+      problem="a Setup banner in a _test.go file should splice: $out"
+    fi
+    report "$outfile" "V12 a Setup banner in a _test.go file splices" "$problem" "$out"
+  ) &
+}
+validator_v12_case
 
 validator_formatter_case() {
   local label="$1"
@@ -807,7 +959,7 @@ proposals = [{
     "file": "svc.go",
     "line": 4,
     "template_type": "WHY",
-    "text": "// WHY: confirms run_formatter fires after a splice",
+    "text": "// confirms run_formatter fires after a splice",
 }]
 
 buf = io.StringIO()
@@ -858,7 +1010,7 @@ e2e_pipeline_case() {
     if [ -z "$problem1" ] && [[ "$reason1" != *"explains the retry"* ]]; then
       problem1="reason missing: explains the retry"
     fi
-    report "$outfile1" "E1  a removal-plus-addition edit denies the addition, a deny always outranking the removal-ask" "$problem1" "$reason1"
+    report "$outfile1" "E1  a removal-plus-addition edit still denies for the added comment" "$problem1" "$reason1"
 
     local payload2 out2 problem2="" logfile
     payload2='{"hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"'"$fixture"'/svc.go","old_string":"// old cleanup note\nfunc Boot() {}","new_string":"func Boot() {}"}}'
@@ -872,14 +1024,14 @@ e2e_pipeline_case() {
     report "$outfile2" "E2  the same removal, approved on its own, lands in the shared fixture's log" "$problem2" "$out2"
 
     local proposals3 out3 problem3=""
-    proposals3='[{"file":"svc.go","line":3,"template_type":"WHY","text":"// WHY: covers the invariant a write-comments pass would leave for this band"}]'
+    proposals3='[{"file":"svc.go","line":3,"template_type":"WHY","text":"// covers the invariant a write-comments pass would leave for this band"}]'
     out3="$(printf '%s' "$proposals3" | python3 "$HOOKS/write_comments_validator.py" --repo-root "$fixture" 2>/dev/null)"
     if [[ "$out3" != *"\"spliced\""*"covers the invariant a write-comments pass would leave"* ]]; then
       problem3="spliced result missing expected text"
-    elif ! grep -qF "WHY: covers the invariant a write-comments pass would leave" "$fixture/svc.go"; then
+    elif ! grep -qF "covers the invariant a write-comments pass would leave" "$fixture/svc.go"; then
       problem3="fixture file does not contain the spliced WHY comment"
     fi
-    report "$outfile3" "E3  a valid WHY: proposal splices into the same fixture file the pipeline just touched" "$problem3" "$out3"
+    report "$outfile3" "E3  a valid plain WHY proposal splices into the same fixture file the pipeline just touched" "$problem3" "$out3"
   ) &
 }
 

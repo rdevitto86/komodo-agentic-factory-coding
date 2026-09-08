@@ -49,18 +49,81 @@ EXEMPT_PREFIXES = (
 )
 
 # --- Allowed Strict Comment Templates ---
-TEMPLATE_PATTERNS = [
-    re.compile(r"^-{3,}\s*([^\s-][^-]{0,39})\s*-{3,}$"),              # Banner: --- Label ---
-    re.compile(r"^(?:WHY|NOTE|FIXME|HACK):\s+\S+"),                   # Intent: WHY: reason
-    re.compile(r"^TODO\([a-zA-Z0-9_-]+\):\s+\S+"),                   # Todo: TODO(username): msg
-    re.compile(r"^\d+\.\s+\S+"),                                     # Step: 1. Do action
-]
+BANNER_LABEL = "Setup"
+TEMPLATE_PATTERNS = {
+    "BANNER": re.compile(r"^-{3,}\s*" + re.escape(BANNER_LABEL) + r"\s*-{3,}$"),
+    "NOTE": re.compile(r"^NOTE:\s+\S+"),
+    "FIXME": re.compile(r"^FIXME:\s+\S+"),
+    "TODO": re.compile(r"^TODO:\s+\S+"),
+    "STEP": re.compile(r"^\d+\.\s+\S+"),
+}
+BANNER_SHAPE = re.compile(r"^-{3,}")
+RESERVED_MARKERS = ("NOTE:", "FIXME:", "TODO:", "WHY:", "HACK:")
 
 STEP_MAX_CHARS = 80
+NARRATIVE_MAX_CHARS = 120
+DOC_MAX_CHARS = 120
+FIELD_MAX_CHARS = 80
 DECL_NAME = (
     re.compile(r"^func\s+\([^)]*\)\s*(\w+)"),
     re.compile(r"^(?:export\s+)?(?:pub\s+)?(?:async\s+)?(?:func|function|def|class|type|struct|enum|fn|const|var|let)\s+(\w+)"),
 )
+DOC_DECL_PATTERN = re.compile(
+    r"^(?:func(?:\s*\([^)]*\))?\s+(\w+)|type\s+(\w+)|const\s+(\w+)|var\s+(\w+)|package\s+(\w+))"
+)
+DOC_LANGUAGE_EXTENSIONS = (".go",)
+FIELD_NAME_PATTERN = re.compile(r"^\s*(\w+)\s")
+
+
+def is_plain_body(body):
+    if not body:
+        return False
+    if any(body.upper().startswith(m) for m in RESERVED_MARKERS):
+        return False
+    if BANNER_SHAPE.match(body) or TEMPLATE_PATTERNS["STEP"].match(body):
+        return False
+    return True
+
+
+def validate_doc_shape(body, decl_line, is_indented):
+    if is_indented or decl_line is None:
+        return False, "a DOC comment must sit directly above a top-level func/type/const/var/package declaration"
+
+    match = DOC_DECL_PATTERN.match(decl_line.strip())
+    if not match:
+        return False, "a DOC comment must sit directly above a func/type/const/var/package declaration"
+
+    is_package = decl_line.strip().startswith("package ")
+    name = next(g for g in match.groups() if g)
+    if not is_package and not name[:1].isupper():
+        return False, "a DOC comment only belongs on an exported (capitalized) declaration"
+
+    expected_lead = f"Package {name}" if is_package else name
+    if not (body == expected_lead or body.startswith(expected_lead + " ")):
+        return False, f"a DOC comment must start with {expected_lead!r}"
+
+    terminal_count = sum(body.count(c) for c in ".!?")
+    if terminal_count != 1 or body[-1] not in ".!?":
+        return False, "a DOC comment must be exactly one sentence"
+
+    if len(body) > DOC_MAX_CHARS:
+        return False, f"doc comment is {len(body)} chars, over the {DOC_MAX_CHARS}-char cap"
+
+    return True, ""
+
+
+def field_name_of(code_part):
+    match = FIELD_NAME_PATTERN.match(code_part)
+    return match.group(1) if match else None
+
+
+def trailing_comment_echoes_field(code_part, comment_text):
+    name = field_name_of(code_part)
+    if not name:
+        return False
+    body = comment_body(normalize(comment_text))
+    first_word = body.split()[0].strip("*(),.:;'\"`") if body else ""
+    return first_word.lower() == name.lower()
 
 def resolve_family(path):
     if not path: return None
@@ -96,20 +159,6 @@ def is_mechanically_exempt(normalized, in_manual=False):
 
     return False
 
-def is_narrative_template(normalized, is_indented=False):
-    body = comment_body(normalized)
-    if not body:
-        return False
-
-    # Check Regex Templates (WHY:, NOTE:, Banners, TODOs)
-    if any(pattern.match(body) for pattern in TEMPLATE_PATTERNS):
-        return True
-
-    # Check Step Markers inside function bodies
-    if is_indented and len(body) <= STEP_MAX_CHARS:
-        return True
-
-    return False
 
 def scan_docstrings(text):
     try:
@@ -140,6 +189,74 @@ def scan_blocks(text, block_open, block_close):
             continue
         i += 1
     return found
+
+
+def find_comment_start(line, family):
+    line_marker, _, _, quote_chars, raw_quote_chars = FAMILY_SYNTAX[family]
+    if not line_marker:
+        return None
+    quote_chars = quote_chars or ""
+    raw_quote_chars = raw_quote_chars or ""
+    i, n = 0, len(line)
+    active, is_raw = None, False
+    while i < n:
+        ch = line[i]
+        if active:
+            if not is_raw and ch == "\\":
+                i += 2
+                continue
+            if ch == active:
+                active, is_raw = None, False
+            i += 1
+            continue
+        if ch in quote_chars:
+            active, is_raw = ch, False
+            i += 1
+            continue
+        if ch in raw_quote_chars:
+            active, is_raw = ch, True
+            i += 1
+            continue
+        if line.startswith(line_marker, i):
+            return i
+        i += 1
+    return None
+
+
+def find_trailing_comments(text, family):
+    line_marker = FAMILY_SYNTAX[family][0]
+    if not line_marker:
+        return []
+    found = []
+    for line in text.splitlines():
+        idx = find_comment_start(line, family)
+        if idx is None:
+            continue
+        if not line[:idx].strip():
+            continue
+        found.append(normalize(line[idx:]))
+    return found
+
+
+def find_doc_candidates(text, family):
+    line_marker = FAMILY_SYNTAX[family][0]
+    if not line_marker:
+        return []
+    lines = text.splitlines()
+    candidates = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith(line_marker):
+            continue
+        if index > 0 and lines[index - 1].strip().startswith(line_marker):
+            continue
+        if index + 1 >= len(lines):
+            continue
+        next_line = lines[index + 1]
+        if next_line.strip().startswith(line_marker):
+            continue
+        candidates.append((normalize(stripped), next_line))
+    return candidates
 
 
 def scan_comments(text, family, ext=None):

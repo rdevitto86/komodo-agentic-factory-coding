@@ -11,7 +11,14 @@ import subprocess
 import sys
 import time
 
-from lib.comment_rules import FAMILY_SYNTAX, normalize, resolve_family, scan_comments
+from lib.comment_rules import (
+    FAMILY_SYNTAX,
+    find_comment_start,
+    find_trailing_comments,
+    normalize,
+    resolve_family,
+    scan_comments,
+)
 
 WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 LOG_RELATIVE_PATH = os.path.join(".claude", "state", "removed-comments.jsonl")
@@ -41,6 +48,9 @@ def find_line(before_text, family, body):
         stripped = line.strip()
         if stripped.startswith(line_marker) and normalize(stripped) == body:
             return lineno
+        idx = find_comment_start(line, family)
+        if idx is not None and line[:idx].strip() and normalize(line[idx:]) == body:
+            return lineno
     return None
 
 
@@ -48,8 +58,13 @@ def removed_comments(before_text, after_text, family, ext):
     before_counts = {}
     for body, _, _ in scan_comments(before_text, family, ext):
         before_counts[body] = before_counts.get(body, 0) + 1
+    for body in find_trailing_comments(before_text, family):
+        before_counts[body] = before_counts.get(body, 0) + 1
+
     after_counts = {}
     for body, _, _ in scan_comments(after_text, family, ext):
+        after_counts[body] = after_counts.get(body, 0) + 1
+    for body in find_trailing_comments(after_text, family):
         after_counts[body] = after_counts.get(body, 0) + 1
 
     removed = []
