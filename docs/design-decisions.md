@@ -130,6 +130,14 @@ Komodo builds hardware plus the software layer on top of it — AgTech, Manufact
 
 The boundary is drawn by what a device *does*, not by its compute class or toolchain availability: reflexive low-level control is C, actuation/perception intelligence is C++, network transport is Rust, server/API is Go.
 
+This hierarchy is a single axis — hardware role — and it only ever evaluates device/firmware software. It says nothing about tooling that targets no device at all.
+
+### Rust's second axis: toolchain and dev-tooling binaries
+
+A CLI, linter, formatter, compiler, or language server is judged on a different axis entirely: **distribution shape**, not hardware role. A long-running process serving requests is Go, unconditionally — that is `standards-go`'s charter and this doesn't reopen it. A standalone binary that a developer or CI job runs directly — where a single static binary with no runtime, fast cold start, and CLI-grade throughput matter more than the web-service ecosystem Go is chosen for — is Rust's second use case. `ripgrep`, `ruff`, `swc`/`oxc`, and `biome` are the shape this targets: the modern answer to "make an existing slow dev tool fast" is Rust, not C/C++, both for the memory-safety case already made for the network layer and because `cargo` gives it a package manager and cross-compilation story neither C nor C++ has out of the box.
+
+The two axes never collide because they never compete for the same artifact: hardware role only applies to firmware/device software, distribution shape only applies to software with no device target. A web service is never a candidate for Rust on this axis — that territory stays Go's — and a device's network firmware is never judged by distribution shape. Nothing here widens `standards-go`'s "every web service Komodo runs" charter, and nothing here makes Rust a general-purpose application language; outside a device's network role or a standalone dev-tooling binary, it has no claim.
+
 ### Why Rust over C++ specifically at the network layer
 
 This is the one boundary in the hierarchy where memory safety outweighs C++'s ecosystem case, for reasons specific to networking and not to the actuation/perception tier:
@@ -139,7 +147,7 @@ This is the one boundary in the hierarchy where memory safety outweighs C++'s ec
 - **Performance is a wash.** Both are AOT-compiled, zero-cost-abstraction, LLVM-backed languages, and network throughput is bottlenecked by I/O and syscalls, not language overhead — so this is not a reason to prefer either.
 - **No equivalent ecosystem lock-in.** Unlike cameras/lidar/robotic arms, there's no mature C++-only SDK forcing the choice at the network layer. Rust's networking stack (`smoltcp` for embedded/no_std TCP/IP, `tokio` for async I/O) is mature and arguably purpose-built for hub/controller/router firmware specifically, so choosing Rust here gives up nothing the way skipping C++ elsewhere might.
 
-This hierarchy is why `standards-rust`/`standards-c`/`standards-cpp` sit parked rather than deleted — the domains are real and expected to land, just not yet active.
+This hierarchy — hardware role plus Rust's toolchain axis above — is why `standards-rust`/`standards-c`/`standards-cpp` sit parked rather than deleted — the domains are real and expected to land, just not yet active.
 
 ## No requires: frontmatter key — dependency direction matters
 
