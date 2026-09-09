@@ -4,6 +4,8 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-09-09
+
 ### Added
 - `scripts/validate.sh` gained a "cross-skill reachability" check: it fails when a skill body invokes a sibling that carries `disable-model-invocation: true` and so cannot actually be reached via the Skill tool.
 - `workflow-implement/SKILL.md` now verifies a task's premise before forking — it reads the function/file the task names and confirms the described defect is still present, so a stale backlog entry the repo has already outgrown is reported back instead of implemented.
