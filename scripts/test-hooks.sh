@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test-hooks.sh - regression suite for the two guards.
+# test-hooks.sh - regression suite for the hooks and the comments CLI.
 #
 # Run:     bash scripts/test-hooks.sh
 # Exit 0:  every case passed
@@ -10,7 +10,7 @@
 # permissionDecision that comes back, optionally checking that the
 # reason text does or does not contain a given string.
 #
-# Case IDs: C* comment guard, G* git guard.
+# Case IDs: K* comments check, G* git guard.
 #
 # Writing a case:
 #   heredoc form  literal JSON, use \n for a newline inside a string
@@ -178,334 +178,156 @@ bash_case_at() {
   ) &
 }
 
-# ─────────────────────────────  comment guard  ─────────────────────────────
-HOOK="$HOOKS/comment_guard.py"
-printf '\ncomment guard\n\n'
-
-expect "C1  new comment beside user block flags only the new line" deny \
-  "agent added this" "user note one" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note one\n// user note two\nfunc Foo() {","new_string":"// user note one\n// user note two\n// agent added this\nfunc Foo() {"}}
-JSON
-
-expect "C2  trailing comment survives an edit to its own line" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"x := 1 << 20 // 1MB","new_string":"x := 1 << 21 // 1MB"}}
-JSON
-
-expect "C3  deleting a user comment proceeds silently, logging is the safety net now" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note\nfunc Foo() {}","new_string":"func Foo() {}"}}
-JSON
-
-expect "C4  MultiEdit cannot smuggle a comment through" deny \
-  "smuggled" <<'JSON'
-{"tool_name":"MultiEdit","tool_input":{"file_path":"/x/svc.go","edits":[{"old_string":"a := 1","new_string":"a := 2"},{"old_string":"b := 1","new_string":"// smuggled\nb := 2"}]}}
-JSON
-
-C5_PAYLOAD="$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s/fresh.go","content":"// package header\\npackage main\\n"}}' "$WORKDIR")"
-expect "C5  Write to a brand-new file asks about its comments" deny "package header" <<< "$C5_PAYLOAD"
-
-expect "C6a machine directives are exempt (go)" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"package main","new_string":"//go:build linux\n//nolint:gocyclo\npackage main"}}
-JSON
-
-expect "C6b machine directives are exempt (shell)" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/run.sh","old_string":"echo hi","new_string":"#!/usr/bin/env bash\n# shellcheck disable=SC2086\necho hi"}}
-JSON
-
-expect "C7  python docstrings are comments and prompt for approval" deny \
-  "Return one" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/mod.py","old_string":"def f():\n    return 1","new_string":"def f():\n    \"\"\"Return one.\"\"\"\n    return 1"}}
-JSON
-
-expect "C8  malformed payload fails closed" deny \
-  "Failing closed" <<'JSON'
-{"tool_name":"Edit","tool_input":
-JSON
-
-expect "C9  a // inside a string literal is not a comment" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"host := \"\"","new_string":"host := \"https://api.example.com\""}}
-JSON
-
-expect "C10 reindenting an existing comment is not a change" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// kept verbatim\nif x {","new_string":"\tif x {\n\t\t// kept verbatim"}}
-JSON
-
-expect "C11 unsupported file types are ignored" allow <<'JSON'
-{"tool_name":"Write","tool_input":{"file_path":"/x/notes.md","content":"<!-- a markdown note -->\n# Title\n"}}
-JSON
-
-expect "C12 docstring survives a body-only edit" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/mod.py","old_string":"def f():\n    \"\"\"Return one.\"\"\"\n    return 1","new_string":"def f():\n    \"\"\"Return one.\"\"\"\n    return 2"}}
-JSON
-
-expect "C13 sql line comments are caught" deny "backfill" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/001_init.sql","old_string":"ALTER TABLE orders ADD COLUMN tenant_id uuid;","new_string":"-- backfill later\nALTER TABLE orders ADD COLUMN tenant_id uuid;"}}
-JSON
-
-expect "C14 shebang header block is exempt" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/doctor.sh","old_string":"#!/usr/bin/env bash\nset -e","new_string":"#!/usr/bin/env bash\n#\n# doctor.sh - health check.\n#\n# Run: bash doctor.sh\n\nset -e"}}
-JSON
-
-expect "C15 a shebang does not exempt the rest of the file" deny \
-  "retry twice" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/doctor.sh","old_string":"#!/usr/bin/env bash\n# manual line\n\nrun_checks","new_string":"#!/usr/bin/env bash\n# manual line\n\n# retry twice\nrun_checks"}}
-JSON
-
-expect "C16 a header block without a shebang still prompts" deny \
-  "orders service" <<'JSON'
-{"tool_name":"Write","tool_input":{"file_path":"/x/svc.go","content":"// orders service\npackage main\n"}}
-JSON
-
-C17_SESSION="$(next_session)"
-C17_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// explain Foo\\nfunc Foo() {}"}}' "$C17_SESSION")"
-expect "C17 a doc comment on a func prompts for approval" deny "explain Foo" <<< "$C17_PAYLOAD"
-
-C19_SESSION="$(next_session)"
-C19_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Bar() {}","new_string":"// explain Bar\\nfunc Bar() {}"}}' "$C19_SESSION")"
-expect "C19 an ordinary doc comment prompts for approval" deny "explain Bar" <<< "$C19_PAYLOAD"
-
-C20_SESSION="$(next_session)"
-C20_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"// user note\\nfunc Foo() {}","new_string":"func Foo() {}"}}' "$C20_SESSION")"
-expect "C20 deleting a comment proceeds silently, never grants an addition" allow <<< "$C20_PAYLOAD"
-
-C21_SESSION="$(next_session)"
-C21_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s-other","tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"// +comments\\n// explain Foo\\nfunc Foo() {}"}}' "$C21_SESSION")"
-expect "C21 the agent cannot grant itself by writing the sigil" deny "explain Foo" <<< "$C21_PAYLOAD"
-
-expect "C22 the Helpers banner is no longer exempt in a test file" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Helpers ----------------------------------------------------\n\nfunc newFixture(t *testing.T) {}"}}
-JSON
-
-expect "C23 a --- Label --- banner is no longer a free section break" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Setup ---\n\nfunc newFixture(t *testing.T) {}"}}
-JSON
-
-expect "C24 a banner outside a test path is no longer allowed" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// --- Helpers ---\n\nfunc bar() {}"}}
-JSON
-
-expect "C25 a description above a Go test has no slot" deny \
-  "shipped branch" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// the shipped branch is unreachable through the public API\nfunc TestCancel(t *testing.T) {}"}}
-JSON
-
-expect "C26 the same text above a non-test func prompts" deny \
-  "unreachable" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func newOrder() {}","new_string":"// the shipped branch is unreachable through the public API\nfunc newOrder() {}"}}
-JSON
-
-expect "C27 a three-line description exceeds the cap" deny \
-  "third sentence" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// first sentence on the boundary\n// second sentence on the boundary\n// third sentence on the boundary\nfunc TestCancel(t *testing.T) {}"}}
-JSON
-
-expect "C28 a description over 200 characters prompts" deny \
-  "config default" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestCancel(t *testing.T) {}","new_string":"// the retry ceiling interacts with the jitter window in a way the public API cannot express, so this case pins the exact boundary that a reader would otherwise have to derive from three separate files and a config default\nfunc TestCancel(t *testing.T) {}"}}
-JSON
-
-expect "C29 a blank line breaks the description slot" deny \
-  "degraded default" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestZero(t *testing.T) {}","new_string":"// checks the degraded default\n\nfunc TestZero(t *testing.T) {}"}}
-JSON
-
-expect "C30 a block comment above a test prompts" deny \
-  "degraded default" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestZero(t *testing.T) {}","new_string":"/* checks the degraded default */\nfunc TestZero(t *testing.T) {}"}}
-JSON
-
-expect "C31 a plain helper file under test/ no longer gets the banner" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/test/integration/helpers.go","old_string":"func Seed() {}","new_string":"func Seed() {}\n\n// --- Helpers ---\n\nfunc reset() {}"}}
-JSON
-
-expect "C32 an arbitrary comment in a test file still prompts" deny \
-  "bump the counter" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"count++","new_string":"// bump the counter\ncount++"}}
-JSON
-
-expect "C32b a description above a truncated signature prompts" deny \
-  "cookie is only checked" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order_test.go","old_string":"func TestNew","new_string":"// the cookie is only checked on unsafe methods\nfunc TestNew"}}
-JSON
-
-expect "C33 a description above a pytest test prompts" deny \
-  "retry ceiling" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/test_order.py","old_string":"def test_retry(n):\n    pass","new_string":"# pins the retry ceiling at the documented boundary\n@pytest.mark.parametrize(\"n\", [1, 2])\ndef test_retry(n):\n    pass"}}
-JSON
-
-expect "C34 a description above a Rust #[test] prompts" deny \
-  "saturating add" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/tests/limits.rs","old_string":"fn saturates_at_cap() {}","new_string":"// the saturating add is only reachable at usize::MAX\n#[test]\nfn saturates_at_cap() {}"}}
-JSON
-
-expect "C35 a description above a Vitest case prompts" deny \
-  "402 branch" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/order.x.test.ts","old_string":"it(\"rejects an expired card\", () => {","new_string":"// the 402 branch cannot be reached through the public client\nit(\"rejects an expired card\", () => {"}}
-JSON
-
-expect "C36 a comment restating the func name prompts as an echo" deny \
-  "restates the name" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// InitStore inits a store\nfunc InitStore() {}"}}
-JSON
-
-expect "C36b the same rule catches a Go method receiver" deny \
-  "restates the name" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/sink.go","old_string":"func (s *Sink) Send(e Event) error {","new_string":"// Send sends the event to the HTTP sink\nfunc (s *Sink) Send(e Event) error {"}}
-JSON
-
-expect "C36d a genuinely DOC-shaped comment on an exported method is allowed inline" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/sink.go","old_string":"func (s *Sink) Send(e Event) error {","new_string":"// Send sends the event to the HTTP sink.\nfunc (s *Sink) Send(e Event) error {"}}
-JSON
-
-expect "C36c the same rule catches a TypeScript class" deny \
-  "restates the name" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/cart.ts","old_string":"export class CartService {","new_string":"// CartService is a service for carts\nexport class CartService {"}}
-JSON
-
-expect "C37 a step marker inside a body is no longer allowed" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// init runtime logger\n\tboot()"}}
-JSON
-
-expect "C38 a step marker over 80 chars prompts" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// initialise the runtime logger so that downstream calls can resolve their credentials from AWS\n\tboot()"}}
-JSON
-
-expect "C39 a step marker at column zero prompts" deny \
-  "init runtime logger" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"var boot = 1","new_string":"// init runtime logger\nvar boot = 1"}}
-JSON
-
-expect "C40 a multi-line run inside a body prompts" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {\n\tboot()","new_string":"func Foo() {\n\t// init the logger\n\t// then boot\n\tboot()"}}
-JSON
-
-expect "C41 a box-glyph banner is not a banner" deny \
-  "Helpers" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// ── Helpers ──────────────\n\nfunc newFixture(t *testing.T) {}"}}
-JSON
-
-expect "C42 a banner label over 40 chars prompts" deny \
-  "Helpers" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc_test.go","old_string":"func TestFoo(t *testing.T) {}","new_string":"func TestFoo(t *testing.T) {}\n\n// --- Helpers: shared fixtures, builders and assertion utilities ---\n\nfunc newFixture(t *testing.T) {}"}}
-JSON
-
-expect "C43 a bare rule with no label is not a banner" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// ------------------------------\n\nfunc bar() {}"}}
-JSON
-
-expect "C44 a banner cannot smuggle prose past the hyphens" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Foo() {}","new_string":"func Foo() {}\n\n// --- this helper exists because the upstream client retries twice ---\n\nfunc bar() {}"}}
-JSON
-
-MOVE="$(next_session)-move"
-C45_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/from.go","old_string":"// Preloads all the required dependencies.\\nfunc Boot() {}","new_string":""}}' "$MOVE")"
-expect "C45 removing a comment proceeds silently, the PostToolUse log records it" allow <<< "$C45_PAYLOAD"
-
-C46_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/to.go","old_string":"package x","new_string":"package x\\n\\n// Preloads all the required dependencies.\\nfunc Boot() {}"}}' "$MOVE")"
-expect "C46 re-adding it at the destination still prompts" deny "Preloads all the required" <<< "$C46_PAYLOAD"
-
-C49_SESSION="$(next_session)"
-C49_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// InitStore inits a store\\nfunc InitStore() {}"}}' "$C49_SESSION")"
-expect "C49 a name-echo prompts as an echo" deny "restates the name" <<< "$C49_PAYLOAD"
-
-C50_SESSION="$(next_session)"
-C50_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"func InitStore() {}","new_string":"// Creates the store and seeds it from disk.\\nfunc InitStore() {}"}}' "$C50_SESSION")"
-expect "C50 an ordinary doc comment prompts for approval" deny "self-documenting" <<< "$C50_PAYLOAD"
-
-expect "C51 a script manual under a shebang is still exempt" allow <<'JSON'
-{"tool_name":"Write","tool_input":{"file_path":"/x/deploy.sh","content":"#!/usr/bin/env bash\n#\n# deploy.sh - ships the current build to staging.\n#\n# Usage:  bash deploy.sh [--dry-run]\n#\n# Exit 0: shipped\n# Exit 1: refused\nset -euo pipefail\n"}}
-JSON
-
-expect "C53 an HTML narrative comment in a Vue template prompts" deny <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/Widget.vue","old_string":"<div>hi</div>","new_string":"<!-- explains the widget --> \n<div>hi</div>"}}
-JSON
-
-expect "C54 a bare WHY note in a Svelte template's HTML comment is denied" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/Widget.svelte","old_string":"<div>hi</div>","new_string":"<!-- WHY: Safari needs this wrapper -->\n<div>hi</div>"}}
-JSON
-
-expect "C55 a banner in an HTML comment is no longer allowed" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/Widget.vue","old_string":"<div>hi</div>","new_string":"<!-- --- Header --- -->\n<div>hi</div>"}}
-JSON
-
-expect "C52 a manual not under a shebang prompts" deny \
-  "ships the current build" <<'JSON'
-{"tool_name":"Write","tool_input":{"file_path":"/x/deploy.sh","content":"set -euo pipefail\n#\n# deploy.sh - ships the current build to staging.\n#\necho hi\n"}}
-JSON
-
-expect "C56 a pre-existing echo comment already in old_string doesn't re-prompt" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"// InitStore inits a store\nfunc InitStore() {}\nfoo()","new_string":"// InitStore inits a store\nfunc InitStore() {}\nbar()"}}
-JSON
-
-expect "C56b a new echo comment on an untouched neighbor line still prompts" deny \
-  "restates the name" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"foo()","new_string":"// InitStore inits a store\nfunc InitStore() {}\nfoo()"}}
-JSON
-
-printf '// Helper does the work\nfunc Other() {}\nfoo()\n' > "$WORKDIR/helper.go"
-C56C_PAYLOAD="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/helper.go","old_string":"foo()","new_string":"// Helper does the work\\nfunc Helper() {}\\nfoo()"}}' "$WORKDIR")"
-expect "C56c an echo comment whose exact text already exists elsewhere in the file still prompts" deny "restates the name" <<< "$C56C_PAYLOAD"
-
-C57_SESSION="$(next_session)"
-C57_PAYLOAD="$(printf '{"hook_event_name":"PreToolUse","session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"/x/store.go","old_string":"// old cleanup note\\nfunc InitStore() {}","new_string":"// WHY: retries twice before giving up\\nfunc InitStore() {}"}}' "$C57_SESSION")"
-expect "C57 a single edit removing one comment and adding a narrative comment denies, not asks" deny "retries twice before giving up" <<< "$C57_PAYLOAD"
-
-C57_PAYLOAD="$(printf '{"tool_name":"Edit","agent_type":"reviewer","cwd":"%s","tool_input":{"file_path":"%s/BACKLOG.md","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
-expect "C57 the reviewer agent editing BACKLOG.md is not scope-denied" allow <<< "$C57_PAYLOAD"
-
-C58_PAYLOAD="$(printf '{"tool_name":"Edit","agent_type":"reviewer","cwd":"%s","tool_input":{"file_path":"%s/claude-code/hooks/git_guard.py","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
-expect "C58 the reviewer agent editing any other file is denied" deny \
-  "the reviewer agent may only edit BACKLOG.md" <<< "$C58_PAYLOAD"
-
-C59_PAYLOAD="$(printf '{"tool_name":"Edit","cwd":"%s","tool_input":{"file_path":"%s/claude-code/hooks/git_guard.py","old_string":"x","new_string":"y"}}' "$REPO_ROOT" "$REPO_ROOT")"
-expect "C59 an orchestrator-session edit with no agent_type is unaffected" allow <<< "$C59_PAYLOAD"
-
-expect "C60 a new trailing comment is caught, closing the old blind spot" deny \
-  "trailing" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"Timeout time.Duration","new_string":"Timeout time.Duration // optional; 0 disables the deadline"}}
-JSON
-
-expect "C61 a // inside a string literal is not mistaken for a trailing comment" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"logger.Info(\"boot\")","new_string":"logger.Info(\"processing http://example.com\")"}}
-JSON
-
-expect "C62 a newly added trailing machine directive is exempt" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"x := compute()","new_string":"x := compute() // nolint:varcheck"}}
-JSON
-
-expect "C63 a trailing comment that echoes the field name it trails is denied" deny \
-  "restates the name" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"Timeout time.Duration","new_string":"Timeout time.Duration // Timeout is the timeout"}}
-JSON
-
-expect "C64 a DOC comment on a package declaration is allowed inline" allow <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"package main","new_string":"// Package main runs the demo server.\npackage main"}}
-JSON
-
-expect "C65 a DOC comment on an unexported func is still denied" deny \
-  "restates the name" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func helper() {}","new_string":"// helper does something small.\nfunc helper() {}"}}
-JSON
-
-expect "C66 a name-first single-sentence comment above a matching const in a TypeScript file is still denied -- DOC is Go-only" deny \
-  "restates the name" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/config.ts","old_string":"const MaxRetries = 3;","new_string":"// MaxRetries is the retry ceiling.\nconst MaxRetries = 3;"}}
-JSON
-
-expect "C67 a two-line comment block above a declaration is denied even though line 2 alone would be DOC-valid" deny \
-  "self-documenting" <<'JSON'
-{"tool_name":"Edit","tool_input":{"file_path":"/x/svc.go","old_string":"func Upgrade() {}","new_string":"// worth documenting\n// Upgrade promotes a websocket.\nfunc Upgrade() {}"}}
-JSON
+# ────────────────────────────  comments check  ─────────────────────────────
+COMMENTS="$HOOKS/comments.py"
+printf '\ncomments check\n\n'
+
+FIXTURE_CHECK="$WORKDIR/fixture-check"
+mkdir -p "$FIXTURE_CHECK"
+
+# each case writes one file, runs `comments check --all`, and asserts on findings
+check_case() {
+  local label="$1" name="$2" must_contain="${3:-}" must_not_contain="${4:-}"
+  local body; body="$(cat)"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local target="$FIXTURE_CHECK/$JOB_IDX-$name"
+    printf '%s\n' "$body" > "$target"
+    local out problem=""
+    out="$(python3 "$COMMENTS" --repo-root "$FIXTURE_CHECK" check --all "$target" 2>&1)"
+    if [ -n "$must_contain" ] && [[ "$out" != *"$must_contain"* ]]; then
+      problem="expected finding missing: $must_contain"
+    fi
+    if [ -z "$problem" ] && [ -n "$must_not_contain" ] && [[ "$out" == *"$must_not_contain"* ]]; then
+      problem="unexpected finding present: $must_not_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$out"
+  ) &
+}
+
+check_case "K1  a bool discriminant return is a MISSING site" svc.go "RET_BOOL_DISCRIMINANT" <<'GO'
+package x
+
+func (c *secretCache) getParsed(key string) (map[string]string, bool) {
+	return nil, false
+}
+GO
+
+check_case "K2  an is-prefixed name is exempt" svc.go "0 finding" "RET_BOOL" <<'GO'
+package x
+
+func isValid(key string) (string, bool) {
+	return "", true
+}
+GO
+
+check_case "K3  a plain (T, error) return is not a site" svc.go "0 finding" "MISSING" <<'GO'
+package x
+
+func Load(p string) (string, error) {
+	return "", nil
+}
+GO
+
+check_case "K4  three return values is a MISSING site" svc.go "RET_ARITY_3" <<'GO'
+package x
+
+func Split(s string) (string, string, error) {
+	return "", "", nil
+}
+GO
+
+check_case "K5  an existing comment satisfies the site" svc.go "0 finding" "MISSING" <<'GO'
+package x
+
+// false means the key was absent or unparseable
+func lookup(k string) (map[string]string, bool) {
+	return nil, false
+}
+GO
+
+check_case "K6  a func-typed parameter does not break the parser" svc.go "RET_BOOL_DISCRIMINANT" <<'GO'
+package x
+
+func handler(cb func(int) error, x string) (map[string]string, bool) {
+	return nil, false
+}
+GO
+
+check_case "K7  a named return tuple is parsed by type, not label" svc.go "RET_BOOL_DISCRIMINANT" <<'GO'
+package x
+
+func fetch(k string) (out map[string]string, ok bool) {
+	return nil, false
+}
+GO
+
+check_case "K8  a non-Go file yields no MISSING sites" svc.py "0 finding" "MISSING" <<'GO'
+def get_parsed(key):
+    return None, False
+GO
+
+check_case "K9  a name echo is INVALID" svc.go "NAME_ECHO" <<'GO'
+package x
+
+// InitStore inits a store
+func InitStore() {}
+GO
+
+check_case "K10 a DOC-shaped comment on an exported func is not an echo" svc.go "0 finding" "NAME_ECHO" <<'GO'
+package x
+
+// InitStore prepares the on-disk store and seeds it.
+func InitStore() {}
+GO
+
+check_case "K11 an over-cap comment is INVALID" svc.go "OVER_CAP" <<'GO'
+package x
+
+// this single comment body runs well past the hundred and twenty character cap that the narrative rule sets for one line of prose
+func Run() {}
+GO
+
+check_case "K12 a machine directive is exempt" svc.go "0 finding" "INVALID" <<'GO'
+package x
+
+//nolint:gosec
+func Run() {}
+GO
+
+check_case "K13 a step marker is INVALID" svc.go "STEP_MARKER" <<'GO'
+package x
+
+func Run() {
+	// 1. parse the input
+	parse()
+}
+GO
+
+check_case "K14 a banner outside a _test.go file is INVALID" svc.go "BANNER_OUTSIDE_TEST" <<'GO'
+package x
+
+// --- Setup ---
+func Run() {}
+GO
+
+check_case "K15 a malformed marker is INVALID" svc.go "MALFORMED_MARKER" <<'GO'
+package x
+
+// TODO:
+func Run() {}
+GO
+
+check_case "K16 a // inside a string literal is not a comment" svc.go "0 finding" "INVALID" <<'GO'
+package x
+
+func Run() {
+	s := "http://example.com/path"
+	_ = s
+}
+GO
 
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
@@ -743,54 +565,8 @@ expect "F7  a malformed payload fails open, not closed" allow <<'JSON'
 {"tool_name":"Write","tool_input":
 JSON
 
-# ────────────────────────────  comment removal log  ────────────────────────
-HOOK="$HOOKS/comment_removal_log.py"
-printf '\ncomment removal log\n\n'
-
-FIXTURE_LOG="$WORKDIR/fixture-commentlog"
-git init -q -b main "$FIXTURE_LOG"
-(cd "$FIXTURE_LOG" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
-printf 'package main\n\nfunc Boot() {}\n' > "$FIXTURE_LOG/svc.go"
-
-comment_log_case() {
-  local label="$1" want="$2" tool_input="$3" must_contain="${4:-}" must_not_be_file="${5:-}"
-  JOB_IDX=$((JOB_IDX + 1))
-  local outfile="$RESULTS_DIR/$JOB_IDX.out"
-  throttle
-  (
-    local payload out problem="" logfile
-    payload="{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Edit\",\"tool_input\":$tool_input}"
-    out="$(cd "$FIXTURE_LOG" && printf '%s' "$payload" | python3 "$HOOK" 2>&1)"
-    logfile="$FIXTURE_LOG/.claude/state/removed-comments.jsonl"
-    if [ "$want" = "logged" ]; then
-      if [ ! -f "$logfile" ]; then
-        problem="log file was not created"
-      elif [ -n "$must_contain" ] && ! grep -q "$must_contain" "$logfile"; then
-        problem="removed comment text missing from log"
-      fi
-    else
-      if [ -f "$logfile" ] && [ -n "$must_not_be_file" ] && grep -q "$must_not_be_file" "$logfile" 2>/dev/null; then
-        problem="unexpected entry appeared in log"
-      fi
-    fi
-    report "$outfile" "$label" "$problem" "$out"
-  ) &
-}
-
-comment_log_case "L1  an approved comment removal is appended to the per-band log" logged \
-  '{"file_path":"'"$FIXTURE_LOG"'/svc.go","old_string":"// Preloads all the required dependencies.\nfunc Boot() {}","new_string":"func Boot() {}"}' \
-  "Preloads all the required dependencies"
-
-comment_log_case "L2  a Write with no old_string logs nothing" no-log \
-  '{"file_path":"'"$FIXTURE_LOG"'/svc.go","content":"// brand new\nfunc Fresh() {}"}' \
-  "" "brand new"
-
-comment_log_case "L3  a removed trailing comment reaches the log too, not just leading ones" logged \
-  '{"file_path":"'"$FIXTURE_LOG"'/svc.go","old_string":"Timeout time.Duration // zero disables the deadline entirely","new_string":"Timeout time.Duration"}' \
-  "zero disables the deadline entirely"
-
-VALIDATOR="$HOOKS/write_comments_validator.py"
-printf '\nwrite-comments validator\n\n'
+VALIDATOR="$HOOKS/comments.py"
+printf '\ncomments apply\n\n'
 
 FIXTURE_VALIDATOR="$WORKDIR/fixture-validator"
 mkdir -p "$FIXTURE_VALIDATOR"
@@ -803,7 +579,7 @@ validator_case() {
   throttle
   (
     local out problem=""
-    out="$(printf '%s' "$proposals" | python3 "$VALIDATOR" --repo-root "$FIXTURE_VALIDATOR" 2>/dev/null)"
+    out="$(printf '%s' "$proposals" | python3 "$VALIDATOR" --repo-root "$FIXTURE_VALIDATOR" apply 2>/dev/null)"
     if [ -n "$must_spliced" ] && [[ "$out" != *"\"spliced\""*"$must_spliced"* ]]; then
       problem="spliced result missing: $must_spliced"
     fi
@@ -835,7 +611,7 @@ validator_own_fixture_case() {
     mkdir -p "$fixture"
     printf 'package main\n\nfunc Run() {\n\tx := 1\n\treturn x\n}\n' > "$fixture/svc.go"
     local out problem=""
-    out="$(printf '%s' "$proposals" | python3 "$VALIDATOR" --repo-root "$fixture" 2>/dev/null)"
+    out="$(printf '%s' "$proposals" | python3 "$VALIDATOR" --repo-root "$fixture" apply 2>/dev/null)"
     if [ -n "$must_spliced" ] && [[ "$out" != *"\"spliced\""*"$must_spliced"* ]]; then
       problem="spliced result missing: $must_spliced"
     fi
@@ -882,7 +658,7 @@ validator_v9b_case() {
   throttle
   (
     local out problem=""
-    out="$(printf '[{"file":"svc.go","line":3,"template_type":"DOC","text":"// helper does something small."}]' | python3 "$VALIDATOR" --repo-root "$V9B_FIXTURE" 2>/dev/null)"
+    out="$(printf '[{"file":"svc.go","line":3,"template_type":"DOC","text":"// helper does something small."}]' | python3 "$VALIDATOR" --repo-root "$V9B_FIXTURE" apply 2>/dev/null)"
     if [[ "$out" != *"\"dropped\""*"exported (capitalized) declaration"* ]]; then
       problem="dropped reason missing: exported (capitalized) declaration"
     fi
@@ -904,7 +680,7 @@ validator_v11_case() {
   throttle
   (
     local out problem=""
-    out="$(printf '[{"file":"svc.go","line":4,"template_type":"FIELD","text":"// zero disables the deadline entirely"},{"file":"svc.go","line":5,"template_type":"FIELD","text":"// pulled from env at boot"}]' | python3 "$VALIDATOR" --repo-root "$V11_FIXTURE" 2>/dev/null)"
+    out="$(printf '[{"file":"svc.go","line":4,"template_type":"FIELD","text":"// zero disables the deadline entirely"},{"file":"svc.go","line":5,"template_type":"FIELD","text":"// pulled from env at boot"}]' | python3 "$VALIDATOR" --repo-root "$V11_FIXTURE" apply 2>/dev/null)"
     if [[ "$out" != *"\"spliced\""*"zero disables the deadline entirely"*"pulled from env at boot"* ]] && [[ "$out" != *"pulled from env at boot"*"zero disables the deadline entirely"* ]]; then
       problem="both adjacent FIELD proposals should splice, neither treated as a stack: $out"
     elif ! grep -qF "// zero disables the deadline entirely" "$V11_FIXTURE/svc.go"; then
@@ -924,7 +700,7 @@ validator_v12_case() {
   throttle
   (
     local out problem=""
-    out="$(printf '[{"file":"svc_test.go","line":3,"template_type":"BANNER","text":"// --- Setup ---"}]' | python3 "$VALIDATOR" --repo-root "$V12_FIXTURE" 2>/dev/null)"
+    out="$(printf '[{"file":"svc_test.go","line":3,"template_type":"BANNER","text":"// --- Setup ---"}]' | python3 "$VALIDATOR" --repo-root "$V12_FIXTURE" apply 2>/dev/null)"
     if [[ "$out" != *"\"spliced\""*"--- Setup ---"* ]]; then
       problem="a Setup banner in a _test.go file should splice: $out"
     fi
@@ -949,7 +725,7 @@ import os
 import sys
 
 sys.path.insert(0, os.environ["HOOKS"])
-import write_comments_validator as wcv
+import comments as wcv
 
 calls = []
 wcv.run_formatter = lambda path: calls.append(path)
@@ -996,42 +772,28 @@ e2e_pipeline_case() {
   throttle
   (
     local fixture="$WORKDIR/fixture-e2e"
-    git init -q -b main "$fixture"
-    (cd "$fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
-    printf 'package main\n\nfunc Boot() {}\n' > "$fixture/svc.go"
+    mkdir -p "$fixture"
+    printf 'package main\n\nfunc getParsed(k string) (map[string]string, bool) {\n\treturn nil, false\n}\n' > "$fixture/svc.go"
 
-    local payload1 out1 decoded1 got1 reason1 problem1=""
-    payload1="$(printf '{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"%s/svc.go","old_string":"// old cleanup note\\nfunc Boot() {}","new_string":"// explains the retry\\nfunc Boot() {}"}}' "$fixture")"
-    out1="$(printf '%s' "$payload1" | python3 "$HOOKS/comment_guard.py" 2>/dev/null)"
-    decoded1="$(decision_reason_of "$out1")"
-    got1="${decoded1%%$'\x1e'*}"
-    reason1="${decoded1#*$'\x1e'}"
-    [ "$got1" != "deny" ] && problem1="decision=$got1 want=deny"
-    if [ -z "$problem1" ] && [[ "$reason1" != *"explains the retry"* ]]; then
-      problem1="reason missing: explains the retry"
-    fi
-    report "$outfile1" "E1  a removal-plus-addition edit still denies for the added comment" "$problem1" "$reason1"
+    local out1 problem1=""
+    out1="$(python3 "$HOOKS/comments.py" --repo-root "$fixture" check --all "$fixture/svc.go" 2>&1)"
+    [[ "$out1" != *"RET_BOOL_DISCRIMINANT"* ]] && problem1="check did not report the discriminant site"
+    report "$outfile1" "E1  check reports the discriminant site before any comment exists" "$problem1" "$out1"
 
-    local payload2 out2 problem2="" logfile
-    payload2='{"hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"'"$fixture"'/svc.go","old_string":"// old cleanup note\nfunc Boot() {}","new_string":"func Boot() {}"}}'
-    out2="$(printf '%s' "$payload2" | python3 "$HOOKS/comment_removal_log.py" 2>&1)"
-    logfile="$fixture/.claude/state/removed-comments.jsonl"
-    if [ ! -f "$logfile" ]; then
-      problem2="log file was not created"
-    elif ! grep -q "old cleanup note" "$logfile"; then
-      problem2="removed comment text missing from log"
+    local proposals2 out2 problem2=""
+    proposals2='[{"file":"svc.go","line":3,"template_type":"WHY","text":"// false means the key was absent or its value failed to parse"}]'
+    out2="$(printf '%s' "$proposals2" | python3 "$HOOKS/comments.py" --repo-root "$fixture" apply 2>/dev/null)"
+    if [[ "$out2" != *"\"spliced\""*"false means the key was absent"* ]]; then
+      problem2="spliced result missing expected text"
+    elif ! grep -qF "false means the key was absent" "$fixture/svc.go"; then
+      problem2="fixture file does not contain the spliced WHY comment"
     fi
-    report "$outfile2" "E2  the same removal, approved on its own, lands in the shared fixture's log" "$problem2" "$out2"
+    report "$outfile2" "E2  apply splices the comment the check demanded" "$problem2" "$out2"
 
-    local proposals3 out3 problem3=""
-    proposals3='[{"file":"svc.go","line":3,"template_type":"WHY","text":"// covers the invariant a write-comments pass would leave for this band"}]'
-    out3="$(printf '%s' "$proposals3" | python3 "$HOOKS/write_comments_validator.py" --repo-root "$fixture" 2>/dev/null)"
-    if [[ "$out3" != *"\"spliced\""*"covers the invariant a write-comments pass would leave"* ]]; then
-      problem3="spliced result missing expected text"
-    elif ! grep -qF "covers the invariant a write-comments pass would leave" "$fixture/svc.go"; then
-      problem3="fixture file does not contain the spliced WHY comment"
-    fi
-    report "$outfile3" "E3  a valid plain WHY proposal splices into the same fixture file the pipeline just touched" "$problem3" "$out3"
+    local out3 problem3=""
+    out3="$(python3 "$HOOKS/comments.py" --repo-root "$fixture" check --all "$fixture/svc.go" 2>&1)"
+    [[ "$out3" == *"MISSING"* ]] && problem3="check still reports a MISSING site after apply"
+    report "$outfile3" "E3  the same check comes back clean once the comment landed" "$problem3" "$out3"
   ) &
 }
 

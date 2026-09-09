@@ -30,6 +30,6 @@ A deleted-vs-modified conflict (one branch removed a file, the other kept editin
 
 ## Closing out
 
-No conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`) may reach a commit — grep the resolved files before `git add` if there is any doubt. `comment_guard.py` still applies to whatever the resolution writes: a leftover "// keep ours" or "// merged" note is a banned implementation narrative, not an exempt directive — see the touched language's own `standards-<language>` skill for its Comment discipline section.
+No conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`) may reach a commit — grep the resolved files before `git add` if there is any doubt. `comments.py check` still applies to whatever the resolution writes: a leftover "// keep ours" or "// merged" note is a banned implementation narrative, not an exempt directive — see the touched language's own `standards-<language>` skill for its Comment discipline section.
 
 Branch/push/merge/protected-ref conventions and what `git_guard.py` enforces for each live in `git-pr-create` — load it rather than restating them here.

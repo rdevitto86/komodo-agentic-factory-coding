@@ -286,6 +286,156 @@ def scan_comments(text, family, ext=None):
 
     return found
 
+SITE_LANGUAGE_EXTENSIONS = (".go",)
+SITE_NAME_EXEMPT = re.compile(r"^(?:[Ii]s|[Hh]as|[Cc]an|[Ss]hould|[Ee]xists|[Mm]ust)(?:[A-Z]|$)")
+ADJACENT_WINDOW = 2
+
+
+def top_level_paren_groups(line):
+    groups, depth, start = [], 0, None
+    for index, char in enumerate(line):
+        if char == "(":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == ")" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                groups.append((start, index, line[start + 1:index]))
+    return groups
+
+
+def split_top_level(text):
+    parts, depth, current = [], 0, []
+    for char in text:
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        if char == "," and depth == 0:
+            parts.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+    tail = "".join(current).strip()
+    if tail:
+        parts.append(tail)
+    return [part for part in parts if part]
+
+
+def parse_func_signature(line):
+    stripped = line.strip()
+    if not stripped.startswith("func"):
+        return None
+    groups = top_level_paren_groups(stripped)
+    if not groups:
+        return None
+
+    after_keyword = stripped[4:].lstrip()
+    has_receiver = after_keyword.startswith("(")
+    params_index = 1 if has_receiver else 0
+    if len(groups) <= params_index:
+        return None
+
+    name_start = groups[params_index - 1][1] + 1 if has_receiver else 4
+    name = stripped[name_start:groups[params_index][0]].strip()
+    if not name or not name.replace("_", "").isalnum():
+        return None
+
+    if len(groups) <= params_index + 1:
+        return name, []
+    return name, [
+        part.split()[-1] for part in split_top_level(groups[params_index + 1][2]) if part.split()
+    ]
+
+
+def find_mandatory_sites(text, family, ext):
+    if ext not in SITE_LANGUAGE_EXTENSIONS:
+        return []
+    line_marker = FAMILY_SYNTAX[family][0]
+    lines = text.splitlines()
+    sites = []
+    for index, line in enumerate(lines):
+        parsed = parse_func_signature(line)
+        if not parsed:
+            continue
+        name, returns = parsed
+        if len(returns) >= 3:
+            rule = "RET_ARITY_3"
+        elif len(returns) >= 2 and returns[-1] == "bool" and not SITE_NAME_EXEMPT.match(name):
+            rule = "RET_BOOL_DISCRIMINANT"
+        else:
+            continue
+        previous = lines[index - 1].strip() if index else ""
+        if line_marker and previous.startswith(line_marker):
+            continue
+        sites.append((index + 1, name, rule))
+    return sites
+
+
+def find_invalid_comments(text, family, path, only_lines=None):
+    ext = os.path.splitext(os.path.basename(path))[1].lower()
+    basename = os.path.basename(path)
+    line_marker = FAMILY_SYNTAX[family][0]
+    lines = text.splitlines()
+    findings = []
+    seen_comment_lines = []
+
+    for index, line in enumerate(lines):
+        lineno = index + 1
+        if only_lines is not None and lineno not in only_lines:
+            continue
+
+        start = find_comment_start(line, family) if line_marker else None
+        stripped = line.strip()
+        is_leading = bool(line_marker) and stripped.startswith(line_marker)
+        if start is None and not is_leading:
+            continue
+
+        normalized = normalize(stripped if is_leading else line[start:])
+        if is_mechanically_exempt(normalized):
+            continue
+        body = comment_body(normalized)
+        if not body:
+            continue
+
+        cap = FIELD_MAX_CHARS if not is_leading else NARRATIVE_MAX_CHARS
+        if TEMPLATE_PATTERNS["STEP"].match(body):
+            findings.append((lineno, body, "STEP_MARKER", "a numbered step marker is not an allowed comment shape"))
+            continue
+        if BANNER_SHAPE.match(body) and not basename.endswith("_test.go"):
+            findings.append((lineno, body, "BANNER_OUTSIDE_TEST", "a banner label only belongs in a _test.go file"))
+            continue
+        if len(body) > cap:
+            findings.append((lineno, body, "OVER_CAP", f"comment body is {len(body)} chars, over the {cap}-char cap"))
+            continue
+        for marker in ("NOTE", "FIXME", "TODO"):
+            if body.upper().startswith(marker) and not TEMPLATE_PATTERNS[marker].match(body):
+                findings.append((lineno, body, "MALFORMED_MARKER", f"a {marker} marker must read '{marker}: <text>'"))
+                break
+        else:
+            if is_leading:
+                near = next((ln for ln in seen_comment_lines if abs(ln - lineno) <= ADJACENT_WINDOW), None)
+                if near is not None:
+                    findings.append((lineno, body, "STACKED", f"a comment already lands within {ADJACENT_WINDOW} lines, at line {near}"))
+                seen_comment_lines.append(lineno)
+
+    echoes = check_echoes(lines, family)
+    for index, line in enumerate(lines):
+        lineno = index + 1
+        if only_lines is not None and lineno not in only_lines:
+            continue
+        if line.strip() not in echoes:
+            continue
+        decl_line = lines[index + 1] if index + 1 < len(lines) else None
+        ok, _ = validate_doc_shape(comment_body(normalize(line.strip())), decl_line, False)
+        if ok and ext in DOC_LANGUAGE_EXTENSIONS:
+            continue
+        findings.append((lineno, comment_body(normalize(line.strip())), "NAME_ECHO", "the comment restates the name of the declaration below it"))
+
+    return sorted(findings)
+
+
 def check_echoes(lines, family, old_comments=frozenset()):
     """Detect comments where first word matches the function/type name right below it."""
     line_marker = FAMILY_SYNTAX[family][0]

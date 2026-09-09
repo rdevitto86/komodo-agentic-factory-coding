@@ -12,3 +12,4 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 bash scripts/test-hooks.sh
 bash scripts/validate.sh
+python3 claude-code/hooks/comments.py check
