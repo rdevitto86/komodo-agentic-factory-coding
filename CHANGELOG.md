@@ -4,6 +4,12 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.9] — 2026-09-09
+
+### Changed
+- `git_guard.py`'s three separately hand-rolled `MAX_SCAN_DEPTH` bound checks consolidated into one shared `check_depth()` helper; `repo_root_of` memoized with `functools.lru_cache` so a multi-argument write command (`cp`/`mv`/redirect/`tee`) reuses one `git` subprocess per `cwd` instead of spawning one per source argument.
+- `scripts/test-hooks.sh`'s smoke-test cases `S4`/`S6` deduped against `G58`/`G107` (previously byte-identical commands) into distinct representative commands.
+
 ## [0.40.8] — 2026-09-09
 
 ### Added
