@@ -2,7 +2,6 @@
 name: assess-code-quality
 description: Score the current diff's conformance to Komodo conventions (Low → Critical) — structure, naming, SDK reuse, and performance — with a cited rationale table, filed as a BACKLOG.md story at Med-High or above. Pass --report to skip the write.
 argument-hint: [--report]
-disable-model-invocation: true
 ---
 
 # Komodo conventions assessment

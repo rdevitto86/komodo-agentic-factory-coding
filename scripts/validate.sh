@@ -182,6 +182,57 @@ sys.exit(1 if failures else 0)
 PY
 [ $? -eq 0 ] || problems=$((problems + 1))
 
+printf '\n  cross-skill reachability\n'
+python3 - "$SOURCE" "$REPO_ROOT" <<'PY'
+import os, re, sys
+
+source, repo_root = sys.argv[1], sys.argv[2]
+skills_dir = os.path.join(source, "skills")
+# A qualifying section is one containing an invoke/dispatch verb anywhere in
+# it (a heading-delimited block, so a numbered step and the table beneath it
+# share a section even when the verb sits a few lines above the reference).
+INVOKE_VERB = re.compile(r"\b(?:invoke|invoking|invokes|dispatch|dispatches|dispatching)\b", re.I)
+NAME = re.compile(r"[`/]([a-z][a-z0-9-]{2,})")
+# A line describing why a skill is *not* invoked here (excluded, left to the
+# user, invoked "on its own") is documentation, not an invocation instruction.
+EXCLUDE_LINE = re.compile(r"\bexcludes?\b|on (?:their|its) own|the user invokes", re.I)
+
+unreachable = set()
+bodies = {}
+if os.path.isdir(skills_dir):
+    for entry in sorted(os.listdir(skills_dir)):
+        skill = os.path.join(skills_dir, entry, "SKILL.md")
+        if not os.path.exists(skill):
+            continue
+        body = open(skill, encoding="utf-8").read()
+        bodies[entry] = body
+        head = body.split("---")[1] if body.startswith("---") else ""
+        if re.search(r"^disable-model-invocation:\s*(true|yes|on|1)", head, re.M | re.I):
+            unreachable.add(entry)
+
+failures = 0
+for entry, body in bodies.items():
+    sections = re.split(r"\n(?=#{1,6} )", body)
+    for section in sections:
+        if not INVOKE_VERB.search(section):
+            continue
+        for line in section.splitlines():
+            if EXCLUDE_LINE.search(line):
+                continue
+            for match in NAME.finditer(line):
+                target = match.group(1)
+                if target == entry or target not in unreachable:
+                    continue
+                print("    BROKEN    %s invokes `%s`, which carries disable-model-invocation: true "
+                      "and cannot be reached via the Skill tool" % (entry, target))
+                failures += 1
+
+if failures == 0:
+    print("    ok        no skill body invokes a sibling it cannot reach")
+sys.exit(1 if failures else 0)
+PY
+[ $? -eq 0 ] || problems=$((problems + 1))
+
 printf '\n  standards section order\n'
 python3 - "$SOURCE" <<'PY'
 import os, re, sys

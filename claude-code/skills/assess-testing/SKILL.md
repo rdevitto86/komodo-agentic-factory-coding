@@ -2,7 +2,6 @@
 name: assess-testing
 description: Assess the test suite against standards-sdlc's tiers, layout, and coverage floors — misplaced tests, tier-dependency violations, floor breaches, coverage padding — filed as BACKLOG.md stories. Pass --report to skip the write.
 argument-hint: [optional: path or diff scope] [--report]
-disable-model-invocation: true
 ---
 
 # Testing assessment
