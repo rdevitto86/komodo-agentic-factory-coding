@@ -136,6 +136,7 @@
     "backlog-modify": "name-only",
     "backlog-plan": "name-only",
     "backlog-audit": "name-only",
+    "backlog-prioritize": "name-only",
     "assess-bugs": "name-only",
     "assess-security": "name-only",
     "assess-simplify": "name-only",
@@ -210,7 +211,7 @@
   },
   "modelSettings": {
     "claude-sonnet-5": {
-      "effortLevel": "medium"
+      "effortLevel": "high"
     },
     "claude-opus-5": {
       "effortLevel": "high"
