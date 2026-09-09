@@ -5,7 +5,7 @@ Agent configuration for software/hardware engineering, shared across every Komod
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~1155 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+2. **Base context stays tiny.** ~949 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 

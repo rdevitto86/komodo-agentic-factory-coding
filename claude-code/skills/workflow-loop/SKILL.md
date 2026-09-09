@@ -176,6 +176,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **Backing out is a rewrite** — capture `git diff` before a risky write; `git-pr-create` owns the recovery command.
 - **The bridge is optional, never blocking** — an unreachable MCP server is a skipped step; never branch a phase on whether it is up.
 - **Never poll a delegated phase** — it re-invokes this session the moment it finishes.
+- **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Filed`/`## Changed` block; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
 - **Standards verification happens inside the review or implement fork, never in this window** — a P2.3/P2.4 finding needing re-verifying is P2.1's job.
 - **After any context compaction, re-read the active `ways/` file before the next phase gate** — it loads via `Read`, not invocation, so compaction skips it.
 
