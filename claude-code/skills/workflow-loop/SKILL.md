@@ -94,7 +94,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A task `[BLOCKED]` on something outside this run is not a phase halt** — pick the next task with no dependency edge to it and continue; the blocker surfaces in P4's report. Only stop if every remaining task is transitively blocked.
 
-**Ends when:** one task is named `[WIP]` and the rest are written down.
+**Ends when:** one task is named `[WIP]` and the rest are written down — or, when dispatching a P1-confirmed parallel set (see P2.1), every task in that set is named `[WIP]` together.
 
 ### P2.1 · Implement
 
@@ -103,6 +103,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 **Pass every command explicitly.** The fork cannot see the queue — a task with no `Done when` commands stops rather than guessing one.
 
 **Run the fork even when the code already appears to exist on disk** — verifying inherited state is not implementing it.
+
+**When P1's `## Parallel` output already names a set of tasks with no shared file and no dependency edge among them (confirmed at P2.0), dispatch that set together in one block, `isolation: worktree`, rather than one task at a time.** "Once per task" bounds a fork's scope, never the order tasks start in — serialize only across a real dependency edge. **Each task in the set still goes through P2.2/P2.3 individually** — verify, review, and commit each on its own, merging its worktree branch back before moving to the next task's commit; dispatching in parallel changes only when implementation starts, not how each result is checked in.
 
 **A fork returns a result, never its reasoning — except `## Comment Candidates`.** Retain each task's non-empty `## Comment Candidates` entries verbatim across the band — P3's `/write-comments` call needs the live WHY-context captured at implementation time.
 
@@ -135,6 +137,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 **`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band, once, plus the perf suite.** Runs after every task is green, before P3 — never per-task, each as a `reviewer` fork.
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story filed is folded into P2.0's pick and resolved in this pass — fixed via `/workflow-implement`, or declined and removed with the reason noted for P4's report.
+
+**For a single-task band, skip the `/assess-bugs` repeat when that task was already cleared at P2.3 with no diff change since.** Skip the `/assess-security` repeat under the same condition only if P2.3 actually ran it — if P2.3 skipped `/assess-security` because the surface didn't warrant it, that same judgment applies here too, so it stays skipped for the same reason, not because it's being treated as already cleared. Either way, still run `/assess-simplify` (never covered at P2.3) plus the perf suite.
 
 **Clears the target state's four standing closeout stories.** Never picked as ordinary P2.1 tasks — `assess-*` calls stay this session's job, not the fork that wrote the code.
 

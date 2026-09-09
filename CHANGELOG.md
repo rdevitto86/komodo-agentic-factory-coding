@@ -4,6 +4,14 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.8] — 2026-09-09
+
+### Added
+- `workflow-decompose` returns a `## Parallel` section naming task sets with no shared file or dependency edge.
+
+### Changed
+- `workflow-loop`'s P2.1 dispatches a `workflow-decompose`-confirmed independent task set together with `isolation: worktree` instead of one task at a time, with P2.0/P2.2/P2.3 stating how per-task WIP tracking, verify/review/commit, and worktree merge-back work for that set. P2.4 skips the `assess-bugs`/`assess-security` repeat for a single-task band already cleared at P2.3 with no diff change since.
+
 ## [0.40.7] — 2026-09-09
 
 ### Changed
