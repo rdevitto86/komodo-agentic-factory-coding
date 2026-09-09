@@ -362,6 +362,73 @@ func Run() {
 }
 GO
 
+# a .sql fixture here, not .sh -- its "--" comments never register as a bash "#" comment when this file lints itself
+check_case "K21 a file-header numbered list is exempt from STEP_MARKER" script.sql "0 finding" "STEP_MARKER" <<'SQL'
+-- script.sql - does the thing.
+--
+-- Steps, in order:
+--   1. parse the input
+--   2. run the thing
+SELECT 1;
+SQL
+
+check_case "K22 a file-header comment run is exempt from STACKED" script.sql "0 finding" "STACKED" <<'SQL'
+-- script.sql - does the thing.
+--
+-- More explanation spread across several adjacent comment lines.
+SELECT 1;
+SQL
+
+check_case "K23 a step marker outside the file header is still INVALID" script.sql "STEP_MARKER" <<'SQL'
+SELECT 1;
+
+-- 1. parse the input
+SELECT 2;
+SQL
+
+check_case "K24 a banner outside a _test.go file is exempt for non-Go files" script.sql "0 finding" "BANNER_OUTSIDE_TEST" <<'SQL'
+SELECT 1;
+
+-- --- Setup ---
+SELECT 2;
+SQL
+
+# HEADER_MAX_LINES (comment_rules.py) caps the exempt run; a line past it loses the header exemption.
+check_case "K25 a header run past HEADER_MAX_LINES loses its exemption" script.sql "STACKED" <<'SQL'
+-- line 01 of padding narrative disguised as a file header
+-- line 02 of padding narrative disguised as a file header
+-- line 03 of padding narrative disguised as a file header
+-- line 04 of padding narrative disguised as a file header
+-- line 05 of padding narrative disguised as a file header
+-- line 06 of padding narrative disguised as a file header
+-- line 07 of padding narrative disguised as a file header
+-- line 08 of padding narrative disguised as a file header
+-- line 09 of padding narrative disguised as a file header
+-- line 10 of padding narrative disguised as a file header
+-- line 11 of padding narrative disguised as a file header
+-- line 12 of padding narrative disguised as a file header
+-- line 13 of padding narrative disguised as a file header
+-- line 14 of padding narrative disguised as a file header
+-- line 15 of padding narrative disguised as a file header
+-- line 16 of padding narrative disguised as a file header
+-- line 17 of padding narrative disguised as a file header
+-- line 18 of padding narrative disguised as a file header
+-- line 19 of padding narrative disguised as a file header
+-- line 20 of padding narrative disguised as a file header
+-- line 21 of padding narrative disguised as a file header
+-- line 22 of padding narrative disguised as a file header
+-- line 23 of padding narrative disguised as a file header
+-- line 24 of padding narrative disguised as a file header
+-- line 25 of padding narrative disguised as a file header
+-- line 26 of padding narrative disguised as a file header
+-- line 27 of padding narrative disguised as a file header
+-- line 28 of padding narrative disguised as a file header
+-- line 29 of padding narrative disguised as a file header
+-- line 30 of padding narrative disguised as a file header
+-- line 31, past the cap, adjacent to line 30, should trigger STACKED
+SELECT 1;
+SQL
+
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
 printf '\ngit guard\n\n'
