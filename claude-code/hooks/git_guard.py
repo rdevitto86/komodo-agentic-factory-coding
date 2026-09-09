@@ -428,17 +428,19 @@ def repo_root_of(cwd):
     return os.path.realpath(top) if top else None
 
 
-# a bare filename/extension match alone isn't enough -- the resolved, symlink-free path must also land in the repo root
+# repo root walks up from the resolved target, not cwd -- an absolute target can land in a repo even if cwd doesn't
 def is_guarded_path(token, cwd):
     if not matches_guarded_family(token):
-        return False
-    repo_root = repo_root_of(cwd)
-    if repo_root is None:
         return False
     cleaned = token.strip("\"'")
     base_dir = cwd or os.getcwd()
     absolute = cleaned if os.path.isabs(cleaned) else os.path.join(base_dir, cleaned)
     resolved = os.path.realpath(absolute)
+    # the target may not exist yet -- start the walk from its parent directory in that case
+    start = resolved if os.path.isdir(resolved) else os.path.dirname(resolved)
+    repo_root = repo_root_of(start)
+    if repo_root is None:
+        return False
     try:
         return os.path.commonpath([resolved, repo_root]) == repo_root
     except ValueError:
@@ -542,12 +544,23 @@ def shell_words(text, start, end, terminators=""):
     return words
 
 
+# well past real nesting -- gives adversarial input a deterministic DENY instead of a RecursionError hitting fail-open
+MAX_SCAN_DEPTH = 50
+
+
+# raised by any depth-bound recursive scanner below so an outer caller can turn "too deep to analyze" into a DENY
+class ScanDepthExceeded(Exception):
+    pass
+
+
 # can't execute a captured command -- "echo ARGS" resolves to ARGS, anything else falls back to a matching arg
-def resolve_command_output(inner):
+def resolve_command_output(inner, depth=0):
+    if depth > MAX_SCAN_DEPTH:
+        raise ScanDepthExceeded()
     words = shell_words(inner, 0, len(inner))
     if not words:
         return ""
-    expanded = [expand_word(word) for word, _ in words]
+    expanded = [expand_word(word, depth + 1) for word, _ in words]
     if expanded[0] == "echo":
         return " ".join(expanded[1:])
     match = next((token for token in expanded[1:] if matches_guarded_family(token)), None)
@@ -555,7 +568,9 @@ def resolve_command_output(inner):
 
 
 # fully dequotes a word, mid-word split included, and resolves every $()/backtick piece it holds, nested or not
-def expand_word(word):
+def expand_word(word, depth=0):
+    if depth > MAX_SCAN_DEPTH:
+        raise ScanDepthExceeded()
     out = []
     index = 0
     length = len(word)
@@ -582,17 +597,17 @@ def expand_word(word):
                 buf.append(word[index])
                 index += 1
             index = min(index + 1, length)
-            out.append(expand_word("".join(buf)))
+            out.append(expand_word("".join(buf), depth + 1))
             continue
         if char == "`":
             stop = find_backtick_end(word, index + 1)
             inner = unescape_nested_backticks(word[index + 1:stop])
-            out.append(resolve_command_output(inner))
+            out.append(resolve_command_output(inner, depth + 1))
             index = min(stop + 1, length)
             continue
         if char == "$" and word.startswith("$(", index):
             stop = find_paren_end(word, index + 2)
-            out.append(resolve_command_output(word[index + 2:stop]))
+            out.append(resolve_command_output(word[index + 2:stop], depth + 1))
             index = min(stop + 1, length)
             continue
         out.append(char)
@@ -878,7 +893,7 @@ def gh_violation(tokens):
     return None
 
 
-def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end):
+def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0):
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
         return
@@ -887,17 +902,17 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     if command in SHELL_WRAPPERS:
         for index, token in enumerate(tokens):
             if token == "-c" and index + 1 < len(tokens):
-                scan_command(tokens[index + 1], findings, cwd)
+                scan_command(tokens[index + 1], findings, cwd, depth + 1)
         return
     if command == "eval":
         inner = tokens[1:]
         if inner:
-            scan_command(" ".join(inner), findings, cwd)
+            scan_command(" ".join(inner), findings, cwd, depth + 1)
         return
     if command in PASSTHROUGH_WRAPPERS:
         inner = strip_leading_flags(tokens[1:], PASSTHROUGH_VALUE_FLAGS[command])
         if inner:
-            scan_command(" ".join(inner), findings, cwd)
+            scan_command(" ".join(inner), findings, cwd, depth + 1)
         return
     if command == "tee":
         # tokens loses a $()/backtick arg to blanking -- scan raw shell_words against full_command instead
@@ -971,7 +986,18 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         return
 
 
-def scan_command(command, findings, cwd):
+def scan_command(command, findings, cwd, depth=0):
+    if depth > MAX_SCAN_DEPTH:
+        findings.append("command could not be safely analyzed")
+        return
+    try:
+        _scan_command_at_depth(command, findings, cwd, depth)
+    except ScanDepthExceeded:
+        # word-expansion recursion (expand_word <-> resolve_command_output) hit the bound via a redirect/tee/cp/mv target word
+        findings.append("command could not be safely analyzed")
+
+
+def _scan_command_at_depth(command, findings, cwd, depth):
     masked, substitutions = extract_substitutions(command)
     raw_segments = split_segments(masked)
     segments = []
@@ -985,11 +1011,11 @@ def scan_command(command, findings, cwd):
         segments.append((stripped, abs_start, abs_end))
     has_cd = any(leading_word(stripped) == "cd" for stripped, _, _ in segments)
     for stripped, abs_start, abs_end in segments:
-        scan_segment(stripped, findings, cwd, has_cd, command, abs_start, abs_end)
+        scan_segment(stripped, findings, cwd, has_cd, command, abs_start, abs_end, depth)
     # recursing into each substitution catches a mutating command hidden in backticks/$() -- else it slips past as inert text
     for substitution in substitutions:
         if substitution.strip():
-            scan_command(substitution, findings, cwd)
+            scan_command(substitution, findings, cwd, depth + 1)
 
     # sed/perl/python-write moved to scan_segment (see there); trailer stays on raw command -- it can live in a quoted -m
     if GIT_MESSAGE_CALL.search(command) and BANNED_TRAILER.search(command):

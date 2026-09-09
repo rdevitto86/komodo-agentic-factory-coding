@@ -552,6 +552,36 @@ bash_case_at "$WORKDIR/outside-repo" "G132 a guarded-extension write outside any
   allow 'echo x > BACKLOG.md'
 bash_case_at "$FIXTURE_MAIN" "G133 a guarded-extension write inside the repo still denies" \
   deny  'echo x > BACKLOG.md' "bypasses the comment guard"
+bash_case_at "$WORKDIR/outside-repo" "G137 cwd outside any repo does not exempt an absolute target that lands inside a real repo" \
+  deny  "cp malicious.txt $FIXTURE_MAIN/BACKLOG.md" "bypasses the comment guard"
+mkdir -p "$WORKDIR/outside-repo-2"
+bash_case_at "$WORKDIR/outside-repo-2" "G138 cwd outside any repo and an absolute target outside any repo is still allowed" \
+  allow "echo x > $WORKDIR/outside-repo/BACKLOG.md"
+
+# a nested-deep $(...) chain used to blow the recursion limit and let a real guarded write ride through unblocked
+build_nested_substitution_chain() {
+  local depth="$1" i prefix='' suffix=''
+  for ((i = 0; i < depth; i++)); do
+    prefix+='$('
+    suffix+=')'
+  done
+  printf '%strue%s' "$prefix" "$suffix"
+}
+DEEP_SUBSTITUTION_CHAIN="$(build_nested_substitution_chain 3000)"
+bash_case "G139 a command-substitution chain nested thousands deep cannot recursion-exhaust past a real guarded write" \
+  deny "$DEEP_SUBSTITUTION_CHAIN; sed -i s/x/y/ BACKLOG.md" "bypassing the comment guard"
+
+# nesting lives inside the redirect TARGET word (expand_word <-> resolve_command_output), not a sibling command
+build_nested_target_chain() {
+  local depth="$1" i expr="$2"
+  for ((i = 0; i < depth; i++)); do
+    expr="\$(echo $expr)"
+  done
+  printf '%s' "$expr"
+}
+DEEP_TARGET_CHAIN="$(build_nested_target_chain 3000 BACKLOG.md)"
+bash_case "G140 a redirect target word nested thousands deep in \$(...) cannot recursion-exhaust into a fail-open allow" \
+  deny "echo bad > $DEEP_TARGET_CHAIN" "could not be safely analyzed"
 
 # ---  PUBLISH_ENABLED=0 restores the pre-publishing blanket deny  ---
 # Env-var driven, so this flips the running hook directly rather than
