@@ -18,9 +18,13 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - `workflow-loop`'s P2.3/P2.4 review phases gained a real round-cap: a third straight new Critical/High finding on the same file within one band stops auto-continuing and surfaces the choice (fix now / risk-accept and ship / defer) to the user instead of re-looping — the budget drops to 2 rounds for a file already flagged in `BACKLOG.md` as a hand-rolled parser or security boundary. From round 2 onward, a review call's brief also states its round number and asks for only clear, concrete, reproduced findings, not theoretical edge cases.
 - A session-stated retry-counter tally now enforces that cap uniformly across P2.1/P2.3/P2.4 — the orchestrating session states "round N for `<file>`" before each repeat invocation of the same skill against the same file/task, replacing the prose-only "same check failing twice" rule that depended on the session remembering to apply it (`docs/design-decisions.md`: no new state file, tracked in P2.0's existing perpetual-context queue).
 
-## [0.40.8] — 2026-09-09
+## [0.40.9] — 2026-09-09
 
-*Note: `[0.40.9]` is reserved by an in-flight sibling branch (git_guard.py depth-check/memoization PR, not yet merged) — this band's own release, once it lands, is numbered past it to avoid a tag collision.*
+### Changed
+- `git_guard.py`'s three separately hand-rolled `MAX_SCAN_DEPTH` bound checks consolidated into one shared `check_depth()` helper; `repo_root_of` memoized with `functools.lru_cache` so a multi-argument write command (`cp`/`mv`/redirect/`tee`) reuses one `git` subprocess per `cwd` instead of spawning one per source argument.
+- `scripts/test-hooks.sh`'s smoke-test cases `S4`/`S6` deduped against `G58`/`G107` (previously byte-identical commands) into distinct representative commands.
+
+## [0.40.8] — 2026-09-09
 
 ### Added
 - `workflow-decompose` returns a `## Parallel` section naming task sets with no shared file or dependency edge.
