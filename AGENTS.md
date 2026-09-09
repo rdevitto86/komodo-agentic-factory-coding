@@ -25,8 +25,9 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 | `context_injector.py` | `~/.claude/settings.json` | SessionStart | Injects the `[WIP]` story, backlog tally, version, verify target |
 | `verify_gate.py` | `claude-code/agents/workflow-implementer.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
+| `reviewer_guard.py` | `~/.claude/settings.json` | PreToolUse, matcher `Edit\|Write` | Denies an Edit/Write outside `BACKLOG.md`/`docs/BACKLOG.md` whenever the payload's `agent_type` is `reviewer` |
 
-**`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py` and `context_injector.py` fail open** — any internal error exits 0.
+**`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py`, `context_injector.py`, and `reviewer_guard.py` fail open** — any internal error exits 0.
 
 ## Comments
 

@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib.comment_rules import EXTENSION_FAMILY, FILENAME_FAMILY
+from reviewer_guard import REVIEWER_AGENT, is_allowed_path as reviewer_allowed_path
 
 READ_ONLY_GIT = {
     "annotate",
@@ -432,10 +433,13 @@ def repo_root_of(cwd):
 
 
 # repo root walks up from the resolved target, not cwd -- an absolute target can land in a repo even if cwd doesn't
-def is_guarded_path(token, cwd):
+def is_guarded_path(token, cwd, agent_type=None):
+    cleaned = token.strip("\"'")
+    # reviewer Bash writes narrow to BACKLOG.md alone, matching its Edit/Write boundary -- any extension is in scope
+    if agent_type == REVIEWER_AGENT:
+        return not reviewer_allowed_path(cleaned, cwd)
     if not matches_guarded_family(token):
         return False
-    cleaned = token.strip("\"'")
     base_dir = cwd or os.getcwd()
     absolute = cleaned if os.path.isabs(cleaned) else os.path.join(base_dir, cleaned)
     resolved = os.path.realpath(absolute)
@@ -622,9 +626,9 @@ def expand_word(word, depth=0):
     return "".join(out)
 
 
-def resolve_guard_target(word, cwd):
+def resolve_guard_target(word, cwd, agent_type=None):
     target = expand_word(word)
-    return target if is_guarded_path(target, cwd) else None
+    return target if is_guarded_path(target, cwd, agent_type) else None
 
 
 REDIRECT_OP = re.compile(r"^(&>{1,2}|\d*>{1,2}(&\d+)?|\d*<)")
@@ -900,7 +904,7 @@ def gh_violation(tokens):
     return None
 
 
-def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0):
+def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0, agent_type=None):
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
         return
@@ -909,22 +913,25 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     if command in SHELL_WRAPPERS:
         for index, token in enumerate(tokens):
             if token == "-c" and index + 1 < len(tokens):
-                scan_command(tokens[index + 1], findings, cwd, depth + 1)
+                scan_command(tokens[index + 1], findings, cwd, depth + 1, agent_type)
         return
     if command == "eval":
         inner = tokens[1:]
         if inner:
-            scan_command(" ".join(inner), findings, cwd, depth + 1)
+            scan_command(" ".join(inner), findings, cwd, depth + 1, agent_type)
         return
     if command in PASSTHROUGH_WRAPPERS:
         inner = strip_leading_flags(tokens[1:], PASSTHROUGH_VALUE_FLAGS[command])
         if inner:
-            scan_command(" ".join(inner), findings, cwd, depth + 1)
+            scan_command(" ".join(inner), findings, cwd, depth + 1, agent_type)
         return
     if command == "tee":
-        # tokens loses a $()/backtick arg to blanking -- scan raw shell_words against full_command instead
-        for word, _ in shell_words(full_command, seg_start, seg_end, REDIRECT_WORD_TERMINATORS):
-            target = resolve_guard_target(word, cwd)
+        # tokens loses a $()/backtick arg to blanking; [1:] and a leading '-' skip tee's own name/flags, not its target
+        words = shell_words(full_command, seg_start, seg_end, REDIRECT_WORD_TERMINATORS)[1:]
+        for word, _ in words:
+            if word.startswith("-"):
+                continue
+            target = resolve_guard_target(word, cwd, agent_type)
             if target:
                 findings.append("tee writing to %s bypasses the comment guard" % target)
                 break
@@ -948,11 +955,11 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         ))
         target_dir, positional = parse_cp_mv_target(raw_words[1:])
         if target_dir is not None:
-            if is_guarded_path(target_dir, cwd):
+            if is_guarded_path(target_dir, cwd, agent_type):
                 findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
                 return
             for source in positional:
-                if is_guarded_path(source, cwd):
+                if is_guarded_path(source, cwd, agent_type):
                     findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
                     break
             return
@@ -970,10 +977,10 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         )
         if dest_is_dir:
             for source in sources:
-                if is_guarded_path(source, cwd):
+                if is_guarded_path(source, cwd, agent_type):
                     findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
                     break
-        elif is_guarded_path(destination, cwd):
+        elif is_guarded_path(destination, cwd, agent_type):
             findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
         return
     if command == "git":
@@ -993,17 +1000,17 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         return
 
 
-def scan_command(command, findings, cwd, depth=0):
+def scan_command(command, findings, cwd, depth=0, agent_type=None):
     try:
         check_depth(depth)
-        _scan_command_at_depth(command, findings, cwd, depth)
+        _scan_command_at_depth(command, findings, cwd, depth, agent_type)
     except ScanDepthExceeded:
         # word-expansion recursion (expand_word <-> resolve_command_output) hit the bound via a redirect/tee/cp/mv target word
         findings.append("command could not be safely analyzed")
 
 
 # split out so scan_command can wrap it in one try/except -- redirect/tee/cp/mv targets sit outside the recursion
-def _scan_command_at_depth(command, findings, cwd, depth):
+def _scan_command_at_depth(command, findings, cwd, depth, agent_type=None):
     masked, substitutions = extract_substitutions(command)
     raw_segments = split_segments(masked)
     segments = []
@@ -1017,11 +1024,11 @@ def _scan_command_at_depth(command, findings, cwd, depth):
         segments.append((stripped, abs_start, abs_end))
     has_cd = any(leading_word(stripped) == "cd" for stripped, _, _ in segments)
     for stripped, abs_start, abs_end in segments:
-        scan_segment(stripped, findings, cwd, has_cd, command, abs_start, abs_end, depth)
+        scan_segment(stripped, findings, cwd, has_cd, command, abs_start, abs_end, depth, agent_type)
     # recursing into each substitution catches a mutating command hidden in backticks/$() -- else it slips past as inert text
     for substitution in substitutions:
         if substitution.strip():
-            scan_command(substitution, findings, cwd, depth + 1)
+            scan_command(substitution, findings, cwd, depth + 1, agent_type)
 
     # sed/perl/python-write moved to scan_segment (see there); trailer stays on raw command -- it can live in a quoted -m
     if GIT_MESSAGE_CALL.search(command) and BANNED_TRAILER.search(command):
@@ -1034,7 +1041,7 @@ def _scan_command_at_depth(command, findings, cwd, depth):
         if not words:
             continue
         word, _ = words[0]
-        target = resolve_guard_target(word, cwd)
+        target = resolve_guard_target(word, cwd, agent_type)
         if target:
             findings.append("redirecting output into %s bypasses the comment guard" % target)
 
@@ -1065,7 +1072,7 @@ def analyze(payload):
     if not command:
         return []
     findings = []
-    scan_command(command, findings, payload.get("cwd") or os.getcwd())
+    scan_command(command, findings, payload.get("cwd") or os.getcwd(), agent_type=payload.get("agent_type"))
     return findings
 
 

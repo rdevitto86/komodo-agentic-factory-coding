@@ -147,6 +147,13 @@ bash_case() {
   expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
 }
 
+# like bash_case, but stamps agent_type on the payload -- the reviewer-write restriction only fires for that agent
+bash_case_agent() {
+  local label="$1" want="$2" agent="$3" command="$4" must_contain="${5:-}"
+  local escaped; escaped="$(json_escape "$command")"
+  expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"agent_type\":\"$agent\",\"tool_input\":{\"command\":\"$escaped\"}}"
+}
+
 # ────────────────────────────────  smoke test  ──────────────────────────────
 printf '\nsmoke test\n\n'
 smoke_case() {
@@ -643,6 +650,20 @@ off_case "G85 off: git add is blocked"               deny  'git add .'          
 off_case "G86 off: read-only git still works"        allow 'git log --oneline -5'
 off_case "G87 off: gh pr merge stays blocked"        deny  'gh pr merge 12'                "is denied"
 
+# reviewer Bash writes narrow to BACKLOG.md alone, matching its Edit/Write boundary -- any extension is in scope
+bash_case_agent "G144 reviewer tee to a non-BACKLOG.md file is denied" \
+  deny reviewer 'tee notes.txt' "bypasses the comment guard"
+bash_case_agent "G145 reviewer redirect to an extensionless file is denied" \
+  deny reviewer 'echo x > release-notes' "bypasses the comment guard"
+bash_case_agent "G146 reviewer tee to BACKLOG.md is allowed" \
+  allow reviewer 'tee BACKLOG.md'
+bash_case_agent "G147 reviewer redirect to BACKLOG.md is allowed" \
+  allow reviewer 'echo x > BACKLOG.md'
+bash_case "G148 a non-reviewer tee to a non-guarded extensionless file is unaffected (still allowed)" \
+  allow 'tee notes.txt'
+bash_case "G149 a non-reviewer tee to BACKLOG.md is unaffected (still denied)" \
+  deny 'tee BACKLOG.md' "bypasses the comment guard"
+
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
 printf '\nauto format\n\n'
@@ -712,6 +733,64 @@ JSON
 
 expect "F7  a malformed payload fails open, not closed" allow <<'JSON'
 {"tool_name":"Write","tool_input":
+JSON
+
+# ─────────────────────────────  reviewer guard  ────────────────────────────
+HOOK="$HOOKS/reviewer_guard.py"
+printf '\nreviewer guard\n\n'
+
+FIXTURE_REVIEWER="$WORKDIR/fixture-reviewer"
+mkdir -p "$FIXTURE_REVIEWER/docs"
+git init -q -b main "$FIXTURE_REVIEWER"
+printf '# Backlog\n' > "$FIXTURE_REVIEWER/BACKLOG.md"
+printf '# Backlog\n' > "$FIXTURE_REVIEWER/docs/BACKLOG.md"
+printf 'package main\n' > "$FIXTURE_REVIEWER/main.go"
+
+expect "R1  reviewer editing BACKLOG.md is allowed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/BACKLOG.md"}}
+JSON
+
+expect "R2  reviewer writing docs/BACKLOG.md is allowed" allow <<JSON
+{"tool_name":"Write","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/docs/BACKLOG.md"}}
+JSON
+
+expect "R3  reviewer editing any other file is denied" deny "edits only BACKLOG.md" <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
+expect "R4  reviewer writing any other file is denied" deny "edits only BACKLOG.md" <<JSON
+{"tool_name":"Write","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
+expect "R5  a non-reviewer agent editing any file is allowed, unaffected" allow <<JSON
+{"tool_name":"Edit","agent_type":"workflow-implementer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
+expect "R6  the main thread (no agent_type) editing any file is allowed" allow <<JSON
+{"tool_name":"Edit","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
+# a symlinked BACKLOG.md would collapse both realpath sides onto one inode and wrongly pass -- denied outright first
+FIXTURE_SYMLINK="$WORKDIR/fixture-reviewer-symlink"
+mkdir -p "$FIXTURE_SYMLINK"
+git init -q -b main "$FIXTURE_SYMLINK"
+printf 'top secret\n' > "$FIXTURE_SYMLINK/secret.txt"
+ln -s "$FIXTURE_SYMLINK/secret.txt" "$FIXTURE_SYMLINK/BACKLOG.md"
+
+expect "R7  reviewer editing a symlinked BACKLOG.md is denied" deny "edits only BACKLOG.md" <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_SYMLINK","tool_input":{"file_path":"$FIXTURE_SYMLINK/BACKLOG.md"}}
+JSON
+
+# docs/ itself (not the leaf) swapped for a symlink dereferences the same way -- denied too
+FIXTURE_ANCESTOR_SYMLINK="$WORKDIR/fixture-reviewer-ancestor-symlink"
+FIXTURE_ANCESTOR_TARGET="$WORKDIR/fixture-reviewer-ancestor-target"
+mkdir -p "$FIXTURE_ANCESTOR_SYMLINK" "$FIXTURE_ANCESTOR_TARGET"
+git init -q -b main "$FIXTURE_ANCESTOR_SYMLINK"
+printf 'top secret\n' > "$FIXTURE_ANCESTOR_TARGET/BACKLOG.md"
+ln -s "$FIXTURE_ANCESTOR_TARGET" "$FIXTURE_ANCESTOR_SYMLINK/docs"
+
+expect "R8  reviewer editing docs/BACKLOG.md is denied when docs/ itself is a symlink out of the repo" deny "edits only BACKLOG.md" <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_ANCESTOR_SYMLINK","tool_input":{"file_path":"$FIXTURE_ANCESTOR_SYMLINK/docs/BACKLOG.md"}}
 JSON
 
 VALIDATOR="$HOOKS/comments.py"
