@@ -10,7 +10,7 @@
 # permissionDecision that comes back, optionally checking that the
 # reason text does or does not contain a given string.
 #
-# Case IDs: K* comments check, G* git guard.
+# Case IDs: K* comments check, G* git guard, S* smoke test (runs first, synchronously, the real call shape).
 #
 # Writing a case:
 #   heredoc form  literal JSON, use \n for a newline inside a string
@@ -146,6 +146,32 @@ bash_case() {
   local escaped; escaped="$(json_escape "$command")"
   expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
 }
+
+# ────────────────────────────────  smoke test  ──────────────────────────────
+printf '\nsmoke test\n\n'
+smoke_case() {
+  local label="$1" want="$2" command="$3"
+  local escaped; escaped="$(json_escape "$command")"
+  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  local out got reason decoded
+  out="$(printf '%s' "$payload" | python3 "$HOOKS/git_guard.py")"
+  decoded="$(decision_reason_of "$out")"
+  got="${decoded%%$'\x1e'*}"
+  reason="${decoded#*$'\x1e'}"
+  if [ "$got" != "$want" ]; then
+    printf '  SMOKE FAIL  %s\n        decision=%s want=%s\n        %s\n' "$label" "$got" "$want" "$reason" >&2
+    exit 1
+  fi
+  printf '  SMOKE PASS  %s\n' "$label"
+}
+
+smoke_case "S1  echo hello is allowed"                    allow 'echo hello'
+smoke_case "S2  git status is allowed"                    allow 'git status'
+smoke_case "S3  ls is allowed"                            allow 'ls'
+smoke_case "S4  git push to a protected ref is denied"    deny  'git push origin main'
+smoke_case "S5  tee into a guarded path is denied"        deny  'tee BACKLOG.md'
+smoke_case "S6  sed -i rewriting a file in place is denied" deny  "sed -i -e s/a/b/ file"
+smoke_case "S7  a redirect into a guarded path is denied" deny  'echo bad > BACKLOG.md'
 
 # git_guard.py's current_branch() shells out to `git rev-parse` in the
 # hook's own cwd, so any case whose outcome depends on the branch needs
@@ -507,6 +533,55 @@ bash_case "G97 a real unquoted dollar-paren substitution running git push --forc
   deny  'echo $(git push --force)' "rewrites published history"
 bash_case "G98 old-style backslash-escaped nested backticks hiding git push --force is denied" \
   deny  'echo `echo \`git push --force\`` ' "rewrites published history"
+bash_case "G125 a >1 fd redirect into a guarded path is blocked"  deny 'echo bad 1>BACKLOG.md' "bypasses the comment guard"
+bash_case "G126 a 2> fd redirect into a guarded path is blocked"  deny 'echo bad 2>BACKLOG.md' "bypasses the comment guard"
+bash_case "G127 a 9> fd redirect into a guarded path is blocked"  deny 'echo bad 9>BACKLOG.md' "bypasses the comment guard"
+bash_case "G128 an &> redirect into a guarded path is blocked"    deny 'echo bad &>BACKLOG.md' "bypasses the comment guard"
+bash_case "G129 a double-quoted -i flag still triggers sed -i detection" \
+  deny  'sed "-i" -e s/a/b/ file' "bypassing the comment guard"
+bash_case "G130 a single-quoted -i flag still triggers sed -i detection" \
+  deny  "sed '-i' -e s/a/b/ file" "bypassing the comment guard"
+bash_case "G131 a quoted -i flag still triggers perl -i detection" \
+  deny  'perl "-i" -pe s/a/b/ file' "bypassing the comment guard"
+bash_case "G134 a single-quote split inside the -i flag still triggers sed -i detection" \
+  deny  "sed -'i' -e s/a/b/ BACKLOG.md" "bypassing the comment guard"
+bash_case "G135 a double-quote split inside the -i flag still triggers sed -i detection" \
+  deny  'sed -"i" -e s/a/b/ BACKLOG.md' "bypassing the comment guard"
+mkdir -p "$WORKDIR/outside-repo"
+bash_case_at "$WORKDIR/outside-repo" "G132 a guarded-extension write outside any repo is allowed" \
+  allow 'echo x > BACKLOG.md'
+bash_case_at "$FIXTURE_MAIN" "G133 a guarded-extension write inside the repo still denies" \
+  deny  'echo x > BACKLOG.md' "bypasses the comment guard"
+bash_case_at "$WORKDIR/outside-repo" "G137 cwd outside any repo does not exempt an absolute target that lands inside a real repo" \
+  deny  "cp malicious.txt $FIXTURE_MAIN/BACKLOG.md" "bypasses the comment guard"
+mkdir -p "$WORKDIR/outside-repo-2"
+bash_case_at "$WORKDIR/outside-repo-2" "G138 cwd outside any repo and an absolute target outside any repo is still allowed" \
+  allow "echo x > $WORKDIR/outside-repo/BACKLOG.md"
+
+# a nested-deep $(...) chain used to blow the recursion limit and let a real guarded write ride through unblocked
+build_nested_substitution_chain() {
+  local depth="$1" i prefix='' suffix=''
+  for ((i = 0; i < depth; i++)); do
+    prefix+='$('
+    suffix+=')'
+  done
+  printf '%strue%s' "$prefix" "$suffix"
+}
+DEEP_SUBSTITUTION_CHAIN="$(build_nested_substitution_chain 3000)"
+bash_case "G139 a command-substitution chain nested thousands deep cannot recursion-exhaust past a real guarded write" \
+  deny "$DEEP_SUBSTITUTION_CHAIN; sed -i s/x/y/ BACKLOG.md" "bypassing the comment guard"
+
+# nesting lives inside the redirect TARGET word (expand_word <-> resolve_command_output), not a sibling command
+build_nested_target_chain() {
+  local depth="$1" i expr="$2"
+  for ((i = 0; i < depth; i++)); do
+    expr="\$(echo $expr)"
+  done
+  printf '%s' "$expr"
+}
+DEEP_TARGET_CHAIN="$(build_nested_target_chain 3000 BACKLOG.md)"
+bash_case "G140 a redirect target word nested thousands deep in \$(...) cannot recursion-exhaust into a fail-open allow" \
+  deny "echo bad > $DEEP_TARGET_CHAIN" "could not be safely analyzed"
 
 # ---  PUBLISH_ENABLED=0 restores the pre-publishing blanket deny  ---
 # Env-var driven, so this flips the running hook directly rather than
@@ -531,6 +606,32 @@ off_case() {
     report "$outfile" "$label" "$problem" "$reason"
   ) &
 }
+
+# GIT_GUARD_TEST_CRASH=1 forces analyze() to raise, exercising the hardcoded crash-fallback deny list below
+crash_case() {
+  local label="$1" want="$2" command="$3" must_contain="${4:-}"
+  local escaped; escaped="$(json_escape "$command")"
+  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out got reason problem="" decoded
+    out="$(printf '%s' "$payload" | GIT_GUARD_TEST_CRASH=1 python3 "$HOOK" 2>/dev/null)"
+    decoded="$(decision_reason_of "$out")"
+    got="${decoded%%$'\x1e'*}"
+    reason="${decoded#*$'\x1e'}"
+    [ "$got" != "$want" ] && problem="decision=$got want=$want"
+    if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
+      problem="reason missing: $must_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$reason"
+  ) &
+}
+
+crash_case "G141 crash: echo hello is still allowed"        allow 'echo hello'
+crash_case "G142 crash: git push origin main is still denied" deny 'git push origin main' "git push"
+crash_case "G143 crash: rm -rf / is still denied"            deny 'rm -rf /'              "rm -rf"
 
 off_case "G79 off: push is blocked"                  deny  'git push -u origin feat/x'     "changes repository state"
 off_case "G80 off: commit is blocked"                deny  'git commit -m x'               "changes repository state"
