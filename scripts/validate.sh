@@ -30,6 +30,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$REPO_ROOT/claude-code"
 TARGET="${AGENT_HOME:-$HOME/.claude}"
 BUDGET=2000
+# shared between the reachability check and the budget pass below so the
+# accepted spellings of the key can't drift between the two independently
+DMI_REGEX='^disable-model-invocation:\s*(true|yes|on|1)'
 
 problems=0
 
@@ -183,10 +186,11 @@ PY
 [ $? -eq 0 ] || problems=$((problems + 1))
 
 printf '\n  cross-skill reachability\n'
-python3 - "$SOURCE" "$REPO_ROOT" <<'PY'
+python3 - "$SOURCE" "$REPO_ROOT" "$DMI_REGEX" <<'PY'
 import os, re, sys
 
-source, repo_root = sys.argv[1], sys.argv[2]
+source, repo_root, dmi_regex = sys.argv[1], sys.argv[2], sys.argv[3]
+DMI = re.compile(dmi_regex, re.M | re.I)
 skills_dir = os.path.join(source, "skills")
 # A qualifying section is one containing an invoke/dispatch verb anywhere in
 # it (a heading-delimited block, so a numbered step and the table beneath it
@@ -207,7 +211,7 @@ if os.path.isdir(skills_dir):
         body = open(skill, encoding="utf-8").read()
         bodies[entry] = body
         head = body.split("---")[1] if body.startswith("---") else ""
-        if re.search(r"^disable-model-invocation:\s*(true|yes|on|1)", head, re.M | re.I):
+        if DMI.search(head):
             unreachable.add(entry)
 
 failures = 0
@@ -314,10 +318,11 @@ else
 fi
 
 printf '\n  base context budget\n'
-python3 - "$SOURCE" "$REPO_ROOT" "$BUDGET" <<'PY'
+python3 - "$SOURCE" "$REPO_ROOT" "$BUDGET" "$DMI_REGEX" <<'PY'
 import os, re, sys
 
-source, repo_root, budget = sys.argv[1], sys.argv[2], int(sys.argv[3])
+source, repo_root, budget, dmi_regex = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+DMI = re.compile(dmi_regex, re.M | re.I)
 CAP = 5000
 
 
@@ -358,7 +363,7 @@ if os.path.isdir(skills_dir):
         if cap_count > CAP:
             cap_failures.append((entry, cap_count))
         head = body.split("---")[1] if body.startswith("---") else ""
-        if re.search(r"^disable-model-invocation:\s*(true|yes|on|1)", head, re.M | re.I):
+        if DMI.search(head):
             continue
         state = overrides.get(entry, "on")
         if state in ("off", "user-invocable-only"):
