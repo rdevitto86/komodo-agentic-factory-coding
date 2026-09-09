@@ -145,7 +145,9 @@ MONITORED_COMMANDS = SHELL_WRAPPERS + PASSTHROUGH_WRAPPERS + ("git", "gh", "cp",
 
 CP_MV_TARGET_FLAGS = ("-t", "--target-directory")
 
-REDIRECT = re.compile(r"(?<![-=<0-9&])>>?\s*([^\s;&|>]+)")
+# WHY: matches only the operator -- shell_words/resolve_guard_target resolve the target through a quote or substitution
+REDIRECT_OPERATOR = re.compile(r"(?<![-=<0-9&])>>?")
+REDIRECT_WORD_TERMINATORS = ";&|#\n"
 HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n)(.*?)(^\s*\2\s*$)", re.S | re.M)
 QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 INPLACE_SED = re.compile(r"\bsed\b[^;|&]*?(?:\s-[a-zA-Z]*i\b|\s--in-place\b)")
@@ -290,9 +292,11 @@ def extract_substitutions(command):
     return "".join(masked), substitutions
 
 
+# Returns (text, start_offset) pairs -- the offset lets a caller recover this segment's raw, unmasked text
 def split_segments(command):
     segments = []
     current = []
+    seg_start = 0
     in_squote = False
     in_dquote = False
     in_comment = False
@@ -319,9 +323,10 @@ def split_segments(command):
         if in_comment:
             if char == "\n":
                 in_comment = False
-                segments.append("".join(current))
+                segments.append(("".join(current), seg_start))
                 current = []
                 index += 1
+                seg_start = index
                 continue
             current.append(char)
             index += 1
@@ -347,21 +352,24 @@ def split_segments(command):
             index += 2
             continue
         if command.startswith("&&", index) or command.startswith("||", index):
-            segments.append("".join(current))
+            segments.append(("".join(current), seg_start))
             current = []
             index += 2
+            seg_start = index
             continue
         if char in SEGMENT_BOUNDARY_CHARS:
-            segments.append("".join(current))
+            segments.append(("".join(current), seg_start))
             current = []
             index += 1
+            seg_start = index
             continue
         current.append(char)
         index += 1
-    segments.append("".join(current))
+    segments.append(("".join(current), seg_start))
     return segments
 
 
+# WHY: tokens is now raw shell_words, not the masked segment -- a $()/backtick destination reaches expand_word unblanked
 def parse_cp_mv_target(tokens):
     # cp/mv -t DIR (or --target-directory[=DIR]) names the real
     # destination out of order; everything else stays positional.
@@ -372,17 +380,17 @@ def parse_cp_mv_target(tokens):
         token = tokens[index]
         if token in CP_MV_TARGET_FLAGS:
             if index + 1 < len(tokens):
-                target_dir = tokens[index + 1]
+                target_dir = expand_word(tokens[index + 1])
             index += 2
             continue
         if token.startswith("--target-directory="):
-            target_dir = token.split("=", 1)[1]
+            target_dir = expand_word(token.split("=", 1)[1])
             index += 1
             continue
         if token.startswith("-") and token != "-":
             index += 1
             continue
-        positional.append(token)
+        positional.append(expand_word(token))
         index += 1
     return target_dir, positional
 
@@ -416,6 +424,120 @@ def tokenize(segment):
         return shlex.split(segment)
     except ValueError:
         return segment.split()
+
+
+# Splits text[start:end] into shell words, atomic through quotes/$()/backticks; returns (word, abs_start) pairs
+def shell_words(text, start, end, terminators=""):
+    words = []
+    index = start
+    word_start = None
+    while index < end:
+        char = text[index]
+        if char in terminators or char.isspace():
+            if word_start is not None:
+                words.append((text[word_start:index], word_start))
+                word_start = None
+            if char in terminators:
+                break
+            index += 1
+            continue
+        if word_start is None:
+            word_start = index
+        if char == "\\" and index + 1 < end:
+            index += 2
+            continue
+        if char == "'":
+            index += 1
+            while index < end and text[index] != "'":
+                index += 1
+            index = min(index + 1, end)
+            continue
+        if char == '"':
+            index += 1
+            while index < end:
+                if text[index] == "\\" and index + 1 < end:
+                    index += 2
+                    continue
+                if text[index] == '"':
+                    index += 1
+                    break
+                index += 1
+            continue
+        if char == "`":
+            stop = find_backtick_end(text, index + 1)
+            index = min(stop + 1, end)
+            continue
+        if char == "$" and text.startswith("$(", index):
+            stop = find_paren_end(text, index + 2)
+            index = min(stop + 1, end)
+            continue
+        index += 1
+    if word_start is not None:
+        words.append((text[word_start:index], word_start))
+    return words
+
+
+# WHY: can't execute a captured command -- "echo ARGS" resolves to ARGS, anything else falls back to a matching arg
+def resolve_command_output(inner):
+    words = shell_words(inner, 0, len(inner))
+    if not words:
+        return ""
+    expanded = [expand_word(word) for word, _ in words]
+    if expanded[0] == "echo":
+        return " ".join(expanded[1:])
+    match = next((token for token in expanded[1:] if is_guarded_path(token)), None)
+    return match if match is not None else " ".join(expanded)
+
+
+# WHY: fully dequotes a word, mid-word split included, and resolves every $()/backtick piece it holds, nested or not
+def expand_word(word):
+    out = []
+    index = 0
+    length = len(word)
+    while index < length:
+        char = word[index]
+        if char == "\\" and index + 1 < length:
+            out.append(word[index + 1])
+            index += 2
+            continue
+        if char == "'":
+            end = word.find("'", index + 1)
+            end = length if end == -1 else end
+            out.append(word[index + 1:end])
+            index = min(end + 1, length)
+            continue
+        if char == '"':
+            index += 1
+            buf = []
+            while index < length and word[index] != '"':
+                if word[index] == "\\" and index + 1 < length and word[index + 1] in "\"\\$`":
+                    buf.append(word[index + 1])
+                    index += 2
+                    continue
+                buf.append(word[index])
+                index += 1
+            index = min(index + 1, length)
+            out.append(expand_word("".join(buf)))
+            continue
+        if char == "`":
+            stop = find_backtick_end(word, index + 1)
+            inner = unescape_nested_backticks(word[index + 1:stop])
+            out.append(resolve_command_output(inner))
+            index = min(stop + 1, length)
+            continue
+        if char == "$" and word.startswith("$(", index):
+            stop = find_paren_end(word, index + 2)
+            out.append(resolve_command_output(word[index + 2:stop]))
+            index = min(stop + 1, length)
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def resolve_guard_target(word):
+    target = expand_word(word)
+    return target if is_guarded_path(target) else None
 
 
 REDIRECT_OP = re.compile(r"^(&>{1,2}|\d*>{1,2}(&\d+)?|\d*<)")
@@ -691,7 +813,7 @@ def gh_violation(tokens):
     return None
 
 
-def scan_segment(segment, findings, cwd, has_cd):
+def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end):
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
         return
@@ -712,13 +834,27 @@ def scan_segment(segment, findings, cwd, has_cd):
             scan_command(" ".join(inner), findings, cwd)
         return
     if command == "tee":
-        for token in tokens[1:]:
-            if is_guarded_path(token):
-                findings.append("tee writing to %s bypasses the comment guard" % token)
+        # WHY: tokens loses a $()/backtick arg to blanking -- scan raw shell_words against full_command instead
+        for word, _ in shell_words(full_command, seg_start, seg_end):
+            target = resolve_guard_target(word)
+            if target:
+                findings.append("tee writing to %s bypasses the comment guard" % target)
                 break
         return
+    if command in ("sed", "perl", "python", "python3"):
+        # WHY: raw segment text gated on its own leading command -- a quoted mention elsewhere never reaches here
+        raw_segment = full_command[seg_start:seg_end]
+        if command == "sed" and INPLACE_SED.search(raw_segment):
+            findings.append("sed -i rewrites files in place, bypassing the comment guard")
+        elif command == "perl" and INPLACE_PERL.search(raw_segment):
+            findings.append("perl -i rewrites files in place, bypassing the comment guard")
+        elif command in ("python", "python3") and PYTHON_WRITE.search(raw_segment):
+            findings.append("python -c opening a file for writing bypasses the comment guard")
+        return
     if command in ("cp", "mv"):
-        target_dir, positional = parse_cp_mv_target(tokens[1:])
+        # WHY: raw shell_words on full_command, not tokens -- tokens is masked, blanking any $()/backtick destination
+        raw_words = strip_redirects(strip_env_assignments([word for word, _ in shell_words(full_command, seg_start, seg_end)]))
+        target_dir, positional = parse_cp_mv_target(raw_words[1:])
         if target_dir is not None:
             if is_guarded_path(target_dir):
                 findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
@@ -767,27 +903,37 @@ def scan_segment(segment, findings, cwd, has_cd):
 
 def scan_command(command, findings, cwd):
     masked, substitutions = extract_substitutions(command)
-    segments = [segment.strip() for segment in split_segments(masked)]
-    segments = [segment for segment in segments if segment]
-    has_cd = any(leading_word(segment) == "cd" for segment in segments)
-    for segment in segments:
-        scan_segment(segment, findings, cwd, has_cd)
+    raw_segments = split_segments(masked)
+    segments = []
+    for text, start in raw_segments:
+        stripped = text.strip()
+        if not stripped:
+            continue
+        abs_start = start + (len(text) - len(text.lstrip()))
+        # WHY: start+len(text), not abs_start+len(stripped) -- a trailing blanked substitution is stripped away otherwise
+        abs_end = start + len(text)
+        segments.append((stripped, abs_start, abs_end))
+    has_cd = any(leading_word(stripped) == "cd" for stripped, _, _ in segments)
+    for stripped, abs_start, abs_end in segments:
+        scan_segment(stripped, findings, cwd, has_cd, command, abs_start, abs_end)
     # WHY: recursing into each captured substitution is what catches a mutating command hidden inside backticks or $() -- skipping it would let those slip past as inert segment text
     for substitution in substitutions:
         if substitution.strip():
             scan_command(substitution, findings, cwd)
 
+    # WHY: sed/perl/python-write moved to scan_segment (see there); trailer stays on raw command -- it can live in a quoted -m
     if GIT_MESSAGE_CALL.search(command) and BANNED_TRAILER.search(command):
         findings.append(TRAILER_FINDING)
-    if INPLACE_SED.search(command):
-        findings.append("sed -i rewrites files in place, bypassing the comment guard")
-    if INPLACE_PERL.search(command):
-        findings.append("perl -i rewrites files in place, bypassing the comment guard")
-    if PYTHON_WRITE.search(command):
-        findings.append("python -c opening a file for writing bypasses the comment guard")
 
-    for target in REDIRECT.findall(mask_data(command)):
-        if is_guarded_path(target):
+    # WHY: quotes/heredocs blanked so a real `>` inside one is not read as an operator; target still resolves from raw command
+    guard_source = mask_data(command)
+    for match in REDIRECT_OPERATOR.finditer(guard_source):
+        words = shell_words(command, match.end(), len(command), REDIRECT_WORD_TERMINATORS)
+        if not words:
+            continue
+        word, _ = words[0]
+        target = resolve_guard_target(word)
+        if target:
             findings.append("redirecting output into %s bypasses the comment guard" % target)
 
 

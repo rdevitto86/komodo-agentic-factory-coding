@@ -375,6 +375,40 @@ bash_case "G31 cp over a code path is blocked"       deny  'cp /tmp/staged.go ha
 bash_case "G32 mv over a code path is blocked"       deny  'mv /tmp/staged.go handler.go'  "bypasses the comment guard"
 bash_case "G99 redirect into a .json file is blocked"  deny  'echo x > claude-code/settings.json' "bypasses the comment guard"
 bash_case "G100 redirect into a .md file is blocked"   deny  'echo x > BACKLOG.md'                "bypasses the comment guard"
+bash_case "G101 a dollar-paren command-substitution redirect target is blocked" \
+  deny 'echo bad >$(echo BACKLOG.md)' "bypasses the comment guard"
+bash_case "G102 a backtick command-substitution tee target is blocked" \
+  deny 'tee `echo settings.json`' "bypasses the comment guard"
+bash_case "G103 a dollar-paren command-substitution tee target is blocked" \
+  deny 'tee $(echo settings.json)' "bypasses the comment guard"
+bash_case "G104 a double-quoted redirect target is blocked" \
+  deny 'echo bad > "BACKLOG.md"' "bypasses the comment guard"
+bash_case "G105 a single-quoted redirect target is blocked" \
+  deny "echo bad > 'BACKLOG.md'" "bypasses the comment guard"
+bash_case "G106 sed -i merely named inside a quoted string is allowed" \
+  allow "echo 'sed -i is mentioned here'"
+bash_case "G107 a real unquoted sed -i is still blocked" \
+  deny 'sed -i -e s/a/b/ file' "bypassing the comment guard"
+bash_case "G108 a substitution concatenated after literal text in a redirect target is blocked" \
+  deny 'echo bad > pre$(echo _BACKLOG.md)' "bypasses the comment guard"
+bash_case "G109 a substitution concatenated after literal text in a tee target is blocked" \
+  deny 'tee pre$(echo _BACKLOG.md)' "bypasses the comment guard"
+bash_case "G110 a quoted concatenated-substitution redirect target is blocked" \
+  deny 'echo bad > "pre$(echo BACKLOG.md)"' "bypasses the comment guard"
+bash_case "G111 a nested dollar-paren substitution redirect target is blocked" \
+  deny 'echo bad > $(echo $(echo BACKLOG.md))' "bypasses the comment guard"
+bash_case "G112 a nested dollar-paren substitution tee target is blocked" \
+  deny 'tee $(echo $(echo BACKLOG.md))' "bypasses the comment guard"
+bash_case "G113 a mid-word quote split rejoining a guarded filename in tee is blocked" \
+  deny 'tee Docker"file"' "bypasses the comment guard"
+bash_case "G114 a mid-word quote split rejoining a guarded filename in a redirect is blocked" \
+  deny 'echo x > Make"file"' "bypasses the comment guard"
+bash_case "G115 a dollar-paren command-substitution cp target is blocked" \
+  deny 'cp /tmp/a.txt $(echo handler.go)' "bypasses the comment guard"
+bash_case "G116 a dollar-paren command-substitution cp target naming a doc path is blocked" \
+  deny 'cp /tmp/a.txt $(echo BACKLOG.md)' "bypasses the comment guard"
+bash_case "G117 a dollar-paren command-substitution mv target is blocked" \
+  deny 'mv /tmp/a.txt $(echo settings.json)' "bypasses the comment guard"
 bash_case "G33 cp between non-code paths is allowed" allow 'cp /tmp/a.txt /tmp/b.txt'
 bash_case "G34 mv of a directory listing is allowed" allow 'mv build/ dist/'
 bash_case "G35 time git rebase is caught"            deny  'time git rebase main'          "git rebase"
