@@ -4,6 +4,11 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.6] — 2026-09-09
+
+### Changed
+- Renamed `repo-init` to `git-repo-init` and `readme` to `readme-modify` (pairing it with `readme-audit`), and split `changelog` into `changelog-write`/`changelog-audit`, matching the `backlog-modify`/`backlog-audit` precedent — cross-references across ~20 skills, `workflow-implementer.md`, `README.md`, and `settings.json`'s `skillOverrides` updated to match.
+
 ## [0.40.4] — 2026-09-08
 
 ### Security

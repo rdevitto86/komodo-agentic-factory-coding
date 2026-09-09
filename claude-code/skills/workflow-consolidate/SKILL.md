@@ -13,15 +13,15 @@ Completed: **$ARGUMENTS**
 
 **You cannot see the calling conversation.** The list above is what shipped. If it is empty, stop and say so.
 
-**Load `changelog`** for the changelog format and the version rules. **Never read the SDD** — this phase does not touch the spec, and there is nothing here that needs it.
+**Load `changelog-write`** for the changelog format and the version rules. **Never read the SDD** — this phase does not touch the spec, and there is nothing here that needs it.
 
 ## Order
 
 1. **Read `CHANGELOG.md`.** `[Unreleased]` already carries this band's entries — `workflow-loop`'s P2.4 closeout wrote them before this phase ran. Never author a new bullet here; a shipped story with no matching entry is a gap to report, not something to backfill silently.
-2. **Release `[Unreleased]`** into a `## [X.Y.Z] — <date>` heading, at the bump its entries earn per `changelog`'s versioning table.
+2. **Release `[Unreleased]`** into a `## [X.Y.Z] — <date>` heading, at the bump its entries earn per `changelog-write`'s versioning table.
 3. **Sync the language manifest** to the new heading, never the reverse. No manifest means no sync — the heading is the version, and `workflow-complete`'s P4 tags it from there once the branch is pushed.
 4. **Delete the completed stories from `BACKLOG.md`.** Leave `[BLOCKED]` stories in place, and never delete a story you cannot confirm shipped.
-5. **Refresh `README.md` only where this change invalidated it** — a new endpoint, a changed command, a new environment variable. Load `readme` for its shape. Never rewrite it wholesale.
+5. **Refresh `README.md` only where this change invalidated it** — a new endpoint, a changed command, a new environment variable. Load `readme-modify` for its shape. Never rewrite it wholesale.
 
 **Never rewrite a released changelog section.** A correction is a new entry.
 

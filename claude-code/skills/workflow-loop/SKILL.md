@@ -26,7 +26,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
 | P2.3 Review | `/assess-bugs` (+ `/assess-security`), then commit here | `reviewer` |
-| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog write`, `/backlog-audit`, once per band | `reviewer` (assess-*), `workflow-implementer` (backlog-audit) |
+| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog-write`, `/backlog-audit`, once per band | `reviewer` (assess-*), `workflow-implementer` (backlog-audit) |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `workflow-implementer` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` + tag check | — |
 
@@ -44,7 +44,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **P0's one job is confirming `BACKLOG.md` exists before P1 decomposes it** — never decomposing (P1's job) or auditing (P1 runs `/backlog-audit`) itself. P0 either finds a backlog, builds one, or stops.
 
-**`README.md` missing** → run `/readme` to create it (cheap, never the blocker).
+**`README.md` missing** → run `/readme-modify` to create it (cheap, never the blocker).
 
 **`BACKLOG.md` exists** → `docs/spec/SDD.md`/`docs/spec/PRD.md` are optional context, never a blocker. Read if present, framing only (`standards-specs` owns their section maps) — full read on session's first run, `test -f` existence-only after. Go to P1.
 
@@ -70,9 +70,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — go to P0, not P2.
 
-**A `BACKLOG.md` holding only `repo-init`'s seed stories is not a decomposed queue** — run the fork rather than treating it as if P1 already happened.
+**A `BACKLOG.md` holding only `git-repo-init`'s seed stories is not a decomposed queue** — run the fork rather than treating it as if P1 already happened.
 
-**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `repo-init`'s Create already ran — trust the tree.** Re-invoke `/repo-init` only for an open Foundation-edge story (`backlog-modify` owns that edge), or when the task explicitly asks for Scaffold/Refresh.
+**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `git-repo-init`'s Create already ran — trust the tree.** Re-invoke `/git-repo-init` only for an open Foundation-edge story (`backlog-modify` owns that edge), or when the task explicitly asks for Scaffold/Refresh.
 
 **Plan the run's PRs before branching — no branch, no commit, no `gh pr create` here.** A task group is one domain, so the queue is usually already one PR-sized band per `git-pr-create`'s sizing rule of thumb. Split further only if the group partitions cleanly within itself (no shared file, no dependency edge crossing the split); an entangled group stays one band regardless of size. Present the grouping as a short table (PR # · `TSK-` IDs · why). **Only this run's first planned PR gets built out through P2–P4** — a group needing a second band stays queued, ordered by dependency.
 
@@ -138,7 +138,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Clears the target state's four standing closeout stories.** Never picked as ordinary P2.1 tasks — `assess-*` calls stay this session's job, not the fork that wrote the code.
 
-**Once every closeout finding is fixed or declined, run `/changelog write` for the whole band** — one pass covering every task shipped. P3 then only releases what this step already wrote.
+**Once every closeout finding is fixed or declined, run `/changelog-write` for the whole band** — one pass covering every task shipped. P3 then only releases what this step already wrote.
 
 **Once the changelog is written, run `/backlog-audit` over the whole file, no scope** — sweeps stale tasks, duplicates, and satisfied `[BLOCKED]` `Recheck:` entries.
 
