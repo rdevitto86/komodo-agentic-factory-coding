@@ -108,6 +108,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A fork returns a result, never its reasoning — except `## Comment Candidates`.** Retain each task's non-empty `## Comment Candidates` entries verbatim across the band — P3's `/write-comments` call needs the live WHY-context captured at implementation time.
 
+**No retry counter here** — a P2.2 failure sending a task back to this phase is already bounded by P2.2's own pass/fail, not a repeat-prone loop. The retry tally lives at P2.3, the phase where a "same skill, same file, no forward progress" loop actually happens.
+
 **Ends when:** every one of the task's `Done when` commands exits zero.
 
 ### P2.2 · Verify
@@ -128,6 +130,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Findings affecting correctness, security, or a stated requirement are folded into P2.0's pick and become the next P2.1 task, not deferred. Everything else is optional, filed for a later pass.
 
+**Retry counter — session-stated, not a file.** Before re-invoking the same `assess-*` skill against the same file/task a repeat time within this band, state "round N for `<file>`" in this session's own turn text — P2.0's queue is the tally, no `.claude/state/` file. Hitting `ways/sdlc.md`'s round cap (round 3, or round 2 for a file `BACKLOG.md` already flags as a hand-rolled parser or security boundary) is the stop signal: stop auto-continuing that skill against that file and escalate to the user.
+
 **Commit here once the task's findings are clean.** Run `/git-commit-message` against this task's diff alone (not the whole band), then `git add` + `git commit` — one commit per task, including any P2.3 fix-commits.
 
 **Ends when:** every story the calls filed for this task is fixed or confirmed genuinely optional, and the task is committed. Green ends the task; loop back to P2.0 for the next one.
@@ -137,6 +141,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 **`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band, once, plus the perf suite.** Runs after every task is green, before P3 — never per-task, each as a `reviewer` fork.
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story filed is folded into P2.0's pick and resolved in this pass — fixed via `/workflow-implement`, or declined and removed with the reason noted for P4's report.
+
+**Retry counter — inherits P2.3's per-file tally, doesn't restart it.** A closeout fix-and-reloop pass against a file already reviewed at P2.3 continues that file's round count rather than starting fresh; hitting the cap here stops the same way, per `ways/sdlc.md`.
 
 **For a single-task band, skip the `/assess-bugs` repeat when that task was already cleared at P2.3 with no diff change since.** Skip the `/assess-security` repeat under the same condition only if P2.3 actually ran it — if P2.3 skipped `/assess-security` because the surface didn't warrant it, that same judgment applies here too, so it stays skipped for the same reason, not because it's being treated as already cleared. Either way, still run `/assess-simplify` (never covered at P2.3) plus the perf suite.
 
