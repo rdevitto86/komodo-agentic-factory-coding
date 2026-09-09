@@ -1045,8 +1045,14 @@ def respond_deny(reason):
     sys.exit(0)
 
 
-# a crash in here is our own broken analysis, not a policy decision -- main() catches this and fails open
+# test-only crash injection -- lets the regression suite exercise a real exception, not a simulated one
+TEST_FORCE_CRASH = os.environ.get("GIT_GUARD_TEST_CRASH") == "1"
+
+
+# a crash here is our own broken analysis -- main() falls back to CRASH_FALLBACK_PATTERNS, not a blanket allow
 def analyze(payload):
+    if TEST_FORCE_CRASH:
+        raise RuntimeError("test-forced crash (GIT_GUARD_TEST_CRASH=1)")
     if payload.get("tool_name") != "Bash":
         return []
     command = (payload.get("tool_input") or {}).get("command", "")
@@ -1057,15 +1063,79 @@ def analyze(payload):
     return findings
 
 
+# minimal, dependency-free net for the handful of operations unambiguous enough to deny on raw text alone
+CRASH_FALLBACK_PATTERNS = (
+    (re.compile(r"\bgit\s+push\b"), "git push"),
+    (re.compile(r"\bgit\s+commit\b"), "git commit"),
+    (re.compile(r"\bgit\s+rebase\b"), "git rebase"),
+    (re.compile(r"\bgit\s+reset\b"), "git reset"),
+    (re.compile(r"\bgit\s+clean\b"), "git clean"),
+    (re.compile(r"\bgit\s+filter-branch\b"), "git filter-branch"),
+    (re.compile(r"\bgit\s+filter-repo\b"), "git filter-repo"),
+    (re.compile(r"\bsudo\b"), "sudo"),
+)
+
+
+# flag chars collected across every -prefixed token after "rm" -- catches -rf/-fr/-r -f/-f -r/--recursive --force alike
+def crude_rm_rf_check(command):
+    match = re.search(r"\brm\s+([^\n;|&]*)", command)
+    if not match:
+        return False
+    flag_chars = set()
+    has_recursive = False
+    has_force = False
+    for token in match.group(1).split():
+        if token in ("--recursive",):
+            has_recursive = True
+            continue
+        if token in ("--force",):
+            has_force = True
+            continue
+        if token.startswith("-") and len(token) > 1 and not token.startswith("--"):
+            flag_chars.update(token[1:].lower())
+    return ("r" in flag_chars or has_recursive) and ("f" in flag_chars or has_force)
+
+
+def crash_fallback_reason(command):
+    if not command:
+        return None
+    for pattern, label in CRASH_FALLBACK_PATTERNS:
+        if pattern.search(command):
+            return label
+    if crude_rm_rf_check(command):
+        return "rm -rf"
+    return None
+
+
+# reads the raw command straight off the parsed payload -- analyze() already crashed, nothing it computed is trustworthy
+def crash_fallback_violation(payload):
+    if not isinstance(payload, dict) or payload.get("tool_name") != "Bash":
+        return None
+    command = (payload.get("tool_input") or {}).get("command", "")
+    label = crash_fallback_reason(command)
+    if label is None:
+        return None
+    return (
+        "BLOCKED. Nothing ran.\n\n"
+        "    git guard crashed during analysis and is fail-safe-denying this "
+        "command because it matches a hardcoded destructive pattern (%s)." % label
+    )
+
+
 def main():
+    payload = None
     try:
         payload = json.loads(sys.stdin.read())
         findings = analyze(payload)
     except BaseException as error:
         sys.stderr.write(
-            "git guard is broken: %s: %s\nFailing open -- allowing this command through.\n"
+            "git guard is broken: %s: %s\n"
+            "Failing open, except for a hardcoded destructive-command check.\n"
             % (type(error).__name__, error)
         )
+        reason = crash_fallback_violation(payload)
+        if reason:
+            respond_deny(reason)
         sys.exit(0)
 
     if not findings:

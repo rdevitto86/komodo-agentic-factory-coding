@@ -607,6 +607,32 @@ off_case() {
   ) &
 }
 
+# GIT_GUARD_TEST_CRASH=1 forces analyze() to raise, exercising the hardcoded crash-fallback deny list below
+crash_case() {
+  local label="$1" want="$2" command="$3" must_contain="${4:-}"
+  local escaped; escaped="$(json_escape "$command")"
+  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out got reason problem="" decoded
+    out="$(printf '%s' "$payload" | GIT_GUARD_TEST_CRASH=1 python3 "$HOOK" 2>/dev/null)"
+    decoded="$(decision_reason_of "$out")"
+    got="${decoded%%$'\x1e'*}"
+    reason="${decoded#*$'\x1e'}"
+    [ "$got" != "$want" ] && problem="decision=$got want=$want"
+    if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
+      problem="reason missing: $must_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$reason"
+  ) &
+}
+
+crash_case "G141 crash: echo hello is still allowed"        allow 'echo hello'
+crash_case "G142 crash: git push origin main is still denied" deny 'git push origin main' "git push"
+crash_case "G143 crash: rm -rf / is still denied"            deny 'rm -rf /'              "rm -rf"
+
 off_case "G79 off: push is blocked"                  deny  'git push -u origin feat/x'     "changes repository state"
 off_case "G80 off: commit is blocked"                deny  'git commit -m x'               "changes repository state"
 off_case "G81 off: switch -c is blocked"             deny  'git switch -c feat/x'          "changes repository state"
