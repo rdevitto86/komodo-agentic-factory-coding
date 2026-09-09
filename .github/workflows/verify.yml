@@ -22,6 +22,6 @@ jobs:
         with:
           python-version: "3.x"
 
-      - run: bash setup.sh
+      - run: bash setup.sh --skip-verify
 
       - run: make verify
