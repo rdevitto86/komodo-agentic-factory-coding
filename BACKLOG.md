@@ -114,7 +114,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.16.1** add `.github/workflows/verify.yml` running `make verify` on pull requests and pushes to `main`, matching the contract `standards-cicd` already states for a target repo
   * **Done when:** `test -f .github/workflows/verify.yml && grep -q "make verify" .github/workflows/verify.yml`
 
-#### [TSK-01.1.17] The entire hook layer depends on `python3` being on `PATH` and nothing declares or checks it — all four `settings.json` hook commands and both `scripts/hooks/git/` dispatchers shell out to `python3`, `setup.sh` never mentions it, and there is no manifest declaring a floor; if `python3` is missing or shadowed, the hook command itself fails before any Python runs, so `git_guard.py`'s fail-closed `except BaseException` handler never executes and the guard silently degrades open [P: M] [TODO]
+#### [TSK-01.1.17] The entire hook layer depends on `python3` being on `PATH` and nothing declares or checks it — all four `settings.json` hook commands and both `scripts/hooks/git/` dispatchers shell out to `python3`, `setup.sh` never mentions it, and there is no manifest declaring a floor; if `python3` is missing or shadowed, the hook command itself fails before any Python runs, so `git_guard.py`'s fail-closed `except BaseException` handler never executes and the guard silently degrades open [P: M] [DONE]
 * **SUB-01.1.17.1** have `setup.sh` verify `python3` resolves and meets the toolkit's actual floor before linking anything, and state that floor in the repo's `AGENTS.md` alongside the hook table
   * **Done when:** `bash setup.sh --dry-run` reports the detected `python3` version and fails when none resolves
 

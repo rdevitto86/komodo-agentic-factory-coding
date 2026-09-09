@@ -29,6 +29,8 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 
 **`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py`, `context_injector.py`, and `reviewer_guard.py` fail open** — any internal error exits 0.
 
+**Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `setup.sh` checks `python3` resolves and meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s fail-closed handler never gets a chance to run.
+
 ## Comments
 
 **There is no comment hook.** Comments are enforced as a lint, through one CLI, gated by whatever already runs `verify`:
