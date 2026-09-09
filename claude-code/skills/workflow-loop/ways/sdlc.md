@@ -52,7 +52,7 @@ The SDD sections a code build actually depends on:
 
 **Once per band, not per-task** — after every task in the current pick is green, before `/workflow-consolidate` runs. Clears the target state's four standing closeout stories.
 
-`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band's diff, then confirm the perf suite ran. Each runs as a `reviewer` fork, same as P2.3. **No `--report` here either** — each files to `BACKLOG.md`. Every story a call just filed is folded into P2.0's pick and resolved in this same pass: fixed via `/workflow-implement`, or explicitly declined and removed with the reason noted. None of it waits for the next `/workflow-loop` run.
+`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band's diff, then confirm the perf suite ran. Each runs as a `reviewer` fork, same as P2.3. **Dispatch the three `assess-*` calls in parallel, `isolation: worktree`**, not the serial list this used to be — all three write to `BACKLOG.md`, so this is a writer fan-out, not a read-only one; merge each worktree's diff back one at a time before continuing. **No `--report` here either** — each files to `BACKLOG.md`. Every story a call just filed is folded into P2.0's pick and resolved in this same pass: fixed via `/workflow-implement`, or explicitly declined and removed with the reason noted. None of it waits for the next `/workflow-loop` run.
 
 **Same round cap and round-numbered brief as P2.3, per touched file, for the whole band.** A closeout fix-and-reloop pass counts toward that file's round total; hitting the cap here stops the same way — file, state the budget is spent, surface fix-now/risk-accept/defer to the user instead of resolving it in this pass.
 

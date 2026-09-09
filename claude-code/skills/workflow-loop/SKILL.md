@@ -138,7 +138,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ### P2.4 · Closeout
 
-**`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band, once, plus the perf suite.** Runs after every task is green, before P3 — never per-task, each as a `reviewer` fork.
+**`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band, once, plus the perf suite.** Runs after every task is green, before P3 — never per-task, each as a `reviewer` fork. **Dispatch the three `assess-*` calls together in one parallel block, `isolation: worktree`** — the same pattern P2.1 uses for a P1-confirmed parallel set. Each still files to `BACKLOG.md` on its own terms; **all three write that file**, so this is the writer case, not read-only fan-out — three simultaneous unisolated appends can silently overwrite each other's finding, not merely reorder them. Merge each worktree's `BACKLOG.md` diff back one at a time before continuing.
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story filed is folded into P2.0's pick and resolved in this pass — fixed via `/workflow-implement`, or declined and removed with the reason noted for P4's report.
 
@@ -186,6 +186,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **Backing out is a rewrite** — capture `git diff` before a risky write; `git-pr-create` owns the recovery command.
 - **The bridge is optional, never blocking** — an unreachable MCP server is a skipped step; never branch a phase on whether it is up.
 - **Never poll a delegated phase** — it re-invokes this session the moment it finishes.
+- **Timing is captured silently, session-stated, not a file** — the same "session-stated, not a file" pattern as P2.3's retry counter. Note each phase's (P0–P4) and each forked skill invocation's start and end wall-clock in this session's own turn text as it happens, accumulating an internal record this session can compute durations from. Never print elapsed time by default, and never fold it into any phase's own "Ends when" report — surface it only if the user explicitly asks (e.g. "how long did that take"); otherwise stay silent unless asked.
 - **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Filed`/`## Changed` block; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
 - **Standards verification happens inside the review or implement fork, never in this window** — a P2.3/P2.4 finding needing re-verifying is P2.1's job.
 - **After any context compaction, re-read the active `ways/` file before the next phase gate** — it loads via `Read`, not invocation, so compaction skips it.
