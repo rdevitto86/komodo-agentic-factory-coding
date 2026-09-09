@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import functools
 import json
 import os
 import re
@@ -412,6 +413,8 @@ def matches_guarded_family(token):
     return ext in EXTENSION_FAMILY or ext in GIT_GUARD_ONLY_EXTENSIONS
 
 
+# cached -- a multi-source cp/mv/redirect/tee scan calls this once per path, but the result is identical per cwd
+@functools.lru_cache(maxsize=None)
 def repo_root_of(cwd):
     if not cwd or not os.path.isdir(cwd):
         return None
@@ -553,10 +556,15 @@ class ScanDepthExceeded(Exception):
     pass
 
 
-# can't execute a captured command -- "echo ARGS" resolves to ARGS, anything else falls back to a matching arg
-def resolve_command_output(inner, depth=0):
+# shared bound check for every recursive scanner below -- one place to raise "too deep to analyze"
+def check_depth(depth):
     if depth > MAX_SCAN_DEPTH:
         raise ScanDepthExceeded()
+
+
+# can't execute a captured command -- "echo ARGS" resolves to ARGS, anything else falls back to a matching arg
+def resolve_command_output(inner, depth=0):
+    check_depth(depth)
     words = shell_words(inner, 0, len(inner))
     if not words:
         return ""
@@ -569,8 +577,7 @@ def resolve_command_output(inner, depth=0):
 
 # fully dequotes a word, mid-word split included, and resolves every $()/backtick piece it holds, nested or not
 def expand_word(word, depth=0):
-    if depth > MAX_SCAN_DEPTH:
-        raise ScanDepthExceeded()
+    check_depth(depth)
     out = []
     index = 0
     length = len(word)
@@ -987,10 +994,8 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
 
 
 def scan_command(command, findings, cwd, depth=0):
-    if depth > MAX_SCAN_DEPTH:
-        findings.append("command could not be safely analyzed")
-        return
     try:
+        check_depth(depth)
         _scan_command_at_depth(command, findings, cwd, depth)
     except ScanDepthExceeded:
         # word-expansion recursion (expand_word <-> resolve_command_output) hit the bound via a redirect/tee/cp/mv target word
