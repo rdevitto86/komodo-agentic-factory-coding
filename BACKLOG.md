@@ -187,7 +187,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 #### [TSK-01.4.12] Parallelize P2.4 closeout's three review calls — `assess-bugs`, `assess-security`, `assess-simplify` currently run serially against the same, unchanging whole-band diff with no dependency edge between them, and all three are read-only against the repo (only `BACKLOG.md` writes), so `isolation: worktree` doesn't even apply the way it does for a P2.1 writer fan-out; confirmed by this session's harness audit as the single clearest actionable slowdown in the loop, directly matching the user's complaint that closeout review is the phase that feels slowest [P: H] [TODO]
 * **SUB-01.4.12.1** update `ways/sdlc.md`'s P2.4 section and `workflow-loop/SKILL.md`'s P2.4 section to dispatch `assess-bugs`, `assess-security`, `assess-simplify` as three parallel forks (no `isolation: worktree` needed — read-only fan-out) instead of a serial list, same pattern already proven for P2.1's `workflow-decompose`-confirmed parallel task sets
-  * **Done when:** `grep -qi "parallel" claude-code/skills/workflow-loop/ways/sdlc.md` AND the P2.4 section of `claude-code/skills/workflow-loop/SKILL.md` no longer lists the three calls as a plain sequential sentence
+  * **Done when:** `grep -qi "parallel" claude-code/skills/workflow-loop/ways/sdlc.md && grep -qi "parallel" claude-code/skills/workflow-loop/SKILL.md`
 
 ---
 
