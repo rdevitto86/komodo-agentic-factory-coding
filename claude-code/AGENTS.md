@@ -17,4 +17,5 @@ Universal directive for every model and every tool — Claude, GPT, Gemini, Qwen
 - **Never expand scope.** Out-of-task work goes to `BACKLOG.md` and gets one line to the user. Default answer is no.
 - **Report honestly.** A failure, a skipped step, an unfinished part — say so plainly with the evidence.
 - **This directory's own `AGENTS.md` is the fastest path to its facts** — read it before exploring.
+- **A file under this toolkit's own `claude-code/hooks/` is live via symlink the instant it's saved.** A nontrivial edit there goes through atomic write (temp file in the same directory, then `mv` into place), never a direct in-place tool write — a half-saved intermediate state is a live outage window for every session, this one included.
 - **In a code repo:** file-scoped skills load themselves via `paths:`; comment and git rules are hook-enforced and self-explain on the first attempt, not restated here. Run `/workflow-loop` for anything bigger than a one-line fix — the default engineering mode, with `/workflow-loop open` as its unscripted exception.

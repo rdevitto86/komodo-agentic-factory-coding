@@ -46,9 +46,17 @@ An open content allowlist would be another slot, and would not work — the agen
 
 ## Skill contract: disable-model-invocation and user-invocable
 
-Typed-only workflow skills: `/assess-readiness`, `/assess-change-risk`, `/assess-code-quality`, `/assess-testing`, `/backlog-prioritize`, `/repo-assess`. These stay `disable-model-invocation: true` — a human decision to normalize a backlog or run an assessment should start from the user, not the model's own judgement. `backlog-audit` is a deliberate non-member of this set — it's invoked programmatically by `workflow-loop`'s own P2.4 once per band, the same loop-internal-machinery reason `workflow-decompose`/`workflow-implement`/`workflow-consolidate`/`workflow-complete` carry neither key despite also being judgement-shaped work; giving it `disable-model-invocation: true` would sever that call. `readme-audit` carries neither key — it dropped `disable-model-invocation: true` on purpose so a bare request ("audit the README") can reach it without the user typing the command.
+Typed-only workflow skills: `/assess-change-risk`, `/backlog-prioritize`, `/repo-assess`. These stay `disable-model-invocation: true` — a human decision to normalize a backlog or run an assessment should start from the user, not the model's own judgement. `backlog-audit` is a deliberate non-member of this set — it's invoked programmatically by `workflow-loop`'s own P2.4 once per band, the same loop-internal-machinery reason `workflow-decompose`/`workflow-implement`/`workflow-consolidate`/`workflow-complete` carry neither key despite also being judgement-shaped work; giving it `disable-model-invocation: true` would sever that call. `readme-audit` carries neither key — it dropped `disable-model-invocation: true` on purpose so a bare request ("audit the README") can reach it without the user typing the command.
 
 `disable-model-invocation` is the only thing that controls cross-skill reachability — it says nothing about listing cost.
+
+### repo-assess's sub-skills dropped disable-model-invocation
+
+`/repo-assess` invokes nine `assess-*` skills in its own Process, three of which — `/assess-readiness`, `/assess-code-quality`, `/assess-testing` — originally carried `disable-model-invocation: true` as typed-only human-decision gates. That made them unreachable via the Skill tool from inside `repo-assess`'s own fork, so 3 of the 9 category scores could never be computed and the composite (the unweighted average of all nine) was permanently broken.
+
+Two ways to close that: drop the key from the three sub-skills (composite works, but each becomes reachable standalone by plain-language request too, same as `/assess-bugs`/`/assess-security`/`/assess-simplify`), or rewrite `repo-assess` to score only the six reachable dimensions and tell the user to run the other three by hand (composite never covers all nine, but the human-decision gate survives on each sub-skill individually).
+
+**Decision: drop `disable-model-invocation: true` from `assess-readiness`, `assess-code-quality`, and `assess-testing`.** The composite metric is the whole point of `repo-assess` existing as a single command — a permanently-partial composite defeats it. The human-decision gate is preserved on `/repo-assess` itself, which is the skill a user actually types to trigger a full-repo sweep; reaching one of its three sub-skills directly (by name or by the model's own judgement) costs nothing more than reaching `/assess-bugs` already does today. All three keep `skillOverrides: name-only` so the change is invisible in the always-on listing cost.
 
 ## Skill naming buckets
 

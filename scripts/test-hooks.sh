@@ -38,6 +38,24 @@ JOB_IDX=0
 MAX_PARALLEL="${TEST_HOOKS_PARALLEL:-8}"
 HOOK=""
 
+# git_guard.py's current_branch() and repo_root_of() shell out and derive
+# repo state from the hook's own cwd. Every case below must run against a
+# pinned fixture repo, never the suite's own invocation cwd (TG-01.1's
+# unlabeled [M] bullet: a plain bash_case/smoke_case sent no cwd, so a
+# checkout without .git — a tarball, a stripped CI workspace — silently
+# flips deny-then-fail cases to allow instead of failing loudly).
+FIXTURE_MAIN="$WORKDIR/fixture-main"
+FIXTURE_FEAT="$WORKDIR/fixture-feat"
+git init -q -b main "$FIXTURE_MAIN"
+(cd "$FIXTURE_MAIN" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+# is_guarded_path() walks up from the target's parent directory to find the
+# repo root -- a nonexistent parent (git -C fails on it) reads as "not a
+# repo" and silently allows. Pre-create the one nested path a case below
+# targets so that walk lands inside the fixture repo, not on a missing dir.
+mkdir -p "$FIXTURE_MAIN/claude-code"
+git init -q -b main "$FIXTURE_FEAT"
+(cd "$FIXTURE_FEAT" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init && git checkout -q -b feat/test-branch)
+
 # TSK-01.1.14: a handful of cases fail on the Windows Git Bash CI runner in
 # a way that hasn't reproduced anywhere we can actually attach a debugger -
 # not on macOS/Linux, not in a plain PowerShell session. Skipped there, not
@@ -144,7 +162,11 @@ json_escape() {
 bash_case() {
   local label="$1" want="$2" command="$3" must_contain="${4:-}"
   local escaped; escaped="$(json_escape "$command")"
-  expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  local escaped_cwd; escaped_cwd="$(json_escape "$FIXTURE_MAIN")"
+  # cwd is pinned top-level (git_guard.py reads payload["cwd"], not
+  # tool_input.cwd) so is_guarded_path/repo_root_of/current_branch never
+  # fall back to os.getcwd() of whatever process runs this suite.
+  expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"cwd\":\"$escaped_cwd\",\"tool_input\":{\"command\":\"$escaped\"}}"
 }
 
 # like bash_case, but stamps agent_type on the payload -- the reviewer-write restriction only fires for that agent
@@ -182,7 +204,8 @@ printf '\nsmoke test\n\n'
 smoke_case() {
   local label="$1" want="$2" command="$3"
   local escaped; escaped="$(json_escape "$command")"
-  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  local escaped_cwd; escaped_cwd="$(json_escape "$FIXTURE_MAIN")"
+  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"cwd\":\"$escaped_cwd\",\"tool_input\":{\"command\":\"$escaped\"}}"
   local out got reason decoded
   out="$(printf '%s' "$payload" | python3 "$HOOKS/git_guard.py")"
   decoded="$(decision_reason_of "$out")"
@@ -202,16 +225,6 @@ smoke_case "S4  git push to a protected ref is denied"    deny  'git push origin
 smoke_case "S5  tee into a guarded path is denied"        deny  'tee BACKLOG.md'
 smoke_case "S6  sed --in-place rewriting a file in place is denied" deny  "sed --in-place -e s/a/b/ file"
 smoke_case "S7  a redirect into a guarded path is denied" deny  'echo bad > BACKLOG.md'
-
-# git_guard.py's current_branch() shells out to `git rev-parse` in the
-# hook's own cwd, so any case whose outcome depends on the branch needs
-# a real fixture repo on a known branch, not this checkout's real one.
-FIXTURE_MAIN="$WORKDIR/fixture-main"
-FIXTURE_FEAT="$WORKDIR/fixture-feat"
-git init -q -b main "$FIXTURE_MAIN"
-(cd "$FIXTURE_MAIN" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
-git init -q -b main "$FIXTURE_FEAT"
-(cd "$FIXTURE_FEAT" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init && git checkout -q -b feat/test-branch)
 
 bash_case_at() {
   local dir="$1" label="$2" want="$3" command="$4" must_contain="${5:-}"

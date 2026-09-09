@@ -30,6 +30,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$REPO_ROOT/claude-code"
 TARGET="${AGENT_HOME:-$HOME/.claude}"
 BUDGET=2000
+# shared between the reachability check and the budget pass below so the
+# accepted spellings of the key can't drift between the two independently
+DMI_REGEX='^disable-model-invocation:\s*(true|yes|on|1)'
 
 problems=0
 
@@ -182,6 +185,58 @@ sys.exit(1 if failures else 0)
 PY
 [ $? -eq 0 ] || problems=$((problems + 1))
 
+printf '\n  cross-skill reachability\n'
+python3 - "$SOURCE" "$REPO_ROOT" "$DMI_REGEX" <<'PY'
+import os, re, sys
+
+source, repo_root, dmi_regex = sys.argv[1], sys.argv[2], sys.argv[3]
+DMI = re.compile(dmi_regex, re.M | re.I)
+skills_dir = os.path.join(source, "skills")
+# A qualifying section is one containing an invoke/dispatch verb anywhere in
+# it (a heading-delimited block, so a numbered step and the table beneath it
+# share a section even when the verb sits a few lines above the reference).
+INVOKE_VERB = re.compile(r"\b(?:invoke|invoking|invokes|dispatch|dispatches|dispatching)\b", re.I)
+NAME = re.compile(r"[`/]([a-z][a-z0-9-]{2,})")
+# A line describing why a skill is *not* invoked here (excluded, left to the
+# user, invoked "on its own") is documentation, not an invocation instruction.
+EXCLUDE_LINE = re.compile(r"\bexcludes?\b|on (?:their|its) own|the user invokes", re.I)
+
+unreachable = set()
+bodies = {}
+if os.path.isdir(skills_dir):
+    for entry in sorted(os.listdir(skills_dir)):
+        skill = os.path.join(skills_dir, entry, "SKILL.md")
+        if not os.path.exists(skill):
+            continue
+        body = open(skill, encoding="utf-8").read()
+        bodies[entry] = body
+        head = body.split("---")[1] if body.startswith("---") else ""
+        if DMI.search(head):
+            unreachable.add(entry)
+
+failures = 0
+for entry, body in bodies.items():
+    sections = re.split(r"\n(?=#{1,6} )", body)
+    for section in sections:
+        if not INVOKE_VERB.search(section):
+            continue
+        for line in section.splitlines():
+            if EXCLUDE_LINE.search(line):
+                continue
+            for match in NAME.finditer(line):
+                target = match.group(1)
+                if target == entry or target not in unreachable:
+                    continue
+                print("    BROKEN    %s invokes `%s`, which carries disable-model-invocation: true "
+                      "and cannot be reached via the Skill tool" % (entry, target))
+                failures += 1
+
+if failures == 0:
+    print("    ok        no skill body invokes a sibling it cannot reach")
+sys.exit(1 if failures else 0)
+PY
+[ $? -eq 0 ] || problems=$((problems + 1))
+
 printf '\n  standards section order\n'
 python3 - "$SOURCE" <<'PY'
 import os, re, sys
@@ -263,10 +318,11 @@ else
 fi
 
 printf '\n  base context budget\n'
-python3 - "$SOURCE" "$REPO_ROOT" "$BUDGET" <<'PY'
+python3 - "$SOURCE" "$REPO_ROOT" "$BUDGET" "$DMI_REGEX" <<'PY'
 import os, re, sys
 
-source, repo_root, budget = sys.argv[1], sys.argv[2], int(sys.argv[3])
+source, repo_root, budget, dmi_regex = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+DMI = re.compile(dmi_regex, re.M | re.I)
 CAP = 5000
 
 
@@ -295,6 +351,8 @@ listing = 0
 skills_dir = os.path.join(source, "skills")
 skill_count = 0
 cap_failures = []
+paths_gated_count = 0
+paths_gated_tokens = 0
 if os.path.isdir(skills_dir):
     for entry in sorted(os.listdir(skills_dir)):
         skill = os.path.join(skills_dir, entry, "SKILL.md")
@@ -305,17 +363,32 @@ if os.path.isdir(skills_dir):
         if cap_count > CAP:
             cap_failures.append((entry, cap_count))
         head = body.split("---")[1] if body.startswith("---") else ""
-        if re.search(r"^disable-model-invocation:\s*(true|yes|on|1)", head, re.M | re.I):
+        if DMI.search(head):
             continue
         state = overrides.get(entry, "on")
         if state in ("off", "user-invocable-only"):
             continue
         described = re.search(r"^description:\s*(.+)$", head, re.M)
         text = entry if state == "name-only" else entry + (described.group(1) if described else "")
+        # a skill with paths: only enters the general listing once a matching
+        # file is touched; skillOverrides then decides its steady-state cost.
+        # Collapsed to name-only, it still costs its 1-4 token name always —
+        # count that. Left at full cost ("on"/unset), it is not shown at all
+        # until a path matches, so it is not part of the true always-on total —
+        # exclude it and report it separately instead of folding it in.
+        if re.search(r"^paths:", head, re.M):
+            paths_gated_count += 1
+            paths_gated_tokens += tokens(text)
+            if state == "name-only":
+                listing += tokens(entry)
+                skill_count += 1
+            continue
         listing += tokens(text)
         skill_count += 1
 
 print("    %-24s %5d tokens (%d listed to the model)" % ("skill listing", listing, skill_count))
+print("    %-24s %5d tokens (%d skills, gated by touched file, excluded from budget)" %
+      ("paths:-gated skills", paths_gated_tokens, paths_gated_count))
 total = always_on + listing
 print("    %-24s %5d tokens" % ("TOTAL (always-on)", total))
 print()

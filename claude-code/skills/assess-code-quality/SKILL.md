@@ -2,22 +2,21 @@
 name: assess-code-quality
 description: Score the current diff's conformance to Komodo conventions (Low → Critical) — structure, naming, SDK reuse, and performance — with a cited rationale table, filed as a BACKLOG.md story at Med-High or above. Pass --report to skip the write.
 argument-hint: [--report]
-disable-model-invocation: true
 ---
 
 # Komodo conventions assessment
 
 **Once per task, before `/workflow-complete` or a push — never per-edit.** Scores how well the diff conforms to Komodo's documented conventions — structure, naming, SDK reuse, and performance — not whether it works. Read the diff before scoring; every claim comes from what actually changed.
 
-**The catch-all, not a fixer.** `/assess-simplify` finds reuse/simplification/efficiency issues; this scores what's left if nobody gets to them. `/assess-change-risk` is the other single-dimension score the user invokes on their own; this one folds `/assess-performance` and `/assess-code-conventions` in as standing inputs instead of leaving either to be invoked separately.
+**The catch-all, not a fixer.** `/assess-simplify` finds reuse/simplification/efficiency issues; this scores what's left if nobody gets to them. `/assess-change-risk` and `/assess-code-conventions` are the other single-dimension scores the user invokes on their own (`assess-code-conventions` carries `disable-model-invocation: true`, so this skill cannot invoke it itself); this one folds `/assess-performance` in as a standing input, and folds in `/assess-code-conventions`'s findings only when the user has already supplied a `--report` run of it.
 
 ## Process
 
 1. Read the diff.
 2. Invoke `/assess-performance --report` and note its tier — `--report` because this skill's own `Findings → backlog` step already covers the diff; a bare call would file the same diff twice.
-3. Invoke `/assess-code-conventions --report` and fold its findings in — `--report` for the same reason; this skill never re-derives judgment-call style findings on its own.
+3. If the user has already supplied output from `/assess-code-conventions --report` (the user invokes it on its own; this skill never re-derives judgment-call style findings itself), fold those findings in.
 4. Score structure, naming, and SDK-reuse conformance against `AGENTS.md` and the touched files' `standards-<lang>` skill.
-5. Report the **higher** of the performance tier, any `/assess-code-conventions` finding's severity, and the structure/convention tier — cite all that apply if they differ.
+5. Report the **higher** of the performance tier, any style finding's severity (from step 3, invoked on its own by the user), and the structure/convention tier — cite all that apply if they differ.
 
 ## The scale
 

@@ -33,13 +33,7 @@ def resolve(path, base):
 
 
 def is_symlinked(path, base):
-    # a leaf-only islink check misses an ancestor directory swapped for a
-    # symlink (e.g. docs -> /tmp) -- os.path.realpath dereferences that
-    # ancestor on both sides of the resolve() comparison below, so this
-    # walks every segment from the leaf up to (and including) `base`,
-    # stopping there rather than climbing to the filesystem root: `base`
-    # is the trust boundary, and above it lie OS-level symlinks (e.g.
-    # macOS's /var -> /private/var) that would otherwise false-positive
+    # walks every segment up to `base` since realpath dereferences ancestors too, stopping short of an OS symlink above it
     absolute = path if os.path.isabs(path) else os.path.join(base, path)
     boundary = os.path.normpath(base)
     current = os.path.normpath(absolute)
@@ -61,10 +55,7 @@ def is_allowed_path(file_path, cwd):
     if root is None:
         return True
     root = os.path.realpath(root)
-    # a symlinked BACKLOG.md, a symlinked edit target, or an ancestor
-    # directory (e.g. docs) swapped for a symlink all collapse both
-    # sides of the realpath comparison below onto the same inode, which
-    # would wrongly let the edit through -- checked, and denied, first
+    # a symlinked target, BACKLOG.md, or ancestor dir collapses both realpath sides onto one inode -- checked first
     if is_symlinked(file_path, base) or any(is_symlinked(name, root) for name in ALLOWED_RELATIVE_PATHS):
         return False
     target = resolve(file_path, base)

@@ -436,9 +436,8 @@ def repo_root_of(cwd):
 # repo root walks up from the resolved target, not cwd -- an absolute target can land in a repo even if cwd doesn't
 def is_guarded_path(token, cwd, agent_type=None):
     cleaned = token.strip("\"'")
-    # reviewer Bash writes narrow to BACKLOG.md alone, matching its Edit/Write boundary -- any extension is in scope
+    # reviewer Bash narrows to BACKLOG.md like Edit/Write, but stays guarded (not fail-open) on an unresolvable root
     if agent_type == REVIEWER_AGENT:
-        # unlike reviewer_guard's own fail-open, an unresolvable root here stays guarded, matching git_guard's Bash defensiveness
         if lib_repo_root(cwd or os.getcwd()) is None:
             return True
         return not reviewer_allowed_path(cleaned, cwd)

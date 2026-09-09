@@ -2,7 +2,6 @@
 name: assess-readiness
 description: Full-repo readiness assessment against a mission brief. Severity-ranked, evidence-backed findings and a single verdict, filed as BACKLOG.md stories. Pass --report to skip the write.
 argument-hint: <mission brief — purpose, target state, decision to render> [--report]
-disable-model-invocation: true
 ---
 
 # Readiness assessment

@@ -2,8 +2,12 @@
 #
 # setup.sh - install this repo into ~/.claude.
 #
-# Run:     bash setup.sh              link, then test and verify
-#          bash setup.sh --dry-run    print every action, change nothing
+# Run:     bash setup.sh                link, then test and verify
+#          bash setup.sh --dry-run      print every action, change nothing
+#          bash setup.sh --skip-verify  link only, skip step 4 (a caller
+#                                       about to run its own `make verify`
+#                                       right after, e.g. CI, skips the
+#                                       redundant double run)
 #
 # What it does, in order:
 #   1. prune    removes symlinks left by the old layout (STALE_LINKS)
@@ -11,7 +15,7 @@
 #   3. overlay  copies settings.local.json.tmpl -> settings.local.json
 #               and CLAUDE.local.md.tmpl -> CLAUDE.local.md, each once,
 #               only if the personal overlay does not exist yet
-#   4. verify   runs test-hooks.sh then validate.sh
+#   4. verify   runs test-hooks.sh then validate.sh (skippable, see above)
 #
 # Everything else is a symlink, not a copy. ~/.claude/<name> is a
 # symlink back into this repo, so editing a file here takes effect in
@@ -33,9 +37,11 @@ TARGET="${AGENT_HOME:-$HOME/.claude}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 DRY_RUN=0
+SKIP_VERIFY=0
 
 usage() {
-  printf 'usage: setup.sh [--dry-run] [--target DIR]\n' >&2
+  printf 'usage: setup.sh [--dry-run] [--skip-verify] [--target DIR]\n' >&2
+  printf '  --skip-verify  link and overlay only, skip the trailing test/validate run\n' >&2
   printf '  --target DIR   install into DIR instead of %s\n' "$TARGET" >&2
   printf '  AGENT_HOME=DIR does the same as an environment variable\n' >&2
 }
@@ -43,6 +49,7 @@ usage() {
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --skip-verify) SKIP_VERIFY=1; shift ;;
     --target) [ "$#" -ge 2 ] || { usage; exit 2; }; TARGET="$2"; shift 2 ;;
     --target=*) TARGET="${1#--target=}"; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -139,9 +146,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-say ""
-bash "$REPO_ROOT/scripts/test-hooks.sh"
-bash "$REPO_ROOT/scripts/validate.sh"
+if [ "$SKIP_VERIFY" -eq 0 ]; then
+  say ""
+  bash "$REPO_ROOT/scripts/test-hooks.sh"
+  bash "$REPO_ROOT/scripts/validate.sh"
+fi
 
 VERSION="$(cd "$REPO_ROOT" && git describe --tags --abbrev=0 2>/dev/null)" \
   || VERSION="$(cd "$REPO_ROOT" && git rev-parse --short HEAD 2>/dev/null)" \
