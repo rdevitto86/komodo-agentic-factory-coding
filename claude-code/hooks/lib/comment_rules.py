@@ -72,6 +72,7 @@ DOC_DECL_PATTERN = re.compile(
     r"^(?:func(?:\s*\([^)]*\))?\s+(\w+)|type\s+(\w+)|const\s+(\w+)|var\s+(\w+)|package\s+(\w+))"
 )
 DOC_LANGUAGE_EXTENSIONS = (".go",)
+BANNER_LANGUAGE_EXTENSIONS = (".go",)
 FIELD_NAME_PATTERN = re.compile(r"^\s*(\w+)\s")
 
 
@@ -373,11 +374,27 @@ def find_mandatory_sites(text, family, ext):
     return sites
 
 
+# setup.sh's header (26 comment lines after its shebang) is the repo's longest; 30 leaves margin.
+HEADER_MAX_LINES = 30
+
+
+def header_block_end(lines, line_marker):
+    """Index (exclusive) of a file's leading shebang+comment header, before the first code statement or the HEADER_MAX_LINES cap, whichever comes first."""
+    if not line_marker:
+        return 0
+    index = 1 if lines and lines[0].startswith("#!") else 0
+    limit = min(len(lines), index + HEADER_MAX_LINES)
+    while index < limit and lines[index].strip().startswith(line_marker):
+        index += 1
+    return index
+
+
 def find_invalid_comments(text, family, path, only_lines=None):
     ext = os.path.splitext(os.path.basename(path))[1].lower()
     basename = os.path.basename(path)
     line_marker = FAMILY_SYNTAX[family][0]
     lines = text.splitlines()
+    header_end = header_block_end(lines, line_marker)
     findings = []
     seen_comment_lines = []
 
@@ -385,6 +402,7 @@ def find_invalid_comments(text, family, path, only_lines=None):
         lineno = index + 1
         if only_lines is not None and lineno not in only_lines:
             continue
+        in_header = index < header_end
 
         start = find_comment_start(line, family) if line_marker else None
         stripped = line.strip()
@@ -401,9 +419,10 @@ def find_invalid_comments(text, family, path, only_lines=None):
 
         cap = FIELD_MAX_CHARS if not is_leading else NARRATIVE_MAX_CHARS
         if TEMPLATE_PATTERNS["STEP"].match(body):
-            findings.append((lineno, body, "STEP_MARKER", "a numbered step marker is not an allowed comment shape"))
+            if not in_header:
+                findings.append((lineno, body, "STEP_MARKER", "a numbered step marker is not an allowed comment shape"))
             continue
-        if BANNER_SHAPE.match(body) and not basename.endswith("_test.go"):
+        if BANNER_SHAPE.match(body) and not basename.endswith("_test.go") and ext in BANNER_LANGUAGE_EXTENSIONS:
             findings.append((lineno, body, "BANNER_OUTSIDE_TEST", "a banner label only belongs in a _test.go file"))
             continue
         if len(body) > cap:
@@ -415,9 +434,10 @@ def find_invalid_comments(text, family, path, only_lines=None):
                 break
         else:
             if is_leading:
-                near = next((ln for ln in seen_comment_lines if abs(ln - lineno) <= ADJACENT_WINDOW), None)
-                if near is not None:
-                    findings.append((lineno, body, "STACKED", f"a comment already lands within {ADJACENT_WINDOW} lines, at line {near}"))
+                if not in_header:
+                    near = next((ln for ln in seen_comment_lines if abs(ln - lineno) <= ADJACENT_WINDOW), None)
+                    if near is not None:
+                        findings.append((lineno, body, "STACKED", f"a comment already lands within {ADJACENT_WINDOW} lines, at line {near}"))
                 seen_comment_lines.append(lineno)
 
     echoes = check_echoes(lines, family)

@@ -16,6 +16,7 @@ linters:
     - wrapcheck
     - errorlint
     - contextcheck
+    - lll
 
   settings:
     cyclop:
@@ -23,6 +24,9 @@ linters:
 
     gocognit:
       min-complexity: 20
+
+    lll:
+      line-length: 120
 
     gosec:
       excludes:
@@ -57,6 +61,7 @@ linters:
           - errcheck
           - cyclop
           - gocognit
+          - lll
 
       - path: "main\\.go"
         linters:

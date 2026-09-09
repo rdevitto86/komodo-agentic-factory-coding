@@ -185,6 +185,15 @@
             "command": "python3 ~/.claude/hooks/git_guard.py"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/reviewer_guard.py"
+          }
+        ]
       }
     ],
     "PostToolUse": [

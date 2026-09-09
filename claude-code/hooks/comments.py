@@ -33,9 +33,6 @@ from lib.comment_rules import (
 KNOWN_TEMPLATE_TYPES = ("BANNER", "WHY", "HACK", "NOTE", "FIXME", "TODO", "STEP", "DOC", "FIELD")
 
 
-KNOWN_TEMPLATE_TYPES = ("BANNER", "WHY", "HACK", "NOTE", "FIXME", "TODO", "STEP", "DOC", "FIELD")
-
-
 def validate_comment_shape(text, template_type, family, is_indented, decl_line=None):
     line_marker = FAMILY_SYNTAX[family][0]
     if not line_marker:
@@ -262,6 +259,19 @@ def process_proposals(proposals, repo_root):
     return [s for s in spliced if s is not None], [d for d in dropped if d is not None]
 
 
+def untracked_files(repo_root):
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_root, capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if result.returncode != 0:
+        return []
+    return [line for line in result.stdout.splitlines() if line]
+
+
 def changed_line_map(base, repo_root):
     try:
         result = subprocess.run(
@@ -289,6 +299,16 @@ def changed_line_map(base, repo_root):
         elif line.startswith("+") and not line.startswith("+++") and path is not None:
             changed[path].add(lineno)
             lineno += 1
+
+    # a new file has no diff hunks until staged, so fold it in as wholly changed instead of switching to --all
+    for path in untracked_files(repo_root):
+        full_path = os.path.join(repo_root, path)
+        try:
+            with open(full_path, "r", encoding="utf-8", errors="ignore") as handle:
+                total_lines = len(handle.readlines())
+        except OSError:
+            continue
+        changed[path] = set(range(1, total_lines + 1))
     return changed
 
 

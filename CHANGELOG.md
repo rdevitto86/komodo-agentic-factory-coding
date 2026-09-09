@@ -17,6 +17,23 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - `repo-assess` can now compute a real 9-category composite score: `assess-readiness`, `assess-code-quality`, and `assess-testing` dropped `disable-model-invocation: true` (the human-decision gate stays on `repo-assess` itself), per the resolution recorded in `docs/design-decisions.md`.
 - `scripts/test-hooks.sh`'s `bash_case`/`smoke_case` helpers now pin `cwd` to a fixed fixture repo instead of sending none, so their deny assertions no longer depend on `git_guard.py` falling back to the suite's own invocation cwd.
 
+## [0.43.0] — 2026-09-09
+
+### Added
+- Five `standards-*` skills (`standards-go`, `standards-typescript`, `standards-python`, `standards-java`, the parked `standards-c.off`) gained a shared Dependency Inversion Principle statement and wrapping/magic-literal/guard-clause conventions, each phrased to the language's own idiom.
+- `standards-go` gained a const/var zero-cost distinction, a sentinel-identity-comparison rule, a hard 120-col `lll` lint gate (`templates/go/.golangci.yaml`) with a documented 90-col soft wrap threshold, magic-number rule extensions for string literals/cross-package placement/const-block grouping, a repo-wide-sweep `-count=1` verification methodology, a full-inlining default for single-call-site helpers, and a testable-logging `Logger` interface pattern.
+- New `assess-code-conventions` skill: a standalone, user-invoked style/formatting finder scoped to judgment calls no linter/formatter can mechanically decide; wired into `assess-code-quality` as a standing input.
+- New `reviewer_guard.py` hook makes the `reviewer` agent's "edit only `BACKLOG.md`" boundary mechanical instead of prose-only, for both `Edit`/`Write` and (via a `git_guard.py` extension) `Bash` writes; hardened against leaf- and ancestor-directory symlink bypasses and a fail-open gap on an unresolvable repo root.
+- `.github/workflows/verify.yml`: this repo's own `make verify` now runs in CI on pull requests and pushes to `main`, least-privilege `contents: read`.
+- `setup.sh` now verifies `python3` resolves and meets the hook layer's floor (3.7) before linking anything.
+
+### Fixed
+- `comments.py` no longer defines `KNOWN_TEMPLATE_TYPES` twice; its default (changed-lines) check now folds in untracked-but-not-ignored files as wholly-changed, so a brand-new file is linted without needing `--all`.
+- `comments.py check --all` no longer flags a file's leading shebang/header comment block for `STEP_MARKER`/`STACKED` (capped at 30 lines so unbounded narrative padding disguised as a header is still caught), and `BANNER_OUTSIDE_TEST` is now scoped to `.go` files only.
+
+### Changed
+- Recorded a naming decision: the `workflow-*` skill prefix stays as-is rather than renaming to `harness-*`, since this toolkit is agent configuration riding on top of whichever harness runs it, not a harness in its own right (`docs/design-decisions.md`).
+
 ## [0.42.0] — 2026-09-09
 
 ### Added

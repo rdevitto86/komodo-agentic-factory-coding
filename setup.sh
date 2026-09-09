@@ -66,6 +66,24 @@ run() {
 
 [ -d "$SOURCE" ] || { say "missing $SOURCE"; exit 1; }
 
+# Floor: 3.7, set by subprocess.run(capture_output=...) in claude-code/hooks/*.py (added in 3.7).
+PYTHON_FLOOR="3.7"
+
+say ""
+say "checking python3"
+if ! command -v python3 >/dev/null 2>&1; then
+  say "  python3 not found on PATH (every hook in claude-code/hooks/ and"
+  say "  scripts/hooks/git/ shells out to it; floor: $PYTHON_FLOOR)"
+  exit 1
+fi
+
+PYTHON_VERSION="$(python3 -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')" \
+  || { say "  could not determine python3 version"; exit 1; }
+say "  found python3 $PYTHON_VERSION (floor: $PYTHON_FLOOR)"
+
+python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)" \
+  || { say "  python3 $PYTHON_VERSION is below the required floor $PYTHON_FLOOR"; exit 1; }
+
 say ""
 say "installing agent config"
 say "  from  $SOURCE"

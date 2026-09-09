@@ -169,6 +169,36 @@ bash_case() {
   expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"cwd\":\"$escaped_cwd\",\"tool_input\":{\"command\":\"$escaped\"}}"
 }
 
+# like bash_case, but stamps agent_type on the payload -- the reviewer-write restriction only fires for that agent
+bash_case_agent() {
+  local label="$1" want="$2" agent="$3" command="$4" must_contain="${5:-}"
+  local escaped; escaped="$(json_escape "$command")"
+  expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"agent_type\":\"$agent\",\"tool_input\":{\"command\":\"$escaped\"}}"
+}
+
+# like bash_case_agent, but runs the hook from a given cwd -- exercises the repo_root()-is-None path
+bash_case_agent_at() {
+  local dir="$1" label="$2" want="$3" agent="$4" command="$5" must_contain="${6:-}"
+  local escaped; escaped="$(json_escape "$command")"
+  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"$agent\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out got reason problem="" decoded
+    out="$(cd "$dir" && printf '%s' "$payload" | python3 "$HOOK" 2>/dev/null)"
+    decoded="$(decision_reason_of "$out")"
+    got="${decoded%%$'\x1e'*}"
+    reason="${decoded#*$'\x1e'}"
+
+    [ "$got" != "$want" ] && problem="decision=$got want=$want"
+    if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
+      problem="reason missing: $must_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$reason"
+  ) &
+}
+
 # ────────────────────────────────  smoke test  ──────────────────────────────
 printf '\nsmoke test\n\n'
 smoke_case() {
@@ -367,6 +397,73 @@ func Run() {
 	_ = s
 }
 GO
+
+# a .sql fixture here, not .sh -- its "--" comments never register as a bash "#" comment when this file lints itself
+check_case "K21 a file-header numbered list is exempt from STEP_MARKER" script.sql "0 finding" "STEP_MARKER" <<'SQL'
+-- script.sql - does the thing.
+--
+-- Steps, in order:
+--   1. parse the input
+--   2. run the thing
+SELECT 1;
+SQL
+
+check_case "K22 a file-header comment run is exempt from STACKED" script.sql "0 finding" "STACKED" <<'SQL'
+-- script.sql - does the thing.
+--
+-- More explanation spread across several adjacent comment lines.
+SELECT 1;
+SQL
+
+check_case "K23 a step marker outside the file header is still INVALID" script.sql "STEP_MARKER" <<'SQL'
+SELECT 1;
+
+-- 1. parse the input
+SELECT 2;
+SQL
+
+check_case "K24 a banner outside a _test.go file is exempt for non-Go files" script.sql "0 finding" "BANNER_OUTSIDE_TEST" <<'SQL'
+SELECT 1;
+
+-- --- Setup ---
+SELECT 2;
+SQL
+
+# HEADER_MAX_LINES (comment_rules.py) caps the exempt run; a line past it loses the header exemption.
+check_case "K25 a header run past HEADER_MAX_LINES loses its exemption" script.sql "STACKED" <<'SQL'
+-- line 01 of padding narrative disguised as a file header
+-- line 02 of padding narrative disguised as a file header
+-- line 03 of padding narrative disguised as a file header
+-- line 04 of padding narrative disguised as a file header
+-- line 05 of padding narrative disguised as a file header
+-- line 06 of padding narrative disguised as a file header
+-- line 07 of padding narrative disguised as a file header
+-- line 08 of padding narrative disguised as a file header
+-- line 09 of padding narrative disguised as a file header
+-- line 10 of padding narrative disguised as a file header
+-- line 11 of padding narrative disguised as a file header
+-- line 12 of padding narrative disguised as a file header
+-- line 13 of padding narrative disguised as a file header
+-- line 14 of padding narrative disguised as a file header
+-- line 15 of padding narrative disguised as a file header
+-- line 16 of padding narrative disguised as a file header
+-- line 17 of padding narrative disguised as a file header
+-- line 18 of padding narrative disguised as a file header
+-- line 19 of padding narrative disguised as a file header
+-- line 20 of padding narrative disguised as a file header
+-- line 21 of padding narrative disguised as a file header
+-- line 22 of padding narrative disguised as a file header
+-- line 23 of padding narrative disguised as a file header
+-- line 24 of padding narrative disguised as a file header
+-- line 25 of padding narrative disguised as a file header
+-- line 26 of padding narrative disguised as a file header
+-- line 27 of padding narrative disguised as a file header
+-- line 28 of padding narrative disguised as a file header
+-- line 29 of padding narrative disguised as a file header
+-- line 30 of padding narrative disguised as a file header
+-- line 31, past the cap, adjacent to line 30, should trigger STACKED
+SELECT 1;
+SQL
 
 # ─────────────────────────────────  git guard  ─────────────────────────────
 HOOK="$HOOKS/git_guard.py"
@@ -656,6 +753,23 @@ off_case "G85 off: git add is blocked"               deny  'git add .'          
 off_case "G86 off: read-only git still works"        allow 'git log --oneline -5'
 off_case "G87 off: gh pr merge stays blocked"        deny  'gh pr merge 12'                "is denied"
 
+# reviewer Bash writes narrow to BACKLOG.md alone, matching its Edit/Write boundary -- any extension is in scope
+bash_case_agent "G144 reviewer tee to a non-BACKLOG.md file is denied" \
+  deny reviewer 'tee notes.txt' "bypasses the comment guard"
+bash_case_agent "G145 reviewer redirect to an extensionless file is denied" \
+  deny reviewer 'echo x > release-notes' "bypasses the comment guard"
+bash_case_agent "G146 reviewer tee to BACKLOG.md is allowed" \
+  allow reviewer 'tee BACKLOG.md'
+bash_case_agent "G147 reviewer redirect to BACKLOG.md is allowed" \
+  allow reviewer 'echo x > BACKLOG.md'
+bash_case "G148 a non-reviewer tee to a non-guarded extensionless file is unaffected (still allowed)" \
+  allow 'tee notes.txt'
+bash_case "G149 a non-reviewer tee to BACKLOG.md is unaffected (still denied)" \
+  deny 'tee BACKLOG.md' "bypasses the comment guard"
+# an unresolvable repo root (cwd outside any git repo) must not inherit reviewer_guard's own fail-open here
+bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied, not fail-open" \
+  deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
+
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
 printf '\nauto format\n\n'
@@ -725,6 +839,64 @@ JSON
 
 expect "F7  a malformed payload fails open, not closed" allow <<'JSON'
 {"tool_name":"Write","tool_input":
+JSON
+
+# ─────────────────────────────  reviewer guard  ────────────────────────────
+HOOK="$HOOKS/reviewer_guard.py"
+printf '\nreviewer guard\n\n'
+
+FIXTURE_REVIEWER="$WORKDIR/fixture-reviewer"
+mkdir -p "$FIXTURE_REVIEWER/docs"
+git init -q -b main "$FIXTURE_REVIEWER"
+printf '# Backlog\n' > "$FIXTURE_REVIEWER/BACKLOG.md"
+printf '# Backlog\n' > "$FIXTURE_REVIEWER/docs/BACKLOG.md"
+printf 'package main\n' > "$FIXTURE_REVIEWER/main.go"
+
+expect "R1  reviewer editing BACKLOG.md is allowed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/BACKLOG.md"}}
+JSON
+
+expect "R2  reviewer writing docs/BACKLOG.md is allowed" allow <<JSON
+{"tool_name":"Write","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/docs/BACKLOG.md"}}
+JSON
+
+expect "R3  reviewer editing any other file is denied" deny "edits only BACKLOG.md" <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
+expect "R4  reviewer writing any other file is denied" deny "edits only BACKLOG.md" <<JSON
+{"tool_name":"Write","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
+expect "R5  a non-reviewer agent editing any file is allowed, unaffected" allow <<JSON
+{"tool_name":"Edit","agent_type":"workflow-implementer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
+expect "R6  the main thread (no agent_type) editing any file is allowed" allow <<JSON
+{"tool_name":"Edit","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
+# a symlinked BACKLOG.md would collapse both realpath sides onto one inode and wrongly pass -- denied outright first
+FIXTURE_SYMLINK="$WORKDIR/fixture-reviewer-symlink"
+mkdir -p "$FIXTURE_SYMLINK"
+git init -q -b main "$FIXTURE_SYMLINK"
+printf 'top secret\n' > "$FIXTURE_SYMLINK/secret.txt"
+ln -s "$FIXTURE_SYMLINK/secret.txt" "$FIXTURE_SYMLINK/BACKLOG.md"
+
+expect "R7  reviewer editing a symlinked BACKLOG.md is denied" deny "edits only BACKLOG.md" <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_SYMLINK","tool_input":{"file_path":"$FIXTURE_SYMLINK/BACKLOG.md"}}
+JSON
+
+# docs/ itself (not the leaf) swapped for a symlink dereferences the same way -- denied too
+FIXTURE_ANCESTOR_SYMLINK="$WORKDIR/fixture-reviewer-ancestor-symlink"
+FIXTURE_ANCESTOR_TARGET="$WORKDIR/fixture-reviewer-ancestor-target"
+mkdir -p "$FIXTURE_ANCESTOR_SYMLINK" "$FIXTURE_ANCESTOR_TARGET"
+git init -q -b main "$FIXTURE_ANCESTOR_SYMLINK"
+printf 'top secret\n' > "$FIXTURE_ANCESTOR_TARGET/BACKLOG.md"
+ln -s "$FIXTURE_ANCESTOR_TARGET" "$FIXTURE_ANCESTOR_SYMLINK/docs"
+
+expect "R8  reviewer editing docs/BACKLOG.md is denied when docs/ itself is a symlink out of the repo" deny "edits only BACKLOG.md" <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_ANCESTOR_SYMLINK","tool_input":{"file_path":"$FIXTURE_ANCESTOR_SYMLINK/docs/BACKLOG.md"}}
 JSON
 
 VALIDATOR="$HOOKS/comments.py"
@@ -960,6 +1132,25 @@ e2e_pipeline_case() {
 }
 
 e2e_pipeline_case
+
+# a default check must fold in an untracked file since git diff alone never sees one
+untracked_check_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-untracked"
+    mkdir -p "$fixture"
+    git init -q -b main "$fixture"
+    (cd "$fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc Split(s string) (string, string, error) {\n\treturn "", "", nil\n}\n' > "$fixture/svc.go"
+    local out problem=""
+    out="$(python3 "$HOOKS/comments.py" --repo-root "$fixture" check "$fixture/svc.go" 2>&1)"
+    [[ "$out" != *"RET_ARITY_3"* ]] && problem="a new untracked file with a RET_ARITY_3 site was not reported by a default check: $out"
+    report "$outfile" "K17 a new untracked file with a RET_ARITY_3 site is reported by a default (changed-lines) check" "$problem" "$out"
+  ) &
+}
+untracked_check_case
 
 printf '\ncontext injector\n\n'
 

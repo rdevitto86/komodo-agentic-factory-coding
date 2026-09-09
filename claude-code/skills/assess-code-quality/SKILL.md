@@ -8,14 +8,15 @@ argument-hint: [--report]
 
 **Once per task, before `/workflow-complete` or a push — never per-edit.** Scores how well the diff conforms to Komodo's documented conventions — structure, naming, SDK reuse, and performance — not whether it works. Read the diff before scoring; every claim comes from what actually changed.
 
-**The catch-all, not a fixer.** `/assess-simplify` finds reuse/simplification/efficiency issues; this scores what's left if nobody gets to them. `/assess-change-risk` is the other single-dimension score the user invokes on their own; this one folds `/assess-performance` in as a standing input instead of leaving performance to be invoked separately.
+**The catch-all, not a fixer.** `/assess-simplify` finds reuse/simplification/efficiency issues; this scores what's left if nobody gets to them. `/assess-change-risk` and `/assess-code-conventions` are the other single-dimension scores the user invokes on their own (`assess-code-conventions` carries `disable-model-invocation: true`, so this skill cannot invoke it itself); this one folds `/assess-performance` in as a standing input, and folds in `/assess-code-conventions`'s findings only when the user has already supplied a `--report` run of it.
 
 ## Process
 
 1. Read the diff.
 2. Invoke `/assess-performance --report` and note its tier — `--report` because this skill's own `Findings → backlog` step already covers the diff; a bare call would file the same diff twice.
-3. Score structure, naming, and SDK-reuse conformance against `AGENTS.md` and the touched files' `standards-<lang>` skill.
-4. Report the **higher** of the performance tier and the structure/convention tier — cite both if they differ.
+3. If the user has already supplied output from `/assess-code-conventions --report` (the user invokes it on its own; this skill never re-derives judgment-call style findings itself), fold those findings in.
+4. Score structure, naming, and SDK-reuse conformance against `AGENTS.md` and the touched files' `standards-<lang>` skill.
+5. Report the **higher** of the performance tier, any style finding's severity (from step 3, invoked on its own by the user), and the structure/convention tier — cite all that apply if they differ.
 
 ## The scale
 
@@ -28,7 +29,9 @@ argument-hint: [--report]
 | High | A pattern that will be copied again by the next person to touch this area — the drift compounds |
 | Critical | Actively contradicts a documented convention (`AGENTS.md`, a `standards-<lang>` skill's stated pattern, or an SDK reuse-first rule) — the codebase now teaches the wrong lesson |
 
-Score the **highest tier reached by either the convention check or `/assess-performance`** — one Critical-tier file outweighs nine Low-tier ones.
+A `/assess-code-conventions` finding maps in at its own severity: Medium → Med, Low → Low-Med — its findings are contained style calls, never enough on their own to reach Med-High.
+
+Score the **highest tier reached by the convention check, `/assess-performance`, or `/assess-code-conventions`** — one Critical-tier file outweighs nine Low-tier ones.
 
 ## Output
 
@@ -37,9 +40,9 @@ Score the **highest tier reached by either the convention check or `/assess-perf
 
 | Where | Dimension | Driving factor |
 |---|---|---|
-| `file:line` | structure/naming/SDK reuse/performance | <what raises the tier> |
+| `file:line` | structure/naming/SDK reuse/performance/style | <what raises the tier> |
 
-**Next:** run /assess-simplify, or address what /assess-performance named — <one-line reason>
+**Next:** run /assess-simplify, or address what /assess-performance or /assess-code-conventions named — <one-line reason>
 ```
 
 - **`file:line` for every driving factor.** No pointer, no score.
