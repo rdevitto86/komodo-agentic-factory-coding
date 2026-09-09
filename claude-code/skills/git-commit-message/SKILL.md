@@ -47,7 +47,7 @@ added foundation for api
 refactor: bucket-prefixed skill rename
 
 - renamed skills to bucket prefixes across generate + assess + standards + rules + config + workflow
-- updated settings.json + repo-init + README + AGENTS.md to match
+- updated settings.json + git-repo-init + README + AGENTS.md to match
 - added assess-performance and wired it into assess-code-quality
 ```
 

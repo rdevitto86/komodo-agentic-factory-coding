@@ -1,5 +1,5 @@
 ---
-name: repo-init
+name: git-repo-init
 description: Create a new repo's full skeleton, or scaffold/refresh its CLAUDE.md/AGENTS.md and the three standard local documents.
 argument-hint: [repo-type: go-api|go-mcp|vue-ui|svelte-ui|cdk-infra] [target path, defaults to cwd]
 context: fork
@@ -27,11 +27,11 @@ Claude Code auto-loads `CLAUDE.md` only, on every session, never `AGENTS.md` dir
 |---|---|
 | `CLAUDE.md`, `AGENTS.md` | `templates/project/*.tmpl` |
 | `BACKLOG.md`, `CHANGELOG.md` | `templates/project/*.tmpl` |
-| `README.md` | The `readme` skill, skeleton in `templates/project/README.md.tmpl` |
+| `README.md` | The `readme-modify` skill, skeleton in `templates/project/README.md.tmpl` |
 
 The SDD (and, when one exists, the PRD) is a repo file under `docs/spec/` — its shape comes from `templates/project/docs/spec/*.tmpl`, scaffolded as an empty stub on Create (Step 6). `standards-specs` owns the read contract and section maps once content lands.
 
-**The split is not arbitrary.** A `.tmpl` this skill copies-and-fills exists where the file ships with *seeded content* — closeout stories, an initial version heading. `README.md.tmpl` is the one exception: it holds no seed content, only placeholder tokens for the skeleton, and this skill never touches it — `readme` reads it for shape and fills every value from the live repo (see Step 1 below).
+**The split is not arbitrary.** A `.tmpl` this skill copies-and-fills exists where the file ships with *seeded content* — closeout stories, an initial version heading. `README.md.tmpl` is the one exception: it holds no seed content, only placeholder tokens for the skeleton, and this skill never touches it — `readme-modify` reads it for shape and fills every value from the live repo (see Step 1 below).
 
 This skill fills placeholders and writes the result — it never re-describes a shape in prose. If a placeholder changes, edit the `.tmpl`; if a seed story changes, edit the language skill's `Seed backlog` section.
 
@@ -55,7 +55,7 @@ A line only belongs in a generated `AGENTS.md` if it is a fact that `standards-s
 | Scaffold | Target has code but no `AGENTS.md` | `AGENTS.md`; `README.md` if missing; appends seed stories to an existing `BACKLOG.md` |
 | Refresh | `AGENTS.md` exists | All sections, Deviations included; `README.md` scaffolded or refreshed; appends seed stories |
 
-**Only Create writes the three documents from scratch.** `BACKLOG.md` and `CHANGELOG.md` come from their `.tmpl`, with the repo type's `Seed backlog` stories spliced into `Cross-Cutting`. `README.md` is written by the `readme` skill from Step 3's facts — the one document of the three with real content on day one, since it describes what already exists rather than what's planned.
+**Only Create writes the three documents from scratch.** `BACKLOG.md` and `CHANGELOG.md` come from their `.tmpl`, with the repo type's `Seed backlog` stories spliced into `Cross-Cutting`. `README.md` is written by the `readme-modify` skill from Step 3's facts — the one document of the three with real content on day one, since it describes what already exists rather than what's planned.
 
 **Only scaffold the SDD's stub, never author its content.** Step 6 copies `templates/project/docs/spec/SDD.md` verbatim on Create; filling in the architecture, data model, and decisions is done afterward with the `sdd` skill (`prd` for the optional PRD), not this one.
 
@@ -104,15 +104,15 @@ Walk every entry in the repo type's `Repo layout` tree:
 
 ## Step 6 — Write the documents
 
-Load `changelog` for `CHANGELOG.md` and `readme` for `README.md`. Splicing seed stories into `BACKLOG.md` needs only the story line shape — `- T.D.S | SEV | [WIP] <text> · <size> → \`<done when>\`` — the full ruleset lives in `backlog-modify`, not needed for a splice. After splicing, renumber `Cross-Cutting`'s `T.D`/`T.D.S` tags so the spliced stories stay contiguous with what was already there — same rule `backlog-modify` states for its own merge step.
+Load `changelog-write` for `CHANGELOG.md` and `readme-modify` for `README.md`. Splicing seed stories into `BACKLOG.md` needs only the story line shape — `- T.D.S | SEV | [WIP] <text> · <size> → \`<done when>\`` — the full ruleset lives in `backlog-modify`, not needed for a splice. After splicing, renumber `Cross-Cutting`'s `T.D`/`T.D.S` tags so the spliced stories stay contiguous with what was already there — same rule `backlog-modify` states for its own merge step.
 
 - `CLAUDE.md` missing → write `templates/project/CLAUDE.md.tmpl` verbatim.
 - `AGENTS.md` missing → fill `templates/project/AGENTS.md.tmpl` from Step 3's values. Its Commands table drops any row the repo has no equivalent for (e.g. no "Run locally" for a `cdk-infra` repo) rather than guessing. Its Documents table is built fresh each time from what's actually on disk — `README.md`, `BACKLOG.md`, `CHANGELOG.md` each get a row only if that file exists; on Create all three already exist by the time this step runs, so all three appear.
 - **Create only** → copy `templates/project/BACKLOG.md.tmpl` and `templates/project/CHANGELOG.md.tmpl`, then splice Step 2's `Seed backlog` stories into `Cross-Cutting`.
 - **Create only** → copy `templates/project/docs/spec/`, `templates/project/docs/adr/`, and `templates/project/docs/runbook/` verbatim into the target's `docs/`, and copy `templates/project/mkdocs.yml.tmpl` to `mkdocs.yml` with `{{NAME}}` filled from Step 3's repo name.
 - **Create only** → the SDD/PRD stubs land via the docs/spec/ copy above; name filling them in as the user's next step in the closing report — they gate everything downstream, and this skill only scaffolds the stub, never the content.
-- **`README.md` missing (any branch)** → hand off to `readme`'s own Scaffold path using Step 3's facts. On Create, this runs after the tree is materialized (Step 5) so there's an entrypoint and commands to describe, not an empty skeleton.
-- **`README.md` exists (Scaffold / Refresh)** → hand off to `readme`'s own Refresh path — it diffs and confirms itself; this skill doesn't duplicate that logic.
+- **`README.md` missing (any branch)** → hand off to `readme-modify`'s own Scaffold path using Step 3's facts. On Create, this runs after the tree is materialized (Step 5) so there's an entrypoint and commands to describe, not an empty skeleton.
+- **`README.md` exists (Scaffold / Refresh)** → hand off to `readme-modify`'s own Refresh path — it diffs and confirms itself; this skill doesn't duplicate that logic.
 - **Any branch, when `BACKLOG.md` already exists** → append only the seed stories not already present, matched by text, under `Cross-Cutting`. Read the whole file first; touch nothing else.
 - `AGENTS.md` exists → do not overwrite. Diff the proposed content against what's there, show the diff, and apply only on confirmation — "propose, don't impose", not a silent regeneration.
 

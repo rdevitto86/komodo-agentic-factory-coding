@@ -79,4 +79,4 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact `sta
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for .NET** in `repo-init` — no repo type token maps here yet, the same gap `standards-csharp` records. Use `repo-init`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here once a repo type is confirmed.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for .NET** in `git-repo-init` — no repo type token maps here yet, the same gap `standards-csharp` records. Use `git-repo-init`'s Scaffold path (doc-pair-only) instead, or add a `Repo layout` section here once a repo type is confirmed.

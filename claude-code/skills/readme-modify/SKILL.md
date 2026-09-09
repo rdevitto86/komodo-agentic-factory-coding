@@ -1,5 +1,5 @@
 ---
-name: readme
+name: readme-modify
 description: Generate or refresh a repo's README.md against a fixed, concise template.
 argument-hint: [target repo path, defaults to cwd]
 paths: "**/README.md"
@@ -13,7 +13,7 @@ One fixed skeleton, applicable whether the repo is an API, a UI, a background se
 
 `# <repo-name>` as the H1, an optional table of contents, then six numbered `##` sections: **1. Overview · 2. Features · 3. Setup · 4. Usage · 5. Testing · 6. References.**
 
-**`templates/project/README.md.tmpl` is reference-only, never copied-and-filled.** Unlike `AGENTS.md.tmpl`/`BACKLOG.md.tmpl`/`CHANGELOG.md.tmpl`, it ships no seed content — `repo-init` never touches it. Every value in a real README is sourced live from the repo (see Step 2), so the `.tmpl` exists purely so the skeleton is one file to diff against, not a second prose description to keep in sync.
+**`templates/project/README.md.tmpl` is reference-only, never copied-and-filled.** Unlike `AGENTS.md.tmpl`/`BACKLOG.md.tmpl`/`CHANGELOG.md.tmpl`, it ships no seed content — `git-repo-init` never touches it. Every value in a real README is sourced live from the repo (see Step 2), so the `.tmpl` exists purely so the skeleton is one file to diff against, not a second prose description to keep in sync.
 
 **Concise by default.** A README is an entry point, not the documentation. Depth belongs in the SDD (`docs/spec/SDD.md` — see `standards-specs`) — this file points at it rather than restating it. Target a few screens, not hundreds of lines; tables and links over prose.
 
@@ -55,7 +55,7 @@ No section beyond these six. Deep design rationale, infra diagrams, and endpoint
 | Scaffold | No `README.md` | Write all applicable sections fresh, starting from `templates/project/README.md.tmpl`'s skeleton |
 | Refresh | `README.md` exists | Diff proposed content against what's there section by section |
 
-**Refresh never overwrites silently.** Show the diff, apply only on confirmation — same propose-don't-impose rule as `repo-init`. A section already present and accurate is left untouched, not rewritten to match this template's wording.
+**Refresh never overwrites silently.** Show the diff, apply only on confirmation — same propose-don't-impose rule as `git-repo-init`. A section already present and accurate is left untouched, not rewritten to match this template's wording.
 
 ## Step 5 — Flag, don't fabricate
 

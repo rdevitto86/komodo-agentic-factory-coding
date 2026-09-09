@@ -17,7 +17,7 @@ Load `standards-specs` first — it owns the section map and the read contract; 
 
 ## Starting from the template
 
-If `docs/spec/PRD.md` doesn't exist yet, copy `templates/project/docs/spec/PRD.md` verbatim as the starting point — the same stub `repo-init`'s Create step already writes for a new repo. Never invent a different heading set. **The PRD is optional** — a repo with no PRD simply has no requirement IDs to cite anywhere; that is not a gap to fill on its own.
+If `docs/spec/PRD.md` doesn't exist yet, copy `templates/project/docs/spec/PRD.md` verbatim as the starting point — the same stub `git-repo-init`'s Create step already writes for a new repo. Never invent a different heading set. **The PRD is optional** — a repo with no PRD simply has no requirement IDs to cite anywhere; that is not a gap to fill on its own.
 
 ## Section map
 

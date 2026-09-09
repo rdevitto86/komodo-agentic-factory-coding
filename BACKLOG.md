@@ -167,50 +167,20 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.3.1.3** re-run the full validator
   * **Done when:** `bash scripts/validate.sh`
 
-#### [TSK-01.3.2] Rename `repo-init` to `git-repo-init` across the toolkit [P: M] [TODO]
-* **SUB-01.3.2.1** rename `claude-code/skills/repo-init/` to `claude-code/skills/git-repo-init/`, updating its own `name:` frontmatter field
-  * **Done when:** `test -f claude-code/skills/git-repo-init/SKILL.md && ! test -d claude-code/skills/repo-init`
-* **SUB-01.3.2.2** update every cross-reference across `claude-code/agents/workflow-implementer.md` and the ~18 `claude-code/skills/*/SKILL.md` files naming `repo-init` (`standards-vue`, `standards-specs`, `standards-shell`, `standards-go`, `standards-cdk`, `standards-java`, `runbook`, `workflow-loop`, `readme`/`readme-modify`, `standards-python`, `standards-c`, `standards-dotnet`, `standards-svelte`, `sdd`, `prd`, `standards-react`, `backlog-modify`, `git-pr-create`, `git-commit-message`)
-  * **Done when:** `! grep -rl "\brepo-init\b" claude-code/ templates/ scripts/ | grep -v git-repo-init`
-* **SUB-01.3.2.3** update the `repo-init` key in `claude-code/settings.json`'s `skillOverrides` to `git-repo-init`
-  * **Done when:** `grep -q '"git-repo-init"' claude-code/settings.json`
-* **SUB-01.3.2.4** re-run the full validator and the hook regression suite
-  * **Done when:** `bash scripts/validate.sh`; `bash scripts/test-hooks.sh`
-
-#### [TSK-01.3.3] Split `changelog` into `changelog-write` and `changelog-audit`, matching the `backlog-modify`/`backlog-audit` precedent [P: M] [TODO]
-* **SUB-01.3.3.1** create `claude-code/skills/changelog-write/SKILL.md` from `changelog/SKILL.md`'s Part 1 (`write <entry>` mode) content, dropping the mode-selection preamble
-  * **Done when:** `test -f claude-code/skills/changelog-write/SKILL.md`
-* **SUB-01.3.3.2** create `claude-code/skills/changelog-audit/SKILL.md` from `changelog/SKILL.md`'s Part 2 (`audit [scope]` mode) content, matching `readme-audit`'s shape (findings-only, `--report` flag)
-  * **Done when:** `test -f claude-code/skills/changelog-audit/SKILL.md`
-* **SUB-01.3.3.3** delete `claude-code/skills/changelog/`, reclassifying each of the 7 cross-reference sites (`backlog-audit`, `readme-audit`, `workflow-loop`, `workflow-consolidate`, `git-commit-tag`, `standards-worklog`, `git-repo-init`) to call `/changelog-write` or `/changelog-audit` individually per which mode each site actually invokes — never a blind find-replace
-  * **Done when:** `! test -d claude-code/skills/changelog && ! grep -rl "\`changelog\`\|/changelog write\|/changelog audit" claude-code/ templates/`
-* **SUB-01.3.3.4** update `claude-code/settings.json`'s `changelog: name-only` entry into the two new skill names (or drop, per the token budget)
-  * **Done when:** `bash scripts/validate.sh`
-
-#### [TSK-01.3.4] Rename `readme` to `readme-modify`, pairing its name with the existing `readme-audit` [P: L] [TODO]
-* **SUB-01.3.4.1** rename `claude-code/skills/readme/` to `claude-code/skills/readme-modify/`, updating its `name:` frontmatter field (`paths: "**/README.md"` trigger unchanged)
-  * **Done when:** `test -f claude-code/skills/readme-modify/SKILL.md && ! test -d claude-code/skills/readme`
-* **SUB-01.3.4.2** update the 3 cross-reference sites (`workflow-loop`, `workflow-consolidate`, `git-repo-init`) to `readme-modify`
-  * **Done when:** `! grep -rl "\`readme\`\|/readme\b" claude-code/ templates/ | grep -v readme-audit`
-* **SUB-01.3.4.3** update the `readme: name-only` key in `claude-code/settings.json`'s `skillOverrides` to `readme-modify`
-  * **Done when:** `grep -q '"readme-modify"' claude-code/settings.json`
-* **SUB-01.3.4.4** re-run the full validator
-  * **Done when:** `bash scripts/validate.sh`
-
-#### [TSK-01.3.5] ~~Trim `write-comments` to remove judgment content duplicated in `commentor.md`~~ [P: M] [OBSOLETE]
+#### [TSK-01.3.2] ~~Trim `write-comments` to remove judgment content duplicated in `commentor.md`~~ [P: M] [OBSOLETE]
 * Superseded by the opposite decision: `commentor.md` was deleted and its judgment content folded *into* `write-comments/SKILL.md`, with the mechanical taxonomy split out to `write-comments/reference.md`. The skill now runs as an agent-less `context: fork`, so there is no second file to deduplicate against.
 
-#### [TSK-01.3.6] `repo-assess` cannot execute as written — its Process step 4 mandates invoking `assess-readiness`, `assess-code-quality` and `assess-testing`, and all three carry `disable-model-invocation: true`, which `docs/design-decisions.md` itself states is "the only thing that controls cross-skill reachability"; the Skill tool refuses them outright ("cannot be used with Skill tool due to disable-model-invocation… Do not replicate this skill's workflow by other means"), so 3 of the 9 category scores are unobtainable and the composite — defined as the unweighted average of all nine — cannot be computed. Confirmed live this session: `Skill(assess-readiness)` returned that refusal, and only the six reachable sub-assessments ran [P: C] [TODO]
-* **SUB-01.3.6.1** decide the resolution and record it in `docs/design-decisions.md`: either drop `disable-model-invocation: true` from the three sub-skills (keeping the human-decision gate only on `repo-assess` itself, which is the one the user actually types), or rewrite `repo-assess` to score the six reachable dimensions and instruct the user to run the other three by hand — the first preserves the composite, the second preserves the typed-only rule, and only the user can pick which of those two properties matters more
+#### [TSK-01.3.3] `repo-assess` cannot execute as written — its Process step 4 mandates invoking `assess-readiness`, `assess-code-quality` and `assess-testing`, and all three carry `disable-model-invocation: true`, which `docs/design-decisions.md` itself states is "the only thing that controls cross-skill reachability"; the Skill tool refuses them outright ("cannot be used with Skill tool due to disable-model-invocation… Do not replicate this skill's workflow by other means"), so 3 of the 9 category scores are unobtainable and the composite — defined as the unweighted average of all nine — cannot be computed. Confirmed live this session: `Skill(assess-readiness)` returned that refusal, and only the six reachable sub-assessments ran [P: C] [TODO]
+* **SUB-01.3.3.1** decide the resolution and record it in `docs/design-decisions.md`: either drop `disable-model-invocation: true` from the three sub-skills (keeping the human-decision gate only on `repo-assess` itself, which is the one the user actually types), or rewrite `repo-assess` to score the six reachable dimensions and instruct the user to run the other three by hand — the first preserves the composite, the second preserves the typed-only rule, and only the user can pick which of those two properties matters more
   * **Done when:** `docs/design-decisions.md` names the chosen resolution and `claude-code/skills/repo-assess/SKILL.md` matches it
-* **SUB-01.3.6.2** add a `scripts/validate.sh` check that fails when a skill body names a sibling skill it cannot reach — a `/skill-name` or `` `skill-name` `` invocation instruction pointing at a skill whose frontmatter carries `disable-model-invocation: true`
+* **SUB-01.3.3.2** add a `scripts/validate.sh` check that fails when a skill body names a sibling skill it cannot reach — a `/skill-name` or `` `skill-name` `` invocation instruction pointing at a skill whose frontmatter carries `disable-model-invocation: true`
   * **Done when:** `bash scripts/validate.sh` fails on a deliberately-introduced unreachable cross-skill invocation and passes once it is removed
 
-#### [TSK-01.3.7] Open naming question: is `workflow-<phase>` the right fixed prefix for the 5-phase spec→decompose→execute→consolidate→publish loop (`workflow-loop`, `workflow-decompose`, `workflow-implement`, `workflow-consolidate`, `workflow-complete`, `workflow-debug`), or does a different prefix communicate the loop's role more clearly — user-raised, `harness-*` named as one candidate [P: L] [TODO]
-* **SUB-01.3.7.1** decide whether to rename, and to what — `harness-*` collides with existing terminology Claude Code's own system prompt already uses (a `# Harness` section describing the CLI tool/environment itself), so `harness-loop`/`harness-implement` would likely read as "the CLI's own loop," not "this toolkit's SDLC loop"; weigh candidates that don't overload a term the host tool already owns (e.g. `sdlc-*`, `loop-*`, or keeping `workflow-*`) against `docs/design-decisions.md`'s existing "Skill naming buckets" table before picking — this is a user decision, not one this task resolves on its own
+#### [TSK-01.3.4] Open naming question: is `workflow-<phase>` the right fixed prefix for the 5-phase spec→decompose→execute→consolidate→publish loop (`workflow-loop`, `workflow-decompose`, `workflow-implement`, `workflow-consolidate`, `workflow-complete`, `workflow-debug`), or does a different prefix communicate the loop's role more clearly — user-raised, `harness-*` named as one candidate [P: L] [TODO]
+* **SUB-01.3.4.1** decide whether to rename, and to what — `harness-*` collides with existing terminology Claude Code's own system prompt already uses (a `# Harness` section describing the CLI tool/environment itself), so `harness-loop`/`harness-implement` would likely read as "the CLI's own loop," not "this toolkit's SDLC loop"; weigh candidates that don't overload a term the host tool already owns (e.g. `sdlc-*`, `loop-*`, or keeping `workflow-*`) against `docs/design-decisions.md`'s existing "Skill naming buckets" table before picking — this is a user decision, not one this task resolves on its own
   * **Done when:** `docs/design-decisions.md`'s naming-buckets section names the chosen prefix (or explicitly keeps `workflow-*`) and states why
-* **SUB-01.3.7.2** if renamed, update all 6 skill directories, every cross-reference across the toolkit (`agents/`, other `skills/*/SKILL.md`, `AGENTS.md`, `README.md`), and `claude-code/settings.json`'s `skillOverrides` keys to match
-  * **Done when:** `! grep -rl "workflow-loop\|workflow-decompose\|workflow-implement\|workflow-consolidate\|workflow-complete\|workflow-debug" claude-code/ templates/ README.md` (after the rename; this check is meaningless before SUB-01.3.7.1 decides)
+* **SUB-01.3.4.2** if renamed, update all 6 skill directories, every cross-reference across the toolkit (`agents/`, other `skills/*/SKILL.md`, `AGENTS.md`, `README.md`), and `claude-code/settings.json`'s `skillOverrides` keys to match
+  * **Done when:** `! grep -rl "workflow-loop\|workflow-decompose\|workflow-implement\|workflow-consolidate\|workflow-complete\|workflow-debug" claude-code/ templates/ README.md` (after the rename; this check is meaningless before SUB-01.3.4.1 decides)
 
 ### [TG-01.4] Workflow Loop & Hook Reliability
 * **Target Release:** V1
