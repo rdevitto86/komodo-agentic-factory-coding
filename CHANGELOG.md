@@ -4,6 +4,14 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.4] — 2026-09-08
+
+### Security
+- `git_guard.py`'s redirect/`tee`/`cp`/`mv` guarded-path checks closed a chain of bypasses: a whitespace-bound regex missed a quoted or command-substitution target entirely, and the `sed`/`perl`/`python`-in-place-write and commit-trailer scanners ran against raw unmasked text, false-denying a command that merely quoted one of those patterns as data. A `resolve_guard_target`/`shell_words`/`expand_word` path now fully dequotes (mid-word splits included) and recursively resolves nested or concatenated `$(...)`/backtick substitutions before checking the target, and terminates correctly on an unmatched `)` closing a bare `(...)` subshell without truncating a literal parenthesis inside a real filename. Risk-accepted, not closed, same posture as `[0.37.2]`'s grep/sed/awk/curl gap: a `$(...)`/backtick body whose output is *computed* by the inner command at runtime (e.g. a `python3 -c` one-liner assembling a filename) rather than spelled or `echo`'d literally in its own arguments still evades the check — closing that in general needs either executing the substitution or denying every unrecognized substitution shape outright, both real costs against this hook's usability; mitigated by the toolkit's single-operator, non-hosted threat model. `scripts/test-hooks.sh` gained `G101`–`G124` (184 total, up from 179).
+
+### Fixed
+- `standards-go`'s `SCREAMING_SNAKE_CASE` guidance told the model to preserve legacy screaming-case consts as a package's intentional convention, contradicting idiomatic Go (stdlib and every major Go style guide use MixedCaps for exported consts, lowerCamelCase for unexported). Replaced with: never introduce a new `SCREAMING_SNAKE_CASE` const, exported or not; an existing one is grandfathered legacy and a rename-sweep candidate, never a pattern to continue. Also stated the boundary for an explicitly-requested repo-wide casing sweep — rename every exported identifier the repo itself owns, never one owned by an external/SDK package just because a local file references it.
+
 ## [0.40.3] — 2026-09-02
 
 ### Security

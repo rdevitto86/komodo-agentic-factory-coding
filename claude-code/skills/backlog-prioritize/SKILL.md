@@ -2,7 +2,6 @@
 name: backlog-prioritize
 description: Reorder and re-prioritize BACKLOG.md's existing tasks — priority tag, file order within a task group, and epic placement — without inventing, rewriting, or deleting any task's own text.
 argument-hint: [optional: what's driving the reprioritization, or a scope to limit it to]
-disable-model-invocation: true
 ---
 
 # Backlog prioritization
