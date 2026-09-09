@@ -110,7 +110,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.15.1** fold untracked-but-not-ignored files into `changed_line_map`'s result as wholly-changed (`git ls-files --others --exclude-standard`), so a new file is linted in full without switching the whole check to `--all`
   * **Done when:** `bash scripts/test-hooks.sh` passes with a new case asserting a new untracked file with a `RET_ARITY_3` site is reported by a default `comments.py check`
 
-#### [TSK-01.1.16] This repo has no CI — `.github/` holds only `PULL_REQUEST_TEMPLATE.md`, with no workflow running `make verify`, so the 160-case hook suite, `scripts/validate.sh`, and the comment lint only ever run on the author's own machine via `scripts/hooks/git/pre-push-verify`; a push that bypasses the local hook (or a contributor who never ran `scripts/hooks/git/install.sh`) lands unverified config that every project's next session picks up [P: M] [TODO]
+#### [TSK-01.1.16] This repo has no CI — `.github/` holds only `PULL_REQUEST_TEMPLATE.md`, with no workflow running `make verify`, so the 160-case hook suite, `scripts/validate.sh`, and the comment lint only ever run on the author's own machine via `scripts/hooks/git/pre-push-verify`; a push that bypasses the local hook (or a contributor who never ran `scripts/hooks/git/install.sh`) lands unverified config that every project's next session picks up [P: M] [DONE]
 * **SUB-01.1.16.1** add `.github/workflows/verify.yml` running `make verify` on pull requests and pushes to `main`, matching the contract `standards-cicd` already states for a target repo
   * **Done when:** `test -f .github/workflows/verify.yml && grep -q "make verify" .github/workflows/verify.yml`
 
