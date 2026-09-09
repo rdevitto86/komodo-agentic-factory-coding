@@ -56,6 +56,8 @@ The SDD sections a code build actually depends on:
 
 **Same round cap and round-numbered brief as P2.3, per touched file, for the whole band.** A closeout fix-and-reloop pass counts toward that file's round total; hitting the cap here stops the same way — file, state the budget is spent, surface fix-now/risk-accept/defer to the user instead of resolving it in this pass.
 
+**Same round cap and round-numbered brief as P2.3, per touched file, for the whole band.** A closeout fix-and-reloop pass counts toward that file's round total; hitting the cap here stops the same way — file, state the budget is spent, surface fix-now/risk-accept/defer to the user instead of resolving it in this pass.
+
 **Ends when:** the four closeout stories' findings are fixed or explicitly declined — that satisfies their `Done when: findings triaged`, so `/workflow-consolidate` deletes them like any other finished story.
 
 ---
