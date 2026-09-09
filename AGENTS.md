@@ -86,13 +86,14 @@ The `write-comments` skill is the sanctioned author path; it calls `comments.py 
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 199 hook regression cases
+bash scripts/test-hooks.sh    # 160 hook + comments regression cases
 bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above
-bash .claude/verify.sh        # what the Stop gate runs: both of the above
+python3 claude-code/hooks/comments.py check   # comment lint
+make verify                   # what the Stop gate runs: all three of the above
 ```
 
-`.claude/verify.sh` is this repo's own opt-in for `verify_gate.py`. It only runs automatically inside a `workflow-implementer` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
+`make verify` is this repo's own opt-in for `verify_gate.py`, which resolves a repo's gate in order: `.claude/verify.sh`, then `make verify`, then `task verify`, then `just verify`. `.claude/` is gitignored here, so the `Makefile` target is what ships. It only runs automatically inside a `workflow-implementer` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
 
 This repo ships its own `pre-commit`/`pre-push` dispatchers under `scripts/hooks/git/`, installed into a target repo via `install.sh` (sets `core.hooksPath`, nothing is copied). The `standards-cicd` skill states the contract they must satisfy.
