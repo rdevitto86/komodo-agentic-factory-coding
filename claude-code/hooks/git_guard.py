@@ -84,7 +84,7 @@ ADD_BANNED_FLAGS = ("-i", "--interactive", "-p", "--patch")
 SWITCH_BANNED_FLAGS = ("-C", "--force-create", "--orphan", "-d", "--detach", "--discard-changes")
 STASH_MUTATING_FLAGS = ("drop", "clear")
 
-# WHY: only strategy options that auto-resolve without a visible conflict
+# only strategy options that auto-resolve without a visible conflict
 # are banned — a plain merge that stops and leaves conflict markers is
 # exactly the case this capability exists for.
 MERGE_BANNED_FLAGS = ("-X", "--strategy-option", "-s", "--strategy", "--squash")
@@ -216,7 +216,7 @@ def find_paren_end(command, start):
     return scan_masked_span(command, start, is_terminator)
 
 
-# WHY: blanks captured substitution text in place instead of a placeholder token -- nothing downstream needs a stand-in, and blanking keeps offsets aligned for split_segments
+# blanks captured substitution text in place instead of a placeholder token -- keeps offsets aligned for split_segments
 def capture_and_mask(command, masked, substitutions, index, finder, offset, unescape=None):
     length = len(command)
     end = finder(command, index + offset)
@@ -387,7 +387,7 @@ def parse_cp_mv_target(tokens):
     return target_dir, positional
 
 
-# WHY: settings.json and BACKLOG.md need Edit/Write-only writes, closing the reviewer's Bash side door
+# settings.json and BACKLOG.md need Edit/Write-only writes, closing the reviewer's Bash side door
 GIT_GUARD_ONLY_EXTENSIONS = {".json", ".md"}
 
 
@@ -772,7 +772,7 @@ def scan_command(command, findings, cwd):
     has_cd = any(leading_word(segment) == "cd" for segment in segments)
     for segment in segments:
         scan_segment(segment, findings, cwd, has_cd)
-    # WHY: recursing into each captured substitution is what catches a mutating command hidden inside backticks or $() -- skipping it would let those slip past as inert segment text
+    # recursing into each substitution catches a mutating command hidden in backticks/$() -- else it slips past as inert text
     for substitution in substitutions:
         if substitution.strip():
             scan_command(substitution, findings, cwd)
