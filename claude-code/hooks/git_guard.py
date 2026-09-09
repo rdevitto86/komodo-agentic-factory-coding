@@ -997,6 +997,7 @@ def scan_command(command, findings, cwd, depth=0):
         findings.append("command could not be safely analyzed")
 
 
+# split out so scan_command can wrap it in one try/except -- redirect/tee/cp/mv targets sit outside the recursion
 def _scan_command_at_depth(command, findings, cwd, depth):
     masked, substitutions = extract_substitutions(command)
     raw_segments = split_segments(masked)
