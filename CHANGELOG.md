@@ -4,6 +4,17 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- `scripts/validate.sh` gained a "cross-skill reachability" check: it fails when a skill body invokes a sibling that carries `disable-model-invocation: true` and so cannot actually be reached via the Skill tool.
+- `workflow-implement/SKILL.md` now verifies a task's premise before forking — it reads the function/file the task names and confirms the described defect is still present, so a stale backlog entry the repo has already outgrown is reported back instead of implemented.
+- `workflow-loop/SKILL.md`'s P2.1 now requires the brief to state the chosen mechanism (and why) whenever a task involves a genuine design choice, rather than leaving it to the implement fork's judgment.
+- `claude-code/AGENTS.md` now states that a file under `claude-code/hooks/` is live via symlink the instant it's saved, and requires a nontrivial edit there to go through an atomic temp-file-then-`mv` write.
+
+### Fixed
+- `scripts/validate.sh`'s budget pass no longer overstates the always-on token cost by folding in a `paths:`-gated skill's full description; it now excludes that cost (or counts only its name-only cost when `skillOverrides` collapses it), reporting the gated set as a separate figure.
+- `repo-assess` can now compute a real 9-category composite score: `assess-readiness`, `assess-code-quality`, and `assess-testing` dropped `disable-model-invocation: true` (the human-decision gate stays on `repo-assess` itself), per the resolution recorded in `docs/design-decisions.md`.
+- `scripts/test-hooks.sh`'s `bash_case`/`smoke_case` helpers now pin `cwd` to a fixed fixture repo instead of sending none, so their deny assertions no longer depend on `git_guard.py` falling back to the suite's own invocation cwd.
+
 ## [0.42.0] — 2026-09-09
 
 ### Added
