@@ -4,6 +4,14 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-09-09
+
+### Added
+- `workflow-loop`'s P0-P4 phases (and each forked skill call within them) now record silent, session-stated timing — reported only when the user explicitly asks how long something took, never printed by default.
+
+### Changed
+- `workflow-loop`'s P2.4 closeout now dispatches `assess-bugs`/`assess-security`/`assess-simplify` in parallel (`isolation: worktree`, since all three write `BACKLOG.md`) instead of serially, matching the pattern already proven for P2.1's parallel task dispatch — the single clearest actionable slowdown a harness audit found in the review loop.
+
 ## [0.41.0] — 2026-09-09
 
 ### Added
