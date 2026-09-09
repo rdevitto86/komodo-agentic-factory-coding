@@ -4,6 +4,12 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.7] — 2026-09-09
+
+### Changed
+- Four model-visible skills (`standards-aws`, `readme-audit`, `git-merge-conflict`, `workflow-loop`) moved to `name-only` in `settings.json`'s `skillOverrides` — each was already reached only by explicit name but was paying its full description in the always-on listing. Dropped two dead `skillOverrides` entries (`workflow-authoring`, no skill directory; `standards-c`, disabled). Always-on budget drops from 1165 to 949 tokens.
+- `workflow-loop`'s Guardrails section states: don't re-open a file a fork just wrote — work from its returned `## Filed`/`## Changed` block instead of re-reading the whole file.
+
 ## [0.40.6] — 2026-09-09
 
 ### Changed
