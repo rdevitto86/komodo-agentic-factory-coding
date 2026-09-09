@@ -409,6 +409,20 @@ bash_case "G116 a dollar-paren command-substitution cp target naming a doc path 
   deny 'cp /tmp/a.txt $(echo BACKLOG.md)' "bypasses the comment guard"
 bash_case "G117 a dollar-paren command-substitution mv target is blocked" \
   deny 'mv /tmp/a.txt $(echo settings.json)' "bypasses the comment guard"
+bash_case "G118 a redirect target wrapped in a bare subshell is blocked" \
+  deny '(echo bad > BACKLOG.md)' "bypasses the comment guard"
+bash_case "G119 a tee target wrapped in a bare subshell is blocked" \
+  deny '(tee BACKLOG.md <<< bad)' "bypasses the comment guard"
+bash_case "G120 a redirect target with a literal unquoted paren keeps its extension" \
+  deny 'echo hi > BACKLOG(x).md' "bypasses the comment guard"
+bash_case "G121 a redirect target with a literal unquoted paren keeps its extension (json)" \
+  deny 'cat x > settings(1).json' "bypasses the comment guard"
+bash_case "G122 a tee target wrapped in a bare subshell with no space before the paren is blocked" \
+  deny '(tee AGENTS.md) <<< "malicious content"' "bypasses the comment guard"
+bash_case "G123 a cp target wrapped in a bare subshell is blocked" \
+  deny '(cp malicious.txt AGENTS.md)' "bypasses the comment guard"
+bash_case "G124 a mv target wrapped in a bare subshell is blocked" \
+  deny '(mv malicious.txt AGENTS.md)' "bypasses the comment guard"
 bash_case "G33 cp between non-code paths is allowed" allow 'cp /tmp/a.txt /tmp/b.txt'
 bash_case "G34 mv of a directory listing is allowed" allow 'mv build/ dist/'
 bash_case "G35 time git rebase is caught"            deny  'time git rebase main'          "git rebase"

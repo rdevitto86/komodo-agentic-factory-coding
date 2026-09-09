@@ -147,7 +147,8 @@ CP_MV_TARGET_FLAGS = ("-t", "--target-directory")
 
 # WHY: matches only the operator -- shell_words/resolve_guard_target resolve the target through a quote or substitution
 REDIRECT_OPERATOR = re.compile(r"(?<![-=<0-9&])>>?")
-REDIRECT_WORD_TERMINATORS = ";&|#\n"
+# WHY: ")" closes a bare (...) subshell -- reached here only once a $()/backtick span is already consumed
+REDIRECT_WORD_TERMINATORS = ";&|#\n)"
 HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n)(.*?)(^\s*\2\s*$)", re.S | re.M)
 QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 INPLACE_SED = re.compile(r"\bsed\b[^;|&]*?(?:\s-[a-zA-Z]*i\b|\s--in-place\b)")
@@ -431,8 +432,27 @@ def shell_words(text, start, end, terminators=""):
     words = []
     index = start
     word_start = None
+    # WHY: depth tracks bare "(" since word_start -- only an unmatched ")" ends the word, not a balanced literal paren
+    paren_depth = 0
     while index < end:
         char = text[index]
+        if char == ")":
+            if paren_depth > 0:
+                paren_depth -= 1
+                if word_start is None:
+                    word_start = index
+                index += 1
+                continue
+            if char in terminators:
+                if word_start is not None:
+                    words.append((text[word_start:index], word_start))
+                    word_start = None
+                break
+            if word_start is None:
+                word_start = index
+                paren_depth = 0
+            index += 1
+            continue
         if char in terminators or char.isspace():
             if word_start is not None:
                 words.append((text[word_start:index], word_start))
@@ -443,6 +463,7 @@ def shell_words(text, start, end, terminators=""):
             continue
         if word_start is None:
             word_start = index
+            paren_depth = 0
         if char == "\\" and index + 1 < end:
             index += 2
             continue
@@ -470,6 +491,10 @@ def shell_words(text, start, end, terminators=""):
         if char == "$" and text.startswith("$(", index):
             stop = find_paren_end(text, index + 2)
             index = min(stop + 1, end)
+            continue
+        if char == "(":
+            paren_depth += 1
+            index += 1
             continue
         index += 1
     if word_start is not None:
@@ -817,7 +842,8 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
         return
-    command = os.path.basename(tokens[0])
+    # WHY: a bare (cmd ...) subshell glues its "(" onto the first word -- stripped only for command identification
+    command = os.path.basename(tokens[0].lstrip("("))
     if command in SHELL_WRAPPERS:
         for index, token in enumerate(tokens):
             if token == "-c" and index + 1 < len(tokens):
@@ -835,7 +861,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         return
     if command == "tee":
         # WHY: tokens loses a $()/backtick arg to blanking -- scan raw shell_words against full_command instead
-        for word, _ in shell_words(full_command, seg_start, seg_end):
+        for word, _ in shell_words(full_command, seg_start, seg_end, REDIRECT_WORD_TERMINATORS):
             target = resolve_guard_target(word)
             if target:
                 findings.append("tee writing to %s bypasses the comment guard" % target)
@@ -853,7 +879,9 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         return
     if command in ("cp", "mv"):
         # WHY: raw shell_words on full_command, not tokens -- tokens is masked, blanking any $()/backtick destination
-        raw_words = strip_redirects(strip_env_assignments([word for word, _ in shell_words(full_command, seg_start, seg_end)]))
+        raw_words = strip_redirects(strip_env_assignments(
+            [word for word, _ in shell_words(full_command, seg_start, seg_end, REDIRECT_WORD_TERMINATORS)]
+        ))
         target_dir, positional = parse_cp_mv_target(raw_words[1:])
         if target_dir is not None:
             if is_guarded_path(target_dir):
