@@ -295,6 +295,8 @@ listing = 0
 skills_dir = os.path.join(source, "skills")
 skill_count = 0
 cap_failures = []
+paths_gated_count = 0
+paths_gated_tokens = 0
 if os.path.isdir(skills_dir):
     for entry in sorted(os.listdir(skills_dir)):
         skill = os.path.join(skills_dir, entry, "SKILL.md")
@@ -312,10 +314,25 @@ if os.path.isdir(skills_dir):
             continue
         described = re.search(r"^description:\s*(.+)$", head, re.M)
         text = entry if state == "name-only" else entry + (described.group(1) if described else "")
+        # a skill with paths: only enters the general listing once a matching
+        # file is touched; skillOverrides then decides its steady-state cost.
+        # Collapsed to name-only, it still costs its 1-4 token name always —
+        # count that. Left at full cost ("on"/unset), it is not shown at all
+        # until a path matches, so it is not part of the true always-on total —
+        # exclude it and report it separately instead of folding it in.
+        if re.search(r"^paths:", head, re.M):
+            paths_gated_count += 1
+            paths_gated_tokens += tokens(text)
+            if state == "name-only":
+                listing += tokens(entry)
+                skill_count += 1
+            continue
         listing += tokens(text)
         skill_count += 1
 
 print("    %-24s %5d tokens (%d listed to the model)" % ("skill listing", listing, skill_count))
+print("    %-24s %5d tokens (%d skills, gated by touched file, excluded from budget)" %
+      ("paths:-gated skills", paths_gated_tokens, paths_gated_count))
 total = always_on + listing
 print("    %-24s %5d tokens" % ("TOTAL (always-on)", total))
 print()
