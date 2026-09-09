@@ -65,8 +65,10 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
   * **Done when:** `grep -qi "dependency inversion" claude-code/skills/standards-python/SKILL.md`
 * **SUB-01.1.7.4** add it to `standards-java`, phrased to this language's own idiom
   * **Done when:** `grep -qi "dependency inversion" claude-code/skills/standards-java/SKILL.md`
-* **SUB-01.1.7.5** add it to `standards-c`, phrased to this language's own idiom (e.g. depend on a function-pointer/vtable-style seam the caller owns, not a concrete implementation)
-  * **Done when:** `grep -qi "dependency inversion" claude-code/skills/standards-c/SKILL.md`
+* **SUB-01.1.7.5** add it to `standards-c`, phrased to this language's own idiom (e.g. depend on a function-pointer/vtable-style seam the caller owns, not a concrete implementation) — `standards-c` is deliberately parked as `SKILL.md.off` (`docs/design-decisions.md:158`); content lands there until reactivation, a separate budget decision
+  * **Done when:** `grep -qi "dependency inversion" claude-code/skills/standards-c/SKILL.md.off`
+
+- [L] `docs/design-decisions.md:128`'s "no SKILL.md is invisible" enumeration (`standards-gcp`/`standards-azure`/`standards-rust`/`standards-csharp`/`standards-hardware`/`standards-cpp`) omits `standards-c` even though `standards-c` is itself parked as `SKILL.md.off` — the two `SUB-01.1.7.5`/`SUB-01.1.8.4` citations to line 128 as the source of that fact point at a line whose own list doesn't name `standards-c`, while line 158 of the same doc does · S → `/assess-bugs docs/design-decisions.md` reports it clear
 
 #### [TSK-01.1.8] `standards-go`'s new deterministic-formatting conventions (line-wrapping algorithm, magic-number-to-named-const extraction, blank lines around guard clauses) are language-agnostic but exist only in `standards-go` — every other active language skill still defers formatting entirely to its own linter/formatter with no manual-style rules of its own (after: "Fix standards-go's SCREAMING_SNAKE_CASE guidance") [P: L] [TODO]
 * **SUB-01.1.8.1** add equivalent conventions to `standards-typescript`, phrased to its own idiom
@@ -75,8 +77,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
   * **Done when:** `grep -qi "collapsing one level" claude-code/skills/standards-python/SKILL.md`
 * **SUB-01.1.8.3** add equivalent conventions to `standards-java`, phrased to its own idiom
   * **Done when:** `grep -qi "collapsing one level" claude-code/skills/standards-java/SKILL.md`
-* **SUB-01.1.8.4** add equivalent conventions to `standards-c`, phrased to its own idiom
-  * **Done when:** `grep -qi "collapsing one level" claude-code/skills/standards-c/SKILL.md`
+* **SUB-01.1.8.4** add equivalent conventions to `standards-c`, phrased to its own idiom — `standards-c` is deliberately parked as `SKILL.md.off` (`docs/design-decisions.md:158`); content lands there until reactivation, a separate budget decision
+  * **Done when:** `grep -qi "collapsing one level" claude-code/skills/standards-c/SKILL.md.off`
 
 #### [TSK-01.1.9] `standards-go`'s single-call-site rule defaults to "inline as a closure," but a closure still costs an allocation a fully-inlined statement doesn't — the rule should default to full inlining and reserve the closure form for when the value needs `:=` assignment or expression-embedding [P: L] [TODO]
 * **SUB-01.1.9.1** rewrite the rule so full inlining into the caller's body is the default for a pure, small, single-call-site helper with no domain significance, and a closure is used only when full inlining would awkwardly restructure the caller

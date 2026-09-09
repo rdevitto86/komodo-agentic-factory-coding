@@ -31,6 +31,10 @@ The real rules live in `claude-code/hooks/comments.py` and its shared rules modu
 - **Naming**: `lower_snake_case` modules, `PascalCase` classes, `snake_case` functions and variables, `SCREAMING_SNAKE` constants, leading `_` for private. Booleans take `is_` / `has_` / `can_` / `should_`.
 - **Minimal `__init__.py`** — no logic, no import-time I/O. Avoid `utils` / `common` / `helpers`. No circular or wildcard imports.
 - **Inject dependencies** rather than reaching for module-level singletons.
+- **Depend on a `Protocol` (or an ABC) the caller defines, not a concrete class** — the Dependency Inversion Principle applied to Python. A consumer declares the narrow `Protocol` it needs and a concrete implementation is passed in; the implementation depends on the `Protocol`'s shape, never the reverse.
+- **Wrap a long statement by collapsing one level at a time, never straight to one-arg-per-line.** Try the whole statement on one line first; if it doesn't fit, move the wrapped content to its own indented line(s) with a trailing comma and the closing paren/bracket/brace on its own line at the original indent — a function call may stay grouped at this step if it fits, but a dict/dataclass literal's fields never do, always one field per line once wrapped. Only if that grouped form is still too long, break to one item per line. Apply identically to calls, dict/list literals, and multi-arg logger calls.
+- **A numeric or short repeated string literal standing for a size, TTL, count, threshold, or spec-level value (a header name, a status string) gets extracted to a named constant.** Module-level `SCREAMING_SNAKE` when shared by more than one function in the module; a function-local constant when scoped to one call. A literal repeated across 2+ files or functions is the strongest signal to extract first. Two or more constants introduced together go together in one grouping, not scattered standalone assignments.
+- **No blank line between two consecutive early-return guard clauses.** Exactly one blank line between the last guard clause in a sequence and the happy-path logic that follows it.
 
 ## Async
 
