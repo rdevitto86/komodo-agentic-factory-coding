@@ -42,6 +42,10 @@ The SDD sections a code build actually depends on:
 
 **Neither call takes `--report` here** — each files its findings to `BACKLOG.md` like any standalone run. Findings on correctness, security, or a stated requirement are folded straight into P2.0's pick and become the next P2.1 task, in this same pass. Everything else is optional and stays filed for later.
 
+**Round cap, same file, same band.** A new Critical/High finding on a file already reviewed in this band is round 2; a third straight new Critical/High finding on that same file is the stop signal — mirror the implement-side rule that the same check failing twice with the same error means stop, not retry. On round 3, do not fold the finding into another P2.1 fix-and-reloop pass: file it, state plainly that the round budget for this file in this band is spent, and surface the choice to the user — fix now, risk-accept and ship, or defer to a follow-up task. **The budget drops to 2, not 3,** when the touched file is already flagged in `BACKLOG.md` as a hand-rolled parser or security boundary with an open adversarial-hardening story (for example `git_guard.py`) — adversarial review of hand-rolled shell/parser code is close to open-ended by construction, so budget for that going in rather than discovering it at round 3.
+
+**Every review call's brief states its round number for this band.** Round 1 gets the standard brief. From round 2 onward, the brief also instructs the reviewer to report only clear, concrete, reproduced findings against the touched file — not a theoretical edge case in the underlying grammar or format the fix touches. A round-2+ call that surfaces only theoretical findings is not a new consecutive round for the cap above.
+
 ---
 
 ## P2.4 · Closeout
@@ -49,6 +53,8 @@ The SDD sections a code build actually depends on:
 **Once per band, not per-task** — after every task in the current pick is green, before `/workflow-consolidate` runs. Clears the target state's four standing closeout stories.
 
 `/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band's diff, then confirm the perf suite ran. Each runs as a `reviewer` fork, same as P2.3. **No `--report` here either** — each files to `BACKLOG.md`. Every story a call just filed is folded into P2.0's pick and resolved in this same pass: fixed via `/workflow-implement`, or explicitly declined and removed with the reason noted. None of it waits for the next `/workflow-loop` run.
+
+**Same round cap and round-numbered brief as P2.3, per touched file, for the whole band.** A closeout fix-and-reloop pass counts toward that file's round total; hitting the cap here stops the same way — file, state the budget is spent, surface fix-now/risk-accept/defer to the user instead of resolving it in this pass.
 
 **Ends when:** the four closeout stories' findings are fixed or explicitly declined — that satisfies their `Done when: findings triaged`, so `/workflow-consolidate` deletes them like any other finished story.
 
