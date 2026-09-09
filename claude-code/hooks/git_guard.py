@@ -84,7 +84,7 @@ ADD_BANNED_FLAGS = ("-i", "--interactive", "-p", "--patch")
 SWITCH_BANNED_FLAGS = ("-C", "--force-create", "--orphan", "-d", "--detach", "--discard-changes")
 STASH_MUTATING_FLAGS = ("drop", "clear")
 
-# WHY: only strategy options that auto-resolve without a visible conflict
+# only strategy options that auto-resolve without a visible conflict
 # are banned — a plain merge that stops and leaves conflict markers is
 # exactly the case this capability exists for.
 MERGE_BANNED_FLAGS = ("-X", "--strategy-option", "-s", "--strategy", "--squash")
@@ -145,9 +145,10 @@ MONITORED_COMMANDS = SHELL_WRAPPERS + PASSTHROUGH_WRAPPERS + ("git", "gh", "cp",
 
 CP_MV_TARGET_FLAGS = ("-t", "--target-directory")
 
-# WHY: matches only the operator -- shell_words/resolve_guard_target resolve the target through a quote or substitution
+# matches only the operator -- shell_words/resolve_guard_target resolve the target through a quote or substitution
 REDIRECT_OPERATOR = re.compile(r"(?<![-=<0-9&])>>?")
-# WHY: ")" closes a bare (...) subshell -- reached here only once a $()/backtick span is already consumed
+
+# ")" closes a bare (...) subshell -- reached here only once a $()/backtick span is already consumed
 REDIRECT_WORD_TERMINATORS = ";&|#\n)"
 HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n)(.*?)(^\s*\2\s*$)", re.S | re.M)
 QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
@@ -219,7 +220,7 @@ def find_paren_end(command, start):
     return scan_masked_span(command, start, is_terminator)
 
 
-# WHY: blanks captured substitution text in place instead of a placeholder token -- nothing downstream needs a stand-in, and blanking keeps offsets aligned for split_segments
+# blanks captured substitution text in place instead of a placeholder token -- keeps offsets aligned for split_segments
 def capture_and_mask(command, masked, substitutions, index, finder, offset, unescape=None):
     length = len(command)
     end = finder(command, index + offset)
@@ -370,7 +371,7 @@ def split_segments(command):
     return segments
 
 
-# WHY: tokens is now raw shell_words, not the masked segment -- a $()/backtick destination reaches expand_word unblanked
+# tokens is now raw shell_words, not the masked segment -- a $()/backtick destination reaches expand_word unblanked
 def parse_cp_mv_target(tokens):
     # cp/mv -t DIR (or --target-directory[=DIR]) names the real
     # destination out of order; everything else stays positional.
@@ -396,7 +397,7 @@ def parse_cp_mv_target(tokens):
     return target_dir, positional
 
 
-# WHY: settings.json and BACKLOG.md need Edit/Write-only writes, closing the reviewer's Bash side door
+# settings.json and BACKLOG.md need Edit/Write-only writes, closing the reviewer's Bash side door
 GIT_GUARD_ONLY_EXTENSIONS = {".json", ".md"}
 
 
@@ -432,7 +433,7 @@ def shell_words(text, start, end, terminators=""):
     words = []
     index = start
     word_start = None
-    # WHY: depth tracks bare "(" since word_start -- only an unmatched ")" ends the word, not a balanced literal paren
+    # depth tracks bare "(" since word_start -- only an unmatched ")" ends the word, not a balanced literal paren
     paren_depth = 0
     while index < end:
         char = text[index]
@@ -502,7 +503,7 @@ def shell_words(text, start, end, terminators=""):
     return words
 
 
-# WHY: can't execute a captured command -- "echo ARGS" resolves to ARGS, anything else falls back to a matching arg
+# can't execute a captured command -- "echo ARGS" resolves to ARGS, anything else falls back to a matching arg
 def resolve_command_output(inner):
     words = shell_words(inner, 0, len(inner))
     if not words:
@@ -514,7 +515,7 @@ def resolve_command_output(inner):
     return match if match is not None else " ".join(expanded)
 
 
-# WHY: fully dequotes a word, mid-word split included, and resolves every $()/backtick piece it holds, nested or not
+# fully dequotes a word, mid-word split included, and resolves every $()/backtick piece it holds, nested or not
 def expand_word(word):
     out = []
     index = 0
@@ -842,7 +843,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
         return
-    # WHY: a bare (cmd ...) subshell glues its "(" onto the first word -- stripped only for command identification
+    # a bare (cmd ...) subshell glues its "(" onto the first word -- stripped only for command identification
     command = os.path.basename(tokens[0].lstrip("("))
     if command in SHELL_WRAPPERS:
         for index, token in enumerate(tokens):
@@ -860,7 +861,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
             scan_command(" ".join(inner), findings, cwd)
         return
     if command == "tee":
-        # WHY: tokens loses a $()/backtick arg to blanking -- scan raw shell_words against full_command instead
+        # tokens loses a $()/backtick arg to blanking -- scan raw shell_words against full_command instead
         for word, _ in shell_words(full_command, seg_start, seg_end, REDIRECT_WORD_TERMINATORS):
             target = resolve_guard_target(word)
             if target:
@@ -868,7 +869,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
                 break
         return
     if command in ("sed", "perl", "python", "python3"):
-        # WHY: raw segment text gated on its own leading command -- a quoted mention elsewhere never reaches here
+        # raw segment text gated on its own leading command -- a quoted mention elsewhere never reaches here
         raw_segment = full_command[seg_start:seg_end]
         if command == "sed" and INPLACE_SED.search(raw_segment):
             findings.append("sed -i rewrites files in place, bypassing the comment guard")
@@ -878,7 +879,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
             findings.append("python -c opening a file for writing bypasses the comment guard")
         return
     if command in ("cp", "mv"):
-        # WHY: raw shell_words on full_command, not tokens -- tokens is masked, blanking any $()/backtick destination
+        # raw shell_words on full_command, not tokens -- tokens is masked, blanking any $()/backtick destination
         raw_words = strip_redirects(strip_env_assignments(
             [word for word, _ in shell_words(full_command, seg_start, seg_end, REDIRECT_WORD_TERMINATORS)]
         ))
@@ -938,22 +939,22 @@ def scan_command(command, findings, cwd):
         if not stripped:
             continue
         abs_start = start + (len(text) - len(text.lstrip()))
-        # WHY: start+len(text), not abs_start+len(stripped) -- a trailing blanked substitution is stripped away otherwise
+        # start+len(text), not abs_start+len(stripped) -- a trailing blanked substitution is stripped away otherwise
         abs_end = start + len(text)
         segments.append((stripped, abs_start, abs_end))
     has_cd = any(leading_word(stripped) == "cd" for stripped, _, _ in segments)
     for stripped, abs_start, abs_end in segments:
         scan_segment(stripped, findings, cwd, has_cd, command, abs_start, abs_end)
-    # WHY: recursing into each captured substitution is what catches a mutating command hidden inside backticks or $() -- skipping it would let those slip past as inert segment text
+    # recursing into each substitution catches a mutating command hidden in backticks/$() -- else it slips past as inert text
     for substitution in substitutions:
         if substitution.strip():
             scan_command(substitution, findings, cwd)
 
-    # WHY: sed/perl/python-write moved to scan_segment (see there); trailer stays on raw command -- it can live in a quoted -m
+    # sed/perl/python-write moved to scan_segment (see there); trailer stays on raw command -- it can live in a quoted -m
     if GIT_MESSAGE_CALL.search(command) and BANNED_TRAILER.search(command):
         findings.append(TRAILER_FINDING)
 
-    # WHY: quotes/heredocs blanked so a real `>` inside one is not read as an operator; target still resolves from raw command
+    # quotes/heredocs blanked so a real `>` inside one is not read as an operator; target still resolves from raw command
     guard_source = mask_data(command)
     for match in REDIRECT_OPERATOR.finditer(guard_source):
         words = shell_words(command, match.end(), len(command), REDIRECT_WORD_TERMINATORS)
