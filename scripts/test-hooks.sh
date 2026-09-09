@@ -1027,6 +1027,25 @@ e2e_pipeline_case() {
 
 e2e_pipeline_case
 
+# a default check must fold in an untracked file since git diff alone never sees one
+untracked_check_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-untracked"
+    mkdir -p "$fixture"
+    git init -q -b main "$fixture"
+    (cd "$fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc Split(s string) (string, string, error) {\n\treturn "", "", nil\n}\n' > "$fixture/svc.go"
+    local out problem=""
+    out="$(python3 "$HOOKS/comments.py" --repo-root "$fixture" check "$fixture/svc.go" 2>&1)"
+    [[ "$out" != *"RET_ARITY_3"* ]] && problem="a new untracked file with a RET_ARITY_3 site was not reported by a default check: $out"
+    report "$outfile" "K17 a new untracked file with a RET_ARITY_3 site is reported by a default (changed-lines) check" "$problem" "$out"
+  ) &
+}
+untracked_check_case
+
 printf '\ncontext injector\n\n'
 
 export HOOKS
