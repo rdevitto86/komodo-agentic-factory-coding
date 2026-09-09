@@ -168,9 +168,9 @@ smoke_case() {
 smoke_case "S1  echo hello is allowed"                    allow 'echo hello'
 smoke_case "S2  git status is allowed"                    allow 'git status'
 smoke_case "S3  ls is allowed"                            allow 'ls'
-smoke_case "S4  git push to a protected ref is denied"    deny  'git push origin main'
+smoke_case "S4  git push to a protected ref is denied"    deny  'git push origin master'
 smoke_case "S5  tee into a guarded path is denied"        deny  'tee BACKLOG.md'
-smoke_case "S6  sed -i rewriting a file in place is denied" deny  "sed -i -e s/a/b/ file"
+smoke_case "S6  sed --in-place rewriting a file in place is denied" deny  "sed --in-place -e s/a/b/ file"
 smoke_case "S7  a redirect into a guarded path is denied" deny  'echo bad > BACKLOG.md'
 
 # git_guard.py's current_branch() shells out to `git rev-parse` in the
