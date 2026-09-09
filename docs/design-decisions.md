@@ -63,7 +63,7 @@ Skill naming follows seven buckets, front-loaded so related skills tab-complete 
 | Autoloaded config — governs session/output behavior | `config-<topic>` | Loaded via description, not path-triggered; states how the agent must present itself, not what it writes | `config-accessibility` |
 | Autoloaded knowledge — domain facts | `standards-<noun>` | Loaded via `paths`/description, or by name from a skill that needs it; states what is true about a language, tool, process, or external artifact | `standards-go`, `standards-api-security`, `standards-api-design`, `standards-sdlc`, `standards-worklog` |
 
-`workflow-<phase>` is its own fixed prefix for the five loop phases and is never reused outside it.
+`workflow-<phase>` is its own fixed prefix for the five loop phases and is never reused outside it. It stays `workflow-*`, not `harness-*` — this toolkit's own `AGENTS.md` states it is model-agnostic across "every model and every tool — Claude, GPT, Gemini, Qwen, Kimi, Llama, hosted or local," so a `harness-*` prefix would misclaim the term Claude Code's own system prompt already uses for the CLI runtime itself, and would be wrong even conceptually since this repo is agent configuration that rides on top of whichever harness runs it, not a harness in its own right.
 
 ## readme vs readme-audit split
 
@@ -156,6 +156,12 @@ This is the one boundary in the hierarchy where memory safety outweighs C++'s ec
 - **No equivalent ecosystem lock-in.** Unlike cameras/lidar/robotic arms, there's no mature C++-only SDK forcing the choice at the network layer. Rust's networking stack (`smoltcp` for embedded/no_std TCP/IP, `tokio` for async I/O) is mature and arguably purpose-built for hub/controller/router firmware specifically, so choosing Rust here gives up nothing the way skipping C++ elsewhere might.
 
 This hierarchy — hardware role plus Rust's toolchain axis above — is why `standards-rust`/`standards-c`/`standards-cpp` sit parked rather than deleted — the domains are real and expected to land, just not yet active.
+
+## `comments.py check --all`'s file-header exemption is scoped to the leading block only
+
+`STEP_MARKER`, `STACKED`, and `BANNER_OUTSIDE_TEST` were tuned against Go's comment conventions, which never open a file with a numbered prose docblock. A shell or Python script routinely does — `setup.sh`'s "what it does, in order" list and `validate.sh`'s "Checks, in order" both self-trigger `STEP_MARKER`/`STACKED` on every line of their own header, purely because `--all` now looks at lines `check`'s default changed-lines-only mode never reached.
+
+The fix exempts exactly the leading shebang-plus-comment run at the top of a file — computed once per file as the index of the first line that is neither a shebang nor comment-prefixed, capped at `HEADER_MAX_LINES` (30) — from `STEP_MARKER` and `STACKED` only. A multi-line comment block anywhere else in the same file (a mid-file explanation, a second docblock above an unrelated declaration) still gets both checks; only the file's own opening header is privileged, because that is the one shape every language's convention agrees is prose rather than a mechanical violation. The cap exists because an uncapped exemption would let 30+ lines of narrative padding disguised as a file header bypass both checks indefinitely; 30 was chosen by measuring this repo's own longest genuine header (`setup.sh`, 26 comment lines after its shebang) and leaving margin. Past the cap, `STEP_MARKER`/`STACKED` resume normally within the same contiguous comment run — the exemption ends at a line count, not at the run's actual end. `BANNER_OUTSIDE_TEST` gets a narrower fix in the same spirit but by ext-scoping rather than position: it only makes sense for Go's `_test.go` convention, so it now checks `ext in BANNER_LANGUAGE_EXTENSIONS` (`.go` only, mirroring `DOC_LANGUAGE_EXTENSIONS`) before firing at all — a shell script's `# --- Section ---` divider was never a Go banner mistake to begin with.
 
 ## No requires: frontmatter key — dependency direction matters
 

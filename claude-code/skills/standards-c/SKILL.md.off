@@ -29,6 +29,10 @@ The real rules live in `claude-code/hooks/comments.py` and its shared rules modu
 - **`const`-correct by default** — a pointer parameter the function doesn't mutate through is `const`.
 - **No global mutable state** without a name that says so; justify it in `BACKLOG.md`, never in an inline comment.
 - **Minimise a header's own includes.** Forward-declare where a full definition isn't needed; push includes into the `.c` file.
+- **Depend on a function-pointer/vtable-style seam the caller owns, not a concrete implementation** — the Dependency Inversion Principle applied to C. A consumer takes a struct of function pointers (or a single callback) that it declares the shape of; the concrete implementation is wired in by the caller, never hard-linked into the consumer.
+- **Wrap a long statement by collapsing one level at a time, never straight to one-arg-per-line.** Try the whole statement on one line first; if it doesn't fit, move the wrapped content to its own indented line(s) with a trailing comma and the closing paren/brace on its own line at the original indent — a function call may stay grouped at this step if it fits, but a struct-literal's fields never do, always one field per line once wrapped. Only if that grouped form is still too long, break to one item per line.
+- **A numeric or short repeated string literal standing for a size, TTL, count, threshold, or spec-level value (a header name, a status string) gets extracted to a named `#define` or `static const`.** File-scope when shared by more than one function in the translation unit; a function-local `const` when scoped to one call. A literal repeated across 2+ files or functions is the strongest signal to extract first. Two or more constants introduced together are declared together, adjacent, not scattered across the file.
+- **No blank line between two consecutive early-return guard clauses.** Exactly one blank line between the last guard clause in a sequence and the happy-path logic that follows it.
 
 ## Memory and resources
 
