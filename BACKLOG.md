@@ -15,7 +15,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 ### [TG-01.1] Cross-Cutting
 * **Target Release:** V1
 
-#### [TSK-01.1.1] `standards-go`'s magic-number rule (SUB-01.1.5 area) covers when to extract a numeric/string literal to a `const`, but never distinguishes a compile-time `const` (zero runtime cost at any scope) from a runtime-initialized `var` (`errors.New(...)`, `regexp.MustCompile(...)`, a struct literal holding a func field or requiring setup) — a real sweep in `komodo-forge-sdk-go` applied the const-inlining rule to `var`s too, deleting exported sentinel errors and inlining them per-call (breaking `errors.Is`/`==` comparisons across 4 packages, confirmed by a failing `go test ./...`) and rebuilding a `websocket.Upgrader` on every connection instead of once at package level [P: H] [TODO]
+#### [TSK-01.1.1] `standards-go`'s magic-number rule (SUB-01.1.5 area) covers when to extract a numeric/string literal to a `const`, but never distinguishes a compile-time `const` (zero runtime cost at any scope) from a runtime-initialized `var` (`errors.New(...)`, `regexp.MustCompile(...)`, a struct literal holding a func field or requiring setup) — a real sweep in `komodo-forge-sdk-go` applied the const-inlining rule to `var`s too, deleting exported sentinel errors and inlining them per-call (breaking `errors.Is`/`==` comparisons across 4 packages, confirmed by a failing `go test ./...`) and rebuilding a `websocket.Upgrader` on every connection instead of once at package level [P: H] [DONE]
 * **SUB-01.1.1.1** state the const/var distinction explicitly: a `const` costs nothing regardless of where it's declared, so scope it to the narrowest lexical scope that needs it; a `var` whose initializer runs code (not a literal) costs an allocation or computation *every time that declaration executes*, so its scope must match how often it should be constructed, not how many call sites reference it
   * **Done when:** `grep -qi "zero-cost at any scope" claude-code/skills/standards-go/SKILL.md`
 * **SUB-01.1.1.2** state that a sentinel error or any value compared by `==`/`errors.Is`/`errors.As` must stay a single, stable instance (package-level `var`, regardless of call-site count) — moving it into a function body creates a new instance per call and silently breaks every identity comparison against it, and deleting an exported sentinel to do so is also a breaking API change per the existing Evolution section
@@ -29,13 +29,13 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.2.1** fix `generateRequest`'s payload truncation against `num_ctx` in the bridge server once its source is reachable from this repo
   * **Done when:** a large summarizer payload no longer silently truncates against `num_ctx` in `~/.komodo/bridge`
 
-#### [TSK-01.1.3] `standards-go`'s 120-col line length is stated only as a convention — no lint gate actually enforces it, and the ~90-col soft threshold for choosing grouped-vs-one-item-per-line wrapping isn't documented at all [P: M] [TODO]
+#### [TSK-01.1.3] `standards-go`'s 120-col line length is stated only as a convention — no lint gate actually enforces it, and the ~90-col soft threshold for choosing grouped-vs-one-item-per-line wrapping isn't documented at all [P: M] [DONE]
 * **SUB-01.1.3.1** add golangci-lint's `lll` linter (`line-length: 120`) to `templates/go/.golangci.yaml`, excluded on `_test\.go` paths alongside the existing test-file exclusions
   * **Done when:** `grep -q "lll" templates/go/.golangci.yaml`
 * **SUB-01.1.3.2** document in `standards-go` that 120 cols is now a hard lint gate, and that choosing the grouped form over one-item-per-line is governed by a ~90-col (75% of 120) soft threshold — explicitly noting that threshold is a reviewed convention only, `lll` cannot check "grouped vs. one-per-line"
   * **Done when:** `grep -qi "90.col" claude-code/skills/standards-go/SKILL.md`
 
-#### [TSK-01.1.4] `standards-go`'s magic-number rule is incomplete: it doesn't cover repeated string literals, cross-package const placement, or require grouping multiple new consts into one block [P: M] [TODO]
+#### [TSK-01.1.4] `standards-go`'s magic-number rule is incomplete: it doesn't cover repeated string literals, cross-package const placement, or require grouping multiple new consts into one block [P: M] [DONE]
 * **SUB-01.1.4.1** extend the rule to short repeated string literals and spec-level values, not just numeric literals
   * **Done when:** `grep -qi "string literal" claude-code/skills/standards-go/SKILL.md`
 * **SUB-01.1.4.2** add cross-package placement guidance: a const used across packages lives in the most spec-relevant domain package, other packages import it, never a parallel copy per consumer
@@ -43,7 +43,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.4.3** require two or more consts introduced together to go in one `const ( ... )` block, never consecutive standalone `const X = ...` statements
   * **Done when:** `grep -qi "const block\|const ( \.\.\. )" claude-code/skills/standards-go/SKILL.md`
 
-#### [TSK-01.1.5] `standards-go` has no stated methodology for verifying a repo-wide sweep (magic numbers, casing, literal-flattening) actually covered the whole repo, including build-tag-gated files, before declaring it done [P: M] [TODO]
+#### [TSK-01.1.5] `standards-go` has no stated methodology for verifying a repo-wide sweep (magic numbers, casing, literal-flattening) actually covered the whole repo, including build-tag-gated files, before declaring it done [P: M] [DONE]
 * **SUB-01.1.5.1** add to the Toolchain section: a requested sweep must search the whole repo (`test/`, `cmd/`, and any `//go:build`-gated files, verified against their matching `-tags`), and be confirmed with a fresh, non-cached run (`-count=1`) of build + vet + lint + the full test suite before reporting done
   * **Done when:** `grep -qi -- "-count=1" claude-code/skills/standards-go/SKILL.md`
 
@@ -56,7 +56,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.6.4** register the skill's listing cost per whichever choice SUB-01.1.6.3 lands on (`disable-model-invocation` or a `skillOverrides` `name-only` entry) and confirm the always-on budget still fits
   * **Done when:** `bash scripts/validate.sh`
 
-#### [TSK-01.1.7] Dependency Inversion Principle is undocumented across every language standards skill — `standards-go` states the idiom ("interfaces stay small and live at the consumer") without ever naming the principle, and no other active language skill mentions it at all [P: L] [TODO]
+#### [TSK-01.1.7] Dependency Inversion Principle is undocumented across every language standards skill — `standards-go` states the idiom ("interfaces stay small and live at the consumer") without ever naming the principle, and no other active language skill mentions it at all [P: L] [DONE]
 * **SUB-01.1.7.1** name and state it explicitly in `standards-go`, alongside its existing consumer-side-interface convention
   * **Done when:** `grep -qi "dependency inversion" claude-code/skills/standards-go/SKILL.md`
 * **SUB-01.1.7.2** add it to `standards-typescript`, phrased to this language's own idiom (e.g. depend on a caller-defined interface/type, not a concrete class)
@@ -70,7 +70,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 - [L] `docs/design-decisions.md:128`'s "no SKILL.md is invisible" enumeration (`standards-gcp`/`standards-azure`/`standards-rust`/`standards-csharp`/`standards-hardware`/`standards-cpp`) omits `standards-c` even though `standards-c` is itself parked as `SKILL.md.off` — the two `SUB-01.1.7.5`/`SUB-01.1.8.4` citations to line 128 as the source of that fact point at a line whose own list doesn't name `standards-c`, while line 158 of the same doc does · S → `/assess-bugs docs/design-decisions.md` reports it clear
 
-#### [TSK-01.1.8] `standards-go`'s new deterministic-formatting conventions (line-wrapping algorithm, magic-number-to-named-const extraction, blank lines around guard clauses) are language-agnostic but exist only in `standards-go` — every other active language skill still defers formatting entirely to its own linter/formatter with no manual-style rules of its own (after: "Fix standards-go's SCREAMING_SNAKE_CASE guidance") [P: L] [TODO]
+#### [TSK-01.1.8] `standards-go`'s new deterministic-formatting conventions (line-wrapping algorithm, magic-number-to-named-const extraction, blank lines around guard clauses) are language-agnostic but exist only in `standards-go` — every other active language skill still defers formatting entirely to its own linter/formatter with no manual-style rules of its own (after: "Fix standards-go's SCREAMING_SNAKE_CASE guidance") [P: L] [DONE]
 * **SUB-01.1.8.1** add equivalent conventions to `standards-typescript`, phrased to its own idiom
   * **Done when:** `grep -qi "collapsing one level" claude-code/skills/standards-typescript/SKILL.md`
 * **SUB-01.1.8.2** add equivalent conventions to `standards-python`, phrased to its own idiom
@@ -80,7 +80,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.8.4** add equivalent conventions to `standards-c`, phrased to its own idiom — `standards-c` is deliberately parked as `SKILL.md.off` (`docs/design-decisions.md:158`); content lands there until reactivation, a separate budget decision
   * **Done when:** `grep -qi "collapsing one level" claude-code/skills/standards-c/SKILL.md.off`
 
-#### [TSK-01.1.9] `standards-go`'s single-call-site rule defaults to "inline as a closure," but a closure still costs an allocation a fully-inlined statement doesn't — the rule should default to full inlining and reserve the closure form for when the value needs `:=` assignment or expression-embedding [P: L] [TODO]
+#### [TSK-01.1.9] `standards-go`'s single-call-site rule defaults to "inline as a closure," but a closure still costs an allocation a fully-inlined statement doesn't — the rule should default to full inlining and reserve the closure form for when the value needs `:=` assignment or expression-embedding [P: L] [DONE]
 * **SUB-01.1.9.1** rewrite the rule so full inlining into the caller's body is the default for a pure, small, single-call-site helper with no domain significance, and a closure is used only when full inlining would awkwardly restructure the caller
   * **Done when:** `grep -qi "fully inlin\|full inline" claude-code/skills/standards-go/SKILL.md`
 * **SUB-01.1.9.2** name concrete security/audit-significance examples that stay named regardless of size (a constant-time compare, an auth check, a revocation/ban predicate) — greppable-during-review outweighs one fewer symbol
@@ -89,7 +89,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 #### [TSK-01.1.10] Two Go 1.27+ "modernize" transforms were proposed for `standards-go` (embedded-field composite-literal flattening, `errors.As` → `errors.AsType[T]`) — neither is confirmed against actual Go release notes or the `gopls` modernize analyzer as of this review, so they must not be written into a shared skill unverified [P: L] [TODO]
 * **SUB-01.1.10.1** confirm both transforms actually exist (check the Go release notes and `gopls`'s modernize analyzer docs for the version `go.mod` would need to declare) before writing anything — this is a verification step, not yet a documentation change
 
-#### [TSK-01.1.11] Testable-logging is an undecided, recurring question in Go services — no documented pattern exists in `standards-go` for making a struct's log output assertable in a test without forcing mandatory logger injection everywhere [P: L] [TODO]
+#### [TSK-01.1.11] Testable-logging is an undecided, recurring question in Go services — no documented pattern exists in `standards-go` for making a struct's log output assertable in a test without forcing mandatory logger injection everywhere [P: L] [DONE]
 * **SUB-01.1.11.1** document the pattern: a narrow `Logger` interface field on a `Deps`-style struct, nil-checked, defaulting to a thin adapter over the package/SDK's global logging funcs when unset — never mandatory/non-nullable on every constructor, and never assume an existing global/singleton logger is untouchable by default either; this is filed separately from the formatting work above since it's a DI/architecture pattern, not a style rule
   * **Done when:** `grep -qi "Logger interface" claude-code/skills/standards-go/SKILL.md`
 
