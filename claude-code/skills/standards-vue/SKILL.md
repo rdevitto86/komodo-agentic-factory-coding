@@ -140,7 +140,7 @@ Makefile
 
 ## Seed backlog — `vue-ui`
 
-Stories `repo-init` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
+Stories `git-repo-init` splices into `Cross-Cutting` on Create, or appends if missing on Scaffold/Refresh.
 
 - [H] Build out the starter page's components · M
 - [H] Accessibility: WCAG AA pass (`standards-ui-design`) · S

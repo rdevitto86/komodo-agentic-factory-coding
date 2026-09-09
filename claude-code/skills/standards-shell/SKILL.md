@@ -67,7 +67,7 @@ Drop a row whose value the repo genuinely lacks. Never add a row for a fact this
 
 ## Repo layout
 
-This skill carries no `Repo layout — <token>` section. **Create is unsupported for shell** in `repo-init` — a shell script is glue around another language's repo, never a repo type of its own, so no repo type token maps here.
+This skill carries no `Repo layout — <token>` section. **Create is unsupported for shell** in `git-repo-init` — a shell script is glue around another language's repo, never a repo type of its own, so no repo type token maps here.
 
 ## Reference material
 

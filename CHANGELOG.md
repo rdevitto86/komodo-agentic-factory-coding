@@ -4,6 +4,25 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.8] — 2026-09-09
+
+### Added
+- `workflow-decompose` returns a `## Parallel` section naming task sets with no shared file or dependency edge.
+
+### Changed
+- `workflow-loop`'s P2.1 dispatches a `workflow-decompose`-confirmed independent task set together with `isolation: worktree` instead of one task at a time, with P2.0/P2.2/P2.3 stating how per-task WIP tracking, verify/review/commit, and worktree merge-back work for that set. P2.4 skips the `assess-bugs`/`assess-security` repeat for a single-task band already cleared at P2.3 with no diff change since.
+
+## [0.40.7] — 2026-09-09
+
+### Changed
+- Four model-visible skills (`standards-aws`, `readme-audit`, `git-merge-conflict`, `workflow-loop`) moved to `name-only` in `settings.json`'s `skillOverrides` — each was already reached only by explicit name but was paying its full description in the always-on listing. Dropped two dead `skillOverrides` entries (`workflow-authoring`, no skill directory; `standards-c`, disabled). Always-on budget drops from 1165 to 949 tokens.
+- `workflow-loop`'s Guardrails section states: don't re-open a file a fork just wrote — work from its returned `## Filed`/`## Changed` block instead of re-reading the whole file.
+
+## [0.40.6] — 2026-09-09
+
+### Changed
+- Renamed `repo-init` to `git-repo-init` and `readme` to `readme-modify` (pairing it with `readme-audit`), and split `changelog` into `changelog-write`/`changelog-audit`, matching the `backlog-modify`/`backlog-audit` precedent — cross-references across ~20 skills, `workflow-implementer.md`, `README.md`, and `settings.json`'s `skillOverrides` updated to match.
+
 ## [0.40.5] — 2026-09-09
 
 ### Security

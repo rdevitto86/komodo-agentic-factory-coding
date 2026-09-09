@@ -34,7 +34,7 @@ Every runbook needs a citing link from `docs/spec/SDD.md`'s §14 References — 
 
 ## Starting from the template
 
-Copy `templates/project/docs/runbook/template.md` verbatim as the starting point for a new runbook — the same starter file `repo-init`'s Create step already scaffolds into a new repo. Never invent a different heading set. The five sections are:
+Copy `templates/project/docs/runbook/template.md` verbatim as the starting point for a new runbook — the same starter file `git-repo-init`'s Create step already scaffolds into a new repo. Never invent a different heading set. The five sections are:
 
 - **Trigger** — the alert, symptom, or request that starts this runbook. Concrete: an alarm name, an error signature, a user-visible symptom — not "something is wrong."
 - **Diagnosis** — numbered steps to confirm this is actually the failure mode this runbook covers, not a lookalike. Each step names a command or dashboard, not just an instruction to "check X."

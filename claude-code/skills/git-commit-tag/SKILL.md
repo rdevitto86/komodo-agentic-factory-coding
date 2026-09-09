@@ -21,5 +21,5 @@ Run this against the section directly below `[Unreleased]` (the most recently re
 
 ## Callers
 
-- `changelog`'s Part 1 invokes this by name before appending a new version section, rather than restating the check.
+- `changelog-write` invokes this by name before appending a new version section, rather than restating the check.
 - `workflow-loop`'s P4 (`workflow-complete`) invokes this by name once the band's push has landed, against the section that band just released.

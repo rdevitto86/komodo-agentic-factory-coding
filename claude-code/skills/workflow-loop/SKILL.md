@@ -26,7 +26,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify | `verify_gate.py` — zero tokens | — |
 | P2.3 Review | `/assess-bugs` (+ `/assess-security`), then commit here | `reviewer` |
-| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog write`, `/backlog-audit`, once per band | `reviewer` (assess-*), `workflow-implementer` (backlog-audit) |
+| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog-write`, `/backlog-audit`, once per band | `reviewer` (assess-*), `workflow-implementer` (backlog-audit) |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `workflow-implementer` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` + tag check | — |
 
@@ -44,7 +44,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **P0's one job is confirming `BACKLOG.md` exists before P1 decomposes it** — never decomposing (P1's job) or auditing (P1 runs `/backlog-audit`) itself. P0 either finds a backlog, builds one, or stops.
 
-**`README.md` missing** → run `/readme` to create it (cheap, never the blocker).
+**`README.md` missing** → run `/readme-modify` to create it (cheap, never the blocker).
 
 **`BACKLOG.md` exists** → `docs/spec/SDD.md`/`docs/spec/PRD.md` are optional context, never a blocker. Read if present, framing only (`standards-specs` owns their section maps) — full read on session's first run, `test -f` existence-only after. Go to P1.
 
@@ -70,9 +70,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — go to P0, not P2.
 
-**A `BACKLOG.md` holding only `repo-init`'s seed stories is not a decomposed queue** — run the fork rather than treating it as if P1 already happened.
+**A `BACKLOG.md` holding only `git-repo-init`'s seed stories is not a decomposed queue** — run the fork rather than treating it as if P1 already happened.
 
-**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `repo-init`'s Create already ran — trust the tree.** Re-invoke `/repo-init` only for an open Foundation-edge story (`backlog-modify` owns that edge), or when the task explicitly asks for Scaffold/Refresh.
+**A language manifest already on disk (`go.mod`, `package.json`, `cdk.json`) means `git-repo-init`'s Create already ran — trust the tree.** Re-invoke `/git-repo-init` only for an open Foundation-edge story (`backlog-modify` owns that edge), or when the task explicitly asks for Scaffold/Refresh.
 
 **Plan the run's PRs before branching — no branch, no commit, no `gh pr create` here.** A task group is one domain, so the queue is usually already one PR-sized band per `git-pr-create`'s sizing rule of thumb. Split further only if the group partitions cleanly within itself (no shared file, no dependency edge crossing the split); an entangled group stays one band regardless of size. Present the grouping as a short table (PR # · `TSK-` IDs · why). **Only this run's first planned PR gets built out through P2–P4** — a group needing a second band stays queued, ordered by dependency.
 
@@ -94,7 +94,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A task `[BLOCKED]` on something outside this run is not a phase halt** — pick the next task with no dependency edge to it and continue; the blocker surfaces in P4's report. Only stop if every remaining task is transitively blocked.
 
-**Ends when:** one task is named `[WIP]` and the rest are written down.
+**Ends when:** one task is named `[WIP]` and the rest are written down — or, when dispatching a P1-confirmed parallel set (see P2.1), every task in that set is named `[WIP]` together.
 
 ### P2.1 · Implement
 
@@ -103,6 +103,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 **Pass every command explicitly.** The fork cannot see the queue — a task with no `Done when` commands stops rather than guessing one.
 
 **Run the fork even when the code already appears to exist on disk** — verifying inherited state is not implementing it.
+
+**When P1's `## Parallel` output already names a set of tasks with no shared file and no dependency edge among them (confirmed at P2.0), dispatch that set together in one block, `isolation: worktree`, rather than one task at a time.** "Once per task" bounds a fork's scope, never the order tasks start in — serialize only across a real dependency edge. **Each task in the set still goes through P2.2/P2.3 individually** — verify, review, and commit each on its own, merging its worktree branch back before moving to the next task's commit; dispatching in parallel changes only when implementation starts, not how each result is checked in.
 
 **A fork returns a result, never its reasoning — except `## Comment Candidates`.** Retain each task's non-empty `## Comment Candidates` entries verbatim across the band — P3's `/write-comments` call needs the live WHY-context captured at implementation time.
 
@@ -136,9 +138,11 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story filed is folded into P2.0's pick and resolved in this pass — fixed via `/workflow-implement`, or declined and removed with the reason noted for P4's report.
 
+**For a single-task band, skip the `/assess-bugs` repeat when that task was already cleared at P2.3 with no diff change since.** Skip the `/assess-security` repeat under the same condition only if P2.3 actually ran it — if P2.3 skipped `/assess-security` because the surface didn't warrant it, that same judgment applies here too, so it stays skipped for the same reason, not because it's being treated as already cleared. Either way, still run `/assess-simplify` (never covered at P2.3) plus the perf suite.
+
 **Clears the target state's four standing closeout stories.** Never picked as ordinary P2.1 tasks — `assess-*` calls stay this session's job, not the fork that wrote the code.
 
-**Once every closeout finding is fixed or declined, run `/changelog write` for the whole band** — one pass covering every task shipped. P3 then only releases what this step already wrote.
+**Once every closeout finding is fixed or declined, run `/changelog-write` for the whole band** — one pass covering every task shipped. P3 then only releases what this step already wrote.
 
 **Once the changelog is written, run `/backlog-audit` over the whole file, no scope** — sweeps stale tasks, duplicates, and satisfied `[BLOCKED]` `Recheck:` entries.
 
@@ -176,6 +180,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **Backing out is a rewrite** — capture `git diff` before a risky write; `git-pr-create` owns the recovery command.
 - **The bridge is optional, never blocking** — an unreachable MCP server is a skipped step; never branch a phase on whether it is up.
 - **Never poll a delegated phase** — it re-invokes this session the moment it finishes.
+- **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Filed`/`## Changed` block; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
 - **Standards verification happens inside the review or implement fork, never in this window** — a P2.3/P2.4 finding needing re-verifying is P2.1's job.
 - **After any context compaction, re-read the active `ways/` file before the next phase gate** — it loads via `Read`, not invocation, so compaction skips it.
 

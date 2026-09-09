@@ -74,7 +74,7 @@ The `gh pr create`/`gh pr edit` output (it prints the PR URL) — nothing else.
 
 # Git lifecycle: conventions and enforcement
 
-This section is the merged source for every git branch/push/merge/protected-ref/stash/worktree fact in the toolkit. `git_guard.py` enforces every "Enforcement" line below directly, in code — this is what to do with the capability, not a second copy of the block. `git-pr-review`, `git-pr-comment`, `git-issue-create`, `git-issue-review`, `git-commit-message`, `repo-init`, `workflow-loop`, and `git-merge-conflict` all point here rather than restating any of it.
+This section is the merged source for every git branch/push/merge/protected-ref/stash/worktree fact in the toolkit. `git_guard.py` enforces every "Enforcement" line below directly, in code — this is what to do with the capability, not a second copy of the block. `git-pr-review`, `git-pr-comment`, `git-issue-create`, `git-issue-review`, `git-commit-message`, `git-repo-init`, `workflow-loop`, and `git-merge-conflict` all point here rather than restating any of it.
 
 ## Never route around the block
 

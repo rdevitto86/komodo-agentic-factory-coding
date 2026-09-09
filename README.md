@@ -5,7 +5,7 @@ Agent configuration for software/hardware engineering, shared across every Komod
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~1155 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+2. **Base context stays tiny.** ~949 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
@@ -50,7 +50,7 @@ scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
 
 The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
 
-**Template exception:** the `readme` skill mandates a fixed 6-section template (Overview, Features, Setup, Usage, Testing, References). This repo has no `docs/spec/SDD.md` of its own — it *is* the tool the rest of that template would otherwise point at — so every section below Setup departs from that skeleton by name, as a deliberate, one-off carve-out for this repo's shape: **Structure** (would be Features, but the directory tree is the more direct fact source than prose feature subsections), **The Agentic Workflow Loop** (Features/Usage content merged, including the diagram the template would otherwise push to an SDD that doesn't exist here), **The Hooks** (Features detail, kept adjacent to the loop it gates), **Skills** (Features detail, kept adjacent to the loop that invokes them), **Output Formatting** (has no template slot — states a session-level contract, not a repo feature), **Budget** (Testing-adjacent — it's a check `scripts/validate.sh` runs, but scoped to context budget rather than a test tier), and **Git hooks for other repos** (Usage detail — the one thing another repo actually invokes from this one).
+**Template exception:** the `readme-modify` skill mandates a fixed 6-section template (Overview, Features, Setup, Usage, Testing, References). This repo has no `docs/spec/SDD.md` of its own — it *is* the tool the rest of that template would otherwise point at — so every section below Setup departs from that skeleton by name, as a deliberate, one-off carve-out for this repo's shape: **Structure** (would be Features, but the directory tree is the more direct fact source than prose feature subsections), **The Agentic Workflow Loop** (Features/Usage content merged, including the diagram the template would otherwise push to an SDD that doesn't exist here), **The Hooks** (Features detail, kept adjacent to the loop it gates), **Skills** (Features detail, kept adjacent to the loop that invokes them), **Output Formatting** (has no template slot — states a session-level contract, not a repo feature), **Budget** (Testing-adjacent — it's a check `scripts/validate.sh` runs, but scoped to context budget rather than a test tier), and **Git hooks for other repos** (Usage detail — the one thing another repo actually invokes from this one).
 
 ```mermaid
 flowchart TD
@@ -112,7 +112,7 @@ flowchart TD
 
 Two escape routes exist outside the five-phase happy path: the **open hatch** (`open <topic>`) bypasses the machine entirely before P0 ever runs, and the **task-level `[BLOCKED]` exit** inside P2 lets one stuck task drop out — via two failed verify attempts on the same check — without halting the rest of the band; only every remaining task being transitively blocked halts P2 itself, and even then P4 still reports it rather than the run silently vanishing. P0's "nothing to build from" stop is the sole point allowed to end the whole loop with nothing delivered.
 
-Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `readme` owns the entry point; `backlog-modify` and `changelog` own the format of the two mutable records (`backlog-audit` verdicts and edits `BACKLOG.md`'s existing tasks directly), with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
+Each repo carries three local documents, plus the SDD (and, when one exists, the PRD) under `docs/spec/`. `readme-modify` owns the entry point; `backlog-modify` and `changelog-write` own the format of the two mutable records (`backlog-audit` verdicts and edits `BACKLOG.md`'s existing tasks directly), with `standards-worklog` as the read/write directive shared across both. `sdd` and `prd` own authoring and audit for the spec files — `standards-specs` owns their section maps and read contract.
 
 | File | Holds | Mutable |
 |---|---|---|
@@ -164,7 +164,7 @@ bash scripts/test-hooks.sh    # 202 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-plan` `/backlog-prioritize` `/changelog` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/prd` `/readme` `/readme-audit` `/repo-init` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement` `/write-comments`
+Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-plan` `/backlog-prioritize` `/changelog-audit` `/changelog-write` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/git-repo-init` `/prd` `/readme-audit` `/readme-modify` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement` `/write-comments`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 
