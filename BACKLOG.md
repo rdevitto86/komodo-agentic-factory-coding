@@ -171,6 +171,24 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.4.8.1** swap S4/S6 to a distinct representative command each (or accept the overlap explicitly with a comment noting the smoke set intentionally duplicates a couple of G-cases for fast-fail ordering) so the two blocks aren't silently asserting the same thing twice
   * **Done when:** `/assess-simplify scripts/test-hooks.sh` reports it clear
 
+#### [TSK-01.4.9] `workflow-loop` has no per-stage timing instrumentation, so a session (or the user, after the fact) can't see where a run's time actually went without manually reconstructing it from the transcript — confirmed this session, where the user had to ask and the only available answer was a call-count reconstruction, not real durations [P: M] [TODO]
+* **SUB-01.4.9.1** add lightweight per-phase timing to `workflow-loop`'s execution (P0–P4, and each forked skill invocation within them), captured silently
+  * **Done when:** `grep -qi "timing" claude-code/skills/workflow-loop/SKILL.md`
+* **SUB-01.4.9.2** state that the metrics stay silent unless the user explicitly asks for them (e.g. "how long did that take") — never printed by default, never part of a phase's own `Ends when:` report
+  * **Done when:** `grep -qi "silent unless" claude-code/skills/workflow-loop/SKILL.md`
+
+#### [TSK-01.4.10] `git_guard.py` is live via symlink (`claude-code/hooks/` is symlinked into `~/.claude/hooks/`, per this repo's own `AGENTS.md`), so a direct, non-atomic write to the source file is a live outage window for every session, this one included — a half-saved state mid-edit is the most likely explanation for the post-mortem's second failure (`NameError: name 'spans' is not defined`, not confirmed at the time since the outage blocked further investigation) [P: M] [TODO]
+* **SUB-01.4.10.1** document in `AGENTS.md` (or wherever hook-editing guidance belongs) that a file under `claude-code/hooks/` is live the instant it's saved — editing it should go through a copy-then-atomic-rename step (write to a temp file in the same directory, `mv` into place) rather than a direct in-place tool write whenever the edit is nontrivial enough to risk a half-written intermediate state
+  * **Done when:** `grep -qi "atomic" claude-code/AGENTS.md`
+
+#### [TSK-01.4.11] A `workflow-implement` brief that offers a design/mechanism choice without a preference lets the fork pick, and a wrong pick costs a multi-round fix cycle discovered only at review — confirmed elsewhere: a brief left the choice between two request-body-limiting mechanisms open, the fork picked the one that doesn't abort the connection and rejects a body of exactly the cap, and it took two further implement rounds (surfaced by review, not by the brief) to correct [P: M] [TODO]
+* **SUB-01.4.11.1** add a rule to `workflow-loop/SKILL.md`'s P2.1 section (briefing an implement fork): when a task involves a genuine mechanism/design choice, not merely "write this function," the brief states the chosen mechanism and why, rather than leaving it to the fork's judgment — if truly undecided, that's a P0/P2.0 decision to make before forking, not something to hand off ambiguously
+  * **Done when:** `grep -qi "states the chosen mechanism" claude-code/skills/workflow-loop/SKILL.md`
+
+#### [TSK-01.4.12] Parallelize P2.4 closeout's three review calls — `assess-bugs`, `assess-security`, `assess-simplify` currently run serially against the same, unchanging whole-band diff with no dependency edge between them, and all three are read-only against the repo (only `BACKLOG.md` writes), so `isolation: worktree` doesn't even apply the way it does for a P2.1 writer fan-out; confirmed by this session's harness audit as the single clearest actionable slowdown in the loop, directly matching the user's complaint that closeout review is the phase that feels slowest [P: H] [TODO]
+* **SUB-01.4.12.1** update `ways/sdlc.md`'s P2.4 section and `workflow-loop/SKILL.md`'s P2.4 section to dispatch `assess-bugs`, `assess-security`, `assess-simplify` as three parallel forks (no `isolation: worktree` needed — read-only fan-out) instead of a serial list, same pattern already proven for P2.1's `workflow-decompose`-confirmed parallel task sets
+  * **Done when:** `grep -qi "parallel" claude-code/skills/workflow-loop/ways/sdlc.md` AND the P2.4 section of `claude-code/skills/workflow-loop/SKILL.md` no longer lists the three calls as a plain sequential sentence
+
 ---
 
 ## Archive
