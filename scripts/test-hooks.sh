@@ -154,6 +154,29 @@ bash_case_agent() {
   expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"agent_type\":\"$agent\",\"tool_input\":{\"command\":\"$escaped\"}}"
 }
 
+# like bash_case_agent, but runs the hook from a given cwd -- exercises the repo_root()-is-None path
+bash_case_agent_at() {
+  local dir="$1" label="$2" want="$3" agent="$4" command="$5" must_contain="${6:-}"
+  local escaped; escaped="$(json_escape "$command")"
+  local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"$agent\",\"tool_input\":{\"command\":\"$escaped\"}}"
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out got reason problem="" decoded
+    out="$(cd "$dir" && printf '%s' "$payload" | python3 "$HOOK" 2>/dev/null)"
+    decoded="$(decision_reason_of "$out")"
+    got="${decoded%%$'\x1e'*}"
+    reason="${decoded#*$'\x1e'}"
+
+    [ "$got" != "$want" ] && problem="decision=$got want=$want"
+    if [ -z "$problem" ] && [ -n "$must_contain" ] && [[ "$reason" != *"$must_contain"* ]]; then
+      problem="reason missing: $must_contain"
+    fi
+    report "$outfile" "$label" "$problem" "$reason"
+  ) &
+}
+
 # ────────────────────────────────  smoke test  ──────────────────────────────
 printf '\nsmoke test\n\n'
 smoke_case() {
@@ -730,6 +753,9 @@ bash_case "G148 a non-reviewer tee to a non-guarded extensionless file is unaffe
   allow 'tee notes.txt'
 bash_case "G149 a non-reviewer tee to BACKLOG.md is unaffected (still denied)" \
   deny 'tee BACKLOG.md' "bypasses the comment guard"
+# an unresolvable repo root (cwd outside any git repo) must not inherit reviewer_guard's own fail-open here
+bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied, not fail-open" \
+  deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
 
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"

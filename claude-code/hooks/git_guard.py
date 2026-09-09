@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib.comment_rules import EXTENSION_FAMILY, FILENAME_FAMILY
+from lib.git import repo_root as lib_repo_root
 from reviewer_guard import REVIEWER_AGENT, is_allowed_path as reviewer_allowed_path
 
 READ_ONLY_GIT = {
@@ -437,6 +438,9 @@ def is_guarded_path(token, cwd, agent_type=None):
     cleaned = token.strip("\"'")
     # reviewer Bash writes narrow to BACKLOG.md alone, matching its Edit/Write boundary -- any extension is in scope
     if agent_type == REVIEWER_AGENT:
+        # unlike reviewer_guard's own fail-open, an unresolvable root here stays guarded, matching git_guard's Bash defensiveness
+        if lib_repo_root(cwd or os.getcwd()) is None:
+            return True
         return not reviewer_allowed_path(cleaned, cwd)
     if not matches_guarded_family(token):
         return False
