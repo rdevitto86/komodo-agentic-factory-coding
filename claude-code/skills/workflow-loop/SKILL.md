@@ -110,6 +110,8 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **No retry counter here** — a P2.2 failure sending a task back to this phase is already bounded by P2.2's own pass/fail, not a repeat-prone loop. The retry tally lives at P2.3, the phase where a "same skill, same file, no forward progress" loop actually happens.
 
+**When a task involves a genuine mechanism or design choice — not merely "write this function" — the brief states the chosen mechanism and why, rather than leaving it to the fork's judgment.** A fork picking wrong on an open design question costs a discovery-at-review round trip the brief could have closed for free. If the choice is genuinely undecided, that's a P0/P2.0 decision to make before forking, not something to hand off ambiguously.
+
 **Ends when:** every one of the task's `Done when` commands exits zero.
 
 ### P2.2 · Verify
