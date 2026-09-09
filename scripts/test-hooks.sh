@@ -899,6 +899,23 @@ expect "R8  reviewer editing docs/BACKLOG.md is denied when docs/ itself is a sy
 {"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_ANCESTOR_SYMLINK","tool_input":{"file_path":"$FIXTURE_ANCESTOR_SYMLINK/docs/BACKLOG.md"}}
 JSON
 
+# R9-R12: main()'s except BaseException: sys.exit(0) must fail open, mirroring git_guard.py's F7 case above.
+expect "R9  a malformed payload fails open, not closed" allow <<'JSON'
+{"tool_name":"Edit","agent_type":"reviewer","tool_input":
+JSON
+
+expect "R10  a non-dict tool_input fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":"not-a-dict"}
+JSON
+
+expect "R11  a non-string file_path fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":42}}
+JSON
+
+expect "R12  a non-string cwd fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":42,"tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
 VALIDATOR="$HOOKS/comments.py"
 printf '\ncomments apply\n\n'
 
