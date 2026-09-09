@@ -12,7 +12,7 @@ Rationale moved out of root `AGENTS.md` to keep that file actionable — every f
 
 `context_injector.py` reads disk only. It never probes the bridge — a session must not wait on a local model to start.
 
-`verify_gate.py`'s check is opt-in per repo and silent otherwise. A repo declares its check as `.claude/verify.sh`, or a `verify` target in `Makefile` / `Taskfile` / `justfile`; with none of those present the hook does nothing. It also skips a clean working tree, so a fork that touched nothing never pays for a test run. Claude Code stops honouring a `Stop` hook after 8 consecutive blocks, so a permanently red suite cannot trap a fork.
+`verify_gate.py`'s check is opt-in per repo and silent otherwise. A repo declares its check as `.claude/verify.sh`, or a `verify` target in `Makefile` / `Taskfile` / `justfile`; with none of those present the hook does nothing. It also skips a clean working tree, so a fork that touched nothing never pays for a test run. Claude Code stops honouring a `Stop` hook after 8 consecutive blocks, so a permanently red suite cannot trap a fork. That cutoff is invisible to the hook itself, so it keeps its own approximate streak of consecutive blocks against a repo (a small file under the OS temp dir, keyed by a hash of the repo root, cleared on any pass or skip) and appends a warning to the block reason once the streak nears the cutoff — a fork sees it's about to be force-ended instead of the loop just going quiet.
 
 `comments.py check` evaluates the file as it stands, so adjacency and reindentation are irrelevant. It fails closed — an unparseable payload denies rather than silently passing.
 

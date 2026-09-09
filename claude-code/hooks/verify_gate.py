@@ -22,12 +22,19 @@
 # so any internal error exits 0 and the turn ends normally.
 #
 # Claude Code stops honouring a Stop hook after 8 consecutive blocks,
-# so a permanently red suite cannot trap the session either.
+# so a permanently red suite cannot trap the session either. This hook
+# keeps its own approximate count of how many times in a row it has
+# blocked this repo (a small file under the OS temp dir, keyed by repo
+# root, cleared on any pass or skip) and appends a warning once that
+# count nears the cutoff -- the fork gets a signal before it is force-
+# ended, instead of the loop just going quiet.
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -35,6 +42,7 @@ from lib.git import repo_root
 
 TIMEOUT_SECONDS = 300
 MAX_OUTPUT_CHARS = 4000
+STREAK_WARN_AT = 6
 
 
 def run(args, cwd):
@@ -81,6 +89,34 @@ def tree_is_dirty(root):
     return bool(result.stdout.strip())
 
 
+def streak_path(root):
+    key = hashlib.sha256(root.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(tempfile.gettempdir(), "komodo-verify-gate-streak-%s" % key)
+
+
+def read_streak(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return int(handle.read().strip())
+    except (OSError, ValueError):
+        return 0
+
+
+def write_streak(path, value):
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(str(value))
+    except OSError:
+        pass
+
+
+def clear_streak(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def tail(text):
     text = text.strip()
     if len(text) <= MAX_OUTPUT_CHARS:
@@ -88,16 +124,25 @@ def tail(text):
     return "...(truncated)...\n" + text[-MAX_OUTPUT_CHARS:]
 
 
-def block(label, result):
+def block(label, result, streak):
     combined = tail((result.stdout or "") + (result.stderr or ""))
-    reason = "\n".join([
+    lines = [
         "`%s` is failing. The task is not done." % label,
         "",
         combined,
         "",
         "Fix the cause, do not suppress the check. Re-run `%s`" % label,
         "and show the passing output as evidence.",
-    ])
+    ]
+    if streak >= STREAK_WARN_AT:
+        lines += [
+            "",
+            "This is block %d in a row on this tree. Claude Code stops "
+            "honoring a Stop hook after 8 consecutive blocks -- past that "
+            "this fork force-ends with no further warning. If the same "
+            "failure persists, stop and escalate instead of retrying." % streak,
+        ]
+    reason = "\n".join(lines)
     sys.stdout.write(json.dumps({"decision": "block", "reason": reason}))
     sys.exit(0)
 
@@ -114,16 +159,23 @@ def main():
     if root is None:
         sys.exit(0)
 
+    path = streak_path(root)
+
     command, label = discover(root)
     if command is None:
+        clear_streak(path)
         sys.exit(0)
 
     if not tree_is_dirty(root):
+        clear_streak(path)
         sys.exit(0)
 
     result = run(command, root)
     if result.returncode != 0:
-        block(label, result)
+        streak = read_streak(path) + 1
+        write_streak(path, streak)
+        block(label, result, streak)
+    clear_streak(path)
     sys.exit(0)
 
 

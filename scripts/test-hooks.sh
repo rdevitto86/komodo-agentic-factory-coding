@@ -30,7 +30,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOOKS="$REPO_ROOT/claude-code/hooks"
 WORKDIR="$(mktemp -d)"
 SESSION="hooktest$$"
-trap 'wait 2>/dev/null; rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION"* "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION"*' EXIT
+trap 'wait 2>/dev/null; rm -rf "$WORKDIR"; rm -f "${TMPDIR:-/tmp}/claude-comment-grant-$SESSION"* "${TMPDIR:-/tmp}/claude-comment-ledger-$SESSION"* "${TMPDIR:-/tmp}/komodo-verify-gate-streak-"*' EXIT
 
 RESULTS_DIR="$WORKDIR/results"
 mkdir -p "$RESULTS_DIR"
@@ -1244,6 +1244,77 @@ inject_case "I11 outside a repo it stays silent"   "" "" "Work state"
 inject_case "I12 a missing root does not crash"    "/nonexistent/repo" "" "Work state"
 inject_case "I13 counts a non-zero open tally for a heading-format backlog" "$FIX/full" "Backlog: 3 open"
 inject_case "I14 a DONE story is excluded from the open tally"    "$FIX/full" "Backlog: 3 open" "Fix flaky test"
+
+# ────────────────────────────  verify gate  ─────────────────────────────
+VERIFY_GATE="$HOOKS/verify_gate.py"
+printf '\nverify gate\n\n'
+
+if [ "$IS_WINDOWS" -eq 1 ] || ! command -v make >/dev/null 2>&1; then
+  skip_case "VG1 blocks below the warning threshold carry no streak warning" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG2 the streak warning appears once the block count reaches the threshold" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG3 a passing verify clears the streak" "make unavailable, or Windows runner (TSK-01.1.14)"
+else
+  FIXTURE_VGATE="$WORKDIR/fixture-vgate"
+  mkdir -p "$FIXTURE_VGATE"
+  git init -q -b main "$FIXTURE_VGATE"
+  (cd "$FIXTURE_VGATE" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+  printf 'dirty\n' > "$FIXTURE_VGATE/file.txt"
+
+  vgate_run() {
+    printf '{"cwd":"%s"}' "$FIXTURE_VGATE" | python3 "$VERIFY_GATE" 2>/dev/null
+  }
+
+  vgate_decision() {
+    if [ -z "$1" ]; then printf 'allow'; return; fi
+    printf '%s' "$1" | python3 -c 'import json, sys
+try:
+    print(json.loads(sys.stdin.read()).get("decision", "allow"))
+except Exception:
+    print("malformed")' 2>/dev/null
+  }
+
+  vgate_reason() {
+    [ -z "$1" ] && return
+    printf '%s' "$1" | python3 -c 'import json, sys
+try:
+    print(json.loads(sys.stdin.read()).get("reason", ""))
+except Exception:
+    print("")' 2>/dev/null
+  }
+
+  printf 'verify:\n\t@exit 1\n' > "$FIXTURE_VGATE/Makefile"
+  # sequential, not backgrounded -- each call reads the streak the last one wrote
+  for _ in 1 2 3 4 5; do vgate_out="$(vgate_run)"; done
+  decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [[ "$reason" != *"consecutive"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG1 blocks below the warning threshold carry no streak warning" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG1 blocks below the warning threshold carry no streak warning" "decision=$decision" "$reason"
+  fi
+
+  vgate_out="$(vgate_run)"
+  decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [[ "$reason" == *"consecutive"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG2 the streak warning appears once the block count reaches the threshold" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG2 the streak warning appears once the block count reaches the threshold" "decision=$decision" "$reason"
+  fi
+
+  printf 'verify:\n\t@exit 0\n' > "$FIXTURE_VGATE/Makefile"
+  pass_out="$(vgate_run)"
+  pass_decision="$(vgate_decision "$pass_out")"
+  printf 'verify:\n\t@exit 1\n' > "$FIXTURE_VGATE/Makefile"
+  vgate_out="$(vgate_run)"
+  decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$pass_decision" = "allow" ] && [ "$decision" = "block" ] && [[ "$reason" != *"consecutive"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG3 a passing verify clears the streak" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG3 a passing verify clears the streak" "pass=$pass_decision next=$decision" "$reason"
+  fi
+fi
 
 wait
 

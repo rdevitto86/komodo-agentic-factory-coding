@@ -4,6 +4,9 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- `verify_gate.py` now tracks its own approximate consecutive-block streak per repo (keyed off the repo root, cleared on any pass or skip) and appends a warning to the block reason once that streak nears the 8-consecutive-block point where Claude Code stops honoring a `Stop` hook — previously a fork hitting that cutoff went silent with no in-repo signal.
+
 ## [0.44.0] — 2026-09-09
 
 ### Added
