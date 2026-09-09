@@ -37,8 +37,8 @@ claude-code/          mirrors ~/.claude exactly
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           workflow-implementer, workflow-planner, engineering, scout
-├── hooks/            comments, git_guard, verify_gate, context_injector, auto_format
-└── skills/           62 active, 6 parked, lazily loaded
+├── hooks/            comments, git_guard, reviewer_guard, verify_gate, context_injector, auto_format
+└── skills/           63 active, 7 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
@@ -122,16 +122,17 @@ Each repo carries three local documents, plus the SDD (and, when one exists, the
 
 ## The Hooks
 
-One guard runs as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
+Two guards run as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
 
 | Hook | Fires on | Does | On error |
 |---|---|---|---|
 | `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites | **Closed** |
+| `reviewer_guard.py` | Edit, Write, Bash | Restricts the `reviewer` agent to editing `BACKLOG.md` only | **Closed** |
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
 | `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |
 
-**The failure policy is inverted on purpose.** The guard fails closed because a bad command reaches a shared remote. The other three fail open because none of them may be able to brick a session.
+**The failure policy is inverted on purpose.** The two guards fail closed because a bad command reaches a shared remote or lets a review-only agent mutate arbitrary files. The other three fail open because none of them may be able to brick a session.
 
 ### Comments are a lint, not a hook
 
@@ -147,7 +148,7 @@ python3 ~/.claude/hooks/comments.py apply < proposals.json
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 202 regression cases
+bash scripts/test-hooks.sh    # 223 regression cases
 ```
 
 ## Skills
@@ -164,7 +165,7 @@ bash scripts/test-hooks.sh    # 202 regression cases
 
 **There is no unload.** Once a body is in the window it stays until `/clear` or a compaction. Deferring the load is the whole lever — which is why a glob that is too broad is the expensive mistake, not a skill that exists.
 
-Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-plan` `/backlog-prioritize` `/changelog-audit` `/changelog-write` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/git-repo-init` `/prd` `/readme-audit` `/readme-modify` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement` `/write-comments`
+Workflow skills, all free: `/adr` `/assess-bugs` `/assess-change-risk` `/assess-code-conventions` `/assess-code-quality` `/assess-dependencies` `/assess-performance` `/assess-readiness` `/assess-security` `/assess-simplify` `/assess-testing` `/assess-vulnerabilities` `/backlog-audit` `/backlog-modify` `/backlog-plan` `/backlog-prioritize` `/changelog-audit` `/changelog-write` `/config-accessibility` `/git-commit-message` `/git-commit-tag` `/git-issue-create` `/git-issue-review` `/git-pr-comment` `/git-pr-create` `/git-pr-review` `/git-repo-init` `/prd` `/readme-audit` `/readme-modify` `/runbook` `/sdd` `/workflow-complete` `/workflow-consolidate` `/workflow-debug` `/workflow-decompose` `/workflow-implement` `/write-comments`
 
 `/workflow-loop` carries neither key instead — it pays its description every turn so a plain-language request ("build this end to end") can trigger it, not just the typed command. Its forked phases stay slash-only on purpose.
 

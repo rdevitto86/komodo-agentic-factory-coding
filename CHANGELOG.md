@@ -4,6 +4,8 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-09-09
+
 ### Added
 - Five `standards-*` skills (`standards-go`, `standards-typescript`, `standards-python`, `standards-java`, the parked `standards-c.off`) gained a shared Dependency Inversion Principle statement and wrapping/magic-literal/guard-clause conventions, each phrased to the language's own idiom.
 - `standards-go` gained a const/var zero-cost distinction, a sentinel-identity-comparison rule, a hard 120-col `lll` lint gate (`templates/go/.golangci.yaml`) with a documented 90-col soft wrap threshold, magic-number rule extensions for string literals/cross-package placement/const-block grouping, a repo-wide-sweep `-count=1` verification methodology, a full-inlining default for single-call-site helpers, and a testable-logging `Logger` interface pattern.
