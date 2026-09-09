@@ -63,7 +63,7 @@ Skill naming follows seven buckets, front-loaded so related skills tab-complete 
 | Autoloaded config — governs session/output behavior | `config-<topic>` | Loaded via description, not path-triggered; states how the agent must present itself, not what it writes | `config-accessibility` |
 | Autoloaded knowledge — domain facts | `standards-<noun>` | Loaded via `paths`/description, or by name from a skill that needs it; states what is true about a language, tool, process, or external artifact | `standards-go`, `standards-api-security`, `standards-api-design`, `standards-sdlc`, `standards-worklog` |
 
-`workflow-<phase>` is its own fixed prefix for the five loop phases and is never reused outside it.
+`workflow-<phase>` is its own fixed prefix for the five loop phases and is never reused outside it. It stays `workflow-*`, not `harness-*` — this toolkit's own `AGENTS.md` states it is model-agnostic across "every model and every tool — Claude, GPT, Gemini, Qwen, Kimi, Llama, hosted or local," so a `harness-*` prefix would misclaim the term Claude Code's own system prompt already uses for the CLI runtime itself, and would be wrong even conceptually since this repo is agent configuration that rides on top of whichever harness runs it, not a harness in its own right.
 
 ## readme vs readme-audit split
 
