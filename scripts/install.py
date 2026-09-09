@@ -57,7 +57,7 @@ def resolve_interpreter():
 
 
 def hook_command(interpreter, hook_path):
-    # WHY: shlex.quote is POSIX-only; PowerShell-only dispatch is a known residual gap.
+    # shlex.quote is POSIX-only; PowerShell-only dispatch is a known residual gap.
     return " ".join(shlex.quote(part) for part in interpreter + [hook_path])
 
 
