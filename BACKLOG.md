@@ -166,8 +166,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
   * **Done when:** `grep -qi "hand-rolled parser" claude-code/skills/workflow-loop/ways/sdlc.md`
 
 #### [TSK-01.4.3] A real, enforced skill-retry counter — distinct from the prose round-cap rule in TSK-01.4.2, which still relies on the orchestrating session honoring it — to prevent burn/doom cycles where the same skill re-invokes against the same target with no forward progress, across any phase, not just P2.3/P2.4 review [P: H] [TODO]
-* **SUB-01.4.3.1** design and document the mechanism (e.g. a per-band call tally the orchestrating session must state and check before each repeat invocation of the same skill against the same file/task, or a lighter self-report convention each `assess-*`/`workflow-implement` result carries) — this needs a design decision, not just a prose rule, since `workflow-loop`'s existing "same check failing twice" and Claude Code's own "8 consecutive Stop-hook blocks" precedents are both informal or session-local; record the choice in `docs/design-decisions.md`
-  * **Done when:** `docs/design-decisions.md` names the chosen retry-counter mechanism
+* **SUB-01.4.3.1** ~~design and document the mechanism~~ — decided: a session-stated round tally (no new state file; the orchestrating session states "round N for `<file>`" before each repeat invocation, using P2.0's existing perpetual-context queue as the record), recorded in `docs/design-decisions.md`
+  * **Done when:** `grep -qi "session-stated round tally" docs/design-decisions.md`
 * **SUB-01.4.3.2** wire the mechanism into `workflow-loop/SKILL.md`'s P2.1/P2.3/P2.4 sections, applying uniformly to `workflow-implement` retries and `assess-*` review rounds
   * **Done when:** `grep -qi "retry counter\|call tally" claude-code/skills/workflow-loop/SKILL.md`
 
