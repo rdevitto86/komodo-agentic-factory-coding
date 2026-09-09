@@ -2,12 +2,14 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from auto_format import run_formatter
 from lib.comment_rules import (
+    ADJACENT_WINDOW,
     DOC_LANGUAGE_EXTENSIONS,
     FAMILY_SYNTAX,
     FIELD_MAX_CHARS,
@@ -18,6 +20,8 @@ from lib.comment_rules import (
     check_echoes,
     comment_body,
     find_comment_start,
+    find_invalid_comments,
+    find_mandatory_sites,
     is_plain_body,
     normalize,
     resolve_family,
@@ -26,7 +30,9 @@ from lib.comment_rules import (
     validate_doc_shape,
 )
 
-ADJACENT_WINDOW = 2
+KNOWN_TEMPLATE_TYPES = ("BANNER", "WHY", "HACK", "NOTE", "FIXME", "TODO", "STEP", "DOC", "FIELD")
+
+
 KNOWN_TEMPLATE_TYPES = ("BANNER", "WHY", "HACK", "NOTE", "FIXME", "TODO", "STEP", "DOC", "FIELD")
 
 
@@ -256,57 +262,142 @@ def process_proposals(proposals, repo_root):
     return [s for s in spliced if s is not None], [d for d in dropped if d is not None]
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Deterministic validator/splice gate between write-comments proposals "
-            "and the repo's files. Reads a JSON array of proposals from stdin, "
-            "each shaped {\"file\": <repo-relative or absolute path>, \"line\": "
-            "<int>, \"template_type\": one of WHY/NOTE/FIXME/HACK/TODO/BANNER/STEP, "
-            "\"text\": \"<the exact, already-marker-formatted comment line\"}. "
-            "Prints {\"spliced\": [...], \"dropped\": [...]} to stdout."
-        ),
-    )
-    parser.add_argument(
-        "--repo-root",
-        default=os.getcwd(),
-        help=(
-            "Root a proposal's 'file' path is resolved against when it is not "
-            "already absolute. Defaults to the current working directory."
-        ),
-    )
-    parser.add_argument(
-        "--line-convention",
-        action="store_true",
-        help=(
-            "No-op flag documenting the line-number convention: 'line' is "
-            "1-indexed and names the position the new comment line takes in "
-            "the resulting file -- the line currently at that number (and "
-            "everything after it) shifts down by one. A value equal to "
-            "len(file)+1 appends after the last line."
-        ),
-    )
-    args = parser.parse_args()
+def changed_line_map(base, repo_root):
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--unified=0", base, "--"],
+            cwd=repo_root, capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
 
+    changed, path, lineno = {}, None, 0
+    for line in result.stdout.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[6:]
+            changed.setdefault(path, set())
+        elif line.startswith("@@"):
+            marker = line.split("+", 1)
+            if len(marker) > 1:
+                span = marker[1].split("@@")[0].strip().split(",")
+                try:
+                    lineno = int(span[0])
+                except ValueError:
+                    lineno = 0
+        elif line.startswith("+") and not line.startswith("+++") and path is not None:
+            changed[path].add(lineno)
+            lineno += 1
+    return changed
+
+
+def collect_files(paths, repo_root):
+    found = []
+    for target in paths:
+        full = target if os.path.isabs(target) else os.path.join(repo_root, target)
+        if os.path.isfile(full):
+            found.append(full)
+            continue
+        for root, dirs, names in os.walk(full):
+            dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "vendor", ".venv")]
+            found.extend(os.path.join(root, name) for name in names)
+    return [f for f in found if resolve_family(f)]
+
+
+def run_check(args):
+    repo_root = os.path.abspath(args.repo_root)
+    changed = None if args.all else changed_line_map(args.base, repo_root)
+    findings = []
+
+    for full_path in collect_files(args.paths or [repo_root], repo_root):
+        relative = os.path.relpath(full_path, repo_root)
+        only_lines = None
+        if changed is not None:
+            only_lines = changed.get(relative)
+            if not only_lines:
+                continue
+
+        family = resolve_family(full_path)
+        ext = os.path.splitext(os.path.basename(full_path))[1].lower()
+        try:
+            with open(full_path, "r", encoding="utf-8", errors="ignore") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+
+        for lineno, name, rule in find_mandatory_sites(text, family, ext):
+            if only_lines is not None and lineno not in only_lines:
+                continue
+            findings.append({
+                "file": relative, "line": lineno, "kind": "MISSING",
+                "rule": rule, "subject": name,
+                "detail": "a discriminant return needs a comment stating what it discriminates",
+            })
+
+        for lineno, body, rule, detail in find_invalid_comments(text, family, full_path, only_lines):
+            findings.append({
+                "file": relative, "line": lineno, "kind": "INVALID",
+                "rule": rule, "subject": body, "detail": detail,
+            })
+
+    findings.sort(key=lambda f: (f["file"], f["line"]))
+    if args.json:
+        json.dump({"findings": findings}, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+    else:
+        for finding in findings:
+            print("{file}:{line}: {kind} {rule} -- {detail}".format(**finding))
+        print("%d finding(s)" % len(findings))
+    return 1 if findings else 0
+
+
+def run_apply(args):
     raw = sys.stdin.read()
     try:
         proposals = json.loads(raw) if raw.strip() else []
     except json.JSONDecodeError as exc:
-        print(f"could not parse proposals JSON: {exc}", file=sys.stderr)
+        print("could not parse proposals JSON: %s" % exc, file=sys.stderr)
         json.dump({"spliced": [], "dropped": []}, sys.stdout)
-        return
+        return 1
 
     if not isinstance(proposals, list):
         print("proposals payload must be a JSON array", file=sys.stderr)
         json.dump({"spliced": [], "dropped": []}, sys.stdout)
-        return
+        return 1
 
     spliced, dropped = process_proposals(proposals, args.repo_root)
-
     for entry in dropped:
-        print(f"dropped {entry['file']!r}:{entry['line']} -- {entry['reason']}", file=sys.stderr)
-
+        print("dropped %r:%s -- %s" % (entry["file"], entry["line"], entry["reason"]), file=sys.stderr)
     json.dump({"spliced": spliced, "dropped": dropped}, sys.stdout)
+    sys.stdout.write("\n")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="comments",
+        description=(
+            "Comment linter and splice gate. 'check' reports MISSING sites that "
+            "require a comment and INVALID comments that break a mechanical rule. "
+            "'apply' splices a JSON array of proposals read from stdin."
+        ),
+    )
+    parser.add_argument("--repo-root", default=os.getcwd())
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    check = sub.add_parser("check", help="report MISSING sites and INVALID comments")
+    check.add_argument("paths", nargs="*")
+    check.add_argument("--base", default="HEAD", help="git ref to diff against (default HEAD)")
+    check.add_argument("--all", action="store_true", help="scan whole files, not just changed lines")
+    check.add_argument("--json", action="store_true")
+    check.set_defaults(func=run_check)
+
+    apply_cmd = sub.add_parser("apply", help="splice proposals read from stdin")
+    apply_cmd.set_defaults(func=run_apply)
+
+    args = parser.parse_args()
+    sys.exit(args.func(args))
 
 
 if __name__ == "__main__":

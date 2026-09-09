@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
 # pre-commit-hooks-syntax - fails when a staged copy of this repo's own
-# git_guard.py or comment_guard.py has a Python syntax error.
+# git_guard.py or comments.py has a Python syntax error.
 #
 # Checks the staged content (git show :<path>), not the working-tree
 # file, so a syntax error hidden behind an unstaged fix still blocks the
-# commit. Only claude-code/hooks/git_guard.py and comment_guard.py exist
+# commit. Only claude-code/hooks/git_guard.py and comments.py exist
 # in this repo, so the check exits 0 for any other repo installing this
 # dispatcher.
 set -uo pipefail
@@ -15,7 +15,7 @@ command -v python3 >/dev/null 2>&1 || {
   exit 1
 }
 
-FILES=(claude-code/hooks/git_guard.py claude-code/hooks/comment_guard.py)
+FILES=(claude-code/hooks/git_guard.py claude-code/hooks/comments.py)
 BROKEN=()
 
 CHECK='

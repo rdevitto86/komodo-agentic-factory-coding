@@ -11,7 +11,7 @@ Zero comments, zero JSDoc. Error messages lead with a verb phrase and never name
 
 ## Comment discipline
 
-The real rules live in `claude-code/hooks/comment_guard.py` and its shared rules module `claude-code/hooks/lib/comment_rules.py`, not here. Comments are never authored directly — they are only ever added via the `write-comments` skill.
+The real rules live in `claude-code/hooks/comments.py` and its shared rules module `claude-code/hooks/lib/comment_rules.py`, not here. `comments.py check` reports what is missing or malformed; comments are only ever added via the `write-comments` skill.
 
 ## Toolchain
 

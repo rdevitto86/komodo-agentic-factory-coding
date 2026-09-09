@@ -37,7 +37,7 @@ claude-code/          mirrors ~/.claude exactly
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           workflow-implementer, workflow-planner, engineering, scout
-├── hooks/            comment_guard, git_guard, verify_gate, context_injector, auto_format, comment_removal_log
+├── hooks/            comments, git_guard, verify_gate, context_injector, auto_format
 └── skills/           62 active, 6 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
@@ -122,27 +122,27 @@ Each repo carries three local documents, plus the SDD (and, when one exists, the
 
 ## The Hooks
 
-Two guards run as `PreToolUse`, so a violation never reaches disk. Four more run at the session's edges or after the write.
+One guard runs as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
 
 | Hook | Fires on | Does | On error |
 |---|---|---|---|
-| `comment_guard.py` | Edit, Write, MultiEdit | Flat-denies any narrative comment addition; asks before deleting one | **Closed** |
 | `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites | **Closed** |
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
 | `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |
-| `comment_removal_log.py` | Edit, Write, MultiEdit (`PostToolUse`) | Logs every approved comment removal to `.claude/state/removed-comments.jsonl` | **Open** |
 
-**The failure policy is inverted on purpose.** The guards fail closed because a missed comment reaches disk. The other four fail open because none of them may be able to brick a session.
+**The failure policy is inverted on purpose.** The guard fails closed because a bad command reaches a shared remote. The other three fail open because none of them may be able to brick a session.
 
-`comment_guard.py` compares **comment multisets** rather than diff hunks. Editing the line a comment sits on, or reindenting it, is not a change. Deleting it is.
+### Comments are a lint, not a hook
 
-### The two comment exceptions
+`comments.py` is a CLI, not a hook. `check` reports two finding kinds against changed lines — `MISSING` (a declaration that requires a comment and has none) and `INVALID` (a comment breaking a mechanical rule) — and `apply` splices proposals from the `write-comments` skill. Enforcement rides whatever already runs the repo's `verify` target.
 
-**An exemption the agent can satisfy on its own is a bypass, not an exception.** A content allowlist fails on that alone — whatever token you exempt, the model prepends it. Both exceptions here are things the agent cannot fabricate.
+```bash
+python3 ~/.claude/hooks/comments.py check
+python3 ~/.claude/hooks/comments.py apply < proposals.json
+```
 
-- **Structure — a use-manual under a shebang.** A contiguous run of comment lines starting immediately after `#!`. It cannot reach a function body, because position is not forgeable.
-- **Template — a fixed shape the prose cannot fit.** A banner's label is 40 chars between two hyphen runs; a step marker is one indented line of 80. Each `standards-<language>` skill's own Comment discipline section lists all four.
+`MISSING` is Go-only and narrow: a multi-value return ending in `bool` (unless the name is `is`/`has`/`can`-prefixed), or three or more return values. Both suppress when a comment already sits above the declaration.
 
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
@@ -188,7 +188,7 @@ A skill listed by name costs 1–4 tokens. A new line in `claude-code/AGENTS.md`
 
 ## Git hooks for other repos
 
-**No comment hook ships here.** A comment must never block a commit, a push, a linter, or a release. `comment_guard.py` runs only as a `PreToolUse` hook, before the write reaches disk — by the time git sees a file, the dispute is already settled or was never the agent's to have.
+**No comment hook ships here.** A comment must never block a commit, a push, or a release. `comments.py check` runs inside the repo's own `verify` target — by the time git sees a file, the dispute is already settled or was never the agent's to have.
 
 **Lint and test hooks do not live here.** `pre-commit` (format + lint) and `pre-push` (delta unit tests + coverage) ship with the language SDK — `komodo-forge-sdk-go` for Go. The `standards-cicd` skill states the contract they must satisfy; the SDK decides how.
 

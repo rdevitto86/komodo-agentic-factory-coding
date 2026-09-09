@@ -149,13 +149,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.3.4.4** re-run the full validator
   * **Done when:** `bash scripts/validate.sh`
 
-#### [TSK-01.3.5] Trim `write-comments` to remove judgment content duplicated in `commentor.md`, keeping it solely as the fork-invocation entry point [P: M] [TODO]
-* **SUB-01.3.5.1** remove `write-comments/SKILL.md`'s "Default: write nothing" section (bar plus good/bad examples) — owned solely by `commentor.md`'s fuller "Judgment: when a comment is warranted" section from here on
-  * **Done when:** `! grep -q "Default: write nothing" claude-code/skills/write-comments/SKILL.md`
-* **SUB-01.3.5.2** keep the "You cannot see the calling conversation" contract paragraph naming exactly what must arrive in `$ARGUMENTS`, and the numbered Order of operations — this is the skill's own entry-point contract, not duplicated in `commentor.md`
-  * **Done when:** `grep -q "cannot see the calling conversation" claude-code/skills/write-comments/SKILL.md`
-* **SUB-01.3.5.3** confirm the file still parses and the always-on budget is unaffected
-  * **Done when:** `bash scripts/validate.sh`
+#### [TSK-01.3.5] ~~Trim `write-comments` to remove judgment content duplicated in `commentor.md`~~ [P: M] [OBSOLETE]
+* Superseded by the opposite decision: `commentor.md` was deleted and its judgment content folded *into* `write-comments/SKILL.md`, with the mechanical taxonomy split out to `write-comments/reference.md`. The skill now runs as an agent-less `context: fork`, so there is no second file to deduplicate against.
 
 ---
 

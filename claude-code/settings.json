@@ -178,15 +178,6 @@
             "command": "python3 ~/.claude/hooks/git_guard.py"
           }
         ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/comment_guard.py"
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -196,15 +187,6 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/auto_format.py"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/comment_removal_log.py"
           }
         ]
       }
@@ -228,10 +210,10 @@
   },
   "modelSettings": {
     "claude-sonnet-5": {
-      "effortLevel": "high"
+      "effortLevel": "medium"
     },
     "claude-opus-5": {
-      "effortLevel": "medium"
+      "effortLevel": "high"
     }
   },
   "agentPushNotifEnabled": true

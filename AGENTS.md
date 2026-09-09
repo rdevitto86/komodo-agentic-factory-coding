@@ -11,7 +11,7 @@ Design rationale for the decisions below lives in `docs/design-decisions.md`, no
 | `claude-code/AGENTS.md` | `~/.claude/AGENTS.md` | The universal rules, always loaded |
 | `claude-code/CLAUDE.md` | `~/.claude/CLAUDE.md` | One line: `@AGENTS.md` |
 | `claude-code/settings.json` | `~/.claude/settings.json` | Permissions and hook registration |
-| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` edits only `BACKLOG.md`; `commentor` never edits directly, splicing only via `write_comments_validator.py` |
+| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` edits only `BACKLOG.md` |
 | `claude-code/hooks/` | `~/.claude/hooks/` | Two guards, plus the Stop gate and the session injector |
 | `claude-code/skills/` | `~/.claude/skills/` | Domain knowledge, lazily loaded |
 
@@ -21,24 +21,36 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 
 | Hook | Registered on | Fires on | Does |
 |---|---|---|---|
-| `comment_guard.py` | `~/.claude/settings.json` | Edit, Write, MultiEdit, NotebookEdit | Flat-denies any added narrative comment, no exceptions beyond machine directives/shebang-manual; asks before one is deleted |
 | `git_guard.py` | `~/.claude/settings.json` | Bash | Allowlists read-only git, denies in-place rewrites |
 | `context_injector.py` | `~/.claude/settings.json` | SessionStart | Injects the `[WIP]` story, backlog tally, version, verify target |
 | `verify_gate.py` | `claude-code/agents/workflow-implementer.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
-| `comment_removal_log.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write\|MultiEdit\|NotebookEdit` | Logs every `comment_guard.py`-approved removal to `.claude/state/removed-comments.jsonl` for a later pass to consume |
 
-**The two `PreToolUse` guards fail closed** — an unparseable payload denies. **`verify_gate.py` and `context_injector.py` fail open** — any internal error exits 0.
+**`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py` and `context_injector.py` fail open** — any internal error exits 0.
 
-**Comment guard passing shapes** — an added comment passes silently in exactly three cases:
+## Comments
 
-| Passing shape | Test |
+**There is no comment hook.** Comments are enforced as a lint, through one CLI, gated by whatever already runs `verify`:
+
+```bash
+python3 ~/.claude/hooks/comments.py check [paths]   # findings, exit 1 if any
+python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdin
+```
+
+`check` defaults to changed lines only (`git diff` against `--base`, default `HEAD`), so it never condemns a repo's existing history; `--all` scans whole files. It emits two finding kinds:
+
+| Kind | Meaning |
 |---|---|
-| Script manual | Line comments directly under a `#!` shebang |
-| Machine directive | Prefix match against a fixed list |
-| DOC (Go only) | Name-first, one sentence, ≤120 chars, directly above a newly-added exported top-level `func`/`type`/`const`/`var`/`package` in a `.go` file — the one shape deterministic enough to check with no diff/backlog context, gated to `.go` by extension since Swift/JS/TS/Rust share enough keywords (`func`, `var`, `const`) to otherwise collide |
+| `MISSING` | A declaration that requires a comment and has none |
+| `INVALID` | A comment that breaks a mechanical rule |
 
-Everything else is a flat deny, no ask — a banner, a `NOTE:`/`FIXME:`/`TODO:` note, a plain WHY/HACK/FIELD sentence, and a step marker all deny exactly like unstructured prose. Detection covers both leading comments and trailing (same-line) ones — `find_comment_start` walks each line quote-aware, so a `//` inside a string literal or a Go raw string never false-positives, and a session agent can no longer smuggle an unauthorized comment past the guard by appending it to the end of a line instead of a line of its own. Block comments and Python docstrings are scanned too. A name-echo (first word matches the identifier below it, or a trailing comment's first word matches the field it trails) denies outright — except a comment that already cleared the DOC check, which is exempt by design since name-first is what DOC requires. Deleting a comment proceeds silently — no ask — and is logged unconditionally by `comment_removal_log.py` (leading and trailing both) to `.claude/state/removed-comments.jsonl`, which `commentor` consults later for anything worth restoring; the log, not a per-edit approval, is the safety net. No move ledger or `+comments` grant — moving a non-DOC comment still needs `write-comments` to re-add it, since re-adding denies unless it fits a shape. No comment rule ever blocks a commit, push, lint, or release — `comment_guard.py` is `PreToolUse` only. The `write-comments` skill is the only path to add anything outside the DOC carve-out; it calls `write_comments_validator.py` to check a proposed comment's shape before it's ever written, against a nine-type taxonomy (`WHY`/`HACK`/`DOC`/`FIELD` plain, `NOTE`/`FIXME`/`TODO` marker-prefixed, `BANNER`/`STEP` structural) documented in `commentor.md` — the same `validate_doc_shape` and quote-aware scanners live in `comment_rules.py` and back both the guard and the validator, so the two enforcement points can't drift apart.
+**`MISSING` rules are Go-only** (`SITE_LANGUAGE_EXTENSIONS`) and deliberately narrow: `RET_BOOL_DISCRIMINANT` (≥2 returns ending in `bool`, unless the name is `is`/`has`/`can`/`should`/`exists`/`must`-prefixed) and `RET_ARITY_3` (≥3 return values). Both are suppressed when the line above is already a comment. Signature parsing walks balanced parens rather than matching a flat regex, so a `func`-typed parameter or a named return tuple parses correctly.
+
+**`INVALID` rules are mechanical only** — `NAME_ECHO`, `OVER_CAP`, `STACKED`, `STEP_MARKER`, `BANNER_OUTSIDE_TEST`, `MALFORMED_MARKER`. Machine directives and shebang manuals are exempt, `find_comment_start` keeps a `//` inside a string literal from false-positiving, and a comment that clears the `DOC` shape is exempt from the echo check since name-first is what `DOC` requires.
+
+**Narrative is no longer machine-detectable.** The old `PreToolUse` guard flat-denied every non-`DOC` comment, which caught narration by construction; a lint cannot distinguish `// increments the counter` from a legitimate `WHY` without judgment. That judgment now lives entirely in the `write-comments` skill, and `check` enforces only what is decidable. No comment rule blocks a commit, push, lint, or release beyond the repo's own `verify` target.
+
+The `write-comments` skill is the sanctioned author path; it calls `comments.py apply`, which validates a proposal against the nine-type taxonomy (`WHY`/`HACK`/`DOC`/`FIELD` plain, `NOTE`/`FIXME`/`TODO` marker-prefixed, `BANNER`/`STEP` structural) documented in `write-comments/reference.md`. `check` and `apply` share `lib/comment_rules.py`, so the two ends cannot drift apart.
 
 ## Skill contract
 
@@ -74,13 +86,14 @@ Everything else is a flat deny, no ask — a banner, a `NOTE:`/`FIXME:`/`TODO:` 
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 199 hook regression cases
+bash scripts/test-hooks.sh    # 160 hook + comments regression cases
 bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above
-bash .claude/verify.sh        # what the Stop gate runs: both of the above
+python3 claude-code/hooks/comments.py check   # comment lint
+make verify                   # what the Stop gate runs: all three of the above
 ```
 
-`.claude/verify.sh` is this repo's own opt-in for `verify_gate.py`. It only runs automatically inside a `workflow-implementer` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
+`make verify` is this repo's own opt-in for `verify_gate.py`, which resolves a repo's gate in order: `.claude/verify.sh`, then `make verify`, then `task verify`, then `just verify`. `.claude/` is gitignored here, so the `Makefile` target is what ships. It only runs automatically inside a `workflow-implementer` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
 
 This repo ships its own `pre-commit`/`pre-push` dispatchers under `scripts/hooks/git/`, installed into a target repo via `install.sh` (sets `core.hooksPath`, nothing is copied). The `standards-cicd` skill states the contract they must satisfy.

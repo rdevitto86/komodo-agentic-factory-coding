@@ -9,7 +9,7 @@
 #
 # This hook FAILS OPEN, like verify_gate.py and context_injector.py.
 # It is a convenience, not a guard — a crash or a missing formatter
-# must never be able to block a write that comment_guard.py and
+# must never be able to block a write that the comment rules and
 # git_guard.py already allowed through.
 
 import json

@@ -27,7 +27,7 @@ import shutil
 import subprocess
 import sys
 
-HOOK_NAMES = ("git_guard", "comment_guard", "auto_format", "context_injector")
+HOOK_NAMES = ("git_guard", "comments", "auto_format", "context_injector")
 
 
 def detect_os():

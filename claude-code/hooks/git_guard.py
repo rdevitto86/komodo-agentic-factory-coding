@@ -387,7 +387,7 @@ def parse_cp_mv_target(tokens):
     return target_dir, positional
 
 
-# WHY: json/md aren't in comment_guard's code family, but settings.json and BACKLOG.md still need Edit/Write-only writes -- this closes the reviewer's Bash side door around them
+# WHY: settings.json and BACKLOG.md need Edit/Write-only writes, closing the reviewer's Bash side door
 GIT_GUARD_ONLY_EXTENSIONS = {".json", ".md"}
 
 
