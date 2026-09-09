@@ -145,13 +145,14 @@ MONITORED_COMMANDS = SHELL_WRAPPERS + PASSTHROUGH_WRAPPERS + ("git", "gh", "cp",
 
 CP_MV_TARGET_FLAGS = ("-t", "--target-directory")
 
-# matches only the operator -- shell_words/resolve_guard_target resolve the target through a quote or substitution
-REDIRECT_OPERATOR = re.compile(r"(?<![-=<0-9&])>>?")
+# matches only the operator, digit/"&"-preceded included -- N>, N>>, &>, &>> are real fd redirects too
+REDIRECT_OPERATOR = re.compile(r"(?<![-=<])>>?")
 
 # ")" closes a bare (...) subshell -- reached here only once a $()/backtick span is already consumed
 REDIRECT_WORD_TERMINATORS = ";&|#\n)"
 HEREDOC = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n)(.*?)(^\s*\2\s*$)", re.S | re.M)
 QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+# matched against a shlex-normalized segment -- whole- and split-quoted -i both shlex to the bare token
 INPLACE_SED = re.compile(r"\bsed\b[^;|&]*?(?:\s-[a-zA-Z]*i\b|\s--in-place\b)")
 INPLACE_PERL = re.compile(r"\bperl\b[^;|&]*?\s-[a-zA-Z]*i\b")
 PYTHON_WRITE = re.compile(r"\bpython3?\b[^;|&]*?-c\b.*?open\s*\([^)]*['\"][wa]")
@@ -401,7 +402,7 @@ def parse_cp_mv_target(tokens):
 GIT_GUARD_ONLY_EXTENSIONS = {".json", ".md"}
 
 
-def is_guarded_path(token):
+def matches_guarded_family(token):
     cleaned = token.strip("\"'")
     base = os.path.basename(cleaned)
     if base in FILENAME_FAMILY:
@@ -409,6 +410,39 @@ def is_guarded_path(token):
     _, ext = os.path.splitext(base)
     ext = ext.lower()
     return ext in EXTENSION_FAMILY or ext in GIT_GUARD_ONLY_EXTENSIONS
+
+
+def repo_root_of(cwd):
+    if not cwd or not os.path.isdir(cwd):
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    top = result.stdout.strip()
+    return os.path.realpath(top) if top else None
+
+
+# a bare filename/extension match alone isn't enough -- the resolved, symlink-free path must also land in the repo root
+def is_guarded_path(token, cwd):
+    if not matches_guarded_family(token):
+        return False
+    repo_root = repo_root_of(cwd)
+    if repo_root is None:
+        return False
+    cleaned = token.strip("\"'")
+    base_dir = cwd or os.getcwd()
+    absolute = cleaned if os.path.isabs(cleaned) else os.path.join(base_dir, cleaned)
+    resolved = os.path.realpath(absolute)
+    try:
+        return os.path.commonpath([resolved, repo_root]) == repo_root
+    except ValueError:
+        return False
 
 
 def blank(text):
@@ -426,6 +460,11 @@ def tokenize(segment):
         return shlex.split(segment)
     except ValueError:
         return segment.split()
+
+
+# shlex already resolves every quoting shape ('-i', -'i', -"i" ...) to the bare token -- rejoin beats a per-shape regex
+def normalize_shell_words(segment):
+    return " ".join(tokenize(segment))
 
 
 # Splits text[start:end] into shell words, atomic through quotes/$()/backticks; returns (word, abs_start) pairs
@@ -511,7 +550,7 @@ def resolve_command_output(inner):
     expanded = [expand_word(word) for word, _ in words]
     if expanded[0] == "echo":
         return " ".join(expanded[1:])
-    match = next((token for token in expanded[1:] if is_guarded_path(token)), None)
+    match = next((token for token in expanded[1:] if matches_guarded_family(token)), None)
     return match if match is not None else " ".join(expanded)
 
 
@@ -561,9 +600,9 @@ def expand_word(word):
     return "".join(out)
 
 
-def resolve_guard_target(word):
+def resolve_guard_target(word, cwd):
     target = expand_word(word)
-    return target if is_guarded_path(target) else None
+    return target if is_guarded_path(target, cwd) else None
 
 
 REDIRECT_OP = re.compile(r"^(&>{1,2}|\d*>{1,2}(&\d+)?|\d*<)")
@@ -863,7 +902,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     if command == "tee":
         # tokens loses a $()/backtick arg to blanking -- scan raw shell_words against full_command instead
         for word, _ in shell_words(full_command, seg_start, seg_end, REDIRECT_WORD_TERMINATORS):
-            target = resolve_guard_target(word)
+            target = resolve_guard_target(word, cwd)
             if target:
                 findings.append("tee writing to %s bypasses the comment guard" % target)
                 break
@@ -871,9 +910,11 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     if command in ("sed", "perl", "python", "python3"):
         # raw segment text gated on its own leading command -- a quoted mention elsewhere never reaches here
         raw_segment = full_command[seg_start:seg_end]
-        if command == "sed" and INPLACE_SED.search(raw_segment):
+        # normalized once here -- shlex strips every quoting shape around -i before the -i regexes ever run
+        normalized_segment = normalize_shell_words(raw_segment)
+        if command == "sed" and INPLACE_SED.search(normalized_segment):
             findings.append("sed -i rewrites files in place, bypassing the comment guard")
-        elif command == "perl" and INPLACE_PERL.search(raw_segment):
+        elif command == "perl" and INPLACE_PERL.search(normalized_segment):
             findings.append("perl -i rewrites files in place, bypassing the comment guard")
         elif command in ("python", "python3") and PYTHON_WRITE.search(raw_segment):
             findings.append("python -c opening a file for writing bypasses the comment guard")
@@ -885,11 +926,11 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         ))
         target_dir, positional = parse_cp_mv_target(raw_words[1:])
         if target_dir is not None:
-            if is_guarded_path(target_dir):
+            if is_guarded_path(target_dir, cwd):
                 findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
                 return
             for source in positional:
-                if is_guarded_path(source):
+                if is_guarded_path(source, cwd):
                     findings.append("%s writing to %s bypasses the comment guard" % (command, target_dir))
                     break
             return
@@ -907,10 +948,10 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         )
         if dest_is_dir:
             for source in sources:
-                if is_guarded_path(source):
+                if is_guarded_path(source, cwd):
                     findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
                     break
-        elif is_guarded_path(destination):
+        elif is_guarded_path(destination, cwd):
             findings.append("%s writing to %s bypasses the comment guard" % (command, destination))
         return
     if command == "git":
@@ -961,7 +1002,7 @@ def scan_command(command, findings, cwd):
         if not words:
             continue
         word, _ = words[0]
-        target = resolve_guard_target(word)
+        target = resolve_guard_target(word, cwd)
         if target:
             findings.append("redirecting output into %s bypasses the comment guard" % target)
 
@@ -978,16 +1019,29 @@ def respond_deny(reason):
     sys.exit(0)
 
 
-def main():
-    payload = json.loads(sys.stdin.read())
+# a crash in here is our own broken analysis, not a policy decision -- main() catches this and fails open
+def analyze(payload):
     if payload.get("tool_name") != "Bash":
-        sys.exit(0)
+        return []
     command = (payload.get("tool_input") or {}).get("command", "")
     if not command:
-        sys.exit(0)
-
+        return []
     findings = []
     scan_command(command, findings, payload.get("cwd") or os.getcwd())
+    return findings
+
+
+def main():
+    try:
+        payload = json.loads(sys.stdin.read())
+        findings = analyze(payload)
+    except BaseException as error:
+        sys.stderr.write(
+            "git guard is broken: %s: %s\nFailing open -- allowing this command through.\n"
+            % (type(error).__name__, error)
+        )
+        sys.exit(0)
+
     if not findings:
         sys.exit(0)
 
@@ -1011,12 +1065,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except SystemExit:
-        raise
-    except BaseException as error:
-        respond_deny(
-            "git guard failed to evaluate this command: %s: %s\nFailing closed."
-            % (type(error).__name__, error)
-        )
+    main()

@@ -8,13 +8,17 @@ Rationale moved out of root `AGENTS.md` to keep that file actionable — every f
 
 ## The hook failure policy is inverted by design
 
-The two guards fail closed — an unparseable payload denies, because a missed comment reaches disk. `verify_gate.py` and `context_injector.py` fail open — any internal error exits 0, because neither a broken verifier nor a broken injector may be able to brick a session.
+`comments.py` fails closed — an unparseable payload denies, because a missed comment reaches disk. `git_guard.py` fails closed on the same terms for a genuine policy decision, but (see below) fails open on a bug in its own analysis. `verify_gate.py` and `context_injector.py` fail open — any internal error exits 0, because neither a broken verifier nor a broken injector may be able to brick a session.
 
 `context_injector.py` reads disk only. It never probes the bridge — a session must not wait on a local model to start.
 
 `verify_gate.py`'s check is opt-in per repo and silent otherwise. A repo declares its check as `.claude/verify.sh`, or a `verify` target in `Makefile` / `Taskfile` / `justfile`; with none of those present the hook does nothing. It also skips a clean working tree, so a fork that touched nothing never pays for a test run. Claude Code stops honouring a `Stop` hook after 8 consecutive blocks, so a permanently red suite cannot trap a fork.
 
 `comments.py check` evaluates the file as it stands, so adjacency and reindentation are irrelevant. It fails closed — an unparseable payload denies rather than silently passing.
+
+## git_guard.py fails open on its own bugs, closed on its own decisions
+
+`git_guard.py`'s `main()` used to catch every exception the same way and turn it into a deny — a bug in the hook's own analysis code (a `NameError`, a call-shape mismatch after a refactor) got the identical treatment as a deliberate policy match, so one internal crash denied every Bash call for the rest of the session, `echo hello` included. That collapses two very different failures into one response. When the guard is broken — its own analysis raises before it ever reaches a verdict — failing open on that internal error, while still failing closed on any code path that actually reaches a policy decision, is the safer tradeoff: it avoids a full-session outage without weakening the guard on the calls it can still evaluate correctly. `analyze()` now carries the only code that can crash from a bug in the hook itself, wrapped in `main()`'s `try`/`except` that fails open; the deny path that builds `respond_deny`'s message runs after that block, uncaught, so a genuine, deliberately-produced finding still denies exactly as before.
 
 Block comments and Python docstrings are scanned too, not just line comments — a `/* */` or `""" """` is denied on the same terms. Everything else denies, declaration docs included. A name-echo denies outright — a comment whose first word is the identifier on the next line carries no information.
 
