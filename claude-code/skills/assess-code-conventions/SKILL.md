@@ -5,6 +5,7 @@ argument-hint: <task text or band summary> [standards-* skills that apply] [--re
 context: fork
 agent: reviewer
 background: false
+disable-model-invocation: true
 ---
 
 # Code conventions assessment
