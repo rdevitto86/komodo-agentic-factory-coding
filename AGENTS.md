@@ -89,7 +89,7 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 244 hook + comments regression cases
+bash scripts/test-hooks.sh    # 259 hook + comments regression cases
 bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above
