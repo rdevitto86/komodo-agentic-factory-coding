@@ -157,6 +157,7 @@
     "git-pr-review": "name-only",
     "git-pr-comment": "name-only",
     "git-merge-conflict": "name-only",
+    "git-branching-strategy": "name-only",
     "claude-api": "name-only",
     "dataviz": "name-only",
     "design": "name-only",
