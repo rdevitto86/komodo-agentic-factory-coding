@@ -10,7 +10,7 @@
 # permissionDecision that comes back, optionally checking that the
 # reason text does or does not contain a given string.
 #
-# Case IDs: K* comments check, G* git guard, S* smoke test (runs first, synchronously, the real call shape).
+# Case IDs: K* comments check, H* comments hook, G* git guard, S* smoke test (first, synchronously, the real call shape).
 #
 # Writing a case:
 #   heredoc form  literal JSON, use \n for a newline inside a string
@@ -1120,6 +1120,102 @@ untracked_check_case() {
   ) &
 }
 untracked_check_case
+
+printf '\ncomments hook subcommand\n\n'
+
+hook_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-hook"
+    mkdir -p "$fixture"
+    git init -q -b main "$fixture"
+    (cd "$fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc (c *secretCache) getParsed(key string) (map[string]string, bool) {\n\treturn nil, false\n}\n' > "$fixture/svc.go"
+    local payload out problem=""
+    payload="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/svc.go"}}' "$fixture")"
+    out="$(printf '%s' "$payload" | python3 "$COMMENTS" --repo-root "$fixture" hook 2>&1)"
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+      problem="exited $status instead of 0"
+    elif [[ "$out" != *"additionalContext"* ]] || [[ "$out" != *"RET_BOOL_DISCRIMINANT"* ]]; then
+      problem="stdout missing additionalContext with the MISSING finding"
+    fi
+    report "$outfile" "H1  a Go file with a MISSING site produces additionalContext" "$problem" "$out"
+  ) &
+}
+hook_case
+
+hook_clean_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-hook-clean"
+    mkdir -p "$fixture"
+    git init -q -b main "$fixture"
+    (cd "$fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc Load(p string) (string, error) {\n\treturn "", nil\n}\n' > "$fixture/svc.go"
+    local payload out problem=""
+    payload="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/svc.go"}}' "$fixture")"
+    out="$(printf '%s' "$payload" | python3 "$COMMENTS" --repo-root "$fixture" hook 2>&1)"
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+      problem="exited $status instead of 0"
+    elif [ -n "$out" ]; then
+      problem="a clean file produced output: $out"
+    fi
+    report "$outfile" "H2  a clean file produces no output" "$problem" "$out"
+  ) &
+}
+hook_clean_case
+
+hook_malformed_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out problem=""
+    out="$(printf 'not json{{{' | python3 "$COMMENTS" hook 2>&1)"
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+      problem="exited $status instead of 0"
+    elif [ -n "$out" ]; then
+      problem="a malformed payload produced output: $out"
+    fi
+    report "$outfile" "H3  a malformed payload exits 0 with no output" "$problem" "$out"
+  ) &
+}
+hook_malformed_case
+
+hook_symlink_escape_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local root_fixture="$WORKDIR/fixture-hook-root"
+    local foreign_fixture="$WORKDIR/fixture-hook-foreign"
+    mkdir -p "$root_fixture" "$foreign_fixture"
+    git init -q -b main "$root_fixture"
+    (cd "$root_fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    git init -q -b main "$foreign_fixture"
+    (cd "$foreign_fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc (c *secretCache) getParsed(key string) (map[string]string, bool) {\n\treturn nil, false\n}\n' > "$foreign_fixture/svc.go"
+    ln -s "$foreign_fixture/svc.go" "$root_fixture/link.go"
+    local payload out problem=""
+    payload="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/link.go"}}' "$root_fixture")"
+    out="$(printf '%s' "$payload" | python3 "$COMMENTS" --repo-root "$root_fixture" hook 2>&1)"
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+      problem="exited $status instead of 0"
+    elif [ -n "$out" ]; then
+      problem="a symlink resolving outside repo root produced output: $out"
+    fi
+    report "$outfile" "H4  a symlink resolving outside repo root produces no output" "$problem" "$out"
+  ) &
+}
+hook_symlink_escape_case
 
 printf '\ncontext injector\n\n'
 

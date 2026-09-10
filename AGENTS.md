@@ -25,8 +25,9 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 | `context_injector.py` | `~/.claude/settings.json` | SessionStart | Injects the `[WIP]` story, backlog tally, version, verify target |
 | `verify_gate.py` | `claude-code/agents/workflow-implementer.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
+| `comments.py hook` | `claude-code/agents/workflow-implementer.md` frontmatter | PostToolUse, matcher `Edit\|Write` | Reports comment findings for the touched file; fails open |
 
-**`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py` and `context_injector.py` fail open** — any internal error exits 0.
+**`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py`, `context_injector.py`, and `comments.py hook` fail open** — any internal error exits 0.
 
 **Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `setup.sh` checks `python3` resolves and meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s fail-closed handler never gets a chance to run.
 
@@ -52,7 +53,7 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 
 **Narrative is no longer machine-detectable.** The old `PreToolUse` guard flat-denied every non-`DOC` comment, which caught narration by construction; a lint cannot distinguish `// increments the counter` from a legitimate `WHY` without judgment. That judgment now lives entirely in the `write-comments` skill, and `check` enforces only what is decidable. No comment rule blocks a commit, push, lint, or release beyond the repo's own `verify` target.
 
-The `write-comments` skill is the sanctioned author path; it calls `comments.py apply`, which validates a proposal against the nine-type taxonomy (`WHY`/`HACK`/`DOC`/`FIELD` plain, `NOTE`/`FIXME`/`TODO` marker-prefixed, `BANNER`/`STEP` structural) documented in `write-comments/reference.md`. `check` and `apply` share `lib/comment_rules.py`, so the two ends cannot drift apart.
+`workflow-implementer` is the author path inside the loop, `write-comments` the manual one; both go through `comments.py apply`, which validates a proposal against the nine-type taxonomy (`WHY`/`HACK`/`DOC`/`FIELD` plain, `NOTE`/`FIXME`/`TODO` marker-prefixed, `BANNER`/`STEP` structural) documented in `write-comments/reference.md`. `check` and `apply` share `lib/comment_rules.py`, so the two ends cannot drift apart.
 
 ## Skill contract
 

@@ -1,7 +1,7 @@
 ---
 name: write-comments
 description: Resolve comments.py check findings for a finished band and splice the proposals it demands.
-argument-hint: <band summary, path to the diff, and the workflow-implementer Comment Candidates it carried>
+argument-hint: <band summary and path to the diff>
 context: fork
 background: false
 ---
@@ -10,7 +10,9 @@ background: false
 
 Band: **$ARGUMENTS**
 
-**You cannot see the calling conversation.** Everything you need — the diff, the relevant `BACKLOG.md` stories, the drafted commit message, and the implementer's `## Comment Candidates` entries — must arrive in the text above; you cannot go fetch what was left out.
+**The manual, on-demand path.** `workflow-implementer` already applies these rules itself inside the loop, as its own "Comments, last" step — you run when a user types `/write-comments` over an arbitrary diff, or as a repair pass when `comments.py check` is red in a repo's `verify` and nobody is mid-implementation to fix it.
+
+**You cannot see the calling conversation.** Everything you need — the diff, the relevant `BACKLOG.md` stories, and the drafted commit message — must arrive in the text above; you cannot go fetch what was left out.
 
 **You never edit a file directly.** The only path from your judgment to disk is `comments.py apply`, which you invoke yourself. It is the sole write path that enforces shape, echo, length, and adjacency — an Edit forfeits all four and will be caught by `comments.py check` at verify time.
 
@@ -58,16 +60,16 @@ A trivial `ok`/`found`/`exists` presence check needs nothing extra, and a plain 
 
 `DOC`'s exported-only gate is a fact about `DOC` specifically — a mechanical rule tied to godoc conventions, not a signal that unexported code is beneath judgment. A large unexported function handling a real subtask (parsing an untrusted format, a multi-step validation pipeline) gets the same `WHY`/`HACK` scrutiny as exported code. **Do not default to zero proposals for a function because it is lowercase-first — judge it on what it does, not its casing.**
 
-## Scan the code, not just the Candidates list
+## Scan the code yourself
 
-**A Comment Candidate is a lead, not a boundary.** `workflow-implementer` flags what it noticed while writing, not an exhaustive audit. Read every changed function in the diff yourself before drafting, unexported ones included. A candidate that reads as narration once you see it in context gets dropped here, not passed through — judging each one is the job, passing them all through is not.
+**`check`'s findings are a floor, not the whole job.** `MISSING`/`INVALID` only catch what's mechanically decidable; a workaround or constraint living in a function with an ordinary signature is invisible to it. Read every changed function in the diff yourself before drafting, unexported ones included.
 
 **Also scan the touched code for pre-existing `NOTE`/`FIXME`/`TODO`/`HACK` markers this band made stale** — a `TODO` for work just done, a `FIXME` for a bug just fixed, a `NOTE` describing behavior just changed. You have no tool that deletes a comment; name each in `## Notes` so the session agent can remove it.
 
 ## Order
 
 1. Run `comments.py check --json`. Every `MISSING` finding must end up commented or explicitly skipped with a written reason; every `INVALID` finding must be fixed or removed.
-2. Read the diff, the named `BACKLOG.md` stories, the drafted commit message, and the `## Comment Candidates` entries for the intent behind each site.
+2. Read the diff, the named `BACKLOG.md` stories, and the drafted commit message for the intent behind each site.
 3. Read the diff's own code for sites the check cannot see — a workaround or constraint in a function with an ordinary signature. Unexported functions included.
 4. Scan the touched code for stale pre-existing markers this band invalidated.
 5. Draft proposals in the exact shape — see [reference.md](reference.md) for the nine template types and their per-type rules.

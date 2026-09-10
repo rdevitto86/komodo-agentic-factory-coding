@@ -32,6 +32,9 @@ from lib.comment_rules import (
 
 KNOWN_TEMPLATE_TYPES = ("BANNER", "WHY", "HACK", "NOTE", "FIXME", "TODO", "STEP", "DOC", "FIELD")
 
+# a hand-edited source file this large is not a realistic target -- treat it as a reason to skip, not read
+HOOK_MAX_FILE_BYTES = 1_000_000
+
 
 def validate_comment_shape(text, template_type, family, is_indented, decl_line=None):
     line_marker = FAMILY_SYNTAX[family][0]
@@ -394,6 +397,84 @@ def run_apply(args):
     return 0
 
 
+def hook_findings(full_path, root):
+    if not is_within_repo_root(full_path, root):
+        return None
+
+    family = resolve_family(full_path)
+    if not family:
+        return None
+
+    try:
+        if os.path.getsize(full_path) > HOOK_MAX_FILE_BYTES:
+            return None
+    except OSError:
+        return None
+
+    changed = changed_line_map("HEAD", root)
+    relative = os.path.relpath(full_path, root)
+    only_lines = None
+    if changed is not None:
+        only_lines = changed.get(relative)
+        if not only_lines:
+            return []
+
+    ext = os.path.splitext(os.path.basename(full_path))[1].lower()
+    with open(full_path, "r", encoding="utf-8", errors="ignore") as handle:
+        text = handle.read(HOOK_MAX_FILE_BYTES)
+
+    findings = []
+    for lineno, name, rule in find_mandatory_sites(text, family, ext):
+        if only_lines is not None and lineno not in only_lines:
+            continue
+        findings.append({
+            "file": relative, "line": lineno, "kind": "MISSING",
+            "rule": rule, "subject": name,
+            "detail": "a discriminant return needs a comment stating what it discriminates",
+        })
+    for lineno, body, rule, detail in find_invalid_comments(text, family, full_path, only_lines):
+        findings.append({
+            "file": relative, "line": lineno, "kind": "INVALID",
+            "rule": rule, "subject": body, "detail": detail,
+        })
+
+    findings.sort(key=lambda f: (f["file"], f["line"]))
+    return findings
+
+
+def run_hook(args):
+    # feedback, not a gate -- every path below returns 0, so a crash here can never block the write
+    try:
+        payload = json.loads(sys.stdin.read())
+        if not isinstance(payload, dict):
+            return 0
+
+        tool_input = payload.get("tool_input")
+        file_path = tool_input.get("file_path") if isinstance(tool_input, dict) else None
+        if not file_path or not os.path.isfile(file_path):
+            return 0
+
+        # realpath, not abspath, and rooted at repo_root rather than the target's own git ancestry
+        full_path = os.path.realpath(file_path)
+        root = os.path.realpath(args.repo_root)
+
+        findings = hook_findings(full_path, root)
+        if not findings:
+            return 0
+
+        lines = ["{file}:{line}: {kind} {rule} -- {detail}".format(**f) for f in findings]
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": "\n".join(lines),
+            }
+        }
+        sys.stdout.write(json.dumps(output))
+        return 0
+    except BaseException:
+        return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="comments",
@@ -415,6 +496,12 @@ def main():
 
     apply_cmd = sub.add_parser("apply", help="splice proposals read from stdin")
     apply_cmd.set_defaults(func=run_apply)
+
+    hook_cmd = sub.add_parser(
+        "hook",
+        help="PostToolUse feedback hook -- reads a tool payload from stdin, reports findings for its file_path, always exits 0",
+    )
+    hook_cmd.set_defaults(func=run_hook)
 
     args = parser.parse_args()
     sys.exit(args.func(args))
