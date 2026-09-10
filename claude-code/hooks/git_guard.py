@@ -466,14 +466,15 @@ def matches_guarded_family(token):
 # cached -- a multi-source cp/mv/redirect/tee scan calls this once per path, but the result is identical per cwd
 @functools.lru_cache(maxsize=None)
 def repo_root_of(cwd):
-    if not cwd or not os.path.isdir(cwd):
-        return None
     try:
+        if not cwd or not os.path.isdir(cwd):
+            return None
         result = subprocess.run(
             ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
             capture_output=True, text=True, timeout=5,
         )
-    except (OSError, subprocess.SubprocessError):
+    # TypeError: os.path.isdir/subprocess.run raise it before cwd reaches the OS, for a non-str/bytes/PathLike cwd
+    except (OSError, subprocess.SubprocessError, TypeError):
         return None
     if result.returncode != 0:
         return None
