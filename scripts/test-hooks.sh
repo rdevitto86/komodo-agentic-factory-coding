@@ -893,6 +893,23 @@ bash_case_agent "R1  reviewer echo x >> BACKLOG.md is denied" \
 bash_case "R2  non-reviewer echo x >> BACKLOG.md is unaffected (still denied by the comment guard)" \
   deny 'echo x >> BACKLOG.md' "bypasses the comment guard"
 
+# R9-R12: main()'s except BaseException: sys.exit(0) must fail open, mirroring git_guard.py's F7 case above.
+expect "R9  a malformed payload fails open, not closed" allow <<'JSON'
+{"tool_name":"Edit","agent_type":"reviewer","tool_input":
+JSON
+
+expect "R10  a non-dict tool_input fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":"not-a-dict"}
+JSON
+
+expect "R11  a non-string file_path fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":42}}
+JSON
+
+expect "R12  a non-string cwd fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":42,"tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
+JSON
+
 VALIDATOR="$HOOKS/comments.py"
 printf '\ncomments apply\n\n'
 
