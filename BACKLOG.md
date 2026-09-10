@@ -28,10 +28,15 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|
 | `SUB-01.1.1.1` | fix `generateRequest`'s payload truncation against `num_ctx` in the bridge server once its source is reachable from this repo | a large summarizer payload no longer silently truncates against `num_ctx` in `~/.komodo/bridge` |
 
-#### [TSK-01.1.2] Open policy question: should "reflow a pre-existing wrapped line to the current convention whenever it's revisited during unrelated work" be a standing, written exception to this toolkit's own no-scope-expansion rule in `AGENTS.md`? [P: L] [TODO]
+#### [TSK-01.1.2] Open policy question: should "reflow a pre-existing wrapped line to the current convention whenever it's revisited during unrelated work" be a standing, written exception to this toolkit's own no-scope-expansion rule in `AGENTS.md`? [P: L] [DONE]
+| Field | Value |
+|---|---|
+| Decision (2026-09-10) | No standing exception. `AGENTS.md`'s no-scope-expansion rule already covered this implicitly; added an explicit line (`claude-code/AGENTS.md:17`) calling out formatting/lint reflow specifically so it stops being ambiguous. |
+| Rationale | Multiple people will eventually work inside shared files — drive-by reflow of an untouched line risks stepping on another engineer's in-flight edit to that same line. |
+
 | Subtask | Work | Done when |
 |---|---|---|
-| `SUB-01.1.2.1` | decide whether formatting-only drive-by fixes get a blanket exception (and if so, where that exception is written down — `standards-go`, `AGENTS.md`, or both) versus staying subject to the existing scope rule; a decision for the user, not something this review resolves on its own | — |
+| `SUB-01.1.2.1` | decide whether formatting-only drive-by fixes get a blanket exception (and if so, where that exception is written down — `standards-go`, `AGENTS.md`, or both) versus staying subject to the existing scope rule; a decision for the user, not something this review resolves on its own | decision recorded above; `claude-code/AGENTS.md:17` states the rule explicitly |
 
 #### [TSK-01.1.3] `git_guard.py`'s own inline `repo_root_of()` still catches only `(OSError, subprocess.SubprocessError)`, missing the `TypeError` fix `lib/git.py`'s copy of `repo_root()` already received [P: L] [TODO]
 | Subtask | Work | Done when |
