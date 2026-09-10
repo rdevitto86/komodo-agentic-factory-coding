@@ -52,6 +52,12 @@ READ_ONLY_GIT = {
     "whatchanged",
 }
 
+# reviewer.md's Boundaries set is its own literal allowlist, narrower than READ_ONLY_GIT (the general publish policy)
+REVIEWER_ALLOWED_GIT_SUBCOMMANDS = {"log", "diff", "show", "status", "blame", "ls-files"}
+
+# diff/log/show share the diff-generation parser, which accepts --output=<file> to write to a file, not stdout
+REVIEWER_GIT_OUTPUT_SUBCOMMANDS = {"diff", "log", "show"}
+
 MUTATING_FLAGS = {
     "branch": ("-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy", "--edit-description", "--set-upstream-to", "--unset-upstream"),
     "tag": ("-d", "-D", "--delete", "-f", "--force"),
@@ -1073,6 +1079,15 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         return
     if command == "git":
         subcommand, args = subcommand_of(tokens, GIT_GLOBAL_FLAGS_WITH_VALUE)
+        if agent_type == REVIEWER_AGENT:
+            if subcommand not in REVIEWER_ALLOWED_GIT_SUBCOMMANDS:
+                findings.append("the reviewer's Bash surface is read-only git only -- git %s is denied" % (subcommand or "<none>"))
+                return
+            if subcommand in REVIEWER_GIT_OUTPUT_SUBCOMMANDS and any(
+                arg == "--output" or arg.startswith("--output=") for arg in args
+            ):
+                findings.append("git %s --output writes to a file, and the reviewer has no legitimate write path" % subcommand)
+                return
         scoped = cwd
         for index, token in enumerate(tokens):
             if token == "-C" and index + 1 < len(tokens):

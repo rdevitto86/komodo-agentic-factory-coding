@@ -848,6 +848,31 @@ bash_case_agent "G187 reviewer gh pr view is denied even though it looks read-on
 bash_case "G188 a non-reviewer python3 -m pytest is unaffected (still allowed)" \
   allow 'python3 -m pytest'
 
+# FIXTURE_FEAT (non-protected), not FIXTURE_MAIN -- the protected-branch path would deny anyway, masking the gate
+bash_case_agent_at "$FIXTURE_FEAT" "G189 reviewer git add && git commit on a non-protected branch is still denied" \
+  deny reviewer 'git add -A && git commit -m x' "read-only git"
+bash_case_agent_at "$FIXTURE_FEAT" "G190 reviewer git push on a non-protected branch is still denied" \
+  deny reviewer 'git push' "read-only git"
+bash_case_agent_at "$FIXTURE_FEAT" "G191 reviewer git branch with a validly-named branch is still denied" \
+  deny reviewer 'git branch feat/some-valid-name' "read-only git"
+bash_case_agent_at "$FIXTURE_FEAT" "G192 reviewer bare git stash on a non-protected branch is still denied" \
+  deny reviewer 'git stash' "read-only git"
+bash_case_agent_at "$FIXTURE_FEAT" "G193 reviewer git switch on a non-protected branch is still denied" \
+  deny reviewer 'git switch some-other-branch' "read-only git"
+# diff/log/show accept --output=<file>, a native write path with no shell redirect syntax to catch elsewhere
+bash_case_agent_at "$FIXTURE_FEAT" "G194 reviewer git diff --output writes to a file and is denied" \
+  deny reviewer 'git diff --output=BACKLOG.md' "has no legitimate write path"
+bash_case_agent_at "$FIXTURE_FEAT" "G195 reviewer git log --output writes to a file and is denied" \
+  deny reviewer 'git log --output=x' "has no legitimate write path"
+bash_case_agent_at "$FIXTURE_FEAT" "G196 reviewer git show --output writes to a file and is denied" \
+  deny reviewer 'git show --output=x' "has no legitimate write path"
+bash_case_agent_at "$FIXTURE_FEAT" "G197 reviewer git status stays allowed (subcommand allowlist isn't over-restrictive)" \
+  allow reviewer 'git status'
+bash_case_cwd "$FIXTURE_FEAT" "G198 a non-reviewer git commit on a non-protected branch is unaffected (still allowed)" \
+  allow 'git commit -m x'
+bash_case_agent_at "$FIXTURE_FEAT" "G199 reviewer git diff --output <file>, two-token form, is denied" \
+  deny reviewer 'git diff --output BACKLOG.md' "has no legitimate write path"
+
 bash_case "G167 a non-reviewer env python3 comments.py apply is unaffected (still allowed)" \
   allow 'env python3 ~/.claude/hooks/comments.py apply'
 bash_case "G168 env skips leading -i and VAR=val tokens to reach a wrapped git push --force" \
