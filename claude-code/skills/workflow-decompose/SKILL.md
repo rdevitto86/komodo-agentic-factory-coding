@@ -23,7 +23,7 @@ Scope: **$ARGUMENTS** — a target state, optionally narrowed to one domain or s
 6. **Test every `[BLOCKED]` story's `Recheck:` condition.** Satisfied → drop `[BLOCKED]` and its subnote, queue the story like any other. Not satisfied → leave it blocked and out of the returned queue. **A `[BLOCKED]` story with no `Recheck:` line is a `## Gaps` finding** — every block needs a testable exit condition, not a permanent one.
 7. **Check the queue for a chain** before returning.
 8. **Mark transitive blocks.** A story that names a `Depends on`/`(after: ...)` edge to a story still `[BLOCKED]` after step 6 is itself blocked, even if nothing marks it so directly — carry that forward so P2.0 can pick around the whole chain instead of discovering it task by task.
-9. **Return a `## Parallel` section naming every set of two or more queued tasks that share no file and no `Depends on`/`(after: ...)` edge among them** — this is what `workflow-loop`'s P2.1 dispatches together with `isolation: worktree` instead of one at a time. State `None` when no such set exists; never omit the heading.
+9. **Return a `## Parallel` section naming every set of two or more queued tasks that share no file and no `Depends on`/`(after: ...)` edge among them** — recorded for a later parallel-implement capability; P2.1 dispatches serially today. State `None` when no such set exists; never omit the heading.
 
 **If `BACKLOG.md` is absent**, say so in `## Gaps` and stop. Creating it is the caller's job, not yours.
 

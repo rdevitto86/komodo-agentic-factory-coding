@@ -28,37 +28,39 @@ The SDD sections a code build actually depends on:
 
 **Coverage floors are `standards-sdlc`'s.** A task that drops coverage below its floor has failed even with green tests.
 
+**Once the gate is green, commit here** — `/git-commit-message` against the task's diff alone, then `git add` + `git commit`. One commit per task; no review runs in this phase.
+
 ---
 
-## P2.3 · Review
+## P2.3 · Band review
 
-`/assess-bugs` against the task, always. Add `/assess-security` when the touched surface includes an auth/secret/boundary path. **Invoke each with the task text and which `standards-*` skills the touched files load** (the language skill at minimum; `standards-docker` for a touched `Dockerfile`/`docker-compose.yaml`, `standards-api-security` for a touched auth/secret/boundary path, `standards-ui-security` for a touched rendered surface) — an unbriefed review picks its own lenses, which is not a repeatable gate. The lenses that matter:
+Runs once per band, after every task in the band is committed — never per task. Dispatch `/assess-bugs`, `/assess-simplify`, and (only when a touched path is an auth/secret/boundary path or a rendered surface) `/assess-security` together in one parallel block, as plain forks with no isolation — they are read-only after TSK-01.4.2, so nothing here collides. **Invoke each with the band summary and which `standards-*` skills the touched files load** (the language skill at minimum; `standards-docker` for a touched `Dockerfile`/`docker-compose.yaml`, `standards-api-security` for a touched auth/secret/boundary path, `standards-ui-security` for a touched rendered surface) plus the round number — an unbriefed review picks its own lenses, which is not a repeatable gate. The lenses that matter:
 
 - **Correctness** — does it do what the story said, including the edge the story named
 - **Security** — new boundary, new query, new secret handling
 - **Complexity** — a function that grew a fourth responsibility
 - **Idiom** — does it read like the code around it
-- **Comment discipline** — the guard blocks additions at write time; a review still catches one smuggled through an allowed slot
+- **Comment discipline** — comments are in the diff now (the implementer writes them, see TSK-01.4.3); a narrative, name-echo, or change-narrating comment is a Low finding the orchestrator deletes itself with one Edit, never a fork
 
-**Neither call takes `--report` here** — each files its findings to `BACKLOG.md` like any standalone run. Findings on correctness, security, or a stated requirement are folded straight into P2.0's pick and become the next P2.1 task, in this same pass. Everything else is optional and stays filed for later.
+**The orchestrator appends every returned finding row to `BACKLOG.md` under the matching domain in one Edit, before triage** — story-line shape per `backlog-modify`.
 
-**Round cap, same file, same band.** A new Critical/High finding on a file already reviewed in this band is round 2; a third straight new Critical/High finding on that same file is the stop signal — mirror the implement-side rule that the same check failing twice with the same error means stop, not retry. On round 3, do not fold the finding into another P2.1 fix-and-reloop pass: file it, state plainly that the round budget for this file in this band is spent, and surface the choice to the user — fix now, risk-accept and ship, or defer to a follow-up task. **The budget drops to 2, not 3,** when the touched file is already flagged in `BACKLOG.md` as a hand-rolled parser or security boundary with an open adversarial-hardening story (for example `git_guard.py`) — adversarial review of hand-rolled shell/parser code is close to open-ended by construction, so budget for that going in rather than discovering it at round 3.
+**Severity floor.** Critical and High findings, plus a Medium finding on correctness or a stated requirement, are fixed in this band via `/workflow-implement`; the fixed task re-enters P2.2. Every other finding stays filed and open — it waits for its own pick later, not folded into this pass.
+
+**Round cap, same file, same band.** A new Critical/High finding on a file already reviewed in this band is round 2; a third straight new Critical/High finding on that same file is the stop signal — mirror the implement-side rule that the same check failing twice with the same error means stop, not retry. On round 3, do not fold the finding into another fix-and-reloop pass: file it, state plainly that the round budget for this file in this band is spent, and surface the choice to the user — fix now, risk-accept and ship, or defer to a follow-up task. **The budget drops to 2, not 3,** when the touched file is already flagged in `BACKLOG.md` as a hand-rolled parser or security boundary with an open adversarial-hardening story (for example `git_guard.py`) — adversarial review of hand-rolled shell/parser code is close to open-ended by construction, so budget for that going in rather than discovering it at round 3. The cap bounds the severity-floor fixed set only.
 
 **Every review call's brief states its round number for this band.** Round 1 gets the standard brief. From round 2 onward, the brief also instructs the reviewer to report only clear, concrete, reproduced findings against the touched file — not a theoretical edge case in the underlying grammar or format the fix touches. A round-2+ call that surfaces only theoretical findings is not a new consecutive round for the cap above.
+
+**Exception.** A band of more than three tasks, or any task on a security boundary, also gets a per-task `/assess-bugs` at P2.2, before that task's commit. **Same round cap and round-numbered brief as P2.3** governs that per-task call too — it counts toward the touched file's round total for the band, same budget, same rules.
 
 ---
 
 ## P2.4 · Closeout
 
-**Once per band, not per-task** — after every task in the current pick is green, before `/workflow-consolidate` runs. Clears the target state's four standing closeout stories.
+**Once per band, not per-task** — after P2.3's band review has resolved its severity floor, before `/workflow-consolidate` runs. Clears the target state's four standing closeout stories.
 
-`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band's diff, then confirm the perf suite ran. Each runs as a `reviewer` fork, same as P2.3. **Dispatch the three `assess-*` calls in parallel, `isolation: worktree`**, not the serial list this used to be — all three write to `BACKLOG.md`, so this is a writer fan-out, not a read-only one; merge each worktree's diff back one at a time before continuing. **No `--report` here either** — each files to `BACKLOG.md`. Every story a call just filed is folded into P2.0's pick and resolved in this same pass: fixed via `/workflow-implement`, or explicitly declined and removed with the reason noted. None of it waits for the next `/workflow-loop` run.
+**Only `/changelog-write` runs here**, covering every task the band shipped. No `assess-*` repeat — P2.3 already covered bugs, simplification, and (where warranted) security for the whole band — and no `/backlog-audit` — no phase runs a band-scoped audit right now (TSK-01.4.4 moves that pass into P3).
 
-**Same round cap and round-numbered brief as P2.3, per touched file, for the whole band.** A closeout fix-and-reloop pass counts toward that file's round total; hitting the cap here stops the same way — file, state the budget is spent, surface fix-now/risk-accept/defer to the user instead of resolving it in this pass.
-
-**Same round cap and round-numbered brief as P2.3, per touched file, for the whole band.** A closeout fix-and-reloop pass counts toward that file's round total; hitting the cap here stops the same way — file, state the budget is spent, surface fix-now/risk-accept/defer to the user instead of resolving it in this pass.
-
-**Ends when:** the four closeout stories' findings are fixed or explicitly declined — that satisfies their `Done when: findings triaged`, so `/workflow-consolidate` deletes them like any other finished story.
+**Ends when:** `CHANGELOG.md`'s `[Unreleased]` section reflects the band — that satisfies the four closeout stories' `Done when: findings triaged`, so `/workflow-consolidate` deletes them like any other finished story.
 
 ---
 
