@@ -778,6 +778,17 @@ bash_case "G149 a non-reviewer tee to BACKLOG.md is unaffected (still denied)" \
 # an unresolvable repo root (cwd outside any git repo) must not inherit reviewer_guard's own fail-open here
 bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied, not fail-open" \
   deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
+bash_case "G151 a backslash-escaped backtick inside a \$()-substitution fed through eval hides git push --force" \
+  deny 'eval "$(echo \`git push --force\`)"' "rewrites published history"
+bash_case "G152 a single-quoted sh -c argument containing a double-quoted dollar-paren substitution, nested 2 levels, hides git push --force" \
+  deny 'echo "$(sh -c '\''echo "$(git push --force)"'\'')"' "rewrites published history"
+bash_case "G153 a backslash-escaped backtick inside a \$()-substitution with no eval/-c re-parse is inert text and allowed" \
+  allow 'echo "$(echo \`echo git push --force\` is dangerous)"'
+bash_case "G154 command eval indirection re-parses a \$()-substitution's escaped backtick, same as a bare eval" \
+  deny 'command eval "$(echo x\`git push origin main\`y)"' "is denied"
+bash_case "G155 a # comment line before an eval on the next line still re-parses its escaped backtick" \
+  deny  'echo hi # comment
+eval "$(echo \`git push --force\`)"' "rewrites published history"
 
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"

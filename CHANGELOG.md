@@ -7,6 +7,9 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ### Added
 - `verify_gate.py` now tracks its own approximate consecutive-block streak per repo (keyed off the repo root, cleared on any pass or skip) and appends a warning to the block reason once that streak nears the 8-consecutive-block point where Claude Code stops honoring a `Stop` hook — previously a fork hitting that cutoff went silent with no in-repo signal.
 
+### Changed
+- `git_guard.py`'s `segment_wants_reparse` now looks past a `command` prefix (with or without its value-less flags) at what it actually runs, so `command eval "$(...)"` re-parses a `$()` capture's escaped backtick the same way a bare `eval` already did. Risk-accepted (not closed): a `$()` capture containing an escaped backtick, re-parsed via `eval`/`sh -c` reached through variable indirection (`RUN=eval; $RUN "$(...)"`), an alias, or a shell function rather than a literal leading token, is not statically detectable by this line-local scanner — recognizing it would require cross-statement data-flow tracking this scanner doesn't do.
+
 ## [0.44.0] — 2026-09-09
 
 ### Added
