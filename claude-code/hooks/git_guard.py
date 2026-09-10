@@ -223,7 +223,11 @@ def segment_wants_reparse(prefix):
     base = os.path.basename(tokens[0].lstrip("("))
     # command passes through to eval/-c like a literal call -- variable/alias/function indirection is risk-accepted
     if base == "command":
-        tokens = strip_leading_flags(tokens[1:], PASSTHROUGH_VALUE_FLAGS["command"])
+        rest = tokens[1:]
+        # -v/-V only report whether NAME exists/its type -- bash never executes NAME here, unlike a bare `command NAME`
+        if rest and rest[0] in ("-v", "-V"):
+            return False
+        tokens = strip_leading_flags(rest, PASSTHROUGH_VALUE_FLAGS["command"])
         if not tokens:
             return False
         base = os.path.basename(tokens[0])
@@ -248,6 +252,39 @@ def find_paren_end(command, start):
     return scan_masked_span(command, start, is_terminator)
 
 
+# shared quote/comment/boundary classifier -- split_segments and extract_substitutions no longer hand-roll their own copy
+def classify_shell_char(command, index, in_squote, in_dquote, in_comment):
+    length = len(command)
+    char = command[index]
+    if in_squote:
+        if char == "'":
+            in_squote = False
+        return 1, in_squote, in_dquote, in_comment, False
+    if in_dquote:
+        if char == "\\" and index + 1 < length:
+            return 2, in_squote, in_dquote, in_comment, False
+        if char == '"':
+            in_dquote = False
+        return 1, in_squote, in_dquote, in_comment, False
+    if in_comment:
+        if char == "\n":
+            return 1, in_squote, in_dquote, False, True
+        return 1, in_squote, in_dquote, in_comment, False
+    if char == "#":
+        return 1, in_squote, in_dquote, True, False
+    if char == "'":
+        return 1, True, in_dquote, in_comment, False
+    if char == '"':
+        return 1, in_squote, True, in_comment, False
+    if char == "\\" and index + 1 < length:
+        return 2, in_squote, in_dquote, in_comment, False
+    if command.startswith("&&", index) or command.startswith("||", index):
+        return 2, in_squote, in_dquote, in_comment, True
+    if char in SEGMENT_BOUNDARY_CHARS:
+        return 1, in_squote, in_dquote, in_comment, True
+    return 1, in_squote, in_dquote, in_comment, False
+
+
 # blanks captured substitution text in place instead of a placeholder token -- keeps offsets aligned for split_segments
 def capture_and_mask(command, masked, substitutions, index, finder, offset, unescape=None):
     length = len(command)
@@ -261,6 +298,7 @@ def capture_and_mask(command, masked, substitutions, index, finder, offset, unes
     return stop
 
 
+# a backtick/$() is live in dquote and top-level alike -- only squote and comment spans mask it
 def extract_substitutions(command):
     masked = list(command)
     substitutions = []
@@ -273,19 +311,7 @@ def extract_substitutions(command):
     segment_start = 0
     while index < length:
         char = command[index]
-        if in_squote:
-            if char == "'":
-                in_squote = False
-            index += 1
-            continue
-        if in_dquote:
-            if char == "\\" and index + 1 < length:
-                index += 2
-                continue
-            if char == '"':
-                in_dquote = False
-                index += 1
-                continue
+        if not in_squote and not in_comment:
             if char == "`":
                 index = capture_and_mask(command, masked, substitutions, index, find_backtick_end, 1, unescape_nested_backticks)
                 continue
@@ -294,48 +320,10 @@ def extract_substitutions(command):
                 unescape = unescape_nested_backticks if segment_wants_reparse(command[segment_start:index]) else None
                 index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2, unescape)
                 continue
-            index += 1
-            continue
-        if in_comment:
-            if char == "\n":
-                in_comment = False
-                index += 1
-                segment_start = index
-                continue
-            index += 1
-            continue
-        if char == "#":
-            in_comment = True
-            index += 1
-            continue
-        if char == "'":
-            in_squote = True
-            index += 1
-            continue
-        if char == '"':
-            in_dquote = True
-            index += 1
-            continue
-        if char == "\\" and index + 1 < length:
-            index += 2
-            continue
-        if char == "`":
-            index = capture_and_mask(command, masked, substitutions, index, find_backtick_end, 1, unescape_nested_backticks)
-            continue
-        if char == "$" and command.startswith("$(", index):
-            # same reparse gate as the dquote branch above -- keeps both $() capture sites consistent
-            unescape = unescape_nested_backticks if segment_wants_reparse(command[segment_start:index]) else None
-            index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2, unescape)
-            continue
-        if command.startswith("&&", index) or command.startswith("||", index):
-            index += 2
+        advance, in_squote, in_dquote, in_comment, boundary = classify_shell_char(command, index, in_squote, in_dquote, in_comment)
+        index += advance
+        if boundary:
             segment_start = index
-            continue
-        if char in SEGMENT_BOUNDARY_CHARS:
-            index += 1
-            segment_start = index
-            continue
-        index += 1
     return "".join(masked), substitutions
 
 
@@ -350,68 +338,15 @@ def split_segments(command):
     index = 0
     length = len(command)
     while index < length:
-        char = command[index]
-        if in_squote:
-            current.append(char)
-            if char == "'":
-                in_squote = False
-            index += 1
-            continue
-        if in_dquote:
-            current.append(char)
-            if char == "\\" and index + 1 < length:
-                current.append(command[index + 1])
-                index += 2
-                continue
-            if char == '"':
-                in_dquote = False
-            index += 1
-            continue
-        if in_comment:
-            if char == "\n":
-                in_comment = False
-                segments.append(("".join(current), seg_start))
-                current = []
-                index += 1
-                seg_start = index
-                continue
-            current.append(char)
-            index += 1
-            continue
-        if char == "#":
-            in_comment = True
-            current.append(char)
-            index += 1
-            continue
-        if char == "'":
-            in_squote = True
-            current.append(char)
-            index += 1
-            continue
-        if char == '"':
-            in_dquote = True
-            current.append(char)
-            index += 1
-            continue
-        if char == "\\" and index + 1 < length:
-            current.append(char)
-            current.append(command[index + 1])
-            index += 2
-            continue
-        if command.startswith("&&", index) or command.startswith("||", index):
+        advance, in_squote, in_dquote, in_comment, boundary = classify_shell_char(command, index, in_squote, in_dquote, in_comment)
+        if boundary:
             segments.append(("".join(current), seg_start))
             current = []
-            index += 2
+            index += advance
             seg_start = index
             continue
-        if char in SEGMENT_BOUNDARY_CHARS:
-            segments.append(("".join(current), seg_start))
-            current = []
-            index += 1
-            seg_start = index
-            continue
-        current.append(char)
-        index += 1
+        current.append(command[index:index + advance])
+        index += advance
     segments.append(("".join(current), seg_start))
     return segments
 
@@ -795,6 +730,27 @@ def strip_leading_flags(tokens, value_flags):
     return tokens[index:]
 
 
+# -u NAME, -C DIR, -P PATH (BSD/macOS) consume a value; -S doesn't -- its argument is the wrapped command, not a value
+ENV_VALUE_FLAGS = ("-u", "-C", "-P")
+
+
+# env's own syntax has no -c flag -- compose the two generic strippers instead of a third hand-rolled walk
+def strip_env_wrapper_prefix(tokens):
+    return strip_env_assignments(strip_leading_flags(tokens, ENV_VALUE_FLAGS))
+
+
+# -S/--split-string's argument is the wrapped command (env's -c) -- extract it from any of its three real forms
+def env_split_string_value(tokens):
+    for index, token in enumerate(tokens):
+        if token == "-S":
+            return tokens[index + 1] if index + 1 < len(tokens) else ""
+        if token.startswith("-S") and not token.startswith("--"):
+            return token[len("-S"):]
+        if token.startswith("--split-string="):
+            return token[len("--split-string="):]
+    return None
+
+
 def subcommand_of(tokens, value_flags):
     index = 1
     while index < len(tokens):
@@ -1018,6 +974,11 @@ def gh_violation(tokens):
     return None
 
 
+# the exact inverse of tokenize()'s shlex.split -- a bare " ".join loses a wrapped multi-word token's quoting
+def requote(tokens):
+    return " ".join(shlex.quote(token) for token in tokens)
+
+
 def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0, agent_type=None, piped_source=None):
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
@@ -1029,11 +990,24 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     # a bare (cmd ...) subshell glues its "(" onto the first word -- stripped only for command identification
     command = os.path.basename(tokens[0].lstrip("("))
     if command in SHELL_WRAPPERS:
+        if command == "env":
+            split_string = env_split_string_value(tokens[1:])
+            if split_string is not None:
+                # env -S word-splits its string directly into argv (no ;/&&/| operators) -- tokenize once and requote before recursing
+                inner = tokenize(split_string)
+                if inner:
+                    scan_command(requote(inner), findings, cwd, depth + 1, agent_type)
+                return
+            inner = strip_env_wrapper_prefix(tokens[1:])
+            if inner:
+                scan_command(requote(inner), findings, cwd, depth + 1, agent_type)
+            return
         for index, token in enumerate(tokens):
             if token == "-c" and index + 1 < len(tokens):
                 scan_command(tokens[index + 1], findings, cwd, depth + 1, agent_type)
         return
     if command == "eval":
+        # eval concatenates its dequoted args and reparses -- real bash loses this quoting too, requoting would diverge
         inner = tokens[1:]
         if inner:
             scan_command(" ".join(inner), findings, cwd, depth + 1, agent_type)
@@ -1041,7 +1015,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     if command in PASSTHROUGH_WRAPPERS:
         inner = strip_leading_flags(tokens[1:], PASSTHROUGH_VALUE_FLAGS[command])
         if inner:
-            scan_command(" ".join(inner), findings, cwd, depth + 1, agent_type)
+            scan_command(requote(inner), findings, cwd, depth + 1, agent_type)
         return
     if command == "tee":
         # tokens loses a $()/backtick arg to blanking; [1:] and a leading '-' skip tee's own name/flags, not its target

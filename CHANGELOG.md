@@ -10,6 +10,19 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - `lib/git.py`'s `repo_root()` now also catches `TypeError`, so a non-str/bytes/PathLike `cwd` (e.g. from a malformed hook payload) fails open deliberately instead of depending on whichever caller's outer exception handler happened to rescue it.
 - `standards-go/SKILL.md`'s two "modernize" transform bullets no longer hardcode a Go version number as their gate condition — both now phrase it relative to `go.mod`'s floor, consistent with the file's own stated convention.
 
+## [0.46.2] — 2026-09-10
+
+### Changed
+- `git_guard.py`'s `extract_substitutions` no longer hand-rolls its own second copy of `split_segments`'s quote/comment/boundary state machine — both now share one `classify_shell_char` helper, and the two duplicated `$()`-capture call sites inside `extract_substitutions` collapsed to one.
+
+### Fixed
+- `git_guard.py`'s `segment_wants_reparse` no longer treats `command -v`/`command -V` (existence/type checks that never execute their argument) the same as `command eval` (which does) — fixes a false-positive deny on a harmless existence check.
+- `git_guard.py`'s `env`/`time`/`nohup`/`xargs`/`command` recursion lost shell quoting on rejoin, so a wrapped `sh -c "multi word"` argument split apart on re-tokenize and only its first word was scanned — recursion now round-trips through `shlex.quote` to preserve the original token boundary.
+
+### Security
+- `git_guard.py`'s `env` wrapper handling only recursed on a literal `-c` token, but real `env` has no `-c` flag — `env <any guarded command>` bypassed every pattern the file checks, not only the reviewer-write case that first surfaced it. Fixed by composing the file's existing generic flag-stripper with its `VAR=val` walk instead of a narrow hand-rolled `-i`-only check.
+- `git_guard.py` also treated `env -S`/`--split-string` as a discardable value flag; its argument is actually the wrapped command (the same role `-c` plays for `sh`/`bash`) and was silently discarded rather than scanned — now shell-split and recursively scanned like `sh -c`'s argument.
+
 ## [0.46.1] — 2026-09-10
 
 ### Added
