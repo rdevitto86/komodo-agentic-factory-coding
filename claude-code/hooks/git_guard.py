@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib.agents import REVIEWER_AGENT
 from lib.comment_rules import EXTENSION_FAMILY, FILENAME_FAMILY
+from lib.git import repo_root as lib_repo_root
 
 READ_ONLY_GIT = {
     "annotate",
@@ -466,18 +467,13 @@ def matches_guarded_family(token):
 # cached -- a multi-source cp/mv/redirect/tee scan calls this once per path, but the result is identical per cwd
 @functools.lru_cache(maxsize=None)
 def repo_root_of(cwd):
-    if not cwd or not os.path.isdir(cwd):
-        return None
+    # TypeError: os.path.isdir raises it before cwd reaches the OS, for a non-str/bytes/PathLike cwd
     try:
-        result = subprocess.run(
-            ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
+        if not cwd or not os.path.isdir(cwd):
+            return None
+    except TypeError:
         return None
-    if result.returncode != 0:
-        return None
-    top = result.stdout.strip()
+    top = lib_repo_root(cwd)
     return os.path.realpath(top) if top else None
 
 

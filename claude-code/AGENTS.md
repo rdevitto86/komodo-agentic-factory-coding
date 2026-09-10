@@ -14,7 +14,7 @@ Universal directive for every model and every tool — Claude, GPT, Gemini, Qwen
 - **Assume by default; state it and move.** Ask only when genuinely blocked — a decision only the user can make, or an irreversible/shared action.
 - **Never resolve a capability gap by memory.** Check the real source, document, or record before designing around a limit.
 - **Skill existence is settled by the available-skills listing already in context** — it merges project-local `.claude/skills/` and global `~/.claude/skills/`. Never Glob/grep the filesystem to check whether a skill exists; that only sees the local half.
-- **Never expand scope.** Out-of-task work goes to `BACKLOG.md` and gets one line to the user. Default answer is no.
+- **Never expand scope.** Out-of-task work goes to `BACKLOG.md` and gets one line to the user. Default answer is no. This includes formatting and lint fixes: touch only the lines a task requires, never reflow or restyle a pre-existing line just because the file is already open — a shared file may carry another engineer's in-flight edit to that line.
 - **Report honestly.** A failure, a skipped step, an unfinished part — say so plainly with the evidence.
 - **This directory's own `AGENTS.md` is the fastest path to its facts** — read it before exploring.
 - **A file under this toolkit's own `claude-code/hooks/` is live via symlink the instant it's saved.** A nontrivial edit there goes through atomic write (temp file in the same directory, then `mv` into place), never a direct in-place tool write — a half-saved intermediate state is a live outage window for every session, this one included.
