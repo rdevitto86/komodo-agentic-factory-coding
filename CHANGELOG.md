@@ -4,6 +4,11 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.47.1] — 2026-09-10
+
+### Security
+- `reviewer`'s Bash surface is now deny-by-default: `git_guard.py` allows only read-only `git log`/`diff`/`show`/`status`/`blame`/`ls-files` (no global flag, no `--output`, no leading env-var assignment) and denies everything else outright, closing the whole class of bypass a prior series of comments.py-specific pattern fixes chased one signature at a time — including a live-confirmed arbitrary-code-execution path via `GIT_EXTERNAL_DIFF`.
+
 ## [0.47.0] — 2026-09-10
 
 ### Added

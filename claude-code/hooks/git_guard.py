@@ -52,6 +52,12 @@ READ_ONLY_GIT = {
     "whatchanged",
 }
 
+# reviewer.md's Boundaries set is its own literal allowlist, narrower than READ_ONLY_GIT (the general publish policy)
+REVIEWER_ALLOWED_GIT_SUBCOMMANDS = {"log", "diff", "show", "status", "blame", "ls-files"}
+
+# diff/log/show share the diff-generation parser, which accepts --output=<file> to write to a file, not stdout
+REVIEWER_GIT_OUTPUT_SUBCOMMANDS = {"diff", "log", "show"}
+
 MUTATING_FLAGS = {
     "branch": ("-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy", "--edit-description", "--set-upstream-to", "--unset-upstream"),
     "tag": ("-d", "-D", "--delete", "-f", "--force"),
@@ -976,15 +982,22 @@ def requote(tokens):
 
 
 def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0, agent_type=None, piped_source=None):
-    tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
-    if not tokens:
+    raw_tokens = tokenize(segment)
+    if not raw_tokens:
         return
-    # every segment, not gated on a command-name allowlist -- the bypass this closes is a basename that never matched
-    if agent_type == REVIEWER_AGENT and comments_write_invocation(tokens, cwd, piped_source):
-        findings.append("comments.py apply writes to a source file, and the reviewer has no legitimate write path")
+    # GIT_EXTERNAL_DIFF (and siblings) let git shell out to arbitrary code -- reviewer may never lead with VAR=value
+    if agent_type == REVIEWER_AGENT and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", raw_tokens[0]):
+        findings.append("the reviewer's Bash surface is read-only git only -- a leading VAR=value assignment is denied")
+        return
+    tokens = strip_redirects(strip_env_assignments(raw_tokens))
+    if not tokens:
         return
     # a bare (cmd ...) subshell glues its "(" onto the first word -- stripped only for command identification
     command = os.path.basename(tokens[0].lstrip("("))
+    # deny-by-default, not pattern-recognition -- reviewer.md states the whole reviewer Bash surface is read-only git
+    if agent_type == REVIEWER_AGENT and command != "git":
+        findings.append("the reviewer's Bash surface is read-only git only -- %s is denied" % command)
+        return
     if command in SHELL_WRAPPERS:
         if command == "env":
             split_string = env_split_string_value(tokens[1:])
@@ -1073,6 +1086,17 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         return
     if command == "git":
         subcommand, args = subcommand_of(tokens, GIT_GLOBAL_FLAGS_WITH_VALUE)
+        if agent_type == REVIEWER_AGENT:
+            # tokens[1] must BE the subcommand -- no global flag (-c, --exec-path, ...) may precede it unseen
+            leading = tokens[1] if len(tokens) > 1 else None
+            if leading not in REVIEWER_ALLOWED_GIT_SUBCOMMANDS:
+                findings.append("the reviewer's Bash surface is read-only git only -- git %s is denied" % (leading or "<none>"))
+                return
+            if subcommand in REVIEWER_GIT_OUTPUT_SUBCOMMANDS and any(
+                arg == "--output" or arg.startswith("--output=") for arg in args
+            ):
+                findings.append("git %s --output writes to a file, and the reviewer has no legitimate write path" % subcommand)
+                return
         scoped = cwd
         for index, token in enumerate(tokens):
             if token == "-C" and index + 1 < len(tokens):
