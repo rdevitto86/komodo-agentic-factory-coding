@@ -10,7 +10,8 @@ def repo_root(start):
             text=True,
             timeout=5,
         )
-    except (OSError, subprocess.SubprocessError):
+    # TypeError: subprocess.run raises it before cwd reaches the OS, for a non-str/bytes/PathLike start
+    except (OSError, subprocess.SubprocessError, TypeError):
         return None
     if result.returncode != 0:
         return None
