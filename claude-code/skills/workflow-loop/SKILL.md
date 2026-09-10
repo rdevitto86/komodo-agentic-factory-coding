@@ -134,9 +134,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Each call returns its findings; the orchestrator appends every row to `BACKLOG.md` under the matching domain in one Edit, before triage.**
 
-**Severity floor.** Critical and High findings, plus a Medium finding on correctness or a stated requirement, are fixed in this band via `/workflow-implement`; the fixed task re-enters P2.2. Everything else stays filed and open for a later pick.
+**Severity floor.** Fix the findings `ways/sdlc.md`'s severity floor selects, via `/workflow-implement`; each fixed task re-enters P2.2. Everything else stays filed and open for a later pick.
 
-**Retry counter — session-stated, not a file.** Before re-invoking the same `assess-*` skill against the same file a repeat time within this band, state "round N for `<file>`" in this session's own turn text — P2.0's queue is the tally, no `.claude/state/` file. Hitting `ways/sdlc.md`'s round cap (round 3, or round 2 for a file `BACKLOG.md` already flags as a hand-rolled parser or security boundary) is the stop signal: stop auto-continuing that skill against that file and escalate to the user.
+**Retry counter — session-stated, not a file.** Before re-invoking the same `assess-*` skill against the same file a repeat time within this band, state "round N for `<file>`" in this session's own turn text — P2.0's queue is the tally, no `.claude/state/` file. Hitting `ways/sdlc.md`'s round cap is the stop signal: stop auto-continuing that skill against that file and escalate to the user.
 
 **Ends when:** the severity-floor set is fixed or the round cap has surfaced a stop to the user, and everything else is filed. Continue to P2.4.
 
