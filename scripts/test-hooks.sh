@@ -1318,6 +1318,13 @@ if [ "$IS_WINDOWS" -eq 1 ] || ! command -v make >/dev/null 2>&1; then
   skip_case "VG1 blocks below the warning threshold carry no streak warning" "make unavailable, or Windows runner (TSK-01.1.14)"
   skip_case "VG2 the streak warning appears once the block count reaches the threshold" "make unavailable, or Windows runner (TSK-01.1.14)"
   skip_case "VG3 a passing verify clears the streak" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG4 a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG5 records-only dirty paths skip the gate without running it" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG6 a non-records dirty path still runs the gate" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG7 the first of three identical failures blocks" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG8 the second identical failure names the repeat" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG9 the third identical failure returns instead of blocking again" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG10 a slow git-status probe falls through to running verify instead of skipping" "make unavailable, or Windows runner (TSK-01.1.14)"
 else
   FIXTURE_VGATE="$WORKDIR/fixture-vgate"
   mkdir -p "$FIXTURE_VGATE"
@@ -1347,8 +1354,8 @@ except Exception:
     print("")' 2>/dev/null
   }
 
-  printf 'verify:\n\t@exit 1\n' > "$FIXTURE_VGATE/Makefile"
-  # sequential, not backgrounded -- each call reads the streak the last one wrote
+  printf 'verify:\n\t@echo $$$$; exit 1\n' > "$FIXTURE_VGATE/Makefile"
+  # PID varies each run so these blocks stay non-identical; sequential -- each call reads the streak the last one wrote
   for _ in 1 2 3 4 5; do vgate_out="$(vgate_run)"; done
   decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
   JOB_IDX=$((JOB_IDX + 1))
@@ -1378,6 +1385,122 @@ except Exception:
     report "$RESULTS_DIR/$JOB_IDX.out" "VG3 a passing verify clears the streak" ""
   else
     report "$RESULTS_DIR/$JOB_IDX.out" "VG3 a passing verify clears the streak" "pass=$pass_decision next=$decision" "$reason"
+  fi
+
+  vgate_system_message() {
+    [ -z "$1" ] && return
+    printf '%s' "$1" | python3 -c 'import json, sys
+try:
+    print(json.loads(sys.stdin.read()).get("systemMessage", ""))
+except Exception:
+    print("")' 2>/dev/null
+  }
+
+  # VG4 -- a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit, not a silent exit 0
+  FIXTURE_VGATE_TO="$WORKDIR/fixture-vgate-timeout"
+  mkdir -p "$FIXTURE_VGATE_TO/.claude"
+  git init -q -b main "$FIXTURE_VGATE_TO"
+  (cd "$FIXTURE_VGATE_TO" && git config user.email t@t.com && git config user.name t)
+  printf '#!/bin/sh\nsleep 3\nexit 1\n' > "$FIXTURE_VGATE_TO/.claude/verify.sh"
+  chmod +x "$FIXTURE_VGATE_TO/.claude/verify.sh"
+  (cd "$FIXTURE_VGATE_TO" && git add -A && git commit -q -m init)
+  printf 'dirty\n' > "$FIXTURE_VGATE_TO/file.txt"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_TO" | KOMODO_VERIFY_TIMEOUT=1 python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [[ "$reason" == *"exceeded 1 s"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG4 a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG4 a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit" "decision=$decision" "$reason"
+  fi
+
+  # VG5/VG6 -- records-only dirty paths skip the gate; a marker file proves whether the fixture script ran
+  FIXTURE_VGATE_RO="$WORKDIR/fixture-vgate-records-only"
+  mkdir -p "$FIXTURE_VGATE_RO/.claude"
+  git init -q -b main "$FIXTURE_VGATE_RO"
+  (cd "$FIXTURE_VGATE_RO" && git config user.email t@t.com && git config user.name t)
+  printf '#!/bin/sh\ntouch "%s/marker"\nexit 1\n' "$FIXTURE_VGATE_RO" > "$FIXTURE_VGATE_RO/.claude/verify.sh"
+  chmod +x "$FIXTURE_VGATE_RO/.claude/verify.sh"
+  (cd "$FIXTURE_VGATE_RO" && git add -A && git commit -q -m init)
+
+  touch "$FIXTURE_VGATE_RO/BACKLOG.md" "$FIXTURE_VGATE_RO/CHANGELOG.md"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_RO" | python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" != "block" ] && [ ! -e "$FIXTURE_VGATE_RO/marker" ]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG5 records-only dirty paths skip the gate without running it" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG5 records-only dirty paths skip the gate without running it" "decision=$decision marker=$([ -e "$FIXTURE_VGATE_RO/marker" ] && echo present || echo absent)"
+  fi
+
+  rm -f "$FIXTURE_VGATE_RO/BACKLOG.md" "$FIXTURE_VGATE_RO/marker"
+  printf 'package main\n' > "$FIXTURE_VGATE_RO/x.go"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_RO" | python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [ -e "$FIXTURE_VGATE_RO/marker" ]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG6 a non-records dirty path still runs the gate" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG6 a non-records dirty path still runs the gate" "decision=$decision marker=$([ -e "$FIXTURE_VGATE_RO/marker" ] && echo present || echo absent)"
+  fi
+
+  # VG7/VG8/VG9 -- three consecutive identical failures stop the fork instead of grinding toward the 8-block cutoff
+  FIXTURE_VGATE_ID="$WORKDIR/fixture-vgate-identical"
+  mkdir -p "$FIXTURE_VGATE_ID"
+  git init -q -b main "$FIXTURE_VGATE_ID"
+  (cd "$FIXTURE_VGATE_ID" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+  printf 'verify:\n\t@exit 1\n' > "$FIXTURE_VGATE_ID/Makefile"
+  printf 'dirty\n' > "$FIXTURE_VGATE_ID/file.txt"
+
+  vgate_run_id() {
+    printf '{"cwd":"%s"}' "$FIXTURE_VGATE_ID" | python3 "$VERIFY_GATE" 2>/dev/null
+  }
+
+  out1="$(vgate_run_id)"
+  d1="$(vgate_decision "$out1")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$d1" = "block" ]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG7 the first of three identical failures blocks" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG7 the first of three identical failures blocks" "decision=$d1"
+  fi
+
+  out2="$(vgate_run_id)"
+  d2="$(vgate_decision "$out2")"; r2="$(vgate_reason "$out2")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$d2" = "block" ] && [[ "$r2" == *"Same failure"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG8 the second identical failure names the repeat" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG8 the second identical failure names the repeat" "decision=$d2" "$r2"
+  fi
+
+  out3="$(vgate_run_id)"
+  d3="$(vgate_decision "$out3")"; msg3="$(vgate_system_message "$out3")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$d3" != "block" ] && [[ "$msg3" == *"identical failure three times"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG9 the third identical failure returns instead of blocking again" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG9 the third identical failure returns instead of blocking again" "decision=$d3 systemMessage=$msg3"
+  fi
+
+  # VG10 -- a git-status probe past its own 5s timeout falls through to running verify, not a silent skip
+  REAL_GIT="$(command -v git)"
+  FIXTURE_VGATE_PROBE="$WORKDIR/fixture-vgate-probe-timeout"
+  FIXTURE_VGATE_PROBE_BIN="$WORKDIR/fixture-vgate-probe-timeout-bin"
+  mkdir -p "$FIXTURE_VGATE_PROBE" "$FIXTURE_VGATE_PROBE_BIN"
+  git init -q -b main "$FIXTURE_VGATE_PROBE"
+  (cd "$FIXTURE_VGATE_PROBE" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+  printf 'verify:\n\t@exit 1\n' > "$FIXTURE_VGATE_PROBE/Makefile"
+  printf 'dirty\n' > "$FIXTURE_VGATE_PROBE/file.txt"
+  printf '#!/bin/sh\nif [ "$1" = "status" ]; then\n  sleep 6\nfi\nexec "%s" "$@"\n' "$REAL_GIT" > "$FIXTURE_VGATE_PROBE_BIN/git"
+  chmod +x "$FIXTURE_VGATE_PROBE_BIN/git"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_PROBE" | PATH="$FIXTURE_VGATE_PROBE_BIN:$PATH" python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [[ "$reason" == *"is failing"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG10 a slow git-status probe falls through to running verify instead of skipping" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG10 a slow git-status probe falls through to running verify instead of skipping" "decision=$decision" "$reason"
   fi
 fi
 
