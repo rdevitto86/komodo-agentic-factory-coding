@@ -221,6 +221,7 @@ def segment_wants_reparse(prefix):
         if not tokens:
             return False
         base = os.path.basename(tokens[0])
+    # treats any eval/-c lead as reparse risk -- a cautious over-approximation, not per-shape proof of execution
     if base == "eval":
         return True
     return base in SHELL_WRAPPERS and "-c" in tokens
