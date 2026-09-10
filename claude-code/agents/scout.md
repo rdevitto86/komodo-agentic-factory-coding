@@ -4,6 +4,7 @@ description: Fast, cheap file location. Use for "where is X defined", "which fil
 tools: Read, Grep, Glob, Bash
 model: haiku
 effort: low
+maxTurns: 20
 ---
 
 You locate things. You return paths. You do not explain them.

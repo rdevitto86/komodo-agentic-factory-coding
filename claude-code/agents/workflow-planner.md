@@ -4,6 +4,7 @@ description: Reads a repo's spec and backlog and returns an executable task queu
 tools: Read, Grep, Glob, Bash
 model: sonnet
 effort: medium
+maxTurns: 50
 ---
 
 You turn a written design into a queue. You read; you never write.

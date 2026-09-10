@@ -3,31 +3,32 @@
 # verify_gate.py - Stop hook. Blocks the turn from ending while the
 # repo's own verification command is failing.
 #
-# Opt-in per repo. It runs nothing unless the repo declares a command,
-# checked in this order:
+# Opt-in per repo. Checked in order: .claude/verify.sh (executable),
+# then a `verify:` target in Makefile / Taskfile / justfile. None of
+# those declared means no gate, silently.
 #
-#   1. .claude/verify.sh   (executable)
-#   2. make verify         (Makefile has a `verify:` target)
-#   3. task verify         (Taskfile has a `verify:` task)
-#   4. just verify         (justfile has a `verify:` recipe)
+# Skips a clean working tree, and skips -- without running the check
+# at all -- a tree whose only dirty paths are records-only files
+# (BACKLOG.md, docs/BACKLOG.md, CHANGELOG.md, README.md).
 #
-# No declaration means no gate, silently. A repo opts in by adding one.
+# The verify command is bounded by KOMODO_VERIFY_TIMEOUT seconds
+# (default 300, an invalid value falls back to 300); a timeout is a
+# deliberate block naming the limit, not a silent pass-through. The
+# git-status probe backing the records-only skip has its own fixed
+# 5s timeout; a probe timeout falls through to a normal verify run.
 #
-# It also skips when `git status --porcelain` is empty, so a question-
-# and-answer turn that changed nothing never pays for a test run.
-#
-# This hook FAILS OPEN. Every guard in this directory fails closed
-# because a missed comment reaches disk; this one is the opposite. A
-# verification gate that crashes must not be able to brick a session,
-# so any internal error exits 0 and the turn ends normally.
+# Otherwise this hook FAILS OPEN: an internal error outside the cases
+# above exits 0, because a broken gate must not be able to brick a
+# session.
 #
 # Claude Code stops honouring a Stop hook after 8 consecutive blocks,
-# so a permanently red suite cannot trap the session either. This hook
-# keeps its own approximate count of how many times in a row it has
-# blocked this repo (a small file under the OS temp dir, keyed by repo
-# root, cleared on any pass or skip) and appends a warning once that
-# count nears the cutoff -- the fork gets a signal before it is force-
-# ended, instead of the loop just going quiet.
+# so this hook tracks its own approximate streak of consecutive blocks
+# against a repo (a small file under the OS temp dir, keyed by repo
+# root, cleared on any pass or skip) and warns once that streak nears
+# the cutoff. It also hashes each failure's combined output: three
+# consecutive identical hashes stop the fork itself (exit 0 with a
+# systemMessage, no block) rather than grinding toward that 8-block
+# cutoff on a failure that isn't changing.
 
 import hashlib
 import json
@@ -40,18 +41,33 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib.git import repo_root
 
-TIMEOUT_SECONDS = 300
+DEFAULT_TIMEOUT_SECONDS = 300
 MAX_OUTPUT_CHARS = 4000
 STREAK_WARN_AT = 6
+IDENTICAL_STOP_AT = 3
+RECORDS_ONLY_PATHS = frozenset(
+    ("BACKLOG.md", "docs/BACKLOG.md", "CHANGELOG.md", "README.md")
+)
 
 
-def run(args, cwd):
+def timeout_seconds():
+    raw = os.environ.get("KOMODO_VERIFY_TIMEOUT")
+    if raw is None:
+        return DEFAULT_TIMEOUT_SECONDS
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        return DEFAULT_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_TIMEOUT_SECONDS
+
+
+def run(args, cwd, timeout):
     return subprocess.run(
         args,
         cwd=cwd,
         capture_output=True,
         text=True,
-        timeout=TIMEOUT_SECONDS,
+        timeout=timeout,
     )
 
 
@@ -82,11 +98,29 @@ def discover(root):
     return None, None
 
 
-def tree_is_dirty(root):
-    result = run(["git", "status", "--porcelain"], root)
+def dirty_paths(root):
+    # A timed-out probe is inconclusive, not clean: fall through to a normal verify run.
+    try:
+        result = run(["git", "status", "--porcelain"], root, 5)
+    except subprocess.TimeoutExpired:
+        return None
     if result.returncode != 0:
-        return False
-    return bool(result.stdout.strip())
+        return []
+    paths = []
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        rest = line[3:] if len(line) > 3 else line.strip()
+        if " -> " in rest:
+            rest = rest.split(" -> ", 1)[1]
+        rest = rest.strip()
+        if rest:
+            paths.append(rest)
+    return paths
+
+
+def is_records_only(paths):
+    return bool(paths) and all(p in RECORDS_ONLY_PATHS for p in paths)
 
 
 def streak_path(root):
@@ -94,18 +128,34 @@ def streak_path(root):
     return os.path.join(tempfile.gettempdir(), "komodo-verify-gate-streak-%s" % key)
 
 
-def read_streak(path):
+def read_state(path):
     try:
         with open(path, encoding="utf-8") as handle:
-            return int(handle.read().strip())
-    except (OSError, ValueError):
-        return 0
+            lines = handle.read().splitlines()
+    except OSError:
+        return 0, "", 0
+    streak = 0
+    prev_hash = ""
+    identical = 0
+    if len(lines) >= 1:
+        try:
+            streak = int(lines[0].strip())
+        except ValueError:
+            streak = 0
+    if len(lines) >= 2:
+        prev_hash = lines[1].strip()
+    if len(lines) >= 3:
+        try:
+            identical = int(lines[2].strip())
+        except ValueError:
+            identical = 0
+    return streak, prev_hash, identical
 
 
-def write_streak(path, value):
+def write_state(path, streak, hash_hex, identical):
     try:
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write(str(value))
+            handle.write("%d\n%s\n%d\n" % (streak, hash_hex, identical))
     except OSError:
         pass
 
@@ -124,16 +174,35 @@ def tail(text):
     return "...(truncated)...\n" + text[-MAX_OUTPUT_CHARS:]
 
 
-def block(label, result, streak):
-    combined = tail((result.stdout or "") + (result.stderr or ""))
-    lines = [
-        "`%s` is failing. The task is not done." % label,
-        "",
-        combined,
-        "",
-        "Fix the cause, do not suppress the check. Re-run `%s`" % label,
-        "and show the passing output as evidence.",
-    ]
+def stop_fork(path):
+    clear_streak(path)
+    message = (
+        "verify_gate: identical failure three times -- returning so the "
+        "fork can report BLOCKED"
+    )
+    sys.stdout.write(json.dumps({"systemMessage": message}))
+    sys.exit(0)
+
+
+def record_failure(path, hash_source):
+    prev_streak, prev_hash, prev_identical = read_state(path)
+    hash_hex = hashlib.sha256(hash_source.encode("utf-8")).hexdigest()
+    new_streak = prev_streak + 1
+    if prev_hash and hash_hex == prev_hash:
+        identical = prev_identical + 1
+    else:
+        identical = 1
+    return new_streak, identical, hash_hex, (identical >= 2)
+
+
+def emit_block(path, lines, hash_source):
+    streak, identical, hash_hex, repeats = record_failure(path, hash_source)
+    if identical >= IDENTICAL_STOP_AT:
+        stop_fork(path)
+        return
+    write_state(path, streak, hash_hex, identical)
+    if repeats:
+        lines += ["", "Same failure as the previous block."]
     if streak >= STREAK_WARN_AT:
         lines += [
             "",
@@ -145,6 +214,27 @@ def block(label, result, streak):
     reason = "\n".join(lines)
     sys.stdout.write(json.dumps({"decision": "block", "reason": reason}))
     sys.exit(0)
+
+
+def block(path, label, result):
+    combined = tail((result.stdout or "") + (result.stderr or ""))
+    lines = [
+        "`%s` is failing. The task is not done." % label,
+        "",
+        combined,
+        "",
+        "Fix the cause, do not suppress the check. Re-run `%s`" % label,
+        "and show the passing output as evidence.",
+    ]
+    emit_block(path, lines, combined)
+
+
+def block_timeout(path, label, limit):
+    reason = (
+        "`%s` exceeded %d s -- the task is not done; a suite this slow "
+        "needs a narrower .claude/verify.sh" % (label, limit)
+    )
+    emit_block(path, [reason], reason)
 
 
 def main():
@@ -166,15 +256,26 @@ def main():
         clear_streak(path)
         sys.exit(0)
 
-    if not tree_is_dirty(root):
-        clear_streak(path)
-        sys.exit(0)
+    paths = dirty_paths(root)
+    if paths is not None:
+        if not paths:
+            clear_streak(path)
+            sys.exit(0)
 
-    result = run(command, root)
+        if is_records_only(paths):
+            clear_streak(path)
+            sys.exit(0)
+
+    limit = timeout_seconds()
+    try:
+        result = run(command, root, limit)
+    except subprocess.TimeoutExpired:
+        block_timeout(path, label, limit)
+        return
+
     if result.returncode != 0:
-        streak = read_streak(path) + 1
-        write_streak(path, streak)
-        block(label, result, streak)
+        block(path, label, result)
+        return
     clear_streak(path)
     sys.exit(0)
 

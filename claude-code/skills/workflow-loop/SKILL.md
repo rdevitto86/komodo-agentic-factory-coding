@@ -24,9 +24,9 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P1 Decompose | Pick next task group here, then **`/workflow-decompose`**, then plan the run's PRs and branch here | `workflow-planner` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
-| P2.2 Verify | `verify_gate.py` — zero tokens | — |
-| P2.3 Review | `/assess-bugs` (+ `/assess-security`), then commit here | `reviewer` |
-| P2.4 Closeout | `/assess-bugs`, `/assess-security`, `/assess-simplify`, `/changelog-write`, `/backlog-audit`, once per band | `reviewer` (assess-*), `workflow-implementer` (backlog-audit) |
+| P2.2 Verify + commit | `verify_gate.py`, then commit here | — |
+| P2.3 Band review | `/assess-bugs`, `/assess-simplify` (+ `/assess-security`, + `/assess-performance`), once per band | `reviewer` (`/assess-performance` runs inline, not forked) |
+| P2.4 Closeout | `/changelog-write`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `workflow-implementer` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` + tag check | — |
 
@@ -42,7 +42,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ## P0 · Spec
 
-**P0's one job is confirming `BACKLOG.md` exists before P1 decomposes it** — never decomposing (P1's job) or auditing (P1 runs `/backlog-audit`) itself. P0 either finds a backlog, builds one, or stops.
+**P0's one job is confirming `BACKLOG.md` exists before P1 decomposes it** — never decomposing (P1's job) or auditing itself. P0 either finds a backlog, builds one, or stops.
 
 **`README.md` missing** → run `/readme-modify` to create it (cheap, never the blocker).
 
@@ -60,7 +60,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Requires `BACKLOG.md` to already exist.** If this phase starts without one on disk, exit the loop rather than templating or planning a backlog here.
 
-**No audit runs here.** `/backlog-audit` runs at P2.4 instead, once per band.
+**No audit runs here.** No phase runs a band-scoped audit right now — TSK-01.4.4 moves that pass into P3.
 
 **Pick the next task group before invoking anything.** `BACKLOG.md`'s file order is its priority order (`backlog-modify` sorts by `[P: SEV]` and `(after:)` edges; `backlog-prioritize` keeps it that way). Walk the target state top to bottom — `## Now, V1` by default, or whichever epic `$ARGUMENTS` names — and take the first task group holding at least one task that is neither `[DONE]` nor `[BLOCKED]`. `$ARGUMENTS` overrides this pick when it names a domain, task group, or story substring instead.
 
@@ -88,13 +88,13 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Confirm and order P1's list; do not regenerate it** — P1 already paid for those reads.
 
-**After a P2.3/P2.4 audit call files new `BACKLOG.md` stories, fold them into this list before re-entering P2.1.**
+**After P2.3's band review appends findings, fold the severity-floor set into this list before re-entering P2.1.**
 
 **Pick tasks that share no dependency edge and no file.** Two tasks touching one file are one task.
 
 **A task `[BLOCKED]` on something outside this run is not a phase halt** — pick the next task with no dependency edge to it and continue; the blocker surfaces in P4's report. Only stop if every remaining task is transitively blocked.
 
-**Ends when:** one task is named `[WIP]` and the rest are written down — or, when dispatching a P1-confirmed parallel set (see P2.1), every task in that set is named `[WIP]` together.
+**Ends when:** one task is named `[WIP]` and the rest are written down.
 
 ### P2.1 · Implement
 
@@ -104,9 +104,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Run the fork even when the code already appears to exist on disk** — verifying inherited state is not implementing it.
 
-**When P1's `## Parallel` output already names a set of tasks with no shared file and no dependency edge among them (confirmed at P2.0), dispatch that set together in one block, `isolation: worktree`, rather than one task at a time.** "Once per task" bounds a fork's scope, never the order tasks start in — serialize only across a real dependency edge. **Each task in the set still goes through P2.2/P2.3 individually** — verify, review, and commit each on its own, merging its worktree branch back before moving to the next task's commit; dispatching in parallel changes only when implementation starts, not how each result is checked in.
-
-**A fork returns a result, never its reasoning — except `## Comment Candidates`.** Retain each task's non-empty `## Comment Candidates` entries verbatim across the band — P3's `/write-comments` call needs the live WHY-context captured at implementation time.
+**A fork returns a result, never its reasoning.**
 
 **No retry counter here** — a P2.2 failure sending a task back to this phase is already bounded by P2.2's own pass/fail, not a repeat-prone loop. The retry tally lives at P2.3, the phase where a "same skill, same file, no forward progress" loop actually happens.
 
@@ -114,63 +112,57 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Ends when:** every one of the task's `Done when` commands exits zero.
 
-### P2.2 · Verify
+### P2.2 · Verify + commit
 
-**Run the command; paste what it returned** — "tests pass" without output is not a result.
+**Run the task's `Done when` commands; paste what each returned** — "tests pass" without output is not a result.
 
 **Fix the cause, never suppress the check** — a skipped test, a widened type, or a silenced lint is a failed phase reported as a passed one.
 
 **Failure returns to P2.1**, with the failure output in the brief.
 
-**Ends when:** the command exits zero and its output is in the transcript.
+**A band exception (see `ways/`) also runs a per-task `/assess-bugs` here, before the commit** — that call's findings block the commit like any other P2.2 failure.
 
-### P2.3 · Review
+**Once every command is green (and the exception call, when it ran, is clean), commit** — `/git-commit-message` against this task's diff alone, then `git add` + `git commit`. One commit per task. No review runs here otherwise.
 
-**`/assess-bugs`, plus `/assess-security` when the surface warrants it** (`ways/` names the trigger). Each runs as a `reviewer` fork.
+**Ends when:** every command exits zero, its output is in the transcript, and the task is committed. Loop back to P2.0 for the next task.
 
-**Review against the task, not the diff** — did every acceptance condition land, and did anything outside the task change?
+### P2.3 · Band review
 
-**Each call files its findings straight to `BACKLOG.md`, no `--report`.** Findings affecting correctness, security, or a stated requirement are folded into P2.0's pick and become the next P2.1 task, not deferred. Everything else is optional, filed for a later pass.
+**Runs once per band, after every task in the band is committed — never per task.** Dispatch `/assess-bugs`, `/assess-simplify`, and `/assess-security` (when the surface warrants it, per `ways/`) together in one parallel block, as plain forks — no isolation, they are read-only after TSK-01.4.2. Each runs as a `reviewer` fork. **Also run `/assess-performance`** (when a touched path is performance-sensitive, per `ways/`) in the same pass — it carries no `context: fork` frontmatter, so it runs inline in this session rather than as a `reviewer` fork, and self-files its own `BACKLOG.md` story at Med-High or above per its own contract, same as `/assess-code-quality` already invokes it elsewhere.
 
-**Retry counter — session-stated, not a file.** Before re-invoking the same `assess-*` skill against the same file/task a repeat time within this band, state "round N for `<file>`" in this session's own turn text — P2.0's queue is the tally, no `.claude/state/` file. Hitting `ways/sdlc.md`'s round cap (round 3, or round 2 for a file `BACKLOG.md` already flags as a hand-rolled parser or security boundary) is the stop signal: stop auto-continuing that skill against that file and escalate to the user.
+**Review against the band, not any one task** — did every task's acceptance condition land, and did anything outside the tasks change?
 
-**Commit here once the task's findings are clean.** Run `/git-commit-message` against this task's diff alone (not the whole band), then `git add` + `git commit` — one commit per task, including any P2.3 fix-commits.
+**Each of the three finder forks returns its findings; the orchestrator appends every row to `BACKLOG.md` under the matching domain in one Edit, before triage.** `/assess-performance` files its own story directly — nothing to append for that one.
 
-**Ends when:** every story the calls filed for this task is fixed or confirmed genuinely optional, and the task is committed. Green ends the task; loop back to P2.0 for the next one.
+**Severity floor.** Fix the findings `ways/sdlc.md`'s severity floor selects, via `/workflow-implement`; each fixed task re-enters P2.2. Everything else stays filed and open for a later pick.
+
+**Retry counter — session-stated, not a file.** Before re-invoking the same `assess-*` skill against the same file a repeat time within this band, state "round N for `<file>`" in this session's own turn text — P2.0's queue is the tally, no `.claude/state/` file. Hitting `ways/sdlc.md`'s round cap is the stop signal: stop auto-continuing that skill against that file and escalate to the user.
+
+**Ends when:** the severity-floor set is fixed or the round cap has surfaced a stop to the user, and everything else is filed. Continue to P2.4.
 
 ### P2.4 · Closeout
 
-**`/assess-bugs`, `/assess-security`, `/assess-simplify` against the whole band, once, plus the perf suite.** Runs after every task is green, before P3 — never per-task, each as a `reviewer` fork. **Dispatch the three `assess-*` calls together in one parallel block, `isolation: worktree`** — the same pattern P2.1 uses for a P1-confirmed parallel set. Each still files to `BACKLOG.md` on its own terms; **all three write that file**, so this is the writer case, not read-only fan-out — three simultaneous unisolated appends can silently overwrite each other's finding, not merely reorder them. Merge each worktree's `BACKLOG.md` diff back one at a time before continuing.
+**Once per band, not per-task** — after P2.3's band review has resolved its severity floor, before P3.
 
-**Each call files its findings straight to `BACKLOG.md`, no `--report`.** Every story filed is folded into P2.0's pick and resolved in this pass — fixed via `/workflow-implement`, or declined and removed with the reason noted for P4's report.
+**Only `/changelog-write` runs here**, covering every task the band shipped. No `assess-*` repeat — P2.3 already covered the whole band — and no band-scoped audit — no phase runs one right now (TSK-01.4.4 moves that pass into P3).
 
-**Retry counter — inherits P2.3's per-file tally, doesn't restart it.** A closeout fix-and-reloop pass against a file already reviewed at P2.3 continues that file's round count rather than starting fresh; hitting the cap here stops the same way, per `ways/sdlc.md`.
+**Clears the target state's four standing closeout stories.**
 
-**For a single-task band, skip the `/assess-bugs` repeat when that task was already cleared at P2.3 with no diff change since.** Skip the `/assess-security` repeat under the same condition only if P2.3 actually ran it — if P2.3 skipped `/assess-security` because the surface didn't warrant it, that same judgment applies here too, so it stays skipped for the same reason, not because it's being treated as already cleared. Either way, still run `/assess-simplify` (never covered at P2.3) plus the perf suite.
-
-**Clears the target state's four standing closeout stories.** Never picked as ordinary P2.1 tasks — `assess-*` calls stay this session's job, not the fork that wrote the code.
-
-**Once every closeout finding is fixed or declined, run `/changelog-write` for the whole band** — one pass covering every task shipped. P3 then only releases what this step already wrote.
-
-**Once the changelog is written, run `/backlog-audit` over the whole file, no scope** — sweeps stale tasks, duplicates, and satisfied `[BLOCKED]` `Recheck:` entries.
-
-**Ends when:** every closeout finding is fixed or declined, `/backlog-audit` has applied its verdicts, and `CHANGELOG.md`'s `[Unreleased]` section reflects the band.
+**Ends when:** `CHANGELOG.md`'s `[Unreleased]` section reflects the band.
 
 ---
 
 ## P3 · Consolidate
 
-**Run `/workflow-consolidate <the task summaries that went green>`** once the whole band is done and P2.4 has cleared, not after each task.
+**Run `/workflow-consolidate <the band's `TSK-` IDs and task summaries>`** once the whole band is done and P2.4 has cleared, not after each task.
 
 It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — frozen; a change it needs comes back to you as a finding.
 
 **Right before this commit, decide the PR's labels** — category + authorship, per `git-pr-create`'s "Label it" order, read off `git diff <base>...HEAD --stat` for the band so far. Carry that decision into P4.
 
-**Run `/git-commit-message` against consolidate's delta to draft the message, then run `/write-comments` before committing anything — never after** (new commits only, never amends). Feed it the band's diff, the `BACKLOG.md` task stories, the drafted message, every task's accumulated Comment Candidates from P2.1, and `.claude/state/removed-comments.jsonl`; truncate that file once it returns.
+**Run `/git-commit-message` against consolidate's delta to draft the message, then commit** — `git add` + `git commit`, one commit.
 
-**Commit here once both have run, one commit** — consolidate's version/manifest/backlog-cleanup output plus whatever `write-comments` spliced plus the now-truncated removed-comments log, under the drafted message. `git add` + `git commit`.
-
-**Ends when:** the changelog section is released, the backlog no longer lists finished work, PR labels are decided, `/write-comments` has run with `.claude/state/removed-comments.jsonl` truncated after it, and consolidate's delta with any spliced comments is committed.
+**Ends when:** the changelog section is released, the backlog no longer lists finished work, PR labels are decided, and consolidate's delta is committed.
 
 ---
 
@@ -189,8 +181,8 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **The bridge is optional, never blocking** — an unreachable MCP server is a skipped step; never branch a phase on whether it is up.
 - **Never poll a delegated phase** — it re-invokes this session the moment it finishes.
 - **Timing is captured silently, session-stated, not a file** — the same "session-stated, not a file" pattern as P2.3's retry counter. Note each phase's (P0–P4) and each forked skill invocation's start and end wall-clock in this session's own turn text as it happens, accumulating an internal record this session can compute durations from. Never print elapsed time by default, and never fold it into any phase's own "Ends when" report — surface it only if the user explicitly asks (e.g. "how long did that take"); otherwise stay silent unless asked.
-- **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Filed`/`## Changed` block; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
-- **Standards verification happens inside the review or implement fork, never in this window** — a P2.3/P2.4 finding needing re-verifying is P2.1's job.
+- **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Findings`/`## Changed` block — a reviewer fork returns `## Findings` only, this session files the rows itself; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
+- **Standards verification happens inside the review or implement fork, never in this window** — a P2.3 finding needing re-verifying is P2.1's job.
 - **After any context compaction, re-read the active `ways/` file before the next phase gate** — it loads via `Read`, not invocation, so compaction skips it.
 
 ---
@@ -201,7 +193,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 |---|---|
 | Read-only research across many files | `engineering` |
 | "Where is X" — a path list | `scout` |
-| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3/P2.4 grade the diff. |
+| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. `/assess-performance` grades it too but runs inline (no `context: fork`), conditionally, in the same pass. |
 
 **Parallel writers need `isolation: worktree`** — two agents editing one checkout collide; read-only fan-out needs none.
 

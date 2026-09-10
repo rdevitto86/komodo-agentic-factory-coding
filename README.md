@@ -5,7 +5,7 @@ Agent configuration for software/hardware engineering, shared across every Komod
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~949 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+2. **Base context stays tiny.** ~1,045 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
@@ -36,8 +36,8 @@ claude-code/          mirrors ~/.claude exactly
 ├── AGENTS.md         the universal rules — always loaded
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions, hook registration, skillOverrides
-├── agents/           workflow-implementer, workflow-planner, engineering, scout
-├── hooks/            comments, git_guard, reviewer_guard, verify_gate, context_injector, auto_format
+├── agents/           workflow-implementer, workflow-planner, engineering, scout, reviewer
+├── hooks/            comments, git_guard, verify_gate, context_injector, auto_format
 └── skills/           63 active, 7 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
@@ -70,25 +70,24 @@ flowchart TD
 
     subgraph P1["P1 · Decompose (fork: workflow-planner)"]
         direction TB
-        P1a["/backlog-audit — cheap stale/dup pass"] --> P1b["/workflow-decompose → task queue"]
-        P1b --> P1c["Read the queue's Gaps section"]
+        P1b["/workflow-decompose → task queue"] --> P1c["Read the queue's Gaps section"]
         P1c --> P1d["Group queue into PR-sized bands"]
         P1d --> P1e["Branch: git switch -c type/desc\n(or resume a [WIP] story's branch)"]
     end
     P1 --> P20
 
-    subgraph P2["P2 · Execute — loops once per task, once per band"]
+    subgraph P2["P2 · Execute — P2.0-P2.2 loop once per task, P2.3-P2.4 run once per band"]
         direction TB
         P20["P2.0 Align — pick tasks sharing\nno file/dependency edge, mark [WIP]"] --> P21
-        P21["P2.1 Implement\nfork: workflow-implementer"] --> P22
+        P21["P2.1 Implement + comments\nfork: workflow-implementer"] --> P22
         P22{"P2.2 Verify\nverify_gate.py exits zero?"}
         P22 -->|no| P22fail{"Same failure\ntwice running?"}
         P22fail -->|no, retry| P21
         P22fail -->|"yes"| Blocked(["Mark task [BLOCKED],\nreason + file:line.\nBack to P2.0 for next\nunblocked task."])
         Blocked --> P20
-        P22 -->|yes| P23["P2.3 Review\nassess-bugs (+assess-security)\nfindings → BACKLOG.md → new P2.0 pick\ncommit this task's diff"]
-        P23 -->|more tasks in band| P20
-        P23 -->|band fully green| P24["P2.4 Closeout — once per band\nassess-bugs, assess-security, assess-simplify\nfindings resolved or declined\nchangelog write"]
+        P22 -->|yes, commit task| P20
+        P20 -->|band fully green| P23["P2.3 Band review, once\nassess-bugs, assess-simplify,\n(+security, +performance if warranted)\nfindings → severity floor:\nCritical/High/correctness fixed now,\nrest stay filed"]
+        P23 --> P24["P2.4 Closeout — changelog write only"]
     end
     P24 --> P3
     P20 -.->|"every remaining task\ntransitively blocked"| P2halt(["Phase halt —\nreported in P4, not silent"])
@@ -122,15 +121,15 @@ Each repo carries three local documents, plus the SDD (and, when one exists, the
 
 ## The Hooks
 
-Two guards run as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
+One guard runs as `PreToolUse`, so a violation never reaches disk. Four more run at the session's edges or after the write.
 
 | Hook | Fires on | Does | On error |
 |---|---|---|---|
-| `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites | **Closed** |
-| `reviewer_guard.py` | Edit, Write, Bash | Restricts the `reviewer` agent to editing `BACKLOG.md` only | **Closed** |
+| `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites, and denies every Bash-side write the `reviewer` agent attempts (its Edit/Write access is dropped in the agent's own `tools:` list, not caught by a hook) | **Closed** |
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
 | `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |
+| `comments.py hook` | Edit, Write (`PostToolUse`), `workflow-implementer` only | Reports comment findings for the just-touched file as feedback | **Open** |
 
 **The failure policy is inverted on purpose.** The two guards fail closed because a bad command reaches a shared remote or lets a review-only agent mutate arbitrary files. The other three fail open because none of them may be able to brick a session.
 
@@ -148,7 +147,7 @@ python3 ~/.claude/hooks/comments.py apply < proposals.json
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 223 regression cases
+bash scripts/test-hooks.sh    # 244 regression cases
 ```
 
 ## Skills

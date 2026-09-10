@@ -1,7 +1,7 @@
 ---
 name: assess-code-conventions
-description: Read the changed code for judgment-call style/formatting violations a linter or formatter cannot mechanically decide — wrap-style choice, magic-number extraction placement/casing/grouping, guard-clause blank lines, single-call-site inline-vs-closure. Model-agnostic; never re-flags anything golangci-lint/gofmt/the repo's own formatter already gates. Pass --report to skip the write.
-argument-hint: <task text or band summary> [standards-* skills that apply] [--report]
+description: Read the changed code for judgment-call style/formatting violations a linter or formatter cannot mechanically decide — wrap-style choice, magic-number extraction placement/casing/grouping, guard-clause blank lines, single-call-site inline-vs-closure. Model-agnostic; never re-flags anything golangci-lint/gofmt/the repo's own formatter already gates.
+argument-hint: <task text or band summary> [standards-* skills that apply]
 context: fork
 agent: reviewer
 background: false
@@ -34,6 +34,4 @@ Model-agnostic style pass — Read/Grep/Glob/Bash only, no host-specific tooling
 
 No findings: state that plainly, one line, and stop. **Never invent a finding to have something to report** — every row needs a `standards-<lang>` convention it violates, cited by name, not just a stylistic preference.
 
-## Findings → backlog
-
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <what> · S → \`/assess-code-conventions <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog-modify`. `--report` prints the table only; nothing is written.
+The caller files these rows to `BACKLOG.md`; you never write.

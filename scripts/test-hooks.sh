@@ -10,7 +10,7 @@
 # permissionDecision that comes back, optionally checking that the
 # reason text does or does not contain a given string.
 #
-# Case IDs: K* comments check, G* git guard, S* smoke test (runs first, synchronously, the real call shape).
+# Case IDs: K* comments check, H* comments hook, G* git guard, S* smoke test (first, synchronously, the real call shape).
 #
 # Writing a case:
 #   heredoc form  literal JSON, use \n for a newline inside a string
@@ -762,21 +762,21 @@ off_case "G85 off: git add is blocked"               deny  'git add .'          
 off_case "G86 off: read-only git still works"        allow 'git log --oneline -5'
 off_case "G87 off: gh pr merge stays blocked"        deny  'gh pr merge 12'                "is denied"
 
-# reviewer Bash writes narrow to BACKLOG.md alone, matching its Edit/Write boundary -- any extension is in scope
+# the reviewer has no legitimate write path left -- every Bash write target is denied, BACKLOG.md included
 bash_case_agent "G144 reviewer tee to a non-BACKLOG.md file is denied" \
   deny reviewer 'tee notes.txt' "bypasses the comment guard"
 bash_case_agent "G145 reviewer redirect to an extensionless file is denied" \
   deny reviewer 'echo x > release-notes' "bypasses the comment guard"
-bash_case_agent "G146 reviewer tee to BACKLOG.md is allowed" \
-  allow reviewer 'tee BACKLOG.md'
-bash_case_agent "G147 reviewer redirect to BACKLOG.md is allowed" \
-  allow reviewer 'echo x > BACKLOG.md'
+bash_case_agent "G146 reviewer tee to BACKLOG.md is denied" \
+  deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
+bash_case_agent "G147 reviewer redirect to BACKLOG.md is denied" \
+  deny reviewer 'echo x > BACKLOG.md' "bypasses the comment guard"
 bash_case "G148 a non-reviewer tee to a non-guarded extensionless file is unaffected (still allowed)" \
   allow 'tee notes.txt'
 bash_case "G149 a non-reviewer tee to BACKLOG.md is unaffected (still denied)" \
   deny 'tee BACKLOG.md' "bypasses the comment guard"
-# an unresolvable repo root (cwd outside any git repo) must not inherit reviewer_guard's own fail-open here
-bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied, not fail-open" \
+# the reviewer's deny no longer depends on resolving a repo root -- a cwd outside any git repo denies the same way
+bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied" \
   deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
 bash_case "G151 a backslash-escaped backtick inside a \$()-substitution fed through eval hides git push --force" \
   deny 'eval "$(echo \`git push --force\`)"' "rewrites published history"
@@ -789,6 +789,31 @@ bash_case "G154 command eval indirection re-parses a \$()-substitution's escaped
 bash_case "G155 a # comment line before an eval on the next line still re-parses its escaped backtick" \
   deny  'echo hi # comment
 eval "$(echo \`git push --force\`)"' "rewrites published history"
+
+# comments.py apply carries no -c/open( shape, so it needs its own guarded-family match, not PYTHON_WRITE
+bash_case_agent "G156 reviewer python3 comments.py apply is denied" \
+  deny reviewer 'python3 ~/.claude/hooks/comments.py apply' "has no legitimate write path"
+bash_case "G157 a non-reviewer python3 comments.py apply is unaffected (still allowed)" \
+  allow 'python3 ~/.claude/hooks/comments.py apply'
+bash_case_agent "G158 reviewer python3 -m pytest is unaffected (still allowed)" \
+  allow reviewer 'python3 -m pytest'
+# comments.py runs standalone too (own shebang, mode 755) -- basename match must not require an interpreter
+bash_case_agent "G159 reviewer direct comments.py apply via a relative path (no interpreter prefix) is denied" \
+  deny reviewer 'claude-code/hooks/comments.py apply' "has no legitimate write path"
+bash_case_agent_at "$HOOKS" "G160 reviewer bare comments.py apply, cwd inside hooks/, is denied" \
+  deny reviewer 'comments.py apply' "has no legitimate write path"
+
+# round 4: a symlink stands in for a case-insensitive-fs path alias -- CI's ext4 is case-sensitive, samefile() still fires
+FIXTURE_COMMENTS_COPY="$WORKDIR/cw"
+cp "$COMMENTS" "$FIXTURE_COMMENTS_COPY"
+FIXTURE_COMMENTS_ALIAS="$WORKDIR/Comments.PY"
+ln -s "$COMMENTS" "$FIXTURE_COMMENTS_ALIAS"
+bash_case_agent "G161 reviewer cat comments.py piped into python3 - apply (script read off stdin) is denied" \
+  deny reviewer 'cat ~/.claude/hooks/comments.py | python3 - apply' "has no legitimate write path"
+bash_case_agent "G162 reviewer a same-content copy of comments.py under an unrelated basename is denied" \
+  deny reviewer "$FIXTURE_COMMENTS_COPY apply" "has no legitimate write path"
+bash_case_agent "G163 reviewer a same-file alias under a different-case basename is denied" \
+  deny reviewer "python3 $FIXTURE_COMMENTS_ALIAS apply" "has no legitimate write path"
 
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
@@ -861,80 +886,12 @@ expect "F7  a malformed payload fails open, not closed" allow <<'JSON'
 {"tool_name":"Write","tool_input":
 JSON
 
-# ─────────────────────────────  reviewer guard  ────────────────────────────
-HOOK="$HOOKS/reviewer_guard.py"
-printf '\nreviewer guard\n\n'
-
-FIXTURE_REVIEWER="$WORKDIR/fixture-reviewer"
-mkdir -p "$FIXTURE_REVIEWER/docs"
-git init -q -b main "$FIXTURE_REVIEWER"
-printf '# Backlog\n' > "$FIXTURE_REVIEWER/BACKLOG.md"
-printf '# Backlog\n' > "$FIXTURE_REVIEWER/docs/BACKLOG.md"
-printf 'package main\n' > "$FIXTURE_REVIEWER/main.go"
-
-expect "R1  reviewer editing BACKLOG.md is allowed" allow <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/BACKLOG.md"}}
-JSON
-
-expect "R2  reviewer writing docs/BACKLOG.md is allowed" allow <<JSON
-{"tool_name":"Write","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/docs/BACKLOG.md"}}
-JSON
-
-expect "R3  reviewer editing any other file is denied" deny "edits only BACKLOG.md" <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
-
-expect "R4  reviewer writing any other file is denied" deny "edits only BACKLOG.md" <<JSON
-{"tool_name":"Write","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
-
-expect "R5  a non-reviewer agent editing any file is allowed, unaffected" allow <<JSON
-{"tool_name":"Edit","agent_type":"workflow-implementer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
-
-expect "R6  the main thread (no agent_type) editing any file is allowed" allow <<JSON
-{"tool_name":"Edit","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
-
-# a symlinked BACKLOG.md would collapse both realpath sides onto one inode and wrongly pass -- denied outright first
-FIXTURE_SYMLINK="$WORKDIR/fixture-reviewer-symlink"
-mkdir -p "$FIXTURE_SYMLINK"
-git init -q -b main "$FIXTURE_SYMLINK"
-printf 'top secret\n' > "$FIXTURE_SYMLINK/secret.txt"
-ln -s "$FIXTURE_SYMLINK/secret.txt" "$FIXTURE_SYMLINK/BACKLOG.md"
-
-expect "R7  reviewer editing a symlinked BACKLOG.md is denied" deny "edits only BACKLOG.md" <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_SYMLINK","tool_input":{"file_path":"$FIXTURE_SYMLINK/BACKLOG.md"}}
-JSON
-
-# docs/ itself (not the leaf) swapped for a symlink dereferences the same way -- denied too
-FIXTURE_ANCESTOR_SYMLINK="$WORKDIR/fixture-reviewer-ancestor-symlink"
-FIXTURE_ANCESTOR_TARGET="$WORKDIR/fixture-reviewer-ancestor-target"
-mkdir -p "$FIXTURE_ANCESTOR_SYMLINK" "$FIXTURE_ANCESTOR_TARGET"
-git init -q -b main "$FIXTURE_ANCESTOR_SYMLINK"
-printf 'top secret\n' > "$FIXTURE_ANCESTOR_TARGET/BACKLOG.md"
-ln -s "$FIXTURE_ANCESTOR_TARGET" "$FIXTURE_ANCESTOR_SYMLINK/docs"
-
-expect "R8  reviewer editing docs/BACKLOG.md is denied when docs/ itself is a symlink out of the repo" deny "edits only BACKLOG.md" <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_ANCESTOR_SYMLINK","tool_input":{"file_path":"$FIXTURE_ANCESTOR_SYMLINK/docs/BACKLOG.md"}}
-JSON
-
-# R9-R12: main()'s except BaseException: sys.exit(0) must fail open, mirroring git_guard.py's F7 case above.
-expect "R9  a malformed payload fails open, not closed" allow <<'JSON'
-{"tool_name":"Edit","agent_type":"reviewer","tool_input":
-JSON
-
-expect "R10  a non-dict tool_input fails open, not closed" allow <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":"not-a-dict"}
-JSON
-
-expect "R11  a non-string file_path fails open, not closed" allow <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":42}}
-JSON
-
-expect "R12  a non-string cwd fails open, not closed" allow <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":42,"tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
+# reviewer's Edit/Write guard is retired -- it has no write path left, git_guard.py denies it outright
+HOOK="$HOOKS/git_guard.py"
+bash_case_agent "R1  reviewer echo x >> BACKLOG.md is denied" \
+  deny reviewer 'echo x >> BACKLOG.md' "bypasses the comment guard"
+bash_case "R2  non-reviewer echo x >> BACKLOG.md is unaffected (still denied by the comment guard)" \
+  deny 'echo x >> BACKLOG.md' "bypasses the comment guard"
 
 VALIDATOR="$HOOKS/comments.py"
 printf '\ncomments apply\n\n'
@@ -1189,6 +1146,102 @@ untracked_check_case() {
 }
 untracked_check_case
 
+printf '\ncomments hook subcommand\n\n'
+
+hook_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-hook"
+    mkdir -p "$fixture"
+    git init -q -b main "$fixture"
+    (cd "$fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc (c *secretCache) getParsed(key string) (map[string]string, bool) {\n\treturn nil, false\n}\n' > "$fixture/svc.go"
+    local payload out problem=""
+    payload="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/svc.go"}}' "$fixture")"
+    out="$(printf '%s' "$payload" | python3 "$COMMENTS" --repo-root "$fixture" hook 2>&1)"
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+      problem="exited $status instead of 0"
+    elif [[ "$out" != *"additionalContext"* ]] || [[ "$out" != *"RET_BOOL_DISCRIMINANT"* ]]; then
+      problem="stdout missing additionalContext with the MISSING finding"
+    fi
+    report "$outfile" "H1  a Go file with a MISSING site produces additionalContext" "$problem" "$out"
+  ) &
+}
+hook_case
+
+hook_clean_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local fixture="$WORKDIR/fixture-hook-clean"
+    mkdir -p "$fixture"
+    git init -q -b main "$fixture"
+    (cd "$fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc Load(p string) (string, error) {\n\treturn "", nil\n}\n' > "$fixture/svc.go"
+    local payload out problem=""
+    payload="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/svc.go"}}' "$fixture")"
+    out="$(printf '%s' "$payload" | python3 "$COMMENTS" --repo-root "$fixture" hook 2>&1)"
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+      problem="exited $status instead of 0"
+    elif [ -n "$out" ]; then
+      problem="a clean file produced output: $out"
+    fi
+    report "$outfile" "H2  a clean file produces no output" "$problem" "$out"
+  ) &
+}
+hook_clean_case
+
+hook_malformed_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local out problem=""
+    out="$(printf 'not json{{{' | python3 "$COMMENTS" hook 2>&1)"
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+      problem="exited $status instead of 0"
+    elif [ -n "$out" ]; then
+      problem="a malformed payload produced output: $out"
+    fi
+    report "$outfile" "H3  a malformed payload exits 0 with no output" "$problem" "$out"
+  ) &
+}
+hook_malformed_case
+
+hook_symlink_escape_case() {
+  JOB_IDX=$((JOB_IDX + 1))
+  local outfile="$RESULTS_DIR/$JOB_IDX.out"
+  throttle
+  (
+    local root_fixture="$WORKDIR/fixture-hook-root"
+    local foreign_fixture="$WORKDIR/fixture-hook-foreign"
+    mkdir -p "$root_fixture" "$foreign_fixture"
+    git init -q -b main "$root_fixture"
+    (cd "$root_fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    git init -q -b main "$foreign_fixture"
+    (cd "$foreign_fixture" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+    printf 'package main\n\nfunc (c *secretCache) getParsed(key string) (map[string]string, bool) {\n\treturn nil, false\n}\n' > "$foreign_fixture/svc.go"
+    ln -s "$foreign_fixture/svc.go" "$root_fixture/link.go"
+    local payload out problem=""
+    payload="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/link.go"}}' "$root_fixture")"
+    out="$(printf '%s' "$payload" | python3 "$COMMENTS" --repo-root "$root_fixture" hook 2>&1)"
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+      problem="exited $status instead of 0"
+    elif [ -n "$out" ]; then
+      problem="a symlink resolving outside repo root produced output: $out"
+    fi
+    report "$outfile" "H4  a symlink resolving outside repo root produces no output" "$problem" "$out"
+  ) &
+}
+hook_symlink_escape_case
+
 printf '\ncontext injector\n\n'
 
 export HOOKS
@@ -1290,6 +1343,13 @@ if [ "$IS_WINDOWS" -eq 1 ] || ! command -v make >/dev/null 2>&1; then
   skip_case "VG1 blocks below the warning threshold carry no streak warning" "make unavailable, or Windows runner (TSK-01.1.14)"
   skip_case "VG2 the streak warning appears once the block count reaches the threshold" "make unavailable, or Windows runner (TSK-01.1.14)"
   skip_case "VG3 a passing verify clears the streak" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG4 a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG5 records-only dirty paths skip the gate without running it" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG6 a non-records dirty path still runs the gate" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG7 the first of three identical failures blocks" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG8 the second identical failure names the repeat" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG9 the third identical failure returns instead of blocking again" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG10 a slow git-status probe falls through to running verify instead of skipping" "make unavailable, or Windows runner (TSK-01.1.14)"
 else
   FIXTURE_VGATE="$WORKDIR/fixture-vgate"
   mkdir -p "$FIXTURE_VGATE"
@@ -1319,8 +1379,8 @@ except Exception:
     print("")' 2>/dev/null
   }
 
-  printf 'verify:\n\t@exit 1\n' > "$FIXTURE_VGATE/Makefile"
-  # sequential, not backgrounded -- each call reads the streak the last one wrote
+  printf 'verify:\n\t@echo $$$$; exit 1\n' > "$FIXTURE_VGATE/Makefile"
+  # PID varies each run so these blocks stay non-identical; sequential -- each call reads the streak the last one wrote
   for _ in 1 2 3 4 5; do vgate_out="$(vgate_run)"; done
   decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
   JOB_IDX=$((JOB_IDX + 1))
@@ -1350,6 +1410,122 @@ except Exception:
     report "$RESULTS_DIR/$JOB_IDX.out" "VG3 a passing verify clears the streak" ""
   else
     report "$RESULTS_DIR/$JOB_IDX.out" "VG3 a passing verify clears the streak" "pass=$pass_decision next=$decision" "$reason"
+  fi
+
+  vgate_system_message() {
+    [ -z "$1" ] && return
+    printf '%s' "$1" | python3 -c 'import json, sys
+try:
+    print(json.loads(sys.stdin.read()).get("systemMessage", ""))
+except Exception:
+    print("")' 2>/dev/null
+  }
+
+  # VG4 -- a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit, not a silent exit 0
+  FIXTURE_VGATE_TO="$WORKDIR/fixture-vgate-timeout"
+  mkdir -p "$FIXTURE_VGATE_TO/.claude"
+  git init -q -b main "$FIXTURE_VGATE_TO"
+  (cd "$FIXTURE_VGATE_TO" && git config user.email t@t.com && git config user.name t)
+  printf '#!/bin/sh\nsleep 3\nexit 1\n' > "$FIXTURE_VGATE_TO/.claude/verify.sh"
+  chmod +x "$FIXTURE_VGATE_TO/.claude/verify.sh"
+  (cd "$FIXTURE_VGATE_TO" && git add -A && git commit -q -m init)
+  printf 'dirty\n' > "$FIXTURE_VGATE_TO/file.txt"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_TO" | KOMODO_VERIFY_TIMEOUT=1 python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [[ "$reason" == *"exceeded 1 s"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG4 a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG4 a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit" "decision=$decision" "$reason"
+  fi
+
+  # VG5/VG6 -- records-only dirty paths skip the gate; a marker file proves whether the fixture script ran
+  FIXTURE_VGATE_RO="$WORKDIR/fixture-vgate-records-only"
+  mkdir -p "$FIXTURE_VGATE_RO/.claude"
+  git init -q -b main "$FIXTURE_VGATE_RO"
+  (cd "$FIXTURE_VGATE_RO" && git config user.email t@t.com && git config user.name t)
+  printf '#!/bin/sh\ntouch "%s/marker"\nexit 1\n' "$FIXTURE_VGATE_RO" > "$FIXTURE_VGATE_RO/.claude/verify.sh"
+  chmod +x "$FIXTURE_VGATE_RO/.claude/verify.sh"
+  (cd "$FIXTURE_VGATE_RO" && git add -A && git commit -q -m init)
+
+  touch "$FIXTURE_VGATE_RO/BACKLOG.md" "$FIXTURE_VGATE_RO/CHANGELOG.md"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_RO" | python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" != "block" ] && [ ! -e "$FIXTURE_VGATE_RO/marker" ]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG5 records-only dirty paths skip the gate without running it" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG5 records-only dirty paths skip the gate without running it" "decision=$decision marker=$([ -e "$FIXTURE_VGATE_RO/marker" ] && echo present || echo absent)"
+  fi
+
+  rm -f "$FIXTURE_VGATE_RO/BACKLOG.md" "$FIXTURE_VGATE_RO/marker"
+  printf 'package main\n' > "$FIXTURE_VGATE_RO/x.go"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_RO" | python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [ -e "$FIXTURE_VGATE_RO/marker" ]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG6 a non-records dirty path still runs the gate" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG6 a non-records dirty path still runs the gate" "decision=$decision marker=$([ -e "$FIXTURE_VGATE_RO/marker" ] && echo present || echo absent)"
+  fi
+
+  # VG7/VG8/VG9 -- three consecutive identical failures stop the fork instead of grinding toward the 8-block cutoff
+  FIXTURE_VGATE_ID="$WORKDIR/fixture-vgate-identical"
+  mkdir -p "$FIXTURE_VGATE_ID"
+  git init -q -b main "$FIXTURE_VGATE_ID"
+  (cd "$FIXTURE_VGATE_ID" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+  printf 'verify:\n\t@exit 1\n' > "$FIXTURE_VGATE_ID/Makefile"
+  printf 'dirty\n' > "$FIXTURE_VGATE_ID/file.txt"
+
+  vgate_run_id() {
+    printf '{"cwd":"%s"}' "$FIXTURE_VGATE_ID" | python3 "$VERIFY_GATE" 2>/dev/null
+  }
+
+  out1="$(vgate_run_id)"
+  d1="$(vgate_decision "$out1")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$d1" = "block" ]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG7 the first of three identical failures blocks" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG7 the first of three identical failures blocks" "decision=$d1"
+  fi
+
+  out2="$(vgate_run_id)"
+  d2="$(vgate_decision "$out2")"; r2="$(vgate_reason "$out2")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$d2" = "block" ] && [[ "$r2" == *"Same failure"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG8 the second identical failure names the repeat" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG8 the second identical failure names the repeat" "decision=$d2" "$r2"
+  fi
+
+  out3="$(vgate_run_id)"
+  d3="$(vgate_decision "$out3")"; msg3="$(vgate_system_message "$out3")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$d3" != "block" ] && [[ "$msg3" == *"identical failure three times"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG9 the third identical failure returns instead of blocking again" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG9 the third identical failure returns instead of blocking again" "decision=$d3 systemMessage=$msg3"
+  fi
+
+  # VG10 -- a git-status probe past its own 5s timeout falls through to running verify, not a silent skip
+  REAL_GIT="$(command -v git)"
+  FIXTURE_VGATE_PROBE="$WORKDIR/fixture-vgate-probe-timeout"
+  FIXTURE_VGATE_PROBE_BIN="$WORKDIR/fixture-vgate-probe-timeout-bin"
+  mkdir -p "$FIXTURE_VGATE_PROBE" "$FIXTURE_VGATE_PROBE_BIN"
+  git init -q -b main "$FIXTURE_VGATE_PROBE"
+  (cd "$FIXTURE_VGATE_PROBE" && git config user.email t@t.com && git config user.name t && git commit -q --allow-empty -m init)
+  printf 'verify:\n\t@exit 1\n' > "$FIXTURE_VGATE_PROBE/Makefile"
+  printf 'dirty\n' > "$FIXTURE_VGATE_PROBE/file.txt"
+  printf '#!/bin/sh\nif [ "$1" = "status" ]; then\n  sleep 6\nfi\nexec "%s" "$@"\n' "$REAL_GIT" > "$FIXTURE_VGATE_PROBE_BIN/git"
+  chmod +x "$FIXTURE_VGATE_PROBE_BIN/git"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_PROBE" | PATH="$FIXTURE_VGATE_PROBE_BIN:$PATH" python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"; reason="$(vgate_reason "$vgate_out")"
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [[ "$reason" == *"is failing"* ]]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG10 a slow git-status probe falls through to running verify instead of skipping" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG10 a slow git-status probe falls through to running verify instead of skipping" "decision=$decision" "$reason"
   fi
 fi
 
