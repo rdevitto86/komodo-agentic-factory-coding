@@ -72,7 +72,7 @@ Show the plan and **wait for approval**. Do not write to `BACKLOG.md` yet.
 |---|---|
 | <what> `[TSK-E.T.S] [P: H]` | `<command 1>`; `<command 2>` |
 
-Each `Done when` cell collapses that task's `SUB-` lines' commands into one row for this preview; Step 6 writes them out as the actual nested `SUB-`/`Done when:` bullets, one subtask per command.
+Each `Done when` cell collapses that task's `SUB-` rows' commands into one row for this preview; Step 6 writes them out as the actual per-task Subtask table, one row per command.
 
 ## ⚠️ Risks
 - **<thing>** — why it could bite
