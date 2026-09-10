@@ -4,6 +4,19 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.46.1] — 2026-09-10
+
+### Added
+- `workflow-loop`'s P2.3 band review now also dispatches `/assess-performance` conditionally, whenever a touched path is performance-sensitive (a hot loop, a changed complexity class, a new query/index) — restores coverage for the "Performance" standing closeout story that P2.2–P2.4's restructure (0.46.0) had dropped. Unlike the three forked finders, it runs inline and self-files, matching the contract `/assess-code-quality` already relies on.
+
+### Changed
+- `workflow-loop/SKILL.md`'s P2.3 now states the severity-floor rule and round-cap thresholds once, deferring to `ways/sdlc.md` by reference instead of restating them — the two copies had no mechanism keeping them in sync.
+- `comments.py`'s `run_check` and `hook_findings` now share one `collect_findings` helper instead of independently building `MISSING`/`INVALID` finding dicts; a resulting double-sort (each per-file batch sorted twice) is fixed — `run_check`'s own final sort covers the multi-file case (`collect_files` walks the filesystem with no ordering guarantee), so the per-file sort moved to `hook_findings`, its only caller with no outer sort of its own.
+- README.md, AGENTS.md, and `docs/design-decisions.md` reconciled against the whole `TG-01.4` band: the always-on token count (1,045, was stale at 949), the agent list (`reviewer` was missing), the hooks table (`comments.py hook` was missing a row), the test-case count (244, was stale at 160), the Mermaid diagram (a `backlog-audit`-at-P1 node that was never accurate and is now doubly wrong since `backlog-audit` left P2.4 too), and the mid-loop skill list (`assess-performance` added, `/repo-init`/`/readme` corrected to their current names).
+
+### Security
+- A harness-attested-token mechanism was built and self-tested as a structural fix for the risk-accepted `comments.py apply` gap 0.46.0 documented, then reverted after two independent bypasses were reproduced against the actual code: `env VAR=val cmd` bypasses a shell `readonly` guard by constructing the child process's environment directly, and the token's state file is an ordinary, world-readable file `reviewer`'s `Read` tool reads without ever touching `git_guard.py`'s Bash-only `PreToolUse` hook. The risk-accepted status from 0.46.0 stands; the attempt and its root cause are recorded in `BACKLOG.md` (`SUB-01.4.9.5`) so a future attempt doesn't rediscover the same break.
+
 ## [0.46.0] — 2026-09-10
 
 ### Added
