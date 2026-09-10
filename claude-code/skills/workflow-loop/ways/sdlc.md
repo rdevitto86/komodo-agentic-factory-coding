@@ -40,9 +40,12 @@ Runs once per band, after every task in the band is committed — never per task
 - **Security** — new boundary, new query, new secret handling
 - **Complexity** — a function that grew a fourth responsibility
 - **Idiom** — does it read like the code around it
+- **Performance** — algorithmic complexity, a new hot-path cost, unbounded growth
 - **Comment discipline** — comments are in the diff now (the implementer writes them, see TSK-01.4.3); a narrative, name-echo, or change-narrating comment is a Low finding the orchestrator deletes itself with one Edit, never a fork
 
-**The orchestrator appends every returned finding row to `BACKLOG.md` under the matching domain in one Edit, before triage** — story-line shape per `backlog-modify`.
+**Performance dispatch.** In the same pass, also run `/assess-performance` (no arguments needed — it reads the diff itself) whenever a touched path is performance-sensitive — a hot loop, a changed algorithm's complexity class, a new query or index. Unlike the three finder forks above, `/assess-performance` carries no `context: fork`/`agent: reviewer` frontmatter (it's the same self-filing scorer contract `/assess-code-quality` already uses), so it runs inline in this session rather than as a `reviewer` fork; it files its own `BACKLOG.md` story at Med-High or above directly, under `Cross-Cutting`, rather than returning a row for the orchestrator to append. Once filed, that story is an ordinary backlog row — the severity floor and round cap below apply to it exactly like a finder fork's finding.
+
+**The orchestrator appends every finding row the three finder forks return to `BACKLOG.md` under the matching domain in one Edit, before triage** — story-line shape per `backlog-modify`. (`/assess-performance` already filed its own, as above.)
 
 **Severity floor.** Critical and High findings, plus a Medium finding on correctness or a stated requirement, are fixed in this band via `/workflow-implement`; the fixed task re-enters P2.2. Every other finding stays filed and open — it waits for its own pick later, not folded into this pass.
 
@@ -58,7 +61,7 @@ Runs once per band, after every task in the band is committed — never per task
 
 **Once per band, not per-task** — after P2.3's band review has resolved its severity floor, before `/workflow-consolidate` runs. Clears the target state's four standing closeout stories.
 
-**Only `/changelog-write` runs here**, covering every task the band shipped. No `assess-*` repeat — P2.3 already covered bugs, simplification, and (where warranted) security for the whole band — and no `/backlog-audit` — no phase runs a band-scoped audit right now (TSK-01.4.4 moves that pass into P3).
+**Only `/changelog-write` runs here**, covering every task the band shipped. No `assess-*` repeat — P2.3 already covered bugs, simplification, and (where warranted) security and performance for the whole band — and no `/backlog-audit` — no phase runs a band-scoped audit right now (TSK-01.4.4 moves that pass into P3).
 
 **Ends when:** `CHANGELOG.md`'s `[Unreleased]` section reflects the band — that satisfies the four closeout stories' `Done when: findings triaged`, so `/workflow-consolidate` deletes them like any other finished story.
 

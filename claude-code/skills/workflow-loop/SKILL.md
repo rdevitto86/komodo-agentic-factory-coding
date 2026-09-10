@@ -25,7 +25,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
 | P2.2 Verify + commit | `verify_gate.py`, then commit here | — |
-| P2.3 Band review | `/assess-bugs`, `/assess-simplify` (+ `/assess-security`), once per band | `reviewer` |
+| P2.3 Band review | `/assess-bugs`, `/assess-simplify` (+ `/assess-security`, + `/assess-performance`), once per band | `reviewer` (`/assess-performance` runs inline, not forked) |
 | P2.4 Closeout | `/changelog-write`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `workflow-implementer` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` + tag check | — |
@@ -128,11 +128,11 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 ### P2.3 · Band review
 
-**Runs once per band, after every task in the band is committed — never per task.** Dispatch `/assess-bugs`, `/assess-simplify`, and `/assess-security` (when the surface warrants it, per `ways/`) together in one parallel block, as plain forks — no isolation, they are read-only after TSK-01.4.2. Each runs as a `reviewer` fork.
+**Runs once per band, after every task in the band is committed — never per task.** Dispatch `/assess-bugs`, `/assess-simplify`, and `/assess-security` (when the surface warrants it, per `ways/`) together in one parallel block, as plain forks — no isolation, they are read-only after TSK-01.4.2. Each runs as a `reviewer` fork. **Also run `/assess-performance`** (when a touched path is performance-sensitive, per `ways/`) in the same pass — it carries no `context: fork` frontmatter, so it runs inline in this session rather than as a `reviewer` fork, and self-files its own `BACKLOG.md` story at Med-High or above per its own contract, same as `/assess-code-quality` already invokes it elsewhere.
 
 **Review against the band, not any one task** — did every task's acceptance condition land, and did anything outside the tasks change?
 
-**Each call returns its findings; the orchestrator appends every row to `BACKLOG.md` under the matching domain in one Edit, before triage.**
+**Each of the three finder forks returns its findings; the orchestrator appends every row to `BACKLOG.md` under the matching domain in one Edit, before triage.** `/assess-performance` files its own story directly — nothing to append for that one.
 
 **Severity floor.** Fix the findings `ways/sdlc.md`'s severity floor selects, via `/workflow-implement`; each fixed task re-enters P2.2. Everything else stays filed and open for a later pick.
 
@@ -193,7 +193,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 |---|---|
 | Read-only research across many files | `engineering` |
 | "Where is X" — a path list | `scout` |
-| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. |
+| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. `/assess-performance` grades it too but runs inline (no `context: fork`), conditionally, in the same pass. |
 
 **Parallel writers need `isolation: worktree`** — two agents editing one checkout collide; read-only fan-out needs none.
 
