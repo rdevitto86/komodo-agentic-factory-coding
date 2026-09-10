@@ -730,13 +730,25 @@ def strip_leading_flags(tokens, value_flags):
     return tokens[index:]
 
 
-# env's option-taking flags -- -u NAME, -C DIR, -P PATH (BSD/macOS), -S STRING all consume a following value
-ENV_VALUE_FLAGS = ("-u", "-C", "-P", "-S")
+# -u NAME, -C DIR, -P PATH (BSD/macOS) consume a value; -S doesn't -- its argument is the wrapped command, not a value
+ENV_VALUE_FLAGS = ("-u", "-C", "-P")
 
 
 # env's own syntax has no -c flag -- compose the two generic strippers instead of a third hand-rolled walk
 def strip_env_wrapper_prefix(tokens):
     return strip_env_assignments(strip_leading_flags(tokens, ENV_VALUE_FLAGS))
+
+
+# -S/--split-string's argument is the wrapped command (env's -c) -- extract it from any of its three real forms
+def env_split_string_value(tokens):
+    for index, token in enumerate(tokens):
+        if token == "-S":
+            return tokens[index + 1] if index + 1 < len(tokens) else ""
+        if token.startswith("-S") and not token.startswith("--"):
+            return token[len("-S"):]
+        if token.startswith("--split-string="):
+            return token[len("--split-string="):]
+    return None
 
 
 def subcommand_of(tokens, value_flags):
@@ -979,6 +991,13 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     command = os.path.basename(tokens[0].lstrip("("))
     if command in SHELL_WRAPPERS:
         if command == "env":
+            split_string = env_split_string_value(tokens[1:])
+            if split_string is not None:
+                # env -S word-splits its string directly into argv (no ;/&&/| operators) -- tokenize once and requote before recursing
+                inner = tokenize(split_string)
+                if inner:
+                    scan_command(requote(inner), findings, cwd, depth + 1, agent_type)
+                return
             inner = strip_env_wrapper_prefix(tokens[1:])
             if inner:
                 scan_command(requote(inner), findings, cwd, depth + 1, agent_type)

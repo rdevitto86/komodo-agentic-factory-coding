@@ -844,6 +844,14 @@ bash_case "G174 time sh -c \"...\" preserves the wrapped script's quoting throug
 bash_case "G175 nohup sh -c \"...\" preserves the wrapped script's quoting through the recursive scan and is denied" \
   deny 'nohup sh -c "git push --force"' "rewrites published history"
 
+# -S's argument IS the wrapped command (env's -c equivalent), not a value flag like -u/-C/-P -- see git_guard.py fix
+bash_case "G176 env -S \"...\" (separated form) recurses into its split-string argument and is denied" \
+  deny 'env -S "git push --force"' "rewrites published history"
+bash_case "G177 env -Sstring (attached form) recurses into its split-string argument and is denied" \
+  deny 'env -Sgit\ push\ --force' "rewrites published history"
+bash_case "G178 env --split-string=\"...\" (GNU long form) recurses into its split-string argument and is denied" \
+  deny 'env --split-string="git push --force"' "rewrites published history"
+
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
 printf '\nauto format\n\n'
