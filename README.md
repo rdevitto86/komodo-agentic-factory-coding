@@ -4,8 +4,8 @@ Agent configuration for software/hardware engineering, shared across every Komod
 
 Four ideas hold it together:
 
-1. **Rules that must never break are enforced by a hook, not by prompt text.** Comments and git are checked before the write, never after.
-2. **Base context stays tiny.** ~1,045 tokens of always-on rules and skill names; every skill body loads only when a path glob matches.
+1. **Rules that must never break are enforced mechanically, not by prompt text.** Git is gated before the fact — `git_guard.py` runs at `PreToolUse` and denies the command outright. Comments are a lint after it — `comments.py hook` reports findings on a write without blocking it, and `comments.py check` is what fails the repo's `verify` target.
+2. **Base context stays tiny.** Roughly 1.1k tokens of always-on rules and skill names — `scripts/validate.sh` prints the exact figure and fails above 2,000. Every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
@@ -16,7 +16,10 @@ Four ideas hold it together:
 ```bash
 bash setup.sh --dry-run    # preview
 bash setup.sh              # link, then run the tests and validate
+bash setup.sh --ref v0.47.0    # pin: detach at a release tag, then link
 ```
+
+Without `--ref`, the symlinks point at whatever the clone currently has checked out — an upstream sync moves every session on the next start. `--ref` detaches the clone at a release tag first, so the install only moves when you re-run `setup.sh` with a different one. It refuses a ref that doesn't resolve or a dirty tree, and checks both before touching anything.
 
 ### Windows
 
