@@ -125,7 +125,7 @@ One guard runs as `PreToolUse`, so a violation never reaches disk. Four more run
 
 | Hook | Fires on | Does | On error |
 |---|---|---|---|
-| `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites, and denies every Bash-side write the `reviewer` agent attempts (its Edit/Write access is dropped in the agent's own `tools:` list, not caught by a hook) | **Closed** |
+| `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites, and — for the `reviewer` agent, whose Edit/Write access is dropped in its own `tools:` list, not caught by a hook — denies its entire Bash surface by default, down to a read-only `git log`/`diff`/`show`/`status`/`blame`/`ls-files` allowlist | **Closed** |
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
 | `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |
@@ -147,7 +147,7 @@ python3 ~/.claude/hooks/comments.py apply < proposals.json
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 259 regression cases
+bash scripts/test-hooks.sh    # 286 regression cases
 ```
 
 ## Skills
