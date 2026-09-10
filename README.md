@@ -38,7 +38,7 @@ claude-code/          mirrors ~/.claude exactly
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           workflow-implementer, workflow-planner, engineering, scout, reviewer
 ├── hooks/            comments, git_guard, verify_gate, context_injector, auto_format
-└── skills/           63 active, 7 parked, lazily loaded
+└── skills/           65 active, 7 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks

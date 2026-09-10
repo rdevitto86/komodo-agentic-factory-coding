@@ -45,11 +45,6 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|
 | `SUB-01.3.1.1` | `git_guard.py`'s comment-guard extension list blocks `cp`/`mv`/redirect onto `.py` (and `.json`/`.md`) targets for every agent, not just `reviewer` — so the temp-file-then-`mv` sequence root `AGENTS.md` prescribes for a nontrivial hook edit cannot actually run via Bash; the Edit/Write tool is the only path that works, which contradicts the rule's own wording. Surfaced live during TSK-01.4.2: deleting `reviewer_guard.py` before updating `settings.json` broke every subsequent Edit/Write in that session (the `PreToolUse` hook command itself was missing, which the harness treats as blocking); recovered with `ln` since `mv`/`cp`/redirect were themselves blocked | the rule either states Edit/Write as the sanctioned atomic path, or `git_guard.py` gains a narrow allowance for `mv`/`cp` onto a hook-directory target so the prescribed shell sequence actually runs |
 
-#### [TSK-01.3.2] New skill: tech debt tracking (needs refinement) [P: L] [TODO]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.3.2.1` | scope and write a `tech-debt` skill; what it should actually cover (capturing debt, triaging it, linking it to `BACKLOG.md`) isn't decided yet — needs refinement before it's buildable | — |
-
 #### [TSK-01.3.3] New skill: git branching strategy (feature/branch vs smaller PRs) [P: L] [TODO]
 | Subtask | Work | Done when |
 |---|---|---|
@@ -75,4 +70,4 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 ## Archive
 *Note: use this section strictly for abandoned, shelved, or deprecated initiatives to keep them separate from active work without losing historical ideas.*
 
-_Nothing archived yet._
+- **New skill: tech debt tracking** (2026-09-10) — dropped. Was only ever a loose idea (capture/triage/link debt to `BACKLOG.md`); user decided it may not be needed at all rather than refine the scope.

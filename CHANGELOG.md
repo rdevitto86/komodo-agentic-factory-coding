@@ -4,10 +4,19 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
-## [0.46.5] — 2026-09-10
+## [0.47.1] — 2026-09-10
 
 ### Security
 - `reviewer`'s Bash surface is now deny-by-default: `git_guard.py` allows only read-only `git log`/`diff`/`show`/`status`/`blame`/`ls-files` (no global flag, no `--output`, no leading env-var assignment) and denies everything else outright, closing the whole class of bypass a prior series of comments.py-specific pattern fixes chased one signature at a time — including a live-confirmed arbitrary-code-execution path via `GIT_EXTERNAL_DIFF`.
+
+## [0.47.0] — 2026-09-10
+
+### Added
+- New `git-branching-strategy` skill — when a change belongs on one short-lived branch off main versus a longer-lived feature branch of stacked PRs, cross-referencing `git-pr-create` for mechanics.
+- New `standards-zig` skill — Zig memory/allocator, error-handling, comptime, build-system, testing, and C-interop conventions, structured like `standards-aws`.
+
+### Changed
+- `claude-code/AGENTS.md`'s atomic-write rule for a live `hooks/` file now names the Edit/Write tool as the sanctioned path, since `git_guard.py` already blocks the shell `mv` sequence the rule previously prescribed.
 
 ## [0.46.4] — 2026-09-10
 
