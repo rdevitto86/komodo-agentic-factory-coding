@@ -133,7 +133,7 @@ Every `standards-<language>`/`standards-<framework>` skill follows the same sect
 
 ## A skill directory with no SKILL.md is invisible
 
-`standards-gcp/`, `standards-azure/`, `standards-rust/`, `standards-csharp/`, `standards-hardware/`, and `standards-cpp/` are parked as `SKILL.md.off` — no listing cost, no loader entry, content preserved for when those domains land. Rename back to activate.
+`standards-gcp/`, `standards-azure/`, `standards-rust/`, `standards-c/`, `standards-csharp/`, `standards-hardware/`, and `standards-cpp/` are parked as `SKILL.md.off` — no listing cost, no loader entry, content preserved for when those domains land. Rename back to activate.
 
 ## Which compiled language, for which class of problem
 

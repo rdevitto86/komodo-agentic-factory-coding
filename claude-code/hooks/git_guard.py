@@ -209,6 +209,24 @@ def unescape_nested_backticks(text):
     return text.replace("\\`", "`")
 
 
+# a $()-capture's escaped backtick stays inert until eval/-c re-parses the output -- backtick captures have no such gate
+def segment_wants_reparse(prefix):
+    tokens = strip_env_assignments(tokenize(prefix))
+    if not tokens:
+        return False
+    base = os.path.basename(tokens[0].lstrip("("))
+    # command passes through to eval/-c like a literal call -- variable/alias/function indirection is risk-accepted
+    if base == "command":
+        tokens = strip_leading_flags(tokens[1:], PASSTHROUGH_VALUE_FLAGS["command"])
+        if not tokens:
+            return False
+        base = os.path.basename(tokens[0])
+    # treats any eval/-c lead as reparse risk -- a cautious over-approximation, not per-shape proof of execution
+    if base == "eval":
+        return True
+    return base in SHELL_WRAPPERS and "-c" in tokens
+
+
 def find_paren_end(command, start):
     depth = [1]
 
@@ -245,6 +263,8 @@ def extract_substitutions(command):
     in_comment = False
     index = 0
     length = len(command)
+    # tracks this capture's enclosing segment so a $() capture can tell whether eval/-c owns it
+    segment_start = 0
     while index < length:
         char = command[index]
         if in_squote:
@@ -264,13 +284,18 @@ def extract_substitutions(command):
                 index = capture_and_mask(command, masked, substitutions, index, find_backtick_end, 1, unescape_nested_backticks)
                 continue
             if char == "$" and command.startswith("$(", index):
-                index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2)
+                # only a re-parse (eval/-c) turns \` back into a real substitution -- see segment_wants_reparse
+                unescape = unescape_nested_backticks if segment_wants_reparse(command[segment_start:index]) else None
+                index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2, unescape)
                 continue
             index += 1
             continue
         if in_comment:
             if char == "\n":
                 in_comment = False
+                index += 1
+                segment_start = index
+                continue
             index += 1
             continue
         if char == "#":
@@ -292,7 +317,17 @@ def extract_substitutions(command):
             index = capture_and_mask(command, masked, substitutions, index, find_backtick_end, 1, unescape_nested_backticks)
             continue
         if char == "$" and command.startswith("$(", index):
-            index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2)
+            # same reparse gate as the dquote branch above -- keeps both $() capture sites consistent
+            unescape = unescape_nested_backticks if segment_wants_reparse(command[segment_start:index]) else None
+            index = capture_and_mask(command, masked, substitutions, index, find_paren_end, 2, unescape)
+            continue
+        if command.startswith("&&", index) or command.startswith("||", index):
+            index += 2
+            segment_start = index
+            continue
+        if char in SEGMENT_BOUNDARY_CHARS:
+            index += 1
+            segment_start = index
             continue
         index += 1
     return "".join(masked), substitutions

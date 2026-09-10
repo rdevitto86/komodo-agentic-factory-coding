@@ -4,8 +4,22 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.45.0] — 2026-09-09
+
 ### Added
 - `verify_gate.py` now tracks its own approximate consecutive-block streak per repo (keyed off the repo root, cleared on any pass or skip) and appends a warning to the block reason once that streak nears the 8-consecutive-block point where Claude Code stops honoring a `Stop` hook — previously a fork hitting that cutoff went silent with no in-repo signal.
+- `standards-go` now documents `errors.AsType[T]` (Go 1.26+) and embedded-field composite-literal flattening (Go 1.27+, `gopls`'s `embedlit`), verified against real Go/gopls release material after an earlier verification pass incorrectly concluded neither existed.
+- `scripts/test-hooks.sh` gained a regression suite locking in `reviewer_guard.py`'s fail-open behavior on malformed/malformed-typed input, mirroring `git_guard.py`'s existing coverage.
+
+### Fixed
+- `docs/design-decisions.md`'s "no SKILL.md is invisible" enumeration now includes `standards-c`, matching the parked-skill list elsewhere in the same doc.
+- `scripts/test-hooks.sh` now pins `cwd` one way (a top-level JSON field) instead of two; the `cd`-into-fixture-dir mechanism is kept only as the dedicated regression test for `git_guard.py`'s `os.getcwd()` fallback.
+
+### Security
+- `git_guard.py`'s `extract_substitutions` now only unescapes a `$()` capture's backslash-escaped backticks when the enclosing segment actually re-parses via `eval`/`-c` — closes a real bypass (`eval "$(echo \`git push --force\`)"` previously went undetected) without the over-broad unescape that briefly followed it false-positiving on inert text merely quoting a banned command in escaped backticks.
+- `git_guard.py`'s `segment_wants_reparse` now looks past a `command` prefix (with or without its value-less flags) at what it actually runs, so `command eval "$(...)"` re-parses the same way a bare `eval` already did.
+- `git_guard.py`'s segment-boundary tracking now advances past a `#`-comment's closing newline before checking for `eval`/`-c` re-parse, closing a bypass where a preceding comment line let a hidden `eval` slip through undetected.
+- Risk-accepted (not closed): a `$()` capture containing an escaped backtick, re-parsed via `eval`/`sh -c` reached through variable indirection (`RUN=eval; $RUN "$(...)"`), an alias, or a shell function rather than a literal leading token, is not statically detectable by this line-local scanner — recognizing it would require cross-statement data-flow tracking this scanner doesn't do.
 
 ## [0.44.0] — 2026-09-09
 

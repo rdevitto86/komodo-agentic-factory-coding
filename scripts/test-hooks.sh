@@ -169,6 +169,14 @@ bash_case() {
   expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"cwd\":\"$escaped_cwd\",\"tool_input\":{\"command\":\"$escaped\"}}"
 }
 
+# like bash_case, but pins an arbitrary fixture dir -- bash_case_at below is the one deliberate exception
+bash_case_cwd() {
+  local dir="$1" label="$2" want="$3" command="$4" must_contain="${5:-}"
+  local escaped; escaped="$(json_escape "$command")"
+  local escaped_cwd; escaped_cwd="$(json_escape "$dir")"
+  expect "$label" "$want" "$must_contain" <<< "{\"tool_name\":\"Bash\",\"cwd\":\"$escaped_cwd\",\"tool_input\":{\"command\":\"$escaped\"}}"
+}
+
 # like bash_case, but stamps agent_type on the payload -- the reviewer-write restriction only fires for that agent
 bash_case_agent() {
   local label="$1" want="$2" agent="$3" command="$4" must_contain="${5:-}"
@@ -226,6 +234,7 @@ smoke_case "S5  tee into a guarded path is denied"        deny  'tee BACKLOG.md'
 smoke_case "S6  sed --in-place rewriting a file in place is denied" deny  "sed --in-place -e s/a/b/ file"
 smoke_case "S7  a redirect into a guarded path is denied" deny  'echo bad > BACKLOG.md'
 
+# sends no "cwd" -- exercises git_guard.py's os.getcwd() fallback; the one dedicated test, others use bash_case_cwd
 bash_case_at() {
   local dir="$1" label="$2" want="$3" command="$4" must_contain="${5:-}"
   local escaped; escaped="$(json_escape "$command")"
@@ -470,7 +479,7 @@ HOOK="$HOOKS/git_guard.py"
 printf '\ngit guard\n\n'
 
 bash_case_at "$FIXTURE_MAIN" "G1a committing directly on a protected branch is blocked" deny 'git commit -m "wip"' "create a branch first"
-bash_case_at "$FIXTURE_FEAT" "G1b committing on a feature branch is allowed"            allow 'git commit -m "wip"'
+bash_case_cwd "$FIXTURE_FEAT" "G1b committing on a feature branch is allowed"            allow 'git commit -m "wip"'
 bash_case "G2  git log is allowed"                   allow 'git log --oneline -20'
 bash_case "G3  git restore is blocked"               deny  'git restore src/main.go'      "git restore"
 bash_case "G4  git checkout -- is blocked"           deny  'git checkout -- src/main.go'  "git checkout"
@@ -479,7 +488,7 @@ bash_case "G6  sh -c wrapper is unwrapped"           deny  'sh -c "git push orig
 bash_case "G7  sed -i is blocked"                    deny  "sed -i '' 's/a/b/' main.go"   "bypassing the comment guard"
 bash_case "G8  redirect into a code file is blocked" deny  'cat > handler.go'             "bypasses the comment guard"
 bash_case "G9  chained read-only git is allowed"     allow 'git status && git diff --stat'
-bash_case_at "$FIXTURE_MAIN" "G10 chained commit on a protected branch is caught" deny 'git diff && git commit -m x' "create a branch first"
+bash_case_cwd "$FIXTURE_MAIN" "G10 chained commit on a protected branch is caught" deny 'git diff && git commit -m x' "create a branch first"
 bash_case "G11 bare git branch lists and is allowed" allow 'git branch -a'
 bash_case "G12a creating a conventionally-named branch is allowed" allow 'git branch feat/x'
 bash_case "G12b creating a badly-named branch is blocked"          deny  'git branch feature/x' "kebab-case"
@@ -593,7 +602,7 @@ bash_case "G53 git switch -c with a bad name is blocked"          deny  'git swi
 bash_case "G54 git switch -c naming a protected branch is blocked" deny 'git switch -c main'    "kebab-case"
 bash_case "G55 git switch to an existing branch is allowed"      allow 'git switch main'
 bash_case "G56 git switch --detach is blocked"                    deny  'git switch --detach HEAD' "is denied"
-bash_case_at "$FIXTURE_FEAT" "G57 git push on a feature branch is allowed" allow 'git push -u origin feat/test-branch'
+bash_case_cwd "$FIXTURE_FEAT" "G57 git push on a feature branch is allowed" allow 'git push -u origin feat/test-branch'
 bash_case "G58 git push to main is blocked"                      deny  'git push origin main' "open a pull request instead"
 bash_case "G59 git push --force is blocked"                      deny  'git push --force origin feat/x' "rewrites published history"
 bash_case "G60 git add -A is allowed"                            allow 'git add -A'
@@ -609,14 +618,14 @@ bash_case "G67 gh label list is allowed"                         allow 'gh label
 bash_case "G68 gh api with a write flag is blocked"              deny  'gh api repos/x/y -X DELETE' "write requests are denied"
 bash_case "G69 gh api read is allowed"                           allow 'gh api repos/x/y/dependabot/alerts'
 bash_case "G70 gh release create is blocked"                     deny  'gh release create v1.0' "is denied"
-bash_case_at "$FIXTURE_FEAT" "G71 merging the protected base into a feature branch is allowed" allow 'git merge origin/main'
-bash_case_at "$FIXTURE_FEAT" "G72 merging the bare base name is allowed"          allow 'git merge main'
-bash_case_at "$FIXTURE_FEAT" "G72b a trailing stderr redirect doesn't miscount the merge target" allow 'git merge main 2>&1'
-bash_case_at "$FIXTURE_FEAT" "G72c a trailing stdout redirect doesn't miscount the merge target"  allow 'git merge main > out.txt'
-bash_case_at "$FIXTURE_MAIN" "G73 merging into a protected branch is blocked"     deny  'git merge feat/test-branch' "landing into it"
-bash_case_at "$FIXTURE_FEAT" "G74 merging a non-base branch is blocked"           deny  'git merge some-other-branch' "protected base branch"
-bash_case_at "$FIXTURE_FEAT" "G75 merge -X ours is blocked"                       deny  'git merge origin/main -X ours' "without a visible conflict"
-bash_case_at "$FIXTURE_FEAT" "G76 merge --abort is allowed"                       allow 'git merge --abort'
+bash_case_cwd "$FIXTURE_FEAT" "G71 merging the protected base into a feature branch is allowed" allow 'git merge origin/main'
+bash_case_cwd "$FIXTURE_FEAT" "G72 merging the bare base name is allowed"          allow 'git merge main'
+bash_case_cwd "$FIXTURE_FEAT" "G72b a trailing stderr redirect doesn't miscount the merge target" allow 'git merge main 2>&1'
+bash_case_cwd "$FIXTURE_FEAT" "G72c a trailing stdout redirect doesn't miscount the merge target"  allow 'git merge main > out.txt'
+bash_case_cwd "$FIXTURE_MAIN" "G73 merging into a protected branch is blocked"     deny  'git merge feat/test-branch' "landing into it"
+bash_case_cwd "$FIXTURE_FEAT" "G74 merging a non-base branch is blocked"           deny  'git merge some-other-branch' "protected base branch"
+bash_case_cwd "$FIXTURE_FEAT" "G75 merge -X ours is blocked"                       deny  'git merge origin/main -X ours' "without a visible conflict"
+bash_case_cwd "$FIXTURE_FEAT" "G76 merge --abort is allowed"                       allow 'git merge --abort'
 bash_case "G77 git rebase is blocked"                            deny  'git rebase main' "changes repository state"
 bash_case "G78 git pull without --ff-only is blocked"            deny  'git pull origin main' "only with --ff-only"
 bash_case "G78b git pull --ff-only is allowed"                   allow 'git pull --ff-only origin main'
@@ -633,7 +642,7 @@ bash_case "G92 a single-quoted grep pattern with backtick git log text still let
 bash_case "G93 a quote inside a shell comment doesn't swallow the next line's real command" \
   deny  'git status # '"'"'
 git push --force' "rewrites published history"
-bash_case_at "$FIXTURE_FEAT" "G94 a # inside a quoted commit message isn't misread as a comment opener" \
+bash_case_cwd "$FIXTURE_FEAT" "G94 a # inside a quoted commit message isn't misread as a comment opener" \
   allow 'git commit -m "see issue #42"'
 bash_case "G95 a double-quoted dollar-paren substitution running git push --force is denied" \
   deny  'echo "note: $(git push --force) is not real here"' "rewrites published history"
@@ -658,14 +667,14 @@ bash_case "G134 a single-quote split inside the -i flag still triggers sed -i de
 bash_case "G135 a double-quote split inside the -i flag still triggers sed -i detection" \
   deny  'sed -"i" -e s/a/b/ BACKLOG.md' "bypassing the comment guard"
 mkdir -p "$WORKDIR/outside-repo"
-bash_case_at "$WORKDIR/outside-repo" "G132 a guarded-extension write outside any repo is allowed" \
+bash_case_cwd "$WORKDIR/outside-repo" "G132 a guarded-extension write outside any repo is allowed" \
   allow 'echo x > BACKLOG.md'
-bash_case_at "$FIXTURE_MAIN" "G133 a guarded-extension write inside the repo still denies" \
+bash_case_cwd "$FIXTURE_MAIN" "G133 a guarded-extension write inside the repo still denies" \
   deny  'echo x > BACKLOG.md' "bypasses the comment guard"
-bash_case_at "$WORKDIR/outside-repo" "G137 cwd outside any repo does not exempt an absolute target that lands inside a real repo" \
+bash_case_cwd "$WORKDIR/outside-repo" "G137 cwd outside any repo does not exempt an absolute target that lands inside a real repo" \
   deny  "cp malicious.txt $FIXTURE_MAIN/BACKLOG.md" "bypasses the comment guard"
 mkdir -p "$WORKDIR/outside-repo-2"
-bash_case_at "$WORKDIR/outside-repo-2" "G138 cwd outside any repo and an absolute target outside any repo is still allowed" \
+bash_case_cwd "$WORKDIR/outside-repo-2" "G138 cwd outside any repo and an absolute target outside any repo is still allowed" \
   allow "echo x > $WORKDIR/outside-repo/BACKLOG.md"
 
 # a nested-deep $(...) chain used to blow the recursion limit and let a real guarded write ride through unblocked
@@ -769,6 +778,17 @@ bash_case "G149 a non-reviewer tee to BACKLOG.md is unaffected (still denied)" \
 # an unresolvable repo root (cwd outside any git repo) must not inherit reviewer_guard's own fail-open here
 bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied, not fail-open" \
   deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
+bash_case "G151 a backslash-escaped backtick inside a \$()-substitution fed through eval hides git push --force" \
+  deny 'eval "$(echo \`git push --force\`)"' "rewrites published history"
+bash_case "G152 a single-quoted sh -c argument containing a double-quoted dollar-paren substitution, nested 2 levels, hides git push --force" \
+  deny 'echo "$(sh -c '\''echo "$(git push --force)"'\'')"' "rewrites published history"
+bash_case "G153 a backslash-escaped backtick inside a \$()-substitution with no eval/-c re-parse is inert text and allowed" \
+  allow 'echo "$(echo \`echo git push --force\` is dangerous)"'
+bash_case "G154 command eval indirection re-parses a \$()-substitution's escaped backtick, same as a bare eval" \
+  deny 'command eval "$(echo x\`git push origin main\`y)"' "is denied"
+bash_case "G155 a # comment line before an eval on the next line still re-parses its escaped backtick" \
+  deny  'echo hi # comment
+eval "$(echo \`git push --force\`)"' "rewrites published history"
 
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
@@ -897,6 +917,23 @@ ln -s "$FIXTURE_ANCESTOR_TARGET" "$FIXTURE_ANCESTOR_SYMLINK/docs"
 
 expect "R8  reviewer editing docs/BACKLOG.md is denied when docs/ itself is a symlink out of the repo" deny "edits only BACKLOG.md" <<JSON
 {"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_ANCESTOR_SYMLINK","tool_input":{"file_path":"$FIXTURE_ANCESTOR_SYMLINK/docs/BACKLOG.md"}}
+JSON
+
+# R9-R12: main()'s except BaseException: sys.exit(0) must fail open, mirroring git_guard.py's F7 case above.
+expect "R9  a malformed payload fails open, not closed" allow <<'JSON'
+{"tool_name":"Edit","agent_type":"reviewer","tool_input":
+JSON
+
+expect "R10  a non-dict tool_input fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":"not-a-dict"}
+JSON
+
+expect "R11  a non-string file_path fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":42}}
+JSON
+
+expect "R12  a non-string cwd fails open, not closed" allow <<JSON
+{"tool_name":"Edit","agent_type":"reviewer","cwd":42,"tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
 JSON
 
 VALIDATOR="$HOOKS/comments.py"
