@@ -789,6 +789,11 @@ bash_case "G154 command eval indirection re-parses a \$()-substitution's escaped
 bash_case "G155 a # comment line before an eval on the next line still re-parses its escaped backtick" \
   deny  'echo hi # comment
 eval "$(echo \`git push --force\`)"' "rewrites published history"
+# command -v/-V only report whether NAME exists/its type -- bash never re-parses its argument, unlike bare `command eval`
+bash_case "G164 command -v eval never re-parses its \$()-substitution's escaped backtick, so it stays inert text and is allowed" \
+  allow 'command -v eval "$(echo \`git push --force\`)"'
+bash_case "G165 command -V eval never re-parses its \$()-substitution's escaped backtick, so it stays inert text and is allowed" \
+  allow 'command -V eval "$(echo \`git push --force\`)"'
 
 # comments.py apply carries no -c/open( shape, so it needs its own guarded-family match, not PYTHON_WRITE
 bash_case_agent "G156 reviewer python3 comments.py apply is denied" \
@@ -814,6 +819,15 @@ bash_case_agent "G162 reviewer a same-content copy of comments.py under an unrel
   deny reviewer "$FIXTURE_COMMENTS_COPY apply" "has no legitimate write path"
 bash_case_agent "G163 reviewer a same-file alias under a different-case basename is denied" \
   deny reviewer "python3 $FIXTURE_COMMENTS_ALIAS apply" "has no legitimate write path"
+
+bash_case_agent "G166 reviewer env python3 comments.py apply is denied, real env has no -c flag to gate the recursion on" \
+  deny reviewer 'env python3 ~/.claude/hooks/comments.py apply' "has no legitimate write path"
+bash_case "G167 a non-reviewer env python3 comments.py apply is unaffected (still allowed)" \
+  allow 'env python3 ~/.claude/hooks/comments.py apply'
+bash_case "G168 env skips leading -i and VAR=val tokens to reach a wrapped git push --force" \
+  deny 'env -i FOO=bar git push origin --force' "rewrites published history"
+bash_case "G169 a harmless env-wrapped command is unaffected (still allowed)" \
+  allow 'env echo hello'
 
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
