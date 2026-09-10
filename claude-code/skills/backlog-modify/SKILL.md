@@ -27,6 +27,7 @@ Hierarchy is fixed, four levels deep: **epic → task group → task → subtask
 * **Priority Tagging:** `[C]` Critical | `[H]` High | `[M]` Medium | `[L]` Low
 * **Status Indicators:** `[TODO]` | `[IN_PROGRESS]` | `[BLOCKED]` | `[DONE]`
 * **Hierarchy ID:** `EPIC-XX` -> `TG-XX.Y` (Task Group) -> `TSK-XX.Y.Z` (Task) -> `SUB-XX.Y.Z.N` (Subtask)
+* **Owner (optional):** an `Owner` row in a task's field table marks work only a person can resolve — a policy call, a risk-acceptance decision. Absent means agent-executable by default.
 
 ---
 
@@ -37,21 +38,23 @@ Hierarchy is fixed, four levels deep: **epic → task group → task → subtask
 * **Target Release:** V1
 
 #### [TSK-01.1.1] <task text> [P: C] [TODO]
-* **SUB-01.1.1.1** <what this piece of work is>
-  * **Done when:** `<command>`
-* **SUB-01.1.1.2** <what this piece of work is>
-  * **Done when:** `<command>`
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.1.1` | <what this piece of work is> | `<command>` |
+| `SUB-01.1.1.2` | <what this piece of work is> | `<command>` |
 
 #### [TSK-01.1.2] <task text> [P: M] [TODO]
-* **SUB-01.1.2.1** <what this piece of work is>
-  * **Done when:** `<command>`
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.2.1` | <what this piece of work is> | `<command>` |
 
 ### [TG-01.2] <task group>
 * **Target Release:** V1
 
 #### [TSK-01.2.1] <task text> [P: H] [IN_PROGRESS]
-* **SUB-01.2.1.1** <what this piece of work is>
-  * **Done when:** `<command>`
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.2.1.1` | <what this piece of work is> | `<command>` |
 
 ---
 
@@ -59,14 +62,16 @@ Hierarchy is fixed, four levels deep: **epic → task group → task → subtask
 *Note: use this section strictly for abandoned, shelved, or deprecated initiatives — never for finished work, which is swept out on completion, not archived.*
 ```
 
-Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]`. Subtask line shape: `* **SUB-E.T.S.N** <text>` — plain text, no checkbox — with a nested `* **Done when:**` bullet directly beneath it, holding one or more literal commands with an exit code.
+Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]` — this line alone is regex-read by `context_injector.py` at every session start, so its shape is fixed. Everything beneath it is free-form and uses tables, not bullets.
 
-**A subtask *is* the task's acceptance criterion, not a separate breakdown from it.** There is no JIRA-style AC list living apart from the subtask list — each `SUB-` line names one piece of work and carries the command that proves that piece is done, in one place. Where JIRA would write "AC-1, AC-2, AC-3" under a story, this file writes `SUB-E.T.S.1`, `SUB-E.T.S.2`, `SUB-E.T.S.3`, each with its own `Done when:`.
+Subtask shape: one row per subtask, in a table directly beneath the task heading — `| SUB-E.T.S.N | <text> | <command> |`. A subtask carries no `[STATUS]` tag of its own; the `Done when` cell holding one or more literal commands with an exit code is what proves it, not a checkbox.
+
+**A subtask *is* the task's acceptance criterion, not a separate breakdown from it.** There is no JIRA-style AC list living apart from the subtask table — each row names one piece of work and carries the command that proves that piece is done, in one place. Where JIRA would write "AC-1, AC-2, AC-3" under a story, this file writes `SUB-E.T.S.1`, `SUB-E.T.S.2`, `SUB-E.T.S.3` as rows, each with its own `Done when` cell.
 
 ### Rules
 
-- **No checkboxes, on any line.** A task's own state is its `[STATUS]` tag; a subtask carries no `[STATUS]` tag of its own — its `Done when:` command is what proves it, not a state written down separately. `CHANGELOG.md` is the completed-work record; `BACKLOG.md` tracking the same completion a second way (a checked box that then gets deleted anyway on sweep) is a distinction with no lasting value.
-- **Every task carries at least one `SUB-` line, and every `SUB-` line carries its own `Done when:` bullet** with one or more literal commands, not a description — a command that exits zero, not "tests pass." `[DONE]` requires every one of a task's subtasks' commands to have exited zero; `workflow-implement` runs the whole set and reports each one's output. A subtask whose completion can only be judged by reading the code, not running something, is Ambiguous — see `backlog-audit` — not plannable as-is. Subtasks are never invented just to fill the level out — one is enough for a task too small to need more.
+- **No checkboxes, anywhere, and no bullet-nested fields — a subtask and a blocked/owner field are table rows**, not a bulleted list. A task's own state is its `[STATUS]` tag; a subtask's row carries no status of its own. `CHANGELOG.md` is the completed-work record; `BACKLOG.md` tracking the same completion a second way (a checked box that then gets deleted anyway on sweep) is a distinction with no lasting value.
+- **Every task carries a Subtask table with at least one row, and every row carries a `Done when` cell** holding one or more literal commands, not a description — a command that exits zero, not "tests pass." `[DONE]` requires every one of a task's subtask commands to have exited zero; `workflow-implement` runs the whole set and reports each one's output. A subtask whose completion can only be judged by reading the code, not running something, is Ambiguous — see `backlog-audit` — not plannable as-is. Subtasks are never invented just to fill the table out — one row is enough for a task too small to need more.
 - **`[P: SEV]` then `[STATUS]` sit at the end of the `TSK-` heading line, in that order, always present** — `#### [TSK-01.1.1] <text> [P: C] [TODO]`. `[TODO]` is the default for anything not started; move to `[IN_PROGRESS]` the moment work starts on it, `[BLOCKED]` per the shape below, `[DONE]` once every `SUB-` line's `Done when:` command is verified against the repo.
 - **`[DONE]` is a pending sweep, not a resting state.** The task stays on the page — visible, but not counted as open — until `/backlog-audit` moves it into `CHANGELOG.md` and deletes it. Never hand-delete a `[DONE]` task yourself; that's the sweep's job, and it's what confirms the entry lands in `CHANGELOG.md` first.
 - **Epics** are `## [EPIC-01] Now, V1`, `## [EPIC-02] Next, V2` — every epic carries a one-line `*Goal: ...*` directly beneath its heading. Nothing is scheduled by date. A third, active epic is possible but rare — plan runs stick to V1/V2 (see `backlog-plan`).
@@ -89,29 +94,31 @@ Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]`. Subtask line sh
 
   ```markdown
   #### [TSK-01.4.1] <deploy task text> [P: H] [BLOCKED]
-  * **Blocked By:** `external`
-    * **Reason (YYYY-MM-DD):** <why the other repo's own open block stops this
-      one, four sentences maximum>
-    * **Citation:** <the other repo's record — e.g. its `BACKLOG.md`>
-    * **Recheck:** <cheap, testable condition — e.g. the other repo's
-      `BACKLOG.md` no longer lists that task as `[BLOCKED]`>
+  | Field | Value |
+  |---|---|
+  | Blocked by | `external` |
+  | Reason (YYYY-MM-DD) | <why the other repo's own open block stops this one, four sentences maximum> |
+  | Citation | <the other repo's record — e.g. its `BACKLOG.md`> |
+  | Recheck | <cheap, testable condition — e.g. the other repo's `BACKLOG.md` no longer lists that task as `[BLOCKED]`> |
   ```
 
 ### A blocked task
 
-**Stopping is a result, not a failure to report.** Keep the heading, set `[BLOCKED]`, and add a `* **Blocked By:**` bullet directly beneath the heading, holding three nested fields — name the in-file task it's blocked on if there is one (`TSK-01.1.2`), or `external` if the blocker sits outside this file, then a dated `Reason:` (`YYYY-MM-DD`, four sentences maximum), a `Citation:` (`file:line`, or the other repo's record for an external block), and a `Recheck:` naming a cheap, testable condition — which is what lets `/workflow-decompose` clear the block on a later pass automatically instead of it sitting blocked forever:
+**Stopping is a result, not a failure to report.** Keep the heading, set `[BLOCKED]`, and add a field table directly beneath the heading, holding four rows — name the in-file task it's blocked on if there is one (`TSK-01.1.2`), or `external` if the blocker sits outside this file, then a dated `Reason` (`YYYY-MM-DD`, four sentences maximum), a `Citation` (`file:line`, or the other repo's record for an external block), and a `Recheck` naming a cheap, testable condition — which is what lets `/workflow-decompose` clear the block on a later pass automatically instead of it sitting blocked forever:
 
 ```markdown
 #### [TSK-01.2.1] <task text> [P: H] [BLOCKED]
-* **Blocked By:** `external`
-  * **Reason (YYYY-MM-DD):** <what's missing and why it blocks this task, four
-    sentences maximum>
-  * **Citation:** `<file:line>`
-  * **Recheck:** `<command that shows the blocker is gone>`, or a written
-    risk-acceptance decision is recorded
+| Field | Value |
+|---|---|
+| Blocked by | `external` |
+| Reason (YYYY-MM-DD) | <what's missing and why it blocks this task, four sentences maximum> |
+| Citation | `<file:line>` |
+| Recheck | `<command that shows the blocker is gone>`, or a written risk-acceptance decision is recorded |
 ```
 
 **A blocked note without a citation is a guess.** If nothing testable exists for `Recheck:`, the block is a decision for the user, not a task state; say so instead of inventing a condition.
+
+**A task done here but gated on a follow-up landing elsewhere stays `[BLOCKED]`, never `[DONE]` early.** The same field table covers it — `Blocked by: external`, `Reason` states the work here is complete and what it's waiting on, `Citation` names the other PR/repo record, `Recheck` names the merge condition (e.g. "`other-repo#218` shows `MERGED`"). Add an `Owner: human` row above it when only a person can confirm that merge, not an agent. This is the one sanctioned way to record "implementation done, acceptance pending" — never a third status invented for it.
 
 **Turning a goal into a new epic-scoped breakdown lives in `backlog-plan` now** — a separate skill, extracted from this one's former planning-run mode. This file keeps only `normalize`.
 

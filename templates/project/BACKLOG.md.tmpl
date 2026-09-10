@@ -4,6 +4,9 @@
 * **Priority Tagging:** `[C]` Critical | `[H]` High | `[M]` Medium | `[L]` Low
 * **Status Indicators:** `[TODO]` | `[IN_PROGRESS]` | `[BLOCKED]` | `[DONE]`
 * **Hierarchy ID:** `EPIC-XX` -> `TG-XX.Y` (Task Group) -> `TSK-XX.Y.Z` (Task) -> `SUB-XX.Y.Z.N` (Subtask)
+* **Owner (optional):** an `Owner` row in a task's field table marks work only a person can resolve — a policy call, an external approval, a risk-acceptance decision. Absent means agent-executable by default.
+
+Format and rules live in the `backlog-modify` skill — load it before editing this file. `[DONE]` tasks stay until a sweep (`/backlog-audit`) moves them to `CHANGELOG.md` and removes them — this is not a log to hand-curate.
 
 ---
 
@@ -14,49 +17,70 @@
 * **Target Release:** <vX.Y or Milestone Name>
 
 #### [TSK-01.1.1] <Completed Deliverable> [P: C] [DONE]
-* **SUB-01.1.1.1** <Completed setup step>
-  * **Done when:** `<command that verified this>`
-* **SUB-01.1.1.2** <Completed core logic step>
-  * **Done when:** `<command that verified this>`
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.1.1` | <Completed setup step> | `<command that verified this>` |
+| `SUB-01.1.1.2` | <Completed core logic step> | `<command that verified this>` |
 
 #### [TSK-01.1.2] <Active Deliverable> [P: H] [IN_PROGRESS]
-* **SUB-01.1.2.1** <Completed step>
-  * **Done when:** `<command>`
-* **SUB-01.1.2.2** <In-progress step>
-  * **Done when:** `<command>`
-* **SUB-01.1.2.3** <Pending verification step>
-  * **Done when:** `<command>`
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.2.1` | <Completed step> | `<command>` |
+| `SUB-01.1.2.2` | <In-progress step> | `<command>` |
+| `SUB-01.1.2.3` | <Pending verification step> | `<command>` |
 
 #### [TSK-01.1.3] <Blocked Deliverable> [P: M] [BLOCKED]
-* **Blocked By:** `TSK-01.1.2`
-  * **Reason (<date>):** <Reason for block, four sentences maximum>
-  * **Citation:** `<file:line, or the other repo's record>`
-  * **Recheck:** `<cheap, testable condition>`
-* **SUB-01.1.3.1** <Subtask description>
-  * **Done when:** `<command>`
+| Field | Value |
+|---|---|
+| Blocked by | `TSK-01.1.2` |
+| Reason (<date>) | <Reason for block, four sentences maximum> |
+| Citation | `<file:line, or the other repo's record>` |
+| Recheck | `<cheap, testable condition>` |
 
-#### [TSK-01.1.4] Security review [P: M] [TODO]
-* **SUB-01.1.4.1** run `/audit-security` against the epic's shipped diff and triage findings
-  * **Done when:** findings triaged
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.3.1` | <Subtask description> | `<command>` |
 
-#### [TSK-01.1.5] Bug sweep [P: M] [TODO]
-* **SUB-01.1.5.1** run `/audit-bugs` against the epic's shipped diff and triage findings
-  * **Done when:** findings triaged
+#### [TSK-01.1.4] <Deliverable finished here, gated on a follow-up PR elsewhere> [P: M] [BLOCKED]
+| Field | Value |
+|---|---|
+| Owner | human |
+| Blocked by | `external` |
+| Reason (<date>) | implementation here is complete and verified locally; it cannot ship as `[DONE]` until `<other repo>`'s PR consuming/deploying it has merged — flipping this to `[DONE]` early would record work as finished before it's actually live. |
+| Citation | `<other repo>#<PR number>` |
+| Recheck | `<other repo>#<PR number>` shows `MERGED` |
 
-#### [TSK-01.1.6] Code smell [P: M] [TODO]
-* **SUB-01.1.6.1** run `/audit-simplify` against the epic's shipped diff and triage findings
-  * **Done when:** findings triaged
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.4.1` | <what was actually built and verified here> | `<command that verified this>` |
 
-#### [TSK-01.1.7] Performance [P: M] [TODO]
-* **SUB-01.1.7.1** confirm the perf suite ran against the epic's shipped diff and triage findings
-  * **Done when:** findings triaged
+#### [TSK-01.1.5] Security review [P: M] [TODO]
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.5.1` | run `/audit-security` against the epic's shipped diff and triage findings | findings triaged |
+
+#### [TSK-01.1.6] Bug sweep [P: M] [TODO]
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.6.1` | run `/audit-bugs` against the epic's shipped diff and triage findings | findings triaged |
+
+#### [TSK-01.1.7] Code smell [P: M] [TODO]
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.7.1` | run `/audit-simplify` against the epic's shipped diff and triage findings | findings triaged |
+
+#### [TSK-01.1.8] Performance [P: M] [TODO]
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.8.1` | confirm the perf suite ran against the epic's shipped diff and triage findings | findings triaged |
 
 ### [TG-01.2] <Second Feature / Module / Infrastructure Focus>
 * **Target Release:** <vX.Y or Milestone Name>
 
 #### [TSK-01.2.1] <Pending Task> [P: L] [TODO]
-* **SUB-01.2.1.1** <Subtask description>
-  * **Done when:** `<command>`
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.2.1.1` | <Subtask description> | `<command>` |
 
 ---
 
@@ -67,24 +91,29 @@
 * **Target Release:** <vX.Y or Milestone Name>
 
 #### [TSK-02.1.1] <Task Name> [P: M] [TODO]
-* **SUB-02.1.1.1** <Subtask description>
-  * **Done when:** `<command>`
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-02.1.1.1` | <Subtask description> | `<command>` |
 
 #### [TSK-02.1.2] Security review [P: M] [TODO]
-* **SUB-02.1.2.1** run `/audit-security` against the epic's shipped diff and triage findings
-  * **Done when:** findings triaged
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-02.1.2.1` | run `/audit-security` against the epic's shipped diff and triage findings | findings triaged |
 
 #### [TSK-02.1.3] Bug sweep [P: M] [TODO]
-* **SUB-02.1.3.1** run `/audit-bugs` against the epic's shipped diff and triage findings
-  * **Done when:** findings triaged
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-02.1.3.1` | run `/audit-bugs` against the epic's shipped diff and triage findings | findings triaged |
 
 #### [TSK-02.1.4] Code smell [P: M] [TODO]
-* **SUB-02.1.4.1** run `/audit-simplify` against the epic's shipped diff and triage findings
-  * **Done when:** findings triaged
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-02.1.4.1` | run `/audit-simplify` against the epic's shipped diff and triage findings | findings triaged |
 
 #### [TSK-02.1.5] Performance [P: M] [TODO]
-* **SUB-02.1.5.1** confirm the perf suite ran against the epic's shipped diff and triage findings
-  * **Done when:** findings triaged
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-02.1.5.1` | confirm the perf suite ran against the epic's shipped diff and triage findings | findings triaged |
 
 ---
 
