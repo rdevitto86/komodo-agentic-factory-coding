@@ -4,6 +4,27 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- `comments.py` gained a hook subcommand: `PostToolUse` feedback on the just-touched file, reported as `additionalContext`, always exits 0. `workflow-implementer.md` registers the hook and adds a Comments-last craft step using `comments.py check`/`apply`; `write-comments` is now the manual/repair path instead of a downstream P3 fork.
+- `workflow-consolidate` now clears a satisfied `[BLOCKED]` Recheck and confirms each shipped task's `Done when` commands before deleting it, band by band, at closeout; `backlog-audit` is repositioned as a full-file sweep a user types or a session runs on staleness, no longer invoked mid-loop.
+- `verify_gate.py` now blocks with the configured limit named when `KOMODO_VERIFY_TIMEOUT` is hit (previously exited 0 silently), skips the verify command entirely on a dirty tree whose only paths are records-only (`BACKLOG.md`/`docs/BACKLOG.md`/`CHANGELOG.md`/`README.md`), and stops a stuck fork at 3 consecutive identical failure hashes (exits 0 with a `systemMessage`) instead of grinding toward Claude Code's 8-consecutive-block cutoff.
+- `reviewer.md` and `workflow-implementer.md` now run at `effort: high`, matching `settings.json`'s sonnet/opus default — both had been silently running at `medium` because agent frontmatter overrides `modelSettings`. Every read-only agent gained a `maxTurns` cap sized to its job (`reviewer`: 80, `workflow-planner`: 50, `engineering`: 40, `scout`: 20); `workflow-implementer` gets none, since `verify_gate.py`'s `Stop` hook already bounds it.
+
+### Changed
+- `workflow-loop`'s P2–P3 phases rebuilt around a band review: P2.2/P2.3/P2.4 restructured into verify+commit / once-per-band review with a severity floor / changelog-only closeout, replacing per-task review and the P2.4 `assess-*` repeat. Removed the inaccurate `isolation: worktree` dispatch/merge-back instructions (the Skill tool has no `isolation` parameter) and stripped P3 of the `/write-comments` call and the retired removed-comments ledger.
+- `reviewer` is now read-only: `Edit` dropped from its tools list and its `## Filed` output section removed — `assess-bugs`/`assess-security`/`assess-simplify`/`assess-code-conventions` return findings only, and the caller files them. `reviewer_guard.py` and its `settings.json` registration are retired; `git_guard.py`'s `is_guarded_path` now denies every Bash-side write for the `reviewer` agent unconditionally.
+
+### Fixed
+- The comments hook subcommand's file-read had re-rooted from the touched file's own git ancestry instead of `args.repo_root`, skipping the existing containment check and reading files unbounded — fixed to pin root to `args.repo_root`, gate every read through `is_within_repo_root`, and cap reads at 1MB.
+- `workflow-complete`'s backlog-staleness check used `git log -S'backlog-audit'`, which false-positived on any commit whose diff merely mentions the string "backlog-audit" in prose (an unrelated docs edit, for instance) rather than an actual sweep — fixed to `git log --grep` against commit messages, paired with a documented convention that a `backlog-audit` run names itself in its own commit message.
+- `verify_gate.py`'s new records-only skip had an unhandled 5s timeout on its own git-status probe that could silently skip a genuinely dirty tree — fixed so a probe timeout falls through to running verify normally instead of skipping.
+- `git_guard.py`'s new reviewer-write deny for `comments.py apply` (see Security) closed four successive bypasses across a whole-band review: a bare interpreter-less invocation, a `python3 -`/stdin-piped script body, a same-content copy under an unrelated basename, and a case-folded path alias — moved from basename text-matching to `os.path.samefile()` identity plus a content-comparison fallback, run unconditionally per segment rather than gated behind a command-name allowlist.
+- `workflow-loop/SKILL.md` and `docs/design-decisions.md` carried three stale references to P2.4 running review (`assess-*`) and to `reviewer` filing its own `## Filed` findings, both left behind by this band's earlier restructure — corrected to the current P2.3-only review, reviewer-files-nothing shape.
+
+### Security
+- Filed `TSK-01.1.17` (Critical): `git_guard.py`'s `env` wrapper handling only recurses on a literal `-c` token, but `env`'s real syntax (`env cmd args...`) has none — `env <any guarded command>` bypasses every pattern the file checks, not only the reviewer-write case that surfaced it. Pre-existing, unrelated to this band's changes; out of scope here, tracked under the existing `git_guard.py` hardening task group.
+- Risk-accepted (not closed): `git_guard.py`'s reviewer-write guard for `comments.py apply` can still be defeated by a functionally-identical copy of the script that differs by even one byte, which passes both the identity check and the exact-match content fallback. Four rounds of fix-and-reloop closed the realistic bypass paths (missing interpreter prefix, stdin piping, basename spoofing, case-folding); this residual gap is a semantic-equivalence question no static command-text or content analysis can decide, the same class of limit this file's `eval`/variable-indirection gap already carries. Tracked as `SUB-01.4.9.4` for a structurally different fix (gating `apply` on something outside command-text analysis entirely) rather than a further pattern-match round.
+
 ## [0.45.0] — 2026-09-09
 
 ### Added

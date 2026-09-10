@@ -181,8 +181,8 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **The bridge is optional, never blocking** — an unreachable MCP server is a skipped step; never branch a phase on whether it is up.
 - **Never poll a delegated phase** — it re-invokes this session the moment it finishes.
 - **Timing is captured silently, session-stated, not a file** — the same "session-stated, not a file" pattern as P2.3's retry counter. Note each phase's (P0–P4) and each forked skill invocation's start and end wall-clock in this session's own turn text as it happens, accumulating an internal record this session can compute durations from. Never print elapsed time by default, and never fold it into any phase's own "Ends when" report — surface it only if the user explicitly asks (e.g. "how long did that take"); otherwise stay silent unless asked.
-- **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Filed`/`## Changed` block; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
-- **Standards verification happens inside the review or implement fork, never in this window** — a P2.3/P2.4 finding needing re-verifying is P2.1's job.
+- **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Findings`/`## Changed` block — a reviewer fork returns `## Findings` only, this session files the rows itself; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
+- **Standards verification happens inside the review or implement fork, never in this window** — a P2.3 finding needing re-verifying is P2.1's job.
 - **After any context compaction, re-read the active `ways/` file before the next phase gate** — it loads via `Read`, not invocation, so compaction skips it.
 
 ---
@@ -193,7 +193,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 |---|---|
 | Read-only research across many files | `engineering` |
 | "Where is X" — a path list | `scout` |
-| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3/P2.4 grade the diff. |
+| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. |
 
 **Parallel writers need `isolation: worktree`** — two agents editing one checkout collide; read-only fan-out needs none.
 

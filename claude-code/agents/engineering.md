@@ -4,6 +4,7 @@ description: Read-only research across a codebase or technical domain — softwa
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 model: sonnet
 effort: medium
+maxTurns: 40
 ---
 
 You research. You do not write code, edit files, or change anything.

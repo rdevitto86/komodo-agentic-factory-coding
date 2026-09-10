@@ -3,7 +3,7 @@ name: workflow-implementer
 description: Executes one task to completion — writes code, writes the tests the task names, runs its Done when commands. The fork target for the implement and consolidate phases. Never picks its own work.
 tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 model: sonnet
-effort: medium
+effort: high
 hooks:
   Stop:
     - hooks:

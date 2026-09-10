@@ -159,6 +159,13 @@ INPLACE_SED = re.compile(r"\bsed\b[^;|&]*?(?:\s-[a-zA-Z]*i\b|\s--in-place\b)")
 INPLACE_PERL = re.compile(r"\bperl\b[^;|&]*?\s-[a-zA-Z]*i\b")
 PYTHON_WRITE = re.compile(r"\bpython3?\b[^;|&]*?-c\b.*?open\s*\([^)]*['\"][wa]")
 
+# round 4: identity (samefile), then content, replaces basename text-matching -- "check"/"hook" stay unguarded, read-only
+COMMENTS_SCRIPT_BASENAME = "comments.py"
+COMMENTS_WRITE_SUBCOMMANDS = {"apply"}
+COMMENTS_SCRIPT_REALPATH = os.path.realpath(
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), COMMENTS_SCRIPT_BASENAME)
+)
+
 
 SEGMENT_BOUNDARY_CHARS = ";\n|"
 
@@ -437,6 +444,78 @@ def parse_cp_mv_target(tokens):
 
 # settings.json and BACKLOG.md need Edit/Write-only writes, closing the reviewer's Bash side door
 GIT_GUARD_ONLY_EXTENSIONS = {".json", ".md"}
+
+
+# cached -- every candidate file this process checks reuses the same signature, comments.py itself never changes mid-run
+@functools.lru_cache(maxsize=1)
+def comments_script_signature():
+    try:
+        with open(COMMENTS_SCRIPT_REALPATH, "rb") as handle:
+            content = handle.read()
+    except OSError:
+        return None
+    return len(content), content
+
+
+# identity first (a symlink or case-folded alias), content second (a same-content copy under any name)
+def is_comments_script(token, cwd):
+    cleaned = token.strip("\"'")
+    if not cleaned or cleaned == "-":
+        return False
+    base_dir = cwd or os.getcwd()
+    expanded = os.path.expanduser(cleaned)
+    absolute = expanded if os.path.isabs(expanded) else os.path.join(base_dir, expanded)
+    try:
+        if os.path.samefile(absolute, COMMENTS_SCRIPT_REALPATH):
+            return True
+    except OSError:
+        pass
+    signature = comments_script_signature()
+    if signature is None:
+        return False
+    size, content = signature
+    try:
+        if os.path.getsize(absolute) != size:
+            return False
+        with open(absolute, "rb") as handle:
+            candidate = handle.read()
+    except OSError:
+        return False
+    return candidate == content
+
+
+# `cat FILE | python3 -` reads the script body off stdin -- the path evidence sits in the piped-from segment
+def cat_source_path(segment_text):
+    tokens = strip_env_assignments(tokenize(segment_text))
+    if not tokens or os.path.basename(tokens[0]) != "cat":
+        return None
+    positional = [token for token in tokens[1:] if not token.startswith("-")]
+    return positional[0] if positional else None
+
+
+# comments.py may run as tokens[0] directly (any basename) or as an interpreter's script arg, maybe "-" (piped_source)
+def comments_write_invocation(tokens, cwd, piped_source):
+    if not tokens:
+        return False
+    command = os.path.basename(tokens[0].strip("\"'").lstrip("("))
+    if command in ("python", "python3"):
+        rest = tokens[1:]
+        index = 0
+        while index < len(rest) and rest[index].startswith("-") and rest[index] != "-":
+            index += 1
+        if index >= len(rest):
+            return False
+        script_token = rest[index]
+        remaining = rest[index + 1:]
+        if script_token == "-":
+            if piped_source is None or not is_comments_script(piped_source, cwd):
+                return False
+        elif not is_comments_script(script_token, cwd):
+            return False
+        return any(arg in COMMENTS_WRITE_SUBCOMMANDS for arg in remaining if not arg.startswith("-"))
+    if not is_comments_script(tokens[0], cwd):
+        return False
+    return any(arg in COMMENTS_WRITE_SUBCOMMANDS for arg in tokens[1:] if not arg.startswith("-"))
 
 
 def matches_guarded_family(token):
@@ -939,9 +1018,13 @@ def gh_violation(tokens):
     return None
 
 
-def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0, agent_type=None):
+def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0, agent_type=None, piped_source=None):
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
+        return
+    # every segment, not gated on a command-name allowlist -- the bypass this closes is a basename that never matched
+    if agent_type == REVIEWER_AGENT and comments_write_invocation(tokens, cwd, piped_source):
+        findings.append("comments.py apply writes to a source file, and the reviewer has no legitimate write path")
         return
     # a bare (cmd ...) subshell glues its "(" onto the first word -- stripped only for command identification
     command = os.path.basename(tokens[0].lstrip("("))
@@ -972,7 +1055,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
                 break
         return
     if command in ("sed", "perl", "python", "python3"):
-        # raw segment text gated on its own leading command -- a quoted mention elsewhere never reaches here
+        # raw segment text gated on its own leading command -- comments.py's own write check runs earlier, unconditionally
         raw_segment = full_command[seg_start:seg_end]
         # normalized once here -- shlex strips every quoting shape around -i before the -i regexes ever run
         normalized_segment = normalize_shell_words(raw_segment)
@@ -1058,8 +1141,14 @@ def _scan_command_at_depth(command, findings, cwd, depth, agent_type=None):
         abs_end = start + len(text)
         segments.append((stripped, abs_start, abs_end))
     has_cd = any(leading_word(stripped) == "cd" for stripped, _, _ in segments)
-    for stripped, abs_start, abs_end in segments:
-        scan_segment(stripped, findings, cwd, has_cd, command, abs_start, abs_end, depth, agent_type)
+    for index, (stripped, abs_start, abs_end) in enumerate(segments):
+        # a lone "|" (not "||", consumed elsewhere) at the prior segment's end feeds its stdout into this one's stdin
+        piped_source = None
+        if index > 0:
+            prev_end = segments[index - 1][2]
+            if prev_end < len(command) and command[prev_end] == "|":
+                piped_source = cat_source_path(segments[index - 1][0])
+        scan_segment(stripped, findings, cwd, has_cd, command, abs_start, abs_end, depth, agent_type, piped_source)
     # recursing into each substitution catches a mutating command hidden in backticks/$() -- else it slips past as inert text
     for substitution in substitutions:
         if substitution.strip():

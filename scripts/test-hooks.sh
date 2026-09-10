@@ -790,6 +790,31 @@ bash_case "G155 a # comment line before an eval on the next line still re-parses
   deny  'echo hi # comment
 eval "$(echo \`git push --force\`)"' "rewrites published history"
 
+# comments.py apply carries no -c/open( shape, so it needs its own guarded-family match, not PYTHON_WRITE
+bash_case_agent "G156 reviewer python3 comments.py apply is denied" \
+  deny reviewer 'python3 ~/.claude/hooks/comments.py apply' "has no legitimate write path"
+bash_case "G157 a non-reviewer python3 comments.py apply is unaffected (still allowed)" \
+  allow 'python3 ~/.claude/hooks/comments.py apply'
+bash_case_agent "G158 reviewer python3 -m pytest is unaffected (still allowed)" \
+  allow reviewer 'python3 -m pytest'
+# comments.py runs standalone too (own shebang, mode 755) -- basename match must not require an interpreter
+bash_case_agent "G159 reviewer direct comments.py apply via a relative path (no interpreter prefix) is denied" \
+  deny reviewer 'claude-code/hooks/comments.py apply' "has no legitimate write path"
+bash_case_agent_at "$HOOKS" "G160 reviewer bare comments.py apply, cwd inside hooks/, is denied" \
+  deny reviewer 'comments.py apply' "has no legitimate write path"
+
+# round 4: a symlink stands in for a case-insensitive-fs path alias -- CI's ext4 is case-sensitive, samefile() still fires
+FIXTURE_COMMENTS_COPY="$WORKDIR/cw"
+cp "$COMMENTS" "$FIXTURE_COMMENTS_COPY"
+FIXTURE_COMMENTS_ALIAS="$WORKDIR/Comments.PY"
+ln -s "$COMMENTS" "$FIXTURE_COMMENTS_ALIAS"
+bash_case_agent "G161 reviewer cat comments.py piped into python3 - apply (script read off stdin) is denied" \
+  deny reviewer 'cat ~/.claude/hooks/comments.py | python3 - apply' "has no legitimate write path"
+bash_case_agent "G162 reviewer a same-content copy of comments.py under an unrelated basename is denied" \
+  deny reviewer "$FIXTURE_COMMENTS_COPY apply" "has no legitimate write path"
+bash_case_agent "G163 reviewer a same-file alias under a different-case basename is denied" \
+  deny reviewer "python3 $FIXTURE_COMMENTS_ALIAS apply" "has no legitimate write path"
+
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
 printf '\nauto format\n\n'
