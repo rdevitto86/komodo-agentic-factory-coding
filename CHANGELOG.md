@@ -4,6 +4,12 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.46.3] — 2026-09-10
+
+### Fixed
+- `lib/git.py`'s `repo_root()` now also catches `TypeError`, so a non-str/bytes/PathLike `cwd` (e.g. from a malformed hook payload) fails open deliberately instead of depending on whichever caller's outer exception handler happened to rescue it.
+- `standards-go/SKILL.md`'s two "modernize" transform bullets no longer hardcode a Go version number as their gate condition — both now phrase it relative to `go.mod`'s floor, consistent with the file's own stated convention.
+
 ## [0.46.1] — 2026-09-10
 
 ### Added
