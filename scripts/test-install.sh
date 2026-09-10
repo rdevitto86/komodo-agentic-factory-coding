@@ -6,11 +6,12 @@
 # Exit 0:  every case passed
 # Exit 1:  at least one failed, with the offending reason printed
 #
-# Case IDs: I* install.py.
+# Case IDs: I* install.py, S* setup.sh --ref pinning.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL="$REPO_ROOT/scripts/install.py"
+SETUP="$REPO_ROOT/setup.sh"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
@@ -101,6 +102,71 @@ elif ! grep -Eq "\"command\": \"[a-zA-Z0-9_]+ '[^']*home6\\\$\\(evil\\)[^']*git_
   fail "I6 hook_path with a shell metacharacter is single-quoted, not left bare" "generated command did not wrap the metacharacter-bearing path in single quotes: $(grep '"command"' "$TARGET6/settings.json" | head -1)"
 else
   pass "I6 hook_path with a shell metacharacter is single-quoted, not left bare"
+fi
+
+printf '\nsetup.sh --ref\n\n'
+
+CLONE="$WORKDIR/clone"
+git clone --quiet --local "$REPO_ROOT" "$CLONE"
+TAG="$(git -C "$CLONE" tag | tail -1)"
+
+TARGET_S4A="$WORKDIR/home-s4a/.claude"
+TARGET_S4B="$WORKDIR/home-s4b/.claude"
+baseline_out="$(AGENT_HOME="$TARGET_S4A" bash "$CLONE/setup.sh" --dry-run 2>&1 | sed "s#$TARGET_S4A#TARGET#g; s#$CLONE#REPO#g")"
+current_out="$(AGENT_HOME="$TARGET_S4B" bash "$SETUP" --dry-run 2>&1 | sed "s#$TARGET_S4B#TARGET#g; s#$REPO_ROOT#REPO#g")"
+if [[ "$baseline_out" == "$current_out" ]]; then
+  pass "S4 plain --dry-run output is unchanged by the --ref addition"
+else
+  fail "S4 plain --dry-run output is unchanged by the --ref addition" "diff:
+$(diff <(printf '%s\n' "$baseline_out") <(printf '%s\n' "$current_out"))"
+fi
+
+cp "$SETUP" "$CLONE/setup.sh"
+git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit --quiet -am "bring in the working copy's setup.sh for --ref testing"
+CLONE_HEAD_BEFORE="$(git -C "$CLONE" rev-parse --abbrev-ref HEAD)"
+
+if [ -z "$TAG" ]; then
+  fail "S1 --ref TAG --dry-run previews the checkout and exits 0" "no tag found in the clone to pin to"
+else
+  TARGET_S1="$WORKDIR/home-s1/.claude"
+  out="$(AGENT_HOME="$TARGET_S1" bash "$CLONE/setup.sh" --ref "$TAG" --dry-run 2>&1)"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "S1 --ref TAG --dry-run previews the checkout and exits 0" "exit $rc: $out"
+  elif [[ "$out" != *"would: git -C $CLONE checkout --detach $TAG"* ]]; then
+    fail "S1 --ref TAG --dry-run previews the checkout and exits 0" "did not preview the detach: $out"
+  else
+    pass "S1 --ref TAG --dry-run previews the checkout and exits 0"
+  fi
+fi
+
+TARGET_S2="$WORKDIR/home-s2/.claude"
+out="$(AGENT_HOME="$TARGET_S2" bash "$CLONE/setup.sh" --ref no-such-tag-xyz 2>&1)"
+rc=$?
+problem=""
+[ "$rc" -eq 0 ] && problem="unknown ref exited 0: $out"
+CLONE_HEAD_AFTER="$(git -C "$CLONE" rev-parse --abbrev-ref HEAD)"
+[ -z "$problem" ] && [ "$CLONE_HEAD_BEFORE" != "$CLONE_HEAD_AFTER" ] && problem="HEAD moved on an unknown ref"
+[ -z "$problem" ] && [ -e "$TARGET_S2" ] && problem="target was created before the unknown-ref check failed"
+if [ -n "$problem" ]; then
+  fail "S2 an unknown ref exits non-zero before touching HEAD or the target" "$problem"
+else
+  pass "S2 an unknown ref exits non-zero before touching HEAD or the target"
+fi
+
+printf 'dirty\n' >> "$CLONE/README.md"
+TARGET_S3="$WORKDIR/home-s3/.claude"
+out="$(AGENT_HOME="$TARGET_S3" bash "$CLONE/setup.sh" --ref "$TAG" 2>&1)"
+rc=$?
+problem=""
+[ "$rc" -eq 0 ] && problem="dirty tree exited 0: $out"
+CLONE_HEAD_AFTER2="$(git -C "$CLONE" rev-parse --abbrev-ref HEAD)"
+[ -z "$problem" ] && [ "$CLONE_HEAD_BEFORE" != "$CLONE_HEAD_AFTER2" ] && problem="HEAD moved on a dirty tree"
+[ -z "$problem" ] && [ -e "$TARGET_S3" ] && problem="target was created before the clean-tree check failed"
+if [ -n "$problem" ]; then
+  fail "S3 a dirty tree exits non-zero before touching HEAD or the target" "$problem"
+else
+  pass "S3 a dirty tree exits non-zero before touching HEAD or the target"
 fi
 
 PASS="$(grep -c '^PASS$' "$RESULTS" || true)"
