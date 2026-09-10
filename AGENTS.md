@@ -33,7 +33,7 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 
 ## Comments
 
-**There is no comment hook.** Comments are enforced as a lint, through one CLI, gated by whatever already runs `verify`:
+**There is no *blocking* comment hook.** `comments.py hook` (see the hook table above) reports findings as `PostToolUse` feedback, but never blocks a write — enforcement is a lint, through one CLI, gated by whatever already runs `verify`:
 
 ```bash
 python3 ~/.claude/hooks/comments.py check [paths]   # findings, exit 1 if any
@@ -89,7 +89,7 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 160 hook + comments regression cases
+bash scripts/test-hooks.sh    # 244 hook + comments regression cases
 bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above
