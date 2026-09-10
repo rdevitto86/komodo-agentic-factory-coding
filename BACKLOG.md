@@ -55,7 +55,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|
 | `SUB-01.3.3.1` | write a skill giving guidance on when to use a feature branch versus splitting work into smaller, direct PRs — name it `git-branching-strategy`, alongside this toolkit's other `git-*` skills | `claude-code/skills/git-branching-strategy/SKILL.md` exists and `bash scripts/validate.sh` passes |
 
-#### [TSK-01.3.4] New skill: `/standards-zig` [P: L] [TODO]
+#### [TSK-01.3.4] New skill: `/standards-zig` [P: L] [DONE]
 | Subtask | Work | Done when |
 |---|---|---|
 | `SUB-01.3.4.1` | write a `standards-zig` skill covering Zig language/build/toolchain conventions, structured like the existing `standards-aws` and `standards-specs` skills | `claude-code/skills/standards-zig/SKILL.md` exists and `bash scripts/validate.sh` passes |

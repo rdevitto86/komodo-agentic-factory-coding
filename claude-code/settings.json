@@ -120,6 +120,7 @@
     "standards-database": "name-only",
     "standards-docker": "name-only",
     "standards-specs": "name-only",
+    "standards-zig": "name-only",
     "changelog-write": "name-only",
     "changelog-audit": "name-only",
     "standards-sdlc": "name-only",
