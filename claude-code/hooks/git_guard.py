@@ -982,7 +982,14 @@ def requote(tokens):
 
 
 def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0, agent_type=None, piped_source=None):
-    tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
+    raw_tokens = tokenize(segment)
+    if not raw_tokens:
+        return
+    # GIT_EXTERNAL_DIFF (and siblings) let git shell out to arbitrary code -- reviewer may never lead with VAR=value
+    if agent_type == REVIEWER_AGENT and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", raw_tokens[0]):
+        findings.append("the reviewer's Bash surface is read-only git only -- a leading VAR=value assignment is denied")
+        return
+    tokens = strip_redirects(strip_env_assignments(raw_tokens))
     if not tokens:
         return
     # a bare (cmd ...) subshell glues its "(" onto the first word -- stripped only for command identification
@@ -1080,8 +1087,10 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     if command == "git":
         subcommand, args = subcommand_of(tokens, GIT_GLOBAL_FLAGS_WITH_VALUE)
         if agent_type == REVIEWER_AGENT:
-            if subcommand not in REVIEWER_ALLOWED_GIT_SUBCOMMANDS:
-                findings.append("the reviewer's Bash surface is read-only git only -- git %s is denied" % (subcommand or "<none>"))
+            # tokens[1] must BE the subcommand -- no global flag (-c, --exec-path, ...) may precede it unseen
+            leading = tokens[1] if len(tokens) > 1 else None
+            if leading not in REVIEWER_ALLOWED_GIT_SUBCOMMANDS:
+                findings.append("the reviewer's Bash surface is read-only git only -- git %s is denied" % (leading or "<none>"))
                 return
             if subcommand in REVIEWER_GIT_OUTPUT_SUBCOMMANDS and any(
                 arg == "--output" or arg.startswith("--output=") for arg in args

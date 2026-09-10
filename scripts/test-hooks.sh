@@ -873,6 +873,20 @@ bash_case_cwd "$FIXTURE_FEAT" "G198 a non-reviewer git commit on a non-protected
 bash_case_agent_at "$FIXTURE_FEAT" "G199 reviewer git diff --output <file>, two-token form, is denied" \
   deny reviewer 'git diff --output BACKLOG.md' "has no legitimate write path"
 
+# round 6: GIT_EXTERNAL_DIFF invisible to the leading-token check, and a git global flag invisible to subcommand_of
+bash_case_agent_at "$FIXTURE_FEAT" "G200 reviewer GIT_EXTERNAL_DIFF=... git diff executes an arbitrary command and is denied" \
+  deny reviewer 'GIT_EXTERNAL_DIFF="touch pwn" git diff' "VAR=value"
+bash_case_agent_at "$FIXTURE_FEAT" "G201 reviewer git -c core.pager=x diff redirects git's pager and is denied" \
+  deny reviewer 'git -c core.pager=x diff' "read-only git"
+bash_case_agent_at "$FIXTURE_FEAT" "G202 reviewer git -C /tmp log hides the subcommand behind a global flag and is denied" \
+  deny reviewer 'git -C /tmp log' "read-only git"
+bash_case_agent_at "$FIXTURE_FEAT" "G203 reviewer git --exec-path=/tmp/evil diff points git at a malicious binary and is denied" \
+  deny reviewer 'git --exec-path=/tmp/evil diff' "read-only git"
+bash_case "G204 a non-reviewer GIT_EXTERNAL_DIFF=... git diff is unaffected (still allowed)" \
+  allow 'GIT_EXTERNAL_DIFF="touch pwn" git diff'
+bash_case "G205 a non-reviewer git -c core.pager=x diff is unaffected (still allowed)" \
+  allow 'git -c core.pager=x diff'
+
 bash_case "G167 a non-reviewer env python3 comments.py apply is unaffected (still allowed)" \
   allow 'env python3 ~/.claude/hooks/comments.py apply'
 bash_case "G168 env skips leading -i and VAR=val tokens to reach a wrapped git push --force" \
