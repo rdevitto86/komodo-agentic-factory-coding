@@ -328,6 +328,27 @@ def collect_files(paths, repo_root):
     return [f for f in found if resolve_family(f)]
 
 
+def collect_findings(full_path, relative, family, ext, text, only_lines):
+    findings = []
+
+    for lineno, name, rule in find_mandatory_sites(text, family, ext):
+        if only_lines is not None and lineno not in only_lines:
+            continue
+        findings.append({
+            "file": relative, "line": lineno, "kind": "MISSING",
+            "rule": rule, "subject": name,
+            "detail": "a discriminant return needs a comment stating what it discriminates",
+        })
+
+    for lineno, body, rule, detail in find_invalid_comments(text, family, full_path, only_lines):
+        findings.append({
+            "file": relative, "line": lineno, "kind": "INVALID",
+            "rule": rule, "subject": body, "detail": detail,
+        })
+
+    return findings
+
+
 def run_check(args):
     repo_root = os.path.abspath(args.repo_root)
     changed = None if args.all else changed_line_map(args.base, repo_root)
@@ -349,20 +370,7 @@ def run_check(args):
         except OSError:
             continue
 
-        for lineno, name, rule in find_mandatory_sites(text, family, ext):
-            if only_lines is not None and lineno not in only_lines:
-                continue
-            findings.append({
-                "file": relative, "line": lineno, "kind": "MISSING",
-                "rule": rule, "subject": name,
-                "detail": "a discriminant return needs a comment stating what it discriminates",
-            })
-
-        for lineno, body, rule, detail in find_invalid_comments(text, family, full_path, only_lines):
-            findings.append({
-                "file": relative, "line": lineno, "kind": "INVALID",
-                "rule": rule, "subject": body, "detail": detail,
-            })
+        findings.extend(collect_findings(full_path, relative, family, ext, text, only_lines))
 
     findings.sort(key=lambda f: (f["file"], f["line"]))
     if args.json:
@@ -423,22 +431,8 @@ def hook_findings(full_path, root):
     with open(full_path, "r", encoding="utf-8", errors="ignore") as handle:
         text = handle.read(HOOK_MAX_FILE_BYTES)
 
-    findings = []
-    for lineno, name, rule in find_mandatory_sites(text, family, ext):
-        if only_lines is not None and lineno not in only_lines:
-            continue
-        findings.append({
-            "file": relative, "line": lineno, "kind": "MISSING",
-            "rule": rule, "subject": name,
-            "detail": "a discriminant return needs a comment stating what it discriminates",
-        })
-    for lineno, body, rule, detail in find_invalid_comments(text, family, full_path, only_lines):
-        findings.append({
-            "file": relative, "line": lineno, "kind": "INVALID",
-            "rule": rule, "subject": body, "detail": detail,
-        })
-
-    findings.sort(key=lambda f: (f["file"], f["line"]))
+    findings = collect_findings(full_path, relative, family, ext, text, only_lines)
+    findings.sort(key=lambda f: f["line"])
     return findings
 
 
