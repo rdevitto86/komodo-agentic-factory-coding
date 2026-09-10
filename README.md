@@ -77,18 +77,18 @@ flowchart TD
     end
     P1 --> P20
 
-    subgraph P2["P2 · Execute — loops once per task, once per band"]
+    subgraph P2["P2 · Execute — P2.0-P2.2 loop once per task, P2.3-P2.4 run once per band"]
         direction TB
         P20["P2.0 Align — pick tasks sharing\nno file/dependency edge, mark [WIP]"] --> P21
-        P21["P2.1 Implement\nfork: workflow-implementer"] --> P22
+        P21["P2.1 Implement + comments\nfork: workflow-implementer"] --> P22
         P22{"P2.2 Verify\nverify_gate.py exits zero?"}
         P22 -->|no| P22fail{"Same failure\ntwice running?"}
         P22fail -->|no, retry| P21
         P22fail -->|"yes"| Blocked(["Mark task [BLOCKED],\nreason + file:line.\nBack to P2.0 for next\nunblocked task."])
         Blocked --> P20
-        P22 -->|yes| P23["P2.3 Review\nassess-bugs (+assess-security)\nfindings → BACKLOG.md → new P2.0 pick\ncommit this task's diff"]
-        P23 -->|more tasks in band| P20
-        P23 -->|band fully green| P24["P2.4 Closeout — once per band\nassess-bugs, assess-security, assess-simplify\nfindings resolved or declined\nchangelog write"]
+        P22 -->|yes, commit task| P20
+        P20 -->|band fully green| P23["P2.3 Band review, once\nassess-bugs (+security), assess-simplify\nfindings → severity floor:\nCritical/High/correctness fixed now,\nrest stay filed"]
+        P23 --> P24["P2.4 Closeout — changelog write only"]
     end
     P24 --> P3
     P20 -.->|"every remaining task\ntransitively blocked"| P2halt(["Phase halt —\nreported in P4, not silent"])
@@ -147,7 +147,7 @@ python3 ~/.claude/hooks/comments.py apply < proposals.json
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 223 regression cases
+bash scripts/test-hooks.sh    # 244 regression cases
 ```
 
 ## Skills

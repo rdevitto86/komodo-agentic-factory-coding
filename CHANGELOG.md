@@ -4,6 +4,8 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.46.0] — 2026-09-10
+
 ### Added
 - `comments.py` gained a hook subcommand: `PostToolUse` feedback on the just-touched file, reported as `additionalContext`, always exits 0. `workflow-implementer.md` registers the hook and adds a Comments-last craft step using `comments.py check`/`apply`; `write-comments` is now the manual/repair path instead of a downstream P3 fork.
 - `workflow-consolidate` now clears a satisfied `[BLOCKED]` Recheck and confirms each shipped task's `Done when` commands before deleting it, band by band, at closeout; `backlog-audit` is repositioned as a full-file sweep a user types or a session runs on staleness, no longer invoked mid-loop.
