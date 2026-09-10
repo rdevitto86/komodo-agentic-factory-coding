@@ -47,7 +47,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **SUB-01.1.23.1** the same file's own "Version floor is whatever `go.mod` declares. Read it; never assume a release." convention (line 18), and root `AGENTS.md`'s "No static references" table, whose worked example is literally "Instead of `Go 1.26` write the floor `go.mod` declares" — but the two new bullets (`embedlit` composite-literal flattening, `errors.AsType[T]`) name the literal versions `Go 1.27+`/`Go 1.26+` directly rather than phrasing the gate relative to the floor
   * **Done when:** the two bullets phrase their version gate without a hardcoded release number (e.g. "once `go.mod`'s floor reaches the release that added it"), consistent with line 18 and `AGENTS.md`'s own example · S → `/assess-bugs claude-code/skills/standards-go/SKILL.md` reports it clear
 
-#### [TSK-01.1.21] `scripts/test-hooks.sh` pins cwd two different ways for the same purpose [P: L] [TODO]
+#### [TSK-01.1.21] `scripts/test-hooks.sh` pins cwd two different ways for the same purpose [P: L] [DONE]
 * **SUB-01.1.21.1** `bash_case`/`smoke_case` set a top-level `"cwd"` field in the JSON payload, while the pre-existing `bash_case_at` relies on `git_guard.py`'s `payload.get("cwd") or os.getcwd()` fallback by `cd`-ing the subshell into the fixture dir before invoking the hook — both work, but the file now carries two mechanisms for "pin the effective cwd" instead of one
   * **Done when:** `scripts/test-hooks.sh` uses one cwd-pinning mechanism and `bash scripts/test-hooks.sh` passes · S → `/assess-simplify scripts/test-hooks.sh` reports it clear
 
