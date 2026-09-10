@@ -13,7 +13,9 @@ Judges backlog validity against current repo state and applies the verdict direc
 
 Load `backlog-modify` first — every check below tests against the format and rules it owns, not rules restated here.
 
-**Lighter-weight than a full `/workflow-decompose` re-derivation.** `/workflow-loop`'s P2.4 runs this once per band, over the whole file, after `/changelog-write` — realigning the backlog against what the band just shipped rather than gatekeeping P1's pick. P1 itself runs no audit; it leans on P0's existence check and picks its scope straight off the file's own priority order.
+**Lighter-weight than a full `/workflow-decompose` re-derivation, but still a full-file sweep, not a band-scoped one.** `workflow-consolidate` now clears a `[BLOCKED]` task's stale block and confirms a shipped band's `Done when:` commands before deleting it, band by band, as part of its own closeout — this skill is what a user types when the backlog feels stale, or what a session runs on its own when a report notes it hasn't run in three or more bands. P1 itself runs no audit; it leans on P0's existence check and picks its scope straight off the file's own priority order.
+
+**Whoever commits this run's edits names `backlog-audit` in the commit message** (e.g. `chore: backlog-audit sweep`) — `workflow-complete`'s staleness check finds the run by searching commit messages, not diff content.
 
 ## Process
 
