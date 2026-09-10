@@ -10,9 +10,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from lib.agents import REVIEWER_AGENT
 from lib.comment_rules import EXTENSION_FAMILY, FILENAME_FAMILY
-from lib.git import repo_root as lib_repo_root
-from reviewer_guard import REVIEWER_AGENT, is_allowed_path as reviewer_allowed_path
 
 READ_ONLY_GIT = {
     "annotate",
@@ -471,11 +470,9 @@ def repo_root_of(cwd):
 # repo root walks up from the resolved target, not cwd -- an absolute target can land in a repo even if cwd doesn't
 def is_guarded_path(token, cwd, agent_type=None):
     cleaned = token.strip("\"'")
-    # reviewer Bash narrows to BACKLOG.md like Edit/Write, but stays guarded (not fail-open) on an unresolvable root
+    # the reviewer has no legitimate write path left -- every git_guard.py write target is guarded, unconditionally
     if agent_type == REVIEWER_AGENT:
-        if lib_repo_root(cwd or os.getcwd()) is None:
-            return True
-        return not reviewer_allowed_path(cleaned, cwd)
+        return True
     if not matches_guarded_family(token):
         return False
     base_dir = cwd or os.getcwd()

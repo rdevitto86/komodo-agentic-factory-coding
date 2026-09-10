@@ -1,7 +1,7 @@
 ---
 name: assess-simplify
-description: Read the changed code for reuse, simplification, and efficiency cleanups, and file them as BACKLOG.md stories. Model-agnostic; quality only — never hunts for bugs or security defects. Pass --report to skip the write.
-argument-hint: <task text or band summary> [standards-* skills that apply] [--report]
+description: Read the changed code for reuse, simplification, and efficiency cleanups, and return them as a findings table. Model-agnostic; quality only — never hunts for bugs or security defects.
+argument-hint: <task text or band summary> [standards-* skills that apply]
 context: fork
 agent: reviewer
 background: false
@@ -30,6 +30,4 @@ Model-agnostic quality pass — Read/Grep/Glob/Bash only, no host-specific tooli
 
 No findings: state that plainly, one line, and stop. **Never invent a finding to have something to report** — a fix needs a concrete win (fewer lines, one fewer allocation, one fewer custom implementation), not just a different shape.
 
-## Findings → backlog
-
-Each row becomes one `BACKLOG.md` story unless `--report` is in `$ARGUMENTS`: `- [Sev] <what> · S → \`/assess-simplify <file>\` reports it clear`. Append under the current target state (the first `##` heading) and the domain matching the file's area, or `Cross-Cutting` if none fits — full story-line rules live in `backlog-modify`. `--report` prints the table only; nothing is written.
+The caller files these rows to `BACKLOG.md`; you never write.

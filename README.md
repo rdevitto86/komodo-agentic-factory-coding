@@ -37,7 +37,7 @@ claude-code/          mirrors ~/.claude exactly
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions, hook registration, skillOverrides
 ├── agents/           workflow-implementer, workflow-planner, engineering, scout
-├── hooks/            comments, git_guard, reviewer_guard, verify_gate, context_injector, auto_format
+├── hooks/            comments, git_guard, verify_gate, context_injector, auto_format
 └── skills/           63 active, 7 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
@@ -122,12 +122,11 @@ Each repo carries three local documents, plus the SDD (and, when one exists, the
 
 ## The Hooks
 
-Two guards run as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
+One guard runs as `PreToolUse`, so a violation never reaches disk. Three more run at the session's edges or after the write.
 
 | Hook | Fires on | Does | On error |
 |---|---|---|---|
-| `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites | **Closed** |
-| `reviewer_guard.py` | Edit, Write, Bash | Restricts the `reviewer` agent to editing `BACKLOG.md` only | **Closed** |
+| `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites, and denies every Bash-side write the `reviewer` agent attempts (its Edit/Write access is dropped in the agent's own `tools:` list, not caught by a hook) | **Closed** |
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
 | `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |

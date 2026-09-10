@@ -11,8 +11,8 @@ Design rationale for the decisions below lives in `docs/design-decisions.md`, no
 | `claude-code/AGENTS.md` | `~/.claude/AGENTS.md` | The universal rules, always loaded |
 | `claude-code/CLAUDE.md` | `~/.claude/CLAUDE.md` | One line: `@AGENTS.md` |
 | `claude-code/settings.json` | `~/.claude/settings.json` | Permissions and hook registration |
-| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` edits only `BACKLOG.md` |
-| `claude-code/hooks/` | `~/.claude/hooks/` | Two guards, plus the Stop gate and the session injector |
+| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` never writes |
+| `claude-code/hooks/` | `~/.claude/hooks/` | A guard, plus the Stop gate and the session injector |
 | `claude-code/skills/` | `~/.claude/skills/` | Domain knowledge, lazily loaded |
 
 Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANGELOG.md`) and `bridges/komodo-bridge/` (local LLM MCP bridge).
@@ -25,9 +25,8 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 | `context_injector.py` | `~/.claude/settings.json` | SessionStart | Injects the `[WIP]` story, backlog tally, version, verify target |
 | `verify_gate.py` | `claude-code/agents/workflow-implementer.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
-| `reviewer_guard.py` | `~/.claude/settings.json` | PreToolUse, matcher `Edit\|Write` | Denies an Edit/Write outside `BACKLOG.md`/`docs/BACKLOG.md` whenever the payload's `agent_type` is `reviewer` |
 
-**`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py`, `context_injector.py`, and `reviewer_guard.py` fail open** — any internal error exits 0.
+**`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py` and `context_injector.py` fail open** — any internal error exits 0.
 
 **Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `setup.sh` checks `python3` resolves and meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s fail-closed handler never gets a chance to run.
 

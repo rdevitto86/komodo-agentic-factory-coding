@@ -762,21 +762,21 @@ off_case "G85 off: git add is blocked"               deny  'git add .'          
 off_case "G86 off: read-only git still works"        allow 'git log --oneline -5'
 off_case "G87 off: gh pr merge stays blocked"        deny  'gh pr merge 12'                "is denied"
 
-# reviewer Bash writes narrow to BACKLOG.md alone, matching its Edit/Write boundary -- any extension is in scope
+# the reviewer has no legitimate write path left -- every Bash write target is denied, BACKLOG.md included
 bash_case_agent "G144 reviewer tee to a non-BACKLOG.md file is denied" \
   deny reviewer 'tee notes.txt' "bypasses the comment guard"
 bash_case_agent "G145 reviewer redirect to an extensionless file is denied" \
   deny reviewer 'echo x > release-notes' "bypasses the comment guard"
-bash_case_agent "G146 reviewer tee to BACKLOG.md is allowed" \
-  allow reviewer 'tee BACKLOG.md'
-bash_case_agent "G147 reviewer redirect to BACKLOG.md is allowed" \
-  allow reviewer 'echo x > BACKLOG.md'
+bash_case_agent "G146 reviewer tee to BACKLOG.md is denied" \
+  deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
+bash_case_agent "G147 reviewer redirect to BACKLOG.md is denied" \
+  deny reviewer 'echo x > BACKLOG.md' "bypasses the comment guard"
 bash_case "G148 a non-reviewer tee to a non-guarded extensionless file is unaffected (still allowed)" \
   allow 'tee notes.txt'
 bash_case "G149 a non-reviewer tee to BACKLOG.md is unaffected (still denied)" \
   deny 'tee BACKLOG.md' "bypasses the comment guard"
-# an unresolvable repo root (cwd outside any git repo) must not inherit reviewer_guard's own fail-open here
-bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied, not fail-open" \
+# the reviewer's deny no longer depends on resolving a repo root -- a cwd outside any git repo denies the same way
+bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied" \
   deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
 bash_case "G151 a backslash-escaped backtick inside a \$()-substitution fed through eval hides git push --force" \
   deny 'eval "$(echo \`git push --force\`)"' "rewrites published history"
@@ -861,80 +861,12 @@ expect "F7  a malformed payload fails open, not closed" allow <<'JSON'
 {"tool_name":"Write","tool_input":
 JSON
 
-# ─────────────────────────────  reviewer guard  ────────────────────────────
-HOOK="$HOOKS/reviewer_guard.py"
-printf '\nreviewer guard\n\n'
-
-FIXTURE_REVIEWER="$WORKDIR/fixture-reviewer"
-mkdir -p "$FIXTURE_REVIEWER/docs"
-git init -q -b main "$FIXTURE_REVIEWER"
-printf '# Backlog\n' > "$FIXTURE_REVIEWER/BACKLOG.md"
-printf '# Backlog\n' > "$FIXTURE_REVIEWER/docs/BACKLOG.md"
-printf 'package main\n' > "$FIXTURE_REVIEWER/main.go"
-
-expect "R1  reviewer editing BACKLOG.md is allowed" allow <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/BACKLOG.md"}}
-JSON
-
-expect "R2  reviewer writing docs/BACKLOG.md is allowed" allow <<JSON
-{"tool_name":"Write","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/docs/BACKLOG.md"}}
-JSON
-
-expect "R3  reviewer editing any other file is denied" deny "edits only BACKLOG.md" <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
-
-expect "R4  reviewer writing any other file is denied" deny "edits only BACKLOG.md" <<JSON
-{"tool_name":"Write","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
-
-expect "R5  a non-reviewer agent editing any file is allowed, unaffected" allow <<JSON
-{"tool_name":"Edit","agent_type":"workflow-implementer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
-
-expect "R6  the main thread (no agent_type) editing any file is allowed" allow <<JSON
-{"tool_name":"Edit","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
-
-# a symlinked BACKLOG.md would collapse both realpath sides onto one inode and wrongly pass -- denied outright first
-FIXTURE_SYMLINK="$WORKDIR/fixture-reviewer-symlink"
-mkdir -p "$FIXTURE_SYMLINK"
-git init -q -b main "$FIXTURE_SYMLINK"
-printf 'top secret\n' > "$FIXTURE_SYMLINK/secret.txt"
-ln -s "$FIXTURE_SYMLINK/secret.txt" "$FIXTURE_SYMLINK/BACKLOG.md"
-
-expect "R7  reviewer editing a symlinked BACKLOG.md is denied" deny "edits only BACKLOG.md" <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_SYMLINK","tool_input":{"file_path":"$FIXTURE_SYMLINK/BACKLOG.md"}}
-JSON
-
-# docs/ itself (not the leaf) swapped for a symlink dereferences the same way -- denied too
-FIXTURE_ANCESTOR_SYMLINK="$WORKDIR/fixture-reviewer-ancestor-symlink"
-FIXTURE_ANCESTOR_TARGET="$WORKDIR/fixture-reviewer-ancestor-target"
-mkdir -p "$FIXTURE_ANCESTOR_SYMLINK" "$FIXTURE_ANCESTOR_TARGET"
-git init -q -b main "$FIXTURE_ANCESTOR_SYMLINK"
-printf 'top secret\n' > "$FIXTURE_ANCESTOR_TARGET/BACKLOG.md"
-ln -s "$FIXTURE_ANCESTOR_TARGET" "$FIXTURE_ANCESTOR_SYMLINK/docs"
-
-expect "R8  reviewer editing docs/BACKLOG.md is denied when docs/ itself is a symlink out of the repo" deny "edits only BACKLOG.md" <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_ANCESTOR_SYMLINK","tool_input":{"file_path":"$FIXTURE_ANCESTOR_SYMLINK/docs/BACKLOG.md"}}
-JSON
-
-# R9-R12: main()'s except BaseException: sys.exit(0) must fail open, mirroring git_guard.py's F7 case above.
-expect "R9  a malformed payload fails open, not closed" allow <<'JSON'
-{"tool_name":"Edit","agent_type":"reviewer","tool_input":
-JSON
-
-expect "R10  a non-dict tool_input fails open, not closed" allow <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":"not-a-dict"}
-JSON
-
-expect "R11  a non-string file_path fails open, not closed" allow <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":"$FIXTURE_REVIEWER","tool_input":{"file_path":42}}
-JSON
-
-expect "R12  a non-string cwd fails open, not closed" allow <<JSON
-{"tool_name":"Edit","agent_type":"reviewer","cwd":42,"tool_input":{"file_path":"$FIXTURE_REVIEWER/main.go"}}
-JSON
+# reviewer's Edit/Write guard is retired -- it has no write path left, git_guard.py denies it outright
+HOOK="$HOOKS/git_guard.py"
+bash_case_agent "R1  reviewer echo x >> BACKLOG.md is denied" \
+  deny reviewer 'echo x >> BACKLOG.md' "bypasses the comment guard"
+bash_case "R2  non-reviewer echo x >> BACKLOG.md is unaffected (still denied by the comment guard)" \
+  deny 'echo x >> BACKLOG.md' "bypasses the comment guard"
 
 VALIDATOR="$HOOKS/comments.py"
 printf '\ncomments apply\n\n'
