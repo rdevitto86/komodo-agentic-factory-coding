@@ -4,6 +4,16 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.46.4] — 2026-09-10
+
+### Changed
+- `AGENTS.md`'s no-scope-expansion rule now explicitly covers formatting/lint reflow of untouched lines — drive-by reflow of a pre-existing line is out of scope even when the file is already open for another reason, since a shared file may carry another engineer's in-flight edit to that line.
+- `git_guard.py`'s `repo_root_of()` now delegates its subprocess-call-and-except core to `lib.git.repo_root()` instead of duplicating it, closing the drift that let the same `TypeError` gap sit unfixed here after `lib/git.py` had already received the fix.
+
+### Fixed
+- `git_guard.py`'s `repo_root_of()` now also catches `TypeError`, matching the fix `lib/git.py`'s `repo_root()` already received — a non-str/bytes/PathLike `cwd` no longer crashes uncaught in this fail-closed-by-design hook.
+- Root `AGENTS.md`'s hook-test-count comment updated from 244 to 259, matching `scripts/test-hooks.sh`'s actual case count.
+
 ## [0.46.3] — 2026-09-10
 
 ### Fixed

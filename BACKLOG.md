@@ -28,35 +28,10 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|
 | `SUB-01.1.1.1` | fix `generateRequest`'s payload truncation against `num_ctx` in the bridge server once its source is reachable from this repo | a large summarizer payload no longer silently truncates against `num_ctx` in `~/.komodo/bridge` |
 
-#### [TSK-01.1.2] Open policy question: should "reflow a pre-existing wrapped line to the current convention whenever it's revisited during unrelated work" be a standing, written exception to this toolkit's own no-scope-expansion rule in `AGENTS.md`? [P: L] [DONE]
-| Field | Value |
-|---|---|
-| Decision (2026-09-10) | No standing exception. `AGENTS.md`'s no-scope-expansion rule already covered this implicitly; added an explicit line (`claude-code/AGENTS.md:17`) calling out formatting/lint reflow specifically so it stops being ambiguous. |
-| Rationale | Multiple people will eventually work inside shared files — drive-by reflow of an untouched line risks stepping on another engineer's in-flight edit to that same line. |
-
+#### [TSK-01.1.2] `repo_root_of()`'s `@functools.lru_cache` builds its hash key before the function body runs, so an unhashable `cwd` (a `list`/`dict`) still raises an uncaught `TypeError` even after the earlier `TypeError`-catch fix [P: L] [TODO]
 | Subtask | Work | Done when |
 |---|---|---|
-| `SUB-01.1.2.1` | decide whether formatting-only drive-by fixes get a blanket exception (and if so, where that exception is written down — `standards-go`, `AGENTS.md`, or both) versus staying subject to the existing scope rule; a decision for the user, not something this review resolves on its own | decision recorded above; `claude-code/AGENTS.md:17` states the rule explicitly |
-
-#### [TSK-01.1.3] `git_guard.py`'s own inline `repo_root_of()` still catches only `(OSError, subprocess.SubprocessError)`, missing the `TypeError` fix `lib/git.py`'s copy of `repo_root()` already received [P: L] [DONE]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.1.3.1` | `git_guard.py` does not call `lib.git.repo_root` — it carries its own separate inline `repo_root_of()` (`claude-code/hooks/git_guard.py:468`) with the same narrow except clause the `lib/git.py` copy was fixed for; a non-str/bytes/PathLike `cwd` still raises an uncaught `TypeError` here. `git_guard.py` fails closed by design, so this matters more here than in the already-fixed `lib/git.py` copy | `repo_root_of()` in `git_guard.py` also catches `TypeError` (or validates `cwd` before the call), consistent with the `lib/git.py` fix · S → `/assess-bugs claude-code/hooks/git_guard.py` reports it clear |
-
-#### [TSK-01.1.3b] `repo_root_of()`'s `@functools.lru_cache` builds its hash key before the function body runs, so an unhashable `cwd` (a `list`/`dict`) still raises an uncaught `TypeError` even after `TSK-01.1.3`'s fix [P: L] [TODO]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.1.3b.1` | surfaced by `TSK-01.1.3`'s `/assess-bugs` pass: `lru_cache`'s own key-hashing happens outside the `try`/`except` the fix widened, so it never sees an unhashable `cwd`. Currently unreachable — the sole call site (`claude-code/hooks/git_guard.py:498`) always passes a `str` — so this is latent, not live | a regression case (or inline check) confirms `repo_root_of(['a'])` no longer raises an uncaught `TypeError`, e.g. by validating/coercing `cwd` before the cached call, or wrapping the cache lookup itself |
-
-#### [TSK-01.1.3c] `git_guard.py`'s `repo_root_of()` re-implements `lib.git.repo_root()`'s subprocess+except core instead of calling it [P: H] [DONE]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.1.3c.1` | filed by `/assess-simplify` during `TSK-01.1.3`'s band review: `git_guard.py` already imports from `lib` elsewhere (`lib.agents`, `lib.comment_rules`), yet `repo_root_of()` duplicates `lib.git.repo_root()`'s subprocess call and except clause rather than calling it — proven live by `TSK-01.1.3` itself, which had to hand-reapply the `TypeError` fix a second time after `lib/git.py` already received it | `repo_root_of()` delegates its subprocess+except core to `lib.git.repo_root(cwd)`, keeping only the `isdir` pre-check, `lru_cache`, and `realpath` resolution as `git_guard.py`'s own layer · `bash scripts/test-hooks.sh` passes, `/assess-bugs claude-code/hooks/git_guard.py` reports it clear |
-
-#### [TSK-01.1.4] Root `AGENTS.md:92`'s `# 244 hook + comments regression cases` comment is stale — the suite now has 259 cases after `fix/git-guard-command-env-hardening`'s G164-G178 additions [P: L] [DONE]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.1.4.1` | surfaced during that band's `workflow-consolidate` pass, which corrected the same stale count in `README.md` but left `AGENTS.md` out of its stated scope — update the comment to the current count (or phrase it without a hardcoded number, consistent with `TSK-01.1.2`'s open question about whether drive-by reflow fixes get a standing exception) | `grep -c '  PASS  ' <(bash scripts/test-hooks.sh)` matches the number `AGENTS.md:92` states |
+| `SUB-01.1.2.1` | surfaced by an `/assess-bugs` pass: `lru_cache`'s own key-hashing happens outside the `try`/`except` the fix widened, so it never sees an unhashable `cwd`. Currently unreachable — the sole call site (`claude-code/hooks/git_guard.py:498`) always passes a `str` — so this is latent, not live | a regression case (or inline check) confirms `repo_root_of(['a'])` no longer raises an uncaught `TypeError`, e.g. by validating/coercing `cwd` before the cached call, or wrapping the cache lookup itself |
 
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
