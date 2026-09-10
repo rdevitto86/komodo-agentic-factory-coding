@@ -33,20 +33,15 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|
 | `SUB-01.1.2.1` | decide whether formatting-only drive-by fixes get a blanket exception (and if so, where that exception is written down — `standards-go`, `AGENTS.md`, or both) versus staying subject to the existing scope rule; a decision for the user, not something this review resolves on its own | — |
 
-#### [TSK-01.1.3] `lib/git.py`'s `repo_root()` only catches `(OSError, subprocess.SubprocessError)` around `subprocess.run(cwd=start, ...)`, so a non-str/bytes/PathLike `cwd` (e.g. an int from a malformed payload) raises an uncaught `TypeError` — surfaced by `scripts/test-hooks.sh`'s new R12 case, which only passes because `reviewer_guard.py`'s outer `except BaseException` in `__main__` rescues it; `git_guard.py` calls the same `repo_root` and fails closed by design, so the same uncaught `TypeError` there depends entirely on how far up its own exception handling reaches [P: L] [TODO]
+#### [TSK-01.1.3] `git_guard.py`'s own inline `repo_root_of()` still catches only `(OSError, subprocess.SubprocessError)`, missing the `TypeError` fix `lib/git.py`'s copy of `repo_root()` already received [P: L] [TODO]
 | Subtask | Work | Done when |
 |---|---|---|
-| `SUB-01.1.3.1` | widen `repo_root()`'s except clause (or validate `start` before the call) so the failure mode is deliberate rather than incidental to whichever caller's outer handler happens to catch it first | `repo_root()` handles a non-path `start` without relying on caller-level rescue · S → `/assess-bugs claude-code/hooks/lib/git.py` reports it clear |
+| `SUB-01.1.3.1` | `git_guard.py` does not call `lib.git.repo_root` — it carries its own separate inline `repo_root_of()` (`claude-code/hooks/git_guard.py:468`) with the same narrow except clause the `lib/git.py` copy was fixed for; a non-str/bytes/PathLike `cwd` still raises an uncaught `TypeError` here. `git_guard.py` fails closed by design, so this matters more here than in the already-fixed `lib/git.py` copy | `repo_root_of()` in `git_guard.py` also catches `TypeError` (or validates `cwd` before the call), consistent with the `lib/git.py` fix · S → `/assess-bugs claude-code/hooks/git_guard.py` reports it clear |
 
-#### [TSK-01.1.4] `standards-go/SKILL.md`'s two new "modernize" transform bullets hardcode `Go 1.27+`/`Go 1.26+` version numbers [P: L] [TODO]
+#### [TSK-01.1.4] Root `AGENTS.md:92`'s `# 244 hook + comments regression cases` comment is stale — the suite now has 259 cases after `fix/git-guard-command-env-hardening`'s G164-G178 additions [P: L] [TODO]
 | Subtask | Work | Done when |
 |---|---|---|
-| `SUB-01.1.4.1` | the same file's own "Version floor is whatever `go.mod` declares. Read it; never assume a release." convention (line 18), and root `AGENTS.md`'s "No static references" table, whose worked example is literally "Instead of `Go 1.26` write the floor `go.mod` declares" — but the two new bullets (`embedlit` composite-literal flattening, `errors.AsType[T]`) name the literal versions `Go 1.27+`/`Go 1.26+` directly rather than phrasing the gate relative to the floor | the two bullets phrase their version gate without a hardcoded release number (e.g. "once `go.mod`'s floor reaches the release that added it"), consistent with line 18 and `AGENTS.md`'s own example · S → `/assess-bugs claude-code/skills/standards-go/SKILL.md` reports it clear |
-
-#### [TSK-01.1.5] Root `AGENTS.md:92`'s `# 244 hook + comments regression cases` comment is stale — the suite now has 259 cases after `fix/git-guard-command-env-hardening`'s G164-G178 additions [P: L] [TODO]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.1.5.1` | surfaced during that band's `workflow-consolidate` pass, which corrected the same stale count in `README.md` but left `AGENTS.md` out of its stated scope — update the comment to the current count (or phrase it without a hardcoded number, consistent with `TSK-01.1.2`'s open question about whether drive-by reflow fixes get a standing exception) | `grep -c '  PASS  ' <(bash scripts/test-hooks.sh)` matches the number `AGENTS.md:92` states |
+| `SUB-01.1.4.1` | surfaced during that band's `workflow-consolidate` pass, which corrected the same stale count in `README.md` but left `AGENTS.md` out of its stated scope — update the comment to the current count (or phrase it without a hardcoded number, consistent with `TSK-01.1.2`'s open question about whether drive-by reflow fixes get a standing exception) | `grep -c '  PASS  ' <(bash scripts/test-hooks.sh)` matches the number `AGENTS.md:92` states |
 
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
