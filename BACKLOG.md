@@ -48,6 +48,11 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|
 | `SUB-01.1.3b.1` | surfaced by `TSK-01.1.3`'s `/assess-bugs` pass: `lru_cache`'s own key-hashing happens outside the `try`/`except` the fix widened, so it never sees an unhashable `cwd`. Currently unreachable — the sole call site (`claude-code/hooks/git_guard.py:498`) always passes a `str` — so this is latent, not live | a regression case (or inline check) confirms `repo_root_of(['a'])` no longer raises an uncaught `TypeError`, e.g. by validating/coercing `cwd` before the cached call, or wrapping the cache lookup itself |
 
+#### [TSK-01.1.3c] `git_guard.py`'s `repo_root_of()` re-implements `lib.git.repo_root()`'s subprocess+except core instead of calling it [P: H] [DONE]
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.3c.1` | filed by `/assess-simplify` during `TSK-01.1.3`'s band review: `git_guard.py` already imports from `lib` elsewhere (`lib.agents`, `lib.comment_rules`), yet `repo_root_of()` duplicates `lib.git.repo_root()`'s subprocess call and except clause rather than calling it — proven live by `TSK-01.1.3` itself, which had to hand-reapply the `TypeError` fix a second time after `lib/git.py` already received it | `repo_root_of()` delegates its subprocess+except core to `lib.git.repo_root(cwd)`, keeping only the `isdir` pre-check, `lru_cache`, and `realpath` resolution as `git_guard.py`'s own layer · `bash scripts/test-hooks.sh` passes, `/assess-bugs claude-code/hooks/git_guard.py` reports it clear |
+
 #### [TSK-01.1.4] Root `AGENTS.md:92`'s `# 244 hook + comments regression cases` comment is stale — the suite now has 259 cases after `fix/git-guard-command-env-hardening`'s G164-G178 additions [P: L] [DONE]
 | Subtask | Work | Done when |
 |---|---|---|
