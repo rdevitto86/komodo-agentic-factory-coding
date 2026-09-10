@@ -710,20 +710,6 @@ def strip_env_assignments(tokens):
     return tokens[index:]
 
 
-# env's own syntax has no -c flag -- env [-i] [VAR=val...] cmd [args...] -- walk past both to find the wrapped command
-def strip_env_wrapper_prefix(tokens):
-    index = 0
-    while index < len(tokens):
-        if tokens[index] == "-i":
-            index += 1
-            continue
-        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[index]):
-            index += 1
-            continue
-        break
-    return tokens[index:]
-
-
 def strip_leading_flags(tokens, value_flags):
     index = 0
     while index < len(tokens) and tokens[index].startswith("-"):
@@ -742,6 +728,15 @@ def strip_leading_flags(tokens, value_flags):
             if not nxt.startswith("-") and os.path.basename(nxt) not in MONITORED_COMMANDS:
                 index += 1
     return tokens[index:]
+
+
+# env's option-taking flags -- -u NAME, -C DIR, -P PATH (BSD/macOS), -S STRING all consume a following value
+ENV_VALUE_FLAGS = ("-u", "-C", "-P", "-S")
+
+
+# env's own syntax has no -c flag -- compose the two generic strippers instead of a third hand-rolled walk
+def strip_env_wrapper_prefix(tokens):
+    return strip_env_assignments(strip_leading_flags(tokens, ENV_VALUE_FLAGS))
 
 
 def subcommand_of(tokens, value_flags):
@@ -967,6 +962,11 @@ def gh_violation(tokens):
     return None
 
 
+# the exact inverse of tokenize()'s shlex.split -- a bare " ".join loses a wrapped multi-word token's quoting
+def requote(tokens):
+    return " ".join(shlex.quote(token) for token in tokens)
+
+
 def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0, agent_type=None, piped_source=None):
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
@@ -981,13 +981,14 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         if command == "env":
             inner = strip_env_wrapper_prefix(tokens[1:])
             if inner:
-                scan_command(" ".join(inner), findings, cwd, depth + 1, agent_type)
+                scan_command(requote(inner), findings, cwd, depth + 1, agent_type)
             return
         for index, token in enumerate(tokens):
             if token == "-c" and index + 1 < len(tokens):
                 scan_command(tokens[index + 1], findings, cwd, depth + 1, agent_type)
         return
     if command == "eval":
+        # eval concatenates its dequoted args and reparses -- real bash loses this quoting too, requoting would diverge
         inner = tokens[1:]
         if inner:
             scan_command(" ".join(inner), findings, cwd, depth + 1, agent_type)
@@ -995,7 +996,7 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     if command in PASSTHROUGH_WRAPPERS:
         inner = strip_leading_flags(tokens[1:], PASSTHROUGH_VALUE_FLAGS[command])
         if inner:
-            scan_command(" ".join(inner), findings, cwd, depth + 1, agent_type)
+            scan_command(requote(inner), findings, cwd, depth + 1, agent_type)
         return
     if command == "tee":
         # tokens loses a $()/backtick arg to blanking; [1:] and a leading '-' skip tee's own name/flags, not its target

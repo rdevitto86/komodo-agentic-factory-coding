@@ -829,6 +829,21 @@ bash_case "G168 env skips leading -i and VAR=val tokens to reach a wrapped git p
 bash_case "G169 a harmless env-wrapped command is unaffected (still allowed)" \
   allow 'env echo hello'
 
+# strip_env_wrapper_prefix only recognized -i/VAR=val -- any other real env flag stopped the walk early
+bash_case "G170 env -u NAME (a real env value flag outside -i/VAR=val) is skipped to reach a wrapped git push --force" \
+  deny 'env -u PATH git push --force' "rewrites published history"
+bash_case "G171 env -C DIR (a real env value flag outside -i/VAR=val) is skipped to reach a wrapped git push --force" \
+  deny 'env -C /tmp git push --force' "rewrites published history"
+bash_case "G172 env --ignore-environment (a real env boolean flag outside -i/VAR=val) is skipped to reach a wrapped git push --force" \
+  deny 'env --ignore-environment git push --force' "rewrites published history"
+# " ".join(inner) before recursing lost shlex quoting, splitting a wrapped sh -c "multi word arg" on the recursive scan
+bash_case "G173 env sh -c \"...\" preserves the wrapped script's quoting through the recursive scan and is denied" \
+  deny 'env sh -c "git push origin main --force"' "rewrites published history"
+bash_case "G174 time sh -c \"...\" preserves the wrapped script's quoting through the recursive scan and is denied" \
+  deny 'time sh -c "git push --force"' "rewrites published history"
+bash_case "G175 nohup sh -c \"...\" preserves the wrapped script's quoting through the recursive scan and is denied" \
+  deny 'nohup sh -c "git push --force"' "rewrites published history"
+
 # ──────────────────────────────  auto format  ──────────────────────────────
 HOOK="$HOOKS/auto_format.py"
 printf '\nauto format\n\n'
