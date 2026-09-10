@@ -764,11 +764,11 @@ off_case "G87 off: gh pr merge stays blocked"        deny  'gh pr merge 12'     
 
 # the reviewer has no legitimate write path left -- every Bash write target is denied, BACKLOG.md included
 bash_case_agent "G144 reviewer tee to a non-BACKLOG.md file is denied" \
-  deny reviewer 'tee notes.txt' "bypasses the comment guard"
+  deny reviewer 'tee notes.txt' "read-only git"
 bash_case_agent "G145 reviewer redirect to an extensionless file is denied" \
   deny reviewer 'echo x > release-notes' "bypasses the comment guard"
 bash_case_agent "G146 reviewer tee to BACKLOG.md is denied" \
-  deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
+  deny reviewer 'tee BACKLOG.md' "read-only git"
 bash_case_agent "G147 reviewer redirect to BACKLOG.md is denied" \
   deny reviewer 'echo x > BACKLOG.md' "bypasses the comment guard"
 bash_case "G148 a non-reviewer tee to a non-guarded extensionless file is unaffected (still allowed)" \
@@ -777,7 +777,7 @@ bash_case "G149 a non-reviewer tee to BACKLOG.md is unaffected (still denied)" \
   deny 'tee BACKLOG.md' "bypasses the comment guard"
 # the reviewer's deny no longer depends on resolving a repo root -- a cwd outside any git repo denies the same way
 bash_case_agent_at "$WORKDIR/outside-repo" "G150 reviewer tee to BACKLOG.md from a cwd outside any git repo is denied" \
-  deny reviewer 'tee BACKLOG.md' "bypasses the comment guard"
+  deny reviewer 'tee BACKLOG.md' "read-only git"
 bash_case "G151 a backslash-escaped backtick inside a \$()-substitution fed through eval hides git push --force" \
   deny 'eval "$(echo \`git push --force\`)"' "rewrites published history"
 bash_case "G152 a single-quoted sh -c argument containing a double-quoted dollar-paren substitution, nested 2 levels, hides git push --force" \
@@ -797,16 +797,17 @@ bash_case "G165 command -V eval never re-parses its \$()-substitution's escaped 
 
 # comments.py apply carries no -c/open( shape, so it needs its own guarded-family match, not PYTHON_WRITE
 bash_case_agent "G156 reviewer python3 comments.py apply is denied" \
-  deny reviewer 'python3 ~/.claude/hooks/comments.py apply' "has no legitimate write path"
+  deny reviewer 'python3 ~/.claude/hooks/comments.py apply' "read-only git"
 bash_case "G157 a non-reviewer python3 comments.py apply is unaffected (still allowed)" \
   allow 'python3 ~/.claude/hooks/comments.py apply'
-bash_case_agent "G158 reviewer python3 -m pytest is unaffected (still allowed)" \
-  allow reviewer 'python3 -m pytest'
+# reviewer has no sanctioned test-run workflow -- this now only proves the deny-by-default gate fires on python3
+bash_case_agent "G158 reviewer python3 -m pytest is denied" \
+  deny reviewer 'python3 -m pytest' "read-only git"
 # comments.py runs standalone too (own shebang, mode 755) -- basename match must not require an interpreter
 bash_case_agent "G159 reviewer direct comments.py apply via a relative path (no interpreter prefix) is denied" \
-  deny reviewer 'claude-code/hooks/comments.py apply' "has no legitimate write path"
+  deny reviewer 'claude-code/hooks/comments.py apply' "read-only git"
 bash_case_agent_at "$HOOKS" "G160 reviewer bare comments.py apply, cwd inside hooks/, is denied" \
-  deny reviewer 'comments.py apply' "has no legitimate write path"
+  deny reviewer 'comments.py apply' "read-only git"
 
 # round 4: a symlink stands in for a case-insensitive-fs path alias -- CI's ext4 is case-sensitive, samefile() still fires
 FIXTURE_COMMENTS_COPY="$WORKDIR/cw"
@@ -814,14 +815,39 @@ cp "$COMMENTS" "$FIXTURE_COMMENTS_COPY"
 FIXTURE_COMMENTS_ALIAS="$WORKDIR/Comments.PY"
 ln -s "$COMMENTS" "$FIXTURE_COMMENTS_ALIAS"
 bash_case_agent "G161 reviewer cat comments.py piped into python3 - apply (script read off stdin) is denied" \
-  deny reviewer 'cat ~/.claude/hooks/comments.py | python3 - apply' "has no legitimate write path"
+  deny reviewer 'cat ~/.claude/hooks/comments.py | python3 - apply' "read-only git"
 bash_case_agent "G162 reviewer a same-content copy of comments.py under an unrelated basename is denied" \
-  deny reviewer "$FIXTURE_COMMENTS_COPY apply" "has no legitimate write path"
+  deny reviewer "$FIXTURE_COMMENTS_COPY apply" "read-only git"
 bash_case_agent "G163 reviewer a same-file alias under a different-case basename is denied" \
-  deny reviewer "python3 $FIXTURE_COMMENTS_ALIAS apply" "has no legitimate write path"
+  deny reviewer "python3 $FIXTURE_COMMENTS_ALIAS apply" "read-only git"
 
 bash_case_agent "G166 reviewer env python3 comments.py apply is denied, real env has no -c flag to gate the recursion on" \
-  deny reviewer 'env python3 ~/.claude/hooks/comments.py apply' "has no legitimate write path"
+  deny reviewer 'env python3 ~/.claude/hooks/comments.py apply' "read-only git"
+
+# round 5 (TSK-01.4.9): deny-by-default replaces recognize-by-pattern -- reviewer's audited allowlist is git alone
+bash_case_agent_at "$HOOKS" "G179 reviewer git log is allowed" \
+  allow reviewer 'git log'
+bash_case_agent_at "$HOOKS" "G180 reviewer git diff is allowed" \
+  allow reviewer 'git diff'
+bash_case_agent_at "$HOOKS" "G181 reviewer git status is allowed" \
+  allow reviewer 'git status'
+bash_case_agent_at "$HOOKS" "G182 reviewer git show is allowed" \
+  allow reviewer 'git show'
+bash_case_agent_at "$HOOKS" "G183 reviewer git blame on a tracked file is allowed" \
+  allow reviewer 'git blame -- git_guard.py'
+bash_case_agent_at "$HOOKS" "G184 reviewer git ls-files is allowed" \
+  allow reviewer 'git ls-files'
+# a mutating git subcommand still routes through the pre-existing, unrelated READ_ONLY_GIT/git_violation check
+bash_case_agent_at "$FIXTURE_MAIN" "G185 reviewer git commit -m is still blocked by the pre-existing mechanism" \
+  deny reviewer 'git commit -m "x"' "is denied"
+# proves the new gate is genuinely generic, not another basename signature added to a recognize-list
+bash_case_agent "G186 reviewer a never-before-seen interpreter is denied by the generic gate" \
+  deny reviewer 'ruby -e "File.write(1,1)"' "read-only git"
+bash_case_agent "G187 reviewer gh pr view is denied even though it looks read-only" \
+  deny reviewer 'gh pr view' "read-only git"
+bash_case "G188 a non-reviewer python3 -m pytest is unaffected (still allowed)" \
+  allow 'python3 -m pytest'
+
 bash_case "G167 a non-reviewer env python3 comments.py apply is unaffected (still allowed)" \
   allow 'env python3 ~/.claude/hooks/comments.py apply'
 bash_case "G168 env skips leading -i and VAR=val tokens to reach a wrapped git push --force" \

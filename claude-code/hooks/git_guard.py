@@ -979,12 +979,12 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
     tokens = strip_redirects(strip_env_assignments(tokenize(segment)))
     if not tokens:
         return
-    # every segment, not gated on a command-name allowlist -- the bypass this closes is a basename that never matched
-    if agent_type == REVIEWER_AGENT and comments_write_invocation(tokens, cwd, piped_source):
-        findings.append("comments.py apply writes to a source file, and the reviewer has no legitimate write path")
-        return
     # a bare (cmd ...) subshell glues its "(" onto the first word -- stripped only for command identification
     command = os.path.basename(tokens[0].lstrip("("))
+    # deny-by-default, not pattern-recognition -- reviewer.md states the whole reviewer Bash surface is read-only git
+    if agent_type == REVIEWER_AGENT and command != "git":
+        findings.append("the reviewer's Bash surface is read-only git only -- %s is denied" % command)
+        return
     if command in SHELL_WRAPPERS:
         if command == "env":
             split_string = env_split_string_value(tokens[1:])
