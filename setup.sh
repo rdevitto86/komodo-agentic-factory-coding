@@ -44,6 +44,8 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 DRY_RUN=0
 SKIP_VERIFY=0
 REF=""
+REF_SET=0
+REF_COMMIT=""
 
 usage() {
   printf 'usage: setup.sh [--dry-run] [--skip-verify] [--target DIR] [--ref TAG]\n' >&2
@@ -60,14 +62,18 @@ while [ "$#" -gt 0 ]; do
     --skip-verify) SKIP_VERIFY=1; shift ;;
     --target) [ "$#" -ge 2 ] || { usage; exit 2; }; TARGET="$2"; shift 2 ;;
     --target=*) TARGET="${1#--target=}"; shift ;;
-    --ref) [ "$#" -ge 2 ] || { usage; exit 2; }; REF="$2"; shift 2 ;;
-    --ref=*) REF="${1#--ref=}"; shift ;;
+    --ref) [ "$#" -ge 2 ] || { usage; exit 2; }; REF="$2"; REF_SET=1; shift 2 ;;
+    --ref=*) REF="${1#--ref=}"; REF_SET=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
 done
 
 [ -n "$TARGET" ] || { printf 'setup.sh: empty target\n' >&2; exit 2; }
+
+# An empty --ref would fall through the gates below and install unpinned.
+[ "$REF_SET" -eq 0 ] || [ -n "$REF" ] \
+  || { printf 'setup.sh: --ref requires a non-empty ref\n' >&2; exit 2; }
 export AGENT_HOME="$TARGET"
 
 STALE_LINKS=(standards modes templates profile orchestration docs)
@@ -108,7 +114,12 @@ if [ -n "$REF" ]; then
     say "  $REPO_ROOT is not a git repository, cannot pin to a ref"
     exit 1
   fi
-  if ! git -C "$REPO_ROOT" rev-parse --verify --quiet "$REF^{commit}" >/dev/null 2>&1; then
+  # `--` can't disambiguate here: for checkout it starts a pathspec, not a ref.
+  case "$REF" in
+    -*) say "  ref '$REF' starts with '-', refusing to pass it to git"; exit 2 ;;
+  esac
+  REF_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify --quiet "$REF^{commit}")" || REF_COMMIT=""
+  if [ -z "$REF_COMMIT" ]; then
     say "  ref '$REF' does not resolve to a commit"
     exit 1
   fi
@@ -126,8 +137,8 @@ say "  into  $TARGET"
 say ""
 
 if [ -n "$REF" ]; then
-  say "  detaching at $REF"
-  run git -C "$REPO_ROOT" checkout --detach "$REF"
+  say "  detaching at $REF ($REF_COMMIT)"
+  run git -C "$REPO_ROOT" checkout --detach "$REF_COMMIT"
   say ""
 fi
 

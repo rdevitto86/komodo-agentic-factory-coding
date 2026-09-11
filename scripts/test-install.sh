@@ -125,48 +125,59 @@ cp "$SETUP" "$CLONE/setup.sh"
 git -C "$CLONE" -c user.email=test@example.com -c user.name=test commit --quiet -am "bring in the working copy's setup.sh for --ref testing"
 CLONE_HEAD_BEFORE="$(git -C "$CLONE" rev-parse --abbrev-ref HEAD)"
 
+# Only the setup that makes the tree bad differs between rejection cases.
+assert_guard_rejected() {
+  local label="$1" target="$2"
+  shift 2
+  local head_before out rc problem=""
+  head_before="$(git -C "$CLONE" rev-parse --abbrev-ref HEAD)"
+  out="$(AGENT_HOME="$target" bash "$CLONE/setup.sh" "$@" 2>&1)"
+  rc=$?
+  [ "$rc" -eq 0 ] && problem="exited 0: $out"
+  [ -z "$problem" ] && [ "$head_before" != "$(git -C "$CLONE" rev-parse --abbrev-ref HEAD)" ] \
+    && problem="HEAD moved"
+  [ -z "$problem" ] && [ -e "$target" ] && problem="target was created before the guard failed"
+  if [ -n "$problem" ]; then
+    fail "$label" "$problem"
+  else
+    pass "$label"
+  fi
+}
+
 if [ -z "$TAG" ]; then
   fail "S1 --ref TAG --dry-run previews the checkout and exits 0" "no tag found in the clone to pin to"
+  fail "S3 a dirty tree exits non-zero before touching HEAD or the target" "no tag found in the clone to pin to"
 else
+  TAG_COMMIT="$(git -C "$CLONE" rev-parse --verify --quiet "$TAG^{commit}")"
   TARGET_S1="$WORKDIR/home-s1/.claude"
   out="$(AGENT_HOME="$TARGET_S1" bash "$CLONE/setup.sh" --ref "$TAG" --dry-run 2>&1)"
   rc=$?
   if [ "$rc" -ne 0 ]; then
     fail "S1 --ref TAG --dry-run previews the checkout and exits 0" "exit $rc: $out"
-  elif [[ "$out" != *"would: git -C $CLONE checkout --detach $TAG"* ]]; then
+  elif [[ "$out" != *"would: git -C $CLONE checkout --detach $TAG_COMMIT"* ]]; then
     fail "S1 --ref TAG --dry-run previews the checkout and exits 0" "did not preview the detach: $out"
   else
     pass "S1 --ref TAG --dry-run previews the checkout and exits 0"
   fi
 fi
 
-TARGET_S2="$WORKDIR/home-s2/.claude"
-out="$(AGENT_HOME="$TARGET_S2" bash "$CLONE/setup.sh" --ref no-such-tag-xyz 2>&1)"
-rc=$?
-problem=""
-[ "$rc" -eq 0 ] && problem="unknown ref exited 0: $out"
-CLONE_HEAD_AFTER="$(git -C "$CLONE" rev-parse --abbrev-ref HEAD)"
-[ -z "$problem" ] && [ "$CLONE_HEAD_BEFORE" != "$CLONE_HEAD_AFTER" ] && problem="HEAD moved on an unknown ref"
-[ -z "$problem" ] && [ -e "$TARGET_S2" ] && problem="target was created before the unknown-ref check failed"
-if [ -n "$problem" ]; then
-  fail "S2 an unknown ref exits non-zero before touching HEAD or the target" "$problem"
-else
-  pass "S2 an unknown ref exits non-zero before touching HEAD or the target"
-fi
+assert_guard_rejected \
+  "S2 an unknown ref exits non-zero before touching HEAD or the target" \
+  "$WORKDIR/home-s2/.claude" --ref no-such-tag-xyz
+
+assert_guard_rejected \
+  "S5 an empty --ref is rejected rather than silently installing unpinned" \
+  "$WORKDIR/home-s5/.claude" --ref=
+
+assert_guard_rejected \
+  "S6 a leading-dash ref is rejected before reaching git" \
+  "$WORKDIR/home-s6/.claude" --ref --orphan=x
 
 printf 'dirty\n' >> "$CLONE/README.md"
-TARGET_S3="$WORKDIR/home-s3/.claude"
-out="$(AGENT_HOME="$TARGET_S3" bash "$CLONE/setup.sh" --ref "$TAG" 2>&1)"
-rc=$?
-problem=""
-[ "$rc" -eq 0 ] && problem="dirty tree exited 0: $out"
-CLONE_HEAD_AFTER2="$(git -C "$CLONE" rev-parse --abbrev-ref HEAD)"
-[ -z "$problem" ] && [ "$CLONE_HEAD_BEFORE" != "$CLONE_HEAD_AFTER2" ] && problem="HEAD moved on a dirty tree"
-[ -z "$problem" ] && [ -e "$TARGET_S3" ] && problem="target was created before the clean-tree check failed"
-if [ -n "$problem" ]; then
-  fail "S3 a dirty tree exits non-zero before touching HEAD or the target" "$problem"
-else
-  pass "S3 a dirty tree exits non-zero before touching HEAD or the target"
+if [ -n "$TAG" ]; then
+  assert_guard_rejected \
+    "S3 a dirty tree exits non-zero before touching HEAD or the target" \
+    "$WORKDIR/home-s3/.claude" --ref "$TAG"
 fi
 
 PASS="$(grep -c '^PASS$' "$RESULTS" || true)"
