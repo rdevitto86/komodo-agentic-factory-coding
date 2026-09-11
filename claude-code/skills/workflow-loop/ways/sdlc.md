@@ -59,11 +59,13 @@ Runs once per band, after every task in the band is committed — never per task
 
 ## P2.4 · Closeout
 
-**Once per band, not per-task** — after P2.3's band review has resolved its severity floor, before `/workflow-consolidate` runs. Clears the target state's four standing closeout stories.
+**Once per band, not per-task** — after P2.3's band review has resolved its severity floor, before `/workflow-consolidate` runs.
 
 **Only `/changelog-write` runs here**, covering every task the band shipped. No `assess-*` repeat — P2.3 already covered bugs, simplification, and (where warranted) security and performance for the whole band — and no `/backlog-audit` — no phase runs a band-scoped audit right now (TSK-01.4.4 moves that pass into P3).
 
-**Ends when:** `CHANGELOG.md`'s `[Unreleased]` section reflects the band — that satisfies the four closeout stories' `Done when: findings triaged`, so `/workflow-consolidate` deletes them like any other finished story.
+**The four standing closeout tasks are a separate `Quality Assurance & Epic Hardening` task group, not this phase's job.** Their `Trigger` bullet fires only once every functional task group in the epic reaches `[DONE]` — an ordinary band's `/changelog-write` never satisfies them. When this band's own commit happens to be the one that clears the epic's last functional task group, pick up that task group in P1's next run like any other open work; nothing here special-cases it.
+
+**Ends when:** `CHANGELOG.md`'s `[Unreleased]` section reflects the band.
 
 ---
 

@@ -146,7 +146,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **Only `/changelog-write` runs here**, covering every task the band shipped. No `assess-*` repeat — P2.3 already covered the whole band — and no band-scoped audit — no phase runs one right now (TSK-01.4.4 moves that pass into P3).
 
-**Clears the target state's four standing closeout stories.**
+**The four standing closeout tasks live in their own `Quality Assurance & Epic Hardening` task group, gated by their own `Trigger` bullet — an ordinary band's changelog write never satisfies them.** See `ways/sdlc.md` for the gate's exact condition.
 
 **Ends when:** `CHANGELOG.md`'s `[Unreleased]` section reflects the band.
 
