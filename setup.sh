@@ -8,6 +8,11 @@
 #                                       about to run its own `make verify`
 #                                       right after, e.g. CI, skips the
 #                                       redundant double run)
+#          bash setup.sh --ref TAG      detach the clone at TAG before
+#                                       linking, so the symlinks pin to a
+#                                       release instead of the working
+#                                       tree's current commit (requires a
+#                                       resolvable ref and a clean tree)
 #
 # What it does, in order:
 #   1. prune    removes symlinks left by the old layout (STALE_LINKS)
@@ -38,11 +43,16 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 
 DRY_RUN=0
 SKIP_VERIFY=0
+REF=""
+REF_SET=0
+REF_COMMIT=""
 
 usage() {
-  printf 'usage: setup.sh [--dry-run] [--skip-verify] [--target DIR]\n' >&2
+  printf 'usage: setup.sh [--dry-run] [--skip-verify] [--target DIR] [--ref TAG]\n' >&2
   printf '  --skip-verify  link and overlay only, skip the trailing test/validate run\n' >&2
   printf '  --target DIR   install into DIR instead of %s\n' "$TARGET" >&2
+  printf '  --ref TAG      detach the clone at TAG before linking (ref must\n' >&2
+  printf '                 resolve, working tree must be clean)\n' >&2
   printf '  AGENT_HOME=DIR does the same as an environment variable\n' >&2
 }
 
@@ -52,12 +62,18 @@ while [ "$#" -gt 0 ]; do
     --skip-verify) SKIP_VERIFY=1; shift ;;
     --target) [ "$#" -ge 2 ] || { usage; exit 2; }; TARGET="$2"; shift 2 ;;
     --target=*) TARGET="${1#--target=}"; shift ;;
+    --ref) [ "$#" -ge 2 ] || { usage; exit 2; }; REF="$2"; REF_SET=1; shift 2 ;;
+    --ref=*) REF="${1#--ref=}"; REF_SET=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
 done
 
 [ -n "$TARGET" ] || { printf 'setup.sh: empty target\n' >&2; exit 2; }
+
+# An empty --ref would fall through the gates below and install unpinned.
+[ "$REF_SET" -eq 0 ] || [ -n "$REF" ] \
+  || { printf 'setup.sh: --ref requires a non-empty ref\n' >&2; exit 2; }
 export AGENT_HOME="$TARGET"
 
 STALE_LINKS=(standards modes templates profile orchestration docs)
@@ -91,11 +107,40 @@ say "  found python3 $PYTHON_VERSION (floor: $PYTHON_FLOOR)"
 python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)" \
   || { say "  python3 $PYTHON_VERSION is below the required floor $PYTHON_FLOOR"; exit 1; }
 
+if [ -n "$REF" ]; then
+  say ""
+  say "checking --ref $REF"
+  if ! git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    say "  $REPO_ROOT is not a git repository, cannot pin to a ref"
+    exit 1
+  fi
+  # `--` can't disambiguate here: for checkout it starts a pathspec, not a ref.
+  case "$REF" in
+    -*) say "  ref '$REF' starts with '-', refusing to pass it to git"; exit 2 ;;
+  esac
+  REF_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify --quiet "$REF^{commit}")" || REF_COMMIT=""
+  if [ -z "$REF_COMMIT" ]; then
+    say "  ref '$REF' does not resolve to a commit"
+    exit 1
+  fi
+  if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
+    say "  working tree is dirty, refusing to pin to a ref (commit or stash first)"
+    exit 1
+  fi
+  say "  ref resolves, working tree is clean"
+fi
+
 say ""
 say "installing agent config"
 say "  from  $SOURCE"
 say "  into  $TARGET"
 say ""
+
+if [ -n "$REF" ]; then
+  say "  detaching at $REF ($REF_COMMIT)"
+  run git -C "$REPO_ROOT" checkout --detach "$REF_COMMIT"
+  say ""
+fi
 
 run mkdir -p "$TARGET"
 
@@ -152,9 +197,13 @@ if [ "$SKIP_VERIFY" -eq 0 ]; then
   bash "$REPO_ROOT/scripts/validate.sh"
 fi
 
-VERSION="$(cd "$REPO_ROOT" && git describe --tags --abbrev=0 2>/dev/null)" \
-  || VERSION="$(cd "$REPO_ROOT" && git rev-parse --short HEAD 2>/dev/null)" \
-  || VERSION="unknown"
+if [ -n "$REF" ]; then
+  VERSION="$REF (pinned)"
+else
+  VERSION="$(cd "$REPO_ROOT" && git describe --tags --abbrev=0 2>/dev/null)" \
+    || VERSION="$(cd "$REPO_ROOT" && git rev-parse --short HEAD 2>/dev/null)" \
+    || VERSION="unknown"
+fi
 say "installed $VERSION"
 say "restart Claude Code to pick up settings.json and hooks"
 say ""

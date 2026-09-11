@@ -4,6 +4,18 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.48.0] — 2026-09-10
+
+### Added
+- `setup.sh --ref <tag>` pins an install to a release tag. Without it the symlinks in `~/.claude` track whatever the clone has checked out, so an upstream sync moved every engineer's next session with no staging step and no rollback; `--ref` detaches the clone at the tag before linking, so an install moves only when its consumer re-runs `setup.sh` with a different ref. The is-a-git-repo, ref-resolves, and clean-tree guards all run before any mutation — under `--dry-run` too, so a bad ref fails the preview without touching `HEAD` or a symlink. With no `--ref`, behavior is byte-for-byte unchanged.
+- Root `CODEOWNERS` over `claude-code/AGENTS.md`, `claude-code/settings.json`, and `claude-code/hooks/` — the three paths that reach every session in every project on the next start, with no staging environment in between.
+
+### Fixed
+- `README.md` described a blocking comment hook that does not exist. `git_guard.py` denies at `PreToolUse`, before the command runs; comments are the opposite shape — `comments.py hook` reports on a write without blocking, and `comments.py check` is what fails the `verify` target. The always-on budget figure was also stale (1,045 against an actual 1,129), and is now a rounded value plus a pointer to `scripts/validate.sh`, which prints the exact number.
+
+### Security
+- Two bypasses of the new `--ref` guard, found at band review and closed in the same band. An empty `--ref=` — a wrapper whose tag lookup returned nothing — fell through every `[ -n "$REF" ]` gate and silently performed the unpinned install the flag exists to prevent. A ref name beginning with `-` reached `git checkout --detach "$REF"` as a bare argument, where git parses it as an option; `--` cannot close that one, since before a checkout argument it introduces a pathspec rather than a revision, so the shape is rejected up front and the detach now takes the SHA `rev-parse` already resolved instead of the name the caller supplied.
+
 ## [0.47.1] — 2026-09-10
 
 ### Security
