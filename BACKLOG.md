@@ -33,7 +33,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|
 | `SUB-01.1.2.1` | surfaced by an `/assess-bugs` pass: `lru_cache`'s own key-hashing happens outside the `try`/`except` the fix widened, so it never sees an unhashable `cwd`. Currently unreachable — the sole call site (`claude-code/hooks/git_guard.py:498`) always passes a `str` — so this is latent, not live | a regression case (or inline check) confirms `repo_root_of(['a'])` no longer raises an uncaught `TypeError`, e.g. by validating/coercing `cwd` before the cached call, or wrapping the cache lookup itself |
 
-#### [TSK-01.1.3] `BACKLOG.md` format gains User Story, Acceptance Criteria, and subtask Category; the four closeout tasks move to their own task group [P: M] [TODO]
+#### [TSK-01.1.3] `BACKLOG.md` format gains User Story, Acceptance Criteria, and subtask Category; the four closeout tasks move to their own task group [P: M] [IN_PROGRESS]
 
 **User Story:**
 > **As a** maintainer scaffolding a new Komodo repo,

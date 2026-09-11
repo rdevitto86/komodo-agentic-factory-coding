@@ -30,12 +30,13 @@ Scoping: **$ARGUMENTS** (default: every open line in `BACKLOG.md`)
 | Resolved | Already true in the code — should have been deleted, not left open |
 | Stale | Repo state moved past what the task describes; it no longer makes sense as written |
 | Duplicate | Overlaps another open task's scope |
-| Ambiguous | A `SUB-` line missing a `Done when:` bullet, or one whose bullets are prose rather than runnable commands |
+| Ambiguous | A `SUB-` row missing its `Done when` cell, or one whose cell is prose rather than runnable commands |
+| Ambiguous | A `[DONE]` task carrying any unchecked `- [ ]` Acceptance Criteria box — see `backlog-modify`'s AC sweep-gate rule |
 
 Absence of contradiction is not validity. A task naming no file, command, or artifact — text like "once X is scoped" — can't be checked against current repo state at all; "nothing in the repo contradicts it" looks identical whether the task is a live placeholder or a dead fragment nothing ever backed. For any task in this shape, `git blame`/`git log -S '<task text>'` its introduction and check `CHANGELOG.md` for whether the thing it references (the suite, the tool, the flag) was ever real. No commit ever built it → **Stale**, not Valid.
 
 3. For any `[BLOCKED]` task in scope, test its `Blocked By:` bullet's `Recheck:` clause against current state — flag if it now passes.
-4. For any `[DONE]` task in scope, run every command in every `SUB-` line's `Done when:` bullet and confirm each still exits zero before sweeping it; a `[DONE]` tag someone set without that being true is Ambiguous, not swept.
+4. For any `[DONE]` task in scope, run every command in every `SUB-` line's `Done when` cell and confirm each still exits zero, and confirm every Acceptance Criteria box the task carries is ticked (`- [x]`), before sweeping it; a `[DONE]` tag someone set without both being true is Ambiguous, not swept.
 
 ## Findings → backlog
 
@@ -49,7 +50,7 @@ Verdicting *is* the edit — apply each one directly to `BACKLOG.md`, not by fil
 | Duplicate | Delete the weaker of the two tasks (less specific text, or the one added later per `git log`) and keep the other. |
 | Ambiguous | Leave the task as-is. This is a human call, not an edit this skill makes on its own — flag it in the report instead. |
 | `[BLOCKED]` whose `Recheck:` now passes | Set the task's status back to `[TODO]` or `[IN_PROGRESS]` and remove its `Blocked By:` bullet. |
-| `[DONE]`, confirmed true in the repo | Delete the task, its `Blocked By:` bullet, and its `SUB-` lines (each with its nested `Done when:` bullet). If not already recorded, add it to `CHANGELOG.md` — `standards-worklog` covers the read/write directive. |
+| `[DONE]`, confirmed true in the repo | Delete the task, its `Blocked By:` bullet, and its `SUB-` table rows (each with its own `Done when` cell). If not already recorded, add it to `CHANGELOG.md` — `standards-worklog` covers the read/write directive. |
 
 Never invent a new task from a verdict — verdicting "this task is stale" means deleting that task, never filing a fresh one describing the staleness. That circularity is exactly what stays out of scope here.
 

@@ -21,6 +21,7 @@ Task: **$ARGUMENTS**
 4. **Load** the language skill and whatever the touched paths trigger.
 5. **Write the failing test first where the task names a test tier**, and confirm it fails. A test that passes before the implementation is broken — rewrite it. Where the task names no tier, the `Done when` commands are the whole contract; do not invent a test to satisfy a ritual.
 6. **Implement**, then run every `Done when` command and keep each one's output.
-7. **Comments, last** — per your standing rules; the `Done when` commands must already be green. See `write-comments/reference.md` for the taxonomy each proposal must clear.
+7. **Tick the Acceptance Criteria box your subtask satisfied.** Once a subtask's `Done when` command(s) all exit zero, and the parent task's `Acceptance Criteria` block names a specific `AC-N` that subtask proves, flip that box from `- [ ]` to `- [x]` in `BACKLOG.md` as part of reporting completion. When an AC doesn't map cleanly to one subtask, ticking it is a judgment call you make and state plainly in your own report — never guess silently, and never tick a box no subtask actually proved.
+8. **Comments, last** — per your standing rules; the `Done when` commands must already be green. See `write-comments/reference.md` for the taxonomy each proposal must clear.
 
 Your standing rules on scope, craft, and stopping already apply. Nothing here overrides them.
