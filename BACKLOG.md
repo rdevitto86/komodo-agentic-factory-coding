@@ -78,8 +78,23 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.1.5.1` | `[Impl]` | hit live in this session: `git commit -F -` with a heredoc body reading "any `git pull` in the clone changed every engineer's next session" was denied with "git pull is allowed only with --ff-only". The guard scans the whole Bash command string, and a heredoc body is part of it, so prose describing a command is indistinguishable from the command. Teach the segment scanner to skip heredoc bodies — the delimiter is known from the `<<` operator, so the span is decidable without parsing the shell fully | `bash scripts/test-hooks.sh` passes with new cases covering both acceptance criteria |
+| `SUB-01.1.5.1` | `[Impl]` | hit live twice while publishing this band: `git commit -F -` with a heredoc body reading "any `git pull` in the clone changed every engineer's next session" was denied with "git pull is allowed only with --ff-only", and `gh pr create --body "$(cat <<'PRBODY' ...)"` was denied for "git checkout changes repository state" because the PR prose quoted a checkout invocation. The guard scans the whole Bash command string, and a heredoc body is part of it, so prose describing a command is indistinguishable from the command. Teach the segment scanner to skip heredoc bodies — the delimiter is known from the `<<` operator, so the span is decidable without parsing the shell fully | `bash scripts/test-hooks.sh` passes with new cases covering both acceptance criteria |
 | `SUB-01.1.5.2` | `[UnitTest]` | add the two regression cases to `scripts/test-hooks.sh` | `bash scripts/test-hooks.sh` |
+
+#### [TSK-01.1.6] `scripts/test-install.sh` is not wired into `make verify`, so neither CI nor the Stop gate ever runs it [P: M] [TODO]
+
+**User Story:**
+> **As a** maintainer relying on the repo's own gate,
+> **I want** every regression suite in `scripts/` to run in CI,
+> **So that** a suite cannot pass locally and rot unnoticed on the branch.
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given `make verify`, when it runs, then `scripts/test-install.sh` executes and a failure in it fails the target.
+- [ ] **AC-2:** Given the `verify` GitHub Actions workflow, when it runs on a PR, then that suite's result is visible in the run log.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.6.1` | `[Impl]` | surfaced while publishing the `--ref` band: `Makefile`'s `verify` target is `test validate comments`, where `test` is `scripts/test-hooks.sh` only. `scripts/test-install.sh` — 12 cases, six of them added by that band to cover `setup.sh --ref` — runs nowhere automatic, so the flag's entire guard surface is unprotected against regression in CI. Add it as its own target and fold it into `verify`. Note it is slower than the other three (it clones the repo and runs full installs into temp dirs), so measure the added wall-clock against `KOMODO_VERIFY_TIMEOUT`'s 300s default before wiring it in | `make verify` runs `scripts/test-install.sh`; `time make verify` stays under 300s |
 
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
