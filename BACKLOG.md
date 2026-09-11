@@ -4,7 +4,7 @@
 * **Priority Tagging:** `[C]` Critical | `[H]` High | `[M]` Medium | `[L]` Low
 * **Status Indicators:** `[TODO]` | `[IN_PROGRESS]` | `[BLOCKED]` | `[DONE]`
 * **Hierarchy ID:** `EPIC-XX` -> `TG-XX.Y` (Task Group) -> `TSK-XX.Y.Z` (Task) -> `SUB-XX.Y.Z.N` (Subtask)
-* **Owner (optional):** an `Owner` row in a task's field table marks work only a person can resolve — a policy call, an external approval, a risk-acceptance decision. Absent means agent-executable by default.
+* **Owner:** `agent` (default) or `human` (requires human decision, external PR merge, or policy approval).
 
 Format and rules live in the `backlog-modify` skill — load it before editing this file. `[DONE]` tasks stay until a sweep (`/backlog-audit`) moves them to `CHANGELOG.md` and removes them — this is not a log to hand-curate.
 
@@ -32,6 +32,54 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | Subtask | Work | Done when |
 |---|---|---|
 | `SUB-01.1.2.1` | surfaced by an `/assess-bugs` pass: `lru_cache`'s own key-hashing happens outside the `try`/`except` the fix widened, so it never sees an unhashable `cwd`. Currently unreachable — the sole call site (`claude-code/hooks/git_guard.py:498`) always passes a `str` — so this is latent, not live | a regression case (or inline check) confirms `repo_root_of(['a'])` no longer raises an uncaught `TypeError`, e.g. by validating/coercing `cwd` before the cached call, or wrapping the cache lookup itself |
+
+#### [TSK-01.1.3] `BACKLOG.md` format gains User Story, Acceptance Criteria, and subtask Category; the four closeout tasks move to their own task group [P: M] [TODO]
+
+**User Story:**
+> **As a** maintainer scaffolding a new Komodo repo,
+> **I want** each task to state its behavioral boundaries and test tiers explicitly,
+> **So that** an implementer fork knows what "done" covers without reading the code.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Spec):** Given `backlog-modify/SKILL.md`, when its format section is read, then it mandates the `User Story` block, checkbox `Acceptance Criteria`, and the `Category` column, and no longer bans checkboxes or a standalone AC list.
+- [ ] **AC-2 (Placement):** Given an app/service/infra repo, when a backlog is scaffolded, then the four closeout tasks appear under `[TG-XX.2] Quality Assurance & Epic Hardening` with a `Trigger` bullet — and given a skill/config/doc-only repo, then that task group is absent entirely.
+- [ ] **AC-3 (Location drift):** Given `backlog-plan`, `backlog-prioritize`, `workflow-loop/SKILL.md`, and `ways/sdlc.md`, when each is read in full, then none places the closeout tasks in `Cross-Cutting`.
+- [ ] **AC-4 (Shape drift):** Given `backlog-audit`, when its verdict table and sweep steps are read, then they describe `Done when` table cells rather than bullets.
+- [ ] **AC-5 (Sweep gate):** Given a `[DONE]` task carrying an unchecked `AC-` box, when `/backlog-audit` runs, then the task is verdicted Ambiguous and not swept — and given every box checked and every command green, then it sweeps normally.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.3.1` | `[Impl]` | rewrite `backlog-modify/SKILL.md`'s format spec and Rules: add the `User Story` block, checkbox `Acceptance Criteria`, and the `Category` column; delete the no-checkboxes and no-standalone-AC rules together with their rationale; move the four closeout tasks into their own `Quality Assurance & Epic Hardening` task group while preserving the skill/config/doc-only carve-out. Define the `Trigger` bullet explicitly as part of that task group's shape — the field name, that it states the condition under which the group's tasks run, and its canonical wording (`Run once all functional Task Groups in <EPIC> reach [DONE]`) | `bash scripts/validate.sh`; `grep -c "Trigger" claude-code/skills/backlog-modify/SKILL.md` returns non-zero |
+| `SUB-01.1.3.2` | `[Impl]` | propagate the new closeout location to `backlog-plan:56`, `backlog-prioritize:22`, `workflow-loop/SKILL.md:149`, and `ways/sdlc.md:62,66`. The prose around each edit is verified by a human read at P2.3 band review, not by this cell — the grep only proves the two strings stopped co-occurring | `grep -rn "closeout" claude-code/skills \| grep -c "Cross-Cutting"` returns `0` |
+| `SUB-01.1.3.3` | `[Impl]` | fix `backlog-audit:33,38,52` to audit `Done when` table cells rather than bullets, and add the AC-5 sweep gate to its verdict table | `grep -c "Done when:\` bullet" claude-code/skills/backlog-audit/SKILL.md` returns `0`; `bash scripts/validate.sh` |
+| `SUB-01.1.3.4` | `[Impl]` | teach `workflow-implement` to tick the `AC-` boxes its task satisfied once that subtask's `Done when` commands exit zero — without this the AC-5 gate deadlocks every backlog, since nothing else marks a box | `grep -c "AC-" claude-code/skills/workflow-implement/SKILL.md` returns non-zero; `bash scripts/validate.sh` |
+| `SUB-01.1.3.5` | `[Impl]` | rewrite `templates/project/BACKLOG.md.tmpl` structurally, not just textually: every example task gains a `User Story` block, a checkbox `Acceptance Criteria` list, and a `Category` column; the eight closeout tasks currently nested in `[TG-01.1] Cross-Cutting` and `[TG-02.1] Cross-Cutting` move into per-epic `Quality Assurance & Epic Hardening` task groups carrying the `Trigger` bullet; `/audit-security`→`/assess-security`, `/audit-bugs`→`/assess-bugs`, `/audit-simplify`→`/assess-simplify`; and `npm run test:*` becomes `<test command>` | `grep -c "audit-" templates/project/BACKLOG.md.tmpl` returns `0`; `grep -c "Quality Assurance & Epic Hardening" templates/project/BACKLOG.md.tmpl` returns `2`; `grep -c "Category" templates/project/BACKLOG.md.tmpl` returns non-zero; `grep -c "npm run" templates/project/BACKLOG.md.tmpl` returns `0` |
+| `SUB-01.1.3.6` | `[Impl]` | record in `docs/design-decisions.md` why the no-checkbox rule was dropped and what the AC boxes now gate | `make verify` |
+
+#### [TSK-01.1.4] `git-repo-init`'s `BACKLOG.md` seed-story splicing describes a flat bullet line shape that matches neither the current table format nor `TSK-01.1.3`'s target shape [P: L] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given `git-repo-init/SKILL.md:107`, when read, then its seed-story shape matches whatever `backlog-modify` currently mandates.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.4.1` | `[Impl]` | surfaced by `/workflow-decompose` while gap-checking `TSK-01.1.3`: line 107 still documents `- T.D.S \| SEV \| [WIP] <text> · <size> → \`<done when>\`` for spliced seed stories. This is pre-existing drift — wrong against today's table format independently of `TSK-01.1.3`, so it is filed separately rather than widening that task to a tenth file | `bash scripts/validate.sh` |
+
+#### [TSK-01.1.5] `git_guard.py` reads a heredoc body as command text, so a commit message that merely mentions a git command is denied [P: M] [TODO]
+
+**User Story:**
+> **As an** agent writing a commit message that explains git behavior,
+> **I want** the guard to distinguish a command from a string that describes one,
+> **So that** I am not forced to reword an accurate message into a vaguer one.
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given `git commit -F -` with a heredoc body containing the words `git pull`, when the guard scans it, then the commit is allowed.
+- [ ] **AC-2:** Given a genuine `git pull` without `--ff-only` anywhere in the command, when the guard scans it, then it is still denied.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.5.1` | `[Impl]` | hit live in this session: `git commit -F -` with a heredoc body reading "any `git pull` in the clone changed every engineer's next session" was denied with "git pull is allowed only with --ff-only". The guard scans the whole Bash command string, and a heredoc body is part of it, so prose describing a command is indistinguishable from the command. Teach the segment scanner to skip heredoc bodies — the delimiter is known from the `<<` operator, so the span is decidable without parsing the shell fully | `bash scripts/test-hooks.sh` passes with new cases covering both acceptance criteria |
+| `SUB-01.1.5.2` | `[UnitTest]` | add the two regression cases to `scripts/test-hooks.sh` | `bash scripts/test-hooks.sh` |
 
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1

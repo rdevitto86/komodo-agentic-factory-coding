@@ -45,6 +45,7 @@ claude-code/          mirrors ~/.claude exactly
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
+CODEOWNERS            review gate on claude-code/AGENTS.md, settings.json, hooks/
 ```
 
 ## The Agentic Workflow Loop
