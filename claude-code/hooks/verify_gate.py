@@ -1,42 +1,33 @@
 #!/usr/bin/env python3
 #
-# verify_gate.py - Stop hook. Blocks the turn from ending while the
-# repo's own verification command is failing.
+# verify_gate.py - Stop hook. Blocks the turn from ending while the repo's own verification command is failing.
 #
-# Opt-in per repo. Checked in order: .claude/verify.sh (executable),
-# then a `verify:` target in Makefile / Taskfile / justfile. None of
-# those declared means no gate, silently.
+# Opt-in per repo, checked in order: .claude/verify.sh (executable), then a `verify:` target in Makefile /
+# Taskfile / justfile. None declared means no gate, silently. Skipped without running the check at all: a clean
+# tree, and a tree whose only dirty paths are records-only (BACKLOG.md, docs/BACKLOG.md, CHANGELOG.md, README.md).
 #
-# Skips a clean working tree, and skips -- without running the check
-# at all -- a tree whose only dirty paths are records-only files
-# (BACKLOG.md, docs/BACKLOG.md, CHANGELOG.md, README.md).
+# The full suite is also skipped while a band-gate deferral marker is live -- one line holding an integer
+# epoch-seconds deadline, written by the orchestrator when a band of more than one task starts and removed before
+# the band's single gate run at P2.2. The marker lives under the OS temp dir, keyed by the git common dir: never
+# inside the working tree, so it cannot be committed into anyone else's checkout, and visible from every worktree
+# of the same repo. This suppression fails CLOSED toward running the gate -- an absent, unkeyable, unreadable,
+# malformed, expired, or past-MAX_DEFER_SECONDS marker runs the suite as usual. MAX_DEFER_SECONDS is 30 minutes
+# because no hook payload here carries a session identifier, so the marker cannot honestly be session-scoped: a
+# second session against the same checkout can still inherit one. The short window bounds that blast radius; it
+# is a known limitation, not a solved problem. A band that outruns the window simply runs the gate again.
 #
-# Skips the full suite -- without running it -- while the repo carries a
-# band-gate deferral marker at .claude/state/band-gate: one line holding
-# an integer epoch-seconds deadline, written by the orchestrator when a
-# band of more than one task starts, removed before the band's single
-# gate run at P2.2. This suppression fails CLOSED toward running the
-# gate: an absent, unreadable, malformed, expired, or implausibly distant
-# (past MAX_DEFER_SECONDS from now) marker runs the suite as usual.
+# The verify command is bounded by KOMODO_VERIFY_TIMEOUT seconds (default 300, an invalid value falls back to
+# 300); a timeout is a deliberate block naming the limit, not a silent pass-through. The git-status probe backing
+# the records-only skip has its own fixed 5s timeout; a probe timeout falls through to a normal verify run.
 #
-# The verify command is bounded by KOMODO_VERIFY_TIMEOUT seconds
-# (default 300, an invalid value falls back to 300); a timeout is a
-# deliberate block naming the limit, not a silent pass-through. The
-# git-status probe backing the records-only skip has its own fixed
-# 5s timeout; a probe timeout falls through to a normal verify run.
+# Otherwise this hook FAILS OPEN: an internal error outside the cases above exits 0, because a broken gate must
+# not be able to brick a session.
 #
-# Otherwise this hook FAILS OPEN: an internal error outside the cases
-# above exits 0, because a broken gate must not be able to brick a
-# session.
-#
-# Claude Code stops honouring a Stop hook after 8 consecutive blocks,
-# so this hook tracks its own approximate streak of consecutive blocks
-# against a repo (a small file under the OS temp dir, keyed by repo
-# root, cleared on any pass or skip) and warns once that streak nears
-# the cutoff. It also hashes each failure's combined output: three
-# consecutive identical hashes stop the fork itself (exit 0 with a
-# systemMessage, no block) rather than grinding toward that 8-block
-# cutoff on a failure that isn't changing.
+# Claude Code stops honouring a Stop hook after 8 consecutive blocks, so this hook tracks its own approximate
+# streak of consecutive blocks against a repo (a small file under the OS temp dir, keyed by repo root, cleared on
+# any pass or skip) and warns once that streak nears the cutoff. It also hashes each failure's combined output:
+# three consecutive identical hashes stop the fork itself (exit 0 with a systemMessage, no block) rather than
+# grinding toward that 8-block cutoff on a failure that isn't changing.
 
 import hashlib
 import json
@@ -48,7 +39,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from lib.git import repo_root
+from lib.git import git_common_dir, repo_root
 
 DEFAULT_TIMEOUT_SECONDS = 300
 MAX_OUTPUT_CHARS = 4000
@@ -57,8 +48,7 @@ IDENTICAL_STOP_AT = 3
 RECORDS_ONLY_PATHS = frozenset(
     ("BACKLOG.md", "docs/BACKLOG.md", "CHANGELOG.md", "README.md")
 )
-BAND_MARKER_PARTS = (".claude", "state", "band-gate")
-MAX_DEFER_SECONDS = 4 * 60 * 60
+MAX_DEFER_SECONDS = 30 * 60
 
 
 def timeout_seconds():
@@ -134,25 +124,37 @@ def is_records_only(paths):
     return bool(paths) and all(p in RECORDS_ONLY_PATHS for p in paths)
 
 
+def temp_key_path(prefix, key_source):
+    key = hashlib.sha256(key_source.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(tempfile.gettempdir(), "%s%s" % (prefix, key))
+
+
+def band_marker_path(root):
+    common = git_common_dir(root)
+    if common is None:
+        return None
+    return temp_key_path("komodo-verify-gate-band-", common)
+
+
 def band_gate_deferred(root):
-    # Absent, malformed, expired, implausibly distant: every one runs the gate.
+    # Absent, unkeyable, malformed, expired, implausibly distant: every one runs the gate.
+    marker = band_marker_path(root)
+    if marker is None:
+        return False
     try:
-        with open(
-            os.path.join(root, *BAND_MARKER_PARTS), encoding="utf-8"
-        ) as handle:
+        with open(marker, encoding="utf-8") as handle:
             lines = handle.read(256).splitlines()
         if not lines:
             return False
         deadline = int(lines[0].strip())
-    except Exception:
+    except (OSError, ValueError):
         return False
     now = time.time()
     return now < deadline <= now + MAX_DEFER_SECONDS
 
 
 def streak_path(root):
-    key = hashlib.sha256(root.encode("utf-8")).hexdigest()[:16]
-    return os.path.join(tempfile.gettempdir(), "komodo-verify-gate-streak-%s" % key)
+    return temp_key_path("komodo-verify-gate-streak-", root)
 
 
 def read_state(path):

@@ -1464,6 +1464,7 @@ if [ "$IS_WINDOWS" -eq 1 ] || ! command -v make >/dev/null 2>&1; then
   skip_case "VG13 an expired band marker still runs the gate" "make unavailable, or Windows runner (TSK-01.1.14)"
   skip_case "VG14 a band marker past the deferral cap still runs the gate" "make unavailable, or Windows runner (TSK-01.1.14)"
   skip_case "VG15 a band marker that is not a readable file still runs the gate" "make unavailable, or Windows runner (TSK-01.1.14)"
+  skip_case "VG16 an unresolvable git common dir still runs the gate" "make unavailable, or Windows runner (TSK-01.1.14)"
 else
   FIXTURE_VGATE="$WORKDIR/fixture-vgate"
   mkdir -p "$FIXTURE_VGATE"
@@ -1644,7 +1645,7 @@ except Exception:
 
   # VG11-VG15 -- every marker shape but a readable in-cap deadline runs the gate; the echoed PID keeps those blocks distinct
   FIXTURE_VGATE_BAND="$WORKDIR/fixture-vgate-band"
-  mkdir -p "$FIXTURE_VGATE_BAND/.claude/state"
+  mkdir -p "$FIXTURE_VGATE_BAND/.claude"
   git init -q -b main "$FIXTURE_VGATE_BAND"
   (cd "$FIXTURE_VGATE_BAND" && git config user.email t@t.com && git config user.name t)
   printf '#!/bin/sh\ntouch "%s/ran"\necho $$\nexit 1\n' "$FIXTURE_VGATE_BAND" > "$FIXTURE_VGATE_BAND/.claude/verify.sh"
@@ -1652,7 +1653,8 @@ except Exception:
   (cd "$FIXTURE_VGATE_BAND" && git add -A && git commit -q -m init)
   printf 'package main\n' > "$FIXTURE_VGATE_BAND/x.go"
 
-  BAND_MARKER="$FIXTURE_VGATE_BAND/.claude/state/band-gate"
+  # the hook keys the marker by a hash of the git common dir under the OS temp dir, so the test must derive the same path
+  BAND_MARKER="$(cd "$FIXTURE_VGATE_BAND" && python3 -c 'import hashlib, os, subprocess, tempfile; c = os.path.realpath(subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True).stdout.strip()); print(os.path.join(tempfile.gettempdir(), "komodo-verify-gate-band-" + hashlib.sha256(c.encode("utf-8")).hexdigest()[:16]))')"
 
   # $1 case label, $2 expectation (defer or run); the marker is whatever the caller left on disk
   vgate_band_case() {
@@ -1695,6 +1697,25 @@ except Exception:
   rm -f "$BAND_MARKER"
   mkdir -p "$BAND_MARKER"
   vgate_band_case "VG15 a band marker that is not a readable file still runs the gate" run
+  rm -rf "$BAND_MARKER"
+
+  # VG16 -- with no resolvable common dir the marker is unkeyable, which must fail closed toward running the gate
+  FIXTURE_VGATE_NOCOMMON_BIN="$WORKDIR/fixture-vgate-nocommon-bin"
+  mkdir -p "$FIXTURE_VGATE_NOCOMMON_BIN"
+  printf '#!/bin/sh\nif [ "$1" = "rev-parse" ] && [ "$2" = "--git-common-dir" ]; then\n  exit 1\nfi\nexec "%s" "$@"\n' "$(command -v git)" > "$FIXTURE_VGATE_NOCOMMON_BIN/git"
+  chmod +x "$FIXTURE_VGATE_NOCOMMON_BIN/git"
+  python3 -c 'import time; print(int(time.time()) + 600)' > "$BAND_MARKER"
+  rm -f "$FIXTURE_VGATE_BAND/ran"
+  vgate_out="$(printf '{"cwd":"%s"}' "$FIXTURE_VGATE_BAND" | PATH="$FIXTURE_VGATE_NOCOMMON_BIN:$PATH" python3 "$VERIFY_GATE" 2>/dev/null)"
+  decision="$(vgate_decision "$vgate_out")"
+  ran=absent
+  [ -e "$FIXTURE_VGATE_BAND/ran" ] && ran=present
+  JOB_IDX=$((JOB_IDX + 1))
+  if [ "$decision" = "block" ] && [ "$ran" = "present" ]; then
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG16 an unresolvable git common dir still runs the gate" ""
+  else
+    report "$RESULTS_DIR/$JOB_IDX.out" "VG16 an unresolvable git common dir still runs the gate" "decision=$decision verify=$ran"
+  fi
   rm -rf "$BAND_MARKER"
 fi
 

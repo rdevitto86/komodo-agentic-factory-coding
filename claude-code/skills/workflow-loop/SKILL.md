@@ -129,11 +129,12 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 **The repo's full gate runs once per band, against the band's merged state — never once per task.** For a band of more than one task, write the deferral marker before P2.1's first fork and drop it before the band's own gate run:
 
 ```bash
-mkdir -p .claude/state && python3 -c 'import time; print(int(time.time()) + 7200)' > .claude/state/band-gate
-rm -f .claude/state/band-gate   # before the band gate runs
+BAND_GATE="$(python3 -c 'import hashlib, os, subprocess, tempfile; c = os.path.realpath(subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True).stdout.strip()); print(os.path.join(tempfile.gettempdir(), "komodo-verify-gate-band-" + hashlib.sha256(c.encode("utf-8")).hexdigest()[:16]))')"
+python3 -c 'import time; print(int(time.time()) + 1500)' > "$BAND_GATE"
+rm -f "$BAND_GATE"   # before the band gate runs
 ```
 
-The marker suppresses `verify_gate.py`'s full-suite run inside each `builder` fork; the fork's own `Done when` commands still run and still gate its return. **A missing, expired, or malformed marker means every fork runs the full gate itself** — the fallback is the redundant check, never the skipped one, so a forgotten `rm` costs time and nothing else.
+The marker suppresses `verify_gate.py`'s full-suite run inside each `builder` fork; the fork's own `Done when` commands still run and still gate its return. The marker lives under the OS temp dir, keyed by the git common dir, so it is never committable and every worktree of the repo sees it; its deadline is capped at 30 minutes. **A missing, expired, malformed, or over-cap marker means every fork runs the full gate itself** — the fallback is the redundant check, never the skipped one, so a forgotten `rm` costs time and nothing else.
 
 **Run the band gate at the last task's P2.2**, after that task's `Done when` commands are green and before its commit: drop the marker, then run the repo's own gate once (`.claude/verify.sh`, else `make verify` / `task verify` / `just verify`). **A red band gate returns to P2.1** like any other P2.2 failure, with the failing output in the brief — and the marker goes back before the fix forks.
 
