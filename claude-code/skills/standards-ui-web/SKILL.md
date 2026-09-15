@@ -1,6 +1,6 @@
 ---
-name: standards-web-ui
-description: Browser UI standards — Design (Tailwind, component rules, WCAG AA) and Security (output encoding and XSS, CSP and browser headers, clickjacking, postMessage and embeds, dark patterns, sensitive inputs). Web targets only; native mobile is standards-mobile-ui, desktop shells are standards-desktop-ui. Load before writing a component, stylesheet, template, iframe, or postMessage handler.
+name: standards-ui-web
+description: Browser UI standards — Design (Tailwind, component rules, WCAG AA) and Security (output encoding and XSS, CSP and browser headers, clickjacking, postMessage and embeds, dark patterns, sensitive inputs). Web targets only; native mobile is standards-ui-mobile, desktop shells are standards-ui-desktop. Load before writing a component, stylesheet, template, iframe, or postMessage handler.
 user-invocable: false
 paths: "**/*.css, **/*.svelte, **/*.vue, **/*.tsx, **/*.jsx, **/*.html"
 ---
@@ -11,9 +11,9 @@ Framework-agnostic, browser-targeted. Framework mechanics live in the framework 
 
 ## Platform routing
 
-This skill owns the browser extensions — stylesheets, HTML templates, and the component extensions (`.svelte`, `.vue`, `.tsx`, `.jsx`). `.tsx`/`.jsx` are unambiguously web here because `standards-mobile-ui` covers native targets only and excludes React Native.
+This skill owns the browser extensions — stylesheets, HTML templates, and the component extensions (`.svelte`, `.vue`, `.tsx`, `.jsx`). `.tsx`/`.jsx` are unambiguously web here because `standards-ui-mobile` covers native targets only and excludes React Native.
 
-- **A desktop shell rendering its UI in web technology** still loads this skill for its renderer files — they match the browser extensions. `standards-desktop-ui` loads alongside it, off the shell's own config surface, and owns the shell boundary (context isolation, IPC, protocol handlers, update signing).
+- **A desktop shell rendering its UI in web technology** still loads this skill for its renderer files — they match the browser extensions. `standards-ui-desktop` loads alongside it, off the shell's own config surface, and owns the shell boundary (context isolation, IPC, protocol handlers, update signing).
 - **No glob in this skill matches a native mobile or desktop config file**, and neither of those skills claims a browser extension.
 
 # Design

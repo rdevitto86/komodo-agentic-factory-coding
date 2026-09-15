@@ -39,7 +39,7 @@ The real rules live in `claude-code/hooks/comments.py` and its shared rules modu
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-web-ui`'s Security section owns the broader rendered-surface bar this narrows to TypeScript/JavaScript mechanics.
+Language-specific insecure-usage patterns for `/assess-security` to pull from, beyond `standards-api-security`'s generic OWASP checklist — `standards-ui-web`'s Security section owns the broader rendered-surface bar this narrows to TypeScript/JavaScript mechanics.
 
 - **`eval`/`new Function(...)` on any request- or user-derived string is code execution**, not a shortcut — no upstream validation makes it safe.
 - **`dangerouslySetInnerHTML`/`innerHTML`/`v-html` with unsanitized content is stored/reflected XSS** — run untrusted HTML through a sanitizer (e.g. DOMPurify) first, or avoid the raw-HTML sink entirely.

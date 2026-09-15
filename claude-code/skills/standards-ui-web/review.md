@@ -1,6 +1,6 @@
 # Rendered-surface security review
 
-The procedure for reviewing the exploits a browser interface itself enables — XSS, clickjacking, dark patterns. `SKILL.md`'s Security half states the rules this file hunts for violations of. **Scope enumeration, the severity bar, and the report shape are shared with the backend review** — see `standards-api-security/review.md` §§1–2 and Output; this file adds only the rendered-surface vector that skill's §3 (Injection) explicitly excludes. For a native mobile or desktop surface, use `standards-mobile-ui` or `standards-desktop-ui` instead.
+The procedure for reviewing the exploits a browser interface itself enables — XSS, clickjacking, dark patterns. `SKILL.md`'s Security half states the rules this file hunts for violations of. **Scope enumeration, the severity bar, and the report shape are shared with the backend review** — see `standards-api-security/review.md` §§1–2 and Output; this file adds only the rendered-surface vector that skill's §3 (Injection) explicitly excludes. For a native mobile or desktop surface, use `standards-ui-mobile` or `standards-ui-desktop` instead.
 
 ## XSS
 
