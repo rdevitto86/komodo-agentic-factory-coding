@@ -44,7 +44,7 @@ claude-code/          mirrors ~/.claude exactly
 └── skills/           65 active, 7 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
-scripts/              validate.py, test-hooks.sh, release.sh, portable git hooks
+scripts/              validate.py, test-hooks.sh, release.py, portable git hooks
 CODEOWNERS            review gate on claude-code/AGENTS.md, settings.json, hooks/
 ```
 

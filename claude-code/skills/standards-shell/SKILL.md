@@ -72,4 +72,4 @@ This skill carries no `Repo layout — <token>` section. **Create is unsupported
 
 ## Reference material
 
-- **`scripts/setup.sh`, `scripts/test-hooks.sh`, `scripts/validate.sh`, `scripts/release.sh`** in this repo — the lived example for header-comment shape, `set -euo pipefail`, quoting, and the trap-based cleanup pattern this skill describes.
+- **`scripts/setup.sh`, `scripts/test-hooks.sh`** in this repo — the lived example for header-comment shape, `set -euo pipefail`, quoting, and the trap-based cleanup pattern this skill describes.

@@ -58,7 +58,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | `SUB-01.1.5.1` | `[Impl]` | hit live twice while publishing this band: `git commit -F -` with a heredoc body reading "any `git pull` in the clone changed every engineer's next session" was denied with "git pull is allowed only with --ff-only", and `gh pr create --body "$(cat <<'PRBODY' ...)"` was denied for "git checkout changes repository state" because the PR prose quoted a checkout invocation. The guard scans the whole Bash command string, and a heredoc body is part of it, so prose describing a command is indistinguishable from the command. Teach the segment scanner to skip heredoc bodies — the delimiter is known from the `<<` operator, so the span is decidable without parsing the shell fully | `bash scripts/test-hooks.sh` passes with new cases covering both acceptance criteria |
 | `SUB-01.1.5.2` | `[UnitTest]` | add the two regression cases to `scripts/test-hooks.sh` | `bash scripts/test-hooks.sh` |
 
-#### [TSK-01.1.6] `scripts/test-install.sh` is not wired into `make verify`, so neither CI nor the Stop gate ever runs it [P: M] [TODO]
+#### [TSK-01.1.6] `scripts/test_install.py` is not wired into `make verify`, so neither CI nor the Stop gate ever runs it [P: M] [TODO]
 
 **User Story:**
 > **As a** maintainer relying on the repo's own gate,
@@ -66,12 +66,12 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** a suite cannot pass locally and rot unnoticed on the branch.
 
 **Acceptance Criteria:**
-- [ ] **AC-1:** Given `make verify`, when it runs, then `scripts/test-install.sh` executes and a failure in it fails the target.
+- [ ] **AC-1:** Given `make verify`, when it runs, then `scripts/test_install.py` executes and a failure in it fails the target.
 - [ ] **AC-2:** Given the `verify` GitHub Actions workflow, when it runs on a PR, then that suite's result is visible in the run log.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.1.6.1` | `[Impl]` | surfaced while publishing the `--ref` band: `Makefile`'s `verify` target is `test validate comments`, where `test` is `scripts/test-hooks.sh` only. `scripts/test-install.sh` — 12 cases, six of them added by that band to cover `setup.sh --ref` — runs nowhere automatic, so the flag's entire guard surface is unprotected against regression in CI. Add it as its own target and fold it into `verify`. Note it is slower than the other three (it clones the repo and runs full installs into temp dirs), so measure the added wall-clock against `KOMODO_VERIFY_TIMEOUT`'s 300s default before wiring it in | `make verify` runs `scripts/test-install.sh`; `time make verify` stays under 300s |
+| `SUB-01.1.6.1` | `[Impl]` | surfaced while publishing the `--ref` band: `Makefile`'s `verify` target is `test validate comments`, where `test` is `scripts/test-hooks.sh` only. `scripts/test_install.py` — 12 cases, six of them added by that band to cover `setup.sh --ref` — runs nowhere automatic, so the flag's entire guard surface is unprotected against regression in CI. Add it as its own target and fold it into `verify`. Note it is slower than the other three (it clones the repo and runs full installs into temp dirs), so measure the added wall-clock against `KOMODO_VERIFY_TIMEOUT`'s 300s default before wiring it in | `make verify` runs `scripts/test_install.py`; `time make verify` stays under 300s |
 
 #### [TSK-01.1.7] Nothing enforces that a task's Acceptance Criteria actually map to a subtask, so an unmapped AC deadlocks the task in `backlog-audit`'s Ambiguous bucket indefinitely [P: L] [TODO]
 
@@ -118,11 +118,11 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 **Acceptance Criteria:**
 - [ ] **AC-1 (Collapse):** Given `scripts/hooks/git/install.sh`, when its `core.hooksPath` classification is read, then it carries only the distinctions some branch below actually tests.
-- [ ] **AC-2 (No regression):** Given `scripts/test-install.sh`, when it runs, then `G1`-`G4` pass unchanged.
+- [ ] **AC-2 (No regression):** Given `scripts/test_install.py`, when it runs, then `G1`-`G4` pass unchanged.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.4.14.1` | `[Impl]` | filed by `TSK-01.4.13`'s band-review `/assess-simplify` pass: the classification added at `scripts/hooks/git/install.sh:42-58` sets `state="different"` for an existing-but-not-`$HOOK_DIR` path, but every branch below tests only `current` or `stale` — `different` and `unset` take the identical `else` in both `--status` and the install path. The `[ -d ]` stat and the absolute-vs-relative `case` are load-bearing only for the stale distinction. Two flags (`is_current`, `is_stale`) express the same behavior with no dead assignment | `bash scripts/test-install.sh` passes with `G1`-`G4` unchanged; `python3 scripts/validate.py` |
+| `SUB-01.4.14.1` | `[Impl]` | filed by `TSK-01.4.13`'s band-review `/assess-simplify` pass: the classification added at `scripts/hooks/git/install.sh:42-58` sets `state="different"` for an existing-but-not-`$HOOK_DIR` path, but every branch below tests only `current` or `stale` — `different` and `unset` take the identical `else` in both `--status` and the install path. The `[ -d ]` stat and the absolute-vs-relative `case` are load-bearing only for the stale distinction. Two flags (`is_current`, `is_stale`) express the same behavior with no dead assignment | `python3 scripts/test_install.py` passes with `G1`-`G4` unchanged; `python3 scripts/validate.py` |
 
 ### [TG-01.5] Review Precision & Model Tiering
 * **Target Release:** V1
