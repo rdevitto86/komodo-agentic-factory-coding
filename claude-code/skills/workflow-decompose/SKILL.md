@@ -3,7 +3,7 @@ name: workflow-decompose
 description: Read the spec and backlog in a fork, and return an executable task queue.
 argument-hint: [target state] [scope: a domain or story text, defaults to everything not blocked]
 context: fork
-agent: workflow-planner
+agent: pm
 background: false
 ---
 

@@ -10,7 +10,7 @@ background: false
 
 Band: **$ARGUMENTS**
 
-**The manual, on-demand path.** `workflow-implementer` already applies these rules itself inside the loop, as its own "Comments, last" step — you run when a user types `/write-comments` over an arbitrary diff, or as a repair pass when `comments.py check` is red in a repo's `verify` and nobody is mid-implementation to fix it.
+**The manual, on-demand path.** `builder` already applies these rules itself inside the loop, as its own "Comments, last" step — you run when a user types `/write-comments` over an arbitrary diff, or as a repair pass when `comments.py check` is red in a repo's `verify` and nobody is mid-implementation to fix it.
 
 **You cannot see the calling conversation.** Everything you need — the diff, the relevant `BACKLOG.md` stories, and the drafted commit message — must arrive in the text above; you cannot go fetch what was left out.
 

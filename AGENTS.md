@@ -11,7 +11,7 @@ Design rationale for the decisions below lives in `docs/design-decisions.md`, no
 | `claude-code/AGENTS.md` | `~/.claude/AGENTS.md` | The universal rules, always loaded |
 | `claude-code/CLAUDE.md` | `~/.claude/CLAUDE.md` | One line: `@AGENTS.md` |
 | `claude-code/settings.json` | `~/.claude/settings.json` | Permissions and hook registration |
-| `claude-code/agents/` | `~/.claude/agents/` | `workflow-implementer` writes; `workflow-planner`, `engineering`, `scout` are read-only; `reviewer` never writes |
+| `claude-code/agents/` | `~/.claude/agents/` | `builder` writes anywhere and `tester` under test paths only; `pm`, `researcher`, `architect`, `scout` are read-only; `reviewer` never writes |
 | `claude-code/hooks/` | `~/.claude/hooks/` | A guard, plus the Stop gate and the session injector |
 | `claude-code/skills/` | `~/.claude/skills/` | Domain knowledge, lazily loaded |
 
@@ -23,9 +23,9 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 |---|---|---|---|
 | `git_guard.py` | `~/.claude/settings.json` | Bash | Allowlists read-only git, denies in-place rewrites |
 | `context_injector.py` | `~/.claude/settings.json` | SessionStart | Injects the `[WIP]` story, backlog tally, version, verify target |
-| `verify_gate.py` | `claude-code/agents/workflow-implementer.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
+| `verify_gate.py` | `claude-code/agents/builder.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
-| `comments.py hook` | `claude-code/agents/workflow-implementer.md` frontmatter | PostToolUse, matcher `Edit\|Write` | Reports comment findings for the touched file; fails open |
+| `comments.py hook` | `claude-code/agents/builder.md` frontmatter | PostToolUse, matcher `Edit\|Write` | Reports comment findings for the touched file; fails open |
 
 **`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py`, `context_injector.py`, and `comments.py hook` fail open** — any internal error exits 0, except a verify command that outruns `KOMODO_VERIFY_TIMEOUT` (integer seconds, default 300), which is a deliberate block naming the limit, not a silent pass-through.
 
@@ -53,7 +53,7 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 
 **Narrative is no longer machine-detectable.** The old `PreToolUse` guard flat-denied every non-`DOC` comment, which caught narration by construction; a lint cannot distinguish `// increments the counter` from a legitimate `WHY` without judgment. That judgment now lives entirely in the `write-comments` skill, and `check` enforces only what is decidable. No comment rule blocks a commit, push, lint, or release beyond the repo's own `verify` target.
 
-`workflow-implementer` is the author path inside the loop, `write-comments` the manual one; both go through `comments.py apply`, which validates a proposal against the nine-type taxonomy (`WHY`/`HACK`/`DOC`/`FIELD` plain, `NOTE`/`FIXME`/`TODO` marker-prefixed, `BANNER`/`STEP` structural) documented in `write-comments/reference.md`. `check` and `apply` share `lib/comment_rules.py`, so the two ends cannot drift apart.
+`builder` is the author path inside the loop, `write-comments` the manual one; both go through `comments.py apply`, which validates a proposal against the nine-type taxonomy (`WHY`/`HACK`/`DOC`/`FIELD` plain, `NOTE`/`FIXME`/`TODO` marker-prefixed, `BANNER`/`STEP` structural) documented in `write-comments/reference.md`. `check` and `apply` share `lib/comment_rules.py`, so the two ends cannot drift apart.
 
 ## Skill contract
 
@@ -65,7 +65,7 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 
 **Activation is path-based, not description-based.** `paths:` globs load a skill when a matching file is touched; `skillOverrides` in `claude-code/settings.json` then collapses it to `name-only`, so its description costs nothing in the always-on listing. `paths` decides when, `skillOverrides` decides cost. A skill with neither pays its full description forever.
 
-**Forked review and audit phases:** `assess-bugs`, `assess-security`, `assess-simplify` each run as a `context: fork` skill against the `reviewer` agent; `backlog-audit` runs the same way against `workflow-implementer` (it writes `BACKLOG.md`, the same record `workflow-consolidate` already touches). Each still carries neither `disable-model-invocation` nor `user-invocable: false`, so `workflow-loop`'s phases reach them by name.
+**Forked review and audit phases:** `assess-bugs`, `assess-security`, `assess-simplify` each run as a `context: fork` skill against the `reviewer` agent; `backlog-audit` runs the same way against `builder` (it writes `BACKLOG.md`, the same record `workflow-consolidate` already touches). Each still carries neither `disable-model-invocation` nor `user-invocable: false`, so `workflow-loop`'s phases reach them by name.
 
 ## No static references
 
@@ -97,6 +97,6 @@ python3 claude-code/hooks/comments.py check   # comment lint
 make verify                   # what the Stop gate runs: all three of the above
 ```
 
-`make verify` is this repo's own opt-in for `verify_gate.py`, which resolves a repo's gate in order: `.claude/verify.sh`, then `make verify`, then `task verify`, then `just verify`. `.claude/` is gitignored here, so the `Makefile` target is what ships. It only runs automatically inside a `workflow-implementer` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
+`make verify` is this repo's own opt-in for `verify_gate.py`, which resolves a repo's gate in order: `.claude/verify.sh`, then `make verify`, then `task verify`, then `just verify`. `.claude/` is gitignored here, so the `Makefile` target is what ships. It only runs automatically inside a `builder` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
 
 This repo ships its own `pre-commit`/`pre-push` dispatchers under `scripts/hooks/git/`, installed into a target repo via `install.sh` (sets `core.hooksPath`, nothing is copied). The `standards-cicd` skill states the contract they must satisfy.

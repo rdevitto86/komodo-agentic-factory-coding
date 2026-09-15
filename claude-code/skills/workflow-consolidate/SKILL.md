@@ -3,7 +3,7 @@ name: workflow-consolidate
 description: Record finished work in a fork — changelog entry, version bump, doc refresh, backlog cleanup.
 argument-hint: <the task summaries that just went green>
 context: fork
-agent: workflow-implementer
+agent: builder
 background: false
 ---
 

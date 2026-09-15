@@ -3,7 +3,7 @@ name: git-repo-init
 description: Create a new repo's full skeleton, or scaffold/refresh its CLAUDE.md/AGENTS.md and the three standard local documents.
 argument-hint: [repo-type: go-api|go-mcp|vue-ui|svelte-ui|cdk-infra] [target path, defaults to cwd]
 context: fork
-agent: workflow-implementer
+agent: builder
 background: false
 ---
 
@@ -76,7 +76,7 @@ A line only belongs in a generated `AGENTS.md` if it is a fact that `standards-s
 
 **Create** — nothing to read yet. Ask for what Step 2's repo type can't supply: the repo name (if not derivable from the target path), its one-line purpose, and its port(s) — no cross-repo port convention exists to derive one from. Never ask for anything the repo type or language skill already fixes (layout, entrypoint path).
 
-**When invoked by name from another skill or a `BACKLOG.md` story rather than typed directly** — this runs forked (`workflow-implementer`, per this file's frontmatter), and a fork cannot ask. The invocation must supply repo name, purpose, and port(s) up front, the same way `workflow-implement` requires its `Done when` commands explicit because "the fork cannot see the queue."
+**When invoked by name from another skill or a `BACKLOG.md` story rather than typed directly** — this runs forked (`builder`, per this file's frontmatter), and a fork cannot ask. The invocation must supply repo name, purpose, and port(s) up front, the same way `workflow-implement` requires its `Done when` commands explicit because "the fork cannot see the queue."
 
 ## Step 4 — Create: which repo types are supported
 

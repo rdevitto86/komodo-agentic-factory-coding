@@ -4,7 +4,7 @@ Rationale moved out of root `AGENTS.md` to keep that file actionable — every f
 
 ## verify_gate.py runs on the agent, not settings.json
 
-`verify_gate.py` is declared on the agent, not in global `settings.json`, on purpose. A `Stop` hook in an agent's own frontmatter only runs while that agent is active as a subagent, and Claude Code auto-converts it to `SubagentStop` — so it fires when a `workflow-implementer` fork (the `workflow-implement`/`workflow-consolidate` phases) finishes, and never in the primary interactive session. A verification gate on every casual turn burns tokens re-running a repo's test suite for edits nobody asked to be gated; scoping it to the fork means it only fires on work that came through `/workflow-loop`.
+`verify_gate.py` is declared on the agent, not in global `settings.json`, on purpose. A `Stop` hook in an agent's own frontmatter only runs while that agent is active as a subagent, and Claude Code auto-converts it to `SubagentStop` — so it fires when a `builder` fork (the `workflow-implement`/`workflow-consolidate` phases) finishes, and never in the primary interactive session. A verification gate on every casual turn burns tokens re-running a repo's test suite for edits nobody asked to be gated; scoping it to the fork means it only fires on work that came through `/workflow-loop`.
 
 ## The hook failure policy is inverted by design
 
@@ -48,7 +48,7 @@ The fix is `find_comment_start()` in `comment_rules.py` — a small per-line tok
 
 ## Comments are written by the fork that has the context
 
-An earlier design ran comment authoring as its own P3 fork, downstream of `workflow-implementer`, consuming a `## Comment Candidates` list the implementer handed it. Two problems retired that split, both about the fork doing the writing having gone cold. First, a P3 fork reads the implementer's candidates second-hand — plain prose describing intent the implementer held live while writing, already lossy by the time it's re-read in a separate context with no memory of the diff taking shape. Second, comment authoring landed after every reviewer phase had already run, so comment discipline itself was never actually reviewed — a P3 fork's output shipped unchecked by the very passes meant to catch a bad splice. `workflow-implementer` now runs its own "Comments, last" step once its `Done when` commands are green, applying the same judgment rules while the diff is still live in its own context, through the same `comments.py apply` gate. `write-comments` still exists for the case that step doesn't cover: a user-typed `/write-comments` over an arbitrary diff, or a repair pass when `comments.py check` comes back red in a repo's `verify` and nobody is mid-implementation to fix it.
+An earlier design ran comment authoring as its own P3 fork, downstream of `builder`, consuming a `## Comment Candidates` list the implementer handed it. Two problems retired that split, both about the fork doing the writing having gone cold. First, a P3 fork reads the implementer's candidates second-hand — plain prose describing intent the implementer held live while writing, already lossy by the time it's re-read in a separate context with no memory of the diff taking shape. Second, comment authoring landed after every reviewer phase had already run, so comment discipline itself was never actually reviewed — a P3 fork's output shipped unchecked by the very passes meant to catch a bad splice. `builder` now runs its own "Comments, last" step once its `Done when` commands are green, applying the same judgment rules while the diff is still live in its own context, through the same `comments.py apply` gate. `write-comments` still exists for the case that step doesn't cover: a user-typed `/write-comments` over an arbitrary diff, or a repair pass when `comments.py check` comes back red in a repo's `verify` and nobody is mid-implementation to fix it.
 
 ## The no-op directive anecdote
 
@@ -119,7 +119,7 @@ Spec → decompose → execute → consolidate → complete, each phase naming w
 
 ## A fork needs an agent, and that agent's output template is the phase's return contract
 
-`workflow-implementer` exists because the read-only agents cannot write; `workflow-planner` exists because `engineering` returns a research report and a decompose phase must return a queue; `reviewer` exists because `engineering`'s Answer/Evidence contract does not fit a findings table. Adding a phase means asking which existing contract fits before adding a new agent.
+`builder` exists because the read-only agents cannot write; `pm` exists because `researcher` returns a research report and a queue is a different contract; `reviewer` exists because `researcher`'s Answer/Evidence shape does not fit a findings table; `architect` exists because a set of weighed options is neither. Adding a role means asking which existing output contract fits before adding an agent.
 
 ## backlog-modify/changelog own the mutable-record formats; standards-worklog just the directive
 
@@ -131,7 +131,7 @@ Spec → decompose → execute → consolidate → complete, each phase naming w
 
 ## No fork reaches Drive or other MCP tools
 
-`workflow-planner` and `workflow-implementer` declare no MCP tools, so a forked phase cannot fetch even if it wanted to — whatever it needs arrives in `$ARGUMENTS`. Nothing fetches at session start either, the same rule that keeps `context_injector.py` off the bridge.
+`pm` and `builder` declare no MCP tools, so a forked phase cannot fetch even if it wanted to — whatever it needs arrives in `$ARGUMENTS`. Nothing fetches at session start either, the same rule that keeps `context_injector.py` off the bridge.
 
 ## A skill with a procedure half gets a sibling file
 
@@ -183,7 +183,7 @@ The fix exempts exactly the leading shebang-plus-comment run at the top of a fil
 
 ## Read-only agents get a turn cap, the writer gets a gate instead
 
-`reviewer` (`maxTurns: 80`), `workflow-planner` (`maxTurns: 50`), `engineering` (`maxTurns: 40`), and `scout` (`maxTurns: 20`) each carry a hard turn cap sized to how much reading their job needs — `scout` answers one path-list question, `engineering` traces call paths and surveys patterns across many files, `workflow-planner` reads a whole spec and backlog, `reviewer` reads a diff cold with no prior context and may need the most turns to reconstruct what it's looking at. `workflow-implementer` gets no `maxTurns` — `verify_gate.py`'s `Stop` hook already bounds it, blocking a return until the repo's own `Done when`/`verify` checks pass or the fork reports `BLOCKED`, so a second cap would only race the gate that already exists for the one agent that writes.
+`reviewer` (`maxTurns: 80`), `architect` and `tester` (`maxTurns: 60`), `pm` (`maxTurns: 50`), `researcher` (`maxTurns: 40`), and `scout` (`maxTurns: 20`) each carry a hard turn cap sized to how much reading their job needs — `scout` answers one path-list question, `researcher` traces call paths and surveys patterns across many files, `pm` reads a whole spec and backlog, `reviewer` reads a diff cold with no prior context and may need the most turns to reconstruct what it's looking at. `tester` carries one despite writing, because nothing gates its return the way `verify_gate.py` gates `builder`'s. `builder` gets no `maxTurns` — `verify_gate.py`'s `Stop` hook already bounds it, blocking a return until the repo's own `Done when`/`verify` checks pass or the fork reports `BLOCKED`, so a second cap would only race the gate that already exists for the one agent that writes.
 
 ## Checkboxes are sanctioned for one thing: Acceptance Criteria
 
