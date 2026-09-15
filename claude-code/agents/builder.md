@@ -1,6 +1,6 @@
 ---
 name: builder
-description: Writes code and the tests a task names, then proves it with that task's own commands. The roster's only writer. Never picks its own work.
+description: Writes code and the tests a task names, then proves it with that task's own commands. Writes anywhere in the tree. Never picks its own work.
 tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 model: sonnet
 effort: high

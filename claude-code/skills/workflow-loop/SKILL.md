@@ -193,15 +193,13 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 |---|---|
 | Read-only research across many files | `researcher` |
 | "Where is X" — a path list | `scout` |
-| A design question with more than one defensible answer | `architect` — returns options and a recommendation, never a decision |
-| Tests against an interface that already exists | `tester` — writes under test paths only, so it can run beside `builder` |
-| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. `/assess-performance` grades it too but runs inline (no `context: fork`), conditionally, in the same pass. |
+| A design question with more than one answer | `architect` — weighed options, never a decision |
+| Tests against an existing interface | `tester` — test paths only, and that is prose, not a lock |
+| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. |
 
-**Parallel writers need `isolation: worktree`** — two agents editing one checkout collide; read-only fan-out needs none.
+**Parallel writers need `isolation: worktree`** — two agents editing one checkout collide, and `builder` writes tests too, so `tester` beside it is two writers. Read-only fan-out needs none.
 
-**Set `model`/`effort` in the delegate's own frontmatter.** `opus`/`high` for architecture and hard debugging, `sonnet`/`medium` for research and routine code, `haiku`/`low` for path lookup.
-
-**Brief with `Task` / `Files` / `Context` / `Done when` / `Out of scope`** — never "see above". Ask for the verdict, not the transcript.
+**Set `model`/`effort` in the delegate's own frontmatter.** `opus`/`high` for architecture and hard debugging, `sonnet`/`medium` for research and routine code, `haiku`/`low` for path lookup. **Brief with `Task` / `Files` / `Context` / `Done when` / `Out of scope`** — never "see above". Ask for the verdict, not the transcript.
 
 ---
 
