@@ -140,10 +140,10 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** the documented enforcement path is real rather than something each repo has to discover and add.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Go):** Given `templates/go/Makefile`, when its `verify` target is read, then it runs `comments.py check`.
-- [ ] **AC-2 (Node):** Given `templates/node/Makefile`, when its `verify` target is read, then it runs the same check.
-- [ ] **AC-3 (Ordering):** Given either target, when it runs, then the comment check's failure fails the target, and it is ordered so a formatting or build failure surfaces first.
-- [ ] **AC-4 (Doc truth):** Given `docs/design-decisions.md`'s claim that `comments.py check` runs inside the repo's own `verify` target only, when a scaffolded repo is inspected, then that claim holds.
+- [x] **AC-1 (Go):** Given `templates/go/Makefile`, when its `verify` target is read, then it runs `comments.py check`.
+- [x] **AC-2 (Node):** Given `templates/node/Makefile`, when its `verify` target is read, then it runs the same check.
+- [x] **AC-3 (Ordering):** Given either target, when it runs, then the comment check's failure fails the target, and it is ordered so a formatting or build failure surfaces first.
+- [x] **AC-4 (Doc truth):** Given `docs/design-decisions.md`'s claim that `comments.py check` runs inside the repo's own `verify` target only, when a scaffolded repo is inspected, then that claim holds.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
