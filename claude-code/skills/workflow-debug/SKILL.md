@@ -1,7 +1,7 @@
 ---
 name: workflow-debug
 description: Read a failure's reproduction and characterization in a fork, and return a ranked queue of testable hypotheses.
-argument-hint: <the repro steps and symptom characterization from P0>
+argument-hint: a pm brief — Task (repro steps + symptom) | Context | Out of scope (all three required)
 context: fork
 agent: pm
 background: false
@@ -9,9 +9,9 @@ background: false
 
 # Hypothesize
 
-Failure: **$ARGUMENTS** — the repro steps, symptom, and any "started after" boundary P0 already established.
+Brief: **$ARGUMENTS** — a `pm` brief whose `Task` slot carries the repro steps, the symptom, and any "started after" boundary P0 already established, alongside the required `Context` and `Out of scope`.
 
-**You cannot see the calling conversation.** Everything you need is in the text above and on disk.
+**You cannot see the calling conversation.** Everything you need is in that brief and on disk, and a missing or empty required slot is your standing stop.
 
 ## Order
 

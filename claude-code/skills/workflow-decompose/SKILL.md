@@ -1,7 +1,7 @@
 ---
 name: workflow-decompose
 description: Read the spec and backlog in a fork, and return an executable task queue.
-argument-hint: [target state] [scope: a domain or story text, defaults to everything not blocked]
+argument-hint: a pm brief — Task (target state + scope) | Context | Out of scope (all three required)
 context: fork
 agent: pm
 background: false
@@ -9,7 +9,7 @@ background: false
 
 # Decompose
 
-Scope: **$ARGUMENTS** — a target state, optionally narrowed to one domain or story. Empty means the current `## Now` state, every story not `[BLOCKED]` after step 6 below.
+Brief: **$ARGUMENTS** — a `pm` brief whose `Task` slot carries the target state and the scope it is narrowed to, alongside the required `Context` and `Out of scope`. A `Task` naming a target state but no narrower domain or story means the current `## Now` state, every story not `[BLOCKED]` after step 6 below; a missing or empty required slot is your standing stop.
 
 **You cannot see the calling conversation.** Everything you need is on disk, and the queue you return is the only thing that reaches it.
 
@@ -19,7 +19,7 @@ Scope: **$ARGUMENTS** — a target state, optionally narrowed to one domain or s
 2. **Task shape**: each task's `SUB-` lines each carry their own nested `* **Done when:**` bullet — a subtask is the acceptance criterion, not a separate list from it. Full rules live in `backlog-modify`, not needed here to parse the queue.
 3. **Drop anything already in `CHANGELOG.md`.** A story recorded there has shipped.
 4. **A task with no `SUB-` lines, or any `SUB-` line missing a `Done when:` bullet (or whose bullets are prose, not commands), is a gap** — report it, don't invent one.
-5. **If `$ARGUMENTS` names a domain or story substring, narrow to matching stories** before the checks below. No match named: every story in the target state is in scope.
+5. **If the `Task` slot names a domain or story substring, narrow to matching stories** before the checks below. No match named: every story in the target state is in scope.
 6. **Test every `[BLOCKED]` story's `Recheck:` condition.** Satisfied → drop `[BLOCKED]` and its subnote, queue the story like any other. Not satisfied → leave it blocked and out of the returned queue. **A `[BLOCKED]` story with no `Recheck:` line is a `## Gaps` finding** — every block needs a testable exit condition, not a permanent one.
 7. **Check the queue for a chain** before returning.
 8. **Mark transitive blocks.** A story that names a `Depends on`/`(after: ...)` edge to a story still `[BLOCKED]` after step 6 is itself blocked, even if nothing marks it so directly — carry that forward so P2.0 can pick around the whole chain instead of discovering it task by task.

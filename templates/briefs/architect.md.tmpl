@@ -1,0 +1,30 @@
+# Brief — architect
+
+A design question with more than one defensible answer. Returns weighed options and a recommendation; never a decision.
+
+**Required:** `Task` · `Context` · `Out of scope`
+**Optional:** `Files` — where to start reading, when the question is anchored to a known surface. `Done when` — an architecture call ends at its own output template, not at a command; include it only where a specific probe must be run to settle an option.
+
+The shared slot contract is in this directory's `README.md`.
+
+---
+
+**Task** — {{THE_DECISION_IN_ONE_SENTENCE}}
+
+A question with one answer is not an architecture question. If the brief cannot state a genuine fork in the road, it is the wrong fork to call.
+
+**Context** — {{CONSTRAINTS_OUTSIDE_THE_CODEBASE}}
+
+The deadline, the migration already underway, the preference already stated. This is the slot that does the work: the fork can read the tree, and cannot read any of this.
+
+**Out of scope** — {{OPTIONS_ALREADY_REJECTED}}
+
+Options already ruled out and why, so they are not weighed again. Write `nothing ruled out yet` rather than leaving it empty.
+
+**Files** — {{STARTING_PATHS}}
+
+*Optional.* Where the question lives, if it is anchored.
+
+**Done when** — {{COMMAND}}
+
+*Optional.* A probe whose result an option depends on.

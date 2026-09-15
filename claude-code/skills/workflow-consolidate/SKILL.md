@@ -1,7 +1,7 @@
 ---
 name: workflow-consolidate
 description: Record finished work in a fork — changelog entry, version bump, doc refresh, backlog cleanup.
-argument-hint: <the task summaries that just went green>
+argument-hint: a builder brief — Task | Files | Context | Done when | Out of scope (all five required)
 context: fork
 agent: builder
 background: false
@@ -9,9 +9,9 @@ background: false
 
 # Consolidate
 
-Completed: **$ARGUMENTS** — the band's `TSK-` IDs plus their summaries.
+Brief: **$ARGUMENTS** — a `builder` brief whose `Task` slot carries the band's `TSK-` IDs plus their summaries, alongside the other four required slots.
 
-**You cannot see the calling conversation.** The list above is what shipped. If it is empty, stop and say so.
+**You cannot see the calling conversation.** That brief is what shipped. An absent or empty required slot is your standing stop, not something to infer from the repo.
 
 **Load `changelog-write`** for the changelog format and the version rules, and **`backlog-modify`** for `BACKLOG.md`'s status tags, `Blocked By:`/`Recheck:` shape, and `SUB-`/`Done when:` shape — the two steps below edit against those rules, not ones restated here. **Never read the SDD** — this phase does not touch the spec, and there is nothing here that needs it.
 

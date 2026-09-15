@@ -66,7 +66,7 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 **No task group left with open, unblocked work** → say so and stop.
 
-**Run `/workflow-decompose [target state] [scope]`**, `scope` being the task group just picked, or `$ARGUMENTS`'s override. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue naming the exact `TSK-` IDs in scope for this run.
+**Run `/workflow-decompose`** with a `pm` brief — `Task` carrying the target state plus the scope (the task group just picked, or `$ARGUMENTS`'s override), then `Context` and `Out of scope`. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue naming the exact `TSK-` IDs in scope for this run.
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — go to P0, not P2.
 
@@ -102,17 +102,17 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 ### P2.1 · Implement
 
-**Run `/workflow-implement <task text and Done when commands>`, once per task.**
+**Run `/workflow-implement`, once per task**, with a `builder` brief — `Task`, `Files`, `Context`, `Done when`, `Out of scope`.
 
-**Pass every command explicitly.** The fork cannot see the queue — a task with no `Done when` commands stops rather than guessing one.
+**Fill every one of those five explicitly.** The fork cannot see the queue, and an empty required slot stops it — slot set in the delegate table under *Delegating outside the phases*.
+
+**A design choice the task leaves open is a P0/P2.0 decision to make before forking**, never something to hand off ambiguously — the template's `Task` slot owns where the decision then goes.
 
 **Run the fork even when the code already appears to exist on disk** — verifying inherited state is not implementing it.
 
 **A fork returns a result, never its reasoning.**
 
 **No retry counter here** — a P2.2 failure sending a task back to this phase is already bounded by P2.2's own pass/fail, not a repeat-prone loop. The retry tally lives at P2.3, the phase where a "same skill, same file, no forward progress" loop actually happens.
-
-**When a task involves a genuine mechanism or design choice — not merely "write this function" — the brief states the chosen mechanism and why, rather than leaving it to the fork's judgment.** A fork picking wrong on an open design question costs a discovery-at-review round trip the brief could have closed for free. If the choice is genuinely undecided, that's a P0/P2.0 decision to make before forking, not something to hand off ambiguously.
 
 **Ends when:** every one of the task's `Done when` commands exits zero.
 
@@ -134,7 +134,7 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 ### P2.3 · Band review
 
-**Runs once per band, after every task in the band is committed — never per task.** Dispatch `/assess-bugs`, `/assess-simplify`, and `/assess-security` (when the surface warrants it, per `ways/`) together in one parallel block, as plain forks — no isolation, they are read-only after TSK-01.4.2. Each runs as a `reviewer` fork. **Also run `/assess-performance`** (when a touched path is performance-sensitive, per `ways/`) in the same pass — it carries no `context: fork` frontmatter, so it runs inline in this session rather than as a `reviewer` fork, and self-files its own `BACKLOG.md` story at Med-High or above per its own contract, same as `/assess-code-quality` already invokes it elsewhere.
+**Runs once per band, after every task in the band is committed — never per task.** Dispatch `/assess-bugs`, `/assess-simplify`, and `/assess-security` (when the surface warrants it, per `ways/`) together in one parallel block, as plain forks — no isolation, they are read-only after TSK-01.4.2. Each runs as a `reviewer` fork, so each brief carries `Task`, `Files`, `Context`, `Round`, `Standards`, and `Out of scope`. **Also run `/assess-performance`** (when a touched path is performance-sensitive, per `ways/`) in the same pass — it carries no `context: fork` frontmatter, so it runs inline in this session rather than as a `reviewer` fork, and self-files its own `BACKLOG.md` story at Med-High or above per its own contract, same as `/assess-code-quality` already invokes it elsewhere.
 
 **Review against the band, not any one task** — did every task's acceptance condition land, and did anything outside the tasks change?
 
@@ -160,7 +160,7 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 ## P3 · Consolidate
 
-**Run `/workflow-consolidate <the band's `TSK-` IDs and task summaries>`** once the whole band is done and P2.4 has cleared, not after each task.
+**Run `/workflow-consolidate`** once the whole band is done and P2.4 has cleared, not after each task — a `builder` brief, `Task` carrying the band's `TSK-` IDs and task summaries, plus the other four required slots.
 
 It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — frozen; a change it needs comes back to you as a finding.
 
@@ -205,7 +205,18 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 
 **Parallel writers need `isolation: "worktree"`** — `builder` writes tests too, so `tester` beside it is two writers. P2.0 owns the manifest proof that gates it.
 
-**Set `model`/`effort` in the delegate's own frontmatter.** `opus`/`high` for architecture and hard debugging, `sonnet`/`medium` for research and routine code, `haiku`/`low` for path lookup. **Brief with `Task` / `Files` / `Context` / `Done when` / `Out of scope`** — never "see above". Ask for the verdict, not the transcript.
+**Set `model`/`effort` in the delegate's own frontmatter.** `opus`/`high` for architecture and hard debugging, `sonnet`/`medium` for research and routine code, `haiku`/`low` for path lookup.
+
+**Brief every delegate with every slot its role requires** — never "see above":
+
+| Role | Required slots |
+|---|---|
+| `builder` · `tester` | `Task` `Files` `Context` `Done when` `Out of scope` |
+| `reviewer` | `Task` `Files` `Context` `Round` `Standards` `Out of scope` |
+| `pm` · `architect` · `researcher` | `Task` `Context` `Out of scope` |
+| `scout` | `Task` |
+
+**An absent slot and a present-but-empty one are the same thing** — the fork stops and returns the gap instead of doing the work. Delete an optional slot you have nothing for rather than leaving it blank. The per-role templates under `templates/briefs/` are the fuller authoring reference, available when working in the toolkit repo itself; the table above is what a session in any other repo has. Ask for the verdict, not the transcript.
 
 ---
 

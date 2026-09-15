@@ -1,7 +1,7 @@
 ---
 name: workflow-implement
 description: Execute one task to completion in a fork — write the code, write the tests it names, run its Done when commands.
-argument-hint: <task text and its Done when commands>
+argument-hint: a builder brief — Task | Files | Context | Done when | Out of scope (all five required)
 context: fork
 agent: builder
 background: false
@@ -9,9 +9,7 @@ background: false
 
 # Implement
 
-Task: **$ARGUMENTS**
-
-**You cannot see the calling conversation.** If the task above names no `Done when` commands, stop and say so — guessing one is how a task reports green without being done.
+Brief: **$ARGUMENTS** — a `builder` brief carrying `Task`, `Files`, `Context`, `Done when`, and `Out of scope`. A missing or empty one of those is your standing stop, not something to infer from the repo.
 
 ## Order
 

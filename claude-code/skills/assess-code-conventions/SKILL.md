@@ -1,7 +1,7 @@
 ---
 name: assess-code-conventions
 description: Read the changed code for judgment-call style/formatting violations a linter or formatter cannot mechanically decide — wrap-style choice, magic-number extraction placement/casing/grouping, guard-clause blank lines, single-call-site inline-vs-closure. Model-agnostic; never re-flags anything golangci-lint/gofmt/the repo's own formatter already gates.
-argument-hint: <task text or band summary> [standards-* skills that apply]
+argument-hint: a reviewer brief — Task (band summary) | Files | Context | Round | Standards | Out of scope (all six required)
 context: fork
 agent: reviewer
 background: false
@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 # Code conventions assessment
 
-Reviewing: **$ARGUMENTS**
+Brief: **$ARGUMENTS** — a `reviewer` brief carrying `Task`, `Files`, `Context`, `Round`, `Standards`, and `Out of scope`. A missing or empty one of those is your standing stop, not something to infer from the diff.
 
 Model-agnostic style pass — Read/Grep/Glob/Bash only, no host-specific tooling. Findings only, never fixes — same contract as `assess-bugs`/`assess-simplify`, just a different lens.
 
@@ -18,7 +18,7 @@ Model-agnostic style pass — Read/Grep/Glob/Bash only, no host-specific tooling
 
 ## Process
 
-1. **Load the `standards-<lang>` skill(s) named in `$ARGUMENTS`** and read their Conventions section — the judgment calls this skill checks are documented there, not invented per-review.
+1. **Load the `standards-<lang>` skill(s) the brief's `Standards` slot names** and read their Conventions section — the judgment calls this skill checks are documented there, not invented per-review.
 2. **Confirm the repo's lint/format gate is clean first** — run whatever `AGENTS.md` or the `standards-<lang>` skill names as the formatter/linter command. If it fails, stop and say so: a dirty gate means the mechanical layer hasn't run yet, and everything it would catch is noise here.
 3. **Read `git diff` for the band.**
 4. **For each changed block, check only the judgment calls the gate can't decide**: the wrap-style step chosen once a statement already needs wrapping, a magic number/string left inline or extracted to the wrong scope/casing/grouping, a guard-clause blank-line placement, a single-call-site function that should be a closure or vice versa.

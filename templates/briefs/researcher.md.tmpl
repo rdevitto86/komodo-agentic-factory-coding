@@ -1,0 +1,30 @@
+# Brief — researcher
+
+Read-only research across a codebase or technical domain. Returns findings with `file:line` evidence; never edits.
+
+**Required:** `Task` · `Context` · `Out of scope`
+**Optional:** `Files` — the paths or subtree to start from, when the question is already narrowed. `Done when` — research ends at its own output template, not at a command; include it only where a specific command's output is the answer.
+
+The shared slot contract is in this directory's `README.md`.
+
+---
+
+**Task** — {{THE_QUESTION}}
+
+One answerable question. "Look into X" is not one — say what a good answer would let the caller do.
+
+**Context** — {{WHY_IT_IS_BEING_ASKED}}
+
+What the answer will be used for, and what is already known, so the fork does not re-derive it. The fork cannot see the calling conversation.
+
+**Out of scope** — {{WHAT_NOT_TO_CHASE}}
+
+The adjacent question this call must not expand into. Write `nothing adjacent` rather than leaving it empty.
+
+**Files** — {{STARTING_PATHS}}
+
+*Optional.* A starting subtree, where one is known.
+
+**Done when** — {{COMMAND}}
+
+*Optional.* A command whose output is the answer.

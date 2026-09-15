@@ -222,25 +222,30 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** the deciding rule is the one this repo already adopted for comments — enforce only what is decidable. A brief is generated per invocation and fails by omission, which is decidable; a standards skill is read per session and fails by misjudgment, which is not. So briefs and report contracts become templates, and `AGENTS.md`, `standards-*`, agent bodies, and `ways/` stay static prose. Sequenced last by decision, and after the roster rename, since each template is owned by the role it addresses.
 
-#### [TSK-01.11.1] A fork brief is described in prose in three separate places and validated nowhere, so an omitted slot is only discovered by the fork guessing or stopping (after: "The agent roster is named after workflow phases rather than roles") [P: M] [TODO]
+#### [TSK-01.11.2] `workflow-loop/SKILL.md` is structurally too big for its own compaction cap, and every band spends its remaining headroom [P: H] [TODO]
 
 **User Story:**
-> **As an** orchestrator briefing a fork that cannot see this conversation,
-> **I want** one template per role with required slots,
-> **So that** an incomplete brief is caught before the fork burns a turn on it.
+> **As** whoever adds the next rule to the loop,
+> **I want** the file to have room for it,
+> **So that** a real improvement is not blocked by a budget the file's shape made inevitable.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Templates):** Given `templates/briefs/`, when it is listed, then it holds one template per role in the roster.
-- [ ] **AC-2 (Slots):** Given each template, when it is read, then it carries `Task`, `Files`, `Context`, `Done when`, and `Out of scope`, plus `Round` and `Standards` for reviewer briefs.
-- [ ] **AC-3 (Enforcement):** Given a brief arriving with a required slot empty, when the receiving agent reads it, then it stops and names the missing slot rather than guessing.
-- [ ] **AC-4 (Deduplication):** Given `workflow-loop`, `ways/sdlc.md`, and `workflow-implement`, when each is read, then none carries its own prose description of brief contents.
+- [ ] **AC-1 (Headroom):** Given `claude-code/skills/workflow-loop/SKILL.md`, when `python3 scripts/validate.py` reports the compaction cap, then the file has room for a substantial addition rather than a sentence.
+- [ ] **AC-2 (Nothing lost):** Given every rule the file states today, when the restructure is done, then each is still reachable by the session that needs it, at the phase that needs it.
+- [ ] **AC-3 (Loaded, not linked):** Given whatever the content moves into, when the orchestrator runs, then it actually reaches that content — a pointer to a file that does not install is what `TSK-01.11.1`'s band review already caught once.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.11.1.1` | `[Impl]` | write one `templates/briefs/<role>.md.tmpl` per role. These live outside any loaded path, so they cost nothing in the always-on budget | `ls templates/briefs/`; `python3 scripts/validate.py` |
-| `SUB-01.11.1.2` | `[Impl]` | add the stop-on-missing-slot rule to each agent body. The fork is the only place with the information to validate its own brief, and `workflow-implement` already half-states this for `Done when` — generalize that rather than inventing a mechanism | `python3 scripts/validate.py` |
-| `SUB-01.11.1.3` | `[Impl]` | delete the three prose brief descriptions now superseded by the templates. `workflow-loop/SKILL.md` is near the compaction cap, so this should buy tokens back rather than cost them | `grep -rc "Out of scope" claude-code/skills/workflow-loop/SKILL.md` reflects the removal; `make verify` |
-| `SUB-01.11.1.4` | `[Impl]` | spike whether a `PreToolUse` matcher on `Task`/`Skill` fires the way the `Edit|Write` matcher does. If it does, brief validation can move from the fork to the harness, which is strictly better; if it does not, the fork-side rule above stands alone. Record the result either way | `grep -c "PreToolUse" docs/design-decisions.md` returns non-zero; `make verify` |
+| `SUB-01.11.2.1` | `[Impl]` | the file went 3961 to 4745 tokens against a 5000-token cap across `TG-01.10` and `TG-01.11`, and every band since has had to spend part of its budget buying headroom back rather than doing its own work. Two attempts have landed: moving the band-gate mechanics into `ways/sdlc.md` bought 206, and `SUB-01.11.1.3`'s deletion of three prose brief descriptions was expected to buy more but net cost 239 once the dispatch table replacing an uninstallable pointer was counted. Trimming sentences is not working; the shape is the problem. `ways/sdlc.md` is loaded by `Read` rather than the skill loader and is not capped, which is the seam already in use — consider whether the five phase sections belong there, leaving `SKILL.md` the machine and the phase table. Note AC-3: `ways/` is read by the orchestrator, so it genuinely reaches, unlike `templates/` | `python3 scripts/validate.py` reports `workflow-loop/SKILL.md` at or below 4000 tokens with every rule still reachable; `make verify` |
+
+#### [TSK-01.11.3] `TSK-01.11.1`'s AC-4 is ticked, but the three files carry more brief-content text than when it was ticked [P: L] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given `TSK-01.11.1`'s AC-4 and the three files it names, when both are read, then the criterion describes what is actually there.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.11.3.1` | `[Impl]` | AC-4 reads "`workflow-loop`, `ways/sdlc.md`, and `workflow-implement` carry no prose description of brief contents", and was ticked when the three prose blocks were deleted. Its band review then found those files pointing at `templates/briefs/`, which does not install into a target repo, so a role-to-slots dispatch table and inline slot names at each invocation site went back in — a slot list rather than prose, and the minimum that stops the pointer dangling, but more brief-content text than the tick assumed. Decide whether AC-4's intent was "no duplicated prose" (satisfied) or "no brief content at all" (not), and correct either the criterion or the files. Folded into `TSK-01.11.2` if that restructure moves this text anyway | `make verify` |
 
 ---
 
