@@ -2,7 +2,7 @@
 name: reviewer
 description: Reads a diff cold and returns findings. The fork target for assess-bugs, assess-security, and assess-simplify. Never writes — findings only.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: opus
 effort: high
 maxTurns: 80
 ---

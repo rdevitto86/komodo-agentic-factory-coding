@@ -149,8 +149,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 #### [TSK-01.5.2] `reviewer` runs on `model: sonnet` while precision under adversarial reading is the single thing that role exists for [P: H] [TODO]
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Spike):** Given a `context: fork` skill that also names `agent:`, when a skill-level `model:` key is set on it, then whether that key overrides the agent's own frontmatter is determined by observation and recorded in `docs/design-decisions.md`.
-- [ ] **AC-2 (Assignment):** Given the spike's result, when the reviewer tier is set, then the finders whose precision matters most run on the stronger model and the decision's rationale is written down.
+- [x] **AC-1 (Spike):** Given a `context: fork` skill that also names `agent:`, when a skill-level `model:` key is set on it, then whether that key overrides the agent's own frontmatter is determined by observation and recorded in `docs/design-decisions.md`.
+- [x] **AC-2 (Assignment):** Given the spike's result, when the reviewer tier is set, then the finders whose precision matters most run on the stronger model and the decision's rationale is written down.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
