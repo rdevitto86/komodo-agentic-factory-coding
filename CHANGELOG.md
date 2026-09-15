@@ -4,6 +4,16 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- The `verify` target in both scaffolded Makefiles (`templates/go/`, `templates/node/`) now runs `comments.py check`, so the enforcement path the design decisions document describes exists in every repo this toolkit creates. It runs last, so a formatting, test, or build failure still surfaces first.
+- `scripts/hooks/git/install.sh` gains its first regression coverage, in `scripts/test-install.sh` — stale `--status`, stale install, and the already-installed and orphaned `.git/hooks` paths as anchors.
+
+### Changed
+- A session starting in a repo with no verify gate now gets an explicit warning naming what is not running — the repo's own checks, and `comments.py check` with them — rather than a neutral status line that read the same as the released version and backlog tally beside it. Output for a repo that does declare a gate is unchanged.
+
+### Fixed
+- `scripts/hooks/git/install.sh --status` could not tell a `core.hooksPath` pointing somewhere deliberate from one pointing at a directory that no longer exists, so a repo running zero git hooks looked normal from the one command meant to audit exactly that. The path is now classified, a stale one is marked, and installing over one notes that hooks had not been running.
+
 ## [0.49.0] — 2026-09-10
 
 ### Added

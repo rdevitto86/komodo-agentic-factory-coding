@@ -114,57 +114,15 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | `SUB-01.4.10.1` | `TSK-01.4.9`'s new gate (`agent_type == REVIEWER_AGENT and command != "git"`) denies every non-`git` reviewer command before `scan_segment` ever reaches the old comments.py-bypass detection call site, so `comments_write_invocation` (and everything it alone calls: `is_comments_script`, `comments_script_signature`, `cat_source_path`, plus `COMMENTS_SCRIPT_BASENAME`/`COMMENTS_SCRIPT_REALPATH`/`COMMENTS_WRITE_SUBCOMMANDS`) is defined but never called from anywhere. Flagged by `TSK-01.4.9`'s own implementer and by its band-review `/assess-bugs` pass as a follow-up simplify candidate, deliberately not removed in that task to keep its diff scoped to the security fix alone. `piped_source` threading through `scan_segment`/`_scan_command_at_depth` (its only consumer was `comments_write_invocation`) becomes dead alongside it | `/assess-simplify claude-code/hooks/git_guard.py` reports the dead functions/constants removed (or confirms none remain reachable); `bash scripts/test-hooks.sh` still passes with the same pass count minus any cases that existed solely to exercise the removed code path |
 | `SUB-01.4.10.2` | filed by `TSK-01.4.9`'s band-review `/assess-simplify` pass: `scripts/test-hooks.sh`'s `G161`-`G163` cases (plus the `FIXTURE_COMMENTS_COPY`/`FIXTURE_COMMENTS_ALIAS` fixtures at lines ~812-816) were built to exercise `is_comments_script`'s samefile/content-signature matching — with the new deny-by-default gate, every one of those commands is now rejected by the generic `command != "git"` check before that identity/content logic is ever reached, and `G179`-`G188` already cover the same ground more directly (`G186` explicitly proves the gate is basename-agnostic). The fixture setup now builds infrastructure no reviewer-agent test path can reach | `scripts/test-hooks.sh`'s round-4 comments.py-copy/alias block (`G161`-`G163` and their now-unreachable fixtures) is collapsed or removed without losing any assertion `G179`-`G188` doesn't already make; `bash scripts/test-hooks.sh` still passes |
 
-#### [TSK-01.4.11] `context_injector.py` reports a missing verify gate in the same neutral tone as every other status line, so a repo running zero enforcement looks identical to one running all of it [P: H] [TODO]
-
-**User Story:**
-> **As an** engineer opening a session in a repo with no verify gate,
-> **I want** that fact announced as a problem rather than as a status line,
-> **So that** I find out before a fork's Stop gate passes on an empty check instead of a green one.
+#### [TSK-01.4.14] `install.sh`'s new `core.hooksPath` classification carries a fourth state, `different`, that no branch downstream ever reads [P: M] [TODO]
 
 **Acceptance Criteria:**
-- [x] **AC-1 (Loud):** Given a repo where `verify_label()` resolves nothing, when a session starts, then the injected report marks it as a warning, visually distinct from the `Released version:` and backlog-tally lines beside it.
-- [x] **AC-2 (Consequence):** Given that same warning, when it is read, then it states what is not running — the repo's checks and `comments.py check` with them — not merely that a gate is absent.
-- [x] **AC-3 (Quiet when fine):** Given a repo that does declare a gate, when a session starts, then the line is unchanged from today.
-- [x] **AC-4 (Fails open):** Given any error inside the new branch, when the hook runs, then it still exits zero — `context_injector.py` is a fail-open hook and must stay one.
+- [ ] **AC-1 (Collapse):** Given `scripts/hooks/git/install.sh`, when its `core.hooksPath` classification is read, then it carries only the distinctions some branch below actually tests.
+- [ ] **AC-2 (No regression):** Given `scripts/test-install.sh`, when it runs, then `G1`-`G4` pass unchanged.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.4.11.1` | `[Impl]` | change `claude-code/hooks/context_injector.py:133` so the `none declared` case is an explicit warning. Surfaced by a live postmortem (2026-09-15): `komodo-forge-sdk-go` has no `verify` target, so `comments.py check` never ran and `verify_gate.py` passed the implementer fork on an empty gate — two PRs merged with 4–8 line stacked function comments that `comments.py check` catches correctly when it actually runs. The injector already computes the fact and had been printing it, quietly, in every session | `grep -c "none declared" claude-code/hooks/context_injector.py` reflects the rewrite; `bash scripts/test-hooks.sh` |
-| `SUB-01.4.11.2` | `[UnitTest]` | add a regression case covering both branches — a repo with no gate emits the warning, a repo with one is unchanged | `bash scripts/test-hooks.sh` |
-
-#### [TSK-01.4.12] Neither scaffolded `verify` target runs `comments.py check`, so the enforcement path `docs/design-decisions.md` calls the only one does not exist in any repo this toolkit creates [P: H] [TODO]
-
-**User Story:**
-> **As a** maintainer of a repo scaffolded by this toolkit,
-> **I want** the comment lint wired into the verify target I was given,
-> **So that** the documented enforcement path is real rather than something each repo has to discover and add.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Go):** Given `templates/go/Makefile`, when its `verify` target is read, then it runs `comments.py check`.
-- [x] **AC-2 (Node):** Given `templates/node/Makefile`, when its `verify` target is read, then it runs the same check.
-- [x] **AC-3 (Ordering):** Given either target, when it runs, then the comment check's failure fails the target, and it is ordered so a formatting or build failure surfaces first.
-- [x] **AC-4 (Doc truth):** Given `docs/design-decisions.md`'s claim that `comments.py check` runs inside the repo's own `verify` target only, when a scaffolded repo is inspected, then that claim holds.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.4.12.1` | `[Impl]` | add `comments.py check` to the `verify` target in `templates/go/Makefile` and `templates/node/Makefile`. `git-repo-init:99` already copies these verbatim and calls the Makefile "the `verify` target `context_injector.py` discovers" — so the on-ramp exists and simply omits the lint. Reference the hook by the installed `~/.claude/hooks/` path, since a scaffolded repo has no copy of its own | `grep -c "comments.py" templates/go/Makefile templates/node/Makefile` returns non-zero for both; `bash scripts/validate.sh` |
-
-#### [TSK-01.4.13] `scripts/hooks/git/install.sh` cannot distinguish a `core.hooksPath` pointing somewhere deliberate from one pointing at a directory that no longer exists, so `--status` reports a repo running zero git hooks as normal [P: M] [TODO]
-
-**User Story:**
-> **As an** engineer auditing which repos have hooks installed,
-> **I want** `--status` to tell me when a configured path is dead,
-> **So that** a repo silently running no hooks is visible from the one command meant to audit exactly that.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Status):** Given a repo whose `core.hooksPath` names a directory that does not exist, when `--status` runs, then the output marks it stale rather than printing the path like any other value.
-- [x] **AC-2 (Install):** Given that same repo, when a plain install runs, then it notes that hooks had not been running before writing the new path.
-- [x] **AC-3 (No regression):** Given a repo already pointing at `$HOOK_DIR`, or one with an orphaned `.git/hooks`, when either mode runs, then the existing behavior is unchanged.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.4.13.1` | `[Impl]` | classify `$current` into three states — unset, live-but-different, and stale (non-empty, not `$HOOK_DIR`, and not an existing directory) — at `scripts/hooks/git/install.sh:40`. Found live (2026-09-15): `komodo-forge-sdk-go` pointed at `komodo-agentic-config/scripts/hooks/git`, a path left behind when this repo was renamed, so its `gofmt`, `golangci`, and hooks-syntax pre-commit/pre-push checks had all been dead. A stale path still gets overwritten on install exactly like any other mismatch — the only new behavior is surfacing the dead state | `bash scripts/hooks/git/install.sh --status` on a repo with a missing hooksPath prints the stale marker; `bash scripts/validate.sh` |
-| `SUB-01.4.13.2` | `[UnitTest]` | add the first coverage this installer has ever had — `scripts/test-install.sh` covers `scripts/install.py`, not this script, so neither suite exercises it today. Cases: stale `--status`, stale install, plus the existing already-installed and orphaned-`.git/hooks` paths as regression anchors. Note `TSK-01.1.6` separately wires `test-install.sh` into `make verify`; until that lands these cases run only when invoked directly | `bash scripts/test-install.sh` passes with the new cases |
+| `SUB-01.4.14.1` | `[Impl]` | filed by `TSK-01.4.13`'s band-review `/assess-simplify` pass: the classification added at `scripts/hooks/git/install.sh:42-58` sets `state="different"` for an existing-but-not-`$HOOK_DIR` path, but every branch below tests only `current` or `stale` — `different` and `unset` take the identical `else` in both `--status` and the install path. The `[ -d ]` stat and the absolute-vs-relative `case` are load-bearing only for the stale distinction. Two flags (`is_current`, `is_stale`) express the same behavior with no dead assignment | `bash scripts/test-install.sh` passes with `G1`-`G4` unchanged; `bash scripts/validate.sh` |
 
 ### [TG-01.5] Review Precision & Model Tiering
 * **Target Release:** V1
