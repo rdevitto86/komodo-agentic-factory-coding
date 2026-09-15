@@ -24,6 +24,8 @@ disable-model-invocation: true
 
 Score the **highest tier any touched file reaches** — one Critical-tier file outweighs nine Low-tier ones.
 
+**Fan-out is measured, not guessed.** Before scoring anything above Low-Med, run the internal-dependency command named in the Toolchain section of the `standards-<lang>` skill covering the touched files, and read back what imports them. That reverse set is what separates the tiers: nothing importing a changed file holds it at Low-Med, importers confined to its own package or module hold it at Med, importers crossing a package, module, or project boundary push it to Med-High or above, and a shared or trust-boundary importer to High. Where the language skill says its toolchain ships no such command, the fan-out is a judgment call — say so in the driving-factor row rather than letting an unmeasured guess read as a graph that was actually walked.
+
 ## Output
 
 ```markdown

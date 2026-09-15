@@ -19,6 +19,7 @@ The real rules live in `claude-code/hooks/comments.py` and its shared rules modu
 
 - **The C standard is whatever the build declares** — `-std=` in the Makefile, or `CMAKE_C_STANDARD` in `CMakeLists.txt`. Read it; never assume C99 vs C11 vs C17.
 - **`clang-format`** for formatting, config at `.clang-format`. **`clang-tidy`** and/or **`cppcheck`** as the static-analysis gate.
+- **Internal dependency graph** — the compiler generates it, nothing extra to install: `cc -MM` prints each translation unit's header dependencies in make syntax (`-M` to include system headers), and `-MD`/`-MF` writes the same during an ordinary build. `assess-change-risk` states when to run it and what its output does to the tier.
 - **Sanitizers over guesswork** — AddressSanitizer and UndefinedBehaviorSanitizer (`-fsanitize=address,undefined`) on every debug build; ThreadSanitizer for anything touching shared state across threads. A memory bug a sanitizer would have caught in CI is a process failure, not bad luck.
 - **`valgrind --leak-check=full`** where sanitizers aren't wired into the build yet.
 

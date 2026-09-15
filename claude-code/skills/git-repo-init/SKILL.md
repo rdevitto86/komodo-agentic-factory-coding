@@ -63,7 +63,7 @@ A line only belongs in a generated `AGENTS.md` if it is a fact that `standards-s
 
 **Neither Create nor Scaffold writes a Deviations section.** Nothing has had a chance to drift yet, and an empty header is still a cost.
 
-**Refresh diffs the repo's actual layout and conventions against the language skill's `Repo layout — <token>` tree, and its actual practice against `standards-sdlc` (coverage floors, test tiers), `standards-cicd` (pipeline stages), and `standards-api-security`/`standards-ui-security` wherever the repo visibly departs from one of them.** Only what differs becomes a Deviations line, each tagged with the skill it departs from. Matching it produces zero lines, not a line saying so.
+**Refresh diffs the repo's actual layout and conventions against the language skill's `Repo layout — <token>` tree, and its actual practice against `standards-sdlc` (coverage floors, test tiers), `standards-cicd` (pipeline stages), and `standards-api-security`/`standards-web-ui` wherever the repo visibly departs from one of them.** Only what differs becomes a Deviations line, each tagged with the skill it departs from. Matching it produces zero lines, not a line saying so.
 
 ## Step 2 — Load the facts
 

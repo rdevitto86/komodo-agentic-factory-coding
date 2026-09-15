@@ -1,6 +1,6 @@
 # Rendered-surface security review
 
-The procedure for reviewing the exploits an interface itself enables — XSS, clickjacking, dark patterns. `SKILL.md` states the rules this file hunts for violations of. **Scope enumeration, the severity bar, and the report shape are shared with the backend review** — see `standards-api-security/review.md` §§1–2 and Output; this file adds only the rendered-surface vector that skill's §3 (Injection) explicitly excludes.
+The procedure for reviewing the exploits a browser interface itself enables — XSS, clickjacking, dark patterns. `SKILL.md`'s Security half states the rules this file hunts for violations of. **Scope enumeration, the severity bar, and the report shape are shared with the backend review** — see `standards-api-security/review.md` §§1–2 and Output; this file adds only the rendered-surface vector that skill's §3 (Injection) explicitly excludes. For a native mobile or desktop surface, use `standards-mobile-ui` or `standards-desktop-ui` instead.
 
 ## XSS
 
@@ -10,9 +10,9 @@ The procedure for reviewing the exploits an interface itself enables — XSS, cl
 - **CSP is the backstop, not the fix.** Require a policy with no `unsafe-inline` and no `unsafe-eval`; a nonce or hash for anything inline. A CSP does not close an XSS finding — it downgrades it.
 - **A stored XSS is High**, not Medium — it needs no attacker-controlled link, only a victim viewing already-poisoned content. A reflected XSS needing a crafted link the victim must click is Medium.
 
-## Clickjacking, tapjacking, and embeds
+## Clickjacking and embeds
 
-Covered directly in `SKILL.md` — framing, overlay/tap-through protection, and `postMessage` origin checks. No separate procedure beyond the severity bar shared with the backend review: a functioning clickjacking primitive on a sensitive action (payment, permission grant) is High; a missing header with no demonstrated overlay is Low.
+Covered directly in `SKILL.md` — framing, overlays, and `postMessage` origin checks. No separate procedure beyond the severity bar shared with the backend review: a functioning clickjacking primitive on a sensitive action (payment, permission grant) is High; a missing header with no demonstrated overlay is Low.
 
 ## Dark patterns
 

@@ -41,6 +41,7 @@ Conventions for engineering in Kotlin. Principles live here; a version number ne
 
 - **The build is the source of truth for every floor** — the Kotlin plugin version, the JVM toolchain, and for an Android target its declared SDK levels. Read them rather than assuming.
 - **Gradle Kotlin DSL with a version catalog.** Dependency coordinates and versions live in the catalog, not scattered across module build files as string literals.
+- **Internal dependency graph** — module-to-module edges come from the wrapper the repo already commits: `./gradlew projects` for the module list, `./gradlew :<module>:dependencies` for what one module depends on. Below module level the Kotlin toolchain ships nothing of its own; the JDK's `jdeps` reads the compiled classes. `assess-change-risk` states when to run it and what its output does to the tier.
 - **A formatter and a static-analysis tool both run in CI**, configured by a committed file; a suppression is narrow, sits on the declaration it applies to, and names the rule.
 
 ## Testing
