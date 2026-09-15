@@ -1,14 +1,14 @@
 ---
 name: workflow-loop
 description: The end-to-end execution loop — spec, decompose, execute, consolidate, publish. Run it for any change bigger than a one-line fix, including when the user asks in plain language to build, ship, or implement something end to end rather than typing the slash command.
-argument-hint: [task, or "open <topic>" for the unscripted path]
+argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>" for the unscripted one]
 ---
 
 # Workflow Loop
 
 **Five phases, in order.** Every phase names what ends it.
 
-`$ARGUMENTS` names the task. **If it begins with `open`, skip the whole machine** — see The open hatch at the bottom.
+`$ARGUMENTS` names the task. **If it begins with `open`, skip the whole machine; if `fast`, skip the planning phases** — both blocks at the bottom.
 
 **Load the matching way of working before P0**: `ways/sdlc.md` for code, `ways/debugging.md` when the task reads as diagnostic ("why is X broken", "debug", "investigate a failure") rather than build-something.
 
@@ -180,7 +180,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **Backing out is a rewrite** — capture `git diff` before a risky write; `git-pr-create` owns the recovery command.
 - **The bridge is optional, never blocking** — an unreachable MCP server is a skipped step; never branch a phase on whether it is up.
 - **Never poll a delegated phase** — it re-invokes this session the moment it finishes.
-- **Timing is captured silently, session-stated, not a file** — the same "session-stated, not a file" pattern as P2.3's retry counter. Note each phase's (P0–P4) and each forked skill invocation's start and end wall-clock in this session's own turn text as it happens, accumulating an internal record this session can compute durations from. Never print elapsed time by default, and never fold it into any phase's own "Ends when" report — surface it only if the user explicitly asks (e.g. "how long did that take"); otherwise stay silent unless asked.
+- **Timing is captured silently, session-stated, not a file** — the same pattern as P2.3's retry counter. Note each phase's (P0–P4) and each forked skill's start and end wall-clock in this session's own turn text as it happens. Never print elapsed time, and never fold it into an "Ends when" report — surface it only if the user asks.
 - **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Findings`/`## Changed` block — a reviewer fork returns `## Findings` only, this session files the rows itself; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
 - **Standards verification happens inside the review or implement fork, never in this window** — a P2.3 finding needing re-verifying is P2.1's job.
 - **After any context compaction, re-read the active `ways/` file before the next phase gate** — it loads via `Read`, not invocation, so compaction skips it.
@@ -206,3 +206,20 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 ## The open hatch
 
 **`/workflow-loop open <topic>` skips every phase above.** For design, architecture, and exploration, where a script produces worse output than judgement. Use it when the task is to *decide* something, never to build something already decided.
+
+---
+
+## The fast path
+
+**`/workflow-loop fast <task>` skips P1 decompose, P2.0 align, and P3 consolidate.** P2.1, P2.2, P2.3, and P2.4 run unchanged — fast means less planning, never less verification or review.
+
+**Entry is checked, not judged.** Run both against the change's own diff — before P2.1 on the paths the task names, and again before P2.2's commit:
+
+```bash
+git diff --shortstat     # ≤ 1 file changed and ≤ 10 lines changed
+git diff --name-only     # no path on the exclusion list below
+```
+
+**Exclusion list — any match refuses the fast path regardless of diff size:** the agent-config surface (`**/hooks/**`, `**/agents/**`, `settings.json`), the repo's verify gate (`.claude/verify.sh`, `Makefile`, `Taskfile.yml`, `justfile`), and anything the repo's `AGENTS.md` names as a security boundary. A change able to weaken its own verification is not a fast path.
+
+**Either check failing sends the change back to P1** — the full machine, from the top.

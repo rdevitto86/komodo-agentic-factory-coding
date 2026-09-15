@@ -239,9 +239,9 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** the process cost is proportional to the change.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Predicate):** Given `workflow-loop`, when the fast path is described, then its entry condition is stated as a checkable property of the diff, not a judgment call.
-- [ ] **AC-2 (Phases):** Given a change meeting that condition, when the loop runs, then P1 decompose, P2.0 align, and P3 consolidate are skipped and the remaining phases are unchanged.
-- [ ] **AC-3 (Escape):** Given a change that touches a security boundary, when the fast path is evaluated, then it is refused regardless of diff size.
+- [x] **AC-1 (Predicate):** Given `workflow-loop`, when the fast path is described, then its entry condition is stated as a checkable property of the diff, not a judgment call.
+- [x] **AC-2 (Phases):** Given a change meeting that condition, when the loop runs, then P1 decompose, P2.0 align, and P3 consolidate are skipped and the remaining phases are unchanged.
+- [x] **AC-3 (Escape):** Given a change that touches a security boundary, when the fast path is evaluated, then it is refused regardless of diff size.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
