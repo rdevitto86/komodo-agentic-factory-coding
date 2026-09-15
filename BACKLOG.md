@@ -184,7 +184,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.6.4.1` | `[Impl]` | pre-existing drift, spotted by a fork during `TSK-01.6.1` and deliberately not fixed there to keep that diff to the lines the rename required: `AGENTS.md` says `259 hook + comments regression cases` while the suite reports 287. Confirm which number is authoritative before editing — the 259 may have been scoped to a subset — and consider whether a hand-maintained count belongs in the file at all | `bash scripts/test-hooks.sh`'s reported count matches `AGENTS.md`; `make verify` |
+| `SUB-01.6.4.1` | `[Impl]` | pre-existing drift, spotted by a fork during `TSK-01.6.1` and deliberately not fixed there to keep that diff to the lines the rename required: `AGENTS.md` says `259 hook + comments regression cases` and `README.md` says `286 regression cases`, while the suite reports 293 (it moved twice during `TG-01.10` alone). Confirm which number is authoritative before editing — the 259 may have been scoped to a subset — and consider whether a hand-maintained count belongs in the file at all | `bash scripts/test-hooks.sh`'s reported count matches `AGENTS.md`; `make verify` |
 
 ### [TG-01.7] Cross-Platform Portability
 * **Target Release:** V1
@@ -274,6 +274,22 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.10.3.1` | `[Impl]` | teach `pm` to return a files-touched manifest per task, and `workflow-loop` P2.0 to use manifest disjointness as the parallel predicate rather than today's weaker no-shared-file rule | `bash scripts/validate.sh` |
 | `SUB-01.10.3.2` | `[Impl]` | add the worktree-per-group execution and the orchestrator merge step, gated on the manifest proof, defaulting to serial. Read-only fan-out (`assess-*`, `researcher`, `scout`) needs no worktree and should be documented as always-parallel — that half is free today and under-used | `make verify` |
+
+#### [TSK-01.10.4] The band-gate deferral is scoped to a checkout, not a session, so two concurrent sessions on one repo can cross [P: M] [TODO]
+
+**User Story:**
+> **As** someone running two sessions against one checkout,
+> **I want** a band gate deferred by one of them not to suppress the other's,
+> **So that** a change is never committed with the repo's own gate silently skipped on its behalf.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Binding):** Given a band-gate marker, when a `builder` fork's Stop reads it, then the deferral applies only to the run that wrote it.
+- [ ] **AC-2 (Unbindable is closed):** Given no identifier available to bind, when the marker is read, then the gate runs.
+- [ ] **AC-3 (Honest doc):** Given `docs/design-decisions.md`, when the band gate is described, then it no longer records this as an open limitation.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.10.4.1` | `[Impl]` | filed by `TSK-01.10.2`'s band-review `/assess-security` pass, and deliberately mitigated rather than fixed there. The marker keys off the git common dir, so it is shared by every worktree of a checkout — which is what makes parallel forks work, and also what lets an unrelated concurrent session inherit the deferral, with no code path in its own flow that ever runs the full suite to compensate. It could not be fixed in that band because the Stop payload `verify_gate.py` receives carries only `stop_hook_active` and `cwd` — no session identifier exists to bind to. The window was cut from four hours to thirty minutes to bound the blast radius instead. Resolving this needs a session or band identifier that survives into the fork's Stop payload; establish whether one is available before designing, and if none is, record that and close this as won't-fix rather than inventing a token the orchestrator has to hand-manage | `bash scripts/test-hooks.sh` covers a marker written by one identity not deferring another's gate; `make verify` |
 
 ### [TG-01.11] Prompt Templates
 * **Target Release:** V1

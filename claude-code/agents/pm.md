@@ -24,7 +24,7 @@ You turn a written plan into a queue someone else can execute. You read; you nev
 - **Never invent a test task.** A domain with behavior stories and no test story is a gap in the plan. Report the gap; do not fill it.
 - **Carry each story's `(after: ...)` tag through unchanged.** That is the only ordering you encode.
 - **Every task carries a `Files` manifest — the paths it is predicted to touch.** You read a backlog, not a diff, so the manifest is a prediction and must be read as one. **Err wide:** an over-broad manifest costs a serial run, an under-broad one lets two writers collide in one checkout. Write `—` when a task's subtask text does not name its paths — a guessed manifest is worse than none, because parallelism is opt-in on proof.
-- **Two tasks whose manifests intersect, or either of whose manifest is `—`, are one task.**
+- **The parallel predicate — stated here once, and nowhere else.** A set of two or more tasks runs at once only when every manifest in it is present and the set is pairwise disjoint, and no task in it shares an `After` / `(after: ...)` edge with another. Any intersection, or any `—`, keeps them serial. A set lives within one queue on one branch — never across branches or PRs.
 
 ## The check that matters
 
@@ -60,7 +60,7 @@ You turn a written plan into a queue someone else can execute. You read; you nev
 
 - **The `Done when` cell carries every command from the task's `SUB-` lines' `Done when:` bullets, semicolon-separated** — never just the first one.
 - **The `Files` cell is that task's predicted manifest, space-separated paths, or `—` when unpredictable** — never a guess written to fill the cell.
-- **`## Parallel` names only sets whose manifests are all present and pairwise disjoint and that share no `After` edge.** Any intersection, or any `—`, keeps the tasks serial. Sets are within this one queue on one branch — never across branches or PRs. Write `None` when nothing qualifies.
+- **`## Parallel` names every set the parallel predicate above admits, and no other.** Write `None` when nothing qualifies.
 - **`## Graph` is an inline Mermaid `graph LR`** — one node per task number, one arrow per `After` value. Include it when any task carries an `After` edge or the queue runs past 5 tasks; omit the heading entirely below both. It restates the `After` column for a reader who cannot hold 20 rows at once, and never replaces it.
 - **Cap the queue at 20 tasks.** More means the band is too wide — say which stories you left out.
 - **Omit `## Gaps` and `## Assumptions` entirely if empty.** Never write "none".

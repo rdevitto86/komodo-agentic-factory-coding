@@ -24,7 +24,19 @@ The SDD sections a code build actually depends on:
 
 **The repo's own gate**, discovered in order: `.claude/verify.sh`, then a `verify` target in `Makefile`, `Taskfile`, or `justfile`. `verify_gate.py` runs it when a `builder` fork ends and blocks while red.
 
-**That full gate runs once per band, not once per task** — an N-task band proves one merged state, so N full suite runs buy nothing. `SKILL.md`'s P2.2 owns the mechanics: a deadline marker under the OS temp dir, keyed by the git common dir, suppresses the per-fork suite run for a multi-task band, and the orchestrator runs the gate itself, once, at the band's last task before its commit. **The per-task `Done when` commands are untouched** — each fork still runs and still proves its own task, and a marker that is missing, expired, or malformed just puts the full gate back in every fork.
+**That full gate runs once per band, not once per task** — an N-task band proves one merged state, so N full suite runs buy nothing. `SKILL.md`'s P2.2 points here for the mechanics, which are:
+
+For a band of more than one task, write the deferral marker before P2.1's first fork and drop it before the band's own gate run:
+
+```bash
+BAND_GATE="$(python3 -c 'import hashlib, os, subprocess, tempfile; c = os.path.realpath(subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True).stdout.strip()); print(os.path.join(tempfile.gettempdir(), "komodo-verify-gate-band-" + hashlib.sha256(c.encode("utf-8")).hexdigest()[:16]))')"
+python3 -c 'import time; print(int(time.time()) + 1500)' > "$BAND_GATE"
+rm -f "$BAND_GATE"   # before the band gate runs
+```
+
+The marker suppresses `verify_gate.py`'s full-suite run inside each `builder` fork. It lives under the OS temp dir, keyed by the git common dir, so it is never committable and every worktree of the repo sees it; its deadline is capped at 30 minutes. **The per-task `Done when` commands are untouched** — each fork still runs and still proves its own task. **A missing, expired, malformed, or over-cap marker means every fork runs the full gate itself** — the fallback is the redundant check, never the skipped one, so a forgotten `rm` costs time and nothing else.
+
+**Run the band gate at the last task's P2.2**, after that task's `Done when` commands are green and before its commit: drop the marker, then run the repo's own gate once. **A red band gate returns to P2.1** like any other P2.2 failure, with the failing output in the brief — and the marker goes back before the fix forks.
 
 **A repo with none of those has no gate** — one line of finding, because it means the user is the verification loop here.
 
