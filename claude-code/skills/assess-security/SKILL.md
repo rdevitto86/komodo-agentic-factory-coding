@@ -22,6 +22,8 @@ Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Lo
 
 ## Report
 
+`reviewer.md`'s section structure governs — a near-miss goes to `## Considered and dismissed`, not here. This table's columns and `Sev` scale are this lens's own.
+
 | Sev | Where | Claim | Exploit path | OWASP |
 |---|---|---|---|---|
 | C | `handler.go:88` | unvalidated redirect target | attacker-supplied `next` reaches `http.Redirect` unchecked | A01 |

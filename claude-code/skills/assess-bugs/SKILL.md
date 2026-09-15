@@ -23,6 +23,8 @@ Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling, us
 
 ## Report
 
+`reviewer.md`'s section structure governs — a near-miss goes to `## Considered and dismissed`, not here. This table's columns and `Sev` scale are this lens's own.
+
 | Sev | Where | Claim | Scenario |
 |---|---|---|---|
 | H | `file.go:42` | swallows the write error | retry after crash → silent data loss |

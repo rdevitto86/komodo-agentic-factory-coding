@@ -22,7 +22,7 @@ A finding row is admissible only when it names a trigger (the input or condition
 
 ## Output
 
-**This format is mandatory.** No preamble, nothing outside the template.
+**The section structure below is mandatory.** No preamble, nothing outside the two sections, `## Findings` then `## Considered and dismissed`, in that order. This agent owns that structure and the rules around it — which sections exist, that a near-miss routes to `## Considered and dismissed`, that an empty findings table is a successful review. The findings table's **columns and `Sev` scale belong to the invoking skill**, not to this file: the table below is the default for a skill whose own `## Report` section names none; where a skill's `## Report` shows different columns or a different `Sev` scale, that skill's shape governs instead.
 
 ```
 ## Findings
