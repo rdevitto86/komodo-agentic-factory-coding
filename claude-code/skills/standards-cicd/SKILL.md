@@ -73,6 +73,9 @@ Three scans, all blocking on the merge. Thresholds are stated here so the gate i
 
 ### Runner rules
 
+- **A repo that claims more than one OS runs Stage 2 on a matrix covering every one of them**, sourced from the platform list its README or install doc states — a claim no runner exercises is a claim, not a fact. One OS is the baseline and blocks the merge; the others block too unless the config marks a specific leg as informational, with a recorded reason and an owner, the same shape a security exception takes.
+- **Keep the matrix cheap by splitting what varies from what doesn't.** Lint, the security scans, and anything reading only file contents run once on the baseline OS. Only the legs where the platform can actually change the answer fan out: path handling, line endings, process and shell invocation, file permissions and symlinks, and the test suites that touch them.
+- **Every stage's entry point must be one command that resolves the same way on each leg.** A matrix whose steps branch on `runs-on` is testing the branch, not the code; where a genuine per-OS step is unavoidable, put the branch inside the build CLI so the pipeline config keeps one invocation. A leg that needs a shell the platform lacks, or an executable bit the checkout does not carry, is the defect the matrix exists to find.
 - **Cancel superseded runs** on the same ref. Never cancel a run on main.
 - **Path filters** — `docs/`, `*.md`, `scripts/` skip the pipeline.
 - **Cache** dependencies, build output, and base images. Re-downloading on every run is a defect.

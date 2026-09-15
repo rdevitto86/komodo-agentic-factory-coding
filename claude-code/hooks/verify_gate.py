@@ -2,9 +2,12 @@
 #
 # verify_gate.py - Stop hook. Blocks the turn from ending while the repo's own verification command is failing.
 #
-# Opt-in per repo, checked in order: .claude/verify.sh (executable), then a `verify:` target in Makefile /
-# Taskfile / justfile. None declared means no gate, silently. Skipped without running the check at all: a clean
-# tree, and a tree whose only dirty paths are records-only (BACKLOG.md, docs/BACKLOG.md, CHANGELOG.md, README.md).
+# Opt-in per repo, checked in order: .claude/verify.py, scripts/verify.py, .claude/verify.sh (executable), then
+# a `verify:` target in Makefile / Taskfile / justfile. The two Python entry points lead because they are the only
+# ones that run everywhere -- they are invoked as <this interpreter> <path>, so neither an executable bit nor a
+# `make`/`task`/`just` binary has to exist. None declared means no gate, silently. Skipped without running the
+# check at all: a clean tree, and a tree whose only dirty paths are records-only (BACKLOG.md, docs/BACKLOG.md,
+# CHANGELOG.md, README.md).
 #
 # The full suite is also skipped while a band-gate deferral marker is live -- one line holding an integer
 # epoch-seconds deadline, written by the orchestrator when a band of more than one task starts and removed before
@@ -62,6 +65,10 @@ def timeout_seconds():
     return value if value > 0 else DEFAULT_TIMEOUT_SECONDS
 
 
+def interpreter():
+    return sys.executable or "python3"
+
+
 def run(args, cwd, timeout):
     return subprocess.run(
         args,
@@ -86,6 +93,10 @@ def target_exists(path, pattern):
 
 
 def discover(root):
+    for relative in ((".claude", "verify.py"), ("scripts", "verify.py")):
+        entry = os.path.join(root, *relative)
+        if os.path.isfile(entry):
+            return [interpreter(), entry], "/".join(relative)
     script = os.path.join(root, ".claude", "verify.sh")
     if os.path.isfile(script) and os.access(script, os.X_OK):
         return [script], ".claude/verify.sh"

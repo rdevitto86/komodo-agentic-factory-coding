@@ -88,6 +88,9 @@ def current_version(root):
 
 
 def verify_label(root):
+    for relative in ((".claude", "verify.py"), ("scripts", "verify.py")):
+        if os.path.isfile(os.path.join(root, *relative)):
+            return "/".join(relative)
     script = os.path.join(root, ".claude", "verify.sh")
     if os.path.isfile(script) and os.access(script, os.X_OK):
         return ".claude/verify.sh"

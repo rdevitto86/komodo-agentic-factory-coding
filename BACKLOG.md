@@ -198,9 +198,9 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** the guardrails I just installed actually execute on my machine.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Gate):** Given `verify_gate.py`, when it resolves a repo's gate, then a Python entry point is among the discovery targets and is tried before the shell and `make` ones.
+- [x] **AC-1 (Gate):** Given `verify_gate.py`, when it resolves a repo's gate, then a Python entry point is among the discovery targets and is tried before the shell and `make` ones.
 - [ ] **AC-2 (Suites):** Given the repo's regression suites, when they are run on a machine with only `python3` and `git`, then every one of them executes.
-- [ ] **AC-3 (Parity):** Given `make verify` and the Python entry point, when both run on macOS, then they execute the same set of checks.
+- [x] **AC-3 (Parity):** Given `make verify` and the Python entry point, when both run on macOS, then they execute the same set of checks.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
@@ -212,8 +212,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 #### [TSK-01.7.2] No skill tells a target repo to keep its own build and verify surface cross-platform, even though this toolkit solved that problem for itself [P: M] [TODO]
 
 **Acceptance Criteria:**
-- [ ] **AC-1:** Given `standards-shell`, when it is read, then it states when a script must be Python rather than shell, and that a repo's verify gate must be invocable on every platform the repo claims to support.
-- [ ] **AC-2:** Given `standards-cicd`, when it is read, then it covers runner-matrix portability for a repo targeting more than one OS.
+- [x] **AC-1:** Given `standards-shell`, when it is read, then it states when a script must be Python rather than shell, and that a repo's verify gate must be invocable on every platform the repo claims to support.
+- [x] **AC-2:** Given `standards-cicd`, when it is read, then it covers runner-matrix portability for a repo targeting more than one OS.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|

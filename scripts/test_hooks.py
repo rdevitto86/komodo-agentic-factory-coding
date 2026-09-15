@@ -2399,6 +2399,54 @@ def check_verify_gate() -> None:
     remove_path(band_marker)
 
 
+def check_verify_gate_discovery() -> None:
+    emit("\nverify gate discovery\n\n")
+
+    work = WORKDIR[0]
+    both = os.path.join(work, "fixture-vgate-python-entry")
+    os.makedirs(os.path.join(both, "scripts"))
+    make_repo(both)
+    marker = os.path.join(both, "ran-python")
+    write_text(
+        os.path.join(both, "scripts", "verify.py"),
+        "import sys\nopen(%r, 'w').close()\nsys.exit(1)\n" % marker,
+    )
+    write_text(os.path.join(both, "Makefile"), "verify:\n\t@exit 0\n")
+    git_quiet(["add", "-A"], cwd=both)
+    git_quiet(["commit", "-q", "-m", "init"], cwd=both)
+    write_text(os.path.join(both, "x.go"), "package main\n")
+
+    out = vgate_run(both)
+    decision = vgate_field(out, "decision", "allow")
+    reason = vgate_field(out, "reason", "")
+    index = allocate()
+    label = ("VG17 scripts/verify.py wins over a Makefile verify target and runs with no "
+             "executable bit")
+    if decision == "block" and os.path.exists(marker) and "scripts/verify.py" in reason:
+        report(index, label, "")
+    else:
+        report(index, label,
+               "decision=%s marker=%s" % (decision, presence(marker)), reason)
+
+    label = "VG18 a repo with only a Makefile still resolves to make verify"
+    if IS_WINDOWS or not shutil.which("make"):
+        skip_case(label, MAKE_SKIP_REASON)
+        return
+
+    only_make = os.path.join(work, "fixture-vgate-make-only")
+    seeded_repo(only_make)
+    write_text(os.path.join(only_make, "Makefile"), "verify:\n\t@exit 1\n")
+    write_text(os.path.join(only_make, "file.txt"), "dirty\n")
+    out = vgate_run(only_make)
+    decision = vgate_field(out, "decision", "allow")
+    reason = vgate_field(out, "reason", "")
+    index = allocate()
+    if decision == "block" and "`make verify` is failing" in reason:
+        report(index, label, "")
+    else:
+        report(index, label, "decision=%s" % decision, reason)
+
+
 VGATE_SKIP_LABELS = [
     "VG1 blocks below the warning threshold carry no streak warning",
     "VG2 the streak warning appears once the block count reaches the threshold",
@@ -2503,6 +2551,7 @@ def main() -> int:
         check_comments_hook()
         check_context_injector()
         check_verify_gate()
+        check_verify_gate_discovery()
 
         executor.shutdown(wait=True)
 

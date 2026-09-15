@@ -1,6 +1,7 @@
 .PHONY: verify test validate comments
 
-verify: test validate comments
+verify:
+	python3 scripts/verify.py
 
 test:
 	python3 scripts/test_hooks.py

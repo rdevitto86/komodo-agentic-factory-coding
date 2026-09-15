@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
 #
-# pre-push-verify - runs a repo's own .claude/verify.sh, if it has one.
+# pre-push-verify - runs a repo's own verify gate, if it has one.
 #
-# No .claude/verify.sh at the repo root means this repo doesn't opt in
-# to a push-time check; exits 0. Mirrors pre-push-golangci's presence-
-# gated pattern so one shared hook directory serves every repo without
-# per-repo branching in the dispatcher.
+# Resolves the same order verify_gate.py does: .claude/verify.py, then
+# scripts/verify.py, then .claude/verify.sh. None of them at the repo
+# root means this repo doesn't opt in to a push-time check; exits 0.
+# Mirrors pre-push-golangci's presence-gated pattern so one shared hook
+# directory serves every repo without per-repo branching in the
+# dispatcher.
 set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+
+for candidate in "$REPO_ROOT/.claude/verify.py" "$REPO_ROOT/scripts/verify.py"; do
+  [ -f "$candidate" ] || continue
+  python3 "$candidate" || {
+    printf '\npre-push-verify: %s failed. Fix the issues above or push with --no-verify.\n' "$candidate" >&2
+    exit 1
+  }
+  exit 0
+done
+
 VERIFY="$REPO_ROOT/.claude/verify.sh"
 [ -x "$VERIFY" ] || [ -f "$VERIFY" ] || exit 0
 
