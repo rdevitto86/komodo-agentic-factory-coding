@@ -250,8 +250,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 #### [TSK-01.10.2] `verify_gate.py` fires on every builder Stop, so an N-task band runs the repo's full gate N times for one merged result [P: M] [TODO]
 
 **Acceptance Criteria:**
-- [ ] **AC-1:** Given a multi-task band, when it completes, then the repo's full gate has run once against the band's merged state rather than once per task.
-- [ ] **AC-2:** Given a single task's `Done when` commands, when its fork finishes, then those still run per-task — the band gate replaces the full-suite run, not the task's own proof.
+- [x] **AC-1:** Given a multi-task band, when it completes, then the repo's full gate has run once against the band's merged state rather than once per task.
+- [x] **AC-2:** Given a single task's `Done when` commands, when its fork finishes, then those still run per-task — the band gate replaces the full-suite run, not the task's own proof.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|

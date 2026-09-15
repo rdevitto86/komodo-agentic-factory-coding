@@ -18,6 +18,12 @@ It also hashes each failure's combined output and stops at three consecutive ide
 
 `comments.py check` evaluates the file as it stands, so adjacency and reindentation are irrelevant. It fails closed — an unparseable payload denies rather than silently passing.
 
+## The full suite is a band gate, not a per-fork gate
+
+A band of N tasks used to pay N full suite runs to prove one merged state. The suite now runs once, from the orchestrator at P2.2 against the band's merged tree; a `.claude/state/band-gate` marker — one line, an integer epoch-seconds deadline — tells `verify_gate.py` to skip its own full-suite run inside a fork while the band is in flight. What is *not* deferred is the fork's own proof: the task's `Done when` commands still run per task, so a fork still cannot return work it never proved.
+
+The suppression fails closed toward running the gate, in every direction at once: absent, unreadable, malformed, expired, or carrying a deadline further out than `MAX_DEFER_SECONDS` all fall through to the normal run. A forgotten `rm` therefore costs a redundant suite run, never a skipped one, and the deadline plus the cap mean a marker left behind by a crashed band expires on its own rather than silently disarming the gate for every later session in that repo. The band-level run is what keeps an ungated fork from being possible: the gate moved, it was not removed.
+
 ## Reviewers are read-only
 
 `reviewer` lost `Edit`, and `reviewer_guard.py` (the hook that mechanically narrowed its Edit/Write and Bash writes to `BACKLOG.md` alone) is gone — the agent has no write path left, anywhere. Two things made the narrower boundary obsolete rather than just simpler. First, true parallel fan-out needs no write isolation once nothing writes: `assess-bugs`, `assess-security`, and `assess-simplify` can run as simultaneous `reviewer` forks with no risk of stepping on each other's output, because none of them touch disk. Second, that also removes the one write race the old boundary still permitted — three concurrent forks each appending a story to `BACKLOG.md` could interleave or clobber each other's writes; a `reviewer` that only returns a findings table has nothing left to race. The caller (the orchestrating session or `workflow-loop` phase that launched the fork) files the returned rows to `BACKLOG.md` itself, once, after the fan-out returns — a single writer, not several.

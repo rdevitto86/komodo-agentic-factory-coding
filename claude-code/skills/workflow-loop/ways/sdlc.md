@@ -22,7 +22,9 @@ The SDD sections a code build actually depends on:
 
 ## P2.2 · Verify
 
-**The repo's own gate**, discovered in order: `.claude/verify.sh`, then a `verify` target in `Makefile`, `Taskfile`, or `justfile`. `verify_gate.py` runs it at turn's end and blocks while red.
+**The repo's own gate**, discovered in order: `.claude/verify.sh`, then a `verify` target in `Makefile`, `Taskfile`, or `justfile`. `verify_gate.py` runs it when a `builder` fork ends and blocks while red.
+
+**That full gate runs once per band, not once per task** — an N-task band proves one merged state, so N full suite runs buy nothing. `SKILL.md`'s P2.2 owns the mechanics: a `.claude/state/band-gate` deadline marker suppresses the per-fork suite run for a multi-task band, and the orchestrator runs the gate itself, once, at the band's last task before its commit. **The per-task `Done when` commands are untouched** — each fork still runs and still proves its own task, and a marker that is missing, expired, or malformed just puts the full gate back in every fork.
 
 **A repo with none of those has no gate** — one line of finding, because it means the user is the verification loop here.
 

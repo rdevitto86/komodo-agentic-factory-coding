@@ -11,6 +11,14 @@
 # at all -- a tree whose only dirty paths are records-only files
 # (BACKLOG.md, docs/BACKLOG.md, CHANGELOG.md, README.md).
 #
+# Skips the full suite -- without running it -- while the repo carries a
+# band-gate deferral marker at .claude/state/band-gate: one line holding
+# an integer epoch-seconds deadline, written by the orchestrator when a
+# band of more than one task starts, removed before the band's single
+# gate run at P2.2. This suppression fails CLOSED toward running the
+# gate: an absent, unreadable, malformed, expired, or implausibly distant
+# (past MAX_DEFER_SECONDS from now) marker runs the suite as usual.
+#
 # The verify command is bounded by KOMODO_VERIFY_TIMEOUT seconds
 # (default 300, an invalid value falls back to 300); a timeout is a
 # deliberate block naming the limit, not a silent pass-through. The
@@ -36,6 +44,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -48,6 +57,8 @@ IDENTICAL_STOP_AT = 3
 RECORDS_ONLY_PATHS = frozenset(
     ("BACKLOG.md", "docs/BACKLOG.md", "CHANGELOG.md", "README.md")
 )
+BAND_MARKER_PARTS = (".claude", "state", "band-gate")
+MAX_DEFER_SECONDS = 4 * 60 * 60
 
 
 def timeout_seconds():
@@ -123,6 +134,22 @@ def is_records_only(paths):
     return bool(paths) and all(p in RECORDS_ONLY_PATHS for p in paths)
 
 
+def band_gate_deferred(root):
+    # Absent, malformed, expired, implausibly distant: every one runs the gate.
+    try:
+        with open(
+            os.path.join(root, *BAND_MARKER_PARTS), encoding="utf-8"
+        ) as handle:
+            lines = handle.read(256).splitlines()
+        if not lines:
+            return False
+        deadline = int(lines[0].strip())
+    except Exception:
+        return False
+    now = time.time()
+    return now < deadline <= now + MAX_DEFER_SECONDS
+
+
 def streak_path(root):
     key = hashlib.sha256(root.encode("utf-8")).hexdigest()[:16]
     return os.path.join(tempfile.gettempdir(), "komodo-verify-gate-streak-%s" % key)
@@ -179,6 +206,16 @@ def stop_fork(path):
     message = (
         "verify_gate: identical failure three times -- returning so the "
         "fork can report BLOCKED"
+    )
+    sys.stdout.write(json.dumps({"systemMessage": message}))
+    sys.exit(0)
+
+
+def defer_to_band(path):
+    clear_streak(path)
+    message = (
+        "verify_gate: full suite deferred to the band gate at P2.2 -- this "
+        "fork's own `Done when` commands stay its proof"
     )
     sys.stdout.write(json.dumps({"systemMessage": message}))
     sys.exit(0)
@@ -255,6 +292,10 @@ def main():
     if command is None:
         clear_streak(path)
         sys.exit(0)
+
+    if band_gate_deferred(root):
+        defer_to_band(path)
+        return
 
     paths = dirty_paths(root)
     if paths is not None:

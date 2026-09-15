@@ -24,7 +24,7 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 | P1 Decompose | Pick next task group here, then **`/workflow-decompose`**, then plan the run's PRs and branch here | `pm` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `builder` |
-| P2.2 Verify + commit | `verify_gate.py`, then commit here | — |
+| P2.2 Verify + commit | the task's `Done when` per task, the repo's full gate once per band, then commit here | — |
 | P2.3 Band review | `/assess-bugs`, `/assess-simplify` (+ `/assess-security`, + `/assess-performance`), once per band | `reviewer` (`/assess-performance` runs inline, not forked) |
 | P2.4 Closeout | `/changelog-write`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `builder` |
@@ -122,9 +122,20 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 **A band exception (see `ways/`) also runs a per-task `/assess-bugs` here, before the commit** — that call's findings block the commit like any other P2.2 failure.
 
+**The repo's full gate runs once per band, against the band's merged state — never once per task.** For a band of more than one task, write the deferral marker before P2.1's first fork and drop it before the band's own gate run:
+
+```bash
+mkdir -p .claude/state && python3 -c 'import time; print(int(time.time()) + 7200)' > .claude/state/band-gate
+rm -f .claude/state/band-gate   # before the band gate runs
+```
+
+The marker suppresses `verify_gate.py`'s full-suite run inside each `builder` fork; the fork's own `Done when` commands still run and still gate its return. **A missing, expired, or malformed marker means every fork runs the full gate itself** — the fallback is the redundant check, never the skipped one, so a forgotten `rm` costs time and nothing else.
+
+**Run the band gate at the last task's P2.2**, after that task's `Done when` commands are green and before its commit: drop the marker, then run the repo's own gate once (`.claude/verify.sh`, else `make verify` / `task verify` / `just verify`). **A red band gate returns to P2.1** like any other P2.2 failure, with the failing output in the brief — and the marker goes back before the fix forks.
+
 **Once every command is green (and the exception call, when it ran, is clean), commit** — `/git-commit-message` against this task's diff alone, then `git add` + `git commit`. One commit per task. No review runs here otherwise.
 
-**Ends when:** every command exits zero, its output is in the transcript, and the task is committed. Loop back to P2.0 for the next task.
+**Ends when:** every command exits zero, the band gate has passed once, its output is in the transcript, and the task is committed. Loop back to P2.0 for the next task.
 
 ### P2.3 · Band review
 
