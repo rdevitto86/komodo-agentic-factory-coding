@@ -247,8 +247,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 #### [TSK-01.8.2] Nothing in the toolkit says how to map a repo's internal dependency graph, so `assess-change-risk` scores blast radius by judgment with no import data behind it [P: L] [TODO]
 
 **Acceptance Criteria:**
-- [ ] **AC-1:** Given each `standards-<lang>` skill's Toolchain section, when it is read, then it names the command that language's own toolchain ships for listing internal dependencies.
-- [ ] **AC-2:** Given `assess-change-risk`, when it is read, then it states when to run that command and how its output feeds the tier.
+- [x] **AC-1:** Given each `standards-<lang>` skill's Toolchain section, when it is read, then it names the command that language's own toolchain ships for listing internal dependencies.
+- [x] **AC-2:** Given `assess-change-risk`, when it is read, then it states when to run that command and how its output feeds the tier.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|

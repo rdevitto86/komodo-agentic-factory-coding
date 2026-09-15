@@ -24,6 +24,7 @@ This language's exempt machine directives, verified against the guard's own list
 - **No version floor to declare** — POSIX-adjacent bash 3.2+ unless a script itself gates on a newer feature (associative arrays, `mapfile`) with a version check. State the floor in the script's own header comment when it matters.
 - **`shellcheck` is the lint tool**, run against every `.sh` file; there is no accepted alternative. A suppression is `# shellcheck disable=<code>` directly above the flagged line, never a blanket disable for the whole file.
 - **No standard formatter** — `shfmt` is optional, not required by anything in this repo. Match the indentation (two spaces) and brace style already in `scripts/*.sh` and `setup.sh`.
+- **No internal dependency graph command** — nothing in the shell toolchain lists one. A script's internal edges are its `source`/`.` lines and the siblings it execs; read those directly. `assess-change-risk` states when that read is required and what an unmeasured fan-out does to the tier.
 - **No dependency manager** — a shell script's "SDK" is the coreutils and the other scripts already in the repo. Read a sibling script before shelling out to a new external tool.
 
 ## Conventions

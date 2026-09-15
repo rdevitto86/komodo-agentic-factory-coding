@@ -25,6 +25,7 @@ This language's exempt machine directives, verified against the guard's own list
 - **`Makefile`'s (or `Taskfile`'s) `verify` target is the merge gate** — `dotnet format --verify-no-changes`, a configured analyzer run (Roslyn analyzers driven by `.editorconfig`, or a named package such as a StyleCop analyzer), `dotnet build`, `dotnet test`, in that order. `context_injector.py` reads this target directly; a repo without it has no gate.
 - **Formatting and linting** — `dotnet format` on commit, the project's configured analyzer set as the gate. These are the tools the pre-commit hook runs; `standards-cicd` defines when.
 - **Vulnerability scanning** — `dotnet list package --vulnerable` against the resolved lockfile is the gate; triage by whether the vulnerable path is actually reachable, not by CVE score alone. `standards-cicd` defines the gate; the `standards-security` skill states the bar.
+- **Internal dependency graph** — `dotnet list <project> reference` ships with the SDK and prints that project's `<ProjectReference>` edges; below project level the toolchain ships nothing that lists namespace- or type-level edges. `assess-change-risk` states when to run it and what its output does to the tier.
 - **Nuget packages** via the project's `<PackageReference>` entries at a pinned version — never a local `<ProjectReference>` standing in for a published package outside a solution's own projects.
 
 ## Conventions
