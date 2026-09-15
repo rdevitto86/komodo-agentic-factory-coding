@@ -16,6 +16,7 @@ Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Sc
 2. **Scan the manifest/lockfile when Dependabot yields nothing usable.** Load whichever `standards-<language>` skill(s) this repo's languages trigger and run the exact tool it documents — never invent one: `govulncheck ./...` (Go), `npm audit --omit=dev --audit-level=high` (or the pnpm/yarn equivalent, TS/JS), `pip-audit` (Python). No matching language skill: fall back to `osv-scanner` against the lockfile if it's installed; otherwise report that no scanner was available and stop.
 3. **Read each hit's severity and reachability**, not just its CVE score — `govulncheck` and `npm audit` both report whether the vulnerable symbol is actually called; an unreachable high-severity CVE is still worth recording but ranks lower than a reachable one.
 4. **A finding needs the CVE/GHSA ID and the affected package@version**, not a vague "dependency X is old" — that belongs to `assess-dependencies`, not this skill.
+5. **A finding needs a concrete reachable path**, not a hypothetical. "Could theoretically" is not a finding; "the scanner marks the vulnerable symbol reachable from the entry point" is.
 
 ## Report
 

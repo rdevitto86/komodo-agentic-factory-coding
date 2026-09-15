@@ -136,10 +136,10 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** triage time goes to real defects instead of disproving speculation.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Contract):** Given `claude-code/agents/reviewer.md`, when it is read, then it states the evidence a finding row requires — a trigger, the path it reaches, and an observable effect — each anchored to a cited `file:line`.
-- [ ] **AC-2 (Dismissals):** Given the same file, when its Output template is read, then it carries a `## Considered and dismissed` section so a near-miss has somewhere to go other than the findings table.
-- [ ] **AC-3 (Zero is success):** Given the same file, when its Output rules are read, then an empty findings table is stated to be a successful review, not a failed one.
-- [ ] **AC-4 (Parity):** Given `assess-bugs`, `assess-testing`, `assess-vulnerabilities`, and `assess-performance`, when each is read, then each states a positive evidence bar in the shape `assess-security` already uses.
+- [x] **AC-1 (Contract):** Given `claude-code/agents/reviewer.md`, when it is read, then it states the evidence a finding row requires — a trigger, the path it reaches, and an observable effect — each anchored to a cited `file:line`.
+- [x] **AC-2 (Dismissals):** Given the same file, when its Output template is read, then it carries a `## Considered and dismissed` section so a near-miss has somewhere to go other than the findings table.
+- [x] **AC-3 (Zero is success):** Given the same file, when its Output rules are read, then an empty findings table is stated to be a successful review, not a failed one.
+- [x] **AC-4 (Parity):** Given `assess-bugs`, `assess-testing`, `assess-vulnerabilities`, and `assess-performance`, when each is read, then each states a positive evidence bar in the shape `assess-security` already uses.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|

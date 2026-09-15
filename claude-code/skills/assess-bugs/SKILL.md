@@ -18,7 +18,8 @@ Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling, us
 1. **Load the `standards-*` skills named in `$ARGUMENTS`** (or infer from touched file extensions if none named) — read their Testing and Conventions sections before scoring anything a bug.
 2. **Read `git diff` for the band**, not the whole tree. A file untouched by this band is out of scope.
 3. **For each changed function/block, check**: does it do what the task said, including the edge case the task named? A wrong assumption, an unhandled input, a race, an off-by-one, a swallowed error.
-4. **Skip style, naming, reuse, and efficiency** — that is `assess-simplify`'s job, not this one's.
+4. **A finding needs a concrete trigger path**, not a hypothetical. "Could theoretically" is not a finding; "input X reaches the unguarded branch at Y, effect Z follows" is.
+5. **Skip style, naming, reuse, and efficiency** — that is `assess-simplify`'s job, not this one's.
 
 ## Report
 
