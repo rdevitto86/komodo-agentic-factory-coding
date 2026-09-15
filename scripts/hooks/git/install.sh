@@ -39,12 +39,34 @@ for repo in "$@"; do
   name="$(basename "$repo")"
   current="$(git -C "$repo" config --local --get core.hooksPath || true)"
 
+  # A relative core.hooksPath is resolved against the repo root, as git itself does.
+  state="unset"
+  if [ -n "$current" ]; then
+    if [ "$current" = "$HOOK_DIR" ]; then
+      state="current"
+    else
+      case "$current" in
+        /*) current_abs="$current" ;;
+        *) current_abs="$repo/$current" ;;
+      esac
+      if [ -d "$current_abs" ]; then
+        state="different"
+      else
+        state="stale"
+      fi
+    fi
+  fi
+
   if [ "$STATUS_ONLY" -eq 1 ]; then
-    printf '%-45s %s\n' "$name" "${current:-<unset>}"
+    if [ "$state" = "stale" ]; then
+      printf '%-45s stale: %s\n' "$name" "$current"
+    else
+      printf '%-45s %s\n' "$name" "${current:-<unset>}"
+    fi
     continue
   fi
 
-  if [ "$current" = "$HOOK_DIR" ]; then
+  if [ "$state" = "current" ]; then
     printf '%-45s already installed\n' "$name"
     continue
   fi
@@ -56,6 +78,10 @@ for repo in "$@"; do
       printf '%-45s note: these .git/hooks files stop running:\n' "$name"
       printf '  %s\n' $orphans
     fi
+  fi
+
+  if [ "$state" = "stale" ]; then
+    printf '%-45s note: hooks had not been running (core.hooksPath pointed at missing %s)\n' "$name" "$current"
   fi
 
   git -C "$repo" config --local core.hooksPath "$HOOK_DIR"

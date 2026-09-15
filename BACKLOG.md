@@ -157,9 +157,9 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** a repo silently running no hooks is visible from the one command meant to audit exactly that.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Status):** Given a repo whose `core.hooksPath` names a directory that does not exist, when `--status` runs, then the output marks it stale rather than printing the path like any other value.
-- [ ] **AC-2 (Install):** Given that same repo, when a plain install runs, then it notes that hooks had not been running before writing the new path.
-- [ ] **AC-3 (No regression):** Given a repo already pointing at `$HOOK_DIR`, or one with an orphaned `.git/hooks`, when either mode runs, then the existing behavior is unchanged.
+- [x] **AC-1 (Status):** Given a repo whose `core.hooksPath` names a directory that does not exist, when `--status` runs, then the output marks it stale rather than printing the path like any other value.
+- [x] **AC-2 (Install):** Given that same repo, when a plain install runs, then it notes that hooks had not been running before writing the new path.
+- [x] **AC-3 (No regression):** Given a repo already pointing at `$HOOK_DIR`, or one with an orphaned `.git/hooks`, when either mode runs, then the existing behavior is unchanged.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
