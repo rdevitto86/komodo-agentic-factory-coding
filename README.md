@@ -5,7 +5,7 @@ Agent configuration for software/hardware engineering, shared across every Komod
 Four ideas hold it together:
 
 1. **Rules that must never break are enforced mechanically, not by prompt text.** Git is gated before the fact — `git_guard.py` runs at `PreToolUse` and denies the command outright. Comments are a lint after it — `comments.py hook` reports findings on a write without blocking it, and `comments.py check` is what fails the repo's `verify` target.
-2. **Base context stays tiny.** Roughly 1.1k tokens of always-on rules and skill names — `scripts/validate.sh` prints the exact figure and fails above 2,000. Every skill body loads only when a path glob matches.
+2. **Base context stays tiny.** Roughly 1.1k tokens of always-on rules and skill names — `scripts/validate.py` prints the exact figure and fails above 2,000. Every skill body loads only when a path glob matches.
 3. **Work state lives on disk, not in the conversation.** Five documents per repo mean a compaction cannot lose the plan.
 4. **Nothing is Claude-specific except `settings.json`.** Rules and skills are plain markdown, so a local model behind the bridge reads the same source of truth.
 
@@ -44,7 +44,7 @@ claude-code/          mirrors ~/.claude exactly
 └── skills/           65 active, 7 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
-scripts/              validate.sh, test-hooks.sh, release.sh, portable git hooks
+scripts/              validate.py, test-hooks.sh, release.sh, portable git hooks
 CODEOWNERS            review gate on claude-code/AGENTS.md, settings.json, hooks/
 ```
 
@@ -54,7 +54,7 @@ CODEOWNERS            review gate on claude-code/AGENTS.md, settings.json, hooks
 
 The phases that read a lot and return a little run in a forked subagent, so their reading never lands in the main window. `/workflow-loop open <topic>` skips the machine for design work, where a script produces worse output than judgement.
 
-**Template exception:** the `readme-modify` skill mandates a fixed 6-section template (Overview, Features, Setup, Usage, Testing, References). This repo has no `docs/spec/SDD.md` of its own — it *is* the tool the rest of that template would otherwise point at — so every section below Setup departs from that skeleton by name, as a deliberate, one-off carve-out for this repo's shape: **Structure** (would be Features, but the directory tree is the more direct fact source than prose feature subsections), **The Agentic Workflow Loop** (Features/Usage content merged, including the diagram the template would otherwise push to an SDD that doesn't exist here), **The Hooks** (Features detail, kept adjacent to the loop it gates), **Skills** (Features detail, kept adjacent to the loop that invokes them), **Output Formatting** (has no template slot — states a session-level contract, not a repo feature), **Budget** (Testing-adjacent — it's a check `scripts/validate.sh` runs, but scoped to context budget rather than a test tier), and **Git hooks for other repos** (Usage detail — the one thing another repo actually invokes from this one).
+**Template exception:** the `readme-modify` skill mandates a fixed 6-section template (Overview, Features, Setup, Usage, Testing, References). This repo has no `docs/spec/SDD.md` of its own — it *is* the tool the rest of that template would otherwise point at — so every section below Setup departs from that skeleton by name, as a deliberate, one-off carve-out for this repo's shape: **Structure** (would be Features, but the directory tree is the more direct fact source than prose feature subsections), **The Agentic Workflow Loop** (Features/Usage content merged, including the diagram the template would otherwise push to an SDD that doesn't exist here), **The Hooks** (Features detail, kept adjacent to the loop it gates), **Skills** (Features detail, kept adjacent to the loop that invokes them), **Output Formatting** (has no template slot — states a session-level contract, not a repo feature), **Budget** (Testing-adjacent — it's a check `scripts/validate.py` runs, but scoped to context budget rather than a test tier), and **Git hooks for other repos** (Usage detail — the one thing another repo actually invokes from this one).
 
 ```mermaid
 flowchart TD
@@ -156,7 +156,7 @@ bash scripts/test-hooks.sh    # 286 regression cases
 
 ## Skills
 
-**The loader accepts exactly 19 frontmatter keys** — any other key silently rejects the whole file, so the skill simply does not exist at runtime. `validate.sh` fails the build on an unknown one.
+**The loader accepts exactly 19 frontmatter keys** — any other key silently rejects the whole file, so the skill simply does not exist at runtime. `validate.py` fails the build on an unknown one.
 
 | Kind | Frontmatter | Reaches the model | You type `/name` |
 |---|---|---|---|
@@ -183,7 +183,7 @@ Every subagent carries the same contract as a mandatory output template.
 ## Budget
 
 ```bash
-bash scripts/validate.sh
+python3 scripts/validate.py
 ```
 
 Verifies every symlink, validates every skill and agent against the loader's frontmatter schema, and **fails above 2,000 tokens** of base context.

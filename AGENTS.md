@@ -79,18 +79,18 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 
 ## Context budget
 
-`AGENTS.md` plus every model-visible skill description is paid on every turn of every session, forever. `validate.sh` fails above **2,000 tokens**.
+`AGENTS.md` plus every model-visible skill description is paid on every turn of every session, forever. `validate.py` fails above **2,000 tokens**.
 
 - **A skill listed `name-only` costs 1–4 tokens.** With a full description it costs ~30–70.
 - **A new line in `claude-code/AGENTS.md` costs its full length**, always. Put it in a skill unless it must apply unconditionally.
 - **`disable-model-invocation: true` keeps a workflow skill out of the listing entirely.** Everything else reached only by an explicit name is `name-only` in `skillOverrides`.
-- **`validate.sh`'s token total excludes bundled and plugin skills** — their text lives in the Claude Code binary, not this repo. `skillOverrides` is the only lever for a bundled skill, `/plugin` for a plugin one, and `/context`'s Skills row is where the real listing size is read.
+- **`validate.py`'s token total excludes bundled and plugin skills** — their text lives in the Claude Code binary, not this repo. `skillOverrides` is the only lever for a bundled skill, `/plugin` for a plugin one, and `/context`'s Skills row is where the real listing size is read.
 
 ## Working on this repo
 
 ```bash
 bash scripts/test-hooks.sh    # 259 hook + comments regression cases
-bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
+python3 scripts/validate.py   # symlinks, frontmatter schema, token budget
 bash setup.sh --dry-run       # preview the install
 bash setup.sh                 # install, then runs both of the above
 python3 claude-code/hooks/comments.py check   # comment lint

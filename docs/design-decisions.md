@@ -149,7 +149,7 @@ Spec → decompose → execute → consolidate → complete, each phase naming w
 
 ## Standards-<language> skills share one section order
 
-Every `standards-<language>`/`standards-<framework>` skill follows the same section order, so a language skill's shape never has to be re-derived from scratch: Comment discipline → Toolchain → Conventions → domain-specific sections → Testing → Quick-reference fields → `Repo layout — <token>` → `Seed backlog — <token>` → Reference material. A process/rule skill (`standards-cicd`, `standards-sdlc`, `standards-database`, `standards-worklog`, `standards-specs`) is exempt. Start a new one from `templates/skills/standards.md.tmpl`; `scripts/validate.sh`'s section-order check enforces it on the skills that already exist.
+Every `standards-<language>`/`standards-<framework>` skill follows the same section order, so a language skill's shape never has to be re-derived from scratch: Comment discipline → Toolchain → Conventions → domain-specific sections → Testing → Quick-reference fields → `Repo layout — <token>` → `Seed backlog — <token>` → Reference material. A process/rule skill (`standards-cicd`, `standards-sdlc`, `standards-database`, `standards-worklog`, `standards-specs`) is exempt. Start a new one from `templates/skills/standards.md.tmpl`; `scripts/validate.py`'s section-order check enforces it on the skills that already exist.
 
 ## A skill directory with no SKILL.md is invisible
 

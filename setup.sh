@@ -20,7 +20,7 @@
 #   3. overlay  copies settings.local.json.tmpl -> settings.local.json
 #               and CLAUDE.local.md.tmpl -> CLAUDE.local.md, each once,
 #               only if the personal overlay does not exist yet
-#   4. verify   runs test-hooks.sh then validate.sh (skippable, see above)
+#   4. verify   runs test-hooks.sh then validate.py (skippable, see above)
 #
 # Everything else is a symlink, not a copy. ~/.claude/<name> is a
 # symlink back into this repo, so editing a file here takes effect in
@@ -194,7 +194,7 @@ fi
 if [ "$SKIP_VERIFY" -eq 0 ]; then
   say ""
   bash "$REPO_ROOT/scripts/test-hooks.sh"
-  bash "$REPO_ROOT/scripts/validate.sh"
+  python3 "$REPO_ROOT/scripts/validate.py"
 fi
 
 if [ -n "$REF" ]; then

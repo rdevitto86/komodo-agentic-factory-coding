@@ -52,7 +52,7 @@ Language-specific insecure-usage patterns for `/assess-security` to pull from, b
 
 - **No `bats` or other shell test framework is in use** — this repo's own bash surface (`claude-code/hooks/*.py` are Python; `scripts/*.sh` and `setup.sh` are the actual shell) is tested by a hand-rolled harness, `scripts/test-hooks.sh`: a plain bash script that feeds each hook a JSON payload on stdin and asserts the returned decision, no external test runner.
 - **Follow that shape for a new shell script under test**: a sibling `test-<name>.sh` that runs the script against fixture input/args and asserts exit code and stdout/stderr with `diff` or a string match, no framework dependency added.
-- **`bash scripts/validate.sh` and `bash scripts/test-hooks.sh` together are this repo's shell-adjacent verify surface** — `.claude/verify.sh` runs both. Tier definitions, merge/release gates, and coverage floors beyond that are owned by `standards-sdlc`.
+- **`python3 scripts/validate.py` and `bash scripts/test-hooks.sh` together are this repo's shell-adjacent verify surface** — `.claude/verify.sh` runs both. Tier definitions, merge/release gates, and coverage floors beyond that are owned by `standards-sdlc`.
 
 ## Quick-reference fields
 

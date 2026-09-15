@@ -40,7 +40,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.1.4.1` | `[Impl]` | surfaced by `/workflow-decompose` while gap-checking `TSK-01.1.3`: line 107 still documents `- T.D.S \| SEV \| [WIP] <text> · <size> → \`<done when>\`` for spliced seed stories. This is pre-existing drift — wrong against today's table format independently of `TSK-01.1.3`, so it is filed separately rather than widening that task to a tenth file | `bash scripts/validate.sh` |
+| `SUB-01.1.4.1` | `[Impl]` | surfaced by `/workflow-decompose` while gap-checking `TSK-01.1.3`: line 107 still documents `- T.D.S \| SEV \| [WIP] <text> · <size> → \`<done when>\`` for spliced seed stories. This is pre-existing drift — wrong against today's table format independently of `TSK-01.1.3`, so it is filed separately rather than widening that task to a tenth file | `python3 scripts/validate.py` |
 
 #### [TSK-01.1.5] `git_guard.py` reads a heredoc body as command text, so a commit message that merely mentions a git command is denied [P: M] [TODO]
 
@@ -80,7 +80,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.1.7.1` | `[Impl]` | surfaced by `/assess-bugs` at TSK-01.1.3's band review: `backlog-modify` and `docs/design-decisions.md` both acknowledge the failure mode ("a backlog defect, not a sweep the gate should quietly let through") but nothing enforces the mapping at write time — `backlog-plan`'s decomposition constraints don't check it, and no lint exists. Recoverable only by a human manually ticking the box. Deliberately not fixed in the same band since it's an acknowledged, intentional trade-off rather than a defect | `bash scripts/validate.sh` |
+| `SUB-01.1.7.1` | `[Impl]` | surfaced by `/assess-bugs` at TSK-01.1.3's band review: `backlog-modify` and `docs/design-decisions.md` both acknowledge the failure mode ("a backlog defect, not a sweep the gate should quietly let through") but nothing enforces the mapping at write time — `backlog-plan`'s decomposition constraints don't check it, and no lint exists. Recoverable only by a human manually ticking the box. Deliberately not fixed in the same band since it's an acknowledged, intentional trade-off rather than a defect | `python3 scripts/validate.py` |
 
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
@@ -102,7 +102,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 #### [TSK-01.3.4] New skill: `/standards-zig` [P: L] [TODO]
 | Subtask | Work | Done when |
 |---|---|---|
-| `SUB-01.3.4.1` | write a `standards-zig` skill covering Zig language/build/toolchain conventions, structured like the existing `standards-aws` and `standards-specs` skills | `claude-code/skills/standards-zig/SKILL.md` exists and `bash scripts/validate.sh` passes |
+| `SUB-01.3.4.1` | write a `standards-zig` skill covering Zig language/build/toolchain conventions, structured like the existing `standards-aws` and `standards-specs` skills | `claude-code/skills/standards-zig/SKILL.md` exists and `python3 scripts/validate.py` passes |
 
 ### [TG-01.4] Workflow Loop & Hook Reliability
 * **Target Release:** V1
@@ -122,7 +122,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.4.14.1` | `[Impl]` | filed by `TSK-01.4.13`'s band-review `/assess-simplify` pass: the classification added at `scripts/hooks/git/install.sh:42-58` sets `state="different"` for an existing-but-not-`$HOOK_DIR` path, but every branch below tests only `current` or `stale` — `different` and `unset` take the identical `else` in both `--status` and the install path. The `[ -d ]` stat and the absolute-vs-relative `case` are load-bearing only for the stale distinction. Two flags (`is_current`, `is_stale`) express the same behavior with no dead assignment | `bash scripts/test-install.sh` passes with `G1`-`G4` unchanged; `bash scripts/validate.sh` |
+| `SUB-01.4.14.1` | `[Impl]` | filed by `TSK-01.4.13`'s band-review `/assess-simplify` pass: the classification added at `scripts/hooks/git/install.sh:42-58` sets `state="different"` for an existing-but-not-`$HOOK_DIR` path, but every branch below tests only `current` or `stale` — `different` and `unset` take the identical `else` in both `--status` and the install path. The `[ -d ]` stat and the absolute-vs-relative `case` are load-bearing only for the stale distinction. Two flags (`is_current`, `is_stale`) express the same behavior with no dead assignment | `bash scripts/test-install.sh` passes with `G1`-`G4` unchanged; `python3 scripts/validate.py` |
 
 ### [TG-01.5] Review Precision & Model Tiering
 * **Target Release:** V1
@@ -136,7 +136,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.5.3.1` | `[Impl]` | filed by `TSK-01.5.1`'s band-review `/assess-bugs` pass: `reviewer.md` routes a near-miss to `## Considered and dismissed`, but that instruction reaches only the three skills carrying `context: fork`/`agent: reviewer`. `assess-testing`, `assess-vulnerabilities`, and `assess-performance` gained the bar this round and run inline, so a near-miss they catch is silently dropped rather than preserved. Give each the same disposal section in its own `## Report` contract | `bash scripts/validate.sh`; `make verify` |
+| `SUB-01.5.3.1` | `[Impl]` | filed by `TSK-01.5.1`'s band-review `/assess-bugs` pass: `reviewer.md` routes a near-miss to `## Considered and dismissed`, but that instruction reaches only the three skills carrying `context: fork`/`agent: reviewer`. `assess-testing`, `assess-vulnerabilities`, and `assess-performance` gained the bar this round and run inline, so a near-miss they catch is silently dropped rather than preserved. Give each the same disposal section in its own `## Report` contract | `python3 scripts/validate.py`; `make verify` |
 
 #### [TSK-01.5.4] The evidence bar is now written five independent times, with no canonical statement to propagate an edit from [P: L] [TODO]
 
@@ -146,7 +146,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.5.4.1` | `[Impl]` | filed by `TSK-01.5.1`'s band-review `/assess-bugs` and `/assess-simplify` passes, which disagreed: `reviewer.md` and four skills each hand-write their own trigger/path/effect sentence, so an edit to the agent's wording has nothing to propagate from. `/assess-simplify` argued `assess-bugs`'s copy is pure duplication since it forks as `reviewer` and already inherits the agent's text — `assess-simplify`, the third fork skill, correctly got no copy. But `TSK-01.5.1`'s AC-4 explicitly required `assess-bugs` to state one, so removing it contradicts a shipped acceptance criterion. Resolve the tension deliberately: either amend the AC's intent in `docs/design-decisions.md` and drop the inherited copies, or keep them and record why the duplication is accepted | `bash scripts/validate.sh`; `make verify` |
+| `SUB-01.5.4.1` | `[Impl]` | filed by `TSK-01.5.1`'s band-review `/assess-bugs` and `/assess-simplify` passes, which disagreed: `reviewer.md` and four skills each hand-write their own trigger/path/effect sentence, so an edit to the agent's wording has nothing to propagate from. `/assess-simplify` argued `assess-bugs`'s copy is pure duplication since it forks as `reviewer` and already inherits the agent's text — `assess-simplify`, the third fork skill, correctly got no copy. But `TSK-01.5.1`'s AC-4 explicitly required `assess-bugs` to state one, so removing it contradicts a shipped acceptance criterion. Resolve the tension deliberately: either amend the AC's intent in `docs/design-decisions.md` and drop the inherited copies, or keep them and record why the duplication is accepted | `python3 scripts/validate.py`; `make verify` |
 
 ### [TG-01.6] Agent Roster
 * **Target Release:** V1
@@ -166,7 +166,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.6.2.1` | `[Impl]` | filed during `TSK-01.6.1`'s rename: `scripts/validate.sh` validates agent and skill frontmatter against the loader's key schema but never cross-checks an `agent:` VALUE against the roster, so the six skills repointed by that rename would have failed silently had any name been mistyped. `git_guard.py`'s reviewer gate has the same shape — it keys on `REVIEWER_AGENT` and falls through to allow if the string stops matching, which is a security surface failing open, not just a broken fork | `bash scripts/validate.sh` fails on a deliberately mistyped `agent:` value and passes on the real tree; `make verify` |
+| `SUB-01.6.2.1` | `[Impl]` | filed during `TSK-01.6.1`'s rename: `scripts/validate.sh` validates agent and skill frontmatter against the loader's key schema but never cross-checks an `agent:` VALUE against the roster, so the six skills repointed by that rename would have failed silently had any name been mistyped. `git_guard.py`'s reviewer gate has the same shape — it keys on `REVIEWER_AGENT` and falls through to allow if the string stops matching, which is a security surface failing open, not just a broken fork | `python3 scripts/validate.py` fails on a deliberately mistyped `agent:` value and passes on the real tree; `make verify` |
 
 #### [TSK-01.6.3] `docs/design-decisions.md`'s per-role contract rationale covers `architect` but not `tester` [P: L] [TODO]
 
@@ -175,7 +175,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.6.3.1` | `[Impl]` | filed by `TSK-01.6.1`'s band-review `/assess-simplify` pass: the paragraph exists to record, per role, which existing contract was asked-and-rejected before a new agent was added. It states that for `builder`, `pm`, `reviewer`, and `architect`, but not for `tester` — whose Output template visibly reuses `builder`'s `Result`/`Verified`/`Notes` shape, so the answer is "it did fit, and was reused". One clause | `bash scripts/validate.sh` |
+| `SUB-01.6.3.1` | `[Impl]` | filed by `TSK-01.6.1`'s band-review `/assess-simplify` pass: the paragraph exists to record, per role, which existing contract was asked-and-rejected before a new agent was added. It states that for `builder`, `pm`, `reviewer`, and `architect`, but not for `tester` — whose Output template visibly reuses `builder`'s `Result`/`Verified`/`Notes` shape, so the answer is "it did fit, and was reused". One clause | `python3 scripts/validate.py` |
 
 #### [TSK-01.6.4] `AGENTS.md` states a hook regression-case count that the suite has outgrown [P: L] [TODO]
 
@@ -217,7 +217,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.7.2.1` | `[Impl]` | add the portability rules to `standards-shell` and `standards-cicd`. Both are already `paths:`-gated to exactly the files where the rule applies, so this costs nothing in the always-on budget — a new skill would cost a description forever to say something only relevant when a `.sh` or a pipeline config is open | `bash scripts/validate.sh` |
+| `SUB-01.7.2.1` | `[Impl]` | add the portability rules to `standards-shell` and `standards-cicd`. Both are already `paths:`-gated to exactly the files where the rule applies, so this costs nothing in the always-on budget — a new skill would cost a description forever to say something only relevant when a `.sh` or a pipeline config is open | `python3 scripts/validate.py` |
 
 ### [TG-01.8] UI & Language Standards
 * **Target Release:** V1
@@ -266,8 +266,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.11.1.1` | `[Impl]` | write one `templates/briefs/<role>.md.tmpl` per role. These live outside any loaded path, so they cost nothing in the always-on budget | `ls templates/briefs/`; `bash scripts/validate.sh` |
-| `SUB-01.11.1.2` | `[Impl]` | add the stop-on-missing-slot rule to each agent body. The fork is the only place with the information to validate its own brief, and `workflow-implement` already half-states this for `Done when` — generalize that rather than inventing a mechanism | `bash scripts/validate.sh` |
+| `SUB-01.11.1.1` | `[Impl]` | write one `templates/briefs/<role>.md.tmpl` per role. These live outside any loaded path, so they cost nothing in the always-on budget | `ls templates/briefs/`; `python3 scripts/validate.py` |
+| `SUB-01.11.1.2` | `[Impl]` | add the stop-on-missing-slot rule to each agent body. The fork is the only place with the information to validate its own brief, and `workflow-implement` already half-states this for `Done when` — generalize that rather than inventing a mechanism | `python3 scripts/validate.py` |
 | `SUB-01.11.1.3` | `[Impl]` | delete the three prose brief descriptions now superseded by the templates. `workflow-loop/SKILL.md` is near the compaction cap, so this should buy tokens back rather than cost them | `grep -rc "Out of scope" claude-code/skills/workflow-loop/SKILL.md` reflects the removal; `make verify` |
 | `SUB-01.11.1.4` | `[Impl]` | spike whether a `PreToolUse` matcher on `Task`/`Skill` fires the way the `Edit|Write` matcher does. If it does, brief validation can move from the fork to the harness, which is strictly better; if it does not, the fork-side rule above stands alone. Record the result either way | `grep -c "PreToolUse" docs/design-decisions.md` returns non-zero; `make verify` |
 
