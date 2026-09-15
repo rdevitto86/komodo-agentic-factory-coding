@@ -252,11 +252,11 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** I can see the shape of the work without reading two files end to end.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Sources):** Given the map, when it is generated, then every node derives from `BACKLOG.md` or `CHANGELOG.md` and nothing is hand-maintained.
-- [ ] **AC-2 (Level):** Given the map, when it is read, then nodes are epics and task groups, not individual subtasks.
+- [x] **AC-1 (Sources):** Given the map, when it is generated, then every node derives from `BACKLOG.md` or `CHANGELOG.md` and nothing is hand-maintained.
+- [x] **AC-2 (Level):** Given the map, when it is read, then nodes are epics and task groups, not individual subtasks.
 - [ ] **AC-3 (State):** Given the map, when it is read, then shipped, open, and blocked work are visually distinct, and the released version is shown.
-- [ ] **AC-4 (Zero setup):** Given a machine with only `python3`, when the map is generated, then it renders with no install step.
-- [ ] **AC-5 (Not a record):** Given the map, when it is described in its own skill, then it is stated to be a view over the two record files and never a source of truth.
+- [x] **AC-4 (Zero setup):** Given a machine with only `python3`, when the map is generated, then it renders with no install step.
+- [x] **AC-5 (Not a record):** Given the map, when it is described in its own skill, then it is stated to be a view over the two record files and never a source of truth.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
