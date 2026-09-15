@@ -152,27 +152,39 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** the roster is phase-named (`workflow-implementer`, `workflow-planner`), which is exactly why it is narrow — the name lies the moment the agent is invoked outside the loop. Renaming to role names decouples agent from phase and makes `workflow-loop` a mapping table instead of the owner. Sequenced before parallelism and prompt templates, both of which depend on stable role names. Five agent descriptions cost ~246 always-on tokens today; eight cost ~400 against 871 free.
 
-#### [TSK-01.6.1] The agent roster is named after workflow phases rather than roles, so no agent is invocable for ad-hoc work without its name misdescribing what it is doing [P: H] [TODO]
+#### [TSK-01.6.2] Nothing checks that a skill's `agent:` frontmatter names an agent that exists, so a roster change breaks every fork of that skill silently [P: H] [TODO]
 
 **User Story:**
-> **As an** engineer doing ad-hoc work outside the workflow loop,
-> **I want** agents named for what they are rather than for which phase calls them,
-> **So that** I can invoke a builder or a researcher directly without the roster fighting me.
+> **As** whoever changes the agent roster next,
+> **I want** a stale `agent:` key to fail the repo's own gate,
+> **So that** the failure surfaces at `make verify` rather than at the next fork that tries to run.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Names):** Given `claude-code/agents/`, when it is listed, then it holds `architect`, `builder`, `reviewer`, `researcher`, `tester`, `pm`, `scout`, and `audit`, and no file is named for a workflow phase.
-- [ ] **AC-2 (Hooks):** Given `builder`, when its frontmatter is read, then it carries the `Stop` `verify_gate.py` registration and the `PostToolUse` comments hook that `workflow-implementer` carried.
-- [ ] **AC-3 (Guard):** Given `claude-code/hooks/lib/agents.py`, when `REVIEWER_AGENT` is read, then it still resolves to the reviewer agent's actual name and `git_guard.py`'s deny-by-default reviewer surface is unbroken.
-- [ ] **AC-4 (Generality):** Given each agent body, when it is read, then its directives describe the role's standing responsibilities and boundaries, not the phase that happens to invoke it.
-- [ ] **AC-5 (Callers):** Given every skill and `ways/` file naming an agent, when each is read, then none references a retired phase-based name.
+- [ ] **AC-1 (Cross-check):** Given a skill whose `agent:` key names no file in `claude-code/agents/`, when `scripts/validate.sh` runs, then it fails and names the skill and the missing agent.
+- [ ] **AC-2 (Name, not filename):** Given the check, when it resolves an agent, then it matches the agent's `name:` frontmatter, not its filename — the loader keys on `name:`.
+- [ ] **AC-3 (Constant):** Given `REVIEWER_AGENT` in `claude-code/hooks/lib/agents.py`, when the check runs, then that constant is verified against a real agent's `name:` too.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.6.1.1` | `[Impl]` | rename `workflow-implementer`→`builder`, `workflow-planner`→`pm`, `engineering`→`researcher`; `reviewer` and `scout` keep their names since they are already roles. Move `verify_gate.py` and the `comments.py hook` frontmatter registrations onto `builder` in the same change — they are registered in the agent file, so a rename that leaves them behind silently disarms the Stop gate | `ls claude-code/agents/builder.md claude-code/agents/pm.md claude-code/agents/researcher.md`; `grep -c "verify_gate" claude-code/agents/builder.md` returns non-zero |
-| `SUB-01.6.1.2` | `[Impl]` | add `architect` (read-only, opus tier, returns options with trade-offs and a recommendation — never decides in a fork, since `workflow-loop`'s open hatch already owns design dialogue) and `tester` (writes under test paths only, so it can run concurrently with `builder` without a file collision) | `ls claude-code/agents/architect.md claude-code/agents/tester.md`; `bash scripts/validate.sh` |
-| `SUB-01.6.1.3` | `[Impl]` | rewrite every agent body so its directives are role-general rather than phase-bound — this is the half that makes the rename worth doing; a renamed agent carrying phase-specific instructions is still narrow | `bash scripts/validate.sh` |
-| `SUB-01.6.1.4` | `[Impl]` | update `workflow-loop/SKILL.md`'s phase table, `ways/sdlc.md`, and every skill naming an agent by its old name. `workflow-loop/SKILL.md` sits near `validate.sh`'s 5000-token compaction cap, so this rewrite must net-shrink or hold | `grep -rc "workflow-implementer\|workflow-planner" claude-code/skills claude-code/agents` returns `0` for every file; `make verify` |
-| `SUB-01.6.1.5` | `[UnitTest]` | confirm `REVIEWER_AGENT` in `claude-code/hooks/lib/agents.py` still matches the reviewer agent's name and the deny-by-default Bash surface still denies — the guard keys on that string, so a roster change is exactly when it silently breaks | `bash scripts/test-hooks.sh` |
+| `SUB-01.6.2.1` | `[Impl]` | filed during `TSK-01.6.1`'s rename: `scripts/validate.sh` validates agent and skill frontmatter against the loader's key schema but never cross-checks an `agent:` VALUE against the roster, so the six skills repointed by that rename would have failed silently had any name been mistyped. `git_guard.py`'s reviewer gate has the same shape — it keys on `REVIEWER_AGENT` and falls through to allow if the string stops matching, which is a security surface failing open, not just a broken fork | `bash scripts/validate.sh` fails on a deliberately mistyped `agent:` value and passes on the real tree; `make verify` |
+
+#### [TSK-01.6.3] `docs/design-decisions.md`'s per-role contract rationale covers `architect` but not `tester` [P: L] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given the paragraph recording which existing output contract each role was weighed against, when it is read, then `tester` is covered like every other agent in the roster.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.6.3.1` | `[Impl]` | filed by `TSK-01.6.1`'s band-review `/assess-simplify` pass: the paragraph exists to record, per role, which existing contract was asked-and-rejected before a new agent was added. It states that for `builder`, `pm`, `reviewer`, and `architect`, but not for `tester` — whose Output template visibly reuses `builder`'s `Result`/`Verified`/`Notes` shape, so the answer is "it did fit, and was reused". One clause | `bash scripts/validate.sh` |
+
+#### [TSK-01.6.4] `AGENTS.md` states a hook regression-case count that the suite has outgrown [P: L] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given `AGENTS.md`'s line naming the regression-case count, when `scripts/test-hooks.sh` runs, then the two agree.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.6.4.1` | `[Impl]` | pre-existing drift, spotted by a fork during `TSK-01.6.1` and deliberately not fixed there to keep that diff to the lines the rename required: `AGENTS.md` says `259 hook + comments regression cases` while the suite reports 287. Confirm which number is authoritative before editing — the 259 may have been scoped to a subset — and consider whether a hand-maintained count belongs in the file at all | `bash scripts/test-hooks.sh`'s reported count matches `AGENTS.md`; `make verify` |
 
 ### [TG-01.7] Cross-Platform Portability
 * **Target Release:** V1
