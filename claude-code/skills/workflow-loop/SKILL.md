@@ -1,14 +1,14 @@
 ---
 name: workflow-loop
 description: The end-to-end execution loop — spec, decompose, execute, consolidate, publish. Run it for any change bigger than a one-line fix, including when the user asks in plain language to build, ship, or implement something end to end rather than typing the slash command.
-argument-hint: [task, or "open <topic>" for the unscripted path]
+argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>" for the unscripted one]
 ---
 
 # Workflow Loop
 
 **Five phases, in order.** Every phase names what ends it.
 
-`$ARGUMENTS` names the task. **If it begins with `open`, skip the whole machine** — see The open hatch at the bottom.
+`$ARGUMENTS` names the task. **If it begins with `open`, skip the whole machine; if `fast`, skip the planning phases** — both blocks at the bottom.
 
 **Load the matching way of working before P0**: `ways/sdlc.md` for code, `ways/debugging.md` when the task reads as diagnostic ("why is X broken", "debug", "investigate a failure") rather than build-something.
 
@@ -24,7 +24,7 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | P1 Decompose | Pick next task group here, then **`/workflow-decompose`**, then plan the run's PRs and branch here | `pm` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
 | P2.1 Implement | **`/workflow-implement`, once per task** | `builder` |
-| P2.2 Verify + commit | `verify_gate.py`, then commit here | — |
+| P2.2 Verify + commit | the task's `Done when` per task, the repo's full gate once per band, then commit here | — |
 | P2.3 Band review | `/assess-bugs`, `/assess-simplify` (+ `/assess-security`, + `/assess-performance`), once per band | `reviewer` (`/assess-performance` runs inline, not forked) |
 | P2.4 Closeout | `/changelog-write`, once per band | — |
 | P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `builder` |
@@ -90,7 +90,11 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **After P2.3's band review appends findings, fold the severity-floor set into this list before re-entering P2.1.**
 
-**Pick tasks that share no dependency edge and no file.** Two tasks touching one file are one task.
+**Parallel is opt-in on proof; serial is the default.** Two tasks run at once only when `pm`'s `Files` manifests are both present and disjoint and they share no dependency edge. An intersection, a missing or `—` manifest, or one you would have to guess means serial — the manifest is a prediction, so err that way. Parallel spans one branch and one band, never a PR stack.
+
+**Proven-disjoint tasks fork with `isolation: "worktree"`** (the `Agent` option — never raw `git worktree`, which `git_guard.py` blocks), one worktree per task. **The orchestrator merges them back before P2.2's band gate**, so the gate runs once against the merged state.
+
+**Read-only fan-out is always parallel and free** — `assess-*`, `researcher`, and `scout` never write, so they need no manifest and no worktree, and nothing above governs them.
 
 **A task `[BLOCKED]` on something outside this run is not a phase halt** — pick the next task with no dependency edge to it and continue; the blocker surfaces in P4's report. Only stop if every remaining task is transitively blocked.
 
@@ -122,9 +126,11 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 
 **A band exception (see `ways/`) also runs a per-task `/assess-bugs` here, before the commit** — that call's findings block the commit like any other P2.2 failure.
 
+**The repo's full gate runs once per band, at the last task's P2.2, against the band's merged state — never once per task.** The active `ways/` file owns the mechanics: the deferral marker, when to write and drop it, and what an absent one falls back to.
+
 **Once every command is green (and the exception call, when it ran, is clean), commit** — `/git-commit-message` against this task's diff alone, then `git add` + `git commit`. One commit per task. No review runs here otherwise.
 
-**Ends when:** every command exits zero, its output is in the transcript, and the task is committed. Loop back to P2.0 for the next task.
+**Ends when:** every command exits zero, the band gate has passed once, its output is in the transcript, and the task is committed. Loop back to P2.0 for the next task.
 
 ### P2.3 · Band review
 
@@ -180,7 +186,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **Backing out is a rewrite** — capture `git diff` before a risky write; `git-pr-create` owns the recovery command.
 - **The bridge is optional, never blocking** — an unreachable MCP server is a skipped step; never branch a phase on whether it is up.
 - **Never poll a delegated phase** — it re-invokes this session the moment it finishes.
-- **Timing is captured silently, session-stated, not a file** — the same "session-stated, not a file" pattern as P2.3's retry counter. Note each phase's (P0–P4) and each forked skill invocation's start and end wall-clock in this session's own turn text as it happens, accumulating an internal record this session can compute durations from. Never print elapsed time by default, and never fold it into any phase's own "Ends when" report — surface it only if the user explicitly asks (e.g. "how long did that take"); otherwise stay silent unless asked.
+- **Timing is captured silently, session-stated, not a file** — the same pattern as P2.3's retry counter. Note each phase's (P0–P4) and each forked skill's start and end wall-clock in this session's own turn text as it happens. Never print elapsed time, and never fold it into an "Ends when" report — surface it only if the user asks.
 - **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Findings`/`## Changed` block — a reviewer fork returns `## Findings` only, this session files the rows itself; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
 - **Standards verification happens inside the review or implement fork, never in this window** — a P2.3 finding needing re-verifying is P2.1's job.
 - **After any context compaction, re-read the active `ways/` file before the next phase gate** — it loads via `Read`, not invocation, so compaction skips it.
@@ -197,7 +203,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 | Tests against an existing interface | `tester` — test paths only, and that is prose, not a lock |
 | Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. |
 
-**Parallel writers need `isolation: worktree`** — two agents editing one checkout collide, and `builder` writes tests too, so `tester` beside it is two writers. Read-only fan-out needs none.
+**Parallel writers need `isolation: "worktree"`** — `builder` writes tests too, so `tester` beside it is two writers. P2.0 owns the manifest proof that gates it.
 
 **Set `model`/`effort` in the delegate's own frontmatter.** `opus`/`high` for architecture and hard debugging, `sonnet`/`medium` for research and routine code, `haiku`/`low` for path lookup. **Brief with `Task` / `Files` / `Context` / `Done when` / `Out of scope`** — never "see above". Ask for the verdict, not the transcript.
 
@@ -206,3 +212,27 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 ## The open hatch
 
 **`/workflow-loop open <topic>` skips every phase above.** For design, architecture, and exploration, where a script produces worse output than judgement. Use it when the task is to *decide* something, never to build something already decided.
+
+---
+
+## The fast path
+
+**`/workflow-loop fast <task>` skips P1 decompose, P2.0 align, and P3 consolidate.** P2.1, P2.2, P2.3, and P2.4 run unchanged — fast means less planning, never less verification or review.
+
+**Entry is checked, not judged.** Run both against the change's own diff — before P2.1 on the paths the task names, and again before P2.2's commit:
+
+```bash
+git diff --shortstat     # ≤ 1 file changed and ≤ 10 lines changed
+git diff --name-only     # no path on the exclusion list below
+```
+
+**Exclusion list — any match refuses the fast path regardless of diff size.** Match `git diff --name-only` against these paths, no judgement required:
+
+- **Agent config** — `**/hooks/**`, `**/agents/**`, `settings.json`
+- **The verify gate and every script it runs** — `.claude/verify.sh`, `Makefile`, `Taskfile.yml`, `justfile`, `scripts/**`
+- **Git-hook dispatchers and installers** — `**/pre-commit*`, `**/pre-push*`, `setup.sh`, `install.sh`
+- **Always-loaded directives and ownership** — `**/AGENTS.md`, `**/CLAUDE.md`, `CODEOWNERS`
+
+A change able to weaken its own verification is not a fast path — the gate's own scripts are the check, so editing one and then running it proves nothing. **The list is a floor, not a ceiling:** a path it misses that you nonetheless read as enforcement also refuses. That judgement may only refuse, never admit — erring into the full machine costs time and nothing else.
+
+**Either check failing sends the change back to P1** — the full machine, from the top.

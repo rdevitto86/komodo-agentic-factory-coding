@@ -23,7 +23,7 @@ Scope: **$ARGUMENTS** — a target state, optionally narrowed to one domain or s
 6. **Test every `[BLOCKED]` story's `Recheck:` condition.** Satisfied → drop `[BLOCKED]` and its subnote, queue the story like any other. Not satisfied → leave it blocked and out of the returned queue. **A `[BLOCKED]` story with no `Recheck:` line is a `## Gaps` finding** — every block needs a testable exit condition, not a permanent one.
 7. **Check the queue for a chain** before returning.
 8. **Mark transitive blocks.** A story that names a `Depends on`/`(after: ...)` edge to a story still `[BLOCKED]` after step 6 is itself blocked, even if nothing marks it so directly — carry that forward so P2.0 can pick around the whole chain instead of discovering it task by task.
-9. **Return a `## Parallel` section naming every set of two or more queued tasks that share no file and no `Depends on`/`(after: ...)` edge among them** — recorded for a later parallel-implement capability; P2.1 dispatches serially today. State `None` when no such set exists; never omit the heading.
+9. **Give every task a `Files` manifest, then return a `## Parallel` section naming every set your standing parallel predicate admits.** That predicate is stated once, in your own rules — apply it as written rather than reasoning one out here. Never omit the heading; `None` is an answer.
 
 10. **Draw the queue's `## Graph` section** — an inline Mermaid graph LR fence, one node per task number and one arrow per `After` edge, exactly as `pm.md`'s template specifies. It accompanies the `## Queue` table and never substitutes for it; omit the heading when no task carries an `After` edge and the queue holds 5 tasks or fewer.
 

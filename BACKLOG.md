@@ -184,7 +184,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.6.4.1` | `[Impl]` | pre-existing drift, spotted by a fork during `TSK-01.6.1` and deliberately not fixed there to keep that diff to the lines the rename required: `AGENTS.md` says `259 hook + comments regression cases` while the suite reports 287. Confirm which number is authoritative before editing — the 259 may have been scoped to a subset — and consider whether a hand-maintained count belongs in the file at all | `bash scripts/test-hooks.sh`'s reported count matches `AGENTS.md`; `make verify` |
+| `SUB-01.6.4.1` | `[Impl]` | pre-existing drift, spotted by a fork during `TSK-01.6.1` and deliberately not fixed there to keep that diff to the lines the rename required: `AGENTS.md` says `259 hook + comments regression cases` and `README.md` says `286 regression cases`, while the suite reports 293 (it moved twice during `TG-01.10` alone). Confirm which number is authoritative before editing — the 259 may have been scoped to a subset — and consider whether a hand-maintained count belongs in the file at all | `bash scripts/test-hooks.sh`'s reported count matches `AGENTS.md`; `make verify` |
 
 ### [TG-01.7] Cross-Platform Portability
 * **Target Release:** V1
@@ -231,49 +231,21 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** a simple edit currently costs 30–60 minutes, and `TG-01.4`'s own context names why — a one-task band runs 7 serial forks, and `verify_gate.py` fires on every builder Stop, so an N-task band runs the full gate N times. Parallelism does not fix that; it fixes the multi-task band. The fast path and the band-level gate are the levers that return time on the case that actually hurts. Parallelism is opportunistic by decision: the planner proves disjointness or the band runs serial.
 
-#### [TSK-01.10.1] A one-line change pays the full five-phase machine, so trivial edits cost 7 serial forks and 30–60 minutes of wall clock [P: H] [TODO]
+#### [TSK-01.10.4] The band-gate deferral is scoped to a checkout, not a session, so two concurrent sessions on one repo can cross [P: M] [TODO]
 
 **User Story:**
-> **As an** engineer making a small, obvious change,
-> **I want** the loop to skip the phases that exist for large bands,
-> **So that** the process cost is proportional to the change.
+> **As** someone running two sessions against one checkout,
+> **I want** a band gate deferred by one of them not to suppress the other's,
+> **So that** a change is never committed with the repo's own gate silently skipped on its behalf.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Predicate):** Given `workflow-loop`, when the fast path is described, then its entry condition is stated as a checkable property of the diff, not a judgment call.
-- [ ] **AC-2 (Phases):** Given a change meeting that condition, when the loop runs, then P1 decompose, P2.0 align, and P3 consolidate are skipped and the remaining phases are unchanged.
-- [ ] **AC-3 (Escape):** Given a change that touches a security boundary, when the fast path is evaluated, then it is refused regardless of diff size.
+- [ ] **AC-1 (Binding):** Given a band-gate marker, when a `builder` fork's Stop reads it, then the deferral applies only to the run that wrote it.
+- [ ] **AC-2 (Unbindable is closed):** Given no identifier available to bind, when the marker is read, then the gate runs.
+- [ ] **AC-3 (Honest doc):** Given `docs/design-decisions.md`, when the band gate is described, then it no longer records this as an open limitation.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.10.1.1` | `[Impl]` | add the fast path to `workflow-loop/SKILL.md`, modelled on the existing `open` hatch — that hatch already establishes that not every change deserves the full machine. The file sits near the 5000-token compaction cap, so this addition must net-shrink or hold | `bash scripts/validate.sh`; `make verify` |
-
-#### [TSK-01.10.2] `verify_gate.py` fires on every builder Stop, so an N-task band runs the repo's full gate N times for one merged result [P: M] [TODO]
-
-**Acceptance Criteria:**
-- [ ] **AC-1:** Given a multi-task band, when it completes, then the repo's full gate has run once against the band's merged state rather than once per task.
-- [ ] **AC-2:** Given a single task's `Done when` commands, when its fork finishes, then those still run per-task — the band gate replaces the full-suite run, not the task's own proof.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.10.2.1` | `[Impl]` | move the full-gate run from per-fork Stop to a band-level check at P2.2. Keep the per-task `Done when` commands where they are; the task's own proof is not the thing being deduplicated | `bash scripts/test-hooks.sh`; `make verify` |
-
-#### [TSK-01.10.3] Parallel execution is unavailable even where two tasks provably cannot collide, because nothing computes which files a task will touch (after: "The agent roster is named after workflow phases rather than roles") [P: M] [TODO]
-
-**User Story:**
-> **As an** orchestrator running a multi-task band,
-> **I want** provably disjoint tasks to run at the same time,
-> **So that** a band's wall clock reflects its widest dependency chain rather than its task count.
-
-**Acceptance Criteria:**
-- [ ] **AC-1 (Manifest):** Given a decomposed queue, when `pm` returns it, then each task carries the set of files it is expected to touch.
-- [ ] **AC-2 (Default):** Given two tasks whose manifests intersect, or a queue where the manifest is unavailable, when the band runs, then it runs serial — parallelism is opt-in on proof, never the default.
-- [ ] **AC-3 (Isolation):** Given tasks selected to run in parallel, when they execute, then each runs in its own worktree and the orchestrator merges before the band gate.
-- [ ] **AC-4 (Scope):** Given the parallel design, when it is documented, then it is scoped to one branch — never across PRs or branches.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.10.3.1` | `[Impl]` | teach `pm` to return a files-touched manifest per task, and `workflow-loop` P2.0 to use manifest disjointness as the parallel predicate rather than today's weaker no-shared-file rule | `bash scripts/validate.sh` |
-| `SUB-01.10.3.2` | `[Impl]` | add the worktree-per-group execution and the orchestrator merge step, gated on the manifest proof, defaulting to serial. Read-only fan-out (`assess-*`, `researcher`, `scout`) needs no worktree and should be documented as always-parallel — that half is free today and under-used | `make verify` |
+| `SUB-01.10.4.1` | `[Impl]` | filed by `TSK-01.10.2`'s band-review `/assess-security` pass, and deliberately mitigated rather than fixed there. The marker keys off the git common dir, so it is shared by every worktree of a checkout — which is what makes parallel forks work, and also what lets an unrelated concurrent session inherit the deferral, with no code path in its own flow that ever runs the full suite to compensate. It could not be fixed in that band because the Stop payload `verify_gate.py` receives carries only `stop_hook_active` and `cwd` — no session identifier exists to bind to. The window was cut from four hours to thirty minutes to bound the blast radius instead. Resolving this needs a session or band identifier that survives into the fork's Stop payload; establish whether one is available before designing, and if none is, record that and close this as won't-fix rather than inventing a token the orchestrator has to hand-manage | `bash scripts/test-hooks.sh` covers a marker written by one identity not deferring another's gate; `make verify` |
 
 ### [TG-01.11] Prompt Templates
 * **Target Release:** V1
