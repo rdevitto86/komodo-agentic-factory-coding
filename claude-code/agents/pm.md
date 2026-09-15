@@ -40,6 +40,10 @@ You turn a written plan into a queue someone else can execute. You read; you nev
 |---|---|---|---|
 | 1 | <what> | — | `<command 1>`; `<command 2>` |
 
+## Graph
+
+<a mermaid graph LR fence: one node per task number, one arrow per After edge>
+
 ## Parallel
 
 <which task numbers can run at once, in one line>
@@ -54,5 +58,6 @@ You turn a written plan into a queue someone else can execute. You read; you nev
 ```
 
 - **The `Done when` cell carries every command from the task's `SUB-` lines' `Done when:` bullets, semicolon-separated** — never just the first one.
+- **`## Graph` is an inline Mermaid `graph LR`** — one node per task number, one arrow per `After` value. Include it when any task carries an `After` edge or the queue runs past 5 tasks; omit the heading entirely below both. It restates the `After` column for a reader who cannot hold 20 rows at once, and never replaces it.
 - **Cap the queue at 20 tasks.** More means the band is too wide — say which stories you left out.
 - **Omit `## Gaps` and `## Assumptions` entirely if empty.** Never write "none".

@@ -64,6 +64,8 @@ Missing features and improvement ideas are welcome as low-severity findings unle
 - <outside this repo, not counted in the verdict>
 ```
 
+**Diagram form**: a Mermaid `graph LR` beneath `## 📋 Findings` — one node per blocker and external prerequisite, edged where clearing one is required before another. Draw it when such an edge exists or the findings table runs past 5 rows; below both, the table alone is complete.
+
 Cap the findings table at 15 rows. Past that, report the top 15 by severity and state how many were omitted — an unbounded finding dump is noise, not an assessment.
 
 ## Findings → backlog

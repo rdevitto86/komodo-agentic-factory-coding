@@ -28,6 +28,8 @@ Model-agnostic quality pass — Read/Grep/Glob/Bash only, no host-specific tooli
 |---|---|---|---|
 | M | `client.go:120` | hand-rolled retry loop | Forge SDK's `retry.Do` covers this, −18 lines |
 
+**Diagram form**: a Mermaid `graph LR` — every duplicated site as a node, each pointing at the one abstraction that would replace them all. `reviewer.md` says when it is drawn and where it sits.
+
 **Sev**: High (a pattern the next change will copy) · Medium (contained duplication or a missed abstraction) · Low (naming/shape drift, no functional cost).
 
 No findings: state that plainly, one line, and stop. **Never invent a finding to have something to report** — a fix needs a concrete win (fewer lines, one fewer allocation, one fewer custom implementation), not just a different shape.

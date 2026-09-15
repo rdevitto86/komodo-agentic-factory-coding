@@ -30,6 +30,8 @@ Model-agnostic style pass — Read/Grep/Glob/Bash only, no host-specific tooling
 |---|---|---|---|
 | L | `handler.go:84` | one-arg-per-line wrap when the grouped form fits the ~90-col soft threshold | `standards-go` wrap-style step |
 
+**Diagram form**: a Mermaid `graph LR` — one node per drifting file, grouped under the convention each one breaks. Draw it when the table runs past 5 rows or one drift was copied from another; below both, the table alone is complete.
+
 **Sev**: Medium (a judgment call that will mislead the next person copying the pattern) · Low (a single, contained drift with no compounding risk).
 
 No findings: state that plainly, one line, and stop. **Never invent a finding to have something to report** — every row needs a `standards-<lang>` convention it violates, cited by name, not just a stylistic preference.

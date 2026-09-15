@@ -29,6 +29,8 @@ Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling, us
 |---|---|---|---|
 | H | `file.go:42` | swallows the write error | retry after crash → silent data loss |
 
+**Diagram form**: a Mermaid `graph LR` — one node per cited `file:line`, one edge where a finding's effect is another finding's trigger. `reviewer.md` says when it is drawn and where it sits.
+
 **Sev**: Critical (data loss/crash/security on a path the target state depends on) · High (wrong result reachable in normal use) · Medium (edge case, recoverable) · Low (cosmetic or needs an unlikely input).
 
 No findings: state that plainly, one line, and stop. **Never invent a finding to have something to report.**

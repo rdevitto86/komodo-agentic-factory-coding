@@ -235,9 +235,9 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** I am not re-deriving a graph from a table every time I plan or review.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Rule):** Given `config-accessibility`, when it is read, then it states a visual-first rule — an output carrying a dependency relation or more than a handful of entities ships a diagram, not only prose.
-- [ ] **AC-2 (Contracts):** Given `workflow-decompose` and the `assess-*` skills, when their Report sections are read, then each names a diagram form alongside its table.
-- [ ] **AC-3 (Surface):** Given the visual-first rule, when it names where a diagram is rendered, then it distinguishes inline Mermaid from a published artifact and says which applies when.
+- [x] **AC-1 (Rule):** Given `config-accessibility`, when it is read, then it states a visual-first rule — an output carrying a dependency relation or more than a handful of entities ships a diagram, not only prose.
+- [x] **AC-2 (Contracts):** Given `workflow-decompose` and the `assess-*` skills, when their Report sections are read, then each names a diagram form alongside its table.
+- [x] **AC-3 (Surface):** Given the visual-first rule, when it names where a diagram is rendered, then it distinguishes inline Mermaid from a published artifact and says which applies when.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|

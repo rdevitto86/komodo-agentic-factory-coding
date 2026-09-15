@@ -48,6 +48,7 @@ Score the **highest tier reached by the convention check, `/assess-performance`,
 - **`file:line` for every driving factor.** No pointer, no score.
 - **Omit `Next` below Med-High.** Nothing to recommend at Low through Med.
 - **One row per driving factor.** If the table needs more than 3 rows, the diff needs splitting, not a longer table.
+- **Diagram form — a Mermaid `graph LR` beneath the table, one node per driving factor.** Only a chain triggers it here (one factor's debt caused another's); the 3-row cap means the entity count never does. Unchained factors: table only.
 
 ## Findings → backlog
 
