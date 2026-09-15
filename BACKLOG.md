@@ -231,11 +231,11 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** a review is not silently graded against browser assumptions that do not apply.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Merge):** Given `claude-code/skills/`, when it is listed, then `standards-web-ui` exists carrying both the design and security halves, and `standards-ui-design`/`standards-ui-security` are gone.
-- [ ] **AC-2 (Platforms):** Given the same directory, when it is listed, then `standards-mobile-ui` and `standards-desktop-ui` exist, each carrying a Design half and a Security half.
-- [ ] **AC-3 (Routing):** Given each new skill's `paths:`, when they are read, then mobile routes on native extensions and manifests, desktop on its own config surface, and web on the browser extensions — with no glob matching two platforms.
-- [ ] **AC-4 (Callers):** Given every file referencing a retired UI skill name, when each is read, then none references `standards-ui-design` or `standards-ui-security`.
-- [ ] **AC-5 (Scope):** Given `standards-mobile-ui`, when it is read, then it covers native targets only and states that React Native and Flutter are out of scope.
+- [x] **AC-1 (Merge):** Given `claude-code/skills/`, when it is listed, then `standards-web-ui` exists carrying both the design and security halves, and `standards-ui-design`/`standards-ui-security` are gone.
+- [x] **AC-2 (Platforms):** Given the same directory, when it is listed, then `standards-mobile-ui` and `standards-desktop-ui` exist, each carrying a Design half and a Security half.
+- [x] **AC-3 (Routing):** Given each new skill's `paths:`, when they are read, then mobile routes on native extensions and manifests, desktop on its own config surface, and web on the browser extensions — with no glob matching two platforms.
+- [x] **AC-4 (Callers):** Given every file referencing a retired UI skill name, when each is read, then none references `standards-ui-design` or `standards-ui-security`.
+- [x] **AC-5 (Scope):** Given `standards-mobile-ui`, when it is read, then it covers native targets only and states that React Native and Flutter are out of scope.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
