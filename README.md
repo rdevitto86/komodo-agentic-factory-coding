@@ -44,7 +44,7 @@ claude-code/          mirrors ~/.claude exactly
 └── skills/           65 active, 7 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
-scripts/              validate.py, test-hooks.sh, release.py, portable git hooks
+scripts/              validate.py, test_hooks.py, release.py, portable git hooks
 CODEOWNERS            review gate on claude-code/AGENTS.md, settings.json, hooks/
 ```
 
@@ -151,7 +151,7 @@ python3 ~/.claude/hooks/comments.py apply < proposals.json
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-bash scripts/test-hooks.sh    # 286 regression cases
+python3 scripts/test_hooks.py    # 286 regression cases
 ```
 
 ## Skills

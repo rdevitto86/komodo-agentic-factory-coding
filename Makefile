@@ -3,7 +3,7 @@
 verify: test validate comments
 
 test:
-	bash scripts/test-hooks.sh
+	python3 scripts/test_hooks.py
 
 validate:
 	python3 scripts/validate.py

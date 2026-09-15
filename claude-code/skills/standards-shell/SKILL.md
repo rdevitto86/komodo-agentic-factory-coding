@@ -29,7 +29,7 @@ This language's exempt machine directives, verified against the guard's own list
 
 ## Conventions
 
-- **`set -euo pipefail` at the top of every script** that isn't a sourced fragment, right after the shebang and header comment. `test-hooks.sh` uses `set -uo pipefail` instead because it must survive a failing case and tally results — the deliberate exception, not a template.
+- **`set -euo pipefail` at the top of every script** that isn't a sourced fragment, right after the shebang and header comment. Drop the `-e` only where the script must survive a failing step to tally or report results, and say so in the header comment.
 - **Quote every expansion**: `"$var"`, `"$@"`, `"${arr[@]}"`. An unquoted expansion is a bug unless the line is deliberately doing word-splitting, which itself gets a `# shellcheck disable=SC2086` immediately above it.
 - **`[ ]` (POSIX test) or `[[ ]]` (bash test), never `[ $x == $y ]` unquoted.** This repo's scripts use both; match whichever the file already uses rather than mixing.
 - **Naming**: `lower_snake_case` for functions and local variables, `SCREAMING_SNAKE` for exported/global constants (`REPO_ROOT`, `TARGET`, `DRY_RUN`). A function that only prints takes a verb name (`say`, `usage`) the way `setup.sh` does.
@@ -37,7 +37,7 @@ This language's exempt machine directives, verified against the guard's own list
 - **Prefer `printf` over `echo`** for anything with a variable in it — `echo` interprets backslash escapes inconsistently across shells; `printf '%s\n' "$msg"` does not.
 - **Resolve the script's own directory** with `"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` rather than assuming the caller's `cwd` — every script in `scripts/` and `setup.sh` does this.
 - **Exit codes are deliberate**: `0` success, `1` a check failed, `2` a usage/argument error. `setup.sh`'s `usage()` + `exit 2` on a bad flag is the pattern to match.
-- **A trap for cleanup**, not a manual `rm` at every exit path — `test-hooks.sh`'s `trap 'rm -rf "$WORKDIR"; ...' EXIT` is the reference.
+- **A trap for cleanup**, not a manual `rm` at every exit path — a script that makes a temp directory removes it from a single `EXIT` trap.
 
 ## Security standards
 
@@ -50,9 +50,9 @@ Language-specific insecure-usage patterns for `/assess-security` to pull from, b
 
 ## Testing
 
-- **No `bats` or other shell test framework is in use** — this repo's own bash surface (`claude-code/hooks/*.py` are Python; `scripts/*.sh` and `setup.sh` are the actual shell) is tested by a hand-rolled harness, `scripts/test-hooks.sh`: a plain bash script that feeds each hook a JSON payload on stdin and asserts the returned decision, no external test runner.
-- **Follow that shape for a new shell script under test**: a sibling `test-<name>.sh` that runs the script against fixture input/args and asserts exit code and stdout/stderr with `diff` or a string match, no framework dependency added.
-- **`python3 scripts/validate.py` and `bash scripts/test-hooks.sh` together are this repo's shell-adjacent verify surface** — `.claude/verify.sh` runs both. Tier definitions, merge/release gates, and coverage floors beyond that are owned by `standards-sdlc`.
+- **No `bats` or other shell test framework is in use** — this repo's shell surface (`setup.sh` and the git-hook dispatchers; everything under `claude-code/hooks/` and `scripts/*.py` is Python) is covered by hand-rolled stdlib harnesses that invoke the script under test as a subprocess and assert on its exit code and output, no external test runner.
+- **Follow that shape for a new shell script under test**: a sibling `test_<name>.py` that runs the script against fixture input/args and asserts exit code and stdout/stderr by `difflib` or a string match, no framework dependency added.
+- **`python3 scripts/validate.py` and `python3 scripts/test_hooks.py` together are this repo's shell-adjacent verify surface** — `.claude/verify.sh` runs both. Tier definitions, merge/release gates, and coverage floors beyond that are owned by `standards-sdlc`.
 
 ## Quick-reference fields
 
@@ -72,4 +72,4 @@ This skill carries no `Repo layout — <token>` section. **Create is unsupported
 
 ## Reference material
 
-- **`scripts/setup.sh`, `scripts/test-hooks.sh`** in this repo — the lived example for header-comment shape, `set -euo pipefail`, quoting, and the trap-based cleanup pattern this skill describes.
+- **`setup.sh` and `scripts/hooks/git/install.sh`** in this repo — the lived example for header-comment shape, `set -euo pipefail`, and the quoting this skill describes.
