@@ -21,13 +21,13 @@ argument-hint: [task, or "open <topic>" for the unscripted path]
 | Phase | Runs as | Fork agent |
 |---|---|---|
 | P0 Spec | Here — dialogue cannot be forked; `/backlog-plan` when a backlog has to be built | — |
-| P1 Decompose | Pick next task group here, then **`/workflow-decompose`**, then plan the run's PRs and branch here | `workflow-planner` |
+| P1 Decompose | Pick next task group here, then **`/workflow-decompose`**, then plan the run's PRs and branch here | `pm` |
 | P2.0 Align | Here — the queue is the perpetual context | — |
-| P2.1 Implement | **`/workflow-implement`, once per task** | `workflow-implementer` |
+| P2.1 Implement | **`/workflow-implement`, once per task** | `builder` |
 | P2.2 Verify + commit | `verify_gate.py`, then commit here | — |
 | P2.3 Band review | `/assess-bugs`, `/assess-simplify` (+ `/assess-security`, + `/assess-performance`), once per band | `reviewer` (`/assess-performance` runs inline, not forked) |
 | P2.4 Closeout | `/changelog-write`, once per band | — |
-| P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `workflow-implementer` |
+| P3 Consolidate | **`/workflow-consolidate`**, then commit its own delta (labels decided) here | `builder` |
 | P4 Publish | **`/workflow-complete`** — push + `/git-pr-create` + tag check | — |
 
 **The forked phases carry their own instructions** (`context: fork`), so their rules and work never enter this window — only the returned result.
@@ -191,8 +191,10 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 
 | Need | Send to |
 |---|---|
-| Read-only research across many files | `engineering` |
+| Read-only research across many files | `researcher` |
 | "Where is X" — a path list | `scout` |
+| A design question with more than one defensible answer | `architect` — returns options and a recommendation, never a decision |
+| Tests against an interface that already exists | `tester` — writes under test paths only, so it can run beside `builder` |
 | Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. `/assess-performance` grades it too but runs inline (no `context: fork`), conditionally, in the same pass. |
 
 **Parallel writers need `isolation: worktree`** — two agents editing one checkout collide; read-only fan-out needs none.

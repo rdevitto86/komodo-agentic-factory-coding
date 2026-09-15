@@ -3,7 +3,7 @@ name: workflow-debug
 description: Read a failure's reproduction and characterization in a fork, and return a ranked queue of testable hypotheses.
 argument-hint: <the repro steps and symptom characterization from P0>
 context: fork
-agent: workflow-planner
+agent: pm
 background: false
 ---
 

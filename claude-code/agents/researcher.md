@@ -1,5 +1,5 @@
 ---
-name: engineering
+name: researcher
 description: Read-only research across a codebase or technical domain — software, infrastructure, testing, data, security. Use to locate code, trace a call path, survey patterns across many files, or gather external documentation. Returns findings; never edits.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 model: sonnet

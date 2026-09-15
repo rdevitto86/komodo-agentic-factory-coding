@@ -13,7 +13,7 @@ That fact alone decides where an agent lives:
 | No — pure text transform | The bridge (`bridges/komodo-bridge/agents/`) |
 | Yes — has to read, search, or browse | Claude only (`claude-code/agents/`) |
 
-`claude-code/agents/engineering.md` reads files and runs searches — it cannot become a bridge agent without the bridge growing a tool-use loop it does not have. It stays Claude-only, not by preference but by architecture.
+`claude-code/agents/researcher.md` reads files and runs searches — it cannot become a bridge agent without the bridge growing a tool-use loop it does not have. It stays Claude-only, not by preference but by architecture.
 
 ## The roster
 
@@ -83,7 +83,7 @@ Every agent that is no longer here was absorbed, not dropped. Nothing needs recr
 | Former agent | Now |
 |---|---|
 | `advisor` | The default session |
-| `software-engineer` | `engineering` subagent |
+| `software-engineer` | `researcher` subagent |
 | `business-architect`, `marketing`, `lawyer`, `tax-advisor`, `customer-servicing`, `logistics`, `hardware-engineer` | Dropped — no business-domain agent in this repo; revisit if a business/office repo gets built |
 
 The advisory roles had no reason to run off Claude — they were never code review. The three that remain are here because each needs a *different* model than the one calling it.

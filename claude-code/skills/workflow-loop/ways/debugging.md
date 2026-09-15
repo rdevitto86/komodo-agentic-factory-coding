@@ -24,7 +24,7 @@ The gates for the phases that run in **this** session, when the task is "find wh
 
 ## P1 · Hypothesize
 
-**Runs as `/workflow-debug <repro + characterization from P0>` instead of `/workflow-decompose`** — the fork target is `workflow-planner`, same as decompose, but the contract is a ranked hypothesis queue, not a backlog-derived task queue. See that skill for its read order.
+**Runs as `/workflow-debug <repro + characterization from P0>` instead of `/workflow-decompose`** — the fork target is `pm`, same as decompose, but the contract is a ranked hypothesis queue, not a backlog-derived task queue. See that skill for its read order.
 
 **Ends when:** every hypothesis carries a `Done when` command and a rank.
 

@@ -3,7 +3,7 @@ name: backlog-audit
 description: Verdict every open BACKLOG.md task against current repo state and apply the verdicts directly — resolved, stale, duplicate, ambiguous, or a cleared block.
 argument-hint: [scope]
 context: fork
-agent: workflow-implementer
+agent: builder
 background: false
 ---
 

@@ -39,7 +39,7 @@ claude-code/          mirrors ~/.claude exactly
 ├── AGENTS.md         the universal rules — always loaded
 ├── CLAUDE.md         @AGENTS.md
 ├── settings.json     permissions, hook registration, skillOverrides
-├── agents/           workflow-implementer, workflow-planner, engineering, scout, reviewer
+├── agents/           builder, tester, pm, researcher, architect, scout, reviewer
 ├── hooks/            comments, git_guard, verify_gate, context_injector, auto_format
 └── skills/           65 active, 7 parked, lazily loaded
 templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
@@ -72,7 +72,7 @@ flowchart TD
     P0b --> P1
     P0c --> P1
 
-    subgraph P1["P1 · Decompose (fork: workflow-planner)"]
+    subgraph P1["P1 · Decompose (fork: pm)"]
         direction TB
         P1b["/workflow-decompose → task queue"] --> P1c["Read the queue's Gaps section"]
         P1c --> P1d["Group queue into PR-sized bands"]
@@ -83,7 +83,7 @@ flowchart TD
     subgraph P2["P2 · Execute — P2.0-P2.2 loop once per task, P2.3-P2.4 run once per band"]
         direction TB
         P20["P2.0 Align — pick tasks sharing\nno file/dependency edge, mark [WIP]"] --> P21
-        P21["P2.1 Implement + comments\nfork: workflow-implementer"] --> P22
+        P21["P2.1 Implement + comments\nfork: builder"] --> P22
         P22{"P2.2 Verify\nverify_gate.py exits zero?"}
         P22 -->|no| P22fail{"Same failure\ntwice running?"}
         P22fail -->|no, retry| P21
@@ -96,7 +96,7 @@ flowchart TD
     P24 --> P3
     P20 -.->|"every remaining task\ntransitively blocked"| P2halt(["Phase halt —\nreported in P4, not silent"])
 
-    subgraph P3["P3 · Consolidate (fork: workflow-implementer)"]
+    subgraph P3["P3 · Consolidate (fork: builder)"]
         direction TB
         P3a["/workflow-consolidate — release\nchangelog, sync manifest, clear stories"] --> P3b["Decide this PR's labels"]
         P3b --> P3c["Commit consolidate's own delta"]
@@ -133,7 +133,7 @@ One guard runs as `PreToolUse`, so a violation never reaches disk. Four more run
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
 | `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |
-| `comments.py hook` | Edit, Write (`PostToolUse`), `workflow-implementer` only | Reports comment findings for the just-touched file as feedback | **Open** |
+| `comments.py hook` | Edit, Write (`PostToolUse`), `builder` only | Reports comment findings for the just-touched file as feedback | **Open** |
 
 **The failure policy is inverted on purpose.** The two guards fail closed because a bad command reaches a shared remote or lets a review-only agent mutate arbitrary files. The other three fail open because none of them may be able to brick a session.
 
