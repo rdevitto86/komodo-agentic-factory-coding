@@ -114,6 +114,297 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | `SUB-01.4.10.1` | `TSK-01.4.9`'s new gate (`agent_type == REVIEWER_AGENT and command != "git"`) denies every non-`git` reviewer command before `scan_segment` ever reaches the old comments.py-bypass detection call site, so `comments_write_invocation` (and everything it alone calls: `is_comments_script`, `comments_script_signature`, `cat_source_path`, plus `COMMENTS_SCRIPT_BASENAME`/`COMMENTS_SCRIPT_REALPATH`/`COMMENTS_WRITE_SUBCOMMANDS`) is defined but never called from anywhere. Flagged by `TSK-01.4.9`'s own implementer and by its band-review `/assess-bugs` pass as a follow-up simplify candidate, deliberately not removed in that task to keep its diff scoped to the security fix alone. `piped_source` threading through `scan_segment`/`_scan_command_at_depth` (its only consumer was `comments_write_invocation`) becomes dead alongside it | `/assess-simplify claude-code/hooks/git_guard.py` reports the dead functions/constants removed (or confirms none remain reachable); `bash scripts/test-hooks.sh` still passes with the same pass count minus any cases that existed solely to exercise the removed code path |
 | `SUB-01.4.10.2` | filed by `TSK-01.4.9`'s band-review `/assess-simplify` pass: `scripts/test-hooks.sh`'s `G161`-`G163` cases (plus the `FIXTURE_COMMENTS_COPY`/`FIXTURE_COMMENTS_ALIAS` fixtures at lines ~812-816) were built to exercise `is_comments_script`'s samefile/content-signature matching — with the new deny-by-default gate, every one of those commands is now rejected by the generic `command != "git"` check before that identity/content logic is ever reached, and `G179`-`G188` already cover the same ground more directly (`G186` explicitly proves the gate is basename-agnostic). The fixture setup now builds infrastructure no reviewer-agent test path can reach | `scripts/test-hooks.sh`'s round-4 comments.py-copy/alias block (`G161`-`G163` and their now-unreachable fixtures) is collapsed or removed without losing any assertion `G179`-`G188` doesn't already make; `bash scripts/test-hooks.sh` still passes |
 
+#### [TSK-01.4.11] `context_injector.py` reports a missing verify gate in the same neutral tone as every other status line, so a repo running zero enforcement looks identical to one running all of it [P: H] [TODO]
+
+**User Story:**
+> **As an** engineer opening a session in a repo with no verify gate,
+> **I want** that fact announced as a problem rather than as a status line,
+> **So that** I find out before a fork's Stop gate passes on an empty check instead of a green one.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Loud):** Given a repo where `verify_label()` resolves nothing, when a session starts, then the injected report marks it as a warning, visually distinct from the `Released version:` and backlog-tally lines beside it.
+- [ ] **AC-2 (Consequence):** Given that same warning, when it is read, then it states what is not running — the repo's checks and `comments.py check` with them — not merely that a gate is absent.
+- [ ] **AC-3 (Quiet when fine):** Given a repo that does declare a gate, when a session starts, then the line is unchanged from today.
+- [ ] **AC-4 (Fails open):** Given any error inside the new branch, when the hook runs, then it still exits zero — `context_injector.py` is a fail-open hook and must stay one.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.11.1` | `[Impl]` | change `claude-code/hooks/context_injector.py:133` so the `none declared` case is an explicit warning. Surfaced by a live postmortem (2026-09-15): `komodo-forge-sdk-go` has no `verify` target, so `comments.py check` never ran and `verify_gate.py` passed the implementer fork on an empty gate — two PRs merged with 4–8 line stacked function comments that `comments.py check` catches correctly when it actually runs. The injector already computes the fact and had been printing it, quietly, in every session | `grep -c "none declared" claude-code/hooks/context_injector.py` reflects the rewrite; `bash scripts/test-hooks.sh` |
+| `SUB-01.4.11.2` | `[UnitTest]` | add a regression case covering both branches — a repo with no gate emits the warning, a repo with one is unchanged | `bash scripts/test-hooks.sh` |
+
+#### [TSK-01.4.12] Neither scaffolded `verify` target runs `comments.py check`, so the enforcement path `docs/design-decisions.md` calls the only one does not exist in any repo this toolkit creates [P: H] [TODO]
+
+**User Story:**
+> **As a** maintainer of a repo scaffolded by this toolkit,
+> **I want** the comment lint wired into the verify target I was given,
+> **So that** the documented enforcement path is real rather than something each repo has to discover and add.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Go):** Given `templates/go/Makefile`, when its `verify` target is read, then it runs `comments.py check`.
+- [ ] **AC-2 (Node):** Given `templates/node/Makefile`, when its `verify` target is read, then it runs the same check.
+- [ ] **AC-3 (Ordering):** Given either target, when it runs, then the comment check's failure fails the target, and it is ordered so a formatting or build failure surfaces first.
+- [ ] **AC-4 (Doc truth):** Given `docs/design-decisions.md`'s claim that `comments.py check` runs inside the repo's own `verify` target only, when a scaffolded repo is inspected, then that claim holds.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.12.1` | `[Impl]` | add `comments.py check` to the `verify` target in `templates/go/Makefile` and `templates/node/Makefile`. `git-repo-init:99` already copies these verbatim and calls the Makefile "the `verify` target `context_injector.py` discovers" — so the on-ramp exists and simply omits the lint. Reference the hook by the installed `~/.claude/hooks/` path, since a scaffolded repo has no copy of its own | `grep -c "comments.py" templates/go/Makefile templates/node/Makefile` returns non-zero for both; `bash scripts/validate.sh` |
+
+#### [TSK-01.4.13] `scripts/hooks/git/install.sh` cannot distinguish a `core.hooksPath` pointing somewhere deliberate from one pointing at a directory that no longer exists, so `--status` reports a repo running zero git hooks as normal [P: M] [TODO]
+
+**User Story:**
+> **As an** engineer auditing which repos have hooks installed,
+> **I want** `--status` to tell me when a configured path is dead,
+> **So that** a repo silently running no hooks is visible from the one command meant to audit exactly that.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Status):** Given a repo whose `core.hooksPath` names a directory that does not exist, when `--status` runs, then the output marks it stale rather than printing the path like any other value.
+- [ ] **AC-2 (Install):** Given that same repo, when a plain install runs, then it notes that hooks had not been running before writing the new path.
+- [ ] **AC-3 (No regression):** Given a repo already pointing at `$HOOK_DIR`, or one with an orphaned `.git/hooks`, when either mode runs, then the existing behavior is unchanged.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.13.1` | `[Impl]` | classify `$current` into three states — unset, live-but-different, and stale (non-empty, not `$HOOK_DIR`, and not an existing directory) — at `scripts/hooks/git/install.sh:40`. Found live (2026-09-15): `komodo-forge-sdk-go` pointed at `komodo-agentic-config/scripts/hooks/git`, a path left behind when this repo was renamed, so its `gofmt`, `golangci`, and hooks-syntax pre-commit/pre-push checks had all been dead. A stale path still gets overwritten on install exactly like any other mismatch — the only new behavior is surfacing the dead state | `bash scripts/hooks/git/install.sh --status` on a repo with a missing hooksPath prints the stale marker; `bash scripts/validate.sh` |
+| `SUB-01.4.13.2` | `[UnitTest]` | add the first coverage this installer has ever had — `scripts/test-install.sh` covers `scripts/install.py`, not this script, so neither suite exercises it today. Cases: stale `--status`, stale install, plus the existing already-installed and orphaned-`.git/hooks` paths as regression anchors. Note `TSK-01.1.6` separately wires `test-install.sh` into `make verify`; until that lands these cases run only when invoked directly | `bash scripts/test-install.sh` passes with the new cases |
+
+### [TG-01.5] Review Precision & Model Tiering
+* **Target Release:** V1
+* **Context (2026-09-15):** the `Never invent a finding` prohibition is already in all nine `assess-*` skills and in `reviewer.md`, so the gap is not the missing rule — it is that only `assess-security` states a *positive* evidence bar. A negative rule cannot be complied with; a positive one can. Paired with the model tier, since no prompt change substitutes for the reviewer running on the weaker model.
+
+#### [TSK-01.5.1] Every `assess-*` skill prohibits inventing a finding, but only `assess-security` states what evidence a finding actually requires, so the remaining finders accept a plausible narrative as a `Scenario` [P: H] [TODO]
+
+**User Story:**
+> **As a** maintainer reading a band review,
+> **I want** every finding to carry evidence I can check,
+> **So that** triage time goes to real defects instead of disproving speculation.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Contract):** Given `claude-code/agents/reviewer.md`, when it is read, then it states the evidence a finding row requires — a trigger, the path it reaches, and an observable effect — each anchored to a cited `file:line`.
+- [ ] **AC-2 (Dismissals):** Given the same file, when its Output template is read, then it carries a `## Considered and dismissed` section so a near-miss has somewhere to go other than the findings table.
+- [ ] **AC-3 (Zero is success):** Given the same file, when its Output rules are read, then an empty findings table is stated to be a successful review, not a failed one.
+- [ ] **AC-4 (Parity):** Given `assess-bugs`, `assess-testing`, `assess-vulnerabilities`, and `assess-performance`, when each is read, then each states a positive evidence bar in the shape `assess-security` already uses.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.5.1.1` | `[Impl]` | add the evidence contract, the `## Considered and dismissed` section, and the zero-findings-is-success line to `claude-code/agents/reviewer.md`. It goes in the agent, not in each skill, because all three finder forks run as this one agent — one statement, no drift, and no always-on token cost | `grep -c "Considered and dismissed" claude-code/agents/reviewer.md` returns non-zero; `bash scripts/validate.sh` |
+| `SUB-01.5.1.2` | `[Impl]` | add the matching positive evidence bar to `assess-bugs`, `assess-testing`, `assess-vulnerabilities`, and `assess-performance`, mirroring `assess-security/SKILL.md:21`'s shape rather than inventing a second phrasing | `bash scripts/validate.sh`; `make verify` |
+
+#### [TSK-01.5.2] `reviewer` runs on `model: sonnet` while precision under adversarial reading is the single thing that role exists for [P: H] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Spike):** Given a `context: fork` skill that also names `agent:`, when a skill-level `model:` key is set on it, then whether that key overrides the agent's own frontmatter is determined by observation and recorded in `docs/design-decisions.md`.
+- [ ] **AC-2 (Assignment):** Given the spike's result, when the reviewer tier is set, then the finders whose precision matters most run on the stronger model and the decision's rationale is written down.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.5.2.1` | `[Impl]` | determine whether a skill's own `model:` key overrides the fork agent's frontmatter — this decides whether `/assess-security` and `/assess-bugs` can be tiered separately from `/assess-simplify`, or whether the whole `reviewer` agent moves together. Record the answer in `docs/design-decisions.md` either way, since it governs every future forked skill | `grep -c "model" docs/design-decisions.md` returns non-zero; `make verify` |
+| `SUB-01.5.2.2` | `[Impl]` | set the tier per the spike's result — per-skill if the override works, otherwise on `claude-code/agents/reviewer.md` itself | `bash scripts/validate.sh` |
+
+### [TG-01.6] Agent Roster
+* **Target Release:** V1
+* **Context (2026-09-15):** the roster is phase-named (`workflow-implementer`, `workflow-planner`), which is exactly why it is narrow — the name lies the moment the agent is invoked outside the loop. Renaming to role names decouples agent from phase and makes `workflow-loop` a mapping table instead of the owner. Sequenced before parallelism and prompt templates, both of which depend on stable role names. Five agent descriptions cost ~246 always-on tokens today; eight cost ~400 against 871 free.
+
+#### [TSK-01.6.1] The agent roster is named after workflow phases rather than roles, so no agent is invocable for ad-hoc work without its name misdescribing what it is doing [P: H] [TODO]
+
+**User Story:**
+> **As an** engineer doing ad-hoc work outside the workflow loop,
+> **I want** agents named for what they are rather than for which phase calls them,
+> **So that** I can invoke a builder or a researcher directly without the roster fighting me.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Names):** Given `claude-code/agents/`, when it is listed, then it holds `architect`, `builder`, `reviewer`, `researcher`, `tester`, `pm`, `scout`, and `audit`, and no file is named for a workflow phase.
+- [ ] **AC-2 (Hooks):** Given `builder`, when its frontmatter is read, then it carries the `Stop` `verify_gate.py` registration and the `PostToolUse` comments hook that `workflow-implementer` carried.
+- [ ] **AC-3 (Guard):** Given `claude-code/hooks/lib/agents.py`, when `REVIEWER_AGENT` is read, then it still resolves to the reviewer agent's actual name and `git_guard.py`'s deny-by-default reviewer surface is unbroken.
+- [ ] **AC-4 (Generality):** Given each agent body, when it is read, then its directives describe the role's standing responsibilities and boundaries, not the phase that happens to invoke it.
+- [ ] **AC-5 (Callers):** Given every skill and `ways/` file naming an agent, when each is read, then none references a retired phase-based name.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.6.1.1` | `[Impl]` | rename `workflow-implementer`→`builder`, `workflow-planner`→`pm`, `engineering`→`researcher`; `reviewer` and `scout` keep their names since they are already roles. Move `verify_gate.py` and the `comments.py hook` frontmatter registrations onto `builder` in the same change — they are registered in the agent file, so a rename that leaves them behind silently disarms the Stop gate | `ls claude-code/agents/builder.md claude-code/agents/pm.md claude-code/agents/researcher.md`; `grep -c "verify_gate" claude-code/agents/builder.md` returns non-zero |
+| `SUB-01.6.1.2` | `[Impl]` | add `architect` (read-only, opus tier, returns options with trade-offs and a recommendation — never decides in a fork, since `workflow-loop`'s open hatch already owns design dialogue) and `tester` (writes under test paths only, so it can run concurrently with `builder` without a file collision) | `ls claude-code/agents/architect.md claude-code/agents/tester.md`; `bash scripts/validate.sh` |
+| `SUB-01.6.1.3` | `[Impl]` | rewrite every agent body so its directives are role-general rather than phase-bound — this is the half that makes the rename worth doing; a renamed agent carrying phase-specific instructions is still narrow | `bash scripts/validate.sh` |
+| `SUB-01.6.1.4` | `[Impl]` | update `workflow-loop/SKILL.md`'s phase table, `ways/sdlc.md`, and every skill naming an agent by its old name. `workflow-loop/SKILL.md` sits near `validate.sh`'s 5000-token compaction cap, so this rewrite must net-shrink or hold | `grep -rc "workflow-implementer\|workflow-planner" claude-code/skills claude-code/agents` returns `0` for every file; `make verify` |
+| `SUB-01.6.1.5` | `[UnitTest]` | confirm `REVIEWER_AGENT` in `claude-code/hooks/lib/agents.py` still matches the reviewer agent's name and the deny-by-default Bash surface still denies — the guard keys on that string, so a roster change is exactly when it silently breaks | `bash scripts/test-hooks.sh` |
+
+### [TG-01.7] Cross-Platform Portability
+* **Target Release:** V1
+* **Context (2026-09-15):** every hook is already Python and `scripts/install.py` already ships, so the remaining non-portable surface is six shell files plus the `Makefile`. The sharp end is the gate itself — `verify_gate.py` resolves `.claude/verify.sh` → `make verify` → `task verify` → `just verify`, and three of those four do not exist on a stock Windows box. No preloaded binaries: `python3` 3.7+ is already the hard floor and a binary would *add* a setup step.
+
+#### [TSK-01.7.1] The toolkit's own gate and test surface are shell and `make`, so neither runs on Windows without Git Bash — the one platform `docs/windows-install.md` explicitly supports [P: M] [TODO]
+
+**User Story:**
+> **As an** engineer installing this toolkit on Windows,
+> **I want** the repo's own verify and test targets to run natively,
+> **So that** the guardrails I just installed actually execute on my machine.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Gate):** Given `verify_gate.py`, when it resolves a repo's gate, then a Python entry point is among the discovery targets and is tried before the shell and `make` ones.
+- [ ] **AC-2 (Suites):** Given the repo's regression suites, when they are run on a machine with only `python3` and `git`, then every one of them executes.
+- [ ] **AC-3 (Parity):** Given `make verify` and the Python entry point, when both run on macOS, then they execute the same set of checks.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.1.1` | `[Impl]` | port `scripts/validate.sh`, `scripts/test-hooks.sh`, `scripts/test-install.sh`, and `scripts/release.sh` to Python, stdlib only, preserving every existing assertion and the pass counts | `python3 scripts/validate.py`; `python3 scripts/test_hooks.py`; `make verify` |
+| `SUB-01.7.1.2` | `[Impl]` | port `setup.sh` to Python, folding it into or alongside the existing `scripts/install.py` rather than maintaining two installers | `python3 scripts/install.py --dry-run` |
+| `SUB-01.7.1.3` | `[Impl]` | add the Python entry point to `verify_gate.py`'s discovery order ahead of the shell and `make` targets, and keep `make verify` as a thin wrapper so the macOS path is unchanged | `make verify`; `bash scripts/test-hooks.sh` |
+| `SUB-01.7.1.4` | `[Impl]` | decide and record whether `scripts/hooks/git/`'s dispatchers stay shell. They are the one genuinely portable case — `core.hooksPath` hooks run through Git Bash, which ships with Git for Windows — so this is a uniformity call, not a defect fix. Record the decision in `docs/design-decisions.md` either way | `grep -c "hooksPath" docs/design-decisions.md` returns non-zero; `make verify` |
+
+#### [TSK-01.7.2] No skill tells a target repo to keep its own build and verify surface cross-platform, even though this toolkit solved that problem for itself [P: M] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given `standards-shell`, when it is read, then it states when a script must be Python rather than shell, and that a repo's verify gate must be invocable on every platform the repo claims to support.
+- [ ] **AC-2:** Given `standards-cicd`, when it is read, then it covers runner-matrix portability for a repo targeting more than one OS.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.2.1` | `[Impl]` | add the portability rules to `standards-shell` and `standards-cicd`. Both are already `paths:`-gated to exactly the files where the rule applies, so this costs nothing in the always-on budget — a new skill would cost a description forever to say something only relevant when a `.sh` or a pipeline config is open | `bash scripts/validate.sh` |
+
+### [TG-01.8] UI & Language Standards
+* **Target Release:** V1
+* **Context (2026-09-15):** `standards-ui-design` and `standards-ui-security` are web-only skills wearing generic names — the security one covers `postMessage`, iframes, and `frame-ancestors`, all browser. Merging design and security per platform follows the precedent the language skills already set (`assess-security` reads a Security section out of `standards-go`, and does not load a separate skill for it), and native-only mobile removes the one unsolved activation problem: with React Native out of scope, `**/*.tsx` is unambiguously web again. `standards-swift` and `standards-kotlin` landed 2026-09-15, defaulted off.
+
+#### [TSK-01.8.1] The two UI skills are web-only under platform-generic names, and there is no mobile or desktop UI standard at all [P: M] [TODO]
+
+**User Story:**
+> **As an** engineer writing a native mobile or desktop surface,
+> **I want** a UI standard that covers my platform's real attack surface and interaction rules,
+> **So that** a review is not silently graded against browser assumptions that do not apply.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Merge):** Given `claude-code/skills/`, when it is listed, then `standards-web-ui` exists carrying both the design and security halves, and `standards-ui-design`/`standards-ui-security` are gone.
+- [ ] **AC-2 (Platforms):** Given the same directory, when it is listed, then `standards-mobile-ui` and `standards-desktop-ui` exist, each carrying a Design half and a Security half.
+- [ ] **AC-3 (Routing):** Given each new skill's `paths:`, when they are read, then mobile routes on native extensions and manifests, desktop on its own config surface, and web on the browser extensions — with no glob matching two platforms.
+- [ ] **AC-4 (Callers):** Given every file referencing a retired UI skill name, when each is read, then none references `standards-ui-design` or `standards-ui-security`.
+- [ ] **AC-5 (Scope):** Given `standards-mobile-ui`, when it is read, then it covers native targets only and states that React Native and Flutter are out of scope.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.8.1.1` | `[Impl]` | merge `standards-ui-design` and `standards-ui-security` into `standards-web-ui`, keeping both halves as sections so `assess-security` can read the Security section the same way it reads a language skill's | `ls claude-code/skills/standards-web-ui/SKILL.md`; `bash scripts/validate.sh` |
+| `SUB-01.8.1.2` | `[Impl]` | write `standards-mobile-ui` — Design (touch targets, safe areas, gestures, platform HIG divergence, offline states) and Security (overlay/tapjacking, screenshot and backgrounding snapshots, deep-link and scheme hijacking, WebView bridge exposure, pasteboard and keyboard caches, biometric prompt spoofing). Native targets only; state the RN/Flutter exclusion explicitly, since that exclusion is what makes the `paths:` routing unambiguous | `ls claude-code/skills/standards-mobile-ui/SKILL.md`; `bash scripts/validate.sh` |
+| `SUB-01.8.1.3` | `[Impl]` | write `standards-desktop-ui` — Design (keyboard and menu conventions, window and multi-window management, density, right-click affordances) and Security (context isolation and node integration, protocol handler registration, local IPC surface, update signing, drag-drop file trust) | `ls claude-code/skills/standards-desktop-ui/SKILL.md`; `bash scripts/validate.sh` |
+| `SUB-01.8.1.4` | `[Impl]` | update every caller of the two retired names — `assess-security`, `ways/sdlc.md`, `git-repo-init`, `standards-api-security` and its `review.md`, `standards-typescript`, `standards-cicd`, and the three framework skills — plus `claude-code/settings.json`'s `skillOverrides` entries | `grep -rc "standards-ui-design\|standards-ui-security" claude-code` returns `0` for every file; `make verify` |
+
+#### [TSK-01.8.2] Nothing in the toolkit says how to map a repo's internal dependency graph, so `assess-change-risk` scores blast radius by judgment with no import data behind it [P: L] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given each `standards-<lang>` skill's Toolchain section, when it is read, then it names the command that language's own toolchain ships for listing internal dependencies.
+- [ ] **AC-2:** Given `assess-change-risk`, when it is read, then it states when to run that command and how its output feeds the tier.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.8.2.1` | `[Impl]` | a directive, not a skill — the per-language commands are already model-recall; what is not recallable is this repo's convention for when to run one and what to do with the output. One bullet per language Toolchain section, one paragraph in `assess-change-risk`. Phrase each as the command the toolchain ships, never a pinned version or a third-party tool that needs installing | `bash scripts/validate.sh`; `make verify` |
+
+### [TG-01.9] Accessibility & Visual Output
+* **Target Release:** V1
+* **Context (2026-09-15):** `config-accessibility` governs formatting — heading depth, density caps, emoji placement — while every skill's Report section still contracts for a markdown table. The rules say show-don't-tell and the output contracts say emit-a-table. Since a terminal cannot render a diagram, visual output means a hosted artifact, which is a real shift in where this toolkit's output lives and is why this is a task group rather than a single skill.
+
+#### [TSK-01.9.1] Every skill's output contract is a markdown table, so `config-accessibility`'s show-don't-tell rule is contradicted by the contracts it is supposed to govern [P: M] [TODO]
+
+**User Story:**
+> **As a** maintainer who reads structure faster than prose,
+> **I want** the toolkit's own outputs to default to diagrams where a diagram is clearer,
+> **So that** I am not re-deriving a graph from a table every time I plan or review.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Rule):** Given `config-accessibility`, when it is read, then it states a visual-first rule — an output carrying a dependency relation or more than a handful of entities ships a diagram, not only prose.
+- [ ] **AC-2 (Contracts):** Given `workflow-decompose` and the `assess-*` skills, when their Report sections are read, then each names a diagram form alongside its table.
+- [ ] **AC-3 (Surface):** Given the visual-first rule, when it names where a diagram is rendered, then it distinguishes inline Mermaid from a published artifact and says which applies when.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.9.1.1` | `[Impl]` | add the visual-first rule to `config-accessibility`, including the inline-vs-artifact distinction — a terminal cannot render a diagram, so the rule has to say where the visual actually goes rather than assuming markdown is enough | `grep -c "visual-first\|diagram" claude-code/skills/config-accessibility/SKILL.md` returns non-zero; `bash scripts/validate.sh` |
+| `SUB-01.9.1.2` | `[Impl]` | add a diagram form to `workflow-decompose`'s queue output and to the `assess-*` report contracts | `bash scripts/validate.sh`; `make verify` |
+
+#### [TSK-01.9.2] There is no single view of a repo's whole work state — what is planned, what shipped, what is left lives split across `BACKLOG.md` and `CHANGELOG.md` with no way to see it at once (after: "Every skill's output contract is a markdown table") [P: M] [TODO]
+
+**User Story:**
+> **As a** maintainer planning a release,
+> **I want** one high-level map of everything planned, done, and remaining,
+> **So that** I can see the shape of the work without reading two files end to end.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Sources):** Given the map, when it is generated, then every node derives from `BACKLOG.md` or `CHANGELOG.md` and nothing is hand-maintained.
+- [ ] **AC-2 (Level):** Given the map, when it is read, then nodes are epics and task groups, not individual subtasks.
+- [ ] **AC-3 (State):** Given the map, when it is read, then shipped, open, and blocked work are visually distinct, and the released version is shown.
+- [ ] **AC-4 (Zero setup):** Given a machine with only `python3`, when the map is generated, then it renders with no install step.
+- [ ] **AC-5 (Not a record):** Given the map, when it is described in its own skill, then it is stated to be a view over the two record files and never a source of truth.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.9.2.1` | `[Impl]` | write the parser — stdlib Python, reads `BACKLOG.md` and `CHANGELOG.md`, emits the graph as JSON. This is the load-bearing half; the renderer is swappable and the data model should carry position-independent nodes so a 2D or 3D renderer can consume the same output | `python3` parser run against this repo's own two files exits zero and emits nodes for every epic and task group |
+| `SUB-01.9.2.2` | `[Impl]` | write the skill that renders the JSON as a published artifact, 2D first with the data model 3D-ready. Force-graph or three.js from the CDN the artifact CSP already allows — no build step, no install. State in the skill that the artifact is a view, never a record | `bash scripts/validate.sh` |
+
+### [TG-01.10] Parallelism & Loop Latency
+* **Target Release:** V1
+* **Context (2026-09-15):** a simple edit currently costs 30–60 minutes, and `TG-01.4`'s own context names why — a one-task band runs 7 serial forks, and `verify_gate.py` fires on every builder Stop, so an N-task band runs the full gate N times. Parallelism does not fix that; it fixes the multi-task band. The fast path and the band-level gate are the levers that return time on the case that actually hurts. Parallelism is opportunistic by decision: the planner proves disjointness or the band runs serial.
+
+#### [TSK-01.10.1] A one-line change pays the full five-phase machine, so trivial edits cost 7 serial forks and 30–60 minutes of wall clock [P: H] [TODO]
+
+**User Story:**
+> **As an** engineer making a small, obvious change,
+> **I want** the loop to skip the phases that exist for large bands,
+> **So that** the process cost is proportional to the change.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Predicate):** Given `workflow-loop`, when the fast path is described, then its entry condition is stated as a checkable property of the diff, not a judgment call.
+- [ ] **AC-2 (Phases):** Given a change meeting that condition, when the loop runs, then P1 decompose, P2.0 align, and P3 consolidate are skipped and the remaining phases are unchanged.
+- [ ] **AC-3 (Escape):** Given a change that touches a security boundary, when the fast path is evaluated, then it is refused regardless of diff size.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.10.1.1` | `[Impl]` | add the fast path to `workflow-loop/SKILL.md`, modelled on the existing `open` hatch — that hatch already establishes that not every change deserves the full machine. The file sits near the 5000-token compaction cap, so this addition must net-shrink or hold | `bash scripts/validate.sh`; `make verify` |
+
+#### [TSK-01.10.2] `verify_gate.py` fires on every builder Stop, so an N-task band runs the repo's full gate N times for one merged result [P: M] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given a multi-task band, when it completes, then the repo's full gate has run once against the band's merged state rather than once per task.
+- [ ] **AC-2:** Given a single task's `Done when` commands, when its fork finishes, then those still run per-task — the band gate replaces the full-suite run, not the task's own proof.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.10.2.1` | `[Impl]` | move the full-gate run from per-fork Stop to a band-level check at P2.2. Keep the per-task `Done when` commands where they are; the task's own proof is not the thing being deduplicated | `bash scripts/test-hooks.sh`; `make verify` |
+
+#### [TSK-01.10.3] Parallel execution is unavailable even where two tasks provably cannot collide, because nothing computes which files a task will touch (after: "The agent roster is named after workflow phases rather than roles") [P: M] [TODO]
+
+**User Story:**
+> **As an** orchestrator running a multi-task band,
+> **I want** provably disjoint tasks to run at the same time,
+> **So that** a band's wall clock reflects its widest dependency chain rather than its task count.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Manifest):** Given a decomposed queue, when `pm` returns it, then each task carries the set of files it is expected to touch.
+- [ ] **AC-2 (Default):** Given two tasks whose manifests intersect, or a queue where the manifest is unavailable, when the band runs, then it runs serial — parallelism is opt-in on proof, never the default.
+- [ ] **AC-3 (Isolation):** Given tasks selected to run in parallel, when they execute, then each runs in its own worktree and the orchestrator merges before the band gate.
+- [ ] **AC-4 (Scope):** Given the parallel design, when it is documented, then it is scoped to one branch — never across PRs or branches.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.10.3.1` | `[Impl]` | teach `pm` to return a files-touched manifest per task, and `workflow-loop` P2.0 to use manifest disjointness as the parallel predicate rather than today's weaker no-shared-file rule | `bash scripts/validate.sh` |
+| `SUB-01.10.3.2` | `[Impl]` | add the worktree-per-group execution and the orchestrator merge step, gated on the manifest proof, defaulting to serial. Read-only fan-out (`assess-*`, `researcher`, `scout`) needs no worktree and should be documented as always-parallel — that half is free today and under-used | `make verify` |
+
+### [TG-01.11] Prompt Templates
+* **Target Release:** V1
+* **Context (2026-09-15):** the deciding rule is the one this repo already adopted for comments — enforce only what is decidable. A brief is generated per invocation and fails by omission, which is decidable; a standards skill is read per session and fails by misjudgment, which is not. So briefs and report contracts become templates, and `AGENTS.md`, `standards-*`, agent bodies, and `ways/` stay static prose. Sequenced last by decision, and after the roster rename, since each template is owned by the role it addresses.
+
+#### [TSK-01.11.1] A fork brief is described in prose in three separate places and validated nowhere, so an omitted slot is only discovered by the fork guessing or stopping (after: "The agent roster is named after workflow phases rather than roles") [P: M] [TODO]
+
+**User Story:**
+> **As an** orchestrator briefing a fork that cannot see this conversation,
+> **I want** one template per role with required slots,
+> **So that** an incomplete brief is caught before the fork burns a turn on it.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Templates):** Given `templates/briefs/`, when it is listed, then it holds one template per role in the roster.
+- [ ] **AC-2 (Slots):** Given each template, when it is read, then it carries `Task`, `Files`, `Context`, `Done when`, and `Out of scope`, plus `Round` and `Standards` for reviewer briefs.
+- [ ] **AC-3 (Enforcement):** Given a brief arriving with a required slot empty, when the receiving agent reads it, then it stops and names the missing slot rather than guessing.
+- [ ] **AC-4 (Deduplication):** Given `workflow-loop`, `ways/sdlc.md`, and `workflow-implement`, when each is read, then none carries its own prose description of brief contents.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.11.1.1` | `[Impl]` | write one `templates/briefs/<role>.md.tmpl` per role. These live outside any loaded path, so they cost nothing in the always-on budget | `ls templates/briefs/`; `bash scripts/validate.sh` |
+| `SUB-01.11.1.2` | `[Impl]` | add the stop-on-missing-slot rule to each agent body. The fork is the only place with the information to validate its own brief, and `workflow-implement` already half-states this for `Done when` — generalize that rather than inventing a mechanism | `bash scripts/validate.sh` |
+| `SUB-01.11.1.3` | `[Impl]` | delete the three prose brief descriptions now superseded by the templates. `workflow-loop/SKILL.md` is near the compaction cap, so this should buy tokens back rather than cost them | `grep -rc "Out of scope" claude-code/skills/workflow-loop/SKILL.md` reflects the removal; `make verify` |
+| `SUB-01.11.1.4` | `[Impl]` | spike whether a `PreToolUse` matcher on `Task`/`Skill` fires the way the `Edit|Write` matcher does. If it does, brief validation can move from the fork to the harness, which is strictly better; if it does not, the fork-side rule above stands alone. Record the result either way | `grep -c "PreToolUse" docs/design-decisions.md` returns non-zero; `make verify` |
+
 ---
 
 ## Archive
