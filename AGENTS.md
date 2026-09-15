@@ -1,6 +1,6 @@
 # komodo-agentic-toolkit-coding
 
-Shared agent configuration for software/hardware engineering. `claude-code/` mirrors `~/.claude/` one-to-one and is symlinked there by `setup.sh`. Changing anything under `claude-code/` changes every project's next session.
+Shared agent configuration for software/hardware engineering. `claude-code/` mirrors `~/.claude/` one-to-one and is symlinked there by `scripts/install.py`. Changing anything under `claude-code/` changes every project's next session.
 
 Design rationale for the decisions below lives in `docs/design-decisions.md`, not here — this file states current rules only.
 
@@ -29,7 +29,7 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 
 **`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py`, `context_injector.py`, and `comments.py hook` fail open** — any internal error exits 0, except a verify command that outruns `KOMODO_VERIFY_TIMEOUT` (integer seconds, default 300), which is a deliberate block naming the limit, not a silent pass-through.
 
-**Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `setup.sh` checks `python3` resolves and meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s fail-closed handler never gets a chance to run.
+**Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `scripts/install.py` checks the interpreter a hook command will resolve on `PATH` meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s fail-closed handler never gets a chance to run.
 
 ## Comments
 
@@ -79,24 +79,25 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 
 ## Context budget
 
-`AGENTS.md` plus every model-visible skill description is paid on every turn of every session, forever. `validate.sh` fails above **2,000 tokens**.
+`AGENTS.md` plus every model-visible skill description is paid on every turn of every session, forever. `validate.py` fails above **2,000 tokens**.
 
 - **A skill listed `name-only` costs 1–4 tokens.** With a full description it costs ~30–70.
 - **A new line in `claude-code/AGENTS.md` costs its full length**, always. Put it in a skill unless it must apply unconditionally.
 - **`disable-model-invocation: true` keeps a workflow skill out of the listing entirely.** Everything else reached only by an explicit name is `name-only` in `skillOverrides`.
-- **`validate.sh`'s token total excludes bundled and plugin skills** — their text lives in the Claude Code binary, not this repo. `skillOverrides` is the only lever for a bundled skill, `/plugin` for a plugin one, and `/context`'s Skills row is where the real listing size is read.
+- **`validate.py`'s token total excludes bundled and plugin skills** — their text lives in the Claude Code binary, not this repo. `skillOverrides` is the only lever for a bundled skill, `/plugin` for a plugin one, and `/context`'s Skills row is where the real listing size is read.
 
 ## Working on this repo
 
 ```bash
-bash scripts/test-hooks.sh    # 259 hook + comments regression cases
-bash scripts/validate.sh      # symlinks, frontmatter schema, token budget
-bash setup.sh --dry-run       # preview the install
-bash setup.sh                 # install, then runs both of the above
+python3 scripts/test_hooks.py # 295 hook + comments regression cases
+python3 scripts/validate.py   # symlinks, frontmatter schema, token budget
+python3 scripts/install.py --dry-run   # preview the install
+python3 scripts/install.py             # install, then runs both of the above
 python3 claude-code/hooks/comments.py check   # comment lint
-make verify                   # what the Stop gate runs: all three of the above
+python3 scripts/verify.py     # what the Stop gate runs: all three of the above
+make verify                   # thin wrapper around scripts/verify.py
 ```
 
-`make verify` is this repo's own opt-in for `verify_gate.py`, which resolves a repo's gate in order: `.claude/verify.sh`, then `make verify`, then `task verify`, then `just verify`. `.claude/` is gitignored here, so the `Makefile` target is what ships. It only runs automatically inside a `builder` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
+`scripts/verify.py` is this repo's own opt-in for `verify_gate.py`, which resolves a repo's gate in order: `.claude/verify.py`, then `scripts/verify.py`, then `.claude/verify.sh`, then `make verify`, then `task verify`, then `just verify`. The two Python entry points lead because they are invoked as `<interpreter> <path>` — no executable bit, no `make` binary, so they work on every platform. `.claude/` is gitignored here, so `scripts/verify.py` is what ships and `make verify` is a one-line wrapper around it. It only runs automatically inside a `builder` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
 
 This repo ships its own `pre-commit`/`pre-push` dispatchers under `scripts/hooks/git/`, installed into a target repo via `install.sh` (sets `core.hooksPath`, nothing is copied). The `standards-cicd` skill states the contract they must satisfy.

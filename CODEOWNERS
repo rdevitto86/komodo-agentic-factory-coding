@@ -1,6 +1,6 @@
 # Review gate for the files with the widest blast radius.
 #
-# claude-code/ is symlinked into ~/.claude by setup.sh, so a change to any
+# claude-code/ is symlinked into ~/.claude by scripts/install.py, so a change to any
 # path below reaches every session in every project on the next start —
 # there is no staging environment between this repo and a working agent.
 # Everything else in the repo is reviewed normally.

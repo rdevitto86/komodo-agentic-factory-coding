@@ -2,7 +2,7 @@
 
 This guide walks through installing this toolkit on a Windows machine, one step at a time. It assumes no prior familiarity with symlinks, PATH, environment variables, or Developer Mode — each is explained the first time it comes up.
 
-If you're on macOS or Linux, use `bash setup.sh` instead — see the main [README](../README.md#setup).
+The installer is the same one macOS and Linux use — `scripts/install.py` — so the README's [Setup](../README.md#setup) section and this guide describe one command, not two.
 
 ## What you need first
 
@@ -25,7 +25,7 @@ python3 scripts/install.py
 
 (substitute `python` or `py -3` if that's the one that worked for you)
 
-This copies the toolkit's configuration into your Claude Code settings folder. What happens next depends on one thing: whether Windows will let the installer create a **symlink**.
+This installs the toolkit's configuration into your Claude Code settings folder. What happens next depends on one thing: whether Windows will let the installer create a **symlink**.
 
 ### What a symlink is, and why it matters here
 
@@ -35,7 +35,7 @@ Windows treats creating a symlink as a sensitive operation. By default, only an 
 
 ### Turning on Developer Mode (recommended)
 
-Developer Mode is a Windows setting that allows ordinary user accounts to do a handful of things normally reserved for administrators, including creating symlinks. Turning it on once means every future install and re-install just works, with nothing to repeat.
+Developer Mode is a Windows setting that allows ordinary user accounts to do a handful of things normally reserved for administrators, including creating symlinks. Turning it on once means every future install and re-install just works, with nothing to repeat. Without it, `os.symlink` raises a permission error and the installer cannot create a live link.
 
 To turn it on:
 

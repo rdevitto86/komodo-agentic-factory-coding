@@ -1,12 +1,13 @@
 .PHONY: verify test validate comments
 
-verify: test validate comments
+verify:
+	python3 scripts/verify.py
 
 test:
-	bash scripts/test-hooks.sh
+	python3 scripts/test_hooks.py
 
 validate:
-	bash scripts/validate.sh
+	python3 scripts/validate.py
 
 comments:
 	python3 claude-code/hooks/comments.py check
