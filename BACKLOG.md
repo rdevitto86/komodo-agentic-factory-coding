@@ -82,6 +82,49 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.1.7.1` | `[Impl]` | surfaced by `/assess-bugs` at TSK-01.1.3's band review: `backlog-modify` and `docs/design-decisions.md` both acknowledge the failure mode ("a backlog defect, not a sweep the gate should quietly let through") but nothing enforces the mapping at write time — `backlog-plan`'s decomposition constraints don't check it, and no lint exists. Recoverable only by a human manually ticking the box. Deliberately not fixed in the same band since it's an acknowledged, intentional trade-off rather than a defect | `python3 scripts/validate.py` |
 
+#### [TSK-01.1.8] `AGENTS.md` states `git_guard.py` fails closed, but the code, its own header, and four regression cases all say it fails open — the always-loaded project doc is the only thing asserting the wrong posture [P: M] [TODO]
+
+**User Story:**
+> **As** anyone reasoning about what the guard guarantees,
+> **I want** the documented failure posture to match the code's tested one,
+> **So that** a design decision is never made against a protection that is not there.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Doc matches code):** Given `AGENTS.md:30`, when read against `git_guard.py`'s crash handler and cases `F7`/`G141`/`G142`/`G143`, then the two agree.
+- [ ] **AC-2 (Backstop stated):** Given the corrected line, when read, then it names the destructive-pattern backstop rather than flattening the posture to "fails open".
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.8.1` | `[Impl]` | surfaced by a full-toolkit assessment. `AGENTS.md:30` reads "**`git_guard.py` fails closed** — an unparseable payload denies". `git_guard.py:1261` catches `BaseException`, writes "Failing open, except for a hardcoded destructive-command check" to stderr, and `sys.exit(0)` — which Claude Code reads as allow. This is a doc-only fix, not a code one: the posture is deliberate, documented in the hook's own header, and already locked by four cases (`F7` malformed payload allows, `G141` crash still allows a benign command, `G142`/`G143` crash still denies `git push origin main` and `rm -rf /`). Correct the sentence to state fail-open plus the destructive-pattern backstop. The same line's claims about `verify_gate.py`/`context_injector.py`/`comments.py hook` were spot-checked and hold — leave them. Priority is `M` not `H` because nothing is unprotected; the cost is a reader misled about where the boundary sits | `python3 scripts/validate.py`; `make verify` |
+
+#### [TSK-01.1.9] `claude-code/AGENTS.md` understates `git_guard.py`'s guarded set as `.py`/`.json`/`.md`, when it actually covers every commented source extension [P: L] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given `claude-code/AGENTS.md`'s guard sentence, when read against `lib/comment_rules.py`'s family maps plus the guard's own document-extension set, then it describes the real coverage.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.9.1` | `[Impl]` | surfaced by the same assessment, and probed live: `sed -i`, `perl -pi`, `>` redirect, `cp`, and `tee` are all denied against a `.go` target, not just the three extensions the sentence names — `is_guarded_path` runs `matches_guarded_family`, which spans `EXTENSION_FAMILY`'s ~30 source extensions plus `FILENAME_FAMILY`. The doc sells the guard short, which matters because this sentence is in the always-on file and is what an agent reads before deciding whether a Bash write is safe. Restate it by the rule (every extension the comment lint knows, plus the document set), never by enumerating extensions — an enumeration is the drift that got us here | `python3 scripts/validate.py` |
+
+#### [TSK-01.1.10] `settings.json`'s allowlist no longer describes real policy — `curl` is unrestricted while `WebFetch` is domain-pinned, and the `sed`/`cp`/`mv`/`tee` entries are dead for the case that matters [P: M] [TODO]
+
+| Field | Value |
+|---|---|
+| Owner | `human` |
+
+**User Story:**
+> **As** whoever reads `settings.json` to learn what this harness permits,
+> **I want** the allowlist to be the policy rather than a list overtaken by the guard,
+> **So that** the file is a control surface instead of a historical artifact.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Egress decided):** Given `Bash(curl:*)`, when the egress posture is settled, then either it is narrowed to match `WebFetch`'s domain pins or the asymmetry is recorded as accepted in `docs/design-decisions.md`.
+- [ ] **AC-2 (No dead entries):** Given every remaining `Bash(...)` allow entry, when audited, then each one still grants something the guard does not already deny.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.10.1` | `[Audit]` | surfaced by the same assessment. Two distinct problems in one file. First, `WebFetch` is pinned to six domains while `Bash(curl:*)` is wide open, and `curl` is an egress path, not just ingress — the weaker control is the unrestricted one. Narrowing it is a policy call, which is what the `Owner: human` row above is for. Second, `sed`/`cp`/`mv`/`tee` are allowlisted but `git_guard.py` denies them against any guarded target, so those entries are inert exactly where they would matter and live everywhere else. Also sweep the entries that read as matcher noise rather than policy (`cd`, `for`, `true`, `test`, `source`, `export`) — verify how Claude Code actually matches a compound command before removing any, rather than assuming | `python3 scripts/validate.py`; `make verify` |
+
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
 * **Context (2026-09-09):** the always-on budget stays healthy (`scripts/validate.sh` tracks the figure). The bounded `git_guard.py` shell-parsing hardening pass this task group's last open task tracked is complete — all Critical substitution-scanner bypasses it surfaced (comment-boundary reset, `command`-prefix reparse detection, the `command -v`/`-V` false-positive, the `env` wrapper bypass, and the `extract_substitutions`/`split_segments` dedup) are closed as of `0.46.2` (see `CHANGELOG.md`). No task currently open in this task group.
@@ -103,6 +146,22 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | Subtask | Work | Done when |
 |---|---|---|
 | `SUB-01.3.4.1` | write a `standards-zig` skill covering Zig language/build/toolchain conventions, structured like the existing `standards-aws` and `standards-specs` skills | `claude-code/skills/standards-zig/SKILL.md` exists and `python3 scripts/validate.py` passes |
+
+#### [TSK-01.3.5] `standards-swift` and `standards-kotlin` carry `disable-model-invocation: true` with no `paths:`, so ~15 KB of skill text is unreachable by any caller — a second, silent way of disabling a skill beside the `.md.off` convention [P: M] [TODO]
+
+**User Story:**
+> **As** someone reading `claude-code/skills/` to learn what is on and what is off,
+> **I want** one visible mechanism for disabling a skill,
+> **So that** an off skill cannot be mistaken for a live one that simply never fires.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (One mechanism):** Given every skill in `claude-code/skills/`, when its activation is read, then a disabled skill is disabled the same way as every other disabled skill.
+- [ ] **AC-2 (No silent dead text):** Given a skill with `disable-model-invocation: true`, when it carries no `paths:` and no other caller names it, then `scripts/validate.py` fails.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.3.5.1` | `[Impl]` | surfaced by a full-toolkit assessment. Seven skills are disabled by the `.md.off` suffix; these two are disabled by a frontmatter combination that reads as live. `BACKLOG.md`'s `TG-01.8` context records them as "landed 2026-09-15, defaulted off", so the state is deliberate — the defect is that the mechanism is invisible and costs a reader a frontmatter cross-check to detect. Pick one: rename both to `.md.off`, or give them `paths:` and turn them on. Note `standards-ui-mobile` already claims `**/*.swift` and `**/*.kt`, so a Swift or Kotlin file gets partial coverage today while ARC, SPM, coroutine, and Gradle-DSL rules never load — decide whether that overlap is the intended end state before turning either on | `python3 scripts/validate.py` |
+| `SUB-01.3.5.2` | `[Impl]` | extend `scripts/validate.py`'s existing reachability check to also fail a skill that is model-invocable-disabled, path-ungated, and named by no sibling skill body — the exact condition that made these two dead. `assess-change-risk`, `assess-code-conventions`, and `repo-assess` must stay passing: all three are `disable-model-invocation: true` but user-typed, so the check keys on "no caller and no path", not on the key alone | `python3 scripts/validate.py`; `make verify` |
 
 ### [TG-01.4] Workflow Loop & Hook Reliability
 * **Target Release:** V1
@@ -186,9 +245,59 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.6.4.1` | `[Impl]` | pre-existing drift, spotted by a fork during `TSK-01.6.1` and deliberately not fixed there to keep that diff to the lines the rename required: `AGENTS.md` says `259 hook + comments regression cases` and `README.md` says `286 regression cases`, while the suite reports 293 (it moved twice during `TG-01.10` alone). Confirm which number is authoritative before editing — the 259 may have been scoped to a subset — and consider whether a hand-maintained count belongs in the file at all | `python3 scripts/test_hooks.py`'s reported count matches `AGENTS.md`; `make verify` |
 
+#### [TSK-01.6.5] `builder` is the only agent with no `maxTurns`, and it is the one agent carrying a blocking `Stop` gate — an oscillating failure has no ceiling above it [P: M] [TODO]
+
+**User Story:**
+> **As** whoever pays for a `builder` fork that stops making progress,
+> **I want** a turn ceiling under it like every other agent has,
+> **So that** a fork that cannot converge ends instead of grinding.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Ceiling exists):** Given `claude-code/agents/builder.md`, when its frontmatter is read, then it declares `maxTurns`.
+- [ ] **AC-2 (Roster is uniform):** Given every agent in `claude-code/agents/`, when checked, then none is missing a ceiling by omission.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.6.5.1` | `[Impl]` | surfaced by a full-toolkit assessment. Ceilings today: `architect` 60, `pm` 50, `researcher` 40, `reviewer` 80, `scout` 20, `tester` 60 — `builder` unset. `verify_gate.py`'s own brakes do not substitute: `IDENTICAL_STOP_AT` needs three byte-identical failures and `STREAK_WARN_AT` only warns, so a fork alternating between two distinct failures resets the identical counter every cycle and never trips either. `builder` writes, so it is also the most expensive fork to leave unbounded. Pick the number from a real band's turn count rather than by analogy to `tester` — a builder legitimately runs longer than a test-only fork | `python3 scripts/validate.py` |
+| `SUB-01.6.5.2` | `[Impl]` | add a `scripts/validate.py` check that every agent frontmatter declares `maxTurns`, so the next agent added cannot omit it silently — the same class of check `TSK-01.6.2` adds for `agent:` naming a real agent | `python3 scripts/validate.py`; `make verify` |
+
+#### [TSK-01.6.6] The missing-brief-slot rule is restated in all seven agents and the read-only-git rule in five, against `claude-code/AGENTS.md`'s own stated principle that a rule stated there never needs restating in an agent body — and `reviewer.md`'s copy has already drifted [P: M] [TODO]
+
+**User Story:**
+> **As** whoever edits the brief contract next,
+> **I want** one canonical statement to edit,
+> **So that** a change propagates instead of leaving six stale copies behind.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Shared half is canonical):** Given the brief-slot rule's agent-independent half, when read across the roster, then it exists in exactly one file.
+- [ ] **AC-2 (Role half stays local):** Given each agent's own required-slot list, when read, then it remains in that agent's body — it differs per role and does not belong in a shared file.
+- [ ] **AC-3 (Budget holds):** Given the always-on budget, when `scripts/validate.py` runs, then the total has not regressed.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.6.6.1` | `[Impl]` | surfaced by a full-toolkit assessment, and the same disease `TSK-01.5.4` files for the evidence bar — one layer up, in the roster. Split the rule: the agent-independent half (absent and empty are the same thing; the return replaces the whole template, never one section of it; you cannot pause, so this is a return that names the gap, never a question) moves to `claude-code/AGENTS.md`, which already reaches every subagent at startup. The per-role required-slot list stays in each body, because it genuinely differs. Evidence the copies have already diverged: `reviewer.md` adds `Round` and `Standards` and carries a special rule letting the phrase "nothing beyond the named band" satisfy `Out of scope` — no sibling has it. The read-only-git bullet is duplicated verbatim in five bodies and moves the same way. Cost note: this moves per-spawn text into always-on text, so the shared half has to be written tight — measure with `scripts/validate.py` before and after, and keep the total under budget | `python3 scripts/validate.py` reports the always-on total within budget; `make verify` |
+
 ### [TG-01.7] Cross-Platform Portability
 * **Target Release:** V1
 * **Context (2026-09-15):** every hook is already Python and `scripts/install.py` already ships, so the remaining non-portable surface is six shell files plus the `Makefile`. The sharp end is the gate itself — `verify_gate.py` resolves `.claude/verify.sh` → `make verify` → `task verify` → `just verify`, and three of those four do not exist on a stock Windows box. No preloaded binaries: `python3` 3.7+ is already the hard floor and a binary would *add* a setup step.
+
+#### [TSK-01.7.1] On Windows `settings.json` is always a generated copy, and the re-sync notice is keyed on symlink refusal — so a Developer Mode user gets live skills beside a silently frozen permission set, with nothing printed [P: M] [TODO]
+
+**User Story:**
+> **As** a Windows user who turned on Developer Mode and got working symlinks,
+> **I want** to be told that one file is still a frozen copy,
+> **So that** my permissions and `skillOverrides` do not silently lag the repo forever.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Notice follows the copy, not the refusal):** Given any entry materialized as a copy rather than a symlink, when the install finishes, then the re-sync notice prints and names that entry.
+- [ ] **AC-2 (Developer Mode is covered):** Given Windows with symlinks permitted, when the install finishes, then the notice still prints, because `settings.json` was generated regardless.
+- [ ] **AC-3 (Drift is detectable):** Given an installed `settings.json` older than the repo's, when the drift is checked, then it is reported without the user having to diff by hand.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.1.1` | `[Impl]` | surfaced by a full-toolkit assessment, and more specific than "Windows copies things". `settings_strategy` returns `generate` whenever `detect_os() == "windows"`, independent of Developer Mode, because the resolved interpreter (`py -3`, `python`) has to be baked into each hook command — that part is correct and should stay. The defect is the notice: `install_settings` returns `True` only when a symlink was *refused*, and the `generate` branch returns `False`, so `fallback_used` at `scripts/install.py:419` stays false and the re-sync block at `:429` never runs. A Developer Mode user therefore sees `agents/`, `skills/`, and `hooks/` go live by symlink and has no way to learn that `settings.json` alone is a snapshot. Fix the signal, not the strategy | `python3 scripts/test_install.py` |
+| `SUB-01.7.1.2` | `[Impl]` | add a drift check so the snapshot is detectable after the fact, not only at install time — compare the installed `settings.json` against what `build_settings` would generate now and report a mismatch. Decide where it belongs: `scripts/validate.py` already checks symlink health and runs inside `verify`, which makes it the natural home, but it must not fail a macOS/Linux install where the file is a live symlink and the question is moot | `python3 scripts/validate.py`; `make verify` |
+| `SUB-01.7.1.3` | `[UnitTest]` | cover both paths in `scripts/test_install.py`: a `generate` strategy prints the re-sync notice, and a successful symlink install does not. Note `TSK-01.1.6` tracks wiring this suite into `make verify` — until that lands these cases run only when invoked directly, so run it explicitly as proof rather than relying on the gate | `python3 scripts/test_install.py` |
 
 ### [TG-01.8] UI & Language Standards
 * **Target Release:** V1
@@ -217,6 +326,29 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
 | `SUB-01.10.4.1` | `[Impl]` | filed by `TSK-01.10.2`'s band-review `/assess-security` pass, and deliberately mitigated rather than fixed there. The marker keys off the git common dir, so it is shared by every worktree of a checkout — which is what makes parallel forks work, and also what lets an unrelated concurrent session inherit the deferral, with no code path in its own flow that ever runs the full suite to compensate. It could not be fixed in that band because the Stop payload `verify_gate.py` receives carries only `stop_hook_active` and `cwd` — no session identifier exists to bind to. The window was cut from four hours to thirty minutes to bound the blast radius instead. Resolving this needs a session or band identifier that survives into the fork's Stop payload; establish whether one is available before designing, and if none is, record that and close this as won't-fix rather than inventing a token the orchestrator has to hand-manage | `python3 scripts/test_hooks.py` covers a marker written by one identity not deferring another's gate; `make verify` |
+
+### [TG-01.11] Outcome Evidence
+* **Target Release:** V1
+* **Context (2026-09-15):** every check this repo runs proves the harness is *well-formed* — `test_hooks.py` proves the hooks behave, `validate.py` proves the prompt graph resolves, the budget check proves it is cheap. Nothing proves it produces better work than a bare session. Every design decision rests on the reasoning in `docs/design-decisions.md` rather than a measured effect, which is honest but means a regression in skill quality is invisible until someone notices bad output. The `skill-creator` plugin is already enabled in `settings.json` and ships eval and variance tooling; no skill has an eval suite. This is the single largest gap between this toolkit and one that can be trusted to stay good as it changes.
+
+#### [TSK-01.11.1] No skill has an eval suite, so skill quality is unmeasured and a regression is only visible as bad output someone happens to notice [P: H] [TODO]
+
+**User Story:**
+> **As** whoever edits a high-traffic skill next,
+> **I want** a suite that tells me whether the edit made its output better or worse,
+> **So that** a prompt change is a measured change rather than an argued one.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Traffic-ranked):** Given the skill library, when the eval targets are chosen, then they are the highest-traffic skills, named with the reason each was picked.
+- [ ] **AC-2 (Runnable cold):** Given a clean checkout, when the eval command runs, then it executes without manual setup beyond what `README.md` already requires.
+- [ ] **AC-3 (Baseline recorded):** Given each covered skill, when its suite first runs, then its score and variance are recorded as the baseline to regress against.
+- [ ] **AC-4 (Gate decided):** Given the baseline, when the gate question is settled, then `docs/design-decisions.md` records whether evals block `verify` or run on demand, and why.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.11.1.1` | `[Audit]` | pick the covered set before writing anything. Rank by how often a skill actually runs and how much damage a silent regression does — `workflow-loop`, `backlog-modify`, `git-pr-create`, `write-comments`, and the `reviewer`-forked `assess-*` trio are the obvious candidates, but confirm against real usage rather than intuition. Cap the first pass at five: an eval suite nobody maintains is worse than none. Record the set and the reason for each under a `## Skill eval coverage` heading | `grep -q '^## Skill eval coverage' docs/design-decisions.md` |
+| `SUB-01.11.1.2` | `[Impl]` | build the suites against the `claude plugin eval` interface already on this machine, not an invented harness. Verified shape: cases are `<eval dir>/**/case.yaml`, or `prompt.md` plus `graders/*.md`, defaulting to `evals/`; the target resolves a path, a plugin name, or `plugin@marketplace`; `--trust-plugin` answers the first-run trust prompt so a non-interactive run does not hang; `--ablation with-without` adds the no-plugin baseline arm that makes a score meaningful. Add `scripts/evals.py` as this repo's own entry point so the invocation lives in one place the way `scripts/verify.py` already does, and confirm how a plain skills directory resolves as a target before committing to the path form | `python3 scripts/evals.py --list` |
+| `SUB-01.11.1.3` | `[Impl]` | run each suite, record its baseline score and variance beneath the same heading, and record the gate decision. `verify` is 9.2 s today and runs on every dirty `builder` Stop, so folding model-calling evals into it would change that gate's cost and latency character completely — default to a separate on-demand command and state that plainly rather than leaving it implied. Keep `scripts/evals.py` out of `scripts/verify.py`'s call graph | `python3 scripts/verify.py`; `grep -q 'evals do not gate verify' docs/design-decisions.md` |
 
 ---
 
