@@ -85,10 +85,10 @@ def check_links(source: str, target: str) -> int:
             print("    dangling  %s -> %s" % (name, os.readlink(link)))
             problems += 1
         elif os.path.exists(link):
-            print("    not-link  %s (real file, run setup.sh)" % name)
+            print("    not-link  %s (real file, run scripts/install.py)" % name)
             problems += 1
         else:
-            print("    missing   %s (run setup.sh)" % name)
+            print("    missing   %s (run scripts/install.py)" % name)
             problems += 1
     return problems
 

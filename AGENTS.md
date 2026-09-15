@@ -1,6 +1,6 @@
 # komodo-agentic-toolkit-coding
 
-Shared agent configuration for software/hardware engineering. `claude-code/` mirrors `~/.claude/` one-to-one and is symlinked there by `setup.sh`. Changing anything under `claude-code/` changes every project's next session.
+Shared agent configuration for software/hardware engineering. `claude-code/` mirrors `~/.claude/` one-to-one and is symlinked there by `scripts/install.py`. Changing anything under `claude-code/` changes every project's next session.
 
 Design rationale for the decisions below lives in `docs/design-decisions.md`, not here — this file states current rules only.
 
@@ -29,7 +29,7 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 
 **`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py`, `context_injector.py`, and `comments.py hook` fail open** — any internal error exits 0, except a verify command that outruns `KOMODO_VERIFY_TIMEOUT` (integer seconds, default 300), which is a deliberate block naming the limit, not a silent pass-through.
 
-**Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `setup.sh` checks `python3` resolves and meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s fail-closed handler never gets a chance to run.
+**Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `scripts/install.py` checks the interpreter a hook command will resolve on `PATH` meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s fail-closed handler never gets a chance to run.
 
 ## Comments
 
@@ -91,8 +91,8 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 ```bash
 python3 scripts/test_hooks.py # 259 hook + comments regression cases
 python3 scripts/validate.py   # symlinks, frontmatter schema, token budget
-bash setup.sh --dry-run       # preview the install
-bash setup.sh                 # install, then runs both of the above
+python3 scripts/install.py --dry-run   # preview the install
+python3 scripts/install.py             # install, then runs both of the above
 python3 claude-code/hooks/comments.py check   # comment lint
 make verify                   # what the Stop gate runs: all three of the above
 ```

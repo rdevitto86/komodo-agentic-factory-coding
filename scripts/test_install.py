@@ -11,7 +11,6 @@ import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL = os.path.join(REPO_ROOT, "scripts", "install.py")
-SETUP = os.path.join(REPO_ROOT, "setup.sh")
 GIT_INSTALL = os.path.join(REPO_ROOT, "scripts", "hooks", "git", "install.sh")
 LIVE_HOOK_DIR = os.path.join(REPO_ROOT, "scripts", "hooks", "git")
 
@@ -81,7 +80,7 @@ def check_install(workdir: str, python3: str) -> None:
     label = "I1 resolves python when python3 is absent from PATH"
     target1 = os.path.join(workdir, "home1", ".claude")
     rc, out = capture(
-        [os.path.join(stubbin, "python"), INSTALL, "--target", target1],
+        [os.path.join(stubbin, "python"), INSTALL, "--target", target1, "--skip-verify"],
         env=env_with(PATH=stubbin),
     )
     if rc != 0:
@@ -92,7 +91,9 @@ def check_install(workdir: str, python3: str) -> None:
         passed(label)
 
     target2 = os.path.join(workdir, "home2", ".claude")
-    rc, out = capture([python3, INSTALL, "--target", target2])
+    rc, out = capture(
+        [python3, INSTALL, "--target", target2, "--skip-verify", "--settings", "generate"]
+    )
     if rc != 0:
         failed("I2 install with the real python3 exits 0", "exit %d: %s" % (rc, out))
     elif "~" in read_text(os.path.join(target2, "settings.json")):
@@ -102,7 +103,7 @@ def check_install(workdir: str, python3: str) -> None:
 
     label = "I3 forced symlink failure falls back to copy and prints guidance"
     target3 = os.path.join(workdir, "home3", ".claude")
-    rc, out = capture([python3, INSTALL, "--target", target3, "--force-copy"])
+    rc, out = capture([python3, INSTALL, "--target", target3, "--force-copy", "--skip-verify"])
     hooks3 = os.path.join(target3, "hooks")
     problem = ""
     if rc != 0:
@@ -121,7 +122,7 @@ def check_install(workdir: str, python3: str) -> None:
 
     label = "I4 a normal install still symlinks (macOS/Linux path unaffected)"
     target4 = os.path.join(workdir, "home4", ".claude")
-    capture([python3, INSTALL, "--target", target4])
+    capture([python3, INSTALL, "--target", target4, "--skip-verify"])
     hooks4 = os.path.join(target4, "hooks")
     if os.path.islink(hooks4) and os.path.isfile(os.path.join(hooks4, "git_guard.py")):
         passed(label)
@@ -130,7 +131,7 @@ def check_install(workdir: str, python3: str) -> None:
 
     label = "I5 symlinked directory entry is created with directory semantics"
     target5 = os.path.join(workdir, "home5", ".claude")
-    capture([python3, INSTALL, "--target", target5])
+    capture([python3, INSTALL, "--target", target5, "--skip-verify"])
     hooks5 = os.path.join(target5, "hooks")
     problem = ""
     if not os.path.islink(hooks5):
@@ -146,7 +147,9 @@ def check_install(workdir: str, python3: str) -> None:
     label = "I6 hook_path with a shell metacharacter is single-quoted, not left bare"
     target6 = os.path.join(workdir, "home6$(evil)", ".claude")
     os.makedirs(os.path.dirname(target6))
-    rc, out = capture([python3, INSTALL, "--target", target6])
+    rc, out = capture(
+        [python3, INSTALL, "--target", target6, "--skip-verify", "--settings", "generate"]
+    )
     settings6 = read_text(os.path.join(target6, "settings.json"))
     if rc != 0:
         failed(label, "exit %d: %s" % (rc, out))
@@ -164,10 +167,11 @@ def check_install(workdir: str, python3: str) -> None:
         passed(label)
 
 
-def assert_guard_rejected(label: str, clone: str, target: str, args: list) -> None:
+def assert_guard_rejected(label: str, clone: str, target: str, args: list, python3: str) -> None:
     _, head_before = git(["rev-parse", "--abbrev-ref", "HEAD"], clone)
     rc, out = capture(
-        ["bash", os.path.join(clone, "setup.sh")] + args, env=env_with(AGENT_HOME=target)
+        [python3, os.path.join(clone, "scripts", "install.py")] + args,
+        env=env_with(AGENT_HOME=target),
     )
     _, head_after = git(["rev-parse", "--abbrev-ref", "HEAD"], clone)
     problem = ""
@@ -180,11 +184,24 @@ def assert_guard_rejected(label: str, clone: str, target: str, args: list) -> No
     record(label, problem)
 
 
-def check_setup_ref(workdir: str) -> None:
-    emit("\nsetup.sh --ref\n\n")
+def check_setup_ref(workdir: str, python3: str) -> None:
+    emit("\ninstall.py --ref\n\n")
 
     clone = os.path.join(workdir, "clone")
     capture(["git", "clone", "--quiet", "--local", REPO_ROOT, clone])
+    clone_install = os.path.join(clone, "scripts", "install.py")
+    shutil.copyfile(INSTALL, clone_install)
+    _, commit_out = capture(
+        [
+            "git", "-C", clone,
+            "-c", "user.email=test@example.com",
+            "-c", "user.name=test",
+            "commit", "--quiet", "-am",
+            "bring in the working copy's install.py for --ref testing",
+        ]
+    )
+    emit(commit_out)
+
     _, tag_out = git(["tag"], clone)
     tag_lines = tag_out.splitlines()
     tag = tag_lines[-1] if tag_lines else ""
@@ -193,9 +210,9 @@ def check_setup_ref(workdir: str) -> None:
     target_a = os.path.join(workdir, "home-s4a", ".claude")
     target_b = os.path.join(workdir, "home-s4b", ".claude")
     _, baseline = capture(
-        ["bash", os.path.join(clone, "setup.sh"), "--dry-run"], env=env_with(AGENT_HOME=target_a)
+        [python3, clone_install, "--dry-run"], env=env_with(AGENT_HOME=target_a)
     )
-    _, current = capture(["bash", SETUP, "--dry-run"], env=env_with(AGENT_HOME=target_b))
+    _, current = capture([python3, INSTALL, "--dry-run"], env=env_with(AGENT_HOME=target_b))
     baseline = baseline.replace(target_a, "TARGET").replace(clone, "REPO")
     current = current.replace(target_b, "TARGET").replace(REPO_ROOT, "REPO")
     if baseline == current:
@@ -208,18 +225,6 @@ def check_setup_ref(workdir: str) -> None:
         )
         failed(label, "diff:\n%s" % diff)
 
-    shutil.copyfile(SETUP, os.path.join(clone, "setup.sh"))
-    _, commit_out = capture(
-        [
-            "git", "-C", clone,
-            "-c", "user.email=test@example.com",
-            "-c", "user.name=test",
-            "commit", "--quiet", "-am",
-            "bring in the working copy's setup.sh for --ref testing",
-        ]
-    )
-    emit(commit_out)
-
     label_s1 = "S1 --ref TAG --dry-run previews the checkout and exits 0"
     label_s3 = "S3 a dirty tree exits non-zero before touching HEAD or the target"
     if not tag:
@@ -230,7 +235,7 @@ def check_setup_ref(workdir: str) -> None:
         tag_commit = commit_line.strip()
         target_s1 = os.path.join(workdir, "home-s1", ".claude")
         rc, out = capture(
-            ["bash", os.path.join(clone, "setup.sh"), "--ref", tag, "--dry-run"],
+            [python3, clone_install, "--ref", tag, "--dry-run"],
             env=env_with(AGENT_HOME=target_s1),
         )
         preview = "would: git -C %s checkout --detach %s" % (clone, tag_commit)
@@ -246,25 +251,32 @@ def check_setup_ref(workdir: str) -> None:
         clone,
         os.path.join(workdir, "home-s2", ".claude"),
         ["--ref", "no-such-tag-xyz"],
+        python3,
     )
     assert_guard_rejected(
         "S5 an empty --ref is rejected rather than silently installing unpinned",
         clone,
         os.path.join(workdir, "home-s5", ".claude"),
         ["--ref="],
+        python3,
     )
     assert_guard_rejected(
         "S6 a leading-dash ref is rejected before reaching git",
         clone,
         os.path.join(workdir, "home-s6", ".claude"),
-        ["--ref", "--orphan=x"],
+        ["--ref=--orphan=x"],
+        python3,
     )
 
     with open(os.path.join(clone, "README.md"), "a", encoding="utf-8") as handle:
         handle.write("dirty\n")
     if tag:
         assert_guard_rejected(
-            label_s3, clone, os.path.join(workdir, "home-s3", ".claude"), ["--ref", tag]
+            label_s3,
+            clone,
+            os.path.join(workdir, "home-s3", ".claude"),
+            ["--ref", tag],
+            python3,
         )
 
 
@@ -340,7 +352,7 @@ def main() -> int:
     workdir = tempfile.mkdtemp()
     try:
         check_install(workdir, python3)
-        check_setup_ref(workdir)
+        check_setup_ref(workdir, python3)
         check_git_install(workdir)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

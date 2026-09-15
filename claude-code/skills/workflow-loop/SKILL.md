@@ -230,7 +230,7 @@ git diff --name-only     # no path on the exclusion list below
 
 - **Agent config** — `**/hooks/**`, `**/agents/**`, `settings.json`
 - **The verify gate and every script it runs** — `.claude/verify.sh`, `Makefile`, `Taskfile.yml`, `justfile`, `scripts/**`
-- **Git-hook dispatchers and installers** — `**/pre-commit*`, `**/pre-push*`, `setup.sh`, `install.sh`
+- **Git-hook dispatchers and installers** — `**/pre-commit*`, `**/pre-push*`, `install.sh`, `install.py`
 - **Always-loaded directives and ownership** — `**/AGENTS.md`, `**/CLAUDE.md`, `CODEOWNERS`
 
 A change able to weaken its own verification is not a fast path — the gate's own scripts are the check, so editing one and then running it proves nothing. **The list is a floor, not a ceiling:** a path it misses that you nonetheless read as enforcement also refuses. That judgement may only refuse, never admit — erring into the full machine costs time and nothing else.

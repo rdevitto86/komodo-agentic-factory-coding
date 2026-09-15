@@ -17,13 +17,13 @@ Banned: a name echo (the comment's first word repeats the function/variable name
 
 Allowed only: a compiler/linter directive (always allowed); a step marker (indented, inside a function body, <= 80 chars); a banner/section break (<= 40-char label); an intent/WHY comment using the `WHY:`, `NOTE:`, or `TODO(author/issue):` prefix; a script manual — line comments directly under a `#!` shebang, this file's only place for a contiguous block.
 
-This language's exempt machine directives, verified against the guard's own list: `shellcheck disable=`. The "Script manual" slot — line comments directly under a `#!` shebang — is this language's usual home for a run/exit-code summary; see `setup.sh` and `scripts/*.sh` in this repo for the lived shape. Anything past that header block prompts for approval.
+This language's exempt machine directives, verified against the guard's own list: `shellcheck disable=`. The "Script manual" slot — line comments directly under a `#!` shebang — is this language's usual home for a run/exit-code summary; see `scripts/hooks/git/` in this repo for the lived shape. Anything past that header block prompts for approval.
 
 ## Toolchain
 
 - **No version floor to declare** — POSIX-adjacent bash 3.2+ unless a script itself gates on a newer feature (associative arrays, `mapfile`) with a version check. State the floor in the script's own header comment when it matters.
 - **`shellcheck` is the lint tool**, run against every `.sh` file; there is no accepted alternative. A suppression is `# shellcheck disable=<code>` directly above the flagged line, never a blanket disable for the whole file.
-- **No standard formatter** — `shfmt` is optional, not required by anything in this repo. Match the indentation (two spaces) and brace style already in `scripts/*.sh` and `setup.sh`.
+- **No standard formatter** — `shfmt` is optional, not required by anything in this repo. Match the indentation (two spaces) and brace style already in `scripts/hooks/git/`.
 - **No internal dependency graph command** — nothing in the shell toolchain lists one. A script's internal edges are its `source`/`.` lines and the siblings it execs; read those directly. `assess-change-risk` states when that read is required and what an unmeasured fan-out does to the tier.
 - **No dependency manager** — a shell script's "SDK" is the coreutils and the other scripts already in the repo. Read a sibling script before shelling out to a new external tool.
 
@@ -32,11 +32,11 @@ This language's exempt machine directives, verified against the guard's own list
 - **`set -euo pipefail` at the top of every script** that isn't a sourced fragment, right after the shebang and header comment. Drop the `-e` only where the script must survive a failing step to tally or report results, and say so in the header comment.
 - **Quote every expansion**: `"$var"`, `"$@"`, `"${arr[@]}"`. An unquoted expansion is a bug unless the line is deliberately doing word-splitting, which itself gets a `# shellcheck disable=SC2086` immediately above it.
 - **`[ ]` (POSIX test) or `[[ ]]` (bash test), never `[ $x == $y ]` unquoted.** This repo's scripts use both; match whichever the file already uses rather than mixing.
-- **Naming**: `lower_snake_case` for functions and local variables, `SCREAMING_SNAKE` for exported/global constants (`REPO_ROOT`, `TARGET`, `DRY_RUN`). A function that only prints takes a verb name (`say`, `usage`) the way `setup.sh` does.
+- **Naming**: `lower_snake_case` for functions and local variables, `SCREAMING_SNAKE` for exported/global constants (`REPO_ROOT`, `TARGET`, `DRY_RUN`). A function that only prints takes a verb name (`say`, `usage`).
 - **`local` every function-scoped variable** in a function that isn't just a one-line wrapper around a single command.
 - **Prefer `printf` over `echo`** for anything with a variable in it — `echo` interprets backslash escapes inconsistently across shells; `printf '%s\n' "$msg"` does not.
-- **Resolve the script's own directory** with `"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` rather than assuming the caller's `cwd` — every script in `scripts/` and `setup.sh` does this.
-- **Exit codes are deliberate**: `0` success, `1` a check failed, `2` a usage/argument error. `setup.sh`'s `usage()` + `exit 2` on a bad flag is the pattern to match.
+- **Resolve the script's own directory** with `"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` rather than assuming the caller's `cwd` — every shell script in this repo does this.
+- **Exit codes are deliberate**: `0` success, `1` a check failed, `2` a usage/argument error. A `usage()` + `exit 2` on a bad flag is the pattern to match.
 - **A trap for cleanup**, not a manual `rm` at every exit path — a script that makes a temp directory removes it from a single `EXIT` trap.
 
 ## Security standards
@@ -50,7 +50,7 @@ Language-specific insecure-usage patterns for `/assess-security` to pull from, b
 
 ## Testing
 
-- **No `bats` or other shell test framework is in use** — this repo's shell surface (`setup.sh` and the git-hook dispatchers; everything under `claude-code/hooks/` and `scripts/*.py` is Python) is covered by hand-rolled stdlib harnesses that invoke the script under test as a subprocess and assert on its exit code and output, no external test runner.
+- **No `bats` or other shell test framework is in use** — this repo's shell surface (the git-hook dispatchers and their installer; everything under `claude-code/hooks/` and `scripts/*.py` is Python) is covered by hand-rolled stdlib harnesses that invoke the script under test as a subprocess and assert on its exit code and output, no external test runner.
 - **Follow that shape for a new shell script under test**: a sibling `test_<name>.py` that runs the script against fixture input/args and asserts exit code and stdout/stderr by `difflib` or a string match, no framework dependency added.
 - **`python3 scripts/validate.py` and `python3 scripts/test_hooks.py` together are this repo's shell-adjacent verify surface** — `.claude/verify.sh` runs both. Tier definitions, merge/release gates, and coverage floors beyond that are owned by `standards-sdlc`.
 
@@ -72,4 +72,4 @@ This skill carries no `Repo layout — <token>` section. **Create is unsupported
 
 ## Reference material
 
-- **`setup.sh` and `scripts/hooks/git/install.sh`** in this repo — the lived example for header-comment shape, `set -euo pipefail`, and the quoting this skill describes.
+- **`scripts/hooks/git/install.sh` and its `pre-commit`/`pre-push` dispatchers** in this repo — the lived example for header-comment shape, `set -euo pipefail`, and the quoting this skill describes.

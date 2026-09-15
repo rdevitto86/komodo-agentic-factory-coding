@@ -374,7 +374,7 @@ def find_mandatory_sites(text, family, ext):
     return sites
 
 
-# setup.sh's header (26 comment lines after its shebang) is the repo's longest; 30 leaves margin.
+# scripts/install.py's header (23 comment lines after its shebang) is the repo's longest; 30 leaves margin.
 HEADER_MAX_LINES = 30
 
 

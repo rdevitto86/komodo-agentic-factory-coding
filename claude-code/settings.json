@@ -69,7 +69,7 @@
       "Bash(true:*)",
       "Bash(test:*)",
       "Bash(git tag:*)",
-      "Bash(bash setup.sh:*)"
+      "Bash(python3 scripts/install.py:*)"
     ],
     "deny": [
       "Bash(git rebase:*)",

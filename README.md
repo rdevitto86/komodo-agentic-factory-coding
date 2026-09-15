@@ -14,12 +14,12 @@ Four ideas hold it together:
 ### macOS / Linux
 
 ```bash
-bash setup.sh --dry-run    # preview
-bash setup.sh              # link, then run the tests and validate
-bash setup.sh --ref v0.47.0    # pin: detach at a release tag, then link
+python3 scripts/install.py --dry-run    # preview
+python3 scripts/install.py              # link, then run the tests and validate
+python3 scripts/install.py --ref v0.47.0    # pin: detach at a release tag, then link
 ```
 
-Without `--ref`, the symlinks point at whatever the clone currently has checked out — an upstream sync moves every session on the next start. `--ref` detaches the clone at a release tag first, so the install only moves when you re-run `setup.sh` with a different one. It refuses a ref that doesn't resolve or a dirty tree, and checks both before touching anything.
+Without `--ref`, the symlinks point at whatever the clone currently has checked out — an upstream sync moves every session on the next start. `--ref` detaches the clone at a release tag first, so the install only moves when you re-run `scripts/install.py` with a different one. It refuses a ref that doesn't resolve or a dirty tree, and checks both before touching anything.
 
 ### Windows
 
