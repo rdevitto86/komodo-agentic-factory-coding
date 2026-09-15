@@ -190,11 +190,20 @@ def resolve_version(repo_root: str, ref: str) -> str:
     return "unknown"
 
 
+def free_backup_path(dest: str, stamp: str) -> str:
+    candidate = dest + ".bak-" + stamp
+    suffix = 2
+    while os.path.lexists(candidate):
+        candidate = "%s.bak-%s.%d" % (dest, stamp, suffix)
+        suffix += 1
+    return candidate
+
+
 def backup_existing(dest: str) -> None:
     if os.path.islink(dest) or not os.path.exists(dest):
         return
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    os.rename(dest, dest + ".bak-" + stamp)
+    os.rename(dest, free_backup_path(dest, stamp))
 
 
 def prepare_dest(dest: str) -> None:
@@ -204,12 +213,21 @@ def prepare_dest(dest: str) -> None:
         backup_existing(dest)
 
 
-def prune_stale(target: str, dry_run: bool) -> None:
+def points_into(path: str, root: str) -> bool:
+    resolved = os.path.realpath(path)
+    root = os.path.realpath(root)
+    return resolved == root or resolved.startswith(root + os.sep)
+
+
+def prune_stale(repo_root: str, target: str, dry_run: bool) -> None:
     print("")
     print("  pruning stale links from the previous layout")
     for name in STALE_LINKS:
         path = os.path.join(target, name)
         if os.path.islink(path):
+            if not points_into(path, repo_root):
+                print("    kept   %s (symlink outside this repo, left alone)" % name)
+                continue
             print("    unlink %s" % name)
             if not dry_run:
                 os.unlink(path)
@@ -397,7 +415,7 @@ def main(argv=None) -> int:
         os.makedirs(target, exist_ok=True)
         os.environ["AGENT_HOME"] = target
 
-    prune_stale(target, args.dry_run)
+    prune_stale(repo_root, target, args.dry_run)
     fallback_used = link_entries(source, target, args.force_copy, ("settings.json",), args.dry_run)
     if install_settings(source, target, interpreter, strategy, args.force_copy, args.dry_run):
         fallback_used = True

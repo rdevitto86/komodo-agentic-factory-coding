@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import difflib
+import importlib.util
 import os
 import re
 import shutil
@@ -23,6 +24,8 @@ FAILED = [0]
 
 SKIP_TICKET = "SUB-01.7.1.4"
 BASH_SKIP_REASON = "bash unavailable; scripts/hooks/git/install.sh stays shell"
+MAKE_SKIP_REASON = "make unavailable; the build-tool fallthrough needs one to run"
+PRE_PUSH_VERIFY = os.path.join(LIVE_HOOK_DIR, "pre-push-verify")
 
 
 def emit(text: str) -> None:
@@ -287,6 +290,59 @@ def check_setup_ref(workdir: str, python3: str) -> None:
         )
 
 
+def load_install_module():
+    spec = importlib.util.spec_from_file_location("install_under_test", INSTALL)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_destructive_paths(workdir: str, python3: str) -> None:
+    emit("\ninstall.py destructive paths\n\n")
+
+    label = "I7 a stale-named symlink pointing outside the repo survives the prune"
+    target7 = os.path.join(workdir, "home7", ".claude")
+    foreign = os.path.join(workdir, "somewhere-else")
+    os.makedirs(foreign)
+    os.makedirs(target7)
+    mine = os.path.join(target7, "docs")
+    os.symlink(foreign, mine)
+    ours = os.path.join(target7, "templates")
+    os.symlink(os.path.join(REPO_ROOT, "templates"), ours)
+    rc, out = capture([python3, INSTALL, "--target", target7, "--skip-verify"])
+    problem = ""
+    if rc != 0:
+        problem = "exit %d: %s" % (rc, out)
+    if not problem and not os.path.islink(mine):
+        problem = "a foreign ~/.claude/docs symlink was removed by the prune"
+    if not problem and os.path.realpath(mine) != os.path.realpath(foreign):
+        problem = "the foreign symlink was repointed"
+    if not problem and "kept   docs" not in out:
+        problem = "the prune did not report keeping the foreign link: %s" % out
+    if not problem and os.path.islink(ours):
+        problem = "a link into this repo's own tree was not pruned"
+    record(label, problem)
+
+    label = "I8 a second backup in the same second does not clobber the first"
+    install = load_install_module()
+    sandbox = os.path.join(workdir, "backups")
+    os.makedirs(sandbox)
+    dest = os.path.join(sandbox, "settings.json")
+    for content in ("first", "second"):
+        with open(dest, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        install.backup_existing(dest)
+    saved = sorted(
+        read_text(os.path.join(sandbox, name))
+        for name in os.listdir(sandbox)
+        if ".bak-" in name
+    )
+    if saved == ["first", "second"]:
+        passed(label)
+    else:
+        failed(label, "backups on disk were %s, expected both originals" % saved)
+
+
 def make_git_repo(path: str) -> None:
     os.makedirs(path)
     git(["init", "--quiet"], path)
@@ -356,6 +412,45 @@ def check_git_install(workdir: str) -> None:
     record(label, problem)
 
 
+G5_LABEL = "G5 a Makefile-only repo's pre-push-verify actually runs its verify target"
+
+
+def check_pre_push_verify(workdir: str) -> None:
+    emit("\nscripts/hooks/git/pre-push-verify\n\n")
+
+    if not shutil.which("bash"):
+        skip_case(G5_LABEL, BASH_SKIP_REASON)
+        return
+    if not shutil.which("make"):
+        skip_case(G5_LABEL, MAKE_SKIP_REASON)
+        return
+
+    mrepo = os.path.join(workdir, "mrepo")
+    make_git_repo(mrepo)
+    sentinel = os.path.join(mrepo, "ran.txt")
+    with open(os.path.join(mrepo, "Makefile"), "w", encoding="utf-8") as handle:
+        handle.write("verify:\n\t@echo ran > ran.txt\n\t@exit 1\n")
+
+    rc, out = capture(["bash", PRE_PUSH_VERIFY], cwd=mrepo)
+    problem = ""
+    if not os.path.isfile(sentinel):
+        problem = "the verify target never ran: %s" % out
+    if not problem and rc == 0:
+        problem = "a failing verify target did not block the push: %s" % out
+    if not problem and "make verify" not in out:
+        problem = "the failure message did not name the gate: %s" % out
+    record(G5_LABEL, problem)
+
+    label = "G6 a repo with no verify gate at all still exits 0"
+    plain = os.path.join(workdir, "plainrepo")
+    make_git_repo(plain)
+    rc, out = capture(["bash", PRE_PUSH_VERIFY], cwd=plain)
+    if rc == 0:
+        passed(label)
+    else:
+        failed(label, "exit %d: %s" % (rc, out))
+
+
 GIT_INSTALL_SKIP_LABELS = [
     "G1 --status marks a missing core.hooksPath stale",
     "G2 installing over a stale core.hooksPath notes hooks had not been running",
@@ -372,8 +467,10 @@ def main() -> int:
     workdir = tempfile.mkdtemp()
     try:
         check_install(workdir, python3)
+        check_destructive_paths(workdir, python3)
         check_setup_ref(workdir, python3)
         check_git_install(workdir)
+        check_pre_push_verify(workdir)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
