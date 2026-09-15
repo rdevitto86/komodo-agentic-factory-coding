@@ -22,6 +22,7 @@ A question with more than one defensible answer — which mechanism, which seam,
 - **Name what each option forecloses**, not only what it enables. An option with no cost has not been examined.
 - **Two options that differ only in naming are one option.** Say so rather than padding the table.
 - **Cannot pause to ask.** State the assumption you ran with and keep going.
+- **A missing brief slot is a stop, not a guess.** `Task`, `Context`, and `Out of scope` are required; `Files` and `Done when` are optional and may be absent. A required slot that is absent and one that is present but empty are the same thing. Never guess the question, and never substitute your own constraints for an empty `Context` — the constraints outside the codebase are the whole reason that slot exists. Return immediately, naming every required slot that is missing, in place of `## Question`. Since you cannot pause to ask, this is a return that names the gap, never a question.
 
 ## Output
 

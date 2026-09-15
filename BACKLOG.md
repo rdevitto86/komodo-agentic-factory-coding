@@ -230,10 +230,10 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** an incomplete brief is caught before the fork burns a turn on it.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Templates):** Given `templates/briefs/`, when it is listed, then it holds one template per role in the roster.
-- [ ] **AC-2 (Slots):** Given each template, when it is read, then it carries `Task`, `Files`, `Context`, `Done when`, and `Out of scope`, plus `Round` and `Standards` for reviewer briefs.
-- [ ] **AC-3 (Enforcement):** Given a brief arriving with a required slot empty, when the receiving agent reads it, then it stops and names the missing slot rather than guessing.
-- [ ] **AC-4 (Deduplication):** Given `workflow-loop`, `ways/sdlc.md`, and `workflow-implement`, when each is read, then none carries its own prose description of brief contents.
+- [x] **AC-1 (Templates):** Given `templates/briefs/`, when it is listed, then it holds one template per role in the roster.
+- [x] **AC-2 (Slots):** Given each template, when it is read, then it carries `Task`, `Files`, `Context`, `Done when`, and `Out of scope`, plus `Round` and `Standards` for reviewer briefs.
+- [x] **AC-3 (Enforcement):** Given a brief arriving with a required slot empty, when the receiving agent reads it, then it stops and names the missing slot rather than guessing.
+- [x] **AC-4 (Deduplication):** Given `workflow-loop`, `ways/sdlc.md`, and `workflow-implement`, when each is read, then none carries its own prose description of brief contents.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|

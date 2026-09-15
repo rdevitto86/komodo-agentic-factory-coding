@@ -48,7 +48,7 @@ The marker suppresses `verify_gate.py`'s full-suite run inside each `builder` fo
 
 ## P2.3 · Band review
 
-Runs once per band, after every task in the band is committed — never per task. Dispatch `/assess-bugs`, `/assess-simplify`, and (only when a touched path is an auth/secret/boundary path or a rendered surface) `/assess-security` together in one parallel block, as plain forks with no isolation — they are read-only after TSK-01.4.2, so nothing here collides. **Invoke each with the band summary and which `standards-*` skills the touched files load** (the language skill at minimum; `standards-docker` for a touched `Dockerfile`/`docker-compose.yaml`, `standards-api-security` for a touched auth/secret/boundary path, `standards-web-ui`, `standards-mobile-ui`, or `standards-desktop-ui` for a touched rendered surface) plus the round number — an unbriefed review picks its own lenses, which is not a repeatable gate. The lenses that matter:
+Runs once per band, after every task in the band is committed — never per task. Dispatch `/assess-bugs`, `/assess-simplify`, and (only when a touched path is an auth/secret/boundary path or a rendered surface) `/assess-security` together in one parallel block, as plain forks with no isolation — they are read-only after TSK-01.4.2, so nothing here collides. **Invoke each from the `reviewer` brief template**, which owns the slots those calls require. The lenses that matter:
 
 - **Correctness** — does it do what the story said, including the edge the story named
 - **Security** — new boundary, new query, new secret handling
@@ -65,9 +65,9 @@ Runs once per band, after every task in the band is committed — never per task
 
 **Round cap, same file, same band.** A new Critical/High finding on a file already reviewed in this band is round 2; a third straight new Critical/High finding on that same file is the stop signal — mirror the implement-side rule that the same check failing twice with the same error means stop, not retry. On round 3, do not fold the finding into another fix-and-reloop pass: file it, state plainly that the round budget for this file in this band is spent, and surface the choice to the user — fix now, risk-accept and ship, or defer to a follow-up task. **The budget drops to 2, not 3,** when the touched file is already flagged in `BACKLOG.md` as a hand-rolled parser or security boundary with an open adversarial-hardening story (for example `git_guard.py`) — adversarial review of hand-rolled shell/parser code is close to open-ended by construction, so budget for that going in rather than discovering it at round 3. The cap bounds the severity-floor fixed set only.
 
-**Every review call's brief states its round number for this band.** Round 1 gets the standard brief. From round 2 onward, the brief also instructs the reviewer to report only clear, concrete, reproduced findings against the touched file — not a theoretical edge case in the underlying grammar or format the fix touches. A round-2+ call that surfaces only theoretical findings is not a new consecutive round for the cap above.
+**A round-2+ call that surfaces only theoretical findings is not a new consecutive round for the cap above.**
 
-**Exception.** A band of more than three tasks, or any task on a security boundary, also gets a per-task `/assess-bugs` at P2.2, before that task's commit. **Same round cap and round-numbered brief as P2.3** governs that per-task call too — it counts toward the touched file's round total for the band, same budget, same rules.
+**Exception.** A band of more than three tasks, or any task on a security boundary, also gets a per-task `/assess-bugs` at P2.2, before that task's commit. **Same round cap as P2.3** governs that per-task call too — it counts toward the touched file's round total for the band, same budget, same rules.
 
 ---
 

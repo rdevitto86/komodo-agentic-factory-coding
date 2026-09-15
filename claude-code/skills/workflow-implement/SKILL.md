@@ -11,8 +11,6 @@ background: false
 
 Task: **$ARGUMENTS**
 
-**You cannot see the calling conversation.** If the task above names no `Done when` commands, stop and say so — guessing one is how a task reports green without being done.
-
 ## Order
 
 1. **Verify the task's premise before doing anything else.** Read the function or file the task names and confirm the defect or gap it describes is still present against current code — a stale task can reach an implementer whose premise the repo has already outgrown. If the premise no longer holds, stop: report it back rather than forking ahead, so the task can be re-aimed or removed from `BACKLOG.md` instead of shipping nothing. A premise that still holds, even with code that looks already-written, is inherited state to verify (run the fork's own `Done when` commands against it) — never a reason to skip the task; see `workflow-loop/SKILL.md`'s "run the fork even when the code already appears to exist" rule.
