@@ -231,50 +231,6 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** a simple edit currently costs 30–60 minutes, and `TG-01.4`'s own context names why — a one-task band runs 7 serial forks, and `verify_gate.py` fires on every builder Stop, so an N-task band runs the full gate N times. Parallelism does not fix that; it fixes the multi-task band. The fast path and the band-level gate are the levers that return time on the case that actually hurts. Parallelism is opportunistic by decision: the planner proves disjointness or the band runs serial.
 
-#### [TSK-01.10.1] A one-line change pays the full five-phase machine, so trivial edits cost 7 serial forks and 30–60 minutes of wall clock [P: H] [TODO]
-
-**User Story:**
-> **As an** engineer making a small, obvious change,
-> **I want** the loop to skip the phases that exist for large bands,
-> **So that** the process cost is proportional to the change.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Predicate):** Given `workflow-loop`, when the fast path is described, then its entry condition is stated as a checkable property of the diff, not a judgment call.
-- [x] **AC-2 (Phases):** Given a change meeting that condition, when the loop runs, then P1 decompose, P2.0 align, and P3 consolidate are skipped and the remaining phases are unchanged.
-- [x] **AC-3 (Escape):** Given a change that touches a security boundary, when the fast path is evaluated, then it is refused regardless of diff size.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.10.1.1` | `[Impl]` | add the fast path to `workflow-loop/SKILL.md`, modelled on the existing `open` hatch — that hatch already establishes that not every change deserves the full machine. The file sits near the 5000-token compaction cap, so this addition must net-shrink or hold | `bash scripts/validate.sh`; `make verify` |
-
-#### [TSK-01.10.2] `verify_gate.py` fires on every builder Stop, so an N-task band runs the repo's full gate N times for one merged result [P: M] [TODO]
-
-**Acceptance Criteria:**
-- [x] **AC-1:** Given a multi-task band, when it completes, then the repo's full gate has run once against the band's merged state rather than once per task.
-- [x] **AC-2:** Given a single task's `Done when` commands, when its fork finishes, then those still run per-task — the band gate replaces the full-suite run, not the task's own proof.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.10.2.1` | `[Impl]` | move the full-gate run from per-fork Stop to a band-level check at P2.2. Keep the per-task `Done when` commands where they are; the task's own proof is not the thing being deduplicated | `bash scripts/test-hooks.sh`; `make verify` |
-
-#### [TSK-01.10.3] Parallel execution is unavailable even where two tasks provably cannot collide, because nothing computes which files a task will touch (after: "The agent roster is named after workflow phases rather than roles") [P: M] [TODO]
-
-**User Story:**
-> **As an** orchestrator running a multi-task band,
-> **I want** provably disjoint tasks to run at the same time,
-> **So that** a band's wall clock reflects its widest dependency chain rather than its task count.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Manifest):** Given a decomposed queue, when `pm` returns it, then each task carries the set of files it is expected to touch.
-- [x] **AC-2 (Default):** Given two tasks whose manifests intersect, or a queue where the manifest is unavailable, when the band runs, then it runs serial — parallelism is opt-in on proof, never the default.
-- [x] **AC-3 (Isolation):** Given tasks selected to run in parallel, when they execute, then each runs in its own worktree and the orchestrator merges before the band gate.
-- [x] **AC-4 (Scope):** Given the parallel design, when it is documented, then it is scoped to one branch — never across PRs or branches.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.10.3.1` | `[Impl]` | teach `pm` to return a files-touched manifest per task, and `workflow-loop` P2.0 to use manifest disjointness as the parallel predicate rather than today's weaker no-shared-file rule | `bash scripts/validate.sh` |
-| `SUB-01.10.3.2` | `[Impl]` | add the worktree-per-group execution and the orchestrator merge step, gated on the manifest proof, defaulting to serial. Read-only fan-out (`assess-*`, `researcher`, `scout`) needs no worktree and should be documented as always-parallel — that half is free today and under-used | `make verify` |
-
 #### [TSK-01.10.4] The band-gate deferral is scoped to a checkout, not a session, so two concurrent sessions on one repo can cross [P: M] [TODO]
 
 **User Story:**
