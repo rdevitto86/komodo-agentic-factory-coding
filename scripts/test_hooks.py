@@ -27,6 +27,14 @@ DEFAULT_PARALLEL = 8
 DEEP_NESTING_DEPTH = 3000
 SKIP_TICKET = "TSK-01.1.14"
 MAKE_SKIP_REASON = "make unavailable, or Windows runner"
+
+VERIFY_PY_PASS = "import sys\nsys.exit(0)\n"
+VERIFY_PY_FAIL = "import sys\nsys.exit(1)\n"
+VERIFY_PY_FAIL_UNIQUE = "import os, sys\nprint(os.getpid())\nsys.exit(1)\n"
+VERIFY_PY_TOUCH_FAIL = "import sys\nopen(%r, 'w').close()\nsys.exit(1)\n"
+VERIFY_PY_TOUCH_FAIL_UNIQUE = (
+    "import os, sys\nopen(%r, 'w').close()\nprint(os.getpid())\nsys.exit(1)\n"
+)
 GO_FIXTURE = "package main\n\nfunc Run() {\n\tx := 1\n\treturn x\n}\n"
 DISCRIMINANT_FIXTURE = (
     "package main\n\nfunc (c *secretCache) getParsed(key string) "
@@ -2182,18 +2190,14 @@ def shim_bin(directory: str, body: str) -> str:
 def check_verify_gate() -> None:
     emit("\nverify gate\n\n")
 
-    if IS_WINDOWS or not shutil.which("make"):
-        for label in VGATE_SKIP_LABELS:
-            skip_case(label, MAKE_SKIP_REASON)
-        return
-
     work = WORKDIR[0]
     fixture = os.path.join(work, "fixture-vgate")
     seeded_repo(fixture)
+    os.makedirs(os.path.join(fixture, "scripts"))
     write_text(os.path.join(fixture, "file.txt"), "dirty\n")
 
-    makefile = os.path.join(fixture, "Makefile")
-    write_text(makefile, "verify:\n\t@echo $$$$; exit 1\n")
+    entry = os.path.join(fixture, "scripts", "verify.py")
+    write_text(entry, VERIFY_PY_FAIL_UNIQUE)
     out = ""
     for _ in range(5):
         out = vgate_run(fixture)
@@ -2216,9 +2220,9 @@ def check_verify_gate() -> None:
     else:
         report(index, label, "decision=%s" % decision, reason)
 
-    write_text(makefile, "verify:\n\t@exit 0\n")
+    write_text(entry, VERIFY_PY_PASS)
     pass_decision = vgate_field(vgate_run(fixture), "decision", "allow")
-    write_text(makefile, "verify:\n\t@exit 1\n")
+    write_text(entry, VERIFY_PY_FAIL)
     out = vgate_run(fixture)
     decision = vgate_field(out, "decision", "allow")
     reason = vgate_field(out, "reason", "")
@@ -2230,10 +2234,10 @@ def check_verify_gate() -> None:
         report(index, label, "pass=%s next=%s" % (pass_decision, decision), reason)
 
     timeout_fixture = os.path.join(work, "fixture-vgate-timeout")
-    os.makedirs(os.path.join(timeout_fixture, ".claude"))
+    os.makedirs(os.path.join(timeout_fixture, "scripts"))
     make_repo(timeout_fixture)
-    write_script(os.path.join(timeout_fixture, ".claude", "verify.sh"),
-                 "#!/bin/sh\nsleep 3\nexit 1\n")
+    write_text(os.path.join(timeout_fixture, "scripts", "verify.py"),
+               "import sys, time\ntime.sleep(3)\nsys.exit(1)\n")
     git_quiet(["add", "-A"], cwd=timeout_fixture)
     git_quiet(["commit", "-q", "-m", "init"], cwd=timeout_fixture)
     write_text(os.path.join(timeout_fixture, "file.txt"), "dirty\n")
@@ -2248,11 +2252,11 @@ def check_verify_gate() -> None:
         report(index, label, "decision=%s" % decision, reason)
 
     records = os.path.join(work, "fixture-vgate-records-only")
-    os.makedirs(os.path.join(records, ".claude"))
+    os.makedirs(os.path.join(records, "scripts"))
     make_repo(records)
     marker = os.path.join(records, "marker")
-    write_script(os.path.join(records, ".claude", "verify.sh"),
-                 '#!/bin/sh\ntouch "%s/marker"\nexit 1\n' % records)
+    write_text(os.path.join(records, "scripts", "verify.py"),
+               VERIFY_PY_TOUCH_FAIL % marker)
     git_quiet(["add", "-A"], cwd=records)
     git_quiet(["commit", "-q", "-m", "init"], cwd=records)
 
@@ -2280,7 +2284,8 @@ def check_verify_gate() -> None:
 
     identical = os.path.join(work, "fixture-vgate-identical")
     seeded_repo(identical)
-    write_text(os.path.join(identical, "Makefile"), "verify:\n\t@exit 1\n")
+    os.makedirs(os.path.join(identical, "scripts"))
+    write_text(os.path.join(identical, "scripts", "verify.py"), VERIFY_PY_FAIL)
     write_text(os.path.join(identical, "file.txt"), "dirty\n")
 
     first = vgate_field(vgate_run(identical), "decision", "allow")
@@ -2315,7 +2320,8 @@ def check_verify_gate() -> None:
     real_git = shutil.which("git")
     probe = os.path.join(work, "fixture-vgate-probe-timeout")
     seeded_repo(probe)
-    write_text(os.path.join(probe, "Makefile"), "verify:\n\t@exit 1\n")
+    os.makedirs(os.path.join(probe, "scripts"))
+    write_text(os.path.join(probe, "scripts", "verify.py"), VERIFY_PY_FAIL)
     write_text(os.path.join(probe, "file.txt"), "dirty\n")
     probe_bin = shim_bin(
         os.path.join(work, "fixture-vgate-probe-timeout-bin"),
@@ -2334,11 +2340,11 @@ def check_verify_gate() -> None:
         report(index, label, "decision=%s" % decision, reason)
 
     band = os.path.join(work, "fixture-vgate-band")
-    os.makedirs(os.path.join(band, ".claude"))
+    os.makedirs(os.path.join(band, "scripts"))
     make_repo(band)
     ran = os.path.join(band, "ran")
-    write_script(os.path.join(band, ".claude", "verify.sh"),
-                 '#!/bin/sh\ntouch "%s"\necho $$\nexit 1\n' % ran)
+    write_text(os.path.join(band, "scripts", "verify.py"),
+               VERIFY_PY_TOUCH_FAIL_UNIQUE % ran)
     git_quiet(["add", "-A"], cwd=band)
     git_quiet(["commit", "-q", "-m", "init"], cwd=band)
     write_text(os.path.join(band, "x.go"), "package main\n")
@@ -2445,26 +2451,6 @@ def check_verify_gate_discovery() -> None:
         report(index, label, "")
     else:
         report(index, label, "decision=%s" % decision, reason)
-
-
-VGATE_SKIP_LABELS = [
-    "VG1 blocks below the warning threshold carry no streak warning",
-    "VG2 the streak warning appears once the block count reaches the threshold",
-    "VG3 a passing verify clears the streak",
-    "VG4 a verify command past KOMODO_VERIFY_TIMEOUT blocks naming the limit",
-    "VG5 records-only dirty paths skip the gate without running it",
-    "VG6 a non-records dirty path still runs the gate",
-    "VG7 the first of three identical failures blocks",
-    "VG8 the second identical failure names the repeat",
-    "VG9 the third identical failure returns instead of blocking again",
-    "VG10 a slow git-status probe falls through to running verify instead of skipping",
-    "VG11 a well-formed unexpired band marker defers the full gate",
-    "VG12 a malformed band marker still runs the gate",
-    "VG13 an expired band marker still runs the gate",
-    "VG14 a band marker past the deferral cap still runs the gate",
-    "VG15 a band marker that is not a readable file still runs the gate",
-    "VG16 an unresolvable git common dir still runs the gate",
-]
 
 
 def build_fixtures() -> None:

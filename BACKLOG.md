@@ -199,7 +199,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 
 **Acceptance Criteria:**
 - [x] **AC-1 (Gate):** Given `verify_gate.py`, when it resolves a repo's gate, then a Python entry point is among the discovery targets and is tried before the shell and `make` ones.
-- [ ] **AC-2 (Suites):** Given the repo's regression suites, when they are run on a machine with only `python3` and `git`, then every one of them executes.
+- [x] **AC-2 (Suites):** Given the repo's regression suites, when they are run on a machine with only `python3` and `git`, then every one of them executes.
 - [x] **AC-3 (Parity):** Given `make verify` and the Python entry point, when both run on macOS, then they execute the same set of checks.
 
 | Subtask | Category | Work | Done when |

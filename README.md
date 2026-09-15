@@ -151,7 +151,7 @@ python3 ~/.claude/hooks/comments.py apply < proposals.json
 **There is no exemption sigil.** An earlier `+comments` grant was removed; nothing lifts the guard for a turn. Deleting a comment returns `ask`, and the guard fails closed on an unreadable payload.
 
 ```bash
-python3 scripts/test_hooks.py    # 286 regression cases
+python3 scripts/test_hooks.py    # 295 regression cases
 ```
 
 ## Skills

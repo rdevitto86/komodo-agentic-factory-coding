@@ -21,6 +21,9 @@ METACHAR_COMMAND = re.compile(
 PASSED = [0]
 FAILED = [0]
 
+SKIP_TICKET = "SUB-01.7.1.4"
+BASH_SKIP_REASON = "bash unavailable; scripts/hooks/git/install.sh stays shell"
+
 
 def emit(text: str) -> None:
     sys.stdout.write(text)
@@ -35,6 +38,10 @@ def passed(label: str) -> None:
 def failed(label: str, reason: str) -> None:
     emit("  FAIL  %s\n        %s\n" % (label, reason))
     FAILED[0] += 1
+
+
+def skip_case(label: str, reason: str) -> None:
+    emit("  SKIP  %s\n        %s (%s)\n" % (label, reason, SKIP_TICKET))
 
 
 def record(label: str, problem: str) -> None:
@@ -288,6 +295,11 @@ def make_git_repo(path: str) -> None:
 def check_git_install(workdir: str) -> None:
     emit("\nscripts/hooks/git/install.sh\n\n")
 
+    if not shutil.which("bash"):
+        for label in GIT_INSTALL_SKIP_LABELS:
+            skip_case(label, BASH_SKIP_REASON)
+        return
+
     grepo1 = os.path.join(workdir, "grepo1")
     make_git_repo(grepo1)
     git(["config", "--local", "core.hooksPath", "no-such-dir/hooks"], grepo1)
@@ -342,6 +354,14 @@ def check_git_install(workdir: str) -> None:
     if not problem and "had not been running" in out:
         problem = "unset core.hooksPath was misclassified as stale: %s" % out
     record(label, problem)
+
+
+GIT_INSTALL_SKIP_LABELS = [
+    "G1 --status marks a missing core.hooksPath stale",
+    "G2 installing over a stale core.hooksPath notes hooks had not been running",
+    "G3 a repo already pointing at the live hooks dir is left alone",
+    "G4 an orphaned .git/hooks file is still reported, unset stays unset",
+]
 
 
 def main() -> int:

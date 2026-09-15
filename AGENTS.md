@@ -89,14 +89,15 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 ## Working on this repo
 
 ```bash
-python3 scripts/test_hooks.py # 259 hook + comments regression cases
+python3 scripts/test_hooks.py # 295 hook + comments regression cases
 python3 scripts/validate.py   # symlinks, frontmatter schema, token budget
 python3 scripts/install.py --dry-run   # preview the install
 python3 scripts/install.py             # install, then runs both of the above
 python3 claude-code/hooks/comments.py check   # comment lint
-make verify                   # what the Stop gate runs: all three of the above
+python3 scripts/verify.py     # what the Stop gate runs: all three of the above
+make verify                   # thin wrapper around scripts/verify.py
 ```
 
-`make verify` is this repo's own opt-in for `verify_gate.py`, which resolves a repo's gate in order: `.claude/verify.sh`, then `make verify`, then `task verify`, then `just verify`. `.claude/` is gitignored here, so the `Makefile` target is what ships. It only runs automatically inside a `builder` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
+`scripts/verify.py` is this repo's own opt-in for `verify_gate.py`, which resolves a repo's gate in order: `.claude/verify.py`, then `scripts/verify.py`, then `.claude/verify.sh`, then `make verify`, then `task verify`, then `just verify`. The two Python entry points lead because they are invoked as `<interpreter> <path>` — no executable bit, no `make` binary, so they work on every platform. `.claude/` is gitignored here, so `scripts/verify.py` is what ships and `make verify` is a one-line wrapper around it. It only runs automatically inside a `builder` fork finishing a dirty tree — editing this repo directly in a primary session does not trigger it, so run it by hand before ending a manual editing session.
 
 This repo ships its own `pre-commit`/`pre-push` dispatchers under `scripts/hooks/git/`, installed into a target repo via `install.sh` (sets `core.hooksPath`, nothing is copied). The `standards-cicd` skill states the contract they must satisfy.
