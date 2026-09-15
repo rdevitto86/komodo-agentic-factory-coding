@@ -265,10 +265,10 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** a band's wall clock reflects its widest dependency chain rather than its task count.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Manifest):** Given a decomposed queue, when `pm` returns it, then each task carries the set of files it is expected to touch.
-- [ ] **AC-2 (Default):** Given two tasks whose manifests intersect, or a queue where the manifest is unavailable, when the band runs, then it runs serial — parallelism is opt-in on proof, never the default.
-- [ ] **AC-3 (Isolation):** Given tasks selected to run in parallel, when they execute, then each runs in its own worktree and the orchestrator merges before the band gate.
-- [ ] **AC-4 (Scope):** Given the parallel design, when it is documented, then it is scoped to one branch — never across PRs or branches.
+- [x] **AC-1 (Manifest):** Given a decomposed queue, when `pm` returns it, then each task carries the set of files it is expected to touch.
+- [x] **AC-2 (Default):** Given two tasks whose manifests intersect, or a queue where the manifest is unavailable, when the band runs, then it runs serial — parallelism is opt-in on proof, never the default.
+- [x] **AC-3 (Isolation):** Given tasks selected to run in parallel, when they execute, then each runs in its own worktree and the orchestrator merges before the band gate.
+- [x] **AC-4 (Scope):** Given the parallel design, when it is documented, then it is scoped to one branch — never across PRs or branches.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|

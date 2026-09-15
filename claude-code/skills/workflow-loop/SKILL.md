@@ -90,7 +90,11 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 **After P2.3's band review appends findings, fold the severity-floor set into this list before re-entering P2.1.**
 
-**Pick tasks that share no dependency edge and no file.** Two tasks touching one file are one task.
+**Parallel is opt-in on proof; serial is the default.** Two tasks run at once only when `pm`'s `Files` manifests are both present and disjoint and they share no dependency edge. An intersection, a missing or `—` manifest, or one you would have to guess means serial — the manifest is a prediction, so err that way. Parallel spans one branch and one band, never a PR stack.
+
+**Proven-disjoint tasks fork with `isolation: "worktree"`** (the `Agent` option — never raw `git worktree`, which `git_guard.py` blocks), one worktree per task. **The orchestrator merges them back before P2.2's band gate**, so the gate runs once against the merged state.
+
+**Read-only fan-out is always parallel and free** — `assess-*`, `researcher`, and `scout` never write, so they need no manifest and no worktree, and nothing above governs them.
 
 **A task `[BLOCKED]` on something outside this run is not a phase halt** — pick the next task with no dependency edge to it and continue; the blocker surfaces in P4's report. Only stop if every remaining task is transitively blocked.
 
@@ -208,7 +212,7 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 | Tests against an existing interface | `tester` — test paths only, and that is prose, not a lock |
 | Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. |
 
-**Parallel writers need `isolation: worktree`** — two agents editing one checkout collide, and `builder` writes tests too, so `tester` beside it is two writers. Read-only fan-out needs none.
+**Parallel writers need `isolation: "worktree"`** — `builder` writes tests too, so `tester` beside it is two writers. P2.0 owns the manifest proof that gates it.
 
 **Set `model`/`effort` in the delegate's own frontmatter.** `opus`/`high` for architecture and hard debugging, `sonnet`/`medium` for research and routine code, `haiku`/`low` for path lookup. **Brief with `Task` / `Files` / `Context` / `Done when` / `Out of scope`** — never "see above". Ask for the verdict, not the transcript.
 
