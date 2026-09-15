@@ -44,6 +44,7 @@ Edges are `contains` (epic to task group), `after` (a dependency between two tas
   | `&` | `&amp;` |
 
   Escape `&` first, or the entity prefixes the other three rules produce get double-escaped. A `subgraph` needs the same treatment in its own quoted title, and Mermaid needs its id separate from its label: `subgraph EPIC01["…"]`, never a bare title.
+- **Never draw an `after` edge carrying `intra_group`.** It records an ordering between two tasks inside one group, and both tasks collapse to the same node at this level — drawn literally it emits a self-loop, which is noise, not information. The ordering is real and belongs in the presenting text, not on the graph.
 - **Draw the release spine** as its own chain, visually separated from the epic subgraphs.
 - **Responsive to about 400px** and **theme-aware** — the page around the diagram follows the artifact contract, and wide content (the diagram included) scrolls inside its own container rather than widening the page.
 

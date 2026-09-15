@@ -227,42 +227,6 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** `config-accessibility` governs formatting — heading depth, density caps, emoji placement — while every skill's Report section still contracts for a markdown table. The rules say show-don't-tell and the output contracts say emit-a-table. Since a terminal cannot render a diagram, visual output means a hosted artifact, which is a real shift in where this toolkit's output lives and is why this is a task group rather than a single skill.
 
-#### [TSK-01.9.1] Every skill's output contract is a markdown table, so `config-accessibility`'s show-don't-tell rule is contradicted by the contracts it is supposed to govern [P: M] [TODO]
-
-**User Story:**
-> **As a** maintainer who reads structure faster than prose,
-> **I want** the toolkit's own outputs to default to diagrams where a diagram is clearer,
-> **So that** I am not re-deriving a graph from a table every time I plan or review.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Rule):** Given `config-accessibility`, when it is read, then it states a visual-first rule — an output carrying a dependency relation or more than a handful of entities ships a diagram, not only prose.
-- [x] **AC-2 (Contracts):** Given `workflow-decompose` and the `assess-*` skills, when their Report sections are read, then each names a diagram form alongside its table.
-- [x] **AC-3 (Surface):** Given the visual-first rule, when it names where a diagram is rendered, then it distinguishes inline Mermaid from a published artifact and says which applies when.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.9.1.1` | `[Impl]` | add the visual-first rule to `config-accessibility`, including the inline-vs-artifact distinction — a terminal cannot render a diagram, so the rule has to say where the visual actually goes rather than assuming markdown is enough | `grep -c "visual-first\|diagram" claude-code/skills/config-accessibility/SKILL.md` returns non-zero; `bash scripts/validate.sh` |
-| `SUB-01.9.1.2` | `[Impl]` | add a diagram form to `workflow-decompose`'s queue output and to the `assess-*` report contracts | `bash scripts/validate.sh`; `make verify` |
-
-#### [TSK-01.9.2] There is no single view of a repo's whole work state — what is planned, what shipped, what is left lives split across `BACKLOG.md` and `CHANGELOG.md` with no way to see it at once (after: "Every skill's output contract is a markdown table") [P: M] [TODO]
-
-**User Story:**
-> **As a** maintainer planning a release,
-> **I want** one high-level map of everything planned, done, and remaining,
-> **So that** I can see the shape of the work without reading two files end to end.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Sources):** Given the map, when it is generated, then every node derives from `BACKLOG.md` or `CHANGELOG.md` and nothing is hand-maintained.
-- [x] **AC-2 (Level):** Given the map, when it is read, then nodes are epics and task groups, not individual subtasks.
-- [ ] **AC-3 (State):** Given the map, when it is read, then shipped, open, and blocked work are visually distinct, and the released version is shown.
-- [x] **AC-4 (Zero setup):** Given a machine with only `python3`, when the map is generated, then it renders with no install step.
-- [x] **AC-5 (Not a record):** Given the map, when it is described in its own skill, then it is stated to be a view over the two record files and never a source of truth.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.9.2.1` | `[Impl]` | write the parser — stdlib Python, reads `BACKLOG.md` and `CHANGELOG.md`, emits the graph as JSON. This is the load-bearing half; the renderer is swappable and the data model should carry position-independent nodes so a 2D or 3D renderer can consume the same output | `python3` parser run against this repo's own two files exits zero and emits nodes for every epic and task group |
-| `SUB-01.9.2.2` | `[Impl]` | write the skill that renders the JSON as a published artifact, 2D first with the data model 3D-ready. Force-graph or three.js from the CDN the artifact CSP already allows — no build step, no install. State in the skill that the artifact is a view, never a record | `bash scripts/validate.sh` |
-
 ### [TG-01.10] Parallelism & Loop Latency
 * **Target Release:** V1
 * **Context (2026-09-15):** a simple edit currently costs 30–60 minutes, and `TG-01.4`'s own context names why — a one-task band runs 7 serial forks, and `verify_gate.py` fires on every builder Stop, so an N-task band runs the full gate N times. Parallelism does not fix that; it fixes the multi-task band. The fast path and the band-level gate are the levers that return time on the case that actually hurts. Parallelism is opportunistic by decision: the planner proves disjointness or the band runs serial.
