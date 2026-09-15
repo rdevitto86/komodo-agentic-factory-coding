@@ -11,7 +11,7 @@ Function components and hooks, always. Class components are never correct here �
 
 **Load `standards-typescript` alongside this skill.** `standards-typescript` stays framework-agnostic on purpose — its own `paths:` never names `.tsx`/`.jsx`, so nothing auto-loads it here. Invoke it explicitly; its conventions, toolchain, and Quick-reference fields apply to every component file without restatement.
 
-**UI/WCAG rules live in `standards-web-ui`**, which already auto-loads on `.tsx`/`.jsx` via its own `paths:`. This skill covers React mechanics only — Tailwind usage, component-rule generalities, the WCAG bar, and the rendered-surface security rules are `standards-web-ui`'s.
+**UI/WCAG rules live in `standards-ui-web`**, which already auto-loads on `.tsx`/`.jsx` via its own `paths:`. This skill covers React mechanics only — Tailwind usage, component-rule generalities, the WCAG bar, and the rendered-surface security rules are `standards-ui-web`'s.
 
 ## Comment discipline
 
@@ -130,7 +130,7 @@ The field set a React repo's `AGENTS.md` Quick-reference table carries. Every va
 | Router | router package in `package.json` |
 | Path alias | `tsconfig.json` paths |
 
-Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `standards-typescript`, or `standards-web-ui` already states by name.
+Drop a row whose value the repo genuinely lacks. Never add a row for a fact this skill, `standards-typescript`, or `standards-ui-web` already states by name.
 
 ## Repo layout
 

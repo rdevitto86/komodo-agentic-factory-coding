@@ -1,13 +1,13 @@
 ---
 name: standards-api-security
-description: Backend/API security — the OWASP baseline (secrets, injection, authn/JWT, authz, crypto, dependencies, PII, SSRF) plus API-specific concerns — rate limiting, versioning and deprecation, auth scheme selection (API key, OAuth scopes, mTLS), and input-contract enforcement (schema validation, payload/pagination limits, idempotency). Distinct from the rendered-surface scope of standards-web-ui, standards-mobile-ui, and standards-desktop-ui (XSS, clickjacking, overlays, dark patterns). Load before touching an auth path, a query, a secret, an endpoint, or any server-side external boundary.
+description: Backend/API security — the OWASP baseline (secrets, injection, authn/JWT, authz, crypto, dependencies, PII, SSRF) plus API-specific concerns — rate limiting, versioning and deprecation, auth scheme selection (API key, OAuth scopes, mTLS), and input-contract enforcement (schema validation, payload/pagination limits, idempotency). Distinct from the rendered-surface scope of standards-ui-web, standards-ui-mobile, and standards-ui-desktop (XSS, clickjacking, overlays, dark patterns). Load before touching an auth path, a query, a secret, an endpoint, or any server-side external boundary.
 user-invocable: false
 paths: "**/api/**, **/routes/**, **/controllers/**, **/*.proto, **/openapi*, **/swagger*, **/graphql/**, **/*.graphql, **/handlers/**, **/auth/**, **/*auth*, **/middleware/**, **/session*, **/token*, **/crypto/**, **/.env*, **/secrets/**, **/*.sql, **/migrations/**, **/*.tf"
 ---
 
 # API and backend security
 
-The platform UI skills own the rendered surface — `standards-web-ui`, `standards-mobile-ui`, and `standards-desktop-ui`, each carrying its own Security section for what that platform draws. This skill owns everything else: the OWASP baseline for a server-side boundary (secrets, injection, authn, crypto, dependencies, data handling), plus the decisions specific to an API's shape as a contract between two systems — how many requests it accepts, which version it honours, how a caller proves who it is, and what it refuses to parse. Apply both when a change touches a route that also renders; neither substitutes for the other.
+The platform UI skills own the rendered surface — `standards-ui-web`, `standards-ui-mobile`, and `standards-ui-desktop`, each carrying its own Security section for what that platform draws. This skill owns everything else: the OWASP baseline for a server-side boundary (secrets, injection, authn, crypto, dependencies, data handling), plus the decisions specific to an API's shape as a contract between two systems — how many requests it accepts, which version it honours, how a caller proves who it is, and what it refuses to parse. Apply both when a change touches a route that also renders; neither substitutes for the other.
 
 **[review.md](review.md)** carries the review procedure — attack-surface enumeration, the severity bar, the per-vector sweep, and the report shape. Load it for a security review, an attack-vector review, or a dependency check.
 
@@ -119,7 +119,7 @@ Isolate, assess blast radius, rotate every affected credential, record the timel
 
 ## OWASP Top 10 mitigations
 
-Categories by name, no ranks — OWASP re-ranks and merges between editions. Read the current list if a rank matters. Injection covers XSS's data path (rendering/encoding specifics live in `standards-web-ui`); SSRF has merged into access control in some editions.
+Categories by name, no ranks — OWASP re-ranks and merges between editions. Read the current list if a rank matters. Injection covers XSS's data path (rendering/encoding specifics live in `standards-ui-web`); SSRF has merged into access control in some editions.
 
 | Category | Mitigation |
 |---|---|

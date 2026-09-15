@@ -1,6 +1,6 @@
 ---
-name: standards-desktop-ui
-description: Desktop UI standards — Design (keyboard and menu conventions, window and multi-window management, density, right-click affordances) and Security (context isolation and node integration, protocol handler registration, local IPC surface, update signing, drag-drop file trust). Loads off the desktop shell's own config surface; a shell whose UI is web technology also loads standards-web-ui for those files.
+name: standards-ui-desktop
+description: Desktop UI standards — Design (keyboard and menu conventions, window and multi-window management, density, right-click affordances) and Security (context isolation and node integration, protocol handler registration, local IPC surface, update signing, drag-drop file trust). Loads off the desktop shell's own config surface; a shell whose UI is web technology also loads standards-ui-web for those files.
 user-invocable: false
 paths: "**/tauri.conf.json, **/electron-builder.yml, **/electron-builder.json, **/forge.config.js, **/forge.config.ts, **/*.desktop, **/*.appxmanifest, **/*.wxs"
 ---
@@ -12,8 +12,8 @@ Desktop applications — a windowed app the user runs locally, whether drawn nat
 ## Platform routing
 
 - **This skill's globs match the desktop shell's own config surface only** — the shell/bundler configuration, the installer manifest, and the platform's desktop-entry file. None of them is a source extension.
-- **A desktop shell whose UI is web technology routes those files to `standards-web-ui`**, which owns the browser extensions outright. This skill does not duplicate that claim; it loads alongside, off the config surface above, and owns the shell boundary — context isolation, IPC, protocol handlers, update signing, and file-drop trust — which no browser-only skill covers.
-- **A macOS bundle's `Info.plist` routes to `standards-mobile-ui`**, which claims it; when the target is a desktop app, invoke this skill explicitly alongside it rather than widening either glob. No glob is shared between the two.
+- **A desktop shell whose UI is web technology routes those files to `standards-ui-web`**, which owns the browser extensions outright. This skill does not duplicate that claim; it loads alongside, off the config surface above, and owns the shell boundary — context isolation, IPC, protocol handlers, update signing, and file-drop trust — which no browser-only skill covers.
+- **A macOS bundle's `Info.plist` routes to `standards-ui-mobile`**, which claims it; when the target is a desktop app, invoke this skill explicitly alongside it rather than widening either glob. No glob is shared between the two.
 
 # Design
 

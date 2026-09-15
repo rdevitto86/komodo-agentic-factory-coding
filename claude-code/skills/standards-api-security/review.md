@@ -1,6 +1,6 @@
 # Backend/API security review
 
-The procedure for a security sweep, an attack-vector review, or a dependency check against a server-side boundary. `SKILL.md` states the rules this file hunts for violations of. For a rendered-surface finding (XSS, clickjacking, dark patterns), use `standards-web-ui/review.md` instead — the two split the same procedure by attack surface, not by severity.
+The procedure for a security sweep, an attack-vector review, or a dependency check against a server-side boundary. `SKILL.md` states the rules this file hunts for violations of. For a rendered-surface finding (XSS, clickjacking, dark patterns), use `standards-ui-web/review.md` instead — the two split the same procedure by attack surface, not by severity.
 
 ## The benchmark
 
@@ -50,7 +50,7 @@ The procedure for a security sweep, an attack-vector review, or a dependency che
 
 ## 3. Injection
 
-**Every injection is the same defect: data reaching an interpreter as code.** Identify the interpreter, then confirm the data never reaches it as syntax. (Output-side injection — XSS — is `standards-web-ui`'s review, not this one.)
+**Every injection is the same defect: data reaching an interpreter as code.** Identify the interpreter, then confirm the data never reaches it as syntax. (Output-side injection — XSS — is `standards-ui-web`'s review, not this one.)
 
 | Interpreter | The only accepted fix |
 |---|---|
@@ -170,7 +170,7 @@ The procedure for a security sweep, an attack-vector review, or a dependency che
 - **Confirm the security signals exist** — auth failure, authz denial, privileged action, and PII access must each be observable. Missing signal on an auth path is a Blind Spot finding.
 - **Check rate limiting beyond login** — expensive queries, exports, search, and any unauthenticated endpoint.
 
-For the browser-facing response header set (HSTS, `nosniff`, CSP, `frame-ancestors`), see `standards-web-ui/review.md`.
+For the browser-facing response header set (HSTS, `nosniff`, CSP, `frame-ancestors`), see `standards-ui-web/review.md`.
 
 ---
 
