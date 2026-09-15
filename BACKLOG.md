@@ -128,34 +128,25 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** the `Never invent a finding` prohibition is already in all nine `assess-*` skills and in `reviewer.md`, so the gap is not the missing rule — it is that only `assess-security` states a *positive* evidence bar. A negative rule cannot be complied with; a positive one can. Paired with the model tier, since no prompt change substitutes for the reviewer running on the weaker model.
 
-#### [TSK-01.5.1] Every `assess-*` skill prohibits inventing a finding, but only `assess-security` states what evidence a finding actually requires, so the remaining finders accept a plausible narrative as a `Scenario` [P: H] [TODO]
-
-**User Story:**
-> **As a** maintainer reading a band review,
-> **I want** every finding to carry evidence I can check,
-> **So that** triage time goes to real defects instead of disproving speculation.
+#### [TSK-01.5.3] The three `assess-*` skills that do not fork as `reviewer` now state an evidence bar with nowhere to put what it excludes [P: M] [TODO]
 
 **Acceptance Criteria:**
-- [x] **AC-1 (Contract):** Given `claude-code/agents/reviewer.md`, when it is read, then it states the evidence a finding row requires — a trigger, the path it reaches, and an observable effect — each anchored to a cited `file:line`.
-- [x] **AC-2 (Dismissals):** Given the same file, when its Output template is read, then it carries a `## Considered and dismissed` section so a near-miss has somewhere to go other than the findings table.
-- [x] **AC-3 (Zero is success):** Given the same file, when its Output rules are read, then an empty findings table is stated to be a successful review, not a failed one.
-- [x] **AC-4 (Parity):** Given `assess-bugs`, `assess-testing`, `assess-vulnerabilities`, and `assess-performance`, when each is read, then each states a positive evidence bar in the shape `assess-security` already uses.
+- [ ] **AC-1 (Disposal):** Given `assess-testing`, `assess-vulnerabilities`, and `assess-performance`, when each is read, then a near-miss that fails the evidence bar has a named place to go.
+- [ ] **AC-2 (No agent coupling):** Given the same three skills, when they run, then the disposal path works without them forking as `reviewer`.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.5.1.1` | `[Impl]` | add the evidence contract, the `## Considered and dismissed` section, and the zero-findings-is-success line to `claude-code/agents/reviewer.md`. It goes in the agent, not in each skill, because all three finder forks run as this one agent — one statement, no drift, and no always-on token cost | `grep -c "Considered and dismissed" claude-code/agents/reviewer.md` returns non-zero; `bash scripts/validate.sh` |
-| `SUB-01.5.1.2` | `[Impl]` | add the matching positive evidence bar to `assess-bugs`, `assess-testing`, `assess-vulnerabilities`, and `assess-performance`, mirroring `assess-security/SKILL.md:21`'s shape rather than inventing a second phrasing | `bash scripts/validate.sh`; `make verify` |
+| `SUB-01.5.3.1` | `[Impl]` | filed by `TSK-01.5.1`'s band-review `/assess-bugs` pass: `reviewer.md` routes a near-miss to `## Considered and dismissed`, but that instruction reaches only the three skills carrying `context: fork`/`agent: reviewer`. `assess-testing`, `assess-vulnerabilities`, and `assess-performance` gained the bar this round and run inline, so a near-miss they catch is silently dropped rather than preserved. Give each the same disposal section in its own `## Report` contract | `bash scripts/validate.sh`; `make verify` |
 
-#### [TSK-01.5.2] `reviewer` runs on `model: sonnet` while precision under adversarial reading is the single thing that role exists for [P: H] [TODO]
+#### [TSK-01.5.4] The evidence bar is now written five independent times, with no canonical statement to propagate an edit from [P: L] [TODO]
 
 **Acceptance Criteria:**
-- [x] **AC-1 (Spike):** Given a `context: fork` skill that also names `agent:`, when a skill-level `model:` key is set on it, then whether that key overrides the agent's own frontmatter is determined by observation and recorded in `docs/design-decisions.md`.
-- [x] **AC-2 (Assignment):** Given the spike's result, when the reviewer tier is set, then the finders whose precision matters most run on the stronger model and the decision's rationale is written down.
+- [ ] **AC-1 (Single source):** Given the evidence bar, when it is edited in one place, then no other file needs a matching hand-edit to stay consistent.
+- [ ] **AC-2 (AC-4 tension resolved):** Given `TSK-01.5.1`'s AC-4, when this is done, then the decision to keep or drop `assess-bugs`'s own copy is recorded rather than left implicit.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
-| `SUB-01.5.2.1` | `[Impl]` | determine whether a skill's own `model:` key overrides the fork agent's frontmatter — this decides whether `/assess-security` and `/assess-bugs` can be tiered separately from `/assess-simplify`, or whether the whole `reviewer` agent moves together. Record the answer in `docs/design-decisions.md` either way, since it governs every future forked skill | `grep -c "model" docs/design-decisions.md` returns non-zero; `make verify` |
-| `SUB-01.5.2.2` | `[Impl]` | set the tier per the spike's result — per-skill if the override works, otherwise on `claude-code/agents/reviewer.md` itself | `bash scripts/validate.sh` |
+| `SUB-01.5.4.1` | `[Impl]` | filed by `TSK-01.5.1`'s band-review `/assess-bugs` and `/assess-simplify` passes, which disagreed: `reviewer.md` and four skills each hand-write their own trigger/path/effect sentence, so an edit to the agent's wording has nothing to propagate from. `/assess-simplify` argued `assess-bugs`'s copy is pure duplication since it forks as `reviewer` and already inherits the agent's text — `assess-simplify`, the third fork skill, correctly got no copy. But `TSK-01.5.1`'s AC-4 explicitly required `assess-bugs` to state one, so removing it contradicts a shipped acceptance criterion. Resolve the tension deliberately: either amend the AC's intent in `docs/design-decisions.md` and drop the inherited copies, or keep them and record why the duplication is accepted | `bash scripts/validate.sh`; `make verify` |
 
 ### [TG-01.6] Agent Roster
 * **Target Release:** V1
