@@ -8,9 +8,11 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 **Five phases, in order.** Every phase names what ends it.
 
-`$ARGUMENTS` names the task. **If it begins with `open`, skip the whole machine; if `fast`, skip the planning phases** — both blocks at the bottom.
+`$ARGUMENTS` names the task. **If it begins with `open`, skip every phase below** — design, architecture, and exploration, where a script produces worse output than judgement; use it when the task is to *decide* something, never to build something already decided.
 
-**Load the matching way of working before P0**: `ways/sdlc.md` for code, `ways/debugging.md` when the task reads as diagnostic ("why is X broken", "debug", "investigate a failure") rather than build-something.
+**Load the matching way of working before P0**: `ways/sdlc.md` for code, `ways/debugging.md` when the task reads as diagnostic ("why is X broken", "debug", "investigate a failure") rather than build-something. **If `$ARGUMENTS` begins with `fast`, also load `ways/fast.md`** — a reduced machine with checked entry, never a reduced gate.
+
+**Read `delegation.md` at P2.0** — who each kind of work goes to, and the required brief slots every phase below defers to.
 
 ---
 
@@ -60,13 +62,13 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 **Requires `BACKLOG.md` to already exist.** If this phase starts without one on disk, exit the loop rather than templating or planning a backlog here.
 
-**No audit runs here.** No phase runs a band-scoped audit right now — TSK-01.4.4 moves that pass into P3.
+**No audit runs here.** No phase runs a band-scoped audit right now.
 
 **Pick the next task group before invoking anything.** `BACKLOG.md`'s file order is its priority order (`backlog-modify` sorts by `[P: SEV]` and `(after:)` edges; `backlog-prioritize` keeps it that way). Walk the target state top to bottom — `## Now, V1` by default, or whichever epic `$ARGUMENTS` names — and take the first task group holding at least one task that is neither `[DONE]` nor `[BLOCKED]`. `$ARGUMENTS` overrides this pick when it names a domain, task group, or story substring instead.
 
 **No task group left with open, unblocked work** → say so and stop.
 
-**Run `/workflow-decompose`** with a `pm` brief — `Task` carrying the target state plus the scope (the task group just picked, or `$ARGUMENTS`'s override), then `Context` and `Out of scope`. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue naming the exact `TSK-` IDs in scope for this run.
+**Run `/workflow-decompose`** with a `pm` brief whose `Task` carries the target state plus the scope — the task group just picked, or `$ARGUMENTS`'s override. It reads the repo facts, the backlog, and the changelog in a fork, and returns a queue naming the exact `TSK-` IDs in scope for this run.
 
 **Read its `## Gaps` before doing anything else.** A missing `Done when`, a missing test story, or a chained decomposition is a spec problem — go to P0, not P2.
 
@@ -102,9 +104,9 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 ### P2.1 · Implement
 
-**Run `/workflow-implement`, once per task**, with a `builder` brief — `Task`, `Files`, `Context`, `Done when`, `Out of scope`.
+**Run `/workflow-implement`, once per task**, with a `builder` brief.
 
-**Fill every one of those five explicitly.** The fork cannot see the queue, and an empty required slot stops it — slot set in the delegate table under *Delegating outside the phases*.
+**Fill every slot `delegation.md` requires, explicitly.** The fork cannot see the queue, and an empty required slot stops it.
 
 **A design choice the task leaves open is a P0/P2.0 decision to make before forking**, never something to hand off ambiguously — the template's `Task` slot owns where the decision then goes.
 
@@ -134,7 +136,7 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 ### P2.3 · Band review
 
-**Runs once per band, after every task in the band is committed — never per task.** Dispatch `/assess-bugs`, `/assess-simplify`, and `/assess-security` (when the surface warrants it, per `ways/`) together in one parallel block, as plain forks — no isolation, they are read-only after TSK-01.4.2. Each runs as a `reviewer` fork, so each brief carries `Task`, `Files`, `Context`, `Round`, `Standards`, and `Out of scope`. **Also run `/assess-performance`** (when a touched path is performance-sensitive, per `ways/`) in the same pass — it carries no `context: fork` frontmatter, so it runs inline in this session rather than as a `reviewer` fork, and self-files its own `BACKLOG.md` story at Med-High or above per its own contract, same as `/assess-code-quality` already invokes it elsewhere.
+**Runs once per band, after every task in the band is committed — never per task.** Dispatch `/assess-bugs`, `/assess-simplify`, and `/assess-security` (when the surface warrants it, per `ways/`) together in one parallel block, as plain forks — no isolation, they are read-only. Each runs as a `reviewer` fork, so each brief carries the `reviewer` slot set. **Also run `/assess-performance`** (when a touched path is performance-sensitive, per `ways/`) in the same pass — it carries no `context: fork` frontmatter, so it runs inline in this session rather than as a `reviewer` fork, and self-files its own `BACKLOG.md` story at Med-High or above per its own contract, same as `/assess-code-quality` already invokes it elsewhere.
 
 **Review against the band, not any one task** — did every task's acceptance condition land, and did anything outside the tasks change?
 
@@ -150,7 +152,7 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 **Once per band, not per-task** — after P2.3's band review has resolved its severity floor, before P3.
 
-**Only `/changelog-write` runs here**, covering every task the band shipped. No `assess-*` repeat — P2.3 already covered the whole band — and no band-scoped audit — no phase runs one right now (TSK-01.4.4 moves that pass into P3).
+**Only `/changelog-write` runs here**, covering every task the band shipped. No `assess-*` repeat — P2.3 already covered the whole band — and no band-scoped audit, which no phase runs right now.
 
 **The four standing closeout tasks live in their own `Quality Assurance & Epic Hardening` task group, gated by their own `Trigger` bullet — an ordinary band's changelog write never satisfies them.** See `ways/sdlc.md` for the gate's exact condition.
 
@@ -160,7 +162,7 @@ argument-hint: [task, "fast <task>" for the checked short path, or "open <topic>
 
 ## P3 · Consolidate
 
-**Run `/workflow-consolidate`** once the whole band is done and P2.4 has cleared, not after each task — a `builder` brief, `Task` carrying the band's `TSK-` IDs and task summaries, plus the other four required slots.
+**Run `/workflow-consolidate`** once the whole band is done and P2.4 has cleared, not after each task — a `builder` brief whose `Task` carries the band's `TSK-` IDs and task summaries.
 
 It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manifest, clears the finished stories, and refreshes only the README parts the change invalidated. **It never touches the SDD** — frozen; a change it needs comes back to you as a finding.
 
@@ -189,61 +191,5 @@ It releases P2.4's `[Unreleased]` entries at the bump they earn, syncs the manif
 - **Timing is captured silently, session-stated, not a file** — the same pattern as P2.3's retry counter. Note each phase's (P0–P4) and each forked skill's start and end wall-clock in this session's own turn text as it happens. Never print elapsed time, and never fold it into an "Ends when" report — surface it only if the user asks.
 - **A fork's result is the record — don't re-open a file it just wrote.** Work from the returned `## Findings`/`## Changed` block — a reviewer fork returns `## Findings` only, this session files the rows itself; only open the file directly for a task no fork result handed you (e.g. reading `BACKLOG.md` fresh at the start of P1 decompose).
 - **Standards verification happens inside the review or implement fork, never in this window** — a P2.3 finding needing re-verifying is P2.1's job.
-- **After any context compaction, re-read the active `ways/` file before the next phase gate** — it loads via `Read`, not invocation, so compaction skips it.
+- **After any context compaction, re-read the active `ways/` file and `delegation.md` before the next phase gate** — both load via `Read`, not invocation, so compaction skips them, and the phases above state neither's rules a second time.
 
----
-
-## Delegating outside the phases
-
-| Need | Send to |
-|---|---|
-| Read-only research across many files | `researcher` |
-| "Where is X" — a path list | `scout` |
-| A design question with more than one answer | `architect` — weighed options, never a decision |
-| Tests against an existing interface | `tester` — test paths only, and that is prose, not a lock |
-| Grading work this session produced | Fresh subagent — **never `subagent_type: fork`.** A `context: fork` *skill* (`/assess-bugs`, `/assess-security`, `/assess-simplify`) runs `reviewer`, not this session — how P2.3 grades the diff. |
-
-**Parallel writers need `isolation: "worktree"`** — `builder` writes tests too, so `tester` beside it is two writers. P2.0 owns the manifest proof that gates it.
-
-**Set `model`/`effort` in the delegate's own frontmatter.** `opus`/`high` for architecture and hard debugging, `sonnet`/`medium` for research and routine code, `haiku`/`low` for path lookup.
-
-**Brief every delegate with every slot its role requires** — never "see above":
-
-| Role | Required slots |
-|---|---|
-| `builder` · `tester` | `Task` `Files` `Context` `Done when` `Out of scope` |
-| `reviewer` | `Task` `Files` `Context` `Round` `Standards` `Out of scope` |
-| `pm` · `architect` · `researcher` | `Task` `Context` `Out of scope` |
-| `scout` | `Task` |
-
-**An absent slot and a present-but-empty one are the same thing** — the fork stops and returns the gap instead of doing the work. Delete an optional slot you have nothing for rather than leaving it blank. The per-role templates under `templates/briefs/` are the fuller authoring reference, available when working in the toolkit repo itself; the table above is what a session in any other repo has. Ask for the verdict, not the transcript.
-
----
-
-## The open hatch
-
-**`/workflow-loop open <topic>` skips every phase above.** For design, architecture, and exploration, where a script produces worse output than judgement. Use it when the task is to *decide* something, never to build something already decided.
-
----
-
-## The fast path
-
-**`/workflow-loop fast <task>` skips P1 decompose, P2.0 align, and P3 consolidate.** P2.1, P2.2, P2.3, and P2.4 run unchanged — fast means less planning, never less verification or review.
-
-**Entry is checked, not judged.** Run both against the change's own diff — before P2.1 on the paths the task names, and again before P2.2's commit:
-
-```bash
-git diff --shortstat     # ≤ 1 file changed and ≤ 10 lines changed
-git diff --name-only     # no path on the exclusion list below
-```
-
-**Exclusion list — any match refuses the fast path regardless of diff size.** Match `git diff --name-only` against these paths, no judgement required:
-
-- **Agent config** — `**/hooks/**`, `**/agents/**`, `settings.json`
-- **The verify gate and every script it runs** — `.claude/verify.sh`, `Makefile`, `Taskfile.yml`, `justfile`, `scripts/**`
-- **Git-hook dispatchers and installers** — `**/pre-commit*`, `**/pre-push*`, `install.sh`, `install.py`
-- **Always-loaded directives and ownership** — `**/AGENTS.md`, `**/CLAUDE.md`, `CODEOWNERS`
-
-A change able to weaken its own verification is not a fast path — the gate's own scripts are the check, so editing one and then running it proves nothing. **The list is a floor, not a ceiling:** a path it misses that you nonetheless read as enforcement also refuses. That judgement may only refuse, never admit — erring into the full machine costs time and nothing else.
-
-**Either check failing sends the change back to P1** — the full machine, from the top.
