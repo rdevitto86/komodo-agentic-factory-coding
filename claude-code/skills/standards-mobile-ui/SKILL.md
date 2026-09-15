@@ -1,17 +1,22 @@
 ---
 name: standards-mobile-ui
-description: Native mobile UI standards — Design (touch targets, safe areas, gestures, platform HIG divergence, offline and interrupted states) and Security (overlay/tapjacking, backgrounding snapshots, deep-link hijacking, WebView bridge exposure, pasteboard and keyboard caches, biometric prompt spoofing). Native targets only — cross-platform JS/Dart frameworks are out of scope. Load before writing a native screen, layout, or app manifest.
+description: Native mobile UI standards — Design (touch targets, safe areas, gestures, platform HIG divergence, offline and interrupted states) and Security (overlay/tapjacking, backgrounding snapshots, deep-link hijacking, WebView bridge exposure, pasteboard and keyboard caches, biometric prompt spoofing). Design is native-UI only; Security covers any native manifest, cross-platform projects included. Load before writing a native screen, layout, or app manifest.
 user-invocable: false
 paths: "**/*.swift, **/*.kt, **/*.m, **/*.mm, **/*.storyboard, **/*.xib, **/AndroidManifest.xml, **/Info.plist, **/res/layout/**, **/res/xml/**"
 ---
 
 # Mobile UI
 
-Native mobile only. Language mechanics live in the language skills; this skill owns what the user touches and what an attacker can put between them and it.
+Native mobile. Language mechanics live in the language skills; this skill owns what the user touches and what an attacker can put between them and it.
 
 ## Scope and platform routing
 
-- **Native targets only.** React Native, Flutter, and every other cross-platform JS or Dart UI framework are **explicitly out of scope** — this skill states nothing about them, and its globs deliberately never match their source extensions. That exclusion is what keeps routing unambiguous: `.tsx`/`.jsx` belong to `standards-web-ui` with no contest, and a `.dart` file matches nothing here.
+**The two halves of this skill have different scopes.** Security applies to any native app manifest; Design applies only to a native UI layer.
+
+- **Security covers every native manifest, React Native and Flutter projects included.** `AndroidManifest.xml` and `Info.plist` are the native host shell's own files, and a cross-platform app ships and edits both routinely — a permission string, an exported component or intent filter, a deep-link and URL-scheme registration, a bundle ID, the backgrounding and screen-capture flags. All of those are native-shell concerns no matter what renders the UI above them, so the Security half applies unchanged.
+- **Design is native-UI only.** Touch targets, safe areas, gestures, platform HIG divergence, and the state/interruption rules describe a native view layer. They do **not** apply to a React Native or Flutter UI layer — this skill states nothing about those component models, and its globs never match their source extensions. `.tsx`/`.jsx` belong to `standards-web-ui`; a `.dart` file matches nothing here.
+- **Arrived here because you touched a manifest in a cross-platform project? Read Security, skip Design.**
+- **An `Info.plist` belonging to a desktop target is this skill's false positive** — the glob matches, the guidance does not. Invoke `standards-desktop-ui` instead. The cheapest tell is the file itself: an iOS plist carries the `UI*` device keys (`UIDeviceFamily`, `UISupportedInterfaceOrientations`, `UILaunchStoryboardName`); a macOS one carries `LSMinimumSystemVersion` and `NSPrincipalClass`/`NSMainNibFile`/`NSMainStoryboardFile`, and none of the `UI*` device keys.
 - **This skill owns native source extensions, native layout resources, and the app manifests.** No glob here matches a browser extension or a desktop shell config file, and neither of those skills claims a native extension or manifest.
 - **A native app embedding a web view** loads `standards-web-ui` for the embedded document's own files; the bridge between the native host and that document is this skill's (see WebView bridge below).
 

@@ -18,6 +18,7 @@ The real rules live in `claude-code/hooks/comments.py` and its shared rules modu
 - **Versions come from `package.json`.** Read it; never assume a major.
 - **Vulnerability scanning** — `npm audit --omit=dev --audit-level=high` (or the pnpm/yarn equivalent) is the gate. Install with `npm ci` so the lockfile is honoured. Enable `eslint-plugin-security` for the static half. `standards-cicd` defines the gate; the `standards-api-security` skill states the bar.
 - **Outdated dependencies** — `npm outdated` (or the pnpm/yarn equivalent) lists packages behind their declared range, no CVE required to surface. Advisory only, never a merge gate; bump one package at a time and re-run the test suite, rather than a blanket `npm update`.
+- **Internal dependency graph** — the toolchain ships no graph command. The closest answer needing no install is `tsc --noEmit --explainFiles`, which lists every file the program pulls in and names what imported each one; that is file-level edges for a single `tsconfig.json`'s program, not a module- or symbol-level graph, and it says nothing about a file no entry point reaches. `npm ls` covers external packages only, never internal edges. Do not reach for a third-party graph tool. `assess-change-risk` states when to run it and what its output does to the tier.
 - **Forge SDK** — published as `@komodo-forge-sdk/typescript`, including the shared CDK construct toolkit. Import the published package at a pinned version; never a relative path into a local checkout. Read its exports before concluding it lacks something.
 
 ## Conventions
