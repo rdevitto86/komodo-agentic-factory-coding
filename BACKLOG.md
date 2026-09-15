@@ -190,35 +190,6 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** every hook is already Python and `scripts/install.py` already ships, so the remaining non-portable surface is six shell files plus the `Makefile`. The sharp end is the gate itself — `verify_gate.py` resolves `.claude/verify.sh` → `make verify` → `task verify` → `just verify`, and three of those four do not exist on a stock Windows box. No preloaded binaries: `python3` 3.7+ is already the hard floor and a binary would *add* a setup step.
 
-#### [TSK-01.7.1] The toolkit's own gate and test surface are shell and `make`, so neither runs on Windows without Git Bash — the one platform `docs/windows-install.md` explicitly supports [P: M] [TODO]
-
-**User Story:**
-> **As an** engineer installing this toolkit on Windows,
-> **I want** the repo's own verify and test targets to run natively,
-> **So that** the guardrails I just installed actually execute on my machine.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Gate):** Given `verify_gate.py`, when it resolves a repo's gate, then a Python entry point is among the discovery targets and is tried before the shell and `make` ones.
-- [x] **AC-2 (Suites):** Given the repo's regression suites, when they are run on a machine with only `python3` and `git`, then every one of them executes.
-- [x] **AC-3 (Parity):** Given `make verify` and the Python entry point, when both run on macOS, then they execute the same set of checks.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.7.1.1` | `[Impl]` | port `scripts/validate.sh`, `scripts/test-hooks.sh`, `scripts/test-install.sh`, and `scripts/release.sh` to Python, stdlib only, preserving every existing assertion and the pass counts | `python3 scripts/validate.py`; `python3 scripts/test_hooks.py`; `make verify` |
-| `SUB-01.7.1.2` | `[Impl]` | port `setup.sh` to Python, folding it into or alongside the existing `scripts/install.py` rather than maintaining two installers | `python3 scripts/install.py --dry-run` |
-| `SUB-01.7.1.3` | `[Impl]` | add the Python entry point to `verify_gate.py`'s discovery order ahead of the shell and `make` targets, and keep `make verify` as a thin wrapper so the macOS path is unchanged | `make verify`; `python3 scripts/test_hooks.py` |
-| `SUB-01.7.1.4` | `[Impl]` | decide and record whether `scripts/hooks/git/`'s dispatchers stay shell. They are the one genuinely portable case — `core.hooksPath` hooks run through Git Bash, which ships with Git for Windows — so this is a uniformity call, not a defect fix. Record the decision in `docs/design-decisions.md` either way | `grep -c "hooksPath" docs/design-decisions.md` returns non-zero; `make verify` |
-
-#### [TSK-01.7.2] No skill tells a target repo to keep its own build and verify surface cross-platform, even though this toolkit solved that problem for itself [P: M] [TODO]
-
-**Acceptance Criteria:**
-- [x] **AC-1:** Given `standards-shell`, when it is read, then it states when a script must be Python rather than shell, and that a repo's verify gate must be invocable on every platform the repo claims to support.
-- [x] **AC-2:** Given `standards-cicd`, when it is read, then it covers runner-matrix portability for a repo targeting more than one OS.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.7.2.1` | `[Impl]` | add the portability rules to `standards-shell` and `standards-cicd`. Both are already `paths:`-gated to exactly the files where the rule applies, so this costs nothing in the always-on budget — a new skill would cost a description forever to say something only relevant when a `.sh` or a pipeline config is open | `python3 scripts/validate.py` |
-
 ### [TG-01.8] UI & Language Standards
 * **Target Release:** V1
 * **Context (2026-09-15):** `standards-ui-design` and `standards-ui-security` are web-only skills wearing generic names — the security one covers `postMessage`, iframes, and `frame-ancestors`, all browser. Merging design and security per platform follows the precedent the language skills already set (`assess-security` reads a Security section out of `standards-go`, and does not load a separate skill for it), and native-only mobile removes the one unsolved activation problem: with React Native out of scope, `**/*.tsx` is unambiguously web again. `standards-swift` and `standards-kotlin` landed 2026-09-15, defaulted off.
