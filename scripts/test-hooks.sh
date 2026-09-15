@@ -1412,6 +1412,12 @@ printf '%s\n' '# Project Backlog' '#### [TSK-01.1.1] a nested story [P: M] [TODO
 
 printf '%s\n' 'not a backlog at all' > "$FIX/junk/BACKLOG.md"
 
+mkdir -p "$FIX/gated"
+printf '%s\n' '# Project Backlog' '#### [TSK-01.1.1] a gated story [P: M] [TODO]' \
+  '* **Done when:** `true`' \
+  > "$FIX/gated/BACKLOG.md"
+printf 'verify:\n\tbash scripts/verify.sh\n' > "$FIX/gated/Makefile"
+
 if [ "$IS_WINDOWS" -eq 1 ]; then
   skip_case "I1  reports the WIP story"          "ci.main() returns empty stdout for the \"full\" fixture on the Windows Git Bash runner"
   skip_case "I2  counts blocked stories"         "same empty-stdout failure as I1 - only the \"full\" fixture is affected"
@@ -1424,10 +1430,11 @@ fi
 inject_case "I4  skips the Unreleased heading"     "$FIX/full" "" "version: Unreleased"
 inject_case "I5  an indented note is not a story"  "$FIX/full" "" "SDK exposes no idempotency key"
 if [ "$IS_WINDOWS" -eq 1 ]; then
-  skip_case "I6  no verify target is stated"     "same empty-stdout failure as I1 - only the \"full\" fixture is affected"
+  skip_case "I6  a missing verify gate is a loud warning" "same empty-stdout failure as I1 - only the \"full\" fixture is affected"
 else
-  inject_case "I6  no verify target is stated"       "$FIX/full" "Verify gate: none declared"
+  inject_case "I6  a missing verify gate is a loud warning" "$FIX/full" "WARNING: no verify gate declared -- this repo's checks, and \`comments.py check\` with them, never run automatically."
 fi
+inject_case "I15 a declared verify gate is reported plainly, unchanged" "$FIX/gated" "Verify gate: make verify." "WARNING"
 inject_case "I7  silent when no backlog exists"    "$FIX/empty" "" "Work state"
 inject_case "I8  finds a backlog under docs/"      "$FIX/nested" "docs/BACKLOG.md"
 inject_case "I9  a backlog with no stories is fine" "$FIX/junk" "Nothing marked [IN_PROGRESS]"

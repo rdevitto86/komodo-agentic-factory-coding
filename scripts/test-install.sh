@@ -6,12 +6,13 @@
 # Exit 0:  every case passed
 # Exit 1:  at least one failed, with the offending reason printed
 #
-# Case IDs: I* install.py, S* setup.sh --ref pinning.
+# Case IDs: I* install.py, S* setup.sh --ref pinning, G* scripts/hooks/git/install.sh.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL="$REPO_ROOT/scripts/install.py"
 SETUP="$REPO_ROOT/setup.sh"
+GIT_INSTALL="$REPO_ROOT/scripts/hooks/git/install.sh"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
@@ -178,6 +179,69 @@ if [ -n "$TAG" ]; then
   assert_guard_rejected \
     "S3 a dirty tree exits non-zero before touching HEAD or the target" \
     "$WORKDIR/home-s3/.claude" --ref "$TAG"
+fi
+
+printf '\nscripts/hooks/git/install.sh\n\n'
+
+mk_git_repo() {
+  local dir="$1"
+  mkdir -p "$dir"
+  git -C "$dir" init --quiet
+}
+
+GREPO1="$WORKDIR/grepo1"
+mk_git_repo "$GREPO1"
+git -C "$GREPO1" config --local core.hooksPath "no-such-dir/hooks"
+
+out="$(bash "$GIT_INSTALL" --status "$GREPO1" 2>&1)"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  fail "G1 --status marks a missing core.hooksPath stale" "exit $rc: $out"
+elif [[ "$out" != *"stale"* ]]; then
+  fail "G1 --status marks a missing core.hooksPath stale" "no stale marker in: $out"
+else
+  pass "G1 --status marks a missing core.hooksPath stale"
+fi
+
+out="$(bash "$GIT_INSTALL" "$GREPO1" 2>&1)"
+rc=$?
+current="$(git -C "$GREPO1" config --local --get core.hooksPath || true)"
+problem=""
+[ "$rc" -eq 0 ] || problem="exit $rc: $out"
+[ -z "$problem" ] && [[ "$out" != *"had not been running"* ]] && problem="no note that hooks had not been running: $out"
+[ -z "$problem" ] && [ "$current" != "$REPO_ROOT/scripts/hooks/git" ] && problem="core.hooksPath was not rewritten to the live directory: $current"
+if [ -n "$problem" ]; then
+  fail "G2 installing over a stale core.hooksPath notes hooks had not been running" "$problem"
+else
+  pass "G2 installing over a stale core.hooksPath notes hooks had not been running"
+fi
+
+out="$(bash "$GIT_INSTALL" "$GREPO1" 2>&1)"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  fail "G3 a repo already pointing at the live hooks dir is left alone" "exit $rc: $out"
+elif [[ "$out" != *"already installed"* ]]; then
+  fail "G3 a repo already pointing at the live hooks dir is left alone" "missing 'already installed': $out"
+else
+  pass "G3 a repo already pointing at the live hooks dir is left alone"
+fi
+
+GREPO2="$WORKDIR/grepo2"
+mk_git_repo "$GREPO2"
+orphan="$GREPO2/.git/hooks/pre-commit"
+printf '#!/bin/sh\n' > "$orphan"
+chmod +x "$orphan"
+
+out="$(bash "$GIT_INSTALL" "$GREPO2" 2>&1)"
+rc=$?
+problem=""
+[ "$rc" -eq 0 ] || problem="exit $rc: $out"
+[ -z "$problem" ] && [[ "$out" != *".git/hooks files stop running"* ]] && problem="missing orphan-hooks note: $out"
+[ -z "$problem" ] && [[ "$out" == *"had not been running"* ]] && problem="unset core.hooksPath was misclassified as stale: $out"
+if [ -n "$problem" ]; then
+  fail "G4 an orphaned .git/hooks file is still reported, unset stays unset" "$problem"
+else
+  pass "G4 an orphaned .git/hooks file is still reported, unset stays unset"
 fi
 
 PASS="$(grep -c '^PASS$' "$RESULTS" || true)"
