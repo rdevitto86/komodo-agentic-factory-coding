@@ -1,7 +1,7 @@
 ---
 name: assess-bugs
 description: Read the diff for correctness bugs against the task it claims to satisfy — logic errors, edge cases, wrong assumptions — and return them as a findings table. Model-agnostic finder; never a fixer.
-argument-hint: <task text or band summary> [standards-* skills that apply]
+argument-hint: a reviewer brief — Task (band summary) | Files | Context | Round | Standards | Out of scope (all six required)
 context: fork
 agent: reviewer
 background: false
@@ -9,13 +9,13 @@ background: false
 
 # Bug assessment
 
-Reviewing: **$ARGUMENTS**
+Brief: **$ARGUMENTS** — a `reviewer` brief carrying `Task`, `Files`, `Context`, `Round`, `Standards`, and `Out of scope`. A missing or empty one of those is your standing stop, not something to infer from the diff.
 
 Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling, usable from any bridge-connected model. Findings only, never fixes — a correctness or requirement finding routes back to implementation; report the rest and stop.
 
 ## Process
 
-1. **Load the `standards-*` skills named in `$ARGUMENTS`** (or infer from touched file extensions if none named) — read their Testing and Conventions sections before scoring anything a bug.
+1. **Load the `standards-*` skills the brief's `Standards` slot names** — read their Testing and Conventions sections before scoring anything a bug.
 2. **Read `git diff` for the band**, not the whole tree. A file untouched by this band is out of scope.
 3. **For each changed function/block, check**: does it do what the task said, including the edge case the task named? A wrong assumption, an unhandled input, a race, an off-by-one, a swallowed error.
 4. **A finding needs a concrete trigger path**, not a hypothetical. "Could theoretically" is not a finding; "input X reaches the unguarded branch at Y, effect Z follows" is.

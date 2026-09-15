@@ -1,7 +1,7 @@
 ---
 name: git-repo-init
 description: Create a new repo's full skeleton, or scaffold/refresh its CLAUDE.md/AGENTS.md and the three standard local documents.
-argument-hint: [repo-type: go-api|go-mcp|vue-ui|svelte-ui|cdk-infra] [target path, defaults to cwd]
+argument-hint: a builder brief — Task (repo type + target path) | Files | Context | Done when | Out of scope (all five required)
 context: fork
 agent: builder
 background: false
@@ -9,7 +9,7 @@ background: false
 
 # Generate Repo
 
-Target: **$ARGUMENTS** — first token is the repo type (`go-api`, `go-mcp`, `vue-ui`, `svelte-ui`, `cdk-infra`), second is the target path (defaults to cwd). Repo type is only needed when the target has no code yet; an existing repo's language is detected from what's on disk, as before.
+Brief: **$ARGUMENTS** — a `builder` brief whose `Task` slot names the repo type (`go-api`, `go-mcp`, `vue-ui`, `svelte-ui`, `cdk-infra`) and the target path (defaults to cwd), alongside the other four required slots. Repo type is only needed when the target has no code yet; an existing repo's language is detected from what's on disk, as before. A missing or empty required slot is your standing stop.
 
 This skill owns both the contract and the writing. Anything that later checks a repo for drift reads this same file, so there is exactly one definition to keep current.
 

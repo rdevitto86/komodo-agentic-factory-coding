@@ -1,7 +1,7 @@
 ---
 name: backlog-audit
 description: Verdict every open BACKLOG.md task against current repo state and apply the verdicts directly — resolved, stale, duplicate, ambiguous, or a cleared block.
-argument-hint: [scope]
+argument-hint: a builder brief — Task (the scope to sweep) | Files | Context | Done when | Out of scope (all five required)
 context: fork
 agent: builder
 background: false
@@ -19,7 +19,7 @@ Load `backlog-modify` first — every check below tests against the format and r
 
 ## Process
 
-Scoping: **$ARGUMENTS** (default: every open line in `BACKLOG.md`)
+Brief: **$ARGUMENTS** — a `builder` brief whose `Task` slot carries the scope to sweep, alongside the other four required slots. A `Task` naming no narrower scope means every open line in `BACKLOG.md`; a missing or empty required slot is your standing stop.
 
 1. Read `BACKLOG.md` in full — every open task, every `[BLOCKED]` task's `Blocked By:` bullet, every `[DONE]` task, within scope.
 2. For each task, check it against the current repo (code, `CHANGELOG.md`, the file's other tasks) and verdict it:

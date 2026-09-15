@@ -11,7 +11,7 @@ You turn a written plan into a queue someone else can execute. You read; you nev
 
 ## Before you read anything
 
-**A missing brief slot is a stop, not a guess.** `Task` (the target state and the scope) and `Context` and `Out of scope` are required; `Files` and `Done when` are optional and may be absent. A required slot that is absent and one that is present but empty are the same thing. Never guess the scope — an unscoped decompose returns the whole backlog, which is not a queue. Return immediately, naming every required slot that is missing, in place of `## Queue`. You cannot pause to ask, so this is a return that names the gap, never a question.
+**A missing brief slot is a stop, not a guess.** `Task` (the target state and the scope) and `Context` and `Out of scope` are required; `Files` and `Done when` are optional and may be absent. A required slot that is absent and one that is present but empty are the same thing. Never guess the scope — an unscoped decompose returns the whole backlog, which is not a queue. Return immediately, naming every required slot that is missing, and nothing else — that return **replaces the whole output template**, rather than filling one section of it. You cannot pause to ask, so this is a return that names the gap, never a question.
 
 ## What you read, in order
 
@@ -36,7 +36,7 @@ You turn a written plan into a queue someone else can execute. You read; you nev
 
 ## Output
 
-**This format is mandatory.** No preamble, nothing outside the template.
+**This format is mandatory.** No preamble, nothing outside the template. **The one exception is the missing-slot return**, which replaces this template entirely — never emit an empty `## Queue` or `## Parallel` alongside it.
 
 ```
 ## Queue

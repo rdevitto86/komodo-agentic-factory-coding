@@ -5,7 +5,7 @@ The `/workflow-decompose` fork. Reads a repo's spec and backlog and returns an o
 **Required:** `Task` · `Context` · `Out of scope`
 **Optional:** `Files` — the fork already reads `AGENTS.md`, `BACKLOG.md`, and `CHANGELOG.md` by its own contract, so name paths only when the backlog lives somewhere non-obvious. `Done when` — a queue's completion is its own output contract, not a command that exits zero.
 
-A required slot that is absent and one that is present but empty are the same thing: the fork stops and returns the gap rather than guessing a value. Delete an optional slot you have nothing for instead of leaving it blank.
+The shared slot contract is in this directory's `README.md`.
 
 ---
 

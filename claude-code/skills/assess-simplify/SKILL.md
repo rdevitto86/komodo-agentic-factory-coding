@@ -1,7 +1,7 @@
 ---
 name: assess-simplify
 description: Read the changed code for reuse, simplification, and efficiency cleanups, and return them as a findings table. Model-agnostic; quality only — never hunts for bugs or security defects.
-argument-hint: <task text or band summary> [standards-* skills that apply]
+argument-hint: a reviewer brief — Task (band summary) | Files | Context | Round | Standards | Out of scope (all six required)
 context: fork
 agent: reviewer
 background: false
@@ -9,13 +9,13 @@ background: false
 
 # Simplify assessment
 
-Reviewing: **$ARGUMENTS**
+Brief: **$ARGUMENTS** — a `reviewer` brief carrying `Task`, `Files`, `Context`, `Round`, `Standards`, and `Out of scope`. A missing or empty one of those is your standing stop, not something to infer from the diff.
 
 Model-agnostic quality pass — Read/Grep/Glob/Bash only, no host-specific tooling. Findings only, never fixes — same contract as `assess-bugs`/`assess-security`, just a different lens.
 
 ## Process
 
-1. **Load the `standards-*` skills named in `$ARGUMENTS`** for the reuse order (SDK first, vetted library second, custom last) and idiom conventions.
+1. **Load the `standards-*` skills the brief's `Standards` slot names** for the reuse order (SDK first, vetted library second, custom last) and idiom conventions.
 2. **Read `git diff` for the band.**
 3. **For each changed block, check for**: duplicated logic already covered by an SDK/library call, a custom implementation of something the standards skill says exists, dead code, a function carrying more than one responsibility, an O(n²) shape where O(n) is available at no added complexity.
 4. **Skip correctness and security** — that is `assess-bugs`/`assess-security`'s job, not this one's.

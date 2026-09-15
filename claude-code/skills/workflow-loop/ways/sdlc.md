@@ -48,7 +48,7 @@ The marker suppresses `verify_gate.py`'s full-suite run inside each `builder` fo
 
 ## P2.3 · Band review
 
-Runs once per band, after every task in the band is committed — never per task. Dispatch `/assess-bugs`, `/assess-simplify`, and (only when a touched path is an auth/secret/boundary path or a rendered surface) `/assess-security` together in one parallel block, as plain forks with no isolation — they are read-only after TSK-01.4.2, so nothing here collides. **Invoke each from the `reviewer` brief template**, which owns the slots those calls require. The lenses that matter:
+Runs once per band, after every task in the band is committed — never per task. Dispatch `/assess-bugs`, `/assess-simplify`, and (only when a touched path is an auth/secret/boundary path or a rendered surface) `/assess-security` together in one parallel block, as plain forks with no isolation — they are read-only after TSK-01.4.2, so nothing here collides. **Invoke each with every slot `reviewer` requires** — `Task`, `Files`, `Context`, `Round`, `Standards`, `Out of scope`, per `workflow-loop`'s delegate table; an empty one stops the fork before it reads the diff. The lenses that matter:
 
 - **Correctness** — does it do what the story said, including the edge the story named
 - **Security** — new boundary, new query, new secret handling
