@@ -23,6 +23,8 @@ argument-hint: [--report]
 
 Score the **highest tier any touched file reaches** — one Critical-tier file outweighs nine Low-tier ones.
 
+**A driving factor needs a concrete cost change**, not a hypothetical. "Could theoretically" is not a finding; "the loop at `file:line` now issues one query per iteration" is.
+
 ## Output
 
 ```markdown

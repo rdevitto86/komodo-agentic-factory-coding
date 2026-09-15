@@ -9,6 +9,9 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - `scripts/hooks/git/install.sh` gains its first regression coverage, in `scripts/test-install.sh` — stale `--status`, stale install, and the already-installed and orphaned `.git/hooks` paths as anchors.
 
 ### Changed
+- A review finding now has to clear a stated evidence bar — a trigger, the path it reaches, and an observable effect, each anchored to a cited `file:line` — rather than only being forbidden from being invented. The reviewer agent gains a `Considered and dismissed` section so a near-miss keeps its reasoning without inflating the findings count, and an empty findings table is stated to be a successful review. `assess-bugs`, `assess-testing`, `assess-vulnerabilities`, and `assess-performance` each carry the matching bar.
+- The reviewer agent runs on the stronger model. Precision under adversarial reading is the one thing that role exists for, so it is the wrong place to spend a cost saving. All three finder forks run as that agent and move with it.
+- The reviewer's output contract splits by owner: the agent owns the section structure and the rules, and the invoking skill owns the findings table's columns and its `Sev` scale. Previously both declared a "mandatory" template and the two disagreed.
 - A session starting in a repo with no verify gate now gets an explicit warning naming what is not running — the repo's own checks, and `comments.py check` with them — rather than a neutral status line that read the same as the released version and backlog tally beside it. Output for a repo that does declare a gate is unchanged.
 
 ### Fixed

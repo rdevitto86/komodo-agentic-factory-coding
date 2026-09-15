@@ -22,6 +22,8 @@ Model-agnostic quality pass — Read/Grep/Glob/Bash only, no host-specific tooli
 
 ## Report
 
+`reviewer.md`'s section structure governs — a near-miss goes to `## Considered and dismissed`, not here. This table's columns and `Sev` scale are this lens's own.
+
 | Sev | Where | What | Win |
 |---|---|---|---|
 | M | `client.go:120` | hand-rolled retry loop | Forge SDK's `retry.Do` covers this, −18 lines |

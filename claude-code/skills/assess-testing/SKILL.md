@@ -19,6 +19,7 @@ Findings only, never writes a test — a coverage or placement gap routes back t
 5. **Check for padding** — a case that asserts only "no error" or "not nil" with no assertion on the actual result inflates the number without covering the behavior; flag it as a finding, not a pass.
 6. **Check "skipped never reports as passed"** — a test suite that swallows a skip-on-outage and reports green is itself a finding.
 7. **Check helper placement** — a helper used by one file sitting in a shared test-utility package, or a per-case hook doing heavy setup that could run once at file/suite scope, is drift from `standards-sdlc`'s placement and hook rules.
+8. **A finding needs a concrete gap**, not a hypothetical. "Could theoretically" is not a finding; "branch X at `file:line` has no case asserting the result" is.
 
 ## Report
 
