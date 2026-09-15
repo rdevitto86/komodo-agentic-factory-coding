@@ -223,37 +223,6 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** `standards-ui-design` and `standards-ui-security` are web-only skills wearing generic names — the security one covers `postMessage`, iframes, and `frame-ancestors`, all browser. Merging design and security per platform follows the precedent the language skills already set (`assess-security` reads a Security section out of `standards-go`, and does not load a separate skill for it), and native-only mobile removes the one unsolved activation problem: with React Native out of scope, `**/*.tsx` is unambiguously web again. `standards-swift` and `standards-kotlin` landed 2026-09-15, defaulted off.
 
-#### [TSK-01.8.1] The two UI skills are web-only under platform-generic names, and there is no mobile or desktop UI standard at all [P: M] [TODO]
-
-**User Story:**
-> **As an** engineer writing a native mobile or desktop surface,
-> **I want** a UI standard that covers my platform's real attack surface and interaction rules,
-> **So that** a review is not silently graded against browser assumptions that do not apply.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Merge):** Given `claude-code/skills/`, when it is listed, then `standards-web-ui` exists carrying both the design and security halves, and `standards-ui-design`/`standards-ui-security` are gone.
-- [x] **AC-2 (Platforms):** Given the same directory, when it is listed, then `standards-mobile-ui` and `standards-desktop-ui` exist, each carrying a Design half and a Security half.
-- [x] **AC-3 (Routing):** Given each new skill's `paths:`, when they are read, then mobile routes on native extensions and manifests, desktop on its own config surface, and web on the browser extensions — with no glob matching two platforms.
-- [x] **AC-4 (Callers):** Given every file referencing a retired UI skill name, when each is read, then none references `standards-ui-design` or `standards-ui-security`.
-- [x] **AC-5 (Scope):** Given `standards-mobile-ui`, when it is read, then it covers native targets only and states that React Native and Flutter are out of scope.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.8.1.1` | `[Impl]` | merge `standards-ui-design` and `standards-ui-security` into `standards-web-ui`, keeping both halves as sections so `assess-security` can read the Security section the same way it reads a language skill's | `ls claude-code/skills/standards-web-ui/SKILL.md`; `bash scripts/validate.sh` |
-| `SUB-01.8.1.2` | `[Impl]` | write `standards-mobile-ui` — Design (touch targets, safe areas, gestures, platform HIG divergence, offline states) and Security (overlay/tapjacking, screenshot and backgrounding snapshots, deep-link and scheme hijacking, WebView bridge exposure, pasteboard and keyboard caches, biometric prompt spoofing). Native targets only; state the RN/Flutter exclusion explicitly, since that exclusion is what makes the `paths:` routing unambiguous | `ls claude-code/skills/standards-mobile-ui/SKILL.md`; `bash scripts/validate.sh` |
-| `SUB-01.8.1.3` | `[Impl]` | write `standards-desktop-ui` — Design (keyboard and menu conventions, window and multi-window management, density, right-click affordances) and Security (context isolation and node integration, protocol handler registration, local IPC surface, update signing, drag-drop file trust) | `ls claude-code/skills/standards-desktop-ui/SKILL.md`; `bash scripts/validate.sh` |
-| `SUB-01.8.1.4` | `[Impl]` | update every caller of the two retired names — `assess-security`, `ways/sdlc.md`, `git-repo-init`, `standards-api-security` and its `review.md`, `standards-typescript`, `standards-cicd`, and the three framework skills — plus `claude-code/settings.json`'s `skillOverrides` entries | `grep -rc "standards-ui-design\|standards-ui-security" claude-code` returns `0` for every file; `make verify` |
-
-#### [TSK-01.8.2] Nothing in the toolkit says how to map a repo's internal dependency graph, so `assess-change-risk` scores blast radius by judgment with no import data behind it [P: L] [TODO]
-
-**Acceptance Criteria:**
-- [x] **AC-1:** Given each `standards-<lang>` skill's Toolchain section, when it is read, then it names the command that language's own toolchain ships for listing internal dependencies.
-- [x] **AC-2:** Given `assess-change-risk`, when it is read, then it states when to run that command and how its output feeds the tier.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.8.2.1` | `[Impl]` | a directive, not a skill — the per-language commands are already model-recall; what is not recallable is this repo's convention for when to run one and what to do with the output. One bullet per language Toolchain section, one paragraph in `assess-change-risk`. Phrase each as the command the toolchain ships, never a pinned version or a third-party tool that needs installing | `bash scripts/validate.sh`; `make verify` |
-
 ### [TG-01.9] Accessibility & Visual Output
 * **Target Release:** V1
 * **Context (2026-09-15):** `config-accessibility` governs formatting — heading depth, density caps, emoji placement — while every skill's Report section still contracts for a markdown table. The rules say show-don't-tell and the output contracts say emit-a-table. Since a terminal cannot render a diagram, visual output means a hosted artifact, which is a real shift in where this toolkit's output lives and is why this is a task group rather than a single skill.
