@@ -131,7 +131,13 @@ def main():
         report.append("Released version: %s." % version)
 
     gate = verify_label(root)
-    report.append("Verify gate: %s." % (gate or "none declared"))
+    if gate:
+        report.append("Verify gate: %s." % gate)
+    else:
+        report.append(
+            "WARNING: no verify gate declared -- this repo's checks, and "
+            "`comments.py check` with them, never run automatically."
+        )
 
     sys.stdout.write("\n".join(report) + "\n")
     sys.exit(0)

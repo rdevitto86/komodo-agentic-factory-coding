@@ -122,10 +122,10 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** I find out before a fork's Stop gate passes on an empty check instead of a green one.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Loud):** Given a repo where `verify_label()` resolves nothing, when a session starts, then the injected report marks it as a warning, visually distinct from the `Released version:` and backlog-tally lines beside it.
-- [ ] **AC-2 (Consequence):** Given that same warning, when it is read, then it states what is not running — the repo's checks and `comments.py check` with them — not merely that a gate is absent.
-- [ ] **AC-3 (Quiet when fine):** Given a repo that does declare a gate, when a session starts, then the line is unchanged from today.
-- [ ] **AC-4 (Fails open):** Given any error inside the new branch, when the hook runs, then it still exits zero — `context_injector.py` is a fail-open hook and must stay one.
+- [x] **AC-1 (Loud):** Given a repo where `verify_label()` resolves nothing, when a session starts, then the injected report marks it as a warning, visually distinct from the `Released version:` and backlog-tally lines beside it.
+- [x] **AC-2 (Consequence):** Given that same warning, when it is read, then it states what is not running — the repo's checks and `comments.py check` with them — not merely that a gate is absent.
+- [x] **AC-3 (Quiet when fine):** Given a repo that does declare a gate, when a session starts, then the line is unchanged from today.
+- [x] **AC-4 (Fails open):** Given any error inside the new branch, when the hook runs, then it still exits zero — `context_injector.py` is a fail-open hook and must stay one.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
