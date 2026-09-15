@@ -53,7 +53,7 @@ Anything beyond V2 is speculation and does not belong in a plan. **A planning ru
 `backlog-modify`'s format governs shape. Four constraints are the planning run's own:
 
 - **Cap each run at 3 task groups and 6 tasks per task group.** If the work genuinely exceeds that, plan V1 only and say V2 needs its own pass. An unbounded dump is what made the old ledger useless.
-- **In an app/service/infra repo (see `backlog-modify`'s `Cross-Cutting` rule), the four closeout tasks are structural, not planned content** — exempt from the cap, and never write them yourself during a planning run; `backlog-modify`'s `normalize` mode is what adds them if a `Cross-Cutting` group is missing any. A skill/config/doc-only repo carries none of the four — don't add them there either.
+- **In an app/service/infra repo (see `backlog-modify`'s closeout-task rule), the four closeout tasks and their `Quality Assurance & Epic Hardening` task group are structural, not planned content** — exempt from the cap, and never write them yourself during a planning run; `backlog-modify`'s `normalize` mode is what adds the task group (and any missing task) when it's absent or incomplete. A skill/config/doc-only repo carries neither — don't add them there either.
 - **Default every task to parallel** — mark `(after: "<task text>")` only where one task genuinely cannot start before another lands, never to impose an arbitrary order.
 - **Every task carries at least one `SUB-` line, and every `SUB-` line carries a `Done when:` command.** A task nobody else can run is not planned, it is hoped for. If nothing runnable can be named, that is the finding — say so.
 

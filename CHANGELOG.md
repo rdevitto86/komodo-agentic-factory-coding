@@ -4,6 +4,19 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+## [0.49.0] — 2026-09-10
+
+### Added
+- `BACKLOG.md`'s format gains two optional elements: a `User Story` block, and a checkbox `Acceptance Criteria` list — the one place a checkbox is now sanctioned in the file. A `Category` column (`[Impl]`/`[UnitTest]`/`[IntegTest]`/`[E2E]`/`[Audit]`) is added to the Subtask table, which also lets the old standalone "every task group carries its own `Tests:` task" rule retire as redundant.
+- The four standing closeout tasks (Security review, Bug sweep, Code smell, Performance) move out of `Cross-Cutting` into their own per-epic `Quality Assurance & Epic Hardening` task group, gated by a `Trigger` bullet that fires once every functional task group in the epic reaches `[DONE]` — not on every band's changelog write, as the prior wording implied.
+- A `[DONE]` task carrying any unchecked Acceptance Criteria box is not swept — both `backlog-audit`'s periodic pass and `workflow-consolidate`'s routine per-band deletion now check this. `workflow-implement` ticks a box once the subtask proving it goes green.
+
+### Changed
+- The old "no checkboxes, anywhere" and "no standalone Acceptance Criteria list" rules are gone, replaced by the narrower rule above — checkboxes are still never sanctioned for a subtask, a task's own status, or a `Blocked by`/`Owner` field.
+
+### Fixed
+- `templates/project/BACKLOG.md.tmpl` referenced nonexistent `/audit-security`/`/audit-bugs`/`/audit-simplify` skills; corrected to `/assess-*`. Its example test commands were JS-specific (`npm run test:*`); genericized.
+
 ## [0.48.0] — 2026-09-10
 
 ### Added

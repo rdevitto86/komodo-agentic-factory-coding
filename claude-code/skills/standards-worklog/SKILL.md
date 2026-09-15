@@ -16,5 +16,5 @@ paths: "**/BACKLOG.md, **/CHANGELOG.md"
 - **Read the current file before writing.** Never duplicate a line already there, and never write a `BACKLOG.md` story or `CHANGELOG.md` entry the file already carries in substance.
 - **Never invent.** A record states what is true now — a story that is open, an entry that shipped — never a guess dressed as either.
 - **Nothing writes back into the frozen spec.** The SDD is untouched by a build — it isn't even a repo file to touch.
-- **Test stories are decomposed when a story is written, never invented later.** A domain with behavior stories and no `Tests:` story is an incomplete decomposition, not a gap to fill during implementation.
+- **Test coverage is decomposed when a story is written, never invented later.** A behavior task with no `[UnitTest]`/`[IntegTest]`/`[E2E]` subtask row (`backlog-modify`'s `Category` column) is an incomplete decomposition, not a gap to fill during implementation.
 - **Never dump raw audit, review, or scan output straight into either file.** Report the findings; the user decides what becomes a line.

@@ -38,23 +38,33 @@ Hierarchy is fixed, four levels deep: **epic → task group → task → subtask
 * **Target Release:** V1
 
 #### [TSK-01.1.1] <task text> [P: C] [TODO]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.1.1.1` | <what this piece of work is> | `<command>` |
-| `SUB-01.1.1.2` | <what this piece of work is> | `<command>` |
+
+**User Story:** *(optional, recommended)*
+> **As a** <role>,
+> **I want** <capability>,
+> **So that** <outcome>.
+
+**Acceptance Criteria:** *(optional, recommended)*
+- [ ] **AC-1 (<label>):** Given <context>, when <action>, then <outcome>.
+- [ ] **AC-2 (<label>):** Given <context>, when <action>, then <outcome>.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.1.1` | `[Impl]` | <what this piece of work is> | `<command>` |
+| `SUB-01.1.1.2` | `[UnitTest]` | <what this piece of work is> | `<command>` |
 
 #### [TSK-01.1.2] <task text> [P: M] [TODO]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.1.2.1` | <what this piece of work is> | `<command>` |
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.2.1` | `[Impl]` | <what this piece of work is> | `<command>` |
 
 ### [TG-01.2] <task group>
 * **Target Release:** V1
 
 #### [TSK-01.2.1] <task text> [P: H] [IN_PROGRESS]
-| Subtask | Work | Done when |
-|---|---|---|
-| `SUB-01.2.1.1` | <what this piece of work is> | `<command>` |
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.2.1.1` | `[Impl]` | <what this piece of work is> | `<command>` |
 
 ---
 
@@ -62,34 +72,39 @@ Hierarchy is fixed, four levels deep: **epic → task group → task → subtask
 *Note: use this section strictly for abandoned, shelved, or deprecated initiatives — never for finished work, which is swept out on completion, not archived.*
 ```
 
-Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]` — this line alone is regex-read by `context_injector.py` at every session start, so its shape is fixed. Everything beneath it is free-form and uses tables, not bullets.
+Task heading shape: `#### [TSK-E.T.S] <text> [P: SEV] [STATUS]` — this line alone is regex-read by `context_injector.py` at every session start, so its shape is fixed. Everything beneath it is free-form and uses tables, not bullets, except the two optional blocks below.
 
-Subtask shape: one row per subtask, in a table directly beneath the task heading — `| SUB-E.T.S.N | <text> | <command> |`. A subtask carries no `[STATUS]` tag of its own; the `Done when` cell holding one or more literal commands with an exit code is what proves it, not a checkbox.
+**`User Story` (optional, recommended):** a `**User Story:**` heading directly beneath the task heading, followed by a blockquote — `> **As a** <role>,` / `> **I want** <capability>,` / `> **So that** <outcome>.`, one clause per line. States who the task is for and why, not what to build; the Subtask table still owns that.
 
-**A subtask *is* the task's acceptance criterion, not a separate breakdown from it.** There is no JIRA-style AC list living apart from the subtask table — each row names one piece of work and carries the command that proves that piece is done, in one place. Where JIRA would write "AC-1, AC-2, AC-3" under a story, this file writes `SUB-E.T.S.1`, `SUB-E.T.S.2`, `SUB-E.T.S.3` as rows, each with its own `Done when` cell.
+**`Acceptance Criteria` (optional, recommended):** a `**Acceptance Criteria:**` heading, followed by one checkbox line per criterion — `- [ ] **AC-N (<label>):** Given <context>, when <action>, then <outcome>.` A box is `- [ ]` unticked or `- [x]` ticked, never any other marker. This is the one place a checkbox is sanctioned in this file — not for a subtask, a task's own status, or a `Blocked by`/`Owner` field, all of which stay table rows exactly as before.
+
+Subtask shape: one row per subtask, in a table directly beneath the task heading (and beneath the two optional blocks, when present) — `| SUB-E.T.S.N | <category> | <text> | <command> |`. `Category` is one of `[Impl]`, `[UnitTest]`, `[IntegTest]`, `[E2E]`, `[Audit]`. A subtask carries no `[STATUS]` tag of its own; the `Done when` cell holding one or more literal commands with an exit code is what proves it, not a checkbox.
+
+**A subtask proves a piece of work is done; an Acceptance Criterion states what "done" means for the task as a whole.** A task with no Acceptance Criteria block uses the Subtask table exactly as before — the two blocks are additive, never a replacement for it. Where a task does carry Acceptance Criteria, a subtask maps to at most one AC's proof; `workflow-implement` ticks that AC's box once the mapped subtask's `Done when` commands exit zero (see `workflow-implement/SKILL.md`).
 
 ### Rules
 
-- **No checkboxes, anywhere, and no bullet-nested fields — a subtask and a blocked/owner field are table rows**, not a bulleted list. A task's own state is its `[STATUS]` tag; a subtask's row carries no status of its own. `CHANGELOG.md` is the completed-work record; `BACKLOG.md` tracking the same completion a second way (a checked box that then gets deleted anyway on sweep) is a distinction with no lasting value.
 - **Every task carries a Subtask table with at least one row, and every row carries a `Done when` cell** holding one or more literal commands, not a description — a command that exits zero, not "tests pass." `[DONE]` requires every one of a task's subtask commands to have exited zero; `workflow-implement` runs the whole set and reports each one's output. A subtask whose completion can only be judged by reading the code, not running something, is Ambiguous — see `backlog-audit` — not plannable as-is. Subtasks are never invented just to fill the table out — one row is enough for a task too small to need more.
 - **`[P: SEV]` then `[STATUS]` sit at the end of the `TSK-` heading line, in that order, always present** — `#### [TSK-01.1.1] <text> [P: C] [TODO]`. `[TODO]` is the default for anything not started; move to `[IN_PROGRESS]` the moment work starts on it, `[BLOCKED]` per the shape below, `[DONE]` once every `SUB-` line's `Done when:` command is verified against the repo.
 - **`[DONE]` is a pending sweep, not a resting state.** The task stays on the page — visible, but not counted as open — until `/backlog-audit` moves it into `CHANGELOG.md` and deletes it. Never hand-delete a `[DONE]` task yourself; that's the sweep's job, and it's what confirms the entry lands in `CHANGELOG.md` first.
 - **Epics** are `## [EPIC-01] Now, V1`, `## [EPIC-02] Next, V2` — every epic carries a one-line `*Goal: ...*` directly beneath its heading. Nothing is scheduled by date. A third, active epic is possible but rare — plan runs stick to V1/V2 (see `backlog-plan`).
-- **Task groups** are `Cross-Cutting` or a feature/route/screen/stack/queue name **inside this one service** — never another service's name. Every task group carries a `* **Target Release:**` bullet directly beneath its heading, naming the version or milestone it ships with.
+- **Task groups** are `Cross-Cutting`, `Quality Assurance & Epic Hardening`, or a feature/route/screen/stack/queue name **inside this one service** — never another service's name. Every task group carries a `* **Target Release:**` bullet directly beneath its heading, naming the version or milestone it ships with.
 - **Tasks are flat under their task group** — no phase. Default is parallel.
 - **Numbering is four levels deep, for reference, not for sequencing.** `EPIC-XX` (`01` for Now/V1, `02` for Next/V2, in file order). `TG-XX.Y`, `Y` numbered within its epic, in file order. `TSK-XX.Y.Z`, `Z` numbered within its task group, in file order — so V1's Cross-Cutting's first task is `TSK-01.1.1`. `SUB-XX.Y.Z.N`, `N` numbered within its task. Renumber whenever an epic, task group, task, or subtask is added, deleted, or reordered, so the numbers stay contiguous — this is a display convenience for saying "do TSK-01.1.1–TSK-01.1.4," never an ID stored anywhere else or referenced across files.
 - **`(after: "<task text>")` is the only sequencing the file encodes**, appended to a task's own text, naming the task it must follow by its own text — never a number, and never an ID from another document. Numbers shift on renumbering; text doesn't.
-- **Every task group with behavior tasks carries its own `Tests:` task.** That is the merge gate; integration, smoke, e2e, and perf get their own task. `standards-sdlc` defines the tiers.
-- **In a repo `git-repo-init` scaffolds as an app/service/infra type** (`go-api`, `go-mcp`, `vue-ui`, `svelte-ui`, `cdk-infra` — see `git-repo-init`), **every epic's `Cross-Cutting` task group carries four standing closeout tasks** — `Security review`, `Bug sweep`, `Code smell`, `Performance`. They run last, after any Deploy tasks (see below): delete the epic's heading only once every other task is gone and these four are too (or swept, if left `[DONE]`). **A skill/config/doc-only repo — one `git-repo-init` never scaffolds as one of those types, this toolkit included — carries none of the four**; there is no runtime surface for a security scan, a perf suite, or a code-smell pass to cover, so `Cross-Cutting` in that kind of repo ends at whatever real tasks it holds.
+- **In a repo `git-repo-init` scaffolds as an app/service/infra type** (`go-api`, `go-mcp`, `vue-ui`, `svelte-ui`, `cdk-infra` — see `git-repo-init`), **every epic carries its own `Quality Assurance & Epic Hardening` task group**, numbered as the next task group in that epic (an epic whose only other task group is `Cross-Cutting` numbers this one `TG-XX.2`).
+  It holds four standing closeout tasks — `Security review`, `Bug sweep`, `Code smell`, `Performance` — and carries a `* **Trigger:**` bullet directly beneath its `* **Target Release:**` bullet, reading `Run once all functional Task Groups in <EPIC> reach [DONE].` Delete the epic's heading only once every other task group is gone and this one is too (or swept, if left `[DONE]`). **A skill/config/doc-only repo — one `git-repo-init` never scaffolds as one of those types, this toolkit included — carries neither the four closeout tasks nor the `Quality Assurance & Epic Hardening` task group itself**; there is no runtime surface for a security scan, a perf suite, or a code-smell pass to cover, so that repo's epics end at whatever functional task groups they hold.
 - **Every task carries a `[P: SEV]` tag.** The task's own text names what the work is; each `SUB-` line's `Done when:` command is what states what "done" means for that piece — write it concretely enough that someone else can run it, not so vague it can only be judged by the person who wrote it.
 - **An `assess-*` skill files its own findings straight in** — that is its own `Findings → backlog` step, not this skill's `normalize`, nor `backlog-plan`'s planning run. Those runs (a planning pass, a normalize pass) never invent a task from a finding it did not itself derive from the repo or the source file being normalized.
+- **A `[DONE]` task carrying an unchecked `- [ ]` Acceptance Criteria box is not swept** — `backlog-audit` verdicts it Ambiguous. `workflow-implement` is responsible for ticking a box once the subtask(s) proving it are green; a task with Acceptance Criteria and no ticking mechanism will never reach `[DONE]`.
 
 ### Foundation and Deploy edges
 
-`Cross-Cutting` has two fixed edges. Neither changes the rules above — same flat task list, same `(after:)` sequencing, same four closeout tasks last.
+`Cross-Cutting` has two fixed edges. Neither changes the rules above — same flat task list, same `(after:)` sequencing.
 
 - **Foundation, first.** Repo skeleton, toolchain floor, container build, health endpoint — what `git-repo-init` Create already seeds. On Scaffold/Refresh of a pre-existing repo these surface as real open tasks instead of pre-satisfied ones.
-- **Deploy, last — before the four closeout tasks.** CI deploy pipeline, STG rollout, PROD rollout. The task-group rule still applies: a service repo's Deploy tasks cover *becoming deployable* (build, push, wire the pipeline). The cloud infra itself is a task in the infra repo's own `Cross-Cutting`, never this one.
+- **Deploy, last.** CI deploy pipeline, STG rollout, PROD rollout. The task-group rule still applies: a service repo's Deploy tasks cover *becoming deployable* (build, push, wire the pipeline). The cloud infra itself is a task in the infra repo's own `Cross-Cutting`, never this one.
+  An epic's `Quality Assurance & Epic Hardening` task group runs once Deploy and every other functional task group reaches `[DONE]` — its own `Trigger` bullet states that condition directly.
 - **A Deploy task blocked on something outside this repo is still `[BLOCKED]`, same shape as any other** — the citation just points at the other repo's record instead of a code defect:
 
   ```markdown
@@ -141,7 +156,7 @@ Read the source file(s) in full. Every line becomes exactly one of:
 
 Assign each surviving task an epic (default `## [EPIC-01] Now, V1` unless the source clearly marks it future work) and a task group (the feature or route it belongs to — infer from the file's path or the task's own text, never a new taxonomy, never another service's name).
 
-If the repo is an app/service/infra type (see the `Cross-Cutting` rule above) and an epic's `Cross-Cutting` task group is missing any of the four closeout tasks, add the missing ones. Skip this for a skill/config/doc-only repo — it carries none of the four.
+If the repo is an app/service/infra type (see the closeout-task rule above) and an epic is missing its `Quality Assurance & Epic Hardening` task group, or that group is missing any of the four closeout tasks, add it/them. Skip this for a skill/config/doc-only repo — it carries neither.
 
 ## Step 3 — Present, then stop
 

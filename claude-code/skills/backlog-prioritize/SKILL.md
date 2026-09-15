@@ -19,7 +19,7 @@ Reorders what's already in `BACKLOG.md`. Never writes a new task, never edits a 
 5. **Re-rank `[P: SEV]` only when `$ARGUMENTS` gives a concrete reason to** (a task now blocks a named deadline, an incident elevated it, the user named it directly) — cite the reason next to the change in the report. Never bump priority on a hunch.
 6. **Move a task to a different epic only when the driver justifies it** — pulling V2 work into V1 because it's now urgent, or pushing a V1 task to V2 because something outranked it. `[BLOCKED]` tasks move only if the block itself is what's being deprioritized, never silently.
 7. **Never touch `[DONE]` tasks** — those are pending a `/backlog-audit` sweep, not live priority.
-8. **Never touch the four standing closeout tasks' position** — `Security review`, `Bug sweep`, `Code smell`, `Performance` stay last in their epic's `Cross-Cutting` task group, per `backlog-modify`'s fixed edges.
+8. **Never touch the four standing closeout tasks' position** — `Security review`, `Bug sweep`, `Code smell`, `Performance` stay in their epic's own `Quality Assurance & Epic Hardening` task group, per `backlog-modify`'s fixed edges.
 
 ## Applying the reorder
 
