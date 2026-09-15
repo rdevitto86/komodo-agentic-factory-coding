@@ -23,7 +23,7 @@ Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Sc
 |---|---|---|---|
 | M | `go.mod: golang.org/x/net@0.17.0` | 4 minor releases behind per `go list -u -m all` | no reachable exploit, but the pin blocks picking up unrelated fixes |
 
-**Diagram form**: a Mermaid `graph LR` of the dependency edges behind the rows — this module → the stale package → whatever pins it there. Draw it when a row's upgrade is gated by another row or the table runs past 5 rows; below both, the table alone is complete.
+**Diagram form**: a Mermaid `graph LR` of the dependency edges behind the rows — this module → the stale package → whatever pins it there, edged where one row's upgrade is gated by another. `config-accessibility`'s visual-first section says when it is drawn and where it sits.
 
 **Sev**: Critical (runtime past EOL, no security patches ship for it at all) · High (major version behind with a breaking-change migration overdue) · Medium (minor/patch versions behind, or a deprecated API this repo still calls) · Low (deprecated API with a stable no-op stub, or a dev-only dependency).
 

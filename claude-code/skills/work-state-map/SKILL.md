@@ -34,6 +34,16 @@ Edges are `contains` (epic to task group), `after` (a dependency between two tas
 - **Inline the JSON.** The page cannot fetch its own data — every request to an outside host is blocked. Embed the parser's output in the page at publish time.
 - **States are visually distinct** (AC-3): give `open`, `in_progress`, `blocked`, `done`, and `empty` each their own fill via `classDef`, and show the state's meaning in a legend rather than relying on color alone. The current released version is labeled as such and rendered distinctly from the `Unreleased` node beside it.
 - **Group by epic** using a Mermaid `subgraph` per epic, with each task group's node label carrying its title and its open / blocked / done counts.
+- **Always quote the label, and escape what quoting cannot carry.** Real titles contain `&` and backticked identifiers, and appending counts reads as a parenthetical — an unquoted `(` or `)` is a shape delimiter and breaks the whole diagram, so every node and subgraph label is written as `ID["<text>"]`, double quotes included, with no exceptions for a label that happens to look safe. Inside that text, apply all four rules before emitting:
+
+  | In the title | Emit |
+  |---|---|
+  | `"` | `&quot;` |
+  | `#` | `&#35;` |
+  | `` ` `` | drop the backticks, keep the identifier |
+  | `&` | `&amp;` |
+
+  Escape `&` first, or the entity prefixes the other three rules produce get double-escaped. A `subgraph` needs the same treatment in its own quoted title, and Mermaid needs its id separate from its label: `subgraph EPIC01["…"]`, never a bare title.
 - **Draw the release spine** as its own chain, visually separated from the epic subgraphs.
 - **Responsive to about 400px** and **theme-aware** — the page around the diagram follows the artifact contract, and wide content (the diagram included) scrolls inside its own container rather than widening the page.
 

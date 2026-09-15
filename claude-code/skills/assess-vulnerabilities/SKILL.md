@@ -24,7 +24,7 @@ Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Sc
 |---|---|---|---|
 | H | `go.mod: golang.org/x/net@0.17.0` | CVE-2023-45288 (HTTP/2 CONTINUATION flood) | `govulncheck` marks the vulnerable func reachable from `cmd/server` |
 
-**Diagram form**: a Mermaid `graph LR` of each reachability chain the scanner reported — entry package → intermediate → the vulnerable symbol. Draw it when chains share a hop or the table runs past 5 rows; below both, the table alone is complete.
+**Diagram form**: a Mermaid `graph LR` of each reachability chain the scanner reported — entry package → intermediate → the vulnerable symbol, edged where two chains share a hop. `config-accessibility`'s visual-first section says when it is drawn and where it sits.
 
 **Sev**: Critical (reachable, exploitable, no fix pending) · High (reachable, patch available) · Medium (unreachable per the scanner, or needs an unlikely precondition) · Low (dev-only dependency, or already flagged with a tracked upstream fix).
 

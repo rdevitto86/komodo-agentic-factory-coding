@@ -75,7 +75,6 @@ CHANGE_GROUPS = ("Added", "Changed", "Fixed", "Removed", "Security")
 
 
 def read_lines(path, warnings, label):
-    """Return a file's lines, or None after recording why it could not be read."""
     if not os.path.isfile(path):
         warnings.append({"kind": "missing_source", "source": label, "detail": path})
         return None
@@ -97,13 +96,16 @@ def empty_priorities():
     return dict((priority, 0) for priority in PRIORITIES)
 
 
+def empty_changes():
+    return dict((name, 0) for name in CHANGE_GROUPS)
+
+
 def add_counts(target, source):
     for key in target:
         target[key] += source[key]
 
 
 def strip_annotations(title):
-    """A task heading's prose with its (after:), [P: X], and [STATUS] markers removed."""
     text = AFTER_RE.sub("", title)
     text = PRIORITY_RE.sub("", text)
     text = STATUS_RE.sub("", text)
@@ -111,7 +113,6 @@ def strip_annotations(title):
 
 
 def derive_state(counts):
-    """Collapse a bag of task counts into the one state a renderer colors."""
     if counts["total"] == 0:
         return "empty"
     if counts["done"] == counts["total"]:
@@ -124,7 +125,6 @@ def derive_state(counts):
 
 
 def parse_backlog(lines, warnings):
-    """Build the epic and task-group nodes, plus the task index the after edges resolve against."""
     epics = []
     groups = []
     tasks = []
@@ -246,7 +246,6 @@ def parse_backlog(lines, warnings):
 
 
 def resolve_after_edges(tasks, warnings):
-    """Lift each task's (after:) annotation to an edge between the two tasks' groups."""
     edges = []
     for task in tasks:
         if not task["after"]:
@@ -276,7 +275,6 @@ def resolve_after_edges(tasks, warnings):
 
 
 def parse_changelog(lines, warnings, limit):
-    """Build the release spine, newest first, with per-group entry counts."""
     releases = []
     current = None
     group = None
@@ -293,7 +291,7 @@ def parse_changelog(lines, warnings, limit):
                 "released": False,
                 "state": "unreleased",
                 "parent": None,
-                "changes": dict((name, 0) for name in CHANGE_GROUPS),
+                "changes": empty_changes(),
                 "change_count": 0,
                 "line": number,
             }
@@ -313,7 +311,7 @@ def parse_changelog(lines, warnings, limit):
                 "released": True,
                 "state": "shipped",
                 "parent": None,
-                "changes": dict((name, 0) for name in CHANGE_GROUPS),
+                "changes": empty_changes(),
                 "change_count": 0,
                 "line": number,
             }

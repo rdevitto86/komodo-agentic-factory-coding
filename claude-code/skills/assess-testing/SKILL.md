@@ -28,7 +28,7 @@ Findings only, never writes a test — a coverage or placement gap routes back t
 | H | `pkg/auth` | 62% coverage, security-critical | coverage run output |
 | M | `internal/foo/foo_test.go` | asserts `err == nil` only, 4 branches unchecked | `file:line` |
 
-**Diagram form**: a Mermaid `graph LR` — one node per package or tier named, edged where a lower tier depends on a higher one. Draw it when such an edge exists or the table runs past 5 rows; below both, the table alone is complete.
+**Diagram form**: a Mermaid `graph LR` — one node per package or tier named, edged where a lower tier depends on a higher one. `config-accessibility`'s visual-first section says when it is drawn and where it sits.
 
 **Sev**: Critical (a security-critical or SDK package below its 100% floor, or a suite reporting a skipped test as passed) · High (new/changed code below the 85% floor, a lower tier depending on a higher one) · Medium (misplaced test file, a stale §6 citation against `standards-sdlc`, a heavy per-case hook) · Low (coverage padding, a shared helper that should be file-local).
 
