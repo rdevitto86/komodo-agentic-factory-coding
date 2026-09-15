@@ -41,6 +41,7 @@ Score the **highest tier any touched file reaches** — one Critical-tier file o
 - **`file:line` for every driving factor.** No pointer, no score.
 - **Omit `Next` below Med-High.** Nothing to recommend at Low through Med.
 - **One row per driving factor.** If the table needs more than 3 rows, the diff needs splitting, not a longer table.
+- **Diagram form — a Mermaid `graph LR` beneath the table, one node per driving factor, edged where one factor's blast radius reaches another.** `config-accessibility`'s visual-first section says when it is drawn and where it sits.
 
 ## Findings → backlog
 

@@ -36,6 +36,7 @@ A finding row is admissible only when it names a trigger (the input or condition
 |---|---|---|
 ```
 
+- **A Mermaid fence sits directly beneath the findings table** — inside `## Findings`, never as a third section — when the rows share an edge (one finding's effect is another's trigger, several reach one sink) or the table runs past 5 rows. Below both, table only. It restates rows, never replaces one, and what its nodes and edges mean belongs to the invoking skill, like the columns.
 - **No findings:** state that plainly in `## Findings`, one line — an empty findings table is a successful review, not a failed one.
 - **Never invent a finding to have something to report.**
 - **A near-miss that fails the evidence bar goes in `## Considered and dismissed`**, not `## Findings` — it keeps the reasoning visible without inflating the findings count.

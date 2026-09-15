@@ -28,6 +28,8 @@ Model-agnostic finder — Read/Grep/Glob/Bash only, no host-specific tooling. Lo
 |---|---|---|---|---|
 | C | `handler.go:88` | unvalidated redirect target | attacker-supplied `next` reaches `http.Redirect` unchecked | A01 |
 
+**Diagram form**: a Mermaid `graph LR` — one path per finding, attacker-controlled entry point → each hop → the sink it reaches. `reviewer.md` says when it is drawn and where it sits.
+
 **Sev**: Critical (auth bypass, injection, secret exposure) · High (exploitable but needs a precondition) · Medium (defense-in-depth gap, no direct exploit path yet) · Low (hardening, not exploitable as written).
 
 No findings: state that plainly, one line, and stop. **Never invent a finding to have something to report.**

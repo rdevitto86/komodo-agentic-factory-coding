@@ -99,6 +99,7 @@
   "model": "sonnet",
   "skillOverrides": {
     "config-accessibility": "name-only",
+    "work-state-map": "name-only",
     "standards-worklog": "name-only",
     "standards-observability": "name-only",
     "standards-cicd": "name-only",

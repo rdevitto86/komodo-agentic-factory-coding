@@ -84,8 +84,25 @@ Applies to rendered output — HTML, artifact, README, slide — not terminal te
 
 ---
 
-## 7. Self-check
+## 7. Visual-first output
+
+A "show, don't tell" rule that never says where the picture goes is not actionable. It goes inline, in a Mermaid fence, unless the graph outgrows one.
+
+| Trigger — either one | Threshold |
+|---|---|
+| Dependency relation | any edge between rows — after, blocks, reaches |
+| Entity count | more than 5 rows or nodes |
+
+- **Below both triggers, the table alone is correct and complete.** Unrelated rows gain nothing from a diagram and cost tokens to draw.
+- **The diagram is additive, never a replacement.** Every table stays verbatim; a reader on a surface that renders nothing loses no information.
+- **Inline Mermaid is the default.** No build step, and an unrendered fence still reads as plain text.
+- **A published artifact is the exception** — an interactive graph, or one past ~25 nodes, where Mermaid is illegible rendered and raw alike (`artifact-diagramming`).
+
+---
+
+## 8. Self-check
 
 - [ ] Heading levels ≤ 3, `---` at each topic shift
 - [ ] Turn-end summary uses fixed ✅/❌/⚠️ buckets, none freeform
 - [ ] Density caps respected; emoji only in headings, ≤1 each
+- [ ] A dependency edge or >5 entities → a Mermaid fence accompanies the table
