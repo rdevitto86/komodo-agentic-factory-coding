@@ -46,6 +46,8 @@ templates/project/    AGENTS.md / CLAUDE.md / BACKLOG.md / CHANGELOG.md
 bridges/komodo-bridge/    local LLM MCP bridge config
 scripts/              validate.py, test_hooks.py, release.py, evals.py, portable git hooks
 CODEOWNERS            review gate on claude-code/AGENTS.md, settings.json, hooks/
+LICENSE               MIT
+SECURITY.md           vulnerability reporting, and what installing this toolkit grants
 ```
 
 ## The Agentic Workflow Loop
@@ -129,7 +131,7 @@ One guard runs as `PreToolUse`, so a violation never reaches disk. Four more run
 
 | Hook | Fires on | Does | On error |
 |---|---|---|---|
-| `git_guard.py` | Bash | Allowlists read-only git, denies in-place rewrites, and — for the `reviewer` agent, whose Edit/Write access is dropped in its own `tools:` list, not caught by a hook — denies its entire Bash surface by default, down to a read-only `git log`/`diff`/`show`/`status`/`blame`/`ls-files` allowlist | **Closed** |
+| `git_guard.py` | Bash | Denies destructive git for every caller, restricts six forks' (`builder`, `tester`, `scout`, `researcher`, `architect`, `reviewer`) direct git invocations to their own read-only subcommand set by identity — not a sandbox, since an interpreter reached through Bash can still get to git — and denies in-place rewrites | **Closed** |
 | `verify_gate.py` | Stop | Blocks the turn while the repo's checks fail | **Open** |
 | `context_injector.py` | SessionStart | Injects the current `[WIP]` story and version | **Open** |
 | `auto_format.py` | Edit, Write (`PostToolUse`) | Runs `gofmt`/prettier on the written file; no-ops if the formatter isn't on `PATH` | **Open** |

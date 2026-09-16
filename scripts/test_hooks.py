@@ -2180,6 +2180,96 @@ def check_git_guard() -> None:
         'env --split-string="git push --force"',
         'rewrites published history',
     )
+    bash_case_agent(
+        'G211 builder git commit is denied by its own read-only git allowlist',
+        'deny',
+        'builder',
+        'git commit -m "x"',
+        'read-only git',
+    )
+    bash_case_agent(
+        'G212 builder git log is allowed', 'allow', 'builder', 'git log',
+    )
+    bash_case_agent(
+        'G213 tester git push is denied by its own read-only git allowlist',
+        'deny',
+        'tester',
+        'git push',
+        'read-only git',
+    )
+    bash_case_agent(
+        'G214 tester git status is allowed', 'allow', 'tester', 'git status',
+    )
+    bash_case_agent(
+        'G215 scout git branch is denied by its own read-only git allowlist',
+        'deny',
+        'scout',
+        'git branch feat/some-name',
+        'read-only git',
+    )
+    bash_case_agent(
+        'G216 scout git diff is allowed', 'allow', 'scout', 'git diff',
+    )
+    bash_case_agent(
+        'G217 researcher git add is denied by its own read-only git allowlist',
+        'deny',
+        'researcher',
+        'git add .',
+        'read-only git',
+    )
+    bash_case_agent(
+        'G218 researcher git rev-parse is allowed, named in its own file beyond the shared set',
+        'allow',
+        'researcher',
+        'git rev-parse HEAD',
+    )
+    bash_case_agent(
+        'G219 architect git switch is denied by its own read-only git allowlist',
+        'deny',
+        'architect',
+        'git switch some-other-branch',
+        'read-only git',
+    )
+    bash_case_agent(
+        'G220 architect git rev-parse is allowed, named in its own file beyond the shared set',
+        'allow',
+        'architect',
+        'git rev-parse HEAD',
+    )
+    bash_case_cwd(
+        FIXTURE_FEAT,
+        'G221 an orchestrator call with no agent identity is unaffected by the five-agent '
+        'policy -- git commit stays allowed',
+        'allow',
+        'git commit -m "x"',
+    )
+    bash_case_agent(
+        'G222 builder git diff --output writes to a file and is denied, not just the reviewer',
+        'deny',
+        'builder',
+        'git diff --output BACKLOG.md',
+        'bypassing',
+    )
+    bash_case_agent(
+        'G223 builder GIT_EXTERNAL_DIFF=... git diff executes an arbitrary command and is denied, not just the reviewer',
+        'deny',
+        'builder',
+        'GIT_EXTERNAL_DIFF="touch pwn" git diff',
+        'VAR=value',
+    )
+    bash_case_agent(
+        'G224 builder git -c core.pager=x diff injects a config value and is denied, not just the reviewer',
+        'deny',
+        'builder',
+        'git -c core.pager=x diff',
+        'config-env',
+    )
+    bash_case_agent(
+        'G225 builder git rev-parse is allowed, granted to all five agents per BACKLOG.md TSK-01.4.16 AC-2',
+        'allow',
+        'builder',
+        'git rev-parse HEAD',
+    )
 
 
 def check_auto_format() -> None:

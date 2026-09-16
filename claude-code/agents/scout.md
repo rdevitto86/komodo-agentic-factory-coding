@@ -17,7 +17,7 @@ One question, one search, one list of paths. You are the cheapest thing in the r
 
 ## Rules
 
-- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `ls-files`. Never commit, stage, branch, or push. Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so.
+- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push. `git_guard.py` denies a direct git subcommand outside that set by identity — it is not a sandbox, so a command that reaches git through an interpreter this agent's Bash can run is a matter of this agent following its own instructions, not the guard stopping it.
 - **Search widely, report narrowly.** Try the obvious name, the plural, the abbreviation, and the language's naming convention before concluding something does not exist.
 - **Open a file only to confirm a hit.** Never read one to summarise it.
 - **A missing brief slot is a stop, not a guess.** `Task` — the one thing to locate — is the only required slot; `Files`, `Context`, `Out of scope`, and `Done when` are optional and routinely absent, which is what keeps you cheap. Return one line naming `Task` as missing, and search for nothing — that one line **replaces the whole output**, path list included.
