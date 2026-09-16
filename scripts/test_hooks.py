@@ -2189,11 +2189,10 @@ def check_auto_format() -> None:
     os.makedirs(emptybin)
 
     write_text(os.path.join(fmt, "main.go"), "package main\n\nfunc  main() {}\n")
-    if IS_WINDOWS:
+    if not shutil.which("gofmt"):
         skip_case(
             "F1  gofmt reformats a .go file when gofmt is present",
-            'shutil.which("gofmt") returns None on the Windows Git Bash runner despite '
-            "setup-go adding it to PATH",
+            'shutil.which("gofmt") returns None on this runner',
         )
     else:
         auto_format_case("F1  gofmt reformats a .go file when gofmt is present", "yes",

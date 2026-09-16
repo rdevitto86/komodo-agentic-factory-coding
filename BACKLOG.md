@@ -304,6 +304,31 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** every hook is already Python and `scripts/install.py` already ships, so the remaining non-portable surface is six shell files plus the `Makefile`. The sharp end is the gate itself — `verify_gate.py` resolves `.claude/verify.sh` → `make verify` → `task verify` → `just verify`, and three of those four do not exist on a stock Windows box. No preloaded binaries: `python3` 3.7+ is already the hard floor and a binary would *add* a setup step.
 
+#### [TSK-01.7.6] `scripts/test_hooks.py` fails on Windows across two subsystems, so that leg cannot gate until it is ported [P: H] [TODO]
+
+**User Story:**
+> **As** someone relying on the Windows CI leg,
+> **I want** the hook suite to run there,
+> **So that** a leg that reports red for known reasons either goes green or stops pretending to gate.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Green or skipped):** Given the `windows-latest` leg, when `scripts/test_hooks.py` runs, then every case either passes or reports a skip naming its missing precondition.
+- [ ] **AC-2 (Leg gates):** Given the matrix, when the Windows leg finishes, then its result blocks the merge like every other leg.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.6.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s first real CI run — the first time this suite has ever executed on anything but Linux. Three clusters fail on `windows-latest`: `G206`/`G207` (the `gh api` threaded-reply cases), `G137` (cwd outside any repo versus an absolute target landing inside one — a path-shape assumption), and `VG1`-`VG11`, the entire `verify_gate.py` block. Each is a POSIX assumption rather than a real defect in the code under test, but the count is large enough that porting them is its own task rather than a fix folded into the band that found them. Establish per cluster whether the right answer is a port or a documented skip; a skip must name its precondition the way `test_install.py`'s Windows guards now do | `python3 scripts/test_hooks.py` reports zero failures on `windows-latest` |
+| `SUB-01.7.6.2` | `[Impl]` | until `SUB-01.7.6.1` lands, the Windows leg reports red on every pull request for known reasons. Decide deliberately between leaving it red and visible, or marking it `continue-on-error` with a comment naming this task — and if `continue-on-error` is chosen, flipping it back is this task's `AC-2` and must not be forgotten | the workflow states which legs gate, and `python3 scripts/validate.py` exits zero |
+
+#### [TSK-01.7.7] `G210` reads ambient `gh` state, so the hook suite's result depends on whether the checkout has an open PR [P: M] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given any machine, when `scripts/test_hooks.py` runs, then `G210`'s result does not depend on the ambient `gh` binary's authentication or on whether the current branch has an open pull request.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.7.1` | `[Impl]` | surfaced while fixing `TSK-01.7.1`'s CI failures. `current_branch_pr_number()` (`claude-code/hooks/git_guard.py:944`) shells out to `gh pr view` with no `cwd` override, so it inherits the real process cwd — the actual checkout, not `test_hooks.py`'s fixture repo. `G210` (`scripts/test_hooks.py:1532`) uses the plain `bash_case` helper and never stubs `gh`, unlike `G206`-`G209` which use `gh_stub_env`. Verified this session: `G210` fails on a machine where `gh` is authenticated and the branch has an open PR, and passes under `GH_CONFIG_DIR=<empty>`, which is CI's state since the workflow sets no `GH_TOKEN`. The suite is therefore not hermetic, and it went red locally the moment this branch's own PR was opened. Likely fix is threading `cwd` through to that `gh` call, or giving `G210` its own `gh_stub_env` | `python3 scripts/test_hooks.py` passes with `gh` authenticated and the branch carrying an open PR |
+
 #### [TSK-01.7.3] The `verify` workflow pulls its container and its actions by mutable tag, and persists the job token into a tree that then executes PR-authored code [P: M] [TODO]
 
 **User Story:**
