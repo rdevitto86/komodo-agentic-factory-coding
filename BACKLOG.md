@@ -123,8 +123,8 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** installing it is a decision with known terms rather than an unreviewable one.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Licensed):** Given the repo root, when it is read, then a `LICENSE` file states the terms under which it may be used and redistributed.
-- [ ] **AC-2 (Disclosure path):** Given `SECURITY.md`, when it is read, then it names how to report a vulnerability and what the install's execution surface is.
+- [x] **AC-1 (Licensed):** Given the repo root, when it is read, then a `LICENSE` file states the terms under which it may be used and redistributed.
+- [x] **AC-2 (Disclosure path):** Given `SECURITY.md`, when it is read, then it names how to report a vulnerability and what the install's execution surface is.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
