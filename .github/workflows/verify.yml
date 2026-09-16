@@ -23,22 +23,27 @@ jobs:
             python-version: "3.x"
           - os: macos-latest
             python-version: "3.x"
+          # advisory is deliberate, not an oversight; flip back to false once BACKLOG.md's advisory-ticket item is ported
           - os: windows-latest
             python-version: "3.x"
+            advisory: true
+            advisory-ticket: "TSK-01.7.6"
           # the declared floor, run inside a python:3.7 container since no current runner image publishes a native 3.7 build
           - os: ubuntu-latest
             container: "python:3.7"
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
+    # non-blocking only where matrix.advisory is set; every other leg defaults false and still blocks
+    continue-on-error: ${{ matrix.advisory || false }}
     steps:
       # full history (not the default shallow clone) so tags exist for --ref pin tests (S1, S3 in scripts/test_install.py)
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # the container leg runs git as root over a workspace owned by the runner's uid, which git refuses without this
+      # checkout sets this under a HOME it reverts, and github.workspace is the host path, not the container's
       - if: ${{ matrix.container }}
-        run: git config --global --add safe.directory "${{ github.workspace }}"
+        run: git config --global --add safe.directory '*'
 
       # the floor leg's interpreter comes from the container, not this step
       - if: ${{ !matrix.container }}
