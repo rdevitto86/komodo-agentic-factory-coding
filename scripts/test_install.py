@@ -37,6 +37,17 @@ def is_windows() -> bool:
     return os.name == "nt" or sys.platform.startswith("win")
 
 
+# the bash a Windows PATH resolves is WSL's launcher, so reach for the one Git for Windows ships
+def resolve_bash() -> str:
+    if not is_windows():
+        return shutil.which("bash") or ""
+    git = shutil.which("git")
+    if not git:
+        return ""
+    candidate = os.path.join(os.path.dirname(os.path.dirname(git)), "bin", "bash.exe")
+    return candidate if os.path.isfile(candidate) else ""
+
+
 def emit(text: str) -> None:
     sys.stdout.write(text)
     sys.stdout.flush()
@@ -106,9 +117,10 @@ def first_bad_hook_command(settings: dict, hook_names: tuple) -> str:
         for entry in event_hooks:
             for hook in entry.get("hooks", []):
                 command = hook.get("command", "")
-                if "~" in command:
-                    return "%s -> literal '~' survived the rewrite" % command
                 tokens = shlex.split(command)
+                # a Windows short path carries its own tilde (RUNNER~1), so only a leading one is a home
+                if any(token.startswith("~") for token in tokens):
+                    return "%s -> literal '~' survived the rewrite" % command
                 script_index = next(
                     (
                         i
@@ -484,7 +496,8 @@ def make_git_repo(path: str) -> None:
 def check_git_install(workdir: str) -> None:
     emit("\nscripts/hooks/git/install.sh\n\n")
 
-    if not shutil.which("bash"):
+    bash = resolve_bash()
+    if not bash:
         for label in GIT_INSTALL_SKIP_LABELS:
             skip_case(label, BASH_SKIP_REASON)
         return
@@ -494,7 +507,7 @@ def check_git_install(workdir: str) -> None:
     git(["config", "--local", "core.hooksPath", "no-such-dir/hooks"], grepo1)
 
     label = "G1 --status marks a missing core.hooksPath stale"
-    rc, out = capture(["bash", GIT_INSTALL, "--status", grepo1])
+    rc, out = capture([bash, GIT_INSTALL, "--status", grepo1])
     if rc != 0:
         failed(label, "exit %d: %s" % (rc, out))
     elif "stale" not in out:
@@ -503,7 +516,7 @@ def check_git_install(workdir: str) -> None:
         passed(label)
 
     label = "G2 installing over a stale core.hooksPath notes hooks had not been running"
-    rc, out = capture(["bash", GIT_INSTALL, grepo1])
+    rc, out = capture([bash, GIT_INSTALL, grepo1])
     _, current = git(["config", "--local", "--get", "core.hooksPath"], grepo1)
     current = current.strip()
     problem = ""
@@ -516,7 +529,7 @@ def check_git_install(workdir: str) -> None:
     record(label, problem)
 
     label = "G3 a repo already pointing at the live hooks dir is left alone"
-    rc, out = capture(["bash", GIT_INSTALL, grepo1])
+    rc, out = capture([bash, GIT_INSTALL, grepo1])
     if rc != 0:
         failed(label, "exit %d: %s" % (rc, out))
     elif "already installed" not in out:
@@ -534,7 +547,7 @@ def check_git_install(workdir: str) -> None:
         handle.write("#!/bin/sh\n")
     os.chmod(orphan, 0o755)
 
-    rc, out = capture(["bash", GIT_INSTALL, grepo2])
+    rc, out = capture([bash, GIT_INSTALL, grepo2])
     problem = ""
     if rc != 0:
         problem = "exit %d: %s" % (rc, out)
@@ -551,7 +564,8 @@ G5_LABEL = "G5 a Makefile-only repo's pre-push-verify actually runs its verify t
 def check_pre_push_verify(workdir: str) -> None:
     emit("\nscripts/hooks/git/pre-push-verify\n\n")
 
-    if not shutil.which("bash"):
+    bash = resolve_bash()
+    if not bash:
         skip_case(G5_LABEL, BASH_SKIP_REASON)
         return
     if not shutil.which("make"):
@@ -564,7 +578,7 @@ def check_pre_push_verify(workdir: str) -> None:
     with open(os.path.join(mrepo, "Makefile"), "w", encoding="utf-8") as handle:
         handle.write("verify:\n\t@echo ran > ran.txt\n\t@exit 1\n")
 
-    rc, out = capture(["bash", PRE_PUSH_VERIFY], cwd=mrepo)
+    rc, out = capture([bash, PRE_PUSH_VERIFY], cwd=mrepo)
     problem = ""
     if not os.path.isfile(sentinel):
         problem = "the verify target never ran: %s" % out
@@ -577,7 +591,7 @@ def check_pre_push_verify(workdir: str) -> None:
     label = "G6 a repo with no verify gate at all still exits 0"
     plain = os.path.join(workdir, "plainrepo")
     make_git_repo(plain)
-    rc, out = capture(["bash", PRE_PUSH_VERIFY], cwd=plain)
+    rc, out = capture([bash, PRE_PUSH_VERIFY], cwd=plain)
     if rc == 0:
         passed(label)
     else:
