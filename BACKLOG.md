@@ -80,3 +80,92 @@ files: [komodo/__main__.py, tests/test_cli.py]
 done_when:
   - python3 -m unittest tests.test_cli -q
 ```
+
+### [TG-02.5] Run hygiene
+```yaml
+type: fix
+```
+
+#### [TSK-02.5.1] Commit only the paths a task declares or changed, so build artifacts never land [P: H] [TODO]
+```yaml
+files: [komodo/pipeline.py, komodo/gitops.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline tests.test_gitops -q
+context: ["a live run on a fresh repo committed four .pyc files: gitops.commit stages with add -A after done_when has run in the worktree"]
+```
+
+#### [TSK-02.5.2] Preflight ensures the target repo ignores the .komodo directory before the first run writes to it [P: H] [TODO]
+```yaml
+files: [komodo/pipeline.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+context: ["a live run committed .komodo/runs/<id>/state.json into the target repo; nothing in the harness writes or checks a gitignore and templates/project ships none"]
+```
+
+#### [TSK-02.5.3] A filed review finding points at the file that fixes it, not the artifact it was found in [P: M] [TODO]
+```yaml
+files: [komodo/pipeline.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+context: ["the run filed a task whose files list was a .pyc path, which no builder could act on"]
+```
+
+#### [TSK-02.5.4] Commit subjects lowercase the title after the type and truncate on a word boundary [P: M] [TODO]
+```yaml
+files: [komodo/gitops.py, tests/test_gitops.py]
+done_when:
+  - python3 -m unittest tests.test_gitops -q
+context: ["commit_message produced 'feat: Add pkg/greet.py with a greet function returning \"hello <name>\"' truncated mid-word at 72 chars"]
+```
+
+#### [TSK-02.5.5] Reconsider the reviewer diff floor now that review dominates a small group's cost and wall clock [P: L] [TODO]
+```yaml
+files: [komodo/config.py, docs/design-decisions.md, tests/test_config.py]
+done_when:
+  - python3 -m unittest tests.test_config -q
+context: ["a 10-line diff cost 0.10 of 0.16 USD and 1m54s of a 2m09s run; the fast profile's 150-line floor turns review off for exactly this case"]
+```
+
+### [TG-02.6] Defects found reading the tree
+```yaml
+type: fix
+```
+
+#### [TSK-02.6.1] Cover render.py and the CLI with tests [P: H] [TODO]
+```yaml
+files: [tests/test_render.py, tests/test_cli.py]
+done_when:
+  - python3 -m unittest tests.test_render tests.test_cli -q
+context: ["komodo/render.py and komodo/__main__.py carry no test file between them"]
+```
+
+#### [TSK-02.6.2] publish picks the first pull request template it finds, not the last [P: M] [TODO]
+```yaml
+files: [komodo/pipeline.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+```
+
+#### [TSK-02.6.3] Retire the claude-code references the rules now forbid [P: M] [TODO]
+```yaml
+files: [CHANGELOG.md, komodo/doctor.py, tests/test_doctor_install.py]
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+  - python3 -m komodo doctor
+context: ["AGENTS.md forbids a claude-code directory; CHANGELOG.md names it twelve times and doctor whitelists the prefix instead of flagging it"]
+```
+
+#### [TSK-02.6.4] Close the files doctor opens, so verify stops printing ResourceWarnings [P: L] [TODO]
+```yaml
+files: [komodo/doctor.py, tests/test_doctor_install.py]
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+```
+
+#### [TSK-02.6.5] Remove the dead conditional in the builder commit path [P: L] [TODO]
+```yaml
+files: [komodo/pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+context: ["both arms of the status assignment return DONE"]
+```
