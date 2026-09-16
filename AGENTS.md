@@ -27,9 +27,9 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
 | `comments.py hook` | `claude-code/agents/builder.md` frontmatter | PostToolUse, matcher `Edit\|Write` | Reports comment findings for the touched file; fails open |
 
-**`git_guard.py` fails closed** — an unparseable payload denies. **`verify_gate.py`, `context_injector.py`, and `comments.py hook` fail open** — any internal error exits 0, except a verify command that outruns `KOMODO_VERIFY_TIMEOUT` (integer seconds, default 300), which is a deliberate block naming the limit, not a silent pass-through.
+**`git_guard.py` fails open** — an unparseable payload or an internal crash exits 0, backstopped by a hardcoded destructive-pattern check that still denies. **`verify_gate.py`, `context_injector.py`, and `comments.py hook` fail open** — any internal error exits 0, except a verify command that outruns `KOMODO_VERIFY_TIMEOUT` (integer seconds, default 300), which is a deliberate block naming the limit, not a silent pass-through.
 
-**Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `scripts/install.py` checks the interpreter a hook command will resolve on `PATH` meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s fail-closed handler never gets a chance to run.
+**Every hook command and both `scripts/hooks/git/` dispatchers shell out to `python3` on `PATH`; the floor is 3.7** (set by `subprocess.run(capture_output=...)`, added in 3.7 — nothing here needs a later syntax feature). `scripts/install.py` checks the interpreter a hook command will resolve on `PATH` meets that floor before it links anything; if it's missing or shadowed, the hook command fails before any Python runs, so `git_guard.py`'s own crash handler — destructive-pattern backstop included — never gets a chance to run.
 
 ## Comments
 

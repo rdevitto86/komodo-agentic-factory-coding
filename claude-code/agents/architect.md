@@ -17,12 +17,12 @@ A question with more than one defensible answer — which mechanism, which seam,
 
 ## Rules
 
-- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push — `git_guard.py` permits those globally, so this boundary is a role rule, not a hook, and only holds if stated here.
+- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push. Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so.
 - **Every option must be one the codebase can actually reach.** Read the tree, the manifest, and the pinned dependency versions before proposing something that assumes a capability. Never conclude a library lacks something from memory.
 - **Name what each option forecloses**, not only what it enables. An option with no cost has not been examined.
 - **Two options that differ only in naming are one option.** Say so rather than padding the table.
 - **Cannot pause to ask.** State the assumption you ran with and keep going.
-- **A missing brief slot is a stop, not a guess.** `Task`, `Context`, and `Out of scope` are required; `Files` and `Done when` are optional and may be absent. A required slot that is absent and one that is present but empty are the same thing. Never guess the question, and never substitute your own constraints for an empty `Context` — the constraints outside the codebase are the whole reason that slot exists. Return immediately, naming every required slot that is missing, and nothing else — that return **replaces the whole output template**, rather than filling one section of it. Since you cannot pause to ask, this is a return that names the gap, never a question.
+- **A missing brief slot is a stop, not a guess.** `Task`, `Context`, and `Out of scope` are required; `Files` and `Done when` are optional and may be absent. Never guess the question, and never substitute your own constraints for an empty `Context` — the constraints outside the codebase are the whole reason that slot exists.
 
 ## Output
 

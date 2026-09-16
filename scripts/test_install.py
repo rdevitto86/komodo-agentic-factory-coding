@@ -176,6 +176,44 @@ def check_install(workdir: str, python3: str) -> None:
     else:
         passed(label)
 
+    label = "I9 a generate-strategy install names settings.json, not the whole-tree notice"
+    target9 = os.path.join(workdir, "home9", ".claude")
+    rc, out = capture(
+        [python3, INSTALL, "--target", target9, "--skip-verify", "--settings", "generate"]
+    )
+    problem = ""
+    if rc != 0:
+        problem = "exit %d: %s" % (rc, out)
+    if not problem and "fell back to copy mode" in out:
+        problem = "a deliberate generate printed the whole-tree copy-fallback notice: %s" % out
+    if not problem and "generated settings.json" not in out:
+        problem = "missing the settings-generated notice naming settings.json: %s" % out
+    if not problem and "re-sync with" not in out:
+        problem = "missing the re-sync instruction: %s" % out
+    if not problem and ("--target " + target9) not in out:
+        problem = "re-sync command did not carry the --target suffix: %s" % out
+    record(label, problem)
+
+    label = "I10 a real all-symlink install prints neither re-sync notice"
+    stubbin10 = os.path.join(workdir, "stubbin-python3-only")
+    os.makedirs(stubbin10)
+    os.symlink(python3, os.path.join(stubbin10, "python3"))
+    target10 = os.path.join(workdir, "home10", ".claude")
+    rc, out = capture(
+        [python3, INSTALL, "--target", target10, "--skip-verify", "--settings", "link"],
+        env=env_with(PATH=stubbin10),
+    )
+    problem = ""
+    if rc != 0:
+        problem = "exit %d: %s" % (rc, out)
+    if not problem and not os.path.islink(os.path.join(target10, "settings.json")):
+        problem = "settings.json was not actually symlinked, so this is not the all-symlink case: %s" % out
+    if not problem and "fell back to copy mode" in out:
+        problem = "notice printed even though nothing fell back to copy: %s" % out
+    if not problem and "generated settings.json" in out:
+        problem = "notice printed even though settings.json was really symlinked: %s" % out
+    record(label, problem)
+
 
 def assert_guard_rejected(label: str, clone: str, target: str, args: list, python3: str) -> None:
     _, head_before = git(["rev-parse", "--abbrev-ref", "HEAD"], clone)

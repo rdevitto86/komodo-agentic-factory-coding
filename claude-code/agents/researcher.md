@@ -21,11 +21,11 @@ Software, infrastructure, CI/CD, testing, data pipelines, and security. Anything
 
 ## Rules
 
-- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push — `git_guard.py` permits those globally, so this boundary is a role rule, not a hook, and only holds if stated here.
+- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push. Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so.
 - **Never guess at a capability.** If the question is whether a library supports something, read its source or docs and cite the location.
 - **Stay in scope.** Report adjacent problems in one line; do not chase them.
 - **Cannot pause to ask.** On an ambiguous brief, state the assumption you ran with and keep going — never stop short waiting for clarification that will not arrive mid-task.
-- **A missing brief slot is a stop, not a guess.** `Task`, `Context`, and `Out of scope` are required; `Files` and `Done when` are optional and may be absent. A required slot that is absent and one that is present but empty are the same thing. An ambiguous brief is the assumption case above; an empty required slot is not — never invent the question. Return immediately, naming every required slot that is missing, and nothing else — that return **replaces the whole output template**, rather than filling one section of it. Since you cannot pause to ask, this is a return that names the gap, never a question.
+- **A missing brief slot is a stop, not a guess.** `Task`, `Context`, and `Out of scope` are required; `Files` and `Done when` are optional and may be absent. An ambiguous brief is the assumption case above; an empty required slot is not — never invent the question.
 
 ## Output
 
