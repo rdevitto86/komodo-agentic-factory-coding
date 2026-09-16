@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import difflib
 import importlib.util
+import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -80,6 +82,40 @@ def env_with(**overrides) -> dict:
     return env
 
 
+def load_json(path: str):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def first_bad_hook_command(settings: dict, hook_names: tuple) -> str:
+    for event_hooks in settings.get("hooks", {}).values():
+        for entry in event_hooks:
+            for hook in entry.get("hooks", []):
+                command = hook.get("command", "")
+                if "~" in command:
+                    return "%s -> literal '~' survived the rewrite" % command
+                tokens = shlex.split(command)
+                script_index = next(
+                    (
+                        i
+                        for i, token in enumerate(tokens)
+                        if any(token.endswith(n + ".py") for n in hook_names)
+                    ),
+                    None,
+                )
+                if script_index is None:
+                    return "%s -> no recognizable hook script in the command" % command
+                script = tokens[script_index]
+                if not os.path.isabs(script):
+                    return "%s -> script path '%s' is not absolute" % (command, script)
+                if script.endswith("comments.py") and tokens[script_index + 1 :] != ["hook"]:
+                    return "%s -> comments.py entry lost its 'hook' subcommand" % command
+    return ""
+
+
 def check_install(workdir: str, python3: str) -> None:
     emit("\ninstall\n\n")
 
@@ -104,12 +140,15 @@ def check_install(workdir: str, python3: str) -> None:
     rc, out = capture(
         [python3, INSTALL, "--target", target2, "--skip-verify", "--settings", "generate"]
     )
+    label = "I2 every generated hook command names an absolute script path, tilde-free, and comments.py keeps its subcommand"
     if rc != 0:
-        failed("I2 install with the real python3 exits 0", "exit %d: %s" % (rc, out))
-    elif "~" in read_text(os.path.join(target2, "settings.json")):
-        failed("I2 no literal tilde in generated settings.json", "tilde found")
+        failed(label, "exit %d: %s" % (rc, out))
     else:
-        passed("I2 no literal tilde in generated settings.json")
+        settings2 = load_json(os.path.join(target2, "settings.json"))
+        if settings2 is None:
+            failed(label, "settings.json did not parse as JSON")
+        else:
+            record(label, first_bad_hook_command(settings2, load_install_module().HOOK_NAMES))
 
     label = "I3 forced symlink failure falls back to copy and prints guidance"
     target3 = os.path.join(workdir, "home3", ".claude")
