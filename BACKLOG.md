@@ -350,6 +350,22 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.7.8.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s CI matrix on the `python:3.7` container leg, which reported `166 finding(s)` and failed the gate. `changed_line_map` (`claude-code/hooks/comments.py:296-305`) returns `None` on either an exception or a non-zero return code from `git diff`, and the caller reads `None` as "no diff information, scan everything". Inside the container the job runs as root against a workspace owned by another uid, so git refuses on dubious ownership and `git diff` exits non-zero — turning a changed-lines lint into a whole-repo one and condemning 166 pre-existing declarations. `AGENTS.md` states the changed-lines default exists precisely so the lint "never condemns a repo's existing history", so this fallback inverts the documented contract. Distinguish "resolved a diff, nothing changed" from "could not resolve a diff" and make only the first scan nothing and the second fail loudly naming git's own error | `python3 scripts/test_hooks.py` covers a failed `git diff` reporting rather than widening; `python3 scripts/verify.py` |
 
+#### [TSK-01.7.9] `check_setup_ref`'s `git clone --local` yields an empty working tree on the container leg, crashing the install suite [P: H] [TODO]
+
+**User Story:**
+> **As** whoever relies on the floor leg,
+> **I want** the install suite to survive a checkout shape it does not control,
+> **So that** the one leg testing the declared Python floor reports on the floor rather than on its own fixture setup.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (No crash):** Given any checkout shape CI produces, when `check_setup_ref` runs, then it either runs its cases or reports a skip naming the missing precondition — never an uncaught traceback.
+- [ ] **AC-2 (Leg gates):** Given the `python:3.7` leg, when the suite runs there, then the leg passes and blocks the merge like ubuntu and macOS.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.9.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s matrix once the container leg got past its earlier comment-lint failure. `check_setup_ref` (`scripts/test_install.py:299-305`) runs `git clone --quiet --local <repo> <tmp>` and then immediately `shutil.copyfile(INSTALL, clone/scripts/install.py)`, which raises `FileNotFoundError: /tmp/.../clone/scripts/install.py` — the clone produced no working tree. It is container-specific: the `ubuntu-latest` leg passes with the identical `fetch-depth: 0` checkout and the identical detached HEAD, so neither of those is the cause on its own. `--local` hardlinks and the container's `/tmp` and the mounted workspace are different filesystems, which is the first thing to check. The crash is also uncaught, so one fixture failure takes down the whole suite rather than failing one case — fix that regardless of the cause, since `AC-1` is what stops a fixture problem from masking every real case behind it | `python3 scripts/test_install.py` runs to completion on the `python:3.7` container leg |
+| `SUB-01.7.9.2` | `[Impl]` | until `SUB-01.7.9.1` lands, decide whether this leg is advisory like `windows-latest` or stays blocking. Marking a second leg advisory is not free: two of four legs non-blocking is most of the matrix, and the whole point of `TSK-01.7.1` was that an untested platform is how a defect ships. Prefer fixing over flagging here, since unlike the Windows port this is one fixture function rather than two subsystems | the workflow states which legs gate, and `python3 scripts/validate.py` exits zero |
+
 #### [TSK-01.7.7] `G210` reads ambient `gh` state, so the hook suite's result depends on whether the checkout has an open PR [P: M] [TODO]
 
 **Acceptance Criteria:**
