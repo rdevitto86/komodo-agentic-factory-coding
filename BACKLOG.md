@@ -112,6 +112,25 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.1.15.1` | `[Impl]` | filed by this band's `/assess-bugs`. `python3 scripts/evals.py -- --list` — the forwarding form the file's own header documents — matches the `"--list" in argv` test before the `--` branch is ever reached, so it prints the covered set and exits 0 instead of forwarding `--list` to `claude plugin eval` | `python3 scripts/evals.py --list` |
 
+#### [TSK-01.1.17] The repo ships no `LICENSE` and no `SECURITY.md`, while its installer symlinks the clone into `~/.claude` where every file executes as a hook [P: H] [TODO]
+| Field | Value |
+|---|---|
+| Owner | `human` |
+
+**User Story:**
+> **As** someone evaluating whether this toolkit can be adopted at work,
+> **I want** stated licensing terms and a disclosure path,
+> **So that** installing it is a decision with known terms rather than an unreviewable one.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Licensed):** Given the repo root, when it is read, then a `LICENSE` file states the terms under which it may be used and redistributed.
+- [ ] **AC-2 (Disclosure path):** Given `SECURITY.md`, when it is read, then it names how to report a vulnerability and what the install's execution surface is.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.17.1` | `[Impl]` | the licence choice is a policy call, not an agent one — this subtask is blocked on the user naming it, then writing the file verbatim from that licence's canonical text. `README.md` also names no terms today | `test -f LICENSE` |
+| `SUB-01.1.17.2` | `[Impl]` | write `SECURITY.md`: how to report, and what an install actually grants. `scripts/install.py` symlinks `claude-code/` into `~/.claude`, so every file under `hooks/` runs as a `PreToolUse`/`PostToolUse`/`SessionStart` command on every tool call, and an upstream sync moves every session on the next start unless `--ref` pinned it. State the `--ref` pin as the mitigation it is | `test -f SECURITY.md`; `python3 scripts/validate.py` |
+
 #### [TSK-01.1.18] Every generated hook command names its interpreter by bare `PATH` name, so a directory ahead of `python3` on `PATH` displaces the `PreToolUse` guard on every tool call [P: H] [TODO]
 
 **User Story:**
@@ -182,6 +201,25 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
 | `SUB-01.4.14.1` | `[Impl]` | filed by `TSK-01.4.13`'s band-review `/assess-simplify` pass: the classification added at `scripts/hooks/git/install.sh:42-58` sets `state="different"` for an existing-but-not-`$HOOK_DIR` path, but every branch below tests only `current` or `stale` — `different` and `unset` take the identical `else` in both `--status` and the install path. The `[ -d ]` stat and the absolute-vs-relative `case` are load-bearing only for the stale distinction. Two flags (`is_current`, `is_stale`) express the same behavior with no dead assignment | `python3 scripts/test_install.py` passes with `G1`-`G4` unchanged; `python3 scripts/validate.py` |
+
+#### [TSK-01.4.16] Read-only git is prompt-only for five of seven agents, and each of their files says so outright [P: M] [TODO]
+
+**User Story:**
+> **As** whoever relies on a fork not touching history,
+> **I want** the read-only git boundary enforced by the hook that already reads agent identity,
+> **So that** the rule holds when a fork's own instructions are ignored, not only when they are followed.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Enforced):** Given a `builder`, `tester`, `scout`, `researcher`, or `architect` fork, when it invokes a history-mutating git command, then `git_guard.py` denies it.
+- [ ] **AC-2 (Read path intact):** Given the same agents, when they invoke `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, or `ls-files`, then the command is permitted.
+- [ ] **AC-3 (Orchestrator unaffected):** Given a primary session, when it commits or pushes, then nothing added here denies it.
+- [ ] **AC-4 (Docs match):** Given those five agent files, when their git bullet is read, then it no longer states that nothing enforces the rule.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.16.1` | `[Impl]` | `builder.md`, `tester.md`, `scout.md`, `researcher.md` and `architect.md` each carry the line "Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so." `TSK-01.4.9` already shipped the mechanism: a deny-by-default gate keyed on agent identity through `lib/agents.py`, applied to `reviewer`. Extend it to a per-agent allowed-subcommand set rather than a second parallel gate, and keep the primary session ungated — P2.2 commits there | `python3 scripts/test_hooks.py` |
+| `SUB-01.4.16.2` | `[UnitTest]` | cases per agent, both directions: a mutating subcommand denied and a read-only one permitted, for all five. Include the orchestrator case — no agent identity in the payload means permitted — so the gate cannot regress into blocking the loop's own commits | `python3 scripts/test_hooks.py` |
+| `SUB-01.4.16.3` | `[Impl]` | correct the five agent files' git bullet to state the mechanism, and `AGENTS.md`'s hook table where it describes what `git_guard.py` denies | `python3 scripts/validate.py`; `python3 scripts/verify.py` |
 
 #### [TSK-01.4.17] An agent holding `Write` can move a branch pointer by writing under `.git/` directly, which no `PreToolUse` hook sees [P: M] [TODO]
 
