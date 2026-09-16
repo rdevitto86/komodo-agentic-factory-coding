@@ -37,6 +37,11 @@ def is_windows() -> bool:
     return os.name == "nt" or sys.platform.startswith("win")
 
 
+# git stores a path in its own native form, which is a different spelling of the same directory
+def same_path(left: str, right: str) -> bool:
+    return os.path.normcase(os.path.normpath(left)) == os.path.normcase(os.path.normpath(right))
+
+
 # the bash a Windows PATH resolves is WSL's launcher, so reach for the one Git for Windows ships
 def resolve_bash() -> str:
     if not is_windows():
@@ -524,7 +529,7 @@ def check_git_install(workdir: str) -> None:
         problem = "exit %d: %s" % (rc, out)
     if not problem and "had not been running" not in out:
         problem = "no note that hooks had not been running: %s" % out
-    if not problem and current != LIVE_HOOK_DIR:
+    if not problem and not same_path(current, LIVE_HOOK_DIR):
         problem = "core.hooksPath was not rewritten to the live directory: %s" % current
     record(label, problem)
 
