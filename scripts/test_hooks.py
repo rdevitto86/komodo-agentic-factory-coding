@@ -1529,10 +1529,11 @@ def check_git_guard() -> None:
         gh_stub_env(FIXTURES['ghstub']),
         'write requests are denied',
     )
-    bash_case(
+    bash_case_env(
         'G210 a reply write with no resolvable PR number is denied',
         'deny',
         'gh api repos/o/r/pulls/64/comments/123/replies -f body=ack',
+        gh_stub_env(FIXTURES['ghstub_none']),
         "couldn't confirm",
     )
     bash_case('G70 gh release create is blocked', 'deny', 'gh release create v1.0', 'is denied')
@@ -2745,6 +2746,17 @@ def build_gh_stub(work: str, number: str) -> str:
     return directory
 
 
+def build_gh_stub_no_pr(work: str) -> str:
+    # a separate stub directory whose gh exits nonzero with empty stdout, unresolvable
+    directory = os.path.join(work, "ghstub-none")
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "gh")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/sh\nexit 1\n")
+    os.chmod(path, 0o755)
+    return directory
+
+
 def gh_stub_env(directory: str) -> dict:
     return {"PATH": directory + os.pathsep + os.environ.get("PATH", "")}
 
@@ -2771,6 +2783,7 @@ def build_fixtures() -> None:
     FIXTURES["comments_copy"] = os.path.join(work, "cw")
     FIXTURES["comments_alias"] = os.path.join(work, "Comments.PY")
     FIXTURES["ghstub"] = build_gh_stub(work, "64")
+    FIXTURES["ghstub_none"] = build_gh_stub_no_pr(work)
 
     seeded_repo(FIXTURES["main"])
     os.makedirs(os.path.join(FIXTURES["main"], "claude-code"))
