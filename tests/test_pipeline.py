@@ -136,10 +136,12 @@ class PipelineTests(unittest.TestCase):
         backlog = tasks.load(os.path.join(self.tmp.name, "BACKLOG.md"))
         self.assertEqual(backlog.task("TSK-01.1.1").status, "DONE")
         self.assertEqual(len([t for t in backlog.group("TG-01.1").tasks if t.status == "TODO"]), 1, "low finding filed as a new TODO task")
-        changelog = open(os.path.join(self.tmp.name, "CHANGELOG.md")).read()
+        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), encoding="utf-8") as handle:
+            changelog = handle.read()
         self.assertIn("### Added", changelog)
         self.assertIn("Write the greeting", changelog)
-        report = open(run.store.report_path(state.run_id)).read()
+        with open(run.store.report_path(state.run_id), encoding="utf-8") as handle:
+            report = handle.read()
         self.assertIn("## ✅ Successful Changes", report)
         self.assertTrue(any("unpushed" in note or "gh is not" in note or "nothing landed" in note or "pushed" in note for note in state.notes) or state.pr_url == "")
         self.assertGreater(state.cost_usd, 0)
@@ -179,7 +181,8 @@ class ChangelogTests(unittest.TestCase):
             pipeline._write_changelog(path, "feat", ["First thing"])
             pipeline._write_changelog(path, "fix", ["Second thing"])
             pipeline._write_changelog(path, "feat", ["Third thing"])
-            text = open(path).read()
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
             self.assertEqual(text.count("## [Unreleased]"), 1)
             self.assertEqual(text.count("### Added"), 1)
             self.assertIn("- First thing\n- Third thing", text)
