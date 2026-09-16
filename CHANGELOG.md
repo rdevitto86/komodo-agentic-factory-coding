@@ -4,6 +4,14 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- Root `LICENSE` (MIT, copyright 2026 R. DeVitto) and `SECURITY.md` — the repo previously stated no terms at all while its installer symlinks the clone into `~/.claude`. `SECURITY.md` names GitHub private vulnerability reporting as the channel, states that every file under `claude-code/hooks/` runs as a `PreToolUse`, `PostToolUse`, or `SessionStart` command on every tool call, that a symlink install moves every session on its next start unless `--ref` pinned it, and that `--ref` and `CODEOWNERS` are the existing mitigations. A band-review correction narrowed the symlink claim: `scripts/install.py` falls back to `copytree`/`copy2` when `os.symlink` raises on Windows without Developer Mode or when `--force-copy` is chosen, and a copy install propagates nothing until the installer is re-run.
+
+### Security
+- Read-only git is now enforced per agent instead of only stated in prose. `git_guard.py`'s reviewer-only identity gate generalized into one `AGENT_READ_ONLY_GIT_SUBCOMMANDS` table keyed on six identities, denying by default any subcommand outside a listed agent's set — `builder`, `tester`, `scout`, `researcher`, and `architect` each previously carried "nothing enforces this" in their own file, and now do not. The orchestrator path (a payload carrying no agent identity) stays untouched, since the workflow loop's own commits depend on it. `rev-parse` is granted to all five. `scripts/test_hooks.py` grew from 324 to 339 cases.
+- Band review found three live bypasses in that generalization, all closed: `git diff --output=PATH` is a file-write primitive whose deny had been reviewer-only, so three agents holding no `Write`/`Edit` tool at all could write any path, hooks included, through an allowlisted subcommand; a leading `GIT_EXTERNAL_DIFF=` environment assignment and a `-c diff.external=` config option each execute an arbitrary command through an allowlisted subcommand, and those denies had also been reviewer-only.
+- Stated the honest limit rather than an overclaim: the guard denies a direct git invocation by identity and is not a sandbox. `builder` and `tester` must run arbitrary Bash for their `Done when` commands and the repo's verify target, so an interpreter hop such as `python3 -c` reaches git regardless — the five agent files and `AGENTS.md` now say so directly, rather than replacing an honest "nothing enforces this" with a claim that overstates the enforcement.
+
 ## [0.51.0] — 2026-09-16
 
 ### Added
