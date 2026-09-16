@@ -14,14 +14,40 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # one leg per supported platform, each floating to its newest available Python 3
+          - os: ubuntu-latest
+            python-version: "3.x"
+          - os: macos-latest
+            python-version: "3.x"
+          - os: windows-latest
+            python-version: "3.x"
+          # the declared floor, run inside a python:3.7 container since no current runner image publishes a native 3.7 build
+          - os: ubuntu-latest
+            container: "python:3.7"
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      # the floor leg's interpreter comes from the container, not this step
+      - if: ${{ !matrix.container }}
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: ${{ matrix.python-version }}
 
-      - run: python3 scripts/install.py --skip-verify
+      # resolves whichever interpreter name is on PATH, since python3 is not guaranteed on Windows
+      - name: install
+        shell: bash
+        run: |
+          PY="$(command -v python3 || command -v python)"
+          "$PY" scripts/install.py --skip-verify
 
-      - run: make verify
+      - name: verify
+        shell: bash
+        run: |
+          PY="$(command -v python3 || command -v python)"
+          "$PY" scripts/verify.py

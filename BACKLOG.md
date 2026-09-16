@@ -305,14 +305,32 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** a break on a supported platform fails the PR instead of reaching a user's machine.
 
 **Acceptance Criteria:**
-- [ ] **AC-1 (Platform matrix):** Given a PR, when `verify` runs, then it runs on Windows and macOS as well as Linux, and a failure on any one fails the check.
-- [ ] **AC-2 (Floor exercised):** Given the Python floor `AGENTS.md` declares, when the matrix runs, then one leg pins that exact version rather than resolving to the latest.
-- [ ] **AC-3 (Gate reachable):** Given the Windows leg, when it runs the repo's gate, then it invokes it by a path that exists on a stock Windows box.
+- [x] **AC-1 (Platform matrix):** Given a PR, when `verify` runs, then it runs on Windows and macOS as well as Linux, and a failure on any one fails the check.
+- [x] **AC-2 (Floor exercised):** Given the Python floor `AGENTS.md` declares, when the matrix runs, then one leg pins that exact version rather than resolving to the latest.
+- [x] **AC-3 (Gate reachable):** Given the Windows leg, when it runs the repo's gate, then it invokes it by a path that exists on a stock Windows box.
 
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
 | `SUB-01.7.1.1` | `[Impl]` | `.github/workflows/verify.yml` is a single job: `runs-on: ubuntu-latest`, `python-version: "3.x"`. Windows is a first-class documented platform — `docs/windows-install.md`, `scripts/install.py`'s copy fallback, and `test_install.py`'s `I3`/`I4` cases all exist for it — and has never run in CI, which is how `TSK-01.1.16` shipped. Add a `strategy.matrix` over the three runners; keep `fail-fast: false` so one platform's break does not mask another's | `grep -q windows-latest .github/workflows/verify.yml && grep -q macos-latest .github/workflows/verify.yml && grep -q ubuntu-latest .github/workflows/verify.yml` |
 | `SUB-01.7.1.2` | `[Impl]` | `make verify` is the workflow's current entry point and `make` is not on a stock Windows runner — `AGENTS.md` already records that `scripts/verify.py` leads the gate resolution order for exactly this reason. Invoke `python3 scripts/verify.py` directly in the workflow rather than the `Makefile` wrapper, and add a matrix leg pinning the 3.7 floor so the declared minimum is tested rather than asserted | `python3 scripts/verify.py`; `python3 scripts/validate.py` |
+
+#### [TSK-01.7.2] The declared Python 3.7 floor is three years past end-of-life and no hosted runner image can provide it, so CI tests it only inside a container [P: M] [TODO]
+| Field | Value |
+|---|---|
+| Owner | `human` |
+
+**User Story:**
+> **As** whoever maintains this repo's CI,
+> **I want** the declared interpreter floor to be one the platform can still supply,
+> **So that** testing the floor does not depend on a container leg standing in for a runner that no longer exists.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Decided):** Given the floor, when the decision is recorded, then `docs/design-decisions.md` states whether it stays at 3.7 or rises, and why.
+- [ ] **AC-2 (Consistent):** Given whichever floor is chosen, when `AGENTS.md`, `scripts/install.py`'s floor check, and the CI matrix are read, then all three name the same version.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.2.1` | `[Audit]` | surfaced by `TSK-01.7.1`'s round-2 implement pass. Verified live this session: `actions/setup-python` publishes no 3.7 build for Ubuntu 24.04, which is what `ubuntu-latest` resolves to, and the `ubuntu-22.04` label that used to carry one entered deprecation on 2026-09-17 with job-failing brownouts and full removal in April 2027. `TSK-01.7.1` therefore tests the floor in a `python:3.7` container, which is correct but is a workaround for a floor the platform has stopped supporting — 3.7 has been end-of-life since June 2023. The floor exists only because `subprocess.run(capture_output=...)` needs 3.7; nothing in this repo requires that it stay there. Raising it drops the container leg and simplifies the matrix, but narrows who can install without a newer interpreter, which is why this is a human call rather than an agent one | `docs/design-decisions.md` records the decision, and `python3 scripts/validate.py` exits zero |
 
 ### [TG-01.8] UI & Language Standards
 * **Target Release:** V1
