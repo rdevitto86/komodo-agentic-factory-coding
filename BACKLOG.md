@@ -320,6 +320,21 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | `SUB-01.7.6.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s first real CI run — the first time this suite has ever executed on anything but Linux. Three clusters fail on `windows-latest`: `G206`/`G207` (the `gh api` threaded-reply cases), `G137` (cwd outside any repo versus an absolute target landing inside one — a path-shape assumption), and `VG1`-`VG11`, the entire `verify_gate.py` block. Each is a POSIX assumption rather than a real defect in the code under test, but the count is large enough that porting them is its own task rather than a fix folded into the band that found them. Establish per cluster whether the right answer is a port or a documented skip; a skip must name its precondition the way `test_install.py`'s Windows guards now do | `python3 scripts/test_hooks.py` reports zero failures on `windows-latest` |
 | `SUB-01.7.6.2` | `[Impl]` | until `SUB-01.7.6.1` lands, the Windows leg reports red on every pull request for known reasons. Decide deliberately between leaving it red and visible, or marking it `continue-on-error` with a comment naming this task — and if `continue-on-error` is chosen, flipping it back is this task's `AC-2` and must not be forgotten | the workflow states which legs gate, and `python3 scripts/validate.py` exits zero |
 
+#### [TSK-01.7.8] A failed `git diff` silently widens `comments.py check` from changed lines to the whole repo [P: H] [TODO]
+
+**User Story:**
+> **As** someone whose gate depends on the comment lint scoping itself to a diff,
+> **I want** a failure to resolve that diff to be loud,
+> **So that** the lint cannot quietly start condemning history it was designed never to touch.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Loud, not wide):** Given a repository where `git diff` fails, when `comments.py check` runs without `--all`, then it reports that it could not resolve the diff and why, rather than scanning every file.
+- [ ] **AC-2 (Explicit still works):** Given `--all`, when it runs, then the whole-repo scan happens exactly as it does today.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.8.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s CI matrix on the `python:3.7` container leg, which reported `166 finding(s)` and failed the gate. `changed_line_map` (`claude-code/hooks/comments.py:296-305`) returns `None` on either an exception or a non-zero return code from `git diff`, and the caller reads `None` as "no diff information, scan everything". Inside the container the job runs as root against a workspace owned by another uid, so git refuses on dubious ownership and `git diff` exits non-zero — turning a changed-lines lint into a whole-repo one and condemning 166 pre-existing declarations. `AGENTS.md` states the changed-lines default exists precisely so the lint "never condemns a repo's existing history", so this fallback inverts the documented contract. Distinguish "resolved a diff, nothing changed" from "could not resolve a diff" and make only the first scan nothing and the second fail loudly naming git's own error | `python3 scripts/test_hooks.py` covers a failed `git diff` reporting rather than widening; `python3 scripts/verify.py` |
+
 #### [TSK-01.7.7] `G210` reads ambient `gh` state, so the hook suite's result depends on whether the checkout has an open PR [P: M] [TODO]
 
 **Acceptance Criteria:**

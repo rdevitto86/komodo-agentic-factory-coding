@@ -36,6 +36,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      # the container leg runs git as root over a workspace owned by the runner's uid, which git refuses without this
+      - if: ${{ matrix.container }}
+        run: git config --global --add safe.directory "${{ github.workspace }}"
+
       # the floor leg's interpreter comes from the container, not this step
       - if: ${{ !matrix.container }}
         uses: actions/setup-python@v5
