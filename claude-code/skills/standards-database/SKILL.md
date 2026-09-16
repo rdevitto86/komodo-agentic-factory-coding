@@ -13,7 +13,7 @@ Engine-agnostic rules first, then what changes per engine. Generic hygiene — p
 
 ## Comment discipline
 
-You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note.
+`standards-comments` owns the rules and loads on the same files this skill does — read it there, not here. In short: every function gets one line saying what it does, public or private; everything else gets nothing unless the code cannot say it; `comments.py apply` is the only write path. **Deleting a comment you did not add is not licence taken by refactoring** — restore it, or say in `## Notes` why it went.
 
 Banned: a name echo (the comment's first word repeats the table/column/procedure name below it); an implementation narrative (explaining *what* a query does, or describing standard SQL syntax).
 

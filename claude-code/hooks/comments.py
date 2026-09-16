@@ -13,13 +13,19 @@ from lib.comment_rules import (
     DOC_LANGUAGE_EXTENSIONS,
     FAMILY_SYNTAX,
     FIELD_MAX_CHARS,
+    MANDATORY_DETAIL,
     NARRATIVE_MAX_CHARS,
     STEP_MAX_CHARS,
     TEMPLATE_PATTERNS,
     BANNER_LABEL,
+    block_line_cap,
     check_echoes,
     comment_body,
+    comment_run_bounds,
+    external_reference,
     find_comment_start,
+    header_block_end,
+    substantive_comment_lines,
     find_invalid_comments,
     find_mandatory_sites,
     is_plain_body,
@@ -51,6 +57,10 @@ def validate_comment_shape(text, template_type, family, is_indented, decl_line=N
 
     if template_type not in KNOWN_TEMPLATE_TYPES:
         return False, f"unknown template_type {template_type!r}"
+
+    cited = external_reference(body)
+    if cited:
+        return False, f"text cites {cited} -- describe the code, not a document, a version, or a conversation"
 
     if template_type in ("NOTE", "FIXME", "TODO"):
         if not TEMPLATE_PATTERNS[template_type].match(body):
@@ -191,12 +201,21 @@ def apply_proposal_to_lines(proposal, family, lines, old_comment_set, accepted_l
         return None, f"a comment already lands within {ADJACENT_WINDOW} lines of this one, at line {near} -- one comment per site, not a stack"
 
     indented_text = indent + normalize(text)
+    trial = lines[: line_no - 1] + [indented_text] + lines[line_no - 1 :]
 
     if template_type != "DOC":
-        trial = lines[: line_no - 1] + [indented_text] + lines[line_no - 1 :]
         echoes = check_echoes(trial, family, old_comment_set)
         if indented_text.strip() in echoes:
             return None, "inserting this comment would echo the identifier on the following line"
+
+    line_marker = FAMILY_SYNTAX[family][0]
+    start, end = comment_run_bounds(trial, line_marker, line_no - 1)
+    if end > header_block_end(trial, line_marker):
+        cap, subject = block_line_cap(trial[end] if end < len(trial) else None)
+        count = len(substantive_comment_lines(trial, start, end))
+        if count > cap:
+            return None, ("this would make a %d-line comment block %s, over the %d-line cap"
+                          % (count, subject, cap))
 
     lines[line_no - 1 : line_no - 1] = [indented_text]
     return indented_text, None
@@ -331,13 +350,12 @@ def collect_files(paths, repo_root):
 def collect_findings(full_path, relative, family, ext, text, only_lines):
     findings = []
 
-    for lineno, name, rule in find_mandatory_sites(text, family, ext):
+    for lineno, name, rule in find_mandatory_sites(text, family, ext, relative):
         if only_lines is not None and lineno not in only_lines:
             continue
         findings.append({
             "file": relative, "line": lineno, "kind": "MISSING",
-            "rule": rule, "subject": name,
-            "detail": "a discriminant return needs a comment stating what it discriminates",
+            "rule": rule, "subject": name, "detail": MANDATORY_DETAIL[rule],
         })
 
     for lineno, body, rule, detail in find_invalid_comments(text, family, full_path, only_lines):

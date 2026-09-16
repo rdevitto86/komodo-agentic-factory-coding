@@ -60,6 +60,26 @@ TEMPLATE_PATTERNS = {
 BANNER_SHAPE = re.compile(r"^-{3,}")
 RESERVED_MARKERS = ("NOTE:", "FIXME:", "TODO:", "WHY:", "HACK:")
 
+EXTERNAL_REF_PATTERNS = (
+    (re.compile(r"\bv\d+\.\d+"), "a version number"),
+    (re.compile(r"\b\d+\.\d+\.\d+\b"), "a version number"),
+    (re.compile(r"\b(?:PRD|SDD|ADR|TSK|EPIC|JIRA)\b"), "a spec or ticket reference"),
+    (re.compile(r"(?i)\bper (?:the |our )?(?:spec|prd|sdd|design|ticket|backlog|story)"), "a document reference"),
+    (re.compile(r"(?i)\bthe (?:spec|design doc|backlog|ticket|story)\b"), "a document reference"),
+    (re.compile(r"(?i)\bas (?:discussed|requested|agreed)\b"), "session context"),
+    (re.compile(r"(?i)\bthis (?:band|task|PR|story|sprint|session)\b"), "session context"),
+    (re.compile(r"(?i)\bthe user (?:asked|wants|requested|said)\b"), "session context"),
+)
+
+
+# the first banned citation a comment body matches, named for the finding's message
+def external_reference(body):
+    for pattern, subject in EXTERNAL_REF_PATTERNS:
+        if pattern.search(body):
+            return subject
+    return None
+
+
 STEP_MAX_CHARS = 80
 NARRATIVE_MAX_CHARS = 120
 DOC_MAX_CHARS = 120
@@ -96,9 +116,6 @@ def validate_doc_shape(body, decl_line, is_indented):
 
     is_package = decl_line.strip().startswith("package ")
     name = next(g for g in match.groups() if g)
-    if not is_package and not name[:1].isupper():
-        return False, "a DOC comment only belongs on an exported (capitalized) declaration"
-
     expected_lead = f"Package {name}" if is_package else name
     if not (body == expected_lead or body.startswith(expected_lead + " ")):
         return False, f"a DOC comment must start with {expected_lead!r}"
@@ -350,27 +367,163 @@ def parse_func_signature(line):
     ]
 
 
-def find_mandatory_sites(text, family, ext):
-    if ext not in SITE_LANGUAGE_EXTENSIONS:
-        return []
-    line_marker = FAMILY_SYNTAX[family][0]
-    lines = text.splitlines()
-    sites = []
-    for index, line in enumerate(lines):
+MANDATORY_DETAIL = {
+    "RET_ARITY_3": "a discriminant return needs a comment stating what it discriminates",
+    "RET_BOOL_DISCRIMINANT": "a discriminant return needs a comment stating what it discriminates",
+    "FUNC_UNDOCUMENTED": "a function declaration needs a comment saying what it does",
+}
+
+KEYWORD_DECL_NAME = re.compile(
+    r"^(?:(?:export|default|public|private|protected|internal|static|final|abstract"
+    r"|async|inline|open|override|suspend|pub)(?:\([^)]*\))?\s+)*"
+    r"(?:func|function|def|fn)\s+(\w+)"
+)
+ARROW_DECL_NAME = re.compile(
+    r"^(?:export\s+)?(?:default\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=\s*"
+    r"(?:async\s+)?(?:\([^)]*\)|\w+)\s*(?:=>|\{)"
+)
+NAME_BEFORE_PAREN = re.compile(r"(\w+)\s*(?:<[^<>]*>)?\s*$")
+TYPE_DECL_KEYWORDS = ("class", "record", "struct", "interface", "enum", "namespace", "trait")
+
+TEST_NAME_PATTERNS = (
+    re.compile(r"_test\.[^.]+$"),
+    re.compile(r"^test_"),
+    re.compile(r"\.(?:test|spec)\.[^.]+$"),
+    re.compile(r"(?:Test|Tests|Spec|Specs)\.[^.]+$"),
+    re.compile(r"^conftest\."),
+)
+TEST_PATH_PARTS = ("test", "tests", "__tests__", "spec", "specs", "testdata")
+GENERATED_PATH_PARTS = ("vendor", "node_modules", "generated", "third_party")
+GENERATED_SUFFIXES = (".gen.go", ".pb.go", "_pb2.py", ".g.dart", ".generated.ts", ".d.ts")
+GENERATED_SCAN_LINES = 5
+
+
+def path_parts(path):
+    return [part.lower() for part in os.path.normpath(path).split(os.sep)[:-1]]
+
+
+# whether a path names a test file or sits under a test directory
+def is_test_path(path):
+    if not path:
+        return False
+    base = os.path.basename(path)
+    if any(pattern.search(base) for pattern in TEST_NAME_PATTERNS):
+        return True
+    return any(part in TEST_PATH_PARTS for part in path_parts(path))
+
+
+# whether a file is machine-written, by its header marker, its suffix, or its directory
+def is_generated(lines, path):
+    for line in lines[:GENERATED_SCAN_LINES]:
+        lowered = line.lower()
+        if "do not edit" in lowered or "@generated" in lowered:
+            return True
+    if os.path.basename(path).lower().endswith(GENERATED_SUFFIXES):
+        return True
+    return any(part in GENERATED_PATH_PARTS for part in path_parts(path))
+
+
+def function_decl_name(line, ext):
+    """The name this line declares a function under, or None -- a literal, a call, and control flow all declare nothing."""
+    stripped = line.strip()
+    if ext in SITE_LANGUAGE_EXTENSIONS:
+        parsed = parse_func_signature(stripped)
+        return parsed[0] if parsed else None
+
+    for pattern in (KEYWORD_DECL_NAME, ARROW_DECL_NAME):
+        match = pattern.match(stripped)
+        if match:
+            return match.group(1)
+
+    if not stripped.endswith("{"):
+        return None
+    groups = top_level_paren_groups(stripped)
+    if not groups:
+        return None
+    before = stripped[: groups[0][0]]
+    head = before.split()
+    if not head or head[0] in NON_DECL_KEYWORDS or head[0] in TYPE_DECL_KEYWORDS:
+        return None
+    match = NAME_BEFORE_PAREN.search(before)
+    return match.group(1) if match else None
+
+
+def body_statement_count(lines, index, line_marker):
+    """Statements in the declaration's body -- one or none means trivial, so no comment is demanded."""
+    indent = len(lines[index]) - len(lines[index].lstrip())
+    count = 0
+    for line in lines[index + 1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            break
+        if line_marker and stripped.startswith(line_marker):
+            continue
+        count += 1
+    return count
+
+
+DOCSTRING_EXTENSIONS = (".py", ".pyi")
+DOCSTRING_OPENERS = ('"""', "'''", 'r"""', "r'''", 'f"""', '"', "'")
+
+
+def is_documented_above(lines, index, family):
+    """Whether the line above carries a comment -- a line comment, or a block comment's closing line."""
+    if not index:
+        return False
+    previous = lines[index - 1].strip()
+    line_marker, _, block_close = FAMILY_SYNTAX[family][:3]
+    if line_marker and previous.startswith(line_marker):
+        return True
+    return bool(block_close) and previous.endswith(block_close)
+
+
+# whether the declaration's first body line opens a docstring
+def has_docstring(lines, index):
+    for line in lines[index + 1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        return stripped.startswith(DOCSTRING_OPENERS)
+    return False
+
+
+# the rule a declaration owes a comment under, most specific first, or None
+def mandatory_rule(lines, index, ext, line_marker, in_test):
+    line = lines[index]
+    if ext in SITE_LANGUAGE_EXTENSIONS:
         parsed = parse_func_signature(line)
-        if not parsed:
-            continue
-        name, returns = parsed
-        if len(returns) >= 3:
-            rule = "RET_ARITY_3"
-        elif len(returns) >= 2 and returns[-1] == "bool" and not SITE_NAME_EXEMPT.match(name):
-            rule = "RET_BOOL_DISCRIMINANT"
-        else:
-            continue
-        previous = lines[index - 1].strip() if index else ""
-        if line_marker and previous.startswith(line_marker):
-            continue
-        sites.append((index + 1, name, rule))
+        if parsed:
+            name, returns = parsed
+            if len(returns) >= 3:
+                return name, "RET_ARITY_3"
+            if len(returns) >= 2 and returns[-1] == "bool" and not SITE_NAME_EXEMPT.match(name):
+                return name, "RET_BOOL_DISCRIMINANT"
+    if in_test or line.strip().endswith(";"):
+        return None
+    name = function_decl_name(line, ext)
+    if not name or body_statement_count(lines, index, line_marker) <= 1:
+        return None
+    if ext in DOCSTRING_EXTENSIONS and has_docstring(lines, index):
+        return None
+    return name, "FUNC_UNDOCUMENTED"
+
+
+# every declaration in the file that owes a comment and has none above it
+def find_mandatory_sites(text, family, ext, path=""):
+    line_marker = FAMILY_SYNTAX[family][0]
+    if not line_marker:
+        return []
+    lines = text.splitlines()
+    if is_generated(lines, path):
+        return []
+    in_test = is_test_path(path)
+    sites = []
+    for index in range(len(lines)):
+        found = mandatory_rule(lines, index, ext, line_marker, in_test)
+        if found and not is_documented_above(lines, index, family):
+            sites.append((index + 1, found[0], found[1]))
     return sites
 
 
@@ -389,14 +542,106 @@ def header_block_end(lines, line_marker):
     return index
 
 
+FUNC_BLOCK_MAX_LINES = 2
+BLOCK_MAX_LINES = 1
+FUNC_KEYWORD_DECL = re.compile(
+    r"^(?:(?:export|default|public|private|protected|internal|static|final|abstract"
+    r"|async|inline|open|override|suspend|pub)(?:\([^)]*\))?\s+)*"
+    r"(?:func|function|def|fn)\b"
+)
+NON_DECL_KEYWORDS = ("if", "for", "while", "switch", "catch", "else", "do", "try", "select", "case")
+
+
+# whether a line opens a function body, permissively -- a literal counts, since only the cap reads this
+def is_function_decl(line):
+    stripped = line.strip()
+    if FUNC_KEYWORD_DECL.match(stripped):
+        return True
+    # a keyword-less signature -- Java, C#, and C++ open a body with a parameter list and no keyword
+    if not stripped.endswith("{") or not top_level_paren_groups(stripped):
+        return False
+    head = stripped.split("(", 1)[0].split()
+    return bool(head) and head[0] not in NON_DECL_KEYWORDS
+
+
+# the comment lines a declaration allows above it, and the phrase naming it in the finding
+def block_line_cap(decl_line):
+    if decl_line is not None and is_function_decl(decl_line):
+        return FUNC_BLOCK_MAX_LINES, "above a function"
+    return BLOCK_MAX_LINES, "above a var, const, type, or statement"
+
+
+# every maximal run of whole-line comments, as start and exclusive-end indices
+def comment_runs(lines, line_marker):
+    runs, index = [], 0
+    while index < len(lines):
+        if not lines[index].strip().startswith(line_marker):
+            index += 1
+            continue
+        start = index
+        while index < len(lines) and lines[index].strip().startswith(line_marker):
+            index += 1
+        runs.append((start, index))
+    return runs
+
+
+# the bounds of the one comment run containing this index
+def comment_run_bounds(lines, line_marker, index):
+    start = index
+    while start > 0 and lines[start - 1].strip().startswith(line_marker):
+        start -= 1
+    end = index + 1
+    while end < len(lines) and lines[end].strip().startswith(line_marker):
+        end += 1
+    return start, end
+
+
+def substantive_comment_lines(lines, start, end):
+    """Indices in a comment run that count against its cap -- a directive or a bare marker does not."""
+    return [index for index in range(start, end)
+            if not is_mechanically_exempt(normalize(lines[index].strip()))]
+
+
+# OVER_LINES for a run past its cap, STACKED for two runs too close together
+def find_block_findings(lines, line_marker, only_lines):
+    if not line_marker:
+        return []
+    header_end = header_block_end(lines, line_marker)
+    findings, previous_end = [], None
+
+    for start, end in comment_runs(lines, line_marker):
+        if previous_end is not None and (start + 1) - previous_end <= ADJACENT_WINDOW:
+            lineno = start + 1
+            if end > header_end and (only_lines is None or lineno in only_lines):
+                findings.append((lineno, comment_body(normalize(lines[start].strip())), "STACKED",
+                                 "a comment already lands within %d lines, at line %d"
+                                 % (ADJACENT_WINDOW, previous_end)))
+        previous_end = end
+
+        if end <= header_end:
+            continue
+        substantive = substantive_comment_lines(lines, start, end)
+        cap, subject = block_line_cap(lines[end] if end < len(lines) else None)
+        # a run that opened in the header is governed whole, so its overrun reports where the exemption ran out
+        over = [index for index in substantive[cap:] if index >= header_end]
+        if not over:
+            continue
+        if only_lines is not None and not any(index + 1 in only_lines for index in range(start, end)):
+            continue
+        findings.append((over[0] + 1, comment_body(normalize(lines[over[0]].strip())), "OVER_LINES",
+                         "a comment block %s is capped at %d line%s; this one runs %d"
+                         % (subject, cap, "" if cap == 1 else "s", len(substantive))))
+
+    return findings
+
+
 def find_invalid_comments(text, family, path, only_lines=None):
     ext = os.path.splitext(os.path.basename(path))[1].lower()
     basename = os.path.basename(path)
     line_marker = FAMILY_SYNTAX[family][0]
     lines = text.splitlines()
     header_end = header_block_end(lines, line_marker)
-    findings = []
-    seen_comment_lines = []
+    findings = find_block_findings(lines, line_marker, only_lines)
 
     for index, line in enumerate(lines):
         lineno = index + 1
@@ -428,17 +673,15 @@ def find_invalid_comments(text, family, path, only_lines=None):
         if len(body) > cap:
             findings.append((lineno, body, "OVER_CAP", f"comment body is {len(body)} chars, over the {cap}-char cap"))
             continue
+        cited = external_reference(body)
+        if cited:
+            findings.append((lineno, body, "EXTERNAL_REF",
+                             "a comment cites %s -- describe the code, not a document, a version, or a conversation" % cited))
+            continue
         for marker in ("NOTE", "FIXME", "TODO"):
             if body.upper().startswith(marker) and not TEMPLATE_PATTERNS[marker].match(body):
                 findings.append((lineno, body, "MALFORMED_MARKER", f"a {marker} marker must read '{marker}: <text>'"))
                 break
-        else:
-            if is_leading:
-                if not in_header:
-                    near = next((ln for ln in seen_comment_lines if abs(ln - lineno) <= ADJACENT_WINDOW), None)
-                    if near is not None:
-                        findings.append((lineno, body, "STACKED", f"a comment already lands within {ADJACENT_WINDOW} lines, at line {near}"))
-                seen_comment_lines.append(lineno)
 
     echoes = check_echoes(lines, family)
     for index, line in enumerate(lines):

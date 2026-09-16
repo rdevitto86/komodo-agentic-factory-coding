@@ -25,7 +25,7 @@ Also: `templates/project/` (per-repo `AGENTS.md`/`CLAUDE.md`/`BACKLOG.md`/`CHANG
 | `context_injector.py` | `~/.claude/settings.json` | SessionStart | Injects the `[WIP]` story, backlog tally, version, verify target |
 | `verify_gate.py` | `claude-code/agents/builder.md` frontmatter | Stop (auto-converts to `SubagentStop`) | Blocks the fork from returning while the repo's checks fail |
 | `auto_format.py` | `~/.claude/settings.json` | PostToolUse, matcher `Edit\|Write` | Runs the repo's formatter on a touched file after the write lands |
-| `comments.py hook` | `claude-code/agents/builder.md` frontmatter | PostToolUse, matcher `Edit\|Write` | Reports comment findings for the touched file; fails open |
+| `comments.py hook` | `~/.claude/settings.json` **and** `claude-code/agents/builder.md` frontmatter | PostToolUse, matcher `Edit\|Write` | Reports comment findings for the touched file; fails open |
 
 **`git_guard.py` fails open** — an unparseable payload or an internal crash exits 0, backstopped by a hardcoded destructive-pattern check that still denies. **`verify_gate.py`, `context_injector.py`, and `comments.py hook` fail open** — any internal error exits 0, except a verify command that outruns `KOMODO_VERIFY_TIMEOUT` (integer seconds, default 300), which is a deliberate block naming the limit, not a silent pass-through.
 
@@ -47,9 +47,15 @@ python3 ~/.claude/hooks/comments.py apply           # splice proposals from stdi
 | `MISSING` | A declaration that requires a comment and has none |
 | `INVALID` | A comment that breaks a mechanical rule |
 
-**`MISSING` rules are Go-only** (`SITE_LANGUAGE_EXTENSIONS`) and deliberately narrow: `RET_BOOL_DISCRIMINANT` (≥2 returns ending in `bool`, unless the name is `is`/`has`/`can`/`should`/`exists`/`must`-prefixed) and `RET_ARITY_3` (≥3 return values). Both are suppressed when the line above is already a comment. Signature parsing walks balanced parens rather than matching a flat regex, so a `func`-typed parameter or a named return tuple parses correctly.
+**`FUNC_UNDOCUMENTED` demands a comment on every function declaration**, public and private, in every language the lint resolves a family for. It is suppressed by a line comment above, a block comment's closing line above (JSDoc), a Python docstring on the first body line, and four exemptions: a test path, a one-statement body, a bodyless declaration (an interface method, an abstract signature), and a generated file. Anonymous function literals are not declarations and never fire.
 
-**`INVALID` rules are mechanical only** — `NAME_ECHO`, `OVER_CAP`, `STACKED`, `STEP_MARKER`, `BANNER_OUTSIDE_TEST`, `MALFORMED_MARKER`. Machine directives and shebang manuals are exempt, `find_comment_start` keeps a `//` inside a string literal from false-positiving, and a comment that clears the `DOC` shape is exempt from the echo check since name-first is what `DOC` requires.
+**`RET_BOOL_DISCRIMINANT` and `RET_ARITY_3` stay Go-only** (`SITE_LANGUAGE_EXTENSIONS`) and outrank it: ≥2 returns ending in `bool` unless the name is `is`/`has`/`can`/`should`/`exists`/`must`-prefixed, and ≥3 return values. Signature parsing walks balanced parens rather than matching a flat regex, so a `func`-typed parameter or a named return tuple parses correctly.
+
+**`INVALID` rules are mechanical only** — `NAME_ECHO`, `OVER_CAP`, `OVER_LINES`, `STACKED`, `STEP_MARKER`, `BANNER_OUTSIDE_TEST`, `MALFORMED_MARKER`. Machine directives and shebang manuals are exempt, `find_comment_start` keeps a `//` inside a string literal from false-positiving, and a comment that clears the `DOC` shape is exempt from the echo check since name-first is what `DOC` requires.
+
+**`EXTERNAL_REF` refuses a comment that cites anything outside the code** — a version number (`v1.2`, semver), a `PRD`/`SDD`/`ADR`/`TSK`/`EPIC`/`JIRA`, "per the spec", "as discussed", "this task". `apply` refuses the same text, so the one write path cannot land one either. `DOC`'s exported-only gate is gone: any top-level Go declaration can carry a name-first one-sentence doc, which is what `FUNC_UNDOCUMENTED` expects.
+
+**`OVER_LINES` caps a comment block at two lines above a function declaration and one line above everything else** — a `var`, a `const`, a `type`, or a statement. It governs lines *within* one block; `STACKED` governs two distinct blocks landing within `ADJACENT_WINDOW` lines of each other. A directive inside the run does not count against the cap, the leading file header stays exempt up to `HEADER_MAX_LINES`, and `apply` refuses a proposal that would push the run it lands in over — including onto a comment that was already there.
 
 **Narrative is no longer machine-detectable.** The old `PreToolUse` guard flat-denied every non-`DOC` comment, which caught narration by construction; a lint cannot distinguish `// increments the counter` from a legitimate `WHY` without judgment. That judgment now lives entirely in the `write-comments` skill, and `check` enforces only what is decidable. No comment rule blocks a commit, push, lint, or release beyond the repo's own `verify` target.
 

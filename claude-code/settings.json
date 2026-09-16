@@ -192,6 +192,10 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/auto_format.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/comments.py hook"
           }
         ]
       }

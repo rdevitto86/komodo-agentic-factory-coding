@@ -11,7 +11,7 @@ Zero comments, zero Javadoc. Exception messages lead with a verb phrase and neve
 
 ## Comment discipline
 
-You must strictly limit code comments. **A non-compliant comment prompts the user for approval before the write lands — it does not fail outright.** That is deliberate while these directives are still being tuned: write only a comment you actually believe is warranted, since every miss costs the user a decision. **Deleting a comment you did not add always prompts too**, regardless of shape — moving or refactoring code is not licence to drop someone else's note. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and Javadoc are scanned the same way.
+`standards-comments` owns the rules and loads on the same files this skill does — read it there, not here. In short: every function gets one line saying what it does, public or private; everything else gets nothing unless the code cannot say it; `comments.py apply` is the only write path. A Javadoc block above a method already satisfies the rule. **Deleting a comment you did not add is not licence taken by refactoring** — restore it, or say in `## Notes` why it went. **Applies to every comment syntax**, not just `//` — block comments (`/* */`) and Javadoc are scanned the same way.
 
 Banned: a name echo (the comment's first word repeats the method/field/type name below it); an implementation narrative (explaining *what* code is doing, or describing standard syntax); a redundant Javadoc block for an internal/private utility not explicitly requested.
 

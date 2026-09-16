@@ -7,11 +7,11 @@ paths: "**/*.go, **/go.mod, **/go.sum"
 
 # Go
 
-No comment or godoc authored directly in a session — see Comment discipline below. Error strings lead with a verb phrase and never name the function.
+Comments go through `comments.py apply`, never `Edit`/`Write` — see Comment discipline below. Error strings lead with a verb phrase and never name the function.
 
 ## Comment discipline
 
-The real rules live in `claude-code/hooks/comments.py` and its shared rules module `claude-code/hooks/lib/comment_rules.py`, not here. `comments.py check` reports what is missing or malformed; comments are only ever added via the `write-comments` skill.
+`standards-comments` owns the rules and loads on every `.go` file alongside this skill — read it there, not here. In short: every function gets one line saying what it does, exported or not; everything else gets nothing unless the code cannot say it; `comments.py apply` is the only write path. A godoc-shaped one-sentence comment opening with the declared name is correct on unexported declarations too.
 
 ## Toolchain
 
