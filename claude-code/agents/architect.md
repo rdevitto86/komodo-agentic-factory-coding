@@ -17,7 +17,7 @@ A question with more than one defensible answer — which mechanism, which seam,
 
 ## Rules
 
-- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push. Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so.
+- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push. `git_guard.py` enforces this by identity — any other git subcommand from this agent is denied.
 - **Every option must be one the codebase can actually reach.** Read the tree, the manifest, and the pinned dependency versions before proposing something that assumes a capability. Never conclude a library lacks something from memory.
 - **Name what each option forecloses**, not only what it enables. An option with no cost has not been examined.
 - **Two options that differ only in naming are one option.** Say so rather than padding the table.

@@ -10,7 +10,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from lib.agents import REVIEWER_AGENT
+from lib.agents import (
+    ARCHITECT_AGENT,
+    BUILDER_AGENT,
+    REVIEWER_AGENT,
+    RESEARCHER_AGENT,
+    SCOUT_AGENT,
+    TESTER_AGENT,
+)
 from lib.comment_rules import EXTENSION_FAMILY, FILENAME_FAMILY
 from lib.git import repo_root as lib_repo_root
 
@@ -52,8 +59,15 @@ READ_ONLY_GIT = {
     "whatchanged",
 }
 
-# reviewer.md's Boundaries set is its own literal allowlist, narrower than READ_ONLY_GIT (the general publish policy)
-REVIEWER_ALLOWED_GIT_SUBCOMMANDS = {"log", "diff", "show", "status", "blame", "ls-files"}
+# One table, keyed on agent identity, deny-by-default beyond each set named here.
+AGENT_READ_ONLY_GIT_SUBCOMMANDS = {
+    REVIEWER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files"},
+    BUILDER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files"},
+    TESTER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files"},
+    SCOUT_AGENT: {"log", "diff", "show", "status", "blame", "ls-files"},
+    RESEARCHER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files", "rev-parse"},
+    ARCHITECT_AGENT: {"log", "diff", "show", "status", "blame", "ls-files", "rev-parse"},
+}
 
 # diff/log/show share the diff-generation parser, which accepts --output=<file> to write to a file, not stdout
 REVIEWER_GIT_OUTPUT_SUBCOMMANDS = {"diff", "log", "show"}
@@ -1129,13 +1143,21 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         if agent_type == REVIEWER_AGENT:
             # tokens[1] must BE the subcommand -- no global flag (-c, --exec-path, ...) may precede it unseen
             leading = tokens[1] if len(tokens) > 1 else None
-            if leading not in REVIEWER_ALLOWED_GIT_SUBCOMMANDS:
+            if leading not in AGENT_READ_ONLY_GIT_SUBCOMMANDS[REVIEWER_AGENT]:
                 findings.append("the reviewer's Bash surface is read-only git only -- git %s is denied" % (leading or "<none>"))
                 return
             if subcommand in REVIEWER_GIT_OUTPUT_SUBCOMMANDS and any(
                 arg == "--output" or arg.startswith("--output=") for arg in args
             ):
                 findings.append("git %s --output writes to a file, and the reviewer has no legitimate write path" % subcommand)
+                return
+        elif agent_type in AGENT_READ_ONLY_GIT_SUBCOMMANDS:
+            allowed = AGENT_READ_ONLY_GIT_SUBCOMMANDS[agent_type]
+            if subcommand not in allowed:
+                findings.append(
+                    "the %s's Bash surface is read-only git only -- git %s is denied"
+                    % (agent_type, subcommand or "<none>")
+                )
                 return
         scoped = cwd
         for index, token in enumerate(tokens):
