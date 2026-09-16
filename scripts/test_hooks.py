@@ -28,9 +28,9 @@ DEEP_NESTING_DEPTH = 3000
 SKIP_TICKET = "TSK-01.1.14"
 MAKE_SKIP_REASON = "make unavailable, or Windows runner"
 WINDOWS_PORT_TICKET = "TSK-01.7.6"
-GH_STUB_SKIP_REASON = (
-    "a PATH stub for gh cannot be reached here: CreateProcess appends .exe to a bare name "
-    "and never consults PATHEXT, so an extensionless shell stub never runs"
+PATH_STUB_SKIP_REASON = (
+    "a PATH stub cannot be reached here: CreateProcess appends .exe to a bare name and "
+    "never consults PATHEXT, so an extensionless shell stub never runs"
 )
 
 VERIFY_PY_PASS = "import sys\nsys.exit(0)\n"
@@ -1515,8 +1515,8 @@ def check_git_guard() -> None:
     label_206 = 'G206 gh api threaded reply on this branch\'s own PR is allowed'
     label_207 = 'G207 gh api threaded reply on someone else\'s PR is denied'
     if IS_WINDOWS:
-        skip_case(label_206, GH_STUB_SKIP_REASON, WINDOWS_PORT_TICKET)
-        skip_case(label_207, GH_STUB_SKIP_REASON, WINDOWS_PORT_TICKET)
+        skip_case(label_206, PATH_STUB_SKIP_REASON, WINDOWS_PORT_TICKET)
+        skip_case(label_207, PATH_STUB_SKIP_REASON, WINDOWS_PORT_TICKET)
     else:
         bash_case_env(
             label_206,
@@ -2778,6 +2778,11 @@ def check_verify_gate() -> None:
     band_case("VG15 a band marker that is not a readable file still runs the gate", "run")
     remove_path(band_marker)
 
+    label = "VG16 an unresolvable git common dir still runs the gate"
+    if IS_WINDOWS:
+        skip_case(label, PATH_STUB_SKIP_REASON, WINDOWS_PORT_TICKET)
+        return
+
     nocommon_bin = shim_bin(
         os.path.join(work, "fixture-vgate-nocommon-bin"),
         '#!/bin/sh\nif [ "$1" = "rev-parse" ] && [ "$2" = "--git-common-dir" ]; then\n'
@@ -2790,7 +2795,6 @@ def check_verify_gate() -> None:
     decision = vgate_field(out, "decision", "allow")
     state = presence(ran)
     index = allocate()
-    label = "VG16 an unresolvable git common dir still runs the gate"
     if decision == "block" and state == "present":
         report(index, label, "")
     else:

@@ -296,13 +296,14 @@ def assert_guard_rejected(label: str, clone: str, target: str, args: list, pytho
     record(label, problem)
 
 
-# the source may sit on a detached HEAD no branch points at, and a plain clone of one checks out nothing
+# a plain clone of a source on a detached HEAD checks out nothing, and the local transport
+# hardlinks, which cannot cross the boundary between a container's /tmp and its workspace
 def build_ref_clone(clone: str) -> str:
     rc, out = capture(
-        ["git", "clone", "--quiet", "--no-checkout", "--local", REPO_ROOT, clone]
+        ["git", "clone", "--quiet", "--no-checkout", "--no-hardlinks", REPO_ROOT, clone]
     )
     if rc != 0:
-        return "git clone --local exited %d: %s" % (rc, out)
+        return "git clone exited %d: %s" % (rc, out)
     rc, head = capture(["git", "-C", REPO_ROOT, "rev-parse", "HEAD"])
     if rc != 0:
         return "reading the source HEAD exited %d: %s" % (rc, head)
