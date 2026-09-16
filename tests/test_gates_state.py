@@ -29,7 +29,7 @@ class GateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             gate = gates.run_gate("done_when", [OK, FAIL, OK], root, timeout=10)
             self.assertFalse(gate.ok)
-            self.assertEqual(len(gate.results), 2)
+            self.assertEqual(len(gate.results), 2, [(r.command, r.returncode, r.output) for r in gate.results])
             self.assertEqual(gate.failures()[0].command, FAIL)
 
     def test_run_gate_skips_empty(self):
@@ -41,7 +41,7 @@ class GateTests(unittest.TestCase):
     def test_timeout_is_a_failure(self):
         with tempfile.TemporaryDirectory() as root:
             result = gates.run_command(SLOW, root, timeout=1)
-            self.assertEqual(result.returncode, 124)
+            self.assertEqual(result.returncode, 124, result.output)
             self.assertIn("timed out", result.output)
 
     def test_compile_commands_from_manifests(self):

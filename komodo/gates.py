@@ -60,8 +60,8 @@ def run_command(command: str, cwd: str, timeout: int, env: Optional[dict] = None
 
     started = time.time()
     if os.name == "nt":
-        # cmd.exe strips the outer quotes of a command that starts with a quoted path; /s makes that stripping exact
-        argv = ["cmd.exe", "/s", "/c", '"%s"' % command]
+        # one raw string, not a list: list2cmdline would backslash-escape the inner quotes cmd.exe needs to see verbatim
+        argv = 'cmd.exe /s /c "%s"' % command
         shell = False
     else:
         argv = command
