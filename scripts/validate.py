@@ -163,8 +163,11 @@ def check_frontmatter(source: str) -> int:
     for entry in listdir_sorted(agents_dir):
         if not entry.endswith(".md"):
             continue
-        _, count = one(os.path.join(agents_dir, entry), "agents/%s" % entry, AGENT_KEYS)
+        fm, count = one(os.path.join(agents_dir, entry), "agents/%s" % entry, AGENT_KEYS)
         failures += count
+        if fm and not fm.get("maxTurns"):
+            print("    BROKEN    agents/%s: missing maxTurns" % entry)
+            failures += 1
 
     if failures == 0:
         print("    ok        every skill and agent parses against the loader schema")

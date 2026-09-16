@@ -4,6 +4,7 @@ description: Writes code and the tests a task names, then proves it with that ta
 tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 model: sonnet
 effort: high
+maxTurns: 100
 hooks:
   Stop:
     - hooks:
