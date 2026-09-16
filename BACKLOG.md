@@ -112,6 +112,25 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.1.15.1` | `[Impl]` | filed by this band's `/assess-bugs`. `python3 scripts/evals.py -- --list` — the forwarding form the file's own header documents — matches the `"--list" in argv` test before the `--` branch is ever reached, so it prints the covered set and exits 0 instead of forwarding `--list` to `claude plugin eval` | `python3 scripts/evals.py --list` |
 
+#### [TSK-01.1.17] The repo ships no `LICENSE` and no `SECURITY.md`, while its installer symlinks the clone into `~/.claude` where every file executes as a hook [P: H] [TODO]
+| Field | Value |
+|---|---|
+| Owner | `human` |
+
+**User Story:**
+> **As** someone evaluating whether this toolkit can be adopted at work,
+> **I want** stated licensing terms and a disclosure path,
+> **So that** installing it is a decision with known terms rather than an unreviewable one.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Licensed):** Given the repo root, when it is read, then a `LICENSE` file states the terms under which it may be used and redistributed.
+- [ ] **AC-2 (Disclosure path):** Given `SECURITY.md`, when it is read, then it names how to report a vulnerability and what the install's execution surface is.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.17.1` | `[Impl]` | the licence choice is a policy call, not an agent one — this subtask is blocked on the user naming it, then writing the file verbatim from that licence's canonical text. `README.md` also names no terms today | `test -f LICENSE` |
+| `SUB-01.1.17.2` | `[Impl]` | write `SECURITY.md`: how to report, and what an install actually grants. `scripts/install.py` symlinks `claude-code/` into `~/.claude`, so every file under `hooks/` runs as a `PreToolUse`/`PostToolUse`/`SessionStart` command on every tool call, and an upstream sync moves every session on the next start unless `--ref` pinned it. State the `--ref` pin as the mitigation it is | `test -f SECURITY.md`; `python3 scripts/validate.py` |
+
 #### [TSK-01.1.18] Every generated hook command names its interpreter by bare `PATH` name, so a directory ahead of `python3` on `PATH` displaces the `PreToolUse` guard on every tool call [P: H] [TODO]
 
 **User Story:**
@@ -183,6 +202,25 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.4.14.1` | `[Impl]` | filed by `TSK-01.4.13`'s band-review `/assess-simplify` pass: the classification added at `scripts/hooks/git/install.sh:42-58` sets `state="different"` for an existing-but-not-`$HOOK_DIR` path, but every branch below tests only `current` or `stale` — `different` and `unset` take the identical `else` in both `--status` and the install path. The `[ -d ]` stat and the absolute-vs-relative `case` are load-bearing only for the stale distinction. Two flags (`is_current`, `is_stale`) express the same behavior with no dead assignment | `python3 scripts/test_install.py` passes with `G1`-`G4` unchanged; `python3 scripts/validate.py` |
 
+#### [TSK-01.4.16] Read-only git is prompt-only for five of seven agents, and each of their files says so outright [P: M] [TODO]
+
+**User Story:**
+> **As** whoever relies on a fork not touching history,
+> **I want** the read-only git boundary enforced by the hook that already reads agent identity,
+> **So that** the rule holds when a fork's own instructions are ignored, not only when they are followed.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Enforced):** Given a `builder`, `tester`, `scout`, `researcher`, or `architect` fork, when it invokes a history-mutating git command, then `git_guard.py` denies it.
+- [ ] **AC-2 (Read path intact):** Given the same agents, when they invoke `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, or `ls-files`, then the command is permitted.
+- [ ] **AC-3 (Orchestrator unaffected):** Given a primary session, when it commits or pushes, then nothing added here denies it.
+- [ ] **AC-4 (Docs match):** Given those five agent files, when their git bullet is read, then it no longer states that nothing enforces the rule.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.16.1` | `[Impl]` | `builder.md`, `tester.md`, `scout.md`, `researcher.md` and `architect.md` each carry the line "Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so." `TSK-01.4.9` already shipped the mechanism: a deny-by-default gate keyed on agent identity through `lib/agents.py`, applied to `reviewer`. Extend it to a per-agent allowed-subcommand set rather than a second parallel gate, and keep the primary session ungated — P2.2 commits there | `python3 scripts/test_hooks.py` |
+| `SUB-01.4.16.2` | `[UnitTest]` | cases per agent, both directions: a mutating subcommand denied and a read-only one permitted, for all five. Include the orchestrator case — no agent identity in the payload means permitted — so the gate cannot regress into blocking the loop's own commits | `python3 scripts/test_hooks.py` |
+| `SUB-01.4.16.3` | `[Impl]` | correct the five agent files' git bullet to state the mechanism, and `AGENTS.md`'s hook table where it describes what `git_guard.py` denies | `python3 scripts/validate.py`; `python3 scripts/verify.py` |
+
 #### [TSK-01.4.17] An agent holding `Write` can move a branch pointer by writing under `.git/` directly, which no `PreToolUse` hook sees [P: M] [TODO]
 
 **User Story:**
@@ -204,6 +242,20 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | `SUB-01.4.18.1` | `[Impl]` | filed by `TSK-01.4.16`'s band-review `/assess-simplify` pass. The six-element read-only base set is written out once per row in `AGENT_READ_ONLY_GIT_SUBCOMMANDS` (`git_guard.py:63-70`), so widening the common surface is six synchronised edits and a seventh agent copies the literal again. Extract the shared frozenset and express each row as the base plus its own delta; `frozenset | set` cannot raise, so the fail-open posture is untouched | `python3 scripts/test_hooks.py` |
 | `SUB-01.4.18.2` | `[Impl]` | the membership-check-and-deny shape is written twice at `git_guard.py:1143-1161`, once per branch, with the deny message as two separate literals, and `:1146` hard-subscripts the shared table — the one read of it that is not membership-guarded, so a later edit dropping that row raises `KeyError` into the fail-open handler and silently removes the reviewer's whole restriction. One `.get(agent_type)` block with an explicit reviewer override collapses both and removes the subscript | `python3 scripts/test_hooks.py` with the deny messages byte-identical |
 | `SUB-01.4.18.3` | `[Impl]` | the five new identity constants in `lib/agents.py:7-12` are each used exactly once, as a table key equal to their own name lowercased, and none is ever compared — unlike `REVIEWER_AGENT`, which is. They remove no duplication. Weigh dropping them for literal keys against the cross-module hop a reader currently pays to confirm the guard covers `builder` | `python3 scripts/test_hooks.py`; `python3 scripts/validate.py` |
+#### [TSK-01.4.19] `git_guard.py` permits merging only a protected base, so a stacked PR cannot be synced from the branch it is actually based on [P: M] [TODO]
+
+**User Story:**
+> **As** someone running a multi-PR band the way `workflow-loop`'s P1 plans them,
+> **I want** to merge my PR's real base into my branch,
+> **So that** a stacked PR's checks run against the base it will actually merge into.
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given a branch whose pull request targets another feature branch, when that base is merged in, then the guard permits it.
+- [ ] **AC-2:** Given a protected ref, when it is the merge source or the merge target, then today's behaviour is unchanged.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.19.1` | `[Impl]` | hit live while publishing a two-PR run. `git merge <feature-branch>` is denied with "isn't the protected base branch", because the guard's merge rule admits only `main`/`master`/`trunk`/`prod`/`production` and the `release/*`/`hotfix/*` patterns as a merge source. That is right for the common case and wrong for a stack: `workflow-loop`'s P1 explicitly plans a run's PRs and queues a second band, and `git-pr-create`'s own lifecycle section describes merging "the protected base" with no stacked-PR story at all, so the toolkit plans for stacks and then blocks the one command that maintains them. The effect is that the second PR's checks run against a base it no longer matches, showing failures already fixed in the branch below it. Decide whether the guard should permit merging the branch that is actually the current PR's base — readable from `gh pr view --json baseRefName` — or whether stacking should be documented as unsupported and `git-pr-create` should say so | `python3 scripts/test_hooks.py` covers merging a non-protected base that is the current PR's own base; `python3 scripts/verify.py` |
 
 ### [TG-01.5] Review Precision & Model Tiering
 * **Target Release:** V1
@@ -287,6 +339,62 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 ### [TG-01.7] Cross-Platform Portability
 * **Target Release:** V1
 * **Context (2026-09-15):** every hook is already Python and `scripts/install.py` already ships, so the remaining non-portable surface is six shell files plus the `Makefile`. The sharp end is the gate itself — `verify_gate.py` resolves `.claude/verify.sh` → `make verify` → `task verify` → `just verify`, and three of those four do not exist on a stock Windows box. No preloaded binaries: `python3` 3.7+ is already the hard floor and a binary would *add* a setup step.
+
+#### [TSK-01.7.6] `scripts/test_hooks.py` fails on Windows across two subsystems, so that leg cannot gate until it is ported [P: H] [TODO]
+
+**User Story:**
+> **As** someone relying on the Windows CI leg,
+> **I want** the hook suite to run there,
+> **So that** a leg that reports red for known reasons either goes green or stops pretending to gate.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Green or skipped):** Given the `windows-latest` leg, when `scripts/test_hooks.py` runs, then every case either passes or reports a skip naming its missing precondition.
+- [ ] **AC-2 (Leg gates):** Given the matrix, when the Windows leg finishes, then its result blocks the merge like every other leg.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.6.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s first real CI run — the first time this suite has ever executed on anything but Linux. Three clusters fail on `windows-latest`: `G206`/`G207` (the `gh api` threaded-reply cases), `G137` (cwd outside any repo versus an absolute target landing inside one — a path-shape assumption), and `VG1`-`VG11`, the entire `verify_gate.py` block. Each is a POSIX assumption rather than a real defect in the code under test, but the count is large enough that porting them is its own task rather than a fix folded into the band that found them. Establish per cluster whether the right answer is a port or a documented skip; a skip must name its precondition the way `test_install.py`'s Windows guards now do | `python3 scripts/test_hooks.py` reports zero failures on `windows-latest` |
+| `SUB-01.7.6.2` | `[Impl]` | decided: `.github/workflows/verify.yml`'s `windows-latest` include entry carries its own `advisory: true` boolean, and the job's `continue-on-error` reads `${{ matrix.advisory \|\| false }}` so every other leg still defaults to blocking. The entry also carries `advisory-ticket: "TSK-01.7.6"`, and the comment above it points there rather than naming the ticket inline, since the comment lint's `EXTERNAL_REF` rule refuses a ticket token in a comment body. Flipping `advisory` back to `false` is this task's own `AC-2` and must not be forgotten | the workflow states which legs gate, and `python3 scripts/validate.py` exits zero |
+
+#### [TSK-01.7.8] A failed `git diff` silently widens `comments.py check` from changed lines to the whole repo [P: H] [TODO]
+
+**User Story:**
+> **As** someone whose gate depends on the comment lint scoping itself to a diff,
+> **I want** a failure to resolve that diff to be loud,
+> **So that** the lint cannot quietly start condemning history it was designed never to touch.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Loud, not wide):** Given a repository where `git diff` fails, when `comments.py check` runs without `--all`, then it reports that it could not resolve the diff and why, rather than scanning every file.
+- [ ] **AC-2 (Explicit still works):** Given `--all`, when it runs, then the whole-repo scan happens exactly as it does today.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.8.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s CI matrix on the `python:3.7` container leg, which reported `166 finding(s)` and failed the gate. `changed_line_map` (`claude-code/hooks/comments.py:296-305`) returns `None` on either an exception or a non-zero return code from `git diff`, and the caller reads `None` as "no diff information, scan everything". Inside the container the job runs as root against a workspace owned by another uid, so git refuses on dubious ownership and `git diff` exits non-zero — turning a changed-lines lint into a whole-repo one and condemning 166 pre-existing declarations. `AGENTS.md` states the changed-lines default exists precisely so the lint "never condemns a repo's existing history", so this fallback inverts the documented contract. Distinguish "resolved a diff, nothing changed" from "could not resolve a diff" and make only the first scan nothing and the second fail loudly naming git's own error | `python3 scripts/test_hooks.py` covers a failed `git diff` reporting rather than widening; `python3 scripts/verify.py` |
+
+#### [TSK-01.7.9] `check_setup_ref`'s `git clone --local` yields an empty working tree on the container leg, crashing the install suite [P: H] [TODO]
+
+**User Story:**
+> **As** whoever relies on the floor leg,
+> **I want** the install suite to survive a checkout shape it does not control,
+> **So that** the one leg testing the declared Python floor reports on the floor rather than on its own fixture setup.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (No crash):** Given any checkout shape CI produces, when `check_setup_ref` runs, then it either runs its cases or reports a skip naming the missing precondition — never an uncaught traceback.
+- [ ] **AC-2 (Leg gates):** Given the `python:3.7` leg, when the suite runs there, then the leg passes and blocks the merge like ubuntu and macOS.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.9.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s matrix once the container leg got past its earlier comment-lint failure. `check_setup_ref` (`scripts/test_install.py:299-305`) runs `git clone --quiet --local <repo> <tmp>` and then immediately `shutil.copyfile(INSTALL, clone/scripts/install.py)`, which raises `FileNotFoundError: /tmp/.../clone/scripts/install.py` — the clone produced no working tree. It is container-specific: the `ubuntu-latest` leg passes with the identical `fetch-depth: 0` checkout and the identical detached HEAD, so neither of those is the cause on its own. `--local` hardlinks and the container's `/tmp` and the mounted workspace are different filesystems, which is the first thing to check. The crash is also uncaught, so one fixture failure takes down the whole suite rather than failing one case — fix that regardless of the cause, since `AC-1` is what stops a fixture problem from masking every real case behind it | `python3 scripts/test_install.py` runs to completion on the `python:3.7` container leg |
+| `SUB-01.7.9.2` | `[Impl]` | until `SUB-01.7.9.1` lands, decide whether this leg is advisory like `windows-latest` or stays blocking. Marking a second leg advisory is not free: two of four legs non-blocking is most of the matrix, and the whole point of `TSK-01.7.1` was that an untested platform is how a defect ships. Prefer fixing over flagging here, since unlike the Windows port this is one fixture function rather than two subsystems | the workflow states which legs gate, and `python3 scripts/validate.py` exits zero |
+
+#### [TSK-01.7.7] `G210` reads ambient `gh` state, so the hook suite's result depends on whether the checkout has an open PR [P: M] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given any machine, when `scripts/test_hooks.py` runs, then `G210`'s result does not depend on the ambient `gh` binary's authentication or on whether the current branch has an open pull request.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.7.1` | `[Impl]` | surfaced while fixing `TSK-01.7.1`'s CI failures. `current_branch_pr_number()` (`claude-code/hooks/git_guard.py:944`) shells out to `gh pr view` with no `cwd` override, so it inherits the real process cwd — the actual checkout, not `test_hooks.py`'s fixture repo. `G210` (`scripts/test_hooks.py:1532`) uses the plain `bash_case` helper and never stubs `gh`, unlike `G206`-`G209` which use `gh_stub_env`. Verified this session: `G210` fails on a machine where `gh` is authenticated and the branch has an open PR, and passes under `GH_CONFIG_DIR=<empty>`, which is CI's state since the workflow sets no `GH_TOKEN`. The suite is therefore not hermetic, and it went red locally the moment this branch's own PR was opened. Likely fix is threading `cwd` through to that `gh` call, or giving `G210` its own `gh_stub_env` | `python3 scripts/test_hooks.py` passes with `gh` authenticated and the branch carrying an open PR |
 
 #### [TSK-01.7.3] The `verify` workflow pulls its container and its actions by mutable tag, and persists the job token into a tree that then executes PR-authored code [P: M] [TODO]
 
