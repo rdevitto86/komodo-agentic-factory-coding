@@ -62,15 +62,15 @@ READ_ONLY_GIT = {
 # One table, keyed on agent identity, deny-by-default beyond each set named here.
 AGENT_READ_ONLY_GIT_SUBCOMMANDS = {
     REVIEWER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files"},
-    BUILDER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files"},
-    TESTER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files"},
-    SCOUT_AGENT: {"log", "diff", "show", "status", "blame", "ls-files"},
+    BUILDER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files", "rev-parse"},
+    TESTER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files", "rev-parse"},
+    SCOUT_AGENT: {"log", "diff", "show", "status", "blame", "ls-files", "rev-parse"},
     RESEARCHER_AGENT: {"log", "diff", "show", "status", "blame", "ls-files", "rev-parse"},
     ARCHITECT_AGENT: {"log", "diff", "show", "status", "blame", "ls-files", "rev-parse"},
 }
 
 # diff/log/show share the diff-generation parser, which accepts --output=<file> to write to a file, not stdout
-REVIEWER_GIT_OUTPUT_SUBCOMMANDS = {"diff", "log", "show"}
+GIT_OUTPUT_SUBCOMMANDS = {"diff", "log", "show"}
 
 MUTATING_FLAGS = {
     "branch": ("-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy", "--edit-description", "--set-upstream-to", "--unset-upstream"),
@@ -1035,13 +1035,28 @@ def requote(tokens):
     return " ".join(shlex.quote(token) for token in tokens)
 
 
+# reviewer's whole Bash surface is git-only, so its sentence stays accurate; every other gated
+# identity keeps a broad Bash surface, so only its git usage -- not "Bash" itself -- is read-only
+def restricted_git_deny(agent_type, detail):
+    if agent_type == REVIEWER_AGENT:
+        return "the reviewer's Bash surface is read-only git only -- %s" % detail
+    return "the %s's git usage is limited to its own read-only git allowlist -- %s" % (agent_type, detail)
+
+
+# reviewer truly has no write path left; a gated builder/tester/scout/researcher/architect does
+# (Write/Edit, or another command entirely) -- this primitive still bypasses its git allowlist though
+def output_flag_deny(agent_type, subcommand):
+    if agent_type == REVIEWER_AGENT:
+        return "git %s --output writes to a file, and the reviewer has no legitimate write path" % subcommand
+    return (
+        "git %s --output writes to a file through a read-only git subcommand, bypassing the %s's git allowlist"
+        % (subcommand, agent_type)
+    )
+
+
 def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_end, depth=0, agent_type=None, piped_source=None):
     raw_tokens = tokenize(segment)
     if not raw_tokens:
-        return
-    # GIT_EXTERNAL_DIFF (and siblings) let git shell out to arbitrary code -- reviewer may never lead with VAR=value
-    if agent_type == REVIEWER_AGENT and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", raw_tokens[0]):
-        findings.append("the reviewer's Bash surface is read-only git only -- a leading VAR=value assignment is denied")
         return
     tokens = strip_redirects(strip_env_assignments(raw_tokens))
     if not tokens:
@@ -1140,24 +1155,31 @@ def scan_segment(segment, findings, cwd, has_cd, full_command, seg_start, seg_en
         return
     if command == "git":
         subcommand, args = subcommand_of(tokens, GIT_GLOBAL_FLAGS_WITH_VALUE)
-        if agent_type == REVIEWER_AGENT:
-            # tokens[1] must BE the subcommand -- no global flag (-c, --exec-path, ...) may precede it unseen
-            leading = tokens[1] if len(tokens) > 1 else None
-            if leading not in AGENT_READ_ONLY_GIT_SUBCOMMANDS[REVIEWER_AGENT]:
-                findings.append("the reviewer's Bash surface is read-only git only -- git %s is denied" % (leading or "<none>"))
+        if agent_type in AGENT_READ_ONLY_GIT_SUBCOMMANDS:
+            # GIT_EXTERNAL_DIFF lets git shell out -- gated here, not earlier, so a non-git command keeps VAR=value
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", raw_tokens[0]):
+                findings.append(restricted_git_deny(agent_type, "a leading VAR=value assignment is denied"))
                 return
-            if subcommand in REVIEWER_GIT_OUTPUT_SUBCOMMANDS and any(
+            # -c/--config-env sets a config git then executes -- no safe-key allowlist, denied outright
+            if any(
+                token == "-c" or token == "--config-env" or token.startswith("--config-env=")
+                for token in tokens[1:]
+            ):
+                findings.append(restricted_git_deny(agent_type, "a -c/--config-env option is denied"))
+                return
+            if agent_type == REVIEWER_AGENT:
+                # tokens[1] must BE the subcommand -- no global flag (-c, --exec-path, ...) may precede it unseen
+                leading = tokens[1] if len(tokens) > 1 else None
+                if leading not in AGENT_READ_ONLY_GIT_SUBCOMMANDS[REVIEWER_AGENT]:
+                    findings.append(restricted_git_deny(agent_type, "git %s is denied" % (leading or "<none>")))
+                    return
+            elif subcommand not in AGENT_READ_ONLY_GIT_SUBCOMMANDS[agent_type]:
+                findings.append(restricted_git_deny(agent_type, "git %s is denied" % (subcommand or "<none>")))
+                return
+            if subcommand in GIT_OUTPUT_SUBCOMMANDS and any(
                 arg == "--output" or arg.startswith("--output=") for arg in args
             ):
-                findings.append("git %s --output writes to a file, and the reviewer has no legitimate write path" % subcommand)
-                return
-        elif agent_type in AGENT_READ_ONLY_GIT_SUBCOMMANDS:
-            allowed = AGENT_READ_ONLY_GIT_SUBCOMMANDS[agent_type]
-            if subcommand not in allowed:
-                findings.append(
-                    "the %s's Bash surface is read-only git only -- git %s is denied"
-                    % (agent_type, subcommand or "<none>")
-                )
+                findings.append(output_flag_deny(agent_type, subcommand))
                 return
         scoped = cwd
         for index, token in enumerate(tokens):

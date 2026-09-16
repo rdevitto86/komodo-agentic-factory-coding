@@ -90,7 +90,7 @@
       "Read(./**/credentials)"
     ]
   },
-  "model": "sonnet",
+  "model": "opus",
   "skillOverrides": {
     "config-accessibility": "name-only",
     "work-state-map": "name-only",

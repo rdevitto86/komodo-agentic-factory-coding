@@ -221,6 +221,28 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | `SUB-01.4.16.2` | `[UnitTest]` | cases per agent, both directions: a mutating subcommand denied and a read-only one permitted, for all five. Include the orchestrator case — no agent identity in the payload means permitted — so the gate cannot regress into blocking the loop's own commits | `python3 scripts/test_hooks.py` |
 | `SUB-01.4.16.3` | `[Impl]` | correct the five agent files' git bullet to state the mechanism, and `AGENTS.md`'s hook table where it describes what `git_guard.py` denies | `python3 scripts/validate.py`; `python3 scripts/verify.py` |
 
+#### [TSK-01.4.17] An agent holding `Write` can move a branch pointer by writing under `.git/` directly, which no `PreToolUse` hook sees [P: M] [TODO]
+
+**User Story:**
+> **As** whoever relies on `TSK-01.4.16`'s gate,
+> **I want** the repository's own metadata to be unwritable by a fork that cannot run the equivalent git command,
+> **So that** the gate is not walked around by the tool it does not cover.
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given a `builder` or `tester` fork, when it writes to any path under `.git/`, then the write is refused.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.17.1` | `[Impl]` | filed by `TSK-01.4.16`'s band-review `/assess-security` pass. `analyze` returns `[]` for any `tool_name` other than `Bash` (`git_guard.py:1249`) and the only `PreToolUse` registration is `matcher: "Bash"`, so `Write` and `Edit` are invisible to the guard; `permissions.deny` carries no `.git/` entry either. `builder` and `tester` hold both tools, so either can read a SHA with the permitted `git log` and then write it into `.git/refs/heads/<branch>`, or write `core.hooksPath` or an alias into `.git/config` — history mutated with no git subcommand crossing the gate. The likely fix is a `permissions.deny` entry rather than a new hook, since the guard's own matcher is `Bash` by design | `python3 scripts/test_hooks.py`; a `Write` to a `.git/` path is refused |
+
+#### [TSK-01.4.18] `git_guard.py` states its per-agent policy in seven places and restates the same deny shape twice [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.18.1` | `[Impl]` | filed by `TSK-01.4.16`'s band-review `/assess-simplify` pass. The six-element read-only base set is written out once per row in `AGENT_READ_ONLY_GIT_SUBCOMMANDS` (`git_guard.py:63-70`), so widening the common surface is six synchronised edits and a seventh agent copies the literal again. Extract the shared frozenset and express each row as the base plus its own delta; `frozenset | set` cannot raise, so the fail-open posture is untouched | `python3 scripts/test_hooks.py` |
+| `SUB-01.4.18.2` | `[Impl]` | the membership-check-and-deny shape is written twice at `git_guard.py:1143-1161`, once per branch, with the deny message as two separate literals, and `:1146` hard-subscripts the shared table — the one read of it that is not membership-guarded, so a later edit dropping that row raises `KeyError` into the fail-open handler and silently removes the reviewer's whole restriction. One `.get(agent_type)` block with an explicit reviewer override collapses both and removes the subscript | `python3 scripts/test_hooks.py` with the deny messages byte-identical |
+| `SUB-01.4.18.3` | `[Impl]` | the five new identity constants in `lib/agents.py:7-12` are each used exactly once, as a table key equal to their own name lowercased, and none is ever compared — unlike `REVIEWER_AGENT`, which is. They remove no duplication. Weigh dropping them for literal keys against the cross-module hop a reader currently pays to confirm the guard covers `builder` | `python3 scripts/test_hooks.py`; `python3 scripts/validate.py` |
+
 ### [TG-01.5] Review Precision & Model Tiering
 * **Target Release:** V1
 * **Context (2026-09-15):** the `Never invent a finding` prohibition is already in all nine `assess-*` skills and in `reviewer.md`, so the gap is not the missing rule — it is that only `assess-security` states a *positive* evidence bar. A negative rule cannot be complied with; a positive one can. Paired with the model tier, since no prompt change substitutes for the reviewer running on the weaker model.

@@ -2242,6 +2242,33 @@ def check_git_guard() -> None:
         'allow',
         'git commit -m "x"',
     )
+    bash_case_agent(
+        'G222 builder git diff --output writes to a file and is denied, not just the reviewer',
+        'deny',
+        'builder',
+        'git diff --output BACKLOG.md',
+        'bypassing',
+    )
+    bash_case_agent(
+        'G223 builder GIT_EXTERNAL_DIFF=... git diff executes an arbitrary command and is denied, not just the reviewer',
+        'deny',
+        'builder',
+        'GIT_EXTERNAL_DIFF="touch pwn" git diff',
+        'VAR=value',
+    )
+    bash_case_agent(
+        'G224 builder git -c core.pager=x diff injects a config value and is denied, not just the reviewer',
+        'deny',
+        'builder',
+        'git -c core.pager=x diff',
+        'config-env',
+    )
+    bash_case_agent(
+        'G225 builder git rev-parse is allowed, granted to all five agents per BACKLOG.md TSK-01.4.16 AC-2',
+        'allow',
+        'builder',
+        'git rev-parse HEAD',
+    )
 
 
 def check_auto_format() -> None:
