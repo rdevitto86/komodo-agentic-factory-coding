@@ -221,6 +221,21 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | `SUB-01.4.16.2` | `[UnitTest]` | cases per agent, both directions: a mutating subcommand denied and a read-only one permitted, for all five. Include the orchestrator case — no agent identity in the payload means permitted — so the gate cannot regress into blocking the loop's own commits | `python3 scripts/test_hooks.py` |
 | `SUB-01.4.16.3` | `[Impl]` | correct the five agent files' git bullet to state the mechanism, and `AGENTS.md`'s hook table where it describes what `git_guard.py` denies | `python3 scripts/validate.py`; `python3 scripts/verify.py` |
 
+#### [TSK-01.4.19] `git_guard.py` permits merging only a protected base, so a stacked PR cannot be synced from the branch it is actually based on [P: M] [TODO]
+
+**User Story:**
+> **As** someone running a multi-PR band the way `workflow-loop`'s P1 plans them,
+> **I want** to merge my PR's real base into my branch,
+> **So that** a stacked PR's checks run against the base it will actually merge into.
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given a branch whose pull request targets another feature branch, when that base is merged in, then the guard permits it.
+- [ ] **AC-2:** Given a protected ref, when it is the merge source or the merge target, then today's behaviour is unchanged.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.19.1` | `[Impl]` | hit live while publishing a two-PR run. `git merge <feature-branch>` is denied with "isn't the protected base branch", because the guard's merge rule admits only `main`/`master`/`trunk`/`prod`/`production` and the `release/*`/`hotfix/*` patterns as a merge source. That is right for the common case and wrong for a stack: `workflow-loop`'s P1 explicitly plans a run's PRs and queues a second band, and `git-pr-create`'s own lifecycle section describes merging "the protected base" with no stacked-PR story at all, so the toolkit plans for stacks and then blocks the one command that maintains them. The effect is that the second PR's checks run against a base it no longer matches, showing failures already fixed in the branch below it. Decide whether the guard should permit merging the branch that is actually the current PR's base — readable from `gh pr view --json baseRefName` — or whether stacking should be documented as unsupported and `git-pr-create` should say so | `python3 scripts/test_hooks.py` covers merging a non-protected base that is the current PR's own base; `python3 scripts/verify.py` |
+
 ### [TG-01.5] Review Precision & Model Tiering
 * **Target Release:** V1
 * **Context (2026-09-15):** the `Never invent a finding` prohibition is already in all nine `assess-*` skills and in `reviewer.md`, so the gap is not the missing rule — it is that only `assess-security` states a *positive* evidence bar. A negative rule cannot be complied with; a positive one can. Paired with the model tier, since no prompt change substitutes for the reviewer running on the weaker model.
