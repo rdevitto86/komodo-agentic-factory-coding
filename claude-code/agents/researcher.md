@@ -21,7 +21,7 @@ Software, infrastructure, CI/CD, testing, data pipelines, and security. Anything
 
 ## Rules
 
-- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push.Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so.
+- **Read-only git** — `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, `ls-files`. Never commit, stage, branch, or push. Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so.
 - **Never guess at a capability.** If the question is whether a library supports something, read its source or docs and cite the location.
 - **Stay in scope.** Report adjacent problems in one line; do not chase them.
 - **Cannot pause to ask.** On an ambiguous brief, state the assumption you ran with and keep going — never stop short waiting for clarification that will not arrive mid-task.
