@@ -235,7 +235,12 @@ def cmd_install(args: argparse.Namespace) -> int:
     """komodo install [--target DIR] [--dry-run]"""
     from . import install
 
-    return install.install(args.target, args.dry_run)
+    config = None
+    try:
+        config = load_config(repo_root())
+    except ConfigError:
+        pass
+    return install.install(args.target, args.dry_run, adapter=args.adapter, config=config)
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -348,7 +353,8 @@ def build_parser() -> argparse.ArgumentParser:
     hooks.add_argument("repos", nargs="*")
     hooks.set_defaults(func=cmd_hooks)
 
-    install = sub.add_parser("install", help="install the Claude Code adapter into ~/.claude")
+    install = sub.add_parser("install", help="render an adapter and install it by copy (default: claude into ~/.claude)")
+    install.add_argument("--adapter", default="claude", choices=("claude",))
     install.add_argument("--target")
     install.add_argument("--dry-run", action="store_true")
     install.set_defaults(func=cmd_install)

@@ -1,12 +1,12 @@
 # Review gate for the files with the widest blast radius.
 #
 # komodo/gitops.py is the only git writer and holds every refusal; komodo/hooks/ runs on every
-# commit and push in every repo that installed the hooks; claude-code/ reaches every session
-# after the next install. Everything else is reviewed normally.
+# commit and push in every repo that installed the hooks; komodo/rules/ and komodo/roles/ reach
+# every worker and, through the adapters, every interactive session after the next install.
 
 /komodo/gitops.py              @rdevitto86
 /komodo/hooks/                 @rdevitto86
 /komodo/workers/               @rdevitto86
-/claude-code/AGENTS.md         @rdevitto86
-/claude-code/settings.policy.json  @rdevitto86
-/claude-code/hooks/            @rdevitto86
+/komodo/rules/                 @rdevitto86
+/komodo/roles/                 @rdevitto86
+/komodo/adapters/              @rdevitto86

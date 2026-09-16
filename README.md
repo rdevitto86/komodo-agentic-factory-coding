@@ -15,17 +15,17 @@ Requirements: Python 3.9+, git, the `claude` CLI on PATH, and `gh` authenticated
 ```bash
 git clone <this repo> ~/komodo/ai/komodo-agentic-toolkit-coding
 cd ~/komodo/ai/komodo-agentic-toolkit-coding
-python3 -m komodo install                    # copies claude-code/ into ~/.claude, generates settings.json
+python3 -m komodo install                    # renders the claude adapter into ~/.claude, generates settings.json
 python3 -m komodo hooks install ~/komodo/*/* # points each repo's git hooks at komodo/hooks
 ```
 
 Windows: same commands with `python` or `py -3`. No Git Bash, no symlinks, no `make`. See [docs/windows-install.md](docs/windows-install.md).
 
-The install is a copy. After editing `claude-code/` or `komodo/standards/`, run `python3 -m komodo install` again.
+The install is a copy. After editing `komodo/rules`, `roles`, `standards`, or `adapters`, run `python3 -m komodo install` again.
 
 ## Usage
 
-In any repo with a `BACKLOG.md` in the [task grammar](claude-code/skills/backlog/SKILL.md):
+In any repo with a `BACKLOG.md` in the [task grammar](komodo/rules/backlog.md):
 
 ```bash
 python3 -m komodo run --dry-run              # plan: waves, briefs, token estimates, no spend
@@ -65,12 +65,13 @@ flowchart LR
 | Review | one reviewer over the group diff | 1 |
 | Publish, report | code and `gh` | 0 |
 
-Two profiles, set in `komodo.json` or `.komodo/local.json`, drive model and effort per role:
+Roles declare a tier (`light`, `standard`, `heavy`). Profiles in `komodo.json` or `.komodo/local.json` map tiers to a provider, model, and effort:
 
-| Profile | Planner | Builder | Reviewer | For |
+| Profile | light | standard | heavy | For |
 |---|---|---|---|---|
-| `fast` | Sonnet medium | Sonnet medium, $2 cap | Sonnet medium, skipped under 150 diff lines | Pro plans, small groups |
-| `thinking` | Opus high | Sonnet high | Opus high | Max plans, hard groups |
+| `fast` | Haiku low | Sonnet medium, $2 cap | Sonnet medium; review skipped under 150 diff lines | Pro plans, small groups |
+| `thinking` | Haiku low | Sonnet high | Opus high | Max plans, hard groups |
+| `local` | Ollama | Ollama | Ollama | Air-gapped use; summarize and review today, build once a tool-capable local runtime exists |
 
 ## Enforcement layers
 
@@ -99,24 +100,23 @@ The remote is the only place a change lands into `main`, and only a person press
 ## Layout
 
 ```
-komodo/                the orchestrator (stdlib only)
-├── __main__.py        CLI: run, status, tasks, comments, hooks, install, doctor, pr, release
+komodo/                the library and the orchestrator (stdlib only)
+├── rules/             AGENTS.md (universal rules), backlog.md (grammar), cli.md (commands)
+├── roles/             one file per role: tier, access, and the body every renderer uses
+├── standards/         rule files per language and domain, injected by extension
+├── briefs/            worker prompt template per role
+├── adapters/claude/   renders ~/.claude from the above; owns its hooks and settings policy
+├── hooks/             pre-commit.py, pre-push.py, and the sh stubs Git runs
+├── workers/           claude (headless CLI) and ollama adapters
 ├── pipeline.py        the phases
 ├── gitops.py          the only git writer
-├── workers/           claude (headless CLI) and ollama adapters
-├── briefs/            system + prompt template per role
-├── standards/         rule files per language and domain, injected by extension
-└── hooks/             pre-commit.py, pre-push.py, and the sh stubs Git runs
-claude-code/           thin Claude Code adapter, installed by copy
-├── AGENTS.md          ~40 lines: working, git, comments, writing for a human
-├── agents/            builder, reviewer, planner, researcher, scout, architect, tester
-├── skills/            komodo, backlog, review, and one thin pointer per standard
-├── hooks/             guard.py (advisory), context_injector.py
-└── settings.policy.json  permissions, hooks, skillOverrides; merged into ~/.claude/settings.json
+└── __main__.py        CLI: run, status, tasks, comments, hooks, install, doctor, pr, release
 tests/                 unittest suites
 scripts/verify.py      the gate this repo runs
-templates/project/     AGENTS.md, BACKLOG.md, CHANGELOG.md, README.md starters for a new repo
+templates/project/     AGENTS.md, BACKLOG.md, CHANGELOG.md, komodo.json, docs/spec starters
 ```
+
+There is no hand-maintained Claude directory. `python3 -m komodo install` renders the adapter into `~/.claude`: `AGENTS.md`, one agent file per session role with model and effort from the active profile's tiers, three procedure skills built from `komodo/rules/`, one thin pointer skill per standard, the advisory guard, and a settings policy merged into your personal `settings.json`. Another tool gets another adapter with the same inputs.
 
 ## Comments
 
@@ -134,5 +134,5 @@ CI runs the same command on Ubuntu, macOS, and Windows, plus Python 3.9 on Ubunt
 
 - [docs/architecture.md](docs/architecture.md): phases, state, briefs, and what would change each decision
 - [docs/design-decisions.md](docs/design-decisions.md): why each rule exists
-- [claude-code/skills/backlog/SKILL.md](claude-code/skills/backlog/SKILL.md): the task grammar
-- [SECURITY.md](SECURITY.md): what installing this grants, and how to report a problem
+- [komodo/rules/backlog.md](komodo/rules/backlog.md): the task grammar
+- [SECURITY.md](SECURITY.md): how to report a problem

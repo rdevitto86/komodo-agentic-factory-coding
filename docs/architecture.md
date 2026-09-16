@@ -41,7 +41,7 @@ Each task in a wave gets its own worktree on a branch cut from the run branch. B
 
 ## Briefs and context
 
-A brief is two rendered templates, `<role>.system.md` and `<role>.prompt.md`, with every `{{slot}}` filled or the render refuses. The builder's slots:
+A brief is the role's body plus its `## Worker output` contract as the system prompt, and `komodo/briefs/<role>.prompt.md` as the prompt, with every `{{slot}}` filled or the render refuses. The builder's slots:
 
 | Slot | Source | Cap |
 |---|---|---|
@@ -61,7 +61,7 @@ A brief is two rendered templates, `<role>.system.md` and `<role>.prompt.md`, wi
 
 `workers/ollama.py` posts to a local server's generate endpoint. It has no tool loop, so it only summarizes. Unreachable is a soft failure.
 
-Adding a provider is one file implementing `Worker.invoke`.
+Adding a provider is one file implementing `Worker.invoke`. Adding a tool's config layout is one adapter module implementing `render`.
 
 ## Credentials
 
@@ -72,6 +72,14 @@ Adding a provider is one file implementing `Worker.invoke`.
 ## Review
 
 One reviewer pass over `git diff base...HEAD` with the bug, security, test-gap, simplify, narrative-comment, and undocumented-nonobvious classes in one brief. Findings at or above `severity_floor` become one repair brief; the rest are appended to `BACKLOG.md` as `[TODO]` tasks with the finding's file and the repo verify command as `done_when`. `fast` skips review under `min_diff_lines`.
+
+## One source, many adapters
+
+`komodo/rules/` holds the universal rules and the two procedure documents. `komodo/roles/` holds one file per role: a frontmatter with `tier`, `access`, and `session`, then a body, then a `## Worker output` contract and a `## Session output` contract. The worker system prompt is body plus worker output; an interactive agent is body plus session output. Model and effort never appear in a role; the active profile's tier supplies them.
+
+`komodo/adapters/claude/` renders that source into the `~/.claude` layout: `AGENTS.md`, `agents/<role>.md` for session roles, `skills/komodo` and `skills/backlog` from the rules documents, `skills/review` from the reviewer role, one pointer skill per standard, the two hooks, the standards copy, and a settings policy whose `skillOverrides` are derived from the rendered skill set. `scripts/validate.py` renders into a scratch directory and measures the always-on budget there. A second tool gets a second adapter with the same inputs.
+
+The `local` profile points every tier at Ollama. Today that serves summarizing and, with a capable model, review; building needs a local runtime with a tool loop, which is the next adapter to write.
 
 ## Fragments
 

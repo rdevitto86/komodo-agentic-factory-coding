@@ -10,14 +10,11 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class DoctorTests(unittest.TestCase):
     def test_repo_is_clean(self):
-        problems = doctor.check_references(REPO) + doctor.check_policy(REPO) + doctor.check_skills(REPO)
+        problems = doctor.check_references(REPO) + doctor.check_policy(REPO) + doctor.check_roles(REPO)
         self.assertEqual(problems, [])
 
     def test_planted_dangling_reference(self):
         with tempfile.TemporaryDirectory() as root:
-            os.makedirs(os.path.join(root, "claude-code", "skills", "komodo"))
-            with open(os.path.join(root, "claude-code", "skills", "komodo", "SKILL.md"), "w") as handle:
-                handle.write("---\nname: komodo\n---\n")
             with open(os.path.join(root, "README.md"), "w") as handle:
                 handle.write("See `komodo/nothing.py` and run /workflow-loop today.\n")
             problems = doctor.check_references(root)
@@ -26,24 +23,20 @@ class DoctorTests(unittest.TestCase):
 
     def test_planted_personal_key_in_policy(self):
         with tempfile.TemporaryDirectory() as root:
-            os.makedirs(os.path.join(root, "claude-code", "hooks"))
-            with open(os.path.join(root, "claude-code", "settings.policy.json"), "w") as handle:
+            os.makedirs(os.path.join(root, "komodo", "adapters", "claude", "hooks"))
+            with open(os.path.join(root, "komodo", "adapters", "claude", "settings.policy.json"), "w") as handle:
                 json.dump({"effortLevel": "high", "hooks": {"PreToolUse": [{"hooks": [{"command": "python3 ~/.claude/hooks/missing.py"}]}]}}, handle)
             problems = doctor.check_policy(root)
             self.assertTrue(any("personal key" in p for p in problems))
             self.assertTrue(any("missing.py" in p for p in problems))
 
-    def test_skill_checks(self):
+    def test_checked_in_claude_code_is_flagged(self):
         with tempfile.TemporaryDirectory() as root:
-            folder = os.path.join(root, "claude-code", "skills", "bad")
-            os.makedirs(folder)
-            open(os.path.join(folder, "SKILL.md.off"), "w").close()
-            with open(os.path.join(folder, "SKILL.md"), "w") as handle:
-                handle.write("---\nname: other\nweird: 1\n---\n")
-            problems = doctor.check_skills(root)
-            self.assertTrue(any(".off" in p for p in problems))
-            self.assertTrue(any("unknown frontmatter" in p for p in problems))
-            self.assertTrue(any("does not match" in p for p in problems))
+            os.makedirs(os.path.join(root, "komodo", "adapters", "claude", "hooks"))
+            with open(os.path.join(root, "komodo", "adapters", "claude", "settings.policy.json"), "w") as handle:
+                json.dump({"hooks": {}}, handle)
+            os.makedirs(os.path.join(root, "claude-code"))
+            self.assertTrue(any("claude-code/ exists" in p for p in doctor.check_policy(root)))
 
 
 class InstallTests(unittest.TestCase):
@@ -84,6 +77,9 @@ class InstallTests(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(target, "AGENTS.md")))
             self.assertTrue(os.path.isfile(os.path.join(target, "standards", "go.md")))
             self.assertTrue(os.path.isdir(os.path.join(target, "skills", "komodo")))
+            self.assertTrue(os.path.isfile(os.path.join(target, "agents", "builder.md")))
+            self.assertTrue(os.path.isfile(os.path.join(target, "CLAUDE.local.md")))
+            self.assertFalse(os.path.isdir(os.path.join(target, "seeds")))
             self.assertFalse(os.path.islink(os.path.join(target, "hooks")))
 
 
@@ -99,10 +95,6 @@ class StandardsTests(unittest.TestCase):
         text = standards.load(["go"], cap_chars=500)
         self.assertIn("truncated", text)
         self.assertIn("No language standard", standards.load([]))
-
-    def test_every_standard_has_a_skill_and_vice_versa(self):
-        skills = {name[len("standards-"):] for name in os.listdir(os.path.join(REPO, "claude-code", "skills")) if name.startswith("standards-")}
-        self.assertEqual(skills, set(standards.available()))
 
     def test_comment_convention(self):
         self.assertIn("godoc", standards.comment_convention(["a.go", "b.go", "c.py"]))

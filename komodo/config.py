@@ -1,4 +1,4 @@
-"""komodo.json (team) merged with .komodo/local.json (personal): profiles, protections, budgets."""
+"""komodo.json (team) merged with .komodo/local.json (personal): profiles map tiers to providers, roles declare tiers."""
 
 from __future__ import annotations
 
@@ -8,23 +8,45 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from . import roles as role_defs
+
 TEAM_FILE = "komodo.json"
 LOCAL_FILE = os.path.join(".komodo", "local.json")
+TIERS = ("light", "standard", "heavy")
+PROVIDERS = ("claude", "ollama")
 
 DEFAULTS: Dict[str, Any] = {
     "profile": "fast",
     "profiles": {
         "fast": {
-            "planner": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 1.0, "max_turns": 30},
-            "builder": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 2.0, "max_turns": 60},
-            "reviewer": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 1.0, "max_turns": 20, "min_diff_lines": 150},
-            "summarizer": {"provider": "ollama", "model": "qwen3:1.7B"},
+            "tiers": {
+                "light": {"provider": "claude", "model": "haiku", "effort": "low", "max_budget_usd": 0.5, "max_turns": 15},
+                "standard": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 2.0, "max_turns": 60},
+                "heavy": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 1.0, "max_turns": 30},
+            },
+            "roles": {
+                "reviewer": {"min_diff_lines": 150},
+                "summarizer": {"provider": "ollama", "model": "qwen3:1.7B"},
+            },
         },
         "thinking": {
-            "planner": {"provider": "claude", "model": "opus", "effort": "high", "max_budget_usd": 3.0, "max_turns": 40},
-            "builder": {"provider": "claude", "model": "sonnet", "effort": "high", "max_budget_usd": 4.0, "max_turns": 100},
-            "reviewer": {"provider": "claude", "model": "opus", "effort": "high", "max_budget_usd": 3.0, "max_turns": 30, "min_diff_lines": 0},
-            "summarizer": {"provider": "ollama", "model": "qwen3:1.7B"},
+            "tiers": {
+                "light": {"provider": "claude", "model": "haiku", "effort": "low", "max_budget_usd": 0.5, "max_turns": 15},
+                "standard": {"provider": "claude", "model": "sonnet", "effort": "high", "max_budget_usd": 4.0, "max_turns": 100},
+                "heavy": {"provider": "claude", "model": "opus", "effort": "high", "max_budget_usd": 3.0, "max_turns": 40},
+            },
+            "roles": {
+                "reviewer": {"min_diff_lines": 0},
+                "summarizer": {"provider": "ollama", "model": "qwen3:1.7B"},
+            },
+        },
+        "local": {
+            "tiers": {
+                "light": {"provider": "ollama", "model": "qwen3:1.7B"},
+                "standard": {"provider": "ollama", "model": "qwen3-coder-next:latest"},
+                "heavy": {"provider": "ollama", "model": "qwen3-coder-next:latest"},
+            },
+            "roles": {"reviewer": {"min_diff_lines": 0}},
         },
     },
     "protected": ["main", "master", "trunk", "prod", "production", "release/*", "hotfix/*"],
@@ -41,12 +63,9 @@ DEFAULTS: Dict[str, Any] = {
     "changelog": "CHANGELOG.md",
 }
 
-ROLES = ("planner", "builder", "reviewer", "summarizer")
-PROVIDERS = ("claude", "ollama")
-
 
 class ConfigError(ValueError):
-    """Raised when a config file is unreadable or names an unknown provider."""
+    """Raised when a config file is unreadable or a profile is malformed."""
 
 
 def _deep_merge(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
@@ -94,13 +113,17 @@ class Config:
         return config
 
     def validate(self) -> None:
-        """Rejects an unknown provider or a profile missing a role."""
-        for name, roles in self.data.get("profiles", {}).items():
-            for role in ROLES:
-                spec = roles.get(role)
-                if not isinstance(spec, dict):
-                    raise ConfigError("profile %r lacks role %r" % (name, role))
-                if spec.get("provider") not in PROVIDERS:
+        """Rejects a profile missing a tier, an unknown provider, or an undefined active profile."""
+        for name, profile in self.data.get("profiles", {}).items():
+            tiers = profile.get("tiers") if isinstance(profile, dict) else None
+            if not isinstance(tiers, dict):
+                raise ConfigError("profile %r has no tiers" % name)
+            for tier in TIERS:
+                spec = tiers.get(tier)
+                if not isinstance(spec, dict) or spec.get("provider") not in PROVIDERS:
+                    raise ConfigError("profile %r tier %r: provider must be one of %s" % (name, tier, "|".join(PROVIDERS)))
+            for role, spec in (profile.get("roles") or {}).items():
+                if "provider" in spec and spec["provider"] not in PROVIDERS:
                     raise ConfigError("profile %r role %r: provider must be one of %s" % (name, role, "|".join(PROVIDERS)))
         if self.data.get("profile") not in self.data.get("profiles", {}):
             raise ConfigError("profile %r is not defined" % self.data.get("profile"))
@@ -114,13 +137,25 @@ class Config:
             node = node[part]
         return node
 
-    def role(self, role: str, profile: Optional[str] = None) -> Dict[str, Any]:
-        """The provider/model/effort/budget spec for a role under the active or named profile."""
+    def profile_names(self) -> List[str]:
+        """Every defined profile."""
+        return sorted(self.data.get("profiles", {}))
+
+    def tier(self, tier: str, profile: Optional[str] = None) -> Dict[str, Any]:
+        """The provider spec for a tier under the active or named profile."""
         name = profile or self.data["profile"]
         try:
-            return dict(self.data["profiles"][name][role])
+            return dict(self.data["profiles"][name]["tiers"][tier])
         except KeyError:
-            raise ConfigError("profile %r has no role %r" % (name, role))
+            raise ConfigError("profile %r has no tier %r" % (name, tier))
+
+    def role(self, role: str, profile: Optional[str] = None) -> Dict[str, Any]:
+        """A role's spec: its tier's provider spec merged with any per-role override in the profile."""
+        name = profile or self.data["profile"]
+        spec = self.tier(role_defs.tier_of(role), name)
+        override = ((self.data["profiles"].get(name) or {}).get("roles") or {}).get(role) or {}
+        spec.update(override)
+        return spec
 
     @property
     def protected(self) -> List[str]:

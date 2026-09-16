@@ -1,10 +1,12 @@
-"""Renders role templates under komodo/briefs/ into a system prompt and a task prompt."""
+"""Renders a worker brief: the role's system prompt plus a prompt template under komodo/briefs/ with its slots filled."""
 
 from __future__ import annotations
 
 import os
 import re
 from typing import Any, Dict, Optional, Tuple
+
+from . import roles
 
 BRIEFS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "briefs")
 PLACEHOLDER = re.compile(r"\{\{\s*([a-z_]+)\s*\}\}")
@@ -86,13 +88,10 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-TOOLS: Dict[str, list] = {
-    "builder": ["Read", "Edit", "Write", "Bash", "Grep", "Glob"],
-    "merger": ["Read", "Edit", "Write", "Bash", "Grep", "Glob"],
-    "responder": ["Read", "Edit", "Write", "Bash", "Grep", "Glob"],
-    "reviewer": ["Read", "Grep", "Glob"],
-    "planner": ["Read", "Grep", "Glob"],
-    "summarizer": [],
+TOOLS_BY_ACCESS: Dict[str, list] = {
+    "write": ["Read", "Edit", "Write", "Bash", "Grep", "Glob"],
+    "read": ["Read", "Grep", "Glob"],
+    "none": [],
 }
 
 
@@ -101,7 +100,7 @@ class BriefError(ValueError):
 
 
 def _read(name: str) -> str:
-    """Reads one template file."""
+    """Reads one prompt template file."""
     path = os.path.join(BRIEFS_DIR, name)
     try:
         with open(path, encoding="utf-8") as handle:
@@ -123,8 +122,12 @@ def fill(template: str, slots: Dict[str, Any]) -> str:
 
 
 def render(role: str, slots: Dict[str, Any]) -> Tuple[str, str]:
-    """The (system, prompt) pair for a role with its slots filled."""
-    system = fill(_read("%s.system.md" % role), slots).strip() + "\n"
+    """The (system, prompt) pair: the role's worker system prompt and the filled prompt template."""
+    try:
+        definition = roles.load(role)
+    except roles.RoleError as error:
+        raise BriefError(str(error))
+    system = fill(definition.system_prompt(), slots).strip() + "\n"
     prompt = fill(_read("%s.prompt.md" % role), slots).strip() + "\n"
     return system, prompt
 
@@ -135,8 +138,11 @@ def schema_for(role: str) -> Optional[Dict[str, Any]]:
 
 
 def tools_for(role: str) -> list:
-    """The tool set a role may use."""
-    return list(TOOLS.get(role, []))
+    """The tool set a role may use, from its declared access."""
+    try:
+        return list(TOOLS_BY_ACCESS.get(roles.load(role).access, []))
+    except roles.RoleError:
+        return []
 
 
 def clip(text: str, limit: int, label: str = "") -> str:

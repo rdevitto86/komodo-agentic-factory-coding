@@ -5,15 +5,9 @@ TODO.md
 __pycache__/
 *.pyc
 
-# Local session config, never shared
+# Local session and run state, never shared
 .claude/
 .komodo/
-claude-code/settings.json
-claude-code/settings.local.json
-claude-code/CLAUDE.local.md
-
-# Account skills the client syncs into ~/.claude/skills
-claude-code/skills/synced/
 
 # Editor / OS noise
 .DS_Store

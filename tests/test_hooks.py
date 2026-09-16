@@ -8,7 +8,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS = os.path.join(REPO, "komodo", "hooks")
 PRE_COMMIT = os.path.join(HOOKS, "pre-commit.py")
 PRE_PUSH = os.path.join(HOOKS, "pre-push.py")
-GUARD = os.path.join(REPO, "claude-code", "hooks", "guard.py")
+GUARD = os.path.join(REPO, "komodo", "adapters", "claude", "hooks", "guard.py")
 
 
 def make_repo(root):

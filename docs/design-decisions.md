@@ -30,11 +30,17 @@ The 0.x lint demanded a comment on every function and routed every comment throu
 
 ## Standards are files, injected by extension
 
-A 19 KB Go skill loaded on every `.go` touch was the biggest per-fork cost after the loop text. Standards are now rules-only files under `komodo/standards/`, typically 3 to 8 KB, chosen by the extensions and directories a task touches and clipped to a cap. The interactive adapter's `standards-*` skills are one-line pointers to the same file installed under `~/.claude/standards/`, listed `name-only`, so a session and a worker hold identical rules and the always-on listing costs a few tokens each. There is no "off" standard: an unused language costs nothing.
+A 19 KB Go skill loaded on every `.go` touch was the biggest per-fork cost after the loop text. Standards are now rules-only files under `komodo/standards/`, typically 3 to 8 KB, chosen by the extensions and directories a task touches and clipped to a cap. The rendered `standards-*` skills are one-line pointers to the same file installed under `~/.claude/standards/`, listed `name-only`, so a session and a worker hold identical rules and the always-on listing costs a few tokens each. There is no "off" standard: an unused language costs nothing.
+
+## One source, rendered per tool
+
+The first 1.0 draft carried a hand-written `claude-code/` beside the harness: seven agent files, three skills, and an `AGENTS.md` that duplicated the rules the worker briefs already stated. Two copies of a role drift, and a second tool would have meant a third. Rules, roles, and standards now live once under `komodo/`, a role carries both its worker and session output contracts, and `komodo/adapters/claude/` renders the Claude layout from them at install time. Model names left the role files for the same reason: a role declares a tier, and a profile decides what a tier costs, so a `local` profile can point every tier at Ollama without touching a role.
+
+What would change it: a tool whose config cannot be expressed from these inputs, which would argue for widening the role frontmatter rather than hand-writing that tool's layer.
 
 ## Settings policy is merged, never linked
 
-The tracked `settings.json` was the live symlinked file, so a preference toggled in the UI landed in the next commit. `settings.policy.json` now carries only `permissions`, `hooks`, and `skillOverrides`; the installer merges those keys into the personal `~/.claude/settings.json` and leaves every other key alone. `komodo doctor` fails on a personal key in the policy file or a tracked `settings.json`.
+The tracked `settings.json` was the live symlinked file, so a preference toggled in the UI landed in the next commit. The adapter's `settings.policy.json` carries only `permissions` and `hooks`, `skillOverrides` is derived from the rendered skills, and the installer merges those keys into the personal `~/.claude/settings.json` and leaves every other key alone. `komodo doctor` fails on a personal key in the policy file or a tracked `settings.json`.
 
 ## Copies, not symlinks
 

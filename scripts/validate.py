@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Validates the Claude Code adapter: frontmatter keys, the always-on token budget, agent profiles, and briefs."""
+"""Validates the global layer and the rendered Claude adapter: roles, frontmatter keys, the always-on budget, brief templates."""
 
 from __future__ import annotations
 
 import json
 import os
-import re
 import sys
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ADAPTER = os.path.join(REPO_ROOT, "claude-code")
+sys.path.insert(0, REPO_ROOT)
+
+from komodo import adapters, roles  # noqa: E402
+
 BUDGET_TOKENS = 1500
 SKILL_KEYS = {"name", "description", "when_to_use", "model", "effort", "allowed-tools", "disallowed-tools", "argument-hint", "disable-model-invocation", "user-invocable", "paths", "context", "agent", "background", "hooks", "metadata", "shell", "license", "compatibility"}
 AGENT_KEYS = {"name", "description", "tools", "disallowedTools", "model", "permissionMode", "maxTurns", "skills", "mcpServers", "hooks", "memory", "background", "effort", "isolation", "color", "initialPrompt"}
@@ -36,72 +39,76 @@ def tokens(text: str) -> int:
     return len(text) // 4
 
 
+def read(path: str) -> str:
+    """File text."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def check_roles(problems: list) -> None:
+    """Every role parses, and every worker role has a prompt template and a worker output contract."""
+    briefs_dir = os.path.join(REPO_ROOT, "komodo", "briefs")
+    templates = {name[: -len(".prompt.md")] for name in os.listdir(briefs_dir) if name.endswith(".prompt.md")}
+    for name in roles.available():
+        try:
+            role = roles.load(name)
+        except roles.RoleError as error:
+            problems.append(str(error))
+            continue
+        if not role.purpose:
+            problems.append("roles/%s.md: missing purpose" % name)
+        if name in templates and not role.worker_output:
+            problems.append("roles/%s.md: has a prompt template but no '## Worker output' section" % name)
+        if role.session and not role.session_output:
+            problems.append("roles/%s.md: session role without a '## Session output' section" % name)
+    for name in templates - set(roles.available()):
+        problems.append("briefs/%s.prompt.md has no role file" % name)
+
+
+def check_rendered(problems: list) -> int:
+    """Renders the Claude adapter into a scratch dir and checks frontmatter and the always-on budget."""
+    with tempfile.TemporaryDirectory() as target:
+        adapters.render("claude", target)
+        with open(os.path.join(target, "settings.policy.json"), encoding="utf-8") as handle:
+            overrides = json.load(handle).get("skillOverrides", {})
+        always_on = tokens(read(os.path.join(target, "AGENTS.md")))
+        skills_dir = os.path.join(target, "skills")
+        for name in sorted(os.listdir(skills_dir)):
+            keys = frontmatter(read(os.path.join(skills_dir, name, "SKILL.md")))
+            if keys is None:
+                problems.append("rendered skill %s: missing frontmatter" % name)
+                continue
+            for key in keys:
+                if key not in SKILL_KEYS:
+                    problems.append("rendered skill %s: unknown frontmatter key %r" % (name, key))
+            if keys.get("name") != name:
+                problems.append("rendered skill %s: name mismatch" % name)
+            if "paths" in keys and not keys["paths"].startswith('"'):
+                problems.append("rendered skill %s: paths value must be quoted" % name)
+            always_on += tokens(name) + 2 if overrides.get(name) == "name-only" else tokens(name + keys.get("description", "")) + 6
+        agents_dir = os.path.join(target, "agents")
+        for name in sorted(os.listdir(agents_dir)):
+            keys = frontmatter(read(os.path.join(agents_dir, name)))
+            if keys is None:
+                problems.append("rendered agent %s: missing frontmatter" % name)
+                continue
+            for key in keys:
+                if key not in AGENT_KEYS:
+                    problems.append("rendered agent %s: unknown frontmatter key %r" % (name, key))
+            for key in REQUIRED_AGENT - set(keys):
+                problems.append("rendered agent %s: missing %r" % (name, key))
+        if always_on > BUDGET_TOKENS:
+            problems.append("always-on context is ~%d tokens, over the %d budget" % (always_on, BUDGET_TOKENS))
+        return always_on
+
+
 def main() -> int:
     """Runs every validation and prints each problem."""
-    problems = []
-    overrides = {}
-    policy_path = os.path.join(ADAPTER, "settings.policy.json")
-    try:
-        overrides = json.load(open(policy_path, encoding="utf-8")).get("skillOverrides", {})
-    except (OSError, ValueError) as error:
-        problems.append("settings.policy.json: %s" % error)
-
-    always_on = tokens(open(os.path.join(ADAPTER, "AGENTS.md"), encoding="utf-8").read())
-    skills_dir = os.path.join(ADAPTER, "skills")
-    for name in sorted(os.listdir(skills_dir)):
-        folder = os.path.join(skills_dir, name)
-        skill = os.path.join(folder, "SKILL.md")
-        if not os.path.isdir(folder) or name == "synced":
-            continue
-        if not os.path.isfile(skill):
-            problems.append("skills/%s: no SKILL.md" % name)
-            continue
-        text = open(skill, encoding="utf-8").read()
-        keys = frontmatter(text)
-        if keys is None:
-            problems.append("skills/%s: missing frontmatter" % name)
-            continue
-        for key in keys:
-            if key not in SKILL_KEYS:
-                problems.append("skills/%s: unknown frontmatter key %r" % (name, key))
-        if keys.get("name") != name:
-            problems.append("skills/%s: name %r does not match directory" % (name, keys.get("name")))
-        if "paths" in keys and not keys["paths"].startswith('"'):
-            problems.append("skills/%s: paths value must be quoted" % name)
-        if keys.get("disable-model-invocation", "").lower() in ("true", "yes"):
-            continue
-        cost = tokens(name) + 2 if overrides.get(name) == "name-only" else tokens(name + keys.get("description", "")) + 6
-        always_on += cost
-
-    if always_on > BUDGET_TOKENS:
-        problems.append("always-on context is ~%d tokens, over the %d budget" % (always_on, BUDGET_TOKENS))
-
-    agents_dir = os.path.join(ADAPTER, "agents")
-    for name in sorted(os.listdir(agents_dir)):
-        if not name.endswith(".md"):
-            continue
-        keys = frontmatter(open(os.path.join(agents_dir, name), encoding="utf-8").read())
-        if keys is None:
-            problems.append("agents/%s: missing frontmatter" % name)
-            continue
-        for key in keys:
-            if key not in AGENT_KEYS:
-                problems.append("agents/%s: unknown frontmatter key %r" % (name, key))
-        for key in REQUIRED_AGENT - set(keys):
-            problems.append("agents/%s: missing %r" % (name, key))
-        if keys.get("name") != name[:-3]:
-            problems.append("agents/%s: name does not match filename" % name)
-
-    briefs_dir = os.path.join(REPO_ROOT, "komodo", "briefs")
-    roles = {name.split(".")[0] for name in os.listdir(briefs_dir) if name.endswith(".md")}
-    for role in sorted(roles):
-        for part in ("system", "prompt"):
-            if not os.path.isfile(os.path.join(briefs_dir, "%s.%s.md" % (role, part))):
-                problems.append("briefs/%s.%s.md is missing" % (role, part))
-    for stale in ("settings.json", "CLAUDE.local.md.tmpl.bak"):
-        if os.path.isfile(os.path.join(ADAPTER, stale)) and stale == "settings.json":
-            problems.append("claude-code/settings.json must not exist; policy lives in settings.policy.json")
-
+    problems: list = []
+    check_roles(problems)
+    always_on = check_rendered(problems)
+    if os.path.isdir(os.path.join(REPO_ROOT, "claude-code")):
+        problems.append("claude-code/ must not exist; the Claude layer is rendered from komodo/adapters/claude")
     for problem in problems:
         print(problem)
     print("always-on context: ~%d tokens (budget %d); %d problem(s)" % (always_on, BUDGET_TOKENS, len(problems)))

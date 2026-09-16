@@ -35,11 +35,11 @@ class BriefTests(unittest.TestCase):
             briefs.render("reviewer", {"group_id": "x"})
 
     def test_system_prompts_stay_small(self):
-        for name in os.listdir(briefs.BRIEFS_DIR):
-            if name.endswith(".system.md"):
-                with open(os.path.join(briefs.BRIEFS_DIR, name), encoding="utf-8") as handle:
-                    size = len(handle.read())
-                self.assertLess(size // 4, 900, "%s system prompt is %d tokens" % (name, size // 4))
+        from komodo import roles
+
+        for name in roles.available():
+            size = len(roles.load(name).system_prompt())
+            self.assertLess(size // 4, 900, "%s system prompt is %d tokens" % (name, size // 4))
 
     def test_clip_marks_truncation(self):
         text = "x" * 1000
@@ -52,6 +52,7 @@ class BriefTests(unittest.TestCase):
         self.assertIn("findings", briefs.schema_for("reviewer")["properties"])
         self.assertEqual(briefs.tools_for("reviewer"), ["Read", "Grep", "Glob"])
         self.assertEqual(briefs.tools_for("summarizer"), [])
+        self.assertIn("Edit", briefs.tools_for("builder"))
 
 
 class ClaudeArgvTests(unittest.TestCase):

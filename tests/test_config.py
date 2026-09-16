@@ -22,7 +22,7 @@ class ConfigTests(unittest.TestCase):
                 json.dump({"profile": "thinking", "severity_floor": "medium"}, handle)
             os.makedirs(os.path.join(root, ".komodo"))
             with open(os.path.join(root, ".komodo", "local.json"), "w") as handle:
-                json.dump({"profiles": {"thinking": {"builder": {"model": "haiku"}}}}, handle)
+                json.dump({"profiles": {"thinking": {"roles": {"builder": {"model": "haiku"}}}}}, handle)
             cfg = config.Config.load(root)
             self.assertEqual(cfg.get("severity_floor"), "medium")
             self.assertEqual(cfg.role("builder")["model"], "haiku")
@@ -32,7 +32,7 @@ class ConfigTests(unittest.TestCase):
     def test_unknown_provider_rejected(self):
         with tempfile.TemporaryDirectory() as root:
             with open(os.path.join(root, "komodo.json"), "w") as handle:
-                json.dump({"profiles": {"fast": {"builder": {"provider": "gemini"}}}}, handle)
+                json.dump({"profiles": {"fast": {"tiers": {"standard": {"provider": "gemini"}}}}}, handle)
             with self.assertRaises(config.ConfigError):
                 config.Config.load(root)
 
@@ -41,6 +41,16 @@ class ConfigTests(unittest.TestCase):
             cfg = config.Config.load(root)
             self.assertEqual(cfg.get("comments.trivial_lines"), 8)
             self.assertIsNone(cfg.get("nope.nothing"))
+
+    def test_tiers_and_role_overrides(self):
+        with tempfile.TemporaryDirectory() as root:
+            cfg = config.Config.load(root)
+            self.assertEqual(cfg.role("scout")["model"], "haiku")
+            self.assertEqual(cfg.role("reviewer", "thinking")["model"], "opus")
+            self.assertEqual(cfg.role("reviewer")["min_diff_lines"], 150)
+            self.assertEqual(cfg.role("summarizer")["provider"], "ollama")
+            self.assertEqual(cfg.role("builder", "local")["provider"], "ollama")
+            self.assertEqual(cfg.profile_names(), ["fast", "local", "thinking"])
 
 
 if __name__ == "__main__":
