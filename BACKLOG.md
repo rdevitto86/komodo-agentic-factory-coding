@@ -148,6 +148,30 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | `SUB-01.1.17.1` | `[Impl]` | the licence choice is a policy call, not an agent one — this subtask is blocked on the user naming it, then writing the file verbatim from that licence's canonical text. `README.md` also names no terms today | `test -f LICENSE` |
 | `SUB-01.1.17.2` | `[Impl]` | write `SECURITY.md`: how to report, and what an install actually grants. `scripts/install.py` symlinks `claude-code/` into `~/.claude`, so every file under `hooks/` runs as a `PreToolUse`/`PostToolUse`/`SessionStart` command on every tool call, and an upstream sync moves every session on the next start unless `--ref` pinned it. State the `--ref` pin as the mitigation it is | `test -f SECURITY.md`; `python3 scripts/validate.py` |
 
+#### [TSK-01.1.18] Every generated hook command names its interpreter by bare `PATH` name, so a directory ahead of `python3` on `PATH` displaces the `PreToolUse` guard on every tool call [P: H] [TODO]
+
+**User Story:**
+> **As** someone whose `PATH` includes a project-local or user-writable bin directory,
+> **I want** the installed hook commands to name the interpreter they were resolved against,
+> **So that** a shadowing binary cannot silently replace the guard that gates every Bash call.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Resolved, not named):** Given a generated `settings.json`, when a hook command is read, then its interpreter is the absolute path `resolve_interpreter` found, not a bare name.
+- [ ] **AC-2 (Decision recorded):** Given `check_python`'s existing comment that baking the bare name is intended, when this changes, then `docs/design-decisions.md` records why the trade flipped.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.18.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-security` pass. `resolve_interpreter` (`scripts/install.py:62-68`) calls `shutil.which(candidate[0])` purely as an existence test and returns the bare-name list, discarding the absolute path it just resolved; that list reaches `hook_command:123` and lands in `~/.claude/settings.json` as `python3 /abs/.claude/hooks/git_guard.py`. Any directory an attacker or a careless install can write that precedes the real interpreter — a project `.venv/bin`, a global npm bin, `~/.local/bin` — then runs on every `PreToolUse` Bash call, every `PostToolUse` Edit/Write and every `SessionStart`, and exiting 0 turns `git_guard.py`'s decision into a blanket allow. `check_python:114-115` documents the bare name as deliberate, so this is a recorded trade to revisit rather than an oversight; weigh it against the portability reason the comment gives before changing it | `python3 scripts/test_install.py` covers a generated command naming an absolute interpreter; `python3 scripts/verify.py` |
+
+#### [TSK-01.1.19] `build_settings` and its new test helper carry avoidable duplication, and a trailing-argument parameter whose annotation, default and body disagree [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.19.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-simplify` pass. `scripts/install.py:134-145` traverses the token list twice to learn two facts about one token — a generator with a nested `any()` finds the index, then a second defaultless `next()` re-tests the same token against `HOOK_NAMES` — writing the `token.endswith(n + ".py")` predicate twice. One generator yielding the `(index, name)` pair collapses it to a single scan with the predicate written once | `python3 scripts/test_install.py`; `python3 scripts/verify.py` |
+| `SUB-01.1.19.2` | `[Impl]` | `scripts/install.py:121-122`'s `trailing_args: list = ()` annotates a list, defaults to a tuple, and pays `list(trailing_args)` in the body to reconcile them; the default is never used, since `build_settings:148` is the only caller and always passes a list. Drop the default and the coercion | `python3 scripts/test_install.py` |
+| `SUB-01.1.19.3` | `[Impl]` | `scripts/test_install.py`'s new `load_json` exists for one call and forces a `None`-sentinel branch at the call site, re-expanding a ladder the neighbouring cases express as one `problem` string through `record`. Give `first_bad_hook_command` the path instead of the parsed dict and let a parse failure become one more returned problem string | `python3 scripts/test_install.py` |
+| `SUB-01.1.19.4` | `[Impl]` | `scripts/install.py:134`'s `shlex.split` raises `ValueError` on an unbalanced quote in a source hook command, which the replaced `str.endswith` test never could. It is reachable only from the repo's own tracked `claude-code/settings.json` and lands before `write_settings`, so the target keeps its previous file — an availability nuisance on a corrupt trusted file, not an attacker path. Decide whether to catch it and skip the entry, as the old test did silently, or let it fail loudly | `python3 scripts/test_install.py` |
+
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
 * **Context (2026-09-09):** the always-on budget stays healthy (`scripts/validate.sh` tracks the figure). The bounded `git_guard.py` shell-parsing hardening pass this task group's last open task tracked is complete — all Critical substitution-scanner bypasses it surfaced (comment-boundary reset, `command`-prefix reparse detection, the `command -v`/`-V` false-positive, the `env` wrapper bypass, and the `extract_substitutions`/`split_segments` dedup) are closed as of `0.46.2` (see `CHANGELOG.md`). No task currently open in this task group.
@@ -313,6 +337,39 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.7.1.1` | `[Impl]` | `.github/workflows/verify.yml` is a single job: `runs-on: ubuntu-latest`, `python-version: "3.x"`. Windows is a first-class documented platform — `docs/windows-install.md`, `scripts/install.py`'s copy fallback, and `test_install.py`'s `I3`/`I4` cases all exist for it — and has never run in CI, which is how `TSK-01.1.16` shipped. Add a `strategy.matrix` over the three runners; keep `fail-fast: false` so one platform's break does not mask another's | `grep -q windows-latest .github/workflows/verify.yml && grep -q macos-latest .github/workflows/verify.yml && grep -q ubuntu-latest .github/workflows/verify.yml` |
 | `SUB-01.7.1.2` | `[Impl]` | `make verify` is the workflow's current entry point and `make` is not on a stock Windows runner — `AGENTS.md` already records that `scripts/verify.py` leads the gate resolution order for exactly this reason. Invoke `python3 scripts/verify.py` directly in the workflow rather than the `Makefile` wrapper, and add a matrix leg pinning the 3.7 floor so the declared minimum is tested rather than asserted | `python3 scripts/verify.py`; `python3 scripts/validate.py` |
+
+#### [TSK-01.7.3] The `verify` workflow pulls its container and its actions by mutable tag, and persists the job token into a tree that then executes PR-authored code [P: M] [TODO]
+
+**User Story:**
+> **As** whoever relies on this repo's CI not being the weak link,
+> **I want** the gate's own supply chain pinned and its token not left in the workspace,
+> **So that** a re-pushed tag or a malicious pull request cannot reach the job that installs this toolkit.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Pinned):** Given the workflow, when its container image and action references are read, then each names an immutable digest or commit SHA.
+- [ ] **AC-2 (No persisted token):** Given a `pull_request` run, when PR-authored code executes, then no usable credential remains in the checkout.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.3.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-security` pass. The floor leg's `container: "python:3.7"` is a mutable Docker Hub tag, and every step in that leg — the repo's own installer included — runs as root inside whatever image that tag currently serves. `python:3.7` is also past end-of-life, so its base layers are no longer rebuilt. Pin by digest; note this interacts with `TSK-01.7.2`, which may remove the leg entirely | `grep -q 'python:3.7@sha256:' .github/workflows/verify.yml`, or the leg is gone per `TSK-01.7.2` |
+| `SUB-01.7.3.2` | `[Impl]` | `actions/checkout@v4` leaves `persist-credentials` at its default of `true`, writing an `x-access-token` extraheader into `$GITHUB_WORKSPACE/.git/config`; the steps that follow run `scripts/install.py` and `scripts/verify.py` out of the PR's own tree, and `verify.py` fans out to four more PR-controlled scripts. `permissions: contents: read` caps the blast radius, which is why this is Medium, but the band widened the window from one job to four. Set `persist-credentials: false` | `grep -q 'persist-credentials: false' .github/workflows/verify.yml` |
+| `SUB-01.7.3.3` | `[Impl]` | `actions/checkout@v4` and `actions/setup-python@v5` both resolve at run time to whatever commit their major tag points at. Both are GitHub-owned, which is why this is the lowest of the three, but the tj-actions/changed-files incident is the precedent. Pin both to a commit SHA with the version in a trailing comment | both action references in `.github/workflows/verify.yml` name a 40-character SHA |
+
+#### [TSK-01.7.4] The only merge gate runs no secret scan and no security static analysis [P: M] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given a pull request adding a hardcoded credential, when the `verify` workflow runs, then the check fails rather than merging ungated.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.4.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-security` pass, and pre-existing rather than introduced by it. `scripts/verify.py`'s four checks are the hook regression suite, the config validator, the comment lint and the install regression suite; none reads for a credential or a security rule. `standards-cicd` makes the secret and static-analysis scans blocking on the merge. Dependency scanning does not apply — the repo ships no manifest or lockfile. Decide whether the scan belongs in the workflow or in `scripts/verify.py`, remembering that `verify.py` also runs on every dirty `builder` Stop and is currently an 11-second gate | the `verify` workflow fails a branch carrying a planted test credential; `python3 scripts/verify.py` |
+
+#### [TSK-01.7.5] The workflow's matrix carries a `python-version` key whose value is one constant, and the new `install` Makefile target collides with the GNU convention [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.5.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-simplify` pass. `python-version` is the same literal on all three legs that read it and absent on the fourth, whose `setup-python` step is skipped anyway, so the matrix key buys an indirection over a constant. Dropping it leaves three bare `- os:` legs and the literal on the step. Weigh the lost self-documentation at the matrix before taking it | `python3 scripts/validate.py` |
+| `SUB-01.7.5.2` | `[Impl]` | `Makefile`'s new `install` target runs the install *test suite*, not `scripts/install.py`, so `make install` exits zero having installed nothing — a collision with the GNU convention that the sibling `test`/`validate`/`comments` targets do not have. Rename it, and update the root `AGENTS.md` "Working on this repo" list, which does not mention it either way | `make -n install` runs the suite under a name that does not read as an installer; `python3 scripts/validate.py` |
 
 #### [TSK-01.7.2] The declared Python 3.7 floor is three years past end-of-life and no hosted runner image can provide it, so CI tests it only inside a container [P: M] [TODO]
 | Field | Value |

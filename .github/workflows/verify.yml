@@ -39,15 +39,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # resolves whichever interpreter name is on PATH, since python3 is not guaranteed on Windows
       - name: install
-        shell: bash
-        run: |
-          PY="$(command -v python3 || command -v python)"
-          "$PY" scripts/install.py --skip-verify
+        run: python scripts/install.py --skip-verify
 
       - name: verify
-        shell: bash
-        run: |
-          PY="$(command -v python3 || command -v python)"
-          "$PY" scripts/verify.py
+        run: python scripts/verify.py
