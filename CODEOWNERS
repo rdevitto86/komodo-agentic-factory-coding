@@ -1,10 +1,12 @@
 # Review gate for the files with the widest blast radius.
 #
-# claude-code/ is symlinked into ~/.claude by scripts/install.py, so a change to any
-# path below reaches every session in every project on the next start —
-# there is no staging environment between this repo and a working agent.
-# Everything else in the repo is reviewed normally.
+# komodo/gitops.py is the only git writer and holds every refusal; komodo/hooks/ runs on every
+# commit and push in every repo that installed the hooks; claude-code/ reaches every session
+# after the next install. Everything else is reviewed normally.
 
-/claude-code/AGENTS.md      @rdevitto86
-/claude-code/settings.json  @rdevitto86
-/claude-code/hooks/         @rdevitto86
+/komodo/gitops.py              @rdevitto86
+/komodo/hooks/                 @rdevitto86
+/komodo/workers/               @rdevitto86
+/claude-code/AGENTS.md         @rdevitto86
+/claude-code/settings.policy.json  @rdevitto86
+/claude-code/hooks/            @rdevitto86

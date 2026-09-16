@@ -1,39 +1,29 @@
 #!/usr/bin/env python3
-#
-# verify.py - this repo's verify gate. Runs the hook regression suite, the config validator, the
-# comment lint, and the install regression suite, in that order, stopping at the first failure.
-#
-#   python3 scripts/verify.py
-#
-# Exit codes: 0 every check passed, 1 a check failed.
+"""This repo's verify gate: unit tests, config validation, comment lint, and the fragment doctor, stopping at the first failure."""
 
 import os
 import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
+PYTHON = sys.executable or "python3"
 CHECKS = (
-    ("test", os.path.join("scripts", "test_hooks.py"), []),
-    ("validate", os.path.join("scripts", "validate.py"), []),
-    ("comments", os.path.join("claude-code", "hooks", "comments.py"), ["check"]),
-    ("install", os.path.join("scripts", "test_install.py"), []),
+    ("tests", [PYTHON, "-m", "unittest", "discover", "-s", "tests", "-q"]),
+    ("validate", [PYTHON, os.path.join("scripts", "validate.py")]),
+    ("comments", [PYTHON, "-m", "komodo", "comments", "check"]),
+    ("doctor", [PYTHON, "-m", "komodo", "doctor", "--no-git"]),
 )
 
 
-def interpreter():
-    return sys.executable or "python3"
-
-
-def main():
-    for name, script, args in CHECKS:
-        result = subprocess.run(
-            [interpreter(), os.path.join(REPO_ROOT, script)] + args,
-            cwd=REPO_ROOT,
-        )
+def main() -> int:
+    """Runs each check in order and reports the first failure."""
+    for name, command in CHECKS:
+        print("verify: %s" % name)
+        result = subprocess.run(command, cwd=REPO_ROOT)
         if result.returncode != 0:
-            sys.stdout.write("verify: %s failed\n" % name)
+            print("verify: %s failed" % name)
             return 1
+    print("verify: all checks passed")
     return 0
 
 

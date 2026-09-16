@@ -1,0 +1,124 @@
+"""Human-facing text the orchestrator writes: run reports, PR bodies, changelog bullets, under fixed density caps."""
+
+from __future__ import annotations
+
+import time
+from typing import Dict, Iterable, List, Optional, Sequence
+
+from .state import RunState
+
+MAX_BULLETS = 5
+MAX_WORDS = 20
+
+
+def bullets(items: Iterable[str], cap: int = MAX_BULLETS) -> List[str]:
+    """At most cap bullets; the rest collapse into one counted line."""
+    listed = [item.strip() for item in items if item and item.strip()]
+    if len(listed) <= cap:
+        return ["- " + item for item in listed]
+    shown = ["- " + item for item in listed[: cap - 1]]
+    shown.append("- and %d more" % (len(listed) - cap + 1))
+    return shown
+
+
+def clip_sentence(text: str, words: int = MAX_WORDS) -> str:
+    """Cuts a sentence at the word cap with an ellipsis."""
+    parts = text.split()
+    if len(parts) <= words:
+        return text.strip()
+    return " ".join(parts[:words]).rstrip(",;:") + "..."
+
+
+def duration(seconds: float) -> str:
+    """Seconds as 'Xm Ys'."""
+    total = int(round(seconds))
+    if total < 60:
+        return "%ds" % total
+    return "%dm %02ds" % divmod(total, 60)
+
+
+def phase_table(state: RunState) -> List[str]:
+    """Wall-clock per phase from the recorded start times."""
+    names = list(state.phases.keys())
+    rows = ["| Phase | Time |", "|---|---|"]
+    for index, name in enumerate(names):
+        start = state.phases[name]
+        end = state.phases[names[index + 1]] if index + 1 < len(names) else (state.finished or time.time())
+        rows.append("| %s | %s |" % (name, duration(end - start)))
+    return rows[:8]
+
+
+def worker_table(state: RunState) -> List[str]:
+    """Cost and tokens per role, aggregated."""
+    totals: Dict[str, Dict[str, float]] = {}
+    for record in state.workers:
+        row = totals.setdefault(record.role, {"calls": 0, "cost": 0.0, "tokens": 0})
+        row["calls"] += 1
+        row["cost"] += record.cost_usd
+        row["tokens"] += record.input_tokens + record.output_tokens
+    rows = ["| Role | Calls | Cost |", "|---|---|---|"]
+    for role, row in sorted(totals.items()):
+        rows.append("| %s | %d | $%.2f |" % (role, row["calls"], row["cost"]))
+    return rows[:8]
+
+
+def summary_buckets(state: RunState, task_titles: Dict[str, str]) -> List[str]:
+    """The fixed three-bucket turn-end summary."""
+    done = [task_titles.get(tid, tid) for tid, record in state.tasks.items() if record.status == "DONE"]
+    blocked = ["%s: %s" % (task_titles.get(tid, tid), record.note) for tid, record in state.tasks.items() if record.status == "BLOCKED"]
+    flagged = [f["title"] for f in state.findings if f.get("filed")] + state.notes
+    out: List[str] = []
+    if done:
+        out += ["## ✅ Successful Changes", ""] + bullets(done) + [""]
+    if blocked:
+        out += ["## ❌ Blocked Changes", ""] + bullets(blocked) + [""]
+    if flagged:
+        out += ["## ⚠️ Flagged Changes", ""] + bullets(clip_sentence(item) for item in flagged) + [""]
+    return out
+
+
+def report(state: RunState, group_title: str, task_titles: Dict[str, str], commits: Sequence[str]) -> str:
+    """The full run report, written to .komodo/runs/<id>/report.md and used as the PR body."""
+    lines = ["# %s: %s" % (state.group_id, group_title), ""]
+    status = "blocked" if state.blocked else "complete"
+    lines.append("**Run %s** in %s for $%.2f, %d worker calls, profile `%s`." % (status, duration(state.elapsed), state.cost_usd, len(state.workers), state.profile))
+    lines.append("")
+    lines += summary_buckets(state, task_titles)
+    if commits:
+        lines += ["## Commits", ""] + bullets(commits) + [""]
+    lines += ["## Timing", ""] + phase_table(state) + [""]
+    if state.workers:
+        lines += ["## Spend", ""] + worker_table(state) + [""]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def pr_body(state: RunState, group_title: str, task_titles: Dict[str, str], commits: Sequence[str], template: Optional[str] = None) -> str:
+    """A PR description: the repo's template filled when present, else summary and changes."""
+    done = [task_titles.get(tid, tid) for tid, record in state.tasks.items() if record.status == "DONE"]
+    summary = "%s: %s. %d of %d tasks landed." % (state.group_id, group_title, len(done), len(state.tasks))
+    changes = bullets(done)
+    if template and "## Summary" in template:
+        body = template
+        body = body.replace("## Summary", "## Summary\n\n" + summary, 1)
+        body = body.replace("## Changes", "## Changes\n\n" + "\n".join(changes), 1)
+        return body
+    lines = ["## Summary", "", summary, "", "## Changes", ""] + changes
+    blocked = [task_titles.get(tid, tid) for tid, record in state.tasks.items() if record.status == "BLOCKED"]
+    if blocked:
+        lines += ["", "## Blocked", ""] + bullets(blocked)
+    lines += ["", "## Validation", "", "- Every task's `done_when` re-run by the orchestrator, then the repo verify gate once on the merged branch."]
+    if state.findings:
+        fixed = sum(1 for f in state.findings if f.get("fixed"))
+        filed = sum(1 for f in state.findings if f.get("filed"))
+        lines.append("- Review: %d finding(s) fixed in-branch, %d filed to the backlog." % (fixed, filed))
+    return "\n".join(lines) + "\n"
+
+
+def changelog_entry(kind: str, titles: Sequence[str]) -> List[str]:
+    """Bullets for the changelog's Unreleased section under the heading kind maps to."""
+    return ["- " + clip_sentence(title) for title in titles]
+
+
+def changelog_heading(kind: str) -> str:
+    """Keep a Changelog heading for a conventional-commit type."""
+    return {"fix": "Fixed", "feat": "Added", "perf": "Changed", "refactor": "Changed", "docs": "Changed", "chore": "Changed", "build": "Changed", "ci": "Changed", "test": "Changed"}.get(kind, "Changed")

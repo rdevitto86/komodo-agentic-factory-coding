@@ -5,7 +5,7 @@ verify:
 	npm run typecheck
 	npm test
 	npm run build
-	python3 ~/.claude/hooks/comments.py check
+	python3 -m komodo comments check
 
 test:
 	npm test

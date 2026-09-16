@@ -1,22 +1,32 @@
 # Agent Rules
 
-Universal directive for every model and every tool — Claude, GPT, Gemini, Qwen, Kimi, Llama, hosted or local. Plain markdown, no tool-specific syntax. Scoped to software and hardware engineering — the same rules apply whether the session is writing Go, wiring CDK infrastructure, or reviewing firmware.
+Universal rules for every model and tool working on Komodo software. Plain markdown. Loaded by every session and every subagent.
 
-**This file reaches every custom agent and every forked skill, not just the primary session.** A non-fork subagent and a `context: fork` skill both load the full CLAUDE.md hierarchy at startup, this file included — so a rule stated here never needs restating in an agent body.
+## Working
+- **Recommend before rewriting.** A patch or a snippet, not a wholesale redo.
+- **Read freely, write on a directive.** Search and read without asking. Edit only on an instruction with a directive verb (implement, fix, add, remove, update). Review, assess, and consider mean analysis only.
+- **Assume and state it.** Ask only when blocked on a decision only the user can make, or before an irreversible or shared action.
+- **Never widen scope.** Out-of-task work is one line in `BACKLOG.md`, not a change. Touch only the lines a task needs.
+- **Report honestly.** A failure, a skipped step, or an unfinished part is stated plainly with its evidence.
+- **Verify the real source.** Never design around a limit from memory; read the file, the manifest, or the docs.
+- **Check for an existing skill in the listing before searching the filesystem for one.**
 
----
+## Git
+- Work on a `<type>/<kebab-name>` branch. Never commit to or push `main`, `master`, `trunk`, `prod`, `production`, `release/*`, or `hotfix/*`.
+- Never force-push, rebase, amend, or rewrite published history. Never add a co-author or generated-by trailer.
+- Landing into a protected branch is the human's merge button. Hand the user the command for anything refused.
+- For anything larger than a one-line fix in a repo with a `BACKLOG.md`, run the harness: `python3 -m komodo run <group>`. The `komodo` skill explains the commands.
 
-## 1. How to work — propose, don't impose
+## Comments
+- Every public function gets a one-line doc comment in the language's convention. A private function gets one only when it is long or non-obvious. Everything else is silent unless the line cannot say it itself.
+- At most twenty words, what the code does. Never a restatement of the name, a version, a ticket, first person, a hedge, or history.
+- `python3 -m komodo comments check` is the lint; the pre-commit hook runs it.
 
-- **Recommend before rewriting.** Default to a patch or a snippet, not a wholesale redo.
-- **Build for the SDD's target state, not the code's current shape.** `CHANGELOG.md` is the only signal of a real constraint — empty or absent means nothing has shipped, so there is no live behavior or consumer to preserve: write the target design directly, don't patch around scaffolding or hedge on architecture that isn't real yet. Once an entry exists, prior releases are current state and the patch-first default above applies.
-- **Act on reversible, local reads without asking** — search, reading, exploring. A write needs a directive verb (implement, change, edit, fix, add, remove, update, apply, delete, build) on a single, unambiguous instruction; gray-area verbs (review, assess, consider, propose, "why don't we") or a message discussing multiple options authorize analysis only — no file touched — until a directive verb or explicit go-ahead follows. Confirmation is otherwise reserved for the irreversible and the shared (an action touching another person's system, sending something outward, deleting what can't be undone), never for a directive step you can undo yourself.
-- **Assume by default; state it and move.** Ask only when genuinely blocked — a decision only the user can make, or an irreversible/shared action.
-- **Never resolve a capability gap by memory.** Check the real source, document, or record before designing around a limit.
-- **Skill existence is settled by the available-skills listing already in context** — it merges project-local `.claude/skills/` and global `~/.claude/skills/`. Never Glob/grep the filesystem to check whether a skill exists; that only sees the local half.
-- **Never expand scope.** Out-of-task work goes to `BACKLOG.md` and gets one line to the user. Default answer is no. This includes formatting and lint fixes: touch only the lines a task requires, never reflow or restyle a pre-existing line just because the file is already open — a shared file may carry another engineer's in-flight edit to that line.
-- **Report honestly.** A failure, a skipped step, an unfinished part — say so plainly with the evidence.
-- **A missing brief slot is a stop, not a guess, for every custom agent and forked skill.** An absent slot and a present-but-empty slot are the same thing; never guess, infer, or default a value for one. None of these can pause to ask, so the return is immediate, names every missing slot, and **replaces the whole output template** rather than filling one section of it — naming the gap, never asking a question.
-- **This directory's own `AGENTS.md` is the fastest path to its facts** — read it before exploring.
-- **A file under this toolkit's own `claude-code/hooks/` is live via symlink the instant it's saved.** `git_guard.py` blocks every write verb it recognizes (`mv`, `cp`, `tee`, a redirect, `sed -i`, `perl -i`, a `python -c` file write) onto any target in every extension the comment lint knows, plus its own document-extension set, for every agent, so the only sanctioned path for a hook-directory edit is the Edit/Write tool itself — an in-place write, not a crash-safe atomic swap. Every session, this one included, is exposed to that write's window regardless.
-- **In a code repo:** file-scoped skills load themselves via `paths:`; comment and git rules are hook-enforced and self-explain on the first attempt, not restated here. Run `/workflow-loop` for anything bigger than a one-line fix — the default engineering mode, with `/workflow-loop open` as its unscripted exception.
+## Writing for a human (mandatory, every human-facing output)
+- **Answer first.** The conclusion or outcome is the first line. Detail follows only if needed.
+- **One idea per line.** Sentences under twenty words. A new sentence instead of a clause chain.
+- **Caps:** five bullets per list, three sentences per paragraph, three options per question, three heading levels.
+- **Bold the first words of a bullet.** Headings mark context boundaries. Code, commands, paths, and errors go in code blocks, never in prose.
+- **No walls of text.** Over a cap means restructure, not shrink. No filler, no preamble, no closing summary.
+- **Turn-end summary** when a turn changed something, exactly these headings in this order, omitting an empty bucket: `## ✅ Successful Changes`, `## ❌ Blocked Changes`, `## ⚠️ Flagged Changes`.
+- **Exempt only:** a worker returning JSON to the orchestrator.

@@ -6,14 +6,14 @@ Use GitHub's private vulnerability reporting on this repository's Security tab. 
 
 ## What installing this toolkit grants
 
-`scripts/install.py` symlinks `claude-code/` into `~/.claude` by default. Because these are symlinks, not copies, every file under `claude-code/hooks/` runs as a `PreToolUse`, `PostToolUse`, or `SessionStart` command on every tool call in every Claude Code session on that machine — and editing a file under `claude-code/` in the clone changes every session's behavior on its next start, with no reinstall step. This also means an upstream sync (`git pull` or equivalent) moves every session on that machine, not just this repo.
+`python3 -m komodo install` copies `claude-code/` into `~/.claude`. Two files under `~/.claude/hooks/` then run as commands in every Claude Code session on that machine: `guard.py` on every Bash call, and `context_injector.py` at session start. Both are short, stdlib-only, and fail open on an internal error. Because the install is a copy, an edit in the clone changes nothing until the installer is re-run.
 
-That symlink guarantee is conditional. When `os.symlink` raises — Windows without Developer Mode, or `--force-copy` chosen deliberately — the installer falls back to `shutil.copytree`/`copy2` and copies instead. On a copy install, an edit under `claude-code/` in the clone, or an upstream sync, changes nothing until `scripts/install.py` is re-run: there is no live propagation, only what the last install captured.
+`python3 -m komodo hooks install <repo>` sets that repo's `core.hooksPath` to this clone's `komodo/hooks/`. From then on, `pre-commit.py` and `pre-push.py` run on every commit and push in that repo, from whatever the clone currently holds.
 
-`scripts/install.py --ref <tag>` detaches the clone at a release tag before linking (or copying), which pins the install: it only moves when you re-run the installer against a different ref. Installing without `--ref` tracks whatever the clone's working tree currently holds.
+`python3 -m komodo run` spawns worker processes with a stripped environment (`gitops.worker_env`): no GitHub token, no git credential helper, no SSH identity, an unauthenticated `gh`. The orchestrator process itself holds the user's credentials and is the only pusher. It refuses protected refs, force, amend, and trailers in code, but it runs as the user and can push any unprotected branch the user can.
 
-`CODEOWNERS` requires a named reviewer on `claude-code/AGENTS.md`, `claude-code/settings.json`, and everything under `claude-code/hooks/` — the paths with the widest blast radius, since they are exactly what the symlink puts on every tool call.
+Workers run `claude -p --dangerously-skip-permissions` inside a worktree. A worker can run any command the user can. The worktree and the credential stripping bound what it can publish, not what it can execute.
 
 ## Supported versions
 
-This repo ships from `main` and supports the latest release only. There is no maintained backport branch.
+This repo ships from `main` and supports the latest release only.
