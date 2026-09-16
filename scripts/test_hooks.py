@@ -1566,10 +1566,15 @@ def check_git_guard() -> None:
     )
     bash_case_cwd(
         FIXTURE_FEAT,
-        'G74 merging a non-base branch is blocked',
-        'deny',
+        'G74 merging any branch this branch is based on is allowed',
+        'allow',
         'git merge some-other-branch',
-        'protected base branch',
+    )
+    bash_case_cwd(
+        FIXTURE_FEAT,
+        'G74b merging a stacked PR into another feature branch is allowed',
+        'allow',
+        'git merge feat/stack-base',
     )
     bash_case_cwd(
         FIXTURE_FEAT,
