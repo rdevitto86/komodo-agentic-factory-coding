@@ -38,6 +38,7 @@ The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose sta
 - `git_guard.py` (1,376 lines), `verify_gate.py`, `auto_format.py`, `comments.py apply` and its `PostToolUse` hook, `lib/comment_rules.py`, and `scripts/test_hooks.py`. The guarantees moved into `gitops.py`, the worker environment, and the Python git hooks; the lint moved to `komodo/comments.py`.
 - The `workflow-*`, `backlog-*`, `assess-*`, `changelog-*`, `readme-*`, `git-*`, `work-state-map`, `write-comments`, `repo-assess`, `config-accessibility`, `standards-worklog`, `adr`, `prd`, `sdd`, and `runbook` skills, 43 in all, and every `evals/` directory. The pipeline they described is `komodo/pipeline.py`; the accessibility rules are always-on in `AGENTS.md`.
 - `scripts/install.py`, `scripts/release.py`, `scripts/evals.py`, `scripts/work_state.py`, `scripts/test_install.py`, the shell dispatchers under `scripts/hooks/git/`, `templates/briefs/`, `templates/skills/`, and the `pm` agent (its job is `komodo tasks plan` with the `planner` role).
+- `bridges/komodo-bridge/`. Its two prompt files and README moved next to the bridge server they belong to, under the local `.komodo/bridge/agents/` deploy, which loads `agents/<name>/agent.md` relative to itself. The harness never depended on the bridge; `komodo/workers/ollama.py` talks to Ollama directly.
 - 40 backlog items that only concerned the deleted machinery. The V1.1 epic carries forward the bridge `num_ctx` limit, CI secret scanning, and the tests the new PR actions still owe.
 
 ## [0.51.0] — 2026-09-16

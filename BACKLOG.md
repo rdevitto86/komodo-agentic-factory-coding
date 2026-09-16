@@ -29,11 +29,10 @@ done_when:
 
 #### [TSK-02.1.3] Bridge: set num_ctx on generate requests so a large summarizer payload does not truncate silently [P: M] [BLOCKED]
 ```yaml
-files: [bridges/komodo-bridge/README.md]
-done_when:
-  - test -f bridges/komodo-bridge/README.md
+files: []
+done_when: []
 owner: human
-context: [bridges/komodo-bridge/README.md#limits]
+context: ["the bridge source and its prompt files live outside this repo under the user's .komodo/bridge deploy"]
 ```
 
 ### [TG-02.2] PR actions
