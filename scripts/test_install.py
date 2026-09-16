@@ -296,11 +296,41 @@ def assert_guard_rejected(label: str, clone: str, target: str, args: list, pytho
     record(label, problem)
 
 
+# the source may sit on a detached HEAD no branch points at, and a plain clone of one checks out nothing
+def build_ref_clone(clone: str) -> str:
+    rc, out = capture(
+        ["git", "clone", "--quiet", "--no-checkout", "--local", REPO_ROOT, clone]
+    )
+    if rc != 0:
+        return "git clone --local exited %d: %s" % (rc, out)
+    rc, head = capture(["git", "-C", REPO_ROOT, "rev-parse", "HEAD"])
+    if rc != 0:
+        return "reading the source HEAD exited %d: %s" % (rc, head)
+    rc, out = git(["checkout", "--quiet", "--detach", head.strip()], clone)
+    if rc != 0:
+        return "checking the source commit out in the clone exited %d: %s" % (rc, out)
+    if not os.path.isfile(os.path.join(clone, "scripts", "install.py")):
+        return "the clone has no working tree at scripts/install.py"
+    return ""
+
+
 def check_setup_ref(workdir: str, python3: str) -> None:
     emit("\ninstall.py --ref\n\n")
 
+    label_s1 = "S1 --ref TAG --dry-run previews the checkout and exits 0"
+    label_s2 = "S2 an unknown ref exits non-zero before touching HEAD or the target"
+    label_s3 = "S3 a dirty tree exits non-zero before touching HEAD or the target"
+    label_s4 = "S4 plain --dry-run output is unchanged by the --ref addition"
+    label_s5 = "S5 an empty --ref is rejected rather than silently installing unpinned"
+    label_s6 = "S6 a leading-dash ref is rejected before reaching git"
+
     clone = os.path.join(workdir, "clone")
-    capture(["git", "clone", "--quiet", "--local", REPO_ROOT, clone])
+    problem = build_ref_clone(clone)
+    if problem:
+        for label in (label_s1, label_s2, label_s3, label_s4, label_s5, label_s6):
+            failed(label, problem)
+        return
+
     clone_install = os.path.join(clone, "scripts", "install.py")
     shutil.copyfile(INSTALL, clone_install)
     _, commit_out = capture(
@@ -318,7 +348,6 @@ def check_setup_ref(workdir: str, python3: str) -> None:
     tag_lines = tag_out.splitlines()
     tag = tag_lines[-1] if tag_lines else ""
 
-    label = "S4 plain --dry-run output is unchanged by the --ref addition"
     target_a = os.path.join(workdir, "home-s4a", ".claude")
     target_b = os.path.join(workdir, "home-s4b", ".claude")
     _, baseline = capture(
@@ -328,17 +357,15 @@ def check_setup_ref(workdir: str, python3: str) -> None:
     baseline = baseline.replace(target_a, "TARGET").replace(clone, "REPO")
     current = current.replace(target_b, "TARGET").replace(REPO_ROOT, "REPO")
     if baseline == current:
-        passed(label)
+        passed(label_s4)
     else:
         diff = "".join(
             difflib.unified_diff(
                 baseline.splitlines(True), current.splitlines(True), "baseline", "current"
             )
         )
-        failed(label, "diff:\n%s" % diff)
+        failed(label_s4, "diff:\n%s" % diff)
 
-    label_s1 = "S1 --ref TAG --dry-run previews the checkout and exits 0"
-    label_s3 = "S3 a dirty tree exits non-zero before touching HEAD or the target"
     if not tag:
         failed(label_s1, "no tag found in the clone to pin to")
         failed(label_s3, "no tag found in the clone to pin to")
@@ -359,21 +386,21 @@ def check_setup_ref(workdir: str, python3: str) -> None:
             passed(label_s1)
 
     assert_guard_rejected(
-        "S2 an unknown ref exits non-zero before touching HEAD or the target",
+        label_s2,
         clone,
         os.path.join(workdir, "home-s2", ".claude"),
         ["--ref", "no-such-tag-xyz"],
         python3,
     )
     assert_guard_rejected(
-        "S5 an empty --ref is rejected rather than silently installing unpinned",
+        label_s5,
         clone,
         os.path.join(workdir, "home-s5", ".claude"),
         ["--ref="],
         python3,
     )
     assert_guard_rejected(
-        "S6 a leading-dash ref is rejected before reaching git",
+        label_s6,
         clone,
         os.path.join(workdir, "home-s6", ".claude"),
         ["--ref=--orphan=x"],
