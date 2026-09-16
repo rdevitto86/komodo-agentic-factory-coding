@@ -65,7 +65,7 @@ def tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def check_links(source: str, target: str) -> int:
+def check_links(source: str, target: str, settings_generate_expected: bool) -> int:
     problems = 0
     print("  links")
     for name in listdir_sorted(source):
@@ -86,8 +86,11 @@ def check_links(source: str, target: str) -> int:
             print("    dangling  %s -> %s" % (name, os.readlink(link)))
             problems += 1
         elif os.path.exists(link):
-            print("    not-link  %s (real file, run scripts/install.py)" % name)
-            problems += 1
+            if name == "settings.json" and settings_generate_expected:
+                print("    ok        settings.json (generated for this platform, see drift check below)")
+            else:
+                print("    not-link  %s (real file, run scripts/install.py)" % name)
+                problems += 1
         else:
             print("    missing   %s (run scripts/install.py)" % name)
             problems += 1
@@ -103,7 +106,7 @@ def load_install_module(repo_root: str):
     return module
 
 
-def check_settings_drift(source: str, target: str, repo_root: str) -> int:
+def check_settings_drift(source: str, target: str, install, interpreter: list) -> int:
     print("")
     print("  settings.json drift")
     dest = os.path.join(target, "settings.json")
@@ -114,8 +117,6 @@ def check_settings_drift(source: str, target: str, repo_root: str) -> int:
         print("    ok        settings.json is a live symlink, drift check is moot")
         return 0
 
-    install = load_install_module(repo_root)
-    interpreter = install.resolve_interpreter()
     if not interpreter:
         print("    skip      no working python interpreter found to rebuild settings.json")
         return 0
@@ -454,9 +455,13 @@ def main() -> int:
     print("validate")
     print()
 
+    install = load_install_module(repo_root)
+    interpreter = install.resolve_interpreter()
+    settings_generate_expected = install.settings_strategy("auto", interpreter, False) == "generate"
+
     problems = 0
-    problems += check_links(source, target)
-    problems += check_settings_drift(source, target, repo_root)
+    problems += check_links(source, target, settings_generate_expected)
+    problems += check_settings_drift(source, target, install, interpreter)
     problems += check_hooks(source)
     problems += check_frontmatter(source)
     problems += check_document_names(source, repo_root)

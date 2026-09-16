@@ -278,26 +278,26 @@ def write_settings(target: str, settings: dict) -> None:
         fh.write("\n")
 
 
-def install_settings(source: str, target: str, interpreter: list, strategy: str, force_copy: bool, dry_run: bool) -> bool:
+def install_settings(source: str, target: str, interpreter: list, strategy: str, force_copy: bool, dry_run: bool) -> str:
     entry = os.path.join(source, "settings.json")
     dest = os.path.join(target, "settings.json")
 
     if strategy == "link":
         print("    link   settings.json")
         if dry_run:
-            return False
+            return "linked"
         if not link_entry(entry, dest, force_copy):
-            return False
+            return "linked"
         os.remove(dest)
         print("    write  settings.json (symlink refused, generated instead)")
         write_settings(target, build_settings(entry, os.path.join(target, "hooks"), interpreter))
-        return True
+        return "symlink-refused"
 
     print("    write  settings.json (generated for %s)" % " ".join(interpreter))
     if dry_run:
-        return False
+        return "generated"
     write_settings(target, build_settings(entry, os.path.join(target, "hooks"), interpreter))
-    return True
+    return "generated"
 
 
 def overlay(source: str, target: str, dry_run: bool) -> None:
@@ -314,12 +314,17 @@ def overlay(source: str, target: str, dry_run: bool) -> None:
             shutil.copy2(tmpl, dest)
 
 
-def print_copy_fallback_notice(target: str, interpreter: list, repo_root: str) -> None:
+def resync_command(target: str, interpreter: list, repo_root: str) -> str:
     script = os.path.relpath(os.path.abspath(__file__), start=repo_root)
     resync = " ".join(interpreter + [script])
     default_target = os.path.join(os.path.expanduser("~"), ".claude")
     if os.path.normcase(target) != os.path.normcase(default_target):
         resync += " --target " + target
+    return resync
+
+
+def print_copy_fallback_notice(target: str, interpreter: list, repo_root: str) -> None:
+    resync = resync_command(target, interpreter, repo_root)
     print("")
     print("  fell back to copy mode: symlink creation failed")
     print("")
@@ -328,6 +333,16 @@ def print_copy_fallback_notice(target: str, interpreter: list, repo_root: str) -
     print("")
     print("  claude-code/ is now a plain copy, not a live link: after editing")
     print("  it again, re-sync with:")
+    print("    " + resync)
+    print("")
+
+
+def print_settings_generated_notice(target: str, interpreter: list, repo_root: str) -> None:
+    resync = resync_command(target, interpreter, repo_root)
+    print("")
+    print("  generated settings.json instead of symlinking it: the resolved interpreter")
+    print("  (%s) is baked into every hook command, so it is not a live link. After" % " ".join(interpreter))
+    print("  editing claude-code/settings.json again, re-sync with:")
     print("    " + resync)
     print("")
 
@@ -418,8 +433,10 @@ def main(argv=None) -> int:
 
     prune_stale(repo_root, target, args.dry_run)
     fallback_used = link_entries(source, target, args.force_copy, ("settings.json",), args.dry_run)
-    if install_settings(source, target, interpreter, strategy, args.force_copy, args.dry_run):
+    settings_result = install_settings(source, target, interpreter, strategy, args.force_copy, args.dry_run)
+    if settings_result == "symlink-refused":
         fallback_used = True
+    settings_generated = settings_result == "generated"
     overlay(source, target, args.dry_run)
 
     if args.dry_run:
@@ -429,6 +446,8 @@ def main(argv=None) -> int:
 
     if fallback_used:
         print_copy_fallback_notice(target, interpreter, repo_root)
+    if settings_generated:
+        print_settings_generated_notice(target, interpreter, repo_root)
 
     if not args.skip_verify:
         code = run_verify(repo_root, interpreter)
