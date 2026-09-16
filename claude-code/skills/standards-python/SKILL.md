@@ -11,7 +11,7 @@ Zero comments, zero docstrings. Errors lead with a verb phrase and never name th
 
 ## Comment discipline
 
-The real rules live in `claude-code/hooks/comments.py` and its shared rules module `claude-code/hooks/lib/comment_rules.py`, not here. `comments.py check` reports what is missing or malformed; comments are only ever added via the `write-comments` skill.
+`standards-comments` owns the rules and loads on every `.py` file alongside this skill — read it there, not here. In short: every function gets one line saying what it does, public or private; everything else gets nothing unless the code cannot say it; `comments.py apply` is the only write path. A docstring on the first body line already satisfies the rule — never add a `#` comment above a function that has one.
 
 ## Toolchain
 

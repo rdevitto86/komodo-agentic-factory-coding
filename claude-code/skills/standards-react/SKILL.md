@@ -15,7 +15,7 @@ Function components and hooks, always. Class components are never correct here �
 
 ## Comment discipline
 
-`standards-typescript`'s directives apply inside every `.tsx`/`.jsx` file. **JSX's `{/* */}` comments are scanned on the same terms as `//`** — a banner or a `WHY:` note is allowed there too, a narrative comment is not.
+`standards-typescript`'s directives apply inside every `.tsx`/`.jsx` file. **JSX's `{/* */}` comments are scanned on the same terms as `//`** — `standards-comments`' bar and bans apply to them unchanged.
 
 ## Toolchain
 

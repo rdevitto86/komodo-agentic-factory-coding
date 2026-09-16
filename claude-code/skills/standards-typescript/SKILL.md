@@ -11,7 +11,7 @@ Zero comments, zero JSDoc. Error messages lead with a verb phrase and never name
 
 ## Comment discipline
 
-The real rules live in `claude-code/hooks/comments.py` and its shared rules module `claude-code/hooks/lib/comment_rules.py`, not here. `comments.py check` reports what is missing or malformed; comments are only ever added via the `write-comments` skill.
+`standards-comments` owns the rules and loads on the same files this skill does — read it there, not here. In short: every function gets one line saying what it does, exported or not, arrow-function consts included; everything else gets nothing unless the code cannot say it; `comments.py apply` is the only write path. A JSDoc block above a declaration already satisfies the rule.
 
 ## Toolchain
 

@@ -24,29 +24,62 @@ python3 ~/.claude/hooks/comments.py check --json
 
 `MISSING` findings are sites that require a comment. `INVALID` findings are comments that break a mechanical rule — fix or remove each. Re-run until it exits 0.
 
-## Default: write nothing
+## Every function gets one line. Almost nothing else gets any.
 
-Code should be self-documenting. A comment is the exception you justify, not the default you reach for. Most bands produce zero or very few proposals. A comment earns its place only when it records something the code cannot say by itself:
+**Two defaults, not one, and they pull in opposite directions on purpose.**
 
-- **A non-obvious workaround.** The code looks wrong, or looks like it does more than it needs to, for a reason living outside the diff — a library bug, a platform quirk, an ordering requirement invisible from the surrounding lines.
-- **A rejected alternative worth recording.** Someone reading this in six months will reach for the obvious-looking fix that was already tried and abandoned; the comment is what stops them re-treading it.
-- **A discovered constraint.** A limit, invariant, or assumption the implementation depends on that is stated nowhere else — an API's undocumented rate limit, a data shape guaranteed upstream, a value range the caller must already enforce, a correctness rule the type itself does not enforce (a copy-after-use hazard, a lock-ordering requirement, a must-call-before-use step).
+**A function declaration is documented by default.** Public and private alike — a private helper is read more often than the exported wrapper around it. `check` reports an undocumented one as `FUNC_UNDOCUMENTED`, and it fires in every language it knows, not just Go. Exempt: a test file or test helper, a body of one statement (a getter, `String()`, `Error()`), a declaration with no body (an interface method, an abstract signature), and a generated file. A Python docstring or a JSDoc block already satisfies it — do not add a second comment above one.
 
-None of these is "what this function does," "what this variable holds," or a restatement of a name already in the code. That is narrative, and narrative is banned regardless of phrasing.
+**Everything else is undocumented by default.** A statement, a branch, a loop, a `var`, a `const`, a struct field: write nothing unless the line cannot say it itself. This is where a comment is the exception you justify.
 
-**Also banned regardless of phrasing: narrating the change itself.** "Replaces X pattern," "used to be duplicated in two callers," "now uses Y instead of Z" — commit-message material, not code comments. They describe the diff's history, not a standing property of the code, and confuse the next reader who has no memory of what "replaces" refers to.
+**The bar, both directions: what the code does, as it stands today.** For a function, that is what it does and what it gives back. Elsewhere it is a standing property the code cannot state itself — a unit, a bound, an ordering requirement, the shape of a workaround.
 
-**Good:** `// retries with backoff -- the upstream API returns 429 with no Retry-After header, so a fixed delay is the only signal we have`
-Records a constraint that explains a design choice invisible from the retry loop itself.
+**Five things are banned regardless of how well they are written:**
 
-**Bad:** `// increments the counter` above `counter++`
-Restates code that already says what it does.
+- **An external citation.** A version number, an SDK release, a `PRD`/`SDD`/`ADR`, a ticket ID, "as discussed", "per the spec", "this task". `check` reports these as `EXTERNAL_REF` and `apply` refuses them outright. A comment describes the code in front of the reader; it has no access to your conversation, your backlog, or the version you happened to build against, and neither will they.
+- **A restatement.** `// increments the counter` above `counter++`, or a comment opening with the identifier below it. **A function's summary is the carve-out** — saying what the function does is the job there. But it must add what the name does not: `// mustGroup makes a group` is the name read back; `// builds a route group, fatalling on a construction error` is a comment.
+- **A hypothetical.** "can only mean a programmer mistake", "should never happen", "in theory this could return nil". A comment about a state the code does not reach describes nothing.
+- **Call-site reasoning.** "every call site above passes a non-empty prefix", "the only caller already validates this". Callers move; the sentence is wrong the day one does, and the reader cannot check it from here.
+- **Point-in-time context.** "raised from 200 after the audit", "replaces the old sweep", "now uses Y instead of Z". Commit-message material — it describes the diff's history, not the code.
 
-**Bad:** `// NOTE: this function validates the input` above `func validateInput(...)`
-Name echo — the comment repeats what the identifier already tells the reader. `DOC` is the one type exempt, since it is required to start with the name it documents.
+The last four are what a justification essay is made of. A comment describes; it does not defend, cite, or reminisce.
 
-**Bad:** `// replaces a TTL+sweep pattern once duplicated, with drifting clocks, in two callers`
-A refactor narrated as a comment. Those callers may not exist by the time this is read.
+**This is what a correctly commented file looks like.** Read it before drafting — it is the target, not an illustration of one rule:
+
+```go
+// reads the config from disk and applies the defaults
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return parse(data)
+}
+
+// false covers both a missing key and one that failed to parse
+func (c *Config) lookup(key string) (string, bool) {
+	value, ok := c.entries[normalize(key)]
+	return value, ok
+}
+
+func (c *Config) Name() string {
+	return c.name
+}
+```
+
+Every function carries one line. `Name()` carries none — a one-statement body is exempt, and a comment there would only read the name back. `lookup`'s line is the mandatory discriminant case below. Nothing opens with its own identifier, nothing runs past its cap, nothing cites anything outside the file.
+
+**Bad:** `notFoundGet bool // simulates forge-sdk-go v0.36.0+ Get/GetDel returning awsEC.ErrNotFound on a miss`
+An SDK and a version pinned into a comment. The version is stale on the next bump and the reader cannot verify it from here — say what the field makes the fake do, not which release it was modelled on.
+
+**Bad:** `// mustGroup fatals on a route-group construction error. Every call site above passes a hardcoded, non-empty prefix onto an already-valid parent group, so an error here can only mean a programmer mistake in this file, not a runtime condition to recover from.`
+A name echo, then call-site reasoning, then a hypothetical, spread over three lines. The first clause is the only one with a job, and it needs rewriting to stop opening on the name.
+
+## The line caps
+
+**Two lines above a function. One line above everything else** — a `var`, a `const`, a `type`, or a statement. `check` reports a block over its cap as `OVER_LINES`; `apply` refuses a proposal that would push one over. A machine directive (`//go:generate`, `//nolint`) does not count against the cap.
+
+The second line of a function's block is headroom, not an allowance to fill. A fact that fits on one line takes one line. A fact that does not fit in two is too broad — narrow it to the clause that clears the bar and drop the rest.
 
 ## Mandatory: an ambiguous discriminant return
 
@@ -54,11 +87,11 @@ A refactor narrated as a comment. Those callers may not exist by the time this i
 
 `func (c *secretCache) getParsed(key string) (map[string]string, bool)` is the canonical case: `false` could mean "no such key," "key present but empty," or "key present but failed to parse," and nothing in the name says which. Any reader must open the body to find out — exactly the gap a comment closes.
 
-A trivial `ok`/`found`/`exists` presence check needs nothing extra, and a plain `(T, error)` is idiomatic enough to exempt. This is for the case where the name alone under-specifies the second value. **Do not drop one of these as "self-documenting" — name-only self-documentation is precisely what fails here.**
+A trivial `ok`/`found`/`exists` presence check needs nothing extra, and a plain `(T, error)` is idiomatic enough to exempt. This is for the case where the name alone under-specifies the second value. **Do not drop one of these as "self-documenting" — name-only self-documentation is precisely what fails here.** State the states the discriminant collapses, in one line, and stop there; why the function collapses them is not part of the job.
 
 ## Unexported is not exempt
 
-`DOC`'s exported-only gate is a fact about `DOC` specifically — a mechanical rule tied to godoc conventions, not a signal that unexported code is beneath judgment. A large unexported function handling a real subtask (parsing an untrusted format, a multi-step validation pipeline) gets the same `WHY`/`HACK` scrutiny as exported code. **Do not default to zero proposals for a function because it is lowercase-first — judge it on what it does, not its casing.**
+`DOC` used to refuse an unexported declaration, which read as a signal that lowercase-first code was beneath documenting. It no longer does: any top-level Go `func`/`type`/`const`/`var` can carry a name-first one-sentence `DOC`, which is what Go codebases actually write and what `FUNC_UNDOCUMENTED` now expects on every function. **Do not skip a function because it is lowercase-first** — a private helper is read more often than the exported wrapper around it.
 
 ## Scan the code yourself
 
@@ -81,11 +114,13 @@ A trivial `ok`/`found`/`exists` presence check needs nothing extra, and a plain 
 
 **Every proposal goes through `apply`'s shape check regardless of how sound the judgment behind it was.** A well-reasoned comment carrying a stray `NOTE:`/`FIXME:`/`TODO:`/`WHY:`/`HACK:` marker it should not, targeting a line the file lacks, echoing the identifier on the next line (`DOC` excepted), or landing within 2 lines of one already spliced gets silently dropped by `apply`. Report every drop from its own `dropped` array verbatim; do not soften or reinterpret its reason.
 
-**One comment per site, one sentence, under 120 characters (80 for `FIELD`) — mechanical, not advisory.** Do not dodge either cap by writing more, shorter lines that add up to the same restatement, or by pre-trimming a stack to two or three lines you hope survive. A code block gets at most one comment. If a fact does not fit in one sentence, the fact is too broad — narrow it to the clause that clears the bar and drop the rest.
+**One comment per site, one sentence, under 120 characters (80 for `FIELD`), inside the line caps above — mechanical, not advisory.** Do not dodge a cap by writing more, shorter lines that add up to the same restatement, or by pre-trimming a stack to the number of lines you hope survive. A code block gets at most one comment. If a fact does not fit in one sentence, the fact is too broad — narrow it to the clause that clears the bar and drop the rest.
 
 ## A deleted comment is judged clause by clause
 
-**A doc comment or banner you are restoring after a deletion often bundles more than one fact.** One clause might be design rationale, another a correctness invariant the type does not enforce in code (an embedded `sync.Map` that must never be copied after first use is a real example — the compiler will not catch a copy). Judge each clause against the bar independently. **Restoring one clause never licenses dropping another that independently clears it.** When a clause is a safety rule and you are not certain it is redundant with something the code now states elsewhere, keep it — losing a real invariant is worse than keeping one sentence too many.
+**A doc comment or banner you are restoring after a deletion often bundles more than one fact.** Judge each clause against the bar independently: design rationale, history, and hypotheticals do not come back, while a correctness rule the type does not enforce in code (an embedded `sync.Map` that must never be copied after first use — the compiler will not catch a copy) is a standing property and does. **Restoring one clause never licenses dropping another that independently clears the bar.**
+
+**The line caps apply to a restoration too.** If two surviving clauses cannot both fit the block's cap, one of them was never the more important — splice that one, and name the other in `## Notes`. Do not restore a four-line original as four lines because it was four lines before.
 
 **Never claim a comment was "restored" without diffing your spliced text against the original.** This failure is real and has happened: reporting "restored the substantive parts" when only one clause of a multi-clause original landed. Before writing your report, re-read the original side by side with what actually spliced, clause by clause.
 

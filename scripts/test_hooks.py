@@ -434,8 +434,8 @@ def v9b_body(index: int, label: str) -> None:
         fixture,
     )
     problem = ""
-    if not ordered_in(out, '"dropped"', "exported (capitalized) declaration"):
-        problem = "dropped reason missing: exported (capitalized) declaration"
+    if not ordered_in(out, '"spliced"', "helper does something small."):
+        problem = "spliced result missing: helper does something small."
     report(index, label, problem, out)
 
 
@@ -472,6 +472,35 @@ def v12_body(index: int, label: str) -> None:
     if not ordered_in(out, '"spliced"', "--- Setup ---"):
         problem = "a Setup banner in a _test.go file should splice: %s" % out
     report(index, label, problem, out)
+
+
+def block_cap_body(index: int, label: str, source: str, needle: str, key: str) -> None:
+    fixture = os.path.join(WORKDIR[0], "fixture-validator-%d" % index)
+    os.makedirs(fixture)
+    write_text(os.path.join(fixture, "svc.go"), source)
+    out = apply_proposals(
+        '[{"file":"svc.go","line":3,"template_type":"WHY",'
+        '"text":"// the gateway drops the first connection every time"}]',
+        fixture,
+    )
+    problem = ""
+    if not ordered_in(out, key, needle):
+        problem = "%s result missing: %s" % (key, needle)
+    report(index, label, problem, out)
+
+
+def v13_body(index: int, label: str) -> None:
+    block_cap_body(index, label,
+                   "package main\n\n// raised from 200 after the timeout audit\n"
+                   "var pollInterval = 500\n",
+                   "over the 1-line cap", '"dropped"')
+
+
+def v14_body(index: int, label: str) -> None:
+    block_cap_body(index, label,
+                   "package main\n\n// retried twice before the caller sees an error\n"
+                   "func Run() {}\n",
+                   "the gateway drops the first connection", '"spliced"')
 
 
 def v3_body(index: int, label: str) -> None:
@@ -782,6 +811,7 @@ func Run() {}
                "INVALID", """
 package x
 
+// builds the endpoint string and discards it
 func Run() {
 \ts := "http://example.com/path"
 \t_ = s
@@ -827,10 +857,225 @@ SELECT 2;
         for n in range(1, 31)
     )
     check_case("K25 a header run past HEADER_MAX_LINES loses its exemption", "script.sql",
-               "STACKED", "",
+               "OVER_LINES", "",
                padding
-               + "-- line 31, past the cap, adjacent to line 30, should trigger STACKED\n"
+               + "-- line 31, past the cap, is where the exemption runs out\n"
                + "SELECT 1;\n")
+
+    check_case("K26 a two-line comment block above a function is allowed", "svc.go",
+               "0 finding", "OVER_LINES", """
+package x
+
+// bounded by the upstream gateway's 30-second timeout
+// and retried twice before the caller sees an error
+func Run() {}
+""")
+
+    check_case("K27 a three-line comment block above a function is INVALID", "svc.go",
+               "OVER_LINES", "", """
+package x
+
+// bounded by the upstream gateway's 30-second timeout
+// and retried twice before the caller sees an error
+// then surfaced as a 503 to whoever called in
+func Run() {}
+""")
+
+    check_case("K28 a two-line comment block above a var is INVALID", "svc.go",
+               "OVER_LINES", "", """
+package x
+
+// milliseconds, not seconds
+// raised from 200 after the timeout audit
+var pollInterval = 500
+""")
+
+    check_case("K29 a two-line comment block above a struct type is INVALID", "svc.go",
+               "OVER_LINES", "", """
+package x
+
+// one entry per tenant
+// keys are lowercased before lookup
+type registry struct {
+\tentries map[string]int
+}
+""")
+
+    check_case("K30 a machine directive does not count against the block cap", "svc.go",
+               "0 finding", "OVER_LINES", """
+package x
+
+//go:generate stringer -type=Mode
+// persisted by ordinal, so the order is load-bearing
+var modes = []int{}
+""")
+
+    check_case("K31 two separate one-line comments two lines apart are still STACKED",
+               "svc.go", "STACKED", "", """
+package x
+
+func Run() {
+\t// seeds the retry counter
+\tx := 1
+\t// one increment per attempt
+\tx++
+}
+""")
+
+    check_case("K33 an uncommented function is a MISSING site", "svc.go",
+               "FUNC_UNDOCUMENTED", "", """
+package x
+
+func normalize(raw string) string {
+\ttrimmed := strings.TrimSpace(raw)
+\treturn strings.ToLower(trimmed)
+}
+""")
+
+    check_case("K34 a commented function is not a MISSING site", "svc.go",
+               "0 finding", "FUNC_UNDOCUMENTED", """
+package x
+
+// lowercases the input after trimming its surrounding space
+func normalize(raw string) string {
+\ttrimmed := strings.TrimSpace(raw)
+\treturn strings.ToLower(trimmed)
+}
+""")
+
+    check_case("K35 a one-statement body is exempt", "svc.go",
+               "0 finding", "FUNC_UNDOCUMENTED", """
+package x
+
+func (s *fakeStore) Name() string {
+\treturn "fake"
+}
+""")
+
+    check_case("K36 a function in a _test.go file is exempt", "svc_test.go",
+               "0 finding", "FUNC_UNDOCUMENTED", """
+package x
+
+func newTestStore(t *testing.T) *fakeStore {
+\tt.Helper()
+\tstore := &fakeStore{}
+\treturn store
+}
+""")
+
+    check_case("K37 an interface method with no body is exempt", "svc.go",
+               "0 finding", "FUNC_UNDOCUMENTED", """
+package x
+
+// the contract every transport in this package satisfies
+type Reader interface {
+\tRead(p []byte) (int, error)
+\tClose() error
+}
+""")
+
+    check_case("K38 an anonymous function literal is not a declaration", "svc.go",
+               "0 finding", "FUNC_UNDOCUMENTED", """
+package x
+
+// hands the work to a goroutine and returns immediately
+func spawn() {
+\tgo func() {
+\t\twork()
+\t\tdone()
+\t}()
+}
+""")
+
+    check_case("K39 a generated-file header exempts the whole file", "schema.go",
+               "0 finding", "FUNC_UNDOCUMENTED", """// Code generated by protoc-gen-go. DO NOT EDIT.
+
+package x
+
+func (m *Message) Reset() {
+\t*m = Message{}
+\tm.unknownFields = nil
+}
+""")
+
+    check_case("K40 a TypeScript arrow-function const is a MISSING site", "handlers.ts",
+               "FUNC_UNDOCUMENTED", "", """export const fetchUser = async (id: string) => {
+  const res = await fetch(`/users/${id}`);
+  return res.json();
+};
+""")
+
+    check_case("K41 a Python def is a MISSING site", "svc.py",
+               "FUNC_UNDOCUMENTED", "", """
+def normalize(raw):
+    trimmed = raw.strip()
+    return trimmed.lower()
+""")
+
+    check_case("K41b a Python docstring satisfies the undocumented rule", "svc.py",
+               "0 finding", "FUNC_UNDOCUMENTED", '''
+def normalize(raw):
+    """Lowercases the input after trimming its surrounding space."""
+    trimmed = raw.strip()
+    return trimmed.lower()
+''')
+
+    check_case("K41c a JSDoc block satisfies the undocumented rule", "handlers.ts",
+               "0 finding", "FUNC_UNDOCUMENTED", """/** Fetches one user and decodes the response body. */
+export const fetchUser = async (id: string) => {
+  const res = await fetch(`/users/${id}`);
+  return res.json();
+};
+""")
+
+    check_case("K42 a discriminant return outranks the undocumented rule", "svc.go",
+               "RET_BOOL_DISCRIMINANT", "FUNC_UNDOCUMENTED", """
+package x
+
+func (c *secretCache) getParsed(key string) (map[string]string, bool) {
+\tentry := c.entries[key]
+\treturn entry, entry != nil
+}
+""")
+
+    check_case("K43 a comment citing an SDK version is INVALID", "svc.go",
+               "EXTERNAL_REF", "", """
+package x
+
+type fakeStore struct {
+\tnotFoundGet bool // simulates forge-sdk v0.36.0+ Get returning ErrNotFound on a miss
+}
+""")
+
+    check_case("K44 a comment citing a spec document is INVALID", "svc.go",
+               "EXTERNAL_REF", "", """
+package x
+
+// the retry ceiling the SDD fixes for this service
+const maxRetries = 3
+""")
+
+    check_case("K45 a comment citing the session is INVALID", "svc.go",
+               "EXTERNAL_REF", "", """
+package x
+
+// split out as discussed, so both callers share one path
+func merge(a, b []int) []int {
+\tout := append(a, b...)
+\treturn out
+}
+""")
+
+    check_case("K32 a keyword-less method signature gets the function cap", "Demo.java",
+               "0 finding", "OVER_LINES", """
+public class Demo {
+\t// retries twice before surfacing the failure
+\t// because the gateway drops the first connection
+\tpublic static String fetch(String key) {
+\t\treturn null;
+\t}
+}
+""")
 
 
 def check_git_guard() -> None:
@@ -2040,7 +2285,7 @@ def check_comments_apply() -> None:
         'value."}]',
         "", "top-level func/type/const/var/package declaration")
 
-    custom_case("V9b a DOC comment on an unexported top-level declaration is dropped",
+    custom_case("V9b a DOC comment on an unexported top-level declaration splices",
                 v9b_body)
 
     validator_own_fixture_case(
@@ -2052,6 +2297,10 @@ def check_comments_apply() -> None:
     custom_case("V11 two adjacent FIELD proposals both splice -- FIELD is exempt from "
                 "the stacking rule", v11_body)
     custom_case("V12 a Setup banner in a _test.go file splices", v12_body)
+    custom_case("V13 a proposal that would make a two-line block above a var is dropped",
+                v13_body)
+    custom_case("V14 a proposal that would make a two-line block above a func splices",
+                v14_body)
     custom_case("V3  a successful splice calls the shared auto_format.run_formatter on "
                 "the touched file", v3_body)
 
