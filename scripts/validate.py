@@ -77,7 +77,8 @@ def check_links(source: str, target: str, settings_generate_expected: bool) -> i
         link = os.path.join(target, name)
         if os.path.islink(link) and os.path.exists(link):
             actual = os.readlink(link)
-            if actual == entry:
+            # Windows answers a readlink in extended-length form, so compare what each side resolves to
+            if os.path.realpath(link) == os.path.realpath(entry):
                 print("    ok        %s" % name)
             else:
                 print("    stale     %s -> %s (expected %s)" % (name, actual, entry))
