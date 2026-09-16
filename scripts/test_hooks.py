@@ -27,6 +27,11 @@ DEFAULT_PARALLEL = 8
 DEEP_NESTING_DEPTH = 3000
 SKIP_TICKET = "TSK-01.1.14"
 MAKE_SKIP_REASON = "make unavailable, or Windows runner"
+WINDOWS_PORT_TICKET = "TSK-01.7.6"
+PATH_STUB_SKIP_REASON = (
+    "a PATH stub cannot be reached here: CreateProcess appends .exe to a bare name and "
+    "never consults PATHEXT, so an extensionless shell stub never runs"
+)
 
 VERIFY_PY_PASS = "import sys\nsys.exit(0)\n"
 VERIFY_PY_FAIL = "import sys\nsys.exit(1)\n"
@@ -118,8 +123,8 @@ def is_windows_shell() -> bool:
 IS_WINDOWS = is_windows_shell()
 
 
-def skip_case(label: str, reason: str) -> None:
-    emit("  SKIP  %s\n        %s (%s)\n" % (label, reason, SKIP_TICKET))
+def skip_case(label: str, reason: str, ticket: str = SKIP_TICKET) -> None:
+    emit("  SKIP  %s\n        %s (%s)\n" % (label, reason, ticket))
 
 
 def allocate() -> int:
@@ -136,6 +141,11 @@ def report(index: int, label: str, problem: str, extra: str = "") -> None:
             text += "".join("        | %s\n" % line for line in extra.split("\n"))
     with LOCK:
         RESULTS[index] = text
+
+
+# a path inside a command string is shell text, where a backslash escapes rather than separates
+def shell_path(path: str) -> str:
+    return path.replace(os.sep, "/")
 
 
 def write_text(path: str, body: str) -> None:
@@ -633,7 +643,7 @@ def hook_symlink_body(index: int, label: str) -> None:
 def auto_format_body(index: int, label: str, want_changed: str, path: str, tool: str,
                      path_override: str) -> None:
     before = read_text(path).rstrip("\n")
-    payload = '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' % (tool, path)
+    payload = json.dumps({"tool_name": tool, "tool_input": {"file_path": path}})
     env = env_with(PATH=path_override) if path_override else None
     result = subprocess.run(
         [PYTHON, AUTO_FORMAT],
@@ -1502,19 +1512,25 @@ def check_git_guard() -> None:
         'write requests are denied',
     )
     bash_case('G69 gh api read is allowed', 'allow', 'gh api repos/x/y/dependabot/alerts')
-    bash_case_env(
-        'G206 gh api threaded reply on this branch\'s own PR is allowed',
-        'allow',
-        'gh api repos/o/r/pulls/64/comments/123/replies -f body=ack',
-        gh_stub_env(FIXTURES['ghstub']),
-    )
-    bash_case_env(
-        'G207 gh api threaded reply on someone else\'s PR is denied',
-        'deny',
-        'gh api repos/o/r/pulls/99/comments/123/replies -f body=ack',
-        gh_stub_env(FIXTURES['ghstub']),
-        "not this branch's own",
-    )
+    label_206 = 'G206 gh api threaded reply on this branch\'s own PR is allowed'
+    label_207 = 'G207 gh api threaded reply on someone else\'s PR is denied'
+    if IS_WINDOWS:
+        skip_case(label_206, PATH_STUB_SKIP_REASON, WINDOWS_PORT_TICKET)
+        skip_case(label_207, PATH_STUB_SKIP_REASON, WINDOWS_PORT_TICKET)
+    else:
+        bash_case_env(
+            label_206,
+            'allow',
+            'gh api repos/o/r/pulls/64/comments/123/replies -f body=ack',
+            gh_stub_env(FIXTURES['ghstub']),
+        )
+        bash_case_env(
+            label_207,
+            'deny',
+            'gh api repos/o/r/pulls/99/comments/123/replies -f body=ack',
+            gh_stub_env(FIXTURES['ghstub']),
+            "not this branch's own",
+        )
     bash_case_env(
         'G208 a non-POST method on the reply path is still denied',
         'deny',
@@ -1567,10 +1583,15 @@ def check_git_guard() -> None:
     )
     bash_case_cwd(
         FIXTURE_FEAT,
-        'G74 merging a non-base branch is blocked',
-        'deny',
+        'G74 merging any branch this branch is based on is allowed',
+        'allow',
         'git merge some-other-branch',
-        'protected base branch',
+    )
+    bash_case_cwd(
+        FIXTURE_FEAT,
+        'G74b merging a stacked PR into another feature branch is allowed',
+        'allow',
+        'git merge feat/stack-base',
     )
     bash_case_cwd(
         FIXTURE_FEAT,
@@ -1725,7 +1746,7 @@ def check_git_guard() -> None:
         OUTSIDE_REPO,
         'G137 cwd outside any repo does not exempt an absolute target that lands inside a real repo',
         'deny',
-        'cp malicious.txt ' + FIXTURE_MAIN + '/BACKLOG.md',
+        'cp malicious.txt ' + shell_path(FIXTURE_MAIN) + '/BACKLOG.md',
         'bypasses the comment guard',
     )
     bash_case_cwd(
@@ -2530,7 +2551,7 @@ def vgate_field(out: str, field: str, default: str) -> str:
 
 
 def vgate_run(fixture: str, env: dict = None) -> str:
-    return run_hook(VERIFY_GATE, '{"cwd":"%s"}' % fixture, env=env)
+    return run_hook(VERIFY_GATE, json.dumps({"cwd": fixture}), env=env)
 
 
 def presence(path: str) -> str:
@@ -2757,6 +2778,11 @@ def check_verify_gate() -> None:
     band_case("VG15 a band marker that is not a readable file still runs the gate", "run")
     remove_path(band_marker)
 
+    label = "VG16 an unresolvable git common dir still runs the gate"
+    if IS_WINDOWS:
+        skip_case(label, PATH_STUB_SKIP_REASON, WINDOWS_PORT_TICKET)
+        return
+
     nocommon_bin = shim_bin(
         os.path.join(work, "fixture-vgate-nocommon-bin"),
         '#!/bin/sh\nif [ "$1" = "rev-parse" ] && [ "$2" = "--git-common-dir" ]; then\n'
@@ -2769,7 +2795,6 @@ def check_verify_gate() -> None:
     decision = vgate_field(out, "decision", "allow")
     state = presence(ran)
     index = allocate()
-    label = "VG16 an unresolvable git common dir still runs the gate"
     if decision == "block" and state == "present":
         report(index, label, "")
     else:

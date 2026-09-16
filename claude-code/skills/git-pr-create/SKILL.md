@@ -110,7 +110,7 @@ Enforcement: `git push -u origin <branch>` on your own non-protected branch is a
 
 ## Merging
 
-Only one direction is ever a convention here: the protected base merges into your branch, to pull in its latest changes and surface conflicts early — never your branch into the base. A strategy flag that auto-resolves a conflict without ever showing it defeats the point of merging early, so the convention is always to resolve conflicts by hand, one file at a time, and commit the result with the merge's own default message. Landing a branch into its protected base is a human action end to end, taken through the PR's merge button (or the user's own CLI) — never a step an agent takes.
+Only one direction is ever a convention here: a branch merges the branch it is based on — protected or not, a stacked PR's feature-branch base included — to pull in its latest changes and surface conflicts early, never the other way around. A strategy flag that auto-resolves a conflict without ever showing it defeats the point of merging early, so the convention is always to resolve conflicts by hand, one file at a time, and commit the result with the merge's own default message. Landing a branch into its protected base is a human action end to end, taken through the PR's merge button (or the user's own CLI) — never a step an agent takes.
 
 Enforcement: `git merge <main-or-equivalent>` (bare name or `origin/`-prefixed) is allowed from a non-protected branch; `--abort`/`--continue` are open as escape hatches; a strategy flag that auto-resolves without a visible conflict (`-X`, `--strategy`, `-s`, `--squash`) is denied by the guard — the point is to see the conflict, not paper over it.
 

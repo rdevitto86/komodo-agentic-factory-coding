@@ -37,6 +37,22 @@ def is_windows() -> bool:
     return os.name == "nt" or sys.platform.startswith("win")
 
 
+# git stores a path in its own native form, which is a different spelling of the same directory
+def same_path(left: str, right: str) -> bool:
+    return os.path.normcase(os.path.normpath(left)) == os.path.normcase(os.path.normpath(right))
+
+
+# the bash a Windows PATH resolves is WSL's launcher, so reach for the one Git for Windows ships
+def resolve_bash() -> str:
+    if not is_windows():
+        return shutil.which("bash") or ""
+    git = shutil.which("git")
+    if not git:
+        return ""
+    candidate = os.path.join(os.path.dirname(os.path.dirname(git)), "bin", "bash.exe")
+    return candidate if os.path.isfile(candidate) else ""
+
+
 def emit(text: str) -> None:
     sys.stdout.write(text)
     sys.stdout.flush()
@@ -106,9 +122,10 @@ def first_bad_hook_command(settings: dict, hook_names: tuple) -> str:
         for entry in event_hooks:
             for hook in entry.get("hooks", []):
                 command = hook.get("command", "")
-                if "~" in command:
-                    return "%s -> literal '~' survived the rewrite" % command
                 tokens = shlex.split(command)
+                # a Windows short path carries its own tilde (RUNNER~1), so only a leading one is a home
+                if any(token.startswith("~") for token in tokens):
+                    return "%s -> literal '~' survived the rewrite" % command
                 script_index = next(
                     (
                         i
@@ -296,11 +313,42 @@ def assert_guard_rejected(label: str, clone: str, target: str, args: list, pytho
     record(label, problem)
 
 
+# a plain clone of a source on a detached HEAD checks out nothing, and the local transport
+# hardlinks, which cannot cross the boundary between a container's /tmp and its workspace
+def build_ref_clone(clone: str) -> str:
+    rc, out = capture(
+        ["git", "clone", "--quiet", "--no-checkout", "--no-hardlinks", REPO_ROOT, clone]
+    )
+    if rc != 0:
+        return "git clone exited %d: %s" % (rc, out)
+    rc, head = capture(["git", "-C", REPO_ROOT, "rev-parse", "HEAD"])
+    if rc != 0:
+        return "reading the source HEAD exited %d: %s" % (rc, head)
+    rc, out = git(["checkout", "--quiet", "--detach", head.strip()], clone)
+    if rc != 0:
+        return "checking the source commit out in the clone exited %d: %s" % (rc, out)
+    if not os.path.isfile(os.path.join(clone, "scripts", "install.py")):
+        return "the clone has no working tree at scripts/install.py"
+    return ""
+
+
 def check_setup_ref(workdir: str, python3: str) -> None:
     emit("\ninstall.py --ref\n\n")
 
+    label_s1 = "S1 --ref TAG --dry-run previews the checkout and exits 0"
+    label_s2 = "S2 an unknown ref exits non-zero before touching HEAD or the target"
+    label_s3 = "S3 a dirty tree exits non-zero before touching HEAD or the target"
+    label_s4 = "S4 plain --dry-run output is unchanged by the --ref addition"
+    label_s5 = "S5 an empty --ref is rejected rather than silently installing unpinned"
+    label_s6 = "S6 a leading-dash ref is rejected before reaching git"
+
     clone = os.path.join(workdir, "clone")
-    capture(["git", "clone", "--quiet", "--local", REPO_ROOT, clone])
+    problem = build_ref_clone(clone)
+    if problem:
+        for label in (label_s1, label_s2, label_s3, label_s4, label_s5, label_s6):
+            failed(label, problem)
+        return
+
     clone_install = os.path.join(clone, "scripts", "install.py")
     shutil.copyfile(INSTALL, clone_install)
     _, commit_out = capture(
@@ -318,7 +366,6 @@ def check_setup_ref(workdir: str, python3: str) -> None:
     tag_lines = tag_out.splitlines()
     tag = tag_lines[-1] if tag_lines else ""
 
-    label = "S4 plain --dry-run output is unchanged by the --ref addition"
     target_a = os.path.join(workdir, "home-s4a", ".claude")
     target_b = os.path.join(workdir, "home-s4b", ".claude")
     _, baseline = capture(
@@ -328,17 +375,15 @@ def check_setup_ref(workdir: str, python3: str) -> None:
     baseline = baseline.replace(target_a, "TARGET").replace(clone, "REPO")
     current = current.replace(target_b, "TARGET").replace(REPO_ROOT, "REPO")
     if baseline == current:
-        passed(label)
+        passed(label_s4)
     else:
         diff = "".join(
             difflib.unified_diff(
                 baseline.splitlines(True), current.splitlines(True), "baseline", "current"
             )
         )
-        failed(label, "diff:\n%s" % diff)
+        failed(label_s4, "diff:\n%s" % diff)
 
-    label_s1 = "S1 --ref TAG --dry-run previews the checkout and exits 0"
-    label_s3 = "S3 a dirty tree exits non-zero before touching HEAD or the target"
     if not tag:
         failed(label_s1, "no tag found in the clone to pin to")
         failed(label_s3, "no tag found in the clone to pin to")
@@ -359,21 +404,21 @@ def check_setup_ref(workdir: str, python3: str) -> None:
             passed(label_s1)
 
     assert_guard_rejected(
-        "S2 an unknown ref exits non-zero before touching HEAD or the target",
+        label_s2,
         clone,
         os.path.join(workdir, "home-s2", ".claude"),
         ["--ref", "no-such-tag-xyz"],
         python3,
     )
     assert_guard_rejected(
-        "S5 an empty --ref is rejected rather than silently installing unpinned",
+        label_s5,
         clone,
         os.path.join(workdir, "home-s5", ".claude"),
         ["--ref="],
         python3,
     )
     assert_guard_rejected(
-        "S6 a leading-dash ref is rejected before reaching git",
+        label_s6,
         clone,
         os.path.join(workdir, "home-s6", ".claude"),
         ["--ref=--orphan=x"],
@@ -456,7 +501,8 @@ def make_git_repo(path: str) -> None:
 def check_git_install(workdir: str) -> None:
     emit("\nscripts/hooks/git/install.sh\n\n")
 
-    if not shutil.which("bash"):
+    bash = resolve_bash()
+    if not bash:
         for label in GIT_INSTALL_SKIP_LABELS:
             skip_case(label, BASH_SKIP_REASON)
         return
@@ -466,7 +512,7 @@ def check_git_install(workdir: str) -> None:
     git(["config", "--local", "core.hooksPath", "no-such-dir/hooks"], grepo1)
 
     label = "G1 --status marks a missing core.hooksPath stale"
-    rc, out = capture(["bash", GIT_INSTALL, "--status", grepo1])
+    rc, out = capture([bash, GIT_INSTALL, "--status", grepo1])
     if rc != 0:
         failed(label, "exit %d: %s" % (rc, out))
     elif "stale" not in out:
@@ -475,7 +521,7 @@ def check_git_install(workdir: str) -> None:
         passed(label)
 
     label = "G2 installing over a stale core.hooksPath notes hooks had not been running"
-    rc, out = capture(["bash", GIT_INSTALL, grepo1])
+    rc, out = capture([bash, GIT_INSTALL, grepo1])
     _, current = git(["config", "--local", "--get", "core.hooksPath"], grepo1)
     current = current.strip()
     problem = ""
@@ -483,12 +529,12 @@ def check_git_install(workdir: str) -> None:
         problem = "exit %d: %s" % (rc, out)
     if not problem and "had not been running" not in out:
         problem = "no note that hooks had not been running: %s" % out
-    if not problem and current != LIVE_HOOK_DIR:
+    if not problem and not same_path(current, LIVE_HOOK_DIR):
         problem = "core.hooksPath was not rewritten to the live directory: %s" % current
     record(label, problem)
 
     label = "G3 a repo already pointing at the live hooks dir is left alone"
-    rc, out = capture(["bash", GIT_INSTALL, grepo1])
+    rc, out = capture([bash, GIT_INSTALL, grepo1])
     if rc != 0:
         failed(label, "exit %d: %s" % (rc, out))
     elif "already installed" not in out:
@@ -506,7 +552,7 @@ def check_git_install(workdir: str) -> None:
         handle.write("#!/bin/sh\n")
     os.chmod(orphan, 0o755)
 
-    rc, out = capture(["bash", GIT_INSTALL, grepo2])
+    rc, out = capture([bash, GIT_INSTALL, grepo2])
     problem = ""
     if rc != 0:
         problem = "exit %d: %s" % (rc, out)
@@ -523,7 +569,8 @@ G5_LABEL = "G5 a Makefile-only repo's pre-push-verify actually runs its verify t
 def check_pre_push_verify(workdir: str) -> None:
     emit("\nscripts/hooks/git/pre-push-verify\n\n")
 
-    if not shutil.which("bash"):
+    bash = resolve_bash()
+    if not bash:
         skip_case(G5_LABEL, BASH_SKIP_REASON)
         return
     if not shutil.which("make"):
@@ -536,7 +583,7 @@ def check_pre_push_verify(workdir: str) -> None:
     with open(os.path.join(mrepo, "Makefile"), "w", encoding="utf-8") as handle:
         handle.write("verify:\n\t@echo ran > ran.txt\n\t@exit 1\n")
 
-    rc, out = capture(["bash", PRE_PUSH_VERIFY], cwd=mrepo)
+    rc, out = capture([bash, PRE_PUSH_VERIFY], cwd=mrepo)
     problem = ""
     if not os.path.isfile(sentinel):
         problem = "the verify target never ran: %s" % out
@@ -549,7 +596,7 @@ def check_pre_push_verify(workdir: str) -> None:
     label = "G6 a repo with no verify gate at all still exits 0"
     plain = os.path.join(workdir, "plainrepo")
     make_git_repo(plain)
-    rc, out = capture(["bash", PRE_PUSH_VERIFY], cwd=plain)
+    rc, out = capture([bash, PRE_PUSH_VERIFY], cwd=plain)
     if rc == 0:
         passed(label)
     else:

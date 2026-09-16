@@ -16,6 +16,10 @@
 set -uo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# git rewrites a path argument into its native form before storing it, so hold the form it stores
+if command -v cygpath >/dev/null 2>&1; then
+  HOOK_DIR="$(cygpath -m "$HOOK_DIR")"
+fi
 STATUS_ONLY=0
 
 if [ "${1:-}" = "--status" ]; then
@@ -46,7 +50,7 @@ for repo in "$@"; do
       state="current"
     else
       case "$current" in
-        /*) current_abs="$current" ;;
+        /* | [A-Za-z]:/* | [A-Za-z]:\\*) current_abs="$current" ;;
         *) current_abs="$repo/$current" ;;
       esac
       if [ -d "$current_abs" ]; then

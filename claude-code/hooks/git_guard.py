@@ -890,11 +890,7 @@ def merge_violation(subcommand, args, cwd):
         return "git merge on %s, a protected branch — landing into it stays the user's job" % branch
     positional = [arg for arg in args if not arg.startswith("-")]
     if len(positional) != 1:
-        return "git merge only takes one target: the protected base branch, to sync before a human merges the PR"
-    target = positional[0]
-    bare = target[len("origin/"):] if target.startswith("origin/") else target
-    if not is_protected(bare):
-        return "git merge %s isn't the protected base branch" % target
+        return "git merge only takes one target: the branch this branch is based on"
     return None
 
 
@@ -1366,8 +1362,9 @@ def main():
     lines.extend([
         "",
         "The agent branches, commits, pushes its own branch, opens a PR, and",
-        "may merge its protected base into its own branch to resolve conflicts,",
-        "or pull it with --ff-only. main/master/trunk/prod/production/",
+        "may merge the branch it is based on into its own branch to resolve",
+        "conflicts, protected or not, or pull it with --ff-only.",
+        "main/master/trunk/prod/production/",
         "release/*/hotfix/* stay off limits, and so do landing a branch into",
         "one, rebases, non-ff-only pulls, force-push, --amend, and history",
         "rewrites. Run this yourself if you intended it.",
