@@ -200,12 +200,14 @@ def check_reachability(source: str) -> int:
     skills_dir = os.path.join(source, "skills")
     unreachable = set()
     bodies = {}
+    fms = {}
     for entry in listdir_sorted(skills_dir):
         skill = os.path.join(skills_dir, entry, "SKILL.md")
         if not os.path.exists(skill):
             continue
         body = read_text(skill)
         bodies[entry] = body
+        fms[entry] = frontmatter(skill) or {}
         head = body.split("---")[1] if body.startswith("---") else ""
         if DMI.search(head):
             unreachable.add(entry)
@@ -225,6 +227,23 @@ def check_reachability(source: str) -> int:
                     print("    BROKEN    %s invokes `%s`, which carries disable-model-invocation: true "
                           "and cannot be reached via the Skill tool" % (entry, target))
                     failures += 1
+
+    named_by_sibling = set()
+    for entry, body in bodies.items():
+        for match in NAME.finditer(body):
+            target = match.group(1)
+            if target != entry and target in bodies:
+                named_by_sibling.add(target)
+
+    for entry in sorted(unreachable):
+        fm = fms.get(entry, {})
+        if "paths" in fm or "argument-hint" in fm:
+            continue
+        if entry in named_by_sibling:
+            continue
+        print("    BROKEN    %s carries disable-model-invocation: true, no paths:, no "
+              "argument-hint:, and no sibling skill names it — unreachable by any caller" % entry)
+        failures += 1
 
     if failures == 0:
         print("    ok        no skill body invokes a sibling it cannot reach")
