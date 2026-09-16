@@ -10,7 +10,7 @@ from komodo import pipeline, tasks
 from komodo.config import Config
 from komodo.workers import Result, Worker
 
-PY = shlex.quote(sys.executable) if os.name != "nt" else '"%s"' % sys.executable
+PY = sys.executable if " " not in sys.executable else (shlex.quote(sys.executable) if os.name != "nt" else '"%s"' % sys.executable)
 
 BACKLOG_TEMPLATE = """# Backlog
 

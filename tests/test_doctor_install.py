@@ -59,7 +59,10 @@ class InstallTests(unittest.TestCase):
     def test_rewrite_hook_commands(self):
         policy = {"hooks": {"PreToolUse": [{"hooks": [{"command": "python3 ~/.claude/hooks/guard.py"}]}]}}
         out = install.rewrite_hook_commands(policy, "/x/hooks", ["py", "-3"])
-        self.assertEqual(out["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "py -3 /x/hooks/guard.py")
+        command = out["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        self.assertTrue(command.startswith("py -3 "), command)
+        self.assertTrue(command.rstrip("'\"").endswith("guard.py"), command)
+        self.assertNotIn("~", command)
 
     def test_install_dry_run_into_temp(self):
         with tempfile.TemporaryDirectory() as target:

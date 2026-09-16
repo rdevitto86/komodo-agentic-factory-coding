@@ -7,7 +7,7 @@ import unittest
 
 from komodo import gates, state
 
-PY = shlex.quote(sys.executable) if os.name != "nt" else '"%s"' % sys.executable
+PY = sys.executable if " " not in sys.executable else (shlex.quote(sys.executable) if os.name != "nt" else '"%s"' % sys.executable)
 OK = '%s -c "import sys; sys.exit(0)"' % PY
 FAIL = '%s -c "import sys; sys.exit(1)"' % PY
 SLOW = '%s -c "import time; time.sleep(3)"' % PY

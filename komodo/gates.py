@@ -59,9 +59,16 @@ def run_command(command: str, cwd: str, timeout: int, env: Optional[dict] = None
     import time
 
     started = time.time()
+    if os.name == "nt":
+        # cmd.exe strips the outer quotes of a command that starts with a quoted path; /s makes that stripping exact
+        argv = ["cmd.exe", "/s", "/c", '"%s"' % command]
+        shell = False
+    else:
+        argv = command
+        shell = True
     try:
         completed = subprocess.run(
-            command, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env,
+            argv, shell=shell, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env,
         )
         output = (completed.stdout or "") + (completed.stderr or "")
         code = completed.returncode
