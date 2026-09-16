@@ -1257,6 +1257,39 @@ def check_git_guard() -> None:
         'write requests are denied',
     )
     bash_case('G69 gh api read is allowed', 'allow', 'gh api repos/x/y/dependabot/alerts')
+    bash_case_env(
+        'G206 gh api threaded reply on this branch\'s own PR is allowed',
+        'allow',
+        'gh api repos/o/r/pulls/64/comments/123/replies -f body=ack',
+        gh_stub_env(FIXTURES['ghstub']),
+    )
+    bash_case_env(
+        'G207 gh api threaded reply on someone else\'s PR is denied',
+        'deny',
+        'gh api repos/o/r/pulls/99/comments/123/replies -f body=ack',
+        gh_stub_env(FIXTURES['ghstub']),
+        "not this branch's own",
+    )
+    bash_case_env(
+        'G208 a non-POST method on the reply path is still denied',
+        'deny',
+        'gh api repos/o/r/pulls/64/comments/123/replies -X DELETE -f body=ack',
+        gh_stub_env(FIXTURES['ghstub']),
+        'write requests are denied',
+    )
+    bash_case_env(
+        'G209 the carve-out does not widen to other write paths',
+        'deny',
+        'gh api repos/o/r/issues/64/comments -f body=ack',
+        gh_stub_env(FIXTURES['ghstub']),
+        'write requests are denied',
+    )
+    bash_case(
+        'G210 a reply write with no resolvable PR number is denied',
+        'deny',
+        'gh api repos/o/r/pulls/64/comments/123/replies -f body=ack',
+        "couldn't confirm",
+    )
     bash_case('G70 gh release create is blocked', 'deny', 'gh release create v1.0', 'is denied')
     bash_case_cwd(
         FIXTURE_FEAT,
@@ -2453,6 +2486,28 @@ def check_verify_gate_discovery() -> None:
         report(index, label, "decision=%s" % decision, reason)
 
 
+def build_gh_stub(work: str, number: str) -> str:
+    # a PATH stub is the only way to reach the allow path -- a fixture repo has no PR
+    directory = os.path.join(work, "ghstub")
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "gh")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/sh\necho %s\n" % number)
+    os.chmod(path, 0o755)
+    return directory
+
+
+def gh_stub_env(directory: str) -> dict:
+    return {"PATH": directory + os.pathsep + os.environ.get("PATH", "")}
+
+
+def bash_case_env(label: str, want: str, command: str, env: dict,
+                  must_contain: str = "") -> None:
+    index = allocate()
+    payload = bash_payload(command, cwd=FIXTURES["main"])
+    submit(decision_case, index, label, want, payload, must_contain, "", None, None, env)
+
+
 def build_fixtures() -> None:
     work = WORKDIR[0]
     FIXTURES["main"] = os.path.join(work, "fixture-main")
@@ -2467,6 +2522,7 @@ def build_fixtures() -> None:
     FIXTURES["outside2"] = os.path.join(work, "outside-repo-2")
     FIXTURES["comments_copy"] = os.path.join(work, "cw")
     FIXTURES["comments_alias"] = os.path.join(work, "Comments.PY")
+    FIXTURES["ghstub"] = build_gh_stub(work, "64")
 
     seeded_repo(FIXTURES["main"])
     os.makedirs(os.path.join(FIXTURES["main"], "claude-code"))

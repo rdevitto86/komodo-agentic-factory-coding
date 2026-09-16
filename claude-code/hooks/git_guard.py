@@ -125,6 +125,11 @@ GH_ALLOWED = {
     "extension": {"list"},
 }
 GH_API_WRITE_FLAGS = ("-X", "--method", "-f", "--raw-field", "-F", "--field", "--input")
+
+# the one gh api write with no gh equivalent -- gh pr comment has no --in-reply-to
+GH_API_REPLY_PATH = re.compile(
+    r"^repos/[^/]+/[^/]+/pulls/(?P<pr>\d+)/comments/\d+/replies/?$"
+)
 # `pr edit`/`pr comment` take a PR number as their first positional and
 # reach outside the agent's own branch if left unscoped — verified
 # against the branch's own open PR before either is allowed through.
@@ -948,15 +953,50 @@ def current_branch_pr_number():
     return value or None
 
 
+def gh_api_method(tokens):
+    # gh defaults to POST once a field flag is present, so an absent -X is still a write
+    for index, token in enumerate(tokens):
+        if token.startswith("--method="):
+            return token.split("=", 1)[1].upper()
+        if token in ("-X", "--method") and index + 1 < len(tokens):
+            return tokens[index + 1].upper()
+    return "POST"
+
+
+def gh_api_write_violation(tokens, rest):
+    path = next(
+        (arg for arg in rest if not arg.startswith("-") and arg != "api"), None
+    )
+    if path is None:
+        return "gh api write requests are denied"
+    match = GH_API_REPLY_PATH.match(path.strip("\"'").lstrip("/"))
+    if match is None:
+        return "gh api write requests are denied"
+    if gh_api_method(tokens) != "POST":
+        return "gh api write requests are denied"
+    own_pr = current_branch_pr_number()
+    if own_pr is None:
+        return "gh api reply couldn't confirm this branch's own PR number"
+    if match.group("pr") != own_pr:
+        return "gh api reply reaches PR #%s, not this branch's own (#%s)" % (
+            match.group("pr"),
+            own_pr,
+        )
+    return None
+
+
 def gh_violation(tokens):
     group, rest = subcommand_of(tokens, GH_GLOBAL_VALUE_FLAGS)
     if group is None:
         return None
     if group == "api":
-        for token in tokens:
-            if token in GH_API_WRITE_FLAGS or token.startswith("--method="):
-                return "gh api write requests are denied"
-        return None
+        writes = any(
+            token in GH_API_WRITE_FLAGS or token.startswith("--method=")
+            for token in tokens
+        )
+        if not writes:
+            return None
+        return gh_api_write_violation(tokens, rest)
     if group not in GH_ALLOWED:
         return "gh %s is denied" % group
     allowed = GH_ALLOWED[group]
