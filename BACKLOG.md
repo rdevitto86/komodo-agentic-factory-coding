@@ -112,23 +112,6 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.1.15.1` | `[Impl]` | filed by this band's `/assess-bugs`. `python3 scripts/evals.py -- --list` — the forwarding form the file's own header documents — matches the `"--list" in argv` test before the `--` branch is ever reached, so it prints the covered set and exits 0 instead of forwarding `--list` to `claude plugin eval` | `python3 scripts/evals.py --list` |
 
-#### [TSK-01.1.16] `build_settings` matches a hook command by suffix, so the one command carrying a subcommand keeps an unexpanded `~` and installs dead [P: H] [TODO]
-
-**User Story:**
-> **As** someone installing on Windows or a box without `python3` on `PATH`,
-> **I want** every generated hook command to carry an absolute interpreter and path,
-> **So that** the comment lint runs instead of failing silently on the one platform the generate strategy exists for.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Every command rewritten):** Given a `--settings generate` install, when the generated `settings.json` is read, then every hook command names an absolute path and no literal `~`.
-- [x] **AC-2 (Subcommand preserved):** Given the `comments.py hook` registration, when it is rewritten, then its `hook` subcommand survives the rewrite.
-- [x] **AC-3 (Test names the command):** Given `scripts/test_install.py`, when `I2` fails, then it names which hook command was not rewritten rather than reporting only that a tilde exists somewhere.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.1.16.1` | `[Impl]` | `scripts/install.py:132` resolves a hook name with `command.endswith(n + ".py")`, which can never match `python3 ~/.claude/hooks/comments.py hook` because of the trailing subcommand — so that one entry falls through the rewrite untouched. Reproduced this session: a `--settings generate` install emits `"command": "python3 ~/.claude/hooks/comments.py hook"`, and `~` does not expand in a hook command, so the `PostToolUse` comment lint never fires on exactly the platforms `settings_strategy` picks `generate` for. Match the script token rather than the whole command string, and preserve every argument after it | `python3 scripts/test_install.py`; `python3 scripts/verify.py` |
-| `SUB-01.1.16.2` | `[UnitTest]` | `I2` currently greps the whole generated file for `~`, which caught this but cannot say which command was wrong. Assert per-command: every entry under `hooks` names an absolute interpreter and an absolute script path, and the `comments.py` entry still ends in its `hook` subcommand | `python3 scripts/test_install.py` reports `I2` passing |
-
 #### [TSK-01.1.17] The repo ships no `LICENSE` and no `SECURITY.md`, while its installer symlinks the clone into `~/.claude` where every file executes as a hook [P: H] [TODO]
 | Field | Value |
 |---|---|
@@ -320,23 +303,6 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 ### [TG-01.7] Cross-Platform Portability
 * **Target Release:** V1
 * **Context (2026-09-15):** every hook is already Python and `scripts/install.py` already ships, so the remaining non-portable surface is six shell files plus the `Makefile`. The sharp end is the gate itself — `verify_gate.py` resolves `.claude/verify.sh` → `make verify` → `task verify` → `just verify`, and three of those four do not exist on a stock Windows box. No preloaded binaries: `python3` 3.7+ is already the hard floor and a binary would *add* a setup step.
-
-#### [TSK-01.7.1] CI runs one job on `ubuntu-latest` at `python-version: "3.x"`, so neither the supported Windows path nor the declared 3.7 floor is ever exercised [P: H] [TODO]
-
-**User Story:**
-> **As** a maintainer changing the installer or a hook,
-> **I want** CI to run on every platform and interpreter the repo claims to support,
-> **So that** a break on a supported platform fails the PR instead of reaching a user's machine.
-
-**Acceptance Criteria:**
-- [x] **AC-1 (Platform matrix):** Given a PR, when `verify` runs, then it runs on Windows and macOS as well as Linux, and a failure on any one fails the check.
-- [x] **AC-2 (Floor exercised):** Given the Python floor `AGENTS.md` declares, when the matrix runs, then one leg pins that exact version rather than resolving to the latest.
-- [x] **AC-3 (Gate reachable):** Given the Windows leg, when it runs the repo's gate, then it invokes it by a path that exists on a stock Windows box.
-
-| Subtask | Category | Work | Done when |
-|---|---|---|---|
-| `SUB-01.7.1.1` | `[Impl]` | `.github/workflows/verify.yml` is a single job: `runs-on: ubuntu-latest`, `python-version: "3.x"`. Windows is a first-class documented platform — `docs/windows-install.md`, `scripts/install.py`'s copy fallback, and `test_install.py`'s `I3`/`I4` cases all exist for it — and has never run in CI, which is how `TSK-01.1.16` shipped. Add a `strategy.matrix` over the three runners; keep `fail-fast: false` so one platform's break does not mask another's | `grep -q windows-latest .github/workflows/verify.yml && grep -q macos-latest .github/workflows/verify.yml && grep -q ubuntu-latest .github/workflows/verify.yml` |
-| `SUB-01.7.1.2` | `[Impl]` | `make verify` is the workflow's current entry point and `make` is not on a stock Windows runner — `AGENTS.md` already records that `scripts/verify.py` leads the gate resolution order for exactly this reason. Invoke `python3 scripts/verify.py` directly in the workflow rather than the `Makefile` wrapper, and add a matrix leg pinning the 3.7 floor so the declared minimum is tested rather than asserted | `python3 scripts/verify.py`; `python3 scripts/validate.py` |
 
 #### [TSK-01.7.3] The `verify` workflow pulls its container and its actions by mutable tag, and persists the job token into a tree that then executes PR-authored code [P: M] [TODO]
 
