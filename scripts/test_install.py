@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import difflib
 import importlib.util
+import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -21,11 +23,18 @@ METACHAR_COMMAND = re.compile(
 
 PASSED = [0]
 FAILED = [0]
+SKIPPED = [0]
 
 SKIP_TICKET = "SUB-01.7.1.4"
 BASH_SKIP_REASON = "bash unavailable; scripts/hooks/git/install.sh stays shell"
 MAKE_SKIP_REASON = "make unavailable; the build-tool fallthrough needs one to run"
+WINDOWS_SKIP_REASON = "POSIX-only: depends on os.symlink or a POSIX-shaped absolute path, neither available on this platform"
 PRE_PUSH_VERIFY = os.path.join(LIVE_HOOK_DIR, "pre-push-verify")
+
+
+# true when the platform's own symlink and path rules, not this suite's, would decide the case
+def is_windows() -> bool:
+    return os.name == "nt" or sys.platform.startswith("win")
 
 
 def emit(text: str) -> None:
@@ -43,8 +52,12 @@ def failed(label: str, reason: str) -> None:
     FAILED[0] += 1
 
 
-def skip_case(label: str, reason: str) -> None:
-    emit("  SKIP  %s\n        %s (%s)\n" % (label, reason, SKIP_TICKET))
+def skip_case(label: str, reason: str, ticket: str = SKIP_TICKET) -> None:
+    if ticket:
+        emit("  SKIP  %s\n        %s (%s)\n" % (label, reason, ticket))
+    else:
+        emit("  SKIP  %s\n        %s\n" % (label, reason))
+    SKIPPED[0] += 1
 
 
 def record(label: str, problem: str) -> None:
@@ -80,36 +93,75 @@ def env_with(**overrides) -> dict:
     return env
 
 
+def load_json(path: str):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def first_bad_hook_command(settings: dict, hook_names: tuple) -> str:
+    for event_hooks in settings.get("hooks", {}).values():
+        for entry in event_hooks:
+            for hook in entry.get("hooks", []):
+                command = hook.get("command", "")
+                if "~" in command:
+                    return "%s -> literal '~' survived the rewrite" % command
+                tokens = shlex.split(command)
+                script_index = next(
+                    (
+                        i
+                        for i, token in enumerate(tokens)
+                        if any(token.endswith(n + ".py") for n in hook_names)
+                    ),
+                    None,
+                )
+                if script_index is None:
+                    return "%s -> no recognizable hook script in the command" % command
+                script = tokens[script_index]
+                if not os.path.isabs(script):
+                    return "%s -> script path '%s' is not absolute" % (command, script)
+                if script.endswith("comments.py") and tokens[script_index + 1 :] != ["hook"]:
+                    return "%s -> comments.py entry lost its 'hook' subcommand" % command
+    return ""
+
+
 def check_install(workdir: str, python3: str) -> None:
     emit("\ninstall\n\n")
 
-    stubbin = os.path.join(workdir, "stubbin-python-only")
-    os.makedirs(stubbin)
-    os.symlink(python3, os.path.join(stubbin, "python"))
-
     label = "I1 resolves python when python3 is absent from PATH"
-    target1 = os.path.join(workdir, "home1", ".claude")
-    rc, out = capture(
-        [os.path.join(stubbin, "python"), INSTALL, "--target", target1, "--skip-verify"],
-        env=env_with(PATH=stubbin),
-    )
-    if rc != 0:
-        failed(label, "exit %d: %s" % (rc, out))
-    elif '"command": "python /' not in read_text(os.path.join(target1, "settings.json")):
-        failed(label, "settings.json did not use the resolved 'python' interpreter")
+    if is_windows():
+        skip_case(label, WINDOWS_SKIP_REASON, "")
     else:
-        passed(label)
+        stubbin = os.path.join(workdir, "stubbin-python-only")
+        os.makedirs(stubbin)
+        os.symlink(python3, os.path.join(stubbin, "python"))
+        target1 = os.path.join(workdir, "home1", ".claude")
+        rc, out = capture(
+            [os.path.join(stubbin, "python"), INSTALL, "--target", target1, "--skip-verify"],
+            env=env_with(PATH=stubbin),
+        )
+        if rc != 0:
+            failed(label, "exit %d: %s" % (rc, out))
+        elif '"command": "python /' not in read_text(os.path.join(target1, "settings.json")):
+            failed(label, "settings.json did not use the resolved 'python' interpreter")
+        else:
+            passed(label)
 
     target2 = os.path.join(workdir, "home2", ".claude")
     rc, out = capture(
         [python3, INSTALL, "--target", target2, "--skip-verify", "--settings", "generate"]
     )
+    label = "I2 every generated hook command names an absolute script path, tilde-free, and comments.py keeps its subcommand"
     if rc != 0:
-        failed("I2 install with the real python3 exits 0", "exit %d: %s" % (rc, out))
-    elif "~" in read_text(os.path.join(target2, "settings.json")):
-        failed("I2 no literal tilde in generated settings.json", "tilde found")
+        failed(label, "exit %d: %s" % (rc, out))
     else:
-        passed("I2 no literal tilde in generated settings.json")
+        settings2 = load_json(os.path.join(target2, "settings.json"))
+        if settings2 is None:
+            failed(label, "settings.json did not parse as JSON")
+        else:
+            record(label, first_bad_hook_command(settings2, load_install_module().HOOK_NAMES))
 
     label = "I3 forced symlink failure falls back to copy and prints guidance"
     target3 = os.path.join(workdir, "home3", ".claude")
@@ -131,28 +183,34 @@ def check_install(workdir: str, python3: str) -> None:
     record(label, problem)
 
     label = "I4 a normal install still symlinks (macOS/Linux path unaffected)"
-    target4 = os.path.join(workdir, "home4", ".claude")
-    capture([python3, INSTALL, "--target", target4, "--skip-verify"])
-    hooks4 = os.path.join(target4, "hooks")
-    if os.path.islink(hooks4) and os.path.isfile(os.path.join(hooks4, "git_guard.py")):
-        passed(label)
+    if is_windows():
+        skip_case(label, WINDOWS_SKIP_REASON, "")
     else:
-        failed(label, "hooks was not a live symlink")
+        target4 = os.path.join(workdir, "home4", ".claude")
+        capture([python3, INSTALL, "--target", target4, "--skip-verify"])
+        hooks4 = os.path.join(target4, "hooks")
+        if os.path.islink(hooks4) and os.path.isfile(os.path.join(hooks4, "git_guard.py")):
+            passed(label)
+        else:
+            failed(label, "hooks was not a live symlink")
 
     label = "I5 symlinked directory entry is created with directory semantics"
-    target5 = os.path.join(workdir, "home5", ".claude")
-    capture([python3, INSTALL, "--target", target5, "--skip-verify"])
-    hooks5 = os.path.join(target5, "hooks")
-    problem = ""
-    if not os.path.islink(hooks5):
-        problem = "hooks was not a symlink"
-    if not problem and not os.path.isdir(hooks5):
-        problem = "symlinked hooks does not resolve to a directory"
-    if not problem and not os.path.isfile(os.path.join(hooks5, "git_guard.py")):
-        problem = "hooks/git_guard.py not reachable through symlinked directory"
-    if not problem and "target_is_directory" not in read_text(INSTALL):
-        problem = "install.py no longer requests target_is_directory"
-    record(label, problem)
+    if is_windows():
+        skip_case(label, WINDOWS_SKIP_REASON, "")
+    else:
+        target5 = os.path.join(workdir, "home5", ".claude")
+        capture([python3, INSTALL, "--target", target5, "--skip-verify"])
+        hooks5 = os.path.join(target5, "hooks")
+        problem = ""
+        if not os.path.islink(hooks5):
+            problem = "hooks was not a symlink"
+        if not problem and not os.path.isdir(hooks5):
+            problem = "symlinked hooks does not resolve to a directory"
+        if not problem and not os.path.isfile(os.path.join(hooks5, "git_guard.py")):
+            problem = "hooks/git_guard.py not reachable through symlinked directory"
+        if not problem and "target_is_directory" not in read_text(INSTALL):
+            problem = "install.py no longer requests target_is_directory"
+        record(label, problem)
 
     label = "I6 hook_path with a shell metacharacter is single-quoted, not left bare"
     target6 = os.path.join(workdir, "home6$(evil)", ".claude")
@@ -177,42 +235,48 @@ def check_install(workdir: str, python3: str) -> None:
         passed(label)
 
     label = "I9 a generate-strategy install names settings.json, not the whole-tree notice"
-    target9 = os.path.join(workdir, "home9", ".claude")
-    rc, out = capture(
-        [python3, INSTALL, "--target", target9, "--skip-verify", "--settings", "generate"]
-    )
-    problem = ""
-    if rc != 0:
-        problem = "exit %d: %s" % (rc, out)
-    if not problem and "fell back to copy mode" in out:
-        problem = "a deliberate generate printed the whole-tree copy-fallback notice: %s" % out
-    if not problem and "generated settings.json" not in out:
-        problem = "missing the settings-generated notice naming settings.json: %s" % out
-    if not problem and "re-sync with" not in out:
-        problem = "missing the re-sync instruction: %s" % out
-    if not problem and ("--target " + target9) not in out:
-        problem = "re-sync command did not carry the --target suffix: %s" % out
-    record(label, problem)
+    if is_windows():
+        skip_case(label, WINDOWS_SKIP_REASON, "")
+    else:
+        target9 = os.path.join(workdir, "home9", ".claude")
+        rc, out = capture(
+            [python3, INSTALL, "--target", target9, "--skip-verify", "--settings", "generate"]
+        )
+        problem = ""
+        if rc != 0:
+            problem = "exit %d: %s" % (rc, out)
+        if not problem and "fell back to copy mode" in out:
+            problem = "a deliberate generate printed the whole-tree copy-fallback notice: %s" % out
+        if not problem and "generated settings.json" not in out:
+            problem = "missing the settings-generated notice naming settings.json: %s" % out
+        if not problem and "re-sync with" not in out:
+            problem = "missing the re-sync instruction: %s" % out
+        if not problem and ("--target " + target9) not in out:
+            problem = "re-sync command did not carry the --target suffix: %s" % out
+        record(label, problem)
 
     label = "I10 a real all-symlink install prints neither re-sync notice"
-    stubbin10 = os.path.join(workdir, "stubbin-python3-only")
-    os.makedirs(stubbin10)
-    os.symlink(python3, os.path.join(stubbin10, "python3"))
-    target10 = os.path.join(workdir, "home10", ".claude")
-    rc, out = capture(
-        [python3, INSTALL, "--target", target10, "--skip-verify", "--settings", "link"],
-        env=env_with(PATH=stubbin10),
-    )
-    problem = ""
-    if rc != 0:
-        problem = "exit %d: %s" % (rc, out)
-    if not problem and not os.path.islink(os.path.join(target10, "settings.json")):
-        problem = "settings.json was not actually symlinked, so this is not the all-symlink case: %s" % out
-    if not problem and "fell back to copy mode" in out:
-        problem = "notice printed even though nothing fell back to copy: %s" % out
-    if not problem and "generated settings.json" in out:
-        problem = "notice printed even though settings.json was really symlinked: %s" % out
-    record(label, problem)
+    if is_windows():
+        skip_case(label, WINDOWS_SKIP_REASON, "")
+    else:
+        stubbin10 = os.path.join(workdir, "stubbin-python3-only")
+        os.makedirs(stubbin10)
+        os.symlink(python3, os.path.join(stubbin10, "python3"))
+        target10 = os.path.join(workdir, "home10", ".claude")
+        rc, out = capture(
+            [python3, INSTALL, "--target", target10, "--skip-verify", "--settings", "link"],
+            env=env_with(PATH=stubbin10),
+        )
+        problem = ""
+        if rc != 0:
+            problem = "exit %d: %s" % (rc, out)
+        if not problem and not os.path.islink(os.path.join(target10, "settings.json")):
+            problem = "settings.json was not actually symlinked, so this is not the all-symlink case: %s" % out
+        if not problem and "fell back to copy mode" in out:
+            problem = "notice printed even though nothing fell back to copy: %s" % out
+        if not problem and "generated settings.json" in out:
+            problem = "notice printed even though settings.json was really symlinked: %s" % out
+        record(label, problem)
 
 
 def assert_guard_rejected(label: str, clone: str, target: str, args: list, python3: str) -> None:
@@ -339,27 +403,30 @@ def check_destructive_paths(workdir: str, python3: str) -> None:
     emit("\ninstall.py destructive paths\n\n")
 
     label = "I7 a stale-named symlink pointing outside the repo survives the prune"
-    target7 = os.path.join(workdir, "home7", ".claude")
-    foreign = os.path.join(workdir, "somewhere-else")
-    os.makedirs(foreign)
-    os.makedirs(target7)
-    mine = os.path.join(target7, "docs")
-    os.symlink(foreign, mine)
-    ours = os.path.join(target7, "templates")
-    os.symlink(os.path.join(REPO_ROOT, "templates"), ours)
-    rc, out = capture([python3, INSTALL, "--target", target7, "--skip-verify"])
-    problem = ""
-    if rc != 0:
-        problem = "exit %d: %s" % (rc, out)
-    if not problem and not os.path.islink(mine):
-        problem = "a foreign ~/.claude/docs symlink was removed by the prune"
-    if not problem and os.path.realpath(mine) != os.path.realpath(foreign):
-        problem = "the foreign symlink was repointed"
-    if not problem and "kept   docs" not in out:
-        problem = "the prune did not report keeping the foreign link: %s" % out
-    if not problem and os.path.islink(ours):
-        problem = "a link into this repo's own tree was not pruned"
-    record(label, problem)
+    if is_windows():
+        skip_case(label, WINDOWS_SKIP_REASON, "")
+    else:
+        target7 = os.path.join(workdir, "home7", ".claude")
+        foreign = os.path.join(workdir, "somewhere-else")
+        os.makedirs(foreign)
+        os.makedirs(target7)
+        mine = os.path.join(target7, "docs")
+        os.symlink(foreign, mine)
+        ours = os.path.join(target7, "templates")
+        os.symlink(os.path.join(REPO_ROOT, "templates"), ours)
+        rc, out = capture([python3, INSTALL, "--target", target7, "--skip-verify"])
+        problem = ""
+        if rc != 0:
+            problem = "exit %d: %s" % (rc, out)
+        if not problem and not os.path.islink(mine):
+            problem = "a foreign ~/.claude/docs symlink was removed by the prune"
+        if not problem and os.path.realpath(mine) != os.path.realpath(foreign):
+            problem = "the foreign symlink was repointed"
+        if not problem and "kept   docs" not in out:
+            problem = "the prune did not report keeping the foreign link: %s" % out
+        if not problem and os.path.islink(ours):
+            problem = "a link into this repo's own tree was not pruned"
+        record(label, problem)
 
     label = "I8 a second backup in the same second does not clobber the first"
     install = load_install_module()
@@ -512,7 +579,9 @@ def main() -> int:
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
-    emit("\n  %d passed, %d failed\n\n" % (PASSED[0], FAILED[0]))
+    emit(
+        "\n  %d passed, %d failed, %d skipped\n\n" % (PASSED[0], FAILED[0], SKIPPED[0])
+    )
     return 1 if FAILED[0] else 0
 
 

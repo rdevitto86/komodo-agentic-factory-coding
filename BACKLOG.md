@@ -66,7 +66,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** a suite cannot pass locally and rot unnoticed on the branch.
 
 **Acceptance Criteria:**
-- [ ] **AC-1:** Given `make verify`, when it runs, then `scripts/test_install.py` executes and a failure in it fails the target.
+- [x] **AC-1:** Given `make verify`, when it runs, then `scripts/test_install.py` executes and a failure in it fails the target.
 - [ ] **AC-2:** Given the `verify` GitHub Actions workflow, when it runs on a PR, then that suite's result is visible in the run log.
 
 | Subtask | Category | Work | Done when |
@@ -111,6 +111,49 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
 | `SUB-01.1.15.1` | `[Impl]` | filed by this band's `/assess-bugs`. `python3 scripts/evals.py -- --list` — the forwarding form the file's own header documents — matches the `"--list" in argv` test before the `--` branch is ever reached, so it prints the covered set and exits 0 instead of forwarding `--list` to `claude plugin eval` | `python3 scripts/evals.py --list` |
+
+#### [TSK-01.1.17] The repo ships no `LICENSE` and no `SECURITY.md`, while its installer symlinks the clone into `~/.claude` where every file executes as a hook [P: H] [TODO]
+| Field | Value |
+|---|---|
+| Owner | `human` |
+
+**User Story:**
+> **As** someone evaluating whether this toolkit can be adopted at work,
+> **I want** stated licensing terms and a disclosure path,
+> **So that** installing it is a decision with known terms rather than an unreviewable one.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Licensed):** Given the repo root, when it is read, then a `LICENSE` file states the terms under which it may be used and redistributed.
+- [ ] **AC-2 (Disclosure path):** Given `SECURITY.md`, when it is read, then it names how to report a vulnerability and what the install's execution surface is.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.17.1` | `[Impl]` | the licence choice is a policy call, not an agent one — this subtask is blocked on the user naming it, then writing the file verbatim from that licence's canonical text. `README.md` also names no terms today | `test -f LICENSE` |
+| `SUB-01.1.17.2` | `[Impl]` | write `SECURITY.md`: how to report, and what an install actually grants. `scripts/install.py` symlinks `claude-code/` into `~/.claude`, so every file under `hooks/` runs as a `PreToolUse`/`PostToolUse`/`SessionStart` command on every tool call, and an upstream sync moves every session on the next start unless `--ref` pinned it. State the `--ref` pin as the mitigation it is | `test -f SECURITY.md`; `python3 scripts/validate.py` |
+
+#### [TSK-01.1.18] Every generated hook command names its interpreter by bare `PATH` name, so a directory ahead of `python3` on `PATH` displaces the `PreToolUse` guard on every tool call [P: H] [TODO]
+
+**User Story:**
+> **As** someone whose `PATH` includes a project-local or user-writable bin directory,
+> **I want** the installed hook commands to name the interpreter they were resolved against,
+> **So that** a shadowing binary cannot silently replace the guard that gates every Bash call.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Resolved, not named):** Given a generated `settings.json`, when a hook command is read, then its interpreter is the absolute path `resolve_interpreter` found, not a bare name.
+- [ ] **AC-2 (Decision recorded):** Given `check_python`'s existing comment that baking the bare name is intended, when this changes, then `docs/design-decisions.md` records why the trade flipped.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.18.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-security` pass. `resolve_interpreter` (`scripts/install.py:62-68`) calls `shutil.which(candidate[0])` purely as an existence test and returns the bare-name list, discarding the absolute path it just resolved; that list reaches `hook_command:123` and lands in `~/.claude/settings.json` as `python3 /abs/.claude/hooks/git_guard.py`. Any directory an attacker or a careless install can write that precedes the real interpreter — a project `.venv/bin`, a global npm bin, `~/.local/bin` — then runs on every `PreToolUse` Bash call, every `PostToolUse` Edit/Write and every `SessionStart`, and exiting 0 turns `git_guard.py`'s decision into a blanket allow. `check_python:114-115` documents the bare name as deliberate, so this is a recorded trade to revisit rather than an oversight; weigh it against the portability reason the comment gives before changing it | `python3 scripts/test_install.py` covers a generated command naming an absolute interpreter; `python3 scripts/verify.py` |
+
+#### [TSK-01.1.19] `build_settings` and its new test helper carry avoidable duplication, and a trailing-argument parameter whose annotation, default and body disagree [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.19.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-simplify` pass. `scripts/install.py:134-145` traverses the token list twice to learn two facts about one token — a generator with a nested `any()` finds the index, then a second defaultless `next()` re-tests the same token against `HOOK_NAMES` — writing the `token.endswith(n + ".py")` predicate twice. One generator yielding the `(index, name)` pair collapses it to a single scan with the predicate written once | `python3 scripts/test_install.py`; `python3 scripts/verify.py` |
+| `SUB-01.1.19.2` | `[Impl]` | `scripts/install.py:121-122`'s `trailing_args: list = ()` annotates a list, defaults to a tuple, and pays `list(trailing_args)` in the body to reconcile them; the default is never used, since `build_settings:148` is the only caller and always passes a list. Drop the default and the coercion | `python3 scripts/test_install.py` |
+| `SUB-01.1.19.3` | `[Impl]` | `scripts/test_install.py`'s new `load_json` exists for one call and forces a `None`-sentinel branch at the call site, re-expanding a ladder the neighbouring cases express as one `problem` string through `record`. Give `first_bad_hook_command` the path instead of the parsed dict and let a parse failure become one more returned problem string | `python3 scripts/test_install.py` |
+| `SUB-01.1.19.4` | `[Impl]` | `scripts/install.py:134`'s `shlex.split` raises `ValueError` on an unbalanced quote in a source hook command, which the replaced `str.endswith` test never could. It is reachable only from the repo's own tracked `claude-code/settings.json` and lands before `write_settings`, so the target keeps its previous file — an availability nuisance on a corrupt trusted file, not an attacker path. Decide whether to catch it and skip the entry, as the old test did silently, or let it fail loudly | `python3 scripts/test_install.py` |
 
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
@@ -159,6 +202,40 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.4.14.1` | `[Impl]` | filed by `TSK-01.4.13`'s band-review `/assess-simplify` pass: the classification added at `scripts/hooks/git/install.sh:42-58` sets `state="different"` for an existing-but-not-`$HOOK_DIR` path, but every branch below tests only `current` or `stale` — `different` and `unset` take the identical `else` in both `--status` and the install path. The `[ -d ]` stat and the absolute-vs-relative `case` are load-bearing only for the stale distinction. Two flags (`is_current`, `is_stale`) express the same behavior with no dead assignment | `python3 scripts/test_install.py` passes with `G1`-`G4` unchanged; `python3 scripts/validate.py` |
 
+#### [TSK-01.4.16] Read-only git is prompt-only for five of seven agents, and each of their files says so outright [P: M] [TODO]
+
+**User Story:**
+> **As** whoever relies on a fork not touching history,
+> **I want** the read-only git boundary enforced by the hook that already reads agent identity,
+> **So that** the rule holds when a fork's own instructions are ignored, not only when they are followed.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Enforced):** Given a `builder`, `tester`, `scout`, `researcher`, or `architect` fork, when it invokes a history-mutating git command, then `git_guard.py` denies it.
+- [ ] **AC-2 (Read path intact):** Given the same agents, when they invoke `log`, `diff`, `show`, `status`, `blame`, `rev-parse`, or `ls-files`, then the command is permitted.
+- [ ] **AC-3 (Orchestrator unaffected):** Given a primary session, when it commits or pushes, then nothing added here denies it.
+- [ ] **AC-4 (Docs match):** Given those five agent files, when their git bullet is read, then it no longer states that nothing enforces the rule.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.16.1` | `[Impl]` | `builder.md`, `tester.md`, `scout.md`, `researcher.md` and `architect.md` each carry the line "Nothing enforces this — `git_guard.py` permits those globally, so it holds only because this file says so." `TSK-01.4.9` already shipped the mechanism: a deny-by-default gate keyed on agent identity through `lib/agents.py`, applied to `reviewer`. Extend it to a per-agent allowed-subcommand set rather than a second parallel gate, and keep the primary session ungated — P2.2 commits there | `python3 scripts/test_hooks.py` |
+| `SUB-01.4.16.2` | `[UnitTest]` | cases per agent, both directions: a mutating subcommand denied and a read-only one permitted, for all five. Include the orchestrator case — no agent identity in the payload means permitted — so the gate cannot regress into blocking the loop's own commits | `python3 scripts/test_hooks.py` |
+| `SUB-01.4.16.3` | `[Impl]` | correct the five agent files' git bullet to state the mechanism, and `AGENTS.md`'s hook table where it describes what `git_guard.py` denies | `python3 scripts/validate.py`; `python3 scripts/verify.py` |
+
+#### [TSK-01.4.19] `git_guard.py` permits merging only a protected base, so a stacked PR cannot be synced from the branch it is actually based on [P: M] [TODO]
+
+**User Story:**
+> **As** someone running a multi-PR band the way `workflow-loop`'s P1 plans them,
+> **I want** to merge my PR's real base into my branch,
+> **So that** a stacked PR's checks run against the base it will actually merge into.
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given a branch whose pull request targets another feature branch, when that base is merged in, then the guard permits it.
+- [ ] **AC-2:** Given a protected ref, when it is the merge source or the merge target, then today's behaviour is unchanged.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.4.19.1` | `[Impl]` | hit live while publishing a two-PR run. `git merge <feature-branch>` is denied with "isn't the protected base branch", because the guard's merge rule admits only `main`/`master`/`trunk`/`prod`/`production` and the `release/*`/`hotfix/*` patterns as a merge source. That is right for the common case and wrong for a stack: `workflow-loop`'s P1 explicitly plans a run's PRs and queues a second band, and `git-pr-create`'s own lifecycle section describes merging "the protected base" with no stacked-PR story at all, so the toolkit plans for stacks and then blocks the one command that maintains them. The effect is that the second PR's checks run against a base it no longer matches, showing failures already fixed in the branch below it. Decide whether the guard should permit merging the branch that is actually the current PR's base — readable from `gh pr view --json baseRefName` — or whether stacking should be documented as unsupported and `git-pr-create` should say so | `python3 scripts/test_hooks.py` covers merging a non-protected base that is the current PR's own base; `python3 scripts/verify.py` |
+
 ### [TG-01.5] Review Precision & Model Tiering
 * **Target Release:** V1
 * **Context (2026-09-15):** the `Never invent a finding` prohibition is already in all nine `assess-*` skills and in `reviewer.md`, so the gap is not the missing rule — it is that only `assess-security` states a *positive* evidence bar. A negative rule cannot be complied with; a positive one can. Paired with the model tier, since no prompt change substitutes for the reviewer running on the weaker model.
@@ -182,6 +259,23 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
 | `SUB-01.5.4.1` | `[Impl]` | filed by `TSK-01.5.1`'s band-review `/assess-bugs` and `/assess-simplify` passes, which disagreed: `reviewer.md` and four skills each hand-write their own trigger/path/effect sentence, so an edit to the agent's wording has nothing to propagate from. `/assess-simplify` argued `assess-bugs`'s copy is pure duplication since it forks as `reviewer` and already inherits the agent's text — `assess-simplify`, the third fork skill, correctly got no copy. But `TSK-01.5.1`'s AC-4 explicitly required `assess-bugs` to state one, so removing it contradicts a shipped acceptance criterion. Resolve the tension deliberately: either amend the AC's intent in `docs/design-decisions.md` and drop the inherited copies, or keep them and record why the duplication is accepted | `python3 scripts/validate.py`; `make verify` |
+
+#### [TSK-01.5.5] Two questions `docs/design-decisions.md` records as OPEN both need evidence no live session can produce [P: M] [TODO]
+
+**User Story:**
+> **As** whoever next edits brief validation or model tiering,
+> **I want** both open questions answered from a source outside a live session,
+> **So that** the current design is a chosen one rather than the only one that could be reached.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Matcher settled):** Given the `PreToolUse`-on-`Task`/`Skill` question, when it is answered, then `docs/design-decisions.md` records the answer and its source.
+- [ ] **AC-2 (Override settled):** Given the skill-level `model:` override question, when it is answered, then the same file records the answer and its source.
+- [ ] **AC-3 (Consequence stated):** Given either answer, when it changes what the current design should be, then the follow-up is filed rather than left implied.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.5.5.1` | `[Audit]` | whether a `PreToolUse` matcher fires on `Task`/`Skill` decides where brief validation belongs. Today it lives in seven agent bodies, which means the orchestrator pays a full fork round trip to learn something decidable at dispatch. The session that tried to test it refused, correctly — registering the matcher means editing the live `settings.json` it is running under. Answer it from the Claude Code hook documentation or changelog, or from a throwaway repo opened as a fresh session; if the matcher fires, file the move and demote the agent-body rules to fallback | `grep -q 'PreToolUse' docs/design-decisions.md` and the section no longer reads `OPEN` |
+| `SUB-01.5.5.2` | `[Audit]` | whether a skill-level `model:` on a `context: fork` skill overrides the fork agent's frontmatter decides whether per-skill tiering is available at all. The in-session test failed by design: `reviewer` classified the self-report request as prompt injection and returned that as its finding, which is the hardening wanted. Do not re-run that prompt; answer from SDK or platform documentation | the same file records the answer and its source, and the section no longer reads `OPEN` |
 
 ### [TG-01.6] Agent Roster
 * **Target Release:** V1
@@ -225,6 +319,113 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 * **Target Release:** V1
 * **Context (2026-09-15):** every hook is already Python and `scripts/install.py` already ships, so the remaining non-portable surface is six shell files plus the `Makefile`. The sharp end is the gate itself — `verify_gate.py` resolves `.claude/verify.sh` → `make verify` → `task verify` → `just verify`, and three of those four do not exist on a stock Windows box. No preloaded binaries: `python3` 3.7+ is already the hard floor and a binary would *add* a setup step.
 
+#### [TSK-01.7.6] `scripts/test_hooks.py` fails on Windows across two subsystems, so that leg cannot gate until it is ported [P: H] [TODO]
+
+**User Story:**
+> **As** someone relying on the Windows CI leg,
+> **I want** the hook suite to run there,
+> **So that** a leg that reports red for known reasons either goes green or stops pretending to gate.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Green or skipped):** Given the `windows-latest` leg, when `scripts/test_hooks.py` runs, then every case either passes or reports a skip naming its missing precondition.
+- [ ] **AC-2 (Leg gates):** Given the matrix, when the Windows leg finishes, then its result blocks the merge like every other leg.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.6.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s first real CI run — the first time this suite has ever executed on anything but Linux. Three clusters fail on `windows-latest`: `G206`/`G207` (the `gh api` threaded-reply cases), `G137` (cwd outside any repo versus an absolute target landing inside one — a path-shape assumption), and `VG1`-`VG11`, the entire `verify_gate.py` block. Each is a POSIX assumption rather than a real defect in the code under test, but the count is large enough that porting them is its own task rather than a fix folded into the band that found them. Establish per cluster whether the right answer is a port or a documented skip; a skip must name its precondition the way `test_install.py`'s Windows guards now do | `python3 scripts/test_hooks.py` reports zero failures on `windows-latest` |
+| `SUB-01.7.6.2` | `[Impl]` | decided: `.github/workflows/verify.yml`'s `windows-latest` include entry carries its own `advisory: true` boolean, and the job's `continue-on-error` reads `${{ matrix.advisory \|\| false }}` so every other leg still defaults to blocking. The entry also carries `advisory-ticket: "TSK-01.7.6"`, and the comment above it points there rather than naming the ticket inline, since the comment lint's `EXTERNAL_REF` rule refuses a ticket token in a comment body. Flipping `advisory` back to `false` is this task's own `AC-2` and must not be forgotten | the workflow states which legs gate, and `python3 scripts/validate.py` exits zero |
+
+#### [TSK-01.7.8] A failed `git diff` silently widens `comments.py check` from changed lines to the whole repo [P: H] [TODO]
+
+**User Story:**
+> **As** someone whose gate depends on the comment lint scoping itself to a diff,
+> **I want** a failure to resolve that diff to be loud,
+> **So that** the lint cannot quietly start condemning history it was designed never to touch.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Loud, not wide):** Given a repository where `git diff` fails, when `comments.py check` runs without `--all`, then it reports that it could not resolve the diff and why, rather than scanning every file.
+- [ ] **AC-2 (Explicit still works):** Given `--all`, when it runs, then the whole-repo scan happens exactly as it does today.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.8.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s CI matrix on the `python:3.7` container leg, which reported `166 finding(s)` and failed the gate. `changed_line_map` (`claude-code/hooks/comments.py:296-305`) returns `None` on either an exception or a non-zero return code from `git diff`, and the caller reads `None` as "no diff information, scan everything". Inside the container the job runs as root against a workspace owned by another uid, so git refuses on dubious ownership and `git diff` exits non-zero — turning a changed-lines lint into a whole-repo one and condemning 166 pre-existing declarations. `AGENTS.md` states the changed-lines default exists precisely so the lint "never condemns a repo's existing history", so this fallback inverts the documented contract. Distinguish "resolved a diff, nothing changed" from "could not resolve a diff" and make only the first scan nothing and the second fail loudly naming git's own error | `python3 scripts/test_hooks.py` covers a failed `git diff` reporting rather than widening; `python3 scripts/verify.py` |
+
+#### [TSK-01.7.9] `check_setup_ref`'s `git clone --local` yields an empty working tree on the container leg, crashing the install suite [P: H] [TODO]
+
+**User Story:**
+> **As** whoever relies on the floor leg,
+> **I want** the install suite to survive a checkout shape it does not control,
+> **So that** the one leg testing the declared Python floor reports on the floor rather than on its own fixture setup.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (No crash):** Given any checkout shape CI produces, when `check_setup_ref` runs, then it either runs its cases or reports a skip naming the missing precondition — never an uncaught traceback.
+- [ ] **AC-2 (Leg gates):** Given the `python:3.7` leg, when the suite runs there, then the leg passes and blocks the merge like ubuntu and macOS.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.9.1` | `[Impl]` | surfaced by `TSK-01.7.1`'s matrix once the container leg got past its earlier comment-lint failure. `check_setup_ref` (`scripts/test_install.py:299-305`) runs `git clone --quiet --local <repo> <tmp>` and then immediately `shutil.copyfile(INSTALL, clone/scripts/install.py)`, which raises `FileNotFoundError: /tmp/.../clone/scripts/install.py` — the clone produced no working tree. It is container-specific: the `ubuntu-latest` leg passes with the identical `fetch-depth: 0` checkout and the identical detached HEAD, so neither of those is the cause on its own. `--local` hardlinks and the container's `/tmp` and the mounted workspace are different filesystems, which is the first thing to check. The crash is also uncaught, so one fixture failure takes down the whole suite rather than failing one case — fix that regardless of the cause, since `AC-1` is what stops a fixture problem from masking every real case behind it | `python3 scripts/test_install.py` runs to completion on the `python:3.7` container leg |
+| `SUB-01.7.9.2` | `[Impl]` | until `SUB-01.7.9.1` lands, decide whether this leg is advisory like `windows-latest` or stays blocking. Marking a second leg advisory is not free: two of four legs non-blocking is most of the matrix, and the whole point of `TSK-01.7.1` was that an untested platform is how a defect ships. Prefer fixing over flagging here, since unlike the Windows port this is one fixture function rather than two subsystems | the workflow states which legs gate, and `python3 scripts/validate.py` exits zero |
+
+#### [TSK-01.7.7] `G210` reads ambient `gh` state, so the hook suite's result depends on whether the checkout has an open PR [P: M] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given any machine, when `scripts/test_hooks.py` runs, then `G210`'s result does not depend on the ambient `gh` binary's authentication or on whether the current branch has an open pull request.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.7.1` | `[Impl]` | surfaced while fixing `TSK-01.7.1`'s CI failures. `current_branch_pr_number()` (`claude-code/hooks/git_guard.py:944`) shells out to `gh pr view` with no `cwd` override, so it inherits the real process cwd — the actual checkout, not `test_hooks.py`'s fixture repo. `G210` (`scripts/test_hooks.py:1532`) uses the plain `bash_case` helper and never stubs `gh`, unlike `G206`-`G209` which use `gh_stub_env`. Verified this session: `G210` fails on a machine where `gh` is authenticated and the branch has an open PR, and passes under `GH_CONFIG_DIR=<empty>`, which is CI's state since the workflow sets no `GH_TOKEN`. The suite is therefore not hermetic, and it went red locally the moment this branch's own PR was opened. Likely fix is threading `cwd` through to that `gh` call, or giving `G210` its own `gh_stub_env` | `python3 scripts/test_hooks.py` passes with `gh` authenticated and the branch carrying an open PR |
+
+#### [TSK-01.7.3] The `verify` workflow pulls its container and its actions by mutable tag, and persists the job token into a tree that then executes PR-authored code [P: M] [TODO]
+
+**User Story:**
+> **As** whoever relies on this repo's CI not being the weak link,
+> **I want** the gate's own supply chain pinned and its token not left in the workspace,
+> **So that** a re-pushed tag or a malicious pull request cannot reach the job that installs this toolkit.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Pinned):** Given the workflow, when its container image and action references are read, then each names an immutable digest or commit SHA.
+- [ ] **AC-2 (No persisted token):** Given a `pull_request` run, when PR-authored code executes, then no usable credential remains in the checkout.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.3.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-security` pass. The floor leg's `container: "python:3.7"` is a mutable Docker Hub tag, and every step in that leg — the repo's own installer included — runs as root inside whatever image that tag currently serves. `python:3.7` is also past end-of-life, so its base layers are no longer rebuilt. Pin by digest; note this interacts with `TSK-01.7.2`, which may remove the leg entirely | `grep -q 'python:3.7@sha256:' .github/workflows/verify.yml`, or the leg is gone per `TSK-01.7.2` |
+| `SUB-01.7.3.2` | `[Impl]` | `actions/checkout@v4` leaves `persist-credentials` at its default of `true`, writing an `x-access-token` extraheader into `$GITHUB_WORKSPACE/.git/config`; the steps that follow run `scripts/install.py` and `scripts/verify.py` out of the PR's own tree, and `verify.py` fans out to four more PR-controlled scripts. `permissions: contents: read` caps the blast radius, which is why this is Medium, but the band widened the window from one job to four. Set `persist-credentials: false` | `grep -q 'persist-credentials: false' .github/workflows/verify.yml` |
+| `SUB-01.7.3.3` | `[Impl]` | `actions/checkout@v4` and `actions/setup-python@v5` both resolve at run time to whatever commit their major tag points at. Both are GitHub-owned, which is why this is the lowest of the three, but the tj-actions/changed-files incident is the precedent. Pin both to a commit SHA with the version in a trailing comment | both action references in `.github/workflows/verify.yml` name a 40-character SHA |
+
+#### [TSK-01.7.4] The only merge gate runs no secret scan and no security static analysis [P: M] [TODO]
+
+**Acceptance Criteria:**
+- [ ] **AC-1:** Given a pull request adding a hardcoded credential, when the `verify` workflow runs, then the check fails rather than merging ungated.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.4.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-security` pass, and pre-existing rather than introduced by it. `scripts/verify.py`'s four checks are the hook regression suite, the config validator, the comment lint and the install regression suite; none reads for a credential or a security rule. `standards-cicd` makes the secret and static-analysis scans blocking on the merge. Dependency scanning does not apply — the repo ships no manifest or lockfile. Decide whether the scan belongs in the workflow or in `scripts/verify.py`, remembering that `verify.py` also runs on every dirty `builder` Stop and is currently an 11-second gate | the `verify` workflow fails a branch carrying a planted test credential; `python3 scripts/verify.py` |
+
+#### [TSK-01.7.5] The workflow's matrix carries a `python-version` key whose value is one constant, and the new `install` Makefile target collides with the GNU convention [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.5.1` | `[Impl]` | filed by `TSK-01.7.1`'s band-review `/assess-simplify` pass. `python-version` is the same literal on all three legs that read it and absent on the fourth, whose `setup-python` step is skipped anyway, so the matrix key buys an indirection over a constant. Dropping it leaves three bare `- os:` legs and the literal on the step. Weigh the lost self-documentation at the matrix before taking it | `python3 scripts/validate.py` |
+| `SUB-01.7.5.2` | `[Impl]` | `Makefile`'s new `install` target runs the install *test suite*, not `scripts/install.py`, so `make install` exits zero having installed nothing — a collision with the GNU convention that the sibling `test`/`validate`/`comments` targets do not have. Rename it, and update the root `AGENTS.md` "Working on this repo" list, which does not mention it either way | `make -n install` runs the suite under a name that does not read as an installer; `python3 scripts/validate.py` |
+
+#### [TSK-01.7.2] The declared Python 3.7 floor is three years past end-of-life and no hosted runner image can provide it, so CI tests it only inside a container [P: M] [TODO]
+| Field | Value |
+|---|---|
+| Owner | `human` |
+
+**User Story:**
+> **As** whoever maintains this repo's CI,
+> **I want** the declared interpreter floor to be one the platform can still supply,
+> **So that** testing the floor does not depend on a container leg standing in for a runner that no longer exists.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Decided):** Given the floor, when the decision is recorded, then `docs/design-decisions.md` states whether it stays at 3.7 or rises, and why.
+- [ ] **AC-2 (Consistent):** Given whichever floor is chosen, when `AGENTS.md`, `scripts/install.py`'s floor check, and the CI matrix are read, then all three name the same version.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.7.2.1` | `[Audit]` | surfaced by `TSK-01.7.1`'s round-2 implement pass. Verified live this session: `actions/setup-python` publishes no 3.7 build for Ubuntu 24.04, which is what `ubuntu-latest` resolves to, and the `ubuntu-22.04` label that used to carry one entered deprecation on 2026-09-17 with job-failing brownouts and full removal in April 2027. `TSK-01.7.1` therefore tests the floor in a `python:3.7` container, which is correct but is a workaround for a floor the platform has stopped supporting — 3.7 has been end-of-life since June 2023. The floor exists only because `subprocess.run(capture_output=...)` needs 3.7; nothing in this repo requires that it stay there. Raising it drops the container leg and simplifies the matrix, but narrows who can install without a newer interpreter, which is why this is a human call rather than an agent one | `docs/design-decisions.md` records the decision, and `python3 scripts/validate.py` exits zero |
+
 ### [TG-01.8] UI & Language Standards
 * **Target Release:** V1
 * **Context (2026-09-15):** `standards-ui-design` and `standards-ui-security` are web-only skills wearing generic names — the security one covers `postMessage`, iframes, and `frame-ancestors`, all browser. Merging design and security per platform follows the precedent the language skills already set (`assess-security` reads a Security section out of `standards-go`, and does not load a separate skill for it), and native-only mobile removes the one unsolved activation problem: with React Native out of scope, `**/*.tsx` is unambiguously web again. `standards-swift` and `standards-kotlin` landed 2026-09-15, defaulted off.
@@ -252,6 +453,22 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
 | `SUB-01.10.4.1` | `[Impl]` | filed by `TSK-01.10.2`'s band-review `/assess-security` pass, and deliberately mitigated rather than fixed there. The marker keys off the git common dir, so it is shared by every worktree of a checkout — which is what makes parallel forks work, and also what lets an unrelated concurrent session inherit the deferral, with no code path in its own flow that ever runs the full suite to compensate. It could not be fixed in that band because the Stop payload `verify_gate.py` receives carries only `stop_hook_active` and `cwd` — no session identifier exists to bind to. The window was cut from four hours to thirty minutes to bound the blast radius instead. Resolving this needs a session or band identifier that survives into the fork's Stop payload; establish whether one is available before designing, and if none is, record that and close this as won't-fix rather than inventing a token the orchestrator has to hand-manage | `python3 scripts/test_hooks.py` covers a marker written by one identity not deferring another's gate; `make verify` |
+
+#### [TSK-01.10.5] Loop phase timing is session-stated only, so this task group's own latency claim has no recorded measurement behind it [P: L] [TODO]
+
+**User Story:**
+> **As** whoever decides which latency lever to pull next,
+> **I want** phase and fork wall-clock to accumulate somewhere durable,
+> **So that** a change to the loop is measured against a baseline instead of argued from impression.
+
+**Acceptance Criteria:**
+- [ ] **AC-1 (Durable):** Given a completed loop run, when its timing is read, then it survives the session that produced it.
+- [ ] **AC-2 (Not in context):** Given the record, when a session starts, then reading it is opt-in and costs nothing in the always-on budget.
+- [ ] **AC-3 (Baseline stated):** Given at least one recorded run, when this task group's context is read, then its latency claim cites a measurement.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.10.5.1` | `[Impl]` | `workflow-loop/SKILL.md`'s guardrail has the orchestrator note each phase's and each fork's start and end wall-clock "session-stated, not a file", which is the same pattern as the retry counter and correct for a counter that only has to survive one band. Timing is different: its whole value is comparison across runs, and nothing accumulates today. This task group's own context asserts "a simple edit currently costs 30-60 minutes" with no run behind it. Decide where the record lives — a gitignored path under the OS temp dir keyed like the band-gate marker is the cheapest shape that does not touch the repo — then record it and cite a real run in the task group's context | the timing record survives a session end and `TG-01.10`'s context cites a measured run; `python3 scripts/validate.py` |
 
 ### [TG-01.11] Outcome Evidence
 * **Target Release:** V1

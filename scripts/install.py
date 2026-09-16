@@ -117,8 +117,10 @@ def check_python():
     return interpreter
 
 
-def hook_command(interpreter: list, hook_path: str) -> str:
-    return " ".join(shlex.quote(part) for part in interpreter + [hook_path])
+# joins the interpreter, hook script path, and any trailing arguments into one shell-quoted command string
+def hook_command(interpreter: list, hook_path: str, trailing_args: list = ()) -> str:
+    parts = interpreter + [hook_path] + list(trailing_args)
+    return " ".join(shlex.quote(part) for part in parts)
 
 
 def build_settings(source_settings_path: str, hooks_dir: str, interpreter: list) -> dict:
@@ -129,11 +131,21 @@ def build_settings(source_settings_path: str, hooks_dir: str, interpreter: list)
         for entry in event_hooks:
             for hook in entry.get("hooks", []):
                 command = hook.get("command", "")
-                name = next((n for n in HOOK_NAMES if command.endswith(n + ".py")), None)
-                if name is None:
+                tokens = shlex.split(command)
+                script_index = next(
+                    (
+                        i
+                        for i, token in enumerate(tokens)
+                        if any(token.endswith(n + ".py") for n in HOOK_NAMES)
+                    ),
+                    None,
+                )
+                if script_index is None:
                     continue
+                name = next(n for n in HOOK_NAMES if tokens[script_index].endswith(n + ".py"))
                 hook_path = os.path.join(hooks_dir, name + ".py")
-                hook["command"] = hook_command(interpreter, hook_path)
+                trailing_args = tokens[script_index + 1 :]
+                hook["command"] = hook_command(interpreter, hook_path, trailing_args)
 
     return settings
 

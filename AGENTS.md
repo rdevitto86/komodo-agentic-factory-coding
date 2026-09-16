@@ -100,7 +100,8 @@ python3 scripts/validate.py   # symlinks, frontmatter schema, token budget
 python3 scripts/install.py --dry-run   # preview the install
 python3 scripts/install.py             # install, then runs both of the above
 python3 claude-code/hooks/comments.py check   # comment lint
-python3 scripts/verify.py     # what the Stop gate runs: all three of the above
+python3 scripts/test_install.py   # installer regression suite
+python3 scripts/verify.py     # what the Stop gate runs: all four of the above
 make verify                   # thin wrapper around scripts/verify.py
 ```
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
-# verify.py - this repo's verify gate. Runs the hook regression suite, the config validator, and the
-# comment lint, in that order, stopping at the first failure.
+# verify.py - this repo's verify gate. Runs the hook regression suite, the config validator, the
+# comment lint, and the install regression suite, in that order, stopping at the first failure.
 #
 #   python3 scripts/verify.py
 #
@@ -17,6 +17,7 @@ CHECKS = (
     ("test", os.path.join("scripts", "test_hooks.py"), []),
     ("validate", os.path.join("scripts", "validate.py"), []),
     ("comments", os.path.join("claude-code", "hooks", "comments.py"), ["check"]),
+    ("install", os.path.join("scripts", "test_install.py"), []),
 )
 
 
