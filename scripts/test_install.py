@@ -176,6 +176,32 @@ def check_install(workdir: str, python3: str) -> None:
     else:
         passed(label)
 
+    label = "I9 a generate-strategy install prints the re-sync notice"
+    target9 = os.path.join(workdir, "home9", ".claude")
+    rc, out = capture(
+        [python3, INSTALL, "--target", target9, "--skip-verify", "--settings", "generate"]
+    )
+    problem = ""
+    if rc != 0:
+        problem = "exit %d: %s" % (rc, out)
+    if not problem and "fell back to copy mode" not in out:
+        problem = "missing the copy-fallback notice: %s" % out
+    if not problem and "re-sync with" not in out:
+        problem = "missing the re-sync instruction: %s" % out
+    if not problem and ("--target " + target9) not in out:
+        problem = "re-sync command did not carry the --target suffix: %s" % out
+    record(label, problem)
+
+    label = "I10 a successful all-symlink install does not print the re-sync notice"
+    target10 = os.path.join(workdir, "home10", ".claude")
+    rc, out = capture([python3, INSTALL, "--target", target10, "--skip-verify"])
+    problem = ""
+    if rc != 0:
+        problem = "exit %d: %s" % (rc, out)
+    if not problem and "fell back to copy mode" in out:
+        problem = "notice printed even though nothing fell back to copy: %s" % out
+    record(label, problem)
+
 
 def assert_guard_rejected(label: str, clone: str, target: str, args: list, python3: str) -> None:
     _, head_before = git(["rev-parse", "--abbrev-ref", "HEAD"], clone)

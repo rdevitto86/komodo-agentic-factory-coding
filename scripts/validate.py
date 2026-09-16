@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import os
 import re
@@ -91,6 +92,47 @@ def check_links(source: str, target: str) -> int:
             print("    missing   %s (run scripts/install.py)" % name)
             problems += 1
     return problems
+
+
+def load_install_module(repo_root: str):
+    spec = importlib.util.spec_from_file_location(
+        "install_for_validate", os.path.join(repo_root, "scripts", "install.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_settings_drift(source: str, target: str, repo_root: str) -> int:
+    print("")
+    print("  settings.json drift")
+    dest = os.path.join(target, "settings.json")
+    if not os.path.exists(dest):
+        print("    skip      settings.json not installed")
+        return 0
+    if os.path.islink(dest):
+        print("    ok        settings.json is a live symlink, drift check is moot")
+        return 0
+
+    install = load_install_module(repo_root)
+    interpreter = install.resolve_interpreter()
+    if not interpreter:
+        print("    skip      no working python interpreter found to rebuild settings.json")
+        return 0
+
+    entry = os.path.join(source, "settings.json")
+    expected = install.build_settings(entry, os.path.join(target, "hooks"), interpreter)
+    try:
+        actual = json.loads(read_text(dest))
+    except (OSError, ValueError):
+        print("    BROKEN    settings.json does not parse as JSON")
+        return 1
+
+    if actual == expected:
+        print("    ok        installed settings.json matches what build_settings would generate now")
+        return 0
+    print("    BROKEN    installed settings.json has drifted from source — rerun scripts/install.py")
+    return 1
 
 
 def check_hooks(source: str) -> int:
@@ -414,6 +456,7 @@ def main() -> int:
 
     problems = 0
     problems += check_links(source, target)
+    problems += check_settings_drift(source, target, repo_root)
     problems += check_hooks(source)
     problems += check_frontmatter(source)
     problems += check_document_names(source, repo_root)

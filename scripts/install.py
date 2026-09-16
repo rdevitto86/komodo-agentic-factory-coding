@@ -294,9 +294,10 @@ def install_settings(source: str, target: str, interpreter: list, strategy: str,
         return True
 
     print("    write  settings.json (generated for %s)" % " ".join(interpreter))
-    if not dry_run:
-        write_settings(target, build_settings(entry, os.path.join(target, "hooks"), interpreter))
-    return False
+    if dry_run:
+        return False
+    write_settings(target, build_settings(entry, os.path.join(target, "hooks"), interpreter))
+    return True
 
 
 def overlay(source: str, target: str, dry_run: bool) -> None:
