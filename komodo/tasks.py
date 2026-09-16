@@ -23,7 +23,7 @@ TASK_HEADING = re.compile(
 FENCE_OPEN = re.compile(r"^```(?:yaml|yml)\s*$")
 FENCE_CLOSE = re.compile(r"^```\s*$")
 LEGACY_STATUS = {"WIP": "IN_PROGRESS"}
-COMMAND_HINT = re.compile(r"^(go|npm|pnpm|bun|npx|python3?|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|bash|sh|\./|test\b|git\b)")
+COMMAND_HINT = re.compile(r"^(go|npm|pnpm|bun|npx|python3?|py\b|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|zig|swift|bash|sh|\./|/|\"|'|[A-Za-z]:[\\/]|test\b|git\b)")
 
 
 @dataclass

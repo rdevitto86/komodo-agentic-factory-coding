@@ -1,7 +1,8 @@
-import io
 import json
 import os
+import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -9,7 +10,9 @@ from komodo import pipeline, tasks
 from komodo.config import Config
 from komodo.workers import Result, Worker
 
-BACKLOG = """# Backlog
+PY = shlex.quote(sys.executable) if os.name != "nt" else '"%s"' % sys.executable
+
+BACKLOG_TEMPLATE = """# Backlog
 
 ### [TG-01.1] Greeting module
 ```yaml
@@ -20,24 +23,26 @@ type: feat
 ```yaml
 files: [pkg/greet.py]
 done_when:
-  - python3 -c "import pkg.greet as g; assert g.greet('x') == 'hello x'"
+  - PYEXE -c "import pkg.greet as g; assert g.greet('x') == 'hello x'"
 ```
 
 #### [TSK-01.1.2] Write the farewell [P: M] [TODO]
 ```yaml
 files: [other/bye.py]
 done_when:
-  - python3 -c "import other.bye as b; assert b.bye('x') == 'bye x'"
+  - PYEXE -c "import other.bye as b; assert b.bye('x') == 'bye x'"
 ```
 
 #### [TSK-01.1.3] Wire both [P: M] [TODO]
 ```yaml
 files: [app.py]
 done_when:
-  - python3 app.py
+  - PYEXE app.py
 depends_on: [TSK-01.1.1, TSK-01.1.2]
 ```
 """
+
+BACKLOG = BACKLOG_TEMPLATE.replace("PYEXE", PY)
 
 FILES = {
     "TSK-01.1.1": ("pkg/greet.py", '"""Greetings."""\n\n\ndef greet(name):\n    """Returns a greeting for name."""\n    return "hello " + name\n'),

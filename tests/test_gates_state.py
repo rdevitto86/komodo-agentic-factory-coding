@@ -1,9 +1,16 @@
 import os
+import shlex
+import sys
 import tempfile
 import time
 import unittest
 
 from komodo import gates, state
+
+PY = shlex.quote(sys.executable) if os.name != "nt" else '"%s"' % sys.executable
+OK = '%s -c "import sys; sys.exit(0)"' % PY
+FAIL = '%s -c "import sys; sys.exit(1)"' % PY
+SLOW = '%s -c "import time; time.sleep(3)"' % PY
 
 
 class GateTests(unittest.TestCase):
@@ -20,10 +27,10 @@ class GateTests(unittest.TestCase):
 
     def test_run_gate_stops_at_first_failure(self):
         with tempfile.TemporaryDirectory() as root:
-            gate = gates.run_gate("done_when", ["true", "false", "true"], root, timeout=10)
+            gate = gates.run_gate("done_when", [OK, FAIL, OK], root, timeout=10)
             self.assertFalse(gate.ok)
             self.assertEqual(len(gate.results), 2)
-            self.assertEqual(gate.failures()[0].command, "false")
+            self.assertEqual(gate.failures()[0].command, FAIL)
 
     def test_run_gate_skips_empty(self):
         with tempfile.TemporaryDirectory() as root:
@@ -33,7 +40,7 @@ class GateTests(unittest.TestCase):
 
     def test_timeout_is_a_failure(self):
         with tempfile.TemporaryDirectory() as root:
-            result = gates.run_command("sleep 2", root, timeout=1)
+            result = gates.run_command(SLOW, root, timeout=1)
             self.assertEqual(result.returncode, 124)
             self.assertIn("timed out", result.output)
 
