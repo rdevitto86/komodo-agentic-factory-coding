@@ -82,6 +82,36 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 |---|---|---|---|
 | `SUB-01.1.7.1` | `[Impl]` | surfaced by `/assess-bugs` at TSK-01.1.3's band review: `backlog-modify` and `docs/design-decisions.md` both acknowledge the failure mode ("a backlog defect, not a sweep the gate should quietly let through") but nothing enforces the mapping at write time — `backlog-plan`'s decomposition constraints don't check it, and no lint exists. Recoverable only by a human manually ticking the box. Deliberately not fixed in the same band since it's an acknowledged, intentional trade-off rather than a defect | `python3 scripts/validate.py` |
 
+#### [TSK-01.1.11] `scripts/validate.py` opens and re-reads every `SKILL.md` five separate times per run, inside the gate that fires on every dirty `builder` Stop [P: M] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.11.1` | `[Impl]` | filed by this band's `/assess-simplify`. `check_frontmatter`, `check_document_names`, `check_reachability`, `check_section_order` and `check_budget` each walk `claude-code/skills/` and read every `SKILL.md` from scratch — roughly 67 skills x 5 opens — and `check_reachability` parses frontmatter a second time for a file whose full text it already holds. Four of the five reads predate this band, which added the fifth, so this is pre-existing architecture rather than a defect the band introduced — filed, not fixed in-band. One `load_skills()` pass returning `{name: (body, head, fm)}` collapses it. The `head = body.split("---")[1]` + `DMI.search(head)` pair is also written out verbatim twice | `python3 scripts/verify.py` |
+
+#### [TSK-01.1.12] `scripts/validate.py`'s eight check functions hand-roll the same section-header and verdict idiom, and have already drifted into two incompatible return contracts [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.12.1` | `[Impl]` | filed by this band's `/assess-simplify`. `check_links` and `check_hooks` return a raw problem count while the other six return 0-or-1, and `main` sums both into one `%d problem(s)` line that therefore means two different things. This band added the eighth hand-written copy of the idiom. A `section(name)` helper plus a `verdict(failures, ok_message) -> int` forces one contract so the ninth check cannot invent a third | `python3 scripts/verify.py` |
+
+#### [TSK-01.1.13] `scripts/evals.py` hand-rolls `shutil.which` and types out a skill list that is already derivable from disk [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.13.1` | `[Impl]` | filed by this band's `/assess-simplify`. `claude_on_path()` walks `os.environ["PATH"]` by hand — `shutil.which`, already imported in `scripts/install.py`, does it and handles `PATHEXT` on Windows. Separately, `COVERED_SKILLS` hard-codes five names whose `evals/` directories are on disk and can be scanned, so `--list` prints what someone remembered to add rather than what will actually run; the per-skill reason prose belongs only in `docs/design-decisions.md`, which already carries it | `python3 scripts/evals.py --list` |
+
+#### [TSK-01.1.14] `scripts/validate.py`'s new orphan-skill check keys on `argument-hint:` as a proxy for slash reachability, never on `user-invocable` [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.14.1` | `[Impl]` | filed by this band's `/assess-bugs`. A skill that is `disable-model-invocation: true`, path-ungated, and takes no arguments — so legitimately carries no `argument-hint:` — would be reported unreachable and fail the gate, blocking a `builder` fork's Stop, even though the user reaches it by typing `/name`. The three skills the check must not flag (`assess-change-risk`, `assess-code-conventions`, `repo-assess`) pass only because they happen to carry `argument-hint`. The proxy was chosen deliberately and verified against the current tree, but `user-invocable` is the field that actually decides it | `python3 scripts/validate.py` |
+
+#### [TSK-01.1.15] `scripts/evals.py` tests `--list` against raw argv, so it wins over the `--` passthrough its own header documents [P: L] [TODO]
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.15.1` | `[Impl]` | filed by this band's `/assess-bugs`. `python3 scripts/evals.py -- --list` — the forwarding form the file's own header documents — matches the `"--list" in argv` test before the `--` branch is ever reached, so it prints the covered set and exits 0 instead of forwarding `--list` to `claude plugin eval` | `python3 scripts/evals.py --list` |
+
 ### [TG-01.2] Token Efficiency
 * **Target Release:** V1
 * **Context (2026-09-09):** the always-on budget stays healthy (`scripts/validate.sh` tracks the figure). The bounded `git_guard.py` shell-parsing hardening pass this task group's last open task tracked is complete — all Critical substitution-scanner bypasses it surfaced (comment-boundary reset, `command`-prefix reparse detection, the `command -v`/`-V` false-positive, the `env` wrapper bypass, and the `extract_substitutions`/`split_segments` dedup) are closed as of `0.46.2` (see `CHANGELOG.md`). No task currently open in this task group.
@@ -217,6 +247,29 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 | Subtask | Category | Work | Done when |
 |---|---|---|---|
 | `SUB-01.10.4.1` | `[Impl]` | filed by `TSK-01.10.2`'s band-review `/assess-security` pass, and deliberately mitigated rather than fixed there. The marker keys off the git common dir, so it is shared by every worktree of a checkout — which is what makes parallel forks work, and also what lets an unrelated concurrent session inherit the deferral, with no code path in its own flow that ever runs the full suite to compensate. It could not be fixed in that band because the Stop payload `verify_gate.py` receives carries only `stop_hook_active` and `cwd` — no session identifier exists to bind to. The window was cut from four hours to thirty minutes to bound the blast radius instead. Resolving this needs a session or band identifier that survives into the fork's Stop payload; establish whether one is available before designing, and if none is, record that and close this as won't-fix rather than inventing a token the orchestrator has to hand-manage | `python3 scripts/test_hooks.py` covers a marker written by one identity not deferring another's gate; `make verify` |
+
+### [TG-01.11] Outcome Evidence
+* **Target Release:** V1
+* **Context (2026-09-15):** every check this repo runs proves the harness is *well-formed* — `test_hooks.py` proves the hooks behave, `validate.py` proves the prompt graph resolves, the budget check proves it is cheap. Nothing proves it produces better work than a bare session. Every design decision rests on the reasoning in `docs/design-decisions.md` rather than a measured effect, which is honest but means a regression in skill quality is invisible until someone notices bad output. The `skill-creator` plugin is already enabled in `settings.json` and ships eval and variance tooling; no skill has an eval suite. This is the single largest gap between this toolkit and one that can be trusted to stay good as it changes.
+
+#### [TSK-01.11.1] No skill has an eval suite, so skill quality is unmeasured and a regression is only visible as bad output someone happens to notice [P: H] [TODO]
+
+**User Story:**
+> **As** whoever edits a high-traffic skill next,
+> **I want** a suite that tells me whether the edit made its output better or worse,
+> **So that** a prompt change is a measured change rather than an argued one.
+
+**Acceptance Criteria:**
+- [x] **AC-1 (Traffic-ranked):** Given the skill library, when the eval targets are chosen, then they are the highest-traffic skills, named with the reason each was picked.
+- [x] **AC-2 (Runnable cold):** Given a clean checkout, when the eval command runs, then it executes without manual setup beyond what `README.md` already requires.
+- [ ] **AC-3 (Baseline recorded):** Given each covered skill, when its suite first runs, then its score and variance are recorded as the baseline to regress against. **Not done (2026-09-15):** the runner and all five suites shipped this band, but no eval has actually been run — no score or variance is recorded anywhere. Only the baseline run is outstanding; this task stays open until it lands.
+- [x] **AC-4 (Gate decided):** Given the baseline, when the gate question is settled, then `docs/design-decisions.md` records whether evals block `verify` or run on demand, and why.
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.11.1.1` | `[Audit]` | pick the covered set before writing anything. Rank by how often a skill actually runs and how much damage a silent regression does — `workflow-loop`, `backlog-modify`, `git-pr-create`, `write-comments`, and the `reviewer`-forked `assess-*` trio are the obvious candidates, but confirm against real usage rather than intuition. Cap the first pass at five: an eval suite nobody maintains is worse than none. Record the set and the reason for each under a `## Skill eval coverage` heading | `grep -q '^## Skill eval coverage' docs/design-decisions.md` |
+| `SUB-01.11.1.2` | `[Impl]` | build the suites against the `claude plugin eval` interface already on this machine, not an invented harness. Verified shape: cases are `<eval dir>/**/case.yaml`, or `prompt.md` plus `graders/*.md`, defaulting to `evals/`; the target resolves a path, a plugin name, or `plugin@marketplace`; `--trust-plugin` answers the first-run trust prompt so a non-interactive run does not hang; `--ablation with-without` adds the no-plugin baseline arm that makes a score meaningful. Add `scripts/evals.py` as this repo's own entry point so the invocation lives in one place the way `scripts/verify.py` already does, and confirm how a plain skills directory resolves as a target before committing to the path form | `python3 scripts/evals.py --list` |
+| `SUB-01.11.1.3` | `[Impl]` | run each suite, record its baseline score and variance beneath the same heading, and record the gate decision. `verify` is 9.2 s today and runs on every dirty `builder` Stop, so folding model-calling evals into it would change that gate's cost and latency character completely — default to a separate on-demand command and state that plainly rather than leaving it implied. Keep `scripts/evals.py` out of `scripts/verify.py`'s call graph | `python3 scripts/verify.py`; `grep -q 'evals do not gate verify' docs/design-decisions.md` |
 
 ---
 

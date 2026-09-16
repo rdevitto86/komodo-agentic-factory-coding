@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import os
 import re
@@ -64,7 +65,7 @@ def tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def check_links(source: str, target: str) -> int:
+def check_links(source: str, target: str, settings_generate_expected: bool) -> int:
     problems = 0
     print("  links")
     for name in listdir_sorted(source):
@@ -85,12 +86,54 @@ def check_links(source: str, target: str) -> int:
             print("    dangling  %s -> %s" % (name, os.readlink(link)))
             problems += 1
         elif os.path.exists(link):
-            print("    not-link  %s (real file, run scripts/install.py)" % name)
-            problems += 1
+            if name == "settings.json" and settings_generate_expected:
+                print("    ok        settings.json (generated for this platform, see drift check below)")
+            else:
+                print("    not-link  %s (real file, run scripts/install.py)" % name)
+                problems += 1
         else:
             print("    missing   %s (run scripts/install.py)" % name)
             problems += 1
     return problems
+
+
+def load_install_module(repo_root: str):
+    spec = importlib.util.spec_from_file_location(
+        "install_for_validate", os.path.join(repo_root, "scripts", "install.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_settings_drift(source: str, target: str, install, interpreter: list) -> int:
+    print("")
+    print("  settings.json drift")
+    dest = os.path.join(target, "settings.json")
+    if not os.path.exists(dest):
+        print("    skip      settings.json not installed")
+        return 0
+    if os.path.islink(dest):
+        print("    ok        settings.json is a live symlink, drift check is moot")
+        return 0
+
+    if not interpreter:
+        print("    skip      no working python interpreter found to rebuild settings.json")
+        return 0
+
+    entry = os.path.join(source, "settings.json")
+    expected = install.build_settings(entry, os.path.join(target, "hooks"), interpreter)
+    try:
+        actual = json.loads(read_text(dest))
+    except (OSError, ValueError):
+        print("    BROKEN    settings.json does not parse as JSON")
+        return 1
+
+    if actual == expected:
+        print("    ok        installed settings.json matches what build_settings would generate now")
+        return 0
+    print("    BROKEN    installed settings.json has drifted from source — rerun scripts/install.py")
+    return 1
 
 
 def check_hooks(source: str) -> int:
@@ -163,8 +206,11 @@ def check_frontmatter(source: str) -> int:
     for entry in listdir_sorted(agents_dir):
         if not entry.endswith(".md"):
             continue
-        _, count = one(os.path.join(agents_dir, entry), "agents/%s" % entry, AGENT_KEYS)
+        fm, count = one(os.path.join(agents_dir, entry), "agents/%s" % entry, AGENT_KEYS)
         failures += count
+        if fm and not fm.get("maxTurns"):
+            print("    BROKEN    agents/%s: missing maxTurns" % entry)
+            failures += 1
 
     if failures == 0:
         print("    ok        every skill and agent parses against the loader schema")
@@ -200,12 +246,14 @@ def check_reachability(source: str) -> int:
     skills_dir = os.path.join(source, "skills")
     unreachable = set()
     bodies = {}
+    fms = {}
     for entry in listdir_sorted(skills_dir):
         skill = os.path.join(skills_dir, entry, "SKILL.md")
         if not os.path.exists(skill):
             continue
         body = read_text(skill)
         bodies[entry] = body
+        fms[entry] = frontmatter(skill) or {}
         head = body.split("---")[1] if body.startswith("---") else ""
         if DMI.search(head):
             unreachable.add(entry)
@@ -225,6 +273,23 @@ def check_reachability(source: str) -> int:
                     print("    BROKEN    %s invokes `%s`, which carries disable-model-invocation: true "
                           "and cannot be reached via the Skill tool" % (entry, target))
                     failures += 1
+
+    named_by_sibling = set()
+    for entry, body in bodies.items():
+        for match in NAME.finditer(body):
+            target = match.group(1)
+            if target != entry and target in bodies:
+                named_by_sibling.add(target)
+
+    for entry in sorted(unreachable):
+        fm = fms.get(entry, {})
+        if "paths" in fm or "argument-hint" in fm:
+            continue
+        if entry in named_by_sibling:
+            continue
+        print("    BROKEN    %s carries disable-model-invocation: true, no paths:, no "
+              "argument-hint:, and no sibling skill names it — unreachable by any caller" % entry)
+        failures += 1
 
     if failures == 0:
         print("    ok        no skill body invokes a sibling it cannot reach")
@@ -390,8 +455,13 @@ def main() -> int:
     print("validate")
     print()
 
+    install = load_install_module(repo_root)
+    interpreter = install.resolve_interpreter()
+    settings_generate_expected = install.settings_strategy("auto", interpreter, False) == "generate"
+
     problems = 0
-    problems += check_links(source, target)
+    problems += check_links(source, target, settings_generate_expected)
+    problems += check_settings_drift(source, target, install, interpreter)
     problems += check_hooks(source)
     problems += check_frontmatter(source)
     problems += check_document_names(source, repo_root)
