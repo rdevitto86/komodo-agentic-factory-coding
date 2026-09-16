@@ -1,4 +1,4 @@
-.PHONY: verify test validate comments
+.PHONY: verify test validate comments install
 
 verify:
 	python3 scripts/verify.py
@@ -11,3 +11,6 @@ validate:
 
 comments:
 	python3 claude-code/hooks/comments.py check
+
+install:
+	python3 scripts/test_install.py

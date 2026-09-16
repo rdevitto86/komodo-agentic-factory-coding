@@ -66,7 +66,7 @@ Format and rules live in the `backlog-modify` skill — load it before editing t
 > **So that** a suite cannot pass locally and rot unnoticed on the branch.
 
 **Acceptance Criteria:**
-- [ ] **AC-1:** Given `make verify`, when it runs, then `scripts/test_install.py` executes and a failure in it fails the target.
+- [x] **AC-1:** Given `make verify`, when it runs, then `scripts/test_install.py` executes and a failure in it fails the target.
 - [ ] **AC-2:** Given the `verify` GitHub Actions workflow, when it runs on a PR, then that suite's result is visible in the run log.
 
 | Subtask | Category | Work | Done when |
