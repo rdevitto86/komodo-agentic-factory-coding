@@ -115,6 +115,25 @@ LEGACY = """### [TG-01.1] Cross-Cutting
 """
 
 
+LEGACY_FULL = """### [TG-01.1] Cross-Cutting
+
+#### [TSK-01.1.1] Old shape [P: M] [TODO]
+**Acceptance Criteria**
+- the refund lands in the ledger
+
+| Field | Value |
+|---|---|
+| Depends on | `TSK-01.1.0` |
+
+| Subtask | Category | Work | Done when |
+|---|---|---|---|
+| `SUB-01.1.1.1` | build | do a thing | `go build ./...` |
+| `SUB-01.1.1.2` | test | do another | `TEST_TIER=component go test ./...` |
+| `SUB-01.1.1.3` | test | do a third | `grep -q x f && go test ./...` |
+| `SUB-01.1.1.4` | docs | write it up | the doc reads well |
+"""
+
+
 class MigrateTests(unittest.TestCase):
     def test_migrate_builds_blocks_and_reports(self):
         text, report = tasks.migrate(LEGACY)
@@ -125,6 +144,25 @@ class MigrateTests(unittest.TestCase):
         self.assertEqual(task.fields["done_when_prose"], ["the doc reads well"])
         self.assertTrue(any("prose" in line for line in report))
         self.assertTrue(any("files list is empty" in line for line in report))
+
+    def test_migrate_keeps_the_task_body(self):
+        text, _ = tasks.migrate(LEGACY_FULL)
+        self.assertIn("**Acceptance Criteria**", text)
+        self.assertIn("- the refund lands in the ledger", text)
+        self.assertIn("| `SUB-01.1.1.1` | build | do a thing | `go build ./...` |", text)
+
+    def test_migrate_takes_the_last_cell_of_a_four_column_row(self):
+        text, _ = tasks.migrate(LEGACY_FULL)
+        task = tasks.parse(text).task("TSK-01.1.1")
+        self.assertEqual(
+            task.done_when,
+            ["go build ./...", "TEST_TIER=component go test ./...", "grep -q x f && go test ./..."],
+        )
+
+    def test_migrate_keeps_prose_out_of_done_when(self):
+        text, _ = tasks.migrate(LEGACY_FULL)
+        task = tasks.parse(text).task("TSK-01.1.1")
+        self.assertEqual(task.fields["done_when_prose"], ["the doc reads well"])
 
     def test_migrate_leaves_new_shape_alone(self):
         text, report = tasks.migrate(SAMPLE)
