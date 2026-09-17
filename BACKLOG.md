@@ -74,13 +74,6 @@ context: [komodo/standards/cicd.md#ci]
 type: feat
 ```
 
-#### [TSK-02.4.1] komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending [P: M] [DONE]
-```yaml
-files: [komodo/__main__.py, tests/test_cli.py]
-done_when:
-  - python3 -m unittest tests.test_cli -q
-```
-
 #### [TSK-02.4.2] bug: Only exit codes 126/127 are treated as broken, missing shell syntax errors [P: M] [TODO]
 ```yaml
 files:
@@ -218,18 +211,28 @@ context:
 type: fix
 ```
 
+#### [TSK-02.5.11] publish drops completed tasks from BACKLOG.md instead of marking them DONE [P: H] [TODO]
+```yaml
+files:
+  - komodo/pipeline.py
+  - komodo/tasks.py
+  - tests/test_pipeline.py
+  - tests/test_tasks.py
+done_when:
+  - python3 -m unittest tests.test_pipeline tests.test_tasks -q
+context:
+  - "a completed task belongs to git history and CHANGELOG.md, not the queue; publish calls tasks.set_status(DONE) and the entry is committed forever"
+  - "tasks.py needs a remove_task(text, task_id) that deletes the heading and its fenced block, and drops a group heading left with no tasks"
+  - "removing a task must also strip its id from every remaining depends_on, or lint fails with 'depends_on names unknown task' on the next run"
+  - "BLOCKED stays in the backlog: it is open work waiting on a human"
+type: refactor
+```
+
+
 
 ### [TG-02.6] Defects found reading the tree
 ```yaml
 type: fix
-```
-
-#### [TSK-02.6.1] Cover render.py and the CLI with tests [P: H] [DONE]
-```yaml
-files: [tests/test_render.py, tests/test_cli.py]
-done_when:
-  - python3 -m unittest tests.test_render tests.test_cli -q
-context: ["komodo/render.py and komodo/__main__.py carry no test file between them"]
 ```
 
 #### [TSK-02.6.2] publish picks the first pull request template it finds, not the last [P: M] [BLOCKED]
@@ -246,21 +249,6 @@ done_when:
   - python3 -m unittest tests.test_doctor_install -q
   - python3 -m komodo doctor
 context: ["AGENTS.md forbids a claude-code directory; CHANGELOG.md names it twelve times and doctor whitelists the prefix instead of flagging it"]
-```
-
-#### [TSK-02.6.4] Close the files doctor opens, so verify stops printing ResourceWarnings [P: L] [DONE]
-```yaml
-files: [komodo/doctor.py, tests/test_doctor_install.py]
-done_when:
-  - python3 -m unittest tests.test_doctor_install -q
-```
-
-#### [TSK-02.6.5] Remove the dead conditional in the builder commit path [P: L] [DONE]
-```yaml
-files: [komodo/pipeline.py]
-done_when:
-  - python3 -m unittest tests.test_pipeline -q
-context: ["both arms of the status assignment return DONE"]
 ```
 
 ### [TG-02.7] Go rewrite
