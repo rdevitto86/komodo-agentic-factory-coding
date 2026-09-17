@@ -73,6 +73,8 @@ Adding a provider is one file implementing `Worker.invoke`. Adding a tool's conf
 
 One reviewer pass over `git diff base...HEAD` with the bug, security, test-gap, simplify, narrative-comment, and undocumented-nonobvious classes in one brief. Findings at or above `severity_floor` become one repair brief; the rest are appended to `BACKLOG.md` as `[TODO]` tasks with the finding's file and the repo verify command as `done_when`. `fast` skips review under `min_diff_lines`.
 
+The pass also returns a blast-radius tier from `low` to `critical`: what the diff could break, scored separately from whether it already has a defect, so a wide change with no findings still scores high. Above `low-med` the reviewer runs the internal-dependency command the language standard names and reports what imports the changed files, or says the fan-out was judged rather than walked. The tier and its driving factor go into `report.md` and the PR body.
+
 ## One source, many adapters
 
 `komodo/rules/` holds the universal rules and the two procedure documents. `komodo/roles/` holds one file per role: a frontmatter with `tier`, `access`, and `session`, then a body, then a `## Worker output` contract and a `## Session output` contract. The worker system prompt is body plus worker output; an interactive agent is body plus session output. Model and effort never appear in a role; the active profile's tier supplies them.
