@@ -33,6 +33,19 @@ def resolve_interpreter() -> List[str]:
     return []
 
 
+def hook_scripts(policy: Dict[str, Any]) -> List[str]:
+    """The script or binary token of every hook command in a policy."""
+    scripts = []
+    for entries in (policy.get("hooks") or {}).values():
+        for entry in entries:
+            for hook in entry.get("hooks", []):
+                tokens = shlex.split(str(hook.get("command", "")))
+                index = next((i for i, token in enumerate(tokens) if "hooks/" in token or token.endswith(".py")), None)
+                if index is not None:
+                    scripts.append(tokens[index])
+    return scripts
+
+
 def rewrite_hook_commands(policy: Dict[str, Any], hooks_dir: str, interpreter: List[str]) -> Dict[str, Any]:
     """Points every hook command at an absolute, tilde-free path, prefixing the resolved interpreter only for a .py script."""
     for entries in (policy.get("hooks") or {}).values():
@@ -86,14 +99,21 @@ def _remove(path: str, dry_run: bool, rendered: bool = False) -> str:
 def install(target: Optional[str] = None, dry_run: bool = False, log=print, adapter: str = "claude", config=None) -> int:
     """Renders the adapter to a scratch directory, copies it into target, and generates settings.json."""
     target = os.path.abspath(os.path.expanduser(target or os.environ.get("AGENT_HOME") or os.path.join("~", ".claude")))
-    interpreter = resolve_interpreter()
-    if not interpreter:
-        log("no python >= %d.%d found on PATH; hooks would not run" % PYTHON_FLOOR)
-        return 1
     with tempfile.TemporaryDirectory() as scratch:
         written = adapters.render(adapter, scratch, config)
         log("rendered %s adapter: %d files" % (adapter, len(written)))
-        log("installing into %s (copy, not symlink) using %s" % (target, " ".join(interpreter)))
+        with open(os.path.join(scratch, "settings.policy.json"), encoding="utf-8") as handle:
+            policy = json.load(handle)
+        scripts = hook_scripts(policy)
+        compiled = sorted({os.path.basename(name) for name in scripts if not name.endswith(".py")})
+        interpreted = sorted({os.path.basename(name) for name in scripts if name.endswith(".py")})
+        interpreter = resolve_interpreter()
+        # Python is only a floor for the hooks that are still scripts; a fully compiled set installs without it.
+        if interpreted and not interpreter:
+            log("no python >= %d.%d found on PATH; %s would not run" % (PYTHON_FLOOR[0], PYTHON_FLOOR[1], ", ".join(interpreted)))
+            return 1
+        log("  hooks: %s" % ", ".join(["%s (compiled)" % name for name in compiled] + ["%s (python)" % name for name in interpreted]))
+        log("installing into %s (copy, not symlink) using %s" % (target, " ".join(interpreter) or "no interpreter"))
         root_marker = os.path.join(target, MARKER)
         rendered_before = os.path.exists(root_marker)
         if not dry_run:
@@ -113,8 +133,6 @@ def install(target: Optional[str] = None, dry_run: bool = False, log=print, adap
                     handle.write("rendered by komodo install; safe to replace\n")
             else:
                 shutil.copy2(source, dest)
-        with open(os.path.join(scratch, "settings.policy.json"), encoding="utf-8") as handle:
-            policy = json.load(handle)
         policy = rewrite_hook_commands(policy, os.path.join(target, "hooks"), interpreter)
         settings_path = os.path.join(target, "settings.json")
         existing: Dict[str, Any] = {}

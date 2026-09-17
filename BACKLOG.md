@@ -253,3 +253,12 @@ done_when:
   - python3 scripts/verify.py
 context: ["the Go source and prebuilt binaries already live under komodo/adapters/claude/hooks/; nothing renders them yet", "the adapter render loop copies only .py and writes text, so a binary needs a separate binary-safe copy path", "guard.py stays as the fallback for any platform without a committed binary"]
 ```
+
+#### [TSK-02.7.3] Compile every session hook for every platform so install needs no interpreter [P: M] [DONE]
+```yaml
+files: [komodo/install.py, komodo/adapters/claude/__init__.py, scripts/build-hooks.py, tests/test_hooks.py]
+done_when:
+  - python3 -m unittest tests.test_hooks -q
+  - python3 scripts/verify.py
+context: ["one binary with a guard and an inject subcommand replaces two scripts, so the target matrix costs one artifact per platform", "context_injector.py is ported to Go and both implementations are held to the same test cases", "install hard-failed on a missing python because a hook was still a script; the check now names the scripts that need one"]
+```

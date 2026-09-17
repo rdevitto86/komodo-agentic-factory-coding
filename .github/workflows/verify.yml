@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27.1"
-          cache-dependency-path: komodo/adapters/claude/hooks/guard/go.mod
+          cache-dependency-path: komodo/adapters/claude/hooks/src/go.mod
       - name: configure git identity for the test repos
         run: |
           git config --global user.email ci@example.com

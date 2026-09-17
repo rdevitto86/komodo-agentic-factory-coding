@@ -67,10 +67,21 @@ class InstallTests(unittest.TestCase):
             self.assertTrue(any("settings.json" in line for line in logs))
 
     def test_rewrite_leaves_a_binary_hook_uninterpreted(self):
-        policy = {"hooks": {"PreToolUse": [{"hooks": [{"command": "~/.claude/hooks/guard"}]}]}}
+        policy = {"hooks": {"PreToolUse": [{"hooks": [{"command": "~/.claude/hooks/komodo-hooks guard"}]}]}}
         out = install.rewrite_hook_commands(policy, "/x/hooks", ["python3"])
         command = out["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-        self.assertEqual(command, "/x/hooks/guard")
+        self.assertEqual(command, "/x/hooks/komodo-hooks guard")
+
+    def test_hook_scripts_separates_compiled_from_interpreted(self):
+        policy = {"hooks": {
+            "PreToolUse": [{"hooks": [{"command": "~/.claude/hooks/komodo-hooks guard"}]}],
+            "SessionStart": [{"hooks": [{"command": "python3 ~/.claude/hooks/context_injector.py"}]}],
+        }}
+        self.assertEqual(install.hook_scripts(policy), ["~/.claude/hooks/komodo-hooks", "~/.claude/hooks/context_injector.py"])
+
+    def test_install_needs_no_python_when_every_hook_is_compiled(self):
+        policy = {"hooks": {"PreToolUse": [{"hooks": [{"command": "~/.claude/hooks/komodo-hooks guard"}]}]}}
+        self.assertEqual([s for s in install.hook_scripts(policy) if s.endswith(".py")], [])
 
     def test_install_real_into_temp_preserves_personal(self):
         with tempfile.TemporaryDirectory() as target:
@@ -82,9 +93,9 @@ class InstallTests(unittest.TestCase):
                 settings = json.load(handle)
             self.assertEqual(settings["effortLevel"], "high")
             guard = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-            expected = "guard" if claude.host_guard() else "guard.py"
+            expected = claude.BINARY + " guard" if claude.host_binary() else "guard.py"
             self.assertTrue(guard.endswith(expected), guard)
-            self.assertEqual(os.path.isfile(os.path.join(target, "hooks", "guard")), bool(claude.host_guard()))
+            self.assertEqual(os.path.isfile(os.path.join(target, "hooks", claude.BINARY)), bool(claude.host_binary()))
             self.assertTrue(os.path.isfile(os.path.join(target, "AGENTS.md")))
             self.assertTrue(os.path.isfile(os.path.join(target, "standards", "go.md")))
             self.assertTrue(os.path.isdir(os.path.join(target, "skills", "komodo")))

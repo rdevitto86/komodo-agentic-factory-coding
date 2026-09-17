@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-compiles the Go hook binaries and records their checksums, so a committed binary stays provable against its source."""
+"""Cross-compiles the Go hook binary for every supported target and records their checksums, so a committed binary stays provable against its source."""
 
 from __future__ import annotations
 
@@ -12,12 +12,20 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SOURCE_DIR = os.path.join(REPO_ROOT, "komodo", "adapters", "claude", "hooks", "guard")
+SOURCE_DIR = os.path.join(REPO_ROOT, "komodo", "adapters", "claude", "hooks", "src")
 BIN_DIR = os.path.join(REPO_ROOT, "komodo", "adapters", "claude", "hooks", "bin")
 MANIFEST = os.path.join(BIN_DIR, "MANIFEST.sha256")
+BINARY = "komodo-hooks"
 
-# Expanding this list costs repository size on every rebuild; add a target when something actually runs there.
-TARGETS = (("darwin", "arm64"), ("linux", "amd64"))
+# Every platform Claude Code ships on, so no machine has to fall back to the Python hooks.
+TARGETS = (
+    ("darwin", "amd64"),
+    ("darwin", "arm64"),
+    ("linux", "amd64"),
+    ("linux", "arm64"),
+    ("windows", "amd64"),
+    ("windows", "arm64"),
+)
 
 # -buildvcs=false is the critical one: go otherwise stamps the commit hash and dirty flag into the binary.
 BUILD_FLAGS = ("-trimpath", "-buildvcs=false", "-ldflags", "-s -w")
@@ -25,7 +33,7 @@ BUILD_FLAGS = ("-trimpath", "-buildvcs=false", "-ldflags", "-s -w")
 
 def binary_name(goos: str, goarch: str) -> str:
     """The published file name for one target."""
-    return "guard-%s-%s%s" % (goos, goarch, ".exe" if goos == "windows" else "")
+    return "%s-%s-%s%s" % (BINARY, goos, goarch, ".exe" if goos == "windows" else "")
 
 
 def go_version() -> str:

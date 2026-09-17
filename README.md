@@ -86,7 +86,7 @@ flowchart TB
     subgraph Machine["Developer machine"]
         H1[pre-commit: no protected branch,<br/>no trailer, gofmt, comment lint]
         H2[pre-push: no protected ref,<br/>no force, repo verify gate]
-        G[guard.py: advisory PreToolUse<br/>in interactive sessions]
+        G[komodo-hooks guard: advisory PreToolUse<br/>in interactive sessions]
     end
     subgraph GitHub
         M([Merge button, human])
@@ -106,6 +106,7 @@ komodo/                the library and the orchestrator (stdlib only)
 ├── standards/         rule files per language and domain, injected by extension
 ├── briefs/            worker prompt template per role
 ├── adapters/claude/   renders ~/.claude from the above; owns its hooks and settings policy
+│   └── hooks/         guard.py, context_injector.py, the Go source in src/, prebuilt binaries in bin/
 ├── hooks/             pre-commit.py, pre-push.py, and the sh stubs Git runs
 ├── workers/           claude (headless CLI) and ollama adapters
 ├── pipeline.py        the phases
@@ -116,7 +117,9 @@ scripts/verify.py      the gate this repo runs
 templates/project/     AGENTS.md, CLAUDE.md, BACKLOG.md, CHANGELOG.md, komodo.json templates, docs/spec starters
 ```
 
-There is no hand-maintained Claude directory. `python3 -m komodo install` renders the adapter into `~/.claude`: `AGENTS.md`, one agent file per session role with model and effort from the active profile's tiers, two procedure skills built from `komodo/rules/`, a review skill from the reviewer role, one thin pointer skill per standard, the advisory guard, and a settings policy merged into your personal `settings.json`. Another tool gets another adapter with the same inputs.
+There is no hand-maintained Claude directory. `python3 -m komodo install` renders the adapter into `~/.claude`: `AGENTS.md`, one agent file per session role with model and effort from the active profile's tiers, two procedure skills built from `komodo/rules/`, a review skill from the reviewer role, one thin pointer skill per standard, the session hooks, and a settings policy merged into your personal `settings.json`. Another tool gets another adapter with the same inputs.
+
+The session hooks ship compiled. `komodo/adapters/claude/hooks/src/` is one Go program with a subcommand per hook; `scripts/build-hooks.py` cross-compiles it for darwin, linux, and windows on amd64 and arm64, and records a checksum manifest the verify gate rebuilds and compares. `install` copies the binary matching your machine and points `settings.json` at it, so the hooks need no interpreter. `guard.py` and `context_injector.py` still ship as the fallback for a platform with no committed binary, and the test suite runs every hook case against both so they cannot drift.
 
 ## Comments
 
@@ -128,7 +131,7 @@ Every public function gets a one-line doc comment. A private function gets one o
 python3 scripts/verify.py      # tests, validate, comment lint, doctor
 ```
 
-CI runs the same command on Ubuntu, macOS, and Windows, plus Python 3.9 on Ubuntu.
+CI runs the same command on Ubuntu for Python 3.12 and 3.9, on Windows for merges into `main`, and on macOS for the weekly sweep. Only the Ubuntu tier carries a Go toolchain, so only there does verify rebuild the hook binaries and prove they match the manifest.
 
 ## References
 

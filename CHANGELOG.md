@@ -5,6 +5,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ## [Unreleased]
 
 ### Added
+- The session hooks ship as one compiled Go binary, `komodo-hooks`, with a subcommand per hook. `context_injector.py` is ported to Go beside the guard, and `scripts/build-hooks.py` cross-compiles both for darwin, linux, and windows on amd64 and arm64
 - komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending
 
 ### Fixed
@@ -14,6 +15,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - Detect an unrunnable done_when on Windows, where cmd.exe does not use exit 126 or 127
 
 ### Changed
+- `komodo install` requires Python only for the hooks that are still scripts. Every platform with a committed binary installs without an interpreter, and the install log names which implementation each hook got instead of falling back silently
 - publish drops completed tasks from BACKLOG.md instead of marking them DONE; git history and the changelog hold what shipped
 - `komodo release --bump` promotes Unreleased to a dated version, opens a fresh Unreleased, and bumps `__version__`. Bare `--bump` reads the level off the changelog: a `Removed` section or a breaking bullet is major, an `Added` section is minor, anything else is patch. Plain `komodo release` still only tags
 
