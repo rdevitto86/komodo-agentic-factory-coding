@@ -20,7 +20,7 @@ A platform-agnostic agent library and harness. `komodo/` holds the rules, roles,
 ## Rules that hold here
 
 - **One source, rendered.** A rule, a role, or a standard is written once under `komodo/`. Nothing platform-specific is hand-maintained; an adapter renders it. No `claude-code/` directory may exist.
-- **Roles declare tiers, profiles map tiers to models.** A role says `tier: standard`; `komodo.json` says what `standard` means per profile. A model name never appears in a role file.
+- **Roles declare tiers, profiles map tiers to models.** A role says `tier: standard`; a profile says what `standard` means, defaulting in `komodo/config.py` and overridable in `komodo.json`. A model name never appears in a role file.
 - **Guarantees live in code.** `komodo/gitops.py` is the only git writer and refuses protected refs, force, amend, and trailers. Workers run with `worker_env()`, which strips every push credential.
 - **Nothing in `komodo/` imports outside the standard library.** Floor is Python 3.9.
 - **Standards are files, never inventory.** A standard names no live repo, port, URL, version, or path inside another codebase.

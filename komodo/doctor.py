@@ -62,8 +62,9 @@ def check_references(root: str) -> List[str]:
     basenames = _basenames(root)
     for path in _walk_markdown(root):
         relative = os.path.relpath(path, root).replace("\\", "/")
-        if relative.startswith(("docs/design-decisions", "CHANGELOG", "komodo/standards/")):
+        if relative.startswith(("docs/design-decisions", "CHANGELOG")):
             continue
+        paths_checked = not relative.startswith("komodo/standards/")
         try:
             text = open(path, encoding="utf-8", errors="ignore").read()
         except OSError:
@@ -79,7 +80,7 @@ def check_references(root: str) -> List[str]:
                 candidate = token.strip()
                 if candidate.startswith(("~", "$", "<", "http", "-")) or "*" in candidate or "{" in candidate or " " in candidate:
                     continue
-                if PATH_LIKE.match(candidate) and not _resolves(root, os.path.dirname(path), candidate, basenames):
+                if paths_checked and PATH_LIKE.match(candidate) and not _resolves(root, os.path.dirname(path), candidate, basenames):
                     if candidate.split("/")[0] in ("komodo", "claude-code", "scripts", "tests", "docs", "templates", ".github", "workers", "briefs", "standards", "hooks") or candidate.endswith(".py"):
                         problems.append("%s:%d: `%s` does not exist" % (relative, number, candidate))
             for name in SKILL_REF.findall(line):

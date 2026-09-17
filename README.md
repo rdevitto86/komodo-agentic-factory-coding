@@ -65,7 +65,7 @@ flowchart LR
 | Review | one reviewer over the group diff | 1 |
 | Publish, report | code and `gh` | 0 |
 
-Roles declare a tier (`light`, `standard`, `heavy`). Profiles in `komodo.json` or `.komodo/local.json` map tiers to a provider, model, and effort:
+Roles declare a tier (`light`, `standard`, `heavy`). Profiles map tiers to a provider, model, and effort. Three ship as defaults in `komodo/config.py`; `komodo.json` and `.komodo/local.json` override them:
 
 | Profile | light | standard | heavy | For |
 |---|---|---|---|---|
@@ -113,10 +113,10 @@ komodo/                the library and the orchestrator (stdlib only)
 └── __main__.py        CLI: run, status, tasks, comments, hooks, install, doctor, pr, release
 tests/                 unittest suites
 scripts/verify.py      the gate this repo runs
-templates/project/     AGENTS.md, BACKLOG.md, CHANGELOG.md, komodo.json, docs/spec starters
+templates/project/     AGENTS.md, CLAUDE.md, BACKLOG.md, CHANGELOG.md, komodo.json templates, docs/spec starters
 ```
 
-There is no hand-maintained Claude directory. `python3 -m komodo install` renders the adapter into `~/.claude`: `AGENTS.md`, one agent file per session role with model and effort from the active profile's tiers, three procedure skills built from `komodo/rules/`, one thin pointer skill per standard, the advisory guard, and a settings policy merged into your personal `settings.json`. Another tool gets another adapter with the same inputs.
+There is no hand-maintained Claude directory. `python3 -m komodo install` renders the adapter into `~/.claude`: `AGENTS.md`, one agent file per session role with model and effort from the active profile's tiers, two procedure skills built from `komodo/rules/`, a review skill from the reviewer role, one thin pointer skill per standard, the advisory guard, and a settings policy merged into your personal `settings.json`. Another tool gets another adapter with the same inputs.
 
 ## Comments
 

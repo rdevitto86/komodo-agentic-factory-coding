@@ -54,7 +54,7 @@ Measure first. An optimisation without a before/after number is unreviewable.
 
 ## Security standards
 
-Language-specific insecure-usage patterns for `/audit-security` to pull from, beyond the api-security standard's generic OWASP checklist.
+Language-specific insecure-usage patterns a security review pulls from, beyond the api-security standard's generic OWASP checklist.
 
 - **`FromSqlRaw`/`ExecuteSqlRaw` with an interpolated string is SQL injection**; use the parameterized overload (`FromSqlInterpolated` or explicit `SqlParameter`s) instead.
 - **`BinaryFormatter`/`ObjectStateFormatter`/`SoapFormatter` are unsafe on untrusted input** — .NET's own deserialization advisories name them directly; use a data-only serializer (`System.Text.Json`) for anything crossing a trust boundary.
