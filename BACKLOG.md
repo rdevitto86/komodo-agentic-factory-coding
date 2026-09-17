@@ -231,6 +231,15 @@ done_when:
 context: ["AGENTS.md forbids a claude-code directory; CHANGELOG.md names it twelve times and doctor whitelists the prefix instead of flagging it"]
 ```
 
+#### [TSK-02.6.4] `tasks migrate` deletes every task body, mis-splits four-column subtask tables, and misreads valid commands as prose [P: H] [TODO]
+```yaml
+files: [komodo/tasks.py, tests/test_tasks.py]
+done_when:
+  - python3 -m unittest tests.test_tasks -q
+  - python3 -m unittest tests.test_cli -q
+context: ["Three defects in migrate(), all reachable from `tasks migrate --write`. (1) Data loss: the loop consumes every line to the next # heading and emits only the heading plus a yaml block, so Acceptance Criteria, User Story, Evidence/Approach/Non-goals tables and the subtask table are deleted with no warning and no backup — --write makes it unrecoverable outside git. (2) LEGACY_ROW has three capture groups but the documented subtask table has four columns (Subtask, Category, Work, Done when); the trailing \\|\\s*$ anchor forces group(3) to span Work AND Done when, so every migrated done_when reads `Build the thing | `go build ./...` with the trailing backtick stripped from the wrong end. (3) COMMAND_HINT omits grep, !, and ENV=VALUE prefixes, so a cell holding `grep -q x f && go test ./...` or `TEST_TIER=component go test ./...` is filed as done_when_prose. Repro: a fixture with one task carrying ACs, a field table and a four-column subtask table returns only the heading and an empty done_when. Fix: preserve the body verbatim below the block, split the row on unescaped pipes and take the last cell, and widen COMMAND_HINT. Found while making komodo-auth-api and komodo-forge-sdk-go harness-runnable (2026-09-17); both were converted with a one-off script instead."]
+```
+
 ### [TG-02.7] Go rewrite
 ```yaml
 type: refactor
