@@ -14,6 +14,9 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - Remove the dead conditional in the builder commit path
 - Detect an unrunnable done_when on Windows, where cmd.exe does not use exit 126 or 127
 
+### Removed
+- `.github/workflows/verify.yml`, and with it GitHub Actions from this repo. The same `python3 scripts/verify.py` runs on the developer machine through the `pre-push` hook, which refuses the push when it fails
+
 ### Changed
 - `komodo install` requires Python only for the hooks that are still scripts. Every platform with a committed binary installs without an interpreter, and the install log names which implementation each hook got instead of falling back silently
 - publish drops completed tasks from BACKLOG.md instead of marking them DONE; git history and the changelog hold what shipped

@@ -131,7 +131,7 @@ Every public function gets a one-line doc comment. A private function gets one o
 python3 scripts/verify.py      # tests, validate, comment lint, doctor
 ```
 
-CI runs the same command on Ubuntu for Python 3.12 and 3.9, on Windows for merges into `main`, and on macOS for the weekly sweep. Only the Ubuntu tier carries a Go toolchain, so only there does verify rebuild the hook binaries and prove they match the manifest.
+There is no CI. The gate runs on the developer's machine, installed by `python3 -m komodo hooks install .`, and `pre-push` refuses a push whose verify run fails. Rebuilding the hook binaries and proving them against the manifest is part of that run, so it needs a Go toolchain; without one, verify checks the committed checksums and says so.
 
 ## References
 
