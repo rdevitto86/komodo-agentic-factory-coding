@@ -357,14 +357,31 @@ def _read(path: str) -> str:
         return handle.read()
 
 
+def release_check(root: str, path: str, at_release: bool) -> int:
+    """Reports changelog and tag drift read-only, without touching the repo or the remote."""
+    from . import render
+
+    text = _read(path)
+    tags = subprocess.run(["git", "tag", "--list", "v*"], cwd=root, capture_output=True, text=True).stdout.split()
+    problems = render.changelog_drift(text, tags, at_release)
+    for version in render.never_released_versions(text):
+        print("note: %s is marked never released, so no tag is expected" % version)
+    for problem in problems:
+        print(problem)
+    print("release check: %d problem(s)" % len(problems))
+    return 1 if problems else 0
+
+
 def cmd_release(args: argparse.Namespace) -> int:
-    """komodo release [--bump major|minor|patch]: cut a version from Unreleased, or tag the newest one."""
+    """komodo release [check|--bump major|minor|patch]: audit drift, cut a version from Unreleased, or tag the newest one."""
     root = repo_root()
     config = load_config(root)
     path = os.path.join(root, str(config.get("changelog", "CHANGELOG.md")))
     if not os.path.isfile(path):
         print("no changelog at %s" % path, file=sys.stderr)
         return 2
+    if getattr(args, "action", None) == "check":
+        return release_check(root, path, args.at_release)
     if getattr(args, "bump", None):
         return cut_release(root, path, args.bump, args.dry_run)
     version = None
@@ -473,6 +490,8 @@ def build_parser() -> argparse.ArgumentParser:
     pr_parser.set_defaults(func=cmd_pr)
 
     release = sub.add_parser("release", help="cut a version from Unreleased, or tag the newest one")
+    release.add_argument("action", nargs="?", choices=("check",), help="check: report changelog and tag drift read-only, exiting non-zero on any")
+    release.add_argument("--at-release", action="store_true", dest="at_release", help="with check: also require a non-empty Unreleased section")
     release.add_argument("--bump", nargs="?", const="auto", choices=("auto", "major", "minor", "patch"), help="promote Unreleased to the next version instead of tagging; bare --bump reads the level off the changelog")
     release.add_argument("--dry-run", action="store_true")
     release.set_defaults(func=cmd_release)

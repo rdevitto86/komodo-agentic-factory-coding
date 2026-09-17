@@ -296,5 +296,62 @@ class InferBumpTests(unittest.TestCase):
         self.assertEqual(level, "patch")
 
 
+class PreservationTests(unittest.TestCase):
+    TEXT = "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
+
+    def test_released_versions_are_listed_newest_first(self):
+        self.assertEqual(render.released_versions(self.TEXT), ["0.2.0", "0.1.0"])
+
+    def test_a_write_that_only_adds_is_allowed(self):
+        after = render.cut_release(self.TEXT.replace("## [Unreleased]", "## [Unreleased]\n\n### Fixed\n- a fix"), "0.2.1", "2026-03-01")
+        render.assert_preserved(self.TEXT, after)
+
+    def test_a_write_that_drops_a_version_is_refused(self):
+        after = self.TEXT.replace("## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n", "")
+        with self.assertRaises(ValueError) as caught:
+            render.assert_preserved(self.TEXT, after)
+        self.assertIn("0.1.0", str(caught.exception))
+
+    def test_a_retitled_version_is_refused(self):
+        after = self.TEXT.replace("## [0.2.0] \u2014 2026-02-01", "## [0.3.0] \u2014 2026-03-01")
+        with self.assertRaises(ValueError) as caught:
+            render.assert_preserved(self.TEXT, after)
+        self.assertIn("0.2.0", str(caught.exception))
+
+    def test_a_never_released_version_is_not_taggable(self):
+        text = self.TEXT.replace("## [0.2.0] \u2014 2026-02-01", "## [0.2.0] \u2014 2026-02-01\n\n> Never released as its own tag; superseded by 0.3.0.")
+        self.assertEqual(render.taggable_versions(text), ["0.1.0"])
+        self.assertEqual(render.never_released_versions(text), ["0.2.0"])
+
+
+class ChangelogDriftTests(unittest.TestCase):
+    TEXT = "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
+
+    def test_a_clean_changelog_has_no_drift(self):
+        self.assertEqual(render.changelog_drift(self.TEXT, ["v0.1.0", "v0.2.0"]), [])
+
+    def test_an_entry_with_no_tag_is_drift(self):
+        problems = render.changelog_drift(self.TEXT, ["v0.1.0"])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("0.2.0", problems[0])
+        self.assertIn("git tag -a v0.2.0", problems[0])
+
+    def test_a_tag_with_no_entry_is_drift(self):
+        problems = render.changelog_drift(self.TEXT, ["v0.1.0", "v0.2.0", "v0.1.5"])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("v0.1.5 is tagged", problems[0])
+
+    def test_an_empty_unreleased_is_drift_only_at_release(self):
+        self.assertEqual(render.changelog_drift(self.TEXT, ["v0.1.0", "v0.2.0"], at_release=True)[0].count("Unreleased"), 1)
+        held = self.TEXT.replace("## [Unreleased]", "## [Unreleased]\n\n### Fixed\n- a fix")
+        self.assertEqual(render.changelog_drift(held, ["v0.1.0", "v0.2.0"], at_release=True), [])
+
+    def test_a_date_separator_mismatch_is_drift(self):
+        mixed = self.TEXT.replace("## [0.1.0] \u2014 2026-01-01", "## [0.1.0] - 2026-01-01")
+        problems = render.changelog_drift(mixed, ["v0.1.0", "v0.2.0"])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("separator mismatch", problems[0])
+
+
 if __name__ == "__main__":
     unittest.main()

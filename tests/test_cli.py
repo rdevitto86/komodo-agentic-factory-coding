@@ -396,5 +396,67 @@ class ReleaseBumpTests(unittest.TestCase):
         self.assertEqual(code, 2)
 
 
+class ReleaseCheckTests(unittest.TestCase):
+    CLEAN = "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
+
+    def _check(self, text, tags=(), args=()):
+        """Runs release check in a throwaway repo carrying text and tags, returning its code and output."""
+        with tempfile.TemporaryDirectory() as root:
+            git = make_repo(root)
+            with open(os.path.join(root, "CHANGELOG.md"), "w", encoding="utf-8") as handle:
+                handle.write(text)
+            for tag in tags:
+                git("tag", "-a", tag, "-m", tag)
+            with chdir(root):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    code = cli.main(["release", "check", *args])
+            return code, out.getvalue()
+
+    def test_a_clean_repo_exits_zero(self):
+        code, out = self._check(self.CLEAN, ["v0.1.0", "v0.2.0"])
+        self.assertEqual(code, 0, out)
+        self.assertIn("0 problem(s)", out)
+
+    def test_an_entry_with_no_tag_exits_non_zero(self):
+        code, out = self._check(self.CLEAN, ["v0.1.0"])
+        self.assertEqual(code, 1)
+        self.assertIn("git tag -a v0.2.0", out)
+
+    def test_a_tag_with_no_entry_exits_non_zero(self):
+        code, out = self._check(self.CLEAN, ["v0.1.0", "v0.2.0", "v0.1.5"])
+        self.assertEqual(code, 1)
+        self.assertIn("v0.1.5 is tagged", out)
+
+    def test_an_empty_unreleased_exits_non_zero_at_release(self):
+        code, out = self._check(self.CLEAN, ["v0.1.0", "v0.2.0"], ["--at-release"])
+        self.assertEqual(code, 1)
+        self.assertIn("Unreleased section is empty", out)
+
+    def test_a_date_separator_mismatch_exits_non_zero(self):
+        mixed = self.CLEAN.replace("## [0.1.0] \u2014 2026-01-01", "## [0.1.0] - 2026-01-01")
+        code, out = self._check(mixed, ["v0.1.0", "v0.2.0"])
+        self.assertEqual(code, 1)
+        self.assertIn("separator mismatch", out)
+
+    def test_a_never_released_version_is_a_note_not_a_problem(self):
+        text = self.CLEAN.replace("## [0.2.0] \u2014 2026-02-01", "## [0.2.0] \u2014 2026-02-01\n\n> Never released as its own tag; superseded by 1.0.0.")
+        code, out = self._check(text, ["v0.1.0"])
+        self.assertEqual(code, 0, out)
+        self.assertIn("note: 0.2.0 is marked never released", out)
+
+    def test_it_writes_nothing_and_needs_no_remote(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_repo(root)
+            with open(os.path.join(root, "CHANGELOG.md"), "w", encoding="utf-8") as handle:
+                handle.write(self.CLEAN)
+            before = open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8").read()
+            with chdir(root):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    cli.main(["release", "check"])
+            self.assertEqual(open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8").read(), before)
+            self.assertEqual(subprocess.run(["git", "tag"], cwd=root, capture_output=True, text=True).stdout, "")
+
+
 if __name__ == "__main__":
     unittest.main()

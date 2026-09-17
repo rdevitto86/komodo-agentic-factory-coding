@@ -5,10 +5,13 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ## [Unreleased]
 
 ### Added
+- New `python3 -m komodo release check`: a read-only release-integrity gate, wired into `make verify`, failing on a changelog entry with no tag, a tag with no changelog entry, a date-separator mismatch between headings, and, with `--at-release`, an empty Unreleased section
 - The session hooks ship as one compiled Go binary, `komodo-hooks`, with a subcommand per hook. `context_injector.py` is ported to Go beside the guard, and `scripts/build-hooks.py` cross-compiles both for darwin, linux, and windows on amd64 and arm64
 - komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending
 
 ### Fixed
+- Changelog writes carry a preservation invariant: `render.assert_preserved` refuses any `_write_changelog` or `_cut_version` write that drops a released version heading, which is how 0.46.5's Security entry was overwritten in place and lost. That entry is restored here from `v0.46.5`
+- Preflight tags every untagged changelog version, not only the newest, so a gap below the top heading (0.50.0 and 0.51.0 here, tagged over by v1.0.0) is no longer invisible. A heading or blockquote reading `never released` is skipped
 - `komodo run`'s close-out cuts the version instead of leaving bullets under `[Unreleased]` forever. Preflight tags a merged version no tag points at, and `komodo doctor` fails on a protected branch when `[Unreleased]` holds entries or the newest version is untagged
 - Cover render.py and the CLI with tests
 - Close the files doctor opens, so verify stops printing ResourceWarnings
@@ -160,6 +163,11 @@ The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose sta
 
 ### Changed
 - `claude-code/AGENTS.md`'s atomic-write rule for a live `hooks/` file now names the Edit/Write tool as the sanctioned path, since `git_guard.py` already blocks the shell `mv` sequence the rule previously prescribed.
+
+## [0.46.5] — 2026-09-10
+
+### Security
+- `reviewer`'s Bash surface is now deny-by-default: `git_guard.py` allows only read-only `git log`/`diff`/`show`/`status`/`blame`/`ls-files` (no global flag, no `--output`, no leading env-var assignment) and denies everything else outright, closing the whole class of bypass a prior series of comments.py-specific pattern fixes chased one signature at a time — including a live-confirmed arbitrary-code-execution path via `GIT_EXTERNAL_DIFF`.
 
 ## [0.46.4] — 2026-09-10
 

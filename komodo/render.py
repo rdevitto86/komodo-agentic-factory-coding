@@ -183,6 +183,81 @@ def has_unreleased_entries(text: str) -> bool:
     return False
 
 
+VERSION_HEADING = re.compile(r"^## \[(\d+\.\d+\.\d+[^\]]*)\][ \t]*(\S+)?[ \t]*(\d{4}-\d{2}-\d{2})?", re.M)
+NEVER_RELEASED = re.compile(r"never released", re.IGNORECASE)
+KEEP_A_CHANGELOG_SEPARATOR = "-"
+
+
+def released_versions(text: str) -> List[str]:
+    """Every version carrying a numbered changelog heading, newest heading first."""
+    return [match.group(1).strip() for match in VERSION_HEADING.finditer(text)]
+
+
+def assert_preserved(before: str, after: str) -> None:
+    """Raises when a changelog write would drop a released version heading."""
+    kept = set(released_versions(after))
+    lost = [version for version in released_versions(before) if version not in kept]
+    if lost:
+        raise ValueError("refusing a changelog write that drops released version(s): %s" % ", ".join(lost))
+
+
+def _heading_sections(text: str) -> List[Tuple[str, str, str]]:
+    """Each numbered heading as its version, its own line, and the lines under it up to the next heading."""
+    lines = text.splitlines()
+    starts = [index for index, line in enumerate(lines) if VERSION_HEADING.match(line)]
+    out: List[Tuple[str, str, str]] = []
+    for position, index in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        match = VERSION_HEADING.match(lines[index])
+        out.append((match.group(1).strip(), lines[index], "\n".join(lines[index + 1: end])))
+    return out
+
+
+def _is_never_released(line: str, body: str) -> bool:
+    """Whether a heading or the blockquote under it marks the version as never released."""
+    if NEVER_RELEASED.search(line):
+        return True
+    for row in body.splitlines():
+        if not row.strip():
+            continue
+        return row.strip().startswith(">") and bool(NEVER_RELEASED.search(row))
+    return False
+
+
+def taggable_versions(text: str) -> List[str]:
+    """Versions with a numbered heading that is not annotated as never released."""
+    return [version for version, line, body in _heading_sections(text) if not _is_never_released(line, body)]
+
+
+def never_released_versions(text: str) -> List[str]:
+    """Versions whose heading or blockquote says they were never released, so no tag is expected."""
+    return [version for version, line, body in _heading_sections(text) if _is_never_released(line, body)]
+
+
+def changelog_drift(text: str, tags: Sequence[str], at_release: bool = False) -> List[str]:
+    """Every release-integrity problem: an untagged entry, a tagged version with no entry, a separator mismatch."""
+    problems: List[str] = []
+    tagged = {name[1:] for name in tags if name.startswith("v")}
+    entries = released_versions(text)
+    for version in taggable_versions(text):
+        if version not in tagged:
+            problems.append("%s has a changelog entry and no v%s tag; tag it with `git tag -a v%s -m \"release %s\"`" % (version, version, version, version))
+    for version in sorted(tagged - set(entries)):
+        problems.append("v%s is tagged and has no changelog entry; recover it with `git show v%s:CHANGELOG.md`" % (version, version))
+    if "## [unreleased]" not in text.lower():
+        problems.append("no ## [Unreleased] heading; every changelog keeps one open")
+    elif at_release and not has_unreleased_entries(text):
+        problems.append("the Unreleased section is empty; there is nothing to release")
+    separators = [match.group(2) for match in (VERSION_HEADING.match(line) for _, line, _ in _heading_sections(text)) if match.group(2) and match.group(3)]
+    if separators:
+        dominant = max(set(separators), key=separators.count)
+        odd = sorted({separator for separator in separators if separator != dominant})
+        if odd:
+            problems.append("date separator mismatch: %d heading(s) use %r, %s also appear(s); Keep a Changelog specifies %r" % (
+                separators.count(dominant), dominant, " and ".join(repr(item) for item in odd), KEEP_A_CHANGELOG_SEPARATOR))
+    return problems
+
+
 BREAKING = re.compile(r"\bbreaking\b|\bincompatible\b|\bno longer\b", re.IGNORECASE)
 
 
