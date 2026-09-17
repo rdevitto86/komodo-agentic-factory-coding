@@ -19,8 +19,8 @@ MANIFEST = os.path.join(BIN_DIR, "MANIFEST.sha256")
 # Expanding this list costs repository size on every rebuild; add a target when something actually runs there.
 TARGETS = (("darwin", "arm64"), ("linux", "amd64"))
 
-# These flags are what make the build byte-reproducible: no cgo, no local paths, no build id.
-BUILD_FLAGS = ("-trimpath", "-ldflags", "-s -w")
+# -buildvcs=false is the critical one: go otherwise stamps the commit hash and dirty flag into the binary.
+BUILD_FLAGS = ("-trimpath", "-buildvcs=false", "-ldflags", "-s -w")
 
 
 def binary_name(goos: str, goarch: str) -> str:
