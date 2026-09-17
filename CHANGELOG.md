@@ -5,6 +5,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ## [1.1.0] — 2026-09-17
 
 ### Added
+- `python3 -m komodo pr label --auto` derives a PR's labels from its commit type and the `komodo.json` label map, the same way the pipeline labels a PR it opens, so a PR opened by hand no longer goes up bare
 - New `python3 -m komodo release check`: a read-only release-integrity gate, wired into `make verify`, failing on a changelog entry with no tag, a tag with no changelog entry, and a date-separator mismatch between headings
 - The session hooks ship as one compiled Go binary, `komodo-hooks`, with a subcommand per hook. `context_injector.py` is ported to Go beside the guard, and `scripts/build-hooks.py` cross-compiles both for darwin, linux, and windows on amd64 and arm64
 - komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending
