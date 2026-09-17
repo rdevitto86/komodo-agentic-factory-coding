@@ -13,6 +13,10 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - Remove the dead conditional in the builder commit path
 - Detect an unrunnable done_when on Windows, where cmd.exe does not use exit 126 or 127
 
+### Changed
+- publish drops completed tasks from BACKLOG.md instead of marking them DONE; git history and the changelog hold what shipped
+- `komodo release --bump` promotes Unreleased to a dated version, opens a fresh Unreleased, and bumps `__version__`. Bare `--bump` reads the level off the changelog: a `Removed` section or a breaking bullet is major, an `Added` section is minor, anything else is patch. Plain `komodo release` still only tags
+
 ## [1.0.0] — 2026-09-16
 
 The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose state machine, its text firewall, and the comment `apply` path are gone; what replaces them is code with the same intent and a fraction of the cost.

@@ -486,15 +486,19 @@ class Pipeline:
             self.log("  dry-run publish: would push %s and open a PR against %s" % (self.state.branch, self.state.base))
             return
         text = _read_text(self.backlog_path)
+        done_titles = [self.backlog.task(tid).title for tid, record in self.state.tasks.items() if record.status == "DONE" and self.backlog and self.backlog.task(tid)]
         for task_id, record in self.state.tasks.items():
-            if record.status in ("DONE", "BLOCKED") and self.backlog and self.backlog.task(task_id):
-                text = tasks.set_status(text, task_id, record.status)
+            if not (self.backlog and self.backlog.task(task_id)):
+                continue
+            if record.status == "DONE":
+                text = tasks.remove_task(text, task_id)
+            elif record.status == "BLOCKED":
+                text = tasks.set_status(text, task_id, "BLOCKED")
         with open(self.backlog_path, "w", encoding="utf-8") as handle:
             handle.write(text)
-        done_titles = [self.backlog.task(tid).title for tid, record in self.state.tasks.items() if record.status == "DONE" and self.backlog and self.backlog.task(tid)]
         if done_titles:
             _write_changelog(os.path.join(self.root, str(self.config.get("changelog", "CHANGELOG.md"))), self.group.type, done_titles)
-        self.git.commit(gitops.commit_message("chore", "close out %s" % self.group.id, ["backlog statuses", "changelog entry"]))
+        self.git.commit(gitops.commit_message("chore", "close out %s" % self.group.id, ["completed tasks dropped from the backlog", "changelog entry"]))
         if not verified:
             self.state.notes.append("branch %s left local and unpushed because verify failed" % self.state.branch)
             return

@@ -132,5 +132,41 @@ class MigrateTests(unittest.TestCase):
         self.assertEqual(report, [])
 
 
+class RemoveTaskTests(unittest.TestCase):
+    TEXT = (
+        "# Backlog\n\n"
+        "## [EPIC-01] Now\n*Goal*\n\n"
+        "### [TG-01.1] Refunds\n```yaml\ntype: feat\n```\n\n"
+        "#### [TSK-01.1.1] First [P: H] [DONE]\n```yaml\nfiles: [a.py]\ndone_when: ['python3 -c pass']\n```\n\n"
+        "#### [TSK-01.1.2] Second [P: M] [TODO]\n```yaml\nfiles: [b.py]\ndone_when: ['python3 -c pass']\ndepends_on: [TSK-01.1.1]\n```\n\n"
+        "### [TG-01.2] Solo\n```yaml\ntype: fix\n```\n\n"
+        "#### [TSK-01.2.1] Only one [P: L] [DONE]\n```yaml\nfiles: [c.py]\ndone_when: ['python3 -c pass']\n```\n"
+    )
+
+    def test_task_and_its_block_are_gone(self):
+        out = tasks.remove_task(self.TEXT, "TSK-01.1.1")
+        self.assertNotIn("TSK-01.1.1", out)
+        self.assertNotIn("a.py", out)
+        self.assertIn("TSK-01.1.2", out)
+
+    def test_group_survives_while_it_holds_another_task(self):
+        out = tasks.remove_task(self.TEXT, "TSK-01.1.1")
+        self.assertIn("### [TG-01.1] Refunds", out)
+
+    def test_dependency_on_the_removed_task_is_stripped(self):
+        out = tasks.remove_task(self.TEXT, "TSK-01.1.1")
+        self.assertEqual(tasks.lint(tasks.parse(out)), [])
+        self.assertNotIn("depends_on", out)
+
+    def test_group_left_with_no_tasks_is_dropped(self):
+        out = tasks.remove_task(self.TEXT, "TSK-01.2.1")
+        self.assertNotIn("TG-01.2", out)
+        self.assertIn("### [TG-01.1] Refunds", out)
+
+    def test_unknown_task_raises(self):
+        with self.assertRaises(KeyError):
+            tasks.remove_task(self.TEXT, "TSK-09.9.9")
+
+
 if __name__ == "__main__":
     unittest.main()

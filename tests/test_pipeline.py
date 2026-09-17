@@ -136,8 +136,9 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("chore: close out TG-01.1", subjects)
         self.assertEqual(git.worktrees(), [])
         backlog = tasks.load(os.path.join(self.tmp.name, "BACKLOG.md"))
-        self.assertEqual(backlog.task("TSK-01.1.1").status, "DONE")
+        self.assertIsNone(backlog.task("TSK-01.1.1"), "a completed task is dropped from the backlog")
         self.assertEqual(len([t for t in backlog.group("TG-01.1").tasks if t.status == "TODO"]), 1, "low finding filed as a new TODO task")
+        self.assertEqual([t.id for t in backlog.tasks if t.id.startswith("TSK-01.1.")], [t.id for t in backlog.tasks])
         with open(os.path.join(self.tmp.name, "CHANGELOG.md"), encoding="utf-8") as handle:
             changelog = handle.read()
         self.assertIn("### Added", changelog)

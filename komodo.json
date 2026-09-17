@@ -3,5 +3,16 @@
   "protected": ["main", "master", "trunk", "prod", "production", "release/*", "hotfix/*"],
   "severity_floor": "high",
   "comments": {"require": "nonobvious", "trivial_lines": 8},
-  "labels": {"feat": "enhancement", "fix": "bug", "docs": "documentation", "chore": "enhancement", "refactor": "enhancement", "test": "enhancement", "ci": "enhancement", "build": "enhancement", "perf": "enhancement", "agent": "@agent"}
+  "labels": {
+    "feat": "enhancement",
+    "fix": "bug",
+    "docs": "documentation",
+    "chore": "enhancement",
+    "refactor": "enhancement",
+    "test": "enhancement",
+    "ci": "enhancement",
+    "build": "enhancement",
+    "perf": "enhancement",
+    "agent": "@agent"
+  }
 }

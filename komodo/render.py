@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .state import RunState
 
@@ -151,6 +151,72 @@ def fill_template(template: str, sections: Sequence[tuple]) -> str:
             continue
         lines += ["## " + heading, ""] + body + [""]
     return "\n".join(lines).rstrip() + "\n"
+
+
+def next_version(current: str, bump: str) -> str:
+    """The semantic version after a major, minor, or patch bump."""
+    parts = [int(piece) for piece in current.split(".")[:3]]
+    while len(parts) < 3:
+        parts.append(0)
+    major, minor, patch = parts
+    if bump == "major":
+        return "%d.0.0" % (major + 1)
+    if bump == "minor":
+        return "%d.%d.0" % (major, minor + 1)
+    return "%d.%d.%d" % (major, minor, patch + 1)
+
+
+BREAKING = re.compile(r"\bbreaking\b|\bincompatible\b|\bno longer\b", re.IGNORECASE)
+
+
+def infer_bump(text: str) -> Tuple[str, str]:
+    """The semantic level the Unreleased section implies, with the reason to print."""
+    sections, bullets = [], []
+    started = False
+    for line in text.splitlines():
+        if line.lower().startswith("## [unreleased]"):
+            started = True
+            continue
+        if line.startswith("## ["):
+            break
+        if not started:
+            continue
+        if line.startswith("### "):
+            sections.append(line[4:].strip().lower())
+        elif line.strip().startswith("- "):
+            bullets.append(line)
+    if "removed" in sections:
+        return "major", "a Removed section"
+    breaking = next((line for line in bullets if BREAKING.search(line)), "")
+    if breaking:
+        return "major", "a bullet reading %s" % clip_sentence(breaking.strip("- "), 8)
+    if "added" in sections:
+        return "minor", "an Added section and nothing removed"
+    return "patch", "only fixes and changes"
+
+
+def cut_release(text: str, version: str, today: str) -> str:
+    """Retitles the Unreleased section as a dated version and opens an empty one above it."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not line.lower().startswith("## [unreleased]"):
+            continue
+        if not _has_entries(lines, index):
+            raise ValueError("the Unreleased section is empty; nothing to release")
+        lines[index] = "## [%s] \u2014 %s" % (version, today)
+        lines[index:index] = ["## [Unreleased]", ""]
+        return "\n".join(lines).rstrip() + "\n"
+    raise ValueError("no ## [Unreleased] heading in the changelog")
+
+
+def _has_entries(lines: List[str], start: int) -> bool:
+    """Whether the section at start holds a bullet before the next version heading."""
+    for line in lines[start + 1:]:
+        if line.startswith("## ["):
+            return False
+        if line.strip().startswith("- "):
+            return True
+    return False
 
 
 def changelog_entry(kind: str, titles: Sequence[str]) -> List[str]:

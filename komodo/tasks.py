@@ -296,6 +296,80 @@ def set_status(text: str, task_id: str, status: str) -> str:
     raise KeyError("task %s not found" % task_id)
 
 
+def _block_end(lines: List[str], start: int) -> int:
+    """The index after a task's heading, its fenced block, and the blank lines trailing it."""
+    index = start + 1
+    if index < len(lines) and FENCE_OPEN.match(lines[index].rstrip("\r\n")):
+        index += 1
+        while index < len(lines) and not FENCE_CLOSE.match(lines[index].rstrip("\r\n")):
+            index += 1
+        index += 1
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+    return index
+
+
+def _drop_dependency(lines: List[str], task_id: str) -> List[str]:
+    """Removes a task id from every depends_on list, inline or dashed."""
+    kept = []
+    for line in lines:
+        bare = line.strip()
+        if bare in ("- %s" % task_id, "- \"%s\"" % task_id, "- '%s'" % task_id):
+            continue
+        if "depends_on:" in line and task_id in line:
+            head, _, rest = line.partition("depends_on:")
+            items = [item.strip() for item in rest.strip().strip("[]").split(",")]
+            items = [item for item in items if item.strip("\"'") != task_id and item]
+            line = "%sdepends_on: [%s]\n" % (head, ", ".join(items)) if items else ""
+            if not line:
+                continue
+        kept.append(line)
+    return kept
+
+
+def remove_task(text: str, task_id: str) -> str:
+    """Deletes a task, its fenced block, any group left empty, and every depends_on naming it."""
+    lines = text.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        match = TASK_HEADING.match(line.rstrip("\r\n"))
+        if not match or match.group(1) != task_id:
+            continue
+        end = _block_end(lines, index)
+        start = index
+        if not _group_keeps_tasks(lines, index, end):
+            start = _group_start(lines, index)
+        remaining = _drop_dependency(lines[:start] + lines[end:], task_id)
+        return "".join(remaining)
+    raise KeyError("task %s not found" % task_id)
+
+
+def _group_start(lines: List[str], task_index: int) -> int:
+    """The index of the group heading above a task, including its fenced block."""
+    for index in range(task_index - 1, -1, -1):
+        if GROUP_HEADING.match(lines[index].rstrip("\r\n")):
+            return index
+    return task_index
+
+
+def _group_keeps_tasks(lines: List[str], task_index: int, end: int) -> bool:
+    """Whether the task's group still holds another task once this one goes."""
+    start = _group_start(lines, task_index)
+    if start == task_index:
+        return True
+    stop = len(lines)
+    for index in range(start + 1, len(lines)):
+        stripped = lines[index].rstrip("\r\n")
+        if GROUP_HEADING.match(stripped) or EPIC_HEADING.match(stripped):
+            stop = index
+            break
+    for index in range(start + 1, stop):
+        if task_index <= index < end:
+            continue
+        if TASK_HEADING.match(lines[index].rstrip("\r\n")):
+            return True
+    return False
+
+
 def render_task(task_id: str, title: str, priority: str, status: str, fields: Dict[str, object]) -> str:
     """Renders a heading plus fenced block in the grammar."""
     heading = "#### [%s] %s [P: %s] [%s]" % (task_id, title.strip(), priority, status)
