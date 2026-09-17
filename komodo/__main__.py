@@ -5,13 +5,27 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
-from typing import List, Optional
+import tempfile
+import uuid
+from typing import List, Optional, Sequence, Tuple
 
 from . import __version__, comments, doctor, gates, gitops, pr, tasks
 from .config import Config, ConfigError
 from .state import Store
+
+SCRATCH_TIMEOUT_S = 60
+BROKEN_COMMAND_CODES = (9009,) if os.name == "nt" else (126, 127)
+# cmd.exe reports an unknown command through this text, sometimes with exit 1 rather than 9009.
+WINDOWS_NOT_FOUND_RE = re.compile(r"is not recognized as an internal or external command|cannot find the (path|file) specified", re.IGNORECASE)
+# Network and destructive tools a planner-authored done_when must never invoke unattended.
+UNSAFE_DONE_WHEN_RE = re.compile(
+    r"\b(rm\s+-[a-z]*r[a-z]*f|sudo|curl|wget|nc|ncat|netcat|ssh|scp|sftp|rsync|dd|mkfs|chmod|chown|kill(all)?"
+    r"|shutdown|reboot|telnet|base64\s+-d)\b|\|\s*(sh|bash|zsh)\b",
+    re.IGNORECASE,
+)
 
 
 def repo_root(start: Optional[str] = None) -> str:
@@ -150,6 +164,38 @@ def cmd_tasks(args: argparse.Namespace) -> int:
     return 2
 
 
+def _cannot_execute(result: gates.CommandResult) -> bool:
+    """Whether the shell could not run the command at all, as opposed to running it and getting a failure."""
+    if result.returncode in BROKEN_COMMAND_CODES:
+        return True
+    return os.name == "nt" and result.returncode != 0 and bool(WINDOWS_NOT_FOUND_RE.search(result.output))
+
+
+def validate_done_when(root: str, config: Config, commands: Sequence[str]) -> Tuple[List[str], List[str]]:
+    """Runs each command once in a scratch worktree, dropping any that can't even execute."""
+    if not commands:
+        return [], []
+    git = gitops.Git(root, config.protected, config.remote)
+    scratch = tempfile.mkdtemp(prefix="komodo-plan-")
+    branch = "chore/plan-validate-%s" % uuid.uuid4().hex[:8]
+    kept: List[str] = []
+    problems: List[str] = []
+    try:
+        git.worktree_add(scratch, branch, "HEAD")
+        for command in commands:
+            if UNSAFE_DONE_WHEN_RE.search(command):
+                problems.append("done_when %r not run: matches a network or destructive tool, needs human confirmation" % command)
+                continue
+            result = gates.run_command(command, scratch, SCRATCH_TIMEOUT_S)
+            if _cannot_execute(result):
+                problems.append("done_when %r did not run: %s" % (command, result.output.strip().splitlines()[-1] if result.output.strip() else "exit %d" % result.returncode))
+            else:
+                kept.append(command)
+    finally:
+        git.worktree_remove(scratch, branch)
+    return kept, problems
+
+
 def cmd_plan(args: argparse.Namespace, root: str) -> int:
     """Runs the planner worker over a goal and appends the tasks it proposes to a group."""
     from . import briefs, standards
@@ -185,8 +231,11 @@ def cmd_plan(args: argparse.Namespace, root: str) -> int:
         return 1
     proposed = result.data.get("tasks", [])
     ids: List[str] = []
+    gaps: List[str] = list(result.data.get("gaps", []))
     for index, item in enumerate(proposed):
-        fields = {"files": item.get("files", []), "done_when": item.get("done_when", [])}
+        done_when, broken = validate_done_when(root, config, [str(c) for c in item.get("done_when", [])])
+        gaps.extend(broken)
+        fields = {"files": item.get("files", []), "done_when": done_when}
         deps = [ids[i] for i in item.get("depends_on", []) if isinstance(i, int) and 0 <= i < len(ids)]
         if deps:
             fields["depends_on"] = deps
@@ -199,7 +248,7 @@ def cmd_plan(args: argparse.Namespace, root: str) -> int:
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(text)
     print("added %d task(s) to %s: %s" % (len(ids), group.id, ", ".join(ids)))
-    for gap in result.data.get("gaps", []):
+    for gap in gaps:
         print("gap: %s" % gap)
     problems = tasks.lint(tasks.parse(text))
     for problem in problems:
