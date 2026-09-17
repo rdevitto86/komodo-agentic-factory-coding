@@ -211,25 +211,6 @@ context:
 type: fix
 ```
 
-#### [TSK-02.5.11] publish drops completed tasks from BACKLOG.md instead of marking them DONE [P: H] [TODO]
-```yaml
-files:
-  - komodo/pipeline.py
-  - komodo/tasks.py
-  - tests/test_pipeline.py
-  - tests/test_tasks.py
-done_when:
-  - python3 -m unittest tests.test_pipeline tests.test_tasks -q
-context:
-  - "a completed task belongs to git history and CHANGELOG.md, not the queue; publish calls tasks.set_status(DONE) and the entry is committed forever"
-  - "tasks.py needs a remove_task(text, task_id) that deletes the heading and its fenced block, and drops a group heading left with no tasks"
-  - "removing a task must also strip its id from every remaining depends_on, or lint fails with 'depends_on names unknown task' on the next run"
-  - "BLOCKED stays in the backlog: it is open work waiting on a human"
-type: refactor
-```
-
-
-
 ### [TG-02.6] Defects found reading the tree
 ```yaml
 type: fix

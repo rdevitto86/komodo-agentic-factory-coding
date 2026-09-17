@@ -13,6 +13,9 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - Remove the dead conditional in the builder commit path
 - Detect an unrunnable done_when on Windows, where cmd.exe does not use exit 126 or 127
 
+### Changed
+- publish drops completed tasks from BACKLOG.md instead of marking them DONE; git history and the changelog hold what shipped
+
 ## [1.0.0] — 2026-09-16
 
 The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose state machine, its text firewall, and the comment `apply` path are gone; what replaces them is code with the same intent and a fraction of the cost.
