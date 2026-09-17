@@ -1,484 +1,118 @@
 #!/usr/bin/env python3
+"""Validates the global layer and the rendered Claude adapter: roles, frontmatter keys, the always-on budget, brief templates."""
+
 from __future__ import annotations
 
-import ast
-import importlib.util
 import json
 import os
-import re
-import subprocess
 import sys
+import tempfile
 
-BUDGET = 2000
-CAP = 5000
-DMI_REGEX = r"^disable-model-invocation:\s*(true|yes|on|1)"
-DMI = re.compile(DMI_REGEX, re.M | re.I)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
 
-HOOK_NAMES = ("comments", "git_guard", "verify_gate", "context_injector", "auto_format")
+from komodo import adapters, roles  # noqa: E402
 
-SKILL_KEYS = {
-    "name", "description", "when_to_use", "model", "effort",
-    "allowed-tools", "disallowed-tools", "argument-hint",
-    "disable-model-invocation", "user-invocable", "paths",
-    "context", "agent", "background", "hooks", "metadata", "shell",
-    "license", "compatibility",
-}
-AGENT_KEYS = {
-    "name", "description", "tools", "disallowedTools", "model",
-    "permissionMode", "maxTurns", "skills", "mcpServers", "hooks",
-    "memory", "background", "effort", "isolation", "color",
-    "initialPrompt",
-}
-
-STALE = re.compile(r"\bTODO\.md\b")
-INVOKE_VERB = re.compile(r"\b(?:invoke|invoking|invokes|dispatch|dispatches|dispatching)\b", re.I)
-NAME = re.compile(r"[`/]([a-z][a-z0-9-]{2,})")
-EXCLUDE_LINE = re.compile(r"\bexcludes?\b|on (?:their|its) own|the user invokes", re.I)
-
-LANGUAGE_SKILLS = [
-    "standards-go", "standards-typescript", "standards-python",
-    "standards-c", "standards-vue", "standards-svelte", "standards-cdk",
-    "standards-shell", "standards-dotnet", "standards-java", "standards-react",
-]
-
-ANCHORS = [
-    "Comment discipline", "Toolchain", "Conventions", "Testing",
-    "Quick-reference fields", "Repo layout", "Seed backlog",
-    "Reference material",
-]
-
-HEADING = re.compile(r"^##\s+(.+?)\s*$", re.M)
+BUDGET_TOKENS = 1500
+SKILL_KEYS = {"name", "description", "when_to_use", "model", "effort", "allowed-tools", "disallowed-tools", "argument-hint", "disable-model-invocation", "user-invocable", "paths", "context", "agent", "background", "hooks", "metadata", "shell", "license", "compatibility"}
+AGENT_KEYS = {"name", "description", "tools", "disallowedTools", "model", "permissionMode", "maxTurns", "skills", "mcpServers", "hooks", "memory", "background", "effort", "isolation", "color", "initialPrompt"}
+REQUIRED_AGENT = {"name", "description", "tools", "model", "effort", "maxTurns"}
 
 
-def read_text(path: str, errors: str = "strict") -> str:
-    with open(path, encoding="utf-8", errors=errors) as handle:
-        return handle.read()
-
-
-def listdir_sorted(path: str) -> list:
-    if not os.path.isdir(path):
-        return []
-    return sorted(os.listdir(path))
+def frontmatter(text: str):
+    """The frontmatter as a dict of top-level keys, or None."""
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None
+    keys = {}
+    for line in parts[1].splitlines():
+        if line and not line[0].isspace() and ":" in line:
+            key, value = line.split(":", 1)
+            keys[key.strip()] = value.strip()
+    return keys
 
 
 def tokens(text: str) -> int:
-    return max(1, len(text) // 4)
+    """Rough token count."""
+    return len(text) // 4
 
 
-def check_links(source: str, target: str, settings_generate_expected: bool) -> int:
-    problems = 0
-    print("  links")
-    for name in listdir_sorted(source):
-        if name.startswith("."):
-            continue
-        entry = os.path.join(source, name)
-        if not os.path.exists(entry):
-            continue
-        link = os.path.join(target, name)
-        if os.path.islink(link) and os.path.exists(link):
-            actual = os.readlink(link)
-            # Windows answers a readlink in extended-length form, so compare what each side resolves to
-            if os.path.realpath(link) == os.path.realpath(entry):
-                print("    ok        %s" % name)
-            else:
-                print("    stale     %s -> %s (expected %s)" % (name, actual, entry))
-                problems += 1
-        elif os.path.islink(link):
-            print("    dangling  %s -> %s" % (name, os.readlink(link)))
-            problems += 1
-        elif os.path.exists(link):
-            if name == "settings.json" and settings_generate_expected:
-                print("    ok        settings.json (generated for this platform, see drift check below)")
-            else:
-                print("    not-link  %s (real file, run scripts/install.py)" % name)
-                problems += 1
-        else:
-            print("    missing   %s (run scripts/install.py)" % name)
-            problems += 1
-    return problems
+def read(path: str) -> str:
+    """File text."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
 
 
-def load_install_module(repo_root: str):
-    spec = importlib.util.spec_from_file_location(
-        "install_for_validate", os.path.join(repo_root, "scripts", "install.py")
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def check_settings_drift(source: str, target: str, install, interpreter: list) -> int:
-    print("")
-    print("  settings.json drift")
-    dest = os.path.join(target, "settings.json")
-    if not os.path.exists(dest):
-        print("    skip      settings.json not installed")
-        return 0
-    if os.path.islink(dest):
-        print("    ok        settings.json is a live symlink, drift check is moot")
-        return 0
-
-    if not interpreter:
-        print("    skip      no working python interpreter found to rebuild settings.json")
-        return 0
-
-    entry = os.path.join(source, "settings.json")
-    expected = install.build_settings(entry, os.path.join(target, "hooks"), interpreter)
-    try:
-        actual = json.loads(read_text(dest))
-    except (OSError, ValueError):
-        print("    BROKEN    settings.json does not parse as JSON")
-        return 1
-
-    if actual == expected:
-        print("    ok        installed settings.json matches what build_settings would generate now")
-        return 0
-    print("    BROKEN    installed settings.json has drifted from source — rerun scripts/install.py")
-    return 1
-
-
-def check_hooks(source: str) -> int:
-    problems = 0
-    print("")
-    print("  hooks")
-    for hook in HOOK_NAMES:
-        path = os.path.join(source, "hooks", hook + ".py")
+def check_roles(problems: list) -> None:
+    """Every role parses, and every worker role has a prompt template and a worker output contract."""
+    briefs_dir = os.path.join(REPO_ROOT, "komodo", "briefs")
+    templates = {name[: -len(".prompt.md")] for name in os.listdir(briefs_dir) if name.endswith(".prompt.md")}
+    for name in roles.available():
         try:
-            ast.parse(read_text(path))
-        except (OSError, ValueError, SyntaxError):
-            print("    BROKEN    %s.py does not parse" % hook)
-            problems += 1
-        else:
-            print("    ok        %s.py" % hook)
-    return problems
-
-
-def frontmatter(path: str):
-    body = read_text(path)
-    if not body.startswith("---"):
-        return None
-    head = body.split("---", 2)
-    if len(head) < 3:
-        return None
-    pairs = {}
-    for line in head[1].splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
+            role = roles.load(name)
+        except roles.RoleError as error:
+            problems.append(str(error))
             continue
-        if ":" not in line or line.startswith((" ", "\t", "-")):
-            continue
-        key, _, value = line.partition(":")
-        pairs[key.strip()] = value.strip()
-    return pairs
+        if not role.purpose:
+            problems.append("roles/%s.md: missing purpose" % name)
+        if name in templates and not role.worker_output:
+            problems.append("roles/%s.md: has a prompt template but no '## Worker output' section" % name)
+        if role.session and not role.session_output:
+            problems.append("roles/%s.md: session role without a '## Session output' section" % name)
+    for name in templates - set(roles.available()):
+        problems.append("briefs/%s.prompt.md has no role file" % name)
 
 
-def check_frontmatter(source: str) -> int:
-    print("")
-    print("  frontmatter")
-    failures = 0
-
-    def one(path: str, label: str, allowed: set):
-        count = 0
-        fm = frontmatter(path)
-        if fm is None:
-            print("    BROKEN    %s has no YAML frontmatter" % label)
-            return None, 1
-        unknown = sorted(set(fm) - allowed)
-        if unknown:
-            print("    BROKEN    %s: unknown key(s) %s — the loader rejects the file" % (label, ", ".join(unknown)))
-            count += 1
-        for required in ("name", "description"):
-            if not fm.get(required):
-                print("    BROKEN    %s: missing %s" % (label, required))
-                count += 1
-        return fm, count
-
-    skills_dir = os.path.join(source, "skills")
-    for entry in listdir_sorted(skills_dir):
-        path = os.path.join(skills_dir, entry, "SKILL.md")
-        if not os.path.exists(path):
-            continue
-        fm, count = one(path, "skills/%s" % entry, SKILL_KEYS)
-        failures += count
-        if fm and fm.get("name") != entry:
-            print("    BROKEN    skills/%s: name is '%s', must match the directory" % (entry, fm.get("name")))
-            failures += 1
-
-    agents_dir = os.path.join(source, "agents")
-    for entry in listdir_sorted(agents_dir):
-        if not entry.endswith(".md"):
-            continue
-        fm, count = one(os.path.join(agents_dir, entry), "agents/%s" % entry, AGENT_KEYS)
-        failures += count
-        if fm and not fm.get("maxTurns"):
-            print("    BROKEN    agents/%s: missing maxTurns" % entry)
-            failures += 1
-
-    if failures == 0:
-        print("    ok        every skill and agent parses against the loader schema")
-    return 1 if failures else 0
-
-
-def check_document_names(source: str, repo_root: str) -> int:
-    print("")
-    print("  document names")
-    failures = 0
-    for root in (source, os.path.join(repo_root, "templates")):
-        for base, _, names in os.walk(root):
-            for name in names:
-                if not name.endswith((".md", ".tmpl", ".off")):
-                    continue
-                path = os.path.join(base, name)
-                try:
-                    body = read_text(path, errors="replace")
-                except OSError:
-                    continue
-                if STALE.search(body):
-                    label = os.path.relpath(path, repo_root)
-                    print("    BROKEN    %s still names TODO.md — the file is BACKLOG.md" % label)
-                    failures += 1
-    if failures == 0:
-        print("    ok        no skill or template names a renamed document")
-    return 1 if failures else 0
-
-
-def check_reachability(source: str) -> int:
-    print("")
-    print("  cross-skill reachability")
-    skills_dir = os.path.join(source, "skills")
-    unreachable = set()
-    bodies = {}
-    fms = {}
-    for entry in listdir_sorted(skills_dir):
-        skill = os.path.join(skills_dir, entry, "SKILL.md")
-        if not os.path.exists(skill):
-            continue
-        body = read_text(skill)
-        bodies[entry] = body
-        fms[entry] = frontmatter(skill) or {}
-        head = body.split("---")[1] if body.startswith("---") else ""
-        if DMI.search(head):
-            unreachable.add(entry)
-
-    failures = 0
-    for entry, body in bodies.items():
-        for section in re.split(r"\n(?=#{1,6} )", body):
-            if not INVOKE_VERB.search(section):
+def check_rendered(problems: list) -> int:
+    """Renders the Claude adapter into a scratch dir and checks frontmatter and the always-on budget."""
+    with tempfile.TemporaryDirectory() as target:
+        adapters.render("claude", target)
+        with open(os.path.join(target, "settings.policy.json"), encoding="utf-8") as handle:
+            overrides = json.load(handle).get("skillOverrides", {})
+        always_on = tokens(read(os.path.join(target, "AGENTS.md")))
+        skills_dir = os.path.join(target, "skills")
+        for name in sorted(os.listdir(skills_dir)):
+            keys = frontmatter(read(os.path.join(skills_dir, name, "SKILL.md")))
+            if keys is None:
+                problems.append("rendered skill %s: missing frontmatter" % name)
                 continue
-            for line in section.splitlines():
-                if EXCLUDE_LINE.search(line):
-                    continue
-                for match in NAME.finditer(line):
-                    target = match.group(1)
-                    if target == entry or target not in unreachable:
-                        continue
-                    print("    BROKEN    %s invokes `%s`, which carries disable-model-invocation: true "
-                          "and cannot be reached via the Skill tool" % (entry, target))
-                    failures += 1
-
-    named_by_sibling = set()
-    for entry, body in bodies.items():
-        for match in NAME.finditer(body):
-            target = match.group(1)
-            if target != entry and target in bodies:
-                named_by_sibling.add(target)
-
-    for entry in sorted(unreachable):
-        fm = fms.get(entry, {})
-        if "paths" in fm or "argument-hint" in fm:
-            continue
-        if entry in named_by_sibling:
-            continue
-        print("    BROKEN    %s carries disable-model-invocation: true, no paths:, no "
-              "argument-hint:, and no sibling skill names it — unreachable by any caller" % entry)
-        failures += 1
-
-    if failures == 0:
-        print("    ok        no skill body invokes a sibling it cannot reach")
-    return 1 if failures else 0
-
-
-def check_section_order(source: str) -> int:
-    print("")
-    print("  standards section order")
-    failures = 0
-    for name in LANGUAGE_SKILLS:
-        path = os.path.join(source, "skills", name, "SKILL.md")
-        if not os.path.exists(path):
-            continue
-        headings = HEADING.findall(read_text(path))
-        indices = []
-        for heading in headings:
-            heading = heading.strip("`")
-            for i, anchor in enumerate(ANCHORS):
-                if heading == anchor or heading.startswith(anchor + " "):
-                    indices.append((i, anchor))
-                    break
-        last_pre, in_layout, seen_reference, broken = -1, False, False, False
-        for i, anchor in indices:
-            if i <= 4:
-                if in_layout or seen_reference or i < last_pre:
-                    broken = True
-                    break
-                last_pre = i
-            elif i in (5, 6):
-                if seen_reference:
-                    broken = True
-                    break
-                in_layout = True
-            else:
-                seen_reference = True
-        if broken:
-            print("    BROKEN    %s: section order violates the canonical shape" % name)
-            failures += 1
-
-    if failures == 0:
-        print("    ok        every language/framework skill follows the canonical section order")
-    return 1 if failures else 0
-
-
-def check_hooks_path(repo_root: str) -> int:
-    print("")
-    print("  hooksPath")
-    try:
-        result = subprocess.run(
-            ["git", "-C", repo_root, "config", "--get", "core.hooksPath"],
-            capture_output=True,
-        )
-        hooks_path = result.stdout.decode("utf-8", "replace").strip()
-    except (OSError, ValueError):
-        hooks_path = ""
-
-    if not hooks_path:
-        print("    ok        core.hooksPath is unset")
-        return 0
-    if os.path.isdir(hooks_path) or os.path.isdir(os.path.join(repo_root, hooks_path)):
-        print("    ok        core.hooksPath -> %s" % hooks_path)
-        return 0
-    print("    BROKEN    core.hooksPath -> %s does not resolve to a directory" % hooks_path)
-    return 1
-
-
-def check_budget(source: str, repo_root: str) -> int:
-    print("")
-    print("  base context budget")
-
-    always_on = 0
-    for name in ("AGENTS.md", "CLAUDE.md"):
-        path = os.path.join(source, name)
-        if os.path.exists(path):
-            body = read_text(path)
-            if body.strip() == "@AGENTS.md":
+            for key in keys:
+                if key not in SKILL_KEYS:
+                    problems.append("rendered skill %s: unknown frontmatter key %r" % (name, key))
+            if keys.get("name") != name:
+                problems.append("rendered skill %s: name mismatch" % name)
+            if "paths" in keys and not keys["paths"].startswith('"'):
+                problems.append("rendered skill %s: paths value must be quoted" % name)
+            always_on += tokens(name) + 2 if overrides.get(name) == "name-only" else tokens(name + keys.get("description", "")) + 6
+        agents_dir = os.path.join(target, "agents")
+        for name in sorted(os.listdir(agents_dir)):
+            keys = frontmatter(read(os.path.join(agents_dir, name)))
+            if keys is None:
+                problems.append("rendered agent %s: missing frontmatter" % name)
                 continue
-            count = tokens(body)
-            always_on += count
-            print("    %-24s %5d tokens" % (name, count))
-
-    overrides = {}
-    settings_path = os.path.join(source, "settings.json")
-    if os.path.exists(settings_path):
-        overrides = json.loads(read_text(settings_path)).get("skillOverrides", {})
-
-    listing = 0
-    skill_count = 0
-    cap_failures = []
-    paths_gated_count = 0
-    paths_gated_tokens = 0
-    skills_dir = os.path.join(source, "skills")
-    for entry in listdir_sorted(skills_dir):
-        skill = os.path.join(skills_dir, entry, "SKILL.md")
-        if not os.path.exists(skill):
-            continue
-        body = read_text(skill)
-        cap_count = tokens(body)
-        if cap_count > CAP:
-            cap_failures.append((entry, cap_count))
-        head = body.split("---")[1] if body.startswith("---") else ""
-        if DMI.search(head):
-            continue
-        state = overrides.get(entry, "on")
-        if state in ("off", "user-invocable-only"):
-            continue
-        described = re.search(r"^description:\s*(.+)$", head, re.M)
-        text = entry if state == "name-only" else entry + (described.group(1) if described else "")
-        if re.search(r"^paths:", head, re.M):
-            paths_gated_count += 1
-            paths_gated_tokens += tokens(text)
-            if state == "name-only":
-                listing += tokens(entry)
-                skill_count += 1
-            continue
-        listing += tokens(text)
-        skill_count += 1
-
-    print("    %-24s %5d tokens (%d listed to the model)" % ("skill listing", listing, skill_count))
-    print("    %-24s %5d tokens (%d skills, gated by touched file, excluded from budget)" %
-          ("paths:-gated skills", paths_gated_tokens, paths_gated_count))
-    total = always_on + listing
-    print("    %-24s %5d tokens" % ("TOTAL (always-on)", total))
-    print()
-    print("    NOTE: this total excludes bundled and plugin skills — skillOverrides is the only")
-    print("    lever for bundled ones, /plugin for plugin ones; /context's Skills row is the real listing size.")
-    over_budget = total > BUDGET
-    if over_budget:
-        print("    OVER BUDGET by %d tokens (limit %d)" % (total - BUDGET, BUDGET))
-    else:
-        print("    within budget (limit %d, %d free)" % (BUDGET, BUDGET - total))
-
-    print()
-    print("  skill compaction cap")
-    for entry, cap_count in cap_failures:
-        print("    BROKEN    skills/%s/SKILL.md: %d tokens, over the %d compaction re-attach cap" % (entry, cap_count, CAP))
-    if not cap_failures:
-        print("    ok        every SKILL.md is within the %d-token compaction re-attach cap" % CAP)
-
-    if over_budget or cap_failures:
-        return 1
-
-    root_agents_path = os.path.join(repo_root, "AGENTS.md")
-    if os.path.exists(root_agents_path):
-        root_tokens = tokens(read_text(root_agents_path))
-        print()
-        print("    %-24s %5d tokens (this repo's project doc, loaded via CLAUDE.md's @AGENTS.md" % ("root AGENTS.md", root_tokens))
-        print("                                    only while working in this repo — not part of the always-on budget above)")
-        print("    %-24s %5d tokens" % ("TOTAL incl. project doc", total + root_tokens))
-    return 0
+            for key in keys:
+                if key not in AGENT_KEYS:
+                    problems.append("rendered agent %s: unknown frontmatter key %r" % (name, key))
+            for key in REQUIRED_AGENT - set(keys):
+                problems.append("rendered agent %s: missing %r" % (name, key))
+        if always_on > BUDGET_TOKENS:
+            problems.append("always-on context is ~%d tokens, over the %d budget" % (always_on, BUDGET_TOKENS))
+        return always_on
 
 
 def main() -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    source = os.path.join(repo_root, "claude-code")
-    target = os.environ.get("AGENT_HOME") or os.path.join(os.path.expanduser("~"), ".claude")
-
-    print()
-    print("validate")
-    print()
-
-    install = load_install_module(repo_root)
-    interpreter = install.resolve_interpreter()
-    settings_generate_expected = install.settings_strategy("auto", interpreter, False) == "generate"
-
-    problems = 0
-    problems += check_links(source, target, settings_generate_expected)
-    problems += check_settings_drift(source, target, install, interpreter)
-    problems += check_hooks(source)
-    problems += check_frontmatter(source)
-    problems += check_document_names(source, repo_root)
-    problems += check_reachability(source)
-    problems += check_section_order(source)
-    problems += check_hooks_path(repo_root)
-    problems += check_budget(source, repo_root)
-
-    print()
-    if problems == 0:
-        print("  all checks passed")
-        print()
-        return 0
-    print("  %d problem(s)" % problems)
-    print()
-    return 1
+    """Runs every validation and prints each problem."""
+    problems: list = []
+    check_roles(problems)
+    always_on = check_rendered(problems)
+    if os.path.isdir(os.path.join(REPO_ROOT, "claude-code")):
+        problems.append("claude-code/ must not exist; the Claude layer is rendered from komodo/adapters/claude")
+    for problem in problems:
+        print(problem)
+    print("always-on context: ~%d tokens (budget %d); %d problem(s)" % (always_on, BUDGET_TOKENS, len(problems)))
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

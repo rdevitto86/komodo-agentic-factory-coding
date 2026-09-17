@@ -1,16 +1,13 @@
 # Local working files
-/TODO.md
 TODO.md
 
-# Python bytecode from the hooks
+# Python bytecode
 __pycache__/
 *.pyc
 
-# Local session config, not shared
+# Local session and run state, never shared
 .claude/
-
-# Account skills the client syncs into ~/.claude/skills, which is a symlink into this tree
-claude-code/skills/synced/
+.komodo/
 
 # Editor / OS noise
 .DS_Store

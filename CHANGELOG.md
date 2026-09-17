@@ -4,13 +4,49 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+- Cover render.py and the CLI with tests
+- Close the files doctor opens, so verify stops printing ResourceWarnings
+- Remove the dead conditional in the builder commit path
+
+## [1.0.0] — 2026-09-16
+
+The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose state machine, its text firewall, and the comment `apply` path are gone; what replaces them is code with the same intent and a fraction of the cost.
+
 ### Added
+- `komodo/`, a stdlib-only Python package run as `python3 -m komodo`. `run` takes a task group through preflight, branch, parallel build waves in worktrees, a compile gate per wave, one verify, one review, changelog and backlog update, push, and PR. `status --prune`, `tasks lint|list|migrate|add|plan`, `comments check`, `hooks install`, `install`, `doctor`, `pr threads|label|comment|reply|sync|respond`, and `release` cover the rest of the line. Every phase persists to `.komodo/runs/<id>/state.json`; `--resume` continues an unfinished run; `--dry-run` prints waves, briefs, and per-section token estimates without spawning.
+- A task grammar for `BACKLOG.md`: a fenced yaml block under each task with `files`, `done_when`, `depends_on`, `context`, `owner`, and `type`, and `mode: single|parallel` per group. `komodo/yamlite.py` parses the subset with no dependency; `tasks migrate` converts the 0.x table shape best-effort and reports what needs a human.
+- Directory ownership for parallelism: tasks in disjoint directories share a wave, same-directory tasks serialize, dependencies order the waves. The orchestrator reruns every `done_when` itself; a worker's word is not the proof.
+- Two worker providers behind one `Brief` in, `Result` out contract: `claude -p` with model, effort, turn cap, budget cap, tool set, and JSON schema set from the role spec, and an Ollama adapter for summarizing. Two profiles, `fast` and `thinking`, in `komodo.json` with `.komodo/local.json` as the personal overlay.
+- Credential isolation: workers run with no GitHub token, an empty credential helper, SSH in batch mode with no identity, and an unauthenticated `gh`. `komodo/gitops.py` is the only pusher and refuses protected refs, force, amend, trailers, and merges into a protected branch in code.
+- Python git hooks under `komodo/hooks/` with two-line sh stubs Git dispatches on every platform: pre-commit refuses a protected branch and a trailer, checks gofmt, and lints comments on staged lines; pre-push refuses protected refs, deletes, and non-fast-forward updates, then runs the repo verify gate.
+- One reviewer pass per group carrying bug, security, test-gap, simplify, narrative-comment, and undocumented-nonobvious classes with a severity scale. Floor findings get one repair; the rest are filed to the backlog by code. The same pass scores the diff's blast radius on a six-tier scale, measuring fan-out with the dependency command the language standard names, and the score lands in the run report and the PR body.
+- `komodo doctor`: dangling backticked paths and `/skill` names, personal keys in the settings policy, hook commands naming missing files, skill frontmatter drift, stale worktrees and merged branches. Runs inside `scripts/verify.py`.
+- `komodo/rules/` and `komodo/roles/`: the universal rules, the backlog grammar, the CLI guide, and one file per role carrying a tier, an access class, and both a worker and a session output contract. Workers and interactive agents read the same body. `komodo/adapters/claude/` renders `~/.claude` from them; no Claude-specific directory is checked in.
+- Profiles map tiers (`light`, `standard`, `heavy`) to a provider, model, and effort, and roles declare a tier. A `local` profile points every tier at Ollama.
+- `komodo/standards/`: 33 rules-only files, one per language or domain, injected into a worker by the extensions and directories its task touches and clipped to a cap. Every language the 0.x skills covered is carried over, including the ones that shipped disabled (Rust, Zig, Swift, Kotlin, C, C++, C#, Java, .NET, Azure, GCP, hardware); there is no off state because an unused file costs nothing.
+- Mandatory accessibility rules for every human-facing output in `claude-code/AGENTS.md`, and the same density caps applied in code by `komodo/render.py` to reports and PR bodies.
+- A CI matrix (Ubuntu, macOS, Windows, plus Python 3.9) running `python scripts/verify.py`.
 - Root `LICENSE` (MIT, copyright 2026 R. DeVitto) and `SECURITY.md` — the repo previously stated no terms at all while its installer symlinks the clone into `~/.claude`. `SECURITY.md` names GitHub private vulnerability reporting as the channel, states that every file under `claude-code/hooks/` runs as a `PreToolUse`, `PostToolUse`, or `SessionStart` command on every tool call, that a symlink install moves every session on its next start unless `--ref` pinned it, and that `--ref` and `CODEOWNERS` are the existing mitigations. A band-review correction narrowed the symlink claim: `scripts/install.py` falls back to `copytree`/`copy2` when `os.symlink` raises on Windows without Developer Mode or when `--force-copy` is chosen, and a copy install propagates nothing until the installer is re-run.
 
 ### Security
 - Read-only git is now enforced per agent instead of only stated in prose. `git_guard.py`'s reviewer-only identity gate generalized into one `AGENT_READ_ONLY_GIT_SUBCOMMANDS` table keyed on six identities, denying by default any subcommand outside a listed agent's set — `builder`, `tester`, `scout`, `researcher`, and `architect` each previously carried "nothing enforces this" in their own file, and now do not. The orchestrator path (a payload carrying no agent identity) stays untouched, since the workflow loop's own commits depend on it. `rev-parse` is granted to all five. `scripts/test_hooks.py` grew from 324 to 339 cases.
 - Band review found three live bypasses in that generalization, all closed: `git diff --output=PATH` is a file-write primitive whose deny had been reviewer-only, so three agents holding no `Write`/`Edit` tool at all could write any path, hooks included, through an allowlisted subcommand; a leading `GIT_EXTERNAL_DIFF=` environment assignment and a `-c diff.external=` config option each execute an arbitrary command through an allowlisted subcommand, and those denies had also been reviewer-only.
 - Stated the honest limit rather than an overclaim: the guard denies a direct git invocation by identity and is not a sandbox. `builder` and `tester` must run arbitrary Bash for their `Done when` commands and the repo's verify target, so an interpreter hop such as `python3 -c` reaches git regardless — the five agent files and `AGENTS.md` now say so directly, rather than replacing an honest "nothing enforces this" with a claim that overstates the enforcement.
+
+### Changed
+- The Claude Code layer is rendered, not maintained. `komodo install` produces a 40-line `AGENTS.md`, one agent per session role with model and effort from the active profile, three procedure skills from `komodo/rules/`, and one thin `standards-*` pointer per rules file, every skill `name-only`, keeping the always-on listing near 900 tokens against a 1,500 budget.
+- `komodo/adapters/claude/settings.policy.json` replaces the tracked `settings.json`. It carries only `permissions` and `hooks`; `skillOverrides` is derived at render time; `komodo install` merges those keys into `~/.claude/settings.json` and keeps every personal key.
+- The comment rule: a doc line on every public function, one on a private function only when it is long or has more than one return, silence elsewhere. The lint keeps `EXTERNAL_REF`, `NAME_ECHO`, `OVER_LINES`, `STACKED`, `MALFORMED_MARKER`, and `FUNC_UNDOCUMENTED`, adds `OVER_WORDS` and `NARRATIVE`, ignores `#` inside Python string literals, and runs in pre-commit on staged lines.
+- `scripts/verify.py` runs the unittest suite, `scripts/validate.py`, the comment lint, and `komodo doctor`. `scripts/validate.py` checks frontmatter keys, the token budget, agent profiles, and brief template pairs.
+- Python floor is 3.9.
+
+### Removed
+- `git_guard.py` (1,376 lines), `verify_gate.py`, `auto_format.py`, `comments.py apply` and its `PostToolUse` hook, `lib/comment_rules.py`, and `scripts/test_hooks.py`. The guarantees moved into `gitops.py`, the worker environment, and the Python git hooks; the lint moved to `komodo/comments.py`.
+- The `workflow-*`, `backlog-*`, `assess-*`, `changelog-*`, `readme-*`, `git-*`, `work-state-map`, `write-comments`, `repo-assess`, `config-accessibility`, `standards-worklog`, `adr`, `prd`, `sdd`, and `runbook` skills, 43 in all, and every `evals/` directory. The pipeline they described is `komodo/pipeline.py`; the accessibility rules are always-on in `AGENTS.md`.
+- `claude-code/` itself, `scripts/install.py`, `scripts/release.py`, `scripts/evals.py`, `scripts/work_state.py`, `scripts/test_install.py`, the shell dispatchers under `scripts/hooks/git/`, `templates/briefs/`, `templates/skills/`, the `go` and `node` Makefile templates, the ADR and runbook templates, the README template, and the `pm` agent (its job is `komodo tasks plan` with the `planner` role). `SECURITY.md` shrank to the reporting channel; the install-grants text lives in `docs/architecture.md`.
+- `bridges/komodo-bridge/`. Its two prompt files and README moved next to the bridge server they belong to, under the local `.komodo/bridge/agents/` deploy, which loads `agents/<name>/agent.md` relative to itself. The harness never depended on the bridge; `komodo/workers/ollama.py` talks to Ollama directly.
+- 40 backlog items that only concerned the deleted machinery. The V1.1 epic carries forward the bridge `num_ctx` limit, CI secret scanning, and the tests the new PR actions still owe.
 
 ## [0.51.0] — 2026-09-16
 

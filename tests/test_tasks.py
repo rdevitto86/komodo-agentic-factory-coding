@@ -1,0 +1,136 @@
+import unittest
+
+from komodo import tasks
+
+SAMPLE = """# Backlog
+
+## [EPIC-01] Now
+*Goal*
+
+### [TG-01.1] Refunds
+```yaml
+type: feat
+```
+
+#### [TSK-01.1.1] Add refund handler [P: H] [TODO]
+```yaml
+files: [internal/refund/handler.go, internal/refund/handler_test.go]
+done_when:
+  - go test ./internal/refund/...
+owner: agent
+```
+
+#### [TSK-01.1.2] Wire refund route [P: M] [TODO]
+```yaml
+files: [cmd/api/routes.go]
+done_when: [go build ./...]
+depends_on: [TSK-01.1.1]
+```
+
+### [TG-01.2] Docs
+#### [TSK-01.2.1] Write runbook [P: L] [WIP]
+```yaml
+files: [docs/runbook.md]
+done_when: [test -f docs/runbook.md]
+owner: human
+```
+"""
+
+
+class ParseTests(unittest.TestCase):
+    def test_groups_and_tasks(self):
+        backlog = tasks.parse(SAMPLE)
+        self.assertEqual([g.id for g in backlog.groups], ["TG-01.1", "TG-01.2"])
+        self.assertEqual(backlog.groups[0].type, "feat")
+        self.assertEqual(backlog.groups[0].epic_id, "EPIC-01")
+        first = backlog.task("TSK-01.1.1")
+        self.assertEqual(first.files, ["internal/refund/handler.go", "internal/refund/handler_test.go"])
+        self.assertEqual(first.dirs, ["internal/refund"])
+        self.assertEqual(first.done_when, ["go test ./internal/refund/..."])
+        self.assertEqual(backlog.task("TSK-01.1.2").depends_on, ["TSK-01.1.1"])
+
+    def test_legacy_wip_maps_to_in_progress(self):
+        self.assertEqual(tasks.parse(SAMPLE).task("TSK-01.2.1").status, "IN_PROGRESS")
+
+    def test_lint_clean_sample(self):
+        self.assertEqual(tasks.lint(tasks.parse(SAMPLE)), [])
+
+    def test_lint_flags_missing_fields(self):
+        text = SAMPLE.replace("files: [cmd/api/routes.go]\n", "")
+        problems = tasks.lint(tasks.parse(text))
+        self.assertTrue(any("declares no files" in p for p in problems))
+
+    def test_lint_flags_prose_done_when(self):
+        text = SAMPLE.replace("go build ./...", "the route works")
+        problems = tasks.lint(tasks.parse(text))
+        self.assertTrue(any("does not look like a command" in p for p in problems))
+
+    def test_lint_flags_unknown_dependency(self):
+        text = SAMPLE.replace("depends_on: [TSK-01.1.1]", "depends_on: [TSK-09.9.9]")
+        self.assertTrue(any("unknown task" in p for p in tasks.lint(tasks.parse(text))))
+
+    def test_next_group_skips_human_only(self):
+        backlog = tasks.parse(SAMPLE)
+        self.assertEqual(backlog.next_group().id, "TG-01.1")
+        done = tasks.set_status(tasks.set_status(SAMPLE, "TSK-01.1.1", "DONE"), "TSK-01.1.2", "DONE")
+        self.assertIsNone(tasks.parse(done).next_group())
+
+    def test_group_lookup_by_substring(self):
+        self.assertEqual(tasks.parse(SAMPLE).group("docs").id, "TG-01.2")
+
+
+class RewriteTests(unittest.TestCase):
+    def test_set_status_touches_only_the_token(self):
+        updated = tasks.set_status(SAMPLE, "TSK-01.1.2", "DONE")
+        self.assertIn("#### [TSK-01.1.2] Wire refund route [P: M] [DONE]", updated)
+        self.assertEqual(len(updated.splitlines()), len(SAMPLE.splitlines()))
+        self.assertIn("[TSK-01.1.1] Add refund handler [P: H] [TODO]", updated)
+
+    def test_append_task_lands_at_group_end(self):
+        updated, task_id = tasks.append_task(SAMPLE, "TG-01.1", "Add refund metrics", {"files": ["internal/refund/metrics.go"], "done_when": ["go test ./internal/refund/..."]})
+        self.assertEqual(task_id, "TSK-01.1.3")
+        backlog = tasks.parse(updated)
+        self.assertEqual([t.id for t in backlog.group("TG-01.1").tasks], ["TSK-01.1.1", "TSK-01.1.2", "TSK-01.1.3"])
+        self.assertEqual(tasks.lint(backlog), [])
+        self.assertLess(updated.index("TSK-01.1.3"), updated.index("### [TG-01.2]"))
+
+    def test_append_to_last_group(self):
+        updated, task_id = tasks.append_task(SAMPLE, "TG-01.2", "Another doc", {"files": ["docs/x.md"], "done_when": ["test -f docs/x.md"]})
+        self.assertEqual(task_id, "TSK-01.2.2")
+        self.assertEqual(tasks.lint(tasks.parse(updated)), [])
+
+
+LEGACY = """### [TG-01.1] Cross-Cutting
+* **Target Release:** V1
+
+#### [TSK-01.1.1] Old shape [P: M] [TODO]
+| Field | Value |
+|---|---|
+| Depends on | `TSK-01.1.0` |
+
+| Subtask | Work | Done when |
+|---|---|---|
+| `SUB-01.1.1.1` | do a thing | `go test ./...` |
+| `SUB-01.1.1.2` | do another | the doc reads well |
+"""
+
+
+class MigrateTests(unittest.TestCase):
+    def test_migrate_builds_blocks_and_reports(self):
+        text, report = tasks.migrate(LEGACY)
+        backlog = tasks.parse(text)
+        task = backlog.task("TSK-01.1.1")
+        self.assertEqual(task.done_when, ["go test ./..."])
+        self.assertEqual(task.depends_on, ["TSK-01.1.0"])
+        self.assertEqual(task.fields["done_when_prose"], ["the doc reads well"])
+        self.assertTrue(any("prose" in line for line in report))
+        self.assertTrue(any("files list is empty" in line for line in report))
+
+    def test_migrate_leaves_new_shape_alone(self):
+        text, report = tasks.migrate(SAMPLE)
+        self.assertEqual(text, SAMPLE)
+        self.assertEqual(report, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

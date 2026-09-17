@@ -1,0 +1,11 @@
+#!/bin/sh
+# Git runs this through its bundled shell on every platform; it hands off to the Python sibling.
+d=$(dirname "$0")
+for p in python3 python py; do
+  if command -v "$p" >/dev/null 2>&1; then
+    if [ "$p" = py ]; then exec py -3 "$d/pre-commit.py" "$@"; fi
+    exec "$p" "$d/pre-commit.py" "$@"
+  fi
+done
+echo "pre-commit: no python interpreter found on PATH" >&2
+exit 1

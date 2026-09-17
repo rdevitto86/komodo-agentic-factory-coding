@@ -1,16 +1,19 @@
-.PHONY: verify test validate comments install
+.PHONY: verify test lint doctor install hooks
 
 verify:
 	python3 scripts/verify.py
 
 test:
-	python3 scripts/test_hooks.py
+	python3 -m unittest discover -s tests -q
 
-validate:
-	python3 scripts/validate.py
+lint:
+	python3 -m komodo comments check
 
-comments:
-	python3 claude-code/hooks/comments.py check
+doctor:
+	python3 -m komodo doctor
 
 install:
-	python3 scripts/test_install.py
+	python3 -m komodo install
+
+hooks:
+	python3 -m komodo hooks install .

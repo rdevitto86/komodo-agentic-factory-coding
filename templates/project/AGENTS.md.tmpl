@@ -2,7 +2,7 @@
 
 {{ONE_LINE_PURPOSE}}
 
-Global rules live in `~/.claude/AGENTS.md` and always apply. This file adds project context only — see the `write-repo` skill for what belongs here and why.
+Global rules live in `~/.claude/AGENTS.md` and always apply. This file adds only what an agent would otherwise have to guess.
 
 ## Quick reference
 
@@ -10,44 +10,38 @@ Global rules live in `~/.claude/AGENTS.md` and always apply. This file adds proj
 |---|---|
 | Language | {{LANGUAGE}} |
 | Port(s) | {{PORT}} |
-| Contract | {{CONTRACT}} |
 | Entrypoint | {{ENTRYPOINT}} |
 
 ## Commands
 
-Every command an agent would otherwise have to guess or discover. Wrong here is worse than absent. Drop a row the repo genuinely has no equivalent for — never fill one with a guess.
+Wrong here is worse than absent. Drop a row the repo has no equivalent for.
 
 | Do | Run |
 |---|---|
-| Verify (the Stop gate runs this) | `{{VERIFY}}` |
+| Verify (the harness and the pre-push hook run this) | `{{VERIFY}}` |
 | Test | `{{TEST}}` |
 | Build | `{{BUILD}}` |
 | Run locally | `{{RUN}}` |
-| Deploy | `{{DEPLOY}}` |
 | Lint | `{{LINT}}` |
+
+## Harness
+
+`BACKLOG.md` is the queue, in the grammar the `backlog` skill describes. `python3 -m komodo run` takes the next open group. `komodo.json` at the root sets the profile and protected branches for this repo.
 
 ## Where things are
 
-Only the paths that are not obvious from the language skill's standard layout. A repo matching it leaves this section out.
+Only paths that are not obvious from the language's standard layout.
 
 {{NON_OBVIOUS_PATHS}}
 
 ## Gotchas
 
-Non-obvious behaviour that has already cost someone a debugging session. One line each, empirical only — never a restatement of a global rule.
+Non-obvious behaviour that has already cost someone a debugging session. One line each.
 
 {{GOTCHAS}}
 
-## Documents
-
-Only files that exist in this repo. A row is added the day its file is created — never listed in advance.
-
-{{DOCUMENTS_TABLE}}
-
-Design decisions live in the SDD's §11 (a Google Doc in Drive, fetched via MCP — see `standards-specs`), including any that earned a full write-up, appended there directly rather than as a separate file. Fetch on demand — never pre-load or cache it locally.
-
 ## Deviations
 
-Where this repo diverges from a skill it would otherwise follow — language, `sdlc`, `cicd`, `security`, or any other — tagged with which skill it departs from. Refresh-only; a new repo has no drift yet.
+Where this repo departs from a standard, and which one.
 
 {{DEVIATIONS}}

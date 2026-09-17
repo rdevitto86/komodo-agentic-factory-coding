@@ -1,8 +1,6 @@
 <!--
 Title: <type>: <summary>  — max 72 chars, imperative, no trailing period.
 Types: feat fix chore docs test refactor perf build ci
-Risk tier is a label, not a section. Run /assess-change-risk --report and
-post it as a comment.
 -->
 
 ## Summary
@@ -11,23 +9,14 @@ post it as a comment.
 
 ## Changes
 
-<!-- What changed, not how you got there. One bullet per area, not per file —
-     ten files in one package is one bullet. -->
+<!-- One bullet per area, not per file. -->
 
 - **<area>** — <what changed>
 
-## Validation Evidence
+## Validation
 
-<!-- Only what a green CI run cannot show: a live-dependency happy path, a
-     cURL against STG, a behaviour with no automated coverage yet. Unit,
-     component, and contract results are Stage 2's job — do not paste them.
-     "Covered by CI" is a complete answer. -->
+<!-- Only what a green CI run cannot show. "Covered by CI" is a complete answer. -->
 
 ## Dependencies
 
-<!-- Numbered, in the order they must land or land first. Internal: another
-     PR in this repo or a sibling repo. External: a package, service, or API
-     version this PR requires. Omit the section entirely if there are none —
-     never write "none" as a list item. -->
-
-1. <dep>
+<!-- Numbered, in landing order. Omit the section entirely if there are none. -->
