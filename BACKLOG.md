@@ -201,3 +201,16 @@ done_when:
   - python3 -m unittest tests.test_pipeline -q
 context: ["both arms of the status assignment return DONE"]
 ```
+
+### [TG-02.7] Go rewrite
+```yaml
+type: refactor
+```
+
+#### [TSK-02.7.1] Port the orchestrator to a compiled Go binary that runs natively with no interpreter [P: M] [TODO]
+```yaml
+files: [docs/design-decisions.md, AGENTS.md, BACKLOG.md]
+done_when:
+  - python3 -m komodo doctor
+context: ["same functions as komodo/*.py, compiled and executed on the native machine instead of shelling to python3", "AGENTS.md pins the harness to stdlib Python 3.9; this task supersedes that rule and the decision record has to say so", "a shipped binary has to stay zero-setup for the user: no toolchain install, no build step on their machine", "scope the port and the cutover here; the per-module work becomes its own epic"]
+```
