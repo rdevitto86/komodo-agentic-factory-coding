@@ -224,5 +224,37 @@ class PrBodyRepoTemplateTests(unittest.TestCase):
         self.assertIn("the blocked one", body)
 
 
+class CutReleaseTests(unittest.TestCase):
+    TEXT = "# Changelog\n\n## [Unreleased]\n\n### Added\n- a thing\n\n## [1.0.0] \u2014 2026-01-01\n\n### Added\n- the start\n"
+
+    def test_bumps_each_component(self):
+        self.assertEqual(render.next_version("1.0.0", "major"), "2.0.0")
+        self.assertEqual(render.next_version("1.2.3", "minor"), "1.3.0")
+        self.assertEqual(render.next_version("1.2.3", "patch"), "1.2.4")
+
+    def test_short_version_is_padded(self):
+        self.assertEqual(render.next_version("2", "minor"), "2.1.0")
+
+    def test_unreleased_becomes_a_dated_version(self):
+        out = render.cut_release(self.TEXT, "1.1.0", "2026-09-16")
+        self.assertIn("## [1.1.0] \u2014 2026-09-16", out)
+        self.assertIn("- a thing", out)
+        self.assertIn("## [1.0.0]", out)
+
+    def test_a_fresh_unreleased_section_is_opened(self):
+        out = render.cut_release(self.TEXT, "1.1.0", "2026-09-16")
+        lines = [line for line in out.splitlines() if line.startswith("## [")]
+        self.assertEqual(lines[0], "## [Unreleased]")
+        self.assertEqual(lines[1], "## [1.1.0] \u2014 2026-09-16")
+
+    def test_empty_unreleased_is_refused(self):
+        with self.assertRaises(ValueError):
+            render.cut_release("# Changelog\n\n## [Unreleased]\n\n## [1.0.0] \u2014 2026-01-01\n\n- old\n", "1.1.0", "2026-09-16")
+
+    def test_missing_unreleased_heading_is_refused(self):
+        with self.assertRaises(ValueError):
+            render.cut_release("# Changelog\n\n## [1.0.0] \u2014 2026-01-01\n", "1.1.0", "2026-09-16")
+
+
 if __name__ == "__main__":
     unittest.main()

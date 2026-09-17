@@ -15,6 +15,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ### Changed
 - publish drops completed tasks from BACKLOG.md instead of marking them DONE; git history and the changelog hold what shipped
+- `komodo release --bump major|minor|patch` promotes Unreleased to a dated version, opens a fresh Unreleased, and bumps `__version__`; plain `komodo release` still only tags
 
 ## [1.0.0] — 2026-09-16
 

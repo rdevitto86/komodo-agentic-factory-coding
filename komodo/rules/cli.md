@@ -14,6 +14,8 @@ The harness is code, not prose. A session drives it with one command and reads t
 | Draft tasks from a goal into a group | `python3 -m komodo tasks plan TG-01.3 "<goal>"` |
 | Answer PR review threads | `python3 -m komodo pr respond` |
 | Merge the base branch in, resolving conflicts | `python3 -m komodo pr sync` |
+| Cut a version from Unreleased | `python3 -m komodo release --bump minor` |
+| Tag the newest released version | `python3 -m komodo release` |
 | Fragment check | `python3 -m komodo doctor` |
 
 ## What a run does
