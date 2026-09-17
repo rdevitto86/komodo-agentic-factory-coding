@@ -133,10 +133,18 @@ class PrBodyTests(unittest.TestCase):
     def test_template_with_summary_and_changes_headings_is_filled_in_place(self):
         run = make_state()
         run.task("TSK-01.1.1").status = "DONE"
-        template = "## Summary\n\n## Changes\n\n## Footer\n"
+        template = "## Summary\n\n## Changes\n\n## Footer\n\nkeep me\n"
         body = render.pr_body(run, "Refunds", {"TSK-01.1.1": "Add refund handler"}, [], template=template)
         self.assertIn("Add refund handler", body)
         self.assertIn("## Footer", body)
+        self.assertIn("keep me", body)
+
+    def test_template_heading_with_no_content_is_dropped(self):
+        run = make_state()
+        run.task("TSK-01.1.1").status = "DONE"
+        template = "## Summary\n\n## Changes\n\n## Footer\n"
+        body = render.pr_body(run, "Refunds", {"TSK-01.1.1": "Add refund handler"}, [], template=template)
+        self.assertNotIn("## Footer", body)
 
     def test_template_missing_summary_heading_falls_back(self):
         run = make_state()
@@ -154,6 +162,66 @@ class ChangelogTests(unittest.TestCase):
         self.assertEqual(render.changelog_heading("feat"), "Added")
         self.assertEqual(render.changelog_heading("refactor"), "Changed")
         self.assertEqual(render.changelog_heading("mystery"), "Changed")
+
+
+
+TEMPLATE = """<!--
+Title: <type>: <summary>
+-->
+
+## Summary
+
+<!-- One or two sentences. -->
+
+## Changes
+
+<!-- One bullet per area. -->
+
+- **<area>** - <what changed>
+
+## Validation
+
+<!-- Only what a green CI run cannot show. -->
+
+## Dependencies
+
+<!-- Omit the section entirely if there are none. -->
+"""
+
+
+class PrBodyRepoTemplateTests(unittest.TestCase):
+    def setUp(self):
+        self.titles = {"TSK-01.1.1": "do the thing"}
+
+    def done_run(self, **overrides):
+        """A run with one done task, plus whatever a case overrides."""
+        run = make_state(**overrides)
+        run.task("TSK-01.1.1").status = "DONE"
+        return run
+
+    def test_comments_and_placeholders_are_stripped(self):
+        body = render.pr_body(self.done_run(), "Group", self.titles, [], TEMPLATE)
+        self.assertNotIn("<!--", body)
+        self.assertNotIn("<area>", body)
+
+    def test_empty_section_is_dropped(self):
+        body = render.pr_body(self.done_run(), "Group", self.titles, [], TEMPLATE)
+        self.assertNotIn("## Dependencies", body)
+
+    def test_validation_is_filled_in_the_template_path(self):
+        run = self.done_run(blast_radius="high", blast_radius_why="crosses a trust boundary")
+        body = render.pr_body(run, "Group", self.titles, [], TEMPLATE)
+        self.assertIn("## Validation", body)
+        self.assertIn("done_when", body)
+        self.assertIn("Blast radius **high**", body)
+
+    def test_a_section_the_template_lacks_is_appended(self):
+        run = self.done_run()
+        run.task("TSK-01.1.2").status = "BLOCKED"
+        titles = dict(self.titles, **{"TSK-01.1.2": "the blocked one"})
+        body = render.pr_body(run, "Group", titles, [], TEMPLATE)
+        self.assertIn("## Blocked", body)
+        self.assertIn("the blocked one", body)
 
 
 if __name__ == "__main__":
