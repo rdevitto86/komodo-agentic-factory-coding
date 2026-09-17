@@ -126,12 +126,44 @@ done_when:
 context: ["a 10-line diff cost 0.10 of 0.16 USD and 1m54s of a 2m09s run; the fast profile's 150-line floor turns review off for exactly this case"]
 ```
 
+#### [TSK-02.5.6] Phase timing stores a duration, not the epoch second the phase ended [P: H] [TODO]
+```yaml
+files: [komodo/state.py, komodo/render.py, tests/test_gates_state.py]
+done_when:
+  - python3 -m unittest tests.test_gates_state -q
+context: ["the TG-02.4 report printed `verify | -194s`; state.phases holds absolute timestamps such as 1789609979 and render subtracts them in the wrong order"]
+```
+
+#### [TSK-02.5.7] Persist the run cost so a resumed or re-read state carries what the run spent [P: M] [TODO]
+```yaml
+files: [komodo/state.py, komodo/pipeline.py, tests/test_gates_state.py]
+done_when:
+  - python3 -m unittest tests.test_gates_state tests.test_pipeline -q
+context: ["the TG-02.6 report printed 2.44 USD while its state.json recorded cost_usd 0.0; only the per-worker rows survive a reload"]
+```
+
+#### [TSK-02.5.8] A commit the pre-commit hook refuses is a repair attempt, not a crashed builder [P: H] [TODO]
+```yaml
+files: [komodo/pipeline.py, komodo/gitops.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline tests.test_gitops -q
+context: ["TSK-02.6.2 finished its work, then the comment lint refused the commit over an OVER_LINES finding; the task reported `builder crashed` and no repair pass ran"]
+```
+
+#### [TSK-02.5.9] doctor's stale-worktree check must not flag the main checkout when it runs inside a builder worktree [P: H] [TODO]
+```yaml
+files: [komodo/doctor.py, komodo/gitops.py, tests/test_doctor_install.py]
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+context: ["TSK-02.6.3 blocked because doctor run from the tsk-02-6-3 worktree called the repo root a stale worktree; any done_when naming doctor fails inside a wave"]
+```
+
 ### [TG-02.6] Defects found reading the tree
 ```yaml
 type: fix
 ```
 
-#### [TSK-02.6.1] Cover render.py and the CLI with tests [P: H] [TODO]
+#### [TSK-02.6.1] Cover render.py and the CLI with tests [P: H] [DONE]
 ```yaml
 files: [tests/test_render.py, tests/test_cli.py]
 done_when:
@@ -139,14 +171,14 @@ done_when:
 context: ["komodo/render.py and komodo/__main__.py carry no test file between them"]
 ```
 
-#### [TSK-02.6.2] publish picks the first pull request template it finds, not the last [P: M] [TODO]
+#### [TSK-02.6.2] publish picks the first pull request template it finds, not the last [P: M] [BLOCKED]
 ```yaml
 files: [komodo/pipeline.py, tests/test_pipeline.py]
 done_when:
   - python3 -m unittest tests.test_pipeline -q
 ```
 
-#### [TSK-02.6.3] Retire the claude-code references the rules now forbid [P: M] [TODO]
+#### [TSK-02.6.3] Retire the claude-code references the rules now forbid [P: M] [BLOCKED]
 ```yaml
 files: [CHANGELOG.md, komodo/doctor.py, tests/test_doctor_install.py]
 done_when:
@@ -155,17 +187,30 @@ done_when:
 context: ["AGENTS.md forbids a claude-code directory; CHANGELOG.md names it twelve times and doctor whitelists the prefix instead of flagging it"]
 ```
 
-#### [TSK-02.6.4] Close the files doctor opens, so verify stops printing ResourceWarnings [P: L] [TODO]
+#### [TSK-02.6.4] Close the files doctor opens, so verify stops printing ResourceWarnings [P: L] [DONE]
 ```yaml
 files: [komodo/doctor.py, tests/test_doctor_install.py]
 done_when:
   - python3 -m unittest tests.test_doctor_install -q
 ```
 
-#### [TSK-02.6.5] Remove the dead conditional in the builder commit path [P: L] [TODO]
+#### [TSK-02.6.5] Remove the dead conditional in the builder commit path [P: L] [DONE]
 ```yaml
 files: [komodo/pipeline.py]
 done_when:
   - python3 -m unittest tests.test_pipeline -q
 context: ["both arms of the status assignment return DONE"]
+```
+
+### [TG-02.7] Go rewrite
+```yaml
+type: refactor
+```
+
+#### [TSK-02.7.1] Port the orchestrator to a compiled Go binary that runs natively with no interpreter [P: M] [TODO]
+```yaml
+files: [docs/design-decisions.md, AGENTS.md, BACKLOG.md]
+done_when:
+  - python3 -m komodo doctor
+context: ["same functions as komodo/*.py, compiled and executed on the native machine instead of shelling to python3", "AGENTS.md pins the harness to stdlib Python 3.9; this task supersedes that rule and the decision record has to say so", "a shipped binary has to stay zero-setup for the user: no toolchain install, no build step on their machine", "scope the port and the cutover here; the per-module work becomes its own epic"]
 ```

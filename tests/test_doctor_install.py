@@ -71,7 +71,8 @@ class InstallTests(unittest.TestCase):
                 json.dump({"effortLevel": "high", "permissions": {"allow": []}}, handle)
             code = install.install(target, dry_run=False, log=lambda line: None)
             self.assertEqual(code, 0)
-            settings = json.load(open(os.path.join(target, "settings.json")))
+            with open(os.path.join(target, "settings.json")) as handle:
+                settings = json.load(handle)
             self.assertEqual(settings["effortLevel"], "high")
             self.assertIn("guard.py", settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
             self.assertTrue(os.path.isfile(os.path.join(target, "AGENTS.md")))

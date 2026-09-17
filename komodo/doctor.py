@@ -66,7 +66,8 @@ def check_references(root: str) -> List[str]:
             continue
         paths_checked = not relative.startswith("komodo/standards/")
         try:
-            text = open(path, encoding="utf-8", errors="ignore").read()
+            with open(path, encoding="utf-8", errors="ignore") as handle:
+                text = handle.read()
         except OSError:
             continue
         in_fence = False
