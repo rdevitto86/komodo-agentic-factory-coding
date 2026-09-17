@@ -348,17 +348,17 @@ class ReleaseBumpTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         make_repo(self.tmp.name)
-        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), "w") as handle:
+        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), "w", encoding="utf-8") as handle:
             handle.write(self.CHANGELOG)
         os.makedirs(os.path.join(self.tmp.name, "komodo"))
-        with open(os.path.join(self.tmp.name, "komodo", "__init__.py"), "w") as handle:
+        with open(os.path.join(self.tmp.name, "komodo", "__init__.py"), "w", encoding="utf-8") as handle:
             handle.write('__version__ = "1.0.0"\n')
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def _changelog(self):
-        with open(os.path.join(self.tmp.name, "CHANGELOG.md")) as handle:
+        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), encoding="utf-8") as handle:
             return handle.read()
 
     def test_bump_cuts_a_version_and_opens_a_new_unreleased(self):
@@ -373,7 +373,7 @@ class ReleaseBumpTests(unittest.TestCase):
     def test_bump_updates_the_package_version(self):
         with chdir(self.tmp.name):
             cli.main(["release", "--bump", "major"])
-        with open(os.path.join(self.tmp.name, "komodo", "__init__.py")) as handle:
+        with open(os.path.join(self.tmp.name, "komodo", "__init__.py"), encoding="utf-8") as handle:
             self.assertIn('__version__ = "2.0.0"', handle.read())
 
     def test_dry_run_writes_nothing(self):
@@ -389,7 +389,7 @@ class ReleaseBumpTests(unittest.TestCase):
         self.assertIn("## [1.0.1]", self._changelog())
 
     def test_an_empty_unreleased_section_is_an_error(self):
-        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), "w") as handle:
+        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), "w", encoding="utf-8") as handle:
             handle.write("# Changelog\n\n## [Unreleased]\n\n## [1.0.0] \u2014 2026-01-01\n\n- old\n")
         with chdir(self.tmp.name):
             code = cli.main(["release", "--bump", "minor"])
