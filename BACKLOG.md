@@ -74,12 +74,60 @@ context: [komodo/standards/cicd.md#ci]
 type: feat
 ```
 
-#### [TSK-02.4.1] komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending [P: M] [TODO]
+#### [TSK-02.4.1] komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending [P: M] [DONE]
 ```yaml
 files: [komodo/__main__.py, tests/test_cli.py]
 done_when:
   - python3 -m unittest tests.test_cli -q
 ```
+
+#### [TSK-02.4.2] bug: Only exit codes 126/127 are treated as broken, missing shell syntax errors [P: M] [TODO]
+```yaml
+files:
+  - komodo/__main__.py
+done_when:
+  - /opt/homebrew/opt/python@3.14/bin/python3.14 scripts/verify.py
+type: fix
+context:
+  - "review finding from 20260916-204608-tg-02-4: BROKEN_COMMAND_CODES = (126, 127) catches 'permission denied' and 'command not found', but a malformed shell command (unbalanced quote, bad redirection) typical"
+```
+
+#### [TSK-02.4.3] test-gap: No test proves a legitimately-failing done_when is kept, not dropped [P: M] [TODO]
+```yaml
+files:
+  - tests/test_cli.py
+done_when:
+  - /opt/homebrew/opt/python@3.14/bin/python3.14 scripts/verify.py
+type: fix
+context:
+  - "review finding from 20260916-204608-tg-02-4: The entire design intent is that validate_done_when only filters commands that 'can't run' (126/127), not commands that run and fail (e.g. exit 1 because the fe"
+```
+
+#### [TSK-02.4.4] simplify: One scratch worktree is created and destroyed per proposed task [P: L] [TODO]
+```yaml
+files:
+  - komodo/__main__.py
+done_when:
+  - /opt/homebrew/opt/python@3.14/bin/python3.14 scripts/verify.py
+type: fix
+context:
+  - "review finding from 20260916-204608-tg-02-4: validate_done_when is called once per planner-proposed item inside the cmd_plan loop, each call doing its own git worktree add / remove. A planner proposing N t"
+```
+
+#### [TSK-02.4.5] simplify: Dense one-line conditional expression [P: L] [TODO]
+```yaml
+files:
+  - komodo/__main__.py
+done_when:
+  - /opt/homebrew/opt/python@3.14/bin/python3.14 scripts/verify.py
+type: fix
+context:
+  - "review finding from 20260916-204608-tg-02-4: The problems.append(...) statement nests a ternary, a %-format, and a method chain (splitlines()[-1]) on one line, well past the standard's guidance to wrap a l"
+```
+
+
+
+
 
 ### [TG-02.5] Run hygiene
 ```yaml

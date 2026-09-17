@@ -4,6 +4,9 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending
+
 ## [1.0.0] — 2026-09-16
 
 The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose state machine, its text firewall, and the comment `apply` path are gone; what replaces them is code with the same intent and a fraction of the cost.
