@@ -441,7 +441,7 @@ class Pipeline:
             return
         findings = [item for item in (result.data or {}).get("findings", []) if isinstance(item, dict)]
         self.state.blast_radius = str((result.data or {}).get("blast_radius", ""))
-        self.state.blast_radius_why = str((result.data or {}).get("blast_radius_why", ""))[:300]
+        self.state.blast_radius_why = render.clip_sentence(str((result.data or {}).get("blast_radius_why", "")), 45)
         floor = SEVERITY_RANK.get(str(self.config.get("severity_floor", "high")), 2)
         to_fix = [f for f in findings if SEVERITY_RANK.get(str(f.get("severity")), 0) >= floor]
         to_file = [f for f in findings if f not in to_fix]
