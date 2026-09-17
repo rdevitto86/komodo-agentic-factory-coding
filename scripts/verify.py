@@ -12,6 +12,7 @@ CHECKS = (
     ("validate", [PYTHON, os.path.join("scripts", "validate.py")]),
     ("comments", [PYTHON, "-m", "komodo", "comments", "check"]),
     ("doctor", [PYTHON, "-m", "komodo", "doctor", "--no-git"]),
+    ("hooks", [PYTHON, os.path.join("scripts", "build-hooks.py"), "--check"]),
 )
 
 
