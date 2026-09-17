@@ -252,7 +252,7 @@ class Pipeline:
                 bullets = [str(item.get("what", "")) for item in data.get("changed", []) if isinstance(item, dict)][:8]
                 message = gitops.commit_message(task.type, task.title, bullets)
                 record.commit = self.git.commit(message, cwd=cwd) or ""
-                record.status = "DONE" if record.commit else "DONE"
+                record.status = "DONE"
                 record.note = str(data.get("summary", ""))[:300]
                 record.comment_lines = _comment_lines_added(self.git, cwd, self.state.branch)
                 self.log("  %s done in %d attempt(s)" % (task.id, attempt))

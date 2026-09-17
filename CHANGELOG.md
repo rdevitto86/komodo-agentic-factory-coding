@@ -7,6 +7,12 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 ### Added
 - komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending
 
+### Fixed
+- Cover render.py and the CLI with tests
+- Close the files doctor opens, so verify stops printing ResourceWarnings
+- Remove the dead conditional in the builder commit path
+- Detect an unrunnable done_when on Windows, where cmd.exe does not use exit 126 or 127
+
 ## [1.0.0] — 2026-09-16
 
 The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose state machine, its text firewall, and the comment `apply` path are gone; what replaces them is code with the same intent and a fraction of the cost.
