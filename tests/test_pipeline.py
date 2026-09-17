@@ -18,6 +18,7 @@ BACKLOG_TEMPLATE = """# Backlog
 ### [TG-01.1] Greeting module
 ```yaml
 type: feat
+version: 1.1.0
 ```
 
 #### [TSK-01.1.1] Write the greeting [P: H] [TODO]
@@ -85,10 +86,12 @@ def make_repo(root):
     git("config", "user.email", "t@example.com")
     git("config", "user.name", "t")
     git("config", "commit.gpgsign", "false")
+    with open(os.path.join(root, ".gitignore"), "w") as handle:
+        handle.write(".komodo/\n")
     with open(os.path.join(root, "BACKLOG.md"), "w") as handle:
         handle.write(BACKLOG)
     with open(os.path.join(root, "CHANGELOG.md"), "w") as handle:
-        handle.write("# Changelog\n\n## [Unreleased]\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- the first thing\n")
+        handle.write("# Changelog\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- the first thing\n")
     os.makedirs(os.path.join(root, "pkg"))
     os.makedirs(os.path.join(root, "other"))
     open(os.path.join(root, "pkg", "__init__.py"), "w").close()
@@ -146,7 +149,10 @@ class PipelineTests(unittest.TestCase):
             changelog = handle.read()
         self.assertIn("### Added", changelog)
         self.assertIn("Write the greeting", changelog)
-        self.assertIn("## [0.2.0] \u2014 ", changelog, "a feat group cuts a minor version")
+        declared = tasks.load(os.path.join(self.tmp.name, "BACKLOG.md")).group("TG-01.1").version
+        self.assertEqual(declared, "1.1.0")
+        self.assertIn("## [%s] \u2014 " % declared, changelog, "the heading is the version the backlog declared")
+        self.assertNotIn("Unreleased", changelog)
         self.assertNotIn("- Write the greeting", pipeline._section(changelog, "unreleased"))
         with open(run.store.report_path(state.run_id), encoding="utf-8") as handle:
             report = handle.read()
@@ -182,7 +188,7 @@ class PipelineTests(unittest.TestCase):
     def test_tag_pending_tags_a_gap_below_the_newest_heading(self):
         path = os.path.join(self.tmp.name, "CHANGELOG.md")
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write("# Changelog\n\n## [Unreleased]\n\n## [0.3.0] \u2014 2026-03-01\n\n### Added\n- third\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- second\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
+            handle.write("# Changelog\n\n## [0.3.0] \u2014 2026-03-01\n\n### Added\n- third\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- second\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
         run = self._pipeline()
         run.git.run("add", "-A")
         run.git.run("commit", "-q", "-m", "changelog")
@@ -194,7 +200,7 @@ class PipelineTests(unittest.TestCase):
     def test_tag_pending_skips_a_never_released_version(self):
         path = os.path.join(self.tmp.name, "CHANGELOG.md")
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write("# Changelog\n\n## [Unreleased]\n\n## [0.2.0] \u2014 2026-02-01\n\n> Never released as its own tag; superseded by 0.3.0.\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
+            handle.write("# Changelog\n\n## [0.2.0] \u2014 2026-02-01\n\n> Never released as its own tag; superseded by 0.3.0.\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
         run = self._pipeline()
         run.git.run("add", "-A")
         run.git.run("commit", "-q", "-m", "changelog")
@@ -225,78 +231,118 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("TSK-01.1.3", state.blocked)
 
 
+class VersionSyncTests(unittest.TestCase):
+    """The declared version, the changelog heading, and the git tag are one value copied, never three guesses."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        make_repo(self.tmp.name)
+        FakeBuilder.calls = []
+        self.logs = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.tmp.name, check=True, capture_output=True, text=True).stdout.strip()
+
+    def test_backlog_version_reaches_the_changelog_and_the_tag_unchanged(self):
+        declared = tasks.load(os.path.join(self.tmp.name, "BACKLOG.md")).group("TG-01.1").version
+        config = Config.load(self.tmp.name)
+        run = pipeline.Pipeline(self.tmp.name, config, log=self.logs.append, worker_factory=lambda *a, **k: FakeBuilder())
+        run.run()
+
+        changelog = os.path.join(self.tmp.name, "CHANGELOG.md")
+        with open(changelog, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(render.newest_version(text), declared, "close-out wrote the declared version")
+        self.assertNotIn("Unreleased", text)
+
+        # the human merges, then preflight tags whatever merged
+        branch = run.state.branch
+        self._git("switch", "-q", "main")
+        self._git("merge", "--no-ff", "-q", "-m", "merge %s" % branch, branch)
+        second = pipeline.Pipeline(self.tmp.name, Config.load(self.tmp.name), log=self.logs.append,
+                                   worker_factory=lambda *a, **k: FakeBuilder())
+        second._tag_pending("main")
+
+        self.assertTrue(second.git.tag_exists("v" + declared), "preflight tagged the merged version")
+        tagged = self._git("rev-list", "-n1", "v" + declared)
+        self.assertEqual(tagged, self._git("rev-parse", "HEAD"), "the tag points at what merged")
+        with open(changelog, encoding="utf-8") as handle:
+            merged_text = handle.read()
+        self.assertEqual(render.newest_version(merged_text), declared)
+        tags = self._git("tag", "--list", "v*").split()
+        self.assertEqual(render.changelog_drift(merged_text, tags), [], "no drift between the changelog and the tags")
+
+    def test_a_second_group_on_the_same_version_shares_one_heading(self):
+        changelog = os.path.join(self.tmp.name, "CHANGELOG.md")
+        pipeline._write_changelog(changelog, "feat", ["One"], "1.1.0")
+        pipeline._write_changelog(changelog, "fix", ["Two"], "1.1.0")
+        with open(changelog, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(render.released_versions(text).count("1.1.0"), 1)
+        self.assertEqual(render.newest_version(text), "1.1.0")
+
 class ChangelogTests(unittest.TestCase):
-    def test_write_changelog_creates_and_appends(self):
+    """The declared version is copied into the changelog, never inferred from the bullets."""
+
+    def test_write_changelog_opens_the_declared_version_and_appends_into_it(self):
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "CHANGELOG.md")
-            pipeline._write_changelog(path, "feat", ["First thing"])
-            pipeline._write_changelog(path, "fix", ["Second thing"])
-            pipeline._write_changelog(path, "feat", ["Third thing"])
+            pipeline._write_changelog(path, "feat", ["First thing"], "1.1.0")
+            pipeline._write_changelog(path, "fix", ["Second thing"], "1.1.0")
+            pipeline._write_changelog(path, "feat", ["Third thing"], "1.1.0")
             with open(path, encoding="utf-8") as handle:
                 text = handle.read()
-            self.assertEqual(text.count("## [Unreleased]"), 1)
+            self.assertEqual(text.count("## [1.1.0]"), 1, "three groups on one version share one heading")
+            self.assertNotIn("Unreleased", text)
             self.assertEqual(text.count("### Added"), 1)
             self.assertIn("- First thing\n- Third thing", text)
             self.assertIn("### Fixed\n- Second thing", text)
 
-    def test_cut_version_bumps_patch_and_opens_a_fresh_unreleased(self):
+    def test_a_new_version_opens_above_the_released_ones(self):
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "CHANGELOG.md")
             with open(path, "w", encoding="utf-8") as handle:
-                handle.write("# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
-            cut = pipeline._cut_version(path)
+                handle.write("# Changelog\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
+            pipeline._write_changelog(path, "fix", ["a fix"], "0.1.1")
             with open(path, encoding="utf-8") as handle:
                 text = handle.read()
-            self.assertTrue(cut.startswith("0.1.1 (patch bump:"), cut)
-            self.assertIn("## [0.1.1] \u2014 ", text)
-            self.assertEqual(text.count("## [Unreleased]"), 1)
-            self.assertFalse(render.has_unreleased_entries(text))
+            self.assertLess(text.index("## [0.1.1]"), text.index("## [0.1.0]"))
+            self.assertIn("### Added\n- first", text, "the released version survives")
 
-    def test_cut_version_takes_a_major_from_a_breaking_bullet(self):
+    def test_the_date_separator_matches_the_changelog_and_never_drifts(self):
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "CHANGELOG.md")
             with open(path, "w", encoding="utf-8") as handle:
-                handle.write("# Changelog\n\n## [Unreleased]\n\n### Changed\n- **Breaking** the flag is gone\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
-            cut = pipeline._cut_version(path)
-            self.assertTrue(cut.startswith("1.0.0 (major bump:"), cut)
+                handle.write("# Changelog\n\n## [0.1.0] - 2026-01-01\n\n### Added\n- first\n")
+            pipeline._write_changelog(path, "fix", ["a fix"], "0.1.1")
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            self.assertIn("## [0.1.1] - ", text)
+            self.assertEqual(render.changelog_drift(text, ["v0.1.0", "v0.1.1"]), [])
 
     def test_write_changelog_refuses_to_drop_a_released_version(self):
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "CHANGELOG.md")
             with open(path, "w", encoding="utf-8") as handle:
-                handle.write("# Changelog\n\n## [Unreleased]\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
+                handle.write("# Changelog\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
             with mock.patch.object(pipeline, "_write") as writer:
                 with mock.patch.object(pipeline.render, "assert_preserved", side_effect=ValueError("would drop 0.1.0")):
                     with self.assertRaises(ValueError):
-                        pipeline._write_changelog(path, "fix", ["a fix"])
+                        pipeline._write_changelog(path, "fix", ["a fix"], "0.1.1")
             writer.assert_not_called()
 
     def test_write_preserving_refuses_a_write_that_drops_a_version(self):
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "CHANGELOG.md")
-            before = "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
+            before = "# Changelog\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write(before)
             with self.assertRaises(ValueError) as caught:
-                pipeline._write_preserving(path, before, ["# Changelog", "", "## [Unreleased]", "", "## [0.2.0] \u2014 2026-02-01"])
+                pipeline._write_preserving(path, before, ["# Changelog", "", "## [0.2.0] \u2014 2026-02-01"])
             self.assertIn("0.1.0", str(caught.exception))
             with open(path, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), before, "the file is untouched when the write is refused")
 
-    def test_cut_version_keeps_every_released_version(self):
-        with tempfile.TemporaryDirectory() as root:
-            path = os.path.join(root, "CHANGELOG.md")
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write("# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n")
-            pipeline._cut_version(path)
-            with open(path, encoding="utf-8") as handle:
-                self.assertEqual(render.released_versions(handle.read())[1:], ["0.2.0", "0.1.0"])
-
-    def test_section_anchor(self):
-        text = "# Doc\n\n## Refunds\nbody\n\n## Other\nx\n"
-        self.assertEqual(pipeline._section(text, "refunds"), "## Refunds\nbody\n")
-        self.assertEqual(pipeline._section(text, "missing"), "")
-
-
-if __name__ == "__main__":
-    unittest.main()

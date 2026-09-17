@@ -10,6 +10,7 @@ SAMPLE = """# Backlog
 ### [TG-01.1] Refunds
 ```yaml
 type: feat
+version: 1.1.0
 ```
 
 #### [TSK-01.1.1] Add refund handler [P: H] [TODO]
@@ -28,6 +29,11 @@ depends_on: [TSK-01.1.1]
 ```
 
 ### [TG-01.2] Docs
+```yaml
+type: docs
+version: 1.1.1
+```
+
 #### [TSK-01.2.1] Write runbook [P: L] [WIP]
 ```yaml
 files: [docs/runbook.md]
@@ -78,6 +84,26 @@ class ParseTests(unittest.TestCase):
     def test_group_lookup_by_substring(self):
         self.assertEqual(tasks.parse(SAMPLE).group("docs").id, "TG-01.2")
 
+
+class GroupVersionTests(unittest.TestCase):
+    """A group declares the version it ships; the lint is what stops a changelog and a tag drifting apart."""
+
+    def _backlog(self, block):
+        return tasks.parse("# Backlog\n\n## [EPIC-01] Now\n\n### [TG-01.1] Refunds\n```yaml\n%s\n```\n\n#### [TSK-01.1.1] Do it [P: H] [TODO]\n```yaml\nfiles: [a.py]\ndone_when: [test -d .]\n```\n" % block)
+
+    def test_a_declared_version_is_read_off_the_group(self):
+        self.assertEqual(self._backlog("type: feat\nversion: 2.3.4").group("TG-01.1").version, "2.3.4")
+
+    def test_a_group_with_no_version_fails_lint(self):
+        problems = tasks.lint(self._backlog("type: feat"))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("no version", problems[0])
+
+    def test_a_malformed_version_fails_lint(self):
+        for bad in ("1.2", "v1.2.3", "1.2.3-rc1", "latest"):
+            problems = tasks.lint(self._backlog("type: feat\nversion: %s" % bad))
+            self.assertEqual(len(problems), 1, (bad, problems))
+            self.assertIn("is not x.y.z", problems[0])
 
 class RewriteTests(unittest.TestCase):
     def test_set_status_touches_only_the_token(self):
@@ -174,10 +200,10 @@ class RemoveTaskTests(unittest.TestCase):
     TEXT = (
         "# Backlog\n\n"
         "## [EPIC-01] Now\n*Goal*\n\n"
-        "### [TG-01.1] Refunds\n```yaml\ntype: feat\n```\n\n"
+        "### [TG-01.1] Refunds\n```yaml\ntype: feat\nversion: 1.1.0\n```\n\n"
         "#### [TSK-01.1.1] First [P: H] [DONE]\n```yaml\nfiles: [a.py]\ndone_when: ['python3 -c pass']\n```\n\n"
         "#### [TSK-01.1.2] Second [P: M] [TODO]\n```yaml\nfiles: [b.py]\ndone_when: ['python3 -c pass']\ndepends_on: [TSK-01.1.1]\n```\n\n"
-        "### [TG-01.2] Solo\n```yaml\ntype: fix\n```\n\n"
+        "### [TG-01.2] Solo\n```yaml\ntype: fix\nversion: 1.1.1\n```\n\n"
         "#### [TSK-01.2.1] Only one [P: L] [DONE]\n```yaml\nfiles: [c.py]\ndone_when: ['python3 -c pass']\n```\n"
     )
 

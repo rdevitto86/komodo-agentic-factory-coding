@@ -513,8 +513,8 @@ class Pipeline:
             handle.write(text)
         if done_titles:
             changelog = os.path.join(self.root, str(self.config.get("changelog", "CHANGELOG.md")))
-            _write_changelog(changelog, self.group.type, done_titles)
-            self.log("  cut %s" % _cut_version(changelog))
+            _write_changelog(changelog, self.group.type, done_titles, self.group.version)
+            self.log("  changelog: %s" % self.group.version)
         self.git.commit(gitops.commit_message("chore", "close out %s" % self.group.id, ["completed tasks dropped from the backlog", "changelog entry"]))
         if not verified:
             self.state.notes.append("branch %s left local and unpushed because verify failed" % self.state.branch)
@@ -606,22 +606,21 @@ def _comment_lines_added(git: gitops.Git, cwd: str, base: str) -> int:
     return count
 
 
-def _write_changelog(path: str, kind: str, titles: Sequence[str]) -> None:
-    """Appends bullets under [Unreleased] in the Keep a Changelog shape, creating the file if needed."""
+def _write_changelog(path: str, kind: str, titles: Sequence[str], version: str) -> None:
+    """Appends bullets under the group's declared version heading, opening it when the changelog has none."""
     heading = render.changelog_heading(kind)
     bullets = render.changelog_entry(kind, titles)
+    banner = "## [%s] %s %s" % (version, _separator(path), time.strftime("%Y-%m-%d"))
     if not os.path.isfile(path):
-        text = "# Changelog\n\n## [Unreleased]\n\n### %s\n%s\n" % (heading, "\n".join(bullets))
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write(text)
+            handle.write("# Changelog\n\n%s\n\n### %s\n%s\n" % (banner, heading, "\n".join(bullets)))
         return
     text = _read_text(path)
     lines = text.splitlines()
-    try:
-        start = next(index for index, line in enumerate(lines) if line.lower().startswith("## [unreleased]"))
-    except StopIteration:
+    start = next((index for index, line in enumerate(lines) if _VERSION_OF.match(line) and _VERSION_OF.match(line).group(1) == version), None)
+    if start is None:
         insert_at = next((index for index, line in enumerate(lines) if line.startswith("## ")), len(lines))
-        lines[insert_at:insert_at] = ["## [Unreleased]", "", "### %s" % heading] + bullets + [""]
+        lines[insert_at:insert_at] = [banner, "", "### %s" % heading] + bullets + [""]
         _write_preserving(path, text, lines)
         return
     end = next((index for index in range(start + 1, len(lines)) if lines[index].startswith("## ")), len(lines))
@@ -641,13 +640,17 @@ def _write_changelog(path: str, kind: str, titles: Sequence[str]) -> None:
     _write_preserving(path, text, lines)
 
 
-def _cut_version(path: str) -> str:
-    """Promotes the Unreleased section to the next version, returning the version cut."""
-    text = _read_text(path)
-    level, reason = render.infer_bump(text)
-    version = render.next_version(render.newest_version(text) or "0.0.0", level)
-    _write_preserving(path, text, render.cut_release(text, version, time.strftime("%Y-%m-%d")).splitlines())
-    return "%s (%s bump: %s)" % (version, level, reason)
+_VERSION_OF = re.compile(r"^## \[(\d+\.\d+\.\d+[^\]]*)\]")
+
+
+def _separator(path: str) -> str:
+    """The date separator the changelog already uses, so a new heading never trips the drift check."""
+    if os.path.isfile(path):
+        for _, line, _ in render._heading_sections(_read_text(path)):
+            match = render.VERSION_HEADING.match(line)
+            if match and match.group(2) and match.group(3):
+                return match.group(2)
+    return "\u2014"
 
 
 def _write_preserving(path: str, before: str, lines: List[str]) -> None:

@@ -10,6 +10,7 @@ Priority `[P: C|H|M|L]`. Status `[TODO|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX`
 ### [TG-02.1] Worker providers
 ```yaml
 type: feat
+version: 1.1.0
 ```
 
 #### [TSK-02.1.1] Ollama first-pass review before the Claude reviewer in the fast profile [P: M] [TODO]
@@ -38,6 +39,7 @@ context: ["the bridge is its own repo at ~/komodo/ai/komodo-ollama-bridge; it se
 ### [TG-02.2] PR actions
 ```yaml
 type: feat
+version: 1.1.0
 ```
 
 #### [TSK-02.2.1] Unit tests for pr_actions.sync and pr_actions.respond with a mocked gh and a fake worker [P: H] [TODO]
@@ -58,6 +60,7 @@ depends_on: [TSK-02.2.1]
 ### [TG-02.3] CI and security gates
 ```yaml
 type: ci
+version: 1.1.0
 ```
 
 #### [TSK-02.3.1] Secret scan and dependency scan in the verify gate, blocking on a verified credential or a High advisory [P: M] [BLOCKED]
@@ -71,6 +74,7 @@ context: ["the GitHub Actions workflow this task targeted was removed; scanning 
 ### [TG-02.4] Planner quality
 ```yaml
 type: feat
+version: 1.1.0
 ```
 
 #### [TSK-02.4.2] bug: Only exit codes 126/127 are treated as broken, missing shell syntax errors [P: M] [TODO]
@@ -124,6 +128,7 @@ context:
 ### [TG-02.5] Run hygiene
 ```yaml
 type: fix
+version: 1.1.0
 ```
 
 #### [TSK-02.5.1] Commit only the paths a task declares or changed, so build artifacts never land [P: H] [TODO]
@@ -213,6 +218,7 @@ type: fix
 ### [TG-02.6] Defects found reading the tree
 ```yaml
 type: fix
+version: 1.1.0
 ```
 
 #### [TSK-02.6.2] publish picks the first pull request template it finds, not the last [P: M] [BLOCKED]
@@ -243,6 +249,7 @@ context: ["Three defects in migrate(), all reachable from `tasks migrate --write
 ### [TG-02.7] Go rewrite
 ```yaml
 type: refactor
+version: 1.1.0
 ```
 
 #### [TSK-02.7.1] Port the orchestrator to a compiled Go binary that runs natively with no interpreter [P: M] [TODO]
@@ -274,6 +281,7 @@ context: ["one binary with a guard and an inject subcommand replaces two scripts
 ### [TG-02.8] Standards drift
 ```yaml
 type: docs
+version: 1.1.0
 ```
 
 #### [TSK-02.8.1] Record this repo's no-CI deviation in komodo/standards/cicd.md or give it a runner [P: M] [TODO]

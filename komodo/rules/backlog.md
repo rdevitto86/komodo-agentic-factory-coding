@@ -8,6 +8,7 @@
 ### [TG-01.1] Group title
 ```yaml
 type: feat          # feat fix chore docs test refactor perf build ci (branch and commit type)
+version: 1.4.0      # the version this group ships; close-out writes it into the changelog heading
 mode: parallel      # parallel (default) or single: one builder takes the whole group
 ```
 #### [TSK-01.1.1] Task title [P: H] [TODO]
@@ -24,6 +25,7 @@ type: feat
 
 ## Rules
 - **Priority** is `C`, `H`, `M`, or `L`. **Status** is `TODO`, `IN_PROGRESS`, `BLOCKED`, or `DONE`. The harness rewrites only the status token.
+- **`version`** is required on every group, as `x.y.z`. It is the changelog heading close-out writes and the tag preflight cuts, so the two can never drift. Groups shipping together share one version.
 - **`files`** lists every path the task will create or edit. Tasks in different directories run in parallel; same directory serializes.
 - **`done_when`** is shell commands that exit zero when the task is done. Never prose. Cover the whole package, not one file.
 - **`depends_on`** only when a later task cannot compile or test without an earlier one.

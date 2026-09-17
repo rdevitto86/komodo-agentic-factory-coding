@@ -38,7 +38,7 @@ def write_backlog(root, extra=""):
             "# Backlog\n\n"
             "## [EPIC-01] Now\n*Goal*\n\n"
             "### [TG-01.1] Refunds\n"
-            "```yaml\ntype: feat\n```\n\n"
+            "```yaml\ntype: feat\nversion: 1.1.0\n```\n\n"
             "#### [TSK-01.1.1] Add refund handler [P: H] [TODO]\n"
             "```yaml\nfiles: [a.py]\ndone_when: [python3 -c 'pass']\n```\n"
             + extra
@@ -342,62 +342,8 @@ class PlanCommandTests(unittest.TestCase):
         self.assertNotIn("definitely-not-a-real-command-xyz", text)
 
 
-class ReleaseBumpTests(unittest.TestCase):
-    CHANGELOG = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a fix\n\n## [1.0.0] \u2014 2026-01-01\n\n### Added\n- the start\n"
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        make_repo(self.tmp.name)
-        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), "w", encoding="utf-8") as handle:
-            handle.write(self.CHANGELOG)
-        os.makedirs(os.path.join(self.tmp.name, "komodo"))
-        with open(os.path.join(self.tmp.name, "komodo", "__init__.py"), "w", encoding="utf-8") as handle:
-            handle.write('__version__ = "1.0.0"\n')
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def _changelog(self):
-        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), encoding="utf-8") as handle:
-            return handle.read()
-
-    def test_bump_cuts_a_version_and_opens_a_new_unreleased(self):
-        with chdir(self.tmp.name):
-            code = cli.main(["release", "--bump", "minor"])
-        self.assertEqual(code, 0)
-        text = self._changelog()
-        self.assertIn("## [1.1.0]", text)
-        self.assertIn("- a fix", text)
-        self.assertLess(text.index("## [Unreleased]"), text.index("## [1.1.0]"))
-
-    def test_bump_updates_the_package_version(self):
-        with chdir(self.tmp.name):
-            cli.main(["release", "--bump", "major"])
-        with open(os.path.join(self.tmp.name, "komodo", "__init__.py"), encoding="utf-8") as handle:
-            self.assertIn('__version__ = "2.0.0"', handle.read())
-
-    def test_dry_run_writes_nothing(self):
-        with chdir(self.tmp.name):
-            code = cli.main(["release", "--bump", "patch", "--dry-run"])
-        self.assertEqual(code, 0)
-        self.assertEqual(self._changelog(), self.CHANGELOG)
-
-    def test_bare_bump_infers_patch_from_a_fixes_only_section(self):
-        with chdir(self.tmp.name):
-            code = cli.main(["release", "--bump"])
-        self.assertEqual(code, 0)
-        self.assertIn("## [1.0.1]", self._changelog())
-
-    def test_an_empty_unreleased_section_is_an_error(self):
-        with open(os.path.join(self.tmp.name, "CHANGELOG.md"), "w", encoding="utf-8") as handle:
-            handle.write("# Changelog\n\n## [Unreleased]\n\n## [1.0.0] \u2014 2026-01-01\n\n- old\n")
-        with chdir(self.tmp.name):
-            code = cli.main(["release", "--bump", "minor"])
-        self.assertEqual(code, 2)
-
-
 class ReleaseCheckTests(unittest.TestCase):
-    CLEAN = "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
+    CLEAN = "# Changelog\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
 
     def _check(self, text, tags=(), args=()):
         """Runs release check in a throwaway repo carrying text and tags, returning its code and output."""
@@ -427,11 +373,6 @@ class ReleaseCheckTests(unittest.TestCase):
         code, out = self._check(self.CLEAN, ["v0.1.0", "v0.2.0", "v0.1.5"])
         self.assertEqual(code, 1)
         self.assertIn("v0.1.5 is tagged", out)
-
-    def test_an_empty_unreleased_exits_non_zero_at_release(self):
-        code, out = self._check(self.CLEAN, ["v0.1.0", "v0.2.0"], ["--at-release"])
-        self.assertEqual(code, 1)
-        self.assertIn("Unreleased section is empty", out)
 
     def test_a_date_separator_mismatch_exits_non_zero(self):
         mixed = self.CLEAN.replace("## [0.1.0] \u2014 2026-01-01", "## [0.1.0] - 2026-01-01")

@@ -172,7 +172,7 @@ class InjectorTests(unittest.TestCase):
                     "#### [TSK-01.1.4] live work [P: M] [IN_PROGRESS]\n"
                 )
             with open(os.path.join(root, "CHANGELOG.md"), "w") as handle:
-                handle.write("## [Unreleased]\n\n## [2.1.0] - 2026-01-01\n")
+                handle.write("## [2.1.0] - 2026-01-01\n")
             out = self.summary(root)
             self.assertIn("In progress: TSK-01.1.4 live work", out)
             self.assertIn("Backlog: 3 open, 1 blocked. Next group: TG-01.1.", out)
