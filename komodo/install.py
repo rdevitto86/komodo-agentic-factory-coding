@@ -34,16 +34,17 @@ def resolve_interpreter() -> List[str]:
 
 
 def rewrite_hook_commands(policy: Dict[str, Any], hooks_dir: str, interpreter: List[str]) -> Dict[str, Any]:
-    """Replaces `python3 ~/.claude/hooks/x.py` with the resolved interpreter and an absolute, tilde-free path."""
+    """Points every hook command at an absolute, tilde-free path, prefixing the resolved interpreter only for a .py script."""
     for entries in (policy.get("hooks") or {}).values():
         for entry in entries:
             for hook in entry.get("hooks", []):
                 tokens = shlex.split(str(hook.get("command", "")))
-                index = next((i for i, token in enumerate(tokens) if token.endswith(".py")), None)
+                index = next((i for i, token in enumerate(tokens) if "hooks/" in token or token.endswith(".py")), None)
                 if index is None:
                     continue
                 script = os.path.join(hooks_dir, os.path.basename(tokens[index]))
-                hook["command"] = " ".join(shlex.quote(part) for part in interpreter + [script] + tokens[index + 1:])
+                prefix = interpreter if script.endswith(".py") else []
+                hook["command"] = " ".join(shlex.quote(part) for part in prefix + [script] + tokens[index + 1:])
     return policy
 
 

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from komodo import adapters, roles, standards
+from komodo.adapters import claude
 from komodo.config import Config
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,6 +48,7 @@ class AdapterTests(unittest.TestCase):
             self.assertIn(os.path.join("skills", "komodo", "SKILL.md"), written)
             self.assertIn(os.path.join("skills", "standards-go", "SKILL.md"), written)
             self.assertIn(os.path.join("hooks", "guard.py"), written)
+            self.assertEqual(os.path.join("hooks", "guard") in written, bool(claude.host_guard()))
             self.assertIn(os.path.join("standards", "rust.md"), written)
             with open(os.path.join(target, "agents", "reviewer.md"), encoding="utf-8") as handle:
                 reviewer = handle.read()

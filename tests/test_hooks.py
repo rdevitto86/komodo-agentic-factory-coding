@@ -4,6 +4,8 @@ import sys
 import tempfile
 import unittest
 
+from komodo.adapters import claude
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS = os.path.join(REPO, "komodo", "hooks")
 PRE_COMMIT = os.path.join(HOOKS, "pre-commit.py")
@@ -121,11 +123,14 @@ class PrePushTests(unittest.TestCase):
 
 
 class GuardTests(unittest.TestCase):
+    def argv(self):
+        return [sys.executable, GUARD]
+
     def probe(self, command, cwd=REPO):
         import json
 
         payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd})
-        result = subprocess.run([sys.executable, GUARD], input=payload, capture_output=True, text=True)
+        result = subprocess.run(self.argv(), input=payload, capture_output=True, text=True)
         return "deny" if result.stdout.strip() else "allow"
 
     def test_denies_the_never_right_set(self):
@@ -137,9 +142,16 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(self.probe(command), "allow", command)
 
     def test_fails_open_on_garbage(self):
-        result = subprocess.run([sys.executable, GUARD], input="not json", capture_output=True, text=True)
+        result = subprocess.run(self.argv(), input="not json", capture_output=True, text=True)
         self.assertEqual(result.stdout.strip(), "")
         self.assertEqual(result.returncode, 0)
+
+
+# The compiled guard inherits every case above, so the two implementations can never drift apart silently.
+@unittest.skipUnless(claude.host_guard(), "no prebuilt guard binary for this platform")
+class GuardBinaryTests(GuardTests):
+    def argv(self):
+        return [claude.host_guard()]
 
 
 if __name__ == "__main__":
