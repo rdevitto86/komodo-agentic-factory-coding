@@ -206,6 +206,19 @@ done_when:
 context: ["TSK-02.6.3 blocked because doctor run from the tsk-02-6-3 worktree called the repo root a stale worktree; any done_when naming doctor fails inside a wave"]
 ```
 
+#### [TSK-02.5.10] doctor fails when a changelog version heading has no tag, or a tag has no heading [P: H] [TODO]
+```yaml
+files:
+  - komodo/doctor.py
+  - tests/test_doctor_install.py
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+context:
+  - 0.50.0 and 0.51.0 shipped to main with no v-tag; v0.46.5 is tagged with no changelog heading; komodo release only reads the newest non-Unreleased heading so it can never see an older gap
+type: fix
+```
+
+
 ### [TG-02.6] Defects found reading the tree
 ```yaml
 type: fix
