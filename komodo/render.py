@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .state import RunState
 
@@ -164,6 +164,35 @@ def next_version(current: str, bump: str) -> str:
     if bump == "minor":
         return "%d.%d.0" % (major, minor + 1)
     return "%d.%d.%d" % (major, minor, patch + 1)
+
+
+BREAKING = re.compile(r"\bbreaking\b|\bincompatible\b|\bno longer\b", re.IGNORECASE)
+
+
+def infer_bump(text: str) -> Tuple[str, str]:
+    """The semantic level the Unreleased section implies, with the reason to print."""
+    sections, bullets = [], []
+    started = False
+    for line in text.splitlines():
+        if line.lower().startswith("## [unreleased]"):
+            started = True
+            continue
+        if line.startswith("## ["):
+            break
+        if not started:
+            continue
+        if line.startswith("### "):
+            sections.append(line[4:].strip().lower())
+        elif line.strip().startswith("- "):
+            bullets.append(line)
+    if "removed" in sections:
+        return "major", "a Removed section"
+    breaking = next((line for line in bullets if BREAKING.search(line)), "")
+    if breaking:
+        return "major", "a bullet reading %s" % clip_sentence(breaking.strip("- "), 8)
+    if "added" in sections:
+        return "minor", "an Added section and nothing removed"
+    return "patch", "only fixes and changes"
 
 
 def cut_release(text: str, version: str, today: str) -> str:

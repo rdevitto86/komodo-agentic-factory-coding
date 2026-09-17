@@ -382,6 +382,12 @@ class ReleaseBumpTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(self._changelog(), self.CHANGELOG)
 
+    def test_bare_bump_infers_patch_from_a_fixes_only_section(self):
+        with chdir(self.tmp.name):
+            code = cli.main(["release", "--bump"])
+        self.assertEqual(code, 0)
+        self.assertIn("## [1.0.1]", self._changelog())
+
     def test_an_empty_unreleased_section_is_an_error(self):
         with open(os.path.join(self.tmp.name, "CHANGELOG.md"), "w") as handle:
             handle.write("# Changelog\n\n## [Unreleased]\n\n## [1.0.0] \u2014 2026-01-01\n\n- old\n")

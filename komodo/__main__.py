@@ -327,7 +327,11 @@ def cut_release(root: str, path: str, bump: str, dry_run: bool) -> int:
         if line.startswith("## [") and "unreleased" not in line.lower():
             current = line.split("[", 1)[1].split("]", 1)[0].strip()
             break
+    reason = "you asked for it"
+    if bump == "auto":
+        bump, reason = render.infer_bump(text)
     version = render.next_version(current or "0.0.0", bump)
+    print("%s bump to %s: %s" % (bump, version, reason))
     try:
         updated = render.cut_release(text, version, time.strftime("%Y-%m-%d"))
     except ValueError as error:
@@ -469,7 +473,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr_parser.set_defaults(func=cmd_pr)
 
     release = sub.add_parser("release", help="cut a version from Unreleased, or tag the newest one")
-    release.add_argument("--bump", choices=("major", "minor", "patch"), help="promote Unreleased to the next version instead of tagging")
+    release.add_argument("--bump", nargs="?", const="auto", choices=("auto", "major", "minor", "patch"), help="promote Unreleased to the next version instead of tagging; bare --bump reads the level off the changelog")
     release.add_argument("--dry-run", action="store_true")
     release.set_defaults(func=cmd_release)
     return parser

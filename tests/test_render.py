@@ -256,5 +256,35 @@ class CutReleaseTests(unittest.TestCase):
             render.cut_release("# Changelog\n\n## [1.0.0] \u2014 2026-01-01\n", "1.1.0", "2026-09-16")
 
 
+class InferBumpTests(unittest.TestCase):
+    def _text(self, body):
+        return "# Changelog\n\n## [Unreleased]\n\n%s\n## [1.0.0] \u2014 2026-01-01\n\n### Added\n- the start\n" % body
+
+    def test_only_fixes_is_a_patch(self):
+        level, _ = render.infer_bump(self._text("### Fixed\n- a crash\n"))
+        self.assertEqual(level, "patch")
+
+    def test_changed_alone_is_a_patch(self):
+        level, _ = render.infer_bump(self._text("### Changed\n- tighter output\n"))
+        self.assertEqual(level, "patch")
+
+    def test_added_is_a_minor(self):
+        level, _ = render.infer_bump(self._text("### Fixed\n- a crash\n\n### Added\n- a command\n"))
+        self.assertEqual(level, "minor")
+
+    def test_removed_is_a_major(self):
+        level, reason = render.infer_bump(self._text("### Added\n- a command\n\n### Removed\n- an old flag\n"))
+        self.assertEqual(level, "major")
+        self.assertIn("Removed", reason)
+
+    def test_a_breaking_bullet_is_a_major(self):
+        level, _ = render.infer_bump(self._text("### Changed\n- breaking: the state file moved\n"))
+        self.assertEqual(level, "major")
+
+    def test_a_released_section_below_is_ignored(self):
+        level, _ = render.infer_bump(self._text("### Fixed\n- a crash\n"))
+        self.assertEqual(level, "patch")
+
+
 if __name__ == "__main__":
     unittest.main()
