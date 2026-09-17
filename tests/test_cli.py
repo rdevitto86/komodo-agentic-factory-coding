@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from komodo import __main__ as cli
-from komodo import workers
+from komodo import gates, workers
 from komodo.config import Config
 from komodo.workers.base import Result, Worker
 
@@ -80,6 +80,15 @@ class ValidateDoneWhenTests(unittest.TestCase):
         kept, problems = cli.validate_done_when(self.tmp.name, self.config, commands)
         self.assertEqual(kept, ['python3 -c "print(1)"'])
         self.assertEqual(len(problems), 1)
+
+    def test_a_command_that_runs_and_fails_is_kept(self):
+        kept, problems = cli.validate_done_when(self.tmp.name, self.config, ['python3 -c "raise SystemExit(1)"'])
+        self.assertEqual(kept, ['python3 -c "raise SystemExit(1)"'])
+        self.assertEqual(problems, [])
+
+    def test_windows_not_recognized_text_counts_as_unrunnable(self):
+        result = gates.CommandResult(command="x", returncode=1, output="'x' is not recognized as an internal or external command", seconds=0.0)
+        self.assertEqual(cli._cannot_execute(result), os.name == "nt")
 
     def test_no_commands_is_a_no_op(self):
         kept, problems = cli.validate_done_when(self.tmp.name, self.config, [])

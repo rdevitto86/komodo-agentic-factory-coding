@@ -17,7 +17,9 @@ from .config import Config, ConfigError
 from .state import Store
 
 SCRATCH_TIMEOUT_S = 60
-BROKEN_COMMAND_CODES = (126, 127)
+BROKEN_COMMAND_CODES = (9009,) if os.name == "nt" else (126, 127)
+# cmd.exe reports an unknown command through this text, sometimes with exit 1 rather than 9009.
+WINDOWS_NOT_FOUND_RE = re.compile(r"is not recognized as an internal or external command|cannot find the (path|file) specified", re.IGNORECASE)
 # Network and destructive tools a planner-authored done_when must never invoke unattended.
 UNSAFE_DONE_WHEN_RE = re.compile(
     r"\b(rm\s+-[a-z]*r[a-z]*f|sudo|curl|wget|nc|ncat|netcat|ssh|scp|sftp|rsync|dd|mkfs|chmod|chown|kill(all)?"
@@ -162,6 +164,13 @@ def cmd_tasks(args: argparse.Namespace) -> int:
     return 2
 
 
+def _cannot_execute(result: gates.CommandResult) -> bool:
+    """Whether the shell could not run the command at all, as opposed to running it and getting a failure."""
+    if result.returncode in BROKEN_COMMAND_CODES:
+        return True
+    return os.name == "nt" and result.returncode != 0 and bool(WINDOWS_NOT_FOUND_RE.search(result.output))
+
+
 def validate_done_when(root: str, config: Config, commands: Sequence[str]) -> Tuple[List[str], List[str]]:
     """Runs each command once in a scratch worktree, dropping any that can't even execute."""
     if not commands:
@@ -178,7 +187,7 @@ def validate_done_when(root: str, config: Config, commands: Sequence[str]) -> Tu
                 problems.append("done_when %r not run: matches a network or destructive tool, needs human confirmation" % command)
                 continue
             result = gates.run_command(command, scratch, SCRATCH_TIMEOUT_S)
-            if result.returncode in BROKEN_COMMAND_CODES:
+            if _cannot_execute(result):
                 problems.append("done_when %r did not run: %s" % (command, result.output.strip().splitlines()[-1] if result.output.strip() else "exit %d" % result.returncode))
             else:
                 kept.append(command)
