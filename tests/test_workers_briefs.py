@@ -50,6 +50,7 @@ class BriefTests(unittest.TestCase):
 
     def test_schema_and_tools(self):
         self.assertIn("findings", briefs.schema_for("reviewer")["properties"])
+        self.assertIn("blast_radius", briefs.schema_for("reviewer")["required"])
         self.assertEqual(briefs.tools_for("reviewer"), ["Read", "Grep", "Glob"])
         self.assertEqual(briefs.tools_for("summarizer"), [])
         self.assertIn("Edit", briefs.tools_for("builder"))

@@ -440,12 +440,14 @@ class Pipeline:
                 self.state.notes.append("review worker failed: %s" % result.error[:200])
             return
         findings = [item for item in (result.data or {}).get("findings", []) if isinstance(item, dict)]
+        self.state.blast_radius = str((result.data or {}).get("blast_radius", ""))
+        self.state.blast_radius_why = str((result.data or {}).get("blast_radius_why", ""))[:300]
         floor = SEVERITY_RANK.get(str(self.config.get("severity_floor", "high")), 2)
         to_fix = [f for f in findings if SEVERITY_RANK.get(str(f.get("severity")), 0) >= floor]
         to_file = [f for f in findings if f not in to_fix]
         for finding in findings:
             self.state.findings.append({"title": "%s: %s" % (finding.get("severity"), finding.get("title")), "file": finding.get("file"), "severity": finding.get("severity"), "class": finding.get("class"), "fixed": False, "filed": False})
-        self.log("  review: %d finding(s), %d at or above %s" % (len(findings), len(to_fix), self.config.get("severity_floor")))
+        self.log("  review: %d finding(s), %d at or above %s; blast radius %s" % (len(findings), len(to_fix), self.config.get("severity_floor"), self.state.blast_radius or "unscored"))
         if to_fix:
             failure = "Review findings to fix:\n" + "\n".join("- [%s/%s] %s:%s %s. %s Fix: %s" % (f.get("severity"), f.get("class"), f.get("file"), f.get("line", "?"), f.get("title"), f.get("detail"), f.get("fix", "")) for f in to_fix)
             files = sorted({str(f.get("file")) for f in to_fix if f.get("file")}) or changed

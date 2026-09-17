@@ -27,6 +27,8 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
         "type": "object",
         "properties": {
             "summary": {"type": "string"},
+            "blast_radius": {"type": "string", "enum": ["low", "low-med", "med", "med-high", "high", "critical"]},
+            "blast_radius_why": {"type": "string"},
             "findings": {
                 "type": "array",
                 "items": {
@@ -44,7 +46,7 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
                 },
             },
         },
-        "required": ["summary", "findings"],
+        "required": ["summary", "blast_radius", "blast_radius_why", "findings"],
     },
     "planner": {
         "type": "object",

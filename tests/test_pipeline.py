@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from komodo import pipeline, tasks
+from komodo import pipeline, render, tasks
 from komodo.config import Config
 from komodo.workers import Result, Worker
 
@@ -60,7 +60,7 @@ class FakeBuilder(Worker):
     def invoke(self, brief):
         FakeBuilder.calls.append(brief)
         if brief.role == "reviewer":
-            return Result(ok=True, data={"summary": "fine", "findings": [{"severity": "low", "class": "simplify", "file": "app.py", "line": 1, "title": "could inline", "detail": "one-liner", "fix": "inline"}]}, cost_usd=0.01)
+            return Result(ok=True, data={"summary": "fine", "blast_radius": "low-med", "blast_radius_why": "one module, nothing imports it", "findings": [{"severity": "low", "class": "simplify", "file": "app.py", "line": 1, "title": "could inline", "detail": "one-liner", "fix": "inline"}]}, cost_usd=0.01)
         task_id = brief.task_id
         if task_id in FILES:
             path, body = FILES[task_id]
@@ -127,6 +127,8 @@ class PipelineTests(unittest.TestCase):
         roles = [brief.role for brief in FakeBuilder.calls]
         self.assertEqual(roles.count("builder"), 3)
         self.assertEqual(roles.count("reviewer"), 1)
+        self.assertEqual(state.blast_radius, "low-med")
+        self.assertIn("low-med", render.report(state, "Greeting", {}, []))
         git = run.git
         self.assertEqual(git.current_branch(), "feat/greeting-module")
         subjects = git.log_subjects("main")

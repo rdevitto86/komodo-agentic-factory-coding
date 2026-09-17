@@ -57,6 +57,8 @@ class RunState:
     workers: List[WorkerRecord] = field(default_factory=list)
     phases: Dict[str, float] = field(default_factory=dict)
     findings: List[Dict[str, Any]] = field(default_factory=list)
+    blast_radius: str = ""
+    blast_radius_why: str = ""
     pr_url: str = ""
     blocked: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)

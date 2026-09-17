@@ -34,7 +34,7 @@ Conventions for engineering in Swift. Principles live here; a version number nev
 ## Build & toolchain
 
 - **The manifest is the source of truth for the toolchain floor** — `Package.swift`'s `swift-tools-version` line, plus the platform deployment targets it declares. Read them rather than assuming a feature is available.
-- **Internal dependency graph** — SwiftPM ships it: `swift package describe` lists every target and the targets it depends on, `swift package show-dependencies` the package-level tree. Below target level the toolchain ships nothing. Run it when a change crosses target boundaries; the edge count is the blast radius a review has to cover.
+- **Internal dependency graph** — SwiftPM ships it: `swift package describe` lists every target and the targets it depends on, `swift package show-dependencies` the package-level tree. Below target level the toolchain ships nothing. The review's blast-radius score reads this output: run it before scoring anything above low-med, and say so when the fan-out was judged instead of walked.
 - **A formatter and a linter both run in CI**, configured by a file committed to the repo; a lint suppression is narrow, sits directly above the flagged line, and names the rule.
 - **Dependencies are pinned by the resolved file, and the resolved file is committed** for an application target. A library target does not commit it.
 

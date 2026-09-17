@@ -82,6 +82,8 @@ def report(state: RunState, group_title: str, task_titles: Dict[str, str], commi
     lines = ["# %s: %s" % (state.group_id, group_title), ""]
     status = "blocked" if state.blocked else "complete"
     lines.append("**Run %s** in %s for $%.2f, %d worker calls, profile `%s`." % (status, duration(state.elapsed), state.cost_usd, len(state.workers), state.profile))
+    if state.blast_radius:
+        lines.append("**Blast radius %s.** %s" % (state.blast_radius, state.blast_radius_why))
     lines.append("")
     lines += summary_buckets(state, task_titles)
     if commits:
@@ -111,6 +113,8 @@ def pr_body(state: RunState, group_title: str, task_titles: Dict[str, str], comm
         fixed = sum(1 for f in state.findings if f.get("fixed"))
         filed = sum(1 for f in state.findings if f.get("filed"))
         lines.append("- Review: %d finding(s) fixed in-branch, %d filed to the backlog." % (fixed, filed))
+    if state.blast_radius:
+        lines.append("- Blast radius **%s**: %s" % (state.blast_radius, state.blast_radius_why))
     return "\n".join(lines) + "\n"
 
 
