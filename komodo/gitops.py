@@ -82,6 +82,10 @@ class Git:
         """Whether a local branch with this name exists."""
         return subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/" + name], cwd=self.root).returncode == 0
 
+    def tag_exists(self, name: str) -> bool:
+        """Whether a tag with this name exists locally."""
+        return subprocess.run(["git", "rev-parse", "-q", "--verify", "refs/tags/" + name], cwd=self.root, capture_output=True).returncode == 0
+
     def default_base(self) -> str:
         """The base branch: the remote HEAD if known, else main, else master."""
         result = subprocess.run(["git", "symbolic-ref", "--short", "-q", "refs/remotes/%s/HEAD" % self.remote], cwd=self.root, capture_output=True, text=True)

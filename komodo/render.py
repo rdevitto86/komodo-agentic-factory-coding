@@ -166,6 +166,23 @@ def next_version(current: str, bump: str) -> str:
     return "%d.%d.%d" % (major, minor, patch + 1)
 
 
+def newest_version(text: str) -> Optional[str]:
+    """The version in the first numbered changelog heading, or None when nothing is released."""
+    for line in text.splitlines():
+        if line.startswith("## [") and "unreleased" not in line.lower():
+            return line.split("[", 1)[1].split("]", 1)[0].strip()
+    return None
+
+
+def has_unreleased_entries(text: str) -> bool:
+    """Whether the Unreleased section holds at least one bullet."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.lower().startswith("## [unreleased]"):
+            return _has_entries(lines, index)
+    return False
+
+
 BREAKING = re.compile(r"\bbreaking\b|\bincompatible\b|\bno longer\b", re.IGNORECASE)
 
 

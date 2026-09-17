@@ -20,11 +20,11 @@ The harness is code, not prose. A session drives it with one command and reads t
 | Fragment check | `python3 -m komodo doctor` |
 
 ## What a run does
-Preflight (lint, waves, clean tree), branch, build waves in parallel worktrees, verify once, review once, changelog and backlog update, push, open the PR. The report lands in `.komodo/runs/<id>/report.md` and in the PR body. A human merges.
+Preflight (lint, waves, clean tree, tag a merged version still untagged), branch, build waves in parallel worktrees, verify once, review once, changelog and backlog update, cut the version, push, open the PR. The report lands in `.komodo/runs/<id>/report.md` and in the PR body. A human merges.
 
 ## Rules for the session
 - Run `--dry-run` first when the group is new or large; read the wave plan before spending.
 - Never run the pipeline steps by hand around the CLI. If the CLI refuses, fix the cause it names.
 - A BLOCKED task in the report is a task for a human or a backlog fix, not a reason to edit the branch directly.
-- `release --bump` decides the level itself: a `Removed` section or a breaking bullet is major, an `Added` section is minor, anything else is patch. Pass a level to override it.
+- Close-out cuts the version itself, so `release --bump` is only for a version a human cuts by hand. `release --bump` decides the level itself: a `Removed` section or a breaking bullet is major, an `Added` section is minor, anything else is patch. Pass a level to override it.
 - Report the outcome with the mandatory three-bucket summary from the agent rules.

@@ -165,9 +165,31 @@ def check_roles(root: str) -> List[str]:
     return problems
 
 
+def check_changelog(root: str, protected: Optional[List[str]] = None, git_checks: bool = True) -> List[str]:
+    """On a protected branch only: entries still sitting under Unreleased, and a newest version no tag points at."""
+    from . import render
+
+    path = os.path.join(root, "CHANGELOG.md")
+    if not os.path.isfile(path) or not git_checks:
+        return []
+    git = gitops.Git(root, protected or ["main", "master"])
+    branch = git.current_branch()
+    if branch is None or not git.is_protected(branch):
+        return []
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    problems: List[str] = []
+    if render.has_unreleased_entries(text):
+        problems.append("CHANGELOG.md: [Unreleased] holds entries on %s; cut them with `python3 -m komodo release --bump`" % branch)
+    version = render.newest_version(text)
+    if version and not git.tag_exists("v" + version):
+        problems.append("CHANGELOG.md: version %s has no v%s tag; tag it with `python3 -m komodo release`" % (version, version))
+    return problems
+
+
 def run(root: str, protected: Optional[List[str]] = None, git_checks: bool = True) -> List[str]:
     """Every doctor check, concatenated."""
-    problems = check_references(root) + check_policy(root) + check_roles(root)
+    problems = check_references(root) + check_policy(root) + check_roles(root) + check_changelog(root, protected, git_checks)
     if git_checks:
         problems += check_git_leftovers(root, protected or ["main", "master"])
     return problems

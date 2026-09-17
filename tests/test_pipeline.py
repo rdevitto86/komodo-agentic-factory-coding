@@ -86,6 +86,8 @@ def make_repo(root):
     git("config", "commit.gpgsign", "false")
     with open(os.path.join(root, "BACKLOG.md"), "w") as handle:
         handle.write(BACKLOG)
+    with open(os.path.join(root, "CHANGELOG.md"), "w") as handle:
+        handle.write("# Changelog\n\n## [Unreleased]\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- the first thing\n")
     os.makedirs(os.path.join(root, "pkg"))
     os.makedirs(os.path.join(root, "other"))
     open(os.path.join(root, "pkg", "__init__.py"), "w").close()
@@ -143,6 +145,8 @@ class PipelineTests(unittest.TestCase):
             changelog = handle.read()
         self.assertIn("### Added", changelog)
         self.assertIn("Write the greeting", changelog)
+        self.assertIn("## [0.2.0] \u2014 ", changelog, "a feat group cuts a minor version")
+        self.assertNotIn("- Write the greeting", pipeline._section(changelog, "unreleased"))
         with open(run.store.report_path(state.run_id), encoding="utf-8") as handle:
             report = handle.read()
         self.assertIn("## ✅ Successful Changes", report)
@@ -160,6 +164,26 @@ class PipelineTests(unittest.TestCase):
         run = pipeline.Pipeline(self.tmp.name, config, log=self.logs.append, worker_factory=lambda *a, **k: FakeBuilder())
         with self.assertRaises(pipeline.PipelineError):
             run.run()
+
+    def _pipeline(self):
+        return pipeline.Pipeline(self.tmp.name, Config.load(self.tmp.name), log=self.logs.append,
+                                 worker_factory=lambda *a, **k: FakeBuilder())
+
+    def test_tag_pending_tags_the_merged_version_on_base(self):
+        run = self._pipeline()
+        run._tag_pending("main")
+        self.assertTrue(run.git.tag_exists("v0.1.0"))
+        self.assertIn("tagged v0.1.0 on main", "\n".join(self.logs))
+        self.logs = []
+        run._tag_pending("main")
+        self.assertEqual(self.logs, [], "a second call is a no-op once the tag exists")
+
+    def test_tag_pending_is_a_no_op_off_base(self):
+        run = self._pipeline()
+        run.git.create_branch("feat/somewhere-else")
+        run._tag_pending("main")
+        self.assertFalse(run.git.tag_exists("v0.1.0"))
+        self.assertEqual(self.logs, [])
 
     def test_blocked_task_blocks_dependents(self):
         class FailingBuilder(FakeBuilder):
@@ -190,6 +214,27 @@ class ChangelogTests(unittest.TestCase):
             self.assertEqual(text.count("### Added"), 1)
             self.assertIn("- First thing\n- Third thing", text)
             self.assertIn("### Fixed\n- Second thing", text)
+
+    def test_cut_version_bumps_patch_and_opens_a_fresh_unreleased(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "CHANGELOG.md")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
+            cut = pipeline._cut_version(path)
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            self.assertTrue(cut.startswith("0.1.1 (patch bump:"), cut)
+            self.assertIn("## [0.1.1] \u2014 ", text)
+            self.assertEqual(text.count("## [Unreleased]"), 1)
+            self.assertFalse(render.has_unreleased_entries(text))
+
+    def test_cut_version_takes_a_major_from_a_breaking_bullet(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "CHANGELOG.md")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("# Changelog\n\n## [Unreleased]\n\n### Changed\n- **Breaking** the flag is gone\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
+            cut = pipeline._cut_version(path)
+            self.assertTrue(cut.startswith("1.0.0 (major bump:"), cut)
 
     def test_section_anchor(self):
         text = "# Doc\n\n## Refunds\nbody\n\n## Other\nx\n"

@@ -121,6 +121,19 @@ class Pipeline:
             "comment_convention": standards.comment_convention(task.files),
         }
 
+    def _tag_pending(self, base: str) -> None:
+        """Tags the newest changelog version on base when no tag points at it yet."""
+        path = os.path.join(self.root, str(self.config.get("changelog", "CHANGELOG.md")))
+        if not os.path.isfile(path) or self.git.current_branch() != base or not self.git.is_clean():
+            return
+        version = render.newest_version(_read_text(path))
+        if not version or self.git.tag_exists("v" + version):
+            return
+        self.git.run("tag", "-a", "v" + version, "-m", "release %s" % version)
+        if self.git.has_remote():
+            self.git.run("push", self.config.remote, "v" + version)
+        self.log("tagged v%s on %s" % (version, base))
+
     # ----- phases ------------------------------------------------------------------
 
     def preflight(self, needle: Optional[str], resume: bool) -> None:
@@ -142,6 +155,8 @@ class Pipeline:
         except dag.CycleError as error:
             raise PipelineError("dependency cycle in %s: %s" % (self.group.id, error))
         base = str(self.config.get("base") or "") or self.git.default_base()
+        if not self.dry_run:
+            self._tag_pending(base)
         branch = "%s/%s" % (self.group.type, self.group.slug)
         existing = self.store.latest_for_group(self.group.id)
         if resume and existing:
@@ -497,7 +512,9 @@ class Pipeline:
         with open(self.backlog_path, "w", encoding="utf-8") as handle:
             handle.write(text)
         if done_titles:
-            _write_changelog(os.path.join(self.root, str(self.config.get("changelog", "CHANGELOG.md"))), self.group.type, done_titles)
+            changelog = os.path.join(self.root, str(self.config.get("changelog", "CHANGELOG.md")))
+            _write_changelog(changelog, self.group.type, done_titles)
+            self.log("  cut %s" % _cut_version(changelog))
         self.git.commit(gitops.commit_message("chore", "close out %s" % self.group.id, ["completed tasks dropped from the backlog", "changelog entry"]))
         if not verified:
             self.state.notes.append("branch %s left local and unpushed because verify failed" % self.state.branch)
@@ -622,6 +639,15 @@ def _write_changelog(path: str, kind: str, titles: Sequence[str]) -> None:
         section += ["", "### %s" % heading] + bullets
     lines[start:end] = section + ([""] if end < len(lines) and lines[end].startswith("## ") and section[-1].strip() else [])
     _write(path, lines)
+
+
+def _cut_version(path: str) -> str:
+    """Promotes the Unreleased section to the next version, returning the version cut."""
+    text = _read_text(path)
+    level, reason = render.infer_bump(text)
+    version = render.next_version(render.newest_version(text) or "0.0.0", level)
+    _write(path, render.cut_release(text, version, time.strftime("%Y-%m-%d")).splitlines())
+    return "%s (%s bump: %s)" % (version, level, reason)
 
 
 def _read_text(path: str) -> str:
