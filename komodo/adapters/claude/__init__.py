@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
 from typing import Any, Dict, List, Optional
 
@@ -15,8 +16,12 @@ KOMODO = os.path.dirname(os.path.dirname(HERE))
 RULES = os.path.join(KOMODO, "rules")
 POLICY = os.path.join(HERE, "settings.policy.json")
 HOOKS = os.path.join(HERE, "hooks")
+BIN = os.path.join(HOOKS, "bin")
 SEEDS = os.path.join(HERE, "seeds")
 WEB_TOOLS = ["WebFetch", "WebSearch"]
+GUARD_BINARY = "guard"
+
+ARCH_ALIASES = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}
 
 STANDARD_PATHS: Dict[str, str] = {
     "go": "**/*.go, **/go.mod, **/go.sum",
@@ -66,6 +71,34 @@ def _write(target: str, relative: str, text: str, written: List[str]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(text)
+    written.append(relative)
+
+
+def host_target() -> Optional[str]:
+    """The goos-goarch pair this machine runs, or None when the platform is not one we name."""
+    goos = platform.system().lower()
+    goarch = ARCH_ALIASES.get(platform.machine().lower())
+    if goos not in ("darwin", "linux", "windows") or goarch is None:
+        return None
+    return "%s-%s" % (goos, goarch)
+
+
+def host_guard() -> Optional[str]:
+    """Path to the prebuilt guard binary for this machine, or None when no committed target matches."""
+    target = host_target()
+    if target is None:
+        return None
+    name = "guard-%s%s" % (target, ".exe" if target.startswith("windows") else "")
+    path = os.path.join(BIN, name)
+    return path if os.path.isfile(path) else None
+
+
+def _copy(target: str, relative: str, source: str, written: List[str]) -> None:
+    """Copies a binary file under target and marks it executable."""
+    path = os.path.join(target, relative)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    shutil.copyfile(source, path)
+    os.chmod(path, 0o755)
     written.append(relative)
 
 
@@ -140,6 +173,11 @@ def render_skills(target: str, written: List[str]) -> None:
 def policy() -> Dict[str, Any]:
     """The settings policy with skillOverrides derived from the rendered skill set."""
     data = json.loads(_read(POLICY))
+    if host_guard():
+        for entry in (data.get("hooks") or {}).get("PreToolUse", []):
+            for hook in entry.get("hooks", []):
+                if str(hook.get("command", "")).endswith("guard.py"):
+                    hook["command"] = "~/.claude/hooks/" + GUARD_BINARY
     overrides = {name: "name-only" for name in list(PROCEDURE_SKILLS) + ["review"]}
     overrides.update({"standards-" + name: "name-only" for name in standards.available() if name in STANDARD_PATHS})
     data["skillOverrides"] = overrides
@@ -156,6 +194,10 @@ def render(target: str, config=None) -> List[str]:
     for name in os.listdir(HOOKS):
         if name.endswith(".py"):
             _write(target, os.path.join("hooks", name), _read(os.path.join(HOOKS, name)), written)
+    # guard.py always ships as the fallback; the binary only joins it when a committed target matches this machine.
+    binary = host_guard()
+    if binary:
+        _copy(target, os.path.join("hooks", GUARD_BINARY), binary, written)
     for name in standards.available():
         _write(target, os.path.join("standards", name + ".md"), _read(os.path.join(standards.STANDARDS_DIR, name + ".md")), written)
     _write(target, "settings.policy.json", json.dumps(policy(), indent=2) + "\n", written)

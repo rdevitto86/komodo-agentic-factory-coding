@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from komodo import doctor, install, standards
+from komodo.adapters import claude
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -65,6 +66,12 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(os.listdir(target), [])
             self.assertTrue(any("settings.json" in line for line in logs))
 
+    def test_rewrite_leaves_a_binary_hook_uninterpreted(self):
+        policy = {"hooks": {"PreToolUse": [{"hooks": [{"command": "~/.claude/hooks/guard"}]}]}}
+        out = install.rewrite_hook_commands(policy, "/x/hooks", ["python3"])
+        command = out["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        self.assertEqual(command, "/x/hooks/guard")
+
     def test_install_real_into_temp_preserves_personal(self):
         with tempfile.TemporaryDirectory() as target:
             with open(os.path.join(target, "settings.json"), "w") as handle:
@@ -74,7 +81,10 @@ class InstallTests(unittest.TestCase):
             with open(os.path.join(target, "settings.json")) as handle:
                 settings = json.load(handle)
             self.assertEqual(settings["effortLevel"], "high")
-            self.assertIn("guard.py", settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
+            guard = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+            expected = "guard" if claude.host_guard() else "guard.py"
+            self.assertTrue(guard.endswith(expected), guard)
+            self.assertEqual(os.path.isfile(os.path.join(target, "hooks", "guard")), bool(claude.host_guard()))
             self.assertTrue(os.path.isfile(os.path.join(target, "AGENTS.md")))
             self.assertTrue(os.path.isfile(os.path.join(target, "standards", "go.md")))
             self.assertTrue(os.path.isdir(os.path.join(target, "skills", "komodo")))
