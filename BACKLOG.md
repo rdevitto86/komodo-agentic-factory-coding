@@ -126,6 +126,38 @@ done_when:
 context: ["a 10-line diff cost 0.10 of 0.16 USD and 1m54s of a 2m09s run; the fast profile's 150-line floor turns review off for exactly this case"]
 ```
 
+#### [TSK-02.5.6] Phase timing stores a duration, not the epoch second the phase ended [P: H] [TODO]
+```yaml
+files: [komodo/state.py, komodo/render.py, tests/test_gates_state.py]
+done_when:
+  - python3 -m unittest tests.test_gates_state -q
+context: ["the TG-02.4 report printed `verify | -194s`; state.phases holds absolute timestamps such as 1789609979 and render subtracts them in the wrong order"]
+```
+
+#### [TSK-02.5.7] Persist the run cost so a resumed or re-read state carries what the run spent [P: M] [TODO]
+```yaml
+files: [komodo/state.py, komodo/pipeline.py, tests/test_gates_state.py]
+done_when:
+  - python3 -m unittest tests.test_gates_state tests.test_pipeline -q
+context: ["the TG-02.6 report printed 2.44 USD while its state.json recorded cost_usd 0.0; only the per-worker rows survive a reload"]
+```
+
+#### [TSK-02.5.8] A commit the pre-commit hook refuses is a repair attempt, not a crashed builder [P: H] [TODO]
+```yaml
+files: [komodo/pipeline.py, komodo/gitops.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline tests.test_gitops -q
+context: ["TSK-02.6.2 finished its work, then the comment lint refused the commit over an OVER_LINES finding; the task reported `builder crashed` and no repair pass ran"]
+```
+
+#### [TSK-02.5.9] doctor's stale-worktree check must not flag the main checkout when it runs inside a builder worktree [P: H] [TODO]
+```yaml
+files: [komodo/doctor.py, komodo/gitops.py, tests/test_doctor_install.py]
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+context: ["TSK-02.6.3 blocked because doctor run from the tsk-02-6-3 worktree called the repo root a stale worktree; any done_when naming doctor fails inside a wave"]
+```
+
 ### [TG-02.6] Defects found reading the tree
 ```yaml
 type: fix
