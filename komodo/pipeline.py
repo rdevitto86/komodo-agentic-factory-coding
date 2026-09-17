@@ -493,15 +493,19 @@ class Pipeline:
                     entry["filed"] = True
         self.store.save(self.state)
 
-    def publish(self, verified: bool) -> None:
-        """Updates backlog statuses and the changelog, commits, pushes, and opens the PR when the branch verified."""
+    def publish(self, verified: bool) -> Optional[str]:
+        """Closes out the backlog and changelog, commits, pushes, and opens the PR; returns the reason it could not."""
         assert self.state is not None and self.group is not None and self.backlog_path is not None
         self.state.mark_phase("publish")
         if self.dry_run:
             self.log("  dry-run publish: would push %s and open a PR against %s" % (self.state.branch, self.state.base))
-            return
+            return None
         text = _read_text(self.backlog_path)
         done_titles = [self.backlog.task(tid).title for tid, record in self.state.tasks.items() if record.status == "DONE" and self.backlog and self.backlog.task(tid)]
+        if not verified:
+            return "verify failed; %s keeps the work uncommitted and no pull request was opened" % self.state.branch
+        if not done_titles:
+            return "no task finished; %s has nothing to publish" % self.state.branch
         for task_id, record in self.state.tasks.items():
             if not (self.backlog and self.backlog.task(task_id)):
                 continue
@@ -516,19 +520,11 @@ class Pipeline:
             _write_changelog(changelog, self.group.type, done_titles, self.group.version)
             self.log("  changelog: %s" % self.group.version)
         self.git.commit(gitops.commit_message("chore", "close out %s" % self.group.id, ["completed tasks dropped from the backlog", "changelog entry"]))
-        if not verified:
-            self.state.notes.append("branch %s left local and unpushed because verify failed" % self.state.branch)
-            return
-        if not done_titles:
-            self.state.notes.append("nothing landed; branch not pushed")
-            return
         if not self.git.has_remote():
-            self.state.notes.append("no remote %r configured; branch %s left local" % (self.config.remote, self.state.branch))
-            return
+            return "no remote %r; %s is committed locally and no pull request was opened" % (self.config.remote, self.state.branch)
         self.git.push(self.state.branch)
         if not pr.available(self.root):
-            self.state.notes.append("gh is not authenticated; pushed %s without opening a PR" % self.state.branch)
-            return
+            return "gh is not authenticated; %s is pushed and no pull request was opened - run `gh auth login`" % self.state.branch
         titles = {task.id: task.title for task in self.group.tasks}
         template = None
         for candidate in (".github/PULL_REQUEST_TEMPLATE.md", ".github/pull_request_template.md"):
@@ -545,6 +541,7 @@ class Pipeline:
         else:
             self.state.pr_url = pr.create(self.root, title[:72], body, self.state.base, labels)
         self.log("  PR: %s" % self.state.pr_url)
+        return None
 
     def finish(self) -> str:
         """Writes the report and returns its path."""
@@ -571,9 +568,13 @@ class Pipeline:
         if verified:
             self.review()
             verified = self.verify() if any(f.get("fixed") for f in (self.state.findings if self.state else [])) else verified
-        self.publish(verified)
+        blocker = self.publish(verified)
+        if blocker and self.state is not None:
+            self.state.publish_blocker = blocker
         self.finish()
         assert self.state is not None
+        if blocker:
+            raise PipelineError(blocker)
         return self.state
 
 

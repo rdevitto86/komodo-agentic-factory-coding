@@ -83,6 +83,8 @@ def report(state: RunState, group_title: str, task_titles: Dict[str, str], commi
     lines = ["# %s: %s" % (state.group_id, group_title), ""]
     status = "blocked" if state.blocked else "complete"
     lines.append("**Run %s** in %s for $%.2f, %d worker calls, profile `%s`." % (status, duration(state.elapsed), state.cost_usd, len(state.workers), state.profile))
+    if state.publish_blocker:
+        lines.append("**No pull request.** %s" % state.publish_blocker)
     if state.blast_radius:
         lines.append("**Blast radius %s.** %s" % (state.blast_radius, state.blast_radius_why))
     lines.append("")

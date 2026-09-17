@@ -60,6 +60,7 @@ class RunState:
     blast_radius: str = ""
     blast_radius_why: str = ""
     pr_url: str = ""
+    publish_blocker: str = ""
     blocked: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     finished: float = 0.0
