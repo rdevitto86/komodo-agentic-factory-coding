@@ -124,7 +124,10 @@ class PipelineTests(unittest.TestCase):
     def test_end_to_end_with_fake_workers(self):
         config = Config.load(self.tmp.name)
         run = pipeline.Pipeline(self.tmp.name, config, log=self.logs.append, worker_factory=lambda *a, **k: FakeBuilder())
-        state = run.run()
+        with self.assertRaises(pipeline.PipelineError):
+            run.run()  # the fixture has no remote, so publish reports it instead of passing silently
+        state = run.state
+        assert state is not None
         statuses = {tid: record.status for tid, record in state.tasks.items()}
         self.assertEqual(statuses, {"TSK-01.1.1": "DONE", "TSK-01.1.2": "DONE", "TSK-01.1.3": "DONE"})
         roles = [brief.role for brief in FakeBuilder.calls]
@@ -218,11 +221,103 @@ class PipelineTests(unittest.TestCase):
 
         config = Config.load(self.tmp.name)
         run = pipeline.Pipeline(self.tmp.name, config, log=self.logs.append, worker_factory=lambda *a, **k: FailingBuilder())
-        state = run.run()
+        with self.assertRaises(pipeline.PipelineError):
+            run.run()
+        state = run.state
+        assert state is not None
         self.assertEqual(state.tasks["TSK-01.1.1"].status, "BLOCKED")
         self.assertEqual(state.tasks["TSK-01.1.3"].status, "BLOCKED")
         self.assertEqual(state.tasks["TSK-01.1.2"].status, "DONE")
         self.assertIn("TSK-01.1.3", state.blocked)
+
+
+class PublishBlockerTests(unittest.TestCase):
+    """Every publish path that ends without a pull request names itself and fails the run."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        make_repo(self.tmp.name)
+        self.remote = tempfile.TemporaryDirectory()
+        subprocess.run(["git", "init", "-q", "--bare", self.remote.name], check=True, capture_output=True)
+        FakeBuilder.calls = []
+        self.logs = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        self.remote.cleanup()
+
+    def _pipeline(self):
+        return pipeline.Pipeline(self.tmp.name, Config.load(self.tmp.name), log=self.logs.append,
+                                 worker_factory=lambda *a, **k: FakeBuilder())
+
+    def _add_remote(self):
+        subprocess.run(["git", "remote", "add", "origin", self.remote.name], cwd=self.tmp.name, check=True, capture_output=True)
+
+    def _head(self):
+        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.tmp.name, check=True, capture_output=True, text=True)
+        return out.stdout.strip()
+
+    def test_no_remote_fails_the_run_and_names_the_reason(self):
+        run = self._pipeline()
+        with self.assertRaises(pipeline.PipelineError) as caught:
+            run.run()
+        self.assertIn("no remote 'origin'", str(caught.exception))
+        self.assertEqual(run.state.publish_blocker, str(caught.exception))
+        self.assertEqual(run.state.pr_url, "")
+
+    def test_unauthenticated_gh_pushes_then_fails_the_run(self):
+        self._add_remote()
+        run = self._pipeline()
+        with mock.patch.object(pipeline.pr, "available", return_value=False):
+            with self.assertRaises(pipeline.PipelineError) as caught:
+                run.run()
+        self.assertIn("gh is not authenticated", str(caught.exception))
+        self.assertEqual(run.state.pr_url, "")
+        pushed = subprocess.run(["git", "branch", "--list", "feat/greeting-module"], cwd=self.remote.name, capture_output=True, text=True)
+        self.assertIn("feat/greeting-module", pushed.stdout, "the branch reached the remote before the run failed")
+
+    def test_failed_verify_leaves_no_close_out_commit(self):
+        run = self._pipeline()
+        self._add_remote()
+        with mock.patch.object(pipeline.Pipeline, "verify", return_value=False):
+            with self.assertRaises(pipeline.PipelineError) as caught:
+                run.run()
+        self.assertIn("verify failed", str(caught.exception))
+        subjects = run.git.log_subjects("main")
+        self.assertNotIn("chore: close out TG-01.1", subjects, "a failed verify never writes a close-out commit")
+
+    def test_nothing_landed_fails_the_run(self):
+        class DeadBuilder(FakeBuilder):
+            def invoke(self, brief):
+                if brief.role == "reviewer":
+                    return super().invoke(brief)
+                return Result(ok=False, error="boom")
+
+        self._add_remote()
+        run = pipeline.Pipeline(self.tmp.name, Config.load(self.tmp.name), log=self.logs.append,
+                                worker_factory=lambda *a, **k: DeadBuilder())
+        with self.assertRaises(pipeline.PipelineError) as caught:
+            run.run()
+        self.assertIn("nothing to publish", str(caught.exception))
+
+    def test_the_happy_path_still_opens_a_pull_request(self):
+        self._add_remote()
+        run = self._pipeline()
+        with mock.patch.object(pipeline.pr, "available", return_value=True), \
+             mock.patch.object(pipeline.pr, "view", return_value=None), \
+             mock.patch.object(pipeline.pr, "existing_labels", return_value=[]), \
+             mock.patch.object(pipeline.pr, "create", return_value="https://example.invalid/pr/1") as created:
+            state = run.run()
+        self.assertEqual(state.pr_url, "https://example.invalid/pr/1")
+        self.assertEqual(state.publish_blocker, "")
+        self.assertEqual(created.call_count, 1)
+        self.assertIn("chore: close out TG-01.1", run.git.log_subjects("main"))
+
+    def test_the_report_names_the_missing_pull_request(self):
+        run = self._pipeline()
+        with self.assertRaises(pipeline.PipelineError):
+            run.run()
+        self.assertIn("**No pull request.**", render.report(run.state, "Greeting", {}, []))
 
 
 class ChangelogTests(unittest.TestCase):
