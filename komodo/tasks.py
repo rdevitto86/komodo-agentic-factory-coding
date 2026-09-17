@@ -23,7 +23,11 @@ TASK_HEADING = re.compile(
 FENCE_OPEN = re.compile(r"^```(?:yaml|yml)\s*$")
 FENCE_CLOSE = re.compile(r"^```\s*$")
 LEGACY_STATUS = {"WIP": "IN_PROGRESS"}
-COMMAND_HINT = re.compile(r"^(go|npm|pnpm|bun|npx|python3?|py\b|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|zig|swift|bash|sh|\./|/|\"|'|[A-Za-z]:[\\/]|test\b|git\b)")
+COMMAND_HINT = re.compile(
+    r"^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
+    r"(!|go|npm|pnpm|bun|npx|python3?|py\b|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|zig|swift"
+    r"|bash|sh|grep|rg|sed|awk|find|test\b|git\b|\./|/|\"|'|[A-Za-z]:[\\/])"
+)
 
 
 @dataclass
@@ -413,8 +417,27 @@ def append_task(text: str, group_id: str, title: str, fields: Dict[str, object],
 
 
 LEGACY_TASK = re.compile(r"^####\s+\[(TSK-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$")
-LEGACY_ROW = re.compile(r"^\|\s*`?(SUB-[\w.]+)`?\s*\|(.*?)\|(.*?)\|\s*$")
+LEGACY_ROW = re.compile(r"^\|\s*`?(SUB-[\w.]+)`?\s*\|")
+UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
 LEGACY_FIELD = re.compile(r"^\|\s*([^|]+?)\s*\|\s*(.*?)\s*\|\s*$")
+
+
+def _last_cell(row: str) -> str:
+    """The rightmost cell of a markdown table row, split on unescaped pipes."""
+    cells = UNESCAPED_PIPE.split(row.strip())
+    if cells and not cells[-1].strip():
+        cells.pop()
+    return cells[-1].strip().strip("`").strip() if cells else ""
+
+
+def _trim_blanks(body: List[str]) -> List[str]:
+    """The body lines with leading and trailing blank lines removed."""
+    start, end = 0, len(body)
+    while start < end and not body[start].strip():
+        start += 1
+    while end > start and not body[end - 1].strip():
+        end -= 1
+    return body[start:end]
 
 
 def migrate(text: str) -> Tuple[str, List[str]]:
@@ -443,11 +466,12 @@ def migrate(text: str) -> Tuple[str, List[str]]:
         fields: Dict[str, object] = {"files": [], "done_when": []}
         prose: List[str] = []
         depends: List[str] = []
+        body: List[str] = []
         while index < len(lines) and not lines[index].startswith("#"):
             row = lines[index]
-            sub = LEGACY_ROW.match(row)
-            if sub:
-                done = sub.group(3).strip().strip("`")
+            body.append(row)
+            if LEGACY_ROW.match(row):
+                done = _last_cell(row)
                 if done and done.lower() not in ("done when", "---"):
                     if COMMAND_HINT.match(done):
                         fields["done_when"].append(done)
@@ -470,6 +494,10 @@ def migrate(text: str) -> Tuple[str, List[str]]:
         out.append("```yaml")
         out.append(yamlite.dumps(fields).rstrip("\n"))
         out.append("```")
+        kept = _trim_blanks(body)
+        if kept:
+            out.append("")
+            out.extend(kept)
         out.append("")
     return "\n".join(out) + ("\n" if text.endswith("\n") else ""), report
 
