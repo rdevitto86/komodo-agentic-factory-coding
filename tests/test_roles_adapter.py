@@ -48,7 +48,8 @@ class AdapterTests(unittest.TestCase):
             self.assertIn(os.path.join("skills", "komodo", "SKILL.md"), written)
             self.assertIn(os.path.join("skills", "standards-go", "SKILL.md"), written)
             self.assertIn(os.path.join("hooks", "guard.py"), written)
-            self.assertEqual(os.path.join("hooks", "guard") in written, bool(claude.host_guard()))
+            self.assertIn(os.path.join("hooks", "context_injector.py"), written)
+            self.assertEqual(os.path.join("hooks", claude.BINARY) in written, bool(claude.host_binary()))
             self.assertIn(os.path.join("standards", "rust.md"), written)
             with open(os.path.join(target, "agents", "reviewer.md"), encoding="utf-8") as handle:
                 reviewer = handle.read()

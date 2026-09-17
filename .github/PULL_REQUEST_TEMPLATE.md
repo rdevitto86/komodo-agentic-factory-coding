@@ -15,7 +15,7 @@ Types: feat fix chore docs test refactor perf build ci
 
 ## Validation
 
-<!-- Only what a green CI run cannot show. "Covered by CI" is a complete answer. -->
+<!-- What you ran and what it proved. There is no CI; `python3 scripts/verify.py` is the gate. -->
 
 ## Dependencies
 

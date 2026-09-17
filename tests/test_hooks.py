@@ -10,7 +10,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS = os.path.join(REPO, "komodo", "hooks")
 PRE_COMMIT = os.path.join(HOOKS, "pre-commit.py")
 PRE_PUSH = os.path.join(HOOKS, "pre-push.py")
-GUARD = os.path.join(REPO, "komodo", "adapters", "claude", "hooks", "guard.py")
+CLAUDE_HOOKS = os.path.join(REPO, "komodo", "adapters", "claude", "hooks")
+GUARD = os.path.join(CLAUDE_HOOKS, "guard.py")
+INJECTOR = os.path.join(CLAUDE_HOOKS, "context_injector.py")
 
 
 def make_repo(root):
@@ -147,11 +149,58 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
 
-# The compiled guard inherits every case above, so the two implementations can never drift apart silently.
-@unittest.skipUnless(claude.host_guard(), "no prebuilt guard binary for this platform")
+class InjectorTests(unittest.TestCase):
+    def argv(self):
+        return [sys.executable, INJECTOR]
+
+    def summary(self, root):
+        return subprocess.run(self.argv(), cwd=root, capture_output=True, text=True).stdout
+
+    def test_silent_outside_a_repo(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(self.summary(root), "")
+
+    def test_reports_backlog_counts_and_version(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_repo(root)
+            with open(os.path.join(root, "BACKLOG.md"), "w") as handle:
+                handle.write(
+                    "### [TG-01.1] First\n"
+                    "#### [TSK-01.1.1] done work [P: H] [DONE]\n"
+                    "#### [TSK-01.1.2] open work [P: H] [TODO]\n"
+                    "#### [TSK-01.1.3] stuck work [P: M] [BLOCKED]\n"
+                    "#### [TSK-01.1.4] live work [P: M] [IN_PROGRESS]\n"
+                )
+            with open(os.path.join(root, "CHANGELOG.md"), "w") as handle:
+                handle.write("## [Unreleased]\n\n## [2.1.0] - 2026-01-01\n")
+            out = self.summary(root)
+            self.assertIn("In progress: TSK-01.1.4 live work", out)
+            self.assertIn("Backlog: 3 open, 1 blocked. Next group: TG-01.1.", out)
+            self.assertIn("Released version: 2.1.0.", out)
+            self.assertIn("No verify gate declared.", out)
+
+    def test_reports_a_missing_backlog_and_a_verify_gate(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_repo(root)
+            os.makedirs(os.path.join(root, "scripts"))
+            with open(os.path.join(root, "scripts", "verify.py"), "w") as handle:
+                handle.write("")
+            out = self.summary(root)
+            self.assertIn("No BACKLOG.md; the harness has nothing to run here.", out)
+            self.assertIn("Verify gate: scripts/verify.py.", out)
+
+
+# The compiled hooks inherit every case above, so the two implementations can never drift apart silently.
+@unittest.skipUnless(claude.host_binary(), "no prebuilt hook binary for this platform")
 class GuardBinaryTests(GuardTests):
     def argv(self):
-        return [claude.host_guard()]
+        return [claude.host_binary(), "guard"]
+
+
+@unittest.skipUnless(claude.host_binary(), "no prebuilt hook binary for this platform")
+class InjectorBinaryTests(InjectorTests):
+    def argv(self):
+        return [claude.host_binary(), "inject"]
 
 
 if __name__ == "__main__":

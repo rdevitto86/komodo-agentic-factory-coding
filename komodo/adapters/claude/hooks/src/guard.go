@@ -1,4 +1,3 @@
-// Command guard is a PreToolUse advisory hook that denies the handful of Bash commands that are never right.
 package main
 
 import (
@@ -173,8 +172,8 @@ type payload struct {
 	Cwd string `json:"cwd"`
 }
 
-// main reads the tool payload, denies on findings, and stays silent otherwise; any internal error fails open.
-func main() {
+// guardMain reads the tool payload, denies on findings, and stays silent otherwise; any internal error fails open.
+func guardMain() {
 	raw, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return

@@ -19,7 +19,10 @@ HOOKS = os.path.join(HERE, "hooks")
 BIN = os.path.join(HOOKS, "bin")
 SEEDS = os.path.join(HERE, "seeds")
 WEB_TOOLS = ["WebFetch", "WebSearch"]
-GUARD_BINARY = "guard"
+BINARY = "komodo-hooks"
+
+# Every Python hook and the subcommand of the compiled binary that replaces it.
+HOOK_SUBCOMMANDS = {"guard.py": "guard", "context_injector.py": "inject"}
 
 ARCH_ALIASES = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}
 
@@ -83,12 +86,12 @@ def host_target() -> Optional[str]:
     return "%s-%s" % (goos, goarch)
 
 
-def host_guard() -> Optional[str]:
-    """Path to the prebuilt guard binary for this machine, or None when no committed target matches."""
+def host_binary() -> Optional[str]:
+    """Path to the prebuilt hook binary for this machine, or None when no committed target matches."""
     target = host_target()
     if target is None:
         return None
-    name = "guard-%s%s" % (target, ".exe" if target.startswith("windows") else "")
+    name = "%s-%s%s" % (BINARY, target, ".exe" if target.startswith("windows") else "")
     path = os.path.join(BIN, name)
     return path if os.path.isfile(path) else None
 
@@ -173,11 +176,13 @@ def render_skills(target: str, written: List[str]) -> None:
 def policy() -> Dict[str, Any]:
     """The settings policy with skillOverrides derived from the rendered skill set."""
     data = json.loads(_read(POLICY))
-    if host_guard():
-        for entry in (data.get("hooks") or {}).get("PreToolUse", []):
-            for hook in entry.get("hooks", []):
-                if str(hook.get("command", "")).endswith("guard.py"):
-                    hook["command"] = "~/.claude/hooks/" + GUARD_BINARY
+    if host_binary():
+        for entries in (data.get("hooks") or {}).values():
+            for entry in entries:
+                for hook in entry.get("hooks", []):
+                    script = os.path.basename(str(hook.get("command", "")))
+                    if script in HOOK_SUBCOMMANDS:
+                        hook["command"] = "~/.claude/hooks/%s %s" % (BINARY, HOOK_SUBCOMMANDS[script])
     overrides = {name: "name-only" for name in list(PROCEDURE_SKILLS) + ["review"]}
     overrides.update({"standards-" + name: "name-only" for name in standards.available() if name in STANDARD_PATHS})
     data["skillOverrides"] = overrides
@@ -194,10 +199,10 @@ def render(target: str, config=None) -> List[str]:
     for name in os.listdir(HOOKS):
         if name.endswith(".py"):
             _write(target, os.path.join("hooks", name), _read(os.path.join(HOOKS, name)), written)
-    # guard.py always ships as the fallback; the binary only joins it when a committed target matches this machine.
-    binary = host_guard()
+    # The Python hooks always ship as the fallback; the binary only joins them when a committed target matches this machine.
+    binary = host_binary()
     if binary:
-        _copy(target, os.path.join("hooks", GUARD_BINARY), binary, written)
+        _copy(target, os.path.join("hooks", BINARY), binary, written)
     for name in standards.available():
         _write(target, os.path.join("standards", name + ".md"), _read(os.path.join(standards.STANDARDS_DIR, name + ".md")), written)
     _write(target, "settings.policy.json", json.dumps(policy(), indent=2) + "\n", written)

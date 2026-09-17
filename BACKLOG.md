@@ -27,12 +27,12 @@ done_when:
   - python3 -m unittest tests.test_pipeline -q
 ```
 
-#### [TSK-02.1.3] Bridge: set num_ctx on generate requests so a large summarizer payload does not truncate silently [P: M] [BLOCKED]
+#### [TSK-02.1.3] Bridge: set num_ctx on chat requests so a large summarizer payload does not truncate silently [P: M] [DONE]
 ```yaml
 files: []
 done_when: []
 owner: human
-context: ["the bridge source and its prompt files live outside this repo under the user's .komodo/bridge deploy"]
+context: ["the bridge is its own repo at ~/komodo/ai/komodo-ollama-bridge; it sets num_ctx per agent, warns on a filled window, and banners a truncated tool result"]
 ```
 
 ### [TG-02.2] PR actions
@@ -60,13 +60,12 @@ depends_on: [TSK-02.2.1]
 type: ci
 ```
 
-#### [TSK-02.3.1] Secret scan and dependency scan in the verify workflow, blocking on a verified credential or a High advisory [P: M] [TODO]
+#### [TSK-02.3.1] Secret scan and dependency scan in the verify gate, blocking on a verified credential or a High advisory [P: M] [BLOCKED]
 ```yaml
-files: [.github/workflows/verify.yml]
-done_when:
-  - python3 -c "import yaml" 2>/dev/null || python3 -c "print('yaml parse skipped')"
-  - test -f .github/workflows/verify.yml
-context: [komodo/standards/cicd.md#ci]
+files: []
+done_when: []
+owner: human
+context: ["the GitHub Actions workflow this task targeted was removed; scanning has to run in scripts/verify.py or in a hosted build that is not GitHub Actions", "komodo/standards/cicd.md#ci still mandates CI scanning, so the standard needs a recorded deviation or this repo needs a runner"]
 ```
 
 ### [TG-02.4] Planner quality
@@ -252,4 +251,26 @@ done_when:
   - python3 -m unittest tests.test_hooks -q
   - python3 scripts/verify.py
 context: ["the Go source and prebuilt binaries already live under komodo/adapters/claude/hooks/; nothing renders them yet", "the adapter render loop copies only .py and writes text, so a binary needs a separate binary-safe copy path", "guard.py stays as the fallback for any platform without a committed binary"]
+```
+
+#### [TSK-02.7.3] Compile every session hook for every platform so install needs no interpreter [P: M] [DONE]
+```yaml
+files: [komodo/install.py, komodo/adapters/claude/__init__.py, scripts/build-hooks.py, tests/test_hooks.py]
+done_when:
+  - python3 -m unittest tests.test_hooks -q
+  - python3 scripts/verify.py
+context: ["one binary with a guard and an inject subcommand replaces two scripts, so the target matrix costs one artifact per platform", "context_injector.py is ported to Go and both implementations are held to the same test cases", "install hard-failed on a missing python because a hook was still a script; the check now names the scripts that need one"]
+```
+
+### [TG-02.8] Standards drift
+```yaml
+type: docs
+```
+
+#### [TSK-02.8.1] Record this repo's no-CI deviation in komodo/standards/cicd.md or give it a runner [P: M] [TODO]
+```yaml
+files: [komodo/standards/cicd.md, docs/design-decisions.md]
+done_when:
+  - python3 -m komodo doctor
+context: ["cicd.md requires an ephemeral runner per PR and an OS matrix; this repo now runs its gate only on the developer machine via the pre-push hook", "the account is on a GitHub Free plan and the matrix was the cost driver"]
 ```
