@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,12 @@ from .state import Store
 
 SCRATCH_TIMEOUT_S = 60
 BROKEN_COMMAND_CODES = (126, 127)
+# Network and destructive tools a planner-authored done_when must never invoke unattended.
+UNSAFE_DONE_WHEN_RE = re.compile(
+    r"\b(rm\s+-[a-z]*r[a-z]*f|sudo|curl|wget|nc|ncat|netcat|ssh|scp|sftp|rsync|dd|mkfs|chmod|chown|kill(all)?"
+    r"|shutdown|reboot|telnet|base64\s+-d)\b|\|\s*(sh|bash|zsh)\b",
+    re.IGNORECASE,
+)
 
 
 def repo_root(start: Optional[str] = None) -> str:
@@ -167,6 +174,9 @@ def validate_done_when(root: str, config: Config, commands: Sequence[str]) -> Tu
     try:
         git.worktree_add(scratch, branch, "HEAD")
         for command in commands:
+            if UNSAFE_DONE_WHEN_RE.search(command):
+                problems.append("done_when %r not run: matches a network or destructive tool, needs human confirmation" % command)
+                continue
             result = gates.run_command(command, scratch, SCRATCH_TIMEOUT_S)
             if result.returncode in BROKEN_COMMAND_CODES:
                 problems.append("done_when %r did not run: %s" % (command, result.output.strip().splitlines()[-1] if result.output.strip() else "exit %d" % result.returncode))
