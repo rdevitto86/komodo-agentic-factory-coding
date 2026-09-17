@@ -122,17 +122,17 @@ class Pipeline:
         }
 
     def _tag_pending(self, base: str) -> None:
-        """Tags the newest changelog version on base when no tag points at it yet."""
+        """Tags every changelog version on base that no tag points at, newest first, skipping never-released ones."""
         path = os.path.join(self.root, str(self.config.get("changelog", "CHANGELOG.md")))
         if not os.path.isfile(path) or self.git.current_branch() != base or not self.git.is_clean():
             return
-        version = render.newest_version(_read_text(path))
-        if not version or self.git.tag_exists("v" + version):
-            return
-        self.git.run("tag", "-a", "v" + version, "-m", "release %s" % version)
-        if self.git.has_remote():
-            self.git.run("push", self.config.remote, "v" + version)
-        self.log("tagged v%s on %s" % (version, base))
+        for version in render.taggable_versions(_read_text(path)):
+            if self.git.tag_exists("v" + version):
+                continue
+            self.git.run("tag", "-a", "v" + version, "-m", "release %s" % version)
+            if self.git.has_remote():
+                self.git.run("push", self.config.remote, "v" + version)
+            self.log("tagged v%s on %s" % (version, base))
 
     # ----- phases ------------------------------------------------------------------
 
@@ -622,7 +622,7 @@ def _write_changelog(path: str, kind: str, titles: Sequence[str]) -> None:
     except StopIteration:
         insert_at = next((index for index, line in enumerate(lines) if line.startswith("## ")), len(lines))
         lines[insert_at:insert_at] = ["## [Unreleased]", "", "### %s" % heading] + bullets + [""]
-        _write(path, lines)
+        _write_preserving(path, text, lines)
         return
     end = next((index for index in range(start + 1, len(lines)) if lines[index].startswith("## ")), len(lines))
     section = lines[start:end]
@@ -638,7 +638,7 @@ def _write_changelog(path: str, kind: str, titles: Sequence[str]) -> None:
             section.pop()
         section += ["", "### %s" % heading] + bullets
     lines[start:end] = section + ([""] if end < len(lines) and lines[end].startswith("## ") and section[-1].strip() else [])
-    _write(path, lines)
+    _write_preserving(path, text, lines)
 
 
 def _cut_version(path: str) -> str:
@@ -646,8 +646,14 @@ def _cut_version(path: str) -> str:
     text = _read_text(path)
     level, reason = render.infer_bump(text)
     version = render.next_version(render.newest_version(text) or "0.0.0", level)
-    _write(path, render.cut_release(text, version, time.strftime("%Y-%m-%d")).splitlines())
+    _write_preserving(path, text, render.cut_release(text, version, time.strftime("%Y-%m-%d")).splitlines())
     return "%s (%s bump: %s)" % (version, level, reason)
+
+
+def _write_preserving(path: str, before: str, lines: List[str]) -> None:
+    """Writes changelog lines back only when every released version in before survives the write."""
+    render.assert_preserved(before, "\n".join(lines))
+    _write(path, lines)
 
 
 def _read_text(path: str) -> str:

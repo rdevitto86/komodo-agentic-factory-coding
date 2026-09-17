@@ -2,6 +2,7 @@
 
 verify:
 	python3 scripts/verify.py
+	python3 -m komodo release check
 
 test:
 	python3 -m unittest discover -s tests -q
