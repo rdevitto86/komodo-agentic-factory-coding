@@ -9,6 +9,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending
 
 ### Fixed
+- `komodo run`'s close-out cuts the version instead of leaving bullets under `[Unreleased]` forever. Preflight tags a merged version no tag points at, and `komodo doctor` fails on a protected branch when `[Unreleased]` holds entries or the newest version is untagged
 - Cover render.py and the CLI with tests
 - Close the files doctor opens, so verify stops printing ResourceWarnings
 - Remove the dead conditional in the builder commit path

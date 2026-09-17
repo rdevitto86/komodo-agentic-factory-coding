@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 
@@ -38,6 +39,39 @@ class DoctorTests(unittest.TestCase):
                 json.dump({"hooks": {}}, handle)
             os.makedirs(os.path.join(root, "claude-code"))
             self.assertTrue(any("claude-code/ exists" in p for p in doctor.check_policy(root)))
+
+
+class ChangelogDoctorTests(unittest.TestCase):
+    def _repo(self, root, text, branch="main", tags=()):
+        with open(os.path.join(root, "CHANGELOG.md"), "w", encoding="utf-8") as handle:
+            handle.write(text)
+        for args in (("init", "-q", "-b", branch), ("config", "user.email", "t@example.com"), ("config", "user.name", "t"),
+                     ("config", "commit.gpgsign", "false"), ("add", "-A"), ("commit", "-q", "-m", "init")):
+            subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+        for tag in tags:
+            subprocess.run(["git", "tag", tag], cwd=root, check=True, capture_output=True)
+
+    def test_unreleased_entries_and_untagged_version_are_both_problems(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._repo(root, "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n")
+            problems = doctor.check_changelog(root)
+            self.assertEqual(len(problems), 2, problems)
+            self.assertIn("[Unreleased] holds entries on main", problems[0])
+            self.assertIn("has no v0.1.0 tag", problems[1])
+
+    def test_a_cut_and_tagged_changelog_has_no_problems(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._repo(root, "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- first\n", tags=("v0.1.0",))
+            self.assertEqual(doctor.check_changelog(root), [])
+
+    def test_a_feature_branch_is_never_flagged(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._repo(root, "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.1.0] \u2014 2026-01-01\n", branch="feat/in-progress")
+            self.assertEqual(doctor.check_changelog(root), [])
+
+    def test_no_changelog_is_not_a_problem(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(doctor.check_changelog(root), [])
 
 
 class InstallTests(unittest.TestCase):

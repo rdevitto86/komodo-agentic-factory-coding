@@ -163,6 +163,16 @@ class ChangelogTests(unittest.TestCase):
         self.assertEqual(render.changelog_heading("refactor"), "Changed")
         self.assertEqual(render.changelog_heading("mystery"), "Changed")
 
+    def test_newest_version_skips_unreleased(self):
+        text = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.2.1] \u2014 2026-01-01\n"
+        self.assertEqual(render.newest_version(text), "0.2.1")
+        self.assertIsNone(render.newest_version("# Changelog\n\n## [Unreleased]\n"))
+
+    def test_has_unreleased_entries(self):
+        self.assertTrue(render.has_unreleased_entries("## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.1.0] \u2014 x\n"))
+        self.assertFalse(render.has_unreleased_entries("## [Unreleased]\n\n## [0.1.0] \u2014 x\n\n### Added\n- first\n"))
+        self.assertFalse(render.has_unreleased_entries("# Changelog\n"))
+
 
 
 TEMPLATE = """<!--
