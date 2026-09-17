@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Dict, Iterable, List, Optional, Sequence
 
@@ -94,28 +95,62 @@ def report(state: RunState, group_title: str, task_titles: Dict[str, str], commi
     return "\n".join(lines).rstrip() + "\n"
 
 
-def pr_body(state: RunState, group_title: str, task_titles: Dict[str, str], commits: Sequence[str], template: Optional[str] = None) -> str:
-    """A PR description: the repo's template filled when present, else summary and changes."""
+HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def pr_sections(state: RunState, group_title: str, task_titles: Dict[str, str]) -> List[tuple]:
+    """Each PR body section in order, as a heading and its body lines."""
     done = [task_titles.get(tid, tid) for tid, record in state.tasks.items() if record.status == "DONE"]
-    summary = "%s: %s. %d of %d tasks landed." % (state.group_id, group_title, len(done), len(state.tasks))
-    changes = bullets(done)
-    if template and "## Summary" in template:
-        body = template
-        body = body.replace("## Summary", "## Summary\n\n" + summary, 1)
-        body = body.replace("## Changes", "## Changes\n\n" + "\n".join(changes), 1)
-        return body
-    lines = ["## Summary", "", summary, "", "## Changes", ""] + changes
     blocked = [task_titles.get(tid, tid) for tid, record in state.tasks.items() if record.status == "BLOCKED"]
-    if blocked:
-        lines += ["", "## Blocked", ""] + bullets(blocked)
-    lines += ["", "## Validation", "", "- Every task's `done_when` re-run by the orchestrator, then the repo verify gate once on the merged branch."]
+    summary = "%s: %s. %d of %d tasks landed." % (state.group_id, group_title, len(done), len(state.tasks))
+    validation = ["- Every task's `done_when` re-run by the orchestrator, then the repo verify gate once on the merged branch."]
     if state.findings:
         fixed = sum(1 for f in state.findings if f.get("fixed"))
         filed = sum(1 for f in state.findings if f.get("filed"))
-        lines.append("- Review: %d finding(s) fixed in-branch, %d filed to the backlog." % (fixed, filed))
+        validation.append("- Review: %d finding(s) fixed in-branch, %d filed to the backlog." % (fixed, filed))
     if state.blast_radius:
-        lines.append("- Blast radius **%s**: %s" % (state.blast_radius, state.blast_radius_why))
-    return "\n".join(lines) + "\n"
+        validation.append("- Blast radius **%s**: %s" % (state.blast_radius, state.blast_radius_why))
+    sections = [("Summary", [summary]), ("Changes", bullets(done))]
+    if blocked:
+        sections.append(("Blocked", bullets(blocked)))
+    sections.append(("Validation", validation))
+    return sections
+
+
+def pr_body(state: RunState, group_title: str, task_titles: Dict[str, str], commits: Sequence[str], template: Optional[str] = None) -> str:
+    """A PR description: the repo's template filled when present, else the sections on their own."""
+    sections = pr_sections(state, group_title, task_titles)
+    if template and "## Summary" in template:
+        return fill_template(template, sections)
+    lines: List[str] = []
+    for heading, body in sections:
+        lines += ["## " + heading, ""] + body + [""]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def fill_template(template: str, sections: Sequence[tuple]) -> str:
+    """The template with each heading's content substituted, its comments stripped, and every empty section dropped."""
+    content = dict(sections)
+    blocks: List[tuple] = [(None, [])]
+    for line in HTML_COMMENT.sub("", template).splitlines():
+        if line.startswith("## "):
+            blocks.append((line[3:].strip(), []))
+        else:
+            blocks[-1][1].append(line)
+    lines: List[str] = []
+    for heading, buffered in blocks:
+        if heading is None:
+            lines += [line for line in buffered if line.strip()]
+            continue
+        body = content.get(heading) or [line for line in buffered if line.strip()]
+        if body:
+            lines += ["## " + heading, ""] + body + [""]
+    known = set(name for name, _ in blocks if name)
+    for heading, body in sections:
+        if heading in known or not body:
+            continue
+        lines += ["## " + heading, ""] + body + [""]
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def changelog_entry(kind: str, titles: Sequence[str]) -> List[str]:
