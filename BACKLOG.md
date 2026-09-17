@@ -131,7 +131,7 @@ context: ["a 10-line diff cost 0.10 of 0.16 USD and 1m54s of a 2m09s run; the fa
 type: fix
 ```
 
-#### [TSK-02.6.1] Cover render.py and the CLI with tests [P: H] [TODO]
+#### [TSK-02.6.1] Cover render.py and the CLI with tests [P: H] [DONE]
 ```yaml
 files: [tests/test_render.py, tests/test_cli.py]
 done_when:
@@ -139,14 +139,14 @@ done_when:
 context: ["komodo/render.py and komodo/__main__.py carry no test file between them"]
 ```
 
-#### [TSK-02.6.2] publish picks the first pull request template it finds, not the last [P: M] [TODO]
+#### [TSK-02.6.2] publish picks the first pull request template it finds, not the last [P: M] [BLOCKED]
 ```yaml
 files: [komodo/pipeline.py, tests/test_pipeline.py]
 done_when:
   - python3 -m unittest tests.test_pipeline -q
 ```
 
-#### [TSK-02.6.3] Retire the claude-code references the rules now forbid [P: M] [TODO]
+#### [TSK-02.6.3] Retire the claude-code references the rules now forbid [P: M] [BLOCKED]
 ```yaml
 files: [CHANGELOG.md, komodo/doctor.py, tests/test_doctor_install.py]
 done_when:
@@ -155,14 +155,14 @@ done_when:
 context: ["AGENTS.md forbids a claude-code directory; CHANGELOG.md names it twelve times and doctor whitelists the prefix instead of flagging it"]
 ```
 
-#### [TSK-02.6.4] Close the files doctor opens, so verify stops printing ResourceWarnings [P: L] [TODO]
+#### [TSK-02.6.4] Close the files doctor opens, so verify stops printing ResourceWarnings [P: L] [DONE]
 ```yaml
 files: [komodo/doctor.py, tests/test_doctor_install.py]
 done_when:
   - python3 -m unittest tests.test_doctor_install -q
 ```
 
-#### [TSK-02.6.5] Remove the dead conditional in the builder commit path [P: L] [TODO]
+#### [TSK-02.6.5] Remove the dead conditional in the builder commit path [P: L] [DONE]
 ```yaml
 files: [komodo/pipeline.py]
 done_when:
