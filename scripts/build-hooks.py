@@ -12,8 +12,8 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SOURCE_DIR = os.path.join(REPO_ROOT, "komodo", "adapters", "claude", "hooks", "src")
-BIN_DIR = os.path.join(REPO_ROOT, "komodo", "adapters", "claude", "hooks", "bin")
+SOURCE_DIR = os.path.join(REPO_ROOT, "komodo", "hooks", "src")
+BIN_DIR = os.path.join(REPO_ROOT, "komodo", "hooks", "bin")
 MANIFEST = os.path.join(BIN_DIR, "MANIFEST.sha256")
 BINARY = "komodo-hooks"
 
