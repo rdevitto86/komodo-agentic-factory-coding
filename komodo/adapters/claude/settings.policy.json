@@ -43,6 +43,7 @@
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
       "Bash(gh label list:*)",
+      "Bash(find:*)",
       "Bash(sed:*)",
       "Bash(jq:*)",
       "Bash(sort:*)",
