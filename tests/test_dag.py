@@ -5,7 +5,7 @@ from komodo.tasks import Task
 
 
 def task(task_id, files, deps=()):
-    return Task(id=task_id, title=task_id, priority="M", status="TODO", fields={"files": list(files), "depends_on": list(deps)})
+    return Task(id=task_id, title=task_id, priority="M", status="READY", fields={"files": list(files), "depends_on": list(deps)})
 
 
 class WaveTests(unittest.TestCase):

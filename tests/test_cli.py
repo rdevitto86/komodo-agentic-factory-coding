@@ -39,7 +39,7 @@ def write_backlog(root, extra=""):
             "## [EPIC-01] Now\n*Goal*\n\n"
             "### [TG-01.1] Refunds\n"
             "```yaml\ntype: feat\nversion: 1.1.0\n```\n\n"
-            "#### [TSK-01.1.1] Add refund handler [P: H] [TODO]\n"
+            "#### [TSK-01.1.1] Add refund handler [P: H] [READY]\n"
             "```yaml\nfiles: [a.py]\ndone_when: [python3 -c 'pass']\n```\n"
             + extra
         )

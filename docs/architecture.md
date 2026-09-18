@@ -71,7 +71,7 @@ Adding a provider is one file implementing `Worker.invoke`. Adding a tool's conf
 
 ## Review
 
-One reviewer pass over `git diff base...HEAD` with the bug, security, test-gap, simplify, narrative-comment, and undocumented-nonobvious classes in one brief. Findings at or above `severity_floor` become one repair brief; the rest are appended to `BACKLOG.md` as `[TODO]` tasks with the finding's file and the repo verify command as `done_when`. `fast` skips review under `min_diff_lines`.
+One reviewer pass over `git diff base...HEAD` with the bug, security, test-gap, simplify, narrative-comment, and undocumented-nonobvious classes in one brief. Findings at or above `severity_floor` become one repair brief; the rest are appended to `BACKLOG.md` as `[READY]` tasks with the finding's file and the repo verify command as `done_when`. `fast` skips review under `min_diff_lines`.
 
 The pass also returns a blast-radius tier from `low` to `critical`: what the diff could break, scored separately from whether it already has a defect, so a wide change with no findings still scores high. Above `low-med` the reviewer runs the internal-dependency command the language standard names and reports what imports the changed files, or says the fan-out was judged rather than walked. The tier and its driving factor go into `report.md` and the PR body.
 

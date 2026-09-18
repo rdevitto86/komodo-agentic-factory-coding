@@ -13,7 +13,7 @@ type: feat
 version: 1.1.0
 ```
 
-#### [TSK-01.1.1] Add refund handler [P: H] [TODO]
+#### [TSK-01.1.1] Add refund handler [P: H] [READY]
 ```yaml
 files: [internal/refund/handler.go, internal/refund/handler_test.go]
 done_when:
@@ -21,7 +21,7 @@ done_when:
 owner: agent
 ```
 
-#### [TSK-01.1.2] Wire refund route [P: M] [TODO]
+#### [TSK-01.1.2] Wire refund route [P: M] [READY]
 ```yaml
 files: [cmd/api/routes.go]
 done_when: [go build ./...]
@@ -85,11 +85,66 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(tasks.parse(SAMPLE).group("docs").id, "TG-01.2")
 
 
+REFINING = """# Backlog
+
+## [EPIC-01] Now
+
+### [TG-01.1] Planning
+```yaml
+type: feat
+version: 1.2.0
+```
+
+#### [TSK-01.1.1] Still being scoped [P: M] [REFINEMENT]
+
+### [TG-01.2] Ready work
+```yaml
+type: feat
+version: 1.2.1
+```
+
+#### [TSK-01.2.1] Do it [P: H] [READY]
+```yaml
+files: [a.py]
+done_when: [test -d .]
+```
+"""
+
+
+class RefinementTests(unittest.TestCase):
+    """REFINEMENT is a task still being planned: open work the harness will not pick up."""
+
+    def test_legacy_todo_maps_to_ready(self):
+        text = SAMPLE.replace("[P: H] [READY]", "[P: H] [TODO]")
+        self.assertEqual(tasks.parse(text).task("TSK-01.1.1").status, "READY")
+
+    def test_a_refinement_task_needs_no_block(self):
+        self.assertEqual(tasks.lint(tasks.parse(REFINING)), [])
+
+    def test_a_refinement_task_is_open_but_not_ready(self):
+        task = tasks.parse(REFINING).task("TSK-01.1.1")
+        self.assertTrue(task.open)
+        self.assertFalse(task.ready)
+
+    def test_next_group_skips_a_group_still_in_refinement(self):
+        backlog = tasks.parse(REFINING)
+        self.assertEqual(backlog.next_group().id, "TG-01.2")
+        self.assertEqual(backlog.group("TG-01.1").ready_tasks, [])
+
+    def test_promoting_to_ready_makes_the_group_next(self):
+        promoted = tasks.set_status(REFINING, "TSK-01.1.1", "READY")
+        self.assertEqual(tasks.parse(promoted).next_group().id, "TG-01.1")
+
+    def test_todo_is_no_longer_a_writable_status(self):
+        with self.assertRaises(ValueError):
+            tasks.set_status(SAMPLE, "TSK-01.1.1", "TODO")
+
+
 class GroupVersionTests(unittest.TestCase):
     """A group declares the version it ships; the lint is what stops a changelog and a tag drifting apart."""
 
     def _backlog(self, block):
-        return tasks.parse("# Backlog\n\n## [EPIC-01] Now\n\n### [TG-01.1] Refunds\n```yaml\n%s\n```\n\n#### [TSK-01.1.1] Do it [P: H] [TODO]\n```yaml\nfiles: [a.py]\ndone_when: [test -d .]\n```\n" % block)
+        return tasks.parse("# Backlog\n\n## [EPIC-01] Now\n\n### [TG-01.1] Refunds\n```yaml\n%s\n```\n\n#### [TSK-01.1.1] Do it [P: H] [READY]\n```yaml\nfiles: [a.py]\ndone_when: [test -d .]\n```\n" % block)
 
     def test_a_declared_version_is_read_off_the_group(self):
         self.assertEqual(self._backlog("type: feat\nversion: 2.3.4").group("TG-01.1").version, "2.3.4")
@@ -110,7 +165,7 @@ class RewriteTests(unittest.TestCase):
         updated = tasks.set_status(SAMPLE, "TSK-01.1.2", "DONE")
         self.assertIn("#### [TSK-01.1.2] Wire refund route [P: M] [DONE]", updated)
         self.assertEqual(len(updated.splitlines()), len(SAMPLE.splitlines()))
-        self.assertIn("[TSK-01.1.1] Add refund handler [P: H] [TODO]", updated)
+        self.assertIn("[TSK-01.1.1] Add refund handler [P: H] [READY]", updated)
 
     def test_append_task_lands_at_group_end(self):
         updated, task_id = tasks.append_task(SAMPLE, "TG-01.1", "Add refund metrics", {"files": ["internal/refund/metrics.go"], "done_when": ["go test ./internal/refund/..."]})
@@ -202,7 +257,7 @@ class RemoveTaskTests(unittest.TestCase):
         "## [EPIC-01] Now\n*Goal*\n\n"
         "### [TG-01.1] Refunds\n```yaml\ntype: feat\nversion: 1.1.0\n```\n\n"
         "#### [TSK-01.1.1] First [P: H] [DONE]\n```yaml\nfiles: [a.py]\ndone_when: ['python3 -c pass']\n```\n\n"
-        "#### [TSK-01.1.2] Second [P: M] [TODO]\n```yaml\nfiles: [b.py]\ndone_when: ['python3 -c pass']\ndepends_on: [TSK-01.1.1]\n```\n\n"
+        "#### [TSK-01.1.2] Second [P: M] [READY]\n```yaml\nfiles: [b.py]\ndone_when: ['python3 -c pass']\ndepends_on: [TSK-01.1.1]\n```\n\n"
         "### [TG-01.2] Solo\n```yaml\ntype: fix\nversion: 1.1.1\n```\n\n"
         "#### [TSK-01.2.1] Only one [P: L] [DONE]\n```yaml\nfiles: [c.py]\ndone_when: ['python3 -c pass']\n```\n"
     )
