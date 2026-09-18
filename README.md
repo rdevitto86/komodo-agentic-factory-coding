@@ -84,8 +84,8 @@ flowchart TB
         O[Only pusher.<br/>Refuses protected refs, force,<br/>amend, trailers, in code]
     end
     subgraph Machine["Developer machine"]
-        H1[pre-commit: no protected branch,<br/>no trailer, gofmt, comment lint]
-        H2[pre-push: no protected ref,<br/>no force, repo verify gate]
+        H1[komodo-hooks precommit: no protected branch,<br/>no trailer, gofmt, comment lint]
+        H2[komodo-hooks prepush: no protected ref,<br/>no force, repo verify gate]
         G[komodo-hooks guard: advisory PreToolUse<br/>in interactive sessions]
     end
     subgraph GitHub
@@ -106,8 +106,8 @@ komodo/                the library and the orchestrator (stdlib only)
 ├── standards/         rule files per language and domain, injected by extension
 ├── briefs/            worker prompt template per role
 ├── adapters/claude/   renders ~/.claude from the above; owns its hooks and settings policy
-│   └── hooks/         guard.py, context_injector.py, the Go source in src/, prebuilt binaries in bin/
-├── hooks/             pre-commit.py, pre-push.py, and the sh stubs Git runs
+│   └── hooks/         guard.py and context_injector.py, the Python fallbacks
+├── hooks/             the sh stubs Git runs, the Python fallbacks, the Go source in src/, prebuilt binaries in bin/
 ├── workers/           claude (headless CLI) and ollama adapters
 ├── pipeline.py        the phases
 ├── gitops.py          the only git writer
@@ -119,7 +119,9 @@ templates/project/     AGENTS.md, CLAUDE.md, BACKLOG.md, CHANGELOG.md, komodo.js
 
 There is no hand-maintained Claude directory. `python3 -m komodo install` renders the adapter into `~/.claude`: `AGENTS.md`, one agent file per session role with model and effort from the active profile's tiers, two procedure skills built from `komodo/rules/`, a review skill from the reviewer role, one thin pointer skill per standard, the session hooks, and a settings policy merged into your personal `settings.json`. Another tool gets another adapter with the same inputs.
 
-The session hooks ship compiled. `komodo/adapters/claude/hooks/src/` is one Go program with a subcommand per hook; `scripts/build-hooks.py` cross-compiles it for darwin, linux, and windows on amd64 and arm64, and records a checksum manifest the verify gate rebuilds and compares. `install` copies the binary matching your machine and points `settings.json` at it, so the hooks need no interpreter. `guard.py` and `context_injector.py` still ship as the fallback for a platform with no committed binary, and the test suite runs every hook case against both so they cannot drift.
+Every hook ships compiled. `komodo/hooks/src/` is one Go program, `komodo-hooks`, with a subcommand per hook: `guard` and `inject` for the session, `precommit` and `prepush` for Git. `scripts/build-hooks.py` cross-compiles it for darwin, linux, and windows on amd64 and arm64, and records a checksum manifest the verify gate rebuilds and compares.
+
+`install` copies the session binary to `~/.claude` and points `settings.json` at it; the Git stubs pick the binary for the running machine out of `bin/`. Protected-branch matching, the trailer pattern, and repo-root discovery are written once in Go and shared by all four. The four Python hooks still ship as the fallback for a platform with no committed binary, and the test suite runs every hook case against both so they cannot drift.
 
 ## Comments
 

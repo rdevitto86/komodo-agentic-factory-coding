@@ -11,7 +11,7 @@ A platform-agnostic agent library and harness. `komodo/` holds the rules, roles,
 | `komodo/standards/` | Rule files per language and domain, injected by extension |
 | `komodo/briefs/` | Worker prompt templates, one `<role>.prompt.md` per worker role |
 | `komodo/adapters/claude/` | Renders `~/.claude` from rules, roles, and standards; owns its hooks and settings policy |
-| `komodo/hooks/` | Git `pre-commit` and `pre-push` in Python, with sh stubs Git dispatches |
+| `komodo/hooks/` | Every hook: the sh stubs Git dispatches, the Python fallbacks, the Go source in `src/`, the prebuilt binaries in `bin/` |
 | `komodo/*.py` | The orchestrator. `python3 -m komodo` is the only entry point |
 | `tests/` | `unittest` suites |
 | `scripts/verify.py` | This repo's gate: tests, `validate.py`, comment lint, doctor |
