@@ -141,6 +141,36 @@ def respond(root: str, config: Config, profile: str = None, dry_run: bool = Fals
     return 0
 
 
+def label(root: str, config: Config, wanted: List[str], auto: bool = False) -> int:
+    """Adds labels to the branch's own PR; --auto derives them from the PR's commit type."""
+    if not wanted and not auto:
+        print("name the labels to add, or pass --auto", file=sys.stderr)
+        return 2
+    info = _own_pr(root)
+    defined = pr.existing_labels(root)
+    if auto:
+        kind = pr.kind_of(str(info.get("title") or ""), str(info.get("headRefName") or ""))
+        if not kind:
+            print("no commit type in the PR title or branch name; pass labels explicitly", file=sys.stderr)
+            return 2
+        wanted = pr.pick_labels(kind, dict(config.get("labels", {})), defined) + wanted
+        if not wanted:
+            print("no label maps to %r in komodo.json" % kind, file=sys.stderr)
+            return 2
+    unknown = [name for name in wanted if name not in defined]
+    if unknown:
+        print("label(s) not defined in the repo: %s" % ", ".join(unknown), file=sys.stderr)
+        return 2
+    present = [str(item["name"]) for item in (info.get("labels") or [])]
+    missing = [name for name in dict.fromkeys(wanted) if name not in present]
+    if not missing:
+        print("#%d already carries %s" % (info["number"], ", ".join(wanted)))
+        return 0
+    pr.edit(root, int(info["number"]), add_labels=missing)
+    print("labelled #%d: %s" % (info["number"], ", ".join(missing)))
+    return 0
+
+
 def dispatch(args: argparse.Namespace, root: str, config: Config) -> int:
     """Routes a pr subcommand."""
     if args.action == "threads":
@@ -149,15 +179,7 @@ def dispatch(args: argparse.Namespace, root: str, config: Config) -> int:
             print("%s:%s  %d comment(s)  last by %s" % (thread["path"], thread["line"], len(thread["comments"]), thread["comments"][-1]["author"] if thread["comments"] else "?"))
         return 0
     if args.action == "label":
-        info = _own_pr(root)
-        defined = pr.existing_labels(root)
-        unknown = [label for label in args.labels if label not in defined]
-        if unknown:
-            print("label(s) not defined in the repo: %s" % ", ".join(unknown), file=sys.stderr)
-            return 2
-        pr.edit(root, int(info["number"]), add_labels=args.labels)
-        print("labelled #%d: %s" % (info["number"], ", ".join(args.labels)))
-        return 0
+        return label(root, config, list(args.labels or []), auto=args.auto)
     if args.action == "comment":
         info = _own_pr(root)
         pr.comment(root, int(info["number"]), args.body)

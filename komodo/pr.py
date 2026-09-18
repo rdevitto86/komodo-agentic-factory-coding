@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from typing import Any, Dict, List, Optional
 
@@ -79,6 +80,19 @@ def existing_labels(cwd: str) -> List[str]:
     """Label names the repo defines."""
     data = gh_json("label", "list", "--json", "name", "--limit", "200", cwd=cwd) or []
     return [str(item["name"]) for item in data]
+
+
+# A conventional-commit subject: the type, an optional scope, then the colon.
+CONVENTIONAL = re.compile(r"^([a-z]+)(\([^)]*\))?!?:")
+
+
+def kind_of(title: str, branch: str) -> str:
+    """The commit type a PR carries, read from its title, then from its branch prefix."""
+    match = CONVENTIONAL.match(title.strip())
+    if match:
+        return match.group(1)
+    head = branch.split("/", 1)[0].strip().lower()
+    return head if head and head != branch else ""
 
 
 def pick_labels(kind: str, mapping: Dict[str, str], defined: List[str]) -> List[str]:
