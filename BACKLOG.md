@@ -291,3 +291,106 @@ done_when:
   - python3 -m komodo doctor
 context: ["cicd.md requires an ephemeral runner per PR and an OS matrix; this repo now runs its gate only on the developer machine via the pre-push hook", "the account is on a GitHub Free plan and the matrix was the cost driver"]
 ```
+
+---
+
+## [EPIC-03] Repo-level context
+*Goal: a repo injects its own context, standards, and extensions into the harness without forking the toolkit, and the global render stays identical on every machine.*
+
+### [TG-03.1] Override root and scoped context
+```yaml
+type: feat
+version: 1.3.0
+```
+
+#### [TSK-03.1.1] Move STANDARD_PATHS out of the claude adapter into standards.py [P: H] [READY]
+```yaml
+files: [komodo/standards.py, komodo/adapters/claude/__init__.py, tests/test_roles_adapter.py]
+done_when:
+  - python3 -m unittest tests.test_roles_adapter -q
+  - python3 scripts/verify.py
+context: ["STANDARD_PATHS lives in komodo/adapters/claude/__init__.py and maps a standard name to the globs it fires on", "doctor and the resolver both need the map and neither may import an adapter, so it belongs beside names_for", "pure move: the adapter imports it from standards.py and the rendered skill frontmatter is unchanged"]
+```
+
+#### [TSK-03.1.2] komodo install renders a global layer that does not vary by repo [P: H] [READY]
+```yaml
+files: [komodo/__main__.py, komodo/install.py, komodo/adapters/claude/__init__.py, tests/test_doctor_install.py]
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+  - python3 scripts/verify.py
+context: ["cmd_install loads the repo's config and passes it to render_agents, which writes the active profile's model and effort into ~/.claude/agents/*.md", "installing from a repo on the local profile therefore writes ollama models into the global layer and the next repo inherits them", "agents render from config.DEFAULTS; per-repo model choice stays a harness concern and never reaches ~/.claude", "add a test that two different repo configs produce byte-identical renders"]
+```
+
+#### [TSK-03.1.3] .komodo/context/*.md injects repo context into a worker by matching task files [P: H] [READY]
+```yaml
+files: [komodo/repo_context.py, komodo/pipeline.py, komodo/briefs/builder.prompt.md, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+  - python3 scripts/verify.py
+depends_on: [TSK-03.1.1]
+context: ["today repo_rules() reads the whole AGENTS.md into every brief, so an Auth API and an SDK in one tree get each other's context", "each file carries a paths: frontmatter key in the same grammar as STANDARD_PATHS and loads only when a task file matches", "a context file with no paths: key is an error, not a default of **, because the always-on budget depends on scoping", "AGENTS.md keeps its slot for what is true everywhere in the repo"]
+```
+
+#### [TSK-03.1.4] .komodo/standards extends a shipped standard and adds ones the toolkit never shipped [P: H] [READY]
+```yaml
+files: [komodo/standards.py, komodo/config.py, tests/test_standards.py, tests/test_config.py]
+done_when:
+  - python3 -m unittest tests.test_standards -q
+  - python3 -m unittest tests.test_config -q
+  - python3 scripts/verify.py
+depends_on: [TSK-03.1.1]
+context: ["overrides extend, never replace: no code path may return a repo file instead of a toolkit file", ".komodo/standards/<name>.extra.md appends after the shipped standard under a rendered '## Repo additions' boundary", ".komodo/standards/<newname>.md has no toolkit twin and loads as a parallel standard with its own paths:", "a repo file whose basename collides with a shipped standard is a doctor error naming the .extra.md form", "komodo.json grows standards.extensions and standards.paths, additive only, so a repo can map .cbl to a cobol standard it wrote"]
+```
+
+#### [TSK-03.1.5] The override root is shareable and validated without exposing run state [P: H] [READY]
+```yaml
+files: [.gitignore, komodo/doctor.py, tests/test_doctor_install.py]
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+  - python3 -m komodo doctor
+  - python3 scripts/verify.py
+depends_on: [TSK-03.1.4]
+context: [".gitignore ignores .komodo/ wholesale, so standards and context written there can never be committed or shared", "negate rather than narrow: .komodo/* then !.komodo/standards/ and !.komodo/context/ keeps local.json, runs/ and wt/ ignored with no new entries", "git will not descend into an excluded directory, so the pattern must be .komodo/* and not .komodo/ for the negation to take effect", "doctor.py SKIP_DIRS must keep skipping .komodo for the tree walk; validate the two override directories by direct glob so runs/ stays unreachable", "checks: an unknown standard name, a paths: glob matching nothing, a basename colliding with a shipped standard"]
+```
+
+#### [TSK-03.1.6] The rendered skill body resolves the repo delta at read time [P: M] [READY]
+```yaml
+files: [komodo/adapters/claude/__init__.py, komodo/adapters/claude/hooks/context_injector.py, scripts/validate.py, tests/test_roles_adapter.py]
+done_when:
+  - python3 -m unittest tests.test_roles_adapter -q
+  - python3 scripts/verify.py
+depends_on: [TSK-03.1.3]
+context: ["Claude Code resolves skills enterprise > personal > project, so a project .claude/skills/ entry is shadowed by the global one and a repo cannot override a global skill by name", "unification therefore happens inside the global skill body, which stays identical in every repo and names the repo paths to check", "context_injector emits a delta line at SessionStart only when a delta exists, so a repo adopting none of this prints exactly what it prints today", "validate.py counts a name-only skill as tokens(name) + 2, so a longer body costs nothing against the 1500 always-on budget"]
+```
+
+### [TG-03.2] Exclusion and the drift gate
+```yaml
+type: feat
+version: 1.4.0
+```
+
+#### [TSK-03.2.1] A repo excludes a shipped standard, with a floor it cannot reach [P: M] [REFINEMENT]
+```yaml
+files: [komodo/standards.py, komodo/config.py, tests/test_standards.py]
+done_when:
+  - python3 -m unittest tests.test_standards -q
+context: ["deliberately held in refinement until a non-Komodo repo exists to design against, so the shape is decided by real COBOL and .NET rather than a guess", "a denylist, not an allowlist: an import list silently excludes every standard the toolkit ships after it is written", "names_for must filter ROLE_EXTRA too or reviewer still pulls api-security and builder still pulls comments past the exclusion", "the floor is comments, api-security and sdlc; growing it needs a CHANGELOG line so it stays deliberate", "exclusion is absolute in a worker because the file is never read, and advisory in a session because the global skill always loads"]
+```
+
+#### [TSK-03.2.2] Doctor fails when an exclusion has drifted away from the code [P: M] [REFINEMENT]
+```yaml
+files: [komodo/doctor.py, tests/test_doctor_install.py]
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+depends_on: [TSK-03.2.1]
+context: ["the worst failure mode is silent: exclude react, add .tsx files a year later, nobody rereads komodo.json", "fail, do not warn, when an excluded standard's glob matches tracked files and no .komodo/standards/<name>*.md exists", "git ls-files against the glob map moved in TSK-03.1.1 is the whole check"]
+```
+
+#### [TSK-03.2.3] The session advisory and the worker filter are held to one precedence [P: L] [REFINEMENT]
+```yaml
+files: [komodo/adapters/claude/__init__.py, scripts/validate.py, tests/test_roles_adapter.py]
+done_when:
+  - python3 -m unittest tests.test_roles_adapter -q
+depends_on: [TSK-03.2.1]
+context: ["render_skills exists so a session and a worker hold the same rules; exclusion makes that true only in workers", "a fixture config renders the skill procedure and calls names_for, and the test asserts both name the same standards", "the reviewer worker runs with the repo's resolved set, so code a session wrote against an excluded standard is still caught at review"]
+```
