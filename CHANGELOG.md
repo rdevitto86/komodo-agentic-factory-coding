@@ -2,6 +2,14 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [1.2.0] — 2026-09-18
+
+### Changed
+- A task's status vocabulary is `REFINEMENT`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`. `READY` replaces `TODO`, and `REFINEMENT` holds open work the harness never picks up: `next_group` and the pipeline select on the new `Task.ready`, and `tasks lint` stops demanding `files` or `done_when` until a task is promoted out of refinement. Parsing maps a legacy `TODO` token to `READY`, so an unmigrated backlog still runs
+
+### Removed
+- The `TODO.md` entry in `.gitignore`, left over from the project template that retired the file
+
 ## [1.1.0] — 2026-09-17
 
 ### Added
