@@ -21,21 +21,21 @@ type: feat
 version: 1.1.0
 ```
 
-#### [TSK-01.1.1] Write the greeting [P: H] [TODO]
+#### [TSK-01.1.1] Write the greeting [P: H] [READY]
 ```yaml
 files: [pkg/greet.py]
 done_when:
   - PYEXE -c "import pkg.greet as g; assert g.greet('x') == 'hello x'"
 ```
 
-#### [TSK-01.1.2] Write the farewell [P: M] [TODO]
+#### [TSK-01.1.2] Write the farewell [P: M] [READY]
 ```yaml
 files: [other/bye.py]
 done_when:
   - PYEXE -c "import other.bye as b; assert b.bye('x') == 'bye x'"
 ```
 
-#### [TSK-01.1.3] Wire both [P: M] [TODO]
+#### [TSK-01.1.3] Wire both [P: M] [READY]
 ```yaml
 files: [app.py]
 done_when:
@@ -146,7 +146,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(git.worktrees(), [])
         backlog = tasks.load(os.path.join(self.tmp.name, "BACKLOG.md"))
         self.assertIsNone(backlog.task("TSK-01.1.1"), "a completed task is dropped from the backlog")
-        self.assertEqual(len([t for t in backlog.group("TG-01.1").tasks if t.status == "TODO"]), 1, "low finding filed as a new TODO task")
+        self.assertEqual(len([t for t in backlog.group("TG-01.1").tasks if t.status == "READY"]), 1, "low finding filed as a new READY task")
         self.assertEqual([t.id for t in backlog.tasks if t.id.startswith("TSK-01.1.")], [t.id for t in backlog.tasks])
         with open(os.path.join(self.tmp.name, "CHANGELOG.md"), encoding="utf-8") as handle:
             changelog = handle.read()

@@ -40,7 +40,7 @@ func truncate(s string, n int) string {
 func backlogLines(path string) []string {
 	var inProgress []string
 	var current, nextGroup string
-	open, blocked := 0, 0
+	open, blocked, refinement := 0, 0, 0
 	for _, line := range readLines(path) {
 		if group := groupRe.FindStringSubmatch(line); group != nil {
 			current = group[1]
@@ -58,6 +58,8 @@ func backlogLines(path string) []string {
 		switch {
 		case status == "BLOCKED":
 			blocked++
+		case status == "REFINEMENT":
+			refinement++
 		case status == "IN_PROGRESS" || status == "WIP":
 			inProgress = append(inProgress, match[1]+" "+truncate(match[2], 100))
 		case nextGroup == "":
@@ -71,14 +73,17 @@ func backlogLines(path string) []string {
 		}
 		out = append(out, "In progress: "+strings.Join(inProgress, "; "))
 	}
-	blockedPart := ""
+	counts := itoa(open) + " open"
 	if blocked > 0 {
-		blockedPart = ", " + itoa(blocked) + " blocked"
+		counts += ", " + itoa(blocked) + " blocked"
+	}
+	if refinement > 0 {
+		counts += ", " + itoa(refinement) + " in refinement"
 	}
 	if nextGroup == "" {
 		nextGroup = "none"
 	}
-	return append(out, "Backlog: "+itoa(open)+" open"+blockedPart+". Next group: "+nextGroup+".")
+	return append(out, "Backlog: "+counts+". Next group: "+nextGroup+".")
 }
 
 // itoa renders a non-negative count without pulling in a formatter.

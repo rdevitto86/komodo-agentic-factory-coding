@@ -11,7 +11,7 @@ type: feat          # feat fix chore docs test refactor perf build ci (branch an
 version: 1.4.0      # the version this group ships; close-out writes it into the changelog heading
 mode: parallel      # parallel (default) or single: one builder takes the whole group
 ```
-#### [TSK-01.1.1] Task title [P: H] [TODO]
+#### [TSK-01.1.1] Task title [P: H] [READY]
 ```yaml
 files: [internal/refund/handler.go, internal/refund/handler_test.go]
 done_when:
@@ -24,7 +24,8 @@ type: feat
 ````
 
 ## Rules
-- **Priority** is `C`, `H`, `M`, or `L`. **Status** is `TODO`, `IN_PROGRESS`, `BLOCKED`, or `DONE`. The harness rewrites only the status token.
+- **Priority** is `C`, `H`, `M`, or `L`. **Status** is `REFINEMENT`, `READY`, `IN_PROGRESS`, `BLOCKED`, or `DONE`. The harness rewrites only the status token.
+- **`REFINEMENT`** is a task still being planned: the harness never runs it, never picks its group, and lint does not demand `files` or `done_when`. Promote it to `READY` once both are real.
 - **`version`** is required on every group, as `x.y.z`. It is the changelog heading close-out writes and the tag preflight cuts, so the two can never drift. Groups shipping together share one version.
 - **`files`** lists every path the task will create or edit. Tasks in different directories run in parallel; same directory serializes.
 - **`done_when`** is shell commands that exit zero when the task is done. Never prose. Cover the whole package, not one file.

@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,22 +31,25 @@ def make_repo(root):
     return git
 
 
-def run_hook(script, cwd, stdin="", env=None):
+def run_hook(argv, cwd, stdin="", env=None):
     merged = dict(os.environ)
     merged["PYTHONPATH"] = REPO
     if env:
         merged.update(env)
-    return subprocess.run([sys.executable, script], cwd=cwd, input=stdin, capture_output=True, text=True, env=merged)
+    return subprocess.run(argv, cwd=cwd, input=stdin, capture_output=True, text=True, env=merged)
 
 
 class PreCommitTests(unittest.TestCase):
+    def argv(self):
+        return [sys.executable, PRE_COMMIT]
+
     def test_refuses_protected_branch(self):
         with tempfile.TemporaryDirectory() as root:
             git = make_repo(root)
             with open(os.path.join(root, "b.txt"), "w") as handle:
                 handle.write("b\n")
             git("add", "b.txt")
-            result = run_hook(PRE_COMMIT, root)
+            result = run_hook(self.argv(), root)
             self.assertEqual(result.returncode, 1)
             self.assertIn("protected branch", result.stderr)
 
@@ -56,7 +60,7 @@ class PreCommitTests(unittest.TestCase):
             message = os.path.join(root, "msg.txt")
             with open(message, "w") as handle:
                 handle.write("feat: x\n\nCo-Authored-By: Bot <b@x>\n")
-            result = run_hook(PRE_COMMIT, root, env={"KOMODO_COMMIT_MSG_FILE": message})
+            result = run_hook(self.argv(), root, env={"KOMODO_COMMIT_MSG_FILE": message})
             self.assertEqual(result.returncode, 1)
             self.assertIn("trailer", result.stderr)
 
@@ -67,8 +71,21 @@ class PreCommitTests(unittest.TestCase):
             with open(os.path.join(root, "ok.py"), "w") as handle:
                 handle.write('"""Module."""\n\n\ndef public(a):\n    """Returns a."""\n    return a\n')
             git("add", "ok.py")
-            result = run_hook(PRE_COMMIT, root)
+            result = run_hook(self.argv(), root)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_refuses_unformatted_go(self):
+        if not shutil.which("gofmt"):
+            self.skipTest("gofmt is not installed")
+        with tempfile.TemporaryDirectory() as root:
+            git = make_repo(root)
+            git("switch", "-q", "-c", "feat/x")
+            with open(os.path.join(root, "bad.go"), "w") as handle:
+                handle.write("package main\n\n// x does nothing.\nfunc  x()  {}\n")
+            git("add", "bad.go")
+            result = run_hook(self.argv(), root)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("not gofmt-clean", result.stderr)
 
     def test_comment_lint_on_staged_lines(self):
         with tempfile.TemporaryDirectory() as root:
@@ -77,22 +94,25 @@ class PreCommitTests(unittest.TestCase):
             with open(os.path.join(root, "bad.py"), "w") as handle:
                 handle.write('"""Module."""\n\n\ndef public(a):\n    b = a\n    c = b\n    return c\n')
             git("add", "bad.py")
-            result = run_hook(PRE_COMMIT, root)
+            result = run_hook(self.argv(), root)
             self.assertEqual(result.returncode, 1)
             self.assertIn("FUNC_UNDOCUMENTED", result.stderr)
 
 
 class PrePushTests(unittest.TestCase):
+    def argv(self):
+        return [sys.executable, PRE_PUSH]
+
     def test_refuses_protected_ref_and_delete(self):
         with tempfile.TemporaryDirectory() as root:
             make_repo(root)
             sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
             stdin = "refs/heads/main %s refs/heads/main %s\n" % (sha, "0" * 40)
-            result = run_hook(PRE_PUSH, root, stdin)
+            result = run_hook(self.argv(), root, stdin)
             self.assertEqual(result.returncode, 1)
             self.assertIn("protected ref", result.stderr)
             stdin = "(delete) %s refs/heads/feat/x %s\n" % ("0" * 40, sha)
-            result = run_hook(PRE_PUSH, root, stdin)
+            result = run_hook(self.argv(), root, stdin)
             self.assertEqual(result.returncode, 1)
             self.assertIn("deleting", result.stderr)
 
@@ -106,9 +126,9 @@ class PrePushTests(unittest.TestCase):
             git("add", "c.txt")
             git("commit", "-q", "-m", "c")
             second = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
-            ok = run_hook(PRE_PUSH, root, "refs/heads/feat/x %s refs/heads/feat/x %s\n" % (second, first))
+            ok = run_hook(self.argv(), root, "refs/heads/feat/x %s refs/heads/feat/x %s\n" % (second, first))
             self.assertEqual(ok.returncode, 0, ok.stderr)
-            bad = run_hook(PRE_PUSH, root, "refs/heads/feat/x %s refs/heads/feat/x %s\n" % (first, second))
+            bad = run_hook(self.argv(), root, "refs/heads/feat/x %s refs/heads/feat/x %s\n" % (first, second))
             self.assertEqual(bad.returncode, 1)
             self.assertIn("non-fast-forward", bad.stderr)
 
@@ -119,7 +139,7 @@ class PrePushTests(unittest.TestCase):
             with open(os.path.join(root, "scripts", "verify.py"), "w") as handle:
                 handle.write("import sys; sys.exit(1)\n")
             sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
-            result = run_hook(PRE_PUSH, root, "refs/heads/feat/x %s refs/heads/feat/x %s\n" % (sha, "0" * 40))
+            result = run_hook(self.argv(), root, "refs/heads/feat/x %s refs/heads/feat/x %s\n" % (sha, "0" * 40))
             self.assertEqual(result.returncode, 1)
             self.assertIn("failed", result.stderr)
 
@@ -167,15 +187,16 @@ class InjectorTests(unittest.TestCase):
                 handle.write(
                     "### [TG-01.1] First\n"
                     "#### [TSK-01.1.1] done work [P: H] [DONE]\n"
-                    "#### [TSK-01.1.2] open work [P: H] [TODO]\n"
+                    "#### [TSK-01.1.2] open work [P: H] [READY]\n"
                     "#### [TSK-01.1.3] stuck work [P: M] [BLOCKED]\n"
                     "#### [TSK-01.1.4] live work [P: M] [IN_PROGRESS]\n"
+                    "#### [TSK-01.1.5] unplanned work [P: L] [REFINEMENT]\n"
                 )
             with open(os.path.join(root, "CHANGELOG.md"), "w") as handle:
                 handle.write("## [2.1.0] - 2026-01-01\n")
             out = self.summary(root)
             self.assertIn("In progress: TSK-01.1.4 live work", out)
-            self.assertIn("Backlog: 3 open, 1 blocked. Next group: TG-01.1.", out)
+            self.assertIn("Backlog: 4 open, 1 blocked, 1 in refinement. Next group: TG-01.1.", out)
             self.assertIn("Released version: 2.1.0.", out)
             self.assertIn("No verify gate declared.", out)
 
@@ -201,6 +222,18 @@ class GuardBinaryTests(GuardTests):
 class InjectorBinaryTests(InjectorTests):
     def argv(self):
         return [claude.host_binary(), "inject"]
+
+
+@unittest.skipUnless(claude.host_binary(), "no prebuilt hook binary for this platform")
+class PreCommitBinaryTests(PreCommitTests):
+    def argv(self):
+        return [claude.host_binary(), "precommit"]
+
+
+@unittest.skipUnless(claude.host_binary(), "no prebuilt hook binary for this platform")
+class PrePushBinaryTests(PrePushTests):
+    def argv(self):
+        return [claude.host_binary(), "prepush"]
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - `python3 -m komodo pr label --auto` derives a PR's labels from its commit type and the `komodo.json` label map, the same way the pipeline labels a PR it opens, so a PR opened by hand no longer goes up bare
 - New `python3 -m komodo release check`: a read-only release-integrity gate, wired into `make verify`, failing on a changelog entry with no tag, a tag with no changelog entry, and a date-separator mismatch between headings
 - The session hooks ship as one compiled Go binary, `komodo-hooks`, with a subcommand per hook. `context_injector.py` is ported to Go beside the guard, and `scripts/build-hooks.py` cross-compiles both for darwin, linux, and windows on amd64 and arm64
+- The Git hooks join them: `komodo-hooks precommit` and `komodo-hooks prepush` port `pre-commit.py` and `pre-push.py`, so a commit or a push is guarded on a machine with no Python at all. The sh stubs pick the binary for the running machine and fall back to the Python only when no committed target matches
 - komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending
 
 ### Fixed
@@ -25,6 +26,7 @@ Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelo
 - `.github/workflows/verify.yml`, and with it GitHub Actions from this repo. The same `python3 scripts/verify.py` runs on the developer machine through the `pre-push` hook, which refuses the push when it fails
 
 ### Changed
+- The Go source and the prebuilt binaries moved from `komodo/adapters/claude/hooks/` to `komodo/hooks/`, since one binary now carries the Git hooks as well as the session hooks and no longer belongs to the Claude adapter. Protected-branch matching, the trailer pattern, and repo-root discovery are written once in `repo.go` and shared by all four subcommands, replacing a second and third hand-rolled copy in the two Python Git hooks
 - `komodo install` requires Python only for the hooks that are still scripts. Every platform with a committed binary installs without an interpreter, and the install log names which implementation each hook got instead of falling back silently
 - publish drops completed tasks from BACKLOG.md instead of marking them DONE; git history and the changelog hold what shipped
 - A task group declares `version: x.y.z` in `BACKLOG.md`, and `komodo tasks lint` refuses a group without one. Close-out copies that version into the changelog heading in the same commit as the code, so the changelog and the git tag can no longer disagree
