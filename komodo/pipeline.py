@@ -146,10 +146,10 @@ class Pipeline:
             raise PipelineError("BACKLOG.md fails lint:\n  " + "\n  ".join(problems[:20]))
         self.group = self.backlog.group(needle) if needle else self.backlog.next_group()
         if self.group is None:
-            raise PipelineError("no task group with open agent work" + (" matching %r" % needle if needle else ""))
-        open_tasks = [task for task in self.group.open_tasks if task.owner == "agent"]
+            raise PipelineError("no task group with ready agent work" + (" matching %r" % needle if needle else ""))
+        open_tasks = [task for task in self.group.ready_tasks if task.owner == "agent"]
         if not open_tasks:
-            raise PipelineError("%s has no open agent tasks" % self.group.id)
+            raise PipelineError("%s has no ready agent tasks" % self.group.id)
         try:
             self.waves = dag.waves(open_tasks) if self.group.mode == "parallel" else [[task] for task in dag.topological(open_tasks)]
         except dag.CycleError as error:
@@ -327,7 +327,7 @@ class Pipeline:
     def _repair(self, files: List[str], failure: str, label: str, done_when: List[str]) -> bool:
         """One builder pass in a fresh worktree against a synthetic repair task; returns whether the gate now passes."""
         assert self.state is not None
-        synthetic = Task(id=label.upper(), title="Repair the failing check", priority="H", status="TODO",
+        synthetic = Task(id=label.upper(), title="Repair the failing check", priority="H", status="READY",
                          fields={"files": files, "done_when": done_when, "type": "fix"})
         cwd = self._worktree_for(synthetic)
         branch = "%s-%s" % (self.state.branch, synthetic.id.lower().replace(".", "-"))
@@ -351,14 +351,14 @@ class Pipeline:
     def _build_single(self) -> None:
         """mode: single. One builder takes the whole group in one worktree and one commit."""
         assert self.state is not None and self.group is not None
-        open_tasks = [task for task in self.group.open_tasks if task.owner == "agent"]
+        open_tasks = [task for task in self.group.ready_tasks if task.owner == "agent"]
         files = sorted({path for task in open_tasks for path in task.files})
         done_when = []
         for task in open_tasks:
             for command in task.done_when:
                 if command not in done_when:
                     done_when.append(command)
-        combined = Task(id=self.group.id, title=self.group.title, priority="H", status="TODO",
+        combined = Task(id=self.group.id, title=self.group.title, priority="H", status="READY",
                         fields={"files": files, "done_when": done_when, "type": self.group.type,
                                 "context": sorted({ref for task in open_tasks for ref in task.context})})
         if self.backlog:

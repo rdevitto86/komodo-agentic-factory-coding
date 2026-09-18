@@ -167,15 +167,16 @@ class InjectorTests(unittest.TestCase):
                 handle.write(
                     "### [TG-01.1] First\n"
                     "#### [TSK-01.1.1] done work [P: H] [DONE]\n"
-                    "#### [TSK-01.1.2] open work [P: H] [TODO]\n"
+                    "#### [TSK-01.1.2] open work [P: H] [READY]\n"
                     "#### [TSK-01.1.3] stuck work [P: M] [BLOCKED]\n"
                     "#### [TSK-01.1.4] live work [P: M] [IN_PROGRESS]\n"
+                    "#### [TSK-01.1.5] unplanned work [P: L] [REFINEMENT]\n"
                 )
             with open(os.path.join(root, "CHANGELOG.md"), "w") as handle:
                 handle.write("## [2.1.0] - 2026-01-01\n")
             out = self.summary(root)
             self.assertIn("In progress: TSK-01.1.4 live work", out)
-            self.assertIn("Backlog: 3 open, 1 blocked. Next group: TG-01.1.", out)
+            self.assertIn("Backlog: 4 open, 1 blocked, 1 in refinement. Next group: TG-01.1.", out)
             self.assertIn("Released version: 2.1.0.", out)
             self.assertIn("No verify gate declared.", out)
 

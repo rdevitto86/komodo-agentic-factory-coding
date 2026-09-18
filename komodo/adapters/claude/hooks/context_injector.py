@@ -42,7 +42,7 @@ def main() -> None:
             break
     lines = ["Work state, read from disk at session start:"]
     if backlog:
-        in_progress, blocked, open_count, next_group = [], 0, 0, None
+        in_progress, blocked, refinement, open_count, next_group = [], 0, 0, 0, None
         current = None
         for line in read(backlog):
             group = GROUP.match(line)
@@ -58,13 +58,20 @@ def main() -> None:
             open_count += 1
             if status == "BLOCKED":
                 blocked += 1
+            elif status == "REFINEMENT":
+                refinement += 1
             elif status in ("IN_PROGRESS", "WIP"):
                 in_progress.append("%s %s" % (match.group(1), match.group(2)[:100]))
             elif next_group is None:
                 next_group = current
         if in_progress:
             lines.append("In progress: " + "; ".join(in_progress[:3]))
-        lines.append("Backlog: %d open%s. Next group: %s." % (open_count, ", %d blocked" % blocked if blocked else "", next_group or "none"))
+        counts = "%d open" % open_count
+        if blocked:
+            counts += ", %d blocked" % blocked
+        if refinement:
+            counts += ", %d in refinement" % refinement
+        lines.append("Backlog: %s. Next group: %s." % (counts, next_group or "none"))
     else:
         lines.append("No BACKLOG.md; the harness has nothing to run here.")
     for line in read(os.path.join(root, "CHANGELOG.md")):

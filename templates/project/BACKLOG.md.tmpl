@@ -1,6 +1,6 @@
 # Project Backlog
 
-Priority `[P: C|H|M|L]`. Status `[TODO|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `python3 -m komodo tasks lint` checks it.
+Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `python3 -m komodo tasks lint` checks it.
 
 ---
 
@@ -13,7 +13,7 @@ type: feat
 mode: parallel
 ```
 
-#### [TSK-01.1.1] <Task title> [P: H] [TODO]
+#### [TSK-01.1.1] <Task title> [P: H] [READY]
 ```yaml
 files: [<path/to/file>, <path/to/file_test>]
 done_when:
@@ -21,7 +21,7 @@ done_when:
 context: [docs/spec/SDD.md#<section>]
 ```
 
-#### [TSK-01.1.2] <Task title> [P: M] [TODO]
+#### [TSK-01.1.2] <Task title> [P: M] [READY]
 ```yaml
 files: [<path/to/other>]
 done_when:

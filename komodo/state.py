@@ -34,7 +34,7 @@ class TaskRecord:
     """Where one task stands inside the run."""
 
     id: str
-    status: str = "TODO"
+    status: str = "READY"
     commit: str = ""
     attempts: int = 0
     note: str = ""

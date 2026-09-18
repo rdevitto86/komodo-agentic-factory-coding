@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 from . import yamlite
 
-STATUSES = ("TODO", "IN_PROGRESS", "BLOCKED", "DONE")
+STATUSES = ("REFINEMENT", "READY", "IN_PROGRESS", "BLOCKED", "DONE")
 PRIORITIES = ("C", "H", "M", "L")
 TYPES = ("feat", "fix", "chore", "docs", "test", "refactor", "perf", "build", "ci")
 OWNERS = ("agent", "human")
@@ -23,7 +23,7 @@ TASK_HEADING = re.compile(
 )
 FENCE_OPEN = re.compile(r"^```(?:yaml|yml)\s*$")
 FENCE_CLOSE = re.compile(r"^```\s*$")
-LEGACY_STATUS = {"WIP": "IN_PROGRESS"}
+LEGACY_STATUS = {"WIP": "IN_PROGRESS", "TODO": "READY"}
 COMMAND_HINT = re.compile(
     r"^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
     r"(!|go|npm|pnpm|bun|npx|python3?|py\b|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|zig|swift"
@@ -87,8 +87,13 @@ class Task:
 
     @property
     def open(self) -> bool:
-        """Whether the task still has work to run."""
+        """Whether the task still has work to run, planned or not."""
         return self.status not in ("DONE", "BLOCKED")
+
+    @property
+    def ready(self) -> bool:
+        """Whether the task is planned enough for the harness to run it."""
+        return self.status in ("READY", "IN_PROGRESS")
 
 
 @dataclass
@@ -128,6 +133,11 @@ class Group:
         """Tasks that are neither DONE nor BLOCKED."""
         return [task for task in self.tasks if task.open]
 
+    @property
+    def ready_tasks(self) -> List[Task]:
+        """Open tasks past refinement, in file order."""
+        return [task for task in self.tasks if task.ready]
+
 
 @dataclass
 class Backlog:
@@ -161,9 +171,9 @@ class Backlog:
         return None
 
     def next_group(self) -> Optional[Group]:
-        """The first group in file order holding at least one open agent task."""
+        """The first group in file order holding at least one ready agent task."""
         for group in self.groups:
-            if any(task.open and task.owner == "agent" for task in group.tasks):
+            if any(task.ready and task.owner == "agent" for task in group.tasks):
                 return group
         return None
 
@@ -281,7 +291,7 @@ def lint(backlog: Backlog) -> List[str]:
         for dep in task.depends_on:
             if dep not in ids:
                 problems.append("%s: depends_on names unknown task %s" % (where, dep))
-        if task.owner != "agent" or not task.open:
+        if task.owner != "agent" or not task.ready:
             continue
         if task.block_start < 0:
             problems.append("%s: agent task has no yaml block" % where)
@@ -401,7 +411,7 @@ def next_task_id(group: Group) -> str:
     return "TSK-%s.%d" % (base, highest + 1)
 
 
-def append_task(text: str, group_id: str, title: str, fields: Dict[str, object], priority: str = "M", status: str = "TODO") -> Tuple[str, str]:
+def append_task(text: str, group_id: str, title: str, fields: Dict[str, object], priority: str = "M", status: str = "READY") -> Tuple[str, str]:
     """Appends a task at the end of a group and returns the new text and the task id."""
     backlog = parse(text)
     group = backlog.group(group_id)

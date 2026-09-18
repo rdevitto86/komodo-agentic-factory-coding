@@ -5,7 +5,7 @@ The harness is code, not prose. A session drives it with one command and reads t
 ## Commands
 | Do | Run |
 |---|---|
-| Run the next open task group | `python3 -m komodo run` |
+| Run the next ready task group | `python3 -m komodo run` |
 | Run a named group, thinking profile | `python3 -m komodo run TG-01.2 --profile thinking` |
 | Preview waves, briefs, and token estimates | `python3 -m komodo run TG-01.2 --dry-run` |
 | Resume an unfinished run | `python3 -m komodo run TG-01.2 --resume` |
