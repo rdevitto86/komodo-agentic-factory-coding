@@ -71,6 +71,20 @@ owner: human
 context: ["the GitHub Actions workflow this task targeted was removed; scanning has to run in scripts/verify.py or in a hosted build that is not GitHub Actions", "komodo/standards/cicd.md#ci still mandates CI scanning, so the standard needs a recorded deviation or this repo needs a runner"]
 ```
 
+#### [TSK-02.3.2] Workers run under the guard: ship it as a project-level hook the worker session loads [P: H] [READY]
+```yaml
+files:
+  - komodo/workers/claude.py
+  - komodo/install.py
+  - tests/test_hooks.py
+done_when:
+  - python3 -m unittest tests.test_hooks -q
+context:
+  - "workers spawn with --setting-sources project and --dangerously-skip-permissions, so ~/.claude never loads and guard.py governs sessions only; a worker can cd out of its worktree into the main checkout, or commit with --no-verify, unchecked. Verified 2026-09-18 that a PreToolUse hook in a project .claude/settings.json still fires and still denies under --dangerously-skip-permissions: the hook ran, the command never executed, and the CLI recorded a permission_denials entry. worker_env() already strips every push credential, so nothing reaches the remote"
+type: fix
+```
+
+
 ### [TG-02.4] Planner quality
 ```yaml
 type: feat
