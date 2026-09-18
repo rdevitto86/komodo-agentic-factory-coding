@@ -17,6 +17,8 @@ SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||[;|\n])\s*")
 DESTRUCTIVE = {
     "rebase": "rebases rewrite history",
     "reset": "reset discards work",
+    "checkout": "checkout discards uncommitted work; move with switch",
+    "restore": "restore discards uncommitted work",
     "clean": "clean deletes untracked files",
     "filter-branch": "filter-branch rewrites history",
     "filter-repo": "filter-repo rewrites history",
@@ -95,6 +97,13 @@ def git_findings(tokens: list, cwd: str, patterns: tuple) -> list:
         if branch and is_protected(branch, patterns):
             out.append("git commit on %s: create a branch first" % branch)
         return out
+    if sub == "merge":
+        branch = current_branch(cwd)
+        if branch and is_protected(branch, patterns):
+            return ["git merge on %s: landing is the human's merge button" % branch]
+        return []
+    if sub == "switch" and any(arg in ("-f", "--force", "--discard-changes") for arg in rest):
+        return ["git switch: --discard-changes throws away uncommitted work"]
     if sub == "branch" and any(arg in ("-D", "-f", "--force") for arg in rest):
         return ["git branch: forced delete or move is refused"]
     return []
