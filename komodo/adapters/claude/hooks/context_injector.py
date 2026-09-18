@@ -69,7 +69,7 @@ def main() -> None:
         lines.append("No BACKLOG.md; the harness has nothing to run here.")
     for line in read(os.path.join(root, "CHANGELOG.md")):
         match = VERSION.match(line)
-        if match and match.group(1).lower() != "unreleased":
+        if match:
             lines.append("Released version: %s." % match.group(1))
             break
     for relative in (".claude/verify.py", "scripts/verify.py", ".claude/verify.sh", "Makefile"):

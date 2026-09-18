@@ -2,29 +2,30 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
-## [Unreleased]
+## [1.1.0] — 2026-09-17
 
 ### Added
-- New `python3 -m komodo release check`: a read-only release-integrity gate, wired into `make verify`, failing on a changelog entry with no tag, a tag with no changelog entry, a date-separator mismatch between headings, and, with `--at-release`, an empty Unreleased section
+- New `python3 -m komodo release check`: a read-only release-integrity gate, wired into `make verify`, failing on a changelog entry with no tag, a tag with no changelog entry, and a date-separator mismatch between headings
 - The session hooks ship as one compiled Go binary, `komodo-hooks`, with a subcommand per hook. `context_injector.py` is ported to Go beside the guard, and `scripts/build-hooks.py` cross-compiles both for darwin, linux, and windows on amd64 and arm64
 - komodo tasks plan validates every proposed done_when by running it once in a scratch worktree before appending
 
 ### Fixed
 - Changelog writes carry a preservation invariant: `render.assert_preserved` refuses any `_write_changelog` or `_cut_version` write that drops a released version heading, which is how 0.46.5's Security entry was overwritten in place and lost. That entry is restored here from `v0.46.5`
 - Preflight tags every untagged changelog version, not only the newest, so a gap below the top heading (0.50.0 and 0.51.0 here, tagged over by v1.0.0) is no longer invisible. A heading or blockquote reading `never released` is skipped
-- `komodo run`'s close-out cuts the version instead of leaving bullets under `[Unreleased]` forever. Preflight tags a merged version no tag points at, and `komodo doctor` fails on a protected branch when `[Unreleased]` holds entries or the newest version is untagged
+- Preflight tags a merged version no tag points at, and `komodo doctor` fails on a protected branch when the newest version is untagged
 - Cover render.py and the CLI with tests
 - Close the files doctor opens, so verify stops printing ResourceWarnings
 - Remove the dead conditional in the builder commit path
 - Detect an unrunnable done_when on Windows, where cmd.exe does not use exit 126 or 127
 
 ### Removed
+- `## [Unreleased]`, everywhere. The staging section is gone from `render.py`, `pipeline.py`, `doctor.py`, the `release` command, both session hooks, and the project template. `render.infer_bump`, `render.cut_release`, `render.has_unreleased_entries`, and `komodo release --bump` went with it; a version is declared in the backlog, never inferred
 - `.github/workflows/verify.yml`, and with it GitHub Actions from this repo. The same `python3 scripts/verify.py` runs on the developer machine through the `pre-push` hook, which refuses the push when it fails
 
 ### Changed
 - `komodo install` requires Python only for the hooks that are still scripts. Every platform with a committed binary installs without an interpreter, and the install log names which implementation each hook got instead of falling back silently
 - publish drops completed tasks from BACKLOG.md instead of marking them DONE; git history and the changelog hold what shipped
-- `komodo release --bump` promotes Unreleased to a dated version, opens a fresh Unreleased, and bumps `__version__`. Bare `--bump` reads the level off the changelog: a `Removed` section or a breaking bullet is major, an `Added` section is minor, anything else is patch. Plain `komodo release` still only tags
+- A task group declares `version: x.y.z` in `BACKLOG.md`, and `komodo tasks lint` refuses a group without one. Close-out copies that version into the changelog heading in the same commit as the code, so the changelog and the git tag can no longer disagree
 
 ## [1.0.0] — 2026-09-16
 

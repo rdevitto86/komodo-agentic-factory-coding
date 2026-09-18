@@ -171,18 +171,9 @@ def next_version(current: str, bump: str) -> str:
 def newest_version(text: str) -> Optional[str]:
     """The version in the first numbered changelog heading, or None when nothing is released."""
     for line in text.splitlines():
-        if line.startswith("## [") and "unreleased" not in line.lower():
+        if line.startswith("## ["):
             return line.split("[", 1)[1].split("]", 1)[0].strip()
     return None
-
-
-def has_unreleased_entries(text: str) -> bool:
-    """Whether the Unreleased section holds at least one bullet."""
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        if line.lower().startswith("## [unreleased]"):
-            return _has_entries(lines, index)
-    return False
 
 
 VERSION_HEADING = re.compile(r"^## \[(\d+\.\d+\.\d+[^\]]*)\][ \t]*(\S+)?[ \t]*(\d{4}-\d{2}-\d{2})?", re.M)
@@ -236,7 +227,7 @@ def never_released_versions(text: str) -> List[str]:
     return [version for version, line, body in _heading_sections(text) if _is_never_released(line, body)]
 
 
-def changelog_drift(text: str, tags: Sequence[str], at_release: bool = False) -> List[str]:
+def changelog_drift(text: str, tags: Sequence[str]) -> List[str]:
     """Every release-integrity problem: an untagged entry, a tagged version with no entry, a separator mismatch."""
     problems: List[str] = []
     tagged = {name[1:] for name in tags if name.startswith("v")}
@@ -246,10 +237,6 @@ def changelog_drift(text: str, tags: Sequence[str], at_release: bool = False) ->
             problems.append("%s has a changelog entry and no v%s tag; tag it with `git tag -a v%s -m \"release %s\"`" % (version, version, version, version))
     for version in sorted(tagged - set(entries)):
         problems.append("v%s is tagged and has no changelog entry; recover it with `git show v%s:CHANGELOG.md`" % (version, version))
-    if "## [unreleased]" not in text.lower():
-        problems.append("no ## [Unreleased] heading; every changelog keeps one open")
-    elif at_release and not has_unreleased_entries(text):
-        problems.append("the Unreleased section is empty; there is nothing to release")
     separators = [match.group(2) for match in (VERSION_HEADING.match(line) for _, line, _ in _heading_sections(text)) if match.group(2) and match.group(3)]
     if separators:
         dominant = max(set(separators), key=separators.count)
@@ -260,61 +247,8 @@ def changelog_drift(text: str, tags: Sequence[str], at_release: bool = False) ->
     return problems
 
 
-BREAKING = re.compile(r"\bbreaking\b|\bincompatible\b|\bno longer\b", re.IGNORECASE)
-
-
-def infer_bump(text: str) -> Tuple[str, str]:
-    """The semantic level the Unreleased section implies, with the reason to print."""
-    sections, bullets = [], []
-    started = False
-    for line in text.splitlines():
-        if line.lower().startswith("## [unreleased]"):
-            started = True
-            continue
-        if line.startswith("## ["):
-            break
-        if not started:
-            continue
-        if line.startswith("### "):
-            sections.append(line[4:].strip().lower())
-        elif line.strip().startswith("- "):
-            bullets.append(line)
-    if "removed" in sections:
-        return "major", "a Removed section"
-    breaking = next((line for line in bullets if BREAKING.search(line)), "")
-    if breaking:
-        return "major", "a bullet reading %s" % clip_sentence(breaking.strip("- "), 8)
-    if "added" in sections:
-        return "minor", "an Added section and nothing removed"
-    return "patch", "only fixes and changes"
-
-
-def cut_release(text: str, version: str, today: str) -> str:
-    """Retitles the Unreleased section as a dated version and opens an empty one above it."""
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        if not line.lower().startswith("## [unreleased]"):
-            continue
-        if not _has_entries(lines, index):
-            raise ValueError("the Unreleased section is empty; nothing to release")
-        lines[index] = "## [%s] \u2014 %s" % (version, today)
-        lines[index:index] = ["## [Unreleased]", ""]
-        return "\n".join(lines).rstrip() + "\n"
-    raise ValueError("no ## [Unreleased] heading in the changelog")
-
-
-def _has_entries(lines: List[str], start: int) -> bool:
-    """Whether the section at start holds a bullet before the next version heading."""
-    for line in lines[start + 1:]:
-        if line.startswith("## ["):
-            return False
-        if line.strip().startswith("- "):
-            return True
-    return False
-
-
 def changelog_entry(kind: str, titles: Sequence[str]) -> List[str]:
-    """Bullets for the changelog's Unreleased section under the heading kind maps to."""
+    """Bullets for the changelog under the heading kind maps to."""
     return ["- " + clip_sentence(title) for title in titles]
 
 

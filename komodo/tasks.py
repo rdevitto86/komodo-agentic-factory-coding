@@ -14,6 +14,7 @@ PRIORITIES = ("C", "H", "M", "L")
 TYPES = ("feat", "fix", "chore", "docs", "test", "refactor", "perf", "build", "ci")
 OWNERS = ("agent", "human")
 MODES = ("parallel", "single")
+VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 
 EPIC_HEADING = re.compile(r"^##\s+\[(EPIC-[\w.]+)\]\s*(.*?)\s*$")
 GROUP_HEADING = re.compile(r"^###\s+\[(TG-[\w.]+)\]\s*(.*?)\s*$")
@@ -110,6 +111,11 @@ class Group:
     def type(self) -> str:
         """The branch and commit type for the group, defaulting to feat."""
         return str(self.fields.get("type") or "feat")
+
+    @property
+    def version(self) -> str:
+        """The version this group ships, written into the changelog heading and the git tag."""
+        return str(self.fields.get("version") or "")
 
     @property
     def slug(self) -> str:
@@ -252,6 +258,10 @@ def lint(backlog: Backlog) -> List[str]:
             problems.append("%s: mode must be one of %s" % (group.id, "|".join(MODES)))
         if group.type not in TYPES:
             problems.append("%s: type must be one of %s" % (group.id, "|".join(TYPES)))
+        if not group.version:
+            problems.append("%s: no version; a group declares the version it ships as `version: x.y.z`" % group.id)
+        elif not VERSION.match(group.version):
+            problems.append("%s: version %r is not x.y.z" % (group.id, group.version))
         if group.id in seen:
             problems.append("%s: duplicate group id (lines %d and %d)" % (group.id, seen[group.id] + 1, group.heading_line + 1))
         seen[group.id] = group.heading_line

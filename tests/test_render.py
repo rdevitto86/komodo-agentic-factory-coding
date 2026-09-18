@@ -163,15 +163,10 @@ class ChangelogTests(unittest.TestCase):
         self.assertEqual(render.changelog_heading("refactor"), "Changed")
         self.assertEqual(render.changelog_heading("mystery"), "Changed")
 
-    def test_newest_version_skips_unreleased(self):
-        text = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.2.1] \u2014 2026-01-01\n"
+    def test_newest_version_reads_the_first_heading(self):
+        text = "# Changelog\n\n## [0.2.1] \u2014 2026-01-01\n\n### Fixed\n- a fix\n\n## [0.2.0] \u2014 2025-12-01\n"
         self.assertEqual(render.newest_version(text), "0.2.1")
-        self.assertIsNone(render.newest_version("# Changelog\n\n## [Unreleased]\n"))
-
-    def test_has_unreleased_entries(self):
-        self.assertTrue(render.has_unreleased_entries("## [Unreleased]\n\n### Fixed\n- a fix\n\n## [0.1.0] \u2014 x\n"))
-        self.assertFalse(render.has_unreleased_entries("## [Unreleased]\n\n## [0.1.0] \u2014 x\n\n### Added\n- first\n"))
-        self.assertFalse(render.has_unreleased_entries("# Changelog\n"))
+        self.assertIsNone(render.newest_version("# Changelog\n"))
 
 
 
@@ -234,9 +229,7 @@ class PrBodyRepoTemplateTests(unittest.TestCase):
         self.assertIn("the blocked one", body)
 
 
-class CutReleaseTests(unittest.TestCase):
-    TEXT = "# Changelog\n\n## [Unreleased]\n\n### Added\n- a thing\n\n## [1.0.0] \u2014 2026-01-01\n\n### Added\n- the start\n"
-
+class NextVersionTests(unittest.TestCase):
     def test_bumps_each_component(self):
         self.assertEqual(render.next_version("1.0.0", "major"), "2.0.0")
         self.assertEqual(render.next_version("1.2.3", "minor"), "1.3.0")
@@ -245,65 +238,15 @@ class CutReleaseTests(unittest.TestCase):
     def test_short_version_is_padded(self):
         self.assertEqual(render.next_version("2", "minor"), "2.1.0")
 
-    def test_unreleased_becomes_a_dated_version(self):
-        out = render.cut_release(self.TEXT, "1.1.0", "2026-09-16")
-        self.assertIn("## [1.1.0] \u2014 2026-09-16", out)
-        self.assertIn("- a thing", out)
-        self.assertIn("## [1.0.0]", out)
-
-    def test_a_fresh_unreleased_section_is_opened(self):
-        out = render.cut_release(self.TEXT, "1.1.0", "2026-09-16")
-        lines = [line for line in out.splitlines() if line.startswith("## [")]
-        self.assertEqual(lines[0], "## [Unreleased]")
-        self.assertEqual(lines[1], "## [1.1.0] \u2014 2026-09-16")
-
-    def test_empty_unreleased_is_refused(self):
-        with self.assertRaises(ValueError):
-            render.cut_release("# Changelog\n\n## [Unreleased]\n\n## [1.0.0] \u2014 2026-01-01\n\n- old\n", "1.1.0", "2026-09-16")
-
-    def test_missing_unreleased_heading_is_refused(self):
-        with self.assertRaises(ValueError):
-            render.cut_release("# Changelog\n\n## [1.0.0] \u2014 2026-01-01\n", "1.1.0", "2026-09-16")
-
-
-class InferBumpTests(unittest.TestCase):
-    def _text(self, body):
-        return "# Changelog\n\n## [Unreleased]\n\n%s\n## [1.0.0] \u2014 2026-01-01\n\n### Added\n- the start\n" % body
-
-    def test_only_fixes_is_a_patch(self):
-        level, _ = render.infer_bump(self._text("### Fixed\n- a crash\n"))
-        self.assertEqual(level, "patch")
-
-    def test_changed_alone_is_a_patch(self):
-        level, _ = render.infer_bump(self._text("### Changed\n- tighter output\n"))
-        self.assertEqual(level, "patch")
-
-    def test_added_is_a_minor(self):
-        level, _ = render.infer_bump(self._text("### Fixed\n- a crash\n\n### Added\n- a command\n"))
-        self.assertEqual(level, "minor")
-
-    def test_removed_is_a_major(self):
-        level, reason = render.infer_bump(self._text("### Added\n- a command\n\n### Removed\n- an old flag\n"))
-        self.assertEqual(level, "major")
-        self.assertIn("Removed", reason)
-
-    def test_a_breaking_bullet_is_a_major(self):
-        level, _ = render.infer_bump(self._text("### Changed\n- breaking: the state file moved\n"))
-        self.assertEqual(level, "major")
-
-    def test_a_released_section_below_is_ignored(self):
-        level, _ = render.infer_bump(self._text("### Fixed\n- a crash\n"))
-        self.assertEqual(level, "patch")
-
 
 class PreservationTests(unittest.TestCase):
-    TEXT = "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
+    TEXT = "# Changelog\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
 
     def test_released_versions_are_listed_newest_first(self):
         self.assertEqual(render.released_versions(self.TEXT), ["0.2.0", "0.1.0"])
 
     def test_a_write_that_only_adds_is_allowed(self):
-        after = render.cut_release(self.TEXT.replace("## [Unreleased]", "## [Unreleased]\n\n### Fixed\n- a fix"), "0.2.1", "2026-03-01")
+        after = self.TEXT.replace("## [0.2.0]", "## [0.3.0] \u2014 2026-03-01\n\n### Fixed\n- a fix\n\n## [0.2.0]")
         render.assert_preserved(self.TEXT, after)
 
     def test_a_write_that_drops_a_version_is_refused(self):
@@ -325,7 +268,7 @@ class PreservationTests(unittest.TestCase):
 
 
 class ChangelogDriftTests(unittest.TestCase):
-    TEXT = "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
+    TEXT = "# Changelog\n\n## [0.2.0] \u2014 2026-02-01\n\n### Added\n- two\n\n## [0.1.0] \u2014 2026-01-01\n\n### Added\n- one\n"
 
     def test_a_clean_changelog_has_no_drift(self):
         self.assertEqual(render.changelog_drift(self.TEXT, ["v0.1.0", "v0.2.0"]), [])
@@ -340,11 +283,6 @@ class ChangelogDriftTests(unittest.TestCase):
         problems = render.changelog_drift(self.TEXT, ["v0.1.0", "v0.2.0", "v0.1.5"])
         self.assertEqual(len(problems), 1)
         self.assertIn("v0.1.5 is tagged", problems[0])
-
-    def test_an_empty_unreleased_is_drift_only_at_release(self):
-        self.assertEqual(render.changelog_drift(self.TEXT, ["v0.1.0", "v0.2.0"], at_release=True)[0].count("Unreleased"), 1)
-        held = self.TEXT.replace("## [Unreleased]", "## [Unreleased]\n\n### Fixed\n- a fix")
-        self.assertEqual(render.changelog_drift(held, ["v0.1.0", "v0.2.0"], at_release=True), [])
 
     def test_a_date_separator_mismatch_is_drift(self):
         mixed = self.TEXT.replace("## [0.1.0] \u2014 2026-01-01", "## [0.1.0] - 2026-01-01")

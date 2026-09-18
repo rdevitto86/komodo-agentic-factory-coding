@@ -166,7 +166,7 @@ def check_roles(root: str) -> List[str]:
 
 
 def check_changelog(root: str, protected: Optional[List[str]] = None, git_checks: bool = True) -> List[str]:
-    """On a protected branch only: entries still sitting under Unreleased, and a newest version no tag points at."""
+    """On a protected branch only: a newest changelog version that no tag points at."""
     from . import render
 
     path = os.path.join(root, "CHANGELOG.md")
@@ -179,8 +179,6 @@ def check_changelog(root: str, protected: Optional[List[str]] = None, git_checks
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     problems: List[str] = []
-    if render.has_unreleased_entries(text):
-        problems.append("CHANGELOG.md: [Unreleased] holds entries on %s; cut them with `python3 -m komodo release --bump`" % branch)
     version = render.newest_version(text)
     if version and not git.tag_exists("v" + version):
         problems.append("CHANGELOG.md: version %s has no v%s tag; tag it with `python3 -m komodo release`" % (version, version))

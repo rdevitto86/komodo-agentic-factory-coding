@@ -317,53 +317,19 @@ def cmd_pr(args: argparse.Namespace) -> int:
     return pr_actions.dispatch(args, root, config)
 
 
-def cut_release(root: str, path: str, bump: str, dry_run: bool) -> int:
-    """Promotes Unreleased to the next version in the changelog and in __init__, then commits."""
-    from . import render
-
-    text = _read(path)
-    current = None
-    for line in text.splitlines():
-        if line.startswith("## [") and "unreleased" not in line.lower():
-            current = line.split("[", 1)[1].split("]", 1)[0].strip()
-            break
-    reason = "you asked for it"
-    if bump == "auto":
-        bump, reason = render.infer_bump(text)
-    version = render.next_version(current or "0.0.0", bump)
-    print("%s bump to %s: %s" % (bump, version, reason))
-    try:
-        updated = render.cut_release(text, version, time.strftime("%Y-%m-%d"))
-    except ValueError as error:
-        print("komodo release: %s" % error, file=sys.stderr)
-        return 2
-    init = os.path.join(root, "komodo", "__init__.py")
-    if dry_run:
-        print("would cut %s from %s and bump %s" % (version, current or "nothing", init))
-        return 0
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(updated)
-    if os.path.isfile(init):
-        bumped = re.sub(r'__version__ = "[^"]*"', '__version__ = "%s"' % version, _read(init))
-        with open(init, "w", encoding="utf-8") as handle:
-            handle.write(bumped)
-    print("cut %s; commit the branch, merge it, then run `komodo release` to tag" % version)
-    return 0
-
-
 def _read(path: str) -> str:
     """File contents as text."""
     with open(path, encoding="utf-8") as handle:
         return handle.read()
 
 
-def release_check(root: str, path: str, at_release: bool) -> int:
+def release_check(root: str, path: str) -> int:
     """Reports changelog and tag drift read-only, without touching the repo or the remote."""
     from . import render
 
     text = _read(path)
     tags = subprocess.run(["git", "tag", "--list", "v*"], cwd=root, capture_output=True, text=True).stdout.split()
-    problems = render.changelog_drift(text, tags, at_release)
+    problems = render.changelog_drift(text, tags)
     for version in render.never_released_versions(text):
         print("note: %s is marked never released, so no tag is expected" % version)
     for problem in problems:
@@ -373,7 +339,7 @@ def release_check(root: str, path: str, at_release: bool) -> int:
 
 
 def cmd_release(args: argparse.Namespace) -> int:
-    """komodo release [check|--bump major|minor|patch]: audit drift, cut a version from Unreleased, or tag the newest one."""
+    """komodo release [check]: audit changelog and tag drift, or tag the newest version."""
     root = repo_root()
     config = load_config(root)
     path = os.path.join(root, str(config.get("changelog", "CHANGELOG.md")))
@@ -381,13 +347,11 @@ def cmd_release(args: argparse.Namespace) -> int:
         print("no changelog at %s" % path, file=sys.stderr)
         return 2
     if getattr(args, "action", None) == "check":
-        return release_check(root, path, args.at_release)
-    if getattr(args, "bump", None):
-        return cut_release(root, path, args.bump, args.dry_run)
+        return release_check(root, path)
     version = None
     with open(path, encoding="utf-8") as handle:
         for line in handle:
-            if line.startswith("## [") and "unreleased" not in line.lower():
+            if line.startswith("## ["):
                 version = line.split("[", 1)[1].split("]", 1)[0].strip()
                 break
     if not version:
@@ -489,10 +453,8 @@ def build_parser() -> argparse.ArgumentParser:
     respond.add_argument("--dry-run", action="store_true")
     pr_parser.set_defaults(func=cmd_pr)
 
-    release = sub.add_parser("release", help="cut a version from Unreleased, or tag the newest one")
+    release = sub.add_parser("release", help="audit changelog and tag drift, or tag the newest version")
     release.add_argument("action", nargs="?", choices=("check",), help="check: report changelog and tag drift read-only, exiting non-zero on any")
-    release.add_argument("--at-release", action="store_true", dest="at_release", help="with check: also require a non-empty Unreleased section")
-    release.add_argument("--bump", nargs="?", const="auto", choices=("auto", "major", "minor", "patch"), help="promote Unreleased to the next version instead of tagging; bare --bump reads the level off the changelog")
     release.add_argument("--dry-run", action="store_true")
     release.set_defaults(func=cmd_release)
     return parser

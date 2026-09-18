@@ -116,7 +116,7 @@ func injectMain() {
 	}
 	for _, line := range readLines(filepath.Join(root, "CHANGELOG.md")) {
 		match := versionRe.FindStringSubmatch(line)
-		if match != nil && strings.ToLower(match[1]) != "unreleased" {
+		if match != nil {
 			lines = append(lines, "Released version: "+match[1]+".")
 			break
 		}
