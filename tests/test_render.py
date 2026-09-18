@@ -76,21 +76,40 @@ class SummaryBucketsTests(unittest.TestCase):
         run = make_state()
         self.assertEqual(render.summary_buckets(run, {}), [])
 
-    def test_done_blocked_and_flagged_buckets(self):
+    def test_all_four_buckets_in_order(self):
         run = make_state()
         run.task("TSK-01.1.1").status = "DONE"
         run.task("TSK-01.1.2").status = "BLOCKED"
         run.task("TSK-01.1.2").note = "missing fixture"
-        run.notes.append("watch the cache TTL")
+        run.findings.append({"title": "refund route has no test", "filed": True})
+        run.notes.append("verify gate still failing; no PR opened")
         titles = {"TSK-01.1.1": "Add refund handler", "TSK-01.1.2": "Wire refund route"}
-        out = render.summary_buckets(run, titles)
-        text = "\n".join(out)
-        self.assertIn("## ✅ Successful Changes", text)
+        text = "\n".join(render.summary_buckets(run, titles))
+        headings = [line for line in text.splitlines() if line.startswith("## ")]
+        self.assertEqual(headings, ["## ✅ Successful Changes", "## ❌ Blocked Changes", "## 📌 Callouts", "## ⚠️ Warnings"])
         self.assertIn("Add refund handler", text)
-        self.assertIn("## ❌ Blocked Changes", text)
         self.assertIn("missing fixture", text)
-        self.assertIn("## ⚠️ Flagged Changes", text)
-        self.assertIn("watch the cache TTL", text)
+        self.assertIn("refund route has no test", text)
+        self.assertIn("no PR opened", text)
+
+    def test_a_filed_finding_is_a_callout_not_a_warning(self):
+        run = make_state()
+        run.findings.append({"title": "refund route has no test", "filed": True})
+        text = "\n".join(render.summary_buckets(run, {}))
+        self.assertIn("## 📌 Callouts", text)
+        self.assertNotIn("Warnings", text)
+
+    def test_a_run_note_is_a_warning_not_a_callout(self):
+        run = make_state()
+        run.notes.append("group budget exhausted before wave 2")
+        text = "\n".join(render.summary_buckets(run, {}))
+        self.assertIn("## ⚠️ Warnings", text)
+        self.assertNotIn("Callouts", text)
+
+    def test_an_unfiled_finding_reaches_neither_bucket(self):
+        run = make_state()
+        run.findings.append({"title": "nit: rename the variable", "filed": False})
+        self.assertEqual(render.summary_buckets(run, {}), [])
 
 
 class ReportTests(unittest.TestCase):

@@ -64,17 +64,19 @@ def worker_table(state: RunState) -> List[str]:
 
 
 def summary_buckets(state: RunState, task_titles: Dict[str, str]) -> List[str]:
-    """The fixed three-bucket turn-end summary."""
+    """The fixed turn-end summary: what landed, what did not, what to know, what went wrong."""
     done = [task_titles.get(tid, tid) for tid, record in state.tasks.items() if record.status == "DONE"]
     blocked = ["%s: %s" % (task_titles.get(tid, tid), record.note) for tid, record in state.tasks.items() if record.status == "BLOCKED"]
-    flagged = [f["title"] for f in state.findings if f.get("filed")] + state.notes
+    callouts = [f["title"] for f in state.findings if f.get("filed")]
     out: List[str] = []
     if done:
         out += ["## ✅ Successful Changes", ""] + bullets(done) + [""]
     if blocked:
         out += ["## ❌ Blocked Changes", ""] + bullets(blocked) + [""]
-    if flagged:
-        out += ["## ⚠️ Flagged Changes", ""] + bullets(clip_sentence(item) for item in flagged) + [""]
+    if callouts:
+        out += ["## 📌 Callouts", ""] + bullets(clip_sentence(item) for item in callouts) + [""]
+    if state.notes:
+        out += ["## ⚠️ Warnings", ""] + bullets(clip_sentence(item) for item in state.notes) + [""]
     return out
 
 
