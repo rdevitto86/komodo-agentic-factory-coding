@@ -21,6 +21,8 @@ var (
 var destructive = map[string]string{
 	"rebase":        "rebases rewrite history",
 	"reset":         "reset discards work",
+	"checkout":      "checkout discards uncommitted work; move with switch",
+	"restore":       "restore discards uncommitted work",
 	"clean":         "clean deletes untracked files",
 	"filter-branch": "filter-branch rewrites history",
 	"filter-repo":   "filter-repo rewrites history",
@@ -99,6 +101,16 @@ func gitFindings(tokens []string, cwd string, patterns []string) []string {
 			out = append(out, fmt.Sprintf("git commit on %s: create a branch first", branch))
 		}
 		return out
+	case "merge":
+		if branch := currentBranch(cwd); branch != "" && isProtected(branch, patterns) {
+			return []string{fmt.Sprintf("git merge on %s: landing is the human's merge button", branch)}
+		}
+	case "switch":
+		for _, arg := range rest {
+			if arg == "-f" || arg == "--force" || arg == "--discard-changes" {
+				return []string{"git switch: --discard-changes throws away uncommitted work"}
+			}
+		}
 	case "branch":
 		for _, arg := range rest {
 			if arg == "-D" || arg == "-f" || arg == "--force" {
