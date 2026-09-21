@@ -2,6 +2,12 @@
 
 Notable changes to komodo-agentic-coding-assembly-line, formerly komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## V1 abandoned — 2026-09-21
+
+The 1.x line ends at 1.3.0. V1 was a Python orchestrator that spawned the host as a worker and rebuilt what the host ships: worktrees, parallel agents, hooks with deny, headless mode. By its last release, every open backlog item was about keeping the orchestrator safe from itself, and the account, hook, and report defects it kept fixing were its own. It was abandoned, not finished, in favour of V2: one static binary as the assembly line, markdown as everything a model reads, one guard, and a model mounted per host.
+
+V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the last commit on `main` before the repo was cleared. The repo was renamed from `komodo-agentic-toolkit-coding` to `komodo-agentic-coding-assembly-line` the same day. The V2 plan, its requirements, and a table mapping every V1 capability to its V2 task or its reason for dropping are in `README.md` on PR #103, which carries the whole V2 implementation. The 0.x history at tag `v0.51.0` is unaffected.
+
 ## [1.3.0] — 2026-09-21
 
 ### Added
