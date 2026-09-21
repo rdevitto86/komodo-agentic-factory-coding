@@ -523,3 +523,29 @@ class CommitHookPipelineTests(PipelineTests):
         record = line.state.task(task.id)
         self.assertEqual(record.status, "BLOCKED")
         self.assertIn("OVER_LINES", record.note + " ".join(line.state.notes))
+
+
+class RepoStateTests(PipelineTests):
+    def test_a_bare_flag_stops_preflight_before_any_write(self):
+        subprocess.run(["git", "config", "core.bare", "true"], cwd=self.tmp.name, check=True, capture_output=True)
+        line = self._pipeline()
+        with self.assertRaises(pipeline.PipelineError) as caught:
+            line.preflight("TG-01.1", resume=False)
+        self.assertIn("core.bare", str(caught.exception))
+
+    def test_a_failed_merge_blocks_its_task_and_leaves_the_waves_running(self):
+        line = self._pipeline()
+        line.preflight("TG-01.1", resume=False)
+        line.branch()
+        task = line.backlog.group("TG-01.1").tasks[0]
+        cwd = line._worktree_for(task)
+        line._build_task(task, cwd)
+        self.assertEqual(line.state.task(task.id).status, "DONE")
+        line.state.task(task.id).status = "READY"
+        with mock.patch.object(line.git, "merge", side_effect=pipeline.gitops.GitError("boom")):
+            try:
+                line.build()
+            except pipeline.gitops.GitError:
+                self.fail("a merge failure must not escape the wave loop")
+        self.assertIn(task.id, line.state.blocked)
+        self.assertTrue(any("merge failed" in line.state.task(task.id).note for _ in (0,)))

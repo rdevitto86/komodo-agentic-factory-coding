@@ -30,6 +30,21 @@ class CommitRejected(GitError):
         self.output = output
 
 
+# git exports these to every hook; a child running git elsewhere would act on the hook's repo.
+HOOK_GIT_VARS = (
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_QUARANTINE_PATH", "GIT_PREFIX", "GIT_NAMESPACE",
+)
+
+
+def clean_env(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """An environment with no inherited git repo pointers, for a gate a hook shells out to."""
+    env = dict(base if base is not None else os.environ)
+    for key in HOOK_GIT_VARS:
+        env.pop(key, None)
+    return env
+
+
 def worker_env(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """An environment with no push credential: no GitHub token, no credential helper, no gh auth, no SSH identity."""
     env = dict(base if base is not None else os.environ)
@@ -138,6 +153,12 @@ class Git:
         self.run("worktree", "prune", check=False)
         if branch and self.branch_exists(branch) and not self.is_protected(branch):
             self.run("branch", "-D", branch, check=False)
+
+    def is_bare(self) -> bool:
+        """Whether core.bare is set on a checkout that has a working tree, which breaks every write."""
+        if not os.path.isdir(os.path.join(self.root, ".git")) and not os.path.isfile(os.path.join(self.root, ".git")):
+            return False
+        return self.run("config", "--get", "core.bare", check=False).strip() == "true"
 
     def main_checkout(self) -> str:
         """The main worktree's path, which reads the same from inside any linked worktree."""

@@ -138,6 +138,8 @@ def check_git_leftovers(root: str, protected: List[str], base: Optional[str] = N
     problems: List[str] = []
     git = gitops.Git(root, protected)
     try:
+        if git.is_bare():
+            problems.append("core.bare is true on a checkout that has a working tree; run `git config core.bare false`")
         for path in git.worktrees():
             problems.append("stale worktree %s" % path)
         base = base or git.default_base()

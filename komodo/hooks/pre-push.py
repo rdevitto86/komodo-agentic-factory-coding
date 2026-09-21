@@ -64,13 +64,14 @@ def main() -> int:
 
     try:
         from komodo.gates import resolve_verify, run_command
+        from komodo.gitops import clean_env
     except Exception:
         return 0
     command = resolve_verify(root)
     if command is None:
         return 0
     timeout = int(os.environ.get("KOMODO_VERIFY_TIMEOUT", "600") or 600)
-    result = run_command(command, root, timeout)
+    result = run_command(command, root, timeout, env=clean_env())
     if not result.ok:
         sys.stderr.write(result.output)
         sys.stderr.write("\npre-push: %s failed; fix it or push with --no-verify if you must\n" % command)

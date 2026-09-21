@@ -103,8 +103,37 @@ func runVerify(root, command string) (string, bool) {
 		cmd = exec.CommandContext(ctx, "sh", "-c", command)
 	}
 	cmd.Dir = root
+	cmd.Env = cleanGitEnv()
 	out, err := cmd.CombinedOutput()
 	return string(out), err == nil
+}
+
+// hookGitVars are exported to every hook; a gate inheriting them would run git against the hook's repo.
+var hookGitVars = []string{
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_QUARANTINE_PATH", "GIT_PREFIX", "GIT_NAMESPACE",
+}
+
+// cleanGitEnv returns the environment with every inherited git repo pointer removed.
+func cleanGitEnv() []string {
+	var kept []string
+	for _, entry := range os.Environ() {
+		name := entry
+		if index := strings.IndexByte(entry, '='); index >= 0 {
+			name = entry[:index]
+		}
+		drop := false
+		for _, blocked := range hookGitVars {
+			if name == blocked {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
 }
 
 // prePushMain refuses a protected ref, a delete, or a force update, then runs the repo's verify gate.
