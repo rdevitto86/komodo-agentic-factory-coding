@@ -1,143 +1,125 @@
 # komodo-agentic-toolkit-coding
 
-A software assembly line for Komodo repos. Feed it a task group from `BACKLOG.md`, and it plans waves, builds them in parallel worktrees, verifies, reviews once, and opens a pull request. A human merges.
+Komodo's agent toolkit: one set of rules, roles, standards, skills, and guardrails that any agent host renders and runs. The host is the factory; Komodo is the assembly line. Today the factory is Claude Code with Ollama beside it. The day it is something else, the move is one adapter file.
 
-Three ideas hold it together:
+**Status: V2 is planned, not built.** This README is the plan. V1, the Python orchestrator under `komodo/`, is what runs today and builds V2 until the run skill lands; the demolition group at the end of the roadmap removes it. The full design is in `docs/spec/v2.md` and the work is in `BACKLOG.md`.
 
-1. **The pipeline is code.** A stdlib-only Python orchestrator owns the state machine. Models are workers that receive one brief and return JSON. No model reads the queue or decides the order.
-2. **Guarantees are structural.** Workers hold no push credential. One module pushes, and it refuses protected refs in code. Git hooks refuse the same on the developer's machine.
-3. **Context is per worker.** A builder sees its task, its files, the standard for its language, and its acceptance commands. Nothing else. Fixed prompt text stays under 1.5k tokens; the orchestrator itself spends none.
+## Vision
+
+A Komodo developer clones one repo, runs one install, and every session and every unattended run on their machine carries the same rules, the same standards, the same roles, and the same guardrails. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests, with a model called exactly twice per task: once to build, once to review. Everything between those two calls is deterministic code, identical on every host and every operating system.
+
+Three commitments hold it together:
+
+1. **The line is code; the loop is the host.** Picking the wave, assembling a brief, validating a result, rerunning the acceptance commands, merging a worktree, denying a command: standard-library Python. Spawning agents, giving each a fresh context, running hooks, headless mode: the host's job, never rebuilt here.
+2. **Nothing outside the adapters knows the host.** Rules, roles, skills, and policy are three open formats. `komodo doctor` fails the build on a vendor name, a host tool, or a host path anywhere else.
+3. **Context is budgeted, not hoped for.** Always-on context stays under 1500 tokens. Every slot injected into a builder has a character cap and a visible cut marker. A session sees a standard as a one-line pointer; a brief carries the clipped copy.
+
+## Core features
+
+### One neutral source, rendered per host
+
+Everything Komodo says to an agent lives once under `komodo/`: the universal rules in `AGENTS.md`, one file per role with its tier and tools in frontmatter and its brief template as the body, one `SKILL.md` per standard and per workflow, and one `policy.json` for what no agent may do. An adapter of about 100 lines renders that source into a host's own layout: agents, skills, hooks, and settings for Claude Code, or TOML agents and a hooks file for Codex. `python3 -m komodo install --host claude` is the whole switch, and the same command with another host name is the whole migration. Two developers on two operating systems run the same install and get byte-identical rules.
+
+### The assembly line in code
+
+`komodo tasks` is the line. `next` prints the next ready group as JSON with its waves and dependencies, skipping tasks that already hold a valid result on disk, which is how a run resumes. `brief` fills a role's template, writes the scope file, and creates the worktree. `close` validates the builder's JSON against the role schema, reruns the task's `done_when` commands, runs the comment lint, and flips the status token; with `--wave` it merges worktrees in order and stops on conflict, and with `--group` it commits, pushes, and opens the PR. `diff` and `report` feed the reviewer and the human. None of these calls a model.
+
+### The run skill and the headless launcher
+
+The `run` skill is about ten lines under 800 tokens: next, spawn one builder per task in the wave, close, spawn the reviewer, close the group, publish. The session judges only what to spawn and what a result says, so there is no prose state machine for it to re-read after compaction, which is what made the 0.x skill loop slow. `komodo run <group>` wraps the same skill in the host's non-interactive mode for unattended runs, with push credentials stripped from the environment first. The plan's first proof runs one group under V1 and under the skill and records wall time and tokens before anything is deleted.
+
+### Context injection with budgets
+
+A builder never guesses what it needs; `tasks brief` injects it. The slots are the task block, the repo's own `AGENTS.md`, repo context files matched to the task's files, the task's context anchors resolved to sections, the files themselves, the standards for the extensions and role, the acceptance commands, and on a repair the failed output plus the previous attempt's diff. Every slot has a cap in `config.py` and is clipped head-and-tail with a marker the model can see, so a brief is the same size on a large repo as on a small one. The reviewer gets the diff, the group's tasks, and the standards the diff touches, and nothing from the builder's transcript.
+
+### The repo layer
+
+A repo may commit a `.komodo/` directory and nothing in it is required. Context files under `.komodo/context/` carry a glob list in frontmatter and are injected into any task whose files match, so a payroll module's rules reach the builder touching payroll and no one else. `.komodo/standards/` extends a shipped standard or adds one the toolkit never shipped, in the same format with the same trigger. `.komodo/exclude` names shipped standards this repo never loads, with a floor of comments, API security, and SDLC it cannot reach, and doctor fails when an exclusion has drifted away from the code. Precedence is defaults, then a per-machine overlay that can only tighten, then the repo.
+
+### Roles, tiers, and profiles
+
+A role declares a tier, light, standard, or heavy, and never a model. A profile maps each tier to a provider, a model, and an effort for one host, and `komodo install --profile` picks it. The default profile runs Claude Code's three model sizes; `hybrid` sends light roles through the local bridge; `codex` and `local` do the same on Codex, with `local` running every tier on Ollama. Changing what a tier costs is a config edit that touches no role, and a role rendered for a new host reads the same words it read on the old one.
+
+### Independent review
+
+Every group gets one review pass from a reviewer with a fresh context that reads only the diff. It never sees the builder's transcript, its brief, or its reasoning, so it cannot inherit the builder's assumptions. The profile may place the reviewer on a different tier or a different vendor than the builder, including a local model, so a review need not share a provider with the build. Findings at or above the floor become one repair pass; the rest are filed to the backlog by code.
+
+### Guardrails
+
+One script, the guard, runs before every shell, edit, and write on every host, and it is the only enforcement point. It reads `policy.json` and denies pushes, commits, merges, and deletes on protected refs, force and amend and history rewrites, co-author and generated-by trailers, recursive deletes outside the worktree, database drops and truncates, infrastructure destroy verbs, and any command naming a production marker. Inside a worktree it also denies an edit or write outside the task's own file list. It fails open on an internal error so one bug never stalls every command, and `komodo guard check` runs a table of at least 60 commands inside verify so a broken guard fails the gate, never a run. The headless launcher strips push credentials on top, which is V1's structural guarantee kept for unattended work.
+
+### Local models
+
+Local models are a profile choice, not a code path. On Claude Code, which cannot run a subagent on Ollama, `komodo bridge` is a stdio MCP server in the standard library that the host spawns on demand; a light role's body calls it, so there is no process to keep alive and nothing to install beyond Ollama. On Codex the `local` profile points every tier at Ollama through the host's own provider setting. Both Komodo machines pull the same models, so a brief produces the same result on either desk.
+
+### Standards as skills
+
+Every language and domain standard is a `SKILL.md` whose description names the extensions and directories that trigger it. In a session the host loads it on demand; in a brief `tasks brief` injects the clipped copy for the extensions the task touches. The files stay between 3 and 8 KB, the validator caps them, and there is no "off" standard: an unused language costs nothing. A standard names no live repo, port, URL, version, or path.
+
+### The accessibility contract
+
+Every human-facing output follows one contract, rendered into the always-on rules: the answer first, one idea per line, five bullets per list, three sentences per paragraph, bold anchors, and a turn-end summary in fixed buckets when something changed. The run report follows the same contract, so a report and a chat reply read the same way. The contract is a rules file, so it travels to every host unchanged.
+
+### Doctor and verify
+
+`komodo doctor` fails on a backticked path or skill name that does not resolve, on a vendor name or host tool outside the adapters, on a rendered layout that has drifted from the source, and on a repo exclusion that no longer matches the code. `scripts/verify.py` is the gate: tests, the always-on token budget, the skill size caps, the comment lint, the guard table, and doctor. Nothing lands without it.
+
+## Roadmap
+
+Nine groups in `BACKLOG.md`, in order. V1 runs the first four; the run skill runs the rest.
+
+| Group | Delivers | Proof |
+|---|---|---|
+| TG-03.1 Source reshape | Standards as skills, briefs folded into roles with schemas, `policy.json`, `AGENTS.md` with the accessibility contract | Tests, no old directories |
+| TG-03.2 Guard and inject | The two stdlib hooks, the 60-command table, `guard check` in verify, Go and git hooks deleted | Verify runs the table |
+| TG-03.3 Profiles, Claude adapter, CLI | Tier-to-model profiles with context caps, the Claude render with pointer skills and hooks, the five-command CLI | Validate under 1500 tokens |
+| TG-03.4 The line in code | `tasks next`, `brief`, `close`, `diff`, `report`; schema validation; resume by results | Tests per command |
+| TG-03.5 Run skill and launcher | The ten-line skill, review and backlog skills, `komodo run`, the V1 versus V2 timing proof | One group each way, numbers recorded |
+| TG-03.6 The repo layer | Context by glob, standard overrides, exclusions with a floor, doctor drift check, a template example | Tests, doctor |
+| TG-03.7 Local models on Claude Code | The stdio bridge, its registration at install, the hybrid profile | Bridge tests with a fake Ollama |
+| TG-03.8 Codex and the exit test | The Codex adapter, the portability lint, the local profile, one group under Codex | Zero source changes outside adapters |
+| TG-03.9 Demolition and docs | The orchestrator, workers, state, account, and gitops deleted; README, architecture, decisions, templates rewritten; 2.0.0 | Verify passes with nothing left |
 
 ## Setup
 
-Requirements: Python 3.9+, git, the `claude` CLI on PATH, and `gh` authenticated. Ollama is optional.
+Requirements: Python 3.9+, git, `gh` authenticated, and the host CLI on PATH. Ollama is optional.
 
 ```bash
 git clone <this repo> ~/komodo/ai/komodo-agentic-toolkit-coding
 cd ~/komodo/ai/komodo-agentic-toolkit-coding
-python3 -m komodo install                    # renders the claude adapter into ~/.claude, generates settings.json
-python3 -m komodo hooks install ~/komodo/*/* # points each repo's git hooks at komodo/hooks
+python3 -m komodo install --host claude       # or --host codex; add --profile hybrid for local light roles
 ```
 
-Windows: same commands with `python` or `py -3`. No Git Bash, no symlinks, no `make`. See [docs/windows-install.md](docs/windows-install.md).
-
-The install is a copy. After editing `komodo/rules`, `roles`, `standards`, or `adapters`, run `python3 -m komodo install` again.
+The install is a copy. After editing anything under `komodo/`, run it again. `python3 -m komodo doctor` says when you forgot.
 
 ## Usage
 
-In any repo with a `BACKLOG.md` in the [task grammar](komodo/rules/backlog.md):
+In any repo with a `BACKLOG.md` in the task grammar:
 
 ```bash
-python3 -m komodo run --dry-run              # plan: waves, briefs, token estimates, no spend
-python3 -m komodo run TG-01.2                # run one group, fast profile
-python3 -m komodo run TG-01.2 --profile thinking
-python3 -m komodo status --prune             # runs, stale worktrees, merged branches
-python3 -m komodo pr respond                 # answer unresolved review threads
-python3 -m komodo pr sync                    # merge the base in, resolve conflicts with a worker
+/run TG-01.2                                  # in a session: the assembly line on one group
+python3 -m komodo run TG-01.2                 # headless, credentials stripped
+python3 -m komodo tasks next --json           # what would run, and why
+python3 -m komodo tasks lint                  # after every backlog edit
+python3 -m komodo doctor                      # references, portability, drift
+python3 scripts/verify.py                     # the gate
 ```
-
-A run reports to `.komodo/runs/<id>/report.md` and into the PR body: what landed, what blocked, per-phase time, per-role cost.
-
-## The pipeline
-
-```mermaid
-flowchart LR
-    A[Preflight<br/>lint backlog, build DAG,<br/>check tree, 0 tokens] --> B[Branch<br/>type/group-slug]
-    B --> C[Build waves<br/>one builder per task,<br/>one worktree each,<br/>parallel by directory]
-    C --> D{done_when<br/>rerun by<br/>orchestrator}
-    D -->|pass| E[Commit + merge<br/>into run branch]
-    D -->|fail| F[One repair pass] --> D
-    E --> G[Compile gate<br/>per wave, 0 tokens]
-    G --> C
-    G -->|last wave| H[Verify once<br/>repo gate]
-    H --> I[Review once<br/>bugs, security,<br/>tests, comments]
-    I -->|floor findings| F2[Repair] --> H
-    I -->|below floor| J[File to BACKLOG.md]
-    J --> K[Changelog + statuses<br/>commit, push, PR]
-    K --> L([Human merges])
-```
-
-| Phase | Runs as | Model calls |
-|---|---|---|
-| Preflight, branch, DAG | code | 0 |
-| Build | one builder per task, parallel by directory | N |
-| Verify, compile gates | code | 0, +1 repair on failure |
-| Review | one reviewer over the group diff | 1 |
-| Publish, report | code and `gh` | 0 |
-
-Roles declare a tier (`light`, `standard`, `heavy`). Profiles map tiers to a provider, model, and effort. Three ship as defaults in `komodo/config.py`, and the detected account caps what any of them may reach:
-
-| Profile | light | standard | heavy | For |
-|---|---|---|---|---|
-| `fast` | Haiku low | Sonnet medium | Sonnet medium; review skipped under 150 diff lines | Small groups |
-| `thinking` | Haiku low | Sonnet high | Opus high, capped to Sonnet below a Max plan | Hard groups |
-| `local` | Ollama | Ollama | Ollama | Air-gapped use; summarize and review today, build once a tool-capable local runtime exists |
-
-## Enforcement layers
-
-```mermaid
-flowchart TB
-    subgraph Worker["Worker process (claude -p)"]
-        W[Edits files in its worktree<br/>no GH_TOKEN, credential.helper empty,<br/>SSH batch mode, gh unauthenticated]
-    end
-    subgraph Orchestrator["Orchestrator (komodo/gitops.py)"]
-        O[Only pusher.<br/>Refuses protected refs, force,<br/>amend, trailers, in code]
-    end
-    subgraph Machine["Developer machine"]
-        H1[komodo-hooks precommit: no protected branch,<br/>no trailer, gofmt, comment lint]
-        H2[komodo-hooks prepush: no protected ref,<br/>no force, repo verify gate]
-        G[komodo-hooks guard: advisory PreToolUse<br/>in interactive sessions]
-    end
-    subgraph GitHub
-        M([Merge button, human])
-    end
-    W -->|commits via| O -->|push branch| GitHub
-    H1 & H2 & G -.->|same rules by hand| GitHub
-```
-
-The remote is the only place a change lands into `main`, and only a person presses that button.
 
 ## Layout
 
-```
-komodo/                the library and the orchestrator (stdlib only)
-├── rules/             AGENTS.md (universal rules), backlog.md (grammar), cli.md (commands)
-├── roles/             one file per role: tier, access, and the body every renderer uses
-├── standards/         rule files per language and domain, injected by extension
-├── briefs/            worker prompt template per role
-├── adapters/claude/   renders ~/.claude from the above; owns its hooks and settings policy
-│   └── hooks/         guard.py and context_injector.py, the Python fallbacks
-├── hooks/             the sh stubs Git runs, the Python fallbacks, the Go source in src/, prebuilt binaries in bin/
-├── workers/           claude (headless CLI) and ollama adapters
-├── pipeline.py        the phases
-├── gitops.py          the only git writer
-└── __main__.py        CLI: run, status, tasks, comments, hooks, install, doctor, pr, release
-tests/                 unittest suites
-scripts/verify.py      the gate this repo runs
-templates/project/     AGENTS.md, CLAUDE.md, BACKLOG.md, CHANGELOG.md templates, docs/spec starters
-```
+| Path | What |
+|---|---|
+| the rules file and `komodo/rules/` | Universal rules, the accessibility contract, the backlog grammar |
+| `komodo/roles/` | One file per role: tier, tools, session flag, return schema, brief template |
+| `komodo/skills/` | `run`, `review`, `backlog`, and one `standards-<x>` per language or domain |
+| the policy file and `komodo/hooks/` | What no agent may do, and the two scripts that enforce it |
+| `komodo/adapters/` | One render per host |
+| `komodo/tasks.py` and the line, repo layer, bridge, and launcher modules | The line, the repo layer, the local bridge, the launcher |
+| `tests/`, `scripts/verify.py` | The gate |
+| `templates/project/` | Starters for a new repo |
 
-There is no hand-maintained Claude directory. `python3 -m komodo install` renders the adapter into `~/.claude`: `AGENTS.md`, one agent file per session role with model and effort from the active profile's tiers, two procedure skills built from `komodo/rules/`, a review skill from the reviewer role, one thin pointer skill per standard, the session hooks, and a settings policy merged into your personal `settings.json`. Another tool gets another adapter with the same inputs.
+## Docs
 
-Every hook ships compiled. `komodo/hooks/src/` is one Go program, `komodo-hooks`, with a subcommand per hook: `guard` and `inject` for the session, `precommit` and `prepush` for Git. `scripts/build-hooks.py` cross-compiles it for darwin, linux, and windows on amd64 and arm64, and records a checksum manifest the verify gate rebuilds and compares.
-
-`install` copies the session binary to `~/.claude` and points `settings.json` at it; the Git stubs pick the binary for the running machine out of `bin/`. Protected-branch matching, the trailer pattern, and repo-root discovery are written once in Go and shared by all four. The four Python hooks still ship as the fallback for a platform with no committed binary, and the test suite runs every hook case against both so they cannot drift.
-
-## Comments
-
-Every public function gets a one-line doc comment. A private function gets one only when long or non-obvious. Nothing else is commented unless the line cannot say it itself. The lint (`python3 -m komodo comments check`) flags a missing doc, a comment that restates its identifier, cites a version or ticket, uses first person or a hedge, narrates history, or runs past twenty words. It runs in `pre-commit` on staged lines and in the reviewer brief as a judgment class.
-
-## Testing
-
-```bash
-python3 scripts/verify.py      # tests, validate, comment lint, doctor
-```
-
-There is no CI. The gate runs on the developer's machine, installed by `python3 -m komodo hooks install .`, and `pre-push` refuses a push whose verify run fails. Rebuilding the hook binaries and proving them against the manifest is part of that run, so it needs a Go toolchain; without one, verify checks the committed checksums and says so.
-
-## References
-
-- [docs/architecture.md](docs/architecture.md): phases, state, briefs, and what would change each decision
-- [docs/design-decisions.md](docs/design-decisions.md): why each rule exists
-- [komodo/rules/backlog.md](komodo/rules/backlog.md): the task grammar
-- [SECURITY.md](SECURITY.md): how to report a problem
+- `docs/spec/v2.md`: the design, the stations, the slots and their caps, the repo layer, the exit test.
+- `docs/architecture.md`, `docs/design-decisions.md`: V1 today, rewritten in TG-03.9.
+- `BACKLOG.md`: the roadmap as tasks. `python3 -m komodo tasks lint` after every edit.
