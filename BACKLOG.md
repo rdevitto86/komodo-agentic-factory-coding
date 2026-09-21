@@ -1,20 +1,20 @@
 # Project Backlog
 
-Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `komodo lint` checks it from TG-03.2 on. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V1.4 plan in `README.md`.
+Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `komodo lint` checks it from TG-03.2 on. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V2 plan in `README.md`.
 
 ---
 
-## [EPIC-03] V1.4, the assembly line
+## [EPIC-03] V2, the assembly line
 *Goal: one static binary is the conveyor and the devices, markdown is everything a model reads, one guard is the only hook, and a model is a machine mounted per host. Two model calls per task, build and review; everything between is deterministic. Claude Code with Ollama is the host today for both Komodo devs; Codex is the exit test. Requirements and design: `README.md`.*
 
-* **Everything lands on PR #103.** No group opens its own PR; `close --group` is proven on TG-03.5 by committing to this branch. The tag `v1.4.0` is cut when #103 merges.
+* **Everything lands on PR #103.** No group opens its own PR; `close --group` is proven on TG-03.5 by committing to this branch. The tag `v2.0.0` is cut when #103 merges.
 * **Sessions build TG-03.1 through TG-03.4.** The `run` skill runs TG-03.5 and TG-03.6, and TG-03.5 is the proof.
 * **The repo starts clean.** V1 is the tag `v1-final`; the only V1 files here are the markdown TG-03.1 reshapes.
 
 ### [TG-03.1] The markdown
 ```yaml
 type: refactor
-version: 1.4.0
+version: 2.0.0
 ```
 * **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
 
@@ -74,7 +74,7 @@ type: refactor
 ### [TG-03.2] The conveyor and the devices
 ```yaml
 type: feat
-version: 1.4.0
+version: 2.0.0
 ```
 * **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
 
@@ -186,7 +186,7 @@ type: feat
 ### [TG-03.3] The guard and the mounts
 ```yaml
 type: feat
-version: 1.4.0
+version: 2.0.0
 ```
 * **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
 
@@ -259,7 +259,7 @@ type: feat
 ### [TG-03.4] The skills and the launcher
 ```yaml
 type: feat
-version: 1.4.0
+version: 2.0.0
 ```
 * **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof runs one group each way before anything is deleted.
 
@@ -295,7 +295,7 @@ done_when:
 depends_on: [TSK-03.4.1, TSK-03.4.2]
 owner: human
 context:
-  - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 1.4.0 changelog entry"
+  - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 2.0.0 changelog entry"
   - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.5 merges"
 type: docs
 ```
@@ -303,7 +303,7 @@ type: docs
 ### [TG-03.5] The repo layer and the local machines
 ```yaml
 type: feat
-version: 1.4.0
+version: 2.0.0
 ```
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
 
@@ -418,7 +418,7 @@ type: feat
 ### [TG-03.6] The gate and the exit test
 ```yaml
 type: chore
-version: 1.4.0
+version: 2.0.0
 ```
 * **Why:** the gate is Go and runs in CI, and the second host proves the mounts are the only host-specific code.
 
@@ -458,11 +458,11 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.4] Changelog 1.4.0 [P: M] [READY]
+#### [TSK-03.6.4] Changelog 2.0.0 [P: M] [READY]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
-  - grep -q "## 1.4.0" CHANGELOG.md
+  - grep -q "## 2.0.0" CHANGELOG.md
 depends_on: [TSK-03.6.3]
 context:
   - "one heading: the line, what was removed, what replaced it, both proofs"

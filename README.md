@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-**Status: V1.4 is planned, not built.** This README is the plan and the requirements. The repo was cleared to the markdown source on 2026-09-21; V1 lives at the tag `v1-final` and the branch `archive/v1`. Every task lands on PR #103. Tasks are in `BACKLOG.md`.
+**Status: V2 is planned, not built.** This README is the plan and the requirements. The repo was cleared to the markdown source on 2026-09-21; V1 lives at the tag `v1-final` and the branch `archive/v1`. Every task lands on PR #103. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -156,22 +156,22 @@ Both developers run Claude Code today. Nothing outside `internal/mount/` names a
 
 ## Roadmap
 
-Six groups, all `1.4.0`, all on PR #103. Sessions build the first four; the run skill runs the last two as its own proof.
+Six groups, all `2.0.0`, all on PR #103. Sessions build the first four; the run skill runs the last two as its own proof.
 
 | Group | Delivers | Proof |
 |---|---|---|
 | TG-03.1 The markdown | Standards as skills, briefs folded into roles with schemas, the policy file with four denials, the rules updated for worktree freedom, the merger role removed | Tests, no old directories |
 | TG-03.2 The conveyor and devices | The Go module and the binary: lint, next, brief, close, diff, report, tag, release check, the ledger and metrics, `step`; prebuilt binaries and the manifest | Every station has a test |
 | TG-03.3 The guard and the mounts | The guard with the 60-command table, install for Claude Code and Codex, doctor with portability and prune, profiles with the plan probe and auto-selection | Guard table in the gate; validate under 1500 tokens |
-| TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the V1 versus V1.4 timing proof | One group each way, numbers in the changelog |
+| TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the V1 versus V2 timing proof | One group each way, numbers in the changelog |
 | TG-03.5 The repo layer, detection, and local machines | Context by glob, repo standards and skills, commands and additive policy; `detect`, facets for AWS, GCP, Azure, Postgres, and GitHub Actions, the profile slot, the project render from the profile; the bridge; the hybrid and local profiles | Tests, doctor, bridge against a fake Ollama |
-| TG-03.6 The gate and the exit test | CI runs vet, test, doctor, guard check, and the binary match; one task under Codex with zero changes outside the mounts; README and templates final; changelog 1.4.0 | CI green, proof recorded |
+| TG-03.6 The gate and the exit test | CI runs vet, test, doctor, guard check, and the binary match; one task under Codex with zero changes outside the mounts; README and templates final; changelog 2.0.0 | CI green, proof recorded |
 
 ## V1 coverage
 
 Every V1 capability, where it lands, or why it does not.
 
-| V1 capability | V1.4 |
+| V1 capability | V2 |
 |---|---|
 | `run` with waves, worktrees, merge, verify, review, publish | next, brief, close, and the run skill, TG-03.2 and TG-03.4 |
 | `run --dry-run` token estimates | `brief --dry-run`, TSK-03.2.3 |
