@@ -176,3 +176,35 @@ class CommitHookTests(unittest.TestCase):
             self.assertEqual(from_linked.main_checkout(), os.path.realpath(root))
             self.assertEqual([os.path.realpath(p) for p in from_main.worktrees()], [os.path.realpath(linked)])
             self.assertEqual(from_linked.worktrees(), [])
+
+
+class HookEnvTests(unittest.TestCase):
+    def test_clean_env_drops_every_pointer_git_hands_a_hook(self):
+        base = {"PATH": "/usr/bin", "GIT_DIR": "/repo/.git", "GIT_WORK_TREE": "/repo",
+                "GIT_INDEX_FILE": "/repo/.git/index", "GIT_QUARANTINE_PATH": "/repo/.git/q",
+                "GIT_AUTHOR_NAME": "t"}
+        env = gitops.clean_env(base)
+        for name in gitops.HOOK_GIT_VARS:
+            self.assertNotIn(name, env)
+        self.assertEqual(env["PATH"], "/usr/bin")
+        self.assertEqual(env["GIT_AUTHOR_NAME"], "t")
+
+    def test_an_inherited_git_dir_would_reach_the_wrong_repo(self):
+        with tempfile.TemporaryDirectory() as outer, tempfile.TemporaryDirectory() as inner:
+            make_repo(outer)
+            make_repo(inner)
+            leaked = dict(os.environ, GIT_DIR=os.path.join(outer, ".git"))
+            reached = subprocess.run(["git", "rev-parse", "--absolute-git-dir"], cwd=inner,
+                                     capture_output=True, text=True, env=leaked).stdout.strip()
+            self.assertEqual(os.path.realpath(reached), os.path.realpath(os.path.join(outer, ".git")))
+            scrubbed = subprocess.run(["git", "rev-parse", "--absolute-git-dir"], cwd=inner,
+                                      capture_output=True, text=True, env=gitops.clean_env(leaked)).stdout.strip()
+            self.assertEqual(os.path.realpath(scrubbed), os.path.realpath(os.path.join(inner, ".git")))
+
+    def test_a_bare_flag_on_a_checkout_is_reported(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_repo(root)
+            git = gitops.Git(root, PROTECTED)
+            self.assertFalse(git.is_bare())
+            subprocess.run(["git", "config", "core.bare", "true"], cwd=root, check=True, capture_output=True)
+            self.assertTrue(git.is_bare())
