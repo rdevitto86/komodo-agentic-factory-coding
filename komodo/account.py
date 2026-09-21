@@ -2,16 +2,29 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import logging
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+_LOG = logging.getLogger(__name__)
+
 # Only these four fields are read; the command also returns an email and an org id that never leave it.
 STATUS_FIELDS = ("loggedIn", "authMethod", "apiProvider", "subscriptionType")
 # Read out of the installed binary: a subscription reports exactly one of these names.
 PLANS = ("pro", "max", "team", "enterprise")
+# A Max rate tier the ~/.claude.json multiplier names; each gets its own budget row.
+MAX_RATE_TIERS = ("max_5x", "max_20x")
+# Every plan name a pin or an ~/.claude.json read may resolve to.
+ALL_PLANS = PLANS + MAX_RATE_TIERS
+# oauthAccount.organizationType values from ~/.claude.json, mapped to the plan names above.
+ORG_TYPE_TO_PLAN = {"claude_pro": "pro", "claude_max": "max", "claude_team": "team", "claude_enterprise": "enterprise"}
+# Substrings of oauthAccount.organizationRateLimitTier naming the multiplier on a Max plan.
+RATE_TIER_MULTIPLIERS = ("5x", "20x")
 # Providers that bill a card, where a dollar ceiling is a real ceiling.
 DOLLAR_PROVIDERS = ("bedrock", "vertex", "gateway")
 TOKENS, DOLLARS, UNKNOWN = "tokens", "dollars", "unknown"
@@ -21,6 +34,8 @@ PLAN_INPUT_BUDGET: Dict[str, int] = {
     "pro": 4_000_000,
     "team": 8_000_000,
     "max": 12_000_000,
+    "max_5x": 12_000_000,
+    "max_20x": 48_000_000,
     "enterprise": 16_000_000,
     UNKNOWN: 4_000_000,
 }
@@ -31,9 +46,15 @@ TURN_COST_TOKENS = 1400
 # Model families in ascending cost; a spec naming anything else is left alone.
 MODEL_RANK = {"haiku": 1, "sonnet": 2, "opus": 3}
 # The most expensive family a plan may reach, so a Pro account never spends its allowance on Opus.
-PLAN_MODEL_CEILING = {"pro": "sonnet", "team": "sonnet", "max": "opus", "enterprise": "opus", UNKNOWN: "sonnet"}
+PLAN_MODEL_CEILING = {
+    "pro": "sonnet", "team": "sonnet", "max": "opus", "max_5x": "opus", "max_20x": "opus",
+    "enterprise": "opus", UNKNOWN: "sonnet",
+}
 # Wall-clock headroom per plan, applied on top of the task's own size.
-PLAN_TIME_FACTOR = {"pro": 1.0, "team": 1.3, "max": 1.6, "enterprise": 1.8, UNKNOWN: 1.0}
+PLAN_TIME_FACTOR = {
+    "pro": 1.0, "team": 1.3, "max": 1.6, "max_5x": 1.6, "max_20x": 2.0,
+    "enterprise": 1.8, UNKNOWN: 1.0,
+}
 # Task bytes at which a worker is given double the base timeout.
 TIMEOUT_BYTES_SCALE = 120_000
 TIMEOUT_MAX_FACTOR = 4.0
@@ -81,12 +102,71 @@ _CACHE: Dict[str, Account] = {}
 
 
 def detect(binary: str = "claude", timeout_s: int = 20, refresh: bool = False) -> Account:
-    """Runs `claude auth status` once per process and caches it; any failure yields an undetected account."""
+    """Reads ~/.claude.json first, falls back to `claude auth status`, and caches the result once per process."""
     if not refresh and binary in _CACHE:
         return _CACHE[binary]
-    account = _detect_uncached(binary, timeout_s)
+    account = _apply_claude_json(_detect_uncached(binary, timeout_s))
     _CACHE[binary] = account
     return account
+
+
+def _claude_json_path() -> str:
+    """Where ~/.claude.json lives: beside CLAUDE_CONFIG_DIR when set, else beside the default ~/.claude."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    return config_dir.rstrip(os.sep) + ".json"
+
+
+def _read_oauth_account(path: Optional[str] = None) -> Optional[Dict[str, str]]:
+    """Reads only organizationType and organizationRateLimitTier out of oauthAccount; None on any failure."""
+    target = path or _claude_json_path()
+    try:
+        with open(target, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    oauth = data.get("oauthAccount")
+    if not isinstance(oauth, dict):
+        return None
+    org_type = oauth.get("organizationType")
+    if not org_type:
+        return None
+    return {"organizationType": str(org_type), "organizationRateLimitTier": str(oauth.get("organizationRateLimitTier") or "")}
+
+
+def _plan_from_oauth(oauth: Dict[str, str]) -> str:
+    """The plan named by organizationType, refined to a rate tier when Max names its multiplier."""
+    base = ORG_TYPE_TO_PLAN.get(oauth["organizationType"], UNKNOWN)
+    if base == "max":
+        rate_tier = oauth.get("organizationRateLimitTier", "")
+        for multiplier in RATE_TIER_MULTIPLIERS:
+            if multiplier in rate_tier:
+                return "max_%s" % multiplier
+    return base
+
+
+def _base_plan(plan: str) -> str:
+    """Strips a Max rate-tier suffix, so "max_5x" and "max" compare equal as the same subscription."""
+    for tier in MAX_RATE_TIERS:
+        if plan == tier:
+            return "max"
+    return plan
+
+
+def _apply_claude_json(status_account: Account) -> Account:
+    """Prefers the plan named in ~/.claude.json over the auth-status subscription type, logging a disagreement once."""
+    oauth = _read_oauth_account()
+    if oauth is None:
+        return status_account
+    file_plan = _plan_from_oauth(oauth)
+    if file_plan == UNKNOWN:
+        return status_account
+    if status_account.detected and status_account.plan != UNKNOWN and _base_plan(file_plan) != status_account.plan:
+        _LOG.warning("account plan disagreement: claude.json=%s auth status=%s, using claude.json", file_plan, status_account.plan)
+    if status_account.detected:
+        return dataclasses.replace(status_account, plan=file_plan)
+    return Account(logged_in=True, auth_method="claude.ai", api_provider="firstParty", plan=file_plan, detected=True)
 
 
 def _detect_uncached(binary: str, timeout_s: int) -> Account:
@@ -124,7 +204,7 @@ def pinned(plan: str) -> Account:
     """The account a pinned plan stands for: a subscription on that plan, probe or no probe."""
     name = str(plan or "").strip().lower()
     return Account(logged_in=True, auth_method="claude.ai", api_provider="firstParty",
-                   plan=name if name in PLANS else UNKNOWN, detected=True, pinned=True)
+                   plan=name if name in ALL_PLANS else UNKNOWN, detected=True, pinned=True)
 
 
 def reset_cache() -> None:

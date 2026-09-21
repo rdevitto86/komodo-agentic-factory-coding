@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -10,6 +12,11 @@ SUBSCRIPTION = {
     "email": "someone@example.com", "orgId": "an-org-uuid", "subscriptionType": "pro",
 }
 API_KEY = {"loggedIn": True, "authMethod": "apiKey", "apiProvider": "firstParty", "apiKeySource": "env"}
+
+
+def _no_oauth_account():
+    """Patches the ~/.claude.json read to absent, so a test exercises `claude auth status` alone."""
+    return mock.patch("komodo.account._read_oauth_account", return_value=None)
 
 
 class ParseTests(unittest.TestCase):
@@ -60,24 +67,89 @@ class DetectTests(unittest.TestCase):
         account.reset_cache()
 
     def test_a_missing_binary_is_not_a_failed_run(self):
-        with mock.patch("shutil.which", return_value=None):
+        with _no_oauth_account(), mock.patch("shutil.which", return_value=None):
             self.assertFalse(account.detect("claude").detected)
 
     def test_a_non_zero_exit_is_not_a_failed_run(self):
         completed = subprocess.CompletedProcess(["claude"], 1, stdout="", stderr="nope")
-        with mock.patch("shutil.which", return_value="/bin/claude"), mock.patch("subprocess.run", return_value=completed):
+        with _no_oauth_account(), mock.patch("shutil.which", return_value="/bin/claude"), mock.patch("subprocess.run", return_value=completed):
             self.assertFalse(account.detect("claude").detected)
 
     def test_a_timeout_is_not_a_failed_run(self):
-        with mock.patch("shutil.which", return_value="/bin/claude"), mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("claude", 1)):
+        with _no_oauth_account(), mock.patch("shutil.which", return_value="/bin/claude"), mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("claude", 1)):
             self.assertFalse(account.detect("claude").detected)
 
     def test_the_probe_runs_once_per_process(self):
         completed = subprocess.CompletedProcess(["claude"], 0, stdout=json.dumps(SUBSCRIPTION), stderr="")
-        with mock.patch("shutil.which", return_value="/bin/claude"), mock.patch("subprocess.run", return_value=completed) as run:
+        with _no_oauth_account(), mock.patch("shutil.which", return_value="/bin/claude"), mock.patch("subprocess.run", return_value=completed) as run:
             first, second = account.detect("claude"), account.detect("claude")
         self.assertEqual(run.call_count, 1)
         self.assertEqual(first.plan, second.plan)
+
+
+class ClaudeJsonTests(unittest.TestCase):
+    def setUp(self):
+        account.reset_cache()
+
+    def tearDown(self):
+        account.reset_cache()
+
+    def _write(self, tmp_path, org_type, rate_tier=""):
+        """Writes a ~/.claude.json stand-in carrying only the two oauthAccount fields read plus noise."""
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump({
+                "oauthAccount": {
+                    "organizationType": org_type, "organizationRateLimitTier": rate_tier,
+                    "emailAddress": "someone@example.com", "accountUuid": "an-account-uuid",
+                },
+            }, handle)
+
+    def test_the_file_wins_over_a_disagreeing_auth_status(self):
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            path = tmp.name
+        self.addCleanup(os.remove, path)
+        self._write(path, "claude_max", "default_claude_max_5x")
+        completed = subprocess.CompletedProcess(["claude"], 0, stdout=json.dumps(SUBSCRIPTION), stderr="")
+        with mock.patch("komodo.account._claude_json_path", return_value=path), \
+             mock.patch("shutil.which", return_value="/bin/claude"), \
+             mock.patch("subprocess.run", return_value=completed), \
+             self.assertLogs("komodo.account", level="WARNING") as logs:
+            detected = account.detect("claude")
+        self.assertEqual(detected.plan, "max_5x")
+        self.assertIn("max_5x", logs.output[0])
+        self.assertIn("pro", logs.output[0])
+
+    def test_the_rate_tier_multiplier_distinguishes_5x_from_20x(self):
+        for tier, expected in (("default_claude_max_5x", "max_5x"), ("default_claude_max_20x", "max_20x")):
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+                path = tmp.name
+            self.addCleanup(os.remove, path)
+            self._write(path, "claude_max", tier)
+            with mock.patch("komodo.account._claude_json_path", return_value=path):
+                oauth = account._read_oauth_account()
+                self.assertEqual(account._plan_from_oauth(oauth), expected)
+        self.assertNotEqual(account.PLAN_INPUT_BUDGET["max_5x"], account.PLAN_INPUT_BUDGET["max_20x"])
+
+    def test_no_identifying_field_from_the_file_reaches_the_account(self):
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            path = tmp.name
+        self.addCleanup(os.remove, path)
+        self._write(path, "claude_pro", "")
+        with mock.patch("komodo.account._claude_json_path", return_value=path):
+            oauth = account._read_oauth_account()
+        self.assertNotIn("emailAddress", oauth)
+        self.assertNotIn("accountUuid", oauth)
+
+    def test_a_missing_file_falls_back_to_auth_status(self):
+        with mock.patch("komodo.account._claude_json_path", return_value="/does/not/exist.json"), \
+             mock.patch("shutil.which", return_value="/bin/claude"), \
+             mock.patch("subprocess.run", return_value=subprocess.CompletedProcess(["claude"], 0, stdout=json.dumps(SUBSCRIPTION), stderr="")):
+            detected = account.detect("claude")
+        self.assertEqual(detected.plan, "pro")
+
+    def test_the_config_dir_env_var_moves_the_json_path(self):
+        with mock.patch.dict("os.environ", {"CLAUDE_CONFIG_DIR": "/tmp/somewhere/.claude"}):
+            self.assertEqual(account._claude_json_path(), "/tmp/somewhere/.claude.json")
 
 
 class LimitTests(unittest.TestCase):
