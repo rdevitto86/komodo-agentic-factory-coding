@@ -1,20 +1,20 @@
 # Project Backlog
 
-Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `komodo lint` checks it from TG-03.2 on. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V1.5 plan in `README.md`.
+Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `komodo lint` checks it from TG-03.2 on. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V1.4 plan in `README.md`.
 
 ---
 
-## [EPIC-03] V1.5, the assembly line
+## [EPIC-03] V1.4, the assembly line
 *Goal: one static binary is the conveyor and the devices, markdown is everything a model reads, one guard is the only hook, and a model is a machine mounted per host. Two model calls per task, build and review; everything between is deterministic. Claude Code with Ollama is the host today for both Komodo devs; Codex is the exit test. Requirements and design: `README.md`.*
 
-* **Everything lands on PR #103.** No group opens its own PR; `close --group` is proven on TG-03.5 by committing to this branch. The tag `v1.5.0` is cut when #103 merges.
+* **Everything lands on PR #103.** No group opens its own PR; `close --group` is proven on TG-03.5 by committing to this branch. The tag `v1.4.0` is cut when #103 merges.
 * **Sessions build TG-03.1 through TG-03.4.** The `run` skill runs TG-03.5 and TG-03.6, and TG-03.5 is the proof.
 * **The repo starts clean.** V1 is the tag `v1-final`; the only V1 files here are the markdown TG-03.1 reshapes.
 
 ### [TG-03.1] The markdown
 ```yaml
 type: refactor
-version: 1.5.0
+version: 1.4.0
 ```
 * **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
 
@@ -74,7 +74,7 @@ type: refactor
 ### [TG-03.2] The conveyor and the devices
 ```yaml
 type: feat
-version: 1.5.0
+version: 1.4.0
 ```
 * **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
 
@@ -171,10 +171,22 @@ context:
 type: feat
 ```
 
+#### [TSK-03.2.8] `komodo step`: the binary drives the session [P: C] [READY]
+```yaml
+files: [internal/line/step.go, internal/line/step_test.go, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.2.7]
+context:
+  - "step reads the run's state from the ledger and the results on disk and prints the one next action as JSON: spawn a role with a brief path, run a komodo command, wait until a time, or done; the station order exists only here"
+  - "the run skill becomes three lines: call step, do what it says, repeat; a group, a task, or nothing as the argument; no station name appears in any skill"
+type: feat
+```
+
 ### [TG-03.3] The guard and the mounts
 ```yaml
 type: feat
-version: 1.5.0
+version: 1.4.0
 ```
 * **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
 
@@ -247,7 +259,7 @@ type: feat
 ### [TG-03.4] The skills and the launcher
 ```yaml
 type: feat
-version: 1.5.0
+version: 1.4.0
 ```
 * **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof runs one group each way before anything is deleted.
 
@@ -258,7 +270,7 @@ done_when:
   - go run ./cmd/komodo doctor --no-git
 depends_on: [TSK-03.3.3]
 context:
-  - "run takes a group, a task, or nothing: next --start; per wave, brief per task, spawn the builder role with the brief path, close per task; close --wave; diff, spawn the reviewer role with it, one repair when findings reach the floor; close --group; report"
+  - "run takes a group, a task, or nothing and is three lines: call komodo step, do what it says, repeat; the station order lives in the binary and never in a skill"
   - "review runs QC and the reviewer on the current diff; backlog writes tasks in the grammar with add and lint and is where the planner role works; respond lists unresolved threads and, as the responder role, changes code when the reviewer is right and replies when they are not"
   - "a skill names no host tool, path, flag, or vendor; it says spawn the builder role and the mount decides how"
 type: feat
@@ -283,7 +295,7 @@ done_when:
 depends_on: [TSK-03.4.1, TSK-03.4.2]
 owner: human
 context:
-  - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 1.5.0 changelog entry"
+  - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 1.4.0 changelog entry"
   - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.5 merges"
 type: docs
 ```
@@ -291,7 +303,7 @@ type: docs
 ### [TG-03.5] The repo layer and the local machines
 ```yaml
 type: feat
-version: 1.5.0
+version: 1.4.0
 ```
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
 
@@ -312,7 +324,7 @@ done_when:
   - go test ./internal/repo/... ./internal/install/...
 depends_on: [TSK-03.5.1]
 context:
-  - ".komodo/standards/<name>.md appends to the shipped standard of that name in the standards slot or adds a new one with its own globs; .komodo/skills/<name>/SKILL.md is a new skill or appends a Repo overrides section to a shipped one, frontmatter untouched; a repo never replaces or removes a shipped body"
+  - ".komodo/standards/<name>.md appends to the shipped standard of that name in the standards slot or adds a new one with its own globs; .komodo/skills/<name>/SKILL.md is a new skill or appends a Repo overrides section to a shipped one, frontmatter untouched; run, review, backlog, and respond cannot be appended to; a repo never replaces or removes a shipped body"
   - "install --project renders the repo skills and the repo rules file into the host's project directory as gitignored copies; doctor reports drift between .komodo and the copies"
 type: feat
 ```
@@ -326,6 +338,7 @@ depends_on: [TSK-03.5.2]
 context:
   - ".komodo/commands.json: verify, compile, before_review, after_publish, each a shell command the line runs at that station; verify here overrides the discovery order"
   - ".komodo/policy.json adds critical refs; the guard merges it under the machine overlay and nothing in it can remove a denial"
+  - ".komodo/facets lists facets detection missed, one name per line; it can add, never remove"
 type: feat
 ```
 
@@ -352,10 +365,60 @@ context:
 type: feat
 ```
 
+#### [TSK-03.5.6] `komodo detect`: the repo profile, cached by manifest hash [P: C] [READY]
+```yaml
+files: [internal/detect, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/detect/...
+context:
+  - "reads the tree once and writes .komodo/profile.json: languages from extensions, cloud from markers such as cdk.json, template.yaml with a SAM transform, a Terraform provider block, cloudbuild.yaml, app.yaml, azure-pipelines.yml, data sources from a Prisma schema, SQL migrations, dbt_project.yml, compose services, CI from .github/workflows, the verify and compile commands from the discovery order"
+  - "cached by a hash of the manifests it read; recomputed when the hash changes; zero tokens; a detection never fails the run, an unknown tree is an empty profile"
+type: feat
+```
+
+#### [TSK-03.5.7] Facets: shipped appendices keyed by detection [P: C] [READY]
+```yaml
+files: [komodo/facets, internal/facet]
+done_when:
+  - test -f komodo/facets/aws/facet.md
+  - test -f komodo/facets/aws/mcp.json
+  - go test ./internal/facet/...
+depends_on: [TSK-03.5.6]
+context:
+  - "komodo/facets/<name>/ holds facet.md with a standard section and a builder and a reviewer appendix under their own headings, mcp.json with the MCP server entries the facet needs, commands.json with verify and compile defaults, and detect.json with the markers that select it; shipped: aws, gcp, azure, postgres, github-actions"
+  - "the aws, gcp, and azure standards move into their facets; a facet appendix appends to a role's body in the brief and never touches its schema or tools; selection is detection, then .komodo/facets, then a task's facets key"
+type: feat
+```
+
+#### [TSK-03.5.8] The repo profile slot, facet appendices, and the task keys tier and facets [P: H] [READY]
+```yaml
+files: [internal/line/brief.go, internal/backlog, komodo/rules/backlog.md, komodo/roles/builder.md, komodo/roles/reviewer.md]
+done_when:
+  - go test ./internal/line/... ./internal/backlog/...
+  - grep -q '{{repo_profile}}' komodo/roles/builder.md
+depends_on: [TSK-03.5.7]
+context:
+  - "a ninth slot repo_profile, about 200 characters: languages, cloud, data, CI, verify; facet appendices land in the standards slot under their own cap"
+  - "the grammar gains tier, one of light, standard, heavy, which overrides the role's tier for that task, and facets, a list added to detection; lint accepts both and nothing else new"
+type: feat
+```
+
+#### [TSK-03.5.9] The project render comes from the profile, and intake runs it [P: H] [READY]
+```yaml
+files: [internal/install, internal/mount/claude, internal/mount/codex, internal/line/next.go, internal/doctor]
+done_when:
+  - go test ./internal/install/... ./internal/mount/... ./internal/doctor/...
+depends_on: [TSK-03.5.8, TSK-03.5.2]
+context:
+  - "install --project writes the host's project config from the profile and the repo layer: the facet MCP servers, the pointer skills, the repo skills, the rules file; gitignored copies, rebuilt every time; next --start runs it so a run always has the right tools"
+  - "doctor compares the cached profile to a fresh detection and the rendered project config to what the source renders now; a mismatch is one line and the fix is rerunning the render"
+type: feat
+```
+
 ### [TG-03.6] The gate and the exit test
 ```yaml
 type: chore
-version: 1.5.0
+version: 1.4.0
 ```
 * **Why:** the gate is Go and runs in CI, and the second host proves the mounts are the only host-specific code.
 
@@ -395,11 +458,11 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.4] Changelog 1.5.0 [P: M] [READY]
+#### [TSK-03.6.4] Changelog 1.4.0 [P: M] [READY]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
-  - grep -q "## 1.5.0" CHANGELOG.md
+  - grep -q "## 1.4.0" CHANGELOG.md
 depends_on: [TSK-03.6.3]
 context:
   - "one heading: the line, what was removed, what replaced it, both proofs"

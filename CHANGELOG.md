@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
+Notable changes to komodo-agentic-coding-assembly-line, formerly komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
 ## [1.3.0] — 2026-09-21
 

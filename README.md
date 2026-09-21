@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-**Status: V1.5 is planned, not built.** This README is the plan and the requirements. The repo was cleared to the markdown source on 2026-09-21; V1 lives at the tag `v1-final` and the branch `archive/v1`. Every task lands on PR #103. Tasks are in `BACKLOG.md`.
+**Status: V1.4 is planned, not built.** This README is the plan and the requirements. The repo was cleared to the markdown source on 2026-09-21; V1 lives at the tag `v1-final` and the branch `archive/v1`. Every task lands on PR #103. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -26,7 +26,7 @@ flowchart LR
     M2 -.-> Mounts
 ```
 
-- **Conveyor.** Moves work between stations and never calls a model: intake, close, QC, ship. One binary, `komodo`.
+- **Conveyor.** Moves work between stations and never calls a model: intake, close, QC, ship. One binary, `komodo`. `komodo step` tells a session the one next action, so the station order exists only in the binary and no skill, rule, or agent can alter it.
 - **Input device.** The brief. Task, repo rules, repo context, files, standards, done-when, failure. Identical bytes whatever machine reads it.
 - **Output device.** The result JSON checked against the role's schema. A machine that returns bad output is rejected at the device and given one repair, never debugged in the line.
 - **Machines.** Two on the line, builder and reviewer. The same roles serve ad hoc sessions off the line.
@@ -104,7 +104,7 @@ The line is opt-in. The guard is always on.
 2. **Enter at any station.** `/review` runs QC and the reviewer on your diff. `/run TSK-03.2.4` runs one task through brief, build, close, review, ship. `komodo close --group` ships any branch you built by hand through verify, review, and a PR.
 3. **Promote to the line.** Freehand work that turns out to be a feature becomes a task through the backlog skill, and the next `/run` picks it up.
 
-Skills: `run` takes a group, a task, or nothing; `review`; `backlog`; `respond` answers every unresolved PR thread as the responder role.
+Skills: `run` is three lines, call `komodo step`, do what it says, repeat, and takes a group, a task, or nothing; `review`; `backlog`; `respond` answers every unresolved PR thread as the responder role. These four cannot be appended to by a repo.
 
 ## The guard
 
@@ -133,7 +133,18 @@ A repo may commit `.komodo/`. Nothing in it is required, a malformed file is ski
 - **`standards/<name>.md`**: appends to a shipped standard of that name, or adds a new one.
 - **`skills/<name>/SKILL.md`**: a new skill, or a "Repo overrides" section appended to a shipped one. `komodo install --project` renders these into the host's project directory as gitignored copies.
 - **`commands.json`**: verify, compile, before-review, after-publish, each a shell command the line runs at that station. Verify otherwise resolves by discovery: a Makefile target, a verify script, a package script, `go vet`.
-- **`policy.json`**: adds critical refs. Precedence is defaults, then the machine overlay, then the repo, and each layer can only add.
+- **`policy.json`**: adds critical refs. **`facets`**: names a facet detection missed. Precedence is defaults, then detection, then the machine overlay, then the repo, then the task, and each layer can only add.
+
+## Detection and facets
+
+The line adapts to a repo by detecting it, not by being told. `komodo detect` reads the tree once, zero tokens, and caches a profile under `.komodo/` keyed by a hash of the manifests it read: languages from extensions, cloud from markers such as a CDK config, a SAM template, a Terraform provider block, a Cloud Build file, or an Azure pipeline, data sources from a Prisma schema, SQL migrations, a dbt project, or compose services, CI from the workflows directory, and the verify and compile commands from the discovery order. An unknown tree is an empty profile, never a failed run.
+
+A facet is what detection selects: a shipped directory under `komodo/facets/` with a standard, a builder appendix, a reviewer appendix, the MCP servers the facet needs, and default commands. Shipped at launch: `aws`, `gcp`, `azure`, `postgres`, `github-actions`. A facet is injected at two points and edits nothing:
+
+- **At the brief.** A ninth slot, the repo profile, about 200 characters. Facet appendices land in the standards slot under their own cap. A role's schema and tools never change.
+- **At the project render.** `install --project`, which intake runs, writes the host's project config from the profile: the facet MCP servers, the pointer skills, the repo skills, the rules file. Gitignored copies, rebuilt every time, so a clone plus one command gives a developer the right tools without a commit.
+
+A task may say `tier: heavy` to get the big model for one hard task, or `facets: [postgres]` to add one detection missed. A `.komodo/` file exists only to correct detection, and doctor fails when the cached profile or the rendered config has drifted from a fresh detection.
 
 ## Local machines
 
@@ -145,22 +156,22 @@ Both developers run Claude Code today. Nothing outside `internal/mount/` names a
 
 ## Roadmap
 
-Six groups, all `1.5.0`, all on PR #103. Sessions build the first four; the run skill runs the last two as its own proof.
+Six groups, all `1.4.0`, all on PR #103. Sessions build the first four; the run skill runs the last two as its own proof.
 
 | Group | Delivers | Proof |
 |---|---|---|
 | TG-03.1 The markdown | Standards as skills, briefs folded into roles with schemas, the policy file with four denials, the rules updated for worktree freedom, the merger role removed | Tests, no old directories |
-| TG-03.2 The conveyor and devices | The Go module and the binary: lint, next, brief, close, diff, report, tag, release check, the ledger and metrics; prebuilt binaries and the manifest | Every station has a test |
+| TG-03.2 The conveyor and devices | The Go module and the binary: lint, next, brief, close, diff, report, tag, release check, the ledger and metrics, `step`; prebuilt binaries and the manifest | Every station has a test |
 | TG-03.3 The guard and the mounts | The guard with the 60-command table, install for Claude Code and Codex, doctor with portability and prune, profiles with the plan probe and auto-selection | Guard table in the gate; validate under 1500 tokens |
-| TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the V1 versus V1.5 timing proof | One group each way, numbers in the changelog |
-| TG-03.5 The repo layer and local machines | Context by glob, repo standards, repo skills with `install --project`, commands and additive policy; the bridge; the hybrid and local profiles | Tests, doctor, bridge against a fake Ollama |
-| TG-03.6 The gate and the exit test | CI runs vet, test, doctor, guard check, and the binary match; one task under Codex with zero changes outside the mounts; README and templates final; changelog 1.5.0 | CI green, proof recorded |
+| TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the V1 versus V1.4 timing proof | One group each way, numbers in the changelog |
+| TG-03.5 The repo layer, detection, and local machines | Context by glob, repo standards and skills, commands and additive policy; `detect`, facets for AWS, GCP, Azure, Postgres, and GitHub Actions, the profile slot, the project render from the profile; the bridge; the hybrid and local profiles | Tests, doctor, bridge against a fake Ollama |
+| TG-03.6 The gate and the exit test | CI runs vet, test, doctor, guard check, and the binary match; one task under Codex with zero changes outside the mounts; README and templates final; changelog 1.4.0 | CI green, proof recorded |
 
 ## V1 coverage
 
 Every V1 capability, where it lands, or why it does not.
 
-| V1 capability | V1.5 |
+| V1 capability | V1.4 |
 |---|---|
 | `run` with waves, worktrees, merge, verify, review, publish | next, brief, close, and the run skill, TG-03.2 and TG-03.4 |
 | `run --dry-run` token estimates | `brief --dry-run`, TSK-03.2.3 |
