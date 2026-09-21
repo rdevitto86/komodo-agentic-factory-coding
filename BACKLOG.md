@@ -474,43 +474,127 @@ version: 1.4.0
 * A rewrite breaks a resume, and `tasks.py` already carries a legacy path for the retired `SUB-` row grammar, which is the precedent for how long both forms have to be read.
 * Needs a decision on whether the old literals stay readable forever or for one release.
 
-### [TG-02.14] Guard scopes
+### [TG-02.14] Command safety: one decision point, many enforcement points
 ```yaml
-type: fix
-version: 1.4.0
+type: refactor
+version: 1.5.0
 ```
-* **Why:** the guard refuses whole verbs rather than the destructive shapes of them. A forced branch delete is recoverable from the reflog for 90 days, and a single-file delete inside the worktree destroys nothing that is committed, yet both are denied outright. An agent that cannot delete its own scratch branch hands every cleanup back to the human, which is the cost the guard exists to avoid.
-* Both implementations move together: `guard.py` and `guard.go` are held to the same cases, and the committed binaries under `komodo/hooks/bin/` have to be rebuilt with `python3 scripts/build-hooks.py`.
+* **Why:** `docs/design-decisions.md#command-safety-is-one-decision-point-and-many-enforcement-points` carries the reasoning. The guard fuses policy with enforcement, duplicates the rules in two languages, and reaches only one provider's hook.
+* **Sequencing:** `TSK-02.3.2` is the gate. Until a project-scoped hook governs workers, every mode below is a session-only feature, because a worker spawns with `--dangerously-skip-permissions` and loads neither the settings nor the hooks in them.
+* Both guard implementations move together and the committed binaries under `komodo/hooks/bin/` are rebuilt with `python3 scripts/build-hooks.py`.
 
-#### [TSK-02.14.1] Scope the branch and delete refusals to the shapes that actually lose work [P: H] [READY]
+#### [TSK-02.14.1] The rules become a declarative ruleset both languages read [P: H] [READY]
 ```yaml
 files:
-  - komodo/adapters/claude/hooks/guard.py
-  - komodo/hooks/src/guard.go
-  - tests/test_hooks.py
+  - komodo/policy/rules.json
+  - komodo/policy.py
+  - tests/test_policy.py
 done_when:
-  - python3 -m unittest tests.test_hooks -q
-  - python3 scripts/verify.py
+  - python3 -m unittest tests.test_policy -q
 context:
-  - "guard.py:108 refuses `git branch` carrying -D, -f or --force outright. A forced delete of an unmerged branch is recoverable from the reflog, and the harness itself creates and discards `<branch>-tsk-xx-y-z` worktree branches on every wave. Scope it: refuse a forced delete or move of a protected branch, allow it otherwise."
-  - "guard.py:132 refuses a delete only when both the recursive and force flags are present, but nothing allows the plain single-file form, so it falls through to an interactive prompt and stalls an unattended run. Decide the allowed shape here and record it, so the settings allow list and the guard agree rather than each covering half."
-  - "a delete of a path outside the repo, or of the repo root itself, stays refused whatever the flags"
-type: fix
+  - "today PROTECTED, DESTRUCTIVE, TRAILER and SEGMENT_SPLIT are constants in guard.py and again in guard.go, so a rule change is an edit in two languages plus a rebuild of six binaries"
+  - "JSON because it is stdlib in Python and Go and the harness imports nothing else; every rule carries an id and a human reason so a refusal is traceable to a line rather than to a string in a binary"
+  - "this task only introduces the ruleset and the loader; nothing reads it yet, so the guards are untouched and stay green"
+type: refactor
 ```
 
-#### [TSK-02.14.2] The guard splits a command on shell metacharacters before it parses quotes [P: H] [READY]
+#### [TSK-02.14.2] `decide(request) -> Decision` is the one decision point [P: H] [READY]
 ```yaml
 files:
-  - komodo/adapters/claude/hooks/guard.py
-  - komodo/hooks/src/guard.go
-  - tests/test_hooks.py
+  - komodo/policy.py
+  - tests/test_policy.py
 done_when:
-  - python3 -m unittest tests.test_hooks -q
-  - python3 scripts/verify.py
+  - python3 -m unittest tests.test_policy -q
 depends_on: [TSK-02.14.1]
 context:
-  - "analyze() applies SEGMENT_SPLIT to the raw command string, so a pipe inside a quoted argument starts a new segment and the text after it is parsed as a fresh command. The tokens are never the ones the shell would run."
-  - "verified twice on 2026-09-21. A read-only grep whose pattern carried an alternation naming the refused flags was itself refused, and so was a heredoc whose document body quoted them. In both cases nothing was deleted and nothing could have been: one only reads, the other only writes a markdown file."
-  - "fix: scan into segments with quote awareness, so a metacharacter inside single or double quotes is a literal, and never inspect heredoc body lines as commands. The same inputs have to be refused by both implementations, and allowed by both once fixed."
+  - "a request names tool, command, cwd and mode; a decision is allow, deny or ask, carrying the rule id that produced it"
+  - "pure and stdlib, no I/O beyond loading the ruleset, so it is tested once and reused by every enforcement point"
+  - "port every case the current guards cover, and hold the new engine to the existing tests/test_hooks.py cases before anything switches over"
+type: feat
+```
+
+#### [TSK-02.14.3] `guard.mode` selects the posture, with a floor the repo cannot loosen [P: H] [READY]
+```yaml
+files:
+  - komodo/config.py
+  - komodo/policy.py
+  - tests/test_policy.py
+  - tests/test_config.py
+done_when:
+  - python3 -m unittest tests.test_policy tests.test_config -q
+depends_on: [TSK-02.14.2]
+context:
+  - "safe refuses a whole verb wherever a destructive shape exists and fails closed when the engine errors; default refuses the destructive shape and allows the recoverable one; unsafe keeps the hook and drops the local JSON allow and deny lists"
+  - "`.komodo/config.json` is gitignored and writable by any file tool, so the floor lives in `~/.komodo/policy.json` outside the repo and a repo may tighten it but never loosen it"
+  - "guard.py:149 currently catches every internal error and returns without a decision; fail behaviour becomes a property of the mode"
+  - "`komodo status` prints the mode in force and where the floor came from"
+type: feat
+```
+
+#### [TSK-02.14.4] Both guards call the decision point instead of carrying their own rules [P: H] [READY]
+```yaml
+files:
+  - komodo/adapters/claude/hooks/guard.py
+  - komodo/hooks/src/guard.go
+  - tests/test_hooks.py
+done_when:
+  - python3 -m unittest tests.test_hooks -q
+  - python3 scripts/verify.py
+depends_on: [TSK-02.14.3]
+context:
+  - "the stdin payload to stdout decision contract does not change; only the middle does, so the hook wiring and the rendered settings stay as they are"
+  - "the Go side reads the same rules.json rather than re-implementing it, which is the whole point of the ruleset"
+  - "rebuild the binaries and confirm a denial still names its reason to the caller"
+type: refactor
+```
+
+#### [TSK-02.14.5] Scope the branch and delete refusals to the shapes that actually lose work [P: H] [READY]
+```yaml
+files:
+  - komodo/policy/rules.json
+  - tests/test_policy.py
+done_when:
+  - python3 -m unittest tests.test_policy -q
+depends_on: [TSK-02.14.4]
+context:
+  - "a forced branch delete is recoverable from the reflog and the harness discards its own `<branch>-tsk-xx-y-z` worktree branches on every wave, so refusing -D outright costs more than it protects"
+  - "under default, a delete inside the worktree is allowed; outside it, or of the repo root, stays refused at every mode"
+  - "once the rules are data this is a ruleset edit, not a code change in two languages"
 type: fix
 ```
+
+#### [TSK-02.14.6] The engine splits a command on shell metacharacters before it parses quotes [P: H] [READY]
+```yaml
+files:
+  - komodo/policy.py
+  - tests/test_policy.py
+done_when:
+  - python3 -m unittest tests.test_policy -q
+depends_on: [TSK-02.14.2]
+context:
+  - "SEGMENT_SPLIT is applied to the raw command string, so a pipe inside a quoted argument starts a new segment and the text after it is parsed as a fresh command"
+  - "verified twice on 2026-09-21: a read-only grep whose pattern carried an alternation naming the refused flags was refused, and so was a heredoc whose document body quoted them. Neither could delete anything; one only reads and the other only writes a markdown file"
+  - "scan with quote awareness so a metacharacter inside single or double quotes is a literal, and never inspect heredoc body lines as commands"
+  - "mode-independent: a false positive is wrong under safe too"
+type: fix
+```
+
+#### [TSK-02.14.7] Every denial is logged with its rule and command [P: M] [READY]
+```yaml
+files:
+  - komodo/policy.py
+  - tests/test_policy.py
+done_when:
+  - python3 -m unittest tests.test_policy -q
+depends_on: [TSK-02.14.3]
+context:
+  - "appended to `.komodo/runs/<id>/policy.jsonl`, falling back to `.komodo/policy.jsonl` when no run is active, because a session denial is the common case"
+  - "without a log there is no answer to what the agent attempted, which is the first question an enterprise review asks"
+type: feat
+```
+
+#### [TSK-02.14.8] Ollama gets an enforcement point only when the bridge grows tools [P: L] [REFINEMENT]
+* `komodo/workers/ollama.py` is text in, text out, no tools, so there is nothing to intercept and no mode applies to it today.
+* The interception point would be the bridge's MCP layer, in its own repo, which is currently unreachable and whose distribution is deferred.
+* Needs the bridge to carry tools before this can be specified at all.
+

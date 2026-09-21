@@ -57,3 +57,21 @@ Formatting rules for people with ADHD, autism, and other attention or processing
 ## Fragments fail verify
 
 Three kinds of leftover kept crossing PRs: branches and worktrees from an earlier run, personal settings in commits, and references to skills or paths a previous PR deleted. `komodo doctor` checks the last two inside `scripts/verify.py`, and `komodo status --prune` clears the first. Preflight refuses to start over a stale worktree or an unfinished run without `--resume`.
+
+## Command safety is one decision point and many enforcement points
+
+The guard shipped as policy and enforcement fused together. `guard.py` and `guard.go` each hold the rules as constants, each re-implement the same refusals, and both are reachable only from one tool's `PreToolUse` hook. A rule change is therefore an edit in two languages plus a rebuild of six binaries, and a second provider would have meant a third implementation. The shape was already right: a JSON payload in, a decision out. What was wrong is that the policy was welded to the one path that happened to carry it.
+
+Policy becomes data. One declarative ruleset, read by both languages, in JSON because that is stdlib in each and the harness imports nothing else. A rule carries an id and a reason, so a refusal is traceable to a line in a ruleset rather than to a string in a compiled binary.
+
+The decision lives in `komodo/policy.py`: `decide(request) -> Decision`, where a request names the tool, the command, the working directory and the mode, and a decision is `allow`, `deny` or `ask` with the rule that produced it. It is pure and it is tested once. Every enforcement point calls it and none of them re-implement it. That is what makes a third provider cheap: a provider implements a way to intercept its own tool calls, never a policy.
+
+Enforcement is per execution path, and the paths are not equally covered. An interactive session is governed by the `PreToolUse` hook, which works today. A Claude worker is governed by nothing, because workers spawn with `--setting-sources project` and `--dangerously-skip-permissions`, so neither the personal settings nor the hooks in them are ever loaded; closing that is a project-scoped hook and it is the gate on everything else here. Ollama has no enforcement point because it has no tools: the adapter is text in, text out, and its interception belongs in the bridge if and when the bridge grows tools.
+
+The modes are `safe`, `default` and `unsafe`, and they describe which layers are in force rather than how much risk is tolerated. `safe` refuses a whole verb wherever a destructive shape of it exists, and fails closed when the engine itself errors. `default` refuses the destructive shape and allows the recoverable one, so a forced delete of a protected branch is refused while the same flag on a scratch branch is not. `unsafe` keeps the hook and drops the local JSON allow and deny lists, which is coherent precisely because those lists were never an enforcement boundary: a worker skips them entirely, so anything that must hold was always going to hold in the hook or nowhere.
+
+A mode the agent can edit is not a mode. `.komodo/config.json` is gitignored and writable by anything with a file tool, so the posture floor lives outside the repo, in `~/.komodo/policy.json`, and a repo may tighten it but never loosen it. Refusing writes to the policy file was the alternative and it does not hold, because a refusal covers one tool and a file can be written by many.
+
+The engine fails open today: `guard.py` catches every internal error and returns without a decision. That is the right default for a convenience check and the wrong one for a control, so fail behaviour becomes a property of the mode, closed under `safe` and open under the rest. Every denial is appended to `.komodo/runs/<id>/policy.jsonl` with its rule id and command, because without a log there is no answer to what the agent attempted.
+
+What would change it: a provider whose tool calls cannot be intercepted before execution, which would move enforcement into the harness's own command runner and make the per-provider point a fallback rather than the primary.
