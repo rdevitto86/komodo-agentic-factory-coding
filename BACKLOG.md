@@ -246,6 +246,15 @@ done_when:
 context: ["Three defects in migrate(), all reachable from `tasks migrate --write`. (1) Data loss: the loop consumes every line to the next # heading and emits only the heading plus a yaml block, so Acceptance Criteria, User Story, Evidence/Approach/Non-goals tables and the subtask table are deleted with no warning and no backup — --write makes it unrecoverable outside git. (2) LEGACY_ROW has three capture groups but the documented subtask table has four columns (Subtask, Category, Work, Done when); the trailing \\|\\s*$ anchor forces group(3) to span Work AND Done when, so every migrated done_when reads `Build the thing | `go build ./...` with the trailing backtick stripped from the wrong end. (3) COMMAND_HINT omits grep, !, and ENV=VALUE prefixes, so a cell holding `grep -q x f && go test ./...` or `TEST_TIER=component go test ./...` is filed as done_when_prose. Repro: a fixture with one task carrying ACs, a field table and a four-column subtask table returns only the heading and an empty done_when. Fix: preserve the body verbatim below the block, split the row on unescaped pipes and take the last cell, and widen COMMAND_HINT. Found while making komodo-auth-api and komodo-forge-sdk-go harness-runnable (2026-09-17); both were converted with a one-off script instead."]
 ```
 
+#### [TSK-02.6.5] `run` lints the whole backlog before it resolves the group, so a problem in any group aborts a run of every other [P: H] [READY]
+```yaml
+files: [komodo/pipeline.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+  - python3 -m unittest tests.test_tasks -q
+context: ["`Pipeline.preflight` (komodo/pipeline.py:143-146) calls `tasks.lint` on the entire Backlog and raises PipelineError on any problem, and only then resolves the requested group on line 147 — so the gate runs before the harness knows which group was asked for. One group missing `version: x.y.z` therefore blocks `run` for all of them, including groups that lint clean. Repro: komodo-auth-api BACKLOG.md carries 15 groups with no version key; `python3 -m komodo run TG-01.9 --dry-run`, `... TG-01.10 --dry-run` and `... TG-01.11 --dry-run` each print the identical 15-line dump and plan no waves, though every problem is in a group none of them names. Blast radius, not the rule: the version lint is right to exist. Fix: resolve the group first (needle or next_group), then block only on problems scoped to that group plus the genuinely file-global ones — parse failures, duplicate group and task ids, dependency edges pointing outside the file — and report the rest as warnings that do not stop the run. Found while planning the komodo-auth-api V1 push (2026-09-18); that repo cannot run a single group until all 15 unrelated groups are annotated."]
+```
+
 ### [TG-02.7] Go rewrite
 ```yaml
 type: refactor
