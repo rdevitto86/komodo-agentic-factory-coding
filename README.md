@@ -64,6 +64,19 @@ Every brief slot has a cap and is clipped head and tail with a marker the model 
 
 The reviewer's brief is the diff, the tasks, and the touched standards. The output device is `roles/<role>.schema.json`; close checks type, required, and enum, and rejects anything else.
 
+## Metrics
+
+Every station stamps a ledger line as it runs, with no model in the loop. Two files under `.komodo/`, gitignored, never sent anywhere, never committed, never in a PR body.
+
+| File | Written by | Reset |
+|---|---|---|
+| `line.jsonl` | every station of a run: intake, brief, build, close, QC, review, ship | Truncated when `komodo next --start` begins a new run |
+| `adhoc.jsonl` | any station run off the line, and every task a session crafts with `komodo add` | Truncated by its next writer when the first line is older than 24 hours or the file is over 1 MB |
+
+A line carries the run, group, task, wave, station, role, tier, host, provider, model, seconds, tokens in and out, turns, outcome, and the failure class when there is one. Seconds come from timestamps the binary already holds. Tokens and turns come from the mount reading the host's own transcript or stream output after the fact; a host that exposes nothing gets an empty field, never a guess. Review findings come from the reviewer's result JSON, which it writes anyway.
+
+`komodo report` reads the run's file. `komodo metrics` aggregates whatever the two files hold: median seconds per station, failure rate by class, tokens per task by model, repair rate, findings per group. Text, zero tokens. The run skill never reads either file, so telemetry costs the loop nothing. Freehand work that calls no `komodo` command is invisible to both files by design; the guard stays read-only.
+
 ## Machines and mounts
 
 | Station | Input | Output | Claude Code mount | Codex mount | Ollama |
@@ -137,7 +150,7 @@ Six groups, all `1.5.0`, all on PR #103. Sessions build the first four; the run 
 | Group | Delivers | Proof |
 |---|---|---|
 | TG-03.1 The markdown | Standards as skills, briefs folded into roles with schemas, the policy file with four denials, the rules updated for worktree freedom, the merger role removed | Tests, no old directories |
-| TG-03.2 The conveyor and devices | The Go module and the binary: lint, next, brief, close, diff, report, tag, release check; prebuilt binaries and the manifest; the gate runs Go tests | Every station has a test |
+| TG-03.2 The conveyor and devices | The Go module and the binary: lint, next, brief, close, diff, report, tag, release check, the ledger and metrics; prebuilt binaries and the manifest | Every station has a test |
 | TG-03.3 The guard and the mounts | The guard with the 60-command table, install for Claude Code and Codex, doctor with portability and prune, profiles with the plan probe and auto-selection | Guard table in the gate; validate under 1500 tokens |
 | TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the V1 versus V1.5 timing proof | One group each way, numbers in the changelog |
 | TG-03.5 The repo layer and local machines | Context by glob, repo standards, repo skills with `install --project`, commands and additive policy; the bridge; the hybrid and local profiles | Tests, doctor, bridge against a fake Ollama |
@@ -161,7 +174,7 @@ Every V1 capability, where it lands, or why it does not.
 | Changelog entry per version | `close --group`, TSK-03.2.5 |
 | Preflight tag, `release check` | tag and release check, TSK-03.2.6 |
 | Clean-tree check | Replaced: intake works in its own worktree from the remote base, TSK-03.2.2 |
-| Report: phases, per-role cost, summary buckets | report, TSK-03.2.6; per-phase time becomes per-task time |
+| Report: phases, per-role cost, summary buckets | report and the ledger, TSK-03.2.6 and TSK-03.2.7; per-phase time becomes per-station time |
 | Plan detection, model ceiling, turn caps | Plan probe and overlays, TSK-03.3.4; turn caps are the host's |
 | Rate-window pause and warn | Intake waits before a wave, TSK-03.3.4 |
 | Group wall-clock budget | The launcher, TSK-03.4.2 |

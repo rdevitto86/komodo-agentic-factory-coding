@@ -76,7 +76,7 @@ type: refactor
 type: feat
 version: 1.5.0
 ```
-* **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
+* **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
 
 #### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [READY]
 ```yaml
@@ -158,6 +158,19 @@ context:
 type: feat
 ```
 
+#### [TSK-03.2.7] The ledger and `komodo metrics` [P: H] [READY]
+```yaml
+files: [internal/ledger, internal/line, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/ledger/... ./internal/line/...
+depends_on: [TSK-03.2.6]
+context:
+  - "internal/ledger appends one JSON line per station event to .komodo/line.jsonl for a run and .komodo/adhoc.jsonl for anything off the line, including komodo add; fields run, group, task, wave, station, role, tier, host, provider, model, seconds, tokens_in, tokens_out, turns, outcome, failure_class, findings"
+  - "line.jsonl is truncated by next --start; adhoc.jsonl is truncated by its next writer when the first line is older than 24 hours or the file exceeds 1 MB; both are gitignored and nothing reads them but report and metrics; nothing is sent anywhere and nothing goes into a PR body"
+  - "seconds come from the binary's own timestamps; tokens and turns are filled by the mount's usage function from TSK-03.3.5 when it can, else left empty; metrics prints median seconds per station, failure rate by class, tokens per task by model, repair rate, and findings per group as text"
+type: feat
+```
+
 ### [TG-03.3] The guard and the mounts
 ```yaml
 type: feat
@@ -216,6 +229,18 @@ context:
   - "profiles claude, hybrid, codex, local as the README tables them, plus caps for every brief slot, severity_floor, max_parallel, labels, changelog, remote, base; ~/.komodo/config.json overlays and can only lower a cap or add a critical ref"
   - "selection with no flag: the host from the mount installed, hybrid when Ollama answers on its URL, the plan overlay from the probe; the Claude mount reads oauthAccount and cachedUsageUtilization from the host config file, never the CLI status line, and never reads or logs the email or ids; Codex returns nothing"
   - "plan overlays pro, max_5x, max_20x, unknown: heavy ceiling, max_parallel, review floor and the diff size under which review is skipped, repairs, pause_at and warn_at; next prints wait_until instead of a wave past pause_at, so a run pauses before a wave and never inside one; no probe is the unknown overlay, never a failed run"
+type: feat
+```
+
+#### [TSK-03.3.5] Each mount reports a machine's usage after the fact [P: H] [READY]
+```yaml
+files: [internal/mount/claude/usage.go, internal/mount/codex/usage.go, internal/ledger]
+done_when:
+  - go test ./internal/mount/... ./internal/ledger/...
+depends_on: [TSK-03.3.2, TSK-03.2.7]
+context:
+  - "usage(task) returns tokens in, tokens out, and turns for the agent that built or reviewed a task, or nothing; the Claude mount reads the stream output of a headless run or the session transcript file the host writes for that agent; the Codex mount reads codex exec --json events and returns nothing in a session until its logs expose usage"
+  - "the transcript is read for counts only; no message text is copied anywhere"
 type: feat
 ```
 
