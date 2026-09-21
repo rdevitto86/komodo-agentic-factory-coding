@@ -15,6 +15,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
 	"komodo/internal/gate"
+	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/pr"
@@ -36,6 +37,7 @@ const usage = `komodo: the code assembly line.
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
+  komodo guard [check]        The one agent hook; check runs its table
   komodo step [group|task]    The one next action, as JSON
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, binaries
@@ -74,6 +76,8 @@ func main() {
 		runTag(root)
 	case "release":
 		runRelease(root, os.Args[2:])
+	case "guard":
+		runGuard(root, os.Args[2:])
 	case "step":
 		runStep(root, os.Args[2:])
 	case "metrics":
@@ -263,6 +267,12 @@ func runGate(root string, args []string) {
 			}
 			if len(problems) > 0 {
 				return fmt.Errorf("%d problem(s) in the backlog", len(problems))
+			}
+			return nil
+		}},
+		{Name: "komodo guard check", Run: func(out io.Writer) error {
+			if !guard.Report(root, guard.Load(root, root), out) {
+				return fmt.Errorf("the guard table does not hold")
 			}
 			return nil
 		}},
@@ -628,4 +638,15 @@ func runStep(root string, args []string) {
 		fail(err)
 	}
 	printJSON(next)
+}
+
+// runGuard is the hook on stdin, or the table the gate runs.
+func runGuard(root string, args []string) {
+	if len(args) > 0 && args[0] == "check" {
+		if !guard.Report(root, guard.Load(root, root), os.Stdout) {
+			os.Exit(1)
+		}
+		return
+	}
+	os.Exit(guard.Hook(root, os.Stdin, os.Stdout, os.Stderr))
 }
