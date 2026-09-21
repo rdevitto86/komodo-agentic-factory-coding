@@ -301,60 +301,91 @@ done_when:
 context: ["cicd.md requires an ephemeral runner per PR and an OS matrix; this repo now runs its gate only on the developer machine via the pre-push hook", "the account is on a GitHub Free plan and the matrix was the cost driver"]
 ```
 
+#### [TSK-02.6.6] `komodo/__init__.py` pins `__version__` at 1.1.0 while the changelog has released past it [P: L] [REFINEMENT]
+* `komodo status` and `komodo --version` print a version the repo left behind; decide whether the version is read from the changelog or bumped by the release command.
+
 ### [TG-02.9] Account-aware limits
 ```yaml
 type: feat
-version: 1.1.0
+version: 1.3.0
 ```
-* **Why:** every cap in `config.py` DEFAULTS is a fixed dollar figure, but a `claude.ai` subscription does not meter dollars. `claude auth status` reports `authMethod`, `apiProvider`, and `subscriptionType`, so the tier is readable at preflight and the caps can be derived from it.
+* **Why:** every cap in `config.py` DEFAULTS was a fixed dollar figure, but a `claude.ai` subscription does not meter dollars. Verified against the installed binary: a run's envelope reports `"costBasis": "list"`, so `total_cost_usd` on a subscription is a list-price estimate and a dollar ceiling stops a worker for a reason the account never charged.
 * **Measured on komodo-auth-api, TG-01.10, 4 runs / 30 worker calls / 113.9M input tokens:** builder input scales as `≈1400 × turns²` (every task within ±20%, from 17 turns / 486K to 88 turns / 10.9M). Cost is quadratic in turns, so a turn saved early is worth far more than a dollar cap raised late.
+* **What the CLI actually exposes:** `claude auth status` prints `loggedIn`, `authMethod`, `apiProvider` and, on a subscription, `subscriptionType` — one of `pro`, `max`, `team`, `enterprise`. It does **not** print `rateLimitTier`, so `max_5x` cannot be told from `max_20x`. `--output-format stream-json` emits a `rate_limit_event` carrying live `utilization` and `resetsAt` for the `five_hour` and `seven_day` windows; that is the quantity a subscription actually meters.
 
-#### [TSK-02.9.1] Read the account tier at preflight and expose it on the config [P: H] [READY]
+#### [TSK-02.9.1] Read the account at preflight and expose it on the config [P: H] [DONE]
 ```yaml
-files: [komodo/workers/claude.py, komodo/config.py, tests/test_config.py, tests/test_workers_briefs.py]
+files: [komodo/account.py, komodo/config.py, tests/test_account.py, tests/test_config.py]
 done_when:
-  - python3 -m unittest tests.test_config tests.test_workers_briefs -q
-context: ["`claude auth status` prints JSON: authMethod (claude.ai or apiKey), apiProvider (firstParty, bedrock, vertex), subscriptionType (pro, max, team, enterprise; absent on an API key)", "read it once per run and cache it on the Config; a non-zero exit or unparseable output means unknown, and unknown must fall back to today's defaults rather than fail the run", "never log the email or orgId the command also returns"]
+  - python3 -m unittest tests.test_account tests.test_config -q
+context: ["the probe runs once per process and caches on the Config; a missing binary, a non-zero exit, a timeout or unparseable output all yield an undetected account", "undetected keeps today's behaviour, dollar cap included, rather than failing the run", "the email and orgId the command also returns are never read or logged", "`account.detect: false` and `account.plan` in komodo.json pin a plan for an offline or deliberate run"]
 ```
 
-#### [TSK-02.9.2] Derive the worker caps from the tier, and drop the dollar cap when dollars are not what is metered [P: H] [READY]
+#### [TSK-02.9.2] Derive the caps from the plan, and drop the dollar cap when dollars are not metered [P: H] [DONE]
 ```yaml
-files: [komodo/config.py, komodo/pipeline.py, tests/test_config.py, tests/test_pipeline.py]
+files: [komodo/account.py, komodo/config.py, komodo/workers/claude.py, tests/test_account.py, tests/test_workers_briefs.py]
 done_when:
-  - python3 -m unittest tests.test_config tests.test_pipeline -q
+  - python3 -m unittest tests.test_account tests.test_workers_briefs -q
 depends_on: [TSK-02.9.1]
-context: ["a subscription meters requests and tokens against an allowance, so max_budget_usd stops a worker for a reason the account does not recognise; on a subscription the binding caps should be max_turns and worker_timeout_s, with max_budget_usd omitted from the argv entirely", "an API key keeps today's behaviour, dollar cap included", "TSK-01.10.2 on komodo-auth-api failed three times across two profiles: twice on error_max_budget_usd at $2.03 and $2.04, once on error_max_turns at 101 turns and $3.75 — three different caps for one oversized task, and each raise only moved which cap fired"]
+context: ["turn caps are solved from the measured law rather than guessed: turns = sqrt(plan_input_budget x tier_share / 1400), so headroom is granted in tokens", "pro and unknown get 4M input tokens at standard tier (53 turns, close to the old 60); max gets 12M (92 turns)", "a turn cap written into komodo.json still wins, because derivation only fills an unset one", "an error names which ceiling bound and what the worker had spent, so a raise is not a guess"]
 ```
 
-#### [TSK-02.9.3] `context.file_chars` becomes a per-file budget, not a pool split across the task's files [P: C] [READY]
+#### [TSK-02.9.3] The plan sets the model ceiling, for harness workers and rendered session agents alike [P: H] [DONE]
 ```yaml
-files: [komodo/pipeline.py, tests/test_pipeline.py]
+files: [komodo/account.py, komodo/config.py, tests/test_config.py, tests/test_roles_adapter.py]
 done_when:
-  - python3 -m unittest tests.test_pipeline -q
-context: ["pipeline.py:101 divides one 24000-char budget by len(task.files) with a 2000 floor, so a builder is shown less of its own code the more files its task names", "measured on TG-01.10: TSK-01.10.4 saw 29% of its five files, .17 38% of six, .2 44% of four; the 12-file task that failed three times saw roughly 20%", "what the brief truncates, the builder re-reads by tool call, and turns cost quadratically — so paying input once per file is cheaper than paying turns to rediscover it", "keep a total ceiling so a task naming twenty files cannot blow the window; cap per file around 8-12k chars"]
+  - python3 -m unittest tests.test_config tests.test_roles_adapter -q
+depends_on: [TSK-02.9.1]
+context: ["a Pro account running the thinking profile would otherwise spend its allowance on Opus at heavy tier", "pro, team and unknown cap at sonnet; max and enterprise reach opus", "the ceiling only downgrades, never upgrades, and an unrecognised model name is left alone", "the claude adapter already renders agent frontmatter from config.role, so a session agent inherits the same ceiling", "`account.model_ceiling: false` turns it off"]
 ```
 
-#### [TSK-02.9.4] A worker killed by the timeout keeps its accounting [P: H] [READY]
+#### [TSK-02.9.4] A worker killed by the timeout keeps its accounting [P: H] [DONE]
 ```yaml
-files: [komodo/workers/claude.py, tests/test_workers_briefs.py]
+files: [komodo/workers/claude.py, komodo/workers/base.py, tests/test_workers_briefs.py]
 done_when:
   - python3 -m unittest tests.test_workers_briefs -q
-context: ["workers/claude.py:95 catches TimeoutExpired and returns without reading completed.stdout, and --output-format json emits one envelope at the very end, so a killed worker records 0 turns, 0 tokens and $0.00", "a real 900s burn on komodo-auth-api was recorded as $0.00, understating that run's spend and hiding the fact that the task had been working the whole time", "stream the output instead (Popen plus --output-format stream-json) so partial usage survives the kill"]
+context: ["the old subprocess.run plus --output-format json emitted one envelope at the very end, and the TimeoutExpired branch never read stdout, so a real 900s burn recorded 0 turns and $0.00", "Popen plus --output-format stream-json accumulates turns and tokens per assistant event, and a watchdog kill returns what the worker had already spent", "stream-json requires --verbose, and a prompt past the pipe buffer needs its own writer thread or the read deadlocks"]
 ```
 
-#### [TSK-02.9.5] The second attempt inherits the first attempt's diff, not just its error string [P: M] [READY]
+#### [TSK-02.9.5] The run reads the rate-limit stream and stops before a window it would 429 into [P: H] [DONE]
+```yaml
+files: [komodo/workers/claude.py, komodo/pipeline.py, komodo/state.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+depends_on: [TSK-02.9.4]
+context: ["every worker result carries the newest rate_limit_event, and the run state keeps the last one so a resume sees it", "before each wave the pipeline logs a window past rate_limit.warn_at and stops cleanly past rate_limit.pause_at, naming the window and its reset time", "an account already in overage is never held back", "stopping leaves the run resumable instead of burning turns into a refusal"]
+```
+
+#### [TSK-02.9.6] `context.file_chars` becomes a per-file budget, not a pool split across the task's files [P: C] [DONE]
+```yaml
+files: [komodo/config.py, komodo/pipeline.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+context: ["the old code divided one 24000-char budget by len(task.files) with a 2000 floor, so a builder saw less of its own code the more files its task named", "measured on TG-01.10: TSK-01.10.4 saw 29% of its five files, .17 38% of six, .2 44% of four; the 12-file task that failed three times saw roughly 20%", "what the brief truncates, the builder re-reads by tool call, and turns cost quadratically, so paying input once per file is cheaper", "context.per_file_chars is 10000 with a 120000 total ceiling, so a task naming twenty files still cannot blow the window"]
+```
+
+#### [TSK-02.9.7] The second attempt inherits the first attempt's diff, not just its error string [P: M] [DONE]
 ```yaml
 files: [komodo/pipeline.py, tests/test_pipeline.py]
 done_when:
   - python3 -m unittest tests.test_pipeline -q
-context: ["_build_task loops `for attempt in (1, 2)` sharing one worktree, but briefs.render is called fresh and build_argv passes --no-session-persistence, so attempt 2 re-derives from cold what attempt 1 already wrote to disk", "measured: attempt 2 of TSK-01.10.2 cost more than attempt 1 (57 turns / 5.3M input against 51 / 5.0M) despite inheriting its files", "6 of 30 worker calls across the four runs failed, burning $14.61 — 36% of total spend — for nothing", "pass `git diff HEAD` from the worktree into the failure slot alongside the error"]
+context: ["_build_task and _build_single loop over two attempts sharing one worktree, but briefs.render was called fresh and build_argv passes --no-session-persistence, so attempt 2 re-derived from cold what attempt 1 had written", "measured: attempt 2 of TSK-01.10.2 cost more than attempt 1 (57 turns / 5.3M input against 51 / 5.0M) despite inheriting its files", "6 of 30 worker calls across the four runs failed, burning $14.61 - 36% of total spend - for nothing", "a file the attempt created is untracked, so the diff needs an intent-to-add first"]
 ```
 
-#### [TSK-02.9.6] `komodo status` reports the tier and the caps actually in force [P: M] [READY]
+#### [TSK-02.9.8] The worker timeout scales with the task and the plan [P: M] [DONE]
 ```yaml
-files: [komodo/__main__.py, komodo/config.py, tests/test_cli.py]
+files: [komodo/account.py, komodo/config.py, tests/test_account.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_account tests.test_pipeline -q
+depends_on: [TSK-02.9.1]
+context: ["worker_timeout_s was a flat 900 regardless of how much code a task named", "the timeout now scales with the bytes behind task.files and the plan's headroom, capped by worker_timeout_max_s", "the done_when gate gets the same scaled timeout, so a long build is not killed by the check that proves it"]
+```
+
+#### [TSK-02.9.9] `komodo status` reports the plan and the caps actually in force [P: M] [DONE]
+```yaml
+files: [komodo/__main__.py, tests/test_cli.py]
 done_when:
   - python3 -m unittest tests.test_cli -q
 depends_on: [TSK-02.9.2]
-context: ["the caps a run will use are currently only discoverable by reading config.py DEFAULTS and reasoning about which tier each role maps to", "print the detected tier, the resolved per-role model, and the caps that will be enforced, so a run can be tailored before it is paid for"]
+context: ["the caps a run will use were only discoverable by reading config.py DEFAULTS and reasoning about which tier each role maps to", "status now prints the plan, how it is metered, the scaled timeouts, and one row per role with model, effort, turn cap and dollar cap", "--json carries the same report under a limits key"]
 ```

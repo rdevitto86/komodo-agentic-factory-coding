@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -175,7 +176,43 @@ class HooksCommandTests(unittest.TestCase):
             self.assertIn("hooksPath=<unset>", out.getvalue())
 
 
+def pin_plan(root, plan):
+    """Pins a plan in komodo.json so a status assertion does not depend on the machine's account."""
+    with open(os.path.join(root, "komodo.json"), "w") as handle:
+        json.dump({"account": {"detect": False, "plan": plan}}, handle)
+
+
 class StatusCommandTests(unittest.TestCase):
+    def test_status_reports_the_plan_and_the_caps_in_force(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_repo(root)
+            pin_plan(root, "max")
+            with chdir(root):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    code = cli.main(["status"])
+            printed = out.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("account: max", printed)
+            self.assertIn("metered in tokens", printed)
+            self.assertIn("no dollar cap", printed)
+            self.assertIn("worker timeout:", printed)
+            self.assertIn("builder", printed)
+
+    def test_status_json_carries_the_same_limits(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_repo(root)
+            pin_plan(root, "pro")
+            with chdir(root):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    code = cli.main(["status", "--json"])
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue().strip().splitlines()[-1])
+            self.assertEqual(payload["limits"]["plan"], "pro")
+            self.assertEqual(payload["limits"]["roles"]["reviewer"]["model"], "sonnet")
+            self.assertIsNone(payload["limits"]["roles"]["builder"]["max_budget_usd"])
+
     def test_no_runs_on_disk(self):
         with tempfile.TemporaryDirectory() as root:
             make_repo(root)

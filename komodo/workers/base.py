@@ -43,6 +43,7 @@ class Result:
     seconds: float = 0.0
     provider: str = ""
     model: str = ""
+    rate_limit: Optional[Dict[str, Any]] = None
 
 
 class Worker:

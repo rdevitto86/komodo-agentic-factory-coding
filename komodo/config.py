@@ -8,6 +8,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from . import account as account_probe
 from . import roles as role_defs
 
 TEAM_FILE = "komodo.json"
@@ -20,9 +21,9 @@ DEFAULTS: Dict[str, Any] = {
     "profiles": {
         "fast": {
             "tiers": {
-                "light": {"provider": "claude", "model": "haiku", "effort": "low", "max_budget_usd": 0.5, "max_turns": 15},
-                "standard": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 2.0, "max_turns": 60},
-                "heavy": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 1.0, "max_turns": 30},
+                "light": {"provider": "claude", "model": "haiku", "effort": "low", "max_budget_usd": 0.5},
+                "standard": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 2.0},
+                "heavy": {"provider": "claude", "model": "sonnet", "effort": "medium", "max_budget_usd": 1.0},
             },
             "roles": {
                 "reviewer": {"min_diff_lines": 150},
@@ -31,9 +32,9 @@ DEFAULTS: Dict[str, Any] = {
         },
         "thinking": {
             "tiers": {
-                "light": {"provider": "claude", "model": "haiku", "effort": "low", "max_budget_usd": 0.5, "max_turns": 15},
-                "standard": {"provider": "claude", "model": "sonnet", "effort": "high", "max_budget_usd": 4.0, "max_turns": 100},
-                "heavy": {"provider": "claude", "model": "opus", "effort": "high", "max_budget_usd": 3.0, "max_turns": 40},
+                "light": {"provider": "claude", "model": "haiku", "effort": "low", "max_budget_usd": 0.5},
+                "standard": {"provider": "claude", "model": "sonnet", "effort": "high", "max_budget_usd": 4.0},
+                "heavy": {"provider": "claude", "model": "opus", "effort": "high", "max_budget_usd": 3.0},
             },
             "roles": {
                 "reviewer": {"min_diff_lines": 0},
@@ -54,9 +55,12 @@ DEFAULTS: Dict[str, Any] = {
     "base": "",
     "severity_floor": "high",
     "worker_timeout_s": 900,
+    "worker_timeout_max_s": 3600,
     "group_budget_s": 3600,
+    "account": {"detect": True, "plan": "", "model_ceiling": True},
+    "rate_limit": {"pause_at": 0.95, "warn_at": 0.8, "wait": False},
     "max_parallel": 3,
-    "context": {"file_chars": 24000, "standards_chars": 6000, "diff_chars": 80000},
+    "context": {"file_chars": 120000, "per_file_chars": 10000, "standards_chars": 6000, "diff_chars": 80000},
     "comments": {"trivial_lines": 8, "require": "nonobvious"},
     "ollama": {"url": "http://localhost:11434"},
     "labels": {"feat": "enhancement", "fix": "bug", "docs": "documentation", "chore": "enhancement", "refactor": "enhancement", "perf": "enhancement", "build": "enhancement", "ci": "enhancement", "test": "enhancement", "agent": "@agent"},
@@ -97,6 +101,7 @@ class Config:
     def __init__(self, data: Dict[str, Any], root: str):
         self.data = data
         self.root = root
+        self._account: Optional["account_probe.Account"] = None
 
     @classmethod
     def load(cls, root: str, overrides: Optional[Dict[str, Any]] = None) -> "Config":
@@ -150,12 +155,35 @@ class Config:
             raise ConfigError("profile %r has no tier %r" % (name, tier))
 
     def role(self, role: str, profile: Optional[str] = None) -> Dict[str, Any]:
-        """A role's spec: its tier's provider spec merged with any per-role override in the profile."""
+        """A role's spec: its tier's provider spec, any per-role override, then the caps the account allows."""
         name = profile or self.data["profile"]
-        spec = self.tier(role_defs.tier_of(role), name)
+        tier = role_defs.tier_of(role)
+        spec = self.tier(tier, name)
         override = ((self.data["profiles"].get(name) or {}).get("roles") or {}).get(role) or {}
         spec.update(override)
-        return spec
+        ceiling = bool((self.data.get("account") or {}).get("model_ceiling", True))
+        return account_probe.apply_to_spec(spec, tier, self.account, model_ceiling=ceiling)
+
+    @property
+    def account(self) -> "account_probe.Account":
+        """The detected Claude account, probed at most once and overridable for an offline or pinned run."""
+        if self._account is None:
+            settings = self.data.get("account") or {}
+            forced = str(settings.get("plan") or "").strip().lower()
+            if forced:
+                self._account = account_probe.pinned(forced)
+            elif settings.get("detect", True) is False:
+                self._account = account_probe.Account()
+            else:
+                self._account = account_probe.detect()
+        return self._account
+
+    def worker_timeout(self, task_bytes: int = 0) -> int:
+        """The wall-clock a worker gets, scaled by the bytes its task names and the plan's headroom."""
+        return account_probe.timeout_for(
+            int(self.get("worker_timeout_s", 900)), self.account.plan, task_bytes,
+            int(self.get("worker_timeout_max_s", 3600)),
+        )
 
     @property
     def protected(self) -> List[str]:

@@ -63,6 +63,7 @@ class RunState:
     publish_blocker: str = ""
     blocked: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    rate_limit: Dict[str, Any] = field(default_factory=dict)
     finished: float = 0.0
 
     @property
