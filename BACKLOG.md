@@ -227,7 +227,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.3] Doctor: references, leaks, drift, budgets, prune [P: H] [READY]
+#### [TSK-03.3.3] Doctor: references, leaks, drift, budgets, prune [P: H] [DONE]
 ```yaml
 files: [internal/doctor, cmd/komodo/main.go]
 done_when:

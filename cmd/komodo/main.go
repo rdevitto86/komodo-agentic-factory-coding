@@ -15,6 +15,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/doctor"
 	"komodo/internal/gate"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
@@ -43,6 +44,7 @@ const usage = `komodo: the code assembly line.
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo install --host X     Mount this repo on a host, or on both
+  komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
   komodo guard [check]        The one agent hook; check runs its table
   komodo step [group|task]    The one next action, as JSON
   komodo metrics              What the two ledger files hold
@@ -82,6 +84,8 @@ func main() {
 		runTag(root)
 	case "release":
 		runRelease(root, os.Args[2:])
+	case "doctor":
+		runDoctor(root, os.Args[2:])
 	case "install":
 		runInstall(root, os.Args[2:])
 	case "guard":
@@ -275,6 +279,19 @@ func runGate(root string, args []string) {
 			}
 			if len(problems) > 0 {
 				return fmt.Errorf("%d problem(s) in the backlog", len(problems))
+			}
+			return nil
+		}},
+		{Name: "komodo doctor", Run: func(out io.Writer) error {
+			problems, err := doctor.Run(root, doctor.Options{})
+			if err != nil {
+				return err
+			}
+			for _, problem := range problems {
+				fmt.Fprintf(out, "%s %s: %s\n", problem.Check, problem.Where, problem.Detail)
+			}
+			if len(problems) > 0 {
+				return fmt.Errorf("%d problem(s)", len(problems))
 			}
 			return nil
 		}},
@@ -708,5 +725,42 @@ func binaryName() string {
 		return "komodo-windows-amd64.exe"
 	default:
 		return "komodo-linux-amd64"
+	}
+}
+
+// runDoctor audits the repo and, with --prune, clears what a run stranded.
+func runDoctor(root string, args []string) {
+	set := flag.NewFlagSet("doctor", flag.ExitOnError)
+	noGit := set.Bool("no-git", false, "skip the checks that shell out to git")
+	prune := set.Bool("prune", false, "remove stale worktrees and delete merged branches")
+	asJSON := set.Bool("json", false, "print JSON")
+	_ = set.Parse(args)
+	if *prune {
+		base := line.DefaultBase(root)
+		if state, err := line.LoadRun(root); err == nil && state.Base != "" {
+			base = state.Base
+		}
+		done, err := doctor.Prune(root, base)
+		if err != nil {
+			fail(err)
+		}
+		for _, item := range done {
+			fmt.Println(item)
+		}
+	}
+	problems, err := doctor.Run(root, doctor.Options{NoGit: *noGit})
+	if err != nil {
+		fail(err)
+	}
+	if *asJSON {
+		printJSON(problems)
+	} else {
+		for _, problem := range problems {
+			fmt.Printf("%s %s: %s\n", problem.Check, problem.Where, problem.Detail)
+		}
+		fmt.Printf("%d problem(s)\n", len(problems))
+	}
+	if len(problems) > 0 {
+		os.Exit(1)
 	}
 }

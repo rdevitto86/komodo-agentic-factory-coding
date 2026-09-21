@@ -7,10 +7,11 @@ import (
 	"komodo/internal/install"
 )
 
-// Host is one mount: its name, the paths it owns, and how it renders a repo.
+// Host is one mount: its name, the paths it owns, the names only it may use, and its render.
 type Host struct {
 	Name        string
 	ConfigPaths []string
+	Vendors     []string
 	Render      func(root, binary string) (install.Plan, error)
 }
 
@@ -51,6 +52,15 @@ func Names() []string {
 	var out []string
 	for _, host := range Hosts() {
 		out = append(out, host.Name)
+	}
+	return out
+}
+
+// Vendors are every name that may appear only inside a mount.
+func Vendors() []string {
+	var out []string
+	for _, host := range Hosts() {
+		out = append(out, host.Vendors...)
 	}
 	return out
 }

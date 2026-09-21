@@ -170,6 +170,7 @@ func init() {
 	mount.Register(mount.Host{
 		Name:        "claude",
 		ConfigPaths: []string{"~/.claude/**", "~/.claude.json"},
+		Vendors:     []string{"claude", "anthropic", "sonnet", "opus", "haiku"},
 		Render:      Render,
 	})
 }

@@ -99,6 +99,7 @@ func init() {
 	mount.Register(mount.Host{
 		Name:        "codex",
 		ConfigPaths: []string{"~/.codex/**"},
+		Vendors:     []string{"codex", "openai"},
 		Render:      Render,
 	})
 }
