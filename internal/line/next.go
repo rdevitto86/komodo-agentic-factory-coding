@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/ledger"
 )
 
 // PlanTask is one task as intake prints it.
@@ -155,7 +156,14 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 		Started: time.Now().UTC(),
 	}
 	state.Worktree = path
-	return state, SaveRun(root, state)
+	if err := Book(root).TruncateRun(); err != nil {
+		return state, err
+	}
+	if err := SaveRun(root, state); err != nil {
+		return state, err
+	}
+	Stamp(root, ledger.Entry{Run: state.Run, Group: state.Group, Station: "intake", Outcome: "started"})
+	return state, nil
 }
 
 // contains reports whether the slice holds the value.

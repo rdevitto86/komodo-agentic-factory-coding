@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/ledger"
 	"komodo/internal/pr"
 )
 
@@ -36,7 +37,11 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 	if err != nil {
 		return nil, err
 	}
+	started := time.Now()
 	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base}
+	defer func() {
+		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: "done"})
+	}()
 	for _, task := range plan.Tasks {
 		current, ok := parsed.Task(task.ID)
 		if !ok {

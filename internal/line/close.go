@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"time"
+
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/ledger"
 )
 
 // MaxRepairs is how many times one task may come back for a repair before it blocks.
@@ -46,6 +49,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		return nil, fmt.Errorf("no task %s in %s", taskID, path)
 	}
 	cwd := taskWorktree(root, taskID)
+	started := time.Now()
 	outcome := &Outcome{Task: taskID}
 	problems := checkResult(root, taskID)
 	problems = append(problems, runDoneWhen(cwd, task)...)
@@ -56,11 +60,15 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		}
 	}
 	outcome.Problems = problems
+	entry := ledger.Entry{Task: taskID, Station: "close", Seconds: Since(started)}
 	if len(problems) == 0 {
 		outcome.Status = "DONE"
 		clearAttempt(root, taskID)
+		entry.Outcome = "done"
+		Stamp(root, entry)
 		return outcome, writeStatus(path, taskID, "DONE")
 	}
+	entry.FailureClass = FailureClass(problems)
 	attempt, err := bumpAttempt(root, taskID, strings.Join(problems, "\n"), diffOf(cwd))
 	if err != nil {
 		return nil, err
@@ -69,9 +77,13 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	outcome.Failure = attempt.Failure
 	if attempt.Count > MaxRepairs {
 		outcome.Status = "BLOCKED"
+		entry.Outcome = "blocked"
+		Stamp(root, entry)
 		return outcome, writeStatus(path, taskID, "BLOCKED")
 	}
 	outcome.Status = "IN_PROGRESS"
+	entry.Outcome = "repair"
+	Stamp(root, entry)
 	return outcome, writeStatus(path, taskID, "IN_PROGRESS")
 }
 

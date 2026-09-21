@@ -15,6 +15,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
 	"komodo/internal/gate"
+	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/pr"
 	"komodo/internal/release"
@@ -35,6 +36,7 @@ const usage = `komodo: the code assembly line.
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
+  komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
 
@@ -71,6 +73,8 @@ func main() {
 		runTag(root)
 	case "release":
 		runRelease(root, os.Args[2:])
+	case "metrics":
+		runMetrics(root)
 	case "gate":
 		runGate(root, os.Args[2:])
 	case "-h", "--help", "help":
@@ -208,6 +212,7 @@ func runAdd(root string, args []string) {
 		fail(err)
 	}
 	fmt.Println(id)
+	line.Stamp(root, ledger.Entry{Station: "add", Task: id, Outcome: "added"})
 }
 
 // split turns a comma-separated flag into the list a task block holds.
@@ -598,4 +603,13 @@ func gitLines(root string, args ...string) []string {
 		}
 	}
 	return lines
+}
+
+// runMetrics prints what the two ledger files hold.
+func runMetrics(root string) {
+	entries, err := line.Book(root).All()
+	if err != nil {
+		fail(err)
+	}
+	fmt.Print(ledger.Render(ledger.Aggregate(entries)))
 }

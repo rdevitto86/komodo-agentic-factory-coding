@@ -165,7 +165,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.7] The ledger and `komodo metrics` [P: H] [READY]
+#### [TSK-03.2.7] The ledger and `komodo metrics` [P: H] [DONE]
 ```yaml
 files: [internal/ledger, internal/line, cmd/komodo/main.go]
 done_when:

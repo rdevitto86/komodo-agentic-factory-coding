@@ -6,7 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"time"
+
 	"komodo/internal/backlog"
+	"komodo/internal/ledger"
 )
 
 // WaveResult is what QC decided about one wave.
@@ -28,7 +31,18 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 		return nil, fmt.Errorf("no wave %d in %s", index+1, plan.Group)
 	}
 	group := filepath.Join(root, plan.Worktree)
+	started := time.Now()
 	result := &WaveResult{Wave: index + 1}
+	defer func() {
+		entry := ledger.Entry{Group: plan.Group, Wave: result.Wave, Station: "qc", Seconds: Since(started)}
+		if result.Conflict != "" {
+			entry.FailureClass = "conflict"
+		}
+		if result.OK {
+			entry.Outcome = "done"
+		}
+		Stamp(root, entry)
+	}()
 	var previous string
 	for _, taskID := range plan.Waves[index] {
 		branch := TaskBranch(taskID)
