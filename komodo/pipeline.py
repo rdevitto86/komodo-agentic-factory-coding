@@ -173,6 +173,8 @@ class Pipeline:
 
     def preflight(self, needle: Optional[str], resume: bool) -> None:
         """Reads the backlog, picks the group, checks the tree, and creates or resumes state."""
+        if self.git.is_bare():
+            raise PipelineError("core.bare is true on this checkout, so every git write will fail; run `git config core.bare false`")
         if self.backlog_path is None:
             raise PipelineError("no BACKLOG.md in %s; write one in the task grammar first" % self.root)
         self.backlog = tasks.load(self.backlog_path)
@@ -269,7 +271,10 @@ class Pipeline:
                     except Exception as error:  # a crashed task blocks itself, never the run
                         self._block(task, "builder crashed: %s" % error)
             for task in pending:
-                self._merge_task(task, worktrees[task.id])
+                try:
+                    self._merge_task(task, worktrees[task.id])
+                except gitops.GitError as error:  # a repo-level failure blocks the task, never the remaining waves
+                    self._block(task, "merge failed: %s" % error)
             self._compile_gate(index, pending)
             self.store.save(self.state)
 

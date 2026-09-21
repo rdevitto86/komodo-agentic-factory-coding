@@ -8,3 +8,6 @@ __pycache__/
 
 # Editor / OS noise
 .DS_Store
+
+# go build output from komodo/hooks/src
+komodo/hooks/src/hooks
