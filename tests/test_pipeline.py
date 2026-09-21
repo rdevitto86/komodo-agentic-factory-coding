@@ -490,3 +490,36 @@ class ChangelogTests(unittest.TestCase):
             with open(path, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), before, "the file is untouched when the write is refused")
 
+
+
+class CommitHookPipelineTests(PipelineTests):
+    def test_a_hook_refusing_a_commit_costs_an_attempt_not_the_task(self):
+        stamp = os.path.join(self.tmp.name, ".komodo", "refused-once")
+        hook = os.path.join(self.tmp.name, ".git", "hooks", "pre-commit")
+        with open(hook, "w") as handle:
+            handle.write("#!/bin/sh\nif [ -f '%s' ]; then exit 0; fi\ntouch '%s'\necho 'OVER_LINES: comment too long' >&2\nexit 1\n" % (stamp, stamp))
+        os.chmod(hook, 0o755)
+        line = self._pipeline()
+        line.preflight("TG-01.1", resume=False)
+        line.branch()
+        task = line.backlog.group("TG-01.1").tasks[0]
+        line._build_task(task, line._worktree_for(task))
+        record = line.state.task(task.id)
+        self.assertEqual(record.status, "DONE")
+        self.assertEqual(record.attempts, 2)
+        self.assertTrue(record.commit)
+        self.assertTrue(os.path.isfile(stamp))
+
+    def test_a_hook_refusing_every_commit_blocks_with_what_it_said(self):
+        hook = os.path.join(self.tmp.name, ".git", "hooks", "pre-commit")
+        with open(hook, "w") as handle:
+            handle.write("#!/bin/sh\necho 'OVER_LINES: comment too long' >&2\nexit 1\n")
+        os.chmod(hook, 0o755)
+        line = self._pipeline()
+        line.preflight("TG-01.1", resume=False)
+        line.branch()
+        task = line.backlog.group("TG-01.1").tasks[0]
+        line._build_task(task, line._worktree_for(task))
+        record = line.state.task(task.id)
+        self.assertEqual(record.status, "BLOCKED")
+        self.assertIn("OVER_LINES", record.note + " ".join(line.state.notes))

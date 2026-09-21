@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
@@ -109,6 +110,33 @@ def resolve_verify(root: str) -> Optional[str]:
     return None
 
 
+# compileall walks dot-directories, and the harness keeps its worktrees under .komodo/wt.
+COMPILEALL_SKIP = r"[\\/]\.(komodo|git)[\\/]"
+# A gate proves the tree compiles; writing .pyc beside the source would leave work for the next commit to stage.
+PYCACHE_DIR = os.path.join(tempfile.gettempdir(), "komodo-pycache")
+
+
+def _has_python(root: str) -> bool:
+    """Whether the tree holds Python at its root or one level down, ignoring dot-directories."""
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return False
+    for name in entries:
+        if name.startswith("."):
+            continue
+        path = os.path.join(root, name)
+        if name.endswith(".py") and os.path.isfile(path):
+            return True
+        if os.path.isdir(path):
+            try:
+                if any(child.endswith(".py") for child in os.listdir(path)):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
 def compile_commands(root: str) -> List[str]:
     """Cheap whole-tree compile or typecheck commands, chosen from the manifests present."""
     commands: List[str] = []
@@ -117,8 +145,11 @@ def compile_commands(root: str) -> List[str]:
     if os.path.isfile(os.path.join(root, "package.json")):
         if os.path.isfile(os.path.join(root, "tsconfig.json")) and (shutil.which("npx") or shutil.which("tsc")):
             commands.append("npx tsc --noEmit -p .")
-    if os.path.isfile(os.path.join(root, "pyproject.toml")) or os.path.isfile(os.path.join(root, "setup.py")):
-        commands.append("%s -m compileall -q ." % shlex.quote(sys.executable or "python3"))
+    python_manifest = os.path.isfile(os.path.join(root, "pyproject.toml")) or os.path.isfile(os.path.join(root, "setup.py"))
+    if python_manifest or (not commands and _has_python(root)):
+        commands.append("%s -X pycache_prefix=%s -m compileall -q -x %s ." % (
+            shlex.quote(sys.executable or "python3"), shlex.quote(PYCACHE_DIR), shlex.quote(COMPILEALL_SKIP),
+        ))
     return commands
 
 

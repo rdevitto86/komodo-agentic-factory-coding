@@ -51,6 +51,26 @@ class GateTests(unittest.TestCase):
                 handle.write("module x\n")
             self.assertEqual(gates.compile_commands(root), ["go build ./... && go vet ./..."])
 
+    def test_a_manifestless_python_tree_still_gets_a_compile_gate(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "pkg"))
+            with open(os.path.join(root, "pkg", "thing.py"), "w") as handle:
+                handle.write("x = 1\n")
+            commands = gates.compile_commands(root)
+            self.assertEqual(len(commands), 1)
+            self.assertIn("compileall", commands[0])
+            self.assertIn("komodo", commands[0])
+
+    def test_the_compile_gate_skips_the_harness_worktrees(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".komodo", "wt", "tsk"))
+            with open(os.path.join(root, "build.py"), "w") as handle:
+                handle.write("x = 1\n")
+            with open(os.path.join(root, ".komodo", "wt", "tsk", "broken.py"), "w") as handle:
+                handle.write("def (\n")
+            command = gates.compile_commands(root)[0]
+            self.assertTrue(gates.run_command(command, root, timeout=60).ok)
+
 
 class StateTests(unittest.TestCase):
     def test_roundtrip_and_resume(self):

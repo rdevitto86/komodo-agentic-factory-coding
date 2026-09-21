@@ -309,7 +309,12 @@ class Pipeline:
                 record.changed = changed
                 bullets = [str(item.get("what", "")) for item in data.get("changed", []) if isinstance(item, dict)][:8]
                 message = gitops.commit_message(task.type, task.title, bullets)
-                record.commit = self.git.commit(message, cwd=cwd) or ""
+                try:
+                    record.commit = self.git.commit(message, cwd=cwd) or ""
+                except gitops.CommitRejected as rejected:
+                    failure = "the commit hook refused this work; fix what it reports and leave the changes in place\n%s" % rejected.output
+                    self.log("  %s commit refused on attempt %d" % (task.id, attempt))
+                    continue
                 record.status = "DONE"
                 record.note = str(data.get("summary", ""))[:300]
                 record.comment_lines = _comment_lines_added(self.git, cwd, self.state.branch)
@@ -395,7 +400,12 @@ class Pipeline:
             if not gate.ok:
                 return False
             summary = str((result.data or {}).get("summary", "repair"))[:60]
-            if self.git.commit(gitops.commit_message("fix", summary or "repair failing check"), cwd=cwd):
+            try:
+                committed = self.git.commit(gitops.commit_message("fix", summary or "repair failing check"), cwd=cwd)
+            except gitops.CommitRejected as rejected:
+                self.state.notes.append("%s: the commit hook refused the repair: %s" % (label, rejected.output[:200]))
+                return False
+            if committed:
                 if not self.git.merge(branch):
                     self.git.merge_abort()
                     return False
@@ -448,7 +458,12 @@ class Pipeline:
             if gate.ok:
                 data = result.data or {}
                 bullets = [str(item.get("what", "")) for item in data.get("changed", []) if isinstance(item, dict)][:8]
-                commit = self.git.commit(gitops.commit_message(self.group.type, self.group.title, bullets), cwd=cwd) or ""
+                try:
+                    commit = self.git.commit(gitops.commit_message(self.group.type, self.group.title, bullets), cwd=cwd) or ""
+                except gitops.CommitRejected as rejected:
+                    failure = "the commit hook refused this work; fix what it reports and leave the changes in place\n%s" % rejected.output
+                    self.log("  %s commit refused on attempt %d" % (self.group.id, attempt))
+                    continue
                 for task in open_tasks:
                     record = self.state.task(task.id)
                     record.status, record.commit, record.attempts = "DONE", commit, attempt
@@ -577,7 +592,10 @@ class Pipeline:
             changelog = os.path.join(self.root, str(self.config.get("changelog", "CHANGELOG.md")))
             _write_changelog(changelog, self.group.type, done_titles, self.group.version)
             self.log("  changelog: %s" % self.group.version)
-        self.git.commit(gitops.commit_message("chore", "close out %s" % self.group.id, ["completed tasks dropped from the backlog", "changelog entry"]))
+        try:
+            self.git.commit(gitops.commit_message("chore", "close out %s" % self.group.id, ["completed tasks dropped from the backlog", "changelog entry"]))
+        except gitops.CommitRejected as rejected:
+            return "the commit hook refused the close-out commit, so %s is unpublished: %s" % (self.state.branch, rejected.output[:200])
         if not self.git.has_remote():
             return "no remote %r; %s is committed locally and no pull request was opened" % (self.config.remote, self.state.branch)
         self.git.push(self.state.branch)
