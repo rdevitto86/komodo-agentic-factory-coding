@@ -5,7 +5,7 @@ Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. I
 ---
 
 ## [EPIC-03] V2, the assembly line
-*Goal: Komodo becomes rules, roles, standards, skills, and one guard that any agent host renders. The V1 orchestrator, its state, its account logic, and its Go hooks go. Claude Code is the default host, Codex is the second, and a fully local profile runs on Codex with Ollama. Spec: `docs/spec/v2.md`.*
+*Goal: Komodo becomes rules, roles, standards, skills, and one guard that any agent host renders. The V1 orchestrator, its state, its account logic, and its Go hooks go. Claude Code with Ollama is the host today for both Komodo devs; Codex is the rehearsal for the day Komodo leaves a proprietary host. Spec: `docs/spec/v2.md`.*
 
 * **Groups run in file order.** Every group carries `2.0.0`; the tag is cut once, after TG-03.7.
 * **Until TG-03.4 lands, the V1 harness runs the groups.** After it, the `run` skill runs the rest, which is the first proof.
@@ -204,74 +204,101 @@ context:
 type: docs
 ```
 
-### [TG-03.5] Codex adapter and the portability lint
+### [TG-03.5] Local models on Claude Code
 ```yaml
 type: feat
 version: 2.0.0
 ```
-* **Why:** the second host proves the first was not special. Codex reads AGENTS.md and SKILL.md natively, takes agents as TOML, and registers the same hook events with the same deny JSON.
+* **Why:** Claude Code cannot run a subagent on Ollama, so a role that runs locally calls a tool. The bridge at `127.0.0.1:8000` lives in no repo and was down for a whole session; V2 owns a bridge the host spawns, in the standard library, with no process to keep alive.
 
-#### [TSK-03.5.1] The Codex adapter [P: C] [READY]
+#### [TSK-03.5.1] `komodo bridge` is a stdio MCP server over Ollama [P: C] [READY]
+```yaml
+files: [komodo/bridge.py, tests/test_bridge.py]
+done_when:
+  - python3 -m unittest tests.test_bridge -q
+context:
+  - "JSON-RPC 2.0 over stdin and stdout: initialize, tools/list, tools/call; tools local_chat(model, system, prompt) and local_models(); urllib against OLLAMA_BASE_URL, default http://localhost:11434"
+  - "Ollama down returns a tool error with the URL, never an exception; the host keeps running"
+  - "about 200 lines, standard library only, tested with a fake Ollama on a local socket"
+type: feat
+```
+
+#### [TSK-03.5.2] Install registers the bridge on the Claude host [P: H] [READY]
+```yaml
+files: [komodo/adapters/claude.py, komodo/cli.py, tests/test_adapter_claude.py]
+done_when:
+  - python3 -m unittest tests.test_adapter_claude -q
+depends_on: [TSK-03.5.1]
+context:
+  - "an MCP server entry of type stdio running python3 -m komodo bridge, replacing the http entry at 127.0.0.1:8000 when present"
+  - "the cli gains the bridge subcommand"
+type: feat
+```
+
+#### [TSK-03.5.3] The hybrid profile routes light roles, and optionally the reviewer, through the bridge [P: H] [READY]
+```yaml
+files: [komodo/roles/summarizer.md, komodo/config.py, komodo/adapters/claude.py, tests/test_adapter_claude.py, tests/test_config.py]
+done_when:
+  - python3 -m unittest tests.test_adapter_claude tests.test_config -q
+depends_on: [TSK-03.5.2]
+context:
+  - "a role whose profile provider is ollama on the claude host renders with a body that calls local_chat with the profile's model, and the light tier as the wrapper model"
+  - "the reviewer tier may be ollama, so a review never shares a vendor with the build; off by default"
+  - "a missing bridge degrades to the light tier and says so once"
+type: feat
+```
+
+### [TG-03.6] The second host: Codex, the portability lint, and the local profile
+```yaml
+type: feat
+version: 2.0.0
+```
+* **Why:** the second host proves the first was not special, and rehearses the day Komodo leaves a proprietary host. Codex reads AGENTS.md and SKILL.md natively, takes agents as TOML, registers the same hook events with the same deny JSON, and runs every tier on Ollama with `--oss`.
+
+#### [TSK-03.6.1] The Codex adapter [P: C] [READY]
 ```yaml
 files: [komodo/adapters/codex.py, tests/test_adapter_codex.py]
 done_when:
   - python3 -m unittest tests.test_adapter_codex -q
 context:
-  - "renders ~/.codex/AGENTS.md, ~/.codex/agents/<role>.toml with name, description, developer_instructions, model, model_reasoning_effort, sandbox_mode from the profile, ~/.agents/skills as a copy, ~/.codex/hooks.json with both hooks, and the mcp_servers table in config.toml"
+  - "renders ~/.codex/AGENTS.md, ~/.codex/agents/<role>.toml with name, description, developer_instructions, model, model_reasoning_effort, sandbox_mode from the profile, ~/.agents/skills as a copy, ~/.codex/hooks.json with both hooks, and the mcp_servers table in config.toml with the bridge"
   - "the five Komodo tool verbs map to sandbox_mode and nothing else; Codex has no allow-list, so the guard is the whole policy there"
 type: feat
 ```
 
-#### [TSK-03.5.2] Doctor lints for host leakage [P: H] [READY]
+#### [TSK-03.6.2] Doctor lints for host leakage [P: H] [READY]
 ```yaml
 files: [komodo/doctor.py, tests/test_doctor.py]
 done_when:
   - python3 -m unittest tests.test_doctor -q
   - python3 -m komodo doctor
 context:
-  - "a skill or role that names a host tool, a host path under ~/.claude or ~/.codex, or a host flag fails doctor; adapters are exempt"
+  - "a skill or role that names a host tool, a host path under ~/.claude or ~/.codex, a host flag, or a vendor name fails doctor; adapters and config are exempt"
   - "drift: the rendered layout differs from what the source would render now"
 type: feat
 ```
 
-#### [TSK-03.5.3] Proof: one group under Codex [P: H] [READY]
+#### [TSK-03.6.3] The local profile renders Codex with Ollama as the provider [P: H] [READY]
 ```yaml
-files: [docs/spec/v2-proof.md]
-done_when:
-  - grep -q codex docs/spec/v2-proof.md
-depends_on: [TSK-03.5.1, TSK-03.5.2]
-owner: human
-context:
-  - "komodo install --host codex, then run TG-03.6 with codex exec through the launcher; record the same numbers as TSK-03.4.4"
-type: docs
-```
-
-### [TG-03.6] Local models
-```yaml
-type: feat
-version: 2.0.0
-```
-* **Why:** hybrid today, fully local later, without touching a role. On Codex every tier can run on Ollama; on Claude Code a light role calls the bridge.
-
-#### [TSK-03.6.1] The local profile renders Codex with Ollama as the provider [P: H] [READY]
-```yaml
-files: [komodo/adapters/codex.py, komodo/config.py, tests/test_adapter_codex.py]
+files: [komodo/adapters/codex.py, komodo/config.py, tests/test_adapter_codex.py, tests/test_config.py]
 done_when:
   - python3 -m unittest tests.test_adapter_codex tests.test_config -q
+depends_on: [TSK-03.6.1]
 context:
   - "profile local sets oss_provider ollama and a model_providers.ollama base_url in config.toml, and every tier's model from the profile"
 type: feat
 ```
 
-#### [TSK-03.6.2] The hybrid profile routes light roles through the bridge on Claude Code [P: M] [READY]
+#### [TSK-03.6.4] Proof: one group under Codex [P: H] [READY]
 ```yaml
-files: [komodo/roles/summarizer.md, komodo/adapters/claude.py, tests/test_adapter_claude.py]
+files: [docs/spec/v2-proof.md]
 done_when:
-  - python3 -m unittest tests.test_adapter_claude -q
+  - grep -q codex docs/spec/v2-proof.md
+depends_on: [TSK-03.6.1, TSK-03.6.2, TSK-03.6.3]
+owner: human
 context:
-  - "a role whose profile provider is ollama on the claude host renders with a body that calls the komodo-ollama-bridge tool and a model of the profile's light tier for the wrapper"
-  - "the bridge stays optional; a missing bridge degrades to the light tier and says so once"
-type: feat
+  - "komodo install --host codex, then run TG-03.7 with codex exec through the launcher; record the same numbers as TSK-03.4.4"
+type: docs
 ```
 
 ### [TG-03.7] Demolition and docs
