@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "blast_radius": {
+      "type": "string",
+      "enum": [
+        "low",
+        "low-med",
+        "med",
+        "med-high",
+        "high",
+        "critical"
+      ]
+    },
+    "blast_radius_why": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "class": {
+            "type": "string",
+            "enum": [
+              "bug",
+              "security",
+              "simplify",
+              "narrative-comment",
+              "undocumented-nonobvious",
+              "test-gap"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "class",
+          "file",
+          "title",
+          "detail"
+        ]
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "blast_radius",
+    "blast_radius_why",
+    "findings"
+  ]
+}

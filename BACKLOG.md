@@ -34,7 +34,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.1.2] Briefs fold into roles, and each role carries its schema [P: C] [READY]
+#### [TSK-03.1.2] Briefs fold into roles, and each role carries its schema [P: C] [DONE]
 ```yaml
 files: [komodo/roles, komodo/briefs]
 done_when:
