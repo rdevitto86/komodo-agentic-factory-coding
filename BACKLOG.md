@@ -1,15 +1,15 @@
 # Project Backlog
 
-Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `python3 -m komodo tasks lint` checks it until TG-03.2 lands `komodo lint`. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V1.5 plan in `README.md`.
+Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `komodo lint` checks it from TG-03.2 on. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V1.5 plan in `README.md`.
 
 ---
 
 ## [EPIC-03] V1.5, the assembly line
 *Goal: one static binary is the conveyor and the devices, markdown is everything a model reads, one guard is the only hook, and a model is a machine mounted per host. Two model calls per task, build and review; everything between is deterministic. Claude Code with Ollama is the host today for both Komodo devs; Codex is the exit test. Requirements and design: `README.md`.*
 
-* **Groups run in file order.** Every group carries `1.5.0`; the tag is cut once, after TG-03.6.
-* **V1 runs TG-03.1 through TG-03.3.** After TG-03.4 lands the `run` skill runs the rest, and its first group is the proof.
-* **Go source lands beside the Python it replaces.** The gate runs both until TG-03.6 deletes the Python.
+* **Everything lands on PR #103.** No group opens its own PR; `close --group` is proven on TG-03.5 by committing to this branch. The tag `v1.5.0` is cut when #103 merges.
+* **Sessions build TG-03.1 through TG-03.4.** The `run` skill runs TG-03.5 and TG-03.6, and TG-03.5 is the proof.
+* **The repo starts clean.** V1 is the tag `v1-final`; the only V1 files here are the markdown TG-03.1 reshapes.
 
 ### [TG-03.1] The markdown
 ```yaml
@@ -20,51 +20,51 @@ version: 1.5.0
 
 #### [TSK-03.1.1] Standards become skills at the source [P: C] [READY]
 ```yaml
-files: [komodo/skills, komodo/standards, komodo/standards.py, tests/test_standards.py]
+files: [komodo/skills, komodo/standards]
 done_when:
   - test -f komodo/skills/standards-go/SKILL.md
   - test ! -d komodo/standards
-  - python3 -m unittest discover -s tests -q
+  - grep -q '^globs:' komodo/skills/standards-go/SKILL.md
 context:
   - "each komodo/standards/<x>.md moves to komodo/skills/standards-<x>/SKILL.md with frontmatter name, description, and a globs list of the extensions and directories that trigger it; the body does not change"
-  - "the extension map in komodo/standards.py moves into that frontmatter and nothing else holds it; standards.py and its test go"
+  - "the extension map V1 kept in standards.py, see the tag v1-final, moves into that frontmatter and nothing else holds it"
 type: refactor
 ```
 
 #### [TSK-03.1.2] Briefs fold into roles, and each role carries its schema [P: C] [READY]
 ```yaml
-files: [komodo/roles, komodo/briefs, komodo/briefs.py, tests/test_roles.py, tests/test_briefs.py]
+files: [komodo/roles, komodo/briefs]
 done_when:
   - test ! -d komodo/briefs
   - test -f komodo/roles/builder.schema.json
-  - python3 -m unittest tests.test_roles -q
+  - grep -q '{{task_block}}' komodo/roles/builder.md
 context:
   - "a role file carries frontmatter name, tier, tools, session, returns, and a body that is the brief template with the slots task_block, repo_rules, repo_context, context, files, standards, done_when, failure"
   - "tools are the five Komodo verbs read, edit, write, shell, search; a host tool name never appears in a role"
-  - "the JSON schema each worker prompt carried moves beside the role as <role>.schema.json; the builder's body says to write its result to the path the brief names"
+  - "the JSON schema each worker prompt carried in V1 briefs.py, see the tag v1-final, moves beside the role as <role>.schema.json; the builder's body says to write its result to the path the brief names"
 type: refactor
 ```
 
 #### [TSK-03.1.3] The policy has four denials, and the rules give a worktree unlimited freedom [P: C] [READY]
 ```yaml
-files: [komodo/policy.json, komodo/AGENTS.md, komodo/rules, tests/test_policy.py]
+files: [komodo/policy.json, komodo/AGENTS.md, komodo/rules]
 done_when:
-  - python3 -c "import json; json.load(open('komodo/policy.json'))"
+  - test -f komodo/policy.json
   - test -f komodo/AGENTS.md
-  - python3 -m unittest tests.test_policy -q
+  - test ! -f komodo/rules/AGENTS.md
 context:
   - "policy.json: critical refs main and master plus a list, config paths the hosts and the toolkit own, and the trailer patterns; no destructive command list, no prod markers, no file-list scope"
   - "komodo/rules/AGENTS.md moves to komodo/AGENTS.md; its Git section says an agent may delete files, reset, checkout, restore, force-push and delete its own branches inside its worktree, and never touches a critical branch, a path outside the worktree, or a host or toolkit config"
-  - "komodo/rules/accessibility.md holds the Writing for a human contract and is included into AGENTS.md at render; komodo/rules/cli.md goes"
+  - "komodo/rules/accessibility.md holds the Writing for a human contract and is included into AGENTS.md at render"
 type: feat
 ```
 
 #### [TSK-03.1.4] The merger role goes; the responder stays as a session role [P: M] [READY]
 ```yaml
-files: [komodo/roles/merger.md, komodo/roles/responder.md, tests/test_roles.py]
+files: [komodo/roles/merger.md, komodo/roles/responder.md]
 done_when:
   - test ! -f komodo/roles/merger.md
-  - python3 -m unittest tests.test_roles -q
+  - grep -q '^session: true' komodo/roles/responder.md
 context:
   - "QC stops on a conflict and hands it to a human, so no role resolves conflicts; responder becomes session: true and is the model behind the respond skill"
   - "nine roles remain: architect, builder, planner, researcher, responder, reviewer, scout, summarizer, tester"
@@ -76,19 +76,19 @@ type: refactor
 type: feat
 version: 1.5.0
 ```
-* **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test. The hooks' 1013 lines of Go under `komodo/hooks/src` are the seed of the module.
+* **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
 
 #### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [READY]
 ```yaml
-files: [go.mod, cmd/komodo/main.go, internal/backlog, bin, scripts/verify.py, .github/workflows]
+files: [go.mod, cmd/komodo/main.go, internal/backlog, bin, .github/workflows]
 done_when:
   - go build ./...
   - go test ./internal/backlog/...
-  - python3 scripts/verify.py
+  - go run ./cmd/komodo lint
 context:
-  - "go.mod at the repo root, module komodo, Go 1.22, no dependencies outside the standard library; komodo/hooks/src moves under internal with its tests"
+  - "go.mod at the repo root, module komodo, Go 1.22, no dependencies outside the standard library; the V1 hook sources at the tag v1-final come in under internal with their tests"
   - "internal/backlog ports tasks.py: parse, lint, list, add, set status, next task id, find backlog at the root or docs; komodo lint and komodo list and komodo add are the first subcommands"
-  - "bin/ holds komodo-darwin-arm64, komodo-windows-amd64.exe, komodo-linux-amd64 and MANIFEST.sha256; a workflow builds all three on a PR and fails when they differ from the committed ones; scripts/verify.py runs go build and go test while Python remains"
+  - "bin/ holds komodo-darwin-arm64, komodo-windows-amd64.exe, komodo-linux-amd64 and MANIFEST.sha256; a workflow builds all three on a PR and fails when they differ from the committed ones"
 type: feat
 ```
 
@@ -195,13 +195,13 @@ type: feat
 
 #### [TSK-03.3.3] Doctor: references, leaks, drift, budgets, prune [P: H] [READY]
 ```yaml
-files: [internal/doctor, cmd/komodo/main.go, scripts/validate.py]
+files: [internal/doctor, cmd/komodo/main.go]
 done_when:
   - go test ./internal/doctor/...
   - go run ./cmd/komodo doctor --no-git
 depends_on: [TSK-03.3.2]
 context:
-  - "keeps V1's checks: backticked references resolve, roles are well formed, changelog and tags agree, git leftovers; adds: a vendor name, host tool, host path, or host flag outside internal/mount fails; the rendered layout differs from what the source renders now fails; always-on context over 1500 tokens, the run skill over 800, or a standard over 8 KB fails, which retires scripts/validate.py"
+  - "keeps V1's checks: backticked references resolve, roles are well formed, changelog and tags agree, git leftovers; adds: a vendor name, host tool, host path, or host flag outside internal/mount fails; the rendered layout differs from what the source renders now fails; always-on context over 1500 tokens, the run skill over 800, or a standard over 8 KB fails"
   - "--prune removes stale worktrees under .komodo/wt and deletes branches merged into base; --json stays"
 type: feat
 ```
@@ -258,7 +258,7 @@ done_when:
 depends_on: [TSK-03.4.1, TSK-03.4.2]
 owner: human
 context:
-  - "run TG-03.5 under the run skill in a Claude Code session; record wall time, tokens, and turns beside the V1 numbers for TG-03.3 from its run state, under a Proof: V1 versus the run skill heading in the 1.5.0 changelog entry"
+  - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 1.5.0 changelog entry"
   - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.5 merges"
 type: docs
 ```
@@ -327,23 +327,23 @@ context:
 type: feat
 ```
 
-### [TG-03.6] Demolition and the exit test
+### [TG-03.6] The gate and the exit test
 ```yaml
 type: chore
 version: 1.5.0
 ```
-* **Why:** nothing from the V1 orchestrator survives, the gate is Go, and the second host proves the mounts are the only host-specific code.
+* **Why:** the gate is Go and runs in CI, and the second host proves the mounts are the only host-specific code.
 
-#### [TSK-03.6.1] The Python goes and `go test` is the gate [P: C] [READY]
+#### [TSK-03.6.1] CI is the gate [P: C] [READY]
 ```yaml
-files: [komodo/pipeline.py, komodo/state.py, komodo/gates.py, komodo/pr.py, komodo/pr_actions.py, komodo/account.py, komodo/gitops.py, komodo/workers, komodo/tasks.py, komodo/dag.py, komodo/render.py, komodo/config.py, komodo/install.py, komodo/doctor.py, komodo/comment_rules.py, komodo/__main__.py, komodo/__init__.py, komodo/adapters, komodo/hooks, tests, scripts]
+files: [.github/workflows]
 done_when:
-  - test ! -f komodo/__main__.py
-  - test ! -d komodo/hooks
   - go vet ./...
   - go test ./...
+  - go run ./cmd/komodo doctor
+  - go run ./cmd/komodo guard check
 context:
-  - "delete, do not stub; komodo/ keeps only AGENTS.md, rules, roles, skills, policy.json; .github runs go vet, go test, komodo doctor, komodo guard check, and the binary match"
+  - "one workflow on a PR: go vet, go test, komodo doctor, komodo guard check, and the binary match from TSK-03.2.1; nothing else, and nothing that a dev machine needs"
 type: chore
 ```
 

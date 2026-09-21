@@ -1,8 +1,8 @@
-# komodo-agentic-toolkit-coding
+# komodo-agentic-coding-assembly-line
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-**Status: V1.5 is planned, not built.** This README is the plan and the requirements. V1, the Python orchestrator under `komodo/`, runs today and builds the first three groups; the last group removes it. Tasks are in `BACKLOG.md`.
+**Status: V1.5 is planned, not built.** This README is the plan and the requirements. The repo was cleared to the markdown source on 2026-09-21; V1 lives at the tag `v1-final` and the branch `archive/v1`. Every task lands on PR #103. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -132,7 +132,7 @@ Both developers run Claude Code today. Nothing outside `internal/mount/` names a
 
 ## Roadmap
 
-Six groups, all `1.5.0`. V1 runs the first three; the run skill runs the rest.
+Six groups, all `1.5.0`, all on PR #103. Sessions build the first four; the run skill runs the last two as its own proof.
 
 | Group | Delivers | Proof |
 |---|---|---|
@@ -141,7 +141,7 @@ Six groups, all `1.5.0`. V1 runs the first three; the run skill runs the rest.
 | TG-03.3 The guard and the mounts | The guard with the 60-command table, install for Claude Code and Codex, doctor with portability and prune, profiles with the plan probe and auto-selection | Guard table in the gate; validate under 1500 tokens |
 | TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the V1 versus V1.5 timing proof | One group each way, numbers in the changelog |
 | TG-03.5 The repo layer and local machines | Context by glob, repo standards, repo skills with `install --project`, commands and additive policy; the bridge; the hybrid and local profiles | Tests, doctor, bridge against a fake Ollama |
-| TG-03.6 Demolition and the exit test | Python deleted, `go test` is the gate, one group under Codex with zero changes outside the mounts, README and templates final, changelog 1.5.0 | Verify passes with nothing left |
+| TG-03.6 The gate and the exit test | CI runs vet, test, doctor, guard check, and the binary match; one task under Codex with zero changes outside the mounts; README and templates final; changelog 1.5.0 | CI green, proof recorded |
 
 ## V1 coverage
 
@@ -198,8 +198,8 @@ Every V1 capability, where it lands, or why it does not.
 Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optional.
 
 ```bash
-git clone <this repo> ~/komodo/ai/komodo-agentic-toolkit-coding
-cd ~/komodo/ai/komodo-agentic-toolkit-coding
+git clone <this repo> ~/komodo/ai/komodo-agentic-coding-assembly-line
+cd ~/komodo/ai/komodo-agentic-coding-assembly-line
 bin/komodo-darwin-arm64 install --host claude     # or the windows or linux binary; --host codex; --host both
 ```
 
