@@ -82,7 +82,7 @@ version: 2.0.0
 * **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
 * **PR B:** `feat/v2-conveyor` from `refactor/v2-markdown`, opened by the session. Validated by `komodo gate`, `komodo lint`, `komodo next --json` printing TG-03.3, `komodo brief --dry-run TSK-03.3.1`, `komodo close` on a hand-written result, `komodo step` printing one action, and a human read of one brief. Merges into `refactor/v2-markdown`.
 
-#### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [READY]
+#### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [DONE]
 ```yaml
 files: [go.mod, cmd/komodo/main.go, internal/backlog, internal/gate, bin, .gitattributes]
 done_when:
