@@ -169,3 +169,70 @@ func TestEverySkillIsCopied(t *testing.T) {
 		t.Fatalf("skill = %q", got)
 	}
 }
+
+func TestPlanNameMapsTheRateLimitTiers(t *testing.T) {
+	cases := map[string]string{
+		"default_claude_max_5x": "max_5x",
+		"default_claude_pro":    "pro",
+		"default_claude_max":    "max_20x",
+		"something_else":        "",
+	}
+	for raw, want := range cases {
+		var parsed account
+		parsed.OAuth.OrganizationRateLimitTier = raw
+		if got := planName(parsed); got != want {
+			t.Errorf("planName(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestPlanNameFallsDownTheTiers(t *testing.T) {
+	var parsed account
+	parsed.OAuth.UserRateLimitTier = "max_20x"
+	if got := planName(parsed); got != "max_20x" {
+		t.Fatalf("planName = %q", got)
+	}
+}
+
+func TestTheProbeStructReadsNoIdentity(t *testing.T) {
+	body := `{"oauthAccount":{"emailAddress":"a@b.c","accountUuid":"u","organizationRateLimitTier":"default_claude_max_5x"},
+	          "cachedUsageUtilization":{"utilization":{"five_hour":{"utilization":42,"resets_at":"2026-09-22T08:00:00Z"}}}}`
+	var parsed account
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if planName(parsed) != "max_5x" {
+		t.Fatalf("plan = %q", planName(parsed))
+	}
+	if parsed.Cached.Utilization.FiveHour.Utilization != 42 {
+		t.Fatalf("utilization = %v", parsed.Cached.Utilization.FiveHour.Utilization)
+	}
+	rendered, err := json.Marshal(parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"a@b.c", "accountUuid", "emailAddress"} {
+		if strings.Contains(string(rendered), forbidden) {
+			t.Fatalf("the probe struct carries %q", forbidden)
+		}
+	}
+}
+
+func TestTheProTierDropsTheHeavyCeiling(t *testing.T) {
+	if Tiers("pro", false).Heavy.Model != models["standard"] {
+		t.Fatal("pro did not lower the heavy tier")
+	}
+	if Tiers("max_5x", false).Heavy.Model != models["heavy"] {
+		t.Fatal("max did not keep the heavy tier")
+	}
+}
+
+func TestOllamaTakesTheLightTierAndTheReviewer(t *testing.T) {
+	tiers := Tiers("max_5x", true)
+	if tiers.Light.Provider != "ollama" || tiers.Reviewer.Provider != "ollama" {
+		t.Fatalf("tiers = %+v", tiers)
+	}
+	if tiers.Standard.Provider == "ollama" {
+		t.Fatal("the builder was moved to the local machine")
+	}
+}

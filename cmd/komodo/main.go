@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -682,7 +681,7 @@ func runInstall(root string, args []string) {
 	host := set.String("host", mount.Names()[0], "a mount name, several separated by commas, or both")
 	dryRun := set.Bool("dry-run", false, "print what would change and write nothing")
 	_ = set.Parse(args)
-	binary := filepath.Join("bin", binaryName())
+	binary := mount.BinaryPath()
 	var chosen []mount.Host
 	for _, name := range strings.Split(*host, ",") {
 		name = strings.TrimSpace(name)
@@ -713,18 +712,6 @@ func runInstall(root string, args []string) {
 			fmt.Printf("%-7s %s\n", action.Verb, action.Path)
 		}
 		fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
-	}
-}
-
-// binaryName is the prebuilt binary for the platform the install runs on.
-func binaryName() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return "komodo-darwin-arm64"
-	case "windows":
-		return "komodo-windows-amd64.exe"
-	default:
-		return "komodo-linux-amd64"
 	}
 }
 

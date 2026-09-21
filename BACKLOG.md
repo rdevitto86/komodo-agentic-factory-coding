@@ -240,7 +240,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.4] Profiles select themselves: host, plan probe, Ollama, and pacing [P: H] [READY]
+#### [TSK-03.3.4] Profiles select themselves: host, plan probe, Ollama, and pacing [P: H] [DONE]
 ```yaml
 files: [internal/profile, internal/mount/claude/limits.go, internal/line/next.go]
 done_when:

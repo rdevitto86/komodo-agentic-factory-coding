@@ -215,7 +215,7 @@ func checkDrift(root string) []Problem {
 		if host.Render == nil {
 			continue
 		}
-		plan, err := host.Render(root, filepath.Join("bin", "komodo"))
+		plan, err := host.Render(root, mount.BinaryPath())
 		if err != nil {
 			problems = append(problems, Problem{"drift", host.Name, err.Error()})
 			continue

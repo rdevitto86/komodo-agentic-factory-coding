@@ -171,6 +171,10 @@ func init() {
 		Name:        "claude",
 		ConfigPaths: []string{"~/.claude/**", "~/.claude.json"},
 		Vendors:     []string{"claude", "anthropic", "sonnet", "opus", "haiku"},
+		HybridName:  "hybrid",
 		Render:      Render,
+		Installed:   Installed,
+		Tiers:       Tiers,
+		Probe:       Probe,
 	})
 }

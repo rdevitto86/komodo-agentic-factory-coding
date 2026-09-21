@@ -100,6 +100,10 @@ func init() {
 		Name:        "codex",
 		ConfigPaths: []string{"~/.codex/**"},
 		Vendors:     []string{"codex", "openai"},
+		HybridName:  "local",
 		Render:      Render,
+		Installed:   Installed,
+		Tiers:       Tiers,
+		Probe:       Probe,
 	})
 }

@@ -1,8 +1,11 @@
 package mount
 
 import (
+	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
+	"time"
 
 	"komodo/internal/install"
 )
@@ -12,7 +15,11 @@ type Host struct {
 	Name        string
 	ConfigPaths []string
 	Vendors     []string
+	HybridName  string
 	Render      func(root, binary string) (install.Plan, error)
+	Installed   func(root string) bool
+	Tiers       func(plan string, ollama bool) Tiers
+	Probe       func() (Usage, bool)
 }
 
 var (
@@ -72,4 +79,50 @@ func ConfigPaths() []string {
 		out = append(out, host.ConfigPaths...)
 	}
 	return out
+}
+
+// BinaryPath is the prebuilt binary for the platform the toolkit runs on.
+func BinaryPath() string {
+	name := "komodo-linux-amd64"
+	switch runtime.GOOS {
+	case "darwin":
+		name = "komodo-darwin-arm64"
+	case "windows":
+		name = "komodo-windows-amd64.exe"
+	}
+	return filepath.Join("bin", name)
+}
+
+// Machine is one model behind a tier: who serves it, which model, and at what effort.
+type Machine struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Effort   string `json:"effort,omitempty"`
+}
+
+// Tiers is a host's whole profile row: a machine per tier, plus the one the reviewer uses.
+type Tiers struct {
+	Light    Machine `json:"light"`
+	Standard Machine `json:"standard"`
+	Heavy    Machine `json:"heavy"`
+	Reviewer Machine `json:"reviewer"`
+}
+
+// Machine returns the machine for one tier name.
+func (t Tiers) Machine(tier string) Machine {
+	switch tier {
+	case "light":
+		return t.Light
+	case "heavy":
+		return t.Heavy
+	default:
+		return t.Standard
+	}
+}
+
+// Usage is what a host's own config says about the account's plan and window.
+type Usage struct {
+	Plan     string    `json:"plan"`
+	FiveHour float64   `json:"five_hour"`
+	ResetsAt time.Time `json:"resets_at"`
 }
