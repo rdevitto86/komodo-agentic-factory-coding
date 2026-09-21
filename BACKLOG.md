@@ -178,7 +178,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.8] `komodo step`: the binary drives the session [P: C] [READY]
+#### [TSK-03.2.8] `komodo step`: the binary drives the session [P: C] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/step_test.go, cmd/komodo/main.go]
 done_when:

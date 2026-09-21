@@ -42,25 +42,52 @@ type Plan struct {
 
 // Next builds the plan for the next ready group, or for the group holding the named task.
 func Next(root, needle string) (*Plan, error) {
+	parsed, group, ok, err := groupFor(root, needle)
+	if err != nil || !ok {
+		return nil, err
+	}
+	plan, err := buildPlan(root, parsed, group, false)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+// PlanForGroup builds a group's plan including the tasks that already closed, which is what step walks.
+func PlanForGroup(root, groupID string) (*Plan, error) {
+	parsed, group, ok, err := groupFor(root, groupID)
+	if err != nil || !ok {
+		return nil, err
+	}
+	return buildPlan(root, parsed, group, true)
+}
+
+// groupFor loads the backlog and picks the group a needle names, or the next ready one.
+func groupFor(root, needle string) (backlog.Backlog, backlog.Group, bool, error) {
 	path, err := backlog.Find(root)
 	if err != nil {
-		return nil, err
+		return backlog.Backlog{}, backlog.Group{}, false, err
 	}
 	parsed, err := backlog.Load(path)
 	if err != nil {
-		return nil, err
+		return backlog.Backlog{}, backlog.Group{}, false, err
 	}
 	group, ok := pick(parsed, needle)
-	if !ok {
-		return nil, nil
-	}
+	return parsed, group, ok, nil
+}
+
+// buildPlan renders one group as intake prints it, optionally keeping the tasks that closed.
+func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, includeClosed bool) (*Plan, error) {
 	var done []string
 	var tasks []backlog.Task
-	for _, task := range group.ReadyTasks() {
-		if task.Owner() != "agent" {
+	for _, task := range group.Tasks {
+		if task.Owner() != "agent" || task.Status == "REFINEMENT" {
 			continue
 		}
-		if HasResult(root, task.ID) {
+		if !includeClosed && !task.Ready() {
+			continue
+		}
+		if HasResult(root, task.ID) || !task.Open() {
 			done = append(done, task.ID)
 		}
 		tasks = append(tasks, task)
@@ -81,7 +108,11 @@ func Next(root, needle string) (*Plan, error) {
 			DependsOn: task.DependsOn(), Done: contains(done, task.ID),
 		})
 	}
-	waves, err := planWaves(group, tasks, done)
+	skip := done
+	if includeClosed {
+		skip = nil
+	}
+	waves, err := planWaves(group, tasks, skip)
 	if err != nil {
 		return nil, err
 	}

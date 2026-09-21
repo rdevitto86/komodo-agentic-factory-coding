@@ -94,7 +94,7 @@ func Taggable(text string, tags []string) []string {
 	return out
 }
 
-// Drift is one disagreement between the changelog, the tags, and the backlog.
+// Drift is one disagreement between the changelog, the tags, and BACKLOG.md.
 type Drift struct {
 	Subject string `json:"subject"`
 	Detail  string `json:"detail"`
@@ -102,7 +102,7 @@ type Drift struct {
 
 var versionTag = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
 
-// Check audits the changelog against the tags and the versions the backlog's groups declare.
+// Check audits the changelog against the tags and the versions each group declares.
 func Check(changelog string, tags, groupVersions []string) []Drift {
 	var drift []Drift
 	named := map[string]bool{}

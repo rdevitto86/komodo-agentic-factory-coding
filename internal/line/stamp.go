@@ -23,7 +23,7 @@ func Stamp(root string, entry ledger.Entry) {
 // Since is the seconds elapsed from a station's start, for the ledger.
 func Since(started time.Time) float64 { return time.Since(started).Seconds() }
 
-// FailureClass names what kind of check rejected a task, for the metrics.
+// FailureClass names which check rejected a task, for the metrics.
 func FailureClass(problems []string) string {
 	for _, problem := range problems {
 		switch {

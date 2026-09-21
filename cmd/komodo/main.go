@@ -36,6 +36,7 @@ const usage = `komodo: the code assembly line.
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
+  komodo step [group|task]    The one next action, as JSON
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
@@ -73,6 +74,8 @@ func main() {
 		runTag(root)
 	case "release":
 		runRelease(root, os.Args[2:])
+	case "step":
+		runStep(root, os.Args[2:])
 	case "metrics":
 		runMetrics(root)
 	case "gate":
@@ -612,4 +615,17 @@ func runMetrics(root string) {
 		fail(err)
 	}
 	fmt.Print(ledger.Render(ledger.Aggregate(entries)))
+}
+
+// runStep prints the one next action of the run.
+func runStep(root string, args []string) {
+	needle := ""
+	if len(args) > 0 {
+		needle = args[0]
+	}
+	next, err := line.Step(root, needle)
+	if err != nil {
+		fail(err)
+	}
+	printJSON(next)
 }
