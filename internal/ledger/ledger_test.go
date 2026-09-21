@@ -146,3 +146,35 @@ func TestAnEmptyLedgerAggregatesToNothing(t *testing.T) {
 		t.Fatalf("metrics = %+v", metrics)
 	}
 }
+
+func TestAnEntryCarriesTokensAndTurnsWhenAMountReportsThem(t *testing.T) {
+	book := New(t.TempDir())
+	if err := book.Stamp(Entry{Run: "r1", Station: "close", Task: "a",
+		Host: "h", TokensIn: 100, TokensOut: 20, Turns: 3}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := book.Read(RunFile)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d", len(entries))
+	}
+	got := entries[0]
+	if got.TokensIn != 100 || got.TokensOut != 20 || got.Turns != 3 || got.Host != "h" {
+		t.Fatalf("entry = %+v", got)
+	}
+}
+
+func TestAnEntryLeavesTokensEmptyWhenNoMountCanSay(t *testing.T) {
+	book := New(t.TempDir())
+	if err := book.Stamp(Entry{Run: "r1", Station: "close", Task: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(book.Dir, RunFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"tokens_in", "tokens_out", "turns"} {
+		if strings.Contains(string(body), field) {
+			t.Fatalf("an unknown count was written as a guess: %s", body)
+		}
+	}
+}

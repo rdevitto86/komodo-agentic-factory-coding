@@ -253,7 +253,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.5] Each mount reports a machine's usage after the fact [P: H] [READY]
+#### [TSK-03.3.5] Each mount reports a machine's usage after the fact [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/usage.go, internal/mount/codex/usage.go, internal/ledger]
 done_when:

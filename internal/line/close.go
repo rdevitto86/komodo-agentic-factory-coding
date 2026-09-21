@@ -13,6 +13,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
 	"komodo/internal/ledger"
+	"komodo/internal/mount"
 )
 
 // MaxRepairs is how many times one task may come back for a repair before it blocks.
@@ -61,6 +62,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	}
 	outcome.Problems = problems
 	entry := ledger.Entry{Task: taskID, Station: "close", Seconds: Since(started)}
+	fillUsage(root, taskID, started, &entry)
 	if len(problems) == 0 {
 		outcome.Status = "DONE"
 		clearAttempt(root, taskID)
@@ -230,4 +232,30 @@ func RepairText(root, taskID string) string {
 		text += "\n\n# The diff your last attempt left\n" + attempt.Diff
 	}
 	return text
+}
+
+// fillUsage asks the installed mount what the machine spent, and leaves the fields empty when it cannot say.
+func fillUsage(root, taskID string, until time.Time, entry *ledger.Entry) {
+	since := briefTime(root, taskID)
+	for _, host := range mount.Hosts() {
+		if host.Usage == nil || host.Installed == nil || !host.Installed(root) {
+			continue
+		}
+		usage, ok := host.Usage(root, taskID, since, until)
+		if !ok {
+			continue
+		}
+		entry.Host = host.Name
+		entry.TokensIn, entry.TokensOut, entry.Turns = usage.TokensIn, usage.TokensOut, usage.Turns
+		return
+	}
+}
+
+// briefTime is when the task's brief was written, which opens the window the usage covers.
+func briefTime(root, taskID string) time.Time {
+	info, err := os.Stat(filepath.Join(root, StateDir, "briefs", taskID+".md"))
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
 }

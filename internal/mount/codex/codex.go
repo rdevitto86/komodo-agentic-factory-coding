@@ -105,5 +105,6 @@ func init() {
 		Installed:   Installed,
 		Tiers:       Tiers,
 		Probe:       Probe,
+		Usage:       Usage,
 	})
 }

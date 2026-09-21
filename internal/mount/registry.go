@@ -20,6 +20,14 @@ type Host struct {
 	Installed   func(root string) bool
 	Tiers       func(plan string, ollama bool) Tiers
 	Probe       func() (Usage, bool)
+	Usage       func(root, task string, since, until time.Time) (TaskUsage, bool)
+}
+
+// TaskUsage is what one machine spent on one task, filled after the fact or left empty.
+type TaskUsage struct {
+	TokensIn  int `json:"tokens_in"`
+	TokensOut int `json:"tokens_out"`
+	Turns     int `json:"turns"`
 }
 
 var (
