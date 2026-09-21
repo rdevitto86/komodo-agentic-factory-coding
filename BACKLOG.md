@@ -62,7 +62,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.1.4] The merger role goes; the responder stays as a session role [P: M] [READY]
+#### [TSK-03.1.4] The merger role goes; the responder stays as a session role [P: M] [DONE]
 ```yaml
 files: [komodo/roles/merger.md, komodo/roles/responder.md]
 done_when:
