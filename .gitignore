@@ -1,13 +1,6 @@
-# Python bytecode
-__pycache__/
-*.pyc
-
 # Local session and run state, never shared
 .claude/
 .komodo/
 
 # Editor / OS noise
 .DS_Store
-
-# go build output from komodo/hooks/src
-komodo/hooks/src/hooks
