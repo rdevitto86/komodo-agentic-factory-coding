@@ -213,7 +213,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.2] `komodo install --host claude|codex|both`: the mounts [P: C] [READY]
+#### [TSK-03.3.2] `komodo install --host claude|codex|both`: the mounts [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude, internal/mount/codex, internal/install, cmd/komodo/main.go]
 done_when:

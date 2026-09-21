@@ -1,0 +1,113 @@
+package codex
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// toolkit builds a root with the rules, two roles, and a skill.
+func toolkit(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("komodo/AGENTS.md", "# Agent Rules\n\n{{accessibility}}\n")
+	write("komodo/rules/accessibility.md", "## Writing for a human\n- **Answer first.**\n")
+	write("komodo/roles/builder.md", "---\nname: builder\ndescription: Writes code.\ntier: standard\n"+
+		"tools: [read, edit, write, shell, search]\nsession: true\nreturns: builder.schema.json\n---\n\nYou are a builder.\n")
+	write("komodo/roles/reviewer.md", "---\nname: reviewer\ndescription: Reviews a diff.\ntier: heavy\n"+
+		"tools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\nYou review one diff.\n")
+	write("komodo/skills/run/SKILL.md", "---\nname: run\n---\n\nCall komodo step.\n")
+	return root
+}
+
+// body returns one planned file's contents.
+func body(t *testing.T, root, rel string) string {
+	t.Helper()
+	plan, err := Render(root, "bin/komodo-linux-amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range plan.Changes {
+		if change.Path == filepath.Join(root, rel) {
+			return string(change.Body)
+		}
+	}
+	t.Fatalf("%s is not in the plan", rel)
+	return ""
+}
+
+func TestAnAgentCarriesEveryTomlKey(t *testing.T) {
+	root := toolkit(t)
+	agent := body(t, root, filepath.Join(Dir, "agents", "builder.toml"))
+	for _, want := range []string{
+		`name = "builder"`, `description = "Writes code."`, `model = "standard"`,
+		`model_reasoning_effort = "medium"`, `sandbox_mode = "workspace-write"`, "developer_instructions =",
+	} {
+		if !strings.Contains(agent, want) {
+			t.Errorf("the agent is missing %q:\n%s", want, agent)
+		}
+	}
+}
+
+func TestAReadOnlyRoleGetsAReadOnlySandbox(t *testing.T) {
+	root := toolkit(t)
+	agent := body(t, root, filepath.Join(Dir, "agents", "reviewer.toml"))
+	if !strings.Contains(agent, `sandbox_mode = "read-only"`) {
+		t.Fatalf("agent = %s", agent)
+	}
+	if !strings.Contains(agent, `model = "large"`) || !strings.Contains(agent, `model_reasoning_effort = "high"`) {
+		t.Fatalf("the heavy tier did not map: %s", agent)
+	}
+}
+
+func TestSkillsLandUnderTheHostsSkillDirectory(t *testing.T) {
+	root := toolkit(t)
+	if got := body(t, root, filepath.Join(SkillsDir, "run", "SKILL.md")); !strings.Contains(got, "komodo step") {
+		t.Fatalf("skill = %q", got)
+	}
+}
+
+func TestTheGuardIsRegisteredAndNoMCP(t *testing.T) {
+	root := toolkit(t)
+	raw := body(t, root, filepath.Join(Dir, "hooks.json"))
+	var hooks struct {
+		Hooks []struct {
+			Event   string `json:"event"`
+			Command string `json:"command"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(raw), &hooks); err != nil {
+		t.Fatalf("hooks are not JSON: %v", err)
+	}
+	if len(hooks.Hooks) != 1 || hooks.Hooks[0].Event != "PreToolUse" {
+		t.Fatalf("hooks = %+v", hooks.Hooks)
+	}
+	if !strings.HasSuffix(hooks.Hooks[0].Command, " guard") {
+		t.Fatalf("command = %q", hooks.Hooks[0].Command)
+	}
+	plan, _ := Render(root, "komodo")
+	for _, change := range plan.Changes {
+		if strings.Contains(string(change.Body), "mcp") {
+			t.Fatalf("%s names MCP", change.Path)
+		}
+	}
+}
+
+func TestTheRulesAreRenderedWithTheContract(t *testing.T) {
+	root := toolkit(t)
+	rules := body(t, root, filepath.Join(Dir, "komodo", "AGENTS.md"))
+	if strings.Contains(rules, "{{accessibility}}") || !strings.Contains(rules, "Answer first") {
+		t.Fatalf("rules = %q", rules)
+	}
+}

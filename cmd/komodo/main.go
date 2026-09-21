@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -18,8 +19,12 @@ import (
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 	"komodo/internal/pr"
 	"komodo/internal/release"
+
+	_ "komodo/internal/mount/claude"
+	_ "komodo/internal/mount/codex"
 )
 
 const usage = `komodo: the code assembly line.
@@ -37,6 +42,7 @@ const usage = `komodo: the code assembly line.
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
+  komodo install --host X     Mount this repo on a host, or on both
   komodo guard [check]        The one agent hook; check runs its table
   komodo step [group|task]    The one next action, as JSON
   komodo metrics              What the two ledger files hold
@@ -76,6 +82,8 @@ func main() {
 		runTag(root)
 	case "release":
 		runRelease(root, os.Args[2:])
+	case "install":
+		runInstall(root, os.Args[2:])
 	case "guard":
 		runGuard(root, os.Args[2:])
 	case "step":
@@ -649,4 +657,56 @@ func runGuard(root string, args []string) {
 		return
 	}
 	os.Exit(guard.Hook(root, os.Stdin, os.Stdout, os.Stderr))
+}
+
+// runInstall renders this repo's host configuration, or prints what it would change.
+func runInstall(root string, args []string) {
+	set := flag.NewFlagSet("install", flag.ExitOnError)
+	host := set.String("host", mount.Names()[0], "a mount name, several separated by commas, or both")
+	dryRun := set.Bool("dry-run", false, "print what would change and write nothing")
+	_ = set.Parse(args)
+	binary := filepath.Join("bin", binaryName())
+	var chosen []mount.Host
+	for _, name := range strings.Split(*host, ",") {
+		name = strings.TrimSpace(name)
+		if name == "both" || name == "all" {
+			chosen = mount.Hosts()
+			break
+		}
+		found, ok := mount.Get(name)
+		if !ok {
+			fail(fmt.Errorf("unknown host %q; mounted: %s", name, strings.Join(mount.Names(), ", ")))
+		}
+		chosen = append(chosen, found)
+	}
+	for _, host := range chosen {
+		plan, err := host.Render(root, binary)
+		if err != nil {
+			fail(err)
+		}
+		if *dryRun {
+			plan.Print(os.Stdout)
+			continue
+		}
+		done, err := plan.Apply()
+		if err != nil {
+			fail(err)
+		}
+		for _, action := range done {
+			fmt.Printf("%-7s %s\n", action.Verb, action.Path)
+		}
+		fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
+	}
+}
+
+// binaryName is the prebuilt binary for the platform the install runs on.
+func binaryName() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "komodo-darwin-arm64"
+	case "windows":
+		return "komodo-windows-amd64.exe"
+	default:
+		return "komodo-linux-amd64"
+	}
 }

@@ -2,6 +2,8 @@ package guard
 
 import (
 	"encoding/json"
+
+	"komodo/internal/mount"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,8 +20,14 @@ func worktree(t *testing.T) string {
 	return root
 }
 
+// registerFakeHost puts one mount in the registry so the policy protects a host home.
+func registerFakeHost() {
+	mount.Register(mount.Host{Name: "testhost", ConfigPaths: []string{"~/.testhost/**"}})
+}
+
 func TestTableHoldsAtLeastSixtyCommandsHalfAllowed(t *testing.T) {
-	table := Table()
+	registerFakeHost()
+	table := Table(DefaultPolicy())
 	if len(table) < 60 {
 		t.Fatalf("the table runs %d commands; the gate needs at least 60", len(table))
 	}
@@ -36,6 +44,7 @@ func TestTableHoldsAtLeastSixtyCommandsHalfAllowed(t *testing.T) {
 }
 
 func TestEveryTableRowHoldsAndEachDenialIsNamed(t *testing.T) {
+	registerFakeHost()
 	root := worktree(t)
 	if wrong := RunTable(root, DefaultPolicy()); len(wrong) != 0 {
 		t.Fatalf("%d row(s) wrong:\n%s", len(wrong), strings.Join(wrong, "\n"))
@@ -43,7 +52,8 @@ func TestEveryTableRowHoldsAndEachDenialIsNamed(t *testing.T) {
 }
 
 func TestEveryDeniedRowNamesAFinding(t *testing.T) {
-	for _, item := range Table() {
+	registerFakeHost()
+	for _, item := range Table(DefaultPolicy()) {
 		if item.Deny && item.Finding == "" {
 			t.Errorf("%q is denied with no finding named", item.Name)
 		}
@@ -56,6 +66,20 @@ func TestCheckIsSilentOnAReadTool(t *testing.T) {
 		ToolInput: map[string]any{"file_path": "/etc/hosts"}}
 	if Check(request, DefaultPolicy(), "feat/x").Deny {
 		t.Fatal("the guard denied a read")
+	}
+}
+
+func TestAHostsConfigPathsReachThePolicy(t *testing.T) {
+	registerFakeHost()
+	policy := DefaultPolicy()
+	found := false
+	for _, path := range policy.ConfigPaths {
+		if path == "~/.testhost/**" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a registered mount's paths did not reach the policy: %v", policy.ConfigPaths)
 	}
 }
 

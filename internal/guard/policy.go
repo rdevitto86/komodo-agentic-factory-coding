@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"komodo/internal/mount"
 )
 
 // Policy is what the guard refuses, read from the toolkit and widened by a repo.
@@ -22,10 +24,9 @@ type Policy struct {
 func DefaultPolicy() Policy {
 	policy := Policy{
 		CriticalRefs: []string{"main", "master"},
-		ConfigPaths: []string{
-			"~/.claude/**", "~/.claude.json", "~/.codex/**", "~/.komodo/**",
-			"**/.git/config", "**/.git/hooks/**", "bin/**",
-		},
+		ConfigPaths: append([]string{
+			"~/.komodo/**", "**/.git/config", "**/.git/hooks/**", "bin/**",
+		}, mount.ConfigPaths()...),
 		TrailerPatterns: []string{
 			`(?i)co-authored[-]by\s*:`, `(?i)generated[ ]with`, `(?i)generated[ ]by`, `\x{1F916}`,
 		},
