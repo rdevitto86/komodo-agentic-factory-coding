@@ -415,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="run one task group end to end")
     run.add_argument("group", nargs="?", help="TG id or a substring of its id or title; default: first open group")
-    run.add_argument("--profile", choices=None, help="fast or thinking (or any profile in komodo.json)")
+    run.add_argument("--profile", choices=None, help="fast, thinking, local, or any profile added in .komodo/config.json")
     run.add_argument("--dry-run", action="store_true", help="print waves, briefs, and token estimates; spawn nothing")
     run.add_argument("--resume", action="store_true", help="continue the unfinished run for this group")
     run.set_defaults(func=cmd_run)
@@ -477,7 +477,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr_sub.add_parser("threads", help="list unresolved review threads")
     label = pr_sub.add_parser("label")
     label.add_argument("labels", nargs="*")
-    label.add_argument("--auto", action="store_true", help="derive labels from the PR's commit type and komodo.json")
+    label.add_argument("--auto", action="store_true", help="derive labels from the PR's commit type")
     comment_pr = pr_sub.add_parser("comment")
     comment_pr.add_argument("body")
     reply = pr_sub.add_parser("reply")

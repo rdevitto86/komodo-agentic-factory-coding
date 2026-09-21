@@ -15,12 +15,13 @@ A platform-agnostic agent library and harness. `komodo/` holds the rules, roles,
 | `komodo/*.py` | The orchestrator. `python3 -m komodo` is the only entry point |
 | `tests/` | `unittest` suites |
 | `scripts/verify.py` | This repo's gate: tests, `validate.py`, comment lint, doctor |
-| `templates/project/` | Starters for a new repo: `AGENTS.md`, `BACKLOG.md`, `CHANGELOG.md`, `komodo.json`, `docs/spec/` |
+| `templates/project/` | Starters for a new repo: `AGENTS.md`, `BACKLOG.md`, `CHANGELOG.md`, `docs/spec/` |
 
 ## Rules that hold here
 
 - **One source, rendered.** A rule, a role, or a standard is written once under `komodo/`. Nothing platform-specific is hand-maintained; an adapter renders it. No `claude-code/` directory may exist.
-- **Roles declare tiers, profiles map tiers to models.** A role says `tier: standard`; a profile says what `standard` means, defaulting in `komodo/config.py` and overridable in `komodo.json`. A model name never appears in a role file.
+- **Roles declare tiers, profiles map tiers to models.** A role says `tier: standard`; a profile says what `standard` means, defaulting in `komodo/config.py`. A model name never appears in a role file.
+- **No repo config file is required.** Defaults live in `komodo/config.py`; a machine may overlay `.komodo/config.json`, which the toolkit owns and gitignores. Nothing refuses to run because a config file is missing, and no repo carries one.
 - **Limits come from the account, not from a constant.** `komodo/account.py` reads `claude auth status` once per run; the plan sets the turn cap, the model ceiling and the timeout, and a subscription drops the dollar cap the account never charges. Undetected falls back to the conservative path, never to a failed run.
 - **Guarantees live in code.** `komodo/gitops.py` is the only git writer and refuses protected refs, force, amend, and trailers. Workers run with `worker_env()`, which strips every push credential.
 - **Nothing in `komodo/` imports outside the standard library.** Floor is Python 3.9.

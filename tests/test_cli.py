@@ -78,7 +78,7 @@ class RepoRootTests(unittest.TestCase):
 
 
 class LoadConfigTests(unittest.TestCase):
-    def test_defaults_when_no_komodo_json(self):
+    def test_defaults_when_no_config_file(self):
         with tempfile.TemporaryDirectory() as root:
             config = cli.load_config(root)
             self.assertEqual(config.data["profile"], "fast")
@@ -177,8 +177,9 @@ class HooksCommandTests(unittest.TestCase):
 
 
 def pin_plan(root, plan):
-    """Pins a plan in komodo.json so a status assertion does not depend on the machine's account."""
-    with open(os.path.join(root, "komodo.json"), "w") as handle:
+    """Pins a plan in the toolkit's own config so a status assertion does not depend on the machine's account."""
+    os.makedirs(os.path.join(root, ".komodo"), exist_ok=True)
+    with open(os.path.join(root, ".komodo", "config.json"), "w") as handle:
         json.dump({"account": {"detect": False, "plan": plan}}, handle)
 
 
@@ -269,7 +270,8 @@ class MainTests(unittest.TestCase):
     def test_config_error_is_caught_and_reported(self):
         with tempfile.TemporaryDirectory() as root:
             make_repo(root)
-            with open(os.path.join(root, "komodo.json"), "w") as handle:
+            os.makedirs(os.path.join(root, ".komodo"), exist_ok=True)
+            with open(os.path.join(root, ".komodo", "config.json"), "w") as handle:
                 handle.write('{"profile": "nope"}')
             with chdir(root):
                 code = cli.main(["status"])

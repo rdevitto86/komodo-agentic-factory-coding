@@ -96,7 +96,8 @@ def make_repo(root):
     os.makedirs(os.path.join(root, "other"))
     open(os.path.join(root, "pkg", "__init__.py"), "w").close()
     open(os.path.join(root, "other", "__init__.py"), "w").close()
-    with open(os.path.join(root, "komodo.json"), "w") as handle:
+    os.makedirs(os.path.join(root, ".komodo"), exist_ok=True)
+    with open(os.path.join(root, ".komodo", "config.json"), "w") as handle:
         json.dump({"profile": "fast", "worker_timeout_s": 60, "severity_floor": "high", "account": {"detect": False, "plan": "max"}, "profiles": {"fast": {"roles": {"reviewer": {"min_diff_lines": 0}}}}}, handle)
     git("add", "-A")
     git("commit", "-q", "-m", "init")

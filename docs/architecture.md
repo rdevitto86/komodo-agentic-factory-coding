@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TB
     BL[BACKLOG.md<br/>task grammar] --> P[komodo/pipeline.py]
-    CFG[komodo.json + .komodo/local.json<br/>profiles, protections, budgets] --> P
+    CFG[komodo/config.py defaults<br/>+ claude auth status<br/>profiles, protections, limits] --> P
     P --> ST[(.komodo/runs/id/state.json<br/>report.md)]
     P -->|Brief| WC[workers/claude.py<br/>claude -p, flags from the role spec]
     P -->|Brief| WO[workers/ollama.py<br/>summarize only]

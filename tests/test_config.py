@@ -6,6 +6,13 @@ import unittest
 from komodo import config
 
 
+def _config_path(root):
+    """The toolkit's own config path under root, created on demand."""
+    path = os.path.join(root, config.LOCAL_FILE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
+
+
 class ConfigTests(unittest.TestCase):
     def test_defaults_load_without_files(self):
         with tempfile.TemporaryDirectory() as root:
@@ -16,22 +23,30 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(cfg.is_protected("refs/heads/master"))
             self.assertFalse(cfg.is_protected("feat/x"))
 
-    def test_team_then_local_overlay(self):
+    def test_the_toolkit_config_overlays_the_defaults(self):
         with tempfile.TemporaryDirectory() as root:
-            with open(os.path.join(root, "komodo.json"), "w") as handle:
-                json.dump({"profile": "thinking", "severity_floor": "medium"}, handle)
-            os.makedirs(os.path.join(root, ".komodo"))
-            with open(os.path.join(root, ".komodo", "local.json"), "w") as handle:
-                json.dump({"profiles": {"thinking": {"roles": {"builder": {"model": "haiku"}}}}}, handle)
+            with open(_config_path(root), "w") as handle:
+                json.dump({"profile": "thinking", "severity_floor": "medium", "account": {"plan": "max"},
+                           "profiles": {"thinking": {"roles": {"builder": {"model": "haiku"}}}}}, handle)
             cfg = config.Config.load(root)
             self.assertEqual(cfg.get("severity_floor"), "medium")
             self.assertEqual(cfg.role("builder")["model"], "haiku")
             self.assertEqual(cfg.role("builder")["provider"], "claude")
             self.assertEqual(cfg.role("builder", "fast")["model"], "sonnet")
 
+    def test_a_repo_with_no_config_file_is_fully_workable(self):
+        with tempfile.TemporaryDirectory() as root:
+            cfg = config.Config.load(root)
+            self.assertFalse(os.path.exists(os.path.join(root, "komodo.json")))
+            self.assertFalse(os.path.exists(os.path.join(root, config.LOCAL_FILE)))
+            self.assertEqual(cfg.get("profile"), "fast")
+            self.assertTrue(cfg.protected)
+            self.assertTrue(cfg.role("builder")["max_turns"] > 0)
+            self.assertTrue(cfg.worker_timeout(0) > 0)
+
     def test_unknown_provider_rejected(self):
         with tempfile.TemporaryDirectory() as root:
-            with open(os.path.join(root, "komodo.json"), "w") as handle:
+            with open(_config_path(root), "w") as handle:
                 json.dump({"profiles": {"fast": {"tiers": {"standard": {"provider": "gemini"}}}}}, handle)
             with self.assertRaises(config.ConfigError):
                 config.Config.load(root)

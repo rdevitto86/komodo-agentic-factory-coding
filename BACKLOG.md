@@ -318,6 +318,21 @@ context: ["cicd.md requires an ephemeral runner per PR and an OS matrix; this re
 #### [TSK-02.6.6] `komodo/__init__.py` pins `__version__` at 1.1.0 while the changelog has released past it [P: L] [REFINEMENT]
 * `komodo status` and `komodo --version` print a version the repo left behind; decide whether the version is read from the changelog or bumped by the release command.
 
+### [TG-02.10] No repo config file
+```yaml
+type: refactor
+version: 1.3.0
+```
+* **Why:** `komodo.json` was a required-looking file that carried nothing. This repo's copy was fifteen keys, all fifteen identical to `komodo/config.py` DEFAULTS. Its only load-bearing read was the git guard's `protected` list, whose built-in fallback is the same list. An agent refused valid work because the file was absent, which is the whole cost of having it.
+
+#### [TSK-02.10.1] Delete `komodo.json` and every read of it [P: H] [DONE]
+```yaml
+files: [komodo/config.py, komodo/gitops.py, komodo/pr_actions.py, komodo/__main__.py, komodo/adapters/claude/hooks/guard.py, komodo/hooks/src/repo.go, tests/test_config.py]
+done_when:
+  - python3 scripts/verify.py
+context: ["defaults live in komodo/config.py, and a machine may overlay .komodo/config.json, which the toolkit owns and gitignores", "both guards read the toolkit path instead, and the Go binaries are rebuilt from source", "gitops no longer tells the caller to set base in a config file; it names what it looked for and points at --base", "the repo's own komodo.json and templates/project/komodo.json.tmpl are deleted, so a new repo is never handed one"]
+```
+
 ### [TG-02.9] Account-aware limits
 ```yaml
 type: feat
@@ -332,7 +347,7 @@ version: 1.3.0
 files: [komodo/account.py, komodo/config.py, tests/test_account.py, tests/test_config.py]
 done_when:
   - python3 -m unittest tests.test_account tests.test_config -q
-context: ["the probe runs once per process and caches on the Config; a missing binary, a non-zero exit, a timeout or unparseable output all yield an undetected account", "undetected keeps today's behaviour, dollar cap included, rather than failing the run", "the email and orgId the command also returns are never read or logged", "`account.detect: false` and `account.plan` in komodo.json pin a plan for an offline or deliberate run"]
+context: ["the probe runs once per process and caches on the Config; a missing binary, a non-zero exit, a timeout or unparseable output all yield an undetected account", "undetected keeps today's behaviour, dollar cap included, rather than failing the run", "the email and orgId the command also returns are never read or logged", "`account.detect: false` and `account.plan` in the toolkit's own `.komodo/config.json` pin a plan for an offline or deliberate run"]
 ```
 
 #### [TSK-02.9.2] Derive the caps from the plan, and drop the dollar cap when dollars are not metered [P: H] [DONE]
@@ -341,7 +356,7 @@ files: [komodo/account.py, komodo/config.py, komodo/workers/claude.py, tests/tes
 done_when:
   - python3 -m unittest tests.test_account tests.test_workers_briefs -q
 depends_on: [TSK-02.9.1]
-context: ["turn caps are solved from the measured law rather than guessed: turns = sqrt(plan_input_budget x tier_share / 1400), so headroom is granted in tokens", "pro and unknown get 4M input tokens at standard tier (53 turns, close to the old 60); max gets 12M (92 turns)", "a turn cap written into komodo.json still wins, because derivation only fills an unset one", "an error names which ceiling bound and what the worker had spent, so a raise is not a guess"]
+context: ["turn caps are solved from the measured law rather than guessed: turns = sqrt(plan_input_budget x tier_share / 1400), so headroom is granted in tokens", "pro and unknown get 4M input tokens at standard tier (53 turns, close to the old 60); max gets 12M (92 turns)", "an explicitly set turn cap still wins, because derivation only fills an unset one", "an error names which ceiling bound and what the worker had spent, so a raise is not a guess"]
 ```
 
 #### [TSK-02.9.3] The plan sets the model ceiling, for harness workers and rendered session agents alike [P: H] [DONE]

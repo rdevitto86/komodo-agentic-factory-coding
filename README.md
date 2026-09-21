@@ -65,12 +65,12 @@ flowchart LR
 | Review | one reviewer over the group diff | 1 |
 | Publish, report | code and `gh` | 0 |
 
-Roles declare a tier (`light`, `standard`, `heavy`). Profiles map tiers to a provider, model, and effort. Three ship as defaults in `komodo/config.py`; `komodo.json` and `.komodo/local.json` override them:
+Roles declare a tier (`light`, `standard`, `heavy`). Profiles map tiers to a provider, model, and effort. Three ship as defaults in `komodo/config.py`, and the detected account caps what any of them may reach:
 
 | Profile | light | standard | heavy | For |
 |---|---|---|---|---|
-| `fast` | Haiku low | Sonnet medium, $2 cap | Sonnet medium; review skipped under 150 diff lines | Pro plans, small groups |
-| `thinking` | Haiku low | Sonnet high | Opus high | Max plans, hard groups |
+| `fast` | Haiku low | Sonnet medium | Sonnet medium; review skipped under 150 diff lines | Small groups |
+| `thinking` | Haiku low | Sonnet high | Opus high, capped to Sonnet below a Max plan | Hard groups |
 | `local` | Ollama | Ollama | Ollama | Air-gapped use; summarize and review today, build once a tool-capable local runtime exists |
 
 ## Enforcement layers
@@ -114,7 +114,7 @@ komodo/                the library and the orchestrator (stdlib only)
 └── __main__.py        CLI: run, status, tasks, comments, hooks, install, doctor, pr, release
 tests/                 unittest suites
 scripts/verify.py      the gate this repo runs
-templates/project/     AGENTS.md, CLAUDE.md, BACKLOG.md, CHANGELOG.md, komodo.json templates, docs/spec starters
+templates/project/     AGENTS.md, CLAUDE.md, BACKLOG.md, CHANGELOG.md templates, docs/spec starters
 ```
 
 There is no hand-maintained Claude directory. `python3 -m komodo install` renders the adapter into `~/.claude`: `AGENTS.md`, one agent file per session role with model and effort from the active profile's tiers, two procedure skills built from `komodo/rules/`, a review skill from the reviewer role, one thin pointer skill per standard, the session hooks, and a settings policy merged into your personal `settings.json`. Another tool gets another adapter with the same inputs.

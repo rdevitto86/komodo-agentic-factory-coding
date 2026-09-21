@@ -27,10 +27,10 @@ DESTRUCTIVE = {
 
 
 def protected_patterns() -> tuple:
-    """Patterns from the repo's komodo.json when present, else the built-in set."""
+    """Patterns from the toolkit's own .komodo/config.json when present, else the built-in set."""
     try:
         root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=3).stdout.strip()
-        path = os.path.join(root, "komodo.json")
+        path = os.path.join(root, ".komodo", "config.json")
         if root and os.path.isfile(path):
             data = json.load(open(path, encoding="utf-8"))
             if isinstance(data.get("protected"), list):

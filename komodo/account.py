@@ -73,7 +73,7 @@ class Account:
         if not self.logged_in:
             return "not logged in"
         plan = self.plan if self.plan != UNKNOWN else "no subscription"
-        source = " (pinned in komodo.json)" if self.pinned else ""
+        source = " (pinned)" if self.pinned else ""
         return "%s%s via %s/%s, metered in %s" % (plan, source, self.auth_method or "?", self.api_provider or "?", self.metered)
 
 
@@ -121,7 +121,7 @@ def parse_status(stdout: str) -> Account:
 
 
 def pinned(plan: str) -> Account:
-    """The account a komodo.json plan override stands for: a subscription on that plan, probe or no probe."""
+    """The account a pinned plan stands for: a subscription on that plan, probe or no probe."""
     name = str(plan or "").strip().lower()
     return Account(logged_in=True, auth_method="claude.ai", api_provider="firstParty",
                    plan=name if name in PLANS else UNKNOWN, detected=True, pinned=True)

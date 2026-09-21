@@ -25,7 +25,7 @@ Preflight (lint, waves, clean tree, tag a merged version still untagged), branch
 ## Rules for the session
 - Run `--dry-run` first when the group is new or large; read the wave plan before spending.
 - Never run the pipeline steps by hand around the CLI. If the CLI refuses, fix the cause it names.
-- A PR opened by hand carries no labels; `pr label --auto` reads the commit type from the title and adds what `komodo.json` maps it to. The pipeline already labels every PR it opens.
+- A PR opened by hand carries no labels; `pr label --auto` reads the commit type from the title and adds what the label map names. The pipeline already labels every PR it opens.
 - A BLOCKED task in the report is a task for a human or a backlog fix, not a reason to edit the branch directly.
 - A group declares `version: x.y.z` in `BACKLOG.md` and close-out copies it into the changelog heading, in the same commit as the code. Nothing infers a version, so the changelog and the tag cannot disagree.
 - `release check` is the release-integrity gate and runs inside `make verify`: an entry with no tag, a tag with no entry, and a date-separator mismatch each fail it. A version tagged over by a later one carries a `> Never released` blockquote and is skipped.

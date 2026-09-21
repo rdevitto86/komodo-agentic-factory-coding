@@ -1,4 +1,4 @@
-"""komodo.json (team) merged with .komodo/local.json (personal): profiles map tiers to providers, roles declare tiers."""
+"""Built-in defaults, optionally overlaid by the toolkit's own .komodo/config.json: profiles map tiers to providers, roles declare tiers."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional
 from . import account as account_probe
 from . import roles as role_defs
 
-TEAM_FILE = "komodo.json"
-LOCAL_FILE = os.path.join(".komodo", "local.json")
+# The toolkit owns and gitignores this path; no repo is required to carry a config file.
+LOCAL_FILE = os.path.join(".komodo", "config.json")
 TIERS = ("light", "standard", "heavy")
 PROVIDERS = ("claude", "ollama")
 
@@ -105,12 +105,11 @@ class Config:
 
     @classmethod
     def load(cls, root: str, overrides: Optional[Dict[str, Any]] = None) -> "Config":
-        """Defaults, then komodo.json, then .komodo/local.json, then explicit overrides."""
+        """Defaults, then .komodo/config.json when one exists, then explicit overrides."""
         data = copy.deepcopy(DEFAULTS)
-        for relative in (TEAM_FILE, LOCAL_FILE):
-            path = os.path.join(root, relative)
-            if os.path.isfile(path):
-                data = _deep_merge(data, _read_json(path))
+        path = os.path.join(root, LOCAL_FILE)
+        if os.path.isfile(path):
+            data = _deep_merge(data, _read_json(path))
         if overrides:
             data = _deep_merge(data, overrides)
         config = cls(data, root)
