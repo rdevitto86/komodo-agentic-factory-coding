@@ -7,7 +7,7 @@ import os
 import re
 import shutil
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from . import briefs, dag, gates, gitops, pr, render, standards, tasks
 from .config import Config
@@ -17,10 +17,26 @@ from .workers import Brief, Result, worker_for
 
 SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 WORKTREE_DIR = os.path.join(".komodo", "wt")
+KOMODO_GITIGNORE = re.compile(r"^/?\.komodo/?$")
+GLOBAL_LINT_MARKERS = ("duplicate group id", "duplicate task id", "depends_on names unknown task")
 
 
 class PipelineError(RuntimeError):
     """A condition that stops the run before or between phases, with a message for the human."""
+
+
+def _scope_lint(problems: List[str], group: Group) -> Tuple[List[str], List[str]]:
+    """Splits backlog lint problems into ones that block this group and ones worth only a warning."""
+    scoped_ids = {group.id} | {task.id for task in group.tasks}
+    blocking, warnings = [], []
+    for problem in problems:
+        token = problem.split(":", 1)[0].split(" ", 1)[0]
+        is_global = problem.startswith("line ") or any(marker in problem for marker in GLOBAL_LINT_MARKERS)
+        if is_global or token in scoped_ids:
+            blocking.append(problem)
+        else:
+            warnings.append(problem)
+    return blocking, warnings
 
 
 class Pipeline:
@@ -176,12 +192,14 @@ class Pipeline:
         if self.backlog_path is None:
             raise PipelineError("no BACKLOG.md in %s; write one in the task grammar first" % self.root)
         self.backlog = tasks.load(self.backlog_path)
-        problems = tasks.lint(self.backlog)
-        if problems:
-            raise PipelineError("BACKLOG.md fails lint:\n  " + "\n  ".join(problems[:20]))
         self.group = self.backlog.group(needle) if needle else self.backlog.next_group()
         if self.group is None:
             raise PipelineError("no task group with ready agent work" + (" matching %r" % needle if needle else ""))
+        blocking, warnings = _scope_lint(tasks.lint(self.backlog), self.group)
+        if blocking:
+            raise PipelineError("BACKLOG.md fails lint for %s:\n  " % self.group.id + "\n  ".join(blocking[:20]))
+        if warnings:
+            self.log("  backlog lint: %d problem(s) elsewhere in BACKLOG.md, not blocking %s" % (len(warnings), self.group.id))
         open_tasks = [task for task in self.group.ready_tasks if task.owner == "agent"]
         if not open_tasks:
             raise PipelineError("%s has no ready agent tasks" % self.group.id)
@@ -210,6 +228,7 @@ class Pipeline:
             self.state = RunState(run_id=self.store.new_id(self.group.id), group_id=self.group.id, branch=branch, base=base, profile=self.profile, started=time.time())
             for task in open_tasks:
                 self.state.task(task.id)
+            self._ensure_komodo_ignored()
         self.state.mark_phase("preflight")
         if gates.resolve_verify(self.root) is None:
             self.state.notes.append("repo declares no verify gate; only done_when commands prove the work")
@@ -219,6 +238,23 @@ class Pipeline:
             self.log("  wave %d: %s" % (index, ", ".join("%s [%s]" % (task.id, ",".join(task.dirs)) for task in wave)))
         if not self.dry_run:
             self.store.save(self.state)
+
+    def _ensure_komodo_ignored(self) -> None:
+        """Adds .komodo/ to .gitignore when nothing already ignores it, so run state never lands in a commit."""
+        path = os.path.join(self.root, ".gitignore")
+        lines: List[str] = []
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as handle:
+                lines = handle.read().splitlines()
+            if any(KOMODO_GITIGNORE.match(line.strip()) for line in lines):
+                return
+        if self.dry_run:
+            self.log("  .komodo is not gitignored; `run` will add it to .gitignore")
+            return
+        lines.append(".komodo/")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines).rstrip("\n") + "\n")
+        self.log("  added .komodo/ to .gitignore")
 
     def branch(self) -> None:
         """Creates the run branch, or checks out the existing one on resume."""

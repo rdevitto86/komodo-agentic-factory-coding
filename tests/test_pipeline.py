@@ -285,6 +285,52 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(state.tasks["TSK-01.1.2"].status, "DONE")
         self.assertIn("TSK-01.1.3", state.blocked)
 
+    def _append_and_commit(self, path, text):
+        """Appends text to a tracked file and commits it, keeping the tree clean for preflight."""
+        with open(path, "a") as handle:
+            handle.write(text)
+        subprocess.run(["git", "commit", "-q", "-am", "append"], cwd=self.tmp.name, check=True)
+
+    def test_a_lint_problem_in_another_group_warns_but_does_not_block(self):
+        path = os.path.join(self.tmp.name, "BACKLOG.md")
+        broken_group = "\n### [TG-02.1] Broken group\n```yaml\ntype: feat\n```\n"
+        self._append_and_commit(path, broken_group)
+        line = self._pipeline()
+        line.preflight("TG-01.1", resume=False)
+        self.assertEqual(line.group.id, "TG-01.1")
+        self.assertTrue(any("TG-02.1" in log and "no version" in log for log in self.logs) or
+                         any("TG-02.1" in note for note in line.state.notes) or
+                         any("backlog lint" in log for log in self.logs))
+
+    def test_a_lint_problem_in_the_requested_group_still_blocks(self):
+        path = os.path.join(self.tmp.name, "BACKLOG.md")
+        broken_group = "\n### [TG-02.1] Broken group\n```yaml\ntype: feat\n```\n"
+        self._append_and_commit(path, broken_group)
+        line = self._pipeline()
+        with self.assertRaises(pipeline.PipelineError) as caught:
+            line.preflight("TG-02.1", resume=False)
+        self.assertIn("TG-02.1", str(caught.exception))
+
+    def test_preflight_adds_a_missing_komodo_gitignore_entry(self):
+        gitignore = os.path.join(self.tmp.name, ".gitignore")
+        with open(gitignore, "w") as handle:
+            handle.write("*.pyc\n")
+        subprocess.run(["git", "add", "-A", "-f"], cwd=self.tmp.name, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "narrow gitignore"], cwd=self.tmp.name, check=True)
+        line = self._pipeline()
+        line.preflight("TG-01.1", resume=False)
+        with open(gitignore) as handle:
+            self.assertIn(".komodo/", handle.read())
+
+    def test_preflight_leaves_an_existing_komodo_gitignore_entry_alone(self):
+        gitignore = os.path.join(self.tmp.name, ".gitignore")
+        with open(gitignore) as handle:
+            before = handle.read()
+        line = self._pipeline()
+        line.preflight("TG-01.1", resume=False)
+        with open(gitignore) as handle:
+            self.assertEqual(handle.read(), before)
+
 
 class VersionSyncTests(unittest.TestCase):
     """The declared version, the changelog heading, and the git tag are one value copied, never three guesses."""
