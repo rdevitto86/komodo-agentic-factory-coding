@@ -22,6 +22,14 @@ class GitError(RuntimeError):
     """git itself exited non-zero."""
 
 
+class CommitRejected(GitError):
+    """A commit hook refused staged work that is still intact in the worktree."""
+
+    def __init__(self, message: str, output: str = ""):
+        super().__init__(message)
+        self.output = output
+
+
 def worker_env(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """An environment with no push credential: no GitHub token, no credential helper, no gh auth, no SSH identity."""
     env = dict(base if base is not None else os.environ)
@@ -131,12 +139,19 @@ class Git:
         if branch and self.branch_exists(branch) and not self.is_protected(branch):
             self.run("branch", "-D", branch, check=False)
 
+    def main_checkout(self) -> str:
+        """The main worktree's path, which reads the same from inside any linked worktree."""
+        common = self.run("rev-parse", "--git-common-dir").strip()
+        if not os.path.isabs(common):
+            common = os.path.join(self.root, common)
+        return os.path.realpath(os.path.dirname(os.path.abspath(common)))
+
     def worktrees(self) -> List[str]:
-        """Paths of every worktree except the main checkout."""
+        """Paths of every linked worktree, excluding the main checkout and the one this runs in."""
         out = self.run("worktree", "list", "--porcelain")
         paths = [line[len("worktree "):] for line in out.splitlines() if line.startswith("worktree ")]
-        root = os.path.realpath(self.root)
-        return [path for path in paths if os.path.realpath(path) != root]
+        skip = {os.path.realpath(self.root), self.main_checkout()}
+        return [path for path in paths if os.path.realpath(path) not in skip]
 
     def commit(self, message: str, cwd: Optional[str] = None, paths: Optional[Sequence[str]] = None) -> Optional[str]:
         """Stages paths (or everything) and commits; refuses trailers and protected branches; returns the hash or None when nothing changed."""
@@ -153,7 +168,12 @@ class Git:
             self.run("add", "-A", cwd=cwd)
         if not self.run("diff", "--cached", "--name-only", cwd=cwd).strip():
             return None
-        self.run("commit", "-q", "-m", message, cwd=cwd)
+        result = subprocess.run(
+            ["git", "commit", "-q", "-m", message], cwd=cwd or self.root, capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            output = (result.stdout + result.stderr).strip()
+            raise CommitRejected("commit refused with the work still staged", output)
         return self.head(cwd)
 
     def merge(self, branch: str, cwd: Optional[str] = None, message: Optional[str] = None) -> bool:

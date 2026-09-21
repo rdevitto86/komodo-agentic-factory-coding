@@ -144,3 +144,35 @@ class EnvTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CommitHookTests(unittest.TestCase):
+    def test_a_refused_commit_keeps_the_work_staged(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_repo(root)
+            hooks = os.path.join(root, ".git", "hooks")
+            os.makedirs(hooks, exist_ok=True)
+            hook = os.path.join(hooks, "pre-commit")
+            with open(hook, "w") as handle:
+                handle.write("#!/bin/sh\necho 'OVER_LINES: comment too long' >&2\nexit 1\n")
+            os.chmod(hook, 0o755)
+            git = gitops.Git(root, PROTECTED)
+            git.run("switch", "-c", "fix/hooked")
+            with open(os.path.join(root, "new.py"), "w") as handle:
+                handle.write("x = 1\n")
+            with self.assertRaises(gitops.CommitRejected) as caught:
+                git.commit("fix: add new.py")
+            self.assertIn("OVER_LINES", caught.exception.output)
+            self.assertIn("new.py", git.run("diff", "--cached", "--name-only"))
+
+    def test_a_linked_worktree_is_not_its_own_stale_worktree(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as elsewhere:
+            make_repo(root)
+            linked = os.path.join(elsewhere, "wt")
+            gitops.Git(root, PROTECTED).run("worktree", "add", "-q", "-b", "fix/linked", linked, "main")
+            from_main = gitops.Git(root, PROTECTED)
+            from_linked = gitops.Git(linked, PROTECTED)
+            self.assertEqual(from_main.main_checkout(), os.path.realpath(root))
+            self.assertEqual(from_linked.main_checkout(), os.path.realpath(root))
+            self.assertEqual([os.path.realpath(p) for p in from_main.worktrees()], [os.path.realpath(linked)])
+            self.assertEqual(from_linked.worktrees(), [])

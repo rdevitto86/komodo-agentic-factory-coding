@@ -7,6 +7,99 @@ Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. I
 ## [EPIC-02] V1.1, harden the line
 *Goal: prove the harness on real repos and close the gaps the first runs expose.*
 
+### [TG-02.12] Run safety: the commit chain
+```yaml
+type: fix
+version: 1.4.0
+```
+* **Why:** every task here edits the harness that is running it. The waves are ordered so no two tasks in one wave touch the same file, because a wave merges each worktree back into the run branch and an overlap is a merge conflict, not a merge.
+* **Before running:** freeze the hooks for the duration, since `core.hooksPath` is absolute and every builder commit executes the main checkout's copy: `cp -R komodo/hooks /tmp/komodo-hooks-frozen && git config core.hooksPath /tmp/komodo-hooks-frozen`, restored to `"$PWD/komodo/hooks"` after.
+
+#### [TSK-02.6.5] `run` lints the whole backlog before it resolves the group, and preflight never checks that .komodo is ignored [P: H] [READY]
+```yaml
+files: [komodo/pipeline.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+  - python3 -m unittest tests.test_tasks -q
+context:
+  - "`Pipeline.preflight` lints the entire backlog and raises on any problem, and only then resolves the requested group, so one group missing `version: x.y.z` blocks `run` for every other group. Repro: komodo-auth-api carries 15 groups with no version key and no single group can be run. Fix: resolve the group first, then block only on problems scoped to that group plus the genuinely file-global ones - parse failures, duplicate ids, dependency edges pointing outside the file - and report the rest as warnings."
+  - "the same function is where the .komodo gitignore check belongs, folded in from TSK-02.5.2: a live run committed .komodo/runs/<id>/state.json into the target repo, because nothing writes or checks a gitignore and templates/project ships none. Both changes edit preflight, so they are one task rather than a merge conflict."
+type: fix
+```
+
+#### [TSK-02.5.1] Commit only the paths a task declares or changed, so build artifacts never land [P: H] [READY]
+```yaml
+files: [komodo/pipeline.py, komodo/gitops.py, tests/test_pipeline.py, tests/test_gitops.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline tests.test_gitops -q
+depends_on: [TSK-02.6.5]
+context:
+  - "a live run on a fresh repo committed four .pyc files: gitops.commit stages with add -A because the pipeline never passes paths="
+  - "the compile gate now writes bytecode to a pycache prefix outside the tree, so it is no longer a source of stray .pyc; a builder's own tooling still is"
+type: fix
+```
+
+#### [TSK-02.6.3] Retire the claude-code references the rules now forbid [P: M] [READY]
+```yaml
+files: [CHANGELOG.md, komodo/doctor.py, tests/test_doctor_install.py]
+done_when:
+  - python3 -m unittest tests.test_doctor_install -q
+  - python3 -m komodo doctor
+context:
+  - "AGENTS.md forbids a claude-code directory; CHANGELOG.md names it twelve times and doctor whitelists the prefix instead of flagging it"
+  - "this was BLOCKED because doctor called the main checkout a stale worktree from inside a builder worktree; that is fixed, so the doctor done_when now passes in a wave"
+type: fix
+```
+
+#### [TSK-02.5.3] A filed review finding points at the file that fixes it, not the artifact it was found in [P: M] [READY]
+```yaml
+files: [komodo/pipeline.py, tests/test_pipeline.py]
+done_when:
+  - python3 -m unittest tests.test_pipeline -q
+depends_on: [TSK-02.5.1]
+context: ["the run filed a task whose files list was a .pyc path, which no builder could act on"]
+type: fix
+```
+
+#### [TSK-02.5.4] Commit subjects lowercase the title after the type and truncate on a word boundary [P: M] [READY]
+```yaml
+files: [komodo/gitops.py, tests/test_gitops.py]
+done_when:
+  - python3 -m unittest tests.test_gitops -q
+depends_on: [TSK-02.5.1]
+context: ["commit_message produced 'feat: Add pkg/greet.py with a greet function returning \"hello <name>\"' truncated mid-word at 72 chars"]
+type: fix
+```
+
+### [TG-02.13] Run safety: the report
+```yaml
+type: fix
+version: 1.4.0
+```
+* **Why:** neither task touches `pipeline.py` or `gitops.py`, so this group shares no file with TG-02.12 and a bad run there costs nothing here.
+
+#### [TSK-02.5.6] Phase timing stores a duration, not the epoch second the phase ended [P: H] [READY]
+```yaml
+files: [komodo/state.py, komodo/render.py, tests/test_gates_state.py]
+done_when:
+  - python3 -m unittest tests.test_gates_state -q
+context:
+  - "the TG-02.4 report printed `verify | -194s`; state.phases holds absolute timestamps and render pairs each phase with the next key in dict order"
+  - "a resumed run re-marks a phase it already recorded, which overwrites the timestamp but keeps the original insertion position, so dict order stops being chronological and the subtraction goes negative"
+type: fix
+```
+
+#### [TSK-02.8.1] Record this repo's no-CI deviation in komodo/standards/cicd.md or give it a runner [P: M] [READY]
+```yaml
+files: [komodo/standards/cicd.md, docs/design-decisions.md]
+done_when:
+  - python3 -m komodo doctor
+context:
+  - "cicd.md requires an ephemeral runner per PR and an OS matrix; this repo now runs its gate only on the developer machine via the pre-push hook"
+  - "the account is on a GitHub Free plan and the matrix was the cost driver"
+type: docs
+```
+
 ### [TG-02.1] Worker providers
 ```yaml
 type: feat
@@ -145,38 +238,6 @@ type: fix
 version: 1.1.0
 ```
 
-#### [TSK-02.5.1] Commit only the paths a task declares or changed, so build artifacts never land [P: H] [READY]
-```yaml
-files: [komodo/pipeline.py, komodo/gitops.py, tests/test_pipeline.py]
-done_when:
-  - python3 -m unittest tests.test_pipeline tests.test_gitops -q
-context: ["a live run on a fresh repo committed four .pyc files: gitops.commit stages with add -A after done_when has run in the worktree"]
-```
-
-#### [TSK-02.5.2] Preflight ensures the target repo ignores the .komodo directory before the first run writes to it [P: H] [READY]
-```yaml
-files: [komodo/pipeline.py, tests/test_pipeline.py]
-done_when:
-  - python3 -m unittest tests.test_pipeline -q
-context: ["a live run committed .komodo/runs/<id>/state.json into the target repo; nothing in the harness writes or checks a gitignore and templates/project ships none"]
-```
-
-#### [TSK-02.5.3] A filed review finding points at the file that fixes it, not the artifact it was found in [P: M] [READY]
-```yaml
-files: [komodo/pipeline.py, tests/test_pipeline.py]
-done_when:
-  - python3 -m unittest tests.test_pipeline -q
-context: ["the run filed a task whose files list was a .pyc path, which no builder could act on"]
-```
-
-#### [TSK-02.5.4] Commit subjects lowercase the title after the type and truncate on a word boundary [P: M] [READY]
-```yaml
-files: [komodo/gitops.py, tests/test_gitops.py]
-done_when:
-  - python3 -m unittest tests.test_gitops -q
-context: ["commit_message produced 'feat: Add pkg/greet.py with a greet function returning \"hello <name>\"' truncated mid-word at 72 chars"]
-```
-
 #### [TSK-02.5.5] Reconsider the reviewer diff floor now that review dominates a small group's cost and wall clock [P: L] [READY]
 ```yaml
 files: [komodo/config.py, docs/design-decisions.md, tests/test_config.py]
@@ -185,15 +246,7 @@ done_when:
 context: ["a 10-line diff cost 0.10 of 0.16 USD and 1m54s of a 2m09s run; the fast profile's 150-line floor turns review off for exactly this case"]
 ```
 
-#### [TSK-02.5.6] Phase timing stores a duration, not the epoch second the phase ended [P: H] [READY]
-```yaml
-files: [komodo/state.py, komodo/render.py, tests/test_gates_state.py]
-done_when:
-  - python3 -m unittest tests.test_gates_state -q
-context: ["the TG-02.4 report printed `verify | -194s`; state.phases holds absolute timestamps such as 1789609979 and render subtracts them in the wrong order"]
-```
-
-#### [TSK-02.5.7] Persist the run cost so a resumed or re-read state carries what the run spent [P: M] [READY]
+#### [TSK-02.5.7] Persist the run cost so a resumed or re-read state carries what the run spent [P: M] [BLOCKED]
 ```yaml
 files: [komodo/state.py, komodo/pipeline.py, tests/test_gates_state.py]
 done_when:
@@ -201,7 +254,7 @@ done_when:
 context: ["the TG-02.6 report printed 2.44 USD while its state.json recorded cost_usd 0.0; only the per-worker rows survive a reload"]
 ```
 
-#### [TSK-02.5.8] A commit the pre-commit hook refuses is a repair attempt, not a crashed builder [P: H] [READY]
+#### [TSK-02.5.8] A commit the pre-commit hook refuses is a repair attempt, not a crashed builder [P: H] [DONE]
 ```yaml
 files: [komodo/pipeline.py, komodo/gitops.py, tests/test_pipeline.py]
 done_when:
@@ -209,7 +262,7 @@ done_when:
 context: ["TSK-02.6.2 finished its work, then the comment lint refused the commit over an OVER_LINES finding; the task reported `builder crashed` and no repair pass ran"]
 ```
 
-#### [TSK-02.5.9] doctor's stale-worktree check must not flag the main checkout when it runs inside a builder worktree [P: H] [READY]
+#### [TSK-02.5.9] doctor's stale-worktree check must not flag the main checkout when it runs inside a builder worktree [P: H] [DONE]
 ```yaml
 files: [komodo/doctor.py, komodo/gitops.py, tests/test_doctor_install.py]
 done_when:
@@ -242,15 +295,6 @@ done_when:
   - python3 -m unittest tests.test_pipeline -q
 ```
 
-#### [TSK-02.6.3] Retire the claude-code references the rules now forbid [P: M] [BLOCKED]
-```yaml
-files: [CHANGELOG.md, komodo/doctor.py, tests/test_doctor_install.py]
-done_when:
-  - python3 -m unittest tests.test_doctor_install -q
-  - python3 -m komodo doctor
-context: ["AGENTS.md forbids a claude-code directory; CHANGELOG.md names it twelve times and doctor whitelists the prefix instead of flagging it"]
-```
-
 #### [TSK-02.6.4] `tasks migrate` deletes every task body, mis-splits four-column subtask tables, and misreads valid commands as prose [P: H] [DONE]
 ```yaml
 files: [komodo/tasks.py, tests/test_tasks.py]
@@ -258,15 +302,6 @@ done_when:
   - python3 -m unittest tests.test_tasks -q
   - python3 -m unittest tests.test_cli -q
 context: ["Three defects in migrate(), all reachable from `tasks migrate --write`. (1) Data loss: the loop consumes every line to the next # heading and emits only the heading plus a yaml block, so Acceptance Criteria, User Story, Evidence/Approach/Non-goals tables and the subtask table are deleted with no warning and no backup — --write makes it unrecoverable outside git. (2) LEGACY_ROW has three capture groups but the documented subtask table has four columns (Subtask, Category, Work, Done when); the trailing \\|\\s*$ anchor forces group(3) to span Work AND Done when, so every migrated done_when reads `Build the thing | `go build ./...` with the trailing backtick stripped from the wrong end. (3) COMMAND_HINT omits grep, !, and ENV=VALUE prefixes, so a cell holding `grep -q x f && go test ./...` or `TEST_TIER=component go test ./...` is filed as done_when_prose. Repro: a fixture with one task carrying ACs, a field table and a four-column subtask table returns only the heading and an empty done_when. Fix: preserve the body verbatim below the block, split the row on unescaped pipes and take the last cell, and widen COMMAND_HINT. Found while making komodo-auth-api and komodo-forge-sdk-go harness-runnable (2026-09-17); both were converted with a one-off script instead."]
-```
-
-#### [TSK-02.6.5] `run` lints the whole backlog before it resolves the group, so a problem in any group aborts a run of every other [P: H] [READY]
-```yaml
-files: [komodo/pipeline.py, tests/test_pipeline.py]
-done_when:
-  - python3 -m unittest tests.test_pipeline -q
-  - python3 -m unittest tests.test_tasks -q
-context: ["`Pipeline.preflight` (komodo/pipeline.py:143-146) calls `tasks.lint` on the entire Backlog and raises PipelineError on any problem, and only then resolves the requested group on line 147 — so the gate runs before the harness knows which group was asked for. One group missing `version: x.y.z` therefore blocks `run` for all of them, including groups that lint clean. Repro: komodo-auth-api BACKLOG.md carries 15 groups with no version key; `python3 -m komodo run TG-01.9 --dry-run`, `... TG-01.10 --dry-run` and `... TG-01.11 --dry-run` each print the identical 15-line dump and plan no waves, though every problem is in a group none of them names. Blast radius, not the rule: the version lint is right to exist. Fix: resolve the group first (needle or next_group), then block only on problems scoped to that group plus the genuinely file-global ones — parse failures, duplicate group and task ids, dependency edges pointing outside the file — and report the rest as warnings that do not stop the run. Found while planning the komodo-auth-api V1 push (2026-09-18); that repo cannot run a single group until all 15 unrelated groups are annotated."]
 ```
 
 ### [TG-02.7] Go rewrite
@@ -305,14 +340,6 @@ context: ["one binary with a guard and an inject subcommand replaces two scripts
 ```yaml
 type: docs
 version: 1.1.0
-```
-
-#### [TSK-02.8.1] Record this repo's no-CI deviation in komodo/standards/cicd.md or give it a runner [P: M] [READY]
-```yaml
-files: [komodo/standards/cicd.md, docs/design-decisions.md]
-done_when:
-  - python3 -m komodo doctor
-context: ["cicd.md requires an ephemeral runner per PR and an OS matrix; this repo now runs its gate only on the developer machine via the pre-push hook", "the account is on a GitHub Free plan and the matrix was the cost driver"]
 ```
 
 #### [TSK-02.6.6] `komodo/__init__.py` pins `__version__` at 1.1.0 while the changelog has released past it [P: L] [REFINEMENT]
