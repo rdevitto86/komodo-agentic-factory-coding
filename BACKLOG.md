@@ -1,21 +1,22 @@
 # Project Backlog
 
-Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `python3 -m komodo tasks lint` checks it. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V1.5 plan in `README.md`; the PR that landed the plan lists what it replaced.
+Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `python3 -m komodo tasks lint` checks it until TG-03.2 lands `komodo lint`. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V1.5 plan in `README.md`.
 
 ---
 
-## [EPIC-03] V1.5, the line is code and the loop is the host
-*Goal: Komodo becomes rules, roles, standards, skills, one guard, and a set of deterministic commands that any agent host renders. A model is called twice per task, to build and to review; everything between is standard-library Python. Claude Code with Ollama is the host today for both Komodo devs; Codex is the rehearsal for the day Komodo leaves a proprietary host. Roadmap and design: `README.md`.*
+## [EPIC-03] V1.5, the assembly line
+*Goal: one static binary is the conveyor and the devices, markdown is everything a model reads, one guard is the only hook, and a model is a machine mounted per host. Two model calls per task, build and review; everything between is deterministic. Claude Code with Ollama is the host today for both Komodo devs; Codex is the exit test. Requirements and design: `README.md`.*
 
-* **Groups run in file order.** Every group carries `1.5.0`; the tag is cut once, after TG-03.9.
-* **V1 runs TG-03.1 through TG-03.4.** After TG-03.5 lands the `run` skill runs the rest, and its first group is the proof.
+* **Groups run in file order.** Every group carries `1.5.0`; the tag is cut once, after TG-03.6.
+* **V1 runs TG-03.1 through TG-03.3.** After TG-03.4 lands the `run` skill runs the rest, and its first group is the proof.
+* **Go source lands beside the Python it replaces.** The gate runs both until TG-03.6 deletes the Python.
 
-### [TG-03.1] Source reshape
+### [TG-03.1] The markdown
 ```yaml
 type: refactor
 version: 1.5.0
 ```
-* **Why:** three neutral formats are the whole portability story. Standards become skills so their trigger lives in their own frontmatter. Briefs fold into roles so a role is the brief. The git and destruction policy becomes data one guard reads on every host.
+* **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
 
 #### [TSK-03.1.1] Standards become skills at the source [P: C] [READY]
 ```yaml
@@ -25,13 +26,12 @@ done_when:
   - test ! -d komodo/standards
   - python3 -m unittest discover -s tests -q
 context:
-  - "each komodo/standards/<x>.md moves to komodo/skills/standards-<x>/SKILL.md with frontmatter name and description; the description front-loads the extensions and directories that trigger it"
-  - "the body does not change; a standard names no live repo, port, URL, version, or path"
-  - "the extension-to-standard map in komodo/standards.py moves into the skills' own frontmatter as a globs list, so nothing else holds it"
+  - "each komodo/standards/<x>.md moves to komodo/skills/standards-<x>/SKILL.md with frontmatter name, description, and a globs list of the extensions and directories that trigger it; the body does not change"
+  - "the extension map in komodo/standards.py moves into that frontmatter and nothing else holds it; standards.py and its test go"
 type: refactor
 ```
 
-#### [TSK-03.1.2] Briefs fold into roles, and each role carries its return schema [P: C] [READY]
+#### [TSK-03.1.2] Briefs fold into roles, and each role carries its schema [P: C] [READY]
 ```yaml
 files: [komodo/roles, komodo/briefs, komodo/briefs.py, tests/test_roles.py, tests/test_briefs.py]
 done_when:
@@ -41,11 +41,11 @@ done_when:
 context:
   - "a role file carries frontmatter name, tier, tools, session, returns, and a body that is the brief template with the slots task_block, repo_rules, repo_context, context, files, standards, done_when, failure"
   - "tools are the five Komodo verbs read, edit, write, shell, search; a host tool name never appears in a role"
-  - "the JSON schema each worker prompt carried in briefs.py moves beside the role as <role>.schema.json; the clip function moves to komodo/line.py in TG-03.4 and briefs.py goes"
+  - "the JSON schema each worker prompt carried moves beside the role as <role>.schema.json; the builder's body says to write its result to the path the brief names"
 type: refactor
 ```
 
-#### [TSK-03.1.3] The policy file and the rules both hosts read [P: H] [READY]
+#### [TSK-03.1.3] The policy has four denials, and the rules give a worktree unlimited freedom [P: C] [READY]
 ```yaml
 files: [komodo/policy.json, komodo/AGENTS.md, komodo/rules, tests/test_policy.py]
 done_when:
@@ -53,10 +53,9 @@ done_when:
   - test -f komodo/AGENTS.md
   - python3 -m unittest tests.test_policy -q
 context:
-  - "policy.json holds protected refs, forbidden git verbs, forbidden trailers, destructive command patterns, and prod host markers; gitops.py PROTECTED and hooks/src/guard.go carry the current lists"
-  - "komodo/rules/AGENTS.md moves to komodo/AGENTS.md; komodo/rules/accessibility.md holds the Writing for a human contract and is included into AGENTS.md at render"
-  - "komodo/rules/cli.md goes; the CLI documents itself with --help"
-  - "tags: creating and pushing a tag is allowed; deleting or force-moving one is denied"
+  - "policy.json: critical refs main and master plus a list, config paths the hosts and the toolkit own, and the trailer patterns; no destructive command list, no prod markers, no file-list scope"
+  - "komodo/rules/AGENTS.md moves to komodo/AGENTS.md; its Git section says an agent may delete files, reset, checkout, restore, force-push and delete its own branches inside its worktree, and never touches a critical branch, a path outside the worktree, or a host or toolkit config"
+  - "komodo/rules/accessibility.md holds the Writing for a human contract and is included into AGENTS.md at render; komodo/rules/cli.md goes"
 type: feat
 ```
 
@@ -67,502 +66,317 @@ done_when:
   - test ! -f komodo/roles/merger.md
   - python3 -m unittest tests.test_roles -q
 context:
-  - "the wave close stops on a conflict and hands it to a human, so no role resolves conflicts; responder becomes session: true and is the model behind the respond skill in TG-03.5"
+  - "QC stops on a conflict and hands it to a human, so no role resolves conflicts; responder becomes session: true and is the model behind the respond skill"
   - "nine roles remain: architect, builder, planner, researcher, responder, reviewer, scout, summarizer, tester"
 type: refactor
 ```
 
-### [TG-03.2] Guard and inject
+### [TG-03.2] The conveyor and the devices
 ```yaml
 type: feat
 version: 1.5.0
 ```
-* **Why:** two stdlib scripts replace a Go binary, two Python fallbacks, and two git hooks. Both hosts send the same payload fields and accept the same deny JSON, so one script serves both, and verify runs its table so a broken guard fails the gate and never a run.
+* **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test. The hooks' 1013 lines of Go under `komodo/hooks/src` are the seed of the module.
 
-#### [TSK-03.2.1] One guard for shell, edit, and write on both hosts [P: C] [READY]
+#### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [READY]
 ```yaml
-files: [komodo/hooks/guard.py, tests/test_guard.py]
+files: [go.mod, cmd/komodo/main.go, internal/backlog, bin, scripts/verify.py, .github/workflows]
 done_when:
-  - python3 -m unittest tests.test_guard -q
-context:
-  - "reads hook_event_name, cwd, tool_name, tool_input from stdin; denies with the PreToolUse permissionDecision JSON both hosts accept, exit 2 as the fallback"
-  - "git findings come from policy.json; destruction findings from its patterns; scope findings compare an edit or write path against .komodo/scope.json in cwd when it exists"
-  - "an internal error logs one line to stderr and allows; the test table holds at least 60 commands, half allowed and half denied, and names the finding for each denial"
-  - "komodo/adapters/claude/hooks/guard.py and hooks/src/guard.go are the prior art; this file replaces both and imports nothing outside the standard library"
-  - "runs on Windows: pathlib paths, no shell, no symlinks, invoked through the interpreter the adapter resolved; the table includes tag create and push as allowed and tag delete and force as denied"
-type: feat
-```
-
-#### [TSK-03.2.2] Inject prints the work state on SessionStart [P: M] [READY]
-```yaml
-files: [komodo/hooks/inject.py, tests/test_inject.py]
-done_when:
-  - python3 -m unittest tests.test_inject -q
-context:
-  - "open, blocked, and in-progress counts from BACKLOG.md, the next READY group, the verify command, and the run command; silent outside a repo"
-  - "hooks/src/inject.go is the prior art"
-type: feat
-```
-
-#### [TSK-03.2.3] `komodo guard check` runs the table inside verify [P: H] [READY]
-```yaml
-files: [komodo/__main__.py, scripts/verify.py, tests/test_cli.py]
-done_when:
-  - python3 -m komodo guard check
+  - go build ./...
+  - go test ./internal/backlog/...
   - python3 scripts/verify.py
+context:
+  - "go.mod at the repo root, module komodo, Go 1.22, no dependencies outside the standard library; komodo/hooks/src moves under internal with its tests"
+  - "internal/backlog ports tasks.py: parse, lint, list, add, set status, next task id, find backlog at the root or docs; komodo lint and komodo list and komodo add are the first subcommands"
+  - "bin/ holds komodo-darwin-arm64, komodo-windows-amd64.exe, komodo-linux-amd64 and MANIFEST.sha256; a workflow builds all three on a PR and fails when they differ from the committed ones; scripts/verify.py runs go build and go test while Python remains"
+type: feat
+```
+
+#### [TSK-03.2.2] Intake: `komodo next` [P: C] [READY]
+```yaml
+files: [internal/line/next.go, internal/line/next_test.go, internal/line/worktree.go]
+done_when:
+  - go test ./internal/line/...
 depends_on: [TSK-03.2.1]
 context:
-  - "the table lives beside the test as data; guard check runs every row through the real script and prints one line per mismatch"
+  - "next prints the next READY group, or the group of a named task, as JSON: tasks, dependencies, waves by directory, mode single as one wave, type, version, and the resolved machine per role; nothing when nothing is ready"
+  - "next --start fetches the remote base, creates <type>/<slug> in a worktree under .komodo/wt/group from it, and calls the preflight tag; the main working tree is never read or required clean"
+  - "a task with a valid .komodo/results/<task>.json is listed done and skipped, which is resume; done and in-progress rewrite only the status token"
 type: feat
 ```
 
-#### [TSK-03.2.4] The Go hooks and the binaries go [P: H] [READY]
+#### [TSK-03.2.3] Input device: `komodo brief` [P: C] [READY]
 ```yaml
-files: [komodo/hooks/src, komodo/hooks/bin, komodo/hooks/__init__.py, tests/test_hooks.py]
+files: [internal/line/brief.go, internal/line/brief_test.go, internal/line/clip.go]
 done_when:
-  - test ! -d komodo/hooks/src
-  - test ! -d komodo/hooks/bin
-  - python3 -m unittest discover -s tests -q
-depends_on: [TSK-03.2.1, TSK-03.2.2]
+  - go test ./internal/line/...
+depends_on: [TSK-03.2.2]
 context:
-  - "the MANIFEST, the per-platform binaries, and the build step go; nothing under komodo/hooks is compiled"
-type: chore
+  - "fills the role template from the slots the README tables, each clipped by its cap with the head 70 tail 25 marker briefs.clip used; pipeline.task_slots and pipeline.repo_rules are the prior art"
+  - "writes .komodo/briefs/<task>.md in a task worktree under .komodo/wt/<task> branched from the group branch and prints both paths as JSON; the builder's result path is named in the brief"
+  - "--dry-run prints each slot's characters after clipping and a token estimate and writes nothing"
+type: feat
 ```
 
-#### [TSK-03.2.5] The two git hooks are stdlib Python and opt-in [P: M] [READY]
+#### [TSK-03.2.4] Output device: `komodo close <task>` [P: C] [READY]
 ```yaml
-files: [komodo/hooks/pre-commit, komodo/hooks/pre-push, komodo/hooks/pre-commit.py, komodo/hooks/pre-push.py, komodo/__main__.py, tests/test_git_hooks.py]
+files: [internal/line/close.go, internal/line/close_test.go, internal/line/schema.go, internal/comments]
 done_when:
-  - python3 -m unittest tests.test_git_hooks -q
-  - python3 -m komodo hooks status .
+  - go test ./internal/line/... ./internal/comments/...
+depends_on: [TSK-03.2.3]
+context:
+  - "validates the result JSON against the role schema for type, required, and enum; reruns done_when in the worktree; runs the comment lint on the task's files; flips the status"
+  - "a failure writes the failure slot and the previous attempt's diff so the next brief is a repair, at most one; a second failure marks BLOCKED with the note and the wave continues, as pipeline._block did"
+  - "internal/comments ports comment_rules.py; komodo comments check stays as a command"
+type: feat
+```
+
+#### [TSK-03.2.5] QC and ship: `komodo close --wave` and `--group` [P: C] [READY]
+```yaml
+files: [internal/line/wave.go, internal/line/ship.go, internal/line/verify.go, internal/line/wave_test.go, internal/pr]
+done_when:
+  - go test ./internal/line/... ./internal/pr/...
 depends_on: [TSK-03.2.4]
 context:
-  - "pre-commit refuses a protected branch and a trailer and lints comments on staged lines; pre-push refuses a non-fast-forward and runs the repo verify command under a timeout; hooks/src/precommit.go and prepush.go are the prior art"
-  - "komodo hooks install <repos> points core.hooksPath at a copy under the repo, never at the toolkit checkout, so a run that edits the toolkit cannot change the hook mid-run; hooks status reports it; nothing installs them by default"
-  - "a human terminal is the only reason these exist; the guard already covers every agent"
+  - "--wave merges the wave's worktrees into the group branch in order and stops on the first conflict naming both tasks; runs the compile gate for the languages the wave touched with one repair as gates.compile_commands did; then the verify command, resolved in V1's order or named by .komodo/commands.json"
+  - "review: findings at or above severity_floor become one repair brief; the rest are appended to BACKLOG.md as tasks by code"
+  - "--group commits, pushes, opens the PR with the report as body and the category and agent labels only when the repo defines them, as a draft when a task is blocked; writes the changelog line under the group's version; flips DONE; works on any branch, which is how freehand work ships"
+  - "internal/pr ports pr.py: view, create, edit, threads, label, comment, reply as gh wrappers"
 type: feat
 ```
 
-### [TG-03.3] Profiles, the Claude adapter, and the CLI
+#### [TSK-03.2.6] `komodo diff`, `report`, `tag`, and `release check` [P: H] [READY]
+```yaml
+files: [internal/line/diff.go, internal/line/report.go, internal/release, internal/line/diff_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/release/...
+depends_on: [TSK-03.2.5]
+context:
+  - "diff prints the group branch against base, clipped by the failure cap, with the group's task blocks and the standards the diff's extensions touch; it is the whole reviewer input"
+  - "report prints per task seconds, turns, tokens when the result carries them, findings by severity, and what blocked, in the accessibility contract; render.report is the prior art"
+  - "internal/release ports render.py's changelog functions; tag tags every changelog version no tag points at, annotated v<version>, and pushes it from the group worktree on a clean base; release check audits drift read-only and exits non-zero"
+type: feat
+```
+
+### [TG-03.3] The guard and the mounts
 ```yaml
 type: feat
 version: 1.5.0
 ```
-* **Why:** the adapter is the only Claude-specific code in the repo. Profiles become a tier-to-model table per host with the context caps beside them, and the CLI shrinks to what the line needs.
+* **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
 
-#### [TSK-03.3.1] Profiles map a tier to a provider, model, and effort per host, with the context caps [P: C] [READY]
+#### [TSK-03.3.1] The guard: four denials, worktree scope, and the table in the gate [P: C] [READY]
 ```yaml
-files: [komodo/config.py, tests/test_config.py]
+files: [internal/guard, cmd/komodo/main.go]
 done_when:
-  - python3 -m unittest tests.test_config -q
+  - go test ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.2.1]
 context:
-  - "profiles claude, hybrid, codex, local as the README tables them; each names a host; the reviewer tier may point at a different provider than the builder tier"
-  - "context caps: repo_rules 8000, repo_context 8000, per_file 10000, file_total 24000, standards 6000, failure 80000 chars; pipeline.task_slots holds the current values"
-  - "~/.komodo/config.json overlays per machine and can only lower a cap or add a denial; a repo never carries one"
-  - "kept from V1 config: protected, remote, base, severity_floor, group_budget_s, max_parallel, labels, changelog, comments, ollama url; dropped: worker timeouts and account.detect"
-  - "plan overlays pro, max_5x, max_20x, and unknown: each sets a ceiling per tier, max_parallel, the review floor and a diff floor under which review is skipped, repairs, and pause_at and warn_at for the usage windows; unknown is the conservative one"
+  - "komodo guard reads hook_event_name, cwd, tool_name, tool_input on stdin and denies with the PreToolUse permissionDecision JSON both hosts accept, exit 2 as the fallback"
+  - "denies exactly: commit, push, merge, delete, or force on a critical ref; an edit, write, delete, or move whose path leaves the worktree root, or the repo root off the line; any write under a host home, the machine overlay, .git/config, .git/hooks, or bin; a trailer in a commit message; nothing else, so rm, reset, checkout, and a force-push to the agent's own branch pass"
+  - "an internal error logs one line to stderr and allows; guard check runs a table of at least 60 commands, half allowed, and names the finding for each denial; the guard.go in komodo/hooks/src is the prior art"
 type: feat
 ```
 
-#### [TSK-03.3.2] The Claude adapter renders the new source [P: C] [READY]
+#### [TSK-03.3.2] `komodo install --host claude|codex|both`: the mounts [P: C] [READY]
 ```yaml
-files: [komodo/adapters/claude.py, komodo/adapters/claude, komodo/install.py, komodo/render.py, scripts/validate.py, tests/test_adapter_claude.py, tests/test_render.py]
+files: [internal/mount/claude, internal/mount/codex, internal/install, cmd/komodo/main.go]
 done_when:
-  - python3 -m unittest tests.test_adapter_claude -q
-  - python3 scripts/validate.py
+  - go test ./internal/mount/... ./internal/install/...
+  - go run ./cmd/komodo install --dry-run
 depends_on: [TSK-03.3.1]
 context:
-  - "renders CLAUDE.md with an @AGENTS.md include, agents from roles with model from the profile, the run, review, and backlog skills copied as is, each standard as a one-line pointer skill to the installed file, both hooks registered in settings, and the permissions convenience layer from policy.json"
-  - "the five Komodo tool verbs map to Claude tool names here and nowhere else"
-  - "validate measures the always-on context under 1500 tokens, the run skill under 800, and every standard under 8 KB"
-  - "the seeds stay: the personal overlay CLAUDE.local.md is copied once and never overwritten, settings.local.json likewise; install --dry-run prints what would change"
-  - "install runs on Windows: copy, never symlink; the interpreter path is resolved and written into every hook command"
+  - "claude: CLAUDE.md with an @AGENTS.md include, agents from roles with model from the profile, the run, review, backlog, and respond skills copied, each standard as a one-line pointer skill, the guard registered once on PreToolUse, the permissions convenience layer from policy.json, the personal overlay CLAUDE.local.md and settings.local.json seeded once and never overwritten"
+  - "codex: AGENTS.md, agents/<role>.toml with name, description, developer_instructions, model, model_reasoning_effort, sandbox_mode, skills copied under .agents, the guard in hooks.json, mcp_servers in config.toml"
+  - "the five Komodo verbs map to host tool names or sandbox_mode here and nowhere else; install is a copy, never a symlink, and runs on Windows; --dry-run prints what would change"
 type: feat
 ```
 
-#### [TSK-03.3.3] The CLI is install, doctor, tasks, comments, guard, hooks, pr, release, bridge, and run [P: H] [READY]
+#### [TSK-03.3.3] Doctor: references, leaks, drift, budgets, prune [P: H] [READY]
 ```yaml
-files: [komodo/cli.py, komodo/__main__.py, komodo/comments.py, komodo/comment_rules.py, tests/test_cli.py]
+files: [internal/doctor, cmd/komodo/main.go, scripts/validate.py]
 done_when:
-  - python3 -m komodo --help
-  - python3 -m unittest tests.test_cli -q
+  - go test ./internal/doctor/...
+  - go run ./cmd/komodo doctor --no-git
 depends_on: [TSK-03.3.2]
 context:
-  - "install takes --host claude|codex, --profile, --project, --dry-run; tasks gains next, brief, close, diff, report, tag and keeps lint, list, add; status folds into doctor --prune; pr keeps threads, label, comment, reply and loses sync and respond; release keeps check; bridge and run are registered now and land in TG-03.7 and TG-03.5"
-  - "comment_rules.py becomes comments.py with the same lint"
-type: refactor
-```
-
-#### [TSK-03.3.4] The adapter probes the plan and the usage windows in a neutral shape [P: H] [READY]
-```yaml
-files: [komodo/adapters/claude.py, komodo/adapters/codex.py, tests/test_adapter_claude.py]
-done_when:
-  - python3 -m unittest tests.test_adapter_claude -q
-depends_on: [TSK-03.3.2]
-context:
-  - "limits() returns plan and the five-hour and seven-day windows as fractions with their reset times, or nothing; the Claude adapter reads oauthAccount and cachedUsageUtilization from the host config file under CLAUDE_CONFIG_DIR or the home directory, never the CLI status output, which misreported a Max account as Pro"
-  - "the email and account ids in that file are never read or logged; the Codex adapter returns nothing until its config exposes usage"
-  - "account.py is the prior art for the plan names and goes in TG-03.9"
+  - "keeps V1's checks: backticked references resolve, roles are well formed, changelog and tags agree, git leftovers; adds: a vendor name, host tool, host path, or host flag outside internal/mount fails; the rendered layout differs from what the source renders now fails; always-on context over 1500 tokens, the run skill over 800, or a standard over 8 KB fails, which retires scripts/validate.py"
+  - "--prune removes stale worktrees under .komodo/wt and deletes branches merged into base; --json stays"
 type: feat
 ```
 
-#### [TSK-03.3.5] Doctor keeps its five checks and takes over prune [P: H] [READY]
+#### [TSK-03.3.4] Profiles select themselves: host, plan probe, Ollama, and pacing [P: H] [READY]
 ```yaml
-files: [komodo/doctor.py, tests/test_doctor.py]
+files: [internal/profile, internal/mount/claude/limits.go, internal/line/next.go]
 done_when:
-  - python3 -m unittest tests.test_doctor -q
-  - python3 -m komodo doctor --no-git
+  - go test ./internal/profile/... ./internal/line/...
+depends_on: [TSK-03.3.2, TSK-03.2.2]
 context:
-  - "references, policy leaks, git leftovers, roles, and changelog drift stay; --prune removes stale worktrees under .komodo/wt and deletes branches merged into base, which status --prune did; --json stays for scripts"
+  - "profiles claude, hybrid, codex, local as the README tables them, plus caps for every brief slot, severity_floor, max_parallel, labels, changelog, remote, base; ~/.komodo/config.json overlays and can only lower a cap or add a critical ref"
+  - "selection with no flag: the host from the mount installed, hybrid when Ollama answers on its URL, the plan overlay from the probe; the Claude mount reads oauthAccount and cachedUsageUtilization from the host config file, never the CLI status line, and never reads or logs the email or ids; Codex returns nothing"
+  - "plan overlays pro, max_5x, max_20x, unknown: heavy ceiling, max_parallel, review floor and the diff size under which review is skipped, repairs, pause_at and warn_at; next prints wait_until instead of a wave past pause_at, so a run pauses before a wave and never inside one; no probe is the unknown overlay, never a failed run"
 type: feat
 ```
 
-### [TG-03.4] The line in code
+### [TG-03.4] The skills and the launcher
 ```yaml
 type: feat
 version: 1.5.0
 ```
-* **Why:** everything between the two model calls is deterministic. V1 had this in the pipeline; V1.5 has it as commands the skill calls, so the session judges only what to spawn and what a result says.
+* **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof runs one group each way before anything is deleted.
 
-#### [TSK-03.4.1] `komodo tasks next --json`, and resume by results on disk [P: C] [READY]
+#### [TSK-03.4.1] The run, review, backlog, and respond skills [P: C] [READY]
 ```yaml
-files: [komodo/tasks.py, komodo/dag.py, tests/test_tasks.py]
+files: [komodo/skills/run/SKILL.md, komodo/skills/review/SKILL.md, komodo/skills/backlog/SKILL.md, komodo/skills/respond/SKILL.md]
 done_when:
-  - python3 -m unittest tests.test_tasks -q
+  - go run ./cmd/komodo doctor --no-git
+depends_on: [TSK-03.3.3]
 context:
-  - "next prints the next READY group with its tasks, dependencies, waves by directory, context paths, type, and version; nothing when no group is ready"
-  - "a task with a valid .komodo/results/<task>.json is listed as done and skipped, so a rerun resumes; dag.py folds into tasks.py"
-  - "tasks done and tasks in-progress rewrite only the status token; tasks list and tasks add stay; tasks plan and tasks migrate go, planning is the planner role through the backlog skill"
-  - "next --start refuses a dirty tree, resolves base from config or the remote default, runs the preflight tag from TSK-03.4.5, and creates <type>/<slug> from base; a group with mode: single is one wave with one task list"
+  - "run takes a group, a task, or nothing: next --start; per wave, brief per task, spawn the builder role with the brief path, close per task; close --wave; diff, spawn the reviewer role with it, one repair when findings reach the floor; close --group; report"
+  - "review runs QC and the reviewer on the current diff; backlog writes tasks in the grammar with add and lint and is where the planner role works; respond lists unresolved threads and, as the responder role, changes code when the reviewer is right and replies when they are not"
+  - "a skill names no host tool, path, flag, or vendor; it says spawn the builder role and the mount decides how"
 type: feat
 ```
 
-#### [TSK-03.4.2] `komodo tasks brief` fills the role template from the slots [P: C] [READY]
+#### [TSK-03.4.2] The headless launcher: `komodo run` [P: H] [READY]
 ```yaml
-files: [komodo/line.py, tests/test_line.py]
+files: [internal/run, cmd/komodo/main.go]
 done_when:
-  - python3 -m unittest tests.test_line -q
+  - go test ./internal/run/...
 depends_on: [TSK-03.4.1]
 context:
-  - "slots: task block, repo rules from the repo's AGENTS.md or a one-line default, repo context from the repo layer, context anchors resolved to sections, existing files, standards by the task's extensions and the role's extras, done_when, and the failure slot with the previous diff on repair"
-  - "every slot clipped by the config cap with the head 70 tail 25 marker from briefs.clip; pipeline.task_slots and pipeline.repo_rules are the prior art"
-  - "writes .komodo/briefs/<task>.md and .komodo/scope.json in a new git worktree under .komodo/wt/<task> on the group branch, and prints the brief path and the worktree path as JSON"
-  - "--dry-run prints each slot's characters after clipping and a token estimate, writes nothing, and is what komodo run --dry-run did"
+  - "scrubs push tokens, credential helpers, and SSH identities from the environment, picks the host from the profile, invokes the host's non-interactive mode with the run skill and the group or task id, kills it at group_budget_s, and exits with the host's code; gitops.worker_env is the prior art for the scrub"
 type: feat
 ```
 
-#### [TSK-03.4.3] `komodo tasks close` validates, gates, merges, and publishes [P: C] [READY]
-```yaml
-files: [komodo/line.py, komodo/tasks.py, tests/test_line.py]
-done_when:
-  - python3 -m unittest tests.test_line -q
-depends_on: [TSK-03.4.2]
-context:
-  - "close <task>: validates .komodo/results/<task>.json against the role schema with a stdlib validator for type, required, and enum, reruns done_when in the worktree, runs the comment lint on the task's files, flips the status; a failure writes the failure slot and the previous diff so the next brief is a repair, at most one"
-  - "a task that fails after its one repair is marked BLOCKED with the failure note and the wave continues, as pipeline._block did"
-  - "close --wave: merges the wave's worktrees into the group branch in order, stops on the first conflict naming both tasks, runs the compile gate for the languages the wave touched with one repair as gates.compile_commands did, then the repo's verify command"
-  - "the verify command resolves in V1's order, a Makefile verify target, scripts/verify.py, a package.json verify script, go vet, unless .komodo/commands.json names one; gates.resolve_verify is the prior art"
-  - "close --group: commits on <type>/<name> with the group's message, pushes, opens the PR with the report, writes the changelog line under the group's version, flips DONE; every git write runs under the guard and refuses the same list gitops.py refused"
-  - "the PR carries the category label from the config mapping and the agent label, only when the repo already defines them, as pr.pick_labels does; the body is render.pr_body's sections: landed, blocked, timing, findings; a group with a blocked task opens as a draft"
-  - "findings below the review floor are appended to BACKLOG.md as tasks by code, as V1 did"
-type: feat
-```
-
-#### [TSK-03.4.4] `komodo tasks diff` and `komodo tasks report` [P: H] [READY]
-```yaml
-files: [komodo/line.py, tests/test_line.py]
-done_when:
-  - python3 -m unittest tests.test_line -q
-depends_on: [TSK-03.4.3]
-context:
-  - "diff prints the group branch against its base, clipped by the failure cap, with the group's task blocks and the standards the diff's extensions touch; it is the whole reviewer input"
-  - "report prints per task seconds, turns, tokens when the result carries them, findings by severity, and what blocked, in the accessibility contract; render.py's report is the prior art and goes"
-type: feat
-```
-
-#### [TSK-03.4.5] Release: changelog drift, the preflight tag, and `komodo tasks tag` [P: H] [READY]
-```yaml
-files: [komodo/release.py, komodo/render.py, tests/test_release.py]
-done_when:
-  - python3 -m unittest tests.test_release -q
-  - python3 -m komodo release check
-context:
-  - "release check audits the changelog against tags read-only and exits non-zero on drift; tasks tag tags every changelog version no tag points at, annotated v<version>, and pushes it, on a clean base only; next --start calls it, which is V1's preflight tag"
-  - "render.py's changelog functions move here: next_version, newest_version, released_versions, taggable_versions, never_released_versions, changelog_drift, changelog_entry"
-type: feat
-```
-
-#### [TSK-03.4.6] Plan-aware pacing: overlays and the wait before a wave [P: H] [READY]
-```yaml
-files: [komodo/tasks.py, komodo/config.py, tests/test_tasks.py, tests/test_config.py]
-done_when:
-  - python3 -m unittest tests.test_tasks tests.test_config -q
-depends_on: [TSK-03.3.4, TSK-03.4.1]
-context:
-  - "next reads the adapter probe once, applies the plan overlay to the profile for this run, and prints the resolved tiers and max_parallel with the wave"
-  - "a window past pause_at prints wait_until with the reset time instead of a wave, so a run pauses before a wave and never inside one; past warn_at prints one warning line; a light role prefers the bridge when the plan is pro or unknown and Ollama answers"
-  - "no probe means the unknown overlay, never a failed run"
-type: feat
-```
-
-### [TG-03.5] The run skill, the launcher, and the proof
-```yaml
-type: feat
-version: 1.5.0
-```
-* **Why:** the skill is the list of commands and the two spawns, under 800 tokens, so nothing that slowed the 0.x loop exists. The proof runs one group each way before anything is deleted.
-
-#### [TSK-03.5.1] The run, review, and backlog skills [P: C] [READY]
-```yaml
-files: [komodo/skills/run/SKILL.md, komodo/skills/review/SKILL.md, komodo/skills/backlog/SKILL.md]
-done_when:
-  - python3 scripts/validate.py
-context:
-  - "run: tasks next; for each wave, tasks brief per task, spawn the builder role with the brief path, tasks close per task; tasks close --wave; tasks diff, spawn the reviewer role with it, one repair through brief and close when findings reach the floor; tasks close --group; tasks report"
-  - "the skill names no host tool, path, flag, or vendor; it says spawn the builder role and the adapter decides how"
-  - "review is the reviewer role's session entry over tasks diff; backlog is the grammar with the add and lint commands"
-type: feat
-```
-
-#### [TSK-03.5.2] The headless launcher [P: H] [READY]
-```yaml
-files: [komodo/run.py, tests/test_run.py]
-done_when:
-  - python3 -m unittest tests.test_run -q
-context:
-  - "komodo run <group> scrubs push tokens, credential helpers, and SSH identities from the environment, picks the host from the profile, invokes the host's non-interactive mode with the run skill and the group id, and exits with the host's code"
-  - "about 30 lines; gitops.worker_env is the prior art for the scrub"
-  - "group_budget_s from config is the wall clock: the host process is killed and the run reports what landed; runs on Windows without a shell"
-type: feat
-```
-
-#### [TSK-03.5.4] The respond skill and the thin pull request wrappers [P: M] [READY]
-```yaml
-files: [komodo/skills/respond/SKILL.md, komodo/pr.py, komodo/pr_actions.py, tests/test_pr.py]
-done_when:
-  - python3 -m unittest tests.test_pr -q
-  - python3 -m komodo pr threads --help
-context:
-  - "respond lists unresolved threads with komodo pr threads, and the session, as the responder role, changes code when the reviewer is right and replies when they are not, through komodo pr reply; this replaces pr respond's worker"
-  - "pr.py keeps threads, label, comment, reply, view as gh wrappers; pr_actions.py loses sync and respond and goes"
-  - "pr sync has no replacement: a session merges the base in and a conflict is the human's"
-type: feat
-```
-
-#### [TSK-03.5.3] Proof: one group under V1 and under the run skill [P: C] [READY]
+#### [TSK-03.4.3] Proof: one group under V1 and under the run skill [P: C] [READY]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
   - grep -q "Proof: V1 versus the run skill" CHANGELOG.md
-depends_on: [TSK-03.5.1, TSK-03.5.2]
+depends_on: [TSK-03.4.1, TSK-03.4.2]
 owner: human
 context:
-  - "run TG-03.6 under the run skill in a Claude Code session; record wall time, tokens, and turns beside the V1 numbers for TG-03.4 from its run state, under a Proof: V1 versus the run skill heading in the 1.5.0 changelog entry"
-  - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.6 merges"
+  - "run TG-03.5 under the run skill in a Claude Code session; record wall time, tokens, and turns beside the V1 numbers for TG-03.3 from its run state, under a Proof: V1 versus the run skill heading in the 1.5.0 changelog entry"
+  - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.5 merges"
 type: docs
 ```
 
-### [TG-03.6] The repo layer
+### [TG-03.5] The repo layer and the local machines
 ```yaml
 type: feat
 version: 1.5.0
 ```
-* **Why:** one universal set of rules, and one place a repo adds what only it knows. Nothing here is required, nothing here can widen the floor, and drift fails doctor rather than going silent.
+* **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
 
-#### [TSK-03.6.1] Repo context files inject by glob [P: H] [READY]
+#### [TSK-03.5.1] Repo context injects by glob [P: H] [READY]
 ```yaml
-files: [komodo/repo.py, komodo/line.py, tests/test_repo.py, templates/project]
+files: [internal/repo/context.go, internal/repo/context_test.go, internal/line/brief.go, templates/project]
 done_when:
-  - python3 -m unittest tests.test_repo tests.test_line -q
+  - go test ./internal/repo/... ./internal/line/...
 context:
-  - ".komodo/context/*.md with a paths glob list in frontmatter; a file whose globs match any of the task's files fills the repo_context slot, clipped; no globs means every task"
-  - "a malformed file is skipped with one line in the report and one at SessionStart; templates/project gains one example context file"
+  - ".komodo/context/*.md with a paths glob list in frontmatter fills the repo_context slot for any task whose files match, clipped; no globs means every task; a malformed file is skipped with one line in the report; templates/project gains one example"
 type: feat
 ```
 
-#### [TSK-03.6.2] Repo standards extend or add [P: H] [READY]
+#### [TSK-03.5.2] Repo standards and repo skills, rendered by `install --project` [P: H] [READY]
 ```yaml
-files: [komodo/repo.py, komodo/line.py, tests/test_repo.py]
+files: [internal/repo/standards.go, internal/repo/skills.go, internal/install, internal/mount/claude, internal/mount/codex, internal/doctor]
 done_when:
-  - python3 -m unittest tests.test_repo -q
+  - go test ./internal/repo/... ./internal/install/...
+depends_on: [TSK-03.5.1]
+context:
+  - ".komodo/standards/<name>.md appends to the shipped standard of that name in the standards slot or adds a new one with its own globs; .komodo/skills/<name>/SKILL.md is a new skill or appends a Repo overrides section to a shipped one, frontmatter untouched; a repo never replaces or removes a shipped body"
+  - "install --project renders the repo skills and the repo rules file into the host's project directory as gitignored copies; doctor reports drift between .komodo and the copies"
+type: feat
+```
+
+#### [TSK-03.5.3] Repo commands and additive policy [P: H] [READY]
+```yaml
+files: [internal/repo/commands.go, internal/line/verify.go, internal/guard]
+done_when:
+  - go test ./internal/repo/... ./internal/line/... ./internal/guard/...
+depends_on: [TSK-03.5.2]
+context:
+  - ".komodo/commands.json: verify, compile, before_review, after_publish, each a shell command the line runs at that station; verify here overrides the discovery order"
+  - ".komodo/policy.json adds critical refs; the guard merges it under the machine overlay and nothing in it can remove a denial"
+type: feat
+```
+
+#### [TSK-03.5.4] `komodo bridge`: a stdio MCP server over Ollama [P: C] [READY]
+```yaml
+files: [internal/bridge, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/bridge/...
+context:
+  - "JSON-RPC 2.0 over stdin and stdout: initialize, tools/list, tools/call; tools local_chat(model, system, prompt) and local_models(); net/http against OLLAMA_BASE_URL, default http://localhost:11434"
+  - "Ollama down returns a tool error with the URL, never a crash; tested against a fake Ollama on a local listener"
+type: feat
+```
+
+#### [TSK-03.5.5] The hybrid and local profiles mount the bridge [P: H] [READY]
+```yaml
+files: [internal/mount/claude, internal/mount/codex, internal/profile, komodo/roles/summarizer.md]
+done_when:
+  - go test ./internal/mount/... ./internal/profile/...
+depends_on: [TSK-03.5.4, TSK-03.3.4]
+context:
+  - "the Claude mount registers the bridge as a stdio MCP server running komodo bridge, replacing the http entry at 127.0.0.1:8000 when present; a role whose provider is ollama renders with a body that calls local_chat with the profile's model; the reviewer may be ollama so a review never shares a vendor with the build; a missing bridge degrades to the light tier and says so once"
+  - "the Codex mount's local profile sets oss_provider ollama and a model_providers.ollama base_url in config.toml, and every tier's model from the profile"
+type: feat
+```
+
+### [TG-03.6] Demolition and the exit test
+```yaml
+type: chore
+version: 1.5.0
+```
+* **Why:** nothing from the V1 orchestrator survives, the gate is Go, and the second host proves the mounts are the only host-specific code.
+
+#### [TSK-03.6.1] The Python goes and `go test` is the gate [P: C] [READY]
+```yaml
+files: [komodo/pipeline.py, komodo/state.py, komodo/gates.py, komodo/pr.py, komodo/pr_actions.py, komodo/account.py, komodo/gitops.py, komodo/workers, komodo/tasks.py, komodo/dag.py, komodo/render.py, komodo/config.py, komodo/install.py, komodo/doctor.py, komodo/comment_rules.py, komodo/__main__.py, komodo/__init__.py, komodo/adapters, komodo/hooks, tests, scripts]
+done_when:
+  - test ! -f komodo/__main__.py
+  - test ! -d komodo/hooks
+  - go vet ./...
+  - go test ./...
+context:
+  - "delete, do not stub; komodo/ keeps only AGENTS.md, rules, roles, skills, policy.json; .github runs go vet, go test, komodo doctor, komodo guard check, and the binary match"
+type: chore
+```
+
+#### [TSK-03.6.2] README and the templates describe what exists [P: H] [READY]
+```yaml
+files: [README.md, templates/project]
+done_when:
+  - go run ./cmd/komodo doctor
 depends_on: [TSK-03.6.1]
 context:
-  - ".komodo/standards/<name>.md with the same frontmatter as a shipped standard; a matching name is appended to the shipped one in the standards slot, a new name is a new standard with its own globs"
-  - "the session sees the repo standard through the same pointer mechanism the adapter renders, resolved at read time"
-type: feat
+  - "the README drops its planned status and the V1 coverage table, keeps the line, the stations, the devices, the mounts, ad hoc, the guard, the binary, the repo layer, setup, usage, layout; templates/project carries AGENTS.md, BACKLOG.md, CHANGELOG.md, the docs/spec starters the grammar's context anchors point at, and the example .komodo/context file; CLAUDE.md.tmpl goes"
+type: docs
 ```
 
-#### [TSK-03.6.3] Exclusions with a floor, and doctor fails on drift [P: M] [READY]
-```yaml
-files: [komodo/repo.py, komodo/doctor.py, tests/test_repo.py, tests/test_doctor.py]
-done_when:
-  - python3 -m unittest tests.test_repo tests.test_doctor -q
-depends_on: [TSK-03.6.2]
-context:
-  - ".komodo/exclude lists shipped standards this repo never loads; comments, api-security, and sdlc cannot be excluded"
-  - "doctor fails when an excluded standard's globs match tracked files and no .komodo/standards/<name>.md exists; git ls-files against the globs is the whole check"
-  - "precedence is config defaults, then ~/.komodo/config.json which only tightens, then the repo layer"
-type: feat
-```
-
-#### [TSK-03.6.4] Repo skills add or append, and `install --project` renders them for the host [P: H] [READY]
-```yaml
-files: [komodo/repo.py, komodo/install.py, komodo/adapters/claude.py, komodo/adapters/codex.py, komodo/doctor.py, tests/test_repo.py]
-done_when:
-  - python3 -m unittest tests.test_repo -q
-depends_on: [TSK-03.6.3]
-context:
-  - ".komodo/skills/<name>/SKILL.md: a new name is a new skill; a shipped name appends a Repo overrides section to the shipped body, frontmatter untouched; a repo never replaces or removes a shipped body"
-  - "install --project renders .komodo/skills into the host's project skill directory as gitignored copies and writes the host's project rules file from the repo AGENTS.md; doctor reports drift between .komodo and the copies"
-type: feat
-```
-
-#### [TSK-03.6.5] Repo commands and additive repo policy [P: H] [READY]
-```yaml
-files: [komodo/repo.py, komodo/line.py, komodo/hooks/guard.py, tests/test_repo.py, tests/test_guard.py]
-done_when:
-  - python3 -m unittest tests.test_repo tests.test_guard -q
-depends_on: [TSK-03.6.4]
-context:
-  - ".komodo/commands.json: verify, compile, before_review, after_publish, each a shell command tasks close runs at that station; verify here overrides the discovery order"
-  - ".komodo/policy.json adds protected refs, prod markers, and denied patterns; the guard merges it under the machine floor and nothing in it can remove a denial"
-type: feat
-```
-
-### [TG-03.7] Local models on Claude Code
-```yaml
-type: feat
-version: 1.5.0
-```
-* **Why:** Claude Code cannot run a subagent on Ollama, so a role that runs locally calls a tool. The bridge at `127.0.0.1:8000` lives in no repo and was down for a whole session; V1.5 owns a bridge the host spawns, in the standard library, with no process to keep alive.
-
-#### [TSK-03.7.1] `komodo bridge` is a stdio MCP server over Ollama [P: C] [READY]
-```yaml
-files: [komodo/bridge.py, tests/test_bridge.py]
-done_when:
-  - python3 -m unittest tests.test_bridge -q
-context:
-  - "JSON-RPC 2.0 over stdin and stdout: initialize, tools/list, tools/call; tools local_chat(model, system, prompt) and local_models(); urllib against OLLAMA_BASE_URL, default http://localhost:11434"
-  - "Ollama down returns a tool error with the URL, never an exception; the host keeps running"
-  - "about 200 lines, standard library only, tested with a fake Ollama on a local socket"
-type: feat
-```
-
-#### [TSK-03.7.2] Install registers the bridge on the Claude host [P: H] [READY]
-```yaml
-files: [komodo/adapters/claude.py, tests/test_adapter_claude.py]
-done_when:
-  - python3 -m unittest tests.test_adapter_claude -q
-depends_on: [TSK-03.7.1]
-context:
-  - "an MCP server entry of type stdio running python3 -m komodo bridge, replacing the http entry at 127.0.0.1:8000 when present"
-type: feat
-```
-
-#### [TSK-03.7.3] The hybrid profile routes light roles, and optionally the reviewer, through the bridge [P: H] [READY]
-```yaml
-files: [komodo/roles/summarizer.md, komodo/config.py, komodo/adapters/claude.py, tests/test_adapter_claude.py, tests/test_config.py]
-done_when:
-  - python3 -m unittest tests.test_adapter_claude tests.test_config -q
-depends_on: [TSK-03.7.2]
-context:
-  - "a role whose profile provider is ollama on the claude host renders with a body that calls local_chat with the profile's model, and the light tier as the wrapper model"
-  - "the reviewer tier may be ollama, so a review never shares a vendor with the build; off by default"
-  - "a missing bridge degrades to the light tier and says so once"
-type: feat
-```
-
-### [TG-03.8] The second host: Codex, the portability lint, and the exit test
-```yaml
-type: feat
-version: 1.5.0
-```
-* **Why:** the second host proves the first was not special and rehearses the day Komodo leaves a proprietary host. Codex reads AGENTS.md and SKILL.md natively, takes agents as TOML, registers the same hook events with the same deny JSON, and runs every tier on Ollama with `--oss`.
-
-#### [TSK-03.8.1] The Codex adapter [P: C] [READY]
-```yaml
-files: [komodo/adapters/codex.py, tests/test_adapter_codex.py]
-done_when:
-  - python3 -m unittest tests.test_adapter_codex -q
-context:
-  - "renders ~/.codex/AGENTS.md, ~/.codex/agents/<role>.toml with name, description, developer_instructions, model, model_reasoning_effort, sandbox_mode from the profile, ~/.agents/skills as a copy, ~/.codex/hooks.json with both hooks, and the mcp_servers table in config.toml with the bridge"
-  - "the five Komodo tool verbs map to sandbox_mode and nothing else; Codex has no allow-list, so the guard is the whole policy there"
-type: feat
-```
-
-#### [TSK-03.8.2] Doctor lints for host leakage and render drift [P: H] [READY]
-```yaml
-files: [komodo/doctor.py, tests/test_doctor.py]
-done_when:
-  - python3 -m unittest tests.test_doctor -q
-  - python3 -m komodo doctor
-context:
-  - "a skill, role, or rule that names a host tool, a host path under ~/.claude or ~/.codex, a host flag, or a vendor name fails doctor; adapters and config are exempt"
-  - "drift: the rendered layout differs from what the source would render now"
-type: feat
-```
-
-#### [TSK-03.8.3] The local profile renders Codex with Ollama as the provider [P: H] [READY]
-```yaml
-files: [komodo/adapters/codex.py, komodo/config.py, tests/test_adapter_codex.py, tests/test_config.py]
-done_when:
-  - python3 -m unittest tests.test_adapter_codex tests.test_config -q
-depends_on: [TSK-03.8.1]
-context:
-  - "profile local sets oss_provider ollama and a model_providers.ollama base_url in config.toml, and every tier's model from the profile"
-type: feat
-```
-
-#### [TSK-03.8.4] Proof: the exit test under Codex [P: H] [READY]
+#### [TSK-03.6.3] Proof: the exit test under Codex [P: H] [READY]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
   - grep -q "Proof: the exit test under Codex" CHANGELOG.md
-depends_on: [TSK-03.8.1, TSK-03.8.2, TSK-03.8.3]
+depends_on: [TSK-03.6.2]
 owner: human
 context:
-  - "komodo install --host codex with zero changes outside komodo/adapters, then run TG-03.9 with codex exec through the launcher; record the same numbers as TSK-03.5.3 under a Proof: the exit test under Codex heading in the 1.5.0 changelog entry"
+  - "komodo install --host codex with zero changes outside internal/mount, then run one task with codex exec through the launcher; record the same numbers as TSK-03.4.3 under a Proof: the exit test under Codex heading"
 type: docs
 ```
 
-### [TG-03.9] Demolition and docs
-```yaml
-type: chore
-version: 1.5.0
-```
-* **Why:** nothing from the V1 orchestrator survives, and the docs say what V1.5 is rather than what V1 was.
-
-#### [TSK-03.9.1] The orchestrator goes [P: C] [READY]
-```yaml
-files: [komodo/pipeline.py, komodo/state.py, komodo/gates.py, komodo/account.py, komodo/gitops.py, komodo/workers, tests/test_pipeline.py, tests/test_state.py, tests/test_gates.py, tests/test_account.py, tests/test_gitops.py, tests/test_workers.py]
-done_when:
-  - test ! -f komodo/pipeline.py
-  - test ! -d komodo/workers
-  - python3 scripts/verify.py
-context:
-  - "delete, do not stub; a test that imported a deleted module goes with it; verify must pass with nothing under komodo/ importing outside the standard library"
-type: chore
-```
-
-#### [TSK-03.9.2] README and the templates describe what exists [P: H] [READY]
-```yaml
-files: [README.md, templates/project]
-done_when:
-  - python3 -m komodo doctor
-depends_on: [TSK-03.9.1]
-context:
-  - "the README drops its planned status and keeps the vision, features, setup, usage, and layout; the roadmap becomes a changelog pointer"
-  - "templates/project carries AGENTS.md, BACKLOG.md, CHANGELOG.md, the docs/spec PRD and SDD starters the grammar's context anchors point at, and the example .komodo/context file; CLAUDE.md.tmpl goes because install --project renders it"
-type: docs
-```
-
-#### [TSK-03.9.3] Changelog 1.5.0 [P: M] [READY]
+#### [TSK-03.6.4] Changelog 1.5.0 [P: M] [READY]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
   - grep -q "## 1.5.0" CHANGELOG.md
-depends_on: [TSK-03.9.2]
+depends_on: [TSK-03.6.3]
 context:
-  - "one heading, what was removed and what replaced it, from the README's roadmap and the deleted modules"
+  - "one heading: the line, what was removed, what replaced it, both proofs"
 type: docs
 ```
