@@ -17,6 +17,7 @@ import (
 	"komodo/internal/gate"
 	"komodo/internal/line"
 	"komodo/internal/pr"
+	"komodo/internal/release"
 )
 
 const usage = `komodo: the code assembly line.
@@ -30,6 +31,10 @@ const usage = `komodo: the code assembly line.
   komodo close --wave N       QC: merge the wave, compile, verify
   komodo close --group        Ship: commit, push, the pull request, the changelog
   komodo comments check       The mechanical comment lint
+  komodo diff                 The reviewer's whole input: tasks, standards, diff
+  komodo report               What the run did, in the accessibility contract
+  komodo tag                  Tag every changelog version no tag points at
+  komodo release check        Audit the drift between changelog, tags, and groups
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
 
@@ -58,6 +63,14 @@ func main() {
 		runClose(root, os.Args[2:])
 	case "comments":
 		runComments(root, os.Args[2:])
+	case "diff":
+		runDiff(root)
+	case "report":
+		runReport(root)
+	case "tag":
+		runTag(root)
+	case "release":
+		runRelease(root, os.Args[2:])
 	case "gate":
 		runGate(root, os.Args[2:])
 	case "-h", "--help", "help":
@@ -479,4 +492,110 @@ func printJSON(value any) {
 	if err := encoder.Encode(value); err != nil {
 		fail(err)
 	}
+}
+
+// currentPlan is the plan for the run in progress, with its recorded base and branch.
+func currentPlan(root string) *line.Plan {
+	plan, err := line.Next(root, "")
+	if err != nil {
+		fail(err)
+	}
+	if plan == nil {
+		fail(fmt.Errorf("no group is ready and no run is in progress"))
+	}
+	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
+	}
+	if info, err := os.Stat(filepath.Join(root, plan.Worktree)); err != nil || !info.IsDir() {
+		plan.Worktree = "."
+	}
+	return plan
+}
+
+// runDiff prints the whole input a reviewer reads.
+func runDiff(root string) {
+	input, err := line.DiffFor(root, currentPlan(root))
+	if err != nil {
+		fail(err)
+	}
+	fmt.Print(input.Text)
+}
+
+// runReport prints what the run did.
+func runReport(root string) {
+	report, err := line.BuildReport(root, currentPlan(root))
+	if err != nil {
+		fail(err)
+	}
+	fmt.Print(report.Text)
+}
+
+// runTag tags every changelog version no tag points at and pushes it.
+func runTag(root string) {
+	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		fail(err)
+	}
+	pending := release.Taggable(text, gitLines(root, "tag", "--list"))
+	if len(pending) == 0 {
+		fmt.Println("every changelog version is tagged")
+		return
+	}
+	for _, version := range pending {
+		name := release.TagName(version)
+		if _, err := gitRun(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
+			fail(err)
+		}
+		if _, err := gitRun(root, "push", "origin", name); err != nil {
+			fail(err)
+		}
+		fmt.Println("tagged", name)
+	}
+}
+
+// runRelease audits the drift between the changelog, the tags, and the groups.
+func runRelease(root string, args []string) {
+	if len(args) == 0 || args[0] != "check" {
+		fail(fmt.Errorf("usage: komodo release check"))
+	}
+	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		fail(err)
+	}
+	_, parsed := load(root)
+	var versions []string
+	for _, group := range parsed.Groups {
+		versions = append(versions, group.Version())
+	}
+	drift := release.Check(text, gitLines(root, "tag", "--list"), versions)
+	for _, item := range drift {
+		fmt.Printf("%s: %s\n", item.Subject, item.Detail)
+	}
+	fmt.Printf("%d drift(s)\n", len(drift))
+	if len(drift) > 0 {
+		os.Exit(1)
+	}
+}
+
+// gitRun runs one git command in the repo root.
+func gitRun(root string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+// gitLines runs one git command and splits its output into lines.
+func gitLines(root string, args ...string) []string {
+	out, err := gitRun(root, args...)
+	if err != nil {
+		return nil
+	}
+	var lines []string
+	for _, line := range strings.Split(out, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			lines = append(lines, trimmed)
+		}
+	}
+	return lines
 }

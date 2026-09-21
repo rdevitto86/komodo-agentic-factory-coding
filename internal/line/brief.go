@@ -39,6 +39,9 @@ type Standard struct {
 // LoadStandards reads every standards skill the repo ships.
 func LoadStandards(root string) ([]Standard, error) {
 	entries, err := os.ReadDir(filepath.Join(root, SkillsDir))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

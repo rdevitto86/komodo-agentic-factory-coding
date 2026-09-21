@@ -152,7 +152,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.6] `komodo diff`, `report`, `tag`, and `release check` [P: H] [READY]
+#### [TSK-03.2.6] `komodo diff`, `report`, `tag`, and `release check` [P: H] [DONE]
 ```yaml
 files: [internal/line/diff.go, internal/line/report.go, internal/release, internal/line/diff_test.go]
 done_when:

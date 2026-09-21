@@ -122,7 +122,7 @@ var classType = map[string]string{
 	"narrative-comment": "docs", "undocumented-nonobvious": "docs", "test-gap": "test",
 }
 
-// FileFindings appends the findings under the floor to the backlog as tasks, newest last.
+// FileFindings appends the findings under the floor as low-priority tasks, newest last.
 func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 	if len(findings) == 0 {
 		return nil, nil
