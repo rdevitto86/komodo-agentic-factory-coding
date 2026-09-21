@@ -48,7 +48,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.1.3] The policy has four denials, and the rules give a worktree unlimited freedom [P: C] [READY]
+#### [TSK-03.1.3] The policy has four denials, and the rules give a worktree unlimited freedom [P: C] [DONE]
 ```yaml
 files: [komodo/policy.json, komodo/AGENTS.md, komodo/rules]
 done_when:
