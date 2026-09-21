@@ -1,4 +1,4 @@
-# komodo-factory-coding
+# komodo-agentic-factory-coding
 
 Komodo's code assembly line: one static binary is the conveyor and the devices, markdown is everything a model reads, one guard is the only hook, and a model is a machine mounted per host. `README.md` is the plan and the requirements; `BACKLOG.md` is the work. Everything lands on PR #103.
 

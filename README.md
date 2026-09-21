@@ -1,4 +1,4 @@
-# komodo-factory-coding
+# komodo-agentic-factory-coding
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
@@ -302,8 +302,8 @@ One vocabulary, used the same way in this file, the backlog, the code, the skill
 Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optional.
 
 ```bash
-git clone <this repo> ~/komodo/ai/komodo-factory-coding
-cd ~/komodo/ai/komodo-factory-coding
+git clone <this repo> ~/komodo/ai/komodo-agentic-factory-coding
+cd ~/komodo/ai/komodo-agentic-factory-coding
 bin/komodo-darwin-arm64 install --host claude     # or the windows or linux binary; --host codex; --host both
 ```
 
