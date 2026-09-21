@@ -418,3 +418,31 @@ done_when:
 depends_on: [TSK-02.9.2]
 context: ["the caps a run will use were only discoverable by reading config.py DEFAULTS and reasoning about which tier each role maps to", "status now prints the plan, how it is metered, the scaled timeouts, and one row per role with model, effort, turn cap and dollar cap", "--json carries the same report under a limits key"]
 ```
+
+### [TG-02.11] Repo-scoped task ids
+```yaml
+type: refactor
+version: 1.4.0
+```
+* **Why:** `EPIC-`, `TG-` and `TSK-` are the same three literals in every repo that runs the harness, so two backlogs in one conversation collide and no id says which project it came from. A Jira-style per-repo key — `AITK-1` for an epic, `AITK-1.1` for a group, `AITK-1.1.6` for a task — makes every id self-identifying.
+* **Not ready to build.** The prefix today also encodes the level: `TSK-` means task. Under one key the *depth* has to carry that instead, and every consumer below assumes the literal. This group is scoping only — none of it is estimated, and the open questions outnumber the answers.
+
+#### [TSK-02.11.1] Decide where a repo's key comes from, now that no repo config file exists [P: H] [REFINEMENT]
+* The obvious home was `komodo.json`, which is deleted, and `.komodo/config.json` is gitignored so a key written there would not reach a clone.
+* **Candidates:** the backlog declares its own key in a header line, so the file that uses the ids also defines them; or derive it from the git remote or directory name, so nothing is declared at all; or keep a literal default and let the key be optional.
+* Deriving it makes a rename of the repo silently renumber every id, which argues for declaring it. Needs a decision before anything below can be specified.
+
+#### [TSK-02.11.2] Survey every place the three literals are hardcoded [P: H] [REFINEMENT]
+* `komodo/tasks.py` — `EPIC_HEADING`, `GROUP_HEADING`, `TASK_HEADING`, `LEGACY_TASK`, `LEGACY_ROW`; `next_task_id` slices `group.id[len("TG-"):]`; `depends_on` is recovered with a bare ``re.findall(r"TSK-[\w.]+")``.
+* `komodo/adapters/claude/hooks/context_injector.py` and its Go twin `komodo/hooks/src/inject.go` carry the same two regexes, so a change needs the binaries rebuilt.
+* `komodo/rules/backlog.md` is the grammar the always-on skill renders, `komodo/rules/cli.md` shows `TG-01.1` in its examples, and `templates/project/BACKLOG.md.tmpl` seeds six ids into every new repo.
+
+#### [TSK-02.11.3] Resolve the ambiguity one key introduces [P: H] [REFINEMENT]
+* With three literals the level is read off the prefix. With one key it has to come from segment count, so `AITK-1.1` is a group only because depth is fixed at three.
+* That forbids a fourth level forever, and it makes a malformed id parse as a different level rather than fail. The heading depth (`##`, `###`, `####`) already carries the level and could be the authority instead, with the id purely an address.
+* Decide which of the two is authoritative before writing a regex.
+
+#### [TSK-02.11.4] Plan the migration of a backlog already in flight [P: M] [REFINEMENT]
+* Ids appear in committed history: branch names (`feat/<slug>`), run state under `.komodo/runs/<id>-<group>/`, commit messages, PR titles, and `depends_on` edges.
+* A rewrite breaks a resume, and `tasks.py` already carries a legacy path for the retired `SUB-` row grammar, which is the precedent for how long both forms have to be read.
+* Needs a decision on whether the old literals stay readable forever or for one release.
