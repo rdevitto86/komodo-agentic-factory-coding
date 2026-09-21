@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"komodo/internal/backlog"
@@ -21,6 +22,7 @@ const usage = `komodo: the code assembly line.
   komodo list [--json]        List every task, or one group's tasks
   komodo add <group> <title>  Append a task to a group
   komodo next [--json]        The next ready group: tasks, waves, machines
+  komodo brief <task>         Fill the role template and write the brief
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
 
@@ -42,6 +44,8 @@ func main() {
 		runAdd(root, os.Args[2:])
 	case "next":
 		runNext(root, os.Args[2:])
+	case "brief":
+		runBrief(root, os.Args[2:])
 	case "gate":
 		runGate(root, os.Args[2:])
 	case "-h", "--help", "help":
@@ -279,5 +283,49 @@ func runNext(root string, args []string) {
 	}
 	if len(plan.Skipped) > 0 {
 		fmt.Printf("  done already: %s\n", strings.Join(plan.Skipped, ", "))
+	}
+}
+
+// runBrief fills a role's template for one task and writes it into the task worktree.
+func runBrief(root string, args []string) {
+	set := flag.NewFlagSet("brief", flag.ExitOnError)
+	role := set.String("role", "builder", "the role the brief is for")
+	dryRun := set.Bool("dry-run", false, "print slot sizes and a token estimate, write nothing")
+	failure := set.String("failure", "", "the previous attempt's output, which makes this a repair")
+	_ = set.Parse(args)
+	if set.NArg() < 1 {
+		fail(fmt.Errorf("usage: komodo brief <task> [--role builder] [--dry-run]"))
+	}
+	cwd := root
+	if state, err := line.LoadRun(root); err == nil && state.Worktree != "" {
+		cwd = state.Worktree
+	}
+	brief, err := line.BuildBrief(root, cwd, set.Arg(0), *role, *failure)
+	if err != nil {
+		fail(err)
+	}
+	if *dryRun {
+		names := make([]string, 0, len(brief.Slots))
+		for name := range brief.Slots {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			fmt.Printf("%-14s %7d chars\n", name, brief.Slots[name])
+		}
+		fmt.Printf("%-14s %7d chars, about %d tokens\n", "brief", len(brief.Text), brief.Tokens)
+		return
+	}
+	branch := brief.Task
+	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+		branch = state.Branch
+	}
+	if err := line.WriteBrief(root, brief, branch); err != nil {
+		fail(err)
+	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(brief); err != nil {
+		fail(err)
 	}
 }

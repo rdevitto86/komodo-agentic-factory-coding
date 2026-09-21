@@ -111,7 +111,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.3] Input device: `komodo brief` [P: C] [READY]
+#### [TSK-03.2.3] Input device: `komodo brief` [P: C] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/line/brief_test.go, internal/line/clip.go]
 done_when:
