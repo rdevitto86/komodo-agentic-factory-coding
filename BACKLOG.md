@@ -473,3 +473,44 @@ version: 1.4.0
 * Ids appear in committed history: branch names (`feat/<slug>`), run state under `.komodo/runs/<id>-<group>/`, commit messages, PR titles, and `depends_on` edges.
 * A rewrite breaks a resume, and `tasks.py` already carries a legacy path for the retired `SUB-` row grammar, which is the precedent for how long both forms have to be read.
 * Needs a decision on whether the old literals stay readable forever or for one release.
+
+### [TG-02.14] Guard scopes
+```yaml
+type: fix
+version: 1.4.0
+```
+* **Why:** the guard refuses whole verbs rather than the destructive shapes of them. A forced branch delete is recoverable from the reflog for 90 days, and a single-file delete inside the worktree destroys nothing that is committed, yet both are denied outright. An agent that cannot delete its own scratch branch hands every cleanup back to the human, which is the cost the guard exists to avoid.
+* Both implementations move together: `guard.py` and `guard.go` are held to the same cases, and the committed binaries under `komodo/hooks/bin/` have to be rebuilt with `python3 scripts/build-hooks.py`.
+
+#### [TSK-02.14.1] Scope the branch and delete refusals to the shapes that actually lose work [P: H] [READY]
+```yaml
+files:
+  - komodo/adapters/claude/hooks/guard.py
+  - komodo/hooks/src/guard.go
+  - tests/test_hooks.py
+done_when:
+  - python3 -m unittest tests.test_hooks -q
+  - python3 scripts/verify.py
+context:
+  - "guard.py:108 refuses `git branch` carrying -D, -f or --force outright. A forced delete of an unmerged branch is recoverable from the reflog, and the harness itself creates and discards `<branch>-tsk-xx-y-z` worktree branches on every wave. Scope it: refuse a forced delete or move of a protected branch, allow it otherwise."
+  - "guard.py:132 refuses a delete only when both the recursive and force flags are present, but nothing allows the plain single-file form, so it falls through to an interactive prompt and stalls an unattended run. Decide the allowed shape here and record it, so the settings allow list and the guard agree rather than each covering half."
+  - "a delete of a path outside the repo, or of the repo root itself, stays refused whatever the flags"
+type: fix
+```
+
+#### [TSK-02.14.2] The guard splits a command on shell metacharacters before it parses quotes [P: H] [READY]
+```yaml
+files:
+  - komodo/adapters/claude/hooks/guard.py
+  - komodo/hooks/src/guard.go
+  - tests/test_hooks.py
+done_when:
+  - python3 -m unittest tests.test_hooks -q
+  - python3 scripts/verify.py
+depends_on: [TSK-02.14.1]
+context:
+  - "analyze() applies SEGMENT_SPLIT to the raw command string, so a pipe inside a quoted argument starts a new segment and the text after it is parsed as a fresh command. The tokens are never the ones the shell would run."
+  - "verified twice on 2026-09-21. A read-only grep whose pattern carried an alternation naming the refused flags was itself refused, and so was a heredoc whose document body quoted them. In both cases nothing was deleted and nothing could have been: one only reads, the other only writes a markdown file."
+  - "fix: scan into segments with quote awareness, so a metacharacter inside single or double quotes is a literal, and never inspect heredoc body lines as commands. The same inputs have to be refused by both implementations, and allowed by both once fixed."
+type: fix
+```
