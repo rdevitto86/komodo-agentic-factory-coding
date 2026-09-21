@@ -138,7 +138,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.5] QC and ship: `komodo close --wave` and `--group` [P: C] [READY]
+#### [TSK-03.2.5] QC and ship: `komodo close --wave` and `--group` [P: C] [DONE]
 ```yaml
 files: [internal/line/wave.go, internal/line/ship.go, internal/line/verify.go, internal/line/wave_test.go, internal/pr]
 done_when:

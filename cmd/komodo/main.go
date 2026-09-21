@@ -16,6 +16,7 @@ import (
 	"komodo/internal/comments"
 	"komodo/internal/gate"
 	"komodo/internal/line"
+	"komodo/internal/pr"
 )
 
 const usage = `komodo: the code assembly line.
@@ -26,6 +27,8 @@ const usage = `komodo: the code assembly line.
   komodo next [--json]        The next ready group: tasks, waves, machines
   komodo brief <task>         Fill the role template and write the brief
   komodo close <task>         Validate the result, rerun the checks, flip the status
+  komodo close --wave N       QC: merge the wave, compile, verify
+  komodo close --group        Ship: commit, push, the pull request, the changelog
   komodo comments check       The mechanical comment lint
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
@@ -356,9 +359,20 @@ func runBrief(root string, args []string) {
 func runClose(root string, args []string) {
 	set := flag.NewFlagSet("close", flag.ExitOnError)
 	withGate := set.Bool("gate", false, "run the local gate before the task commit")
+	wave := set.Int("wave", 0, "QC one wave of the current run, counting from 1")
+	group := set.Bool("group", false, "ship the current run: commit, push, pull request, changelog")
+	base := set.String("base", "", "the branch the pull request targets")
 	_ = set.Parse(args)
+	if *wave > 0 {
+		runWave(root, *wave)
+		return
+	}
+	if *group {
+		runShip(root, *base)
+		return
+	}
 	if set.NArg() < 1 {
-		fail(fmt.Errorf("usage: komodo close <task> [--gate]"))
+		fail(fmt.Errorf("usage: komodo close <task> [--gate] | --wave N | --group"))
 	}
 	outcome, err := line.CloseTask(root, set.Arg(0), *withGate)
 	if err != nil {
@@ -414,4 +428,55 @@ func trackedFiles(root string) []string {
 		}
 	}
 	return paths
+}
+
+// runWave merges one wave into the group branch, then runs the compile and verify gates.
+func runWave(root string, number int) {
+	plan, err := line.Next(root, "")
+	if err != nil {
+		fail(err)
+	}
+	if plan == nil {
+		fail(fmt.Errorf("no run is in progress"))
+	}
+	result, err := line.CloseWave(root, plan, number-1)
+	if err != nil {
+		fail(err)
+	}
+	printJSON(result)
+	if !result.OK {
+		os.Exit(1)
+	}
+}
+
+// runShip commits, pushes, opens the pull request, and writes the changelog line.
+func runShip(root, base string) {
+	plan, err := line.Next(root, "")
+	if err != nil {
+		fail(err)
+	}
+	if plan == nil {
+		fail(fmt.Errorf("no run is in progress"))
+	}
+	if state, err := line.LoadRun(root); err == nil {
+		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
+	}
+	if base != "" {
+		plan.Base = base
+	}
+	body := line.ReportBody(plan, &line.ShipResult{}, nil)
+	result, err := line.ShipGroup(root, plan, body, pr.New(root))
+	if err != nil {
+		fail(err)
+	}
+	printJSON(result)
+}
+
+// printJSON writes one value as indented JSON.
+func printJSON(value any) {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
+		fail(err)
+	}
 }
