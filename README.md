@@ -2,7 +2,7 @@
 
 Komodo's agent toolkit: one set of rules, roles, standards, skills, and guardrails that any agent host renders and runs. The host is the factory; Komodo is the assembly line. Today the factory is Claude Code with Ollama beside it. The day it is something else, the move is one adapter file.
 
-**Status: V2 is planned, not built.** This README is the plan. V1, the Python orchestrator under `komodo/`, is what runs today and builds V2 until the run skill lands; the demolition group at the end of the roadmap removes it. The full design is in `docs/spec/v2.md` and the work is in `BACKLOG.md`.
+**Status: V1.5 is planned, not built.** This README is the plan. V1, the Python orchestrator under `komodo/`, is what runs today and builds V1.5 until the run skill lands; the demolition group at the end of the roadmap removes it. The work is in `BACKLOG.md`.
 
 ## Vision
 
@@ -24,6 +24,17 @@ Everything Komodo says to an agent lives once under `komodo/`: the universal rul
 
 `komodo tasks` is the line. `next` prints the next ready group as JSON with its waves and dependencies, skipping tasks that already hold a valid result on disk, which is how a run resumes. `brief` fills a role's template, writes the scope file, and creates the worktree. `close` validates the builder's JSON against the role schema, reruns the task's `done_when` commands, runs the comment lint, and flips the status token; with `--wave` it merges worktrees in order and stops on conflict, and with `--group` it commits, pushes, and opens the PR. `diff` and `report` feed the reviewer and the human. None of these calls a model.
 
+| Station | Who | What |
+|---|---|---|
+| Intake | `tasks next --json` | The next READY group: tasks, dependencies, waves by directory, type, version. Tasks with a valid result on disk are skipped, which is resume |
+| Brief | `tasks brief <task>` | Fills the role template from the slots, writes the brief and the scope file, creates the worktree |
+| Build | builder role, one per task in the wave | Reads its brief path; owns the scope; writes its result JSON |
+| Close | `tasks close <task>` | Validates the result against the role schema, reruns `done_when`, runs the comment lint, flips the status. A failure writes the failure slot for one repair |
+| Wave | `tasks close --wave` | Merges the wave's worktrees in order, stops on conflict, runs the repo's verify |
+| Review | reviewer role, fresh context | Reads only `tasks diff`; on another tier or vendor when the profile says so. One pass, one repair |
+| Publish | `tasks close --group` | Commit on `<type>/<name>`, push, PR, changelog line, status DONE |
+| Report | `tasks report` | Per-task seconds, turns, tokens when the host reports them, findings; in the accessibility format |
+
 ### The run skill and the headless launcher
 
 The `run` skill is about ten lines under 800 tokens: next, spawn one builder per task in the wave, close, spawn the reviewer, close the group, publish. The session judges only what to spawn and what a result says, so there is no prose state machine for it to re-read after compaction, which is what made the 0.x skill loop slow. `komodo run <group>` wraps the same skill in the host's non-interactive mode for unattended runs, with push credentials stripped from the environment first. The plan's first proof runs one group under V1 and under the skill and records wall time and tokens before anything is deleted.
@@ -31,6 +42,17 @@ The `run` skill is about ten lines under 800 tokens: next, spawn one builder per
 ### Context injection with budgets
 
 A builder never guesses what it needs; `tasks brief` injects it. The slots are the task block, the repo's own `AGENTS.md`, repo context files matched to the task's files, the task's context anchors resolved to sections, the files themselves, the standards for the extensions and role, the acceptance commands, and on a repair the failed output plus the previous attempt's diff. Every slot has a cap in `config.py` and is clipped head-and-tail with a marker the model can see, so a brief is the same size on a large repo as on a small one. The reviewer gets the diff, the group's tasks, and the standards the diff touches, and nothing from the builder's transcript.
+
+| Slot | Source | Default cap |
+|---|---|---|
+| task block | the task's YAML | none |
+| repo rules | the repo's `AGENTS.md`, or a one-line default | 8k chars |
+| repo context | `.komodo/context/*.md` whose globs match the task's files | 8k chars |
+| context | the task's `context` anchors, resolved to sections | 10k per file, 24k total |
+| files | the task's `files`, existing ones read | 10k per file, 24k total |
+| standards | by extension and role, from the skills directory plus the repo layer | 6k per standard |
+| done when | the task's commands | none |
+| failure | the failed command output and the previous attempt's diff, on repair only | 80k |
 
 ### The repo layer
 
@@ -74,11 +96,11 @@ Nine groups in `BACKLOG.md`, in order. V1 runs the first four; the run skill run
 | TG-03.2 Guard and inject | The two stdlib hooks, the 60-command table, `guard check` in verify, Go and git hooks deleted | Verify runs the table |
 | TG-03.3 Profiles, Claude adapter, CLI | Tier-to-model profiles with context caps, the Claude render with pointer skills and hooks, the five-command CLI | Validate under 1500 tokens |
 | TG-03.4 The line in code | `tasks next`, `brief`, `close`, `diff`, `report`; schema validation; resume by results | Tests per command |
-| TG-03.5 Run skill and launcher | The ten-line skill, review and backlog skills, `komodo run`, the V1 versus V2 timing proof | One group each way, numbers recorded |
+| TG-03.5 Run skill and launcher | The ten-line skill, review and backlog skills, `komodo run`, the V1 versus V1.5 timing proof | One group each way, numbers recorded |
 | TG-03.6 The repo layer | Context by glob, standard overrides, exclusions with a floor, doctor drift check, a template example | Tests, doctor |
 | TG-03.7 Local models on Claude Code | The stdio bridge, its registration at install, the hybrid profile | Bridge tests with a fake Ollama |
 | TG-03.8 Codex and the exit test | The Codex adapter, the portability lint, the local profile, one group under Codex | Zero source changes outside adapters |
-| TG-03.9 Demolition and docs | The orchestrator, workers, state, account, and gitops deleted; README, architecture, decisions, templates rewritten; 2.0.0 | Verify passes with nothing left |
+| TG-03.9 Demolition and docs | The orchestrator, workers, state, account, and gitops deleted; README and templates rewritten; 1.5.0 | Verify passes with nothing left |
 
 ## Setup
 
@@ -118,8 +140,3 @@ python3 scripts/verify.py                     # the gate
 | `tests/`, `scripts/verify.py` | The gate |
 | `templates/project/` | Starters for a new repo |
 
-## Docs
-
-- `docs/spec/v2.md`: the design, the stations, the slots and their caps, the repo layer, the exit test.
-- `docs/architecture.md`, `docs/design-decisions.md`: V1 today, rewritten in TG-03.9.
-- `BACKLOG.md`: the roadmap as tasks. `python3 -m komodo tasks lint` after every edit.

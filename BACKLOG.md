@@ -1,19 +1,19 @@
 # Project Backlog
 
-Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `python3 -m komodo tasks lint` checks it. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V2 plan in `README.md` and `docs/spec/v2.md`; the PR that landed the plan lists what it replaced.
+Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `python3 -m komodo tasks lint` checks it. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V1.5 plan in `README.md`; the PR that landed the plan lists what it replaced.
 
 ---
 
-## [EPIC-03] V2, the line is code and the loop is the host
-*Goal: Komodo becomes rules, roles, standards, skills, one guard, and a set of deterministic commands that any agent host renders. A model is called twice per task, to build and to review; everything between is standard-library Python. Claude Code with Ollama is the host today for both Komodo devs; Codex is the rehearsal for the day Komodo leaves a proprietary host. Roadmap: `README.md`. Design: `docs/spec/v2.md`.*
+## [EPIC-03] V1.5, the line is code and the loop is the host
+*Goal: Komodo becomes rules, roles, standards, skills, one guard, and a set of deterministic commands that any agent host renders. A model is called twice per task, to build and to review; everything between is standard-library Python. Claude Code with Ollama is the host today for both Komodo devs; Codex is the rehearsal for the day Komodo leaves a proprietary host. Roadmap and design: `README.md`.*
 
-* **Groups run in file order.** Every group carries `2.0.0`; the tag is cut once, after TG-03.9.
+* **Groups run in file order.** Every group carries `1.5.0`; the tag is cut once, after TG-03.9.
 * **V1 runs TG-03.1 through TG-03.4.** After TG-03.5 lands the `run` skill runs the rest, and its first group is the proof.
 
 ### [TG-03.1] Source reshape
 ```yaml
 type: refactor
-version: 2.0.0
+version: 1.5.0
 ```
 * **Why:** three neutral formats are the whole portability story. Standards become skills so their trigger lives in their own frontmatter. Briefs fold into roles so a role is the brief. The git and destruction policy becomes data one guard reads on every host.
 
@@ -62,7 +62,7 @@ type: feat
 ### [TG-03.2] Guard and inject
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.5.0
 ```
 * **Why:** two stdlib scripts replace a Go binary, two Python fallbacks, and two git hooks. Both hosts send the same payload fields and accept the same deny JSON, so one script serves both, and verify runs its table so a broken guard fails the gate and never a run.
 
@@ -118,7 +118,7 @@ type: chore
 ### [TG-03.3] Profiles, the Claude adapter, and the CLI
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.5.0
 ```
 * **Why:** the adapter is the only Claude-specific code in the repo. Profiles become a tier-to-model table per host with the context caps beside them, and the CLI shrinks to what the line needs.
 
@@ -128,7 +128,7 @@ files: [komodo/config.py, tests/test_config.py]
 done_when:
   - python3 -m unittest tests.test_config -q
 context:
-  - "profiles claude, hybrid, codex, local as the spec tables them; each names a host; the reviewer tier may point at a different provider than the builder tier"
+  - "profiles claude, hybrid, codex, local as the README tables them; each names a host; the reviewer tier may point at a different provider than the builder tier"
   - "context caps: repo_rules 8000, repo_context 8000, per_file 10000, file_total 24000, standards 6000, failure 80000 chars; pipeline.task_slots holds the current values"
   - "~/.komodo/config.json overlays per machine and can only lower a cap or add a denial; a repo never carries one; account.py and every plan-derived cap go"
 type: feat
@@ -164,9 +164,9 @@ type: refactor
 ### [TG-03.4] The line in code
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.5.0
 ```
-* **Why:** everything between the two model calls is deterministic. V1 had this in the pipeline; V2 has it as commands the skill calls, so the session judges only what to spawn and what a result says.
+* **Why:** everything between the two model calls is deterministic. V1 had this in the pipeline; V1.5 has it as commands the skill calls, so the session judges only what to spawn and what a result says.
 
 #### [TSK-03.4.1] `komodo tasks next --json`, and resume by results on disk [P: C] [READY]
 ```yaml
@@ -222,7 +222,7 @@ type: feat
 ### [TG-03.5] The run skill, the launcher, and the proof
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.5.0
 ```
 * **Why:** the skill is the list of commands and the two spawns, under 800 tokens, so nothing that slowed the 0.x loop exists. The proof runs one group each way before anything is deleted.
 
@@ -251,13 +251,13 @@ type: feat
 
 #### [TSK-03.5.3] Proof: one group under V1 and under the run skill [P: C] [READY]
 ```yaml
-files: [docs/spec/v2-proof.md]
+files: [CHANGELOG.md]
 done_when:
-  - test -f docs/spec/v2-proof.md
+  - grep -q "Proof: V1 versus the run skill" CHANGELOG.md
 depends_on: [TSK-03.5.1, TSK-03.5.2]
 owner: human
 context:
-  - "run TG-03.6 under the run skill in a Claude Code session; record wall time, tokens, and turns beside the V1 numbers for TG-03.4 from its run state"
+  - "run TG-03.6 under the run skill in a Claude Code session; record wall time, tokens, and turns beside the V1 numbers for TG-03.4 from its run state, under a Proof: V1 versus the run skill heading in the 1.5.0 changelog entry"
   - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.6 merges"
 type: docs
 ```
@@ -265,7 +265,7 @@ type: docs
 ### [TG-03.6] The repo layer
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.5.0
 ```
 * **Why:** one universal set of rules, and one place a repo adds what only it knows. Nothing here is required, nothing here can widen the floor, and drift fails doctor rather than going silent.
 
@@ -308,9 +308,9 @@ type: feat
 ### [TG-03.7] Local models on Claude Code
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.5.0
 ```
-* **Why:** Claude Code cannot run a subagent on Ollama, so a role that runs locally calls a tool. The bridge at `127.0.0.1:8000` lives in no repo and was down for a whole session; V2 owns a bridge the host spawns, in the standard library, with no process to keep alive.
+* **Why:** Claude Code cannot run a subagent on Ollama, so a role that runs locally calls a tool. The bridge at `127.0.0.1:8000` lives in no repo and was down for a whole session; V1.5 owns a bridge the host spawns, in the standard library, with no process to keep alive.
 
 #### [TSK-03.7.1] `komodo bridge` is a stdio MCP server over Ollama [P: C] [READY]
 ```yaml
@@ -351,7 +351,7 @@ type: feat
 ### [TG-03.8] The second host: Codex, the portability lint, and the exit test
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.5.0
 ```
 * **Why:** the second host proves the first was not special and rehearses the day Komodo leaves a proprietary host. Codex reads AGENTS.md and SKILL.md natively, takes agents as TOML, registers the same hook events with the same deny JSON, and runs every tier on Ollama with `--oss`.
 
@@ -391,22 +391,22 @@ type: feat
 
 #### [TSK-03.8.4] Proof: the exit test under Codex [P: H] [READY]
 ```yaml
-files: [docs/spec/v2-proof.md]
+files: [CHANGELOG.md]
 done_when:
-  - grep -q codex docs/spec/v2-proof.md
+  - grep -q "Proof: the exit test under Codex" CHANGELOG.md
 depends_on: [TSK-03.8.1, TSK-03.8.2, TSK-03.8.3]
 owner: human
 context:
-  - "komodo install --host codex with zero changes outside komodo/adapters, then run TG-03.9 with codex exec through the launcher; record the same numbers as TSK-03.5.3"
+  - "komodo install --host codex with zero changes outside komodo/adapters, then run TG-03.9 with codex exec through the launcher; record the same numbers as TSK-03.5.3 under a Proof: the exit test under Codex heading in the 1.5.0 changelog entry"
 type: docs
 ```
 
 ### [TG-03.9] Demolition and docs
 ```yaml
 type: chore
-version: 2.0.0
+version: 1.5.0
 ```
-* **Why:** nothing from the V1 orchestrator survives, and the docs say what V2 is rather than what V1 was.
+* **Why:** nothing from the V1 orchestrator survives, and the docs say what V1.5 is rather than what V1 was.
 
 #### [TSK-03.9.1] The orchestrator goes [P: C] [READY]
 ```yaml
@@ -420,27 +420,25 @@ context:
 type: chore
 ```
 
-#### [TSK-03.9.2] README, architecture, decisions, and the templates describe what exists [P: H] [READY]
+#### [TSK-03.9.2] README and the templates describe what exists [P: H] [READY]
 ```yaml
-files: [README.md, docs/architecture.md, docs/design-decisions.md, docs/windows-install.md, templates/project]
+files: [README.md, templates/project]
 done_when:
   - python3 -m komodo doctor
-  - test ! -f docs/windows-install.md
 depends_on: [TSK-03.9.1]
 context:
   - "the README drops its planned status and keeps the vision, features, setup, usage, and layout; the roadmap becomes a changelog pointer"
-  - "design-decisions rewrites The pipeline is code and Guarantees are credential isolation with the reasoning in docs/spec/v2.md; the rest is checked against what still exists"
   - "templates/project carries AGENTS.md, BACKLOG.md, CHANGELOG.md, and the example .komodo/context file, and nothing else"
 type: docs
 ```
 
-#### [TSK-03.9.3] Changelog 2.0.0 [P: M] [READY]
+#### [TSK-03.9.3] Changelog 1.5.0 [P: M] [READY]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
-  - grep -q "## 2.0.0" CHANGELOG.md
+  - grep -q "## 1.5.0" CHANGELOG.md
 depends_on: [TSK-03.9.2]
 context:
-  - "one heading, what was removed and what replaced it, from the Removed from V1 table in the spec"
+  - "one heading, what was removed and what replaced it, from the README's roadmap and the deleted modules"
 type: docs
 ```
