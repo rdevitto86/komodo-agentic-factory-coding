@@ -7,7 +7,7 @@ Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. I
 ## [EPIC-03] V2, the assembly line
 *Goal: one static binary is the conveyor and the devices, markdown is everything a model reads, one guard is the only hook, and a model is a machine mounted per host. Two model calls per task, build and review; everything between is deterministic. Claude Code with Ollama is the host today for both Komodo devs; Codex is the exit test. Requirements and design: `README.md`.*
 
-* **Everything lands on PR #103.** No group opens its own PR; `close --group` is proven on TG-03.5 by committing to this branch. The tag `v2.0.0` is cut when #103 merges.
+* **Everything lands on PR #103 through a stack.** Each group is one PR based on the group before it and merges into that parent; #103 merges into `main` last and the tag `v2.0.0` is cut then. Branches, bases, and the validation per PR are the README's Pull requests section, and each group below names its own.
 * **Sessions build TG-03.1 through TG-03.4.** The `run` skill runs TG-03.5 and TG-03.6, and TG-03.5 is the proof.
 * **The repo starts clean.** V1 is the tag `v1-final`; the only V1 files here are the markdown TG-03.1 reshapes.
 * **Nothing runs on GitHub.** `komodo gate` is the only precheck, mechanical, local, before every commit and push. No workflow directory exists.
@@ -19,6 +19,7 @@ type: refactor
 version: 2.0.0
 ```
 * **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
+* **PR A:** `refactor/v2-markdown` from `docs/v2-plan`, opened by the session with `gh pr create`. Validated by every `done_when` here, the V1 linter from a scratch worktree of `v1-final` at zero problems, and a human read of `komodo/AGENTS.md` and `komodo/policy.json`. Merges into `docs/v2-plan`.
 
 #### [TSK-03.1.1] Standards become skills at the source [P: C] [READY]
 ```yaml
@@ -79,6 +80,7 @@ type: feat
 version: 2.0.0
 ```
 * **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
+* **PR B:** `feat/v2-conveyor` from `refactor/v2-markdown`, opened by the session. Validated by `komodo gate`, `komodo lint`, `komodo next --json` printing TG-03.3, `komodo brief --dry-run TSK-03.3.1`, `komodo close` on a hand-written result, `komodo step` printing one action, and a human read of one brief. Merges into `refactor/v2-markdown`.
 
 #### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [READY]
 ```yaml
@@ -104,7 +106,7 @@ done_when:
 depends_on: [TSK-03.2.1]
 context:
   - "next prints the next READY group, or the group of a named task, as JSON: tasks, dependencies, waves by directory, mode single as one wave, type, version, and the resolved machine per role; nothing when nothing is ready"
-  - "next --start fetches the remote base, creates <type>/<slug> in a worktree under .komodo/wt/group from it, and calls the preflight tag; the main working tree is never read or required clean"
+  - "next --start fetches the base, creates <type>/<slug> in a worktree under .komodo/wt/group from its head, and calls the preflight tag; --base names the branch, default the remote's default branch, and the choice is recorded in .komodo/run.json so close and ship target the same branch; the main working tree is never read or required clean"
   - "a task with a valid .komodo/results/<task>.json is listed done and skipped, which is resume; done and in-progress rewrite only the status token"
 type: feat
 ```
@@ -145,7 +147,7 @@ depends_on: [TSK-03.2.4]
 context:
   - "--wave merges the wave's worktrees into the group branch in order and stops on the first conflict naming both tasks; runs the compile gate for the languages the wave touched with one repair as gates.compile_commands did; then the verify command, resolved in V1's order or named by .komodo/commands.json"
   - "review: findings at or above severity_floor become one repair brief; the rest are appended to BACKLOG.md as tasks by code"
-  - "--group commits, pushes, opens the PR with the report as body and the category and agent labels only when the repo defines them, as a draft when a task is blocked; writes the changelog line under the group's version; flips DONE; works on any branch, which is how freehand work ships"
+  - "--group commits, pushes, opens the PR against the run's base with the report as body and the category and agent labels only when the repo defines them, as a draft when a task is blocked; writes the changelog line under the group's version; flips DONE; works on any branch with --base, which is how freehand work and a stacked group ship"
   - "internal/pr ports pr.py: view, create, edit, threads, label, comment, reply as gh wrappers"
 type: feat
 ```
@@ -195,6 +197,7 @@ type: feat
 version: 2.0.0
 ```
 * **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
+* **PR C:** `feat/v2-guard-mounts` from `feat/v2-conveyor`, opened by the session. Validated by `komodo gate` with `guard check`, `install --host claude --dry-run`, `komodo doctor` under the budgets with no leak, the probe printing an overlay and no identity, then a real install on this Mac where a session is denied a commit to `main` and allowed `rm` in its worktree. Merges into `feat/v2-conveyor`.
 
 #### [TSK-03.3.1] The guard: four denials, worktree scope, and the table in the gate [P: C] [READY]
 ```yaml
@@ -268,6 +271,7 @@ type: feat
 version: 2.0.0
 ```
 * **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof runs one group each way before anything is deleted.
+* **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
 
 #### [TSK-03.4.1] The run, review, backlog, and respond skills [P: C] [READY]
 ```yaml
@@ -312,6 +316,7 @@ type: feat
 version: 2.0.0
 ```
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
+* **PR E:** `feat/v2-repo-layer` from `feat/v2-skills-launcher`, cut by `/run TG-03.5` and opened by `close --group` with the report as the body. Validated by `komodo gate`, `komodo doctor` with profile drift, `komodo detect` printing Go and no cloud, the Ollama mount against the fake and one real local review, a facet swap reaching a brief, and the proof numbers for TSK-03.4.3 in the changelog. Merges into `feat/v2-skills-launcher`.
 
 #### [TSK-03.5.1] Repo context injects by glob [P: H] [READY]
 ```yaml
@@ -429,6 +434,7 @@ type: chore
 version: 2.0.0
 ```
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
+* **PR F:** `chore/v2-gate-exit` from `feat/v2-repo-layer`, cut by `/run TG-03.6` and opened by `close --group`. Validated by the gate as the pre-commit and pre-push hook on both developer machines, the retired-words grep, the swap tests, no workflow directory, the Codex numbers in the changelog, and a human read of the final README. Merges into `feat/v2-repo-layer`; then #103 merges into `main`.
 
 #### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [READY]
 ```yaml
