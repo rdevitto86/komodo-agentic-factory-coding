@@ -95,7 +95,7 @@ class Git:
         for candidate in ("main", "master"):
             if self.branch_exists(candidate):
                 return candidate
-        raise GitError("cannot determine the base branch; set base in komodo.json")
+        raise GitError("cannot determine the base branch: no %s/HEAD, and neither main nor master exists; pass --base" % self.remote)
 
     def create_branch(self, name: str, start: Optional[str] = None) -> None:
         """Creates and checks out a conventionally named, unprotected branch."""

@@ -70,9 +70,15 @@ class AdapterTests(unittest.TestCase):
 
     def test_profile_changes_rendered_models(self):
         with tempfile.TemporaryDirectory() as target:
-            adapters.render("claude", target, Config.load(REPO, {"profile": "thinking"}))
+            adapters.render("claude", target, Config.load(REPO, {"profile": "thinking", "account": {"detect": False, "plan": "max"}}))
             with open(os.path.join(target, "agents", "reviewer.md"), encoding="utf-8") as handle:
                 self.assertIn("model: opus", handle.read())
+
+    def test_a_pro_plan_renders_session_agents_without_opus(self):
+        with tempfile.TemporaryDirectory() as target:
+            adapters.render("claude", target, Config.load(REPO, {"profile": "thinking", "account": {"detect": False, "plan": "pro"}}))
+            with open(os.path.join(target, "agents", "reviewer.md"), encoding="utf-8") as handle:
+                self.assertIn("model: sonnet", handle.read())
 
     def test_every_standard_gets_a_skill(self):
         with tempfile.TemporaryDirectory() as target:

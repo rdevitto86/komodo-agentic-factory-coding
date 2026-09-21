@@ -2,6 +2,26 @@
 
 Notable changes to komodo-agentic-toolkit-coding. Format follows Keep a Changelog; versions follow SemVer.
 
+## [1.3.0] — 2026-09-21
+
+### Added
+- The harness reads the logged-in Claude account once per run from `claude auth status` and derives its own limits from it. A `claude.ai` subscription is metered in tokens, so `--max-budget-usd` is dropped from the worker command line entirely; an API key, Bedrock or Vertex keeps it, and an undetected account keeps it too. The email and org id the command also returns are never read
+- Turn caps are solved from the measured cost law rather than written down: builder input tracks `1400 × turns²`, so a tier's cap is `sqrt(plan_budget × tier_share / 1400)`. Pro and unknown resolve to roughly today's numbers, Max to nearly double. An explicitly set cap still wins
+- The plan sets a model ceiling. Pro, Team and unknown cap at Sonnet; Max and Enterprise reach Opus. The Claude adapter renders session agents from the same resolution, so a Pro machine never renders an Opus agent. `account.model_ceiling: false` turns it off
+- Every worker result carries the newest `rate_limit_event` from the CLI stream, and the run state keeps the last one. Before each wave the pipeline logs a usage window past `rate_limit.warn_at` and stops cleanly past `rate_limit.pause_at`, naming the window and when it resets, instead of burning turns into a refusal
+- `komodo status` prints the detected plan, how it is metered, the scaled worker timeouts, and one row per role with its model, effort, turn cap and dollar cap. `--json` carries the same report under `limits`
+
+### Removed
+- `komodo.json`. The file was never load-bearing: this repo's copy held fifteen keys, all fifteen identical to the defaults in `komodo/config.py`, and its only real read was the git guard's `protected` list, whose built-in fallback is the same list. Defaults now come from `komodo/config.py` alone, and a machine that wants to override something writes `.komodo/config.json`, which the toolkit owns and gitignores. `templates/project/komodo.json.tmpl` is gone, so a new repo is never handed one
+- The instruction to "set base in komodo.json" from the base-branch error. It now names what it looked for and points at `--base`, so nothing tells a reader that work is blocked on a missing config file
+
+### Changed
+- The Claude worker runs under `--output-format stream-json` through `Popen` instead of `subprocess.run` with a single JSON envelope. A worker killed by the timeout now reports the turns and tokens it actually burned; it previously recorded 0 turns and $0.00
+- `worker_timeout_s` is no longer flat. It scales with the bytes behind the files a task names and with the plan's headroom, capped by the new `worker_timeout_max_s`. The `done_when` gate gets the same scaled timeout
+- `context.file_chars` is a total ceiling of 120000 rather than a 24000 pool divided by the file count. The new `context.per_file_chars` gives each file 10000 characters, so a builder is no longer shown less of its own code the more files its task names
+- A worker stopped by a ceiling now says which ceiling bound and what it had spent when it did, so the next raise is not a guess
+- The repair attempt is handed the diff the first attempt left in the worktree, instead of re-deriving it from the error string alone
+
 ## [1.2.0] — 2026-09-18
 
 ### Changed

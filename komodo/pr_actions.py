@@ -155,7 +155,7 @@ def label(root: str, config: Config, wanted: List[str], auto: bool = False) -> i
             return 2
         wanted = pr.pick_labels(kind, dict(config.get("labels", {})), defined) + wanted
         if not wanted:
-            print("no label maps to %r in komodo.json" % kind, file=sys.stderr)
+            print("no label maps to commit type %r" % kind, file=sys.stderr)
             return 2
     unknown = [name for name in wanted if name not in defined]
     if unknown:

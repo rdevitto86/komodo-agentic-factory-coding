@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 import uuid
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import __version__, comments, doctor, gates, gitops, pr, tasks
 from .config import Config, ConfigError
@@ -61,12 +61,48 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 1 if state.blocked or any("no PR opened" in note or "unpushed" in note for note in state.notes) else 0
 
 
+def _limits_report(config: Config) -> Dict[str, Any]:
+    """The plan and the caps each role will actually run under, so a run can be tailored before it is paid for."""
+    from . import roles as role_defs
+
+    account = config.account
+    report: Dict[str, Any] = {
+        "plan": account.plan, "metered": account.metered, "auth_method": account.auth_method,
+        "api_provider": account.api_provider, "detected": account.detected, "pinned": account.pinned,
+        "describe": account.describe(),
+        "profile": str(config.get("profile")), "roles": {},
+    }
+    for name in sorted(role_defs.available()):
+        spec = config.role(name)
+        report["roles"][name] = {
+            "tier": role_defs.tier_of(name), "provider": spec.get("provider"), "model": spec.get("model"),
+            "effort": spec.get("effort", ""), "max_turns": spec.get("max_turns"),
+            "max_budget_usd": spec.get("max_budget_usd"),
+        }
+    report["worker_timeout_s"] = {"small_task": config.worker_timeout(0), "large_task": config.worker_timeout(400_000)}
+    return report
+
+
+def _print_limits(report: Dict[str, Any]) -> None:
+    """Prints the plan line and one row per role."""
+    print("account: %s | profile %s" % (report["plan"] if report["detected"] else "unknown (probe failed)", report["profile"]))
+    print("  %s" % report["describe"])
+    print("  worker timeout: %ss small task, %ss large task" % (report["worker_timeout_s"]["small_task"], report["worker_timeout_s"]["large_task"]))
+    for name, spec in report["roles"].items():
+        budget = "$%.2f" % spec["max_budget_usd"] if spec.get("max_budget_usd") else "no dollar cap"
+        print("  %-11s %-8s %-10s %-6s turns<=%-4s %s" % (
+            name, spec["tier"], spec["model"], spec["effort"] or "-", spec["max_turns"], budget))
+
+
 def cmd_status(args: argparse.Namespace) -> int:
-    """komodo status [--prune]: open runs, stale worktrees, merged branches."""
+    """komodo status [--prune]: the account's caps, open runs, stale worktrees, merged branches."""
     root = repo_root()
     config = load_config(root)
     store = Store(root)
     git = gitops.Git(root, config.protected, config.remote)
+    limits = _limits_report(config)
+    if not args.json:
+        _print_limits(limits)
     runs = store.list()
     print("runs: %d on disk" % len(runs))
     for run_id in runs[:5]:
@@ -98,7 +134,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             git.delete_branch(name)
             print("deleted branch %s" % name)
     if args.json:
-        print(json.dumps({"runs": runs, "worktrees": worktrees, "merged": merged}))
+        print(json.dumps({"runs": runs, "worktrees": worktrees, "merged": merged, "limits": limits}))
     return 0
 
 
@@ -379,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="run one task group end to end")
     run.add_argument("group", nargs="?", help="TG id or a substring of its id or title; default: first open group")
-    run.add_argument("--profile", choices=None, help="fast or thinking (or any profile in komodo.json)")
+    run.add_argument("--profile", choices=None, help="fast, thinking, local, or any profile added in .komodo/config.json")
     run.add_argument("--dry-run", action="store_true", help="print waves, briefs, and token estimates; spawn nothing")
     run.add_argument("--resume", action="store_true", help="continue the unfinished run for this group")
     run.set_defaults(func=cmd_run)
@@ -441,7 +477,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr_sub.add_parser("threads", help="list unresolved review threads")
     label = pr_sub.add_parser("label")
     label.add_argument("labels", nargs="*")
-    label.add_argument("--auto", action="store_true", help="derive labels from the PR's commit type and komodo.json")
+    label.add_argument("--auto", action="store_true", help="derive labels from the PR's commit type")
     comment_pr = pr_sub.add_parser("comment")
     comment_pr.add_argument("body")
     reply = pr_sub.add_parser("reply")

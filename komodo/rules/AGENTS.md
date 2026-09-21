@@ -14,6 +14,7 @@ Universal rules for every model and tool working on Komodo software, hosted or l
 - Work on a `<type>/<kebab-name>` branch. Never commit to or push `main`, `master`, `trunk`, `prod`, `production`, `release/*`, or `hotfix/*`.
 - Never force-push, rebase, amend, or rewrite published history. Never add a co-author or generated-by trailer.
 - Landing into a protected branch is the human's merge button. Hand the user the command for anything refused.
+- Move with `git switch`. `git checkout`, `git restore`, and `rm` are refused; each discards work that is not committed.
 - For anything larger than a one-line fix in a repo with a `BACKLOG.md`, run the harness: `python3 -m komodo run <group>`. `python3 -m komodo --help` lists every command.
 
 ## Comments

@@ -96,8 +96,9 @@ def make_repo(root):
     os.makedirs(os.path.join(root, "other"))
     open(os.path.join(root, "pkg", "__init__.py"), "w").close()
     open(os.path.join(root, "other", "__init__.py"), "w").close()
-    with open(os.path.join(root, "komodo.json"), "w") as handle:
-        json.dump({"profile": "fast", "worker_timeout_s": 60, "severity_floor": "high", "profiles": {"fast": {"roles": {"reviewer": {"min_diff_lines": 0}}}}}, handle)
+    os.makedirs(os.path.join(root, ".komodo"), exist_ok=True)
+    with open(os.path.join(root, ".komodo", "config.json"), "w") as handle:
+        json.dump({"profile": "fast", "worker_timeout_s": 60, "severity_floor": "high", "account": {"detect": False, "plan": "max"}, "profiles": {"fast": {"roles": {"reviewer": {"min_diff_lines": 0}}}}}, handle)
     git("add", "-A")
     git("commit", "-q", "-m", "init")
 
@@ -111,6 +112,54 @@ class PipelineTests(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def _pipeline(self, **overrides):
+        """A pipeline over the temp repo, with config overrides applied."""
+        config = Config.load(self.tmp.name, overrides or None)
+        return pipeline.Pipeline(self.tmp.name, config, log=self.logs.append, worker_factory=lambda *a, **k: FakeBuilder())
+
+    def test_a_spent_usage_window_stops_the_next_wave(self):
+        line = self._pipeline()
+        line.state = pipeline.RunState(run_id="r", group_id="TG-01.1", branch="feat/x", base="main", profile="fast", started=0.0)
+        line.state.rate_limit = {"unifiedWindows": {"five_hour": {"utilization": 0.97, "resetsAt": 1_790_017_800}}}
+        hold = line.rate_limit_hold()
+        self.assertIn("five_hour", hold)
+        self.assertIn("97%", hold)
+        line.state.rate_limit = {"unifiedWindows": {"five_hour": {"utilization": 0.5, "resetsAt": 1}}}
+        self.assertEqual(line.rate_limit_hold(), "")
+
+    def test_an_overage_account_is_never_held_back(self):
+        line = self._pipeline()
+        line.state = pipeline.RunState(run_id="r", group_id="TG-01.1", branch="feat/x", base="main", profile="fast", started=0.0)
+        line.state.rate_limit = {"isUsingOverage": True, "unifiedWindows": {"seven_day": {"utilization": 0.99, "resetsAt": 1}}}
+        self.assertEqual(line.rate_limit_hold(), "")
+
+    def test_each_file_gets_its_own_budget_rather_than_a_share_of_one(self):
+        backlog = tasks.load(os.path.join(self.tmp.name, "BACKLOG.md"))
+        task = backlog.group("TG-01.1").tasks[0]
+        task.fields["files"] = ["pkg/greet.py", "other/bye.py", "app.py"]
+        body = "x" * 9000
+        for path in task.files:
+            full = os.path.join(self.tmp.name, path)
+            os.makedirs(os.path.dirname(full) or self.tmp.name, exist_ok=True)
+            with open(full, "w") as handle:
+                handle.write(body)
+        line = self._pipeline()
+        line.backlog = backlog
+        slots = line.task_slots(task, self.tmp.name)
+        self.assertNotIn("truncated", slots["files"])
+
+    def test_the_repair_attempt_is_handed_what_the_first_attempt_wrote(self):
+        line = self._pipeline()
+        with open(os.path.join(self.tmp.name, "pkg", "greet.py"), "w") as handle:
+            handle.write("# half a greeting\n")
+        diff = line._attempt_diff(self.tmp.name)
+        self.assertIn("half a greeting", diff)
+        self.assertIn("What the previous attempt already changed", diff)
+
+    def test_the_worker_timeout_grows_with_the_task(self):
+        line = self._pipeline()
+        self.assertGreater(line.config.worker_timeout(500_000), line.config.worker_timeout(0))
 
     def test_dry_run_spawns_nothing_and_plans_waves(self):
         config = Config.load(self.tmp.name)

@@ -29,13 +29,13 @@ func repoRoot(dir string) string {
 	}
 }
 
-// protectedPatterns reads the repo's komodo.json protected list, falling back to the built-in set.
+// protectedPatterns reads the toolkit's own .komodo/config.json protected list, falling back to the built-in set.
 func protectedPatterns(cwd string) []string {
 	root := repoRoot(cwd)
 	if root == "" {
 		return builtinProtected
 	}
-	data, err := os.ReadFile(filepath.Join(root, "komodo.json"))
+	data, err := os.ReadFile(filepath.Join(root, ".komodo", "config.json"))
 	if err != nil {
 		return builtinProtected
 	}

@@ -49,27 +49,30 @@ class Pipeline:
         return self.config.role(role, self.profile)
 
     def record(self, role: str, task_id: str, result: Result) -> None:
-        """Appends a worker's cost and outcome to the run state."""
+        """Appends a worker's cost and outcome to the run state, and keeps the newest rate-limit reading."""
         assert self.state is not None
         self.state.workers.append(WorkerRecord(
             role=role, task_id=task_id, provider=result.provider, model=result.model, ok=result.ok,
             seconds=result.seconds, cost_usd=result.cost_usd, input_tokens=result.input_tokens,
             output_tokens=result.output_tokens, turns=result.turns, error=result.error[:300],
         ))
+        if result.rate_limit:
+            self.state.rate_limit = dict(result.rate_limit)
         self.store.save(self.state)
 
-    def call(self, role: str, task_id: str, system: str, prompt: str, cwd: str) -> Result:
+    def call(self, role: str, task_id: str, system: str, prompt: str, cwd: str, task_bytes: int = 0) -> Result:
         """Runs one worker for a role and records it."""
         spec = self.spec(role)
         brief = Brief(
             role=role, system=system, prompt=prompt, cwd=cwd, spec=spec, schema=briefs.schema_for(role),
-            tools=briefs.tools_for(role), timeout_s=int(self.config.get("worker_timeout_s", 900)),
+            tools=briefs.tools_for(role), timeout_s=self.config.worker_timeout(task_bytes),
             env=gitops.worker_env(), task_id=task_id,
         )
         if self.dry_run:
             estimate = brief.estimated_tokens
-            self.log("  dry-run %s for %s: %s/%s effort=%s ~%d system + %d prompt tokens" % (
-                role, task_id, spec.get("provider"), spec.get("model"), spec.get("effort", "-"), estimate["system"], estimate["prompt"]))
+            self.log("  dry-run %s for %s: %s/%s effort=%s turns<=%s %ss ~%d system + %d prompt tokens" % (
+                role, task_id, spec.get("provider"), spec.get("model"), spec.get("effort", "-"),
+                spec.get("max_turns", "-"), brief.timeout_s, estimate["system"], estimate["prompt"]))
             return Result(ok=True, data=None, provider=str(spec.get("provider")), model=str(spec.get("model")))
         worker = self.worker_factory(str(spec["provider"]), self.config)
         result = worker.run(brief)
@@ -79,6 +82,26 @@ class Pipeline:
     def over_budget(self) -> bool:
         """Whether the group's wall-clock budget is spent."""
         return time.time() - self.started > float(self.config.get("group_budget_s", 3600))
+
+    def rate_limit_hold(self) -> str:
+        """The reason to stop before a wave that the account's usage windows will refuse, or an empty string."""
+        assert self.state is not None
+        info = self.state.rate_limit or {}
+        windows = info.get("unifiedWindows") or {}
+        if not windows and info.get("utilization") is not None:
+            windows = {str(info.get("rateLimitType") or "window"): {"utilization": info.get("utilization"), "resetsAt": info.get("resetsAt")}}
+        pause_at = float(self.config.get("rate_limit.pause_at", 0.95))
+        warn_at = float(self.config.get("rate_limit.warn_at", 0.8))
+        for name, window in sorted(windows.items()):
+            try:
+                used = float((window or {}).get("utilization") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if used >= pause_at and not info.get("isUsingOverage"):
+                return "%s usage window is %.0f%% spent, resetting %s" % (name, used * 100, _reset_at(window))
+            if used >= warn_at:
+                self.log("  %s usage window is %.0f%% spent, resetting %s" % (name, used * 100, _reset_at(window)))
+        return ""
 
     def read(self, path: str, cap: int) -> str:
         """A file's contents clipped, or a marker when absent."""
@@ -96,10 +119,22 @@ class Pipeline:
                 return self.read(path, 6000)
         return "No repo-level rules file. Follow the standards below and the code's existing idioms."
 
+    def task_bytes(self, task: Task, cwd: str) -> int:
+        """Bytes behind the files a task names, the size signal the worker timeout scales with."""
+        total = 0
+        for path in task.files:
+            try:
+                total += os.path.getsize(os.path.join(cwd, path))
+            except OSError:
+                continue
+        return total
+
     def task_slots(self, task: Task, cwd: str, failure: str = "") -> Dict[str, Any]:
         """Every slot the builder brief needs for one task, read from the worktree."""
-        file_cap = int(self.config.get("context.file_chars", 24000))
-        per_file = max(2000, file_cap // max(1, len(task.files)))
+        per_file = int(self.config.get("context.per_file_chars", 10000))
+        total_cap = int(self.config.get("context.file_chars", 24000))
+        if task.files and per_file * len(task.files) > total_cap:
+            per_file = max(2000, total_cap // len(task.files))
         files = "\n\n".join("### %s\n```\n%s\n```" % (path, self.read(os.path.join(cwd, path), per_file)) for path in task.files) or "No files listed."
         context_parts = []
         for ref in task.context:
@@ -212,6 +247,11 @@ class Pipeline:
             if self.over_budget():
                 self.state.notes.append("group budget exhausted before wave %d; %d task(s) left unstarted" % (index, len(pending)))
                 break
+            hold = self.rate_limit_hold()
+            if hold:
+                self.state.notes.append("stopped before wave %d: %s; %d task(s) left unstarted, resume when it resets" % (index, hold, len(pending)))
+                self.log("stopping before wave %d: %s" % (index, hold))
+                break
             self.log("wave %d: %s" % (index, ", ".join(task.id for task in pending)))
             if self.dry_run:
                 for task in pending:
@@ -249,10 +289,13 @@ class Pipeline:
         record = self.state.task(task.id)
         record.status = "IN_PROGRESS"
         failure = ""
+        size = self.task_bytes(task, cwd)
         for attempt in (1, 2):
             record.attempts = attempt
+            if attempt == 2:
+                failure += self._attempt_diff(cwd)
             system, prompt = briefs.render("builder", self.task_slots(task, cwd, failure))
-            result = self.call("builder", task.id, system, prompt, cwd)
+            result = self.call("builder", task.id, system, prompt, cwd, task_bytes=size)
             if not result.ok:
                 failure = result.error or "worker failed"
                 continue
@@ -260,7 +303,7 @@ class Pipeline:
             if data.get("result") == "BLOCKED" and attempt == 2:
                 failure = str(data.get("summary", "worker reported BLOCKED"))
                 break
-            gate = gates.run_gate("done_when", task.done_when, cwd, int(self.config.get("worker_timeout_s", 900)))
+            gate = gates.run_gate("done_when", task.done_when, cwd, self.config.worker_timeout(size))
             if gate.ok:
                 changed = [str(item.get("path", "")) for item in data.get("changed", []) if isinstance(item, dict)]
                 record.changed = changed
@@ -275,6 +318,18 @@ class Pipeline:
             failed = gate.failures()[0]
             failure = "$ %s\n%s" % (failed.command, failed.output)
         self._block(task, failure or "done_when never passed")
+
+    def _attempt_diff(self, cwd: str) -> str:
+        """The uncommitted work the first attempt left behind, so the repair starts from it rather than from cold."""
+        try:
+            self.git.run("add", "-A", "--intent-to-add", cwd=cwd)  # a file the attempt created is untracked, and untracked is invisible to diff
+            diff = self.git.run("diff", "HEAD", cwd=cwd)
+        except gitops.GitError:
+            return ""
+        diff = (diff or "").strip()
+        if not diff:
+            return ""
+        return "\n\n# What the previous attempt already changed\n```diff\n%s\n```" % briefs.clip(diff, int(self.config.get("context.diff_chars", 80000)), "diff")
 
     def _block(self, task: Task, note: str) -> None:
         """Marks a task blocked, and its dependents with it."""
@@ -378,15 +433,18 @@ class Pipeline:
         cwd = self._worktree_for(combined)
         branch = "%s-%s" % (self.state.branch, combined.id.lower().replace(".", "-"))
         failure = ""
+        size = self.task_bytes(combined, cwd)
         for attempt in (1, 2):
+            if attempt == 2:
+                failure += self._attempt_diff(cwd)
             slots = self.task_slots(combined, cwd, failure)
             slots["task_block"] = combined_block
             system, prompt = briefs.render("builder", slots)
-            result = self.call("builder", self.group.id, system, prompt, cwd)
+            result = self.call("builder", self.group.id, system, prompt, cwd, task_bytes=size)
             if not result.ok:
                 failure = result.error
                 continue
-            gate = gates.run_gate("done_when", done_when, cwd, int(self.config.get("worker_timeout_s", 900)))
+            gate = gates.run_gate("done_when", done_when, cwd, self.config.worker_timeout(size))
             if gate.ok:
                 data = result.data or {}
                 bullets = [str(item.get("what", "")) for item in data.get("changed", []) if isinstance(item, dict)][:8]
@@ -670,3 +728,12 @@ def _write(path: str, lines: List[str]) -> None:
     """Writes lines back with a trailing newline."""
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines).rstrip("\n") + "\n")
+
+
+def _reset_at(window: Dict[str, Any]) -> str:
+    """A usage window's reset instant as local time, or a placeholder when the stream did not carry one."""
+    stamp = (window or {}).get("resetsAt")
+    try:
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(float(stamp)))
+    except (TypeError, ValueError):
+        return "an unknown time"

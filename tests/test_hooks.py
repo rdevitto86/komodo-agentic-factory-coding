@@ -1,3 +1,5 @@
+import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -13,7 +15,17 @@ PRE_COMMIT = os.path.join(HOOKS, "pre-commit.py")
 PRE_PUSH = os.path.join(HOOKS, "pre-push.py")
 CLAUDE_HOOKS = os.path.join(REPO, "komodo", "adapters", "claude", "hooks")
 GUARD = os.path.join(CLAUDE_HOOKS, "guard.py")
+GUARD_GO = os.path.join(HOOKS, "src", "guard.go")
+POLICY = os.path.join(REPO, "komodo", "adapters", "claude", "settings.policy.json")
 INJECTOR = os.path.join(CLAUDE_HOOKS, "context_injector.py")
+
+
+def load_guard():
+    """Imports the guard hook from its path so its tables can be read."""
+    spec = importlib.util.spec_from_file_location("komodo_guard", GUARD)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def make_repo(root):
@@ -149,19 +161,33 @@ class GuardTests(unittest.TestCase):
         return [sys.executable, GUARD]
 
     def probe(self, command, cwd=REPO):
-        import json
-
         payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd})
         result = subprocess.run(self.argv(), input=payload, capture_output=True, text=True)
         return "deny" if result.stdout.strip() else "allow"
 
     def test_denies_the_never_right_set(self):
-        for command in ("git push -f origin main", "git push origin feat/x:main", "git rebase main", "git reset --hard", "rm -rf x", "sudo ls", "gh pr merge 1", "git commit --amend", "git commit -m 'x\n\nCo-Authored-By: a <b>'"):
+        for command in ("git push -f origin main", "git push origin feat/x:main", "git rebase main", "git reset --hard", "rm -rf x", "sudo ls", "gh pr merge 1", "git commit --amend", "git commit -m 'x\n\nCo-Authored-By: a <b>'", "git checkout -- .", "git restore src/", "git switch --discard-changes main"):
             self.assertEqual(self.probe(command), "deny", command)
 
     def test_allows_everyday_git(self):
-        for command in ("git merge -m sync main", "git branch --list 'feat/*'", "git reflog", "git push origin feat/x", "git status && ls", "python3 -m komodo run --dry-run", "git stash list"):
+        for command in ("git branch --list 'feat/*'", "git reflog", "git push origin feat/x", "git status && ls", "python3 -m komodo run --dry-run", "git stash list", "git switch main"):
             self.assertEqual(self.probe(command), "allow", command)
+
+    def test_merge_follows_the_branch_it_lands_on(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_repo(root)
+            self.assertEqual(self.probe("git merge feat/x", root), "deny")
+            subprocess.run(["git", "switch", "-q", "-c", "feat/x"], cwd=root, check=True, capture_output=True)
+            self.assertEqual(self.probe("git merge -m sync main", root), "allow")
+
+    def test_the_policy_and_the_go_twin_carry_every_destructive_verb(self):
+        with open(POLICY, encoding="utf-8") as handle:
+            deny = set(json.load(handle)["permissions"]["deny"])
+        with open(GUARD_GO, encoding="utf-8") as handle:
+            go_source = handle.read()
+        for sub in load_guard().DESTRUCTIVE:
+            self.assertIn("Bash(git %s:*)" % sub, deny, sub)
+            self.assertIn('"%s":' % sub, go_source, sub)
 
     def test_fails_open_on_garbage(self):
         result = subprocess.run(self.argv(), input="not json", capture_output=True, text=True)
