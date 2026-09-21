@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/comments"
 	"komodo/internal/gate"
 	"komodo/internal/line"
 )
@@ -23,9 +25,12 @@ const usage = `komodo: the code assembly line.
   komodo add <group> <title>  Append a task to a group
   komodo next [--json]        The next ready group: tasks, waves, machines
   komodo brief <task>         Fill the role template and write the brief
+  komodo close <task>         Validate the result, rerun the checks, flip the status
+  komodo comments check       The mechanical comment lint
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
 
+// main dispatches one subcommand.
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
@@ -46,6 +51,10 @@ func main() {
 		runNext(root, os.Args[2:])
 	case "brief":
 		runBrief(root, os.Args[2:])
+	case "close":
+		runClose(root, os.Args[2:])
+	case "comments":
+		runComments(root, os.Args[2:])
 	case "gate":
 		runGate(root, os.Args[2:])
 	case "-h", "--help", "help":
@@ -233,6 +242,19 @@ func runGate(root string, args []string) {
 			}
 			return nil
 		}},
+		{Name: "komodo comments check", Run: func(_ io.Writer) error {
+			problems, err := comments.Check(root, trackedFiles(root), "nonobvious")
+			if err != nil {
+				return err
+			}
+			for _, problem := range problems {
+				fmt.Println(problem)
+			}
+			if len(problems) > 0 {
+				return fmt.Errorf("%d comment problem(s)", len(problems))
+			}
+			return nil
+		}},
 		gate.Binaries(root),
 	}
 	if err := gate.Run(checks, os.Stdout); err != nil {
@@ -328,4 +350,68 @@ func runBrief(root string, args []string) {
 	if err := encoder.Encode(brief); err != nil {
 		fail(err)
 	}
+}
+
+// runClose validates one task's result, reruns its checks, and flips its status.
+func runClose(root string, args []string) {
+	set := flag.NewFlagSet("close", flag.ExitOnError)
+	withGate := set.Bool("gate", false, "run the local gate before the task commit")
+	_ = set.Parse(args)
+	if set.NArg() < 1 {
+		fail(fmt.Errorf("usage: komodo close <task> [--gate]"))
+	}
+	outcome, err := line.CloseTask(root, set.Arg(0), *withGate)
+	if err != nil {
+		fail(err)
+	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(outcome); err != nil {
+		fail(err)
+	}
+	if outcome.Status != "DONE" {
+		os.Exit(1)
+	}
+}
+
+// runComments lints the comments in the named files, or in every tracked source file.
+func runComments(root string, args []string) {
+	set := flag.NewFlagSet("comments", flag.ExitOnError)
+	require := set.String("require", "nonobvious", "none, nonobvious, or exported")
+	_ = set.Parse(args)
+	paths := set.Args()
+	if len(paths) > 0 && paths[0] == "check" {
+		paths = paths[1:]
+	}
+	if len(paths) == 0 {
+		paths = trackedFiles(root)
+	}
+	problems, err := comments.Check(root, paths, *require)
+	if err != nil {
+		fail(err)
+	}
+	for _, problem := range problems {
+		fmt.Println(problem)
+	}
+	fmt.Printf("%d file(s), %d problem(s)\n", len(paths), len(problems))
+	if len(problems) > 0 {
+		os.Exit(1)
+	}
+}
+
+// trackedFiles lists what git tracks, which is what the lint walks by default.
+func trackedFiles(root string) []string {
+	cmd := exec.Command("git", "ls-files")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+	return paths
 }

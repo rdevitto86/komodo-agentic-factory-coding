@@ -125,7 +125,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.4] Output device: `komodo close <task>` [P: C] [READY]
+#### [TSK-03.2.4] Output device: `komodo close <task>` [P: C] [DONE]
 ```yaml
 files: [internal/line/close.go, internal/line/close_test.go, internal/line/schema.go, internal/comments]
 done_when:

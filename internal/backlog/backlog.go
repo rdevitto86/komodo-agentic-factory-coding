@@ -52,7 +52,7 @@ type Task struct {
 	GroupID    string
 }
 
-// Files are the paths this task declares it will touch.
+// Files are the paths a task declares it will touch.
 func (t Task) Files() []string { return t.Fields.List("files") }
 
 // Dirs are the directories of every declared file, deduplicated, in order.
@@ -79,7 +79,7 @@ func (t Task) DependsOn() []string { return t.Fields.List("depends_on") }
 // Context are the paths, with an optional anchor, a machine reads before starting.
 func (t Task) Context() []string { return t.Fields.List("context") }
 
-// Owner is who executes this task, agent unless a person must act.
+// Owner is who executes a task, agent unless a person must act.
 func (t Task) Owner() string {
 	if owner := t.Fields.String("owner"); owner != "" {
 		return owner
@@ -321,7 +321,7 @@ func Parse(text string) Backlog {
 	return parsed
 }
 
-// Load parses the backlog file at path.
+// Load reads and parses one BACKLOG.md file.
 func Load(path string) (Backlog, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
