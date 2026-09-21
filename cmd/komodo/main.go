@@ -12,6 +12,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/gate"
+	"komodo/internal/line"
 )
 
 const usage = `komodo: the code assembly line.
@@ -19,6 +20,7 @@ const usage = `komodo: the code assembly line.
   komodo lint                 Check BACKLOG.md against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo add <group> <title>  Append a task to a group
+  komodo next [--json]        The next ready group: tasks, waves, machines
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
 
@@ -38,6 +40,8 @@ func main() {
 		runList(root, os.Args[2:])
 	case "add":
 		runAdd(root, os.Args[2:])
+	case "next":
+		runNext(root, os.Args[2:])
 	case "gate":
 		runGate(root, os.Args[2:])
 	case "-h", "--help", "help":
@@ -229,5 +233,51 @@ func runGate(root string, args []string) {
 	}
 	if err := gate.Run(checks, os.Stdout); err != nil {
 		fail(err)
+	}
+}
+
+// runNext prints the next ready group, and with --start cuts its branch in a worktree.
+func runNext(root string, args []string) {
+	set := flag.NewFlagSet("next", flag.ExitOnError)
+	asJSON := set.Bool("json", false, "print JSON")
+	start := set.Bool("start", false, "cut the group branch in its own worktree")
+	base := set.String("base", "", "the branch to cut from, default the remote's default branch")
+	_ = set.Parse(args)
+	plan, err := line.Next(root, set.Arg(0))
+	if err != nil {
+		fail(err)
+	}
+	if plan == nil {
+		if *asJSON {
+			fmt.Println("null")
+		} else {
+			fmt.Println("nothing is ready")
+		}
+		return
+	}
+	if *start {
+		state, err := line.Start(root, plan, *base)
+		if err != nil {
+			fail(err)
+		}
+		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
+	} else if *base != "" {
+		plan.Base = *base
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(plan); err != nil {
+			fail(err)
+		}
+		return
+	}
+	fmt.Printf("%s %s\n", plan.Group, plan.Title)
+	fmt.Printf("  branch %s from %s, %s v%s\n", plan.Branch, plan.Base, plan.Type, plan.Version)
+	for index, wave := range plan.Waves {
+		fmt.Printf("  wave %d: %s\n", index+1, strings.Join(wave, ", "))
+	}
+	if len(plan.Skipped) > 0 {
+		fmt.Printf("  done already: %s\n", strings.Join(plan.Skipped, ", "))
 	}
 }

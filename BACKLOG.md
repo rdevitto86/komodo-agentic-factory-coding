@@ -98,7 +98,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.2] Intake: `komodo next` [P: C] [READY]
+#### [TSK-03.2.2] Intake: `komodo next` [P: C] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/next_test.go, internal/line/worktree.go]
 done_when:
