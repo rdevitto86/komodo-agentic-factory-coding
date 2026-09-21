@@ -348,8 +348,15 @@ done_when:
   - python3 -m unittest tests.test_config -q
   - python3 scripts/verify.py
 depends_on: [TSK-03.1.1]
-context: ["overrides extend, never replace: no code path may return a repo file instead of a toolkit file", ".komodo/standards/<name>.extra.md appends after the shipped standard under a rendered '## Repo additions' boundary", ".komodo/standards/<newname>.md has no toolkit twin and loads as a parallel standard with its own paths:", "a repo file whose basename collides with a shipped standard is a doctor error naming the .extra.md form", "komodo.json grows standards.extensions and standards.paths, additive only, so a repo can map .cbl to a cobol standard it wrote"]
+context: ["overrides extend, never replace: no code path may return a repo file instead of a toolkit file", ".komodo/standards/<name>.extra.md appends after the shipped standard under a rendered '## Repo additions' boundary", ".komodo/standards/<newname>.md has no toolkit twin and loads as a parallel standard with its own paths:", "a repo file whose basename collides with a shipped standard is a doctor error naming the .extra.md form", "the file's own paths: frontmatter is the whole map entry; there is no central registry to add to and no config file to carry one", "names_for already merges BY_EXTENSION, BY_PATH_PART and BY_BASENAME, so a repo standard joins the same result list rather than a second resolution path"]
 ```
+
+* **Worked example, a React + C# + .NET + COBOL tree on Windows.** Three of the four already resolve: `App.tsx` gets `typescript, react, ui-web`, `Order.cs` gets `csharp, dotnet`, `Api.csproj` gets `dotnet`. `PAYROLL.cbl` gets nothing but `comments`, because the toolkit ships no COBOL standard and never will ship one for every language. The repo writes two files and commits them:
+```
+.komodo/standards/cobol.md     paths: ["**/*.cbl", "**/*.cob", "**/*.cpy"]
+.komodo/context/mainframe.md   paths: ["src/batch/**"]
+```
+  Nothing else changes: no fork of the toolkit, no config file, no PR against the toolkit repo, and the global render stays byte-identical to every other machine's.
 
 #### [TSK-03.1.5] The override root is shareable and validated without exposing run state [P: H] [READY]
 ```yaml
@@ -359,7 +366,7 @@ done_when:
   - python3 -m komodo doctor
   - python3 scripts/verify.py
 depends_on: [TSK-03.1.4]
-context: [".gitignore ignores .komodo/ wholesale, so standards and context written there can never be committed or shared", "negate rather than narrow: .komodo/* then !.komodo/standards/ and !.komodo/context/ keeps local.json, runs/ and wt/ ignored with no new entries", "git will not descend into an excluded directory, so the pattern must be .komodo/* and not .komodo/ for the negation to take effect", "doctor.py SKIP_DIRS must keep skipping .komodo for the tree walk; validate the two override directories by direct glob so runs/ stays unreachable", "checks: an unknown standard name, a paths: glob matching nothing, a basename colliding with a shipped standard"]
+context: [".gitignore ignores .komodo/ wholesale, so standards and context written there can never be committed or shared", "negate rather than narrow: .komodo/* then !.komodo/standards/ and !.komodo/context/ keeps config.json, runs/ and wt/ ignored with no new entries", "git will not descend into an excluded directory, so the pattern must be .komodo/* and not .komodo/ for the negation to take effect; verified with git check-ignore", "doctor.py SKIP_DIRS must keep skipping .komodo for the tree walk; validate the two override directories by direct glob so runs/ stays unreachable", "checks: an unknown standard name, a paths: glob matching nothing, a basename colliding with a shipped standard"]
 ```
 
 #### [TSK-03.1.6] The rendered skill body resolves the repo delta at read time [P: M] [READY]
@@ -392,7 +399,7 @@ files: [komodo/doctor.py, tests/test_doctor_install.py]
 done_when:
   - python3 -m unittest tests.test_doctor_install -q
 depends_on: [TSK-03.2.1]
-context: ["the worst failure mode is silent: exclude react, add .tsx files a year later, nobody rereads komodo.json", "fail, do not warn, when an excluded standard's glob matches tracked files and no .komodo/standards/<name>*.md exists", "git ls-files against the glob map moved in TSK-03.1.1 is the whole check"]
+context: ["the worst failure mode is silent: exclude react, add .tsx files a year later, nobody rereads the exclusion", "fail, do not warn, when an excluded standard's glob matches tracked files and no .komodo/standards/<name>*.md exists", "git ls-files against the glob map moved in TSK-03.1.1 is the whole check"]
 ```
 
 #### [TSK-03.2.3] The session advisory and the worker filter are held to one precedence [P: L] [REFINEMENT]
