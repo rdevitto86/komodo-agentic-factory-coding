@@ -30,7 +30,7 @@ flowchart LR
 - **Input device.** The brief. Task, repo rules, repo context, files, standards, done-when, failure. Identical bytes whatever machine reads it.
 - **Output device.** The result JSON checked against the role's schema. A machine that returns bad output is rejected at the device and given one repair, never debugged in the line.
 - **Machines.** Two on the line, builder and reviewer. The same roles serve ad hoc sessions off the line.
-- **Mounts.** How a brief reaches a machine on a given host and how its result comes back. One per host. A model swap is a profile row; a host swap is a mount.
+- **Mounts.** How a brief reaches a machine on a given host and how its result comes back. One per host, and the binary is its own mount for Ollama, so a local model is called mechanically and never through another model. A model swap is a profile row; a host swap is a mount.
 
 ### Stations
 
@@ -41,7 +41,7 @@ flowchart LR
 | Build | the run skill spawns the builder | Reads the brief path, owns the worktree, writes its result JSON. |
 | Close | `komodo close <task>` | Validates the result, reruns `done_when`, lints comments, flips the status. A failure writes the failure slot for one repair; a second failure marks BLOCKED with the note and the wave continues. |
 | QC | `komodo close --wave` | Merges the wave's worktrees in order, stops on conflict naming both tasks, runs the compile gate for the languages touched with one repair, then the repo's verify command. |
-| Review | `komodo diff`, then the run skill spawns the reviewer | The diff, the group's tasks, and the standards the diff touches. Fresh context, another tier or vendor when the profile says so. One pass, one repair. |
+| Review | `komodo diff`, then the run skill spawns the reviewer, or `komodo machine` runs it on Ollama | The diff, the group's tasks, and the standards the diff touches. Fresh context, another tier or vendor when the profile says so. One pass, one repair. |
 | Ship | `komodo close --group` | Commit, push, PR with the report as body and labels the repo already defines, draft when a task is blocked, changelog line under the group's version, status DONE. |
 | Report | `komodo report` | Per task time, turns, tokens when the mount reports them, findings, what blocked. Accessibility format. |
 
@@ -81,18 +81,20 @@ A line carries the run, group, task, wave, station, role, tier, host, provider, 
 
 | Station | Input | Output | Claude Code mount | Codex mount | Ollama |
 |---|---|---|---|---|---|
-| Build | brief file | builder schema | subagent, model from the profile | TOML agent | bridge tool on Claude Code, native provider on Codex |
-| Review | diff plus tasks | reviewer schema | subagent, other tier or vendor | TOML agent | same |
-| Ad hoc | rules and standards | none | agents and skills | agents and skills | same |
+| Build | brief file | builder schema | subagent, model from the profile | TOML agent | native provider on Codex; a builder needs tools, so Claude Code keeps its own |
+| Review | diff plus tasks | reviewer schema | subagent, other tier or vendor | TOML agent | `komodo machine`: the binary posts the brief and reads the JSON back |
+| Ad hoc | rules and standards | none | agents and skills | agents and skills | `komodo machine` for any read-only role |
 
 A role declares a tier, light, standard, or heavy, and never a model. A profile maps tiers to a provider, model, and effort for one host. Selection is automatic: the host from the mount installed, the plan from the probe, local tiers when Ollama answers. No flag for the default run.
 
 | Profile | Host | light | standard | heavy | reviewer |
 |---|---|---|---|---|---|
 | `claude` | Claude Code | haiku | sonnet | opus | opus |
-| `hybrid` | Claude Code with Ollama up | bridge | sonnet | opus | opus, or bridge |
+| `hybrid` | Claude Code with Ollama up | ollama | sonnet | opus | ollama |
 | `codex` | Codex | small | standard | large | large |
 | `local` | Codex with Ollama | local small | local coder | local coder | local coder |
+
+A tier that resolves to `ollama` runs through `komodo machine` and carries only read-only roles. A write role on that tier falls back to the host's standard tier, and the report says so once. No model is ever spent to reach a local model.
 
 Plan overlays sit on top: Pro lowers the heavy ceiling, caps parallel builders at two, skips review under a 40-line diff, and pauses at 75 percent of the five-hour window. Max keeps the defaults and pauses at 90 percent. Unknown is the conservative one. The probe reads the host's own config file, never a CLI status line that once misreported a Max account as Pro. Intake pauses before a wave, never inside one.
 
@@ -121,9 +123,17 @@ Inside the worktree an agent has unlimited freedom: delete files, reset, checkou
 
 ## The binary
 
-`komodo` is one static Go binary: intake, brief, close, diff, report, lint, tag, release check, guard, install, doctor, bridge, run. Prebuilt for macOS arm64, Windows amd64, and Linux amd64 under `bin/` with a checksum manifest. Neither developer installs anything; there is no interpreter, no shell, no symlink, no build step on a dev machine. Whoever changes Go source rebuilds with `go build` and commits the binaries, and a CI check fails a PR whose binaries do not match a fresh build.
+`komodo` is one static Go binary: intake, brief, close, diff, report, lint, tag, release check, guard, install, doctor, machine, gate, run. Prebuilt for macOS arm64, Windows amd64, and Linux amd64 under `bin/` with a checksum manifest. Neither developer installs anything; there is no interpreter, no shell, no symlink, no build step on a dev machine. Whoever changes Go source rebuilds, and the pre-commit hook in this repo does it for them.
+
+A Go binary is compiled per platform, so "any platform" means one small binary per target, not one file. Each is built with `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and `-ldflags "-s -w"`, which makes a rebuild byte-identical and keeps each file near 3 MB. `.gitattributes` marks `bin/**` binary, the files slot names a binary by path and size and never reads it, and `komodo diff` skips binary paths, so no brief, review, or session ever spends a token on a binary. Repo size is accepted; token spend is not.
 
 Go over Rust because 1013 lines of guard, hooks, and repo detection already exist, cross-compiling is two environment variables, and the process lives for milliseconds. Markdown stays markdown: rules, roles, skills, policy. Models never read Go.
+
+## The gate
+
+Every precheck runs locally and mechanically, before a commit and before a push, with no model and nothing on GitHub. GitHub Actions is not used: on a free account it bills minutes, fails on the runner instead of the desk, and adds a stage the line does not own.
+
+`komodo gate` is the whole check: `go vet`, `go test`, doctor, `guard check`, and a rebuild of the three binaries compared to the manifest. The line runs it inside `close <task>` before the task commit and inside `close --group` before the push. In this repo `komodo gate --install` writes pre-commit and pre-push hooks that run the same command through the platform's binary, so a human terminal gets the same gate. Other repos rely on the guard and their own verify command; the git hooks are for the toolkit only.
 
 ## The repo layer
 
@@ -139,16 +149,31 @@ A repo may commit `.komodo/`. Nothing in it is required, a malformed file is ski
 
 The line adapts to a repo by detecting it, not by being told. `komodo detect` reads the tree once, zero tokens, and caches a profile under `.komodo/` keyed by a hash of the manifests it read: languages from extensions, cloud from markers such as a CDK config, a SAM template, a Terraform provider block, a Cloud Build file, or an Azure pipeline, data sources from a Prisma schema, SQL migrations, a dbt project, or compose services, CI from the workflows directory, and the verify and compile commands from the discovery order. An unknown tree is an empty profile, never a failed run.
 
-A facet is what detection selects: a shipped directory under `komodo/facets/` with a standard, a builder appendix, a reviewer appendix, the MCP servers the facet needs, and default commands. Shipped at launch: `aws`, `gcp`, `azure`, `postgres`, `github-actions`. A facet is injected at two points and edits nothing:
+A facet is what detection selects: a shipped directory under `komodo/facets/` with a skill, a builder appendix, a reviewer appendix, and default commands. The skill holds Komodo's own setup for that platform, and only what a model is not trained on: accounts, regions, naming, deploy paths, and conventions, never a vendor tutorial. Until a platform is set up, its skill says so and lists what is unknown. Shipped at launch: `aws`, `gcp`, `azure`, `postgres`, `github-actions`. A facet is injected at two points and edits nothing:
 
 - **At the brief.** A ninth slot, the repo profile, about 200 characters. Facet appendices land in the standards slot under their own cap. A role's schema and tools never change.
-- **At the project render.** `install --project`, which intake runs, writes the host's project config from the profile: the facet MCP servers, the pointer skills, the repo skills, the rules file. Gitignored copies, rebuilt every time, so a clone plus one command gives a developer the right tools without a commit.
+- **At the project render.** `install --project`, which intake runs, writes the host's project config from the profile: the facet skills, the standards skills, the repo skills, the rules file. Gitignored copies, rebuilt every time, so a clone plus one command gives a developer the right tools without a commit.
 
 A task may say `tier: heavy` to get the big model for one hard task, or `facets: [postgres]` to add one detection missed. A `.komodo/` file exists only to correct detection, and doctor fails when the cached profile or the rendered config has drifted from a fresh detection.
 
 ## Local machines
 
-`komodo bridge` is a stdio MCP server over Ollama, spawned by the host on demand, so there is no process to keep alive. On Claude Code a light role's body calls it, and the reviewer may too, so a review never shares a vendor with the build. On Codex the `local` profile points every tier at Ollama through the host's provider setting. Both Komodo machines pull the same models.
+Ollama is mounted by the binary itself. `komodo machine <task>` posts the brief to Ollama's chat endpoint with the role's schema as the response format, writes the result JSON where close expects it, and stamps the ledger with the token counts the response carries. No host, no MCP, no other model in between: the call is mechanical and costs nothing but local compute. V1's HTTP server at 127.0.0.1:8000 is gone, and install removes its entry.
+
+A local machine carries read-only roles: reviewer, summarizer, and any session role that only reads. So on Claude Code the `hybrid` profile builds with Claude and reviews on Ollama, and a review never shares a vendor with the build. A builder needs tools, which is the host's job, so a local builder needs a host that mounts Ollama natively: on Codex the `local` profile points every tier at Ollama through the host's provider setting. Both Komodo machines pull the same models.
+
+## Hot swap
+
+The line is fixed; everything a station consumes is swappable without touching the line. Each station resolves what it consumes at run time, from the layers, and `komodo step` prints what it resolved.
+
+| Swap point | Where it is set | Reaches the station as |
+|---|---|---|
+| Machine | a profile row, per tier, per host | the mount that carries the brief |
+| Skill | `komodo/skills/`, `.komodo/skills/`, a facet's skill | a slot in the brief, a file in the project render |
+| External dependency: infra, data, CI | a facet, `.komodo/facets`, `commands.json` | the standards slot, the profile slot, the verify and compile commands |
+| MCP | a facet's `mcp.json`, reserved | nothing in V2 |
+
+MCPs are deferred. V2 gets the line working with models, skills, and external dependencies as the swappable parts; a later hot-swap pass renders a facet's MCP servers into the project config, and nothing else in the line will know an MCP exists. A role, a skill, and the binary hold no name of a model, a server, or a platform, so each of the four points is proven by a test that swaps it and watches the station change.
 
 ## The non-proprietary day
 
@@ -164,8 +189,8 @@ Six groups, all `2.0.0`, all on PR #103. Sessions build the first four; the run 
 | TG-03.2 The conveyor and devices | The Go module and the binary: lint, next, brief, close, diff, report, tag, release check, the ledger and metrics, `step`; prebuilt binaries and the manifest | Every station has a test |
 | TG-03.3 The guard and the mounts | The guard with the 60-command table, install for Claude Code and Codex, doctor with portability and prune, profiles with the plan probe and auto-selection | Guard table in the gate; validate under 1500 tokens |
 | TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the V1 versus V2 timing proof | One group each way, numbers in the changelog |
-| TG-03.5 The repo layer, detection, and local machines | Context by glob, repo standards and skills, commands and additive policy; `detect`, facets for AWS, GCP, Azure, Postgres, and GitHub Actions, the profile slot, the project render from the profile; the bridge; the hybrid and local profiles | Tests, doctor, bridge against a fake Ollama |
-| TG-03.6 The gate and the exit test | CI runs vet, test, doctor, guard check, and the binary match; one task under Codex with zero changes outside the mounts; README and templates final; changelog 2.0.0 | CI green, proof recorded |
+| TG-03.5 The repo layer, detection, and local machines | Context by glob, repo standards and skills, commands and additive policy; `detect`, facets for AWS, GCP, Azure, Postgres, and GitHub Actions with Komodo's setup skills, the profile slot, the project render from the profile; the Ollama mount; the hybrid and local profiles | Tests, doctor, the Ollama mount against a fake Ollama |
+| TG-03.6 The gate and the exit test | The local gate on pre-commit and pre-push with no CI; every swap point proven by test; one task under Codex with zero changes outside the mounts; README, names, and templates final; changelog 2.0.0 | Gate green locally, proofs recorded |
 
 ## V1 coverage
 
@@ -199,7 +224,7 @@ Every V1 capability, where it lands, or why it does not.
 | `install` with seeds, `--dry-run`, copy on Windows | Kept, TSK-03.3.2; `--host` and `--project` added |
 | `doctor`: references, policy leaks, leftovers, roles, changelog | Kept, TSK-03.3.3; portability and repo drift added |
 | `comments check` | Kept inside close and as a command, TSK-03.2.4 |
-| `hooks install`, pre-commit, pre-push | Dropped; the guard covers every agent and a human terminal is the human's |
+| `hooks install`, pre-commit, pre-push | Kept for this repo only as `komodo gate --install`, mechanical and model-free; other repos rely on the guard, TSK-03.6.1 |
 | Go guard and Go inject | The guard subcommand, TSK-03.3.1; inject dropped, the backlog skill reads the file |
 | `gitops` refusals and the single pusher | The guard's four denials and the launcher's scrub, TSK-03.3.1 and TSK-03.4.2 |
 | Destructive command patterns | Dropped; greenfield, no prod, no AWS; the guard denies paths outside the worktree instead |
@@ -208,14 +233,33 @@ Every V1 capability, where it lands, or why it does not.
 | Brief slots with clip and caps | brief, TSK-03.2.3 |
 | Standards by extension, clipped in briefs, pointers in sessions | TSK-03.1.1 and TSK-03.3.2 |
 | Worker JSON validated against a schema | close, TSK-03.2.4 |
-| Ollama worker and the summarizer | The bridge and the hybrid profile, TSK-03.5.4 and TSK-03.5.5 |
+| Ollama worker and the summarizer | The Ollama mount and the hybrid profile, TSK-03.5.4 and TSK-03.5.5 |
 | Profiles fast, thinking, local | claude, hybrid, codex, local, auto-selected, TSK-03.3.4 |
 | Always-on token budget in validate | Kept inside doctor, TSK-03.3.3 |
-| Verify gate | `go test`, doctor, and the guard table, TSK-03.2.1 and TSK-03.6.1 |
+| Verify gate | `komodo gate`, local, before every commit and push, TSK-03.2.1 and TSK-03.6.1 |
 | Project templates | Kept, TSK-03.6.2; the host rules file is rendered by `install --project` |
 | Personal overlay seed | Kept, TSK-03.3.2 |
 | Per-worker dollar caps and timeouts | Dropped; a subscription never charges them and the host owns turns |
 | Repo-level context, standards, exclusions | Built, TG-03.5; exclusions become the repo layer's additive rule |
+
+## Names
+
+One vocabulary, used the same way in this file, the backlog, the code, the skills, and every command and flag. V1's words for these parts are retired, and TSK-03.6.2 greps them out of everything a model or a developer reads.
+
+| Name | Means |
+|---|---|
+| Station | One fixed step of the line, a `komodo` subcommand or a spawn |
+| Device | The brief going in, the result JSON coming out |
+| Machine | A model doing one station's work |
+| Mount | The code that carries a brief to a machine on one host, or to Ollama |
+| Profile | The table that maps tiers to machines for one host |
+| Tier | light, standard, or heavy; what a role asks for, never a model |
+| Role | One markdown file: what a machine is at a station or in a session |
+| Skill | A markdown procedure a session or a brief can load |
+| Facet | What detection selects for a platform: a skill, appendices, commands |
+| Guard | The one agent hook, four denials |
+| Gate | The local precheck before a commit and a push |
+| Ledger | The two local metrics files |
 
 ## Setup
 
@@ -227,7 +271,7 @@ cd ~/komodo/ai/komodo-agentic-coding-assembly-line
 bin/komodo-darwin-arm64 install --host claude     # or the windows or linux binary; --host codex; --host both
 ```
 
-The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot.
+The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. In this repo, `komodo gate --install` puts the gate on pre-commit and pre-push once.
 
 ## Usage
 
@@ -240,7 +284,7 @@ komodo run TG-03.5          # headless, credentials stripped
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
 komodo doctor               # references, portability, drift, prune
-go test ./...               # the gate, in this repo
+komodo gate                 # vet, test, doctor, guard table, binaries; pre-commit and pre-push run it here
 ```
 
 ## Layout
@@ -251,6 +295,7 @@ go test ./...               # the gate, in this repo
 | `komodo/roles/` | One file per role: tier, tools, session flag, schema, brief template |
 | `komodo/skills/` | `run`, `review`, `backlog`, `respond`, and one `standards-<x>` per language or domain |
 | `komodo/policy.json` | The four denials and the critical refs |
-| `cmd/komodo/`, `internal/` | The binary: line, guard, mounts, bridge, launcher |
+| `komodo/facets/` | One directory per platform: Komodo's setup skill, appendices, commands, markers |
+| `cmd/komodo/`, `internal/` | The binary: line, guard, mounts including Ollama, gate, launcher |
 | `bin/` | Prebuilt binaries and the manifest |
 | `templates/project/` | Starters for a new repo |

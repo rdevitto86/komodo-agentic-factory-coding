@@ -1,6 +1,6 @@
 # Project Backlog
 
-Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the harness parses is in the `backlog` skill; `komodo lint` checks it from TG-03.2 on. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V2 plan in `README.md`.
+Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. Ids `EPIC-XX` > `TG-XX.Y` > `TSK-XX.Y.Z`. The grammar the line parses is in the `backlog` skill; `komodo lint` checks it from TG-03.2 on. The V1.x backlog was dropped whole on 2026-09-21 in favour of the V2 plan in `README.md`.
 
 ---
 
@@ -10,6 +10,8 @@ Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. I
 * **Everything lands on PR #103.** No group opens its own PR; `close --group` is proven on TG-03.5 by committing to this branch. The tag `v2.0.0` is cut when #103 merges.
 * **Sessions build TG-03.1 through TG-03.4.** The `run` skill runs TG-03.5 and TG-03.6, and TG-03.5 is the proof.
 * **The repo starts clean.** V1 is the tag `v1-final`; the only V1 files here are the markdown TG-03.1 reshapes.
+* **Nothing runs on GitHub.** `komodo gate` is the only precheck, mechanical, local, before every commit and push. No workflow directory exists.
+* **No MCP in V2.** Machines, skills, and external dependencies are the swappable parts; a facet's `mcp.json` is reserved for a later pass and nothing reads it.
 
 ### [TG-03.1] The markdown
 ```yaml
@@ -80,15 +82,17 @@ version: 2.0.0
 
 #### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [READY]
 ```yaml
-files: [go.mod, cmd/komodo/main.go, internal/backlog, bin, .github/workflows]
+files: [go.mod, cmd/komodo/main.go, internal/backlog, internal/gate, bin, .gitattributes]
 done_when:
   - go build ./...
-  - go test ./internal/backlog/...
+  - go test ./internal/backlog/... ./internal/gate/...
   - go run ./cmd/komodo lint
+  - go run ./cmd/komodo gate
 context:
   - "go.mod at the repo root, module komodo, Go 1.22, no dependencies outside the standard library; the V1 hook sources at the tag v1-final come in under internal with their tests"
   - "internal/backlog ports tasks.py: parse, lint, list, add, set status, next task id, find backlog at the root or docs; komodo lint and komodo list and komodo add are the first subcommands"
-  - "bin/ holds komodo-darwin-arm64, komodo-windows-amd64.exe, komodo-linux-amd64 and MANIFEST.sha256; a workflow builds all three on a PR and fails when they differ from the committed ones"
+  - "bin/ holds komodo-darwin-arm64, komodo-windows-amd64.exe, komodo-linux-amd64 and MANIFEST.sha256, built with CGO_ENABLED=0, -trimpath, -buildvcs=false, and -ldflags -s -w so a rebuild is byte-identical and each file stays near 3 MB; .gitattributes marks bin/** binary so no diff, brief, or review ever carries their bytes"
+  - "komodo gate is the only precheck and runs locally: go vet, go test, the three binaries rebuilt and compared to the manifest, and doctor and guard check once they exist; gate --install writes pre-commit and pre-push for this repo that run it through the platform's binary; no workflow directory, no CI, nothing on GitHub"
 type: feat
 ```
 
@@ -115,6 +119,7 @@ context:
   - "fills the role template from the slots the README tables, each clipped by its cap with the head 70 tail 25 marker briefs.clip used; pipeline.task_slots and pipeline.repo_rules are the prior art"
   - "writes .komodo/briefs/<task>.md in a task worktree under .komodo/wt/<task> branched from the group branch and prints both paths as JSON; the builder's result path is named in the brief"
   - "--dry-run prints each slot's characters after clipping and a token estimate and writes nothing"
+  - "a listed file that is not text is named in the files slot with its path and size and never read; nothing under bin/ is read by any slot"
 type: feat
 ```
 
@@ -125,7 +130,7 @@ done_when:
   - go test ./internal/line/... ./internal/comments/...
 depends_on: [TSK-03.2.3]
 context:
-  - "validates the result JSON against the role schema for type, required, and enum; reruns done_when in the worktree; runs the comment lint on the task's files; flips the status"
+  - "validates the result JSON against the role schema for type, required, and enum; reruns done_when in the worktree; runs the comment lint on the task's files; runs komodo gate when the repo is this toolkit; flips the status"
   - "a failure writes the failure slot and the previous attempt's diff so the next brief is a repair, at most one; a second failure marks BLOCKED with the note and the wave continues, as pipeline._block did"
   - "internal/comments ports comment_rules.py; komodo comments check stays as a command"
 type: feat
@@ -152,7 +157,7 @@ done_when:
   - go test ./internal/line/... ./internal/release/...
 depends_on: [TSK-03.2.5]
 context:
-  - "diff prints the group branch against base, clipped by the failure cap, with the group's task blocks and the standards the diff's extensions touch; it is the whole reviewer input"
+  - "diff prints the group branch against base, clipped by the failure cap, with the group's task blocks and the standards the diff's extensions touch; it is the whole reviewer input; a path .gitattributes marks binary appears as one line and never as bytes"
   - "report prints per task seconds, turns, tokens when the result carries them, findings by severity, and what blocked, in the accessibility contract; render.report is the prior art"
   - "internal/release ports render.py's changelog functions; tag tags every changelog version no tag points at, annotated v<version>, and pushes it from the group worktree on a clean base; release check audits drift read-only and exits non-zero"
 type: feat
@@ -167,7 +172,7 @@ depends_on: [TSK-03.2.6]
 context:
   - "internal/ledger appends one JSON line per station event to .komodo/line.jsonl for a run and .komodo/adhoc.jsonl for anything off the line, including komodo add; fields run, group, task, wave, station, role, tier, host, provider, model, seconds, tokens_in, tokens_out, turns, outcome, failure_class, findings"
   - "line.jsonl is truncated by next --start; adhoc.jsonl is truncated by its next writer when the first line is older than 24 hours or the file exceeds 1 MB; both are gitignored and nothing reads them but report and metrics; nothing is sent anywhere and nothing goes into a PR body"
-  - "seconds come from the binary's own timestamps; tokens and turns are filled by the mount's usage function from TSK-03.3.5 when it can, else left empty; metrics prints median seconds per station, failure rate by class, tokens per task by model, repair rate, and findings per group as text"
+  - "seconds come from the binary's own timestamps; tokens and turns are filled by the mount's usage function from TSK-03.3.5 when it can, else left empty, and the Ollama mount fills them from the response counts at once; metrics prints median seconds per station, failure rate by class, tokens per task by model, repair rate, and findings per group as text"
 type: feat
 ```
 
@@ -179,6 +184,7 @@ done_when:
 depends_on: [TSK-03.2.7]
 context:
   - "step reads the run's state from the ledger and the results on disk and prints the one next action as JSON: spawn a role with a brief path, run a komodo command, wait until a time, or done; the station order exists only here"
+  - "a role whose machine resolves to ollama comes back as run komodo machine, never as a spawn; every action names the machine, skills, facets, and commands it resolved for that station"
   - "the run skill becomes three lines: call step, do what it says, repeat; a group, a task, or nothing as the argument; no station name appears in any skill"
 type: feat
 ```
@@ -212,8 +218,8 @@ done_when:
   - go run ./cmd/komodo install --dry-run
 depends_on: [TSK-03.3.1]
 context:
-  - "claude: CLAUDE.md with an @AGENTS.md include, agents from roles with model from the profile, the run, review, backlog, and respond skills copied, each standard as a one-line pointer skill, the guard registered once on PreToolUse, the permissions convenience layer from policy.json, the personal overlay CLAUDE.local.md and settings.local.json seeded once and never overwritten"
-  - "codex: AGENTS.md, agents/<role>.toml with name, description, developer_instructions, model, model_reasoning_effort, sandbox_mode, skills copied under .agents, the guard in hooks.json, mcp_servers in config.toml"
+  - "claude: CLAUDE.md with an @AGENTS.md include, agents from roles with model from the profile, the run, review, backlog, and respond skills copied, the standards skills copied, the guard registered once on PreToolUse, the permissions convenience layer from policy.json, the personal overlay CLAUDE.local.md and settings.local.json seeded once and never overwritten; the V1 render and the old MCP entry at 127.0.0.1:8000 removed when present; no MCP server is registered"
+  - "codex: AGENTS.md, agents/<role>.toml with name, description, developer_instructions, model, model_reasoning_effort, sandbox_mode, skills copied under .agents, the guard in hooks.json; no MCP server is registered"
   - "the five Komodo verbs map to host tool names or sandbox_mode here and nowhere else; install is a copy, never a symlink, and runs on Windows; --dry-run prints what would change"
 type: feat
 ```
@@ -342,26 +348,26 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.4] `komodo bridge`: a stdio MCP server over Ollama [P: C] [READY]
+#### [TSK-03.5.4] `komodo machine`: the binary is the Ollama mount [P: C] [READY]
 ```yaml
-files: [internal/bridge, cmd/komodo/main.go]
+files: [internal/mount/ollama, cmd/komodo/main.go]
 done_when:
-  - go test ./internal/bridge/...
+  - go test ./internal/mount/ollama/...
 context:
-  - "JSON-RPC 2.0 over stdin and stdout: initialize, tools/list, tools/call; tools local_chat(model, system, prompt) and local_models(); net/http against OLLAMA_BASE_URL, default http://localhost:11434"
-  - "Ollama down returns a tool error with the URL, never a crash; tested against a fake Ollama on a local listener"
+  - "machine <task> reads the brief, posts it to the chat endpoint of OLLAMA_BASE_URL, default http://localhost:11434, with the role's schema as the response format and the profile's model, writes .komodo/results/<task>.json, and stamps the ledger with the prompt and completion counts the response carries; net/http only, no other model, no MCP, no host in the path"
+  - "read-only roles only: reviewer, summarizer, and any role whose tools hold no write or shell; a write role asked for ollama exits non-zero naming the fallback tier; Ollama down is one line with the URL and a non-zero exit, never a crash; tested against a fake Ollama on a local listener"
 type: feat
 ```
 
-#### [TSK-03.5.5] The hybrid and local profiles mount the bridge [P: H] [READY]
+#### [TSK-03.5.5] The hybrid and local profiles run on the Ollama mount [P: H] [READY]
 ```yaml
 files: [internal/mount/claude, internal/mount/codex, internal/profile, komodo/roles/summarizer.md]
 done_when:
   - go test ./internal/mount/... ./internal/profile/...
 depends_on: [TSK-03.5.4, TSK-03.3.4]
 context:
-  - "the Claude mount registers the bridge as a stdio MCP server running komodo bridge, replacing the http entry at 127.0.0.1:8000 when present; a role whose provider is ollama renders with a body that calls local_chat with the profile's model; the reviewer may be ollama so a review never shares a vendor with the build; a missing bridge degrades to the light tier and says so once"
-  - "the Codex mount's local profile sets oss_provider ollama and a model_providers.ollama base_url in config.toml, and every tier's model from the profile"
+  - "hybrid: the light tier and the reviewer resolve to ollama and run through komodo machine, the builder stays on the host's standard tier, so a review never shares a vendor with the build; a session role on an ollama tier renders on the host as its standard-tier agent, since a host spawn cannot reach Ollama without spending a model; Ollama not answering degrades the tier to the host's light tier and the report says so once"
+  - "the Codex mount's local profile sets oss_provider ollama and a model_providers.ollama base_url in config.toml, and every tier's model from the profile, so the builder runs locally where the host mounts Ollama natively"
 type: feat
 ```
 
@@ -376,17 +382,19 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.7] Facets: shipped appendices keyed by detection [P: C] [READY]
+#### [TSK-03.5.7] Facets: Komodo's setup skills and appendices keyed by detection [P: C] [READY]
 ```yaml
 files: [komodo/facets, internal/facet]
 done_when:
   - test -f komodo/facets/aws/facet.md
-  - test -f komodo/facets/aws/mcp.json
+  - test -f komodo/facets/aws/skill/SKILL.md
+  - test ! -f komodo/facets/aws/mcp.json
   - go test ./internal/facet/...
 depends_on: [TSK-03.5.6]
 context:
-  - "komodo/facets/<name>/ holds facet.md with a standard section and a builder and a reviewer appendix under their own headings, mcp.json with the MCP server entries the facet needs, commands.json with verify and compile defaults, and detect.json with the markers that select it; shipped: aws, gcp, azure, postgres, github-actions"
-  - "the aws, gcp, and azure standards move into their facets; a facet appendix appends to a role's body in the brief and never touches its schema or tools; selection is detection, then .komodo/facets, then a task's facets key"
+  - "komodo/facets/<name>/ holds skill/SKILL.md, facet.md with a builder and a reviewer appendix under their own headings, commands.json with verify and compile defaults, and detect.json with the markers that select it; shipped: aws, gcp, azure, postgres, github-actions; mcp.json is a reserved name a later pass will read, and V2 ships none"
+  - "the skill holds Komodo's own setup for that platform and only what a model is not trained on: accounts, regions, naming, deploy paths, environments, conventions; never a vendor tutorial; a platform not yet set up, which is every cloud today, ships the skill as headings with what is decided and a list of what is unknown"
+  - "the aws, gcp, and azure standards move into their facets' skills, trimmed to the same rule; a facet appendix appends to a role's body in the brief and never touches its schema or tools; selection is detection, then .komodo/facets, then a task's facets key"
 type: feat
 ```
 
@@ -410,7 +418,7 @@ done_when:
   - go test ./internal/install/... ./internal/mount/... ./internal/doctor/...
 depends_on: [TSK-03.5.8, TSK-03.5.2]
 context:
-  - "install --project writes the host's project config from the profile and the repo layer: the facet MCP servers, the pointer skills, the repo skills, the rules file; gitignored copies, rebuilt every time; next --start runs it so a run always has the right tools"
+  - "install --project writes the host's project config from the profile and the repo layer: the facet skills, the standards skills, the repo skills, the rules file; gitignored copies, rebuilt every time; next --start runs it so a run always has the right tools; no MCP server is rendered"
   - "doctor compares the cached profile to a fresh detection and the rendered project config to what the source renders now; a mismatch is one line and the fix is rerunning the render"
 type: feat
 ```
@@ -420,29 +428,30 @@ type: feat
 type: chore
 version: 2.0.0
 ```
-* **Why:** the gate is Go and runs in CI, and the second host proves the mounts are the only host-specific code.
+* **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
 
-#### [TSK-03.6.1] CI is the gate [P: C] [READY]
+#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [READY]
 ```yaml
-files: [.github/workflows]
+files: [internal/gate, internal/line/close.go, internal/line/ship.go, cmd/komodo/main.go]
 done_when:
-  - go vet ./...
-  - go test ./...
-  - go run ./cmd/komodo doctor
-  - go run ./cmd/komodo guard check
+  - go run ./cmd/komodo gate
+  - test ! -d .github/workflows
 context:
-  - "one workflow on a PR: go vet, go test, komodo doctor, komodo guard check, and the binary match from TSK-03.2.1; nothing else, and nothing that a dev machine needs"
+  - "komodo gate runs go vet, go test, komodo doctor, komodo guard check, and the binary rebuild and manifest compare from TSK-03.2.1, in that order, stopping at the first failure with its output; every check is mechanical and no model is called"
+  - "close <task> runs it before the task commit and close --group runs it before the push when the repo is this toolkit; gate --install writes .git/hooks/pre-commit and pre-push as sh scripts that pick the platform's binary under bin/ by uname and run the gate, so a human terminal gets the same check; no workflow directory, no CI, nothing that bills minutes"
 type: chore
 ```
 
-#### [TSK-03.6.2] README and the templates describe what exists [P: H] [READY]
+#### [TSK-03.6.2] README, names, and the templates describe what exists [P: H] [READY]
 ```yaml
-files: [README.md, templates/project]
+files: [README.md, AGENTS.md, templates/project, komodo, cmd/komodo, internal]
 done_when:
   - go run ./cmd/komodo doctor
+  - "! grep -rEil 'bridge|pointer skill|adapter|orchestrator' komodo cmd internal README.md AGENTS.md"
 depends_on: [TSK-03.6.1]
 context:
-  - "the README drops its planned status and the V1 coverage table, keeps the line, the stations, the devices, the mounts, ad hoc, the guard, the binary, the repo layer, setup, usage, layout; templates/project carries AGENTS.md, BACKLOG.md, CHANGELOG.md, the docs/spec starters the grammar's context anchors point at, and the example .komodo/context file; CLAUDE.md.tmpl goes"
+  - "the README drops its planned status and the V1 coverage table, keeps the line, the stations, the devices, the mounts, hot swap, ad hoc, the guard, the binary, the gate, the repo layer, names, setup, usage, layout; templates/project carries AGENTS.md, BACKLOG.md, CHANGELOG.md, the docs/spec starters the grammar's context anchors point at, and the example .komodo/context file; CLAUDE.md.tmpl goes"
+  - "every command, flag, file, directory, skill, role field, and config key uses the README's Names table and nothing else; a retired word, bridge, adapter, worker, orchestrator, harness, pointer skill, appears nowhere a model or a developer reads except CHANGELOG.md; the root AGENTS.md layout and commands match the tree"
 type: docs
 ```
 
@@ -463,8 +472,20 @@ type: docs
 files: [CHANGELOG.md]
 done_when:
   - grep -q "## 2.0.0" CHANGELOG.md
-depends_on: [TSK-03.6.3]
+depends_on: [TSK-03.6.3, TSK-03.6.5]
 context:
-  - "one heading: the line, what was removed, what replaced it, both proofs"
+  - "one heading: the line, what was removed, what replaced it, both proofs, the swap proofs"
 type: docs
+```
+
+#### [TSK-03.6.5] Every swap point is proven [P: C] [READY]
+```yaml
+files: [internal/line/swap_test.go, internal/profile, internal/facet, internal/repo]
+done_when:
+  - go test ./internal/line/... ./internal/profile/... ./internal/facet/... ./internal/repo/...
+depends_on: [TSK-03.6.1]
+context:
+  - "one test per swap point, each with no code change and no restart: a profile row change moves a station to another machine and step names it; a skill body change under komodo/skills or .komodo/skills reaches the next brief and the next project render; a facet added by .komodo/facets or a task's facets key reaches the standards slot, the profile slot, and the render; a commands.json change replaces verify at QC"
+  - "a role, a skill, and the binary hold no name of a model, a server, or a platform, so the test fails when any of them does; MCP is the fifth point and is deferred: the test asserts that a facet's mcp.json, when present, changes nothing in V2"
+type: test
 ```
