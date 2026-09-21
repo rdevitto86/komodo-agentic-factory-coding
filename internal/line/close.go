@@ -156,7 +156,7 @@ func diffOf(cwd string) string {
 	return out
 }
 
-// writeStatus rewrites one task's status token in the backlog file.
+// writeStatus rewrites one task's status token in BACKLOG.md.
 func writeStatus(path, taskID, status string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
