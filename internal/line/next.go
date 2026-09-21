@@ -62,7 +62,7 @@ func PlanForGroup(root, groupID string) (*Plan, error) {
 	return buildPlan(root, parsed, group, true)
 }
 
-// groupFor loads the backlog and picks the group a needle names, or the next ready one.
+// groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one.
 func groupFor(root, needle string) (backlog.Backlog, backlog.Group, bool, error) {
 	path, err := backlog.Find(root)
 	if err != nil {
