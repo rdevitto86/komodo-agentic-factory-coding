@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/ledger"
 )
 
@@ -257,5 +258,60 @@ func TestTheLedgerTimesTheBuildAndNotJustTheClose(t *testing.T) {
 	}
 	if closed == nil || closed.Seconds > 30 {
 		t.Fatalf("close = %+v; the close still measures only itself", closed)
+	}
+}
+
+// taskWith parses one task out of a backlog fragment.
+func taskWith(t *testing.T, files string) backlog.Task {
+	t.Helper()
+	text := "### [TG-30.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-30.1.1] T [P: C] [READY]\n```yaml\nfiles: [" + files + "]\ndone_when: [\"true\"]\n```\n"
+	task, ok := backlog.Parse(text).Task("TSK-30.1.1")
+	if !ok {
+		t.Fatal("no task")
+	}
+	return task
+}
+
+func TestATaskBranchDoesNotCarryRebuiltBinaries(t *testing.T) {
+	cwd := gitRepo(t)
+	commit(t, cwd, "a/one.go", "package a\n", "seed")
+	commit(t, cwd, "bin/komodo-linux-amd64", "old\n", "binaries")
+	if err := os.WriteFile(filepath.Join(cwd, "bin", "komodo-linux-amd64"), []byte("rebuilt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "a", "one.go"), []byte("package a\n\n// Two is two.\nfunc Two() int { return 2 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitTask(cwd, taskWith(t, "a/one.go")); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := git(cwd, "show", "--name-only", "--format=", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(changed, "bin/") {
+		t.Fatalf("committed %q; every branch rebuilds bin, so carrying it conflicts on every wave merge", changed)
+	}
+	if !strings.Contains(changed, "a/one.go") {
+		t.Fatalf("committed %q; the task's own file must still land", changed)
+	}
+}
+
+func TestATaskThatOwnsABuiltPathStillCommitsIt(t *testing.T) {
+	cwd := gitRepo(t)
+	commit(t, cwd, "bin/MANIFEST.sha256", "old\n", "manifest")
+	if err := os.WriteFile(filepath.Join(cwd, "bin", "MANIFEST.sha256"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitTask(cwd, taskWith(t, "bin/MANIFEST.sha256")); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := git(cwd, "show", "--name-only", "--format=", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(changed, "bin/MANIFEST.sha256") {
+		t.Fatalf("committed %q; a task that declares a built path owns it", changed)
 	}
 }
