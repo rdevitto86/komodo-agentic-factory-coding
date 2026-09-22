@@ -140,3 +140,12 @@ func ReadResult(root, taskID string) (map[string]any, error) {
 	}
 	return parsed, nil
 }
+
+// SchemaText is the schema a role returns, verbatim, for a brief to carry.
+func SchemaText(root, role string) string {
+	data, err := os.ReadFile(filepath.Join(root, RolesDir, role+".schema.json"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
