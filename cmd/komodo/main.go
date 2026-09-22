@@ -22,6 +22,7 @@ import (
 	"komodo/internal/mount"
 	"komodo/internal/pr"
 	"komodo/internal/release"
+	"komodo/internal/run"
 
 	_ "komodo/internal/mount/claude"
 	_ "komodo/internal/mount/codex"
@@ -45,7 +46,9 @@ const usage = `komodo: the code assembly line.
   komodo install --host X     Mount this repo on a host, or on both
   komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
   komodo guard [check]        The one agent hook; check runs its table
+  komodo run [group|task]     Drive the line headless on this host, under a budget
   komodo step [group|task]    The one next action, as JSON
+  komodo threads [pr]         The unresolved review threads, as JSON
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
@@ -89,8 +92,12 @@ func main() {
 		runInstall(root, os.Args[2:])
 	case "guard":
 		runGuard(root, os.Args[2:])
+	case "run":
+		runRun(root, os.Args[2:])
 	case "step":
 		runStep(root, os.Args[2:])
+	case "threads":
+		runThreads(root, os.Args[2:])
 	case "metrics":
 		runMetrics(root)
 	case "gate":
@@ -662,6 +669,39 @@ func runStep(root string, args []string) {
 		fail(err)
 	}
 	printJSON(next)
+}
+
+// runRun drives the line headless on the profile's host and exits with the host's code.
+func runRun(root string, args []string) {
+	flags := flag.NewFlagSet("run", flag.ExitOnError)
+	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
+	budget := flags.Duration("budget", run.GroupBudget, "how long the run may take before it is killed")
+	_ = flags.Parse(args)
+	target := ""
+	if flags.NArg() > 0 {
+		target = flags.Arg(0)
+	}
+	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry})
+	if err != nil {
+		fail(err)
+	}
+	os.Exit(code)
+}
+
+// runThreads prints the unresolved review threads on a pull request, or on this branch's.
+func runThreads(root string, args []string) {
+	number := ""
+	if len(args) > 0 {
+		number = args[0]
+	}
+	threads, err := pr.New(root).Threads(number)
+	if err != nil {
+		fail(err)
+	}
+	if threads == nil {
+		threads = []pr.Thread{}
+	}
+	printJSON(threads)
 }
 
 // runGuard is the hook on stdin, or the table the gate runs.
