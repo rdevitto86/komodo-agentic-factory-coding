@@ -9,6 +9,8 @@ import (
 
 	"komodo/internal/install"
 	"komodo/internal/mount"
+	"komodo/internal/mount/ollama"
+	"komodo/internal/profile"
 	repopkg "komodo/internal/repo"
 )
 
@@ -37,11 +39,12 @@ func Render(root string, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
+	local := profile.OllamaUp()
 	for _, role := range roles {
 		if !role.Session {
 			continue
 		}
-		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".toml"), []byte(agentFile(role)), "the "+role.Name+" role as an agent")
+		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".toml"), []byte(agentFile(role, local)), "the "+role.Name+" role as an agent")
 	}
 
 	skills, err := mount.LoadSkills(root)
@@ -59,6 +62,9 @@ func Render(root string, binary string) (install.Plan, error) {
 	}
 	plan.Add(filepath.Join(root, Dir, "hooks.json"), hooks, "the guard before every tool call")
 	plan.AddSeed(filepath.Join(root, "AGENTS.md"), []byte("# Agent Rules\n\nSee `.codex/komodo/AGENTS.md`.\n"), "the repo's own rules")
+	if local {
+		plan.Add(filepath.Join(root, Dir, "config.toml"), configFile(), "the local machine as this host's own provider")
+	}
 	return plan, nil
 }
 
@@ -93,16 +99,21 @@ func mergeOverride(skills *[]mount.Skill, byName map[string]int, name string, is
 	(*skills)[index].Body = strings.TrimRight((*skills)[index].Body, "\n") + "\n\n## Repo overrides\n\n" + body + "\n"
 }
 
-// agentFile renders one role as this host's TOML agent.
-func agentFile(role mount.Role) string {
+// agentFile renders one role as this host's TOML agent; every tier's model comes from the
+// local machine once it is up, since the local profile runs the builder locally too.
+func agentFile(role mount.Role, local bool) string {
 	sandbox := "read-only"
 	if role.Writes() {
 		sandbox = "workspace-write"
 	}
+	model := models[role.Tier]
+	if local {
+		model = profile.OllamaModel
+	}
 	lines := []string{
 		fmt.Sprintf("name = %q", role.Name),
 		fmt.Sprintf("description = %q", role.Description),
-		fmt.Sprintf("model = %q", models[role.Tier]),
+		fmt.Sprintf("model = %q", model),
 		fmt.Sprintf("model_reasoning_effort = %q", efforts[role.Tier]),
 		fmt.Sprintf("sandbox_mode = %q", sandbox),
 		"developer_instructions = \"\"\"",
@@ -110,6 +121,17 @@ func agentFile(role mount.Role) string {
 		"\"\"\"",
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// configFile points this host's own provider setting at the local machine.
+func configFile() []byte {
+	lines := []string{
+		`oss_provider = "ollama"`,
+		"",
+		"[model_providers.ollama]",
+		fmt.Sprintf("base_url = %q", ollama.BaseURL()+"/v1"),
+	}
+	return []byte(strings.Join(lines, "\n") + "\n")
 }
 
 // hooksFile registers the guard before every tool call.

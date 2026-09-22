@@ -2,15 +2,19 @@ package codex
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/profile"
 )
 
-// toolkit builds a root with the rules, two roles, and a skill.
+// toolkit builds a root with the rules, two roles, and a skill, with the local machine down.
 func toolkit(t *testing.T) string {
 	t.Helper()
+	t.Setenv(profile.OllamaEnv, "http://127.0.0.1:1")
 	root := t.TempDir()
 	write := func(rel, body string) {
 		path := filepath.Join(root, rel)
@@ -154,5 +158,72 @@ func TestTheRulesFileAndTheSkillsAreProjectChanges(t *testing.T) {
 	}
 	if found[filepath.Join(root, Dir, "hooks.json")] {
 		t.Fatal("hooks are not a project change")
+	}
+}
+
+// withLocalMachine points OLLAMA_BASE_URL at a listener that answers TCP, so the mount sees it up.
+func withLocalMachine(t *testing.T) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	t.Setenv(profile.OllamaEnv, "http://"+listener.Addr().String())
+}
+
+func TestTheLocalProfilePointsEveryTierAtTheLocalMachine(t *testing.T) {
+	root := toolkit(t)
+	withLocalMachine(t)
+	agent := body(t, root, filepath.Join(Dir, "agents", "builder.toml"))
+	if !strings.Contains(agent, `model = "`+profile.OllamaModel+`"`) {
+		t.Fatalf("the builder did not take the local model: %s", agent)
+	}
+	agent = body(t, root, filepath.Join(Dir, "agents", "reviewer.toml"))
+	if !strings.Contains(agent, `model = "`+profile.OllamaModel+`"`) {
+		t.Fatalf("the reviewer did not take the local model: %s", agent)
+	}
+}
+
+func TestTheLocalProfileSetsOssProviderAndTheBaseURL(t *testing.T) {
+	root := toolkit(t)
+	withLocalMachine(t)
+	config := body(t, root, filepath.Join(Dir, "config.toml"))
+	if !strings.Contains(config, `oss_provider = "ollama"`) {
+		t.Fatalf("config.toml did not set oss_provider: %s", config)
+	}
+	if !strings.Contains(config, "[model_providers.ollama]") || !strings.Contains(config, "base_url =") {
+		t.Fatalf("config.toml did not set the ollama base_url: %s", config)
+	}
+}
+
+func TestTiersPutsEveryTierOnTheLocalMachine(t *testing.T) {
+	tiers := Tiers("max_5x", true)
+	for _, machine := range []struct {
+		name string
+		got  string
+	}{
+		{"light", tiers.Light.Provider}, {"standard", tiers.Standard.Provider},
+		{"heavy", tiers.Heavy.Provider}, {"reviewer", tiers.Reviewer.Provider},
+	} {
+		if machine.got != "ollama" {
+			t.Fatalf("%s = %q, want ollama", machine.name, machine.got)
+		}
+	}
+	if tiers.Light.Model != profile.OllamaModel {
+		t.Fatalf("model = %q", tiers.Light.Model)
+	}
+}
+
+func TestConfigTomlIsAbsentWithoutTheLocalMachine(t *testing.T) {
+	root := toolkit(t)
+	plan, err := Render(root, "komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range plan.Changes {
+		if change.Path == filepath.Join(root, Dir, "config.toml") {
+			t.Fatal("config.toml was rendered with the local machine down")
+		}
 	}
 }

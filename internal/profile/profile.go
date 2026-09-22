@@ -18,6 +18,9 @@ const OllamaEnv = "OLLAMA_BASE_URL"
 // DefaultOllamaURL is where the local machine answers unless the environment says otherwise.
 const DefaultOllamaURL = "http://localhost:11434"
 
+// OllamaModel is the model name every mount pulls from the local machine, so both hosts agree.
+const OllamaModel = "llama3.2"
+
 // Caps are the brief slot caps, in characters, that a profile may lower and never raise.
 type Caps struct {
 	RepoRules   int `json:"repo_rules"`
@@ -152,6 +155,8 @@ func SelectWith(root string, hosts []mount.Host, ollama bool) Profile {
 			profile.Name = host.HybridName
 		}
 		profile.Why += " and the local machine answers"
+	} else if endpoint := os.Getenv(OllamaEnv); endpoint != "" && host.HybridName != "" {
+		profile.Why += "; the local machine did not answer at " + endpoint + ", so the light tier stays on " + host.Name + "'s own light tier"
 	}
 	if plan == "" {
 		profile.Why += "; no plan probe, so the conservative overlay applies"
