@@ -3,6 +3,7 @@ package facet
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -80,8 +81,19 @@ func overlaps(want, have []string) bool {
 	return false
 }
 
+// ValidName reports whether a facet name is a single plain path segment, safe to join under a root.
+func ValidName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	return !strings.ContainsAny(name, `/\`)
+}
+
 // Load reads one shipped facet by name.
 func Load(root, name string) (Facet, error) {
+	if !ValidName(name) {
+		return Facet{}, fmt.Errorf("facet: %q is not a valid facet name", name)
+	}
 	dir := filepath.Join(root, FacetsDir, name)
 
 	facetMD, err := os.ReadFile(filepath.Join(dir, "facet.md"))

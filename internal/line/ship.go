@@ -15,15 +15,16 @@ import (
 
 // ShipResult is what the ship station did with one group.
 type ShipResult struct {
-	Group     string   `json:"group"`
-	Branch    string   `json:"branch"`
-	Base      string   `json:"base"`
-	URL       string   `json:"url,omitempty"`
-	Draft     bool     `json:"draft"`
-	Labels    []string `json:"labels,omitempty"`
-	Changelog string   `json:"changelog,omitempty"`
-	Done      []string `json:"done,omitempty"`
-	Blocked   []string `json:"blocked,omitempty"`
+	Group     string         `json:"group"`
+	Branch    string         `json:"branch"`
+	Base      string         `json:"base"`
+	URL       string         `json:"url,omitempty"`
+	Draft     bool           `json:"draft"`
+	Labels    []string       `json:"labels,omitempty"`
+	Changelog string         `json:"changelog,omitempty"`
+	Done      []string       `json:"done,omitempty"`
+	Blocked   []string       `json:"blocked,omitempty"`
+	Published *CommandResult `json:"published,omitempty"`
 }
 
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
@@ -73,6 +74,10 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 	}
 	if _, err := git(group, "push", "-u", "origin", plan.Branch); err != nil {
 		return nil, err
+	}
+	if command := AfterPublishCommand(group); command != "" {
+		published := RunCommand(group, command)
+		result.Published = &published
 	}
 	if client == nil {
 		return result, nil

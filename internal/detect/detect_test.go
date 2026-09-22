@@ -158,3 +158,19 @@ func TestLoadRecomputesWhenTheManifestHashChanges(t *testing.T) {
 		t.Fatal("cache file is empty")
 	}
 }
+
+func TestLoadNoticesAManifestThatDidNotExistAtTheLastWalk(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "README.md", "# nothing here\n")
+
+	empty := Load(root)
+	if empty.Verify != "" {
+		t.Fatalf("verify = %q, want empty profile", empty.Verify)
+	}
+
+	write(t, root, "go.mod", "module example\n")
+	updated := Load(root)
+	if updated.Verify != "go test ./..." {
+		t.Fatalf("verify = %q, want the new go.mod to be detected", updated.Verify)
+	}
+}

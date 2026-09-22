@@ -67,19 +67,33 @@ var terraformProvider = regexp.MustCompile(`(?m)^\s*provider\s+"[^"]+"\s*\{`)
 // composeServices matches a Docker Compose services block.
 var composeServices = regexp.MustCompile(`(?m)^services:`)
 
-// Load returns the cached profile when the manifests it read have not changed, or detects fresh.
+// Load returns the cached profile when a fresh manifest listing still matches it, or detects fresh.
 func Load(root string) Profile {
+	profile, manifests := Detect(root)
+	hash := hashManifests(root, manifests)
 	path := filepath.Join(root, cacheFile)
 	data, err := os.ReadFile(path)
 	if err == nil {
 		var cached cache
-		if json.Unmarshal(data, &cached) == nil && cached.Hash == hashManifests(root, cached.Manifests) {
+		if json.Unmarshal(data, &cached) == nil && cached.Hash == hash && sameManifests(cached.Manifests, manifests) {
 			return cached.Profile
 		}
 	}
-	profile, manifests := Detect(root)
 	save(root, profile, manifests)
 	return profile
+}
+
+// sameManifests reports whether two sorted manifest lists name the same files.
+func sameManifests(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Detect walks the tree once and returns the profile it found, and the manifests it read.

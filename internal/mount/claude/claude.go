@@ -68,6 +68,9 @@ func Render(root string, binary string) (install.Plan, error) {
 	}
 
 	for _, name := range facetSkills(root) {
+		if !facet.ValidName(name) {
+			continue
+		}
 		loaded, err := facet.Load(root, name)
 		if err != nil {
 			continue
@@ -102,11 +105,11 @@ func repoSkills(root string, skills []mount.Skill) []mount.Skill {
 	}
 	standards, _ := repopkg.LoadStandards(root)
 	for _, override := range standards {
-		mergeOverride(&skills, byName, "standards-"+override.Name, override.New, override.Body)
+		mount.MergeOverride(&skills, byName, "standards-"+override.Name, override.New, override.Body)
 	}
 	overrides, _ := repopkg.LoadSkills(root)
 	for _, override := range overrides {
-		mergeOverride(&skills, byName, override.Name, override.New, override.Body)
+		mount.MergeOverride(&skills, byName, override.Name, override.New, override.Body)
 	}
 	return skills
 }
@@ -118,20 +121,6 @@ func facetSkills(root string) []string {
 		return nil
 	}
 	return names
-}
-
-// mergeOverride appends a new skill, or a "Repo overrides" section onto a shipped one by name.
-func mergeOverride(skills *[]mount.Skill, byName map[string]int, name string, isNew bool, body string) {
-	if isNew {
-		byName[name] = len(*skills)
-		*skills = append(*skills, mount.Skill{Name: name, Body: body})
-		return
-	}
-	index, ok := byName[name]
-	if !ok {
-		return
-	}
-	(*skills)[index].Body = strings.TrimRight((*skills)[index].Body, "\n") + "\n\n## Repo overrides\n\n" + body + "\n"
 }
 
 // agentFile renders one role as this host's agent file; a light tier renders as standard when

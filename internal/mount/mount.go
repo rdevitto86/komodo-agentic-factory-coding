@@ -104,6 +104,20 @@ func LoadSkills(root string) ([]Skill, error) {
 	return skills, nil
 }
 
+// MergeOverride appends a repo skill that is new, or folds one that collides into the shipped skill of that name.
+func MergeOverride(skills *[]Skill, byName map[string]int, name string, isNew bool, body string) {
+	index, ok := byName[name]
+	if !ok {
+		if !isNew {
+			return
+		}
+		byName[name] = len(*skills)
+		*skills = append(*skills, Skill{Name: name, Body: body})
+		return
+	}
+	(*skills)[index].Body = strings.TrimRight((*skills)[index].Body, "\n") + "\n\n## Repo overrides\n\n" + body + "\n"
+}
+
 // Instructions is a role's body without the brief template, which is what a session agent reads.
 func (r Role) Instructions() string {
 	if index := strings.Index(r.Body, "\n# Brief\n"); index >= 0 {

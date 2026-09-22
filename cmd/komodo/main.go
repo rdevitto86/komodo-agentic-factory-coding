@@ -717,11 +717,11 @@ func runThreads(root string, args []string) {
 func runMachine(root string, args []string) {
 	set := flag.NewFlagSet("machine", flag.ExitOnError)
 	role := set.String("role", "builder", "the role the brief was written for")
-	_ = set.Parse(args)
-	if set.NArg() < 1 {
+	taskID, rest := splitTaskArg(args)
+	if taskID == "" {
 		fail(fmt.Errorf("usage: komodo machine <task> [--role reviewer]"))
 	}
-	taskID := set.Arg(0)
+	_ = set.Parse(rest)
 	definition, err := line.LoadRole(root, *role)
 	if err != nil {
 		fail(err)
@@ -764,6 +764,28 @@ func runMachine(root string, args []string) {
 		fail(err)
 	}
 	fmt.Println("wrote", line.ResultPath(root, taskID))
+}
+
+// splitTaskArg pulls the task id out of a machine invocation's args, wherever it falls among the flags.
+func splitTaskArg(args []string) (task string, rest []string) {
+	rest = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--role" || arg == "-role" {
+			rest = append(rest, arg)
+			if i+1 < len(args) {
+				i++
+				rest = append(rest, args[i])
+			}
+			continue
+		}
+		if task == "" && !strings.HasPrefix(arg, "-") {
+			task = arg
+			continue
+		}
+		rest = append(rest, arg)
+	}
+	return task, rest
 }
 
 // runGuard is the hook on stdin, or the table the gate runs.

@@ -41,6 +41,41 @@ func TestLoadRejectsMcpJSON(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsANameThatEscapesTheFacetsRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "facet.md"), []byte("evil"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(outside, "skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "skill", "SKILL.md"), []byte("evil"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(filepath.Join(root, FacetsDir), outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(root, rel); err == nil {
+		t.Fatal("a facet name carrying a path segment was accepted")
+	}
+	if ValidName(rel) {
+		t.Fatalf("ValidName(%q) = true, want false", rel)
+	}
+}
+
+func TestValidNameRejectsEverySeparatorAndDotSegment(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "a/b", `a\b`, "../evil", "a/../b"} {
+		if ValidName(name) {
+			t.Fatalf("ValidName(%q) = true, want false", name)
+		}
+	}
+	if !ValidName("aws") {
+		t.Fatal("ValidName(\"aws\") = false, want true")
+	}
+}
+
 func TestFacetAppendicesComeFromTheirOwnHeadings(t *testing.T) {
 	facet, err := Load(repoRoot(t), "aws")
 	if err != nil {

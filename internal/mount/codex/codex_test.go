@@ -139,6 +139,78 @@ func TestRepoSkillAppendsToAShippedOne(t *testing.T) {
 	}
 }
 
+func TestARepoSkillWithFrontmatterStillMergesIntoAShippedOne(t *testing.T) {
+	root := toolkit(t)
+	shippedPath := filepath.Join(root, "komodo", "skills", "builder", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(shippedPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shippedPath, []byte("---\nname: builder\n---\n\nBuild it.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	overridePath := filepath.Join(root, ".komodo", "skills", "builder", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(overridePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overridePath, []byte("---\nname: builder\n---\n\nThis repo deploys through a Makefile.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, SkillsDir, "builder", "SKILL.md")
+	var matches int
+	var got string
+	for _, change := range plan.Changes {
+		if change.Path == target {
+			matches++
+			got = string(change.Body)
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("builder was scheduled %d times, want 1", matches)
+	}
+	if !strings.Contains(got, "Build it.") || !strings.Contains(got, "## Repo overrides") ||
+		!strings.Contains(got, "through a Makefile") {
+		t.Fatalf("skill = %q", got)
+	}
+}
+
+func TestRenderSkipsAFacetNameThatTriesToEscapeTheFacetsRoot(t *testing.T) {
+	root := toolkit(t)
+	if err := os.MkdirAll(filepath.Join(root, "komodo", "facets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A directory one level above komodo/facets, reachable only by a traversal name.
+	outside := filepath.Join(root, "komodo", "escaped", "skill")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "escaped", "facet.md"), []byte("SECRET_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "SKILL.md"), []byte("SECRET_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	overridePath := filepath.Join(root, ".komodo", "facets")
+	if err := os.MkdirAll(filepath.Dir(overridePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overridePath, []byte("../escaped\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range plan.Changes {
+		if strings.Contains(string(change.Body), "SECRET_MARKER") {
+			t.Fatalf("a facet name escaped komodo/facets: %s", change.Path)
+		}
+	}
+}
+
 func TestTheRulesFileAndTheSkillsAreProjectChanges(t *testing.T) {
 	root := toolkit(t)
 	plan, err := Render(root, "komodo")

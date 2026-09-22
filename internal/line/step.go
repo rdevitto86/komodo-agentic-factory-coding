@@ -75,10 +75,14 @@ func Step(root, needle string) (*Action, error) {
 					Why: taskID + " has no brief yet",
 				}), nil
 			}
-			return action(root, plan, Action{
+			tier := ""
+			if task, ok := parsed.Task(taskID); ok {
+				tier = task.Tier()
+			}
+			return actionForTier(root, plan, Action{
 				Action: "spawn", Role: "builder", Brief: briefPath, Task: taskID, Wave: index + 1,
 				Why: taskID + " has a brief and no result",
-			}), nil
+			}, tier), nil
 		}
 		for _, taskID := range wave {
 			task, ok := parsed.Task(taskID)
@@ -98,7 +102,7 @@ func Step(root, needle string) (*Action, error) {
 	}
 	if !reviewed(root, plan) {
 		return action(root, plan, Action{
-			Action: "spawn", Role: "reviewer", Brief: "komodo diff",
+			Action: "spawn", Role: "reviewer", Brief: "komodo diff", Task: plan.Group + "-review",
 			Why: "every wave is merged and the diff is unreviewed",
 		}), nil
 	}
@@ -113,11 +117,21 @@ func Step(root, needle string) (*Action, error) {
 
 // action fills the machine, skills, facets, and commands a station resolved.
 func action(root string, plan *Plan, next Action) *Action {
+	return actionForTier(root, plan, next, "")
+}
+
+// actionForTier is action, but a task's own tier key, when set, picks the machine over the role's.
+func actionForTier(root string, plan *Plan, next Action, taskTier string) *Action {
 	next.Skills = []string{}
 	next.Facets = []string{}
 	next.Commands = []string{}
 	if command := VerifyCommand(filepath.Join(root, plan.Worktree)); command != "" {
 		next.Commands = append(next.Commands, command)
+	}
+	if next.Role == "reviewer" {
+		if command := BeforeReviewCommand(filepath.Join(root, plan.Worktree)); command != "" {
+			next.Commands = append(next.Commands, command)
+		}
 	}
 	if next.Role != "" {
 		for _, role := range plan.Roles {
@@ -126,11 +140,14 @@ func action(root string, plan *Plan, next Action) *Action {
 				if next.Machine == "" {
 					next.Machine = role.Tier
 				}
+				if taskTier != "" && taskTier != role.Tier {
+					next.Machine = machineFor(plan.Profile, taskTier)
+				}
 			}
 		}
 		if next.Machine == "ollama" {
 			next.Action = "run"
-			next.Command = "komodo machine " + next.Task
+			next.Command = "komodo machine --role " + next.Role + " " + next.Task
 			next.Role = ""
 		}
 	}

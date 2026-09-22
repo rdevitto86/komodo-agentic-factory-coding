@@ -247,6 +247,41 @@ func TestRepoStandardAppendsToAShippedOne(t *testing.T) {
 	}
 }
 
+func TestARepoStandardWithFrontmatterStillMergesIntoAShippedOne(t *testing.T) {
+	root := toolkit(t)
+	write := func(rel, contents string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("komodo/skills/standards-go/SKILL.md", "---\nname: standards-go\n---\n\n# Go\n")
+	write(".komodo/standards/go.md", "---\nglobs: [\"**/*.go\"]\n---\n\nThis repo also bans naked returns.\n")
+	plan, err := Render(root, "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, Dir, "skills", "standards-go", "SKILL.md")
+	var matches int
+	var got string
+	for _, change := range plan.Changes {
+		if change.Path == target {
+			matches++
+			got = string(change.Body)
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("standards-go was scheduled %d times, want 1", matches)
+	}
+	if !strings.Contains(got, "# Go") || !strings.Contains(got, "## Repo overrides") ||
+		!strings.Contains(got, "naked returns") {
+		t.Fatalf("standard = %q", got)
+	}
+}
+
 func TestRepoSkillWithFrontmatterIsNew(t *testing.T) {
 	root := toolkit(t)
 	path := filepath.Join(root, ".komodo", "skills", "deploy", "SKILL.md")
@@ -274,6 +309,40 @@ func TestARepoSkillCannotAppendAProtectedOne(t *testing.T) {
 	got := body(t, root, filepath.Join(Dir, "skills", "run", "SKILL.md"))
 	if strings.Contains(got, "Never happens.") {
 		t.Fatal("a protected skill was appended to")
+	}
+}
+
+func TestRenderSkipsAFacetNameThatTriesToEscapeTheFacetsRoot(t *testing.T) {
+	root := toolkit(t)
+	if err := os.MkdirAll(filepath.Join(root, "komodo", "facets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A directory one level above komodo/facets, reachable only by a traversal name.
+	outside := filepath.Join(root, "komodo", "escaped", "skill")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "escaped", "facet.md"), []byte("SECRET_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "SKILL.md"), []byte("SECRET_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	overridePath := filepath.Join(root, ".komodo", "facets")
+	if err := os.MkdirAll(filepath.Dir(overridePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overridePath, []byte("../escaped\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range plan.Changes {
+		if strings.Contains(string(change.Body), "SECRET_MARKER") {
+			t.Fatalf("a facet name escaped komodo/facets: %s", change.Path)
+		}
 	}
 }
 

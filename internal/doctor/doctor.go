@@ -242,7 +242,7 @@ func checkDrift(root string) []Problem {
 	return problems
 }
 
-// checkProfileDrift reports when the cached repo profile no longer matches a fresh detection.
+// checkProfileDrift reports when the cached repo profile does not match a fresh detection.
 func checkProfileDrift(root string) []Problem {
 	cached := detect.Load(root)
 	fresh, _ := detect.Detect(root)
