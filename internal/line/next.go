@@ -158,7 +158,11 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 	}
 	plan.Profile = chosen
 	for index := range roles {
-		roles[index].Machine = machineFor(chosen, roles[index].Tier)
+		tier := roles[index].Tier
+		if roles[index].Name == "reviewer" {
+			tier = "reviewer"
+		}
+		roles[index].Machine = machineFor(chosen, tier)
 	}
 	plan.Roles = roles
 	if chosen.MaxParallel > 0 && plan.Mode != "single" {
@@ -173,8 +177,12 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 }
 
 // machineFor names the machine a tier resolved to, or the tier when no mount is installed.
+// "reviewer" is not a tier Tiers.Machine knows, so it resolves straight from Tiers.Reviewer.
 func machineFor(chosen profile.Profile, tier string) string {
 	machine := chosen.Tiers.Machine(tier)
+	if tier == "reviewer" {
+		machine = chosen.Tiers.Reviewer
+	}
 	if machine.Provider == "" {
 		return tier
 	}
