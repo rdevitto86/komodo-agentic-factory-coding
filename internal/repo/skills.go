@@ -42,7 +42,7 @@ func LoadSkills(root string) ([]SkillOverride, []string) {
 			skipped = append(skipped, name+": "+err.Error())
 			continue
 		}
-		text := string(data)
+		text := normalizeNewlines(data)
 		out = append(out, SkillOverride{Name: name, New: frontmatter.MatchString(text), Body: strings.TrimSpace(text)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

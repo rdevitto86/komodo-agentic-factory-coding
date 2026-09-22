@@ -34,7 +34,7 @@ func LoadStandards(root string) ([]StandardOverride, []string) {
 			skipped = append(skipped, entry.Name()+": "+err.Error())
 			continue
 		}
-		text := string(data)
+		text := normalizeNewlines(data)
 		name := strings.TrimSuffix(entry.Name(), ".md")
 		out = append(out, StandardOverride{Name: name, New: frontmatter.MatchString(text), Body: strings.TrimSpace(text)})
 	}

@@ -35,6 +35,19 @@ func TestLoadStandardsWithFrontmatterIsNew(t *testing.T) {
 	}
 }
 
+func TestLoadStandardsWithCRLFFrontmatterIsNew(t *testing.T) {
+	root := standardsRepo(t, map[string]string{
+		"terraform.md": "---\r\nglobs: [\"**/*.tf\"]\r\n---\r\n\r\n# Terraform\r\n\r\nOne module per resource group.\r\n",
+	})
+	standards, skipped := LoadStandards(root)
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	if len(standards) != 1 || !standards[0].New || standards[0].Name != "terraform" {
+		t.Fatalf("standards = %+v", standards)
+	}
+}
+
 func TestLoadStandardsWithoutFrontmatterAppends(t *testing.T) {
 	root := standardsRepo(t, map[string]string{
 		"go.md": "Extract this repo's own error-wrapping convention.\n",
