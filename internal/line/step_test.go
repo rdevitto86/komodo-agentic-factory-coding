@@ -187,3 +187,23 @@ func markDone(t *testing.T, root, taskID string) {
 		t.Fatal(err)
 	}
 }
+
+func TestSpawnNamesTheWorktreeTheAgentWorksIn(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	path := filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("a brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(StateDir, "wt", "TSK-12.1.1")
+	if next.Action != "spawn" || next.Worktree != want {
+		t.Fatalf("worktree = %q, want %q (action %s)", next.Worktree, want, next.Action)
+	}
+}

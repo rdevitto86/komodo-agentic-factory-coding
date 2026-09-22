@@ -190,3 +190,28 @@ func TestTokensEstimatesFourCharacters(t *testing.T) {
 		t.Fatalf("tokens = %d", got)
 	}
 }
+
+func TestTheBriefLandsInTheWorktreeTheBuilderWorksIn(t *testing.T) {
+	root := t.TempDir()
+	brief := &Brief{
+		Task: "TSK-01.1.1", Text: "the brief",
+		Path:     filepath.Join(StateDir, "briefs", "TSK-01.1.1.md"),
+		Worktree: filepath.Join(StateDir, "wt", "TSK-01.1.1"),
+	}
+	worktree := filepath.Join(root, brief.Worktree)
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteBrief(root, brief, "feat/a-group"); err != nil {
+		t.Fatal(err)
+	}
+	for _, base := range []string{root, worktree} {
+		data, err := os.ReadFile(filepath.Join(base, brief.Path))
+		if err != nil {
+			t.Fatalf("no brief under %s: %v", base, err)
+		}
+		if string(data) != "the brief" {
+			t.Fatalf("brief under %s = %q", base, data)
+		}
+	}
+}
