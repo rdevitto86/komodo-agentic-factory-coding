@@ -195,11 +195,9 @@ func blockText(parsed backlog.Backlog, task backlog.Task) string {
 
 // repoRules is the repo's own AGENTS.md, clipped, or a one-line default.
 func repoRules(cwd string) string {
-	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-		data, err := os.ReadFile(filepath.Join(cwd, name))
-		if err == nil {
-			return Clip(string(data), CapRepoRules, name)
-		}
+	data, err := os.ReadFile(filepath.Join(cwd, "AGENTS.md"))
+	if err == nil {
+		return Clip(string(data), CapRepoRules, "AGENTS.md")
 	}
 	return "No repo-level rules file. Follow the standards below and the code's existing idioms."
 }

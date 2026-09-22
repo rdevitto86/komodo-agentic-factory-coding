@@ -14,11 +14,17 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/doctor"
 	"komodo/internal/gate"
+	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 	"komodo/internal/pr"
 	"komodo/internal/release"
+
+	_ "komodo/internal/mount/claude"
+	_ "komodo/internal/mount/codex"
 )
 
 const usage = `komodo: the code assembly line.
@@ -36,6 +42,9 @@ const usage = `komodo: the code assembly line.
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
+  komodo install --host X     Mount this repo on a host, or on both
+  komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
+  komodo guard [check]        The one agent hook; check runs its table
   komodo step [group|task]    The one next action, as JSON
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, binaries
@@ -74,6 +83,12 @@ func main() {
 		runTag(root)
 	case "release":
 		runRelease(root, os.Args[2:])
+	case "doctor":
+		runDoctor(root, os.Args[2:])
+	case "install":
+		runInstall(root, os.Args[2:])
+	case "guard":
+		runGuard(root, os.Args[2:])
 	case "step":
 		runStep(root, os.Args[2:])
 	case "metrics":
@@ -263,6 +278,25 @@ func runGate(root string, args []string) {
 			}
 			if len(problems) > 0 {
 				return fmt.Errorf("%d problem(s) in the backlog", len(problems))
+			}
+			return nil
+		}},
+		{Name: "komodo doctor", Run: func(out io.Writer) error {
+			problems, err := doctor.Run(root, doctor.Options{})
+			if err != nil {
+				return err
+			}
+			for _, problem := range problems {
+				fmt.Fprintf(out, "%s %s: %s\n", problem.Check, problem.Where, problem.Detail)
+			}
+			if len(problems) > 0 {
+				return fmt.Errorf("%d problem(s)", len(problems))
+			}
+			return nil
+		}},
+		{Name: "komodo guard check", Run: func(out io.Writer) error {
+			if !guard.Report(root, guard.Load(root, root), out) {
+				return fmt.Errorf("the guard table does not hold")
 			}
 			return nil
 		}},
@@ -628,4 +662,92 @@ func runStep(root string, args []string) {
 		fail(err)
 	}
 	printJSON(next)
+}
+
+// runGuard is the hook on stdin, or the table the gate runs.
+func runGuard(root string, args []string) {
+	if len(args) > 0 && args[0] == "check" {
+		if !guard.Report(root, guard.Load(root, root), os.Stdout) {
+			os.Exit(1)
+		}
+		return
+	}
+	os.Exit(guard.Hook(root, os.Stdin, os.Stdout, os.Stderr))
+}
+
+// runInstall renders this repo's host configuration, or prints what it would change.
+func runInstall(root string, args []string) {
+	set := flag.NewFlagSet("install", flag.ExitOnError)
+	host := set.String("host", mount.Names()[0], "a mount name, several separated by commas, or both")
+	dryRun := set.Bool("dry-run", false, "print what would change and write nothing")
+	_ = set.Parse(args)
+	binary := mount.BinaryPath()
+	var chosen []mount.Host
+	for _, name := range strings.Split(*host, ",") {
+		name = strings.TrimSpace(name)
+		if name == "both" || name == "all" {
+			chosen = mount.Hosts()
+			break
+		}
+		found, ok := mount.Get(name)
+		if !ok {
+			fail(fmt.Errorf("unknown host %q; mounted: %s", name, strings.Join(mount.Names(), ", ")))
+		}
+		chosen = append(chosen, found)
+	}
+	for _, host := range chosen {
+		plan, err := host.Render(root, binary)
+		if err != nil {
+			fail(err)
+		}
+		if *dryRun {
+			plan.Print(os.Stdout)
+			continue
+		}
+		done, err := plan.Apply()
+		if err != nil {
+			fail(err)
+		}
+		for _, action := range done {
+			fmt.Printf("%-7s %s\n", action.Verb, action.Path)
+		}
+		fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
+	}
+}
+
+// runDoctor audits the repo and, with --prune, clears what a run stranded.
+func runDoctor(root string, args []string) {
+	set := flag.NewFlagSet("doctor", flag.ExitOnError)
+	noGit := set.Bool("no-git", false, "skip the checks that shell out to git")
+	prune := set.Bool("prune", false, "remove stale worktrees and delete merged branches")
+	asJSON := set.Bool("json", false, "print JSON")
+	_ = set.Parse(args)
+	if *prune {
+		base := line.DefaultBase(root)
+		if state, err := line.LoadRun(root); err == nil && state.Base != "" {
+			base = state.Base
+		}
+		done, err := doctor.Prune(root, base)
+		if err != nil {
+			fail(err)
+		}
+		for _, item := range done {
+			fmt.Println(item)
+		}
+	}
+	problems, err := doctor.Run(root, doctor.Options{NoGit: *noGit})
+	if err != nil {
+		fail(err)
+	}
+	if *asJSON {
+		printJSON(problems)
+	} else {
+		for _, problem := range problems {
+			fmt.Printf("%s %s: %s\n", problem.Check, problem.Where, problem.Detail)
+		}
+		fmt.Printf("%d problem(s)\n", len(problems))
+	}
+	if len(problems) > 0 {
+		os.Exit(1)
+	}
 }

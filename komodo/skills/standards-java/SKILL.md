@@ -6,7 +6,7 @@ globs: ["**/*.gradle", "**/*.java", "**/pom.xml"]
 
 # Java
 
-Follow the comments standard: a doc line on every public function, a comment on a private one only when long or non-obvious.
+Follow the comments standard.
 
 ## Conventions
 
@@ -14,16 +14,8 @@ Follow the comments standard: a doc line on every public function, a comment on 
 - **Naming**: `PascalCase` for classes, interfaces, records, and enums; `camelCase` for methods, fields, and locals; `SCREAMING_SNAKE_CASE` for `static final` constants. No Hungarian notation, no `I` prefix on interfaces.
 - **No `Utils` / `Common` / `Helpers` grab-bag classes.** Split by domain. Package-private (no modifier) for anything not meant to cross the package boundary; minimise the public surface.
 - **Static initializers and field initializers do no I/O.** Wire through constructor injection (Spring `@Autowired` on the constructor, or plain manual wiring) — never a static singleton reaching out at class-load time.
-- **Log once, at the top of the stack.** Never log-and-rethrow.
-- **Avoid vague names** — `processData`, `handleStuff`, `doWork`. A name you cannot make specific usually marks a method that should not exist.
 - **`var` only when the right-hand side already makes the type obvious** — a `new` expression, a cast, an explicit literal. An LLM-readable diff favours an explicit type on anything returned from a method call.
 - **Prefer a lambda or method reference over a new class** when it captures state a caller already has in scope — a `Comparator`, a `Stream` predicate, a small callback passed to a single method. Skip it on a hot path: each capturing lambda allocates. Measure before choosing a lambda over a dedicated method in code the profiler already flags.
-- **Depend on a caller-declared interface, not a concrete class** — the Dependency Inversion Principle applied to Java. A consumer declares the small interface it needs (one or two methods) and a concrete implementation is passed in via constructor injection; the implementation depends on the interface's shape, never the reverse.
-- **Wrap a long statement by collapsing one level at a time, never straight to one-arg-per-line.** Try the whole statement on one line first; if it doesn't fit, move the wrapped content to its own indented line(s) with a trailing comma and the closing paren/brace on its own line at the original indent — a method call may stay grouped at this step if it fits, but a builder chain or record/object literal's fields never do, always one per line once wrapped. Only if that grouped form is still too long, break to one item per line. Apply identically to calls, builder chains, and multi-arg logger calls.
-- **A numeric or short repeated string literal standing for a size, TTL, count, threshold, or spec-level value (a header name, a status string) gets extracted to a named `static final` constant.** Class-level when shared by more than one method in the class; a method-local `final` local variable when scoped to one call. A literal repeated across 2+ files or methods is the strongest signal to extract first. Two or more constants introduced together are declared together, adjacent, not scattered across the class.
-- **No blank line between two consecutive early-return guard clauses.** Exactly one blank line between the last guard clause in a sequence and the happy-path logic that follows it.
-
-**A single-call-site method must earn its place** as one of: dependency wiring (a `@Bean` factory method, a builder step), a cohesive subset of functionality, a concurrency unit (a `Runnable`/`Callable` submitted independently, a virtual-thread task), or a deliberate abstraction seam (an interface swapped for a test double). Sequencing a handful of statements is not a subset of functionality — it is the call site.
 
 ## Types and boundaries
 

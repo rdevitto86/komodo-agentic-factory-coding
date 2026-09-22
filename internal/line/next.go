@@ -8,6 +8,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/ledger"
+	"komodo/internal/profile"
 )
 
 // PlanTask is one task as intake prints it.
@@ -38,6 +39,9 @@ type Plan struct {
 	Waves    [][]string `json:"waves"`
 	Skipped  []string   `json:"skipped,omitempty"`
 	Roles    []Role     `json:"roles"`
+
+	Profile   profile.Profile `json:"profile"`
+	WaitUntil string          `json:"wait_until,omitempty"`
 }
 
 // Next builds the plan for the next ready group, or for the group holding the named task.
@@ -121,8 +125,50 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 	if err != nil {
 		return nil, err
 	}
+	chosen := profile.Select(root)
+	if path := profile.MachineOverlayPath(); path != "" {
+		chosen = profile.Overlay(chosen, path)
+	}
+	plan.Profile = chosen
+	for index := range roles {
+		roles[index].Machine = machineFor(chosen, roles[index].Tier)
+	}
 	plan.Roles = roles
+	if chosen.Paused() && len(plan.Waves) > 0 {
+		plan.WaitUntil = chosen.WaitUntil().Format(time.RFC3339)
+		plan.Waves = nil
+	}
+	if chosen.MaxParallel > 0 && plan.Mode != "single" {
+		plan.Waves = splitByParallel(plan.Waves, chosen.MaxParallel)
+	}
 	return plan, nil
+}
+
+// machineFor names the machine a tier resolved to, or the tier when no mount is installed.
+func machineFor(chosen profile.Profile, tier string) string {
+	machine := chosen.Tiers.Machine(tier)
+	if machine.Provider == "" {
+		return tier
+	}
+	if machine.Provider == "ollama" {
+		return "ollama"
+	}
+	return machine.Provider + "/" + machine.Model
+}
+
+// splitByParallel caps how many tasks a wave may run at once.
+func splitByParallel(waves [][]string, limit int) [][]string {
+	var out [][]string
+	for _, wave := range waves {
+		for start := 0; start < len(wave); start += limit {
+			end := start + limit
+			if end > len(wave) {
+				end = len(wave)
+			}
+			out = append(out, wave[start:end])
+		}
+	}
+	return out
 }
 
 // planWaves splits a group into waves, or into one wave when the group runs single.

@@ -6,18 +6,16 @@ globs: ["**/*.kt", "**/*.m", "**/*.mm", "**/*.plist", "**/*.storyboard", "**/*.s
 
 # Mobile UI
 
-Native mobile. Language mechanics live in the language standards; this standard owns what the user touches and what an attacker can put between them and it.
+Native mobile. Language mechanics live in the language standards; this one owns what the user touches and what an attacker can put in between.
 
 ## Scope and platform routing
 
-**The two halves of this standard have different scopes.** Security applies to any native app manifest; Design applies only to a native UI layer.
+**The two halves have different scopes.** Security applies to any native app manifest; Design applies only to a native UI layer.
 
-- **Security covers every native manifest, React Native and Flutter projects included.** `AndroidManifest.xml` and `Info.plist` are the native host shell's own files, and a cross-platform app ships and edits both routinely — a permission string, an exported component or intent filter, a deep-link and URL-scheme registration, a bundle ID, the backgrounding and screen-capture flags. All of those are native-shell concerns no matter what renders the UI above them, so the Security half applies unchanged.
-- **Design is native-UI only.** Touch targets, safe areas, gestures, platform HIG divergence, and the state/interruption rules describe a native view layer. They do **not** apply to a React Native or Flutter UI layer — this standard states nothing about those component models, and its globs never match their source extensions. `.tsx`/`.jsx` belong to the ui-web standard; a `.dart` file matches nothing here.
-- **Arrived here because you touched a manifest in a cross-platform project? Read Security, skip Design.**
-- **An `Info.plist` belonging to a desktop target is this standard's false positive** — the glob matches, the guidance does not. Invoke the ui-desktop standard instead. The cheapest tell is the file itself: an iOS plist carries the `UI*` device keys (`UIDeviceFamily`, `UISupportedInterfaceOrientations`, `UILaunchStoryboardName`); a macOS one carries `LSMinimumSystemVersion` and `NSPrincipalClass`/`NSMainNibFile`/`NSMainStoryboardFile`, and none of the `UI*` device keys.
-- **This standard owns native source extensions, native layout resources, and the app manifests.** No glob here matches a browser extension or a desktop shell config file, and neither of those skills claims a native extension or manifest.
-- **A native app embedding a web view** loads the ui-web standard for the embedded document's own files; the bridge between the native host and that document is this standard's (see WebView bridge below).
+- **Security covers every native manifest**, React Native and Flutter included: permissions, exported components and intent filters, deep links and URL schemes, bundle IDs, backgrounding and screen-capture flags are native-shell concerns whatever renders above them.
+- **Design is native-UI only.** Touch targets, safe areas, gestures, HIG divergence, and the state rules do not apply to a React Native or Flutter UI layer; `.tsx`/`.jsx` belong to ui-web and `.dart` matches nothing here.
+- **A desktop target's `Info.plist` is this standard's false positive** — use ui-desktop. An iOS plist carries the `UI*` device keys; a macOS one carries `LSMinimumSystemVersion` and `NSPrincipalClass` and none of them.
+- **A native app embedding a web view** loads ui-web for the embedded document; the bridge between host and document is this standard's.
 
 # Design
 
@@ -33,17 +31,6 @@ Native mobile. Language mechanics live in the language standards; this standard 
 ## Gestures
 
 - **Never override a system gesture** — back/edge swipe, home, notification pull, app switcher. A custom gesture that starts in a system-reserved edge region loses, and the conflict shows up as an unresponsive app.
-- **Every gesture has a visible, non-gesture equivalent.** A swipe-only action is undiscoverable and unreachable with assistive technology.
-- **Destructive gestures confirm or offer undo.** A swipe that deletes without either is a data-loss bug.
-- **Gestures are cancellable and interruptible** — a drag that has begun can be reversed before it commits, and an animation mid-flight accepts a new touch.
-
-## Platform divergence
-
-**Do not ship one platform's conventions on the other.** Each platform's human-interface guidance is the authority for its own side; read the current guidance for the target rather than assuming a remembered rule.
-
-- **Navigation model, back behaviour, and the position of primary actions differ by platform** — a hardware/gesture back that does nothing, or a navigation bar transplanted across platforms, is the most common instance of this defect.
-- **System controls, date/time pickers, share sheets, and alerts use the platform's own** rather than a reimplementation, unless a documented requirement forbids it.
-- **Typography, iconography, and motion follow the platform's system styles.** A shared design token set is fine; identical pixel output on both platforms is not the goal.
 
 ## State and interruption
 

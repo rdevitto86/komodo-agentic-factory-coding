@@ -19,8 +19,6 @@ Follow the comments standard: a doc line on every public function, a comment on 
 - **`var` only when the right-hand side already makes the type obvious** — a `new` expression, a cast, an explicit literal. An LLM-readable diff favours an explicit type on anything returned from a method call.
 - **Prefer a local function or lambda over a new class** when it captures state a caller already has in scope — a LINQ predicate, a small callback passed to a single method. Skip it on a hot path: each closure that captures a variable allocates. Measure before choosing a lambda over a dedicated method in code the profiler already flags.
 
-**A single-call-site method must earn its place** as one of: dependency wiring (`AddXServices`, a factory method), a cohesive subset of functionality, a concurrency unit (a `Task`-returning method run via `Task.Run` or awaited independently), or a deliberate abstraction seam (an interface swapped for a test double). Sequencing a handful of statements is not a subset of functionality — it is the call site.
-
 ## Types and boundaries
 
 - **Records for immutable value types**, classes for entities with identity and mutable state. A `record` with a `with`-expression beats a hand-written copy constructor.

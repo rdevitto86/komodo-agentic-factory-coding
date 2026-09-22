@@ -199,7 +199,7 @@ version: 2.0.0
 * **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
 * **PR C:** `feat/v2-guard-mounts` from `feat/v2-conveyor`, opened by the session. Validated by `komodo gate` with `guard check`, `install --host claude --dry-run`, `komodo doctor` under the budgets with no leak, the probe printing an overlay and no identity, then a real install on this Mac where a session is denied a commit to `main` and allowed `rm` in its worktree. Merges into `feat/v2-conveyor`.
 
-#### [TSK-03.3.1] The guard: four denials, worktree scope, and the table in the gate [P: C] [READY]
+#### [TSK-03.3.1] The guard: four denials, worktree scope, and the table in the gate [P: C] [DONE]
 ```yaml
 files: [internal/guard, cmd/komodo/main.go]
 done_when:
@@ -213,7 +213,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.2] `komodo install --host claude|codex|both`: the mounts [P: C] [READY]
+#### [TSK-03.3.2] `komodo install --host claude|codex|both`: the mounts [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude, internal/mount/codex, internal/install, cmd/komodo/main.go]
 done_when:
@@ -227,7 +227,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.3] Doctor: references, leaks, drift, budgets, prune [P: H] [READY]
+#### [TSK-03.3.3] Doctor: references, leaks, drift, budgets, prune [P: H] [DONE]
 ```yaml
 files: [internal/doctor, cmd/komodo/main.go]
 done_when:
@@ -240,7 +240,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.4] Profiles select themselves: host, plan probe, Ollama, and pacing [P: H] [READY]
+#### [TSK-03.3.4] Profiles select themselves: host, plan probe, Ollama, and pacing [P: H] [DONE]
 ```yaml
 files: [internal/profile, internal/mount/claude/limits.go, internal/line/next.go]
 done_when:
@@ -253,7 +253,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.5] Each mount reports a machine's usage after the fact [P: H] [READY]
+#### [TSK-03.3.5] Each mount reports a machine's usage after the fact [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/usage.go, internal/mount/codex/usage.go, internal/ledger]
 done_when:
