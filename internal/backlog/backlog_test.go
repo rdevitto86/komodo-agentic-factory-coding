@@ -194,3 +194,21 @@ func TestGroupBaseIsWhatTheGroupDeclares(t *testing.T) {
 		t.Fatalf("base = %q", group.Base())
 	}
 }
+
+func TestADeclaredDirectoryIsItsOwnScope(t *testing.T) {
+	text := "### [TG-20.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-20.1.1] Wide [P: C] [READY]\n```yaml\nfiles: [internal, README.md]\ndone_when: [\"true\"]\n```\n\n" +
+		"#### [TSK-20.1.2] Narrow [P: C] [READY]\n```yaml\nfiles: [internal/profile]\ndone_when: [\"true\"]\n```\n"
+	parsed := Parse(text)
+	wide, _ := parsed.Task("TSK-20.1.1")
+	narrow, _ := parsed.Task("TSK-20.1.2")
+	if !contains(wide.Dirs(), "internal") {
+		t.Fatalf("dirs = %v; a declared directory owns itself, not its parent", wide.Dirs())
+	}
+	if !contains(wide.Dirs(), ".") {
+		t.Fatalf("dirs = %v; a declared root file still scopes to the root", wide.Dirs())
+	}
+	if !contains(narrow.Dirs(), "internal/profile") {
+		t.Fatalf("dirs = %v", narrow.Dirs())
+	}
+}

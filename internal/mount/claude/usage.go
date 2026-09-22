@@ -43,7 +43,7 @@ func TranscriptDir(root string) string {
 	return filepath.Join(home, ".claude", projectsDir, slug(root))
 }
 
-// Usage sums the counts this host wrote for the agent that worked between since and until.
+// Usage reports one task's spend, and reports nothing when more than one session wrote in the window.
 func Usage(root, task string, since, until time.Time) (mount.TaskUsage, bool) {
 	dir := TranscriptDir(root)
 	if dir == "" {
@@ -54,7 +54,7 @@ func Usage(root, task string, since, until time.Time) (mount.TaskUsage, bool) {
 		return mount.TaskUsage{}, false
 	}
 	var usage mount.TaskUsage
-	found := false
+	sessions := 0
 	for _, item := range entries {
 		if item.IsDir() || !strings.HasSuffix(item.Name(), ".jsonl") {
 			continue
@@ -67,12 +67,13 @@ func Usage(root, task string, since, until time.Time) (mount.TaskUsage, bool) {
 		if !ok {
 			continue
 		}
-		usage.TokensIn += counted.TokensIn
-		usage.TokensOut += counted.TokensOut
-		usage.Turns += counted.Turns
-		found = true
+		usage = counted
+		sessions++
 	}
-	return usage, found && usage.Turns > 0
+	if sessions != 1 || usage.Turns == 0 {
+		return mount.TaskUsage{}, false
+	}
+	return usage, true
 }
 
 // sumTranscript reads one transcript for counts only; no message text is copied anywhere.
