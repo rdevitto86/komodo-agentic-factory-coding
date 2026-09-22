@@ -330,6 +330,7 @@ type: fix
 ```yaml
 type: feat
 version: 2.0.0
+base: docs/v2-plan
 ```
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
 * **PR E:** `feat/v2-repo-layer` from `feat/v2-skills-launcher`, cut by `/run TG-03.5` and opened by `close --group` with the report as the body. Validated by `komodo gate`, `komodo doctor` with profile drift, `komodo detect` printing Go and no cloud, the Ollama mount against the fake and one real local review, a facet swap reaching a brief, and the proof numbers for TSK-03.4.3 in the changelog. Merges into `feat/v2-skills-launcher`.
@@ -448,6 +449,7 @@ type: feat
 ```yaml
 type: chore
 version: 2.0.0
+base: docs/v2-plan
 ```
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
 * **PR F:** `chore/v2-gate-exit` from `feat/v2-repo-layer`, cut by `/run TG-03.6` and opened by `close --group`. Validated by the gate as the pre-commit and pre-push hook on both developer machines, the retired-words grep, the swap tests, no workflow directory, the Codex numbers in the changelog, and a human read of the final README. Merges into `feat/v2-repo-layer`; then #103 merges into `main`.
