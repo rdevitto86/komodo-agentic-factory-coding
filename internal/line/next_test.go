@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"komodo/internal/backlog"
+	"komodo/internal/ledger"
 )
 
 const groupText = "### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -278,5 +279,42 @@ func TestTheRunsOwnGroupOutlivesItsLastClosedTask(t *testing.T) {
 	}
 	if len(plan.Waves) != 2 {
 		t.Fatalf("waves = %v; the run's waves must survive so QC can still merge them", plan.Waves)
+	}
+}
+
+func TestPlanForStationKeepsAnUnshippedRun(t *testing.T) {
+	root := repo(t, finishedText)
+	state := RunState{
+		Run: "TG-05.1-1", Group: "TG-05.1", Base: "main", Branch: "feat/a-group",
+		Waves: [][]string{{"TSK-05.1.1"}, {"TSK-05.1.2"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := PlanForStation(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Group != "TG-05.1" {
+		t.Fatalf("plan = %+v; the run's own group must not lose its station to a later ready group", plan)
+	}
+}
+
+func TestPlanForStationMovesOnOnceTheRunIsShipped(t *testing.T) {
+	root := repo(t, finishedText)
+	state := RunState{
+		Run: "TG-05.1-1", Group: "TG-05.1", Base: "main", Branch: "feat/a-group",
+		Waves: [][]string{{"TSK-05.1.1"}, {"TSK-05.1.2"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	Stamp(root, ledger.Entry{Group: "TG-05.1", Station: "ship", Outcome: "done"})
+	plan, err := PlanForStation(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Group != "TG-05.2" {
+		t.Fatalf("plan = %+v; a shipped run must release the line to the next ready group", plan)
 	}
 }
