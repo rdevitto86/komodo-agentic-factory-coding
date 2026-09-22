@@ -20,7 +20,9 @@ import (
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/mount/ollama"
 	"komodo/internal/pr"
+	"komodo/internal/profile"
 	"komodo/internal/release"
 	"komodo/internal/run"
 
@@ -49,6 +51,7 @@ const usage = `komodo: the code assembly line.
   komodo run [group|task]     Drive the line headless on this host, under a budget
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
+  komodo machine <task>       Post a brief to the Ollama mount, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
@@ -98,6 +101,8 @@ func main() {
 		runStep(root, os.Args[2:])
 	case "threads":
 		runThreads(root, os.Args[2:])
+	case "machine":
+		runMachine(root, os.Args[2:])
 	case "metrics":
 		runMetrics(root)
 	case "gate":
@@ -702,6 +707,59 @@ func runThreads(root string, args []string) {
 		threads = []pr.Thread{}
 	}
 	printJSON(threads)
+}
+
+// runMachine posts one task's brief to the Ollama mount, writes the result, and stamps the ledger.
+func runMachine(root string, args []string) {
+	set := flag.NewFlagSet("machine", flag.ExitOnError)
+	role := set.String("role", "builder", "the role the brief was written for")
+	_ = set.Parse(args)
+	if set.NArg() < 1 {
+		fail(fmt.Errorf("usage: komodo machine <task> [--role reviewer]"))
+	}
+	taskID := set.Arg(0)
+	definition, err := line.LoadRole(root, *role)
+	if err != nil {
+		fail(err)
+	}
+	if !ollama.Allowed(definition.Tools) {
+		fail(fmt.Errorf("%s writes, and a write role cannot run on ollama; falls back to the standard tier", *role))
+	}
+	brief, err := os.ReadFile(filepath.Join(root, line.StateDir, "briefs", taskID+".md"))
+	if err != nil {
+		fail(err)
+	}
+	schema, err := os.ReadFile(filepath.Join(root, line.RolesDir, definition.Returns))
+	if err != nil {
+		fail(err)
+	}
+	model := profile.Select(root).Tiers.Machine(definition.Tier).Model
+	result, err := ollama.Post(ollama.BaseURL(), model, string(brief), schema)
+	if err != nil {
+		fail(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(line.ResultPath(root, taskID)), 0o755); err != nil {
+		fail(err)
+	}
+	data, err := json.MarshalIndent(result.Value, "", "  ")
+	if err != nil {
+		fail(err)
+	}
+	if err := os.WriteFile(line.ResultPath(root, taskID), data, 0o644); err != nil {
+		fail(err)
+	}
+	entry := ledger.Entry{
+		Task: taskID, Station: "machine", Role: *role, Tier: definition.Tier,
+		Provider: "ollama", Model: model,
+		TokensIn: result.TokensIn, TokensOut: result.TokensOut, Outcome: "done",
+	}
+	if state, err := line.LoadRun(root); err == nil {
+		entry.Run, entry.Group = state.Run, state.Group
+	}
+	if err := line.Book(root).Stamp(entry); err != nil {
+		fail(err)
+	}
+	fmt.Println("wrote", line.ResultPath(root, taskID))
 }
 
 // runGuard is the hook on stdin, or the table the gate runs.
