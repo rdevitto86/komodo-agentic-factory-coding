@@ -1,11 +1,13 @@
 package line
 
 import (
-	"os"
-	"path/filepath"
+	"io/fs"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
+
+	"komodo/internal/toolkit"
 )
 
 // Role is one role file's frontmatter: what a machine is at a station or in a session.
@@ -27,7 +29,7 @@ const RolesDir = "komodo/roles"
 
 // LoadRole reads one role file into its frontmatter and body.
 func LoadRole(root, name string) (Role, error) {
-	data, err := os.ReadFile(filepath.Join(root, RolesDir, name+".md"))
+	data, err := fs.ReadFile(toolkit.FS(root), path.Join("roles", name+".md"))
 	if err != nil {
 		return Role{}, err
 	}
@@ -36,7 +38,7 @@ func LoadRole(root, name string) (Role, error) {
 
 // LoadRoles reads every shipped role, sorted by name.
 func LoadRoles(root string) ([]Role, error) {
-	entries, err := os.ReadDir(filepath.Join(root, RolesDir))
+	entries, err := fs.ReadDir(toolkit.FS(root), "roles")
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"komodo/internal/mount"
 	"komodo/internal/profile"
 	repopkg "komodo/internal/repo"
+	"komodo/internal/toolkit"
 )
 
 // Dir is the host's project directory, relative to the repo root.
@@ -152,7 +154,7 @@ func agentFile(role mount.Role, ollama bool) string {
 
 // settingsFile renders the hook registration and the permissions convenience layer.
 func settingsFile(root, binary string) ([]byte, error) {
-	policy, err := readPolicy(filepath.Join(root, "komodo", "policy.json"))
+	policy, err := readPolicy(toolkit.FS(root))
 	if err != nil {
 		return nil, err
 	}
@@ -193,9 +195,9 @@ type policyFile struct {
 }
 
 // readPolicy reads the shipped policy, tolerating its absence.
-func readPolicy(path string) (policyFile, error) {
+func readPolicy(tree fs.FS) (policyFile, error) {
 	var policy policyFile
-	data, err := os.ReadFile(path)
+	data, err := fs.ReadFile(tree, "policy.json")
 	if os.IsNotExist(err) {
 		return policy, nil
 	}

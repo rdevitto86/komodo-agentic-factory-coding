@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// toolkit builds a root holding the rules, one role, and one skill.
-func toolkit(t *testing.T) string {
+// toolkitRepo builds a root holding the rules, one role, and one skill.
+func toolkitRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	write := func(rel, body string) {
@@ -32,7 +32,7 @@ func toolkit(t *testing.T) string {
 }
 
 func TestLoadRolesReadsEveryFrontmatterKey(t *testing.T) {
-	roles, err := LoadRoles(toolkit(t))
+	roles, err := LoadRoles(toolkitRepo(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestLoadRolesReadsEveryFrontmatterKey(t *testing.T) {
 }
 
 func TestInstructionsDropTheBriefTemplate(t *testing.T) {
-	roles, _ := LoadRoles(toolkit(t))
+	roles, _ := LoadRoles(toolkitRepo(t))
 	text := roles[0].Instructions()
 	if !strings.Contains(text, "You are a builder") || strings.Contains(text, "{{task_id}}") {
 		t.Fatalf("instructions = %q", text)
@@ -57,7 +57,7 @@ func TestInstructionsDropTheBriefTemplate(t *testing.T) {
 }
 
 func TestWritesFollowsTheVerbs(t *testing.T) {
-	roles, _ := LoadRoles(toolkit(t))
+	roles, _ := LoadRoles(toolkitRepo(t))
 	if !roles[0].Writes() {
 		t.Fatal("a role with write and shell does not write")
 	}
@@ -67,7 +67,7 @@ func TestWritesFollowsTheVerbs(t *testing.T) {
 }
 
 func TestRulesFillTheAccessibilitySlot(t *testing.T) {
-	text, err := Rules(toolkit(t))
+	text, err := Rules(toolkitRepo(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +82,29 @@ func TestVerbsAreTheFive(t *testing.T) {
 	}
 }
 
+// TestLoadSkillsToleratesNoSkills covers a repo that ships its own komodo/ with no skills dir.
 func TestLoadSkillsToleratesNoSkills(t *testing.T) {
-	skills, err := LoadSkills(t.TempDir())
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "komodo", "roles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skills, err := LoadSkills(root)
 	if err != nil || skills != nil {
 		t.Fatalf("skills = %v, err = %v", skills, err)
+	}
+}
+
+// TestLoadRolesFallsBackToTheEmbeddedTree proves a repo with no komodo/ still gets the shipped roles.
+func TestLoadRolesFallsBackToTheEmbeddedTree(t *testing.T) {
+	roles, err := LoadRoles(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, role := range roles {
+		found = found || role.Name == "builder"
+	}
+	if !found {
+		t.Fatalf("roles = %+v, want builder among the embedded roles", roles)
 	}
 }

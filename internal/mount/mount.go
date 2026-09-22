@@ -2,11 +2,14 @@
 package mount
 
 import (
+	"io/fs"
 	"os"
-	"path/filepath"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
+
+	"komodo/internal/toolkit"
 )
 
 // Verbs are the five tools a role may ask for. A host tool name never appears in a role.
@@ -33,8 +36,8 @@ var frontmatter = regexp.MustCompile(`(?s)\A---\n(.*?)\n---\n(.*)\z`)
 
 // LoadRoles reads every shipped role, sorted by name.
 func LoadRoles(root string) ([]Role, error) {
-	dir := filepath.Join(root, "komodo", "roles")
-	entries, err := os.ReadDir(dir)
+	tree := toolkit.FS(root)
+	entries, err := fs.ReadDir(tree, "roles")
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +46,7 @@ func LoadRoles(root string) ([]Role, error) {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		data, err := fs.ReadFile(tree, path.Join("roles", entry.Name()))
 		if err != nil {
 			return nil, err
 		}
@@ -81,8 +84,8 @@ func LoadRoles(root string) ([]Role, error) {
 
 // LoadSkills reads every shipped skill, sorted by name.
 func LoadSkills(root string) ([]Skill, error) {
-	dir := filepath.Join(root, "komodo", "skills")
-	entries, err := os.ReadDir(dir)
+	tree := toolkit.FS(root)
+	entries, err := fs.ReadDir(tree, "skills")
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -94,7 +97,7 @@ func LoadSkills(root string) ([]Skill, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, entry.Name(), "SKILL.md"))
+		data, err := fs.ReadFile(tree, path.Join("skills", entry.Name(), "SKILL.md"))
 		if err != nil {
 			continue
 		}
@@ -146,12 +149,13 @@ func (r Role) Writes() bool {
 
 // Rules is the universal rules file with the accessibility contract filled in.
 func Rules(root string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(root, "komodo", "AGENTS.md"))
+	tree := toolkit.FS(root)
+	data, err := fs.ReadFile(tree, "AGENTS.md")
 	if err != nil {
 		return "", err
 	}
 	text := string(data)
-	contract, err := os.ReadFile(filepath.Join(root, "komodo", "rules", "accessibility.md"))
+	contract, err := fs.ReadFile(tree, path.Join("rules", "accessibility.md"))
 	if err == nil {
 		text = strings.ReplaceAll(text, "{{accessibility}}", strings.TrimSpace(string(contract)))
 	}

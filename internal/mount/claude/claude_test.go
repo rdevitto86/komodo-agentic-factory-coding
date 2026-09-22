@@ -11,8 +11,8 @@ import (
 	"komodo/internal/profile"
 )
 
-// toolkit builds a root with the rules, two roles, a skill, and the policy, with the local machine down.
-func toolkit(t *testing.T) string {
+// toolkitRepo builds a root with the rules, two roles, a skill, and the policy, with the local machine down.
+func toolkitRepo(t *testing.T) string {
 	t.Helper()
 	t.Setenv(profile.OllamaEnv, "http://127.0.0.1:1")
 	root := t.TempDir()
@@ -53,7 +53,7 @@ func body(t *testing.T, root, rel string) string {
 }
 
 func TestRenderWritesTheIncludeAndTheRules(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	if got := body(t, root, "CLAUDE.md"); got != "@AGENTS.md\n" {
 		t.Fatalf("CLAUDE.md = %q", got)
 	}
@@ -64,7 +64,7 @@ func TestRenderWritesTheIncludeAndTheRules(t *testing.T) {
 }
 
 func TestOnlySessionRolesBecomeAgents(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	plan, err := Render(root, "komodo")
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestOnlySessionRolesBecomeAgents(t *testing.T) {
 }
 
 func TestAnAgentCarriesHostToolNamesAndAModel(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	agent := body(t, root, filepath.Join(Dir, "agents", "builder.md"))
 	for _, want := range []string{"name: builder", "tools: Read, Edit, Write, Bash, Grep, Glob", "model: sonnet"} {
 		if !strings.Contains(agent, want) {
@@ -142,7 +142,7 @@ func TestALightTierSessionRoleRendersAsStandardWithTheLocalMachineUp(t *testing.
 }
 
 func TestSettingsRegisterTheGuardOnceAndNoMCP(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	raw := body(t, root, filepath.Join(Dir, "settings.json"))
 	var settings struct {
 		Hooks struct {
@@ -181,7 +181,7 @@ func TestSettingsRegisterTheGuardOnceAndNoMCP(t *testing.T) {
 }
 
 func TestThePersonalOverlayIsSeededNotOverwritten(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	plan, err := Render(root, "komodo")
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestThePersonalOverlayIsSeededNotOverwritten(t *testing.T) {
 }
 
 func TestTheOldLocalServerEntryIsRemovedOnlyWhenItNamesTheServer(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	plan, _ := Render(root, "komodo")
 	for _, change := range plan.Changes {
 		if change.Remove && filepath.Base(change.Path) == ".mcp.json" {
@@ -221,14 +221,14 @@ func TestTheOldLocalServerEntryIsRemovedOnlyWhenItNamesTheServer(t *testing.T) {
 }
 
 func TestEverySkillIsCopied(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	if got := body(t, root, filepath.Join(Dir, "skills", "run", "SKILL.md")); !strings.Contains(got, "komodo step") {
 		t.Fatalf("skill = %q", got)
 	}
 }
 
 func TestRepoStandardAppendsToAShippedOne(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	write := func(rel, body string) {
 		path := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -248,7 +248,7 @@ func TestRepoStandardAppendsToAShippedOne(t *testing.T) {
 }
 
 func TestARepoStandardWithFrontmatterStillMergesIntoAShippedOne(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	write := func(rel, contents string) {
 		path := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -286,7 +286,7 @@ func TestARepoStandardWithFrontmatterStillMergesIntoAShippedOne(t *testing.T) {
 }
 
 func TestRepoSkillWithFrontmatterIsNew(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	path := filepath.Join(root, ".komodo", "skills", "deploy", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -301,7 +301,7 @@ func TestRepoSkillWithFrontmatterIsNew(t *testing.T) {
 }
 
 func TestARepoSkillCannotAppendAProtectedOne(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	path := filepath.Join(root, ".komodo", "skills", "run", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -316,7 +316,7 @@ func TestARepoSkillCannotAppendAProtectedOne(t *testing.T) {
 }
 
 func TestRenderSkipsAFacetNameThatTriesToEscapeTheFacetsRoot(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	if err := os.MkdirAll(filepath.Join(root, "komodo", "facets"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestRenderSkipsAFacetNameThatTriesToEscapeTheFacetsRoot(t *testing.T) {
 }
 
 func TestTheRulesFileAndTheSkillsAreProjectChanges(t *testing.T) {
-	root := toolkit(t)
+	root := toolkitRepo(t)
 	plan, err := Render(root, "komodo")
 	if err != nil {
 		t.Fatal(err)

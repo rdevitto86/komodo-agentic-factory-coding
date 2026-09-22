@@ -4,13 +4,16 @@ package facet
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
 	"komodo/internal/detect"
+	"komodo/internal/toolkit"
 )
 
 // FacetsDir is where the shipped facets live, relative to the repo root.
@@ -94,23 +97,24 @@ func Load(root, name string) (Facet, error) {
 	if !ValidName(name) {
 		return Facet{}, fmt.Errorf("facet: %q is not a valid facet name", name)
 	}
-	dir := filepath.Join(root, FacetsDir, name)
+	tree := toolkit.FS(root)
+	dir := path.Join("facets", name)
 
-	facetMD, err := os.ReadFile(filepath.Join(dir, "facet.md"))
+	facetMD, err := fs.ReadFile(tree, path.Join(dir, "facet.md"))
 	if err != nil {
 		return Facet{}, err
 	}
-	skill, err := os.ReadFile(filepath.Join(dir, "skill", "SKILL.md"))
+	skill, err := fs.ReadFile(tree, path.Join(dir, "skill", "SKILL.md"))
 	if err != nil {
 		return Facet{}, err
 	}
 
 	var commands Commands
-	if data, err := os.ReadFile(filepath.Join(dir, "commands.json")); err == nil {
+	if data, err := fs.ReadFile(tree, path.Join(dir, "commands.json")); err == nil {
 		_ = json.Unmarshal(data, &commands)
 	}
 	var detectMarkers Detect
-	if data, err := os.ReadFile(filepath.Join(dir, "detect.json")); err == nil {
+	if data, err := fs.ReadFile(tree, path.Join(dir, "detect.json")); err == nil {
 		_ = json.Unmarshal(data, &detectMarkers)
 	}
 
@@ -125,7 +129,7 @@ func Load(root, name string) (Facet, error) {
 
 // LoadAll reads every shipped facet, sorted by name.
 func LoadAll(root string) ([]Facet, error) {
-	entries, err := os.ReadDir(filepath.Join(root, FacetsDir))
+	entries, err := fs.ReadDir(toolkit.FS(root), "facets")
 	if err != nil {
 		return nil, err
 	}

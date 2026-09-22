@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -26,6 +28,7 @@ import (
 	"komodo/internal/profile"
 	"komodo/internal/release"
 	"komodo/internal/run"
+	"komodo/internal/toolkit"
 
 	_ "komodo/internal/mount/claude"
 	_ "komodo/internal/mount/codex"
@@ -738,7 +741,7 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	schema, err := os.ReadFile(filepath.Join(root, line.RolesDir, definition.Returns))
+	schema, err := fs.ReadFile(toolkit.FS(root), path.Join("roles", definition.Returns))
 	if err != nil {
 		fail(err)
 	}
