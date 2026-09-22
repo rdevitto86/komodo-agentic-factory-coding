@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
@@ -448,5 +449,44 @@ func TestStepMovesOnOnceTheRunHasShipped(t *testing.T) {
 	}
 	if next.Command != "komodo next --start TG-12.2 --base main" {
 		t.Fatalf("action = %+v; a shipped run releases the line to the next group", next)
+	}
+}
+
+func TestARepairMakesItsReviewStale(t *testing.T) {
+	worktree := gitRepo(t)
+	commit(t, worktree, "a/one.go", "package a\n", "seed")
+	root := repo(t, stepBacklog)
+	state := RunState{
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Worktree: worktree, Waves: [][]string{{"TSK-12.1.1"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, root, "TSK-12.1.1")
+	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
+	plan, err := PlanForRun(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Worktree = worktree
+
+	review := ResultPath(root, "TG-12.1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(review, []byte(`{"findings":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !reviewed(root, plan) {
+		t.Fatal("a review written after the last commit is current")
+	}
+
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(review, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if reviewed(root, plan) {
+		t.Fatal("a commit landing after the review makes it stale; a repair must be re-reviewed")
 	}
 }

@@ -58,11 +58,15 @@ type Task struct {
 // Files are the paths a task declares it will touch.
 func (t Task) Files() []string { return t.Fields.List("files") }
 
-// Dirs are the directories of every declared file, deduplicated, in order.
+// Dirs are the scopes a task owns: a declared directory itself, a declared file's directory.
 func (t Task) Dirs() []string {
 	var seen []string
 	for _, path := range t.Files() {
-		dir := filepath.Dir(strings.ReplaceAll(path, "\\", "/"))
+		clean := strings.ReplaceAll(path, "\\", "/")
+		dir := clean
+		if filepath.Ext(clean) != "" {
+			dir = filepath.Dir(clean)
+		}
 		if dir == "" {
 			dir = "."
 		}
