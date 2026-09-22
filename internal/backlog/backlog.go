@@ -31,6 +31,7 @@ var (
 	epicHeading  = regexp.MustCompile(`^##\s+\[(EPIC-[\w.]+)\]\s*(.*?)\s*$`)
 	groupHeading = regexp.MustCompile(`^###\s+\[(TG-[\w.]+)\]\s*(.*?)\s*$`)
 	taskHeading  = regexp.MustCompile(`^####\s+\[(TSK-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
+	taskLike     = regexp.MustCompile(`^####\s+\[TSK-`)
 	fenceOpen    = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
 	fenceClose   = regexp.MustCompile("^```\\s*$")
 	versionRe    = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
@@ -331,6 +332,10 @@ func Parse(text string) Backlog {
 			task.GroupID = parsed.Groups[current].ID
 			parsed.Groups[current].Tasks = append(parsed.Groups[current].Tasks, task)
 			continue
+		}
+		if taskLike.MatchString(line) {
+			parsed.Problems = append(parsed.Problems,
+				fmt.Sprintf("line %d: heading does not match the task pattern: %q", index+1, line))
 		}
 		index++
 	}

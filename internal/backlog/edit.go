@@ -49,6 +49,12 @@ func NextTaskID(group Group) string {
 
 // AppendTask adds a task at the end of a group and returns the new text and the new id.
 func AppendTask(text, groupID, title string, fields Fields, priority, status string) (string, string, error) {
+	if !contains(Priorities, priority) {
+		return "", "", fmt.Errorf("unknown priority %q", priority)
+	}
+	if !contains(Statuses, status) {
+		return "", "", fmt.Errorf("unknown status %q", status)
+	}
 	parsed := Parse(text)
 	group, ok := parsed.Group(groupID)
 	if !ok {
