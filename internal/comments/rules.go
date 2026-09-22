@@ -64,7 +64,7 @@ var externalRefs = []namedPattern{
 }
 
 var narrativePatterns = []namedPattern{
-	{regexp.MustCompile(`(?i)(?:^|\s)(?:we|we're|we've|i|i'm|i've|let's|our)\b`), "first person"},
+	{regexp.MustCompile(`(?i)(?:(?:^|\s)(?:we're|we've|we|let's|our)\b|(?:^|\s)i(?:[\s']|$))`), "first person"},
 	{regexp.MustCompile(`(?i)\b(?:probably|maybe|i think|should work|hopefully|seems? to|might be|kind of|sort of)\b`), "a hedge"},
 	{regexp.MustCompile(`(?i)\b(?:previously|used to|no longer|now uses|was changed|refactored|moved from|instead of the old)\b`), "history"},
 }
@@ -76,6 +76,7 @@ var (
 	goMethod     = regexp.MustCompile(`^func\s*\([^)]*\)\s*(\w+)`)
 	goFunc       = regexp.MustCompile(`^func\s+(\w+)`)
 	markerShape  = regexp.MustCompile(`^(NOTE|FIXME|TODO):\s+\S`)
+	annotation   = regexp.MustCompile(`^(?:@\w+(?:\(.*\))?|#!?\[.*\])$`)
 	dunder       = regexp.MustCompile(`^__\w+__$`)
 	testFileName = []*regexp.Regexp{
 		regexp.MustCompile(`_test\.[^.]+$`), regexp.MustCompile(`^test_`),
@@ -245,6 +246,11 @@ func FunctionName(line, ext string) string {
 		}
 	}
 	return ""
+}
+
+// IsAnnotation reports whether a line is an attribute or annotation, not a comment or declaration.
+func IsAnnotation(line string) bool {
+	return annotation.MatchString(strings.TrimSpace(line))
 }
 
 // IsExported reports whether a declaration is public under its language's convention.
