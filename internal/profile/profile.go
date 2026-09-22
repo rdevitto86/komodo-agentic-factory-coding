@@ -46,7 +46,6 @@ type Profile struct {
 	WarnAt          float64     `json:"warn_at"`
 	Labels          []string    `json:"labels"`
 	Changelog       string      `json:"changelog"`
-	Remote          string      `json:"remote"`
 	Base            string      `json:"base"`
 	CriticalRefs    []string    `json:"critical_refs,omitempty"`
 	Utilization     float64     `json:"utilization"`
@@ -66,7 +65,6 @@ func base() Profile {
 		WarnAt:        0.75,
 		Labels:        []string{"agent"},
 		Changelog:     "CHANGELOG.md",
-		Remote:        "origin",
 	}
 }
 

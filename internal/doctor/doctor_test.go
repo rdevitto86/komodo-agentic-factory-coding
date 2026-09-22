@@ -179,6 +179,47 @@ func TestOversizedAlwaysOnContextIsFound(t *testing.T) {
 	}
 }
 
+// alwaysOnFired reports whether the always-on context problem is among those found.
+func alwaysOnFired(problems []Problem) bool {
+	for _, problem := range problems {
+		if problem.Where == "always-on context" {
+			return true
+		}
+	}
+	return false
+}
+
+// hostRenderingSkills fakes an installed host whose render carries exactly the given skills.
+func hostRenderingSkills(root string, skills map[string]string) mount.Host {
+	return mount.Host{Name: "testhost", Installed: func(string) bool { return true },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "testhost", Root: root}
+			for name, body := range skills {
+				plan.AddProject(filepath.Join(root, ".testhost", "skills", name, "SKILL.md"), []byte(body), "the "+name+" skill")
+			}
+			return plan, nil
+		}}
+}
+
+// TestTheAlwaysOnBudgetTracksTheRenderedSkillsNotTheShippedOnes fails against the pre-fix
+// checkBudgets, which sums every shipped skill and ignores what a host actually renders.
+func TestTheAlwaysOnBudgetTracksTheRenderedSkillsNotTheShippedOnes(t *testing.T) {
+	root := clean(t)
+	huge := "---\nname: standards-huge\ndescription: " + strings.Repeat("word ", 1600) + "\n---\n\n# Huge\n"
+	write(t, root, "komodo/skills/standards-huge/SKILL.md", huge)
+	small := "---\nname: run\ndescription: three words here\n---\n\nBody.\n"
+
+	registerHost(t, hostRenderingSkills(root, map[string]string{"run": small}))
+	if got := problemsFrom(t, root)["budgets"]; alwaysOnFired(got) {
+		t.Fatalf("budgets = %+v; a shipped skill the host never rendered must not count", got)
+	}
+
+	registerHost(t, hostRenderingSkills(root, map[string]string{"run": small, "standards-huge": huge}))
+	if got := problemsFrom(t, root)["budgets"]; !alwaysOnFired(got) {
+		t.Fatalf("budgets = %+v; a rendered skill's description must join the always-on total", got)
+	}
+}
+
 func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	root := clean(t)
 	rendered := filepath.Join(root, "existing.txt")
