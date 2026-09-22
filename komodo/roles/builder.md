@@ -56,6 +56,9 @@ Task {{task_id}}: {{title}}
 ## Files
 {{files}}
 
+## Repo profile
+{{repo_profile}}
+
 ## Standards for the languages you will touch
 {{standards}}
 

@@ -49,6 +49,9 @@ func Lint(parsed Backlog) []string {
 		if !contains(Types, task.Type()) {
 			problems = append(problems, fmt.Sprintf("%s: type must be one of %s", where, strings.Join(Types, "|")))
 		}
+		if tier := task.Tier(); tier != "" && !contains(Tiers, tier) {
+			problems = append(problems, fmt.Sprintf("%s: tier must be one of %s", where, strings.Join(Tiers, "|")))
+		}
 		for _, dep := range task.DependsOn() {
 			if !ids[dep] {
 				problems = append(problems, fmt.Sprintf("%s: depends_on names unknown task %s", where, dep))

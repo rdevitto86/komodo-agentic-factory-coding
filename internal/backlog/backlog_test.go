@@ -194,3 +194,45 @@ func TestGroupBaseIsWhatTheGroupDeclares(t *testing.T) {
 		t.Fatalf("base = %q", group.Base())
 	}
 }
+
+func TestTaskTierAndFacets(t *testing.T) {
+	parsed := Parse("### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-01.1.1] Heavy task [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - go test ./...\n" +
+		"tier: heavy\nfacets: [postgres, aws]\n```\n")
+	task, ok := parsed.Task("TSK-01.1.1")
+	if !ok {
+		t.Fatal("task not found")
+	}
+	if task.Tier() != "heavy" {
+		t.Fatalf("tier = %q", task.Tier())
+	}
+	if got := task.Facets(); len(got) != 2 || got[0] != "postgres" || got[1] != "aws" {
+		t.Fatalf("facets = %v", got)
+	}
+}
+
+func TestTaskTierDefaultsEmpty(t *testing.T) {
+	first, _ := Parse(sample).Task("TSK-01.1.1")
+	if first.Tier() != "" {
+		t.Fatalf("tier = %q, want empty when unset", first.Tier())
+	}
+	if got := first.Facets(); len(got) != 0 {
+		t.Fatalf("facets = %v, want none when unset", got)
+	}
+}
+
+func TestLintRejectsAnUnknownTier(t *testing.T) {
+	broken := "### [TG-02.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-02.1.1] Bad tier [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - go test ./...\n" +
+		"tier: extreme\n```\n"
+	problems := Lint(Parse(broken))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "tier must be one of") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no problem names the bad tier; got %v", problems)
+	}
+}
