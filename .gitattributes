@@ -1,1 +1,1 @@
-bin/** binary -diff -merge
+bin/** binary merge=binary -diff
