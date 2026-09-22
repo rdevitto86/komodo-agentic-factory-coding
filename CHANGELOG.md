@@ -907,3 +907,7 @@ The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose sta
 
 ### Added
 - `setup.sh` symlink installer, `claude/settings.json`, first skill set (`add-route`, `new-component`, `new-page`, `new-service`) under `claude/skills/`.
+
+## 2.0.0 — 2026-09-22
+
+- **TG-03.5** The repo layer and the local machines (9 task(s))

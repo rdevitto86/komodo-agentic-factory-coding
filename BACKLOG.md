@@ -346,7 +346,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.2] Repo standards and repo skills, rendered by `install --project` [P: H] [READY]
+#### [TSK-03.5.2] Repo standards and repo skills, rendered by `install --project` [P: H] [DONE]
 ```yaml
 files: [internal/repo/standards.go, internal/repo/skills.go, internal/install, internal/mount/claude, internal/mount/codex, internal/doctor]
 done_when:
@@ -358,7 +358,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.3] Repo commands and additive policy [P: H] [READY]
+#### [TSK-03.5.3] Repo commands and additive policy [P: H] [DONE]
 ```yaml
 files: [internal/repo/commands.go, internal/line/verify.go, internal/guard]
 done_when:
@@ -382,7 +382,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.5] The hybrid and local profiles run on the Ollama mount [P: H] [READY]
+#### [TSK-03.5.5] The hybrid and local profiles run on the Ollama mount [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude, internal/mount/codex, internal/profile, komodo/roles/summarizer.md]
 done_when:
@@ -394,7 +394,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.6] `komodo detect`: the repo profile, cached by manifest hash [P: C] [READY]
+#### [TSK-03.5.6] `komodo detect`: the repo profile, cached by manifest hash [P: C] [DONE]
 ```yaml
 files: [internal/detect, cmd/komodo/main.go]
 done_when:
@@ -405,7 +405,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.7] Facets: Komodo's setup skills and appendices keyed by detection [P: C] [READY]
+#### [TSK-03.5.7] Facets: Komodo's setup skills and appendices keyed by detection [P: C] [DONE]
 ```yaml
 files: [komodo/facets, internal/facet]
 done_when:
@@ -421,7 +421,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.8] The repo profile slot, facet appendices, and the task keys tier and facets [P: H] [READY]
+#### [TSK-03.5.8] The repo profile slot, facet appendices, and the task keys tier and facets [P: H] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/backlog, komodo/rules/backlog.md, komodo/roles/builder.md, komodo/roles/reviewer.md]
 done_when:
@@ -434,7 +434,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.9] The project render comes from the profile, and intake runs it [P: H] [READY]
+#### [TSK-03.5.9] The project render comes from the profile, and intake runs it [P: H] [DONE]
 ```yaml
 files: [internal/install, internal/mount/claude, internal/mount/codex, internal/line/next.go, internal/doctor]
 done_when:
@@ -445,6 +445,18 @@ context:
   - "doctor compares the cached profile to a fresh detection and the rendered project config to what the source renders now; a mismatch is one line and the fix is rerunning the render"
 type: feat
 ```
+
+#### [TSK-03.5.10] internal/mount/registry.go:136 Machine.Local is exported API with one caller and the provider literal survives elsewhere [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/registry.go
+done_when:
+  - test -f internal/mount/registry.go
+type: refactor
+context:
+  - "Local is called only by FirstRemote eight lines below it and by nothing else in the tree. The constant it introduced does not remove the literal it was meant to replace: step.go, next.go and the machine command still compare the provider string directly. Unexport the predicate or inline the provider comparison into FirstRemote."
+```
+
 
 ### [TG-03.6] The gate and the exit test
 ```yaml
