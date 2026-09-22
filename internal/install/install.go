@@ -36,12 +36,12 @@ func (p *Plan) Add(path string, body []byte, why string) {
 }
 
 // AddProject appends one rendered file that also belongs to the project-only render: the repo
-// skills, the standards skills, and the rules file, which --project writes on their own.
+// skills, the standards skills, and the rules file, which the project render writes on their own.
 func (p *Plan) AddProject(path string, body []byte, why string) {
 	p.Changes = append(p.Changes, Change{Path: path, Body: body, Mode: 0o644, Project: true, Why: why})
 }
 
-// Project narrows the plan to the changes --project writes, gitignored copies rebuilt every time.
+// Project narrows the plan to the project render's changes, gitignored copies rebuilt every time.
 func (p Plan) Project() Plan {
 	narrowed := Plan{Host: p.Host, Root: p.Root}
 	for _, change := range p.Changes {

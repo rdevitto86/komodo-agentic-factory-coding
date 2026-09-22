@@ -197,12 +197,12 @@ func TestThePersonalOverlayIsSeededNotOverwritten(t *testing.T) {
 	}
 }
 
-func TestTheOldBridgeEntryIsRemovedOnlyWhenItNamesTheBridge(t *testing.T) {
+func TestTheOldLocalServerEntryIsRemovedOnlyWhenItNamesTheServer(t *testing.T) {
 	root := toolkit(t)
 	plan, _ := Render(root, "komodo")
 	for _, change := range plan.Changes {
 		if change.Remove && filepath.Base(change.Path) == ".mcp.json" {
-			t.Fatal("an absent bridge file was scheduled for removal")
+			t.Fatal("an absent local server file was scheduled for removal")
 		}
 	}
 	if err := os.WriteFile(filepath.Join(root, ".mcp.json"), []byte(`{"url":"http://127.0.0.1:8000"}`), 0o644); err != nil {
@@ -216,7 +216,7 @@ func TestTheOldBridgeEntryIsRemovedOnlyWhenItNamesTheBridge(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("the old bridge entry was not removed")
+		t.Fatal("the old local server entry was not removed")
 	}
 }
 

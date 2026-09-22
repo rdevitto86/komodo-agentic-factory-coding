@@ -23,7 +23,7 @@ The CI/CD standard owns which stage builds and scans the image. This one owns wh
 
 ## Graceful shutdown
 
-**`stop_grace_period` (compose) or a container orchestrator's termination grace period must be strictly greater than the app's own drain timeout**, never equal or shorter. If the app's graceful-shutdown code drains for 15s after `SIGTERM`, the surrounding grace period needs headroom above that (20s, not 15s) — otherwise the orchestrator sends `SIGKILL` before the app finishes draining in-flight requests, and the graceful-shutdown code was written for nothing. Read the app's own drain timeout from its source before setting this; never guess a round number.
+**`stop_grace_period` (compose) or a container scheduler's termination grace period must be strictly greater than the app's own drain timeout**, never equal or shorter. If the app's graceful-shutdown code drains for 15s after `SIGTERM`, the surrounding grace period needs headroom above that (20s, not 15s) — otherwise the scheduler sends `SIGKILL` before the app finishes draining in-flight requests, and the graceful-shutdown code was written for nothing. Read the app's own drain timeout from its source before setting this; never guess a round number.
 
 ## Build context
 
