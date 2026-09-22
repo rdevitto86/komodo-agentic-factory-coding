@@ -467,7 +467,7 @@ base: docs/v2-plan
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
 * **PR F:** `chore/v2-gate-exit` from `feat/v2-repo-layer`, cut by `/run TG-03.6` and opened by `close --group`. Validated by the gate as the pre-commit and pre-push hook on both developer machines, the retired-words grep, the swap tests, no workflow directory, the Codex numbers in the changelog, and a human read of the final README. Merges into `feat/v2-repo-layer`; then #103 merges into `main`.
 
-#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [READY]
+#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [DONE]
 ```yaml
 files: [internal/gate, internal/line/close.go, internal/line/ship.go, cmd/komodo/main.go]
 done_when:
@@ -539,7 +539,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [READY]
+#### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
@@ -609,4 +609,16 @@ context:
   - "Load now walks the tree on every call and returns the fresh profile, so hashManifests and sameManifests only decide whether the file is rewritten, never what a caller sees; the walk they exist to avoid always runs"
   - "drop the hash comparison and keep the equality guard, or restore a cache read that genuinely skips the walk"
 type: refactor
+```
+
+#### [TSK-03.6.13] A run holds a lock, so two cannot drive one group [P: H] [READY]
+```yaml
+files: [internal/line/worktree.go, internal/line/worktree_test.go, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.1]
+context:
+  - "two komodo run processes drove TG-03.6 at once and both wrote run state, task branches and wave merges; the result happened to be coherent but nothing prevents two runs interleaving a wave merge or renumbering waves under each other"
+  - "next --start takes an exclusive lock under .komodo holding the pid and the run id; a second run exits naming the holder, and a stale lock whose pid is gone is reclaimed"
+type: feat
 ```
