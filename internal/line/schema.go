@@ -3,10 +3,12 @@ package line
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
+	"path"
 	"sort"
 	"strings"
+
+	"komodo/internal/toolkit"
 )
 
 // Schema is the JSON Schema subset the output device checks: type, required, enum, items, properties.
@@ -21,7 +23,7 @@ type Schema struct {
 // LoadSchema reads the schema a role returns.
 func LoadSchema(root, role string) (Schema, error) {
 	var schema Schema
-	data, err := os.ReadFile(filepath.Join(root, RolesDir, role+".schema.json"))
+	data, err := fs.ReadFile(toolkit.FS(root), path.Join("roles", role+".schema.json"))
 	if err != nil {
 		return schema, err
 	}
@@ -143,7 +145,7 @@ func ReadResult(root, taskID string) (map[string]any, error) {
 
 // SchemaText is the schema a role returns, verbatim, for a brief to carry.
 func SchemaText(root, role string) string {
-	data, err := os.ReadFile(filepath.Join(root, RolesDir, role+".schema.json"))
+	data, err := fs.ReadFile(toolkit.FS(root), path.Join("roles", role+".schema.json"))
 	if err != nil {
 		return ""
 	}

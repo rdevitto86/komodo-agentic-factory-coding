@@ -3,12 +3,14 @@ package guard
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"komodo/internal/mount"
+	"komodo/internal/toolkit"
 )
 
 // Policy is what the guard refuses, read from the toolkit and widened by a repo.
@@ -48,7 +50,7 @@ func (p *Policy) compile() {
 // Load reads the toolkit's policy and merges the repo's, which may only add.
 func Load(toolkitRoot, repoRoot string) Policy {
 	policy := DefaultPolicy()
-	if shipped, ok := readPolicy(filepath.Join(toolkitRoot, "komodo", "policy.json")); ok {
+	if shipped, ok := readShippedPolicy(toolkitRoot); ok {
 		policy = shipped
 	}
 	if extra, ok := readPolicy(filepath.Join(repoRoot, ".komodo", "policy.json")); ok {
@@ -58,6 +60,19 @@ func Load(toolkitRoot, repoRoot string) Policy {
 	}
 	policy.compile()
 	return policy
+}
+
+// readShippedPolicy parses the toolkit's own policy.json, on disk or embedded.
+func readShippedPolicy(toolkitRoot string) (Policy, bool) {
+	var policy Policy
+	data, err := fs.ReadFile(toolkit.FS(toolkitRoot), "policy.json")
+	if err != nil {
+		return policy, false
+	}
+	if json.Unmarshal(data, &policy) != nil {
+		return policy, false
+	}
+	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0
 }
 
 // readPolicy parses one policy file, reporting whether it was usable.

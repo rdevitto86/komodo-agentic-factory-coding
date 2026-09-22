@@ -2,7 +2,9 @@ package line
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -12,6 +14,7 @@ import (
 	"komodo/internal/detect"
 	"komodo/internal/facet"
 	repopkg "komodo/internal/repo"
+	"komodo/internal/toolkit"
 )
 
 // SkillsDir is where the shipped skills live, relative to the repo root.
@@ -47,7 +50,7 @@ type Standard struct {
 
 // LoadStandards reads every standards skill the repo ships.
 func LoadStandards(root string) ([]Standard, error) {
-	entries, err := os.ReadDir(filepath.Join(root, SkillsDir))
+	entries, err := fs.ReadDir(toolkit.FS(root), "skills")
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -59,7 +62,7 @@ func LoadStandards(root string) ([]Standard, error) {
 		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "standards-") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(root, SkillsDir, entry.Name(), "SKILL.md"))
+		data, err := fs.ReadFile(toolkit.FS(root), path.Join("skills", entry.Name(), "SKILL.md"))
 		if err != nil {
 			continue
 		}

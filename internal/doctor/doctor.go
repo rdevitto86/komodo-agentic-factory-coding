@@ -4,8 +4,10 @@ package doctor
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -14,6 +16,7 @@ import (
 	"komodo/internal/detect"
 	"komodo/internal/mount"
 	"komodo/internal/release"
+	"komodo/internal/toolkit"
 )
 
 // Budgets, in tokens for context and bytes for a standard.
@@ -120,15 +123,15 @@ func checkRoles(root string) []Problem {
 			problems = append(problems, Problem{"roles", where, "the role names no schema"})
 			continue
 		}
-		schema := filepath.Join(root, "komodo", "roles", role.Returns)
-		data, err := os.ReadFile(schema)
+		schema := filepath.Join("komodo", "roles", role.Returns)
+		data, err := fs.ReadFile(toolkit.FS(root), path.Join("roles", role.Returns))
 		if err != nil {
 			problems = append(problems, Problem{"roles", where, role.Returns + " does not exist"})
 			continue
 		}
 		var parsed map[string]any
 		if json.Unmarshal(data, &parsed) != nil {
-			problems = append(problems, Problem{"roles", rel(root, schema), "is not JSON"})
+			problems = append(problems, Problem{"roles", schema, "is not JSON"})
 		}
 	}
 	return problems
@@ -189,7 +192,7 @@ func checkBudgets(root string) []Problem {
 		problems = append(problems, Problem{"budgets", "always-on context",
 			fmt.Sprintf("about %d tokens; the cap is %d", total, AlwaysOnTokens)})
 	}
-	if data, err := os.ReadFile(filepath.Join(root, "komodo", "skills", "run", "SKILL.md")); err == nil {
+	if data, err := fs.ReadFile(toolkit.FS(root), path.Join("skills", "run", "SKILL.md")); err == nil {
 		if count := tokens(len(data)); count > RunSkillTokens {
 			problems = append(problems, Problem{"budgets", "komodo/skills/run/SKILL.md",
 				fmt.Sprintf("about %d tokens; the cap is %d", count, RunSkillTokens)})
