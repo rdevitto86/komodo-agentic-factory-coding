@@ -14,13 +14,16 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/detect"
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/mount/ollama"
 	"komodo/internal/pr"
+	"komodo/internal/profile"
 	"komodo/internal/release"
 	"komodo/internal/run"
 
@@ -44,11 +47,13 @@ const usage = `komodo: the code assembly line.
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo install --host X     Mount this repo on a host, or on both
+  komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
   komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
   komodo guard [check]        The one agent hook; check runs its table
   komodo run [group|task]     Drive the line headless on this host, under a budget
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
+  komodo machine <task>       Post a brief to the Ollama mount, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, binaries
 `
@@ -86,6 +91,8 @@ func main() {
 		runTag(root)
 	case "release":
 		runRelease(root, os.Args[2:])
+	case "detect":
+		runDetect(root, os.Args[2:])
 	case "doctor":
 		runDoctor(root, os.Args[2:])
 	case "install":
@@ -98,6 +105,8 @@ func main() {
 		runStep(root, os.Args[2:])
 	case "threads":
 		runThreads(root, os.Args[2:])
+	case "machine":
+		runMachine(root, os.Args[2:])
 	case "metrics":
 		runMetrics(root)
 	case "gate":
@@ -708,6 +717,97 @@ func runThreads(root string, args []string) {
 	printJSON(threads)
 }
 
+// runMachine posts one task's brief to the Ollama mount, writes the result, and stamps the ledger.
+func runMachine(root string, args []string) {
+	set := flag.NewFlagSet("machine", flag.ExitOnError)
+	role := set.String("role", "builder", "the role the brief was written for")
+	taskID, rest := splitTaskArg(args)
+	if taskID == "" {
+		fail(fmt.Errorf("usage: komodo machine <task> [--role reviewer]"))
+	}
+	_ = set.Parse(rest)
+	definition, err := line.LoadRole(root, *role)
+	if err != nil {
+		fail(err)
+	}
+	if !ollama.Allowed(definition.Tools) {
+		fail(fmt.Errorf("%s writes, and a write role cannot run on ollama; falls back to the standard tier", *role))
+	}
+	brief, err := os.ReadFile(filepath.Join(root, line.StateDir, "briefs", taskID+".md"))
+	if err != nil {
+		fail(err)
+	}
+	schema, err := os.ReadFile(filepath.Join(root, line.RolesDir, definition.Returns))
+	if err != nil {
+		fail(err)
+	}
+	model, err := localModel(profile.Select(root).Tiers, definition.Tier)
+	if err != nil {
+		fail(err)
+	}
+	result, err := ollama.Post(ollama.BaseURL(), model, string(brief), schema)
+	if err != nil {
+		fail(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(line.ResultPath(root, taskID)), 0o755); err != nil {
+		fail(err)
+	}
+	data, err := json.MarshalIndent(result.Value, "", "  ")
+	if err != nil {
+		fail(err)
+	}
+	if err := os.WriteFile(line.ResultPath(root, taskID), data, 0o644); err != nil {
+		fail(err)
+	}
+	entry := ledger.Entry{
+		Task: taskID, Station: "machine", Role: *role, Tier: definition.Tier,
+		Provider: "ollama", Model: model,
+		TokensIn: result.TokensIn, TokensOut: result.TokensOut, Outcome: "done",
+	}
+	if state, err := line.LoadRun(root); err == nil {
+		entry.Run, entry.Group = state.Run, state.Group
+	}
+	if err := line.Book(root).Stamp(entry); err != nil {
+		fail(err)
+	}
+	fmt.Println("wrote", line.ResultPath(root, taskID))
+}
+
+// localModel resolves a role's tier to the model of whichever tier the local machine mounts.
+func localModel(tiers mount.Tiers, tier string) (string, error) {
+	if machine := tiers.Machine(tier); machine.Provider == "ollama" {
+		return machine.Model, nil
+	}
+	for _, fallback := range []string{"light", "standard", "heavy"} {
+		if machine := tiers.Machine(fallback); machine.Provider == "ollama" {
+			return "", fmt.Errorf("%s tier does not mount the local machine; falls back to %s", tier, fallback)
+		}
+	}
+	return "", fmt.Errorf("no tier mounts the local machine")
+}
+
+// splitTaskArg pulls the task id out of a machine invocation's args, wherever it falls among the flags.
+func splitTaskArg(args []string) (task string, rest []string) {
+	rest = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--role" || arg == "-role" {
+			rest = append(rest, arg)
+			if i+1 < len(args) {
+				i++
+				rest = append(rest, args[i])
+			}
+			continue
+		}
+		if task == "" && !strings.HasPrefix(arg, "-") {
+			task = arg
+			continue
+		}
+		rest = append(rest, arg)
+	}
+	return task, rest
+}
+
 // runGuard is the hook on stdin, or the table the gate runs.
 func runGuard(root string, args []string) {
 	if len(args) > 0 && args[0] == "check" {
@@ -757,6 +857,40 @@ func runInstall(root string, args []string) {
 		}
 		fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
 	}
+}
+
+// runDetect prints the cached repo profile, detecting fresh when the manifests it read have changed.
+func runDetect(root string, args []string) {
+	set := flag.NewFlagSet("detect", flag.ExitOnError)
+	asJSON := set.Bool("json", false, "print JSON")
+	_ = set.Parse(args)
+	found := detect.Load(root)
+	if *asJSON {
+		printJSON(found)
+		return
+	}
+	fmt.Printf("languages: %s\n", listOrNone(found.Languages))
+	fmt.Printf("cloud: %s\n", listOrNone(found.Cloud))
+	fmt.Printf("data: %s\n", listOrNone(found.Data))
+	fmt.Printf("ci: %s\n", listOrNone(found.CI))
+	fmt.Printf("verify: %s\n", stringOrNone(found.Verify))
+	fmt.Printf("compile: %s\n", stringOrNone(found.Compile))
+}
+
+// listOrNone joins a list for display, or names it empty.
+func listOrNone(items []string) string {
+	if len(items) == 0 {
+		return "none"
+	}
+	return strings.Join(items, ", ")
+}
+
+// stringOrNone names an empty command as none.
+func stringOrNone(value string) string {
+	if value == "" {
+		return "none"
+	}
+	return value
 }
 
 // runDoctor audits the repo and, with --prune, clears what a run stranded.

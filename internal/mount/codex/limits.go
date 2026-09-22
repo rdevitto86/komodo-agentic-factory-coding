@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"komodo/internal/mount"
+	"komodo/internal/profile"
 )
 
 // Probe returns nothing: this host exposes no plan or window to read.
@@ -16,16 +17,17 @@ func Installed(root string) bool {
 	return err == nil
 }
 
-// Tiers is this host's profile row; with Ollama up every tier runs on the local provider.
+// Tiers is this host's profile row; with Ollama up every tier runs on the local provider,
+// with the model the profile shares across every mount.
 func Tiers(plan string, ollama bool) mount.Tiers {
-	provider := "codex"
 	if ollama {
-		provider = "ollama"
+		local := mount.Machine{Provider: "ollama", Model: profile.OllamaModel}
+		return mount.Tiers{Light: local, Standard: local, Heavy: local, Reviewer: local}
 	}
 	return mount.Tiers{
-		Light:    mount.Machine{Provider: provider, Model: models["light"], Effort: efforts["light"]},
-		Standard: mount.Machine{Provider: provider, Model: models["standard"], Effort: efforts["standard"]},
-		Heavy:    mount.Machine{Provider: provider, Model: models["heavy"], Effort: efforts["heavy"]},
-		Reviewer: mount.Machine{Provider: provider, Model: models["heavy"], Effort: efforts["heavy"]},
+		Light:    mount.Machine{Provider: "codex", Model: models["light"], Effort: efforts["light"]},
+		Standard: mount.Machine{Provider: "codex", Model: models["standard"], Effort: efforts["standard"]},
+		Heavy:    mount.Machine{Provider: "codex", Model: models["heavy"], Effort: efforts["heavy"]},
+		Reviewer: mount.Machine{Provider: "codex", Model: models["heavy"], Effort: efforts["heavy"]},
 	}
 }

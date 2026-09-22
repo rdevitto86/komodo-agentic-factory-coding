@@ -1,22 +1,15 @@
 package line
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-)
 
-// RepoCommands are the commands a repo may override at each station.
-type RepoCommands struct {
-	Verify       string `json:"verify"`
-	Compile      string `json:"compile"`
-	BeforeReview string `json:"before_review"`
-	AfterPublish string `json:"after_publish"`
-}
+	repopkg "komodo/internal/repo"
+)
 
 // verifyOrder is the discovery order V1 used, first hit wins.
 var verifyOrder = []struct{ file, command string }{
@@ -28,20 +21,9 @@ var verifyOrder = []struct{ file, command string }{
 	{"justfile", "just verify"},
 }
 
-// LoadRepoCommands reads .komodo/commands.json, which may be absent.
-func LoadRepoCommands(root string) RepoCommands {
-	var commands RepoCommands
-	data, err := os.ReadFile(filepath.Join(root, StateDir, "commands.json"))
-	if err != nil {
-		return commands
-	}
-	_ = json.Unmarshal(data, &commands)
-	return commands
-}
-
 // VerifyCommand is the repo's own verify command, from its commands file or the discovery order.
 func VerifyCommand(root string) string {
-	if override := LoadRepoCommands(root).Verify; override != "" {
+	if override := repopkg.LoadCommands(root).Verify; override != "" {
 		return override
 	}
 	for _, candidate := range verifyOrder {
@@ -55,9 +37,19 @@ func VerifyCommand(root string) string {
 	return ""
 }
 
+// BeforeReviewCommand is the repo's own command to run before the reviewer is spawned.
+func BeforeReviewCommand(root string) string {
+	return repopkg.LoadCommands(root).BeforeReview
+}
+
+// AfterPublishCommand is the repo's own command to run once a group has shipped.
+func AfterPublishCommand(root string) string {
+	return repopkg.LoadCommands(root).AfterPublish
+}
+
 // CompileCommands are the cheap whole-tree checks for the manifests a repo carries.
 func CompileCommands(root string) []string {
-	if override := LoadRepoCommands(root).Compile; override != "" {
+	if override := repopkg.LoadCommands(root).Compile; override != "" {
 		return []string{override}
 	}
 	var commands []string

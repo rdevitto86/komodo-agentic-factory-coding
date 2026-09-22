@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/facet"
 )
 
 const briefBacklog = "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -14,7 +16,8 @@ const briefBacklog = "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0
 const briefRole = "---\nname: builder\ndescription: Writes code.\ntier: standard\ntools: [read, edit, write, shell, search]\n" +
 	"session: true\nreturns: builder.schema.json\n---\n\nYou are a builder.\n\n# Brief\n\nTask {{task_id}}: {{title}}\n\n" +
 	"```yaml\n{{task_block}}\n```\n\n## Repo rules\n{{repo_rules}}\n\n## Repo context\n{{repo_context}}\n\n" +
-	"## Context\n{{context}}\n\n## Files\n{{files}}\n\n## Standards\n{{standards}}\n\n## Done when\n{{done_when}}\n{{failure}}\n"
+	"## Context\n{{context}}\n\n## Files\n{{files}}\n\n## Repo profile\n{{repo_profile}}\n\n" +
+	"## Standards\n{{standards}}\n\n## Done when\n{{done_when}}\n{{failure}}\n"
 
 // briefRepo builds a repo root with a backlog, a role, a standards skill, and the task's files.
 func briefRepo(t *testing.T) string {
@@ -113,6 +116,53 @@ func TestBuildBriefCarriesAFailureIntoARepair(t *testing.T) {
 	}
 	if !strings.Contains(brief.Text, "Previous attempt failed") || !strings.Contains(brief.Text, "undefined: One") {
 		t.Fatal("the failure slot did not reach the brief")
+	}
+}
+
+func TestBuildBriefFillsRepoProfile(t *testing.T) {
+	root := briefRepo(t)
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "languages: Go") || !strings.Contains(brief.Text, "cloud: none") {
+		t.Fatalf("repo profile slot missing:\n%s", brief.Text)
+	}
+}
+
+// facetBacklog is briefBacklog's task with a facets key added.
+const facetBacklog = "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-07.1.1] Build the thing [P: C] [READY]\n```yaml\nfiles: [a/one.go, bin/komodo-linux-amd64]\n" +
+	"done_when:\n  - go test ./a/...\ncontext:\n  - docs/spec/SDD.md#The plan\nfacets: [testfacet]\n```\n"
+
+func TestBuildBriefAddsTheFacetsATaskNames(t *testing.T) {
+	root := briefRepo(t)
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("BACKLOG.md", facetBacklog)
+	write(filepath.Join(facet.FacetsDir, "testfacet", "facet.md"),
+		"# Testfacet\n\n## Builder appendix\nBuilder rule text.\n\n## Reviewer appendix\nReviewer rule text.\n")
+	write(filepath.Join(facet.FacetsDir, "testfacet", "skill", "SKILL.md"),
+		"---\nname: facet-testfacet\ndescription: Test.\n---\n\n# Testfacet\n")
+	write(filepath.Join(facet.FacetsDir, "testfacet", "detect.json"), "{}")
+	write(filepath.Join(facet.FacetsDir, "testfacet", "commands.json"), "{}")
+
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "Builder rule text.") {
+		t.Fatalf("the task's facets key never reached the standards slot:\n%s", brief.Text)
+	}
+	if strings.Contains(brief.Text, "Reviewer rule text.") {
+		t.Fatal("a builder's brief carried the reviewer's appendix")
 	}
 }
 

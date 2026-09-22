@@ -8,6 +8,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/ledger"
+	"komodo/internal/mount"
 	"komodo/internal/profile"
 )
 
@@ -260,6 +261,9 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 			return RunState{}, err
 		}
 	}
+	if err := renderProject(root, path); err != nil {
+		return RunState{}, err
+	}
 	state := RunState{
 		Run:     fmt.Sprintf("%s-%d", plan.Group, time.Now().Unix()),
 		Group:   plan.Group,
@@ -277,6 +281,25 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	}
 	Stamp(root, ledger.Entry{Run: state.Run, Group: state.Group, Station: "intake", Outcome: "started"})
 	return state, nil
+}
+
+// renderProject rebuilds the worktree's gitignored project config for every host installed on
+// root, from the profile and the repo layer, so a run always has the right tools.
+func renderProject(root, worktree string) error {
+	binary := mount.BinaryPath()
+	for _, host := range mount.Hosts() {
+		if host.Installed == nil || host.Render == nil || !host.Installed(root) {
+			continue
+		}
+		plan, err := host.Render(worktree, binary)
+		if err != nil {
+			return err
+		}
+		if _, err := plan.Project().Apply(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // contains reports whether the slice holds the value.

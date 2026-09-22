@@ -9,10 +9,19 @@ import (
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/detect"
+	"komodo/internal/facet"
+	repopkg "komodo/internal/repo"
 )
 
 // SkillsDir is where the shipped skills live, relative to the repo root.
 const SkillsDir = "komodo/skills"
+
+// CapRepoProfile bounds the repo profile slot, about 200 characters.
+const CapRepoProfile = 200
+
+// CapFacet bounds a facet's appendix, its own cap distinct from a standard's.
+const CapFacet = 2000
 
 var placeholder = regexp.MustCompile(`\{\{\s*([a-z_]+)\s*\}\}`)
 
@@ -132,15 +141,17 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 		return nil, err
 	}
 	result := filepath.Join(StateDir, "results", taskID+".json")
+	tree, _ := detect.Detect(cwd)
 	slots := map[string]string{
 		"task_id":      task.ID,
 		"title":        task.Title,
 		"task_block":   blockText(parsed, task),
 		"repo_rules":   repoRules(cwd),
-		"repo_context": "None declared for this repo.",
+		"repo_context": repoContextSlot(cwd, task),
 		"context":      contextSlot(cwd, task),
 		"files":        filesSlot(cwd, task),
-		"standards":    standardsSlot(StandardsFor(standards, task.Files(), role)),
+		"repo_profile": repoProfileSlot(tree),
+		"standards":    standardsSlot(StandardsFor(standards, task.Files(), role)) + facetAppendixSlot(root, tree, task, role),
 		"done_when":    doneWhenSlot(task),
 		"failure":      failureSlot(failure),
 		"result_path":  result,
@@ -205,6 +216,21 @@ func repoRules(cwd string) string {
 		return Clip(string(data), CapRepoRules, "AGENTS.md")
 	}
 	return "No repo-level rules file. Follow the standards below and the code's existing idioms."
+}
+
+// repoContextSlot renders every repo context file whose paths match the task's files, clipped.
+func repoContextSlot(cwd string, task backlog.Task) string {
+	contexts, _ := repopkg.LoadContext(cwd)
+	var parts []string
+	for _, context := range contexts {
+		if context.Matches(task.Files()) {
+			parts = append(parts, Clip(context.Body, CapRepoContext, context.Name))
+		}
+	}
+	if len(parts) == 0 {
+		return "None declared for this repo."
+	}
+	return strings.Join(parts, "\n\n---\n\n")
 }
 
 // contextSlot resolves each context anchor to its section, clipped.
@@ -279,6 +305,61 @@ func standardsSlot(selected []Standard) string {
 		parts = append(parts, Clip(strings.TrimSpace(standard.Body), CapStandard, standard.Name))
 	}
 	return strings.Join(parts, "\n\n---\n\n")
+}
+
+// repoProfileSlot summarises the repo's own detected profile: languages, cloud, data, CI, and verify.
+func repoProfileSlot(profile detect.Profile) string {
+	fields := []string{
+		"languages: " + joinOrNone(profile.Languages),
+		"cloud: " + joinOrNone(profile.Cloud),
+		"data: " + joinOrNone(profile.Data),
+		"ci: " + joinOrNone(profile.CI),
+		"verify: " + joinOrNone(nonEmpty(profile.Verify)),
+	}
+	return Clip(strings.Join(fields, "; "), CapRepoProfile, "repo profile")
+}
+
+// joinOrNone joins a list with commas, or names it none when empty.
+func joinOrNone(items []string) string {
+	if len(items) == 0 {
+		return "none"
+	}
+	return strings.Join(items, ",")
+}
+
+// nonEmpty wraps a single string into a one-item list, dropping it when empty.
+func nonEmpty(value string) []string {
+	if value == "" {
+		return nil
+	}
+	return []string{value}
+}
+
+// facetAppendixSlot renders the appendix each selected facet carries for this role, its own cap.
+func facetAppendixSlot(root string, profile detect.Profile, task backlog.Task, role string) string {
+	names, err := facet.Select(root, profile, task.Facets())
+	if err != nil {
+		return ""
+	}
+	var parts []string
+	for _, name := range names {
+		loaded, err := facet.Load(root, name)
+		if err != nil {
+			continue
+		}
+		appendix := loaded.BuilderAppendix()
+		if role == "reviewer" {
+			appendix = loaded.ReviewerAppendix()
+		}
+		if appendix == "" {
+			continue
+		}
+		parts = append(parts, Clip(appendix, CapFacet, loaded.Name))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "\n\n---\n\n" + strings.Join(parts, "\n\n---\n\n")
 }
 
 // doneWhenSlot lists the commands whose zero exit proves the task done.

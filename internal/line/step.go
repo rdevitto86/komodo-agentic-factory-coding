@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/mount/ollama"
 )
 
 // Action is the one next thing a session should do. The station order lives here and nowhere else.
@@ -97,11 +98,15 @@ func Step(root, needle string) (*Action, error) {
 			if attempt.Count > 0 {
 				why = fmt.Sprintf("%s has a repair brief and %d failed attempt(s)", taskID, attempt.Count)
 			}
-			return action(root, plan, Action{
+			tier := ""
+			if task, ok := parsed.Task(taskID); ok {
+				tier = task.Tier()
+			}
+			return actionForTier(root, plan, Action{
 				Action: "spawn", Role: "builder", Brief: briefPath, Task: taskID, Wave: index + 1,
 				Worktree: filepath.Join(StateDir, "wt", taskID),
 				Why:      why,
-			}), nil
+			}, tier), nil
 		}
 		for _, taskID := range wave {
 			task, ok := parsed.Task(taskID)
@@ -121,7 +126,8 @@ func Step(root, needle string) (*Action, error) {
 	}
 	if !reviewed(root, plan) {
 		return action(root, plan, Action{
-			Action: "spawn", Role: "reviewer", Brief: "komodo diff", Worktree: plan.Worktree,
+			Action: "spawn", Role: "reviewer", Brief: "komodo diff",
+			Task: plan.Group + "-review", Worktree: plan.Worktree,
 			Why: "every wave is merged and the diff is unreviewed",
 		}), nil
 	}
@@ -144,24 +150,45 @@ func Step(root, needle string) (*Action, error) {
 
 // action fills the machine, skills, facets, and commands a station resolved.
 func action(root string, plan *Plan, next Action) *Action {
+	return actionForTier(root, plan, next, "")
+}
+
+// actionForTier is action, but a task's own tier key, when set, picks the machine over the role's.
+func actionForTier(root string, plan *Plan, next Action, taskTier string) *Action {
 	next.Skills = []string{}
 	next.Facets = []string{}
 	next.Commands = []string{}
 	if command := VerifyCommand(WorktreePath(root, plan.Worktree)); command != "" {
 		next.Commands = append(next.Commands, command)
 	}
+	if next.Role == "reviewer" {
+		if command := BeforeReviewCommand(WorktreePath(root, plan.Worktree)); command != "" {
+			next.Commands = append(next.Commands, command)
+		}
+	}
 	if next.Role != "" {
+		var matched Role
 		for _, role := range plan.Roles {
 			if role.Name == next.Role {
+				matched = role
 				next.Machine = role.Machine
 				if next.Machine == "" {
 					next.Machine = role.Tier
 				}
+				if taskTier != "" && taskTier != role.Tier {
+					next.Machine = machineFor(plan.Profile, taskTier)
+				}
+			}
+		}
+		if next.Machine == "ollama" && (matched.Session || !ollama.Allowed(matched.Tools)) {
+			next.Machine = matched.Tier
+			if remote, ok := plan.Profile.Tiers.FirstRemote(); ok {
+				next.Machine = remote.Provider + "/" + remote.Model
 			}
 		}
 		if next.Machine == "ollama" {
 			next.Action = "run"
-			next.Command = "komodo machine " + next.Task
+			next.Command = "komodo machine --role " + next.Role + " " + next.Task
 			next.Role = ""
 		}
 	}

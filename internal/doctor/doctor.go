@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 
+	"komodo/internal/detect"
 	"komodo/internal/mount"
 	"komodo/internal/release"
 )
@@ -42,6 +44,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root)...)
 	problems = append(problems, checkDrift(root)...)
+	problems = append(problems, checkProfileDrift(root)...)
 	if !options.NoGit {
 		found, err := checkGit(root)
 		if err != nil {
@@ -237,6 +240,19 @@ func checkDrift(root string) []Problem {
 		}
 	}
 	return problems
+}
+
+// checkProfileDrift reports when the cached repo profile does not match a fresh detection.
+func checkProfileDrift(root string) []Problem {
+	cached, ok := detect.LoadCached(root)
+	if !ok {
+		return nil
+	}
+	fresh, _ := detect.Detect(root)
+	if reflect.DeepEqual(cached, fresh) {
+		return nil
+	}
+	return []Problem{{"profile", ".komodo/profile.json", "differs from a fresh detection; run komodo detect"}}
 }
 
 // checkGit reports conflict markers and the leftovers a run can strand.

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"komodo/internal/ledger"
+	"komodo/internal/mount"
+	"komodo/internal/profile"
 )
 
 const stepBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -121,7 +123,7 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Action != "spawn" || next.Role != "reviewer" {
+	if next.Action != "spawn" || next.Role != "reviewer" || next.Task != "TG-12.1-review" {
 		t.Fatalf("action = %+v", next)
 	}
 	writeStepResult(t, root, "TG-12.1-review")
@@ -160,11 +162,131 @@ func TestEveryActionNamesItsResolvedParts(t *testing.T) {
 	}
 }
 
+func TestTheReviewerSpawnCarriesTheBeforeReviewCommand(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	writeStepResult(t, root, "TSK-12.1.1")
+	markDone(t, root, "TSK-12.1.1")
+	book := Book(root)
+	if err := book.Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	commandsDir := filepath.Join(root, StateDir, "wt", "TG-12.1", StateDir)
+	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"before_review":"make lint"}`
+	if err := os.WriteFile(filepath.Join(commandsDir, "commands.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, command := range next.Commands {
+		if command == "make lint" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("commands = %v, want before_review", next.Commands)
+	}
+}
+
+const stepBacklogWithTaskTier = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\ntier: heavy\n```\n"
+
+func TestATaskTierOverridesTheRolesOwnTier(t *testing.T) {
+	root := repo(t, stepBacklogWithTaskTier)
+	role := "---\nname: reviewer\ndescription: Reviews.\ntier: heavy\ntools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "reviewer.md"), []byte(role), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	startRun(t, root)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "run" || next.Command != "komodo brief TSK-12.1.1" {
+		t.Fatalf("action = %+v", next)
+	}
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md"), []byte("brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err = Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "builder" || next.Machine != "heavy" {
+		t.Fatalf("action = %+v, want the task's own tier heavy", next)
+	}
+}
+
 func TestAnOllamaMachineBecomesACommandNotASpawn(t *testing.T) {
 	plan := &Plan{Roles: []Role{{Name: "reviewer", Tier: "heavy", Machine: "ollama"}}, Worktree: "."}
 	got := action(t.TempDir(), plan, Action{Action: "spawn", Role: "reviewer", Task: "TSK-12.1.1"})
-	if got.Action != "run" || got.Command != "komodo machine TSK-12.1.1" || got.Role != "" {
+	if got.Action != "run" || got.Command != "komodo machine --role reviewer TSK-12.1.1" || got.Role != "" {
 		t.Fatalf("action = %+v", got)
+	}
+}
+
+func TestALightTaskTierKeepsAWritingRoleOnTheHostsStandardTier(t *testing.T) {
+	plan := &Plan{
+		Roles: []Role{{Name: "builder", Tier: "standard", Tools: []string{"read", "edit", "write", "shell", "search"}, Session: true}},
+		Profile: profile.Profile{Tiers: mount.Tiers{
+			Light:    mount.Machine{Provider: "ollama", Model: "llama3.2"},
+			Standard: mount.Machine{Provider: "claude", Model: "sonnet"},
+		}},
+		Worktree: ".",
+	}
+	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "builder", Task: "TSK-12.1.1"}, "light")
+	if got.Action != "spawn" || got.Role != "builder" || got.Machine != "claude/sonnet" {
+		t.Fatalf("action = %+v, want the spawn kept on the host's standard tier", got)
+	}
+}
+
+func TestEveryTierLocalKeepsAWritingRoleAsASpawnOnTheHost(t *testing.T) {
+	local := mount.Machine{Provider: "ollama", Model: "llama3.2"}
+	plan := &Plan{
+		Roles: []Role{{Name: "builder", Tier: "standard", Tools: []string{"read", "edit", "write", "shell", "search"}, Session: true, Machine: "ollama"}},
+		Profile: profile.Profile{Tiers: mount.Tiers{
+			Light: local, Standard: local, Heavy: local, Reviewer: local,
+		}},
+		Worktree: ".",
+	}
+	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "builder", Task: "TSK-12.1.1"}, "")
+	if got.Action != "spawn" || got.Role != "builder" || got.Command != "" {
+		t.Fatalf("action = %+v, want a spawn kept on the host, never a refused machine call", got)
+	}
+	if got.Machine == "" {
+		t.Fatalf("action = %+v; a spawn must still name the machine that serves it", got)
+	}
+}
+
+func TestBeforeReviewLooksUpTheAbsoluteWorktree(t *testing.T) {
+	worktree := t.TempDir()
+	commandsDir := filepath.Join(worktree, StateDir)
+	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"before_review":"make lint"}`
+	if err := os.WriteFile(filepath.Join(commandsDir, "commands.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{Roles: []Role{{Name: "reviewer", Tier: "heavy"}}, Worktree: worktree}
+	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "reviewer", Task: "x"}, "")
+	found := false
+	for _, command := range got.Commands {
+		if command == "make lint" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("commands = %v, want before_review from the absolute worktree", got.Commands)
 	}
 }
 

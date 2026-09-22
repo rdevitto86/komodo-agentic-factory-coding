@@ -8,8 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"komodo/internal/detect"
+	"komodo/internal/facet"
 	"komodo/internal/install"
 	"komodo/internal/mount"
+	"komodo/internal/profile"
+	repopkg "komodo/internal/repo"
 )
 
 // Dir is the host's project directory, relative to the repo root.
@@ -40,25 +44,39 @@ func Render(root string, binary string) (install.Plan, error) {
 		return plan, err
 	}
 	plan.Add(filepath.Join(root, "CLAUDE.md"), []byte("@AGENTS.md\n"), "the host reads the repo's own rules")
-	plan.Add(filepath.Join(root, Dir, "komodo", "AGENTS.md"), []byte(rules), "the universal rules, rendered")
+	plan.AddProject(filepath.Join(root, Dir, "komodo", "AGENTS.md"), []byte(rules), "the universal rules, rendered")
 
 	roles, err := mount.LoadRoles(root)
 	if err != nil {
 		return plan, err
 	}
+	ollama := profile.OllamaUp()
 	for _, role := range roles {
 		if !role.Session {
 			continue
 		}
-		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role)), "the "+role.Name+" role as an agent")
+		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role, ollama)), "the "+role.Name+" role as an agent")
 	}
 
 	skills, err := mount.LoadSkills(root)
 	if err != nil {
 		return plan, err
 	}
+	skills = repoSkills(root, skills)
 	for _, skill := range skills {
-		plan.Add(filepath.Join(root, Dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
+		plan.AddProject(filepath.Join(root, Dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
+	}
+
+	for _, name := range facetSkills(root) {
+		if !facet.ValidName(name) {
+			continue
+		}
+		loaded, err := facet.Load(root, name)
+		if err != nil {
+			continue
+		}
+		plan.AddProject(filepath.Join(root, Dir, "skills", "facet-"+loaded.Name, "SKILL.md"),
+			[]byte(loaded.Skill), "the "+loaded.Name+" facet's setup skill")
 	}
 
 	settings, err := settingsFile(root, binary)
@@ -79,13 +97,44 @@ func Render(root string, binary string) (install.Plan, error) {
 	return plan, nil
 }
 
-// agentFile renders one role as this host's agent file.
-func agentFile(role mount.Role) string {
+// repoSkills merges the repo's standards and skills overrides into the shipped set.
+func repoSkills(root string, skills []mount.Skill) []mount.Skill {
+	byName := map[string]int{}
+	for i, skill := range skills {
+		byName[skill.Name] = i
+	}
+	standards, _ := repopkg.LoadStandards(root)
+	for _, override := range standards {
+		mount.MergeOverride(&skills, byName, "standards-"+override.Name, override.New, override.Body)
+	}
+	overrides, _ := repopkg.LoadSkills(root)
+	for _, override := range overrides {
+		mount.MergeOverride(&skills, byName, override.Name, override.New, override.Body)
+	}
+	return skills
+}
+
+// facetSkills names the facets the detected profile and the repo's own additions select.
+func facetSkills(root string) []string {
+	names, err := facet.Select(root, detect.Load(root), nil)
+	if err != nil {
+		return nil
+	}
+	return names
+}
+
+// agentFile renders one role as this host's agent file; a light tier renders as standard when
+// the local machine holds the light tier, since a host spawn cannot reach Ollama.
+func agentFile(role mount.Role, ollama bool) string {
 	var names []string
 	for _, verb := range role.Tools {
 		names = append(names, tools[verb]...)
 	}
-	model := models[role.Tier]
+	tier := role.Tier
+	if ollama && tier == "light" {
+		tier = "standard"
+	}
+	model := models[tier]
 	head := []string{
 		"---",
 		"name: " + role.Name,

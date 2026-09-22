@@ -446,6 +446,18 @@ context:
 type: feat
 ```
 
+#### [TSK-03.5.10] internal/mount/registry.go:136 Machine.Local is exported API with one caller and the provider literal survives elsewhere [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/registry.go
+done_when:
+  - test -f internal/mount/registry.go
+type: refactor
+context:
+  - "Local is called only by FirstRemote eight lines below it and by nothing else in the tree. The constant it introduced does not remove the literal it was meant to replace: step.go, next.go and the machine command still compare the provider string directly. Unexport the predicate or inline the provider comparison into FirstRemote."
+```
+
+
 ### [TG-03.6] The gate and the exit test
 ```yaml
 type: chore
@@ -537,6 +549,42 @@ context:
   - "checkDrift reports only update and remove, so a new skill or role that an installed mount has never rendered passes clean; TSK-03.4.1 added four skills and the gate stayed green with none of them mounted"
   - "a create against a host that is already rendered is drift and must say run komodo install"
 type: fix
+```
+
+#### [TSK-03.6.8] The reviewer tier is set on both mounts and never dispatched [P: M] [READY]
+```yaml
+files: [internal/line/next.go, internal/line/next_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.5.5]
+context:
+  - "machineFor dispatches on role.Tier and has no reviewer case, so mount.Tiers.Reviewer is populated by both hosts and never read; the shipped reviewer role declares tier heavy and resolves to Tiers.Heavy"
+  - "either dispatch the reviewer role to Tiers.Reviewer or drop the field from the Tiers struct; a set-but-unread field is a silent wrong machine"
+type: fix
+```
+
+#### [TSK-03.6.9] A declared key that nothing reads fails the gate [P: H] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-03.6.6]
+context:
+  - "four mechanisms shipped wired to nothing and were each found by hand: RepairText and komodo brief --failure, SplitFindings and FileFindings and Profile.SeverityFloor, commands.json before_review and after_publish, and a task's tier key; every one parsed, linted, documented and inert"
+  - "doctor grows a check that every exported symbol the rules or the grammar promise has a caller outside its own tests, naming the promise and the symbol"
+type: feat
+```
+
+#### [TSK-03.6.10] One resolver decides which group a station plans for [P: H] [READY]
+```yaml
+files: [internal/line/next.go, internal/line/step.go, internal/line/next_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.9]
+context:
+  - "five defects in one run came from a station planning from BACKLOG.md instead of the open run: the wrong base, renumbered waves twice, close and ship taking the next ready group, and step abandoning an unshipped run"
+  - "PlanForRun and pinWaves patched the callers one at a time; make it impossible instead, so a plan cannot be built without stating whether it is the open run or a fresh group"
+type: refactor
 ```
 
 #### [TSK-03.6.11] `komodo diff` truncates the diff it hands the reviewer [P: H] [READY]

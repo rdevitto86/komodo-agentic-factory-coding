@@ -3,6 +3,7 @@ package profile
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +79,30 @@ func TestAnotherHostWithOllamaIsLocal(t *testing.T) {
 	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("codex", true, mount.Usage{}, false)}, true)
 	if got.Name != "local" {
 		t.Fatalf("name = %s", got.Name)
+	}
+}
+
+func TestOllamaNotAnsweringReportsTheDegradeOnce(t *testing.T) {
+	t.Setenv(OllamaEnv, "http://127.0.0.1:1")
+	host := fakeHost("claude", true, mount.Usage{Plan: "max_5x"}, true)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
+	if got.Name == "hybrid" {
+		t.Fatal("the profile stayed hybrid with the local machine down")
+	}
+	if !strings.Contains(got.Why, "the local machine did not answer") {
+		t.Fatalf("why = %q", got.Why)
+	}
+	if strings.Count(got.Why, "the local machine did not answer") != 1 {
+		t.Fatalf("the degrade was reported more than once: %q", got.Why)
+	}
+}
+
+func TestNoOllamaEnvIsSilentAboutTheLocalMachine(t *testing.T) {
+	t.Setenv(OllamaEnv, "")
+	host := fakeHost("claude", true, mount.Usage{Plan: "max_5x"}, true)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
+	if strings.Contains(got.Why, "did not answer") {
+		t.Fatalf("why = %q", got.Why)
 	}
 }
 

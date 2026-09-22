@@ -21,6 +21,8 @@ depends_on: [TSK-01.1.0]
 context: [docs/spec/SDD.md#refunds]
 owner: agent        # or human
 type: feat
+tier: heavy         # light, standard, or heavy; overrides the role's tier for this task
+facets: [postgres]  # facet names this task adds to detection
 ```
 ````
 
@@ -33,6 +35,8 @@ type: feat
 - **`done_when`** is shell commands that exit zero when the task is done. Never prose. Cover the whole package, not one file.
 - **`depends_on`** only when a later task cannot compile or test without an earlier one.
 - **`context`** points at spec sections or docs a builder reads first, with an optional `#anchor`.
+- **`tier`** is `light`, `standard`, or `heavy`; it overrides the role's tier for this task alone. Omit it to use the role's own tier.
+- **`facets`** lists facet names this task adds, beyond what detection and `.komodo/facets` already select.
 - A task the harness cannot run fails `komodo lint`; run it after every edit.
 
 ## Adding a task

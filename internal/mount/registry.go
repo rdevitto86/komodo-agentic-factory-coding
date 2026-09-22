@@ -129,6 +129,24 @@ func (t Tiers) Machine(tier string) Machine {
 	}
 }
 
+// localProvider names the provider that answers on the machine running the line itself.
+const localProvider = "ollama"
+
+// Local reports whether a machine mounts the provider running on this host.
+func (m Machine) Local() bool {
+	return m.Provider == localProvider
+}
+
+// FirstRemote returns the first mounted tier, standard first, whose machine is not local.
+func (t Tiers) FirstRemote() (Machine, bool) {
+	for _, machine := range []Machine{t.Standard, t.Heavy, t.Light} {
+		if machine.Provider != "" && !machine.Local() {
+			return machine, true
+		}
+	}
+	return Machine{}, false
+}
+
 // Usage is what a host's own config says about the account's plan and window.
 type Usage struct {
 	Plan     string    `json:"plan"`
