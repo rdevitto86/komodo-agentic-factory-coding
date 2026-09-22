@@ -141,6 +141,9 @@ func AppendChangelog(path, version, line string) error {
 	}
 	text := string(data)
 	heading := "## " + version
+	if strings.Contains(text, "\n"+line+"\n") {
+		return nil
+	}
 	if index := strings.Index(text, heading+"\n"); index >= 0 {
 		cut := index + len(heading) + 1
 		return os.WriteFile(path, []byte(text[:cut]+"\n"+line+"\n"+strings.TrimPrefix(text[cut:], "\n")), 0o644)

@@ -183,3 +183,14 @@ func TestReportOpensWithTheVerdict(t *testing.T) {
 		t.Fatalf("first line = %q", first)
 	}
 }
+
+func TestASingleOversizedPieceIsStillClipped(t *testing.T) {
+	piece := strings.Repeat("a", CapDiff+1)
+	got := clipDiff([]string{piece}, CapDiff)
+	if len(got) > CapDiff+200 {
+		t.Fatalf("kept %d chars against a cap of %d; one huge file must not escape the cap", len(got), CapDiff)
+	}
+	if !strings.Contains(got, "clipped") && !strings.Contains(got, "truncated") {
+		t.Fatalf("a clipped diff must say so; got the tail %q", got[max(0, len(got)-120):])
+	}
+}

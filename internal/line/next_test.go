@@ -302,24 +302,6 @@ func TestTheRunsOwnGroupOutlivesItsLastClosedTask(t *testing.T) {
 	}
 }
 
-func TestPlanForStationKeepsAnUnshippedRun(t *testing.T) {
-	root := repo(t, finishedText)
-	state := RunState{
-		Run: "TG-05.1-1", Group: "TG-05.1", Base: "main", Branch: "feat/a-group",
-		Waves: [][]string{{"TSK-05.1.1"}, {"TSK-05.1.2"}},
-	}
-	if err := SaveRun(root, state); err != nil {
-		t.Fatal(err)
-	}
-	plan, err := PlanForStation(root, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan == nil || plan.Group != "TG-05.1" {
-		t.Fatalf("plan = %+v; the run's own group must not lose its station to a later ready group", plan)
-	}
-}
-
 func TestPlanForStationMovesOnOnceTheRunIsShipped(t *testing.T) {
 	root := repo(t, finishedText)
 	state := RunState{

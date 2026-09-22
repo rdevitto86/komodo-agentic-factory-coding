@@ -79,7 +79,7 @@ func PlanForStation(root, needle string) (*Plan, error) {
 	if plan == nil {
 		return planForGroup(root, state.Group)
 	}
-	if needle == "" && state.Group != plan.Group {
+	if needle == "" {
 		if open, err := openRun(root, state.Group); err == nil && open != nil {
 			return open, nil
 		}
