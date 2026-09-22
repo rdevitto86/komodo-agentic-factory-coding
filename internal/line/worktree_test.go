@@ -42,3 +42,24 @@ func TestResultAtTheRootIsStillFound(t *testing.T) {
 		t.Fatal("a result at the root was not found")
 	}
 }
+
+func TestResultIsFoundInTheTasksOwnWorktree(t *testing.T) {
+	root := t.TempDir()
+	state := RunState{
+		Run: "TG-01.1-1", Group: "TG-01.1", Base: "main", Branch: "feat/a",
+		Worktree: filepath.Join(root, StateDir, "wt", "TG-01.1"),
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	path := ResultPath(filepath.Join(root, StateDir, "wt", "TSK-01.1.1"), "TSK-01.1.1")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"result":"DONE"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !HasResult(root, "TSK-01.1.1") {
+		t.Fatal("a result in the task's own worktree was not found")
+	}
+}
