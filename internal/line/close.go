@@ -163,9 +163,45 @@ func commitTask(cwd string, task backlog.Task) error {
 	if _, err := git(cwd, "add", "-A"); err != nil {
 		return err
 	}
+	if err := unstageBuilt(cwd, task); err != nil {
+		return err
+	}
+	if staged, err := git(cwd, "diff", "--cached", "--name-only"); err != nil || strings.TrimSpace(staged) == "" {
+		return err
+	}
 	message := fmt.Sprintf("%s: %s (%s)", task.Type(), task.Title, task.ID)
 	_, err = git(cwd, "commit", "-m", message)
 	return err
+}
+
+// Built are the regenerated paths a task branch never carries, because they conflict on every merge.
+var Built = []string{"bin"}
+
+// unstageBuilt drops the regenerated artifacts from a task's commit, unless the task declares one.
+func unstageBuilt(cwd string, task backlog.Task) error {
+	for _, path := range Built {
+		if declares(task, path) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(cwd, path)); err != nil {
+			continue
+		}
+		if _, err := git(cwd, "reset", "--quiet", "HEAD", "--", path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// declares reports whether a task's own files list covers a built path.
+func declares(task backlog.Task, path string) bool {
+	for _, file := range task.Files() {
+		clean := strings.ReplaceAll(file, "\\", "/")
+		if clean == path || strings.HasPrefix(clean, path+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // isToolkit reports whether this repo is the toolkit, which gates its own commits.
