@@ -37,8 +37,20 @@ func TestStepStartsWithIntake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Action != "run" || next.Command != "komodo next --start TG-12.1" {
+	if next.Action != "run" || next.Command != "komodo next --start TG-12.1 --base main" {
 		t.Fatalf("action = %+v", next)
+	}
+}
+
+func TestStepNamesTheBaseTheGroupDeclares(t *testing.T) {
+	stacked := "### [TG-12.2] A stacked group\n```yaml\ntype: feat\nversion: 2.0.0\nbase: release/2.0\n```\n\n" +
+		"#### [TSK-12.2.1] One [P: C] [READY]\n```yaml\nfiles: [b/one.go]\ndone_when: [\"go test ./b/...\"]\n```\n"
+	next, err := Step(repo(t, stacked), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Command != "komodo next --start TG-12.2 --base release/2.0" {
+		t.Fatalf("command = %q; a stacked group must not be cut from the default branch", next.Command)
 	}
 }
 

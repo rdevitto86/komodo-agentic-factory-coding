@@ -175,3 +175,22 @@ func TestParseFieldsRejectsIndentation(t *testing.T) {
 		t.Fatal("want an error for a non-pair line")
 	}
 }
+
+func TestGroupBaseIsEmptyUntilTheGroupDeclaresOne(t *testing.T) {
+	parsed := Parse("### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n")
+	group, ok := parsed.Group("TG-01.1")
+	if !ok {
+		t.Fatal("the group did not parse")
+	}
+	if group.Base() != "" {
+		t.Fatalf("base = %q, want empty so the remote's default branch is used", group.Base())
+	}
+}
+
+func TestGroupBaseIsWhatTheGroupDeclares(t *testing.T) {
+	parsed := Parse("### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: release/2.0\n```\n")
+	group, _ := parsed.Group("TG-01.1")
+	if group.Base() != "release/2.0" {
+		t.Fatalf("base = %q", group.Base())
+	}
+}

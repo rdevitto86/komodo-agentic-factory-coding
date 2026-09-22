@@ -127,6 +127,9 @@ func (g Group) Type() string {
 	return "feat"
 }
 
+// Base is the branch this group's work is cut from, empty when the remote's default branch is right.
+func (g Group) Base() string { return g.Fields.String("base") }
+
 // Version is the version this group ships, written into the changelog heading and the tag.
 func (g Group) Version() string { return g.Fields.String("version") }
 

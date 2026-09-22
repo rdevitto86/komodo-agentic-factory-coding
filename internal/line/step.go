@@ -44,8 +44,8 @@ func Step(root, needle string) (*Action, error) {
 	if runErr != nil || state.Group != plan.Group {
 		return action(root, plan, Action{
 			Action:  "run",
-			Command: "komodo next --start " + plan.Group,
-			Why:     fmt.Sprintf("%s has not been cut yet", plan.Group),
+			Command: "komodo next --start " + plan.Group + " --base " + plan.Base,
+			Why:     fmt.Sprintf("%s has not been cut yet, from %s", plan.Group, plan.Base),
 		}), nil
 	}
 	full, err := PlanForGroup(root, state.Group)

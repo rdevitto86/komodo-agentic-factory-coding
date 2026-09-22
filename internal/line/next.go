@@ -102,7 +102,7 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 	plan := &Plan{
 		Group: group.ID, Title: group.Title, Type: group.Type(),
 		Version: group.Version(), Mode: group.Mode(), Skipped: done,
-		Base: DefaultBase(root), Branch: BranchName(group.Type(), group.Slug()),
+		Base: groupBase(root, group), Branch: BranchName(group.Type(), group.Slug()),
 	}
 	plan.Worktree = filepath.Join(StateDir, "wt", group.ID)
 	for _, task := range tasks {
@@ -209,6 +209,14 @@ func pick(parsed backlog.Backlog, needle string) (backlog.Group, bool) {
 		return parsed.Group(task.GroupID)
 	}
 	return parsed.Group(needle)
+}
+
+// groupBase is the branch a group declares, or the remote's default when it declares none.
+func groupBase(root string, group backlog.Group) string {
+	if base := group.Base(); base != "" {
+		return base
+	}
+	return DefaultBase(root)
 }
 
 // Start cuts the group branch in its own worktree from the base and records the choice.
