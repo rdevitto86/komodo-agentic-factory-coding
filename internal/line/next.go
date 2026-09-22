@@ -67,10 +67,16 @@ func PlanForGroup(root, groupID string) (*Plan, error) {
 	if err != nil || plan == nil {
 		return plan, err
 	}
-	if state, err := LoadRun(root); err == nil && state.Group == plan.Group && len(state.Waves) > 0 {
-		plan.Waves = state.Waves
-	}
 	return plan, nil
+}
+
+// pinWaves restores the waves the run recorded, so every station numbers them the same way.
+func pinWaves(root string, plan *Plan) {
+	state, err := LoadRun(root)
+	if err != nil || state.Group != plan.Group || len(state.Waves) == 0 {
+		return
+	}
+	plan.Waves = state.Waves
 }
 
 // groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one.
@@ -141,12 +147,13 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 		roles[index].Machine = machineFor(chosen, roles[index].Tier)
 	}
 	plan.Roles = roles
+	if chosen.MaxParallel > 0 && plan.Mode != "single" {
+		plan.Waves = splitByParallel(plan.Waves, chosen.MaxParallel)
+	}
+	pinWaves(root, plan)
 	if chosen.Paused() && len(plan.Waves) > 0 {
 		plan.WaitUntil = chosen.WaitUntil().Format(time.RFC3339)
 		plan.Waves = nil
-	}
-	if chosen.MaxParallel > 0 && plan.Mode != "single" {
-		plan.Waves = splitByParallel(plan.Waves, chosen.MaxParallel)
 	}
 	return plan, nil
 }
