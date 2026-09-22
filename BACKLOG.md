@@ -371,7 +371,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.4] `komodo machine`: the binary is the Ollama mount [P: C] [IN_PROGRESS]
+#### [TSK-03.5.4] `komodo machine`: the binary is the Ollama mount [P: C] [DONE]
 ```yaml
 files: [internal/mount/ollama, cmd/komodo/main.go]
 done_when:

@@ -204,3 +204,19 @@ func ids(wave []backlog.Task) []string {
 	}
 	return out
 }
+
+func TestEveryStationSeesTheWavesTheRunPinned(t *testing.T) {
+	root := repo(t, groupText)
+	pinned := [][]string{{"TSK-05.1.1", "TSK-05.1.2", "TSK-05.1.3"}}
+	state := RunState{Run: "TG-05.1-1", Group: "TG-05.1", Base: "main", Branch: "feat/a-group", Waves: pinned}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Waves) != 1 || len(plan.Waves[0]) != 3 {
+		t.Fatalf("waves = %v; close and ship must see the run's own waves", plan.Waves)
+	}
+}
