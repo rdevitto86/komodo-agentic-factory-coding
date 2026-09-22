@@ -87,6 +87,11 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 			return nil, err
 		}
 	}
+	if isToolkit(root) {
+		if err := gateCommand(group); err != nil {
+			return nil, fmt.Errorf("gate: %w", err)
+		}
+	}
 	if _, err := git(group, "push", "-u", "origin", plan.Branch); err != nil {
 		return nil, err
 	}
