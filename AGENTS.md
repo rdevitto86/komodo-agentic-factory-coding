@@ -22,7 +22,7 @@ Komodo's code assembly line: one static binary is the conveyor and the devices, 
 - **No MCP in V2.** Machines, skills, and external dependencies are the swappable parts; MCPs come in a later hot-swap pass.
 - **No repo config is required.** Nothing refuses to run because a file is missing.
 - **Standard library only.** Go with no dependencies; prebuilt binaries under `bin/` with a manifest.
-- **V1 is history.** The tag `v1-final` and the branch `archive/v1` hold it; nothing is copied back without a task naming it.
+- **V1 is history.** The tag `v1-final` holds it; nothing is copied back without a task naming it. Run state was never committed and is gone.
 
 ## Commands
 

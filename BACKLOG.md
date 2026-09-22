@@ -270,7 +270,7 @@ type: feat
 type: feat
 version: 2.0.0
 ```
-* **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof runs one group each way before anything is deleted.
+* **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof is one group driven end to end by the skill alone, recorded before anything is deleted.
 * **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping, and a session start with no permission-rule warning. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
 
 #### [TSK-03.4.1] The run, review, backlog, and respond skills [P: C] [DONE]
@@ -298,16 +298,18 @@ context:
 type: feat
 ```
 
-#### [TSK-03.4.3] Proof: one group under V1 and under the run skill [P: C] [READY]
+#### [TSK-03.4.3] Proof: the run skill drives a group end to end [P: C] [READY]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
-  - grep -q "Proof: V1 versus the run skill" CHANGELOG.md
+  - grep -q "Proof: the run skill drives a group" CHANGELOG.md
 depends_on: [TSK-03.4.1, TSK-03.4.2]
 owner: human
 context:
-  - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 2.0.0 changelog entry"
-  - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.5 merges"
+  - "run TG-03.5 under the run skill in a session, committing to this branch; record wall time, tokens in, tokens out, and turns per station from .komodo/line.jsonl, under a Proof: the run skill drives a group heading in the 2.0.0 changelog entry"
+  - "the bar is absolute, not comparative: the group finishes inside the launcher's budget, with no human turn between stations and no station run out of the order komodo step gave"
+  - "a station the human had to drive means the skill is wrong; fix the skill before TG-03.5 merges"
+  - "there is no V1 baseline: V1 kept run state in the gitignored .komodo/runs and the V2 clean start deleted it, TG-02.4 is not a group at the tag v1-final, and V1 squash-merged one commit per group so no per-group timing survives in history; never re-add the comparison"
 type: docs
 ```
 
@@ -483,7 +485,7 @@ done_when:
 depends_on: [TSK-03.6.2]
 owner: human
 context:
-  - "komodo install --host codex with zero changes outside internal/mount, then run one task with codex exec through the launcher; record the same numbers as TSK-03.4.3 under a Proof: the exit test under Codex heading"
+  - "komodo install --host codex with zero changes outside internal/mount, then run one task through the launcher; record the same numbers as TSK-03.4.3 under a Proof: the exit test under Codex heading"
 type: docs
 ```
 
