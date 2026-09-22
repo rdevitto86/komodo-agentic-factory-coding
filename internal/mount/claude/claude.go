@@ -10,6 +10,7 @@ import (
 
 	"komodo/internal/install"
 	"komodo/internal/mount"
+	repopkg "komodo/internal/repo"
 )
 
 // Dir is the host's project directory, relative to the repo root.
@@ -40,7 +41,7 @@ func Render(root string, binary string) (install.Plan, error) {
 		return plan, err
 	}
 	plan.Add(filepath.Join(root, "CLAUDE.md"), []byte("@AGENTS.md\n"), "the host reads the repo's own rules")
-	plan.Add(filepath.Join(root, Dir, "komodo", "AGENTS.md"), []byte(rules), "the universal rules, rendered")
+	plan.AddProject(filepath.Join(root, Dir, "komodo", "AGENTS.md"), []byte(rules), "the universal rules, rendered")
 
 	roles, err := mount.LoadRoles(root)
 	if err != nil {
@@ -57,8 +58,9 @@ func Render(root string, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
+	skills = repoSkills(root, skills)
 	for _, skill := range skills {
-		plan.Add(filepath.Join(root, Dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
+		plan.AddProject(filepath.Join(root, Dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
 	}
 
 	settings, err := settingsFile(root, binary)
@@ -77,6 +79,37 @@ func Render(root string, binary string) (install.Plan, error) {
 		plan.AddRemoval(full, "the V1 render and the old bridge entry")
 	}
 	return plan, nil
+}
+
+// repoSkills merges the repo's standards and skills overrides into the shipped set.
+func repoSkills(root string, skills []mount.Skill) []mount.Skill {
+	byName := map[string]int{}
+	for i, skill := range skills {
+		byName[skill.Name] = i
+	}
+	standards, _ := repopkg.LoadStandards(root)
+	for _, override := range standards {
+		mergeOverride(&skills, byName, "standards-"+override.Name, override.New, override.Body)
+	}
+	overrides, _ := repopkg.LoadSkills(root)
+	for _, override := range overrides {
+		mergeOverride(&skills, byName, override.Name, override.New, override.Body)
+	}
+	return skills
+}
+
+// mergeOverride appends a new skill, or a "Repo overrides" section onto a shipped one by name.
+func mergeOverride(skills *[]mount.Skill, byName map[string]int, name string, isNew bool, body string) {
+	if isNew {
+		byName[name] = len(*skills)
+		*skills = append(*skills, mount.Skill{Name: name, Body: body})
+		return
+	}
+	index, ok := byName[name]
+	if !ok {
+		return
+	}
+	(*skills)[index].Body = strings.TrimRight((*skills)[index].Body, "\n") + "\n\n## Repo overrides\n\n" + body + "\n"
 }
 
 // agentFile renders one role as this host's agent file.

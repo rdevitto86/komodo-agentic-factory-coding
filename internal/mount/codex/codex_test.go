@@ -111,3 +111,48 @@ func TestTheRulesAreRenderedWithTheContract(t *testing.T) {
 		t.Fatalf("rules = %q", rules)
 	}
 }
+
+func TestRepoSkillAppendsToAShippedOne(t *testing.T) {
+	root := toolkit(t)
+	overridePath := filepath.Join(root, ".komodo", "skills", "builder", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(overridePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overridePath, []byte("This repo deploys through a Makefile.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shippedPath := filepath.Join(root, "komodo", "skills", "builder", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(shippedPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shippedPath, []byte("---\nname: builder\n---\n\nBuild it.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := body(t, root, filepath.Join(SkillsDir, "builder", "SKILL.md"))
+	if !strings.Contains(got, "Build it.") || !strings.Contains(got, "## Repo overrides") ||
+		!strings.Contains(got, "through a Makefile") {
+		t.Fatalf("skill = %q", got)
+	}
+}
+
+func TestTheRulesFileAndTheSkillsAreProjectChanges(t *testing.T) {
+	root := toolkit(t)
+	plan, err := Render(root, "komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	narrowed := plan.Project()
+	found := map[string]bool{}
+	for _, change := range narrowed.Changes {
+		found[change.Path] = true
+	}
+	if !found[filepath.Join(root, Dir, "komodo", "AGENTS.md")] {
+		t.Fatal("the rules file is not a project change")
+	}
+	if !found[filepath.Join(root, SkillsDir, "run", "SKILL.md")] {
+		t.Fatal("a skill is not a project change")
+	}
+	if found[filepath.Join(root, Dir, "hooks.json")] {
+		t.Fatal("hooks are not a project change")
+	}
+}

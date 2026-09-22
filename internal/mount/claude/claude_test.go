@@ -175,6 +175,88 @@ func TestEverySkillIsCopied(t *testing.T) {
 	}
 }
 
+func TestRepoStandardAppendsToAShippedOne(t *testing.T) {
+	root := toolkit(t)
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("komodo/skills/standards-go/SKILL.md", "---\nname: standards-go\nglobs: [\"**/*.go\"]\n---\n\n# Go\n\nWrap with %w.\n")
+	write(".komodo/standards/go.md", "This repo also bans naked returns.\n")
+	got := body(t, root, filepath.Join(Dir, "skills", "standards-go", "SKILL.md"))
+	if !strings.Contains(got, "Wrap with %w.") || !strings.Contains(got, "## Repo overrides") ||
+		!strings.Contains(got, "naked returns") {
+		t.Fatalf("standard = %q", got)
+	}
+}
+
+func TestRepoSkillWithFrontmatterIsNew(t *testing.T) {
+	root := toolkit(t)
+	path := filepath.Join(root, ".komodo", "skills", "deploy", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("---\nname: deploy\ndescription: this repo's own deploy steps\n---\n\nRun the deploy script.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := body(t, root, filepath.Join(Dir, "skills", "deploy", "SKILL.md"))
+	if !strings.Contains(got, "Run the deploy script.") {
+		t.Fatalf("skill = %q", got)
+	}
+}
+
+func TestARepoSkillCannotAppendAProtectedOne(t *testing.T) {
+	root := toolkit(t)
+	path := filepath.Join(root, ".komodo", "skills", "run", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("Never happens.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := body(t, root, filepath.Join(Dir, "skills", "run", "SKILL.md"))
+	if strings.Contains(got, "Never happens.") {
+		t.Fatal("a protected skill was appended to")
+	}
+}
+
+func TestTheRulesFileAndTheSkillsAreProjectChanges(t *testing.T) {
+	root := toolkit(t)
+	plan, err := Render(root, "komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	narrowed := plan.Project()
+	var names []string
+	for _, change := range narrowed.Changes {
+		names = append(names, change.Path)
+	}
+	if !contains(names, filepath.Join(root, Dir, "komodo", "AGENTS.md")) {
+		t.Fatal("the rules file is not a project change")
+	}
+	if !contains(names, filepath.Join(root, Dir, "skills", "run", "SKILL.md")) {
+		t.Fatal("a skill is not a project change")
+	}
+	if contains(names, filepath.Join(root, Dir, "settings.json")) {
+		t.Fatal("settings is not a project change")
+	}
+}
+
+// contains reports whether the slice holds the value.
+func contains(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPlanNameMapsTheRateLimitTiers(t *testing.T) {
 	cases := map[string]string{
 		"default_claude_max_5x": "max_5x",
