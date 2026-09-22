@@ -4,6 +4,9 @@ package doctor
 import (
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -14,16 +17,18 @@ import (
 	"strings"
 
 	"komodo/internal/detect"
+	"komodo/internal/guard"
+	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/profile"
 	"komodo/internal/release"
 	"komodo/internal/toolkit"
 )
 
-// Budgets, in tokens for context and bytes for a standard.
+// Budgets, in tokens for context; a standard's own cap is internal/line.CapStandard.
 const (
 	AlwaysOnTokens = 1500
 	RunSkillTokens = 800
-	StandardBytes  = 8192
 )
 
 // Problem is one thing the doctor found, named by the check that found it.
@@ -106,6 +111,16 @@ func checkRoles(root string) []Problem {
 	if err != nil {
 		return []Problem{{"roles", "komodo/roles", err.Error()}}
 	}
+	loaded := map[string]bool{}
+	for _, role := range roles {
+		loaded[role.Name] = true
+	}
+	matches, _ := filepath.Glob(filepath.Join(root, "komodo", "roles", "*.md"))
+	for _, path := range matches {
+		if stem := strings.TrimSuffix(filepath.Base(path), ".md"); !loaded[stem] {
+			problems = append(problems, Problem{"roles", rel(root, path), "did not load: missing or malformed frontmatter"})
+		}
+	}
 	for _, role := range roles {
 		where := filepath.Join("komodo", "roles", role.Name+".md")
 		if role.Name == "" || role.Description == "" || role.Tier == "" {
@@ -144,7 +159,7 @@ func checkLeaks(root string) []Problem {
 		return nil
 	}
 	var problems []Problem
-	for _, path := range sources(root) {
+	for _, path := range textFiles(root) {
 		relative := rel(root, path)
 		if strings.HasPrefix(relative, filepath.Join("internal", "mount")) || strings.HasSuffix(path, "_test.go") {
 			continue
@@ -188,6 +203,17 @@ func checkBudgets(root string) []Problem {
 	if rules, err := mount.Rules(root); err == nil {
 		total += tokens(len(rules))
 	}
+	skills, skillsErr := mount.LoadSkills(root)
+	for _, skill := range skills {
+		total += tokens(len(frontmatterField(skill.Body, "description")))
+	}
+	if roles, err := mount.LoadRoles(root); err == nil {
+		for _, role := range roles {
+			if role.Session {
+				total += tokens(len(role.Description))
+			}
+		}
+	}
 	if total > AlwaysOnTokens {
 		problems = append(problems, Problem{"budgets", "always-on context",
 			fmt.Sprintf("about %d tokens; the cap is %d", total, AlwaysOnTokens)})
@@ -198,25 +224,52 @@ func checkBudgets(root string) []Problem {
 				fmt.Sprintf("about %d tokens; the cap is %d", count, RunSkillTokens)})
 		}
 	}
-	skills, err := mount.LoadSkills(root)
-	if err != nil {
+	if skillsErr != nil {
 		return problems
 	}
 	for _, skill := range skills {
 		if !strings.HasPrefix(skill.Name, "standards-") {
 			continue
 		}
-		if len(skill.Body) > StandardBytes {
+		if size := len(frontmatterBody(skill.Body)); size > line.CapStandard {
 			problems = append(problems, Problem{"budgets",
 				filepath.Join("komodo", "skills", skill.Name, "SKILL.md"),
-				fmt.Sprintf("%d bytes; the cap is %d", len(skill.Body), StandardBytes)})
+				fmt.Sprintf("%d bytes; the cap is %d", size, line.CapStandard)})
 		}
 	}
 	return problems
 }
 
+// frontmatterBlock splits a file into its frontmatter and its body.
+var frontmatterBlock = regexp.MustCompile(`(?s)\A---\n(.*?)\n---\n(.*)\z`)
+
+// frontmatterBody is a file's content after its frontmatter, or the whole text when there is none.
+func frontmatterBody(text string) string {
+	if match := frontmatterBlock.FindStringSubmatch(text); match != nil {
+		return match[2]
+	}
+	return text
+}
+
+// frontmatterField reads one key's value from a file's frontmatter, or "" when it is absent.
+func frontmatterField(text, key string) string {
+	match := frontmatterBlock.FindStringSubmatch(text)
+	if match == nil {
+		return ""
+	}
+	for _, line := range strings.Split(match[1], "\n") {
+		name, value, found := strings.Cut(line, ":")
+		if found && strings.TrimSpace(name) == key {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 // checkDrift reports a rendered host file that differs from what the source renders now.
 func checkDrift(root string) []Problem {
+	defer freezeProfile(root)()
+	defer pinOllamaDown()()
 	var problems []Problem
 	for _, host := range mount.Hosts() {
 		if host.Render == nil {
@@ -260,13 +313,64 @@ func checkProfileDrift(root string) []Problem {
 	return []Problem{{"profile", ".komodo/profile.json", "differs from a fresh detection; run komodo detect"}}
 }
 
+// freezeProfile snapshots the profile cache and returns a func that restores it exactly.
+func freezeProfile(root string) func() {
+	path := filepath.Join(root, ".komodo", "profile.json")
+	data, err := os.ReadFile(path)
+	existed := err == nil
+	return func() {
+		if existed {
+			_ = os.WriteFile(path, data, 0o644)
+			return
+		}
+		_ = os.Remove(path)
+	}
+}
+
+// pinOllamaDown points the local machine probe at a closed port for the caller's duration.
+func pinOllamaDown() func() {
+	previous, existed := os.LookupEnv(profile.OllamaEnv)
+	_ = os.Setenv(profile.OllamaEnv, "127.0.0.1:1")
+	return func() {
+		if existed {
+			_ = os.Setenv(profile.OllamaEnv, previous)
+			return
+		}
+		_ = os.Unsetenv(profile.OllamaEnv)
+	}
+}
+
 // promiseBullet matches a grammar rule bullet naming the snake_case key its accessor is built from.
 var promiseBullet = regexp.MustCompile("(?m)^- \\*\\*`([a-z][a-z0-9_]*)`\\*\\*")
 
-// checkPromises reports a grammar key whose accessor exists but is never called outside its own tests.
+// jsonTagKey extracts the snake_case key a struct field's JSON tag names.
+var jsonTagKey = regexp.MustCompile(`json:"([a-z][a-z0-9_]*)`)
+
+// promise is one grammar key or config field, and where it is promised.
+type promise struct {
+	key    string
+	symbol string
+	where  string
+}
+
+// checkPromises reports a grammar key or config field whose accessor exists but nothing outside its own tests calls.
 func checkPromises(root string) []Problem {
 	var problems []Problem
 	files := sources(root)
+	index := indexSymbols(files)
+	for _, made := range promises(root, files) {
+		if !index.declared[made.symbol] || index.called[made.symbol] {
+			continue
+		}
+		problems = append(problems, Problem{"promises", made.where,
+			made.key + " promises " + made.symbol + ", but nothing outside its own tests calls it"})
+	}
+	return problems
+}
+
+// promises lists every grammar bullet komodo/rules makes and every JSON-tagged struct field the source declares.
+func promises(root string, files []string) []promise {
+	var out []promise
 	for _, path := range markdown(root) {
 		relative := rel(root, path)
 		if !strings.HasPrefix(relative, filepath.Join("komodo", "rules")) {
@@ -278,15 +382,44 @@ func checkPromises(root string) []Problem {
 		}
 		for _, match := range promiseBullet.FindAllStringSubmatch(string(data), -1) {
 			key := match[1]
-			symbol := pascal(key)
-			if !declared(files, symbol) || called(files, symbol) {
-				continue
-			}
-			problems = append(problems, Problem{"promises", relative,
-				key + " promises " + symbol + ", but nothing outside its own tests calls it"})
+			out = append(out, promise{key, pascal(key), relative})
 		}
 	}
-	return problems
+	return append(out, fieldPromises(root, files)...)
+}
+
+// grammarPackages are the packages a repo or a machine's own JSON config populates by field name.
+var grammarPackages = []string{filepath.Join("internal", "profile"), filepath.Join("internal", "repo")}
+
+// fieldPromises lists every struct field with a JSON tag in a grammar package, the key it promises to read.
+func fieldPromises(root string, files []string) []promise {
+	var out []promise
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") || !contains(grammarPackages, filepath.Dir(rel(root, path))) {
+			continue
+		}
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			continue
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			field, ok := node.(*ast.Field)
+			if !ok || field.Tag == nil {
+				return true
+			}
+			match := jsonTagKey.FindStringSubmatch(field.Tag.Value)
+			if match == nil {
+				return true
+			}
+			for _, name := range field.Names {
+				position := fset.Position(name.Pos())
+				out = append(out, promise{match[1], name.Name, fmt.Sprintf("%s:%d", rel(root, path), position.Line)})
+			}
+			return true
+		})
+	}
+	return out
 }
 
 // pascal turns a snake_case grammar key into the accessor name it promises.
@@ -301,36 +434,47 @@ func pascal(key string) string {
 	return out.String()
 }
 
-// declared reports whether any source file declares a function or method named symbol.
-func declared(files []string, symbol string) bool {
-	decl := regexp.MustCompile(`func\s+(?:\([^)]*\)\s+)?` + regexp.QuoteMeta(symbol) + `\(`)
-	for _, path := range files {
-		data, err := os.ReadFile(path)
-		if err == nil && decl.MatchString(string(data)) {
-			return true
-		}
-	}
-	return false
+// symbolIndex records where a symbol is declared and where a real call site uses it.
+type symbolIndex struct {
+	declared map[string]bool
+	called   map[string]bool
 }
 
-// called reports whether a non-test file uses symbol beyond the line that declares it.
-func called(files []string, symbol string) bool {
-	decl := regexp.MustCompile(`func\s+(?:\([^)]*\)\s+)?` + regexp.QuoteMeta(symbol) + `\(`)
-	usage := regexp.MustCompile(`\b` + regexp.QuoteMeta(symbol) + `\b`)
+// indexSymbols parses every source file once, resolving each symbol's declaration and its real call sites.
+func indexSymbols(files []string) symbolIndex {
+	index := symbolIndex{declared: map[string]bool{}, called: map[string]bool{}}
 	for _, path := range files {
-		if strings.HasSuffix(path, "_test.go") {
-			continue
-		}
-		data, err := os.ReadFile(path)
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			continue
 		}
-		text := string(data)
-		if len(usage.FindAllString(text, -1)) > len(decl.FindAllString(text, -1)) {
+		test := strings.HasSuffix(path, "_test.go")
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch n := node.(type) {
+			case *ast.FuncDecl:
+				index.declared[n.Name.Name] = true
+			case *ast.Field:
+				if n.Tag != nil {
+					for _, name := range n.Names {
+						index.declared[name.Name] = true
+					}
+				}
+			case *ast.CallExpr:
+				if !test {
+					if ident, ok := n.Fun.(*ast.Ident); ok {
+						index.called[ident.Name] = true
+					}
+				}
+			case *ast.SelectorExpr:
+				if !test {
+					index.called[n.Sel.Name] = true
+				}
+			}
 			return true
-		}
+		})
 	}
-	return false
+	return index
 }
 
 // checkGit reports conflict markers and the leftovers a run can strand.
@@ -343,12 +487,13 @@ func checkGit(root string) ([]Problem, error) {
 	if strings.TrimSpace(out) != "" {
 		problems = append(problems, Problem{"git", "index", "the index holds unmerged paths"})
 	}
-	for _, path := range sources(root) {
+	for _, path := range textFiles(root) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
-		if strings.Contains(string(data), "\n<<<<<<< ") {
+		text := string(data)
+		if strings.HasPrefix(text, "<<<<<<< ") || strings.Contains(text, "\n<<<<<<< ") {
 			problems = append(problems, Problem{"git", rel(root, path), "a conflict marker is still in the file"})
 		}
 	}
@@ -385,9 +530,10 @@ func Prune(root, base string) ([]string, error) {
 	if _, err := git(root, "worktree", "prune"); err == nil {
 		done = append(done, "pruned the worktree list")
 	}
+	policy := guard.Load(root, root)
 	merged := lines(git(root, "branch", "--merged", base, "--format=%(refname:short)"))
 	for _, branch := range merged {
-		if branch == base || branch == "" || strings.HasPrefix(branch, "*") {
+		if branch == base || branch == "" || strings.HasPrefix(branch, "*") || policy.IsCritical(branch) {
 			continue
 		}
 		if _, err := git(root, "branch", "-d", branch); err == nil {
@@ -435,6 +581,23 @@ func sources(root string) []string {
 			}
 			return nil
 		})
+	}
+	return out
+}
+
+// textFiles lists every Go source, every file under komodo and templates, and the root AGENTS.md.
+func textFiles(root string) []string {
+	out := sources(root)
+	for _, dir := range []string{"komodo", "templates"} {
+		_ = filepath.WalkDir(filepath.Join(root, dir), func(path string, entry os.DirEntry, err error) error {
+			if err == nil && !entry.IsDir() {
+				out = append(out, path)
+			}
+			return nil
+		})
+	}
+	if path := filepath.Join(root, "AGENTS.md"); exists(path) {
+		out = append(out, path)
 	}
 	return out
 }
