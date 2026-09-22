@@ -150,6 +150,7 @@ func TestAProfileThatDriftsFromTheTreeIsFound(t *testing.T) {
 
 func TestAProfileWithNoCacheYetIsNotFound(t *testing.T) {
 	root := clean(t)
+	write(t, root, "go.mod", "module example\n")
 	if got := problemsFrom(t, root)["profile"]; len(got) != 0 {
 		t.Fatalf("profile = %+v, want none before a detection has ever run", got)
 	}
