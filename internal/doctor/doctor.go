@@ -218,18 +218,12 @@ func checkDrift(root string) []Problem {
 		if host.Render == nil {
 			continue
 		}
+		if host.Installed != nil && !host.Installed(root) {
+			continue
+		}
 		plan, err := host.Render(root, mount.BinaryPath())
 		if err != nil {
 			problems = append(problems, Problem{"drift", host.Name, err.Error()})
-			continue
-		}
-		rendered := false
-		for _, action := range plan.Actions() {
-			if action.Verb == "same" || action.Verb == "keep" {
-				rendered = true
-			}
-		}
-		if !rendered {
 			continue
 		}
 		for _, action := range plan.Actions() {

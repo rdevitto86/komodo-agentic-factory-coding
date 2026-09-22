@@ -192,3 +192,19 @@ func TestTokensCountFourCharacters(t *testing.T) {
 		t.Fatalf("tokens = %d", tokens(400))
 	}
 }
+
+func TestAHostThatSaysItIsNotInstalledHereIsSkipped(t *testing.T) {
+	root := clean(t)
+	mount.Register(mount.Host{Name: "absenthost",
+		Installed: func(string) bool { return false },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "absenthost", Root: root}
+			plan.Add(filepath.Join(root, "absent.txt"), []byte("new\n"), "never rendered")
+			return plan, nil
+		}})
+	for _, problem := range problemsFrom(t, root)["drift"] {
+		if problem.Where == "absent.txt" {
+			t.Fatal("a host that says it is not installed here has nothing to drift from")
+		}
+	}
+}
