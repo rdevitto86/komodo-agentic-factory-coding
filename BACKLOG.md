@@ -271,7 +271,7 @@ type: feat
 version: 2.0.0
 ```
 * **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof runs one group each way before anything is deleted.
-* **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
+* **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping, and a session start with no permission-rule warning. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
 
 #### [TSK-03.4.1] The run, review, backlog, and respond skills [P: C] [READY]
 ```yaml
@@ -308,6 +308,19 @@ context:
   - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 2.0.0 changelog entry"
   - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.5 merges"
 type: docs
+```
+
+#### [TSK-03.4.4] The permissions layer denies on edit only [P: H] [DONE]
+```yaml
+files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, .claude/settings.json]
+done_when:
+  - go test ./internal/mount/...
+  - test -z "$(grep -c 'Write(' .claude/settings.json | grep -v '^0$')"
+depends_on: [TSK-03.3.2]
+context:
+  - "the host matches a file permission rule on Edit only; a Write(path) deny entry is inert and the host prints a warning for each one at session start"
+  - "denyList emits one Edit entry per config path and no Write entry; the guard is unchanged and still the real refusal"
+type: fix
 ```
 
 ### [TG-03.5] The repo layer and the local machines
