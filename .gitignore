@@ -2,7 +2,7 @@
 .claude/
 .codex/
 .agents/
-.komodo/
+/.komodo/
 
 # Personal overlays the install seeds once and never overwrites
 CLAUDE.local.md

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"komodo/internal/backlog"
+	repopkg "komodo/internal/repo"
 )
 
 // SkillsDir is where the shipped skills live, relative to the repo root.
@@ -137,7 +138,7 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 		"title":        task.Title,
 		"task_block":   blockText(parsed, task),
 		"repo_rules":   repoRules(cwd),
-		"repo_context": "None declared for this repo.",
+		"repo_context": repoContextSlot(cwd, task),
 		"context":      contextSlot(cwd, task),
 		"files":        filesSlot(cwd, task),
 		"standards":    standardsSlot(StandardsFor(standards, task.Files(), role)),
@@ -200,6 +201,21 @@ func repoRules(cwd string) string {
 		return Clip(string(data), CapRepoRules, "AGENTS.md")
 	}
 	return "No repo-level rules file. Follow the standards below and the code's existing idioms."
+}
+
+// repoContextSlot renders every repo context file whose paths match the task's files, clipped.
+func repoContextSlot(cwd string, task backlog.Task) string {
+	contexts, _ := repopkg.LoadContext(cwd)
+	var parts []string
+	for _, context := range contexts {
+		if context.Matches(task.Files()) {
+			parts = append(parts, Clip(context.Body, CapRepoContext, context.Name))
+		}
+	}
+	if len(parts) == 0 {
+		return "None declared for this repo."
+	}
+	return strings.Join(parts, "\n\n---\n\n")
 }
 
 // contextSlot resolves each context anchor to its section, clipped.
