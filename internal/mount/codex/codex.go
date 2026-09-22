@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"komodo/internal/detect"
+	"komodo/internal/facet"
 	"komodo/internal/install"
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
@@ -56,6 +58,15 @@ func Render(root string, binary string) (install.Plan, error) {
 		plan.AddProject(filepath.Join(root, SkillsDir, skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
 	}
 
+	for _, name := range facetSkills(root) {
+		loaded, err := facet.Load(root, name)
+		if err != nil {
+			continue
+		}
+		plan.AddProject(filepath.Join(root, SkillsDir, "facet-"+loaded.Name, "SKILL.md"),
+			[]byte(loaded.Skill), "the "+loaded.Name+" facet's setup skill")
+	}
+
 	hooks, err := hooksFile(binary)
 	if err != nil {
 		return plan, err
@@ -83,6 +94,15 @@ func repoSkills(root string, skills []mount.Skill) []mount.Skill {
 		mergeOverride(&skills, byName, override.Name, override.New, override.Body)
 	}
 	return skills
+}
+
+// facetSkills names the facets the detected profile and the repo's own additions select.
+func facetSkills(root string) []string {
+	names, err := facet.Select(root, detect.Load(root), nil)
+	if err != nil {
+		return nil
+	}
+	return names
 }
 
 // mergeOverride appends a new skill, or a "Repo overrides" section onto a shipped one by name.
