@@ -14,6 +14,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/detect"
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
 	"komodo/internal/guard"
@@ -46,6 +47,7 @@ const usage = `komodo: the code assembly line.
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo install --host X     Mount this repo on a host, or on both
+  komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
   komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
   komodo guard [check]        The one agent hook; check runs its table
   komodo run [group|task]     Drive the line headless on this host, under a budget
@@ -89,6 +91,8 @@ func main() {
 		runTag(root)
 	case "release":
 		runRelease(root, os.Args[2:])
+	case "detect":
+		runDetect(root, os.Args[2:])
 	case "doctor":
 		runDoctor(root, os.Args[2:])
 	case "install":
@@ -811,6 +815,40 @@ func runInstall(root string, args []string) {
 		}
 		fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
 	}
+}
+
+// runDetect prints the cached repo profile, detecting fresh when the manifests it read have changed.
+func runDetect(root string, args []string) {
+	set := flag.NewFlagSet("detect", flag.ExitOnError)
+	asJSON := set.Bool("json", false, "print JSON")
+	_ = set.Parse(args)
+	found := detect.Load(root)
+	if *asJSON {
+		printJSON(found)
+		return
+	}
+	fmt.Printf("languages: %s\n", listOrNone(found.Languages))
+	fmt.Printf("cloud: %s\n", listOrNone(found.Cloud))
+	fmt.Printf("data: %s\n", listOrNone(found.Data))
+	fmt.Printf("ci: %s\n", listOrNone(found.CI))
+	fmt.Printf("verify: %s\n", stringOrNone(found.Verify))
+	fmt.Printf("compile: %s\n", stringOrNone(found.Compile))
+}
+
+// listOrNone joins a list for display, or names it empty.
+func listOrNone(items []string) string {
+	if len(items) == 0 {
+		return "none"
+	}
+	return strings.Join(items, ", ")
+}
+
+// stringOrNone names an empty command as none.
+func stringOrNone(value string) string {
+	if value == "" {
+		return "none"
+	}
+	return value
 }
 
 // runDoctor audits the repo and, with --prune, clears what a run stranded.
