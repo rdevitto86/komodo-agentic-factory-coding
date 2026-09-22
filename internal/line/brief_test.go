@@ -215,3 +215,32 @@ func TestTheBriefLandsInTheWorktreeTheBuilderWorksIn(t *testing.T) {
 		}
 	}
 }
+
+func TestTheBriefCarriesTheSchemaItWillBeJudgedAgainst(t *testing.T) {
+	root := briefRepo(t)
+	schema := "{\n  \"type\": \"object\",\n  \"required\": [\"result\", \"summary\", \"verified\"]\n}"
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "builder.schema.json"), []byte(schema), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "\"required\"") || !strings.Contains(brief.Text, "\"summary\"") {
+		t.Fatalf("a result cannot be judged against a schema the brief never showed:\n%s", brief.Text)
+	}
+	if brief.Slots["schema"] == 0 {
+		t.Fatal("the schema must be a counted slot")
+	}
+}
+
+func TestABriefWithoutASchemaStillNamesTheResultPath(t *testing.T) {
+	root := briefRepo(t)
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, brief.Result) {
+		t.Fatal("the brief must name where the result goes even when no schema ships")
+	}
+}

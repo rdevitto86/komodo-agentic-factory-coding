@@ -144,12 +144,13 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 		"done_when":    doneWhenSlot(task),
 		"failure":      failureSlot(failure),
 		"result_path":  result,
+		"schema":       SchemaText(root, role),
 	}
 	text, err := Fill(definition.Body, slots)
 	if err != nil {
 		return nil, err
 	}
-	text = strings.TrimSpace(text) + resultLine(result)
+	text = strings.TrimSpace(text) + resultLine(result, slots["schema"])
 	brief := &Brief{
 		Task: taskID, Role: role, Result: result, Text: text, Tokens: Tokens(text),
 		Path:     filepath.Join(StateDir, "briefs", taskID+".md"),
@@ -162,9 +163,13 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 	return brief, nil
 }
 
-// resultLine tells the machine where its result JSON belongs.
-func resultLine(result string) string {
-	return "\n\n# Your result\nWrite the JSON your schema describes to `" + result + "`.\n"
+// resultLine tells the machine where its result JSON belongs and the exact shape it must have.
+func resultLine(result, schema string) string {
+	line := "\n\n# Your result\nWrite this JSON to `" + result + "`.\n"
+	if schema == "" {
+		return line
+	}
+	return line + "\nIt must satisfy this schema. Every key under `required` is mandatory, at every level.\n\n```json\n" + schema + "\n```\n"
 }
 
 // Fill substitutes every placeholder; an unsupplied slot fails so nothing ships half-filled.
