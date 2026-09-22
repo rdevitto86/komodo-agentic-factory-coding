@@ -187,6 +187,41 @@ func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	}
 }
 
+func TestAPromisedAccessorWithNoRealCallerIsFound(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/rules/backlog.md", "# Backlog grammar\n\n## Rules\n"+
+		"- **`severity_floor`** is how low a finding may sink before a review blocks it.\n")
+	write(t, root, "internal/profile/floor.go", "package profile\n\nfunc SeverityFloor() int { return 0 }\n")
+	write(t, root, "internal/profile/floor_test.go",
+		"package profile\n\nimport \"testing\"\n\nfunc TestSeverityFloor(t *testing.T) { SeverityFloor() }\n")
+	got := problemsFrom(t, root)["promises"]
+	if len(got) != 1 || !strings.Contains(got[0].Detail, "SeverityFloor") ||
+		!strings.Contains(got[0].Detail, "nothing outside its own tests calls it") {
+		t.Fatalf("promises = %+v", got)
+	}
+}
+
+func TestAPromisedAccessorWithARealCallerPasses(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/rules/backlog.md", "# Backlog grammar\n\n## Rules\n"+
+		"- **`severity_floor`** is how low a finding may sink before a review blocks it.\n")
+	write(t, root, "internal/profile/floor.go", "package profile\n\nfunc SeverityFloor() int { return 0 }\n")
+	write(t, root, "internal/review/gate.go",
+		"package review\n\nimport \"komodo/internal/profile\"\n\nfunc Gate() int { return profile.SeverityFloor() }\n")
+	if got := problemsFrom(t, root)["promises"]; len(got) != 0 {
+		t.Fatalf("promises = %+v, want none: a real caller reads the accessor", got)
+	}
+}
+
+func TestAGrammarKeyWithNoAccessorIsNotFound(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/rules/backlog.md", "# Backlog grammar\n\n## Rules\n"+
+		"- **`unwritten_key`** describes a key no accessor exists for yet.\n")
+	if got := problemsFrom(t, root)["promises"]; len(got) != 0 {
+		t.Fatalf("promises = %+v, want none: no accessor exists to call", got)
+	}
+}
+
 func TestTokensCountFourCharacters(t *testing.T) {
 	if tokens(400) != 100 {
 		t.Fatalf("tokens = %d", tokens(400))

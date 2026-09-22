@@ -45,6 +45,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkBudgets(root)...)
 	problems = append(problems, checkDrift(root)...)
 	problems = append(problems, checkProfileDrift(root)...)
+	problems = append(problems, checkPromises(root)...)
 	if !options.NoGit {
 		found, err := checkGit(root)
 		if err != nil {
@@ -257,6 +258,79 @@ func checkProfileDrift(root string) []Problem {
 		return nil
 	}
 	return []Problem{{"profile", ".komodo/profile.json", "differs from a fresh detection; run komodo detect"}}
+}
+
+// promiseBullet matches a grammar rule bullet naming the snake_case key its accessor is built from.
+var promiseBullet = regexp.MustCompile("(?m)^- \\*\\*`([a-z][a-z0-9_]*)`\\*\\*")
+
+// checkPromises reports a grammar key whose accessor exists but is never called outside its own tests.
+func checkPromises(root string) []Problem {
+	var problems []Problem
+	files := sources(root)
+	for _, path := range markdown(root) {
+		relative := rel(root, path)
+		if !strings.HasPrefix(relative, filepath.Join("komodo", "rules")) {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, match := range promiseBullet.FindAllStringSubmatch(string(data), -1) {
+			key := match[1]
+			symbol := pascal(key)
+			if !declared(files, symbol) || called(files, symbol) {
+				continue
+			}
+			problems = append(problems, Problem{"promises", relative,
+				key + " promises " + symbol + ", but nothing outside its own tests calls it"})
+		}
+	}
+	return problems
+}
+
+// pascal turns a snake_case grammar key into the accessor name it promises.
+func pascal(key string) string {
+	var out strings.Builder
+	for _, part := range strings.Split(key, "_") {
+		if part == "" {
+			continue
+		}
+		out.WriteString(strings.ToUpper(part[:1]) + part[1:])
+	}
+	return out.String()
+}
+
+// declared reports whether any source file declares a function or method named symbol.
+func declared(files []string, symbol string) bool {
+	decl := regexp.MustCompile(`func\s+(?:\([^)]*\)\s+)?` + regexp.QuoteMeta(symbol) + `\(`)
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err == nil && decl.MatchString(string(data)) {
+			return true
+		}
+	}
+	return false
+}
+
+// called reports whether a non-test file uses symbol beyond the line that declares it.
+func called(files []string, symbol string) bool {
+	decl := regexp.MustCompile(`func\s+(?:\([^)]*\)\s+)?` + regexp.QuoteMeta(symbol) + `\(`)
+	usage := regexp.MustCompile(`\b` + regexp.QuoteMeta(symbol) + `\b`)
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		text := string(data)
+		if len(usage.FindAllString(text, -1)) > len(decl.FindAllString(text, -1)) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkGit reports conflict markers and the leftovers a run can strand.
