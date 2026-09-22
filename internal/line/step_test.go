@@ -283,3 +283,48 @@ func TestARepairGivesUpAtTheProfilesLimit(t *testing.T) {
 		t.Fatalf("action = %+v; the line must stop, not repair forever", next)
 	}
 }
+
+const twoGroups = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-12.1.1] One [P: C] [DONE]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
+	"### [TG-12.2] The next group\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	"#### [TSK-12.2.1] Later [P: C] [READY]\n```yaml\nfiles: [c/later.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
+
+func TestALaterReadyGroupCannotStealAnUnshippedRun(t *testing.T) {
+	root := repo(t, twoGroups)
+	state := RunState{
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, root, "TSK-12.1.1")
+	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "reviewer" {
+		t.Fatalf("action = %+v; an unshipped run keeps its review and ship stations", next)
+	}
+}
+
+func TestStepMovesOnOnceTheRunHasShipped(t *testing.T) {
+	root := repo(t, twoGroups)
+	state := RunState{
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, root, "TSK-12.1.1")
+	Stamp(root, ledger.Entry{Group: "TG-12.1", Station: "ship", Outcome: "done"})
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Command != "komodo next --start TG-12.2 --base main" {
+		t.Fatalf("action = %+v; a shipped run releases the line to the next group", next)
+	}
+}

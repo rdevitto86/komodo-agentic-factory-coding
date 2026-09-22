@@ -42,6 +42,11 @@ func Step(root, needle string) (*Action, error) {
 		}
 	}
 	state, runErr := LoadRun(root)
+	if runErr == nil && needle == "" && state.Group != plan.Group {
+		if open, err := openRun(root, state.Group); err == nil && open != nil {
+			plan = open
+		}
+	}
 	if runErr != nil || state.Group != plan.Group {
 		return action(root, plan, Action{
 			Action:  "run",
@@ -200,3 +205,23 @@ func staleBrief(root, taskID string) bool {
 	return brief.ModTime().Before(attempt.ModTime())
 }
 
+
+// openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
+func openRun(root, groupID string) (*Plan, error) {
+	plan, err := PlanForGroup(root, groupID)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if shipped(root, plan, parsed) {
+		return nil, nil
+	}
+	return plan, nil
+}
