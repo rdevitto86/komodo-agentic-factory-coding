@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"komodo/internal/ledger"
+	"komodo/internal/mount"
+	"komodo/internal/profile"
 )
 
 const stepBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -228,6 +230,44 @@ func TestAnOllamaMachineBecomesACommandNotASpawn(t *testing.T) {
 	got := action(t.TempDir(), plan, Action{Action: "spawn", Role: "reviewer", Task: "TSK-12.1.1"})
 	if got.Action != "run" || got.Command != "komodo machine --role reviewer TSK-12.1.1" || got.Role != "" {
 		t.Fatalf("action = %+v", got)
+	}
+}
+
+func TestALightTaskTierKeepsAWritingRoleOnTheHostsStandardTier(t *testing.T) {
+	plan := &Plan{
+		Roles: []Role{{Name: "builder", Tier: "standard", Tools: []string{"read", "edit", "write", "shell", "search"}, Session: true}},
+		Profile: profile.Profile{Tiers: mount.Tiers{
+			Light:    mount.Machine{Provider: "ollama", Model: "llama3.2"},
+			Standard: mount.Machine{Provider: "claude", Model: "sonnet"},
+		}},
+		Worktree: ".",
+	}
+	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "builder", Task: "TSK-12.1.1"}, "light")
+	if got.Action != "spawn" || got.Role != "builder" || got.Machine != "claude/sonnet" {
+		t.Fatalf("action = %+v, want the spawn kept on the host's standard tier", got)
+	}
+}
+
+func TestBeforeReviewLooksUpTheAbsoluteWorktree(t *testing.T) {
+	worktree := t.TempDir()
+	commandsDir := filepath.Join(worktree, StateDir)
+	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"before_review":"make lint"}`
+	if err := os.WriteFile(filepath.Join(commandsDir, "commands.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{Roles: []Role{{Name: "reviewer", Tier: "heavy"}}, Worktree: worktree}
+	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "reviewer", Task: "x"}, "")
+	found := false
+	for _, command := range got.Commands {
+		if command == "make lint" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("commands = %v, want before_review from the absolute worktree", got.Commands)
 	}
 }
 

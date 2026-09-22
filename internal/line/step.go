@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"komodo/internal/backlog"
+	"komodo/internal/mount/ollama"
 )
 
 // Action is the one next thing a session should do. The station order lives here and nowhere else.
@@ -160,13 +161,15 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 		next.Commands = append(next.Commands, command)
 	}
 	if next.Role == "reviewer" {
-		if command := BeforeReviewCommand(filepath.Join(root, plan.Worktree)); command != "" {
+		if command := BeforeReviewCommand(WorktreePath(root, plan.Worktree)); command != "" {
 			next.Commands = append(next.Commands, command)
 		}
 	}
 	if next.Role != "" {
+		var matched Role
 		for _, role := range plan.Roles {
 			if role.Name == next.Role {
+				matched = role
 				next.Machine = role.Machine
 				if next.Machine == "" {
 					next.Machine = role.Tier
@@ -175,6 +178,9 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 					next.Machine = machineFor(plan.Profile, taskTier)
 				}
 			}
+		}
+		if next.Machine == "ollama" && (matched.Session || !ollama.Allowed(matched.Tools)) {
+			next.Machine = machineFor(plan.Profile, "standard")
 		}
 		if next.Machine == "ollama" {
 			next.Action = "run"

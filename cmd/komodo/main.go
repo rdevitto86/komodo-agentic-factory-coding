@@ -741,7 +741,10 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	model := profile.Select(root).Tiers.Machine(definition.Tier).Model
+	model, err := localModel(profile.Select(root).Tiers, definition.Tier)
+	if err != nil {
+		fail(err)
+	}
 	result, err := ollama.Post(ollama.BaseURL(), model, string(brief), schema)
 	if err != nil {
 		fail(err)
@@ -768,6 +771,19 @@ func runMachine(root string, args []string) {
 		fail(err)
 	}
 	fmt.Println("wrote", line.ResultPath(root, taskID))
+}
+
+// localModel resolves a role's tier to the model of whichever tier the local machine mounts.
+func localModel(tiers mount.Tiers, tier string) (string, error) {
+	if machine := tiers.Machine(tier); machine.Provider == "ollama" {
+		return machine.Model, nil
+	}
+	for _, fallback := range []string{"light", "standard", "heavy"} {
+		if machine := tiers.Machine(fallback); machine.Provider == "ollama" {
+			return "", fmt.Errorf("%s tier does not mount the local machine; falls back to %s", tier, fallback)
+		}
+	}
+	return "", fmt.Errorf("no tier mounts the local machine")
 }
 
 // splitTaskArg pulls the task id out of a machine invocation's args, wherever it falls among the flags.

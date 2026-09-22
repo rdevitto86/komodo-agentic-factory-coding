@@ -115,7 +115,15 @@ func MergeOverride(skills *[]Skill, byName map[string]int, name string, isNew bo
 		*skills = append(*skills, Skill{Name: name, Body: body})
 		return
 	}
-	(*skills)[index].Body = strings.TrimRight((*skills)[index].Body, "\n") + "\n\n## Repo overrides\n\n" + body + "\n"
+	(*skills)[index].Body = strings.TrimRight((*skills)[index].Body, "\n") + "\n\n## Repo overrides\n\n" + stripFrontmatter(body) + "\n"
+}
+
+// stripFrontmatter removes a leading frontmatter block, so an override never nests one in a body.
+func stripFrontmatter(body string) string {
+	if match := frontmatter.FindStringSubmatch(body); match != nil {
+		return strings.TrimSpace(match[2])
+	}
+	return body
 }
 
 // Instructions is a role's body without the brief template, which is what a session agent reads.

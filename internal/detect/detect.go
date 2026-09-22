@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -75,7 +76,8 @@ func Load(root string) Profile {
 	data, err := os.ReadFile(path)
 	if err == nil {
 		var cached cache
-		if json.Unmarshal(data, &cached) == nil && cached.Hash == hash && sameManifests(cached.Manifests, manifests) {
+		fresh := json.Unmarshal(data, &cached) == nil && cached.Hash == hash && sameManifests(cached.Manifests, manifests)
+		if fresh && reflect.DeepEqual(cached.Profile, profile) {
 			return cached.Profile
 		}
 	}

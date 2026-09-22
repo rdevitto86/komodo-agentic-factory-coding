@@ -3,6 +3,7 @@ package detect
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -172,5 +173,30 @@ func TestLoadNoticesAManifestThatDidNotExistAtTheLastWalk(t *testing.T) {
 	updated := Load(root)
 	if updated.Verify != "go test ./..." {
 		t.Fatalf("verify = %q, want the new go.mod to be detected", updated.Verify)
+	}
+}
+
+func TestLoadNoticesALanguageAddedWithNoManifestOfItsOwn(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example\n")
+	write(t, root, "main.go", "package main\n")
+
+	first := Load(root)
+	if len(first.Languages) != 1 || first.Languages[0] != "Go" {
+		t.Fatalf("languages = %v, want [Go]", first.Languages)
+	}
+
+	write(t, root, "script.py", "print('hi')\n")
+	updated := Load(root)
+	if len(updated.Languages) != 2 || updated.Languages[0] != "Go" || updated.Languages[1] != "Python" {
+		t.Fatalf("languages = %v, want [Go Python] once a .py file exists though no manifest changed", updated.Languages)
+	}
+
+	cached, err := os.ReadFile(filepath.Join(root, cacheFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cached), "Python") {
+		t.Fatalf("cache = %s, want the fresh languages saved", cached)
 	}
 }

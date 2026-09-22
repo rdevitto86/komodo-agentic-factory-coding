@@ -280,6 +280,9 @@ func TestARepoStandardWithFrontmatterStillMergesIntoAShippedOne(t *testing.T) {
 		!strings.Contains(got, "naked returns") {
 		t.Fatalf("standard = %q", got)
 	}
+	if strings.Contains(got, "globs:") {
+		t.Fatalf("standard = %q, the override's own frontmatter must not appear in the body", got)
+	}
 }
 
 func TestRepoSkillWithFrontmatterIsNew(t *testing.T) {

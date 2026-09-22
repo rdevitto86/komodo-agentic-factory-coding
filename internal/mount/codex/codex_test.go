@@ -175,6 +175,9 @@ func TestARepoSkillWithFrontmatterStillMergesIntoAShippedOne(t *testing.T) {
 		!strings.Contains(got, "through a Makefile") {
 		t.Fatalf("skill = %q", got)
 	}
+	if strings.Count(got, "---\nname: builder\n---") > 1 {
+		t.Fatalf("skill = %q, the override's own frontmatter must not repeat in the body", got)
+	}
 }
 
 func TestRenderSkipsAFacetNameThatTriesToEscapeTheFacetsRoot(t *testing.T) {
