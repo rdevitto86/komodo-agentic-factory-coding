@@ -586,3 +586,27 @@ context:
   - "PlanForRun and pinWaves patched the callers one at a time; make it impossible instead, so a plan cannot be built without stating whether it is the open run or a fresh group"
 type: refactor
 ```
+
+#### [TSK-03.6.11] `komodo diff` truncates the diff it hands the reviewer [P: H] [READY]
+```yaml
+files: [internal/line/diff.go, internal/line/diff_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.1]
+context:
+  - "the third TG-03.5 review reported the input truncated mid-file and read the worktree directly instead; a reviewer silently working from a cut diff is a review of something other than the change"
+  - "either clip on a file boundary and say how many files were dropped, or page the diff; never end mid-hunk with no marker"
+type: fix
+```
+
+#### [TSK-03.6.12] The manifest hash in the profile cache decides nothing [P: L] [READY]
+```yaml
+files: [internal/detect/detect.go, internal/detect/detect_test.go]
+done_when:
+  - go test ./internal/detect/...
+depends_on: [TSK-03.6.11]
+context:
+  - "Load now walks the tree on every call and returns the fresh profile, so hashManifests and sameManifests only decide whether the file is rewritten, never what a caller sees; the walk they exist to avoid always runs"
+  - "drop the hash comparison and keep the equality guard, or restore a cache read that genuinely skips the walk"
+type: refactor
+```
