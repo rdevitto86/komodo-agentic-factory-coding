@@ -82,7 +82,7 @@ version: 2.0.0
 * **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
 * **PR B:** `feat/v2-conveyor` from `refactor/v2-markdown`, opened by the session. Validated by `komodo gate`, `komodo lint`, `komodo next --json` printing TG-03.3, `komodo brief --dry-run TSK-03.3.1`, `komodo close` on a hand-written result, `komodo step` printing one action, and a human read of one brief. Merges into `refactor/v2-markdown`.
 
-#### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [READY]
+#### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [DONE]
 ```yaml
 files: [go.mod, cmd/komodo/main.go, internal/backlog, internal/gate, bin, .gitattributes]
 done_when:
@@ -98,7 +98,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.2] Intake: `komodo next` [P: C] [READY]
+#### [TSK-03.2.2] Intake: `komodo next` [P: C] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/next_test.go, internal/line/worktree.go]
 done_when:
@@ -111,7 +111,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.3] Input device: `komodo brief` [P: C] [READY]
+#### [TSK-03.2.3] Input device: `komodo brief` [P: C] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/line/brief_test.go, internal/line/clip.go]
 done_when:
@@ -125,7 +125,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.4] Output device: `komodo close <task>` [P: C] [READY]
+#### [TSK-03.2.4] Output device: `komodo close <task>` [P: C] [DONE]
 ```yaml
 files: [internal/line/close.go, internal/line/close_test.go, internal/line/schema.go, internal/comments]
 done_when:
@@ -138,7 +138,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.5] QC and ship: `komodo close --wave` and `--group` [P: C] [READY]
+#### [TSK-03.2.5] QC and ship: `komodo close --wave` and `--group` [P: C] [DONE]
 ```yaml
 files: [internal/line/wave.go, internal/line/ship.go, internal/line/verify.go, internal/line/wave_test.go, internal/pr]
 done_when:
@@ -152,7 +152,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.6] `komodo diff`, `report`, `tag`, and `release check` [P: H] [READY]
+#### [TSK-03.2.6] `komodo diff`, `report`, `tag`, and `release check` [P: H] [DONE]
 ```yaml
 files: [internal/line/diff.go, internal/line/report.go, internal/release, internal/line/diff_test.go]
 done_when:
@@ -165,7 +165,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.7] The ledger and `komodo metrics` [P: H] [READY]
+#### [TSK-03.2.7] The ledger and `komodo metrics` [P: H] [DONE]
 ```yaml
 files: [internal/ledger, internal/line, cmd/komodo/main.go]
 done_when:
@@ -178,7 +178,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.8] `komodo step`: the binary drives the session [P: C] [READY]
+#### [TSK-03.2.8] `komodo step`: the binary drives the session [P: C] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/step_test.go, cmd/komodo/main.go]
 done_when:
