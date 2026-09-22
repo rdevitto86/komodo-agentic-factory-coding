@@ -89,12 +89,17 @@ func bodySpan(lines []string, index int, family string) (int, int) {
 	return statements, returns
 }
 
-// documentedAbove reports whether the previous non-blank line is a comment.
+// documentedAbove reports whether the nearest line above, skipping blanks and attributes, is a comment.
 func documentedAbove(lines []string, index int, family string) bool {
 	marker := lineMarker[family]
 	look := index - 1
-	for look >= 0 && strings.TrimSpace(lines[look]) == "" {
-		look--
+	for look >= 0 {
+		trimmed := strings.TrimSpace(lines[look])
+		if trimmed == "" || IsAnnotation(trimmed) {
+			look--
+			continue
+		}
+		break
 	}
 	if look < 0 {
 		return false
@@ -104,8 +109,14 @@ func documentedAbove(lines []string, index int, family string) bool {
 		hasPrefixAny(previous, "/**", "/*", "///")
 }
 
-// hasDocstring reports whether a declaration's first body line opens a Python docstring.
+// hasDocstring reports whether the line after a declaration's wrapped signature opens a Python docstring.
 func hasDocstring(lines []string, index int) bool {
+	for index < len(lines) && !strings.HasSuffix(strings.TrimSpace(lines[index]), ":") {
+		index++
+	}
+	if index >= len(lines) {
+		return false
+	}
 	for _, line := range lines[index+1:] {
 		stripped := strings.TrimSpace(line)
 		if stripped == "" {
@@ -253,9 +264,14 @@ func InvalidComments(text, path string) []Finding {
 			continue
 		}
 		words := len(strings.Fields(body))
-		if len(body) > MaxChars || words > MaxWords {
+		if words > MaxWords {
 			findings = append(findings, Finding{lineno, "OVER_WORDS",
 				fmt.Sprintf("comment runs %d words; the cap is %d", words, MaxWords)})
+			continue
+		}
+		if len(body) > MaxChars {
+			findings = append(findings, Finding{lineno, "OVER_CHARS",
+				fmt.Sprintf("comment runs %d characters; the cap is %d", len(body), MaxChars)})
 			continue
 		}
 		if cited := ExternalReference(body); cited != "" {

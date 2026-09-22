@@ -138,6 +138,50 @@ func TestPythonDocstringCountsAsDocumentation(t *testing.T) {
 	}
 }
 
+func TestPythonWrappedSignatureDocstringIsAccepted(t *testing.T) {
+	text := "def exported(\n    a,\n    b,\n):\n    \"\"\"Returns the sum of a and b.\"\"\"\n    x = a + b\n    return x\n"
+	if got := UndocumentedFunctions(text, "a/b.py", "nonobvious"); len(got) != 0 {
+		t.Fatalf("a wrapped signature's docstring was not seen: %+v", got)
+	}
+}
+
+func TestDocCommentAboveARustAttributeIsSeen(t *testing.T) {
+	text := "package a\n\n// Rounds a value up to the nearest unit.\n#[must_use]\npub fn exported() -> i32 {\n\tlet x = 1;\n\tx\n}\n"
+	if got := UndocumentedFunctions(text, "a/b.rs", "exported"); len(got) != 0 {
+		t.Fatalf("a doc comment above a rust attribute was not seen: %+v", got)
+	}
+}
+
+func TestDocCommentAboveAJavaAnnotationIsSeen(t *testing.T) {
+	text := "package a;\n\n// Handles the health check endpoint.\n@GetMapping(\"/health\")\npublic String exported() {\n\tString x = \"ok\";\n\treturn x;\n}\n"
+	if got := UndocumentedFunctions(text, "a/b.java", "exported"); len(got) != 0 {
+		t.Fatalf("a doc comment above a java annotation was not seen: %+v", got)
+	}
+}
+
+func TestIOAndIEAreNotFirstPerson(t *testing.T) {
+	text := "package a\n\nvar x = 1 // reads the I/O buffer before the next write, i.e. before flush\n"
+	if got := InvalidComments(text, "a/b.go"); len(got) != 0 {
+		t.Fatalf("I/O or i.e. was read as first person: %+v", got)
+	}
+}
+
+func TestLonePronounIIsStillFirstPerson(t *testing.T) {
+	text := "package a\n\nvar x = 1 // I return the cached value here\n"
+	got := rules(InvalidComments(text, "a/b.go"))
+	if len(got) != 1 || got[0] != "NARRATIVE" {
+		t.Fatalf("rules = %v", got)
+	}
+}
+
+func TestOverLongCharacterCommentIsFlaggedSeparately(t *testing.T) {
+	text := "package a\n\nvar x = 1 // " + strings.Repeat("alphabetic ", 15) + "\n"
+	got := rules(InvalidComments(text, "a/b.go"))
+	if len(got) != 1 || got[0] != "OVER_CHARS" {
+		t.Fatalf("rules = %v", got)
+	}
+}
+
 func TestHashInsideADocstringIsNotAComment(t *testing.T) {
 	text := "def exported():\n    \"\"\"Returns one # not a comment at all, and long enough to break every cap the lint has.\"\"\"\n    return 1\n"
 	if got := InvalidComments(text, "a/b.py"); len(got) != 0 {
