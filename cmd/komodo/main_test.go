@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"komodo/internal/mount"
@@ -33,8 +34,12 @@ func TestLocalModelRejectsAHeavyTierWhenOnlyLightRunsLocally(t *testing.T) {
 		Standard: mount.Machine{Provider: "claude", Model: "sonnet"},
 		Heavy:    mount.Machine{Provider: "claude", Model: "opus"},
 	}
-	if _, err := localModel(tiers, "heavy"); err == nil {
+	_, err := localModel(tiers, "heavy")
+	if err == nil {
 		t.Fatal("want an error naming light as the fallback tier, got none")
+	}
+	if !strings.Contains(err.Error(), "light") {
+		t.Fatalf("err = %q, want it to name light as the fallback tier", err.Error())
 	}
 }
 

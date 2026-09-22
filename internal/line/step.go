@@ -180,7 +180,10 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 			}
 		}
 		if next.Machine == "ollama" && (matched.Session || !ollama.Allowed(matched.Tools)) {
-			next.Machine = machineFor(plan.Profile, "standard")
+			next.Machine = matched.Tier
+			if remote, ok := plan.Profile.Tiers.FirstRemote(); ok {
+				next.Machine = remote.Provider + "/" + remote.Model
+			}
 		}
 		if next.Machine == "ollama" {
 			next.Action = "run"

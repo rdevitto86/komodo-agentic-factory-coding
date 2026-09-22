@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/detect"
 	"komodo/internal/mount"
 )
 
@@ -134,6 +135,23 @@ func TestAnOversizedRunSkillIsFound(t *testing.T) {
 	got := problemsFrom(t, root)["budgets"]
 	if len(got) == 0 || !strings.Contains(got[0].Detail, "the cap is 800") {
 		t.Fatalf("budgets = %+v", got)
+	}
+}
+
+func TestAProfileThatDriftsFromTheTreeIsFound(t *testing.T) {
+	root := clean(t)
+	detect.Load(root)
+	write(t, root, "go.mod", "module example\n")
+	got := problemsFrom(t, root)["profile"]
+	if len(got) != 1 || !strings.Contains(got[0].Detail, "differs from a fresh detection") {
+		t.Fatalf("profile = %+v", got)
+	}
+}
+
+func TestAProfileWithNoCacheYetIsNotFound(t *testing.T) {
+	root := clean(t)
+	if got := problemsFrom(t, root)["profile"]; len(got) != 0 {
+		t.Fatalf("profile = %+v, want none before a detection has ever run", got)
 	}
 }
 

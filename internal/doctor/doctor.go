@@ -244,7 +244,10 @@ func checkDrift(root string) []Problem {
 
 // checkProfileDrift reports when the cached repo profile does not match a fresh detection.
 func checkProfileDrift(root string) []Problem {
-	cached := detect.Load(root)
+	cached, ok := detect.LoadCached(root)
+	if !ok {
+		return nil
+	}
 	fresh, _ := detect.Detect(root)
 	if reflect.DeepEqual(cached, fresh) {
 		return nil

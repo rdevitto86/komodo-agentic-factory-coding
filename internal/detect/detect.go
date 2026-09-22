@@ -85,6 +85,19 @@ func Load(root string) Profile {
 	return profile
 }
 
+// LoadCached reads the profile straight from the cache file, without walking the tree or saving.
+func LoadCached(root string) (Profile, bool) {
+	data, err := os.ReadFile(filepath.Join(root, cacheFile))
+	if err != nil {
+		return Profile{}, false
+	}
+	var cached cache
+	if json.Unmarshal(data, &cached) != nil {
+		return Profile{}, false
+	}
+	return cached.Profile, true
+}
+
 // sameManifests reports whether two sorted manifest lists name the same files.
 func sameManifests(a, b []string) bool {
 	if len(a) != len(b) {

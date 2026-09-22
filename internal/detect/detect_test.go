@@ -176,6 +176,43 @@ func TestLoadNoticesAManifestThatDidNotExistAtTheLastWalk(t *testing.T) {
 	}
 }
 
+func TestLoadCachedReadsWithoutWalkingOrSaving(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example\n")
+	_ = Load(root)
+
+	cachePath := filepath.Join(root, cacheFile)
+	before, err := os.Stat(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cached, ok := LoadCached(root)
+	if !ok {
+		t.Fatal("want a cached profile")
+	}
+	if cached.Verify != "go test ./..." {
+		t.Fatalf("verify = %q", cached.Verify)
+	}
+
+	after, err := os.Stat(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatal("LoadCached rewrote the cache file")
+	}
+}
+
+func TestLoadCachedReportsNoCacheWhenNoneWasWritten(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "README.md", "# nothing here\n")
+
+	if _, ok := LoadCached(root); ok {
+		t.Fatal("want no cache when detect has never run")
+	}
+}
+
 func TestLoadNoticesALanguageAddedWithNoManifestOfItsOwn(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "go.mod", "module example\n")

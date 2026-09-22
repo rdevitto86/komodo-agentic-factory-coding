@@ -248,6 +248,24 @@ func TestALightTaskTierKeepsAWritingRoleOnTheHostsStandardTier(t *testing.T) {
 	}
 }
 
+func TestEveryTierLocalKeepsAWritingRoleAsASpawnOnTheHost(t *testing.T) {
+	local := mount.Machine{Provider: "ollama", Model: "llama3.2"}
+	plan := &Plan{
+		Roles: []Role{{Name: "builder", Tier: "standard", Tools: []string{"read", "edit", "write", "shell", "search"}, Session: true, Machine: "ollama"}},
+		Profile: profile.Profile{Tiers: mount.Tiers{
+			Light: local, Standard: local, Heavy: local, Reviewer: local,
+		}},
+		Worktree: ".",
+	}
+	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "builder", Task: "TSK-12.1.1"}, "")
+	if got.Action != "spawn" || got.Role != "builder" || got.Command != "" {
+		t.Fatalf("action = %+v, want a spawn kept on the host, never a refused machine call", got)
+	}
+	if got.Machine == "" {
+		t.Fatalf("action = %+v; a spawn must still name the machine that serves it", got)
+	}
+}
+
 func TestBeforeReviewLooksUpTheAbsoluteWorktree(t *testing.T) {
 	worktree := t.TempDir()
 	commandsDir := filepath.Join(worktree, StateDir)
