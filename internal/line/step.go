@@ -124,6 +124,14 @@ func Step(root, needle string) (*Action, error) {
 			Why: "every wave is merged and the diff is unreviewed",
 		}), nil
 	}
+	blocking, _ := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
+	if len(blocking) > 0 {
+		return action(root, plan, Action{
+			Action: "done",
+			Why: fmt.Sprintf("the review left %d finding(s) at or above %s; fix them on %s, then komodo close --group",
+				len(blocking), plan.Profile.SeverityFloor, plan.Branch),
+		}), nil
+	}
 	if !shipped(root, plan, parsed) {
 		return action(root, plan, Action{
 			Action: "run", Command: "komodo close --group",

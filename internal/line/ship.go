@@ -24,6 +24,7 @@ type ShipResult struct {
 	Changelog string   `json:"changelog,omitempty"`
 	Done      []string `json:"done,omitempty"`
 	Blocked   []string `json:"blocked,omitempty"`
+	Filed     []string `json:"filed,omitempty"`
 }
 
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
@@ -37,8 +38,17 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 	if err != nil {
 		return nil, err
 	}
+	blocking, minor := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
+	if len(blocking) > 0 {
+		return nil, fmt.Errorf("the review left %d finding(s) at or above %s; fix them on %s, then ship",
+			len(blocking), plan.Profile.SeverityFloor, plan.Branch)
+	}
+	filed, err := FileFindings(root, plan.Group, minor)
+	if err != nil {
+		return nil, err
+	}
 	started := time.Now()
-	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base}
+	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Filed: filed}
 	defer func() {
 		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: "done"})
 	}()

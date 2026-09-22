@@ -1,6 +1,7 @@
 package line
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -101,6 +102,21 @@ func AtOrAbove(severity, floor string) bool {
 		return len(Severities)
 	}
 	return rank(severity) <= rank(floor)
+}
+
+// ReviewFindings reads the findings the reviewer returned for a group, or none when it has no review.
+func ReviewFindings(root, groupID string) []Finding {
+	data, _, err := ReadResultFile(root, groupID+"-review")
+	if err != nil {
+		return nil
+	}
+	var result struct {
+		Findings []Finding `json:"findings"`
+	}
+	if json.Unmarshal(data, &result) != nil {
+		return nil
+	}
+	return result.Findings
 }
 
 // SplitFindings separates what becomes one repair brief from what is filed as a task.
