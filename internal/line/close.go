@@ -174,8 +174,7 @@ func commitTask(cwd string, task backlog.Task) error {
 	return err
 }
 
-// Built are the paths a task branch never carries, because every branch regenerates them and they
-// then conflict on every merge.
+// Built are the regenerated paths a task branch never carries, because they conflict on every merge.
 var Built = []string{"bin"}
 
 // unstageBuilt drops the regenerated artifacts from a task's commit, unless the task declares one.
