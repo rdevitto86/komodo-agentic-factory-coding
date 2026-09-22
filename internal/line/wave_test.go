@@ -1,6 +1,7 @@
 package line
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -238,5 +239,39 @@ func TestTheRunPinsItsWavesSoClosingATaskDoesNotRenumberThem(t *testing.T) {
 	}
 	if len(loaded.Waves) != 2 || loaded.Waves[0][0] != "TSK-09.1.1" {
 		t.Fatalf("waves = %v; the run must keep the waves it cut", loaded.Waves)
+	}
+}
+
+// review writes a group's review result holding the findings given.
+func review(t *testing.T, root, groupID string, findings ...Finding) {
+	t.Helper()
+	path := ResultPath(root, groupID+"-review")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{"findings": findings})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTheReviewsFindingsReachTheLine(t *testing.T) {
+	root := t.TempDir()
+	if got := ReviewFindings(root, "TG-09.1"); got != nil {
+		t.Fatalf("findings = %v; no review means no findings", got)
+	}
+	review(t, root, "TG-09.1",
+		Finding{Severity: "high", Class: "bug", File: "a.go", Title: "One", Detail: "d"},
+		Finding{Severity: "low", Class: "simplify", File: "b.go", Title: "Two", Detail: "d"})
+	got := ReviewFindings(root, "TG-09.1")
+	if len(got) != 2 {
+		t.Fatalf("findings = %v; the ship must see what the reviewer returned", got)
+	}
+	blocking, minor := SplitFindings(got, "high")
+	if len(blocking) != 1 || len(minor) != 1 {
+		t.Fatalf("blocking = %v, minor = %v; the floor decides which stop a ship", blocking, minor)
 	}
 }
