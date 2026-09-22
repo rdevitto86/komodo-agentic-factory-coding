@@ -76,3 +76,61 @@ func TestContextMatchesByGlob(t *testing.T) {
 		t.Fatal("a non-matching glob must not match")
 	}
 }
+
+func TestContextMatchesAMultiSegmentDirGlob(t *testing.T) {
+	context := Context{Name: "repo.md", Paths: []string{"internal/repo/**"}}
+	if !context.Matches([]string{"internal/repo/context.go"}) {
+		t.Fatal("internal/repo/** must match a file under internal/repo")
+	}
+	if context.Matches([]string{"internal/line/clip.go"}) {
+		t.Fatal("internal/repo/** must not match a file under a different dir")
+	}
+}
+
+func TestContextMatchesASingleStarGlob(t *testing.T) {
+	context := Context{Name: "web.md", Paths: []string{"src/*.ts", "docs/*.md"}}
+	if !context.Matches([]string{"src/a.ts"}) {
+		t.Fatal("src/*.ts must match a file directly under src")
+	}
+	if !context.Matches([]string{"docs/readme.md"}) {
+		t.Fatal("docs/*.md must match a file directly under docs")
+	}
+	if context.Matches([]string{"src/nested/a.ts"}) {
+		t.Fatal("src/*.ts must not match a file nested deeper than one segment")
+	}
+}
+
+func TestLoadContextReadsPathsFromAYAMLBlockList(t *testing.T) {
+	root := contextRepo(t, map[string]string{
+		"go.md": "---\npaths:\n  - internal/repo/**\n  - src/*.ts\n---\n\nRead the neighbours first.\n",
+	})
+	contexts, skipped := LoadContext(root)
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	if len(contexts) != 1 || len(contexts[0].Paths) != 2 {
+		t.Fatalf("paths = %v", contexts[0].Paths)
+	}
+	if contexts[0].Paths[0] != "internal/repo/**" || contexts[0].Paths[1] != "src/*.ts" {
+		t.Fatalf("paths = %v", contexts[0].Paths)
+	}
+	if contexts[0].Matches([]string{"README.md"}) {
+		t.Fatal("a block-list context must not match every task")
+	}
+}
+
+func TestLoadContextAcceptsACRLFFile(t *testing.T) {
+	root := contextRepo(t, map[string]string{
+		"go.md": "---\r\npaths: [\"internal/repo/**\"]\r\n---\r\n\r\nRead the neighbours first.\r\n",
+	})
+	contexts, skipped := LoadContext(root)
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	if len(contexts) != 1 || contexts[0].Name != "go.md" {
+		t.Fatalf("contexts = %v", contexts)
+	}
+	if len(contexts[0].Paths) != 1 || contexts[0].Paths[0] != "internal/repo/**" {
+		t.Fatalf("paths = %v", contexts[0].Paths)
+	}
+}
