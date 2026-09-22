@@ -106,5 +106,15 @@ func init() {
 		Tiers:       Tiers,
 		Probe:       Probe,
 		Usage:       Usage,
+		Headless:    Headless,
 	})
+}
+
+// Headless returns this host's non-interactive command for one skill and one target.
+func Headless(skill, target string) (string, []string) {
+	prompt := "/" + skill
+	if target != "" {
+		prompt += " " + target
+	}
+	return "codex", []string{"exec", "--json", prompt}
 }

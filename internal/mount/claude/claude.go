@@ -123,7 +123,8 @@ func settingsFile(root, binary string) ([]byte, error) {
 	return append(body, '\n'), nil
 }
 
-// denyList turns the policy's critical refs and config paths into this host's permission entries.
+// denyList turns the policy's critical refs and config paths into this host's permission entries;
+// one edit entry covers every file-editing tool this host has.
 func denyList(policy policyFile) []string {
 	var out []string
 	for _, ref := range policy.CriticalRefs {
@@ -131,7 +132,6 @@ func denyList(policy policyFile) []string {
 		out = append(out, fmt.Sprintf("Bash(git push %s:*)", ref))
 	}
 	for _, path := range policy.ConfigPaths {
-		out = append(out, fmt.Sprintf("Write(%s)", path))
 		out = append(out, fmt.Sprintf("Edit(%s)", path))
 	}
 	return out
@@ -177,5 +177,15 @@ func init() {
 		Tiers:       Tiers,
 		Probe:       Probe,
 		Usage:       Usage,
+		Headless:    Headless,
 	})
+}
+
+// Headless returns this host's non-interactive command for one skill and one target.
+func Headless(skill, target string) (string, []string) {
+	prompt := "/" + skill
+	if target != "" {
+		prompt += " " + target
+	}
+	return "claude", []string{"-p", prompt, "--permission-mode", "acceptEdits"}
 }

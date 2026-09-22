@@ -271,11 +271,11 @@ type: feat
 version: 2.0.0
 ```
 * **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof runs one group each way before anything is deleted.
-* **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
+* **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping, and a session start with no permission-rule warning. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
 
-#### [TSK-03.4.1] The run, review, backlog, and respond skills [P: C] [READY]
+#### [TSK-03.4.1] The run, review, backlog, and respond skills [P: C] [DONE]
 ```yaml
-files: [komodo/skills/run/SKILL.md, komodo/skills/review/SKILL.md, komodo/skills/backlog/SKILL.md, komodo/skills/respond/SKILL.md]
+files: [komodo/skills/run/SKILL.md, komodo/skills/review/SKILL.md, komodo/skills/backlog/SKILL.md, komodo/skills/respond/SKILL.md, cmd/komodo/main.go]
 done_when:
   - go run ./cmd/komodo doctor --no-git
 depends_on: [TSK-03.3.3]
@@ -283,12 +283,13 @@ context:
   - "run takes a group, a task, or nothing and is three lines: call komodo step, do what it says, repeat; the station order lives in the binary and never in a skill"
   - "review runs QC and the reviewer on the current diff; backlog writes tasks in the grammar with add and lint and is where the planner role works; respond lists unresolved threads and, as the responder role, changes code when the reviewer is right and replies when they are not"
   - "a skill names no host tool, path, flag, or vendor; it says spawn the builder role and the mount decides how"
+  - "respond needs the threads the pr package already reads, so komodo threads exposes them as JSON"
 type: feat
 ```
 
-#### [TSK-03.4.2] The headless launcher: `komodo run` [P: H] [READY]
+#### [TSK-03.4.2] The headless launcher: `komodo run` [P: H] [DONE]
 ```yaml
-files: [internal/run, cmd/komodo/main.go]
+files: [internal/run, cmd/komodo/main.go, internal/mount/registry.go]
 done_when:
   - go test ./internal/run/...
 depends_on: [TSK-03.4.1]
@@ -308,6 +309,19 @@ context:
   - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 2.0.0 changelog entry"
   - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.5 merges"
 type: docs
+```
+
+#### [TSK-03.4.4] The permissions layer denies on edit only [P: H] [DONE]
+```yaml
+files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, .claude/settings.json]
+done_when:
+  - go test ./internal/mount/...
+  - test -z "$(grep -c 'Write(' .claude/settings.json | grep -v '^0$')"
+depends_on: [TSK-03.3.2]
+context:
+  - "the host matches a file permission rule on Edit only; a Write(path) deny entry is inert and the host prints a warning for each one at session start"
+  - "denyList emits one Edit entry per config path and no Write entry; the guard is unchanged and still the real refusal"
+type: fix
 ```
 
 ### [TG-03.5] The repo layer and the local machines
@@ -494,4 +508,16 @@ context:
   - "one test per swap point, each with no code change and no restart: a profile row change moves a station to another machine and step names it; a skill body change under komodo/skills or .komodo/skills reaches the next brief and the next project render; a facet added by .komodo/facets or a task's facets key reaches the standards slot, the profile slot, and the render; a commands.json change replaces verify at QC"
   - "a role, a skill, and the binary hold no name of a model, a server, or a platform, so the test fails when any of them does; MCP is the fifth point and is deferred: the test asserts that a facet's mcp.json, when present, changes nothing in V2"
 type: test
+```
+
+#### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-03.4.1]
+context:
+  - "checkDrift reports only update and remove, so a new skill or role that an installed mount has never rendered passes clean; TSK-03.4.1 added four skills and the gate stayed green with none of them mounted"
+  - "a create against a host that is already rendered is drift and must say run komodo install"
+type: fix
 ```

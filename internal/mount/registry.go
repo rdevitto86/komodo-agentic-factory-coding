@@ -21,6 +21,7 @@ type Host struct {
 	Tiers       func(plan string, ollama bool) Tiers
 	Probe       func() (Usage, bool)
 	Usage       func(root, task string, since, until time.Time) (TaskUsage, bool)
+	Headless    func(skill, target string) (string, []string)
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.

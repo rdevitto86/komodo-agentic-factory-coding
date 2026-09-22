@@ -118,6 +118,11 @@ func TestSettingsRegisterTheGuardOnceAndNoMCP(t *testing.T) {
 	if len(settings.Permissions.Deny) == 0 {
 		t.Fatal("the permissions layer is empty")
 	}
+	for _, entry := range settings.Permissions.Deny {
+		if strings.HasPrefix(entry, "Write(") {
+			t.Fatalf("deny entry %q is inert; this host matches file rules on Edit only", entry)
+		}
+	}
 	if strings.Contains(raw, "mcpServers") {
 		t.Fatal("the render registered an MCP server")
 	}
