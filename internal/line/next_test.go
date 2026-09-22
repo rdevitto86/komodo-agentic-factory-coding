@@ -204,3 +204,53 @@ func ids(wave []backlog.Task) []string {
 	}
 	return out
 }
+
+func TestEveryStationSeesTheWavesTheRunPinned(t *testing.T) {
+	root := repo(t, groupText)
+	pinned := [][]string{{"TSK-05.1.1", "TSK-05.1.2", "TSK-05.1.3"}}
+	state := RunState{Run: "TG-05.1-1", Group: "TG-05.1", Base: "main", Branch: "feat/a-group", Waves: pinned}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Waves) != 1 || len(plan.Waves[0]) != 3 {
+		t.Fatalf("waves = %v; close and ship must see the run's own waves", plan.Waves)
+	}
+}
+
+const finishedText = "### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-05.1.1] One [P: C] [DONE]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
+	"#### [TSK-05.1.2] Two [P: C] [DONE]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go test ./b/...\"]\n```\n\n" +
+	"### [TG-05.2] The next group\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	"#### [TSK-05.2.1] Later [P: C] [READY]\n```yaml\nfiles: [c/later.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
+
+func TestTheRunsOwnGroupOutlivesItsLastClosedTask(t *testing.T) {
+	root := repo(t, finishedText)
+	state := RunState{
+		Run: "TG-05.1-1", Group: "TG-05.1", Base: "main", Branch: "feat/a-group",
+		Waves: [][]string{{"TSK-05.1.1"}, {"TSK-05.1.2"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == nil || next.Group != "TG-05.2" {
+		t.Fatalf("plan = %+v; the fixture must have a later group ready, which is what stole the wave", next)
+	}
+	plan, err := PlanForRun(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Group != "TG-05.1" {
+		t.Fatalf("plan = %+v; close --wave and ship must stay on the run's own group", plan)
+	}
+	if len(plan.Waves) != 2 {
+		t.Fatalf("waves = %v; the run's waves must survive so QC can still merge them", plan.Waves)
+	}
+}

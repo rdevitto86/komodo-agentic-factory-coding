@@ -130,13 +130,22 @@ func kind(value any) string {
 
 // ReadResult reads a task's result JSON from disk.
 func ReadResult(root, taskID string) (map[string]any, error) {
-	data, err := os.ReadFile(ResultPath(root, taskID))
+	data, path, err := ReadResultFile(root, taskID)
 	if err != nil {
 		return nil, err
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal(data, &parsed); err != nil {
-		return nil, fmt.Errorf("%s is not JSON: %w", ResultPath(root, taskID), err)
+		return nil, fmt.Errorf("%s is not JSON: %w", path, err)
 	}
 	return parsed, nil
+}
+
+// SchemaText is the schema a role returns, verbatim, for a brief to carry.
+func SchemaText(root, role string) string {
+	data, err := os.ReadFile(filepath.Join(root, RolesDir, role+".schema.json"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }

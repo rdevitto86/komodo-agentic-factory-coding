@@ -64,7 +64,33 @@ func PlanForGroup(root, groupID string) (*Plan, error) {
 	if err != nil || !ok {
 		return nil, err
 	}
-	return buildPlan(root, parsed, group, true)
+	plan, err := buildPlan(root, parsed, group, true)
+	if err != nil || plan == nil {
+		return plan, err
+	}
+	return plan, nil
+}
+
+// PlanForRun is the plan for the group a run has open, or the next ready group when none is.
+func PlanForRun(root string) (*Plan, error) {
+	state, err := LoadRun(root)
+	if err != nil || state.Group == "" {
+		return Next(root, "")
+	}
+	plan, err := PlanForGroup(root, state.Group)
+	if err != nil || plan == nil {
+		return Next(root, "")
+	}
+	return plan, nil
+}
+
+// pinWaves restores the waves the run recorded, so every station numbers them the same way.
+func pinWaves(root string, plan *Plan) {
+	state, err := LoadRun(root)
+	if err != nil || state.Group != plan.Group || len(state.Waves) == 0 {
+		return
+	}
+	plan.Waves = state.Waves
 }
 
 // groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one.
@@ -135,12 +161,13 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 		roles[index].Machine = machineFor(chosen, roles[index].Tier)
 	}
 	plan.Roles = roles
+	if chosen.MaxParallel > 0 && plan.Mode != "single" {
+		plan.Waves = splitByParallel(plan.Waves, chosen.MaxParallel)
+	}
+	pinWaves(root, plan)
 	if chosen.Paused() && len(plan.Waves) > 0 {
 		plan.WaitUntil = chosen.WaitUntil().Format(time.RFC3339)
 		plan.Waves = nil
-	}
-	if chosen.MaxParallel > 0 && plan.Mode != "single" {
-		plan.Waves = splitByParallel(plan.Waves, chosen.MaxParallel)
 	}
 	return plan, nil
 }
@@ -228,7 +255,7 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	if err := Fetch(root, plan.Base); err != nil {
 		return RunState{}, err
 	}
-	path := filepath.Join(root, plan.Worktree)
+	path := WorktreePath(root, plan.Worktree)
 	if _, err := os.Stat(path); err != nil {
 		if err := AddWorktree(root, plan.Branch, plan.Base, path); err != nil {
 			return RunState{}, err
@@ -245,6 +272,7 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 		Started: time.Now().UTC(),
 	}
 	state.Worktree = path
+	state.Waves = plan.Waves
 	if err := Book(root).TruncateRun(); err != nil {
 		return state, err
 	}

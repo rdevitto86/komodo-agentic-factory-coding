@@ -61,9 +61,13 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		}
 	}
 	outcome.Problems = problems
+	stampBuild(root, taskID, started)
 	entry := ledger.Entry{Task: taskID, Station: "close", Seconds: Since(started)}
-	fillUsage(root, taskID, started, &entry)
 	if len(problems) == 0 {
+		if err := commitTask(cwd, task); err != nil {
+			outcome.Problems = []string{"commit: " + err.Error()}
+			return outcome, nil
+		}
 		outcome.Status = "DONE"
 		clearAttempt(root, taskID)
 		entry.Outcome = "done"
@@ -142,6 +146,26 @@ func lintComments(cwd string, task backlog.Task) []string {
 		return []string{"comments: " + err.Error()}
 	}
 	return out
+}
+
+// commitTask commits a passing task on its own branch, so QC has something to merge.
+func commitTask(cwd string, task backlog.Task) error {
+	if _, err := git(cwd, "rev-parse", "--git-dir"); err != nil {
+		return nil
+	}
+	status, err := git(cwd, "status", "--porcelain")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(status) == "" {
+		return nil
+	}
+	if _, err := git(cwd, "add", "-A"); err != nil {
+		return err
+	}
+	message := fmt.Sprintf("%s: %s (%s)", task.Type(), task.Title, task.ID)
+	_, err = git(cwd, "commit", "-m", message)
+	return err
 }
 
 // isToolkit reports whether this repo is the toolkit, which gates its own commits.
@@ -249,6 +273,17 @@ func fillUsage(root, taskID string, until time.Time, entry *ledger.Entry) {
 		entry.TokensIn, entry.TokensOut, entry.Turns = usage.TokensIn, usage.TokensOut, usage.Turns
 		return
 	}
+}
+
+// stampBuild records what the machine spent between its brief and this close, which is the build itself.
+func stampBuild(root, taskID string, closed time.Time) {
+	written := briefTime(root, taskID)
+	if written.IsZero() {
+		return
+	}
+	entry := ledger.Entry{Task: taskID, Station: "build", Seconds: closed.Sub(written).Seconds()}
+	fillUsage(root, taskID, closed, &entry)
+	Stamp(root, entry)
 }
 
 // briefTime is when the task's brief was written, which opens the window the usage covers.

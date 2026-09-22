@@ -335,12 +335,13 @@ base: docs/v2-plan
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
 * **PR E:** `feat/v2-repo-layer` from `feat/v2-skills-launcher`, cut by `/run TG-03.5` and opened by `close --group` with the report as the body. Validated by `komodo gate`, `komodo doctor` with profile drift, `komodo detect` printing Go and no cloud, the Ollama mount against the fake and one real local review, a facet swap reaching a brief, and the proof numbers for TSK-03.4.3 in the changelog. Merges into `feat/v2-skills-launcher`.
 
-#### [TSK-03.5.1] Repo context injects by glob [P: H] [READY]
+#### [TSK-03.5.1] Repo context injects by glob [P: H] [DONE]
 ```yaml
-files: [internal/repo/context.go, internal/repo/context_test.go, internal/line/brief.go, templates/project]
+files: [internal/repo/context.go, internal/repo/context_test.go, internal/line/brief.go, templates/project, .gitignore]
 done_when:
   - go test ./internal/repo/... ./internal/line/...
 context:
+  - "the gitignore entry .komodo/ is anchored to /.komodo/ so templates/project/.komodo can ship; unanchored it swallows the example at any depth"
   - ".komodo/context/*.md with a paths glob list in frontmatter fills the repo_context slot for any task whose files match, clipped; no globs means every task; a malformed file is skipped with one line in the report; templates/project gains one example"
 type: feat
 ```
@@ -370,7 +371,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.4] `komodo machine`: the binary is the Ollama mount [P: C] [READY]
+#### [TSK-03.5.4] `komodo machine`: the binary is the Ollama mount [P: C] [DONE]
 ```yaml
 files: [internal/mount/ollama, cmd/komodo/main.go]
 done_when:
@@ -512,6 +513,18 @@ context:
   - "one test per swap point, each with no code change and no restart: a profile row change moves a station to another machine and step names it; a skill body change under komodo/skills or .komodo/skills reaches the next brief and the next project render; a facet added by .komodo/facets or a task's facets key reaches the standards slot, the profile slot, and the render; a commands.json change replaces verify at QC"
   - "a role, a skill, and the binary hold no name of a model, a server, or a platform, so the test fails when any of them does; MCP is the fifth point and is deferred: the test asserts that a facet's mcp.json, when present, changes nothing in V2"
 type: test
+```
+
+#### [TSK-03.6.7] The prebuilt binaries stop conflicting on every stacked branch [P: M] [READY]
+```yaml
+files: [.gitattributes, bin/MANIFEST.sha256]
+done_when:
+  - git check-attr binary bin/komodo-linux-amd64
+depends_on: [TSK-03.6.1]
+context:
+  - "three committed binaries and a manifest are rebuilt by komodo gate --rebuild on every branch, so any two branches off one base always conflict in bin/; #112 and #114 both hit it"
+  - "mark them binary with a merge strategy that takes the branch's own copy, or build them at release only and drop them from the tree"
+type: chore
 ```
 
 #### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [READY]

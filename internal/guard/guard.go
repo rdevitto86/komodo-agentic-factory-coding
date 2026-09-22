@@ -9,7 +9,9 @@ import (
 )
 
 var (
-	segmentRe   = regexp.MustCompile(`\s*(?:&&|\|\||[;|\n])\s*`)
+	segmentRe = regexp.MustCompile(`\s*(?:&&|\|\||[;|\n])\s*`)
+	// commandRe splits shell commands without splitting a multi-line commit message.
+	commandRe   = regexp.MustCompile(`\s*(?:&&|\|\||[;|])\s*`)
 	assignRe    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 	gitWriteRe  = regexp.MustCompile(`\bgit\b[^\n;|&]*\b(?:commit|merge)\b`)
 	redirectRe  = regexp.MustCompile(`>>?\s*([^\s;|&<>]+)`)
@@ -80,8 +82,11 @@ func stringField(input map[string]any, key string) string {
 // commandFindings returns every reason to refuse one shell command.
 func commandFindings(command, root, branch string, policy Policy) []string {
 	var findings []string
-	if gitWriteRe.MatchString(command) && policy.HasTrailer(command) {
-		findings = append(findings, "commit message carries a co-author or generated-by trailer")
+	for _, part := range commandRe.Split(command, -1) {
+		if gitWriteRe.MatchString(part) && policy.HasTrailer(part) {
+			findings = append(findings, "commit message carries a co-author or generated-by trailer")
+			break
+		}
 	}
 	for _, segment := range segmentRe.Split(command, -1) {
 		tokens, err := splitWords(segment)

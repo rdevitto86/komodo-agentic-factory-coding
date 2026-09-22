@@ -1,9 +1,9 @@
 package line
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"time"
@@ -30,7 +30,7 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 	if index < 0 || index >= len(plan.Waves) {
 		return nil, fmt.Errorf("no wave %d in %s", index+1, plan.Group)
 	}
-	group := filepath.Join(root, plan.Worktree)
+	group := WorktreePath(root, plan.Worktree)
 	started := time.Now()
 	result := &WaveResult{Wave: index + 1}
 	defer func() {
@@ -102,6 +102,21 @@ func AtOrAbove(severity, floor string) bool {
 		return len(Severities)
 	}
 	return rank(severity) <= rank(floor)
+}
+
+// ReviewFindings reads the findings the reviewer returned for a group, or none when it has no review.
+func ReviewFindings(root, groupID string) []Finding {
+	data, _, err := ReadResultFile(root, groupID+"-review")
+	if err != nil {
+		return nil
+	}
+	var result struct {
+		Findings []Finding `json:"findings"`
+	}
+	if json.Unmarshal(data, &result) != nil {
+		return nil
+	}
+	return result.Findings
 }
 
 // SplitFindings separates what becomes one repair brief from what is filed as a task.

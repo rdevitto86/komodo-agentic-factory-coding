@@ -396,7 +396,11 @@ func runBrief(root string, args []string) {
 	if state, err := line.LoadRun(root); err == nil && state.Worktree != "" {
 		cwd = state.Worktree
 	}
-	brief, err := line.BuildBrief(root, cwd, set.Arg(0), *role, *failure)
+	previous := *failure
+	if previous == "" {
+		previous = line.RepairText(root, set.Arg(0))
+	}
+	brief, err := line.BuildBrief(root, cwd, set.Arg(0), *role, previous)
 	if err != nil {
 		fail(err)
 	}
@@ -503,7 +507,7 @@ func trackedFiles(root string) []string {
 
 // runWave merges one wave into the group branch, then runs the compile and verify gates.
 func runWave(root string, number int) {
-	plan, err := line.Next(root, "")
+	plan, err := line.PlanForRun(root)
 	if err != nil {
 		fail(err)
 	}
@@ -522,7 +526,7 @@ func runWave(root string, number int) {
 
 // runShip commits, pushes, opens the pull request, and writes the changelog line.
 func runShip(root, base string) {
-	plan, err := line.Next(root, "")
+	plan, err := line.PlanForRun(root)
 	if err != nil {
 		fail(err)
 	}
@@ -554,7 +558,7 @@ func printJSON(value any) {
 
 // currentPlan is the plan for the run in progress, with its recorded base and branch.
 func currentPlan(root string) *line.Plan {
-	plan, err := line.Next(root, "")
+	plan, err := line.PlanForRun(root)
 	if err != nil {
 		fail(err)
 	}
@@ -564,7 +568,7 @@ func currentPlan(root string) *line.Plan {
 	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
 		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
 	}
-	if info, err := os.Stat(filepath.Join(root, plan.Worktree)); err != nil || !info.IsDir() {
+	if info, err := os.Stat(line.WorktreePath(root, plan.Worktree)); err != nil || !info.IsDir() {
 		plan.Worktree = "."
 	}
 	return plan

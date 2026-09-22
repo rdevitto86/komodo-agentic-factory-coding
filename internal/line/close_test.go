@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"komodo/internal/ledger"
 )
 
 const closeBacklog = "### [TG-08.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -211,5 +214,48 @@ func TestValidateAcceptsAGoodResult(t *testing.T) {
 	}
 	if problems := Validate(schema, any(goodResult())); len(problems) != 0 {
 		t.Fatalf("problems = %v", problems)
+	}
+}
+
+func TestTheLedgerTimesTheBuildAndNotJustTheClose(t *testing.T) {
+	root := closeRepo(t)
+	if err := SaveRun(root, RunState{Run: "TG-08.1-1", Group: "TG-08.1", Base: "main", Branch: "feat/a"}); err != nil {
+		t.Fatal(err)
+	}
+	brief := filepath.Join(root, StateDir, "briefs", "TSK-08.1.1.md")
+	if err := os.MkdirAll(filepath.Dir(brief), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(brief, []byte("brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ago := time.Now().Add(-90 * time.Second)
+	if err := os.Chtimes(brief, ago, ago); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CloseTask(root, "TSK-08.1.1", false); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := Book(root).Read("line.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var build, closed *ledger.Entry
+	for index, entry := range entries {
+		switch entry.Station {
+		case "build":
+			build = &entries[index]
+		case "close":
+			closed = &entries[index]
+		}
+	}
+	if build == nil {
+		t.Fatal("a close must stamp what the build itself cost")
+	}
+	if build.Seconds < 80 {
+		t.Fatalf("build seconds = %v; the build spans its brief to its close, not the close alone", build.Seconds)
+	}
+	if closed == nil || closed.Seconds > 30 {
+		t.Fatalf("close = %+v; the close still measures only itself", closed)
 	}
 }

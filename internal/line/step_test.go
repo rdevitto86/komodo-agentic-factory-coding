@@ -251,3 +251,144 @@ func markDone(t *testing.T, root, taskID string) {
 		t.Fatal(err)
 	}
 }
+
+func TestSpawnNamesTheWorktreeTheAgentWorksIn(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	path := filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("a brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(StateDir, "wt", "TSK-12.1.1")
+	if next.Action != "spawn" || next.Worktree != want {
+		t.Fatalf("worktree = %q, want %q (action %s)", next.Worktree, want, next.Action)
+	}
+}
+
+// fail records a failed close for a task, which is what a repair reads.
+func fail(t *testing.T, root, taskID string, count int) {
+	t.Helper()
+	if _, err := bumpAttempt(root, taskID, "result: missing required key \"summary\"", ""); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 1; attempt < count; attempt++ {
+		if _, err := bumpAttempt(root, taskID, "result: missing required key \"summary\"", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// seed writes a brief and a result for a task, the state a close acts on.
+func seed(t *testing.T, root, taskID string) {
+	t.Helper()
+	for _, rel := range []string{filepath.Join(StateDir, "briefs", taskID+".md"), ResultPath(root, taskID)} {
+		path := rel
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, rel)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestAFailedTaskGoesBackForARepairInsteadOfClosingAgain(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	seed(t, root, "TSK-12.1.1")
+	fail(t, root, "TSK-12.1.1", 1)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "run" || next.Command != "komodo brief TSK-12.1.1" {
+		t.Fatalf("action = %+v; a failed task must get a repair brief, not the same close again", next)
+	}
+}
+
+func TestARepairSpawnsOnceItsBriefIsFresh(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	seed(t, root, "TSK-12.1.1")
+	fail(t, root, "TSK-12.1.1", 1)
+	path := filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")
+	if err := os.WriteFile(path, []byte("repair brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "builder" {
+		t.Fatalf("action = %+v; a fresh repair brief must spawn the builder", next)
+	}
+}
+
+func TestARepairGivesUpAtTheProfilesLimit(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	seed(t, root, "TSK-12.1.1")
+	fail(t, root, "TSK-12.1.1", 5)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "done" {
+		t.Fatalf("action = %+v; the line must stop, not repair forever", next)
+	}
+}
+
+const twoGroups = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-12.1.1] One [P: C] [DONE]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
+	"### [TG-12.2] The next group\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	"#### [TSK-12.2.1] Later [P: C] [READY]\n```yaml\nfiles: [c/later.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
+
+func TestALaterReadyGroupCannotStealAnUnshippedRun(t *testing.T) {
+	root := repo(t, twoGroups)
+	state := RunState{
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, root, "TSK-12.1.1")
+	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "reviewer" {
+		t.Fatalf("action = %+v; an unshipped run keeps its review and ship stations", next)
+	}
+}
+
+func TestStepMovesOnOnceTheRunHasShipped(t *testing.T) {
+	root := repo(t, twoGroups)
+	state := RunState{
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, root, "TSK-12.1.1")
+	Stamp(root, ledger.Entry{Group: "TG-12.1", Station: "ship", Outcome: "done"})
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Command != "komodo next --start TG-12.2 --base main" {
+		t.Fatalf("action = %+v; a shipped run releases the line to the next group", next)
+	}
+}

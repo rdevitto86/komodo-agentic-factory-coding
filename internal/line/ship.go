@@ -24,13 +24,14 @@ type ShipResult struct {
 	Changelog string         `json:"changelog,omitempty"`
 	Done      []string       `json:"done,omitempty"`
 	Blocked   []string       `json:"blocked,omitempty"`
+	Filed     []string       `json:"filed,omitempty"`
 	Published *CommandResult `json:"published,omitempty"`
 }
 
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
 func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipResult, error) {
-	group := filepath.Join(root, plan.Worktree)
-	path, err := backlog.Find(root)
+	group := WorktreePath(root, plan.Worktree)
+	path, err := backlog.Find(group)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +39,17 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 	if err != nil {
 		return nil, err
 	}
+	blocking, minor := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
+	if len(blocking) > 0 {
+		return nil, fmt.Errorf("the review left %d finding(s) at or above %s; fix them on %s, then ship",
+			len(blocking), plan.Profile.SeverityFloor, plan.Branch)
+	}
+	filed, err := FileFindings(group, plan.Group, minor)
+	if err != nil {
+		return nil, err
+	}
 	started := time.Now()
-	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base}
+	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Filed: filed}
 	defer func() {
 		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: "done"})
 	}()
@@ -56,6 +66,11 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 		}
 	}
 	result.Draft = len(result.Blocked) > 0
+	for _, taskID := range result.Done {
+		if err := writeStatus(path, taskID, "DONE"); err != nil {
+			return nil, err
+		}
+	}
 	if line := ChangelogLine(plan, result); line != "" {
 		changelog := filepath.Join(group, "CHANGELOG.md")
 		if err := AppendChangelog(changelog, plan.Version, line); err != nil {
@@ -91,11 +106,6 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 	if known, err := client.Labels(); err == nil {
 		result.Labels = pr.KeepKnown([]string{plan.Type, "agent"}, known)
 		_ = client.Label(url, result.Labels)
-	}
-	for _, taskID := range result.Done {
-		if err := writeStatus(path, taskID, "DONE"); err != nil {
-			return result, err
-		}
 	}
 	return result, nil
 }

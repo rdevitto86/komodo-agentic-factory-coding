@@ -16,12 +16,13 @@ const StateDir = ".komodo"
 
 // RunState records the base and branch a run chose so close and ship target the same one.
 type RunState struct {
-	Run      string    `json:"run"`
-	Group    string    `json:"group"`
-	Base     string    `json:"base"`
-	Branch   string    `json:"branch"`
-	Worktree string    `json:"worktree"`
-	Started  time.Time `json:"started"`
+	Run      string     `json:"run"`
+	Group    string     `json:"group"`
+	Base     string     `json:"base"`
+	Branch   string     `json:"branch"`
+	Worktree string     `json:"worktree"`
+	Waves    [][]string `json:"waves,omitempty"`
+	Started  time.Time  `json:"started"`
 }
 
 // git runs one git command in dir and returns its trimmed stdout.
@@ -71,6 +72,17 @@ func AddWorktree(root, branch, base, path string) error {
 	return err
 }
 
+// WorktreePath resolves a plan's worktree: a run records it absolute, a plan builds it relative to the root.
+func WorktreePath(root, worktree string) string {
+	if worktree == "" {
+		return root
+	}
+	if filepath.IsAbs(worktree) {
+		return worktree
+	}
+	return filepath.Join(root, worktree)
+}
+
 // SaveRun writes the run's state under .komodo so every later station reads the same choices.
 func SaveRun(root string, state RunState) error {
 	dir := filepath.Join(root, StateDir)
@@ -99,9 +111,43 @@ func ResultPath(root, taskID string) string {
 	return filepath.Join(root, StateDir, "results", taskID+".json")
 }
 
+// ResultPaths are the places a result can be: the task's worktree, the group's, then the root.
+func ResultPaths(root, taskID string) []string {
+	rootPath := ResultPath(root, taskID)
+	var paths []string
+	add := func(base string) {
+		if base == "" {
+			return
+		}
+		candidate := ResultPath(base, taskID)
+		if candidate == rootPath || contains(paths, candidate) {
+			return
+		}
+		paths = append(paths, candidate)
+	}
+	add(filepath.Join(root, StateDir, "wt", taskID))
+	if state, err := LoadRun(root); err == nil {
+		add(state.Worktree)
+	}
+	return append(paths, rootPath)
+}
+
+// ReadResultFile returns the first result that exists for a task, and where it was found.
+func ReadResultFile(root, taskID string) ([]byte, string, error) {
+	var err error
+	for _, path := range ResultPaths(root, taskID) {
+		var data []byte
+		data, err = os.ReadFile(path)
+		if err == nil {
+			return data, path, nil
+		}
+	}
+	return nil, "", err
+}
+
 // HasResult reports whether a task already has a result on disk that parses, which is resume.
 func HasResult(root, taskID string) bool {
-	data, err := os.ReadFile(ResultPath(root, taskID))
+	data, _, err := ReadResultFile(root, taskID)
 	if err != nil {
 		return false
 	}

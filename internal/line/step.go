@@ -15,6 +15,7 @@ type Action struct {
 	Command  string   `json:"command,omitempty"`
 	Role     string   `json:"role,omitempty"`
 	Brief    string   `json:"brief,omitempty"`
+	Worktree string   `json:"worktree,omitempty"`
 	Task     string   `json:"task,omitempty"`
 	Wave     int      `json:"wave,omitempty"`
 	Machine  string   `json:"machine,omitempty"`
@@ -41,6 +42,11 @@ func Step(root, needle string) (*Action, error) {
 		}
 	}
 	state, runErr := LoadRun(root)
+	if runErr == nil && needle == "" && state.Group != plan.Group {
+		if open, err := openRun(root, state.Group); err == nil && open != nil {
+			plan = open
+		}
+	}
 	if runErr != nil || state.Group != plan.Group {
 		return action(root, plan, Action{
 			Action:  "run",
@@ -65,15 +71,30 @@ func Step(root, needle string) (*Action, error) {
 	}
 	for index, wave := range plan.Waves {
 		for _, taskID := range wave {
-			if HasResult(root, taskID) {
+			attempt := LoadAttempt(root, taskID)
+			if HasResult(root, taskID) && attempt.Count == 0 {
 				continue
 			}
+			if attempt.Count > plan.Profile.Repairs {
+				return action(root, plan, Action{
+					Action: "done", Task: taskID, Wave: index + 1,
+					Why: fmt.Sprintf("%s is blocked after %d repair(s): %s", taskID, plan.Profile.Repairs, firstLine(attempt.Failure)),
+				}), nil
+			}
 			briefPath := filepath.Join(StateDir, "briefs", taskID+".md")
-			if _, err := os.Stat(filepath.Join(root, briefPath)); err != nil {
+			if staleBrief(root, taskID) {
+				why := taskID + " has no brief yet"
+				if attempt.Count > 0 {
+					why = fmt.Sprintf("%s failed and needs a repair brief carrying the failure", taskID)
+				}
 				return action(root, plan, Action{
 					Action: "run", Command: "komodo brief " + taskID, Task: taskID, Wave: index + 1,
-					Why: taskID + " has no brief yet",
+					Why: why,
 				}), nil
+			}
+			why := taskID + " has a brief and no result"
+			if attempt.Count > 0 {
+				why = fmt.Sprintf("%s has a repair brief and %d failed attempt(s)", taskID, attempt.Count)
 			}
 			tier := ""
 			if task, ok := parsed.Task(taskID); ok {
@@ -81,7 +102,8 @@ func Step(root, needle string) (*Action, error) {
 			}
 			return actionForTier(root, plan, Action{
 				Action: "spawn", Role: "builder", Brief: briefPath, Task: taskID, Wave: index + 1,
-				Why: taskID + " has a brief and no result",
+				Worktree: filepath.Join(StateDir, "wt", taskID),
+				Why:      why,
 			}, tier), nil
 		}
 		for _, taskID := range wave {
@@ -102,8 +124,17 @@ func Step(root, needle string) (*Action, error) {
 	}
 	if !reviewed(root, plan) {
 		return action(root, plan, Action{
-			Action: "spawn", Role: "reviewer", Brief: "komodo diff", Task: plan.Group + "-review",
+			Action: "spawn", Role: "reviewer", Brief: "komodo diff",
+			Task: plan.Group + "-review", Worktree: plan.Worktree,
 			Why: "every wave is merged and the diff is unreviewed",
+		}), nil
+	}
+	blocking, _ := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
+	if len(blocking) > 0 {
+		return action(root, plan, Action{
+			Action: "done",
+			Why: fmt.Sprintf("the review left %d finding(s) at or above %s; fix them on %s, then komodo close --group",
+				len(blocking), plan.Profile.SeverityFloor, plan.Branch),
 		}), nil
 	}
 	if !shipped(root, plan, parsed) {
@@ -125,7 +156,7 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 	next.Skills = []string{}
 	next.Facets = []string{}
 	next.Commands = []string{}
-	if command := VerifyCommand(filepath.Join(root, plan.Worktree)); command != "" {
+	if command := VerifyCommand(WorktreePath(root, plan.Worktree)); command != "" {
 		next.Commands = append(next.Commands, command)
 	}
 	if next.Role == "reviewer" {
@@ -185,4 +216,37 @@ func shipped(root string, plan *Plan, parsed backlog.Backlog) bool {
 		}
 	}
 	return false
+}
+
+// staleBrief reports whether a task has no brief, or one written before its last failure.
+func staleBrief(root, taskID string) bool {
+	brief, err := os.Stat(filepath.Join(root, StateDir, "briefs", taskID+".md"))
+	if err != nil {
+		return true
+	}
+	attempt, err := os.Stat(attemptPath(root, taskID))
+	if err != nil {
+		return false
+	}
+	return brief.ModTime().Before(attempt.ModTime())
+}
+
+// openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
+func openRun(root, groupID string) (*Plan, error) {
+	plan, err := PlanForGroup(root, groupID)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if shipped(root, plan, parsed) {
+		return nil, nil
+	}
+	return plan, nil
 }
