@@ -923,3 +923,26 @@ context:
   - "the request sends no context size, so a brief longer than the local default is silently truncated and the reviewer reads part of the diff; send a context size from the brief's length and fail when the prompt count shows truncation"
 type: fix
 ```
+
+#### [TSK-03.7.25] Seven standards fit the cap they are clipped at [P: M] [READY]
+```yaml
+files: [komodo/skills]
+done_when:
+  - go run ./cmd/komodo doctor
+context:
+  - "doctor now measures a standard's body against CapStandard (6000 bytes), the length the brief clips it at; seven exceed it (standards-csharp 7873, java 7932, kotlin 7639, swift 7302, ui-desktop 6745, ui-mobile 7850, zig 7508), so every brief that selects one silently loses its tail"
+  - "tighten each to at most 6000 bytes of body without dropping a rule: merge duplicates, cut restated examples, shorten wording; a rule that survives only as a fragment is lost, not kept"
+type: chore
+```
+
+#### [TSK-03.7.26] The last host name outside the mounts, a field nobody reads, and an honest always-on count [P: M] [READY]
+```yaml
+files: [templates/project, internal/profile, internal/doctor]
+done_when:
+  - go test ./internal/doctor/... ./internal/profile/...
+context:
+  - "templates/project/AGENTS.md.tmpl names a host's home rules file outside internal/mount; say it without naming the host"
+  - "Profile.Remote is set to origin and read by nothing; ship pushes to origin directly. Remove it, or have ship read it; a set-but-unread field is a silent wrong answer waiting to happen"
+  - "doctor's always-on total sums every shipped skill's description, but a host preloads only the skills the mount rendered; count the rendered set, so the number tracks what a session actually loads"
+type: fix
+```
