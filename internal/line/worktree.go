@@ -99,9 +99,33 @@ func ResultPath(root, taskID string) string {
 	return filepath.Join(root, StateDir, "results", taskID+".json")
 }
 
+// ResultPaths are the places a result can be, worktree first: a builder is sandboxed to its worktree.
+func ResultPaths(root, taskID string) []string {
+	paths := []string{}
+	if state, err := LoadRun(root); err == nil && state.Worktree != "" {
+		if worktree := ResultPath(state.Worktree, taskID); worktree != ResultPath(root, taskID) {
+			paths = append(paths, worktree)
+		}
+	}
+	return append(paths, ResultPath(root, taskID))
+}
+
+// ReadResultFile returns the first result that exists for a task, and where it was found.
+func ReadResultFile(root, taskID string) ([]byte, string, error) {
+	var err error
+	for _, path := range ResultPaths(root, taskID) {
+		var data []byte
+		data, err = os.ReadFile(path)
+		if err == nil {
+			return data, path, nil
+		}
+	}
+	return nil, "", err
+}
+
 // HasResult reports whether a task already has a result on disk that parses, which is resume.
 func HasResult(root, taskID string) bool {
-	data, err := os.ReadFile(ResultPath(root, taskID))
+	data, _, err := ReadResultFile(root, taskID)
 	if err != nil {
 		return false
 	}
