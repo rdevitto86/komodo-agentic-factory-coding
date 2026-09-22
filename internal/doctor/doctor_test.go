@@ -38,6 +38,14 @@ func clean(t *testing.T) string {
 	return root
 }
 
+// registerHost adds a fake mount for one test and restores the registry after it.
+func registerHost(t *testing.T, host mount.Host) {
+	t.Helper()
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Register(host)
+}
+
 // problemsFrom returns the checks that fired.
 func problemsFrom(t *testing.T, root string) map[string][]Problem {
 	t.Helper()
@@ -93,7 +101,7 @@ func TestAMalformedRoleIsFound(t *testing.T) {
 }
 
 func TestAVendorNameOutsideTheMountsIsFound(t *testing.T) {
-	mount.Register(mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
+	registerHost(t, mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
 	root := clean(t)
 	write(t, root, "internal/line/thing.go", "package line\n\n// uses testvendor directly\nvar x = 1\n")
 	got := problemsFrom(t, root)["leaks"]
@@ -103,7 +111,7 @@ func TestAVendorNameOutsideTheMountsIsFound(t *testing.T) {
 }
 
 func TestAMountMayNameItsOwnVendor(t *testing.T) {
-	mount.Register(mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
+	registerHost(t, mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
 	root := clean(t)
 	write(t, root, "internal/mount/testhost/testhost.go", "package testhost\n\n// testvendor lives here\nvar x = 1\n")
 	if got := problemsFrom(t, root)["leaks"]; len(got) != 0 {
@@ -112,7 +120,7 @@ func TestAMountMayNameItsOwnVendor(t *testing.T) {
 }
 
 func TestATestFixtureIsNotALeak(t *testing.T) {
-	mount.Register(mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
+	registerHost(t, mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
 	root := clean(t)
 	write(t, root, "internal/line/thing_test.go", "package line\n\n// testvendor as a fixture\nvar x = 1\n")
 	if got := problemsFrom(t, root)["leaks"]; len(got) != 0 {
@@ -175,7 +183,7 @@ func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	root := clean(t)
 	rendered := filepath.Join(root, "existing.txt")
 	write(t, root, "existing.txt", "old\n")
-	mount.Register(mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
+	registerHost(t, mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
 		plan := install.Plan{Host: "testhost", Root: root}
 		plan.Add(rendered, []byte("old\n"), "kept in sync")
 		plan.Add(filepath.Join(root, "missing.txt"), []byte("new\n"), "never rendered")
@@ -184,6 +192,18 @@ func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	got := problemsFrom(t, root)["drift"]
 	if len(got) != 1 || got[0].Where != "missing.txt" || !strings.Contains(got[0].Detail, "run komodo install") {
 		t.Fatalf("drift = %+v", got)
+	}
+}
+
+func TestADeletedSeedFileIsNotDrift(t *testing.T) {
+	root := clean(t)
+	registerHost(t, mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
+		plan := install.Plan{Host: "testhost", Root: root}
+		plan.AddSeed(filepath.Join(root, "seeded.local.json"), []byte("{}"), "the personal overlay")
+		return plan, nil
+	}})
+	if got := problemsFrom(t, root); len(got) != 0 {
+		t.Fatalf("problems = %+v; a seed file the user deleted must never count as drift", got)
 	}
 }
 
@@ -230,7 +250,7 @@ func TestTokensCountFourCharacters(t *testing.T) {
 
 func TestAHostThatSaysItIsNotInstalledHereIsSkipped(t *testing.T) {
 	root := clean(t)
-	mount.Register(mount.Host{Name: "absenthost",
+	registerHost(t, mount.Host{Name: "absenthost",
 		Installed: func(string) bool { return false },
 		Render: func(root, binary string) (install.Plan, error) {
 			plan := install.Plan{Host: "absenthost", Root: root}

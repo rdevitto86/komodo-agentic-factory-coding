@@ -8,6 +8,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/ledger"
+	"komodo/internal/mount"
 )
 
 const groupText = "### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -85,7 +86,7 @@ func TestBlockedByWalksTransitively(t *testing.T) {
 
 func TestNextPrintsTheGroupAndItsWaves(t *testing.T) {
 	root := repo(t, groupText)
-	plan, err := Next(root, "")
+	plan, err := next(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +114,26 @@ func TestReviewerRoleDispatchesToTheReviewerTier(t *testing.T) {
 	if err := os.WriteFile(path, []byte(role), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := Next(root, "")
+	marker := filepath.Join(root, ".fakehost-reviewer-marker")
+	if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Register(mount.Host{
+		Name: "fakehost-reviewer-tier",
+		Installed: func(r string) bool {
+			_, err := os.Stat(filepath.Join(r, ".fakehost-reviewer-marker"))
+			return err == nil
+		},
+		Tiers: func(string, bool) mount.Tiers {
+			return mount.Tiers{
+				Heavy:    mount.Machine{Provider: "claude", Model: "opus"},
+				Reviewer: mount.Machine{Provider: "claude", Model: "sonnet"},
+			}
+		},
+	})
+	plan, err := next(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,8 +143,8 @@ func TestReviewerRoleDispatchesToTheReviewerTier(t *testing.T) {
 			continue
 		}
 		found = true
-		if role.Machine != "reviewer" {
-			t.Fatalf("machine = %s, want the reviewer tier, not the heavy tier it declares", role.Machine)
+		if role.Machine != "claude/sonnet" {
+			t.Fatalf("machine = %s, want Tiers.Reviewer resolved, not the heavy tier it declares", role.Machine)
 		}
 	}
 	if !found {
@@ -134,11 +154,11 @@ func TestReviewerRoleDispatchesToTheReviewerTier(t *testing.T) {
 
 func TestNextTakesATaskIdOrAGroupId(t *testing.T) {
 	root := repo(t, groupText)
-	byTask, err := Next(root, "TSK-05.1.2")
+	byTask, err := next(root, "TSK-05.1.2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	byGroup, err := Next(root, "TG-05.1")
+	byGroup, err := next(root, "TG-05.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +169,7 @@ func TestNextTakesATaskIdOrAGroupId(t *testing.T) {
 
 func TestNextPrintsNothingWhenNothingIsReady(t *testing.T) {
 	root := repo(t, strings.ReplaceAll(groupText, "[READY]", "[DONE]"))
-	plan, err := Next(root, "")
+	plan, err := next(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +188,7 @@ func TestNextSkipsATaskWithAValidResult(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "TSK-05.1.1.json"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := Next(root, "")
+	plan, err := next(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +219,7 @@ func TestHasResultRejectsBrokenJSON(t *testing.T) {
 func TestSingleModeIsOneWave(t *testing.T) {
 	text := strings.Replace(groupText, "type: feat\nversion: 2.0.0", "type: feat\nversion: 2.0.0\nmode: single", 1)
 	root := repo(t, text)
-	plan, err := Next(root, "")
+	plan, err := next(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +259,7 @@ func TestEveryStationSeesTheWavesTheRunPinned(t *testing.T) {
 	if err := SaveRun(root, state); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := Next(root, "")
+	plan, err := next(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,14 +283,14 @@ func TestTheRunsOwnGroupOutlivesItsLastClosedTask(t *testing.T) {
 	if err := SaveRun(root, state); err != nil {
 		t.Fatal(err)
 	}
-	next, err := Next(root, "")
+	next, err := next(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if next == nil || next.Group != "TG-05.2" {
 		t.Fatalf("plan = %+v; the fixture must have a later group ready, which is what stole the wave", next)
 	}
-	plan, err := PlanForRun(root)
+	plan, err := PlanForStation(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}

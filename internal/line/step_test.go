@@ -234,6 +234,22 @@ func TestAnOllamaMachineBecomesACommandNotASpawn(t *testing.T) {
 	}
 }
 
+func TestASessionReviewerFallsBackToItsOwnHeavyTierNotStandard(t *testing.T) {
+	plan := &Plan{
+		Roles: []Role{{Name: "reviewer", Tier: "heavy", Machine: "ollama", Session: true, Tools: []string{"read", "search"}}},
+		Profile: profile.Profile{Tiers: mount.Tiers{
+			Standard: mount.Machine{Provider: "claude", Model: "haiku"},
+			Heavy:    mount.Machine{Provider: "claude", Model: "opus"},
+			Reviewer: mount.Machine{Provider: "ollama", Model: "llama3.2"},
+		}},
+		Worktree: ".",
+	}
+	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "reviewer", Task: "x"}, "")
+	if got.Machine != "claude/opus" {
+		t.Fatalf("machine = %s, want the reviewer's own heavy tier, not the first remote tier", got.Machine)
+	}
+}
+
 func TestALightTaskTierKeepsAWritingRoleOnTheHostsStandardTier(t *testing.T) {
 	plan := &Plan{
 		Roles: []Role{{Name: "builder", Tier: "standard", Tools: []string{"read", "edit", "write", "shell", "search"}, Session: true}},
@@ -465,7 +481,7 @@ func TestARepairMakesItsReviewStale(t *testing.T) {
 	}
 	seed(t, root, "TSK-12.1.1")
 	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
-	plan, err := PlanForRun(root)
+	plan, err := PlanForStation(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}

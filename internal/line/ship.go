@@ -29,7 +29,7 @@ type ShipResult struct {
 }
 
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
-func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipResult, error) {
+func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (result *ShipResult, err error) {
 	group := WorktreePath(root, plan.Worktree)
 	path, err := backlog.Find(group)
 	if err != nil {
@@ -49,9 +49,13 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 		return nil, err
 	}
 	started := time.Now()
-	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Filed: filed}
+	result = &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Filed: filed}
 	defer func() {
-		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: "done"})
+		outcome := "done"
+		if err != nil {
+			outcome = "failed"
+		}
+		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome})
 	}()
 	for _, task := range plan.Tasks {
 		current, ok := parsed.Task(task.ID)

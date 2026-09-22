@@ -107,6 +107,9 @@ func clipDiff(pieces []string, limit int) string {
 			marker := fmt.Sprintf("\n[... diff clipped at a file boundary: %d of %d files shown, %d files omitted ...]", index, len(pieces), omitted)
 			return strings.Join(kept, "\n") + marker
 		}
+		if size > limit {
+			return Clip(piece, limit, "diff")
+		}
 		kept = append(kept, piece)
 	}
 	return strings.Join(kept, "\n")

@@ -44,7 +44,7 @@ func Step(root, needle string) (*Action, error) {
 			Why:     fmt.Sprintf("%s has not been cut yet, from %s", plan.Group, plan.Base),
 		}), nil
 	}
-	full, err := PlanForGroup(root, state.Group)
+	full, err := planForGroup(root, state.Group)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,9 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 		}
 		if next.Machine == "ollama" && (matched.Session || !ollama.Allowed(matched.Tools)) {
 			next.Machine = matched.Tier
-			if remote, ok := plan.Profile.Tiers.FirstRemote(); ok {
+			if remote := plan.Profile.Tiers.Machine(matched.Tier); remote.Provider != "" && !remote.Local() {
+				next.Machine = remote.Provider + "/" + remote.Model
+			} else if remote, ok := plan.Profile.Tiers.FirstRemote(); ok {
 				next.Machine = remote.Provider + "/" + remote.Model
 			}
 		}
@@ -233,7 +235,7 @@ func shipped(root string, plan *Plan, parsed backlog.Backlog) bool {
 		return false
 	}
 	for _, entry := range entries {
-		if entry.Station == "ship" && entry.Group == plan.Group {
+		if entry.Station == "ship" && entry.Group == plan.Group && entry.Outcome == "done" {
 			return true
 		}
 	}

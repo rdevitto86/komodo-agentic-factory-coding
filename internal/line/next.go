@@ -55,33 +55,20 @@ const (
 	RunGroup
 )
 
-// Next builds the plan for the next ready group, or for the group holding the named task.
-func Next(root, needle string) (*Plan, error) {
+// next builds the plan for the next ready group, or for the group holding the named task.
+func next(root, needle string) (*Plan, error) {
 	return planFor(root, needle, FreshGroup)
 }
 
-// PlanForGroup builds a group's plan including the tasks that already closed, which is what step walks.
-func PlanForGroup(root, groupID string) (*Plan, error) {
+// planForGroup builds a group's plan including the tasks that already closed, which is what step walks.
+func planForGroup(root, groupID string) (*Plan, error) {
 	return planFor(root, groupID, RunGroup)
-}
-
-// PlanForRun is the plan for the group a run has open, or the next ready group when none is.
-func PlanForRun(root string) (*Plan, error) {
-	state, err := LoadRun(root)
-	if err != nil || state.Group == "" {
-		return Next(root, "")
-	}
-	plan, err := PlanForGroup(root, state.Group)
-	if err != nil || plan == nil {
-		return Next(root, "")
-	}
-	return plan, nil
 }
 
 // PlanForStation is the one resolver a station calls to decide which group it plans for: the
 // run's own open group while it is not yet shipped, or a fresh group off BACKLOG.md otherwise.
 func PlanForStation(root, needle string) (*Plan, error) {
-	plan, err := Next(root, needle)
+	plan, err := next(root, needle)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +77,7 @@ func PlanForStation(root, needle string) (*Plan, error) {
 		return plan, nil
 	}
 	if plan == nil {
-		return PlanForGroup(root, state.Group)
+		return planForGroup(root, state.Group)
 	}
 	if needle == "" && state.Group != plan.Group {
 		if open, err := openRun(root, state.Group); err == nil && open != nil {
@@ -102,7 +89,7 @@ func PlanForStation(root, needle string) (*Plan, error) {
 
 // openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
 func openRun(root, groupID string) (*Plan, error) {
-	plan, err := PlanForGroup(root, groupID)
+	plan, err := planForGroup(root, groupID)
 	if err != nil || plan == nil {
 		return nil, err
 	}

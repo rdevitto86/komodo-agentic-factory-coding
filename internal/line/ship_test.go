@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
 )
 
 const shipBacklog = "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -118,6 +120,39 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 	}
 	if strings.Contains(string(stale), "[DONE]") {
 		t.Fatal("ship must write the worktree it commits, not the root it was invoked from")
+	}
+}
+
+func TestAFailedGateRecordsShipAsFailedNotDone(t *testing.T) {
+	root, _ := shipRepo(t)
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	state := RunState{Run: "TG-09.1-1", Group: "TG-09.1", Base: "main", Branch: "feat/a-group"}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ShipGroup(root, plan, "", nil); err == nil || !strings.Contains(err.Error(), "gate") {
+		t.Fatalf("err = %v; the group worktree has no cmd/komodo, so the gate must fail", err)
+	}
+	entries, err := Book(root).All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Station == "ship" && entry.Group == "TG-09.1" && entry.Outcome == "done" {
+			t.Fatal("a failed gate must not stamp the ship entry as done")
+		}
+	}
+	if shipped(root, plan, backlog.Backlog{}) {
+		t.Fatal("a failed gate must not release the line to the next group")
 	}
 }
 

@@ -228,6 +228,9 @@ func checkDrift(root string) []Problem {
 			continue
 		}
 		for _, action := range plan.Actions() {
+			if action.Seed {
+				continue
+			}
 			switch action.Verb {
 			case "update", "remove":
 				problems = append(problems, Problem{"drift", action.Path,
