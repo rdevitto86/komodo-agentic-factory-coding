@@ -222,3 +222,21 @@ func TestFileFindingsIsANoOpWithoutFindings(t *testing.T) {
 		t.Fatalf("added = %v, err = %v", added, err)
 	}
 }
+
+func TestTheRunPinsItsWavesSoClosingATaskDoesNotRenumberThem(t *testing.T) {
+	root := t.TempDir()
+	state := RunState{
+		Run: "TG-09.1-1", Group: "TG-09.1", Base: "main", Branch: "feat/a",
+		Worktree: root, Waves: [][]string{{"TSK-09.1.1", "TSK-09.1.2"}, {"TSK-09.1.3"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadRun(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Waves) != 2 || loaded.Waves[0][0] != "TSK-09.1.1" {
+		t.Fatalf("waves = %v; the run must keep the waves it cut", loaded.Waves)
+	}
+}

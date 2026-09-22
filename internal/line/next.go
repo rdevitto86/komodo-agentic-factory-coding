@@ -63,7 +63,14 @@ func PlanForGroup(root, groupID string) (*Plan, error) {
 	if err != nil || !ok {
 		return nil, err
 	}
-	return buildPlan(root, parsed, group, true)
+	plan, err := buildPlan(root, parsed, group, true)
+	if err != nil || plan == nil {
+		return plan, err
+	}
+	if state, err := LoadRun(root); err == nil && state.Group == plan.Group && len(state.Waves) > 0 {
+		plan.Waves = state.Waves
+	}
+	return plan, nil
 }
 
 // groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one.
@@ -241,6 +248,7 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 		Started: time.Now().UTC(),
 	}
 	state.Worktree = path
+	state.Waves = plan.Waves
 	if err := Book(root).TruncateRun(); err != nil {
 		return state, err
 	}
