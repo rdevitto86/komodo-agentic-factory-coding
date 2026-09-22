@@ -303,9 +303,14 @@ func WriteBrief(root string, brief *Brief, groupBranch string) error {
 			return err
 		}
 	}
-	path := filepath.Join(root, brief.Path)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	for _, base := range []string{root, worktree} {
+		path := filepath.Join(base, brief.Path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(brief.Text), 0o644); err != nil {
+			return err
+		}
 	}
-	return os.WriteFile(path, []byte(brief.Text), 0o644)
+	return nil
 }
