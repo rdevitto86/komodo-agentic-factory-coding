@@ -467,7 +467,7 @@ base: docs/v2-plan
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
 * **PR F:** `chore/v2-gate-exit` from `feat/v2-repo-layer`, cut by `/run TG-03.6` and opened by `close --group`. Validated by the gate as the pre-commit and pre-push hook on both developer machines, the retired-words grep, the swap tests, no workflow directory, the Codex numbers in the changelog, and a human read of the final README. Merges into `feat/v2-repo-layer`; then #103 merges into `main`.
 
-#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [READY]
+#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [DONE]
 ```yaml
 files: [internal/gate, internal/line/close.go, internal/line/ship.go, cmd/komodo/main.go]
 done_when:
@@ -479,7 +479,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.6.2] README, names, and the templates describe what exists [P: H] [READY]
+#### [TSK-03.6.2] README, names, and the templates describe what exists [P: H] [DONE]
 ```yaml
 files: [README.md, AGENTS.md, templates/project, komodo, cmd/komodo, internal]
 done_when:
@@ -504,7 +504,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.4] Changelog 2.0.0 [P: M] [READY]
+#### [TSK-03.6.4] Changelog 2.0.0 [P: M] [DONE]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
@@ -515,7 +515,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.5] Every swap point is proven [P: C] [READY]
+#### [TSK-03.6.5] Every swap point is proven [P: C] [DONE]
 ```yaml
 files: [internal/line/swap_test.go, internal/profile, internal/facet, internal/repo]
 done_when:
@@ -527,7 +527,7 @@ context:
 type: test
 ```
 
-#### [TSK-03.6.7] The prebuilt binaries stop conflicting on every stacked branch [P: M] [READY]
+#### [TSK-03.6.7] The prebuilt binaries stop conflicting on every stacked branch [P: M] [DONE]
 ```yaml
 files: [.gitattributes, bin/MANIFEST.sha256]
 done_when:
@@ -539,7 +539,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [READY]
+#### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
@@ -551,7 +551,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.6.8] The reviewer tier is set on both mounts and never dispatched [P: M] [READY]
+#### [TSK-03.6.8] The reviewer tier is set on both mounts and never dispatched [P: M] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/next_test.go]
 done_when:
@@ -563,7 +563,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.6.9] A declared key that nothing reads fails the gate [P: H] [READY]
+#### [TSK-03.6.9] A declared key that nothing reads fails the gate [P: H] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
@@ -575,7 +575,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.6.10] One resolver decides which group a station plans for [P: H] [READY]
+#### [TSK-03.6.10] One resolver decides which group a station plans for [P: H] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/step.go, internal/line/next_test.go]
 done_when:
@@ -587,7 +587,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.6.11] `komodo diff` truncates the diff it hands the reviewer [P: H] [READY]
+#### [TSK-03.6.11] `komodo diff` truncates the diff it hands the reviewer [P: H] [DONE]
 ```yaml
 files: [internal/line/diff.go, internal/line/diff_test.go]
 done_when:
@@ -599,7 +599,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.6.12] The manifest hash in the profile cache decides nothing [P: L] [READY]
+#### [TSK-03.6.12] The manifest hash in the profile cache decides nothing [P: L] [DONE]
 ```yaml
 files: [internal/detect/detect.go, internal/detect/detect_test.go]
 done_when:
@@ -609,4 +609,70 @@ context:
   - "Load now walks the tree on every call and returns the fresh profile, so hashManifests and sameManifests only decide whether the file is rewritten, never what a caller sees; the walk they exist to avoid always runs"
   - "drop the hash comparison and keep the equality guard, or restore a cache read that genuinely skips the walk"
 type: refactor
+```
+
+### [TG-03.7] The review findings from TG-03.6
+```yaml
+type: fix
+version: 2.0.1
+base: docs/v2-plan
+```
+
+#### [TSK-03.7.1] The binaries leave the tree, so no branch rebuilds them [P: H] [READY]
+```yaml
+files: [.gitattributes, bin, internal/gate, internal/release]
+done_when:
+  - go test ./internal/gate/... ./internal/release/...
+context:
+  - "TSK-03.6.7 set bin/** binary merge=binary -diff, which the review proved a no-op: git's binary macro already expands to -diff -merge -text, and the built-in binary driver behaves exactly like an unset merge attribute, so the paths still conflict"
+  - "take that task's second option instead: build the binaries at release and drop them from the tree, so no branch ever rebuilds a tracked artifact"
+type: fix
+```
+
+#### [TSK-03.7.2] checkPromises reads the sources it names and resolves real callers [P: H] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-03.7.1]
+context:
+  - "the check scans only komodo/rules/*.md for a bullet shaped - **`key`**, so severity_floor, before_review and after_publish, which live in BACKLOG.md, are out of scope; three of the four mechanisms it was written for cannot be seen"
+  - "called() counts any word-boundary match in a non-test file, so the tier key passes on the struct field roles[index].Tier whether or not Task.Tier() is ever called; resolve callers by identifier position with go/ast"
+type: fix
+```
+
+#### [TSK-03.7.3] The MCP swap point is proven or the changelog stops claiming it [P: M] [READY]
+```yaml
+files: [internal/line/swap_test.go, CHANGELOG.md]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.7.2]
+context:
+  - "TSK-03.6.5 requires the swap test to assert that a facet's mcp.json, when present, changes nothing in V2; swap_test.go carries four tests and no mention of mcp, yet the 2.0.0 changelog entry says it does"
+  - "add the assertion, or cut the claim; a changelog that overstates a proof is worse than one that omits it"
+type: fix
+```
+
+#### [TSK-03.7.4] A diff never drops a file without saying so [P: M] [READY]
+```yaml
+files: [internal/line/diff.go, internal/line/diff_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.7.3]
+context:
+  - "DiffFor appends a piece only when byFile holds the name, so a mismatch between git diff --name-only and the chunk keys removes a file silently; with core.quotepath at its default a non-ASCII path is C-quoted in both, the header stops matching diff --git a/, and its hunks are folded into the previous file"
+  - "handle the quoted header form and emit a marker for any name in Files with no chunk; TSK-03.6.11 forbids a silent drop"
+type: fix
+```
+
+#### [TSK-03.7.5] The detect recompute test asserts what its name claims [P: L] [READY]
+```yaml
+files: [internal/detect/detect_test.go]
+done_when:
+  - go test ./internal/detect/...
+depends_on: [TSK-03.7.4]
+context:
+  - "TestLoadRecomputesWhenAManifestIsAdded asserts Verify is go test ./..., which go.mod already produced, and that the cache file is non-empty, which the first Load guaranteed; both hold if Load returned a stale profile without walking"
+  - "assert a profile field the added manifest actually changes, or drop the test in favour of the one that does"
+type: test
 ```
