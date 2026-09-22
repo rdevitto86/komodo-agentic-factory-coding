@@ -559,7 +559,7 @@ func currentPlan(root string) *line.Plan {
 	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
 		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
 	}
-	if info, err := os.Stat(filepath.Join(root, plan.Worktree)); err != nil || !info.IsDir() {
+	if info, err := os.Stat(line.WorktreePath(root, plan.Worktree)); err != nil || !info.IsDir() {
 		plan.Worktree = "."
 	}
 	return plan

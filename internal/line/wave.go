@@ -3,7 +3,6 @@ package line
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"time"
@@ -30,7 +29,7 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 	if index < 0 || index >= len(plan.Waves) {
 		return nil, fmt.Errorf("no wave %d in %s", index+1, plan.Group)
 	}
-	group := filepath.Join(root, plan.Worktree)
+	group := WorktreePath(root, plan.Worktree)
 	started := time.Now()
 	result := &WaveResult{Wave: index + 1}
 	defer func() {

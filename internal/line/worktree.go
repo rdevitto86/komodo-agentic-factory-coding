@@ -72,6 +72,17 @@ func AddWorktree(root, branch, base, path string) error {
 	return err
 }
 
+// WorktreePath resolves a plan's worktree: a run records it absolute, a plan builds it relative to the root.
+func WorktreePath(root, worktree string) string {
+	if worktree == "" {
+		return root
+	}
+	if filepath.IsAbs(worktree) {
+		return worktree
+	}
+	return filepath.Join(root, worktree)
+}
+
 // SaveRun writes the run's state under .komodo so every later station reads the same choices.
 func SaveRun(root string, state RunState) error {
 	dir := filepath.Join(root, StateDir)

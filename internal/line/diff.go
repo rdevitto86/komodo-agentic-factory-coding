@@ -2,7 +2,6 @@ package line
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"komodo/internal/backlog"
@@ -27,7 +26,7 @@ type ReviewInput struct {
 
 // DiffFor renders the group's diff against its base with the task blocks and the standards it touches.
 func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
-	worktree := filepath.Join(root, plan.Worktree)
+	worktree := WorktreePath(root, plan.Worktree)
 	names, err := git(worktree, "diff", "--name-only", plan.Base+"...HEAD")
 	if err != nil {
 		return nil, err

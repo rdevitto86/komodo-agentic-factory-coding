@@ -63,3 +63,18 @@ func TestResultIsFoundInTheTasksOwnWorktree(t *testing.T) {
 		t.Fatal("a result in the task's own worktree was not found")
 	}
 }
+
+func TestAnAbsoluteWorktreeIsNotJoinedToTheRoot(t *testing.T) {
+	root := t.TempDir()
+	absolute := filepath.Join(root, StateDir, "wt", "TG-09.1")
+	if got := WorktreePath(root, absolute); got != absolute {
+		t.Fatalf("path = %s; a run records its worktree absolute and joining it to the root points nowhere", got)
+	}
+	relative := filepath.Join(StateDir, "wt", "TG-09.1")
+	if got := WorktreePath(root, relative); got != absolute {
+		t.Fatalf("path = %s, want %s; a plan builds its worktree relative to the root", got, absolute)
+	}
+	if got := WorktreePath(root, ""); got != root {
+		t.Fatalf("path = %s; no worktree means the root", got)
+	}
+}
