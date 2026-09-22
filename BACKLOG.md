@@ -515,6 +515,18 @@ context:
 type: test
 ```
 
+#### [TSK-03.6.7] The prebuilt binaries stop conflicting on every stacked branch [P: M] [READY]
+```yaml
+files: [.gitattributes, bin/MANIFEST.sha256]
+done_when:
+  - git check-attr binary bin/komodo-linux-amd64
+depends_on: [TSK-03.6.1]
+context:
+  - "three committed binaries and a manifest are rebuilt by komodo gate --rebuild on every branch, so any two branches off one base always conflict in bin/; #112 and #114 both hit it"
+  - "mark them binary with a merge strategy that takes the branch's own copy, or build them at release only and drop them from the tree"
+type: chore
+```
+
 #### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [READY]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]

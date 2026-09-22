@@ -16,12 +16,13 @@ const StateDir = ".komodo"
 
 // RunState records the base and branch a run chose so close and ship target the same one.
 type RunState struct {
-	Run      string    `json:"run"`
-	Group    string    `json:"group"`
-	Base     string    `json:"base"`
-	Branch   string    `json:"branch"`
-	Worktree string    `json:"worktree"`
-	Started  time.Time `json:"started"`
+	Run      string     `json:"run"`
+	Group    string     `json:"group"`
+	Base     string     `json:"base"`
+	Branch   string     `json:"branch"`
+	Worktree string     `json:"worktree"`
+	Waves    [][]string `json:"waves,omitempty"`
+	Started  time.Time  `json:"started"`
 }
 
 // git runs one git command in dir and returns its trimmed stdout.

@@ -204,7 +204,7 @@ PR #103 is the integration PR: its branch `docs/v2-plan` carries the plan and re
 | C | `feat/v2-guard-mounts` | `feat/v2-conveyor` | TG-03.3, 5 tasks: the guard, install for both hosts, doctor, self-selecting profiles, usage | a session | B |
 | D | `feat/v2-skills-launcher` | `feat/v2-guard-mounts` | TG-03.4, 4 tasks: the four skills, the headless launcher, the proof task that PR E fills in, the edit-only permissions layer | a session | C |
 | E | `feat/v2-repo-layer` | `feat/v2-skills-launcher` | TG-03.5, 9 tasks: repo context, standards, skills, commands, the Ollama mount, detect, facets, the profile slot, the project render | the line itself, through `/run TG-03.5` | D |
-| F | `chore/v2-gate-exit` | `feat/v2-repo-layer` | TG-03.6, 6 tasks: the local gate hooks, names and README, the swap proofs, the Codex exit test, the changelog, the drift check | the line, plus the human for Codex | E |
+| F | `chore/v2-gate-exit` | `feat/v2-repo-layer` | TG-03.6, 7 tasks: the local gate hooks, names and README, the swap proofs, the Codex exit test, the changelog, the drift check, the binary conflict | the line, plus the human for Codex | E |
 
 How a stack moves:
 
