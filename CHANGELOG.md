@@ -10,6 +10,10 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 
 ## 2.0.0 — 2026-09-22
 
+- **TG-03.6** The gate and the exit test (11 task(s))
+
+## 2.0.0 — 2026-09-22
+
 ### The line
 
 `komodo`, one static Go binary with no dependency outside the standard library, is the conveyor: intake, brief, close, diff, report, lint, tag, release check, guard, install, doctor, machine, gate, run. A task moves through intake (`komodo next`), the brief device (`komodo brief`), a build machine, close, QC, a diff device, a review machine, and ship, two model calls per task and nothing else in the loop. A role names a tier, light, standard, or heavy, never a model; a profile maps tiers to a machine for one host, and a mount carries a brief to that machine or, for Ollama, calls it directly. Everything a model reads — rules, roles, skills, policy, standards — is markdown; the binary and the mounts under `internal/mount/` are the only Go a model never sees. One guard hook denies exactly four things: a write to a critical branch, a path outside the task's worktree, host or toolkit config, and a commit trailer; everything else inside a worktree is unrestricted. `komodo gate` — vet, test, doctor, the guard table, the binary rebuild — runs locally on pre-commit and pre-push; nothing runs on GitHub.

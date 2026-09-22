@@ -467,7 +467,7 @@ base: docs/v2-plan
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
 * **PR F:** `chore/v2-gate-exit` from `feat/v2-repo-layer`, cut by `/run TG-03.6` and opened by `close --group`. Validated by the gate as the pre-commit and pre-push hook on both developer machines, the retired-words grep, the swap tests, no workflow directory, the Codex numbers in the changelog, and a human read of the final README. Merges into `feat/v2-repo-layer`; then #103 merges into `main`.
 
-#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [READY]
+#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [DONE]
 ```yaml
 files: [internal/gate, internal/line/close.go, internal/line/ship.go, cmd/komodo/main.go]
 done_when:
@@ -479,7 +479,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.6.2] README, names, and the templates describe what exists [P: H] [READY]
+#### [TSK-03.6.2] README, names, and the templates describe what exists [P: H] [DONE]
 ```yaml
 files: [README.md, AGENTS.md, templates/project, komodo, cmd/komodo, internal]
 done_when:
@@ -504,7 +504,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.4] Changelog 2.0.0 [P: M] [READY]
+#### [TSK-03.6.4] Changelog 2.0.0 [P: M] [DONE]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
@@ -515,7 +515,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.5] Every swap point is proven [P: C] [READY]
+#### [TSK-03.6.5] Every swap point is proven [P: C] [DONE]
 ```yaml
 files: [internal/line/swap_test.go, internal/profile, internal/facet, internal/repo]
 done_when:
@@ -527,7 +527,7 @@ context:
 type: test
 ```
 
-#### [TSK-03.6.7] The prebuilt binaries stop conflicting on every stacked branch [P: M] [READY]
+#### [TSK-03.6.7] The prebuilt binaries stop conflicting on every stacked branch [P: M] [DONE]
 ```yaml
 files: [.gitattributes, bin/MANIFEST.sha256]
 done_when:
@@ -539,7 +539,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [READY]
+#### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
@@ -551,7 +551,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.6.8] The reviewer tier is set on both mounts and never dispatched [P: M] [READY]
+#### [TSK-03.6.8] The reviewer tier is set on both mounts and never dispatched [P: M] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/next_test.go]
 done_when:
@@ -563,7 +563,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.6.9] A declared key that nothing reads fails the gate [P: H] [READY]
+#### [TSK-03.6.9] A declared key that nothing reads fails the gate [P: H] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
@@ -575,7 +575,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.6.10] One resolver decides which group a station plans for [P: H] [READY]
+#### [TSK-03.6.10] One resolver decides which group a station plans for [P: H] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/step.go, internal/line/next_test.go]
 done_when:
@@ -587,7 +587,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.6.11] `komodo diff` truncates the diff it hands the reviewer [P: H] [READY]
+#### [TSK-03.6.11] `komodo diff` truncates the diff it hands the reviewer [P: H] [DONE]
 ```yaml
 files: [internal/line/diff.go, internal/line/diff_test.go]
 done_when:
@@ -599,7 +599,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.6.12] The manifest hash in the profile cache decides nothing [P: L] [READY]
+#### [TSK-03.6.12] The manifest hash in the profile cache decides nothing [P: L] [DONE]
 ```yaml
 files: [internal/detect/detect.go, internal/detect/detect_test.go]
 done_when:
