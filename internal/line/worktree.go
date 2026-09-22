@@ -100,15 +100,25 @@ func ResultPath(root, taskID string) string {
 	return filepath.Join(root, StateDir, "results", taskID+".json")
 }
 
-// ResultPaths are the places a result can be, worktree first: a builder is sandboxed to its worktree.
+// ResultPaths are the places a result can be: the task's worktree, the group's, then the root.
 func ResultPaths(root, taskID string) []string {
-	paths := []string{}
-	if state, err := LoadRun(root); err == nil && state.Worktree != "" {
-		if worktree := ResultPath(state.Worktree, taskID); worktree != ResultPath(root, taskID) {
-			paths = append(paths, worktree)
+	rootPath := ResultPath(root, taskID)
+	var paths []string
+	add := func(base string) {
+		if base == "" {
+			return
 		}
+		candidate := ResultPath(base, taskID)
+		if candidate == rootPath || contains(paths, candidate) {
+			return
+		}
+		paths = append(paths, candidate)
 	}
-	return append(paths, ResultPath(root, taskID))
+	add(filepath.Join(root, StateDir, "wt", taskID))
+	if state, err := LoadRun(root); err == nil {
+		add(state.Worktree)
+	}
+	return append(paths, rootPath)
 }
 
 // ReadResultFile returns the first result that exists for a task, and where it was found.
