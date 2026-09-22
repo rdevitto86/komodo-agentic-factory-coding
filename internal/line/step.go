@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"komodo/internal/backlog"
 )
@@ -183,7 +184,31 @@ func waveMerged(root string, plan *Plan, index int) bool {
 
 // reviewed reports whether the reviewer already returned a result for this group.
 func reviewed(root string, plan *Plan) bool {
-	return HasResult(root, plan.Group+"-review")
+	if !HasResult(root, plan.Group+"-review") {
+		return false
+	}
+	return !staleReview(root, plan)
+}
+
+// staleReview reports whether the branch moved after the review, which a repair always does.
+func staleReview(root string, plan *Plan) bool {
+	_, path, err := ReadResultFile(root, plan.Group+"-review")
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	stamp, err := git(WorktreePath(root, plan.Worktree), "log", "-1", "--format=%cI")
+	if err != nil {
+		return false
+	}
+	committed, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		return false
+	}
+	return committed.After(info.ModTime())
 }
 
 // shipped reports whether every task in the group is closed out.
