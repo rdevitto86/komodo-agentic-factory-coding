@@ -233,9 +233,13 @@ func checkDrift(root string) []Problem {
 			continue
 		}
 		for _, action := range plan.Actions() {
-			if action.Verb == "update" || action.Verb == "remove" {
+			switch action.Verb {
+			case "update", "remove":
 				problems = append(problems, Problem{"drift", action.Path,
 					"differs from what the source renders now; run komodo install"})
+			case "create":
+				problems = append(problems, Problem{"drift", action.Path,
+					"the source renders this file now but the mount has never written it; run komodo install"})
 			}
 		}
 	}
