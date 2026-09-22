@@ -387,7 +387,11 @@ func runBrief(root string, args []string) {
 	if state, err := line.LoadRun(root); err == nil && state.Worktree != "" {
 		cwd = state.Worktree
 	}
-	brief, err := line.BuildBrief(root, cwd, set.Arg(0), *role, *failure)
+	previous := *failure
+	if previous == "" {
+		previous = line.RepairText(root, set.Arg(0))
+	}
+	brief, err := line.BuildBrief(root, cwd, set.Arg(0), *role, previous)
 	if err != nil {
 		fail(err)
 	}
