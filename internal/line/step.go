@@ -138,7 +138,7 @@ func action(root string, plan *Plan, next Action) *Action {
 	next.Skills = []string{}
 	next.Facets = []string{}
 	next.Commands = []string{}
-	if command := VerifyCommand(filepath.Join(root, plan.Worktree)); command != "" {
+	if command := VerifyCommand(WorktreePath(root, plan.Worktree)); command != "" {
 		next.Commands = append(next.Commands, command)
 	}
 	if next.Role != "" {
@@ -204,7 +204,6 @@ func staleBrief(root, taskID string) bool {
 	}
 	return brief.ModTime().Before(attempt.ModTime())
 }
-
 
 // openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
 func openRun(root, groupID string) (*Plan, error) {

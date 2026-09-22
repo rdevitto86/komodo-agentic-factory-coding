@@ -28,7 +28,7 @@ type ShipResult struct {
 
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
 func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipResult, error) {
-	group := filepath.Join(root, plan.Worktree)
+	group := WorktreePath(root, plan.Worktree)
 	path, err := backlog.Find(root)
 	if err != nil {
 		return nil, err
