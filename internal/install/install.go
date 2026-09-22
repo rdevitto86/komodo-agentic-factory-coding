@@ -14,12 +14,13 @@ import (
 
 // Change is one file the install writes, seeds, or removes.
 type Change struct {
-	Path   string
-	Body   []byte
-	Mode   fs.FileMode
-	Seed   bool
-	Remove bool
-	Why    string
+	Path    string
+	Body    []byte
+	Mode    fs.FileMode
+	Seed    bool
+	Remove  bool
+	Project bool
+	Why     string
 }
 
 // Plan is every change one host's install would make.
@@ -32,6 +33,23 @@ type Plan struct {
 // Add appends one rendered file to the plan.
 func (p *Plan) Add(path string, body []byte, why string) {
 	p.Changes = append(p.Changes, Change{Path: path, Body: body, Mode: 0o644, Why: why})
+}
+
+// AddProject appends one rendered file that also belongs to the project-only render: the repo
+// skills, the standards skills, and the rules file, which --project writes on their own.
+func (p *Plan) AddProject(path string, body []byte, why string) {
+	p.Changes = append(p.Changes, Change{Path: path, Body: body, Mode: 0o644, Project: true, Why: why})
+}
+
+// Project narrows the plan to the changes --project writes, gitignored copies rebuilt every time.
+func (p Plan) Project() Plan {
+	narrowed := Plan{Host: p.Host, Root: p.Root}
+	for _, change := range p.Changes {
+		if change.Project {
+			narrowed.Changes = append(narrowed.Changes, change)
+		}
+	}
+	return narrowed
 }
 
 // AddSeed appends a file written once and never overwritten.

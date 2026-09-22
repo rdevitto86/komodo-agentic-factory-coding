@@ -98,6 +98,17 @@ func TestPrintCountsWhatWouldChange(t *testing.T) {
 	}
 }
 
+func TestProjectNarrowsToProjectChanges(t *testing.T) {
+	root := t.TempDir()
+	plan := Plan{Host: "test", Root: root}
+	plan.Add(filepath.Join(root, "agents", "builder.md"), []byte("agent"), "not project")
+	plan.AddProject(filepath.Join(root, "skills", "go", "SKILL.md"), []byte("skill"), "a repo skill")
+	narrowed := plan.Project()
+	if len(narrowed.Changes) != 1 || narrowed.Changes[0].Path != filepath.Join(root, "skills", "go", "SKILL.md") {
+		t.Fatalf("changes = %+v", narrowed.Changes)
+	}
+}
+
 func TestApplyIsACopyNotASymlink(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "skill", "SKILL.md")
