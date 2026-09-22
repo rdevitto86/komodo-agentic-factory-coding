@@ -66,20 +66,35 @@ func Step(root, needle string) (*Action, error) {
 	}
 	for index, wave := range plan.Waves {
 		for _, taskID := range wave {
-			if HasResult(root, taskID) {
+			attempt := LoadAttempt(root, taskID)
+			if HasResult(root, taskID) && attempt.Count == 0 {
 				continue
 			}
+			if attempt.Count > plan.Profile.Repairs {
+				return action(root, plan, Action{
+					Action: "done", Task: taskID, Wave: index + 1,
+					Why: fmt.Sprintf("%s is blocked after %d repair(s): %s", taskID, plan.Profile.Repairs, firstLine(attempt.Failure)),
+				}), nil
+			}
 			briefPath := filepath.Join(StateDir, "briefs", taskID+".md")
-			if _, err := os.Stat(filepath.Join(root, briefPath)); err != nil {
+			if staleBrief(root, taskID) {
+				why := taskID + " has no brief yet"
+				if attempt.Count > 0 {
+					why = fmt.Sprintf("%s failed and needs a repair brief carrying the failure", taskID)
+				}
 				return action(root, plan, Action{
 					Action: "run", Command: "komodo brief " + taskID, Task: taskID, Wave: index + 1,
-					Why: taskID + " has no brief yet",
+					Why: why,
 				}), nil
+			}
+			why := taskID + " has a brief and no result"
+			if attempt.Count > 0 {
+				why = fmt.Sprintf("%s has a repair brief and %d failed attempt(s)", taskID, attempt.Count)
 			}
 			return action(root, plan, Action{
 				Action: "spawn", Role: "builder", Brief: briefPath, Task: taskID, Wave: index + 1,
 				Worktree: filepath.Join(StateDir, "wt", taskID),
-				Why:      taskID + " has a brief and no result",
+				Why:      why,
 			}), nil
 		}
 		for _, taskID := range wave {
@@ -171,3 +186,17 @@ func shipped(root string, plan *Plan, parsed backlog.Backlog) bool {
 	}
 	return false
 }
+
+// staleBrief reports whether a task has no brief, or one written before its last failure.
+func staleBrief(root, taskID string) bool {
+	brief, err := os.Stat(filepath.Join(root, StateDir, "briefs", taskID+".md"))
+	if err != nil {
+		return true
+	}
+	attempt, err := os.Stat(attemptPath(root, taskID))
+	if err != nil {
+		return false
+	}
+	return brief.ModTime().Before(attempt.ModTime())
+}
+
