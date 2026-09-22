@@ -611,6 +611,18 @@ context:
 type: refactor
 ```
 
+#### [TSK-03.6.13] A run holds a lock, so two cannot drive one group [P: H] [READY]
+```yaml
+files: [internal/line/worktree.go, internal/line/worktree_test.go, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.1]
+context:
+  - "two komodo run processes drove TG-03.6 at once and both wrote run state, task branches and wave merges; the result happened to be coherent but nothing prevents two runs interleaving a wave merge or renumbering waves under each other"
+  - "next --start takes an exclusive lock under .komodo holding the pid and the run id; a second run exits naming the holder, and a stale lock whose pid is gone is reclaimed"
+type: feat
+```
+
 ### [TG-03.7] The review findings from TG-03.6
 ```yaml
 type: fix
