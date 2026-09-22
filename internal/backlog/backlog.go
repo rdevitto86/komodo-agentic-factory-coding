@@ -21,6 +21,9 @@ var Types = []string{"feat", "fix", "chore", "docs", "test", "refactor", "perf",
 // Owners are who may execute a task.
 var Owners = []string{"agent", "human"}
 
+// Tiers are the machine sizes a task's tier key may override the role's tier with.
+var Tiers = []string{"light", "standard", "heavy"}
+
 // Modes are how a group's tasks are run.
 var Modes = []string{"parallel", "single"}
 
@@ -78,6 +81,12 @@ func (t Task) DependsOn() []string { return t.Fields.List("depends_on") }
 
 // Context are the paths, with an optional anchor, a machine reads before starting.
 func (t Task) Context() []string { return t.Fields.List("context") }
+
+// Tier is the machine size that overrides the role's tier for this task, empty when unset.
+func (t Task) Tier() string { return t.Fields.String("tier") }
+
+// Facets are the facet names this task adds to detection, beyond what the tree and the repo override.
+func (t Task) Facets() []string { return t.Fields.List("facets") }
 
 // Owner is who executes a task, agent unless a person must act.
 func (t Task) Owner() string {
