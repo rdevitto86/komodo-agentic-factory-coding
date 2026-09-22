@@ -175,10 +175,11 @@ func runList(root string, args []string) {
 	set := flag.NewFlagSet("list", flag.ExitOnError)
 	asJSON := set.Bool("json", false, "print JSON")
 	status := set.String("status", "", "only tasks with this status")
-	_ = set.Parse(args)
+	needle, rest := splitPositional(args, "status")
+	_ = set.Parse(rest)
 	_, parsed := load(root)
 	groups := parsed.Groups
-	if needle := set.Arg(0); needle != "" {
+	if needle != "" {
 		group, ok := parsed.Group(needle)
 		if !ok {
 			fail(fmt.Errorf("no group matching %q", needle))
@@ -342,8 +343,9 @@ func runNext(root string, args []string) {
 	asJSON := set.Bool("json", false, "print JSON")
 	start := set.Bool("start", false, "cut the group branch in its own worktree")
 	base := set.String("base", "", "the branch to cut from, default the remote's default branch")
-	_ = set.Parse(args)
-	plan, err := line.Next(root, set.Arg(0))
+	needle, rest := splitPositional(args, "base")
+	_ = set.Parse(rest)
+	plan, err := line.Next(root, needle)
 	if err != nil {
 		fail(err)
 	}
@@ -388,8 +390,9 @@ func runBrief(root string, args []string) {
 	role := set.String("role", "builder", "the role the brief is for")
 	dryRun := set.Bool("dry-run", false, "print slot sizes and a token estimate, write nothing")
 	failure := set.String("failure", "", "the previous attempt's output, which makes this a repair")
-	_ = set.Parse(args)
-	if set.NArg() < 1 {
+	task, rest := splitPositional(args, "role", "failure")
+	_ = set.Parse(rest)
+	if task == "" {
 		fail(fmt.Errorf("usage: komodo brief <task> [--role builder] [--dry-run]"))
 	}
 	cwd := root
@@ -398,9 +401,9 @@ func runBrief(root string, args []string) {
 	}
 	previous := *failure
 	if previous == "" {
-		previous = line.RepairText(root, set.Arg(0))
+		previous = line.RepairText(root, task)
 	}
-	brief, err := line.BuildBrief(root, cwd, set.Arg(0), *role, previous)
+	brief, err := line.BuildBrief(root, cwd, task, *role, previous)
 	if err != nil {
 		fail(err)
 	}
@@ -437,7 +440,8 @@ func runClose(root string, args []string) {
 	wave := set.Int("wave", 0, "QC one wave of the current run, counting from 1")
 	group := set.Bool("group", false, "ship the current run: commit, push, pull request, changelog")
 	base := set.String("base", "", "the branch the pull request targets")
-	_ = set.Parse(args)
+	task, rest := splitPositional(args, "wave", "base")
+	_ = set.Parse(rest)
 	if *wave > 0 {
 		runWave(root, *wave)
 		return
@@ -446,10 +450,10 @@ func runClose(root string, args []string) {
 		runShip(root, *base)
 		return
 	}
-	if set.NArg() < 1 {
+	if task == "" {
 		fail(fmt.Errorf("usage: komodo close <task> [--gate] | --wave N | --group"))
 	}
-	outcome, err := line.CloseTask(root, set.Arg(0), *withGate)
+	outcome, err := line.CloseTask(root, task, *withGate)
 	if err != nil {
 		fail(err)
 	}
@@ -689,11 +693,8 @@ func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
 	budget := flags.Duration("budget", run.GroupBudget, "how long the run may take before it is killed")
-	_ = flags.Parse(args)
-	target := ""
-	if flags.NArg() > 0 {
-		target = flags.Arg(0)
-	}
+	target, rest := splitPositional(args, "budget")
+	_ = flags.Parse(rest)
 	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry})
 	if err != nil {
 		fail(err)
@@ -788,10 +789,25 @@ func localModel(tiers mount.Tiers, tier string) (string, error) {
 
 // splitTaskArg pulls the task id out of a machine invocation's args, wherever it falls among the flags.
 func splitTaskArg(args []string) (task string, rest []string) {
+	return splitPositional(args, "role")
+}
+
+// takesValue reports whether an argument is one of the named flags in a form that consumes the next one.
+func takesValue(arg string, names []string) bool {
+	for _, name := range names {
+		if arg == "--"+name || arg == "-"+name {
+			return true
+		}
+	}
+	return false
+}
+
+// splitPositional pulls the first positional out of args wherever it falls, keeping every flag.
+func splitPositional(args []string, valueFlags ...string) (positional string, rest []string) {
 	rest = make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if arg == "--role" || arg == "-role" {
+		if takesValue(arg, valueFlags) {
 			rest = append(rest, arg)
 			if i+1 < len(args) {
 				i++
@@ -799,13 +815,13 @@ func splitTaskArg(args []string) (task string, rest []string) {
 			}
 			continue
 		}
-		if task == "" && !strings.HasPrefix(arg, "-") {
-			task = arg
+		if positional == "" && !strings.HasPrefix(arg, "-") {
+			positional = arg
 			continue
 		}
 		rest = append(rest, arg)
 	}
-	return task, rest
+	return positional, rest
 }
 
 // runGuard is the hook on stdin, or the table the gate runs.
