@@ -498,7 +498,7 @@ func trackedFiles(root string) []string {
 
 // runWave merges one wave into the group branch, then runs the compile and verify gates.
 func runWave(root string, number int) {
-	plan, err := line.Next(root, "")
+	plan, err := line.PlanForRun(root)
 	if err != nil {
 		fail(err)
 	}
@@ -517,7 +517,7 @@ func runWave(root string, number int) {
 
 // runShip commits, pushes, opens the pull request, and writes the changelog line.
 func runShip(root, base string) {
-	plan, err := line.Next(root, "")
+	plan, err := line.PlanForRun(root)
 	if err != nil {
 		fail(err)
 	}
@@ -549,7 +549,7 @@ func printJSON(value any) {
 
 // currentPlan is the plan for the run in progress, with its recorded base and branch.
 func currentPlan(root string) *line.Plan {
-	plan, err := line.Next(root, "")
+	plan, err := line.PlanForRun(root)
 	if err != nil {
 		fail(err)
 	}

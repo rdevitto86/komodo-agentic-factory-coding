@@ -70,6 +70,19 @@ func PlanForGroup(root, groupID string) (*Plan, error) {
 	return plan, nil
 }
 
+// PlanForRun is the plan for the group a run has open, or the next ready group when none is.
+func PlanForRun(root string) (*Plan, error) {
+	state, err := LoadRun(root)
+	if err != nil || state.Group == "" {
+		return Next(root, "")
+	}
+	plan, err := PlanForGroup(root, state.Group)
+	if err != nil || plan == nil {
+		return Next(root, "")
+	}
+	return plan, nil
+}
+
 // pinWaves restores the waves the run recorded, so every station numbers them the same way.
 func pinWaves(root string, plan *Plan) {
 	state, err := LoadRun(root)
