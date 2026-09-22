@@ -346,7 +346,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.2] Repo standards and repo skills, rendered by `install --project` [P: H] [READY]
+#### [TSK-03.5.2] Repo standards and repo skills, rendered by `install --project` [P: H] [DONE]
 ```yaml
 files: [internal/repo/standards.go, internal/repo/skills.go, internal/install, internal/mount/claude, internal/mount/codex, internal/doctor]
 done_when:
@@ -358,7 +358,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.3] Repo commands and additive policy [P: H] [READY]
+#### [TSK-03.5.3] Repo commands and additive policy [P: H] [DONE]
 ```yaml
 files: [internal/repo/commands.go, internal/line/verify.go, internal/guard]
 done_when:
@@ -382,7 +382,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.5] The hybrid and local profiles run on the Ollama mount [P: H] [READY]
+#### [TSK-03.5.5] The hybrid and local profiles run on the Ollama mount [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude, internal/mount/codex, internal/profile, komodo/roles/summarizer.md]
 done_when:
@@ -394,7 +394,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.6] `komodo detect`: the repo profile, cached by manifest hash [P: C] [READY]
+#### [TSK-03.5.6] `komodo detect`: the repo profile, cached by manifest hash [P: C] [DONE]
 ```yaml
 files: [internal/detect, cmd/komodo/main.go]
 done_when:
@@ -405,7 +405,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.7] Facets: Komodo's setup skills and appendices keyed by detection [P: C] [READY]
+#### [TSK-03.5.7] Facets: Komodo's setup skills and appendices keyed by detection [P: C] [DONE]
 ```yaml
 files: [komodo/facets, internal/facet]
 done_when:
@@ -421,7 +421,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.8] The repo profile slot, facet appendices, and the task keys tier and facets [P: H] [READY]
+#### [TSK-03.5.8] The repo profile slot, facet appendices, and the task keys tier and facets [P: H] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/backlog, komodo/rules/backlog.md, komodo/roles/builder.md, komodo/roles/reviewer.md]
 done_when:
@@ -434,7 +434,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.9] The project render comes from the profile, and intake runs it [P: H] [READY]
+#### [TSK-03.5.9] The project render comes from the profile, and intake runs it [P: H] [DONE]
 ```yaml
 files: [internal/install, internal/mount/claude, internal/mount/codex, internal/line/next.go, internal/doctor]
 done_when:
@@ -537,4 +537,28 @@ context:
   - "checkDrift reports only update and remove, so a new skill or role that an installed mount has never rendered passes clean; TSK-03.4.1 added four skills and the gate stayed green with none of them mounted"
   - "a create against a host that is already rendered is drift and must say run komodo install"
 type: fix
+```
+
+#### [TSK-03.6.11] `komodo diff` truncates the diff it hands the reviewer [P: H] [READY]
+```yaml
+files: [internal/line/diff.go, internal/line/diff_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.1]
+context:
+  - "the third TG-03.5 review reported the input truncated mid-file and read the worktree directly instead; a reviewer silently working from a cut diff is a review of something other than the change"
+  - "either clip on a file boundary and say how many files were dropped, or page the diff; never end mid-hunk with no marker"
+type: fix
+```
+
+#### [TSK-03.6.12] The manifest hash in the profile cache decides nothing [P: L] [READY]
+```yaml
+files: [internal/detect/detect.go, internal/detect/detect_test.go]
+done_when:
+  - go test ./internal/detect/...
+depends_on: [TSK-03.6.11]
+context:
+  - "Load now walks the tree on every call and returns the fresh profile, so hashManifests and sameManifests only decide whether the file is rewritten, never what a caller sees; the walk they exist to avoid always runs"
+  - "drop the hash comparison and keep the equality guard, or restore a cache read that genuinely skips the walk"
+type: refactor
 ```
