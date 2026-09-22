@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"komodo/internal/mount"
+	"komodo/internal/profile"
 )
 
 // configFile is the host's own config, which is the only place the plan is read from.
@@ -104,8 +105,8 @@ func Tiers(plan string, ollama bool) mount.Tiers {
 		Reviewer: heavy,
 	}
 	if ollama {
-		tiers.Light = mount.Machine{Provider: "ollama"}
-		tiers.Reviewer = mount.Machine{Provider: "ollama"}
+		tiers.Light = mount.Machine{Provider: "ollama", Model: profile.OllamaModel}
+		tiers.Reviewer = mount.Machine{Provider: "ollama", Model: profile.OllamaModel}
 	}
 	return tiers
 }

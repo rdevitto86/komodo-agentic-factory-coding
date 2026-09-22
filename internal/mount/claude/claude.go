@@ -10,6 +10,7 @@ import (
 
 	"komodo/internal/install"
 	"komodo/internal/mount"
+	"komodo/internal/profile"
 	repopkg "komodo/internal/repo"
 )
 
@@ -47,11 +48,12 @@ func Render(root string, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
+	ollama := profile.OllamaUp()
 	for _, role := range roles {
 		if !role.Session {
 			continue
 		}
-		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role)), "the "+role.Name+" role as an agent")
+		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role, ollama)), "the "+role.Name+" role as an agent")
 	}
 
 	skills, err := mount.LoadSkills(root)
@@ -112,13 +114,18 @@ func mergeOverride(skills *[]mount.Skill, byName map[string]int, name string, is
 	(*skills)[index].Body = strings.TrimRight((*skills)[index].Body, "\n") + "\n\n## Repo overrides\n\n" + body + "\n"
 }
 
-// agentFile renders one role as this host's agent file.
-func agentFile(role mount.Role) string {
+// agentFile renders one role as this host's agent file; a light tier renders as standard when
+// the local machine holds the light tier, since a host spawn cannot reach Ollama.
+func agentFile(role mount.Role, ollama bool) string {
 	var names []string
 	for _, verb := range role.Tools {
 		names = append(names, tools[verb]...)
 	}
-	model := models[role.Tier]
+	tier := role.Tier
+	if ollama && tier == "light" {
+		tier = "standard"
+	}
+	model := models[tier]
 	head := []string{
 		"---",
 		"name: " + role.Name,
