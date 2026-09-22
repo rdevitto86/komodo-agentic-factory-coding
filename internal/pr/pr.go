@@ -127,37 +127,89 @@ func (c *Client) Comment(number, body string) error {
 	return err
 }
 
+// threadsQuery fetches a pull request's inline review threads by URL.
+const threadsQuery = `query($url: URI!) {
+  resource(url: $url) {
+    ... on PullRequest {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          path
+          line
+          comments(first: 10) {
+            nodes {
+              body
+              author { login }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+// replyMutation adds a reply comment inside one review thread.
+const replyMutation = `mutation($id: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $id, body: $body}) {
+    comment { id }
+  }
+}`
+
 // Threads lists the unresolved review threads on a pull request.
 func (c *Client) Threads(number string) ([]Thread, error) {
-	out, err := c.run("pr", "view", number, "--json", "reviews,comments")
+	pull, err := c.View(number)
+	if err != nil {
+		return nil, err
+	}
+	out, err := c.run("api", "graphql", "-f", "query="+threadsQuery, "-f", "url="+pull.URL)
 	if err != nil {
 		return nil, err
 	}
 	var payload struct {
-		Comments []struct {
-			Path   string `json:"path"`
-			Line   int    `json:"line"`
-			Body   string `json:"body"`
-			Author struct {
-				Login string `json:"login"`
-			} `json:"author"`
-		} `json:"comments"`
+		Data struct {
+			Resource struct {
+				ReviewThreads struct {
+					Nodes []struct {
+						ID         string `json:"id"`
+						IsResolved bool   `json:"isResolved"`
+						Path       string `json:"path"`
+						Line       int    `json:"line"`
+						Comments   struct {
+							Nodes []struct {
+								Body   string `json:"body"`
+								Author struct {
+									Login string `json:"login"`
+								} `json:"author"`
+							} `json:"nodes"`
+						} `json:"comments"`
+					} `json:"nodes"`
+				} `json:"reviewThreads"`
+			} `json:"resource"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(out), &payload); err != nil {
 		return nil, err
 	}
 	var threads []Thread
-	for index, comment := range payload.Comments {
+	for _, node := range payload.Data.Resource.ReviewThreads.Nodes {
+		if node.IsResolved || len(node.Comments.Nodes) == 0 {
+			continue
+		}
+		opening := node.Comments.Nodes[0]
 		threads = append(threads, Thread{
-			ID: fmt.Sprint(index), Path: comment.Path, Line: comment.Line,
-			Author: comment.Author.Login, Body: comment.Body,
+			ID: node.ID, Path: node.Path, Line: node.Line,
+			Author: opening.Author.Login, Body: opening.Body,
 		})
 	}
 	return threads, nil
 }
 
-// Reply answers one review thread.
-func (c *Client) Reply(number, body string) error { return c.Comment(number, body) }
+// Reply answers one review thread by posting inside it, not as a new top-level comment.
+func (c *Client) Reply(threadID, body string) error {
+	_, err := c.run("api", "graphql", "-f", "query="+replyMutation, "-f", "id="+threadID, "-f", "body="+body)
+	return err
+}
 
 // KeepKnown returns only the labels the repository already defines.
 func KeepKnown(wanted, known []string) []string {
