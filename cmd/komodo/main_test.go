@@ -56,3 +56,36 @@ func TestLocalModelResolvesTheTierThatMountsTheLocalMachine(t *testing.T) {
 		t.Fatalf("model = %q, want llama3.2", model)
 	}
 }
+
+func TestAFlagAfterTheTargetIsStillParsed(t *testing.T) {
+	cases := []struct {
+		name       string
+		args       []string
+		valueFlags []string
+		positional string
+		rest       []string
+	}{
+		{"flag after the target", []string{"TG-03.6", "--dry-run"}, nil, "TG-03.6", []string{"--dry-run"}},
+		{"flag before the target", []string{"--dry-run", "TG-03.6"}, nil, "TG-03.6", []string{"--dry-run"}},
+		{"target only", []string{"TG-03.6"}, nil, "TG-03.6", []string{}},
+		{"no target", []string{"--dry-run"}, nil, "", []string{"--dry-run"}},
+		{"value flag keeps its value", []string{"TSK-1", "--role", "reviewer"}, []string{"role"}, "TSK-1", []string{"--role", "reviewer"}},
+		{"value flag before the target", []string{"--budget", "5m", "TG-03.6"}, []string{"budget"}, "TG-03.6", []string{"--budget", "5m"}},
+		{"equals form is self contained", []string{"TG-03.6", "--budget=5m"}, []string{"budget"}, "TG-03.6", []string{"--budget=5m"}},
+		{"only the first positional is taken", []string{"a", "b"}, nil, "a", []string{"b"}},
+	}
+	for _, each := range cases {
+		got, rest := splitPositional(each.args, each.valueFlags...)
+		if got != each.positional {
+			t.Fatalf("%s: positional = %q, want %q", each.name, got, each.positional)
+		}
+		if len(rest) != len(each.rest) {
+			t.Fatalf("%s: rest = %v, want %v", each.name, rest, each.rest)
+		}
+		for i := range rest {
+			if rest[i] != each.rest[i] {
+				t.Fatalf("%s: rest = %v, want %v", each.name, rest, each.rest)
+			}
+		}
+	}
+}
