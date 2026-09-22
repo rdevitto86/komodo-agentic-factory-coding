@@ -28,7 +28,7 @@ var tools = map[string][]string{
 	"shell": {"Bash"}, "search": {"Grep", "Glob"},
 }
 
-// retired are the V1 render and the old bridge entry, removed when present.
+// retired are the V1 render and the old local server entry, removed when present.
 var retired = []string{
 	filepath.Join(Dir, "hooks"),
 	filepath.Join(Dir, "mcp.json"),
@@ -89,10 +89,10 @@ func Render(root string, binary string) (install.Plan, error) {
 
 	for _, path := range retired {
 		full := filepath.Join(root, path)
-		if path == ".mcp.json" && !namesBridge(full) {
+		if path == ".mcp.json" && !namesLocalServer(full) {
 			continue
 		}
-		plan.AddRemoval(full, "the V1 render and the old bridge entry")
+		plan.AddRemoval(full, "the V1 render and the old local server entry")
 	}
 	return plan, nil
 }
@@ -205,8 +205,8 @@ func readPolicy(path string) (policyFile, error) {
 	return policy, json.Unmarshal(data, &policy)
 }
 
-// namesBridge reports whether a file still points at the retired local bridge.
-func namesBridge(path string) bool {
+// namesLocalServer reports whether a file still points at the retired local server.
+func namesLocalServer(path string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false

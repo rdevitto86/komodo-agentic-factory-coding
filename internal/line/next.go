@@ -45,41 +45,78 @@ type Plan struct {
 	WaitUntil string          `json:"wait_until,omitempty"`
 }
 
-// Next builds the plan for the next ready group, or for the group holding the named task.
-func Next(root, needle string) (*Plan, error) {
+// Intent states whether a plan is for the run's own open group, or a fresh group off BACKLOG.md.
+type Intent int
+
+const (
+	// FreshGroup plans the next ready group, or the group holding a named task.
+	FreshGroup Intent = iota
+	// RunGroup plans the group a run already has open, with its closed tasks and pinned waves.
+	RunGroup
+)
+
+// next builds the plan for the next ready group, or for the group holding the named task.
+func next(root, needle string) (*Plan, error) {
+	return planFor(root, needle, FreshGroup)
+}
+
+// planForGroup builds a group's plan including the tasks that already closed, which is what step walks.
+func planForGroup(root, groupID string) (*Plan, error) {
+	return planFor(root, groupID, RunGroup)
+}
+
+// PlanForStation is the one resolver a station calls to decide which group it plans for: the
+// run's own open group while it is not yet shipped, or a fresh group off BACKLOG.md otherwise.
+func PlanForStation(root, needle string) (*Plan, error) {
+	plan, err := next(root, needle)
+	if err != nil {
+		return nil, err
+	}
+	state, runErr := LoadRun(root)
+	if runErr != nil {
+		return plan, nil
+	}
+	if plan == nil {
+		return planForGroup(root, state.Group)
+	}
+	if needle == "" {
+		if open, err := openRun(root, state.Group); err == nil && open != nil {
+			return open, nil
+		}
+	}
+	return plan, nil
+}
+
+// openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
+func openRun(root, groupID string) (*Plan, error) {
+	plan, err := planForGroup(root, groupID)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if shipped(root, plan, parsed) {
+		return nil, nil
+	}
+	return plan, nil
+}
+
+// planFor is the one place that resolves a group and renders its plan; every caller states
+// whether it wants a fresh group off BACKLOG.md or the group a run already has open.
+func planFor(root, needle string, intent Intent) (*Plan, error) {
 	parsed, group, ok, err := groupFor(root, needle)
 	if err != nil || !ok {
 		return nil, err
 	}
-	plan, err := buildPlan(root, parsed, group, false)
-	if err != nil || plan == nil {
-		return nil, err
-	}
-	return plan, nil
-}
-
-// PlanForGroup builds a group's plan including the tasks that already closed, which is what step walks.
-func PlanForGroup(root, groupID string) (*Plan, error) {
-	parsed, group, ok, err := groupFor(root, groupID)
-	if err != nil || !ok {
-		return nil, err
-	}
-	plan, err := buildPlan(root, parsed, group, true)
+	plan, err := buildPlan(root, parsed, group, intent == RunGroup)
 	if err != nil || plan == nil {
 		return plan, err
-	}
-	return plan, nil
-}
-
-// PlanForRun is the plan for the group a run has open, or the next ready group when none is.
-func PlanForRun(root string) (*Plan, error) {
-	state, err := LoadRun(root)
-	if err != nil || state.Group == "" {
-		return Next(root, "")
-	}
-	plan, err := PlanForGroup(root, state.Group)
-	if err != nil || plan == nil {
-		return Next(root, "")
 	}
 	return plan, nil
 }
@@ -158,7 +195,11 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 	}
 	plan.Profile = chosen
 	for index := range roles {
-		roles[index].Machine = machineFor(chosen, roles[index].Tier)
+		tier := roles[index].Tier
+		if roles[index].Name == "reviewer" {
+			tier = "reviewer"
+		}
+		roles[index].Machine = machineFor(chosen, tier)
 	}
 	plan.Roles = roles
 	if chosen.MaxParallel > 0 && plan.Mode != "single" {
@@ -173,8 +214,12 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 }
 
 // machineFor names the machine a tier resolved to, or the tier when no mount is installed.
+// "reviewer" is not a tier Tiers.Machine knows, so it resolves straight from Tiers.Reviewer.
 func machineFor(chosen profile.Profile, tier string) string {
 	machine := chosen.Tiers.Machine(tier)
+	if tier == "reviewer" {
+		machine = chosen.Tiers.Reviewer
+	}
 	if machine.Provider == "" {
 		return tier
 	}

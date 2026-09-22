@@ -134,12 +134,11 @@ func TestLoadWritesAndReusesTheCache(t *testing.T) {
 	}
 }
 
-func TestLoadRecomputesWhenTheManifestHashChanges(t *testing.T) {
+func TestLoadRecomputesWhenAManifestIsAdded(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "go.mod", "module example\n")
 	_ = Load(root)
 
-	// Force a distinct modification time so the hash changes on the next stat.
 	future := time.Now().Add(time.Hour)
 	if err := os.Chtimes(filepath.Join(root, "go.mod"), future, future); err != nil {
 		t.Fatal(err)
@@ -157,6 +156,37 @@ func TestLoadRecomputesWhenTheManifestHashChanges(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatal("cache file is empty")
+	}
+}
+
+func TestLoadDoesNotRewriteWhenOnlyAManifestTimestampChanges(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example\n")
+	_ = Load(root)
+
+	cachePath := filepath.Join(root, cacheFile)
+	before, err := os.Stat(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A touched manifest with no content change leaves the profile identical.
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(filepath.Join(root, "go.mod"), future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	updated := Load(root)
+	if updated.Verify != "go test ./..." {
+		t.Fatalf("verify = %q", updated.Verify)
+	}
+
+	after, err := os.Stat(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatal("cache was rewritten though the profile did not change")
 	}
 }
 

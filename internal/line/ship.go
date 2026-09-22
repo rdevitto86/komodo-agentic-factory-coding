@@ -29,7 +29,7 @@ type ShipResult struct {
 }
 
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
-func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipResult, error) {
+func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (result *ShipResult, err error) {
 	group := WorktreePath(root, plan.Worktree)
 	path, err := backlog.Find(group)
 	if err != nil {
@@ -49,9 +49,13 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 		return nil, err
 	}
 	started := time.Now()
-	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Filed: filed}
+	result = &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Filed: filed}
 	defer func() {
-		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: "done"})
+		outcome := "done"
+		if err != nil {
+			outcome = "failed"
+		}
+		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome})
 	}()
 	for _, task := range plan.Tasks {
 		current, ok := parsed.Task(task.ID)
@@ -85,6 +89,11 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
 		if _, err := git(group, "commit", "-m", message); err != nil {
 			return nil, err
+		}
+	}
+	if isToolkit(root) {
+		if err := gateCommand(group); err != nil {
+			return nil, fmt.Errorf("gate: %w", err)
 		}
 	}
 	if _, err := git(group, "push", "-u", "origin", plan.Branch); err != nil {
@@ -132,6 +141,9 @@ func AppendChangelog(path, version, line string) error {
 	}
 	text := string(data)
 	heading := "## " + version
+	if strings.Contains(text, "\n"+line+"\n") {
+		return nil
+	}
 	if index := strings.Index(text, heading+"\n"); index >= 0 {
 		cut := index + len(heading) + 1
 		return os.WriteFile(path, []byte(text[:cut]+"\n"+line+"\n"+strings.TrimPrefix(text[cut:], "\n")), 0o644)

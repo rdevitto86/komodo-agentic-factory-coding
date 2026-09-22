@@ -15,7 +15,7 @@ Native mobile. Language mechanics live in the language standards; this one owns 
 - **Security covers every native manifest**, React Native and Flutter included: permissions, exported components and intent filters, deep links and URL schemes, bundle IDs, backgrounding and screen-capture flags are native-shell concerns whatever renders above them.
 - **Design is native-UI only.** Touch targets, safe areas, gestures, HIG divergence, and the state rules do not apply to a React Native or Flutter UI layer; `.tsx`/`.jsx` belong to ui-web and `.dart` matches nothing here.
 - **A desktop target's `Info.plist` is this standard's false positive** — use ui-desktop. An iOS plist carries the `UI*` device keys; a macOS one carries `LSMinimumSystemVersion` and `NSPrincipalClass` and none of them.
-- **A native app embedding a web view** loads ui-web for the embedded document; the bridge between host and document is this standard's.
+- **A native app embedding a web view** loads ui-web for the embedded document; the channel between host and document is this standard's.
 
 # Design
 
@@ -62,13 +62,13 @@ Native mobile. Language mechanics live in the language standards; this one owns 
 - **Validate and authorise every deep-link destination.** A link must not reach a screen or an action the user could not otherwise reach, and must not perform a state change without confirmation.
 - **Every exported component, intent filter, or activity declared in the manifest is an attack surface** — export nothing that does not need to be reachable from outside the app, and authorise what remains.
 
-## WebView bridges
+## WebView channels
 
-- **A native bridge exposed to a web view is a remote-code surface.** Expose the narrowest possible method set, never a generic eval, reflection, or file-access primitive.
-- **Restrict which origins the web view may load**, and refuse navigation outside that allowlist. A bridge reachable from arbitrary remote content is a full compromise of the native side.
+- **A native channel exposed to a web view is a remote-code surface.** Expose the narrowest possible method set, never a generic eval, reflection, or file-access primitive.
+- **Restrict which origins the web view may load**, and refuse navigation outside that allowlist. A channel reachable from arbitrary remote content is a full compromise of the native side.
 - **Disable file-system and universal-file access in the web view** unless a specific feature requires it, and never alongside remote content.
 - **Never inject a credential or token into web content** that the web view's own origin does not already own.
-- **Every message crossing the bridge is validated on the native side** — type, shape, and authorisation — exactly as an API boundary would be.
+- **Every message crossing the channel is validated on the native side** — type, shape, and authorisation — exactly as an API boundary would be.
 
 ## Local data, pasteboard, and keyboard
 

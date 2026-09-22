@@ -2,10 +2,7 @@
 package detect
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -28,11 +25,9 @@ type Profile struct {
 	Compile   string   `json:"compile"`
 }
 
-// cache is the profile plus enough to tell whether it is still fresh.
+// cache is what a detection last wrote to disk.
 type cache struct {
-	Hash      string   `json:"hash"`
-	Manifests []string `json:"manifests"`
-	Profile   Profile  `json:"profile"`
+	Profile Profile `json:"profile"`
 }
 
 // languageByExt maps a file extension to the language it names.
@@ -68,20 +63,18 @@ var terraformProvider = regexp.MustCompile(`(?m)^\s*provider\s+"[^"]+"\s*\{`)
 // composeServices matches a Docker Compose services block.
 var composeServices = regexp.MustCompile(`(?m)^services:`)
 
-// Load returns the cached profile when a fresh manifest listing still matches it, or detects fresh.
+// Load walks the tree, returns the fresh profile, and rewrites the cache only when it changed.
 func Load(root string) Profile {
-	profile, manifests := Detect(root)
-	hash := hashManifests(root, manifests)
+	profile, _ := Detect(root)
 	path := filepath.Join(root, cacheFile)
 	data, err := os.ReadFile(path)
 	if err == nil {
 		var cached cache
-		fresh := json.Unmarshal(data, &cached) == nil && cached.Hash == hash && sameManifests(cached.Manifests, manifests)
-		if fresh && reflect.DeepEqual(cached.Profile, profile) {
+		if json.Unmarshal(data, &cached) == nil && reflect.DeepEqual(cached.Profile, profile) {
 			return cached.Profile
 		}
 	}
-	save(root, profile, manifests)
+	save(root, profile)
 	return profile
 }
 
@@ -96,19 +89,6 @@ func LoadCached(root string) (Profile, bool) {
 		return Profile{}, false
 	}
 	return cached.Profile, true
-}
-
-// sameManifests reports whether two sorted manifest lists name the same files.
-func sameManifests(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // Detect walks the tree once and returns the profile it found, and the manifests it read.
@@ -231,31 +211,13 @@ func sorted(set map[string]bool) []string {
 	return out
 }
 
-// hashManifests hashes the path, size, and modification time of every manifest a detection read.
-func hashManifests(root string, manifests []string) string {
-	digest := sha256.New()
-	for _, rel := range manifests {
-		info, err := os.Stat(filepath.Join(root, rel))
-		if err != nil {
-			_, _ = fmt.Fprintf(digest, "%s:missing\n", rel)
-			continue
-		}
-		_, _ = fmt.Fprintf(digest, "%s:%d:%d\n", rel, info.Size(), info.ModTime().UnixNano())
-	}
-	return hex.EncodeToString(digest.Sum(nil))
-}
-
-// save writes the profile and the manifests it depends on, so the next detection can skip the walk.
-func save(root string, profile Profile, manifests []string) {
+// save writes the profile to the cache file.
+func save(root string, profile Profile) {
 	path := filepath.Join(root, cacheFile)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
 	}
-	cached := cache{
-		Hash:      hashManifests(root, manifests),
-		Manifests: manifests,
-		Profile:   profile,
-	}
+	cached := cache{Profile: profile}
 	data, err := json.MarshalIndent(cached, "", "  ")
 	if err != nil {
 		return

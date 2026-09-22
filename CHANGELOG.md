@@ -8,6 +8,35 @@ The 1.x line ends at 1.3.0. V1 was a Python orchestrator that spawned the host a
 
 V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the last commit on `main` before the repo was cleared. The repo was renamed from `komodo-agentic-toolkit-coding` to `komodo-agentic-coding-assembly-line`, then `komodo-agentic-factory-code`, then `komodo-agentic-factory-coding`, all within the same week. The V2 plan, its requirements, and a table mapping every V1 capability to its V2 task or its reason for dropping are in `README.md` on PR #103, which carries the group work.
 
+## 2.0.0 — 2026-09-22
+
+- **TG-03.6** The gate and the exit test (11 task(s))
+
+## 2.0.0 — 2026-09-22
+
+### The line
+
+`komodo`, one static Go binary with no dependency outside the standard library, is the conveyor: intake, brief, close, diff, report, lint, tag, release check, guard, install, doctor, machine, gate, run. A task moves through intake (`komodo next`), the brief device (`komodo brief`), a build machine, close, QC, a diff device, a review machine, and ship, two model calls per task and nothing else in the loop. A role names a tier, light, standard, or heavy, never a model; a profile maps tiers to a machine for one host, and a mount carries a brief to that machine or, for Ollama, calls it directly. Everything a model reads — rules, roles, skills, policy, standards — is markdown; the binary and the mounts under `internal/mount/` are the only Go a model never sees. One guard hook denies exactly four things: a write to a critical branch, a path outside the task's worktree, host or toolkit config, and a commit trailer; everything else inside a worktree is unrestricted. `komodo gate` — vet, test, doctor, the guard table, the binary rebuild — runs locally on pre-commit and pre-push; nothing runs on GitHub.
+
+### Removed
+
+- The Python orchestrator and everything it rebuilt on top of the host: worker spawning, its own worktree management, its own hook and permission model, headless mode, `komodo.json` and `komodo/config.py`. V1 is preserved whole at the tag `v1-final`.
+- The merger role; QC stops on a conflict and hands it to a human instead of a role resolving it.
+- `komodo/briefs/` and `komodo/standards/` as separate directories: a role file now carries its own JSON schema beside it, and a standard is a skill triggered by its own frontmatter globs.
+- The MCP server V1 ran at `127.0.0.1:8000`; `install` removes its entry and no facet ships an `mcp.json` that does anything in V2.
+- Any GitHub Actions workflow; no `.github/workflows` directory exists and nothing bills CI minutes.
+
+### What replaced it
+
+- A profile per host (`claude`, `hybrid`, `codex`, `local`) that self-selects from the installed mount, a plan probe read from the host's own config file, and whether Ollama answers, with plan overlays for pacing and ceilings.
+- `internal/mount/claude` and `internal/mount/codex` render agents, skills, and the guard onto each host from the same roles and skills; `internal/mount/ollama` is the binary acting as its own mount, posting a brief straight to Ollama's chat endpoint for read-only roles.
+- A repo layer under `.komodo/`: context by glob, additive standards and skills, `commands.json` for verify and compile, additive policy, and facets (`aws`, `gcp`, `azure`, `postgres`, `github-actions`) selected by `komodo detect` or named by a task.
+- The ledger, `.komodo/line.jsonl` and `.komodo/adhoc.jsonl`, stamped by every station with no model in the loop, read back by `komodo report` and `komodo metrics`.
+
+### The swap proofs
+
+`internal/line/swap_test.go` proves each hot-swap point with no code change and no restart: a profile row change moves a station to another machine and `komodo step` names it; a skill body change under `komodo/skills` or `.komodo/skills` reaches the next brief and the next project render; a facet added by `.komodo/facets` or a task's `facets` key reaches the standards slot, the profile slot, and the render; a `commands.json` change replaces verify at QC. MCP is the fifth point and is deferred: the same test asserts a facet's `mcp.json`, when present, changes nothing in V2.
+
 ## [1.3.0] — 2026-09-21
 
 ### Added

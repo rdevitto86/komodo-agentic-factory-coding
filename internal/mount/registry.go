@@ -55,6 +55,24 @@ func Hosts() []Host {
 	return out
 }
 
+// Snapshot copies the registry, so a test can restore it after registering a fake host.
+func Snapshot() map[string]Host {
+	lock.Lock()
+	defer lock.Unlock()
+	out := make(map[string]Host, len(hosts))
+	for name, host := range hosts {
+		out[name] = host
+	}
+	return out
+}
+
+// Restore replaces the registry with a copy Snapshot returned.
+func Restore(snapshot map[string]Host) {
+	lock.Lock()
+	defer lock.Unlock()
+	hosts = snapshot
+}
+
 // Get returns one mount by name.
 func Get(name string) (Host, bool) {
 	lock.Lock()

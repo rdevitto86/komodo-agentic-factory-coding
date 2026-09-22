@@ -29,26 +29,14 @@ type Action struct {
 
 // Step reads the run's state and the results on disk and returns the one next action.
 func Step(root, needle string) (*Action, error) {
-	plan, err := Next(root, needle)
+	plan, err := PlanForStation(root, needle)
 	if err != nil {
 		return nil, err
 	}
 	if plan == nil {
-		state, err := LoadRun(root)
-		if err != nil {
-			return &Action{Action: "done", Why: "nothing is ready", Skills: []string{}, Facets: []string{}, Commands: []string{}}, nil
-		}
-		plan, err = PlanForGroup(root, state.Group)
-		if err != nil || plan == nil {
-			return &Action{Action: "done", Why: "nothing is ready", Skills: []string{}, Facets: []string{}, Commands: []string{}}, err
-		}
+		return &Action{Action: "done", Why: "nothing is ready", Skills: []string{}, Facets: []string{}, Commands: []string{}}, nil
 	}
 	state, runErr := LoadRun(root)
-	if runErr == nil && needle == "" && state.Group != plan.Group {
-		if open, err := openRun(root, state.Group); err == nil && open != nil {
-			plan = open
-		}
-	}
 	if runErr != nil || state.Group != plan.Group {
 		return action(root, plan, Action{
 			Action:  "run",
@@ -56,7 +44,7 @@ func Step(root, needle string) (*Action, error) {
 			Why:     fmt.Sprintf("%s has not been cut yet, from %s", plan.Group, plan.Base),
 		}), nil
 	}
-	full, err := PlanForGroup(root, state.Group)
+	full, err := planForGroup(root, state.Group)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +170,9 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 		}
 		if next.Machine == "ollama" && (matched.Session || !ollama.Allowed(matched.Tools)) {
 			next.Machine = matched.Tier
-			if remote, ok := plan.Profile.Tiers.FirstRemote(); ok {
+			if remote := plan.Profile.Tiers.Machine(matched.Tier); remote.Provider != "" && !remote.Local() {
+				next.Machine = remote.Provider + "/" + remote.Model
+			} else if remote, ok := plan.Profile.Tiers.FirstRemote(); ok {
 				next.Machine = remote.Provider + "/" + remote.Model
 			}
 		}
@@ -245,7 +235,7 @@ func shipped(root string, plan *Plan, parsed backlog.Backlog) bool {
 		return false
 	}
 	for _, entry := range entries {
-		if entry.Station == "ship" && entry.Group == plan.Group {
+		if entry.Station == "ship" && entry.Group == plan.Group && entry.Outcome == "done" {
 			return true
 		}
 	}
@@ -263,24 +253,4 @@ func staleBrief(root, taskID string) bool {
 		return false
 	}
 	return brief.ModTime().Before(attempt.ModTime())
-}
-
-// openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
-func openRun(root, groupID string) (*Plan, error) {
-	plan, err := PlanForGroup(root, groupID)
-	if err != nil || plan == nil {
-		return nil, err
-	}
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
-	if err != nil {
-		return nil, err
-	}
-	if shipped(root, plan, parsed) {
-		return nil, nil
-	}
-	return plan, nil
 }

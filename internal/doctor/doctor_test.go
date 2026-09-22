@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"komodo/internal/detect"
+	"komodo/internal/install"
 	"komodo/internal/mount"
 )
 
@@ -35,6 +36,14 @@ func clean(t *testing.T) string {
 	write(t, root, "komodo/skills/run/SKILL.md", "---\nname: run\n---\n\nCall komodo step, do what it says, repeat.\n")
 	write(t, root, "komodo/skills/standards-go/SKILL.md", "---\nname: standards-go\nglobs: [\"**/*.go\"]\n---\n\n# Go\n")
 	return root
+}
+
+// registerHost adds a fake mount for one test and restores the registry after it.
+func registerHost(t *testing.T, host mount.Host) {
+	t.Helper()
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Register(host)
 }
 
 // problemsFrom returns the checks that fired.
@@ -92,7 +101,7 @@ func TestAMalformedRoleIsFound(t *testing.T) {
 }
 
 func TestAVendorNameOutsideTheMountsIsFound(t *testing.T) {
-	mount.Register(mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
+	registerHost(t, mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
 	root := clean(t)
 	write(t, root, "internal/line/thing.go", "package line\n\n// uses testvendor directly\nvar x = 1\n")
 	got := problemsFrom(t, root)["leaks"]
@@ -102,7 +111,7 @@ func TestAVendorNameOutsideTheMountsIsFound(t *testing.T) {
 }
 
 func TestAMountMayNameItsOwnVendor(t *testing.T) {
-	mount.Register(mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
+	registerHost(t, mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
 	root := clean(t)
 	write(t, root, "internal/mount/testhost/testhost.go", "package testhost\n\n// testvendor lives here\nvar x = 1\n")
 	if got := problemsFrom(t, root)["leaks"]; len(got) != 0 {
@@ -111,7 +120,7 @@ func TestAMountMayNameItsOwnVendor(t *testing.T) {
 }
 
 func TestATestFixtureIsNotALeak(t *testing.T) {
-	mount.Register(mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
+	registerHost(t, mount.Host{Name: "testhost", Vendors: []string{"testvendor"}})
 	root := clean(t)
 	write(t, root, "internal/line/thing_test.go", "package line\n\n// testvendor as a fixture\nvar x = 1\n")
 	if got := problemsFrom(t, root)["leaks"]; len(got) != 0 {
@@ -170,8 +179,87 @@ func TestOversizedAlwaysOnContextIsFound(t *testing.T) {
 	}
 }
 
+func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
+	root := clean(t)
+	rendered := filepath.Join(root, "existing.txt")
+	write(t, root, "existing.txt", "old\n")
+	registerHost(t, mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
+		plan := install.Plan{Host: "testhost", Root: root}
+		plan.Add(rendered, []byte("old\n"), "kept in sync")
+		plan.Add(filepath.Join(root, "missing.txt"), []byte("new\n"), "never rendered")
+		return plan, nil
+	}})
+	got := problemsFrom(t, root)["drift"]
+	if len(got) != 1 || got[0].Where != "missing.txt" || !strings.Contains(got[0].Detail, "run komodo install") {
+		t.Fatalf("drift = %+v", got)
+	}
+}
+
+func TestADeletedSeedFileIsNotDrift(t *testing.T) {
+	root := clean(t)
+	registerHost(t, mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
+		plan := install.Plan{Host: "testhost", Root: root}
+		plan.AddSeed(filepath.Join(root, "seeded.local.json"), []byte("{}"), "the personal overlay")
+		return plan, nil
+	}})
+	if got := problemsFrom(t, root); len(got) != 0 {
+		t.Fatalf("problems = %+v; a seed file the user deleted must never count as drift", got)
+	}
+}
+
+func TestAPromisedAccessorWithNoRealCallerIsFound(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/rules/backlog.md", "# Backlog grammar\n\n## Rules\n"+
+		"- **`severity_floor`** is how low a finding may sink before a review blocks it.\n")
+	write(t, root, "internal/profile/floor.go", "package profile\n\nfunc SeverityFloor() int { return 0 }\n")
+	write(t, root, "internal/profile/floor_test.go",
+		"package profile\n\nimport \"testing\"\n\nfunc TestSeverityFloor(t *testing.T) { SeverityFloor() }\n")
+	got := problemsFrom(t, root)["promises"]
+	if len(got) != 1 || !strings.Contains(got[0].Detail, "SeverityFloor") ||
+		!strings.Contains(got[0].Detail, "nothing outside its own tests calls it") {
+		t.Fatalf("promises = %+v", got)
+	}
+}
+
+func TestAPromisedAccessorWithARealCallerPasses(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/rules/backlog.md", "# Backlog grammar\n\n## Rules\n"+
+		"- **`severity_floor`** is how low a finding may sink before a review blocks it.\n")
+	write(t, root, "internal/profile/floor.go", "package profile\n\nfunc SeverityFloor() int { return 0 }\n")
+	write(t, root, "internal/review/gate.go",
+		"package review\n\nimport \"komodo/internal/profile\"\n\nfunc Gate() int { return profile.SeverityFloor() }\n")
+	if got := problemsFrom(t, root)["promises"]; len(got) != 0 {
+		t.Fatalf("promises = %+v, want none: a real caller reads the accessor", got)
+	}
+}
+
+func TestAGrammarKeyWithNoAccessorIsNotFound(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/rules/backlog.md", "# Backlog grammar\n\n## Rules\n"+
+		"- **`unwritten_key`** describes a key no accessor exists for yet.\n")
+	if got := problemsFrom(t, root)["promises"]; len(got) != 0 {
+		t.Fatalf("promises = %+v, want none: no accessor exists to call", got)
+	}
+}
+
 func TestTokensCountFourCharacters(t *testing.T) {
 	if tokens(400) != 100 {
 		t.Fatalf("tokens = %d", tokens(400))
+	}
+}
+
+func TestAHostThatSaysItIsNotInstalledHereIsSkipped(t *testing.T) {
+	root := clean(t)
+	registerHost(t, mount.Host{Name: "absenthost",
+		Installed: func(string) bool { return false },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "absenthost", Root: root}
+			plan.Add(filepath.Join(root, "absent.txt"), []byte("new\n"), "never rendered")
+			return plan, nil
+		}})
+	for _, problem := range problemsFrom(t, root)["drift"] {
+		if problem.Where == "absent.txt" {
+			t.Fatal("a host that says it is not installed here has nothing to drift from")
+		}
 	}
 }

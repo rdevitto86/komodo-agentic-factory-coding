@@ -119,11 +119,78 @@ func TestBuildReportUsesTheAccessibilityHeadings(t *testing.T) {
 	}
 }
 
+func TestClipDiffDropsWholeFilesAndNamesTheCount(t *testing.T) {
+	pieces := []string{
+		strings.Repeat("a", 30000),
+		strings.Repeat("b", 30000),
+		strings.Repeat("c", 30000),
+		strings.Repeat("d", 30000),
+	}
+	out := clipDiff(pieces, CapDiff)
+	if !strings.Contains(out, "2 of 4 files shown, 2 files omitted") {
+		t.Fatalf("marker missing or wrong count:\n%s", out[len(out)-200:])
+	}
+	before, _, found := strings.Cut(out, "\n[... diff clipped")
+	if !found {
+		t.Fatalf("no clip marker found in:\n%s", out)
+	}
+	if before != pieces[0]+"\n"+pieces[1] {
+		t.Fatal("clip cut a file's diff instead of dropping it whole")
+	}
+}
+
+func TestDiffForClipsOnAFileBoundary(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", "### [TG-10.2] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	for _, name := range []string{"a/big.go", "b/big.go", "c/big.go", "d/big.go"} {
+		body := "package p\n\n// Big holds padding.\nvar Big = \"" + strings.Repeat("x", 30000) + "\"\n"
+		commit(t, root, name, body, "add "+name)
+	}
+	plan := &Plan{Group: "TG-10.2", Base: "main~4", Worktree: "."}
+	input, err := DiffFor(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, marker, found := strings.Cut(input.Diff, "\n[... diff clipped")
+	if !found {
+		t.Fatalf("diff was not clipped with a marker naming what was dropped:\n%s", input.Diff)
+	}
+	if !strings.Contains(marker, "files omitted") {
+		t.Fatalf("marker does not name how many files were dropped: %q", marker)
+	}
+	unclipped, err := git(WorktreePath(root, plan.Worktree), "diff", plan.Base+"...HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byFile := fileDiffs(unclipped)
+	var wantKept []string
+	for _, name := range input.Files {
+		wantKept = append(wantKept, byFile[name])
+		if strings.Join(wantKept, "\n") == before {
+			break
+		}
+	}
+	if strings.Join(wantKept, "\n") != before {
+		t.Fatal("clipped diff does not equal a whole prefix of complete files; a hunk was cut")
+	}
+}
+
 func TestReportOpensWithTheVerdict(t *testing.T) {
 	report := &Report{Group: "TG-11.1", Done: []string{"a"}, Blocked: nil}
 	text := renderReport(report, nil)
 	first, _, _ := strings.Cut(text, "\n")
 	if !strings.HasPrefix(first, "TG-11.1: 1 done") {
 		t.Fatalf("first line = %q", first)
+	}
+}
+
+func TestASingleOversizedPieceIsStillClipped(t *testing.T) {
+	piece := strings.Repeat("a", CapDiff+1)
+	got := clipDiff([]string{piece}, CapDiff)
+	if len(got) > CapDiff+200 {
+		t.Fatalf("kept %d chars against a cap of %d; one huge file must not escape the cap", len(got), CapDiff)
+	}
+	if !strings.Contains(got, "clipped") && !strings.Contains(got, "truncated") {
+		t.Fatalf("a clipped diff must say so; got the tail %q", got[max(0, len(got)-120):])
 	}
 }

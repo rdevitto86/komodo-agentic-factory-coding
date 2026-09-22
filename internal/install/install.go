@@ -36,12 +36,12 @@ func (p *Plan) Add(path string, body []byte, why string) {
 }
 
 // AddProject appends one rendered file that also belongs to the project-only render: the repo
-// skills, the standards skills, and the rules file, which --project writes on their own.
+// skills, the standards skills, and the rules file, which the project render writes on their own.
 func (p *Plan) AddProject(path string, body []byte, why string) {
 	p.Changes = append(p.Changes, Change{Path: path, Body: body, Mode: 0o644, Project: true, Why: why})
 }
 
-// Project narrows the plan to the changes --project writes, gitignored copies rebuilt every time.
+// Project narrows the plan to the project render's changes, gitignored copies rebuilt every time.
 func (p Plan) Project() Plan {
 	narrowed := Plan{Host: p.Host, Root: p.Root}
 	for _, change := range p.Changes {
@@ -67,6 +67,7 @@ type Action struct {
 	Verb string
 	Path string
 	Why  string
+	Seed bool
 }
 
 // Actions describes the plan against the current tree without touching it.
@@ -79,20 +80,20 @@ func (p Plan) Actions() []Action {
 		}
 		if change.Remove {
 			if _, err := os.Stat(change.Path); err == nil {
-				out = append(out, Action{"remove", relative, change.Why})
+				out = append(out, Action{Verb: "remove", Path: relative, Why: change.Why})
 			}
 			continue
 		}
 		existing, err := os.ReadFile(change.Path)
 		switch {
 		case change.Seed && err == nil:
-			out = append(out, Action{"keep", relative, "seeded once, never overwritten"})
+			out = append(out, Action{Verb: "keep", Path: relative, Why: "seeded once, never overwritten", Seed: true})
 		case err != nil:
-			out = append(out, Action{"create", relative, change.Why})
+			out = append(out, Action{Verb: "create", Path: relative, Why: change.Why, Seed: change.Seed})
 		case !bytes.Equal(existing, change.Body):
-			out = append(out, Action{"update", relative, change.Why})
+			out = append(out, Action{Verb: "update", Path: relative, Why: change.Why})
 		default:
-			out = append(out, Action{"same", relative, change.Why})
+			out = append(out, Action{Verb: "same", Path: relative, Why: change.Why})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Path < out[j].Path })

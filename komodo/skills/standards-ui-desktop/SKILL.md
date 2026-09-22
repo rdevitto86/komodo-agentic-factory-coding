@@ -39,7 +39,7 @@ Desktop applications — a windowed app the user runs locally, whether drawn nat
 ## Renderer isolation
 
 - **Untrusted or remote content never runs with access to the host runtime.** Context isolation on, host/Node integration off, remote-module access off — in every window and every child frame, including ones created by a link.
-- **The preload/bridge script exposes a narrow, explicit API surface** — named operations with validated arguments, never the runtime's `require`, a filesystem handle, a shell executor, or an eval primitive.
+- **The preload script exposes a narrow, explicit API surface** — named operations with validated arguments, never the runtime's `require`, a filesystem handle, a shell executor, or an eval primitive.
 - **Ship a CSP in the renderer**, and refuse navigation and new-window requests to origins outside an explicit allowlist. Route an external link to the system browser rather than opening it inside the app.
 - **Load local application content over the shell's own restricted scheme**, not from a live remote origin, wherever the app is not a thin client by design.
 

@@ -345,7 +345,7 @@ func runNext(root string, args []string) {
 	base := set.String("base", "", "the branch to cut from, default the remote's default branch")
 	needle, rest := splitPositional(args, "base")
 	_ = set.Parse(rest)
-	plan, err := line.Next(root, needle)
+	plan, err := line.PlanForStation(root, needle)
 	if err != nil {
 		fail(err)
 	}
@@ -511,7 +511,7 @@ func trackedFiles(root string) []string {
 
 // runWave merges one wave into the group branch, then runs the compile and verify gates.
 func runWave(root string, number int) {
-	plan, err := line.PlanForRun(root)
+	plan, err := line.PlanForStation(root, "")
 	if err != nil {
 		fail(err)
 	}
@@ -530,7 +530,7 @@ func runWave(root string, number int) {
 
 // runShip commits, pushes, opens the pull request, and writes the changelog line.
 func runShip(root, base string) {
-	plan, err := line.PlanForRun(root)
+	plan, err := line.PlanForStation(root, "")
 	if err != nil {
 		fail(err)
 	}
@@ -562,7 +562,7 @@ func printJSON(value any) {
 
 // currentPlan is the plan for the run in progress, with its recorded base and branch.
 func currentPlan(root string) *line.Plan {
-	plan, err := line.PlanForRun(root)
+	plan, err := line.PlanForStation(root, "")
 	if err != nil {
 		fail(err)
 	}
