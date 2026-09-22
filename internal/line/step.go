@@ -15,6 +15,7 @@ type Action struct {
 	Command  string   `json:"command,omitempty"`
 	Role     string   `json:"role,omitempty"`
 	Brief    string   `json:"brief,omitempty"`
+	Worktree string   `json:"worktree,omitempty"`
 	Task     string   `json:"task,omitempty"`
 	Wave     int      `json:"wave,omitempty"`
 	Machine  string   `json:"machine,omitempty"`
@@ -77,7 +78,8 @@ func Step(root, needle string) (*Action, error) {
 			}
 			return action(root, plan, Action{
 				Action: "spawn", Role: "builder", Brief: briefPath, Task: taskID, Wave: index + 1,
-				Why: taskID + " has a brief and no result",
+				Worktree: filepath.Join(StateDir, "wt", taskID),
+				Why:      taskID + " has a brief and no result",
 			}), nil
 		}
 		for _, taskID := range wave {
@@ -98,7 +100,7 @@ func Step(root, needle string) (*Action, error) {
 	}
 	if !reviewed(root, plan) {
 		return action(root, plan, Action{
-			Action: "spawn", Role: "reviewer", Brief: "komodo diff",
+			Action: "spawn", Role: "reviewer", Brief: "komodo diff", Worktree: plan.Worktree,
 			Why: "every wave is merged and the diff is unreviewed",
 		}), nil
 	}
