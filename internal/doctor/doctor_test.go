@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"komodo/internal/detect"
+	"komodo/internal/install"
 	"komodo/internal/mount"
 )
 
@@ -167,6 +168,22 @@ func TestOversizedAlwaysOnContextIsFound(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the always-on budget did not fire")
+	}
+}
+
+func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
+	root := clean(t)
+	rendered := filepath.Join(root, "existing.txt")
+	write(t, root, "existing.txt", "old\n")
+	mount.Register(mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
+		plan := install.Plan{Host: "testhost", Root: root}
+		plan.Add(rendered, []byte("old\n"), "kept in sync")
+		plan.Add(filepath.Join(root, "missing.txt"), []byte("new\n"), "never rendered")
+		return plan, nil
+	}})
+	got := problemsFrom(t, root)["drift"]
+	if len(got) != 1 || got[0].Where != "missing.txt" || !strings.Contains(got[0].Detail, "run komodo install") {
+		t.Fatalf("drift = %+v", got)
 	}
 }
 
