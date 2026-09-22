@@ -30,7 +30,7 @@ type ShipResult struct {
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
 func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipResult, error) {
 	group := WorktreePath(root, plan.Worktree)
-	path, err := backlog.Find(root)
+	path, err := backlog.Find(group)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 		return nil, fmt.Errorf("the review left %d finding(s) at or above %s; fix them on %s, then ship",
 			len(blocking), plan.Profile.SeverityFloor, plan.Branch)
 	}
-	filed, err := FileFindings(root, plan.Group, minor)
+	filed, err := FileFindings(group, plan.Group, minor)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +65,11 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 		}
 	}
 	result.Draft = len(result.Blocked) > 0
+	for _, taskID := range result.Done {
+		if err := writeStatus(path, taskID, "DONE"); err != nil {
+			return nil, err
+		}
+	}
 	if line := ChangelogLine(plan, result); line != "" {
 		changelog := filepath.Join(group, "CHANGELOG.md")
 		if err := AppendChangelog(changelog, plan.Version, line); err != nil {
@@ -96,11 +101,6 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (*ShipRe
 	if known, err := client.Labels(); err == nil {
 		result.Labels = pr.KeepKnown([]string{plan.Type, "agent"}, known)
 		_ = client.Label(url, result.Labels)
-	}
-	for _, taskID := range result.Done {
-		if err := writeStatus(path, taskID, "DONE"); err != nil {
-			return result, err
-		}
 	}
 	return result, nil
 }
