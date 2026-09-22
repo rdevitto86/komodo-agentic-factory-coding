@@ -237,6 +237,71 @@ func TestLintRejectsAnUnknownTier(t *testing.T) {
 	}
 }
 
+func TestDumpFieldsRoundTripsADoubleQuote(t *testing.T) {
+	var fields Fields
+	fields.Set("note", `say "hi" now`)
+	dumped := DumpFields(fields)
+	again, err := ParseFields(dumped)
+	if err != nil {
+		t.Fatalf("dumped block does not parse back: %v (dumped: %q)", err, dumped)
+	}
+	if got := again.String("note"); got != `say "hi" now` {
+		t.Fatalf("note = %q, want %q (dumped: %q)", got, `say "hi" now`, dumped)
+	}
+}
+
+func TestDumpFieldsCollapsesEmbeddedNewlines(t *testing.T) {
+	var fields Fields
+	fields.Set("note", "first line\nsecond line")
+	dumped := DumpFields(fields)
+	if strings.Count(dumped, "\n") != 1 {
+		t.Fatalf("dumped block must stay on one line per field, got %q", dumped)
+	}
+	again, err := ParseFields(dumped)
+	if err != nil {
+		t.Fatalf("dumped block does not parse back: %v (dumped: %q)", err, dumped)
+	}
+	if strings.Contains(again.String("note"), "\n") {
+		t.Fatalf("note kept a raw newline: %q", again.String("note"))
+	}
+}
+
+func TestAppendTaskRejectsUnknownPriority(t *testing.T) {
+	var fields Fields
+	fields.Set("files", []any{"c/three.go"})
+	fields.Set("done_when", []any{"go test ./..."})
+	if _, _, err := AppendTask(sample, "TG-01.1", "Third task", fields, "high", "READY"); err == nil {
+		t.Fatal("want an error for an unknown priority")
+	}
+}
+
+func TestAppendTaskRejectsUnknownStatus(t *testing.T) {
+	var fields Fields
+	fields.Set("files", []any{"c/three.go"})
+	fields.Set("done_when", []any{"go test ./..."})
+	if _, _, err := AppendTask(sample, "TG-01.1", "Third task", fields, "H", "SHIPPED"); err == nil {
+		t.Fatal("want an error for an unknown status")
+	}
+}
+
+func TestParseReportsAMalformedTaskHeading(t *testing.T) {
+	broken := "### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-01.1.1] Bad heading [P: high] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
+	parsed := Parse(broken)
+	if len(parsed.Groups[0].Tasks) != 0 {
+		t.Fatalf("a malformed heading must not parse as a task: %+v", parsed.Groups[0].Tasks)
+	}
+	found := false
+	for _, problem := range parsed.Problems {
+		if strings.Contains(problem, "TSK-01.1.1") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no problem names the malformed heading; got %v", parsed.Problems)
+	}
+}
+
 func TestADeclaredDirectoryIsItsOwnScope(t *testing.T) {
 	text := "### [TG-20.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-20.1.1] Wide [P: C] [READY]\n```yaml\nfiles: [internal, README.md]\ndone_when: [\"true\"]\n```\n\n" +

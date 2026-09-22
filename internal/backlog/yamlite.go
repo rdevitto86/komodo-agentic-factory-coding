@@ -213,7 +213,11 @@ func ParseFields(text string) (Fields, error) {
 	return fields, nil
 }
 
+// newlineRe matches any line break so quote can collapse one into a space.
+var newlineRe = regexp.MustCompile(`\r\n|\r|\n`)
+
 // quote renders a scalar, quoting text the parser would otherwise misread.
+// A newline is collapsed to a space, since a raw one would break the fenced block.
 func quote(value any) string {
 	switch typed := value.(type) {
 	case nil:
@@ -226,17 +230,21 @@ func quote(value any) string {
 	case int:
 		return strconv.Itoa(typed)
 	}
-	text := fmt.Sprint(value)
+	text := newlineRe.ReplaceAllString(fmt.Sprint(value), " ")
 	needs := text == "" || text != strings.TrimSpace(text) ||
 		strings.ContainsAny(text, ":#[]{},\"'") || intOnly.MatchString(text)
 	switch strings.ToLower(text) {
 	case "true", "false", "yes", "no", "null", "~":
 		needs = true
 	}
-	if needs {
-		return `"` + strings.ReplaceAll(text, `"`, `\"`) + `"`
+	if !needs {
+		return text
 	}
-	return text
+	// scalar never unescapes a quote, so a value holding one takes the other delimiter.
+	if strings.Contains(text, "\"") {
+		return "'" + text + "'"
+	}
+	return `"` + text + `"`
 }
 
 // DumpFields renders Fields back into the subset, lists dashed one item per line.
