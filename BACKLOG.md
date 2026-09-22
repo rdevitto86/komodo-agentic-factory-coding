@@ -21,7 +21,7 @@ version: 2.0.0
 * **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
 * **PR A:** `refactor/v2-markdown` from `docs/v2-plan`, opened by the session with `gh pr create`. Validated by every `done_when` here, the V1 linter from a scratch worktree of `v1-final` at zero problems, and a human read of `komodo/AGENTS.md` and `komodo/policy.json`. Merges into `docs/v2-plan`.
 
-#### [TSK-03.1.1] Standards become skills at the source [P: C] [READY]
+#### [TSK-03.1.1] Standards become skills at the source [P: C] [DONE]
 ```yaml
 files: [komodo/skills, komodo/standards]
 done_when:
@@ -34,7 +34,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.1.2] Briefs fold into roles, and each role carries its schema [P: C] [READY]
+#### [TSK-03.1.2] Briefs fold into roles, and each role carries its schema [P: C] [DONE]
 ```yaml
 files: [komodo/roles, komodo/briefs]
 done_when:
@@ -48,7 +48,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.1.3] The policy has four denials, and the rules give a worktree unlimited freedom [P: C] [READY]
+#### [TSK-03.1.3] The policy has four denials, and the rules give a worktree unlimited freedom [P: C] [DONE]
 ```yaml
 files: [komodo/policy.json, komodo/AGENTS.md, komodo/rules]
 done_when:
@@ -62,7 +62,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.1.4] The merger role goes; the responder stays as a session role [P: M] [READY]
+#### [TSK-03.1.4] The merger role goes; the responder stays as a session role [P: M] [DONE]
 ```yaml
 files: [komodo/roles/merger.md, komodo/roles/responder.md]
 done_when:

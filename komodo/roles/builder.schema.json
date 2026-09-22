@@ -1,0 +1,63 @@
+{
+  "type": "object",
+  "properties": {
+    "result": {
+      "type": "string",
+      "enum": [
+        "DONE",
+        "BLOCKED"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "what"
+        ]
+      }
+    },
+    "verified": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "command",
+          "exit_code"
+        ]
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "result",
+    "summary",
+    "changed",
+    "verified"
+  ]
+}
