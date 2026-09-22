@@ -105,6 +105,32 @@ func TestNextPrintsTheGroupAndItsWaves(t *testing.T) {
 	}
 }
 
+func TestReviewerRoleDispatchesToTheReviewerTier(t *testing.T) {
+	root := repo(t, groupText)
+	role := "---\nname: reviewer\ndescription: Reviews diffs.\ntier: heavy\ntools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\nBody.\n"
+	path := filepath.Join(root, RolesDir, "reviewer.md")
+	if err := os.WriteFile(path, []byte(role), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, role := range plan.Roles {
+		if role.Name != "reviewer" {
+			continue
+		}
+		found = true
+		if role.Machine != "reviewer" {
+			t.Fatalf("machine = %s, want the reviewer tier, not the heavy tier it declares", role.Machine)
+		}
+	}
+	if !found {
+		t.Fatal("no reviewer role in the plan")
+	}
+}
+
 func TestNextTakesATaskIdOrAGroupId(t *testing.T) {
 	root := repo(t, groupText)
 	byTask, err := Next(root, "TSK-05.1.2")
