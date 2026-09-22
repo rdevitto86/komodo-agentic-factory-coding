@@ -29,19 +29,12 @@ type Detect struct {
 	CI    []string `json:"ci"`
 }
 
-// Commands are the verify and compile defaults a facet ships.
-type Commands struct {
-	Verify  string `json:"verify"`
-	Compile string `json:"compile"`
-}
-
-// Facet is one platform's setup skill, role appendices, and commands, keyed by name.
+// Facet is one platform's setup skill, role appendices, and detection markers, keyed by name.
 type Facet struct {
-	Name     string
-	Skill    string
-	FacetMD  string
-	Commands Commands
-	Detect   Detect
+	Name    string
+	Skill   string
+	FacetMD string
+	Detect  Detect
 }
 
 // builderHeading and reviewerHeading find a facet's appendix under its own heading.
@@ -109,21 +102,16 @@ func Load(root, name string) (Facet, error) {
 		return Facet{}, err
 	}
 
-	var commands Commands
-	if data, err := fs.ReadFile(tree, path.Join(dir, "commands.json")); err == nil {
-		_ = json.Unmarshal(data, &commands)
-	}
 	var detectMarkers Detect
 	if data, err := fs.ReadFile(tree, path.Join(dir, "detect.json")); err == nil {
 		_ = json.Unmarshal(data, &detectMarkers)
 	}
 
 	return Facet{
-		Name:     name,
-		Skill:    strings.TrimSpace(string(skill)),
-		FacetMD:  strings.TrimSpace(string(facetMD)),
-		Commands: commands,
-		Detect:   detectMarkers,
+		Name:    name,
+		Skill:   strings.TrimSpace(string(skill)),
+		FacetMD: strings.TrimSpace(string(facetMD)),
+		Detect:  detectMarkers,
 	}, nil
 }
 
