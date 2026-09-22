@@ -610,3 +610,81 @@ context:
   - "drop the hash comparison and keep the equality guard, or restore a cache read that genuinely skips the walk"
 type: refactor
 ```
+
+#### [TSK-03.6.13] A run holds a lock, so two cannot drive one group [P: H] [READY]
+```yaml
+files: [internal/line/worktree.go, internal/line/worktree_test.go, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.1]
+context:
+  - "two komodo run processes drove TG-03.6 at once and both wrote run state, task branches and wave merges; the result happened to be coherent but nothing prevents two runs interleaving a wave merge or renumbering waves under each other"
+  - "next --start takes an exclusive lock under .komodo holding the pid and the run id; a second run exits naming the holder, and a stale lock whose pid is gone is reclaimed"
+type: feat
+```
+
+### [TG-03.7] The review findings from TG-03.6
+```yaml
+type: fix
+version: 2.0.1
+base: docs/v2-plan
+```
+
+#### [TSK-03.7.1] The binaries leave the tree, so no branch rebuilds them [P: H] [READY]
+```yaml
+files: [.gitattributes, bin, internal/gate, internal/release]
+done_when:
+  - go test ./internal/gate/... ./internal/release/...
+context:
+  - "TSK-03.6.7 set bin/** binary merge=binary -diff, which the review proved a no-op: git's binary macro already expands to -diff -merge -text, and the built-in binary driver behaves exactly like an unset merge attribute, so the paths still conflict"
+  - "take that task's second option instead: build the binaries at release and drop them from the tree, so no branch ever rebuilds a tracked artifact"
+type: fix
+```
+
+#### [TSK-03.7.2] checkPromises reads the sources it names and resolves real callers [P: H] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-03.7.1]
+context:
+  - "the check scans only komodo/rules/*.md for a bullet shaped - **`key`**, so severity_floor, before_review and after_publish, which live in BACKLOG.md, are out of scope; three of the four mechanisms it was written for cannot be seen"
+  - "called() counts any word-boundary match in a non-test file, so the tier key passes on the struct field roles[index].Tier whether or not Task.Tier() is ever called; resolve callers by identifier position with go/ast"
+type: fix
+```
+
+#### [TSK-03.7.3] The MCP swap point is proven or the changelog stops claiming it [P: M] [READY]
+```yaml
+files: [internal/line/swap_test.go, CHANGELOG.md]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.7.2]
+context:
+  - "TSK-03.6.5 requires the swap test to assert that a facet's mcp.json, when present, changes nothing in V2; swap_test.go carries four tests and no mention of mcp, yet the 2.0.0 changelog entry says it does"
+  - "add the assertion, or cut the claim; a changelog that overstates a proof is worse than one that omits it"
+type: fix
+```
+
+#### [TSK-03.7.4] A diff never drops a file without saying so [P: M] [READY]
+```yaml
+files: [internal/line/diff.go, internal/line/diff_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.7.3]
+context:
+  - "DiffFor appends a piece only when byFile holds the name, so a mismatch between git diff --name-only and the chunk keys removes a file silently; with core.quotepath at its default a non-ASCII path is C-quoted in both, the header stops matching diff --git a/, and its hunks are folded into the previous file"
+  - "handle the quoted header form and emit a marker for any name in Files with no chunk; TSK-03.6.11 forbids a silent drop"
+type: fix
+```
+
+#### [TSK-03.7.5] The detect recompute test asserts what its name claims [P: L] [READY]
+```yaml
+files: [internal/detect/detect_test.go]
+done_when:
+  - go test ./internal/detect/...
+depends_on: [TSK-03.7.4]
+context:
+  - "TestLoadRecomputesWhenAManifestIsAdded asserts Verify is go test ./..., which go.mod already produced, and that the cache file is non-empty, which the first Load guaranteed; both hold if Load returned a stale profile without walking"
+  - "assert a profile field the added manifest actually changes, or drop the test in favour of the one that does"
+type: test
+```
