@@ -10,7 +10,7 @@ import (
 // Its file-editing tool is not registered yet: the guard cannot decode its patch body.
 func init() {
 	mount.RegisterGuard("codex", mount.GuardTools{
-		ShellTool:    "shell",
+		ShellTool:    guardShellTool,
 		CommandField: "command",
 		ConfigPaths:  []string{filepath.ToSlash(filepath.Join(Dir, "hooks.json"))},
 		Deny:         denyPayload,
@@ -22,3 +22,6 @@ func init() {
 func denyPayload(string) []byte {
 	return nil
 }
+
+// guardShellTool is the tool name this host reports for a shell call, which the hook matches.
+const guardShellTool = "Bash"
