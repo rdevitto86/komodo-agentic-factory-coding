@@ -1061,3 +1061,13 @@ context:
 type: chore
 ```
 
+#### [TSK-03.8.10] The local machine is reached through the registry, so nothing outside the mounts names it [P: M] [REFINEMENT]
+```yaml
+files: [internal/mount/registry.go, internal/mount/ollama, cmd/komodo/main.go, internal/line/step.go, internal/line/next.go, internal/doctor/doctor.go, internal/profile/profile.go]
+done_when:
+  - go test ./...
+  - go run ./cmd/komodo doctor
+context:
+  - "registering ollama as a vendor makes the doctor report 22 places outside internal/mount that name it: komodo machine in main.go, the machine routing in step.go and next.go, doctor's pinOllamaDown and drift, and profile's selection; route each through a registry entry for the local machine, then register the name as a vendor"
+type: refactor
+```
