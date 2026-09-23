@@ -549,18 +549,15 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 	args := tokens[1:]
 	var findings []string
 	var configs []string
+	elsewhere := ""
 	index := 0
 	for index < len(args) && strings.HasPrefix(args[index], "-") {
 		arg := args[index]
 		switch {
 		case arg == "-C":
 			// git -C <dir> reads and writes the branch of that checkout, not this one.
-			value := ""
-			if index+1 < len(args) {
-				value = args[index+1]
-			}
-			if value != "." {
-				return append(findings, fmt.Sprintf("git -C %s: the branch there is not tracked; open a pull request instead", value)), branch
+			if index+1 < len(args) && args[index+1] != "." {
+				elsewhere = args[index+1]
 			}
 			index += 2
 		case arg == "-c":
@@ -591,6 +588,9 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 		if parts := strings.Fields(alias); len(parts) > 0 {
 			sub, rest = parts[0], append(append([]string{}, parts[1:]...), rest...)
 		}
+	}
+	if elsewhere != "" && !readOnlyGit(sub, rest) {
+		return append(findings, fmt.Sprintf("git -C %s %s: the branch there is not tracked; open a pull request instead", elsewhere, sub)), branch
 	}
 	switch sub {
 	case "push":
@@ -788,6 +788,36 @@ func switchTarget(rest []string) (target string, create bool, ok bool) {
 // previousBranch reports whether a switch target names an earlier branch, as - and @{-1} do.
 func previousBranch(target string) bool {
 	return target == "-" || strings.HasPrefix(target, "@{-")
+}
+
+// readOnlyGitCommands never move a ref, so running them in another checkout is harmless.
+var readOnlyGitCommands = map[string]bool{
+	"status": true, "log": true, "diff": true, "show": true, "rev-parse": true, "rev-list": true,
+	"ls-files": true, "ls-tree": true, "cat-file": true, "blame": true, "grep": true,
+	"describe": true, "shortlog": true, "merge-base": true, "name-rev": true,
+}
+
+// readOnlyGit reports whether a git subcommand only reads, including a branch or worktree listing.
+func readOnlyGit(sub string, rest []string) bool {
+	switch sub {
+	case "branch":
+		for _, arg := range rest {
+			if !strings.HasPrefix(arg, "-") || !branchListFlags[arg] {
+				return false
+			}
+		}
+		return true
+	case "worktree":
+		return len(rest) > 0 && rest[0] == "list"
+	case "config":
+		return hasReadFlag(rest)
+	}
+	return readOnlyGitCommands[sub]
+}
+
+// branchListFlags are the git branch flags that only list.
+var branchListFlags = map[string]bool{
+	"--list": true, "-a": true, "--all": true, "-r": true, "--remotes": true, "-v": true, "-vv": true, "--show-current": true,
 }
 
 // hasReadFlag reports whether a git config call only reads, never writes.
