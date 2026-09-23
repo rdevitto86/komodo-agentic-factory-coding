@@ -39,6 +39,18 @@ var (
 	scrubbedVars = map[string]bool{
 		"GIT_CONFIG_COUNT": true, "GIT_CONFIG_PARAMETERS": true, "GIT_SSH_COMMAND": true, "GIT_ASKPASS": true,
 	}
+	// remotePushConfigRe matches a -c key that redirects where a bare push lands.
+	remotePushConfigRe = regexp.MustCompile(`^remote\.[^.]+\.(push|pushurl)$`)
+	// globalValueFlags are git's global options that take a value, other than -c and -C.
+	globalValueFlags = map[string]bool{
+		"--git-dir": true, "--work-tree": true, "--namespace": true,
+		"--super-prefix": true, "--exec-path": true, "--config-env": true,
+	}
+	// configReadFlags mark a git config call as read-only rather than a write.
+	configReadFlags = map[string]bool{
+		"--get": true, "--get-all": true, "--get-regexp": true, "--get-urlmatch": true,
+		"--list": true, "-l": true, "--name-only": true,
+	}
 )
 
 // Request is the hook payload a host sends on stdin before a tool runs.
@@ -109,6 +121,8 @@ func commandFindings(command, root, branch string, policy Policy) []string {
 			break
 		}
 	}
+	// current tracks the branch across segments, since a switch or checkout changes it mid-chain.
+	current := branch
 	for _, chunk := range segmentRe.Split(command, -1) {
 		for _, raw := range splitBackground(chunk) {
 			segment := unwrapParens(raw)
@@ -151,16 +165,18 @@ func commandFindings(command, root, branch string, policy Policy) []string {
 				findings = append(findings, writerPaths(kept, root, policy)...)
 			}
 			if name == "git" {
-				findings = append(findings, gitFindings(kept, branch, policy)...)
+				var gitResult []string
+				gitResult, current = gitFindings(kept, current, policy)
+				findings = append(findings, gitResult...)
 			}
 			if name == "gh" && len(kept) > 2 && kept[1] == "pr" && kept[2] == "merge" {
 				findings = append(findings, "gh pr merge: landing is the human's merge button")
 			}
 			if name == "eval" && len(kept) > 1 {
-				findings = append(findings, commandFindings(kept[1], root, branch, policy)...)
+				findings = append(findings, commandFindings(kept[1], root, current, policy)...)
 			}
 			if script, ok := shellScript(name, kept); ok {
-				findings = append(findings, commandFindings(script, root, branch, policy)...)
+				findings = append(findings, commandFindings(script, root, current, policy)...)
 			}
 		}
 	}
@@ -333,34 +349,72 @@ func pathFindings(path, root string, policy Policy) []string {
 	return findings
 }
 
-// gitFindings refuses the git operations that touch a critical ref.
-func gitFindings(tokens []string, branch string, policy Policy) []string {
+// gitFindings refuses the git operations that touch a critical ref, and reports the branch after the call.
+func gitFindings(tokens []string, branch string, policy Policy) ([]string, string) {
 	args := tokens[1:]
+	var findings []string
+	var configs []string
 	index := 0
 	for index < len(args) && strings.HasPrefix(args[index], "-") {
-		switch args[index] {
-		case "-C", "-c", "--git-dir", "--work-tree":
+		arg := args[index]
+		switch {
+		case arg == "-C":
+			// git -C <dir> reads and writes the branch of that checkout, not this one.
+			value := ""
+			if index+1 < len(args) {
+				value = args[index+1]
+			}
+			if value != "." {
+				return append(findings, fmt.Sprintf("git -C %s: the branch there is not tracked; open a pull request instead", value)), branch
+			}
+			index += 2
+		case arg == "-c":
+			if index+1 < len(args) {
+				configs = append(configs, args[index+1])
+			}
 			index += 2
 		default:
+			name, _, hasValue := strings.Cut(arg, "=")
 			index++
+			if globalValueFlags[name] && !hasValue {
+				index++
+			}
+		}
+	}
+	for _, entry := range configs {
+		if name, _, _ := strings.Cut(entry, "="); remotePushConfigRe.MatchString(name) {
+			findings = append(findings, fmt.Sprintf("git -c %s: a config write reaches push; open a pull request instead", entry))
 		}
 	}
 	if index >= len(args) {
-		return nil
+		return findings, branch
 	}
 	sub, rest := args[index], args[index+1:]
-	var findings []string
+	if alias := aliasValue(configs, sub); strings.HasPrefix(alias, "!") {
+		return append(findings, fmt.Sprintf("git -c alias.%s: a shell alias hides its command; run the command directly", sub)), branch
+	} else if alias != "" {
+		if parts := strings.Fields(alias); len(parts) > 0 {
+			sub, rest = parts[0], append(append([]string{}, parts[1:]...), rest...)
+		}
+	}
 	switch sub {
 	case "push":
 		var positional []string
 		deletes := false
+		mirrorFlag := ""
 		for _, arg := range rest {
-			if arg == "--delete" || arg == "-d" || arg == "--mirror" {
+			switch arg {
+			case "--delete", "-d":
 				deletes = true
+			case "--mirror", "--all":
+				mirrorFlag = arg
 			}
 			if !strings.HasPrefix(arg, "-") {
 				positional = append(positional, arg)
 			}
+		}
+		if mirrorFlag != "" && hasAnyCritical(policy) {
+			findings = append(findings, fmt.Sprintf("git push %s: reaches every ref, including a critical one; open a pull request instead", mirrorFlag))
 		}
 		targets := positional
 		if len(positional) > 1 {
@@ -375,6 +429,12 @@ func gitFindings(tokens []string, branch string, policy Policy) []string {
 			}
 			if target == "HEAD" {
 				target = branch
+			}
+			if strings.Contains(target, "*") {
+				if hasAnyCritical(policy) {
+					findings = append(findings, fmt.Sprintf("git push %s: a wildcard refspec reaches every ref, including a critical one; open a pull request instead", spec))
+				}
+				continue
 			}
 			if policy.IsCritical(target) {
 				verb := "push to"
@@ -400,7 +460,7 @@ func gitFindings(tokens []string, branch string, policy Policy) []string {
 			}
 		}
 		if !deleting {
-			return nil
+			return findings, branch
 		}
 		for _, arg := range rest {
 			if !strings.HasPrefix(arg, "-") && policy.IsCritical(arg) {
@@ -413,8 +473,71 @@ func gitFindings(tokens []string, branch string, policy Policy) []string {
 				findings = append(findings, fmt.Sprintf("git update-ref %s: a critical ref is never moved by hand", arg))
 			}
 		}
+	case "switch", "checkout":
+		if target, create, ok := switchTarget(rest); ok {
+			if previousBranch(target) && hasAnyCritical(policy) {
+				findings = append(findings, fmt.Sprintf("git %s %s: the previous branch is not tracked; name the branch", sub, target))
+			}
+			if !create && policy.IsCritical(target) {
+				findings = append(findings, fmt.Sprintf("git %s %s: a switch onto a critical ref is watched too", sub, target))
+			}
+			branch = target
+		}
+	case "config":
+		if !hasReadFlag(rest) {
+			findings = append(findings, ".git/config is a host or toolkit config; the guard owns it")
+		}
 	}
-	return findings
+	return findings, branch
+}
+
+// aliasValue returns the git alias a -c option set for a subcommand name, or the empty string.
+func aliasValue(configs []string, sub string) string {
+	for _, entry := range configs {
+		if name, value, found := strings.Cut(entry, "="); found && name == "alias."+sub {
+			return value
+		}
+	}
+	return ""
+}
+
+// hasAnyCritical reports whether the policy protects any ref at all.
+func hasAnyCritical(policy Policy) bool {
+	return len(policy.CriticalRefs) > 0
+}
+
+// switchTarget finds the ref a switch or checkout targets, and whether it creates a new one.
+func switchTarget(rest []string) (target string, create bool, ok bool) {
+	for index, arg := range rest {
+		switch arg {
+		case "-b", "-B", "-c", "--create", "--orphan":
+			if index+1 < len(rest) {
+				return rest[index+1], true, true
+			}
+			return "", false, false
+		case "--":
+			return "", false, false
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			return arg, false, true
+		}
+	}
+	return "", false, false
+}
+
+// previousBranch reports whether a switch target names an earlier branch, as - and @{-1} do.
+func previousBranch(target string) bool {
+	return target == "-" || strings.HasPrefix(target, "@{-")
+}
+
+// hasReadFlag reports whether a git config call only reads, never writes.
+func hasReadFlag(rest []string) bool {
+	for _, arg := range rest {
+		if configReadFlags[arg] {
+			return true
+		}
+	}
+	return false
 }
 
 // unique keeps the first occurrence of each finding, in order.

