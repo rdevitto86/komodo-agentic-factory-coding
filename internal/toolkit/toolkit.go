@@ -13,12 +13,17 @@ import (
 // embedded is the komodo/ tree shipped inside the binary, rooted where a repo's own komodo/ is.
 var embedded = mustSub(komodo.FS, "komodo")
 
-// FS returns the komodo/ tree for root: its own komodo/ directory when the repo ships one,
-// otherwise the tree embedded in the binary.
+// markers are the toolkit's top-level entries; a komodo/ directory holding none is another package.
+var markers = []string{"roles", "skills", "rules", "facets", "policy.json", "AGENTS.md"}
+
+// FS returns the komodo/ tree for root: its own komodo/ directory when that holds one of the
+// toolkit's markers, otherwise the tree embedded in the binary, so a stray directory never blanks a role.
 func FS(root string) fs.FS {
 	dir := filepath.Join(root, "komodo")
-	if info, err := os.Stat(dir); err == nil && info.IsDir() {
-		return os.DirFS(dir)
+	for _, marker := range markers {
+		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+			return os.DirFS(dir)
+		}
 	}
 	return embedded
 }

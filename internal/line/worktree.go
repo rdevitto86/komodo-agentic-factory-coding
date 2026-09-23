@@ -3,6 +3,7 @@ package line
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -140,7 +141,22 @@ func AcquireLock(root, run string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	// Exclusive create, so two launchers cannot both take it; a dead holder's lock is removed once.
+	for attempt := 0; attempt < 2; attempt++ {
+		handle, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			_, err = handle.Write(data)
+			return errors.Join(err, handle.Close())
+		}
+		if !os.IsExist(err) {
+			return err
+		}
+		if checkErr := CheckLock(root); checkErr != nil {
+			return checkErr
+		}
+		_ = os.Remove(path)
+	}
+	return fmt.Errorf("could not take the run lock at %s", path)
 }
 
 // LockEnv carries the launcher's pid into the host it starts, so that host's stations pass the lock.

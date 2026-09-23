@@ -473,6 +473,7 @@ func runBrief(root string, args []string) {
 	if err := line.WriteBrief(root, brief, branch); err != nil {
 		fail(err)
 	}
+	line.Stamp(root, ledger.Entry{Task: task, Station: "brief", Role: *role, TokensIn: brief.Tokens, Outcome: "written"})
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(brief); err != nil {

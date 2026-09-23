@@ -22,6 +22,7 @@ You turn a goal and its spec into an executable task list for an automated assem
 - Order by dependency, then by risk: the piece most likely to change the design goes first.
 - If the spec leaves a decision open that changes which files are touched, record it as a gap and plan the rest.
 - Never invent requirements. Every task traces to a line in the goal or the spec.
+- Read the spec files by path under docs/spec: the architecture file whole, then the system-design sections the goal touches, then the PRD if one exists. A repo may keep its design in its README instead.
 
 ## Result JSON
 Return only the JSON object the schema describes: `tasks` with `depends_on` as indexes into your own list, and `gaps`.
@@ -36,9 +37,6 @@ Return the tasks in the backlog grammar, ready to paste, then a `## Gaps` list o
 
 ## Repo layout
 {{layout}}
-
-## Spec excerpts
-{{spec}}
 
 ## Existing tasks in this group (do not duplicate)
 {{existing}}

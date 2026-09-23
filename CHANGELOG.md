@@ -8,38 +8,9 @@ The 1.x line ends at 1.3.0. V1 was a Python orchestrator that spawned the host a
 
 V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the last commit on `main` before the repo was cleared. The repo was renamed from `komodo-agentic-toolkit-coding` to `komodo-agentic-coding-assembly-line`, then `komodo-agentic-factory-code`, then `komodo-agentic-factory-coding`, all within the same week. The V2 plan, its requirements, and a table mapping every V1 capability to its V2 task or its reason for dropping are in `README.md` on PR #103, which carries the group work.
 
-## 2.0.1 — 2026-09-23
-
-- **TG-03.8** The line plans what it is handed (16 task(s))
-
-### Fixed
-
-- Every station command runs under a wall clock in its own process group: `done_when` under the task's `timeout` key (default 10 minutes), the compile and verify gates, the toolkit gate, and `after_publish`. A hung child is killed, never waited on.
-- The local model is no longer a name compiled into the binary. `OLLAMA_MODEL`, then the overlay's `local_model`, then the first model the server lists, so `komodo machine` never posts to a model that is not pulled.
-- A running local server no longer takes the reviewer. The `hybrid` profile keeps review on the host's heavy tier unless the overlay says `local_reviewer`, and a brief past `local_window` (default 32768 tokens) falls back to the remote tier with the reason in `komodo step`.
-- `komodo brief` reads a repair from the task's own worktree, where the failed attempt's edits sit, not from the group branch.
-- A context anchor that names no heading is reported by `komodo lint` and named in the brief, instead of sending the whole file.
-- A task appended to the open group mid-run joins a wave after the pinned ones instead of never running.
-- `max_parallel` is wave capacity inside the planner, so an overflow task shares its next wave with the tasks that became ready.
-- `komodo next --start` refuses to cut a group while another is open and unshipped; `--force` overrides.
-- `komodo brief` refuses a task whose directories overlap a closed, unmerged task branch of the open run.
-- The guard refuses a force push, `--force-with-lease`, and a `+refspec` on every branch; the rules say the same. Six allowed rows were added so the table stays balanced.
-- The headless ship files the minor findings and runs `after_publish` after the credentialed push, as the in-session ship does.
-- `komodo report` reads the run's own group after it ships instead of planning the next one.
-- The review diff is resolved from the same ref the group was cut from, through one resolver, and a mount names its own events file.
-- The comment lint sees a doc comment above a C# attribute.
-- The README states what the guard is not: a sandbox. The hard boundaries are the forge's ruleset and the credential scrub.
-
-### Changed
-
-- Token accounting on Claude Code sums the spawned agents' own transcripts that were handed the task's brief, never the session driving the line; cache reads are a separate `tokens_cached` field, and the build stamp names the tier, provider, and model the profile resolved. Numbers before this change are the driving session's and are not comparable.
-- `komodo run` on Claude Code bypasses permission prompts, which a headless session cannot answer, and drives on the standard tier's model; the guard hook runs in every mode and stays the wall. The launcher puts `bin/` first on PATH so `komodo` resolves.
-- The overlay renames a tier for this host with `"models": {"heavy": "sonnet"}`, which the agents and the profile both read.
-- `komodo doctor --remote` audits the forge's branch rulesets through `gh` and reports any active one that reaches past the default branch.
-- The reviewer names the files a clip marker omitted as unreviewed.
-
 ## 2.0.0 — 2026-09-22
 
+- **TG-03.8** The line plans what it is handed (16 task(s))
 - **TG-03.7** The sanity pass: safety, correctness, portability (27 task(s))
 - **TG-03.6** The gate and the exit test (11 task(s))
 - **TG-03.5** The repo layer and the local machines (9 task(s))
@@ -66,6 +37,37 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 ### The swap proofs
 
 `internal/line/swap_test.go` proves each hot-swap point with no code change and no restart: a profile row change moves a station to another machine and `komodo step` names it; a skill body change under `komodo/skills` or `.komodo/skills` reaches the next brief and the next project render; a facet added by `.komodo/facets` or a task's `facets` key reaches the standards slot, the profile slot, and the render; a `commands.json` change replaces verify at QC. MCP is the fifth point and is deferred: the same test asserts a facet's `mcp.json`, when present, changes nothing in V2.
+
+### The readiness pass, fixed
+
+- Every station command runs under a wall clock in its own process group: `done_when` under the task's `timeout` key (default 10 minutes), the compile and verify gates, the toolkit gate, and `after_publish`. A hung child is killed, never waited on.
+- The local model is no longer a name compiled into the binary. `OLLAMA_MODEL`, then the overlay's `local_model`, then the first model the server lists, so `komodo machine` never posts to a model that is not pulled.
+- A running local server no longer takes the reviewer. The `hybrid` profile keeps review on the host's heavy tier unless the overlay says `local_reviewer`, and a brief past `local_window` (default 32768 tokens) falls back to the remote tier with the reason in `komodo step`.
+- `komodo brief` reads a repair from the task's own worktree, where the failed attempt's edits sit, not from the group branch.
+- A context anchor that names no heading is reported by `komodo lint` and named in the brief, instead of sending the whole file.
+- A task appended to the open group mid-run joins a wave after the pinned ones instead of never running.
+- `max_parallel` is wave capacity inside the planner, so an overflow task shares its next wave with the tasks that became ready.
+- `komodo next --start` refuses to cut a group while another is open and unshipped; `--force` overrides.
+- `komodo brief` refuses a task whose directories overlap a closed, unmerged task branch of the open run.
+- The guard refuses a force push, `--force-with-lease`, and a `+refspec` on every branch; the rules say the same. Six allowed rows were added so the table stays balanced.
+- The headless ship files the minor findings and runs `after_publish` after the credentialed push, as the in-session ship does.
+- `komodo report` reads the run's own group after it ships instead of planning the next one.
+- The review diff is resolved from the same ref the group was cut from, through one resolver, and a mount names its own events file.
+- The comment lint sees a doc comment above a C# attribute.
+- The README states what the guard is not: a sandbox. The hard boundaries are the forge's ruleset and the credential scrub.
+- A trailer fed through `git commit -F -` from a heredoc is refused; `checkout -B main` and `switch -C main` are moves onto a critical ref; `checkout main -- file` is a restore, not a switch.
+- A `komodo/` directory holding none of the toolkit's entries never replaces the embedded toolkit.
+- The run lock is created exclusively, so two launchers starting together cannot both take it.
+- One spec shape: `docs/spec/architecture.md`, `system-design.md`, and an optional `prd.md`, plain headings, every section in exactly one file; the SDD and PRD templates are retired and the planner reads the files by path.
+- The ledger archives the previous run as `line.<run>.jsonl` instead of truncating it; the brief and review stations stamp their own rows, so every station's seconds are on record.
+
+### The readiness pass, changed
+
+- Token accounting on Claude Code sums the spawned agents' own transcripts that were handed the task's brief, never the session driving the line; cache reads are a separate `tokens_cached` field, and the build stamp names the tier, provider, and model the profile resolved. Numbers before this change are the driving session's and are not comparable.
+- `komodo run` on Claude Code bypasses permission prompts, which a headless session cannot answer, and drives on the standard tier's model; the guard hook runs in every mode and stays the wall. The launcher puts `bin/` first on PATH so `komodo` resolves.
+- The overlay renames a tier for this host with `"models": {"heavy": "sonnet"}`, which the agents and the profile both read.
+- `komodo doctor --remote` audits the forge's branch rulesets through `gh` and reports any active one that reaches past the default branch.
+- The reviewer names the files a clip marker omitted as unreviewed.
 
 ## [1.3.0] — 2026-09-21
 

@@ -58,6 +58,11 @@ func Table(policy Policy) []Case {
 		bash("push a refspec onto main", "git push origin feat/x:main", "feat/x", true, "open a pull request"),
 		bash("forced refspec onto master", "git push origin +feat/x:master", "feat/x", true, "open a pull request"),
 		bash("gh pr merge", "gh pr merge 12 --squash", "feat/x", true, "merge button"),
+		bash("a trailer fed through -F - from a heredoc", "git commit -F - <<'EOF'\nfeat: thing\n\nCo-Authored-By: Bot <bot@example.com>\nEOF", "feat/x", true, "trailer"),
+		bash("a clean message through -F - from a heredoc", "git commit -F - <<'EOF'\nfeat: thing\nEOF", "feat/x", false, ""),
+		bash("checkout -B resets local main", "git checkout -B main feat/x", "feat/x", true, "critical ref"),
+		bash("switch -C resets local main", "git switch -C main feat/x", "feat/x", true, "critical ref"),
+		bash("restoring a file from main is not a switch", "git checkout main -- README.md", "feat/x", false, ""),
 		// Pushed history is never rewritten, on any branch.
 		bash("force push to own branch", "git push --force origin feat/x", "feat/x", true, "never rewritten"),
 		bash("force-with-lease to own branch", "git push --force-with-lease origin feat/x", "feat/x", true, "never rewritten"),

@@ -86,10 +86,19 @@ func (l *Ledger) Stamp(entry Entry) error {
 	return err
 }
 
-// TruncateRun empties the run's file, which intake does when a new run begins.
+// TruncateRun archives the previous run's file beside it as line.<run>.jsonl, then empties it,
+// which intake does when a new run begins, so no run's stations are ever lost.
 func (l *Ledger) TruncateRun() error {
 	if err := os.MkdirAll(l.Dir, 0o755); err != nil {
 		return err
+	}
+	if entries, err := l.Read(RunFile); err == nil && len(entries) > 0 && entries[0].Run != "" {
+		archive := l.path("line." + entries[0].Run + ".jsonl")
+		if _, err := os.Stat(archive); os.IsNotExist(err) {
+			if err := os.Rename(l.path(RunFile), archive); err != nil {
+				return err
+			}
+		}
 	}
 	return os.WriteFile(l.path(RunFile), nil, 0o644)
 }

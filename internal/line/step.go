@@ -10,6 +10,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/detect"
 	"komodo/internal/facet"
+	"komodo/internal/ledger"
 	"komodo/internal/mount/ollama"
 )
 
@@ -155,6 +156,7 @@ func Step(root, needle string) (*Action, error) {
 			Why: "every wave is merged and the diff is unreviewed",
 		}), nil
 	}
+	stampReview(root, plan)
 	blocking, _ := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	if len(blocking) > 0 {
 		return action(root, plan, Action{
@@ -258,6 +260,34 @@ func reviewed(root string, plan *Plan) bool {
 		return false
 	}
 	return !staleReview(root, plan)
+}
+
+// stampReview records the review station once per result: the seconds from the review brief to
+// its result, and how many findings it returned, so a spawned review is timed like a local one.
+func stampReview(root string, plan *Plan) {
+	taskID := plan.Group + "-review"
+	_, path, err := ReadResultFile(root, taskID)
+	if err != nil {
+		return
+	}
+	result, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if entries, err := Book(root).Read("line.jsonl"); err == nil {
+		for _, entry := range entries {
+			if entry.Station == "review" && entry.Group == plan.Group && !entry.At.Before(result.ModTime()) {
+				return
+			}
+		}
+	}
+	entry := ledger.Entry{Group: plan.Group, Task: taskID, Station: "review", Role: "reviewer",
+		Findings: len(ReviewFindings(root, plan.Group)), Outcome: "done"}
+	if brief, err := os.Stat(filepath.Join(root, StateDir, "briefs", taskID+".md")); err == nil {
+		entry.Seconds = result.ModTime().Sub(brief.ModTime()).Seconds()
+	}
+	fillUsage(root, taskID, result.ModTime(), &entry)
+	Stamp(root, entry)
 }
 
 // staleReview reports whether the branch moved after the review, which a repair always does;

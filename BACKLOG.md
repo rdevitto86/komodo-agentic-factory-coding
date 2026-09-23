@@ -962,7 +962,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.7.28] cmd/komodo/main.go:364 next --start never takes the run lock, and AcquireLock can race [P: L] [REFINEMENT]
+#### [TSK-03.7.28] cmd/komodo/main.go:364 next --start never takes the run lock, and AcquireLock can race [P: L] [DONE]
 ```yaml
 files:
   - cmd/komodo/main.go
@@ -984,7 +984,7 @@ context:
   - "When the environment is scrubbed, ShipGroup returns right after writing the handoff, before FileFindings and AfterPublishCommand. finishShip only pushes, creates the PR, and labels it. Every below-floor review finding from a headless run is silently dropped, and after_publish never runs. Have finishShip run FileFindings and the after_publish command after a successful push, with the same one-time guarantee the interactive path has."
 ```
 
-#### [TSK-03.7.30] internal/guard/guard.go:740 A trailer passes through `git commit -F -` from a heredoc [P: L] [REFINEMENT]
+#### [TSK-03.7.30] internal/guard/guard.go:740 A trailer passes through `git commit -F -` from a heredoc [P: L] [DONE]
 ```yaml
 files:
   - internal/guard/guard.go
@@ -995,7 +995,7 @@ context:
   - "readMessageFile returns an empty string for '-'. stripHeredocs also removes the body, because git is not a shell. So `git commit -F - <<'EOF'` with a Co-Authored-By line in the body passes the trailer check the task extended to -F. When -F is '-' or /dev/stdin, check the stripped heredoc body (or deny when it cannot be read) instead of returning an empty message."
 ```
 
-#### [TSK-03.7.31] internal/guard/guard.go:682 Switch handling denies a file restore and misses a forced reset of main [P: L] [REFINEMENT]
+#### [TSK-03.7.31] internal/guard/guard.go:682 Switch handling denies a file restore and misses a forced reset of main [P: L] [DONE]
 ```yaml
 files:
   - internal/guard/guard.go
@@ -1006,7 +1006,7 @@ context:
   - "switchTarget returns the first non-flag argument. So `git checkout main -- README.md`, which restores a file and does not switch, is denied as a switch onto a critical ref. The task explicitly wanted to remove false denies like this. Conversely, `git checkout -B main feat/x` and `git switch -C main feat/x` set create=true and skip the critical check. They silently reset local main, which update-ref on main is denied for. Stop at `--` treating what precedes it as a pathspec source when paths follow, and apply the critical-ref check to -B, -C, and --force-create targets."
 ```
 
-#### [TSK-03.7.32] internal/toolkit/toolkit.go:20 Any top-level komodo/ directory in a target repo replaces the whole embedded toolkit [P: L] [REFINEMENT]
+#### [TSK-03.7.32] internal/toolkit/toolkit.go:20 Any top-level komodo/ directory in a target repo replaces the whole embedded toolkit [P: L] [DONE]
 ```yaml
 files:
   - internal/toolkit/toolkit.go
@@ -1037,7 +1037,7 @@ context:
 ### [TG-03.8] The line plans what it is handed
 ```yaml
 type: fix
-version: 2.0.1
+version: 2.0.0
 base: main
 ```
 
@@ -1084,7 +1084,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.5] One spec shape: architecture, system design, and an optional PRD [P: M] [READY]
+#### [TSK-03.8.5] One spec shape: architecture, system design, and an optional PRD [P: M] [DONE]
 ```yaml
 files: [komodo/skills/standards-specs, templates/project/docs/spec, komodo/roles/planner.md, komodo/rules/backlog.md, templates/project/BACKLOG.md.tmpl]
 done_when:
