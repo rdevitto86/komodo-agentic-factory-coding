@@ -781,7 +781,7 @@ type: fix
 
 #### [TSK-03.7.13] Close trusts nothing the result says about itself, and a repairable failure keeps the loop alive [P: H] [READY]
 ```yaml
-files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, internal/line/step.go, komodo/skills/run/SKILL.md]
+files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, internal/line/step.go, cmd/komodo/main.go, cmd/komodo/main_test.go, README.md, komodo/skills/run/SKILL.md]
 done_when:
   - go test ./internal/line/... -shuffle=on
 depends_on: [TSK-03.7.12]
