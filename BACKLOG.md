@@ -1071,3 +1071,13 @@ context:
   - "registering ollama as a vendor makes the doctor report 22 places outside internal/mount that name it: komodo machine in main.go, the machine routing in step.go and next.go, doctor's pinOllamaDown and drift, and profile's selection; route each through a registry entry for the local machine, then register the name as a vendor"
 type: refactor
 ```
+
+#### [TSK-03.8.11] A running local server does not take every tier [P: H] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/limits.go, internal/mount/codex/limits.go, internal/line/step.go]
+done_when:
+  - go test ./internal/mount/... ./internal/line/...
+context:
+  - "with the local server up, each mount's Tiers maps every tier to the local model, so step routed the TG-03.7 group review (a 124 KB brief over 6749 changed lines) to a 3B model; route to the local machine only the tiers and roles the profile names, and never a brief larger than the local model's window"
+type: fix
+```
