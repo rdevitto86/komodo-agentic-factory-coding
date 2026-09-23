@@ -721,7 +721,7 @@ type: fix
 
 #### [TSK-03.7.9] The guard protects its own policy, every path spelling, and trailers in every form [P: C] [READY]
 ```yaml
-files: [internal/guard, internal/mount/registry.go, komodo/policy.json]
+files: [internal/guard, internal/mount/registry.go, internal/mount/claude/guard.go, internal/mount/codex/guard.go, komodo/policy.json]
 done_when:
   - go test ./internal/guard/...
   - go run ./cmd/komodo guard check
@@ -806,14 +806,15 @@ type: fix
 
 #### [TSK-03.7.15] Every CLI command reads every flag, and machine-read output is compact [P: M] [READY]
 ```yaml
-files: [cmd/komodo/main.go, cmd/komodo/main_test.go]
+files: [cmd/komodo/main.go, cmd/komodo/main_test.go, internal/pr/pr.go, internal/pr/pr_test.go]
 done_when:
-  - go test ./cmd/...
+  - go test ./cmd/... ./internal/pr/...
 depends_on: [TSK-03.7.11]
 context:
   - "komodo add parses with flag.Parse, so flags after the group and title are swallowed into the title and the task is written with no files; it was missed when every other command moved to splitPositional. comments check reads its flags as paths and passes vacuously; strip check first and fail on a path that does not exist"
   - "komodo machine --role reviewer looks up the heavy tier and never Tiers.Reviewer, and its error says it falls back when nothing does; resolve the reviewer through Tiers.Reviewer and say what actually happens"
   - "step and next --json print indented JSON the run skill reads every loop, and next --json carries every role's description and the whole profile; print compact JSON and drop what no station reads"
+  - "the respond loop can reply to a review thread but never resolve it, so a human must click resolve on every one; add pr.Client.Resolve(threadID) over the resolveReviewThread mutation and komodo threads --resolve <id>"
 type: fix
 ```
 
@@ -1021,5 +1022,16 @@ done_when:
 context:
   - "contextSlot falls back to the whole file, clipped, when Section finds no heading for the anchor, so a mistyped anchor silently spends thousands of tokens on the wrong text"
   - "the brief names the missing section instead of inlining the file, and komodo lint reports a context anchor whose file exists but holds no matching heading"
+type: fix
+```
+
+#### [TSK-03.8.7] The guard refuses a force push [P: M] [REFINEMENT]
+```yaml
+files: [internal/guard, komodo/policy.json]
+done_when:
+  - go test ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "the rules forbid force-pushing and rewriting published history, but the guard allows git push --force, --force-with-lease and a +refspec to any branch that is not critical; deny them, or make it a policy switch, and add table rows"
 type: fix
 ```
