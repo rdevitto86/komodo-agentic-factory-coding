@@ -2,20 +2,19 @@ package codex
 
 import (
 	"encoding/json"
+	"komodo/internal/mount/ollama"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"komodo/internal/profile"
 )
 
 // toolkit builds a root with the rules, two roles, and a skill, with the local machine down.
 func toolkit(t *testing.T) string {
 	t.Helper()
-	t.Setenv(profile.OllamaEnv, "http://127.0.0.1:1")
+	t.Setenv(ollama.Env, "http://127.0.0.1:1")
 	root := t.TempDir()
 	write := func(rel, body string) {
 		path := filepath.Join(root, rel)
@@ -251,18 +250,18 @@ func withLocalMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { listener.Close() })
-	t.Setenv(profile.OllamaEnv, "http://"+listener.Addr().String())
+	t.Setenv(ollama.Env, "http://"+listener.Addr().String())
 }
 
 func TestTheLocalProfilePointsEveryTierAtTheLocalMachine(t *testing.T) {
 	root := toolkit(t)
 	withLocalMachine(t)
 	agent := body(t, root, filepath.Join(Dir, "agents", "builder.toml"))
-	if !strings.Contains(agent, `model = "`+profile.OllamaModel+`"`) {
+	if !strings.Contains(agent, `model = "`+ollama.Model+`"`) {
 		t.Fatalf("the builder did not take the local model: %s", agent)
 	}
 	agent = body(t, root, filepath.Join(Dir, "agents", "reviewer.toml"))
-	if !strings.Contains(agent, `model = "`+profile.OllamaModel+`"`) {
+	if !strings.Contains(agent, `model = "`+ollama.Model+`"`) {
 		t.Fatalf("the reviewer did not take the local model: %s", agent)
 	}
 }
@@ -289,7 +288,7 @@ func TestTiersPutsEveryTierOnTheLocalMachine(t *testing.T) {
 			t.Fatalf("%s = %q, want ollama", machine.name, machine.got)
 		}
 	}
-	if tiers.Light.Model != profile.OllamaModel {
+	if tiers.Light.Model != ollama.Model {
 		t.Fatalf("model = %q", tiers.Light.Model)
 	}
 }

@@ -3,23 +3,13 @@ package profile
 
 import (
 	"encoding/json"
-	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
 	"komodo/internal/mount"
+	"komodo/internal/mount/ollama"
 )
-
-// OllamaEnv names the environment variable that moves the local machine's endpoint.
-const OllamaEnv = "OLLAMA_BASE_URL"
-
-// DefaultOllamaURL is where the local machine answers unless the environment says otherwise.
-const DefaultOllamaURL = "http://localhost:11434"
-
-// OllamaModel is the model name every mount pulls from the local machine, so both hosts agree.
-const OllamaModel = "llama3.2"
 
 // Caps are the brief slot caps, in characters, that a profile may lower and never raise.
 type Caps struct {
@@ -98,35 +88,13 @@ func planOverlay(profile Profile, plan string) Profile {
 	return profile
 }
 
-// OllamaUp reports whether the local machine answers where the environment says it lives.
-func OllamaUp() bool {
-	endpoint := os.Getenv(OllamaEnv)
-	if endpoint == "" {
-		endpoint = DefaultOllamaURL
-	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
-		return false
-	}
-	host := parsed.Host
-	if host == "" {
-		host = endpoint
-	}
-	connection, err := net.DialTimeout("tcp", host, 400*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	_ = connection.Close()
-	return true
-}
-
 // Select picks the profile with no flag: the host installed, the plan probed, Ollama if it answers.
 func Select(root string) Profile {
-	return SelectWith(root, mount.Hosts(), OllamaUp())
+	return SelectWith(root, mount.Hosts(), ollama.Up())
 }
 
 // SelectWith is Select over a given set of mounts, which is what a test drives.
-func SelectWith(root string, hosts []mount.Host, ollama bool) Profile {
+func SelectWith(root string, hosts []mount.Host, local bool) Profile {
 	profile := base()
 	host, found := installed(root, hosts)
 	if !found {
@@ -144,16 +112,16 @@ func SelectWith(root string, hosts []mount.Host, ollama bool) Profile {
 	}
 	profile = planOverlay(profile, plan)
 	if host.Tiers != nil {
-		profile.Tiers = host.Tiers(profile.Plan, ollama)
+		profile.Tiers = host.Tiers(profile.Plan, local)
 	}
 	profile.Name = host.Name
 	profile.Why = "the " + host.Name + " mount is installed"
-	if ollama {
+	if local {
 		if host.HybridName != "" {
 			profile.Name = host.HybridName
 		}
 		profile.Why += " and the local machine answers"
-	} else if endpoint := os.Getenv(OllamaEnv); endpoint != "" && host.HybridName != "" {
+	} else if endpoint := os.Getenv(ollama.Env); endpoint != "" && host.HybridName != "" {
 		profile.Why += "; the local machine did not answer at " + endpoint + ", so the light tier stays on " + host.Name + "'s own light tier"
 	}
 	if plan == "" {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"komodo/internal/mount"
+	"komodo/internal/mount/ollama"
 )
 
 // fakeHost builds a mount that reports what a test wants.
@@ -83,7 +84,7 @@ func TestAnotherHostWithOllamaIsLocal(t *testing.T) {
 }
 
 func TestOllamaNotAnsweringReportsTheDegradeOnce(t *testing.T) {
-	t.Setenv(OllamaEnv, "http://127.0.0.1:1")
+	t.Setenv(ollama.Env, "http://127.0.0.1:1")
 	host := fakeHost("claude", true, mount.Usage{Plan: "max_5x"}, true)
 	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
 	if got.Name == "hybrid" {
@@ -98,7 +99,7 @@ func TestOllamaNotAnsweringReportsTheDegradeOnce(t *testing.T) {
 }
 
 func TestNoOllamaEnvIsSilentAboutTheLocalMachine(t *testing.T) {
-	t.Setenv(OllamaEnv, "")
+	t.Setenv(ollama.Env, "")
 	host := fakeHost("claude", true, mount.Usage{Plan: "max_5x"}, true)
 	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
 	if strings.Contains(got.Why, "did not answer") {

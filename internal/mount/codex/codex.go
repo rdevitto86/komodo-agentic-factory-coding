@@ -4,6 +4,7 @@ package codex
 import (
 	"encoding/json"
 	"fmt"
+	"komodo/internal/mount/ollama"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"komodo/internal/facet"
 	"komodo/internal/install"
 	"komodo/internal/mount"
-	"komodo/internal/profile"
 	repopkg "komodo/internal/repo"
 )
 
@@ -41,7 +41,7 @@ func Render(root string, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
-	local := profile.OllamaUp()
+	local := ollama.Up()
 	for _, role := range roles {
 		if !role.Session {
 			continue
@@ -114,7 +114,7 @@ func agentFile(role mount.Role, local bool) string {
 	}
 	model := models[role.Tier]
 	if local {
-		model = profile.OllamaModel
+		model = ollama.Model
 	}
 	lines := []string{
 		fmt.Sprintf("name = %q", role.Name),
