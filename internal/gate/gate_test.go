@@ -173,3 +173,19 @@ func TestHookScriptPicksBinaryPerPlatform(t *testing.T) {
 		t.Fatalf("an unknown platform must not fall back to the Windows binary: out = %q", out)
 	}
 }
+
+func TestCommandDropsTheGitEnvironmentAHookSets(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	t.Setenv("GIT_INDEX_FILE", ".git/index")
+	t.Setenv("GIT_DIR", ".git")
+	var out bytes.Buffer
+	check := Command("env", t.TempDir(), "sh", "-c", "echo ${GIT_INDEX_FILE:-unset} ${GIT_DIR:-unset}")
+	if err := check.Run(&out); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "unset unset" {
+		t.Fatalf("a hook's git variables reached the child: %q", got)
+	}
+}

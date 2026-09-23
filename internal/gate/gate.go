@@ -45,11 +45,34 @@ func Command(name, root string, args ...string) Check {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = root
 		cmd.Stdout, cmd.Stderr = out, out
+		cmd.Env = childEnv()
 		if toolchain, err := Toolchain(root); err == nil {
-			cmd.Env = append(os.Environ(), "GOTOOLCHAIN="+toolchain)
+			cmd.Env = append(cmd.Env, "GOTOOLCHAIN="+toolchain)
 		}
 		return cmd.Run()
 	}}
+}
+
+// hookGitVars are the variables git sets for a hook; a child inheriting them aims every git call at this repo.
+var hookGitVars = []string{"GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR"}
+
+// childEnv is this process's environment without the git variables a hook sets.
+func childEnv() []string {
+	var env []string
+	for _, pair := range os.Environ() {
+		name, _, _ := strings.Cut(pair, "=")
+		dropped := false
+		for _, gitVar := range hookGitVars {
+			if name == gitVar {
+				dropped = true
+				break
+			}
+		}
+		if !dropped {
+			env = append(env, pair)
+		}
+	}
+	return env
 }
 
 // Toolchain reads the toolchain version go.mod pins, for example "go1.27.1".
