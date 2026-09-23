@@ -649,7 +649,7 @@ type: test
 
 #### [TSK-03.7.4] The review station hands the reviewer a filled brief of the right diff [P: H] [READY]
 ```yaml
-files: [internal/line/diff.go, internal/line/diff_test.go, komodo/roles/reviewer.md]
+files: [internal/line/diff.go, internal/line/diff_test.go, internal/line/step.go, komodo/roles/reviewer.md]
 done_when:
   - go test ./internal/line/...
 depends_on: [TSK-03.7.11]
@@ -994,5 +994,30 @@ done_when:
   - go test ./internal/comments/...
 context:
   - "a public C# member with a /// summary above an [Obsolete] line is flagged undocumented; skip bracketed attribute lines when looking up from the declaration, as the Rust and Java attributes already are"
+type: fix
+```
+
+#### [TSK-03.8.5] One spec shape: the SDD a brief slices, and an optional PRD [P: M] [READY]
+```yaml
+files: [komodo/skills/standards-specs, templates/project/docs/spec, komodo/roles/planner.md]
+done_when:
+  - go run ./cmd/komodo doctor
+context:
+  - "docs/spec/SDD.md is the one design document: architecture and system design are its sections, never files of their own. docs/spec/PRD.md stays optional and planner-facing"
+  - "standards-specs lists eight SDD sections and REQ-nn IDs; the templates carry V1 section numbering with gaps (§0, §1, §3, §5) and PRD-1 IDs. Make the skill and both templates name the same sections and the same ID scheme"
+  - "use plain headings with no § numbers, so a task cites docs/spec/SDD.md#components and a renumbering never breaks a citation"
+  - "standards-specs calls the SDD required, one per repo, which contradicts no repo config being required; say a repo may keep its design in README.md or the SDD, and a task cites whichever holds it"
+  - "planner.md carries a {{spec}} slot nothing fills; drop it and tell the planner to read the spec files by path"
+type: fix
+```
+
+#### [TSK-03.8.6] A context anchor that names no section fails instead of sending the whole file [P: H] [READY]
+```yaml
+files: [internal/line/brief.go, internal/line/brief_test.go, internal/backlog]
+done_when:
+  - go test ./internal/line/... ./internal/backlog/...
+context:
+  - "contextSlot falls back to the whole file, clipped, when Section finds no heading for the anchor, so a mistyped anchor silently spends thousands of tokens on the wrong text"
+  - "the brief names the missing section instead of inlining the file, and komodo lint reports a context anchor whose file exists but holds no matching heading"
 type: fix
 ```
