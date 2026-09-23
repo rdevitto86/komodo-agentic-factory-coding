@@ -211,6 +211,19 @@ func (c *Client) Reply(threadID, body string) error {
 	return err
 }
 
+// resolveMutation marks one review thread resolved.
+const resolveMutation = `mutation($id: ID!) {
+  resolveReviewThread(input: {threadId: $id}) {
+    thread { id }
+  }
+}`
+
+// Resolve marks one review thread resolved, so it drops out of the next Threads call.
+func (c *Client) Resolve(threadID string) error {
+	_, err := c.run("api", "graphql", "-f", "query="+resolveMutation, "-f", "id="+threadID)
+	return err
+}
+
 // KeepKnown returns only the labels the repository already defines.
 func KeepKnown(wanted, known []string) []string {
 	var out []string

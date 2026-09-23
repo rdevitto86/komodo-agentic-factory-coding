@@ -57,6 +57,7 @@ const usage = `komodo: the code assembly line.
   komodo run [group|task]     Drive the line headless on this host, under a budget
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
+  komodo threads --resolve id Mark one review thread resolved
   komodo machine <task>       Post a brief to the Ollama mount, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, doctor, guard, comments
@@ -229,8 +230,9 @@ func runAdd(root string, args []string) {
 	priority := set.String("priority", "M", "C, H, M, or L")
 	status := set.String("status", "REFINEMENT", "the status to open the task in")
 	taskType := set.String("type", "feat", "the conventional-commit type")
-	_ = set.Parse(args)
-	if set.NArg() < 2 {
+	positional, rest := splitFlags(args, "files", "done-when", "priority", "status", "type")
+	_ = set.Parse(rest)
+	if len(positional) < 2 {
 		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
 	}
 	path, _ := load(root)
@@ -242,8 +244,8 @@ func runAdd(root string, args []string) {
 	fields.Set("files", split(*files))
 	fields.Set("done_when", split(*doneWhen))
 	fields.Set("type", *taskType)
-	title := strings.Join(set.Args()[1:], " ")
-	out, id, err := backlog.AppendTask(string(data), set.Arg(0), title, fields, *priority, *status)
+	title := strings.Join(positional[1:], " ")
+	out, id, err := backlog.AppendTask(string(data), positional[0], title, fields, *priority, *status)
 	if err != nil {
 		fail(err)
 	}
@@ -367,11 +369,7 @@ func runNext(root string, args []string) {
 		plan.Base = *base
 	}
 	if *asJSON {
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(plan); err != nil {
-			fail(err)
-		}
+		printCompactJSON(os.Stdout, planForJSON(plan))
 		return
 	}
 	fmt.Printf("%s %s\n", plan.Group, plan.Title)
@@ -381,6 +379,44 @@ func runNext(root string, args []string) {
 	}
 	if len(plan.Skipped) > 0 {
 		fmt.Printf("  done already: %s\n", strings.Join(plan.Skipped, ", "))
+	}
+}
+
+// planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.
+type planOutput struct {
+	Group     string          `json:"group"`
+	Title     string          `json:"title"`
+	Type      string          `json:"type"`
+	Version   string          `json:"version"`
+	Mode      string          `json:"mode"`
+	Base      string          `json:"base"`
+	Branch    string          `json:"branch"`
+	Worktree  string          `json:"worktree"`
+	Tasks     []line.PlanTask `json:"tasks"`
+	Waves     [][]string      `json:"waves"`
+	Skipped   []string        `json:"skipped,omitempty"`
+	Roles     []roleOutput    `json:"roles"`
+	WaitUntil string          `json:"wait_until,omitempty"`
+}
+
+// roleOutput is one role's name, tier, and resolved machine, without its description.
+type roleOutput struct {
+	Name    string `json:"name"`
+	Tier    string `json:"tier"`
+	Machine string `json:"machine,omitempty"`
+}
+
+// planForJSON drops a plan's role descriptions and its whole profile, which no station reads.
+func planForJSON(plan *line.Plan) planOutput {
+	roles := make([]roleOutput, len(plan.Roles))
+	for i, role := range plan.Roles {
+		roles[i] = roleOutput{Name: role.Name, Tier: role.Tier, Machine: role.Machine}
+	}
+	return planOutput{
+		Group: plan.Group, Title: plan.Title, Type: plan.Type, Version: plan.Version,
+		Mode: plan.Mode, Base: plan.Base, Branch: plan.Branch, Worktree: plan.Worktree,
+		Tasks: plan.Tasks, Waves: plan.Waves, Skipped: plan.Skipped,
+		Roles: roles, WaitUntil: plan.WaitUntil,
 	}
 }
 
@@ -467,17 +503,24 @@ func runClose(root string, args []string) {
 	}
 }
 
+// commentsArgs strips the check subcommand, if present, then splits what remains into paths and flags.
+func commentsArgs(args []string, valueFlags ...string) (paths, rest []string) {
+	if len(args) > 0 && args[0] == "check" {
+		args = args[1:]
+	}
+	return splitFlags(args, valueFlags...)
+}
+
 // runComments lints the comments in the named files, or in every tracked source file.
 func runComments(root string, args []string) {
 	set := flag.NewFlagSet("comments", flag.ExitOnError)
 	require := set.String("require", "nonobvious", "none, nonobvious, or exported")
-	_ = set.Parse(args)
-	paths := set.Args()
-	if len(paths) > 0 && paths[0] == "check" {
-		paths = paths[1:]
-	}
+	paths, rest := commentsArgs(args, "require")
+	_ = set.Parse(rest)
 	if len(paths) == 0 {
 		paths = trackedFiles(root)
+	} else if err := verifyPaths(root, paths); err != nil {
+		fail(err)
 	}
 	problems, err := comments.Check(root, paths, *require)
 	if err != nil {
@@ -557,6 +600,15 @@ func printJSON(value any) {
 	if err := encoder.Encode(value); err != nil {
 		fail(err)
 	}
+}
+
+// printCompactJSON writes one value as single-line JSON, for output a machine reads every loop.
+func printCompactJSON(w io.Writer, value any) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		fail(err)
+	}
+	fmt.Fprintln(w, string(data))
 }
 
 // currentPlan is the plan for the run in progress, with its recorded base and branch.
@@ -694,7 +746,7 @@ func runStep(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	printJSON(next)
+	printCompactJSON(os.Stdout, next)
 }
 
 // runRun drives the line headless on the profile's host and exits with the host's code.
@@ -711,13 +763,21 @@ func runRun(root string, args []string) {
 	os.Exit(code)
 }
 
-// runThreads prints the unresolved review threads on a pull request, or on this branch's.
+// runThreads prints the unresolved review threads on a pull request, or resolves one by id.
 func runThreads(root string, args []string) {
-	number := ""
-	if len(args) > 0 {
-		number = args[0]
+	set := flag.NewFlagSet("threads", flag.ExitOnError)
+	resolve := set.String("resolve", "", "resolve the review thread with this id")
+	number, rest := splitPositional(args, "resolve")
+	_ = set.Parse(rest)
+	client := pr.New(root)
+	if *resolve != "" {
+		if err := client.Resolve(*resolve); err != nil {
+			fail(err)
+		}
+		fmt.Println("resolved", *resolve)
+		return
 	}
-	threads, err := pr.New(root).Threads(number)
+	threads, err := client.Threads(number)
 	if err != nil {
 		fail(err)
 	}
@@ -741,7 +801,7 @@ func runMachine(root string, args []string) {
 		fail(err)
 	}
 	if !ollama.Allowed(definition.Tools) {
-		fail(fmt.Errorf("%s writes, and a write role cannot run on ollama; falls back to the standard tier", *role))
+		fail(fmt.Errorf("%s writes, and a write role cannot run on ollama; step routes it to a remote machine instead", *role))
 	}
 	brief, err := os.ReadFile(filepath.Join(root, line.StateDir, "briefs", taskID+".md"))
 	if err != nil {
@@ -751,7 +811,11 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	model, err := localModel(profile.Select(root).Tiers, definition.Tier)
+	tier := definition.Tier
+	if *role == "reviewer" {
+		tier = "reviewer"
+	}
+	model, err := localModel(profile.Select(root).Tiers, tier)
 	if err != nil {
 		fail(err)
 	}
@@ -783,14 +847,19 @@ func runMachine(root string, args []string) {
 	fmt.Println("wrote", line.ResultPath(root, taskID))
 }
 
-// localModel resolves a role's tier to the model of whichever tier the local machine mounts.
+// localModel resolves a role's tier to the model of whichever tier the local machine mounts;
+// reviewer resolves through Tiers.Reviewer, which Tiers.Machine does not know.
 func localModel(tiers mount.Tiers, tier string) (string, error) {
-	if machine := tiers.Machine(tier); machine.Provider == "ollama" {
+	machine := tiers.Machine(tier)
+	if tier == "reviewer" {
+		machine = tiers.Reviewer
+	}
+	if machine.Provider == "ollama" {
 		return machine.Model, nil
 	}
 	for _, fallback := range []string{"light", "standard", "heavy"} {
-		if machine := tiers.Machine(fallback); machine.Provider == "ollama" {
-			return "", fmt.Errorf("%s tier does not mount the local machine; falls back to %s", tier, fallback)
+		if candidate := tiers.Machine(fallback); candidate.Provider == "ollama" {
+			return "", fmt.Errorf("%s tier does not mount the local machine; %s does, and komodo machine does not switch tiers", tier, fallback)
 		}
 	}
 	return "", fmt.Errorf("no tier mounts the local machine")
@@ -831,6 +900,39 @@ func splitPositional(args []string, valueFlags ...string) (positional string, re
 		rest = append(rest, arg)
 	}
 	return positional, rest
+}
+
+// splitFlags pulls every flag and its value out of args, keeping every other token as a positional, in order.
+func splitFlags(args []string, valueFlags ...string) (positional, rest []string) {
+	positional = make([]string, 0, len(args))
+	rest = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if takesValue(arg, valueFlags) {
+			rest = append(rest, arg)
+			if i+1 < len(args) {
+				i++
+				rest = append(rest, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			rest = append(rest, arg)
+			continue
+		}
+		positional = append(positional, arg)
+	}
+	return positional, rest
+}
+
+// verifyPaths fails on the first path that does not exist under root, so a stray flag cannot pass silently.
+func verifyPaths(root string, paths []string) error {
+	for _, path := range paths {
+		if _, err := os.Stat(filepath.Join(root, path)); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 // runGuard is the hook on stdin, or the table the gate runs.
