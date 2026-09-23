@@ -31,7 +31,7 @@ var (
 	// wrapperValueFlags names, per wrapper, the short flags that consume a separate following token.
 	wrapperValueFlags = map[string]map[string]bool{
 		"sudo":    {"-u": true, "-g": true, "-C": true, "-D": true, "-h": true, "-p": true, "-r": true, "-t": true, "-U": true},
-		"env":     {"-u": true, "-C": true},
+		"env":     {"-u": true, "-C": true, "--unset": true},
 		"timeout": {"-s": true, "-k": true},
 		"nice":    {"-n": true},
 		"xargs":   {"-I": true, "-L": true, "-n": true, "-P": true, "-d": true, "-E": true, "-s": true, "-a": true},
@@ -45,7 +45,9 @@ var (
 	// scrubbedConfigRe matches the numbered git config pairs the scrub sets, GIT_CONFIG_KEY_0 and on.
 	scrubbedConfigRe = regexp.MustCompile(`^GIT_CONFIG_(KEY|VALUE)_[0-9]+$`)
 	// credentialConfigRe matches a -c or --config-env key that hands git a credential or a transport.
-	credentialConfigRe = regexp.MustCompile(`(?i)^(credential(\..*)?|core\.sshcommand|core\.askpass)$`)
+	credentialConfigRe = regexp.MustCompile(`(?i)^(credential(\..*)?|core\.sshcommand|core\.askpass|include\.path|includeif\..*\.path)$`)
+	// reservedWords open a compound command; the command they guard is the next word.
+	reservedWords = map[string]bool{"if": true, "then": true, "else": true, "elif": true, "do": true, "while": true, "until": true, "!": true, "{": true}
 	// remotePushConfigRe matches a -c key that redirects where a bare push lands.
 	remotePushConfigRe = regexp.MustCompile(`^remote\.[^.]+\.(push|pushurl)$`)
 	// globalValueFlags are git's global options that take a value, other than -c and -C.
@@ -124,11 +126,12 @@ func stringField(input map[string]any, key string) string {
 // commandFindings returns every reason to refuse one shell command.
 func commandFindings(command, root, cwd, branch string, policy Policy) []string {
 	// >| is a noclobber override; folding it into >> keeps the pipe splitter from misreading it.
-	command = strings.ReplaceAll(stripHeredocs(command), ">|", ">>")
+	command = strings.ReplaceAll(command, ">|", ">>")
 	var findings []string
 	for _, body := range substitutions(command) {
 		findings = append(findings, commandFindings(body, root, cwd, branch, policy)...)
 	}
+	command = stripHeredocs(command)
 	// current tracks the branch across segments, since a switch or checkout changes it mid-chain.
 	current := branch
 	for _, chunk := range splitChain(command) {
@@ -138,7 +141,7 @@ func commandFindings(command, root, cwd, branch string, policy Policy) []string 
 			if err != nil {
 				tokens = strings.Fields(segment)
 			}
-			if len(tokens) > 0 && tokens[0] == "{" {
+			for len(tokens) > 0 && reservedWords[tokens[0]] {
 				tokens = tokens[1:]
 			}
 			var kept []string
@@ -171,12 +174,23 @@ func commandFindings(command, root, cwd, branch string, policy Policy) []string 
 				cwd = changeDir(kept, cwd)
 			case name == "pushd" || name == "popd":
 				cwd = unresolvedDir
-			case name == "export" || name == "unset" || name == "declare" || name == "typeset":
+			case assignBuiltins[name]:
 				for _, arg := range kept[1:] {
 					if varName, _, _ := strings.Cut(arg, "="); isScrubbed(varName) {
 						findings = append(findings, fmt.Sprintf("%s %s changes a variable the headless run scrubs", name, arg))
 					}
 				}
+			case name == "printf" || name == "read":
+				for index, arg := range kept[1:] {
+					previous := kept[index]
+					if (name == "read" && !strings.HasPrefix(arg, "-")) || previous == "-v" {
+						if isScrubbed(arg) {
+							findings = append(findings, fmt.Sprintf("%s sets %s, a variable the headless run scrubs", name, arg))
+						}
+					}
+				}
+			case name == "source" || name == ".":
+				findings = append(findings, sourcedFindings(kept, root, cwd, current, policy)...)
 			case name == "dd":
 				findings = append(findings, ddPaths(kept, cwd, root, policy)...)
 			case pathWriters[name] || isConditionalWriter(name, kept):
@@ -191,7 +205,7 @@ func commandFindings(command, root, cwd, branch string, policy Policy) []string 
 				findings = append(findings, "gh pr merge: landing is the human's merge button")
 			}
 			if name == "eval" && len(kept) > 1 {
-				findings = append(findings, commandFindings(kept[1], root, cwd, current, policy)...)
+				findings = append(findings, commandFindings(strings.Join(kept[1:], " "), root, cwd, current, policy)...)
 			}
 			if script, ok := shellScript(name, kept); ok {
 				findings = append(findings, commandFindings(script, root, cwd, current, policy)...)
@@ -248,15 +262,19 @@ func isScrubbed(name string) bool {
 func substitutions(command string) []string {
 	var out []string
 	runes := []rune(command)
-	single := false
+	single, double := false, false
 	for index := 0; index < len(runes); index++ {
-		switch char := runes[index]; {
+		char := runes[index]
+		opens := index+1 < len(runes) && runes[index+1] == '(' && (char == '$' || (!double && (char == '<' || char == '>')))
+		switch {
 		case char == '\\' && !single:
 			index++
-		case char == '\'':
+		case char == '\'' && !double:
 			single = !single
 		case single:
-		case char == '$' && index+1 < len(runes) && runes[index+1] == '(':
+		case char == '"':
+			double = !double
+		case opens:
 			depth, start := 1, index+2
 			end := start
 			for ; end < len(runes) && depth > 0; end++ {
@@ -283,6 +301,45 @@ func substitutions(command string) []string {
 		}
 	}
 	return out
+}
+
+// assignBuiltins set, export, or clear a shell variable by name.
+var assignBuiltins = map[string]bool{
+	"export": true, "unset": true, "declare": true, "typeset": true, "readonly": true, "local": true, "let": true,
+}
+
+// envFlagFindings refuses an env option that clears the environment or unsets a scrubbed variable.
+func envFlagFindings(flag string) []string {
+	switch {
+	case flag == "-" || flag == "-i" || flag == "--ignore-environment":
+		return []string{fmt.Sprintf("env %s clears the variables the headless run scrubs", flag)}
+	case strings.HasPrefix(flag, "-u") && len(flag) > 2 && isScrubbed(flag[2:]):
+		return []string{fmt.Sprintf("env %s removes a variable the headless run scrubs", flag)}
+	case strings.HasPrefix(flag, "--unset="):
+		if name := strings.TrimPrefix(flag, "--unset="); isScrubbed(name) {
+			return []string{fmt.Sprintf("env %s removes a variable the headless run scrubs", flag)}
+		}
+	}
+	return nil
+}
+
+// sourcedFindings checks a sourced file's text as commands, since sourcing runs it in this shell.
+func sourcedFindings(kept []string, root, cwd, branch string, policy Policy) []string {
+	if len(kept) < 2 {
+		return nil
+	}
+	path := expandHome(kept[1])
+	if !filepath.IsAbs(path) {
+		if cwd == unresolvedDir {
+			return []string{fmt.Sprintf("%s %s follows a cd the guard cannot resolve", kept[0], kept[1])}
+		}
+		path = filepath.Join(cwd, path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return commandFindings(string(data), root, cwd, branch, policy)
 }
 
 // splitBackground further splits a segment on a bare & job-control operator, not &&, >&, or &>.
@@ -352,6 +409,9 @@ func unwrapCommand(kept []string) ([]string, []string) {
 		for len(kept) > 0 && strings.HasPrefix(kept[0], "-") {
 			flag := kept[0]
 			kept = kept[1:]
+			if name == "env" {
+				findings = append(findings, envFlagFindings(flag)...)
+			}
 			// env -S's argument is a shell command line, not a plain value; split it like sh -c does.
 			if name == "env" && flag == "-S" && len(kept) > 0 {
 				parsed, err := splitWords(kept[0])
@@ -362,7 +422,7 @@ func unwrapCommand(kept []string) ([]string, []string) {
 				continue
 			}
 			if wrapperValueFlags[name][flag] && len(kept) > 0 {
-				if name == "env" && flag == "-u" && isScrubbed(kept[0]) {
+				if name == "env" && (flag == "-u" || flag == "--unset") && isScrubbed(kept[0]) {
 					findings = append(findings, fmt.Sprintf("env -u %s removes a variable the headless run scrubs", kept[0]))
 				}
 				kept = kept[1:]
@@ -409,13 +469,19 @@ func containsToken(tokens []string, value string) bool {
 // changeDir resolves a cd's target against the current directory, so a later write judges
 // correctly against wherever the chain now stands, even outside the worktree root.
 func changeDir(kept []string, cwd string) string {
-	target := ""
+	var operands []string
 	for _, arg := range kept[1:] {
-		if target == "" && (arg == "--" || arg == "-L" || arg == "-P" || arg == "-e" || arg == "-@") {
+		if len(operands) == 0 && strings.HasPrefix(arg, "-") && arg != "-" {
 			continue
 		}
-		target = arg
-		break
+		operands = append(operands, arg)
+	}
+	if len(operands) > 1 {
+		return unresolvedDir
+	}
+	target := ""
+	if len(operands) == 1 {
+		target = operands[0]
 	}
 	if target == "" {
 		home, err := os.UserHomeDir()
