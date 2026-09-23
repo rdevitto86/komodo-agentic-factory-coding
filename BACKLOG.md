@@ -1081,3 +1081,16 @@ context:
   - "with the local server up, each mount's Tiers maps every tier to the local model, so step routed the TG-03.7 group review (a 124 KB brief over 6749 changed lines) to a 3B model; route to the local machine only the tiers and roles the profile names, and never a brief larger than the local model's window"
 type: fix
 ```
+
+#### [TSK-03.8.12] The guard's limits are stated, and the hard boundaries sit outside it [P: H] [REFINEMENT]
+```yaml
+files: [README.md, komodo/policy.json, internal/guard, internal/run]
+done_when:
+  - go test ./internal/guard/... ./internal/run/...
+  - go run ./cmd/komodo guard check
+context:
+  - "two TG-03.7 review rounds found 13 guard bypasses in a row (substitutions, env -i, shell keywords, include.path, and more); a denylist over bash cannot be complete. Say in README.md that the guard catches a cooperative model's mistakes and is not a sandbox"
+  - "put the hard boundaries where a shell cannot reach: branch protection on the remote for every critical ref (checked by doctor through the forge's API), and the headless credential scrub as the only push path; consider running headless hosts under the host's own sandbox with the network allowed only to the model"
+  - "the second review's low finding: --git-dir=.git and --work-tree=. on the same checkout are refused like another checkout; exempt them as -C . is"
+type: fix
+```
