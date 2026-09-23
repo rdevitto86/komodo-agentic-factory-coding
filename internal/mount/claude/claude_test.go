@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,12 +55,37 @@ func body(t *testing.T, root, rel string) string {
 
 func TestRenderWritesTheIncludeAndTheRules(t *testing.T) {
 	root := toolkitRepo(t)
-	if got := body(t, root, "CLAUDE.md"); got != "@AGENTS.md\n" {
+	if got := body(t, root, "CLAUDE.md"); got != "@AGENTS.md\n"+claudeMDImport {
 		t.Fatalf("CLAUDE.md = %q", got)
 	}
 	rules := body(t, root, filepath.Join(Dir, "komodo", "AGENTS.md"))
 	if strings.Contains(rules, "{{accessibility}}") {
 		t.Fatal("the accessibility slot was not filled")
+	}
+}
+
+func TestRenderAddsTheImportToAnExistingCLAUDEmd(t *testing.T) {
+	root := toolkitRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# My project\n\nOwn notes.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := body(t, root, "CLAUDE.md")
+	if !strings.Contains(got, "Own notes.") {
+		t.Fatalf("CLAUDE.md lost the repo's own content: %q", got)
+	}
+	if !strings.Contains(got, claudeMDImport) {
+		t.Fatalf("CLAUDE.md is missing the rules import: %q", got)
+	}
+}
+
+func TestRenderLeavesAnAlreadyImportingCLAUDEmdAlone(t *testing.T) {
+	root := toolkitRepo(t)
+	original := "# My project\n\n" + claudeMDImport
+	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := body(t, root, "CLAUDE.md"); got != original {
+		t.Fatalf("CLAUDE.md = %q, want %q", got, original)
 	}
 }
 
@@ -177,6 +203,138 @@ func TestSettingsRegisterTheGuardOnceAndNoMCP(t *testing.T) {
 	}
 	if strings.Contains(raw, "mcpServers") {
 		t.Fatal("the render registered an MCP server")
+	}
+}
+
+func TestTheHookCommandIsAnAbsolutePath(t *testing.T) {
+	root := toolkitRepo(t)
+	raw := body(t, root, filepath.Join(Dir, "settings.json"))
+	var settings struct {
+		Hooks struct {
+			PreToolUse []struct {
+				Matcher string `json:"matcher"`
+				Hooks   []struct {
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"PreToolUse"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		t.Fatalf("settings are not JSON: %v", err)
+	}
+	command := settings.Hooks.PreToolUse[0].Hooks[0].Command
+	if !filepath.IsAbs(strings.TrimSuffix(command, " guard")) {
+		t.Fatalf("command %q is not an absolute path; a cd would lose the hook", command)
+	}
+	matcher := settings.Hooks.PreToolUse[0].Matcher
+	for _, want := range []string{"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit"} {
+		if !strings.Contains(matcher, want) {
+			t.Fatalf("matcher %q is missing %q", matcher, want)
+		}
+	}
+}
+
+func TestTheHookCommandStaysAbsoluteWhenTheBinaryAlreadyIs(t *testing.T) {
+	root := toolkitRepo(t)
+	plan, err := Render(root, "/opt/komodo/bin/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range plan.Changes {
+		if change.Path == filepath.Join(root, Dir, "settings.json") {
+			if !strings.Contains(string(change.Body), "/opt/komodo/bin/komodo guard") {
+				t.Fatalf("settings.json = %s", change.Body)
+			}
+			return
+		}
+	}
+	t.Fatal("settings.json is not in the plan")
+}
+
+func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
+	root := toolkitRepo(t)
+	write := func(rel, contents string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(Dir, "hooks", "guard.py"), "old")
+	write(filepath.Join(Dir, "hooks", "my-own-hook.sh"), "mine")
+	write(filepath.Join(Dir, "commands", "my-command.md"), "mine")
+	plan, err := Render(root, "komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "hooks", "guard.py")); !os.IsNotExist(err) {
+		t.Fatal("the old render's guard.py was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "hooks", "my-own-hook.sh")); err != nil {
+		t.Fatal("a user's own hook script was removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "commands", "my-command.md")); err != nil {
+		t.Fatal("a user's own command was removed")
+	}
+}
+
+func TestOnlyTheDetectedProfilesStandardsRender(t *testing.T) {
+	root := toolkitRepo(t)
+	write := func(rel, contents string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("komodo/skills/standards-go/SKILL.md", "---\nname: standards-go\nglobs: [\"**/*.go\"]\n---\n\nGo rules.\n")
+	write("komodo/skills/standards-python/SKILL.md", "---\nname: standards-python\nglobs: [\"**/*.py\"]\n---\n\nPython rules.\n")
+	write("komodo/skills/standards-comments/SKILL.md", "---\nname: standards-comments\nglobs: []\n---\n\nComment rules.\n")
+	write("main.go", "package main\n")
+	plan, err := Render(root, "komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, change := range plan.Changes {
+		if strings.Contains(change.Path, filepath.Join(Dir, "skills", "standards-")) {
+			names = append(names, filepath.Base(filepath.Dir(change.Path)))
+		}
+	}
+	if !contains(names, "standards-go") {
+		t.Fatalf("standards-go did not render: %v", names)
+	}
+	if !contains(names, "standards-comments") {
+		t.Fatalf("a glob-less standard did not render: %v", names)
+	}
+	if contains(names, "standards-python") {
+		t.Fatalf("an undetected language's standard rendered: %v", names)
+	}
+}
+
+func TestARepoOverrideForcesAnUndetectedStandardToRender(t *testing.T) {
+	root := toolkitRepo(t)
+	write := func(rel, contents string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("komodo/skills/standards-python/SKILL.md", "---\nname: standards-python\nglobs: [\"**/*.py\"]\n---\n\nPython rules.\n")
+	write(".komodo/standards/python.md", "This repo also bans bare excepts.\n")
+	got := body(t, root, filepath.Join(Dir, "skills", "standards-python", "SKILL.md"))
+	if !strings.Contains(got, "bare excepts") {
+		t.Fatalf("the repo override did not force the undetected standard to render: %q", got)
 	}
 }
 
@@ -448,5 +606,62 @@ func TestOllamaTakesTheLightTierAndTheReviewer(t *testing.T) {
 	}
 	if tiers.Light.Model != profile.OllamaModel || tiers.Reviewer.Model != profile.OllamaModel {
 		t.Fatalf("tiers did not carry the profile's model: %+v", tiers)
+	}
+}
+
+func TestAStandardRendersWhenItsFolderGlobMatchesARealFile(t *testing.T) {
+	root := toolkitRepo(t)
+	for rel, contents := range map[string]string{
+		"komodo/skills/standards-specs/SKILL.md": "---\nname: standards-specs\nglobs: [\"**/SDD.md\"]\n---\n\nSpec rules.\n",
+		"komodo/skills/standards-api/SKILL.md":   "---\nname: standards-api\nglobs: [\"api/**\"]\n---\n\nAPI rules.\n",
+		"docs/spec/SDD.md":                       "# Design\n",
+	} {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := Render(root, "komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, change := range plan.Changes {
+		if strings.Contains(change.Path, filepath.Join(Dir, "skills", "standards-")) {
+			names = append(names, filepath.Base(filepath.Dir(change.Path)))
+		}
+	}
+	if !contains(names, "standards-specs") {
+		t.Fatalf("a standard whose glob matches docs/spec/SDD.md did not render: %v", names)
+	}
+	if contains(names, "standards-api") {
+		t.Fatalf("a standard whose glob matches no file rendered: %v", names)
+	}
+}
+
+func TestAWorktreesHookPointsAtTheMainCheckoutsBinary(t *testing.T) {
+	root := toolkitRepo(t)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"}, {"config", "user.email", "t@e.st"}, {"config", "user.name", "t"},
+		{"add", "-A"}, {"commit", "-q", "-m", "seed"}, {"worktree", "add", "-q", "-b", "task/x", filepath.Join(root, ".komodo", "wt", "x")},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	worktree := filepath.Join(root, ".komodo", "wt", "x")
+	raw, err := settingsFile(worktree, "bin/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), filepath.Join(main, "bin", "komodo")+" guard") {
+		t.Fatalf("settings = %s; a worktree's hook must run the main checkout's binary, which a worktree lacks", raw)
 	}
 }

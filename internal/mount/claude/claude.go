@@ -7,10 +7,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"komodo/internal/detect"
 	"komodo/internal/facet"
+	"komodo/internal/glob"
 	"komodo/internal/install"
 	"komodo/internal/mount"
 	"komodo/internal/profile"
@@ -30,13 +32,17 @@ var tools = map[string][]string{
 	"shell": {"Bash"}, "search": {"Grep", "Glob"},
 }
 
-// retired are the V1 render and the old local server entry, removed when present.
+// retired are the exact files an old render wrote; a directory a user keeps files in is never wiped.
 var retired = []string{
-	filepath.Join(Dir, "hooks"),
+	filepath.Join(Dir, "hooks", "guard.py"),
+	filepath.Join(Dir, "hooks", "context_injector.py"),
+	filepath.Join(Dir, "hooks", "komodo-hooks"),
 	filepath.Join(Dir, "mcp.json"),
-	filepath.Join(Dir, "commands"),
 	".mcp.json",
 }
+
+// claudeMDImport puts the rendered rules on the file this host always loads into a session.
+const claudeMDImport = "@" + Dir + "/komodo/AGENTS.md\n"
 
 // Render builds the plan that mounts this repo on Claude Code.
 func Render(root string, binary string) (install.Plan, error) {
@@ -45,7 +51,7 @@ func Render(root string, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
-	plan.Add(filepath.Join(root, "CLAUDE.md"), []byte("@AGENTS.md\n"), "the host reads the repo's own rules")
+	plan.Add(filepath.Join(root, "CLAUDE.md"), claudeMD(root), "the host reads the repo's own rules, plus the rendered ones")
 	plan.AddProject(filepath.Join(root, Dir, "komodo", "AGENTS.md"), []byte(rules), "the universal rules, rendered")
 
 	roles, err := mount.LoadRoles(root)
@@ -60,16 +66,18 @@ func Render(root string, binary string) (install.Plan, error) {
 		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role, ollama)), "the "+role.Name+" role as an agent")
 	}
 
+	detected := detect.Load(root)
 	skills, err := mount.LoadSkills(root)
 	if err != nil {
 		return plan, err
 	}
+	skills = selectedStandards(skills, repoFiles(root), forcedStandards(root))
 	skills = repoSkills(root, skills)
 	for _, skill := range skills {
 		plan.AddProject(filepath.Join(root, Dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
 	}
 
-	for _, name := range facetSkills(root) {
+	for _, name := range facetSkills(root, detected) {
 		if !facet.ValidName(name) {
 			continue
 		}
@@ -117,12 +125,125 @@ func repoSkills(root string, skills []mount.Skill) []mount.Skill {
 }
 
 // facetSkills names the facets the detected profile and the repo's own additions select.
-func facetSkills(root string) []string {
-	names, err := facet.Select(root, detect.Load(root), nil)
+func facetSkills(root string, detected detect.Profile) []string {
+	names, err := facet.Select(root, detected, nil)
 	if err != nil {
 		return nil
 	}
 	return names
+}
+
+// forcedStandards names every standard a repo override touches, which renders regardless of profile.
+func forcedStandards(root string) map[string]bool {
+	out := map[string]bool{}
+	standards, _ := repopkg.LoadStandards(root)
+	for _, override := range standards {
+		out["standards-"+override.Name] = true
+	}
+	return out
+}
+
+// standardFrontmatter isolates a skill's frontmatter block, to read its globs.
+var standardFrontmatter = regexp.MustCompile(`(?s)\A---\n(.*?)\n---\n`)
+
+// repoFiles lists the repo's files, relative and slash-separated, so a standard renders only where its globs match.
+func repoFiles(root string) []string {
+	var files []string
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || len(files) >= maxRepoFiles {
+			return filepath.SkipDir
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			if path != root && (skippedDirs[name] || (strings.HasPrefix(name, ".") && name != ".github")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if rel, err := filepath.Rel(root, path); err == nil {
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	return files
+}
+
+// maxRepoFiles bounds the walk; skippedDirs are dependency, build, and state trees no standard targets.
+const maxRepoFiles = 20000
+
+var skippedDirs = map[string]bool{
+	"node_modules": true, "vendor": true, "bin": true, "venv": true, "env": true,
+	"target": true, "dist": true, "build": true, "__pycache__": true,
+}
+
+// standardGlobs reads the globs frontmatter field from a standards skill's raw body.
+func standardGlobs(body string) []string {
+	match := standardFrontmatter.FindStringSubmatch(body)
+	if match == nil {
+		return nil
+	}
+	for _, line := range strings.Split(match[1], "\n") {
+		key, value, found := strings.Cut(line, ":")
+		if found && strings.TrimSpace(key) == "globs" {
+			return splitGlobs(strings.TrimSpace(value))
+		}
+	}
+	return nil
+}
+
+// splitGlobs reads a quoted, comma-separated glob list into its patterns.
+func splitGlobs(value string) []string {
+	value = strings.TrimSuffix(strings.TrimPrefix(value, "["), "]")
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		if trimmed := strings.Trim(strings.TrimSpace(item), `"'`); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+// selectedStandards keeps every skill that is not a standard, a standard a repo override forces,
+// and a standard whose globs match a repo file; a standard with no globs always renders.
+func selectedStandards(skills []mount.Skill, files []string, forced map[string]bool) []mount.Skill {
+	out := make([]mount.Skill, 0, len(skills))
+	for _, skill := range skills {
+		if !strings.HasPrefix(skill.Name, "standards-") || forced[skill.Name] {
+			out = append(out, skill)
+			continue
+		}
+		if globs := standardGlobs(skill.Body); len(globs) == 0 || matchesAny(globs, files) {
+			out = append(out, skill)
+		}
+	}
+	return out
+}
+
+// matchesAny reports whether any glob pattern matches any of the files.
+func matchesAny(globs, files []string) bool {
+	for _, pattern := range globs {
+		for _, file := range files {
+			if glob.Match(pattern, file) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// claudeMD adds the rules import to an existing CLAUDE.md, or seeds a fresh one that carries it.
+func claudeMD(root string) []byte {
+	existing, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
+	if err != nil {
+		return []byte("@AGENTS.md\n" + claudeMDImport)
+	}
+	if strings.Contains(string(existing), claudeMDImport) {
+		return existing
+	}
+	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+		existing = append(existing, '\n')
+	}
+	return append(existing, []byte(claudeMDImport)...)
 }
 
 // agentFile renders one role as this host's agent file; a light tier renders as standard when
@@ -158,10 +279,13 @@ func settingsFile(root, binary string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !filepath.IsAbs(binary) {
+		binary = filepath.Join(mount.MainCheckout(root), binary)
+	}
 	settings := map[string]any{
 		"hooks": map[string]any{
 			"PreToolUse": []any{map[string]any{
-				"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+				"matcher": hookMatcher(),
 				"hooks":   []any{map[string]any{"type": "command", "command": binary + " guard"}},
 			}},
 		},
