@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"komodo/internal/mount"
 )
 
 // ExitDeny is the exit code a host reads as a refusal when it cannot read the JSON.
@@ -23,7 +25,7 @@ func CurrentBranch(dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// Hook reads one payload, writes the denial both hosts accept, and returns the exit code.
+// Hook reads one payload, writes the denial the matching host reads, and returns the exit code.
 func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 	raw, err := io.ReadAll(stdin)
 	if err != nil {
@@ -43,21 +45,24 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if !decision.Deny {
 		return 0
 	}
-	payload := map[string]any{
-		"hookSpecificOutput": map[string]any{
-			"hookEventName":            "PreToolUse",
-			"permissionDecision":       "deny",
-			"permissionDecisionReason": Reason(decision.Findings),
-		},
+	reason := Reason(decision.Findings)
+	if tools, ok := hostGuard(request.ToolName); ok && tools.Deny != nil {
+		if out := tools.Deny(reason); out != nil {
+			if _, err := stdout.Write(out); err == nil {
+				return 0
+			}
+		}
 	}
-	out, err := json.Marshal(payload)
-	if err != nil {
-		fmt.Fprintln(stderr, Reason(decision.Findings))
-		return ExitDeny
+	fmt.Fprintln(stderr, reason)
+	return ExitDeny
+}
+
+// hostGuard returns the registered mount whose write or shell tool names this request's tool.
+func hostGuard(toolName string) (mount.GuardTools, bool) {
+	for _, tools := range mount.GuardHosts() {
+		if tools.WriteTools[toolName] || (tools.ShellTool != "" && tools.ShellTool == toolName) {
+			return tools, true
+		}
 	}
-	if _, err := stdout.Write(out); err != nil {
-		fmt.Fprintln(stderr, Reason(decision.Findings))
-		return ExitDeny
-	}
-	return 0
+	return mount.GuardTools{}, false
 }

@@ -6,21 +6,23 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"komodo/internal/mount"
 )
 
 var (
-	segmentRe = regexp.MustCompile(`\s*(?:&&|\|\||[;|\n])\s*`)
-	// commandRe splits shell commands without splitting a multi-line commit message.
-	commandRe   = regexp.MustCompile(`\s*(?:&&|\|\||[;|])\s*`)
-	assignRe    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
-	gitWriteRe  = regexp.MustCompile(`\bgit\b[^\n;|&]*\b(?:commit|merge)\b`)
-	redirectRe  = regexp.MustCompile(`>>?\s*([^\s;|&<>]+)`)
-	durationRe  = regexp.MustCompile(`^[0-9]+[a-zA-Z]*$`)
-	writeTools  = map[string]bool{"Edit": true, "Write": true, "MultiEdit": true, "NotebookEdit": true}
+	assignRe   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+	durationRe = regexp.MustCompile(`^[0-9]+[a-zA-Z]*$`)
+	// unresolvedVarRe matches a shell variable reference a write target still holds unexpanded.
+	unresolvedVarRe = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
+	// otherHomeRe matches ~name, another user's home, as opposed to ~/ or a bare ~.
+	otherHomeRe = regexp.MustCompile(`^~[^/\s]`)
 	pathWriters = map[string]bool{
 		"rm": true, "mv": true, "cp": true, "tee": true, "dd": true,
 		"truncate": true, "install": true, "ln": true, "mkdir": true, "touch": true, "chmod": true,
 	}
+	// destOnlyWriters read every argument but the last; only the last is where they write.
+	destOnlyWriters = map[string]bool{"cp": true, "mv": true, "ln": true, "install": true}
 	// wrapperCommands run something else; the guard inspects what they run, not their own name.
 	wrapperCommands = map[string]bool{
 		"env": true, "sudo": true, "nice": true, "timeout": true, "xargs": true,
@@ -91,12 +93,16 @@ func WorktreeRoot(dir string) string {
 func Check(request Request, policy Policy, branch string) Decision {
 	root := WorktreeRoot(request.Cwd)
 	var findings []string
-	if writeTools[request.ToolName] {
-		findings = append(findings, pathFindings(stringField(request.ToolInput, "file_path"), root, policy)...)
-		findings = append(findings, pathFindings(stringField(request.ToolInput, "notebook_path"), root, policy)...)
-	}
-	if request.ToolName == "Bash" {
-		findings = append(findings, commandFindings(stringField(request.ToolInput, "command"), root, branch, policy)...)
+	for _, tools := range mount.GuardHosts() {
+		if tools.WriteTools[request.ToolName] {
+			for _, field := range tools.PathFields {
+				findings = append(findings, pathFindings(stringField(request.ToolInput, field), root, root, policy)...)
+			}
+		}
+		if tools.ShellTool != "" && request.ToolName == tools.ShellTool {
+			command := stringField(request.ToolInput, tools.CommandField)
+			findings = append(findings, commandFindings(command, root, root, branch, policy)...)
+		}
 	}
 	findings = unique(findings)
 	return Decision{Deny: len(findings) > 0, Findings: findings}
@@ -111,19 +117,13 @@ func stringField(input map[string]any, key string) string {
 }
 
 // commandFindings returns every reason to refuse one shell command.
-func commandFindings(command, root, branch string, policy Policy) []string {
+func commandFindings(command, root, cwd, branch string, policy Policy) []string {
 	// >| is a noclobber override; folding it into >> keeps the pipe splitter from misreading it.
-	command = strings.ReplaceAll(command, ">|", ">>")
+	command = strings.ReplaceAll(stripHeredocs(command), ">|", ">>")
 	var findings []string
-	for _, part := range commandRe.Split(command, -1) {
-		if gitWriteRe.MatchString(part) && policy.HasTrailer(part) {
-			findings = append(findings, "commit message carries a co-author or generated-by trailer")
-			break
-		}
-	}
 	// current tracks the branch across segments, since a switch or checkout changes it mid-chain.
 	current := branch
-	for _, chunk := range segmentRe.Split(command, -1) {
+	for _, chunk := range splitChain(command) {
 		for _, raw := range splitBackground(chunk) {
 			segment := unwrapParens(raw)
 			tokens, err := splitWords(segment)
@@ -148,8 +148,8 @@ func commandFindings(command, root, branch string, policy Policy) []string {
 			if len(kept) == 0 {
 				continue
 			}
-			for _, match := range redirectRe.FindAllStringSubmatch(segment, -1) {
-				findings = append(findings, pathFindings(match[1], root, policy)...)
+			for _, target := range redirectTargets(segment) {
+				findings = append(findings, pathFindings(target, cwd, root, policy)...)
 			}
 			var wrapFindings []string
 			kept, wrapFindings = unwrapCommand(kept)
@@ -159,28 +159,67 @@ func commandFindings(command, root, branch string, policy Policy) []string {
 			}
 			name := filepath.Base(kept[0])
 			switch {
+			case name == "cd":
+				cwd = changeDir(kept, cwd)
 			case name == "dd":
-				findings = append(findings, ddPaths(kept, root, policy)...)
+				findings = append(findings, ddPaths(kept, cwd, root, policy)...)
 			case pathWriters[name] || isConditionalWriter(name, kept):
-				findings = append(findings, writerPaths(kept, root, policy)...)
+				findings = append(findings, writerPaths(name, kept, cwd, root, policy)...)
 			}
 			if name == "git" {
 				var gitResult []string
-				gitResult, current = gitFindings(kept, current, policy)
+				gitResult, current = gitFindings(kept, current, cwd, policy)
 				findings = append(findings, gitResult...)
 			}
 			if name == "gh" && len(kept) > 2 && kept[1] == "pr" && kept[2] == "merge" {
 				findings = append(findings, "gh pr merge: landing is the human's merge button")
 			}
 			if name == "eval" && len(kept) > 1 {
-				findings = append(findings, commandFindings(kept[1], root, current, policy)...)
+				findings = append(findings, commandFindings(kept[1], root, cwd, current, policy)...)
 			}
 			if script, ok := shellScript(name, kept); ok {
-				findings = append(findings, commandFindings(script, root, current, policy)...)
+				findings = append(findings, commandFindings(script, root, cwd, current, policy)...)
 			}
 		}
 	}
 	return findings
+}
+
+// splitChain splits a command into the same segments segmentRe once did, on &&, ||, ;, |, and a
+// newline, but never inside a quoted string, so a chain operator quoted into a message stays put.
+func splitChain(command string) []string {
+	var parts []string
+	var current strings.Builder
+	quote := rune(0)
+	runes := []rune(command)
+	flush := func() {
+		parts = append(parts, current.String())
+		current.Reset()
+	}
+	for index := 0; index < len(runes); index++ {
+		char := runes[index]
+		switch {
+		case quote != 0:
+			current.WriteRune(char)
+			if char == quote {
+				quote = 0
+			}
+		case char == '\'' || char == '"':
+			quote = char
+			current.WriteRune(char)
+		case char == '&' && index+1 < len(runes) && runes[index+1] == '&':
+			flush()
+			index++
+		case char == '|' && index+1 < len(runes) && runes[index+1] == '|':
+			flush()
+			index++
+		case char == ';' || char == '|' || char == '\n':
+			flush()
+		default:
+			current.WriteRune(char)
+		}
+	}
+	return append(parts, current.String())
 }
 
 // splitBackground further splits a segment on a bare & job-control operator, not &&, >&, or &>.
@@ -301,43 +340,199 @@ func containsToken(tokens []string, value string) bool {
 	return false
 }
 
-// writerPaths checks every non-flag argument of a path-writing command.
-func writerPaths(kept []string, root string, policy Policy) []string {
-	var findings []string
+// changeDir resolves a cd's target against the current directory, so a later write judges
+// correctly against wherever the chain now stands, even outside the worktree root.
+func changeDir(kept []string, cwd string) string {
+	if len(kept) < 2 {
+		return cwd
+	}
+	target := kept[1]
+	if unresolvedVarRe.MatchString(target) || otherHomeRe.MatchString(target) || target == "-" {
+		return unresolvedDir
+	}
+	resolved := expandHome(target)
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(cwd, resolved)
+	}
+	return filepath.Clean(resolved)
+}
+
+// writerPaths checks the paths a path-writing command actually writes to: every argument,
+// unless the command only writes its last, since cp, mv, ln, and install read every other one.
+func writerPaths(name string, kept []string, cwd, root string, policy Policy) []string {
+	var targets []string
 	for _, token := range kept[1:] {
 		if strings.HasPrefix(token, "-") {
 			continue
 		}
-		findings = append(findings, pathFindings(token, root, policy)...)
+		targets = append(targets, token)
+	}
+	if destOnlyWriters[name] && len(targets) > 1 {
+		targets = targets[len(targets)-1:]
+	}
+	var findings []string
+	for _, token := range targets {
+		findings = append(findings, pathFindings(token, cwd, root, policy)...)
 	}
 	return findings
 }
 
 // ddPaths checks dd's of= target, the only argument dd writes to.
-func ddPaths(kept []string, root string, policy Policy) []string {
+func ddPaths(kept []string, cwd, root string, policy Policy) []string {
 	var findings []string
 	for _, token := range kept[1:] {
 		if value, ok := strings.CutPrefix(token, "of="); ok {
-			findings = append(findings, pathFindings(value, root, policy)...)
+			findings = append(findings, pathFindings(value, cwd, root, policy)...)
 		}
 	}
 	return findings
 }
 
-// pathFindings refuses a write that leaves the worktree or lands on a config the hosts own.
-func pathFindings(path, root string, policy Policy) []string {
+// isAllowedWrite reports whether a write may always land here: the null device, or a scratch
+// file placed directly in a system temp directory, which cost real time to deny.
+func isAllowedWrite(path string) bool {
+	compare := path
+	if foldsCase() {
+		compare = strings.ToLower(compare)
+	}
+	if compare == os.DevNull {
+		return true
+	}
+	for _, dir := range []string{os.TempDir(), "/tmp", "/private/tmp"} {
+		dir = strings.TrimRight(dir, string(filepath.Separator))
+		if dir == "" {
+			continue
+		}
+		if foldsCase() {
+			dir = strings.ToLower(dir)
+		}
+		if compare == dir || strings.HasPrefix(compare, dir+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// unresolvedDir stands for the working directory after a cd whose target the guard cannot resolve.
+const unresolvedDir = "\x00unresolved"
+
+// redirectTargets returns each path an unquoted > or >> writes to, skipping a >& descriptor copy.
+func redirectTargets(segment string) []string {
+	var out []string
+	runes := []rune(segment)
+	quote := rune(0)
+	for index := 0; index < len(runes); index++ {
+		char := runes[index]
+		switch {
+		case quote != 0:
+			if char == quote {
+				quote = 0
+			} else if char == '\\' && quote == '"' {
+				index++
+			}
+			continue
+		case char == '\\':
+			index++
+			continue
+		case char == '\'' || char == '"':
+			quote = char
+			continue
+		case char != '>':
+			continue
+		}
+		next := index + 1
+		if next < len(runes) && runes[next] == '>' {
+			next++
+		}
+		index = next
+		if next < len(runes) && runes[next] == '&' {
+			continue
+		}
+		words, err := splitWords(string(runes[next:]))
+		if err != nil {
+			words = strings.Fields(string(runes[next:]))
+		}
+		if len(words) > 0 {
+			out = append(out, words[0])
+		}
+	}
+	return out
+}
+
+// heredocRe matches a heredoc operator and its terminator word, quoted or not.
+var heredocRe = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+
+// stripHeredocs drops each terminated heredoc body, which is data, unless the line feeds it to a shell.
+func stripHeredocs(command string) string {
+	lines := strings.Split(command, "\n")
+	var out []string
+	for index := 0; index < len(lines); index++ {
+		out = append(out, lines[index])
+		match := heredocRe.FindStringSubmatchIndex(lines[index])
+		if match == nil || quotedAt(lines[index], match[0]) || feedsShell(lines[index][:match[0]]) {
+			continue
+		}
+		tag := lines[index][match[2]:match[3]]
+		end := index + 1
+		for end < len(lines) && strings.TrimSpace(lines[end]) != tag {
+			end++
+		}
+		if end < len(lines) {
+			index = end
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// quotedAt reports whether a byte offset in a line sits inside a quoted string.
+func quotedAt(line string, offset int) bool {
+	quote := byte(0)
+	for index := 0; index < offset; index++ {
+		switch char := line[index]; {
+		case quote != 0 && char == quote:
+			quote = 0
+		case quote == 0 && (char == '\'' || char == '"'):
+			quote = char
+		}
+	}
+	return quote != 0
+}
+
+// feedsShell reports whether the words before a heredoc name a shell, which runs the body as commands.
+func feedsShell(prefix string) bool {
+	for _, word := range strings.Fields(prefix) {
+		name := filepath.Base(word)
+		if shells[name] || name == "eval" || name == "source" || name == "." {
+			return true
+		}
+	}
+	return false
+}
+
+// pathFindings refuses a write that leaves the worktree, lands on a config the hosts own, or
+// holds a variable or another user's home the guard cannot resolve, relative to cwd.
+func pathFindings(path, cwd, root string, policy Policy) []string {
 	if path == "" {
 		return nil
 	}
+	if unresolvedVarRe.MatchString(path) || otherHomeRe.MatchString(path) {
+		return []string{fmt.Sprintf("%s holds an unresolved variable or another user's home; the guard cannot judge it", path)}
+	}
 	resolved := expandHome(path)
 	if !filepath.IsAbs(resolved) {
-		resolved = filepath.Join(root, resolved)
+		if cwd == unresolvedDir {
+			return []string{fmt.Sprintf("%s follows a cd the guard cannot resolve; use an absolute path", path)}
+		}
+		resolved = filepath.Join(cwd, resolved)
 	}
 	resolved = filepath.Clean(resolved)
 	var findings []string
 	if policy.IsConfigPath(resolved, root) {
 		findings = append(findings, fmt.Sprintf("%s is a host or toolkit config; the guard owns it", path))
 		return findings
+	}
+	if isAllowedWrite(resolved) {
+		return nil
 	}
 	if root == "" {
 		return findings
@@ -350,7 +545,7 @@ func pathFindings(path, root string, policy Policy) []string {
 }
 
 // gitFindings refuses the git operations that touch a critical ref, and reports the branch after the call.
-func gitFindings(tokens []string, branch string, policy Policy) ([]string, string) {
+func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, string) {
 	args := tokens[1:]
 	var findings []string
 	var configs []string
@@ -448,9 +643,15 @@ func gitFindings(tokens []string, branch string, policy Policy) ([]string, strin
 		if policy.IsCritical(branch) {
 			findings = append(findings, fmt.Sprintf("git commit on %s: create a branch first", branch))
 		}
+		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd))) {
+			findings = append(findings, "commit message carries a co-author or generated-by trailer")
+		}
 	case "merge":
 		if policy.IsCritical(branch) {
 			findings = append(findings, fmt.Sprintf("git merge on %s: landing is the human's merge button", branch))
+		}
+		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd))) {
+			findings = append(findings, "commit message carries a co-author or generated-by trailer")
 		}
 	case "branch":
 		deleting := false
@@ -489,6 +690,65 @@ func gitFindings(tokens []string, branch string, policy Policy) ([]string, strin
 		}
 	}
 	return findings, branch
+}
+
+// commitMessage composes the text of a commit or merge's own message: every -m paragraph, an
+// -F file's content, and a --trailer's raw key=value line, in the order git reads them.
+func commitMessage(rest []string, cwd string) string {
+	var parts []string
+	for index := 0; index < len(rest); index++ {
+		arg := rest[index]
+		switch {
+		case arg == "-m" || arg == "--message":
+			if index+1 < len(rest) {
+				index++
+				parts = append(parts, rest[index])
+			}
+		case strings.HasPrefix(arg, "--message="):
+			parts = append(parts, strings.TrimPrefix(arg, "--message="))
+		case strings.HasPrefix(arg, "-m") && arg != "-m":
+			parts = append(parts, strings.TrimPrefix(arg, "-m"))
+		case arg == "-F" || arg == "--file":
+			if index+1 < len(rest) {
+				index++
+				parts = append(parts, readMessageFile(rest[index], cwd))
+			}
+		case strings.HasPrefix(arg, "--file="):
+			parts = append(parts, readMessageFile(strings.TrimPrefix(arg, "--file="), cwd))
+		case arg == "--trailer":
+			if index+1 < len(rest) {
+				index++
+				parts = append(parts, rest[index])
+			}
+		case strings.HasPrefix(arg, "--trailer="):
+			parts = append(parts, strings.TrimPrefix(arg, "--trailer="))
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// messageBreakRe is a ; or && a message smuggles a trailer past, read as a line break instead.
+var messageBreakRe = regexp.MustCompile(`\s*(?:&&|;)\s*`)
+
+// normalizeMessage turns a message's own ; and && into line breaks before the trailer check.
+func normalizeMessage(text string) string {
+	return messageBreakRe.ReplaceAllString(text, "\n")
+}
+
+// readMessageFile reads a commit message file relative to cwd, tolerating a missing one.
+func readMessageFile(path, cwd string) string {
+	if path == "-" {
+		return ""
+	}
+	resolved := expandHome(path)
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(cwd, resolved)
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // aliasValue returns the git alias a -c option set for a subcommand name, or the empty string.
