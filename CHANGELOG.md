@@ -60,6 +60,8 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 - The run lock is created exclusively, so two launchers starting together cannot both take it.
 - One spec shape: `docs/spec/architecture.md`, `system-design.md`, and an optional `prd.md`, plain headings, every section in exactly one file; the SDD and PRD templates are retired and the planner reads the files by path.
 - The ledger archives the previous run as `line.<run>.jsonl` instead of truncating it; the brief and review stations stamp their own rows, so every station's seconds are on record.
+- The local machine is reached through the registry alone: `mount.LocalMachine()` carries its probe, model, window, and one call, its name is a vendor the doctor checks, and nothing outside `internal/mount/` names it.
+- `--git-dir=.git` and `--work-tree=.` name this checkout, whose branch the guard tracks; only another repository's paths are refused.
 
 ### The readiness pass, changed
 

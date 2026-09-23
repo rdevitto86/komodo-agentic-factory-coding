@@ -121,6 +121,8 @@ func Table(policy Policy) []Case {
 		bash("--git-dir into another checkout", "git --git-dir=../other/.git push origin HEAD", "feat/x", true, "not tracked"),
 		bash("GIT_DIR into another checkout", "GIT_DIR=../other/.git git push origin HEAD", "feat/x", true, "scrubs"),
 		bash("--git-dir only reading", "git --git-dir=../other/.git log --oneline", "feat/x", false, ""),
+		bash("--git-dir=.git is this checkout", "git --git-dir=.git --work-tree=. commit -m 'feat: thing'", "feat/x", false, ""),
+		bash("--git-dir=.git on main is still main", "git --git-dir=.git commit -m 'feat: thing'", "main", true, "create a branch first"),
 		bash("a bare cd goes home", "cd && rm -rf Library/Keychains", "feat/x", true, "outside the worktree"),
 		bash("cd -- to another directory", "cd -- /Users/x && rm -rf y", "feat/x", true, "outside the worktree"),
 		bash("pushd leaves the directory unknown", "pushd /Users/x && rm -rf y", "feat/x", true, "cannot resolve"),

@@ -24,7 +24,7 @@ import (
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
-	"komodo/internal/mount/ollama"
+	_ "komodo/internal/mount/ollama"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
 	"komodo/internal/release"
@@ -59,7 +59,7 @@ const usage = `komodo: the code assembly line.
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
   komodo threads --resolve id Mark one review thread resolved
-  komodo machine <task>       Post a brief to the Ollama mount, write the result, stamp the ledger
+  komodo machine <task>       Post a brief to the local machine, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, doctor, guard, comments
 `
@@ -903,7 +903,7 @@ func runThreads(root string, args []string) {
 	printJSON(threads)
 }
 
-// runMachine posts one task's brief to the Ollama mount, writes the result, and stamps the ledger.
+// runMachine posts one task's brief to the local machine, writes the result, and stamps the ledger.
 func runMachine(root string, args []string) {
 	set := flag.NewFlagSet("machine", flag.ExitOnError)
 	role := set.String("role", "builder", "the role the brief was written for")
@@ -916,8 +916,9 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	if !ollama.Allowed(definition.Tools) {
-		fail(fmt.Errorf("%s writes, and a write role cannot run on ollama; step routes it to a remote machine instead", *role))
+	local := mount.LocalMachine()
+	if !local.Allowed(definition.Tools) {
+		fail(fmt.Errorf("%s writes, and a write role cannot run on the local machine; step routes it to a remote one instead", *role))
 	}
 	brief, err := os.ReadFile(filepath.Join(root, line.StateDir, "briefs", taskID+".md"))
 	if err != nil {
@@ -935,7 +936,7 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	result, err := ollama.Post(ollama.BaseURL(), model, string(brief), schema)
+	result, err := local.Post(model, string(brief), schema)
 	if err != nil {
 		fail(err)
 	}
@@ -951,7 +952,7 @@ func runMachine(root string, args []string) {
 	}
 	entry := ledger.Entry{
 		Task: taskID, Station: "machine", Role: *role, Tier: definition.Tier,
-		Provider: "ollama", Model: model,
+		Provider: mount.LocalName, Model: model,
 		TokensIn: result.TokensIn, TokensOut: result.TokensOut, Outcome: "done",
 	}
 	if state, err := line.LoadRun(root); err == nil {
@@ -970,11 +971,11 @@ func localModel(tiers mount.Tiers, tier string) (string, error) {
 	if tier == "reviewer" {
 		machine = tiers.Reviewer
 	}
-	if machine.Provider == "ollama" {
+	if machine.Local() {
 		return machine.Model, nil
 	}
 	for _, fallback := range []string{"light", "standard", "heavy"} {
-		if candidate := tiers.Machine(fallback); candidate.Provider == "ollama" {
+		if candidate := tiers.Machine(fallback); candidate.Local() {
 			return "", fmt.Errorf("%s tier does not mount the local machine; %s does, and komodo machine does not switch tiers", tier, fallback)
 		}
 	}

@@ -259,8 +259,8 @@ func machineFor(chosen profile.Profile, tier string) string {
 	if machine.Provider == "" {
 		return tier
 	}
-	if machine.Provider == "ollama" {
-		return "ollama"
+	if machine.Local() {
+		return mount.LocalName
 	}
 	return machine.Provider + "/" + machine.Model
 }

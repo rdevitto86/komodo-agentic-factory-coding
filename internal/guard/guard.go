@@ -741,8 +741,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			}
 			switch name {
 			case "--git-dir", "--work-tree":
-				// These point git at another repository, whose branch the guard does not track.
-				elsewhere = value
+				// Another repository's branch is not tracked; this checkout's own .git and . are.
+				if clean := filepath.Clean(value); clean != "." && clean != ".git" {
+					elsewhere = value
+				}
 			case "--config-env":
 				configs = append(configs, value)
 			}

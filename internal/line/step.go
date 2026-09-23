@@ -11,7 +11,7 @@ import (
 	"komodo/internal/detect"
 	"komodo/internal/facet"
 	"komodo/internal/ledger"
-	"komodo/internal/mount/ollama"
+	"komodo/internal/mount"
 )
 
 // Action is the one next thing a session should do. The station order lives here and nowhere else.
@@ -208,8 +208,9 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 				}
 			}
 		}
-		if next.Machine == "ollama" && (!ollama.Allowed(matched.Tools) || !fitsLocal(root, next.Brief)) {
-			if ollama.Allowed(matched.Tools) {
+		local := mount.LocalMachine()
+		if next.Machine == mount.LocalName && (!local.Allowed(matched.Tools) || !fitsLocal(root, next.Brief)) {
+			if local.Allowed(matched.Tools) {
 				next.Why += "; the brief is larger than the local machine's window, so a remote machine reads it"
 			}
 			next.Machine = matched.Tier
@@ -219,7 +220,7 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 				next.Machine = remote.Provider + "/" + remote.Model
 			}
 		}
-		if next.Machine == "ollama" {
+		if next.Machine == mount.LocalName {
 			next.Action = "run"
 			next.Command = "komodo machine --role " + next.Role + " " + next.Task
 			next.Role = ""
@@ -237,7 +238,7 @@ func fitsLocal(root, brief string) bool {
 	if err != nil {
 		return true
 	}
-	return ollama.Fits(int(info.Size()))
+	return mount.LocalMachine().Fits(int(info.Size()))
 }
 
 // waveMerged reports whether QC already merged this wave into the group branch.

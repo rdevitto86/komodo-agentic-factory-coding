@@ -1017,7 +1017,7 @@ context:
   - "FS switches to os.DirFS(root/komodo) whenever that directory exists. A target repo with an unrelated komodo/ package, or one holding only a .komodo-like leftover, loses every embedded role, schema, standard, and facet. Brief, step, and close then fail on missing roles. A root session can also plant komodo/roles/builder.schema.json to weaken close's result validation. Prefer disk only when root/komodo holds the toolkit's marker file (for example roles/builder.md and policy.json), or fall back per file to the embedded tree."
 ```
 
-#### [TSK-03.7.33] internal/guard/guard.go:653 --git-dir=.git or --work-tree=. on the same checkout is denied for any write [P: L] [REFINEMENT]
+#### [TSK-03.7.33] internal/guard/guard.go:653 --git-dir=.git or --work-tree=. on the same checkout is denied for any write [P: L] [DONE]
 ```yaml
 files:
   - internal/guard/guard.go
@@ -1133,7 +1133,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.8.10] The local machine is reached through the registry, so nothing outside the mounts names it [P: M] [REFINEMENT]
+#### [TSK-03.8.10] The local machine is reached through the registry, so nothing outside the mounts names it [P: M] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/ollama, cmd/komodo/main.go, internal/line/step.go, internal/line/next.go, internal/doctor/doctor.go, internal/profile/profile.go]
 done_when:

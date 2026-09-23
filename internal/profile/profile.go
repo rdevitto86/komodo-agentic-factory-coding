@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"komodo/internal/mount"
-	"komodo/internal/mount/ollama"
 )
 
 // Caps are the brief slot caps, in characters, that a profile may lower and never raise.
@@ -88,9 +87,9 @@ func planOverlay(profile Profile, plan string) Profile {
 	return profile
 }
 
-// Select picks the profile with no flag: the host installed, the plan probed, Ollama if it answers.
+// Select picks the profile with no flag: the host installed, the plan probed, the local machine if it answers.
 func Select(root string) Profile {
-	return SelectWith(root, mount.Hosts(), ollama.Up())
+	return SelectWith(root, mount.Hosts(), mount.LocalMachine().Up())
 }
 
 // SelectWith is Select over a given set of mounts, which is what a test drives.
@@ -121,7 +120,7 @@ func SelectWith(root string, hosts []mount.Host, local bool) Profile {
 			profile.Name = host.HybridName
 		}
 		profile.Why += " and the local machine answers"
-	} else if endpoint := os.Getenv(ollama.Env); endpoint != "" && host.HybridName != "" {
+	} else if endpoint := os.Getenv(mount.LocalMachine().Env); endpoint != "" && host.HybridName != "" {
 		profile.Why += "; the local machine did not answer at " + endpoint + ", so the light tier stays on " + host.Name + "'s own light tier"
 	}
 	if plan == "" {

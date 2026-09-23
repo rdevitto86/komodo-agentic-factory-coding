@@ -22,7 +22,6 @@ import (
 	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
-	"komodo/internal/mount/ollama"
 	"komodo/internal/pr"
 	"komodo/internal/release"
 	"komodo/internal/toolkit"
@@ -51,12 +50,12 @@ type Options struct {
 // Run walks every check and returns what it found.
 func Run(root string, options Options) ([]Problem, error) {
 	var problems []Problem
-	rendered := renderInstalled(root, pinOllamaDown)
+	rendered := renderInstalled(root, pinLocalDown)
 	problems = append(problems, checkReferences(root)...)
 	problems = append(problems, checkRoles(root)...)
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root, rendered)...)
-	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinOllamaUp))...)
+	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinLocalUp))...)
 	problems = append(problems, checkProfileDrift(root)...)
 	problems = append(problems, checkPromises(root)...)
 	if !options.NoGit {
@@ -430,34 +429,34 @@ func freezeProfile(root string) func() {
 	}
 }
 
-// pinOllamaDown points the local machine probe at a closed port for the caller's duration.
-func pinOllamaDown() func() {
-	previous, existed := os.LookupEnv(ollama.Env)
-	_ = os.Setenv(ollama.Env, "127.0.0.1:1")
+// pinLocalDown points the local machine probe at a closed port for the caller's duration.
+func pinLocalDown() func() {
+	previous, existed := os.LookupEnv(mount.LocalMachine().Env)
+	_ = os.Setenv(mount.LocalMachine().Env, "127.0.0.1:1")
 	return func() {
 		if existed {
-			_ = os.Setenv(ollama.Env, previous)
+			_ = os.Setenv(mount.LocalMachine().Env, previous)
 			return
 		}
-		_ = os.Unsetenv(ollama.Env)
+		_ = os.Unsetenv(mount.LocalMachine().Env)
 	}
 }
 
-// pinOllamaUp points the local machine probe at a loopback listener this audit owns, never the live one.
-func pinOllamaUp() func() {
+// pinLocalUp points the local machine probe at a loopback listener this audit owns, never the live one.
+func pinLocalUp() func() {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return pinOllamaDown()
+		return pinLocalDown()
 	}
-	previous, existed := os.LookupEnv(ollama.Env)
-	_ = os.Setenv(ollama.Env, "http://"+listener.Addr().String())
+	previous, existed := os.LookupEnv(mount.LocalMachine().Env)
+	_ = os.Setenv(mount.LocalMachine().Env, "http://"+listener.Addr().String())
 	return func() {
 		_ = listener.Close()
 		if existed {
-			_ = os.Setenv(ollama.Env, previous)
+			_ = os.Setenv(mount.LocalMachine().Env, previous)
 			return
 		}
-		_ = os.Unsetenv(ollama.Env)
+		_ = os.Unsetenv(mount.LocalMachine().Env)
 	}
 }
 

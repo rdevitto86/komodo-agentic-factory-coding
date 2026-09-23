@@ -2,6 +2,7 @@ package mount
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -161,6 +162,67 @@ func (t Tiers) Machine(tier string) Machine {
 
 // localProvider names the provider that answers on the machine running the line itself.
 const localProvider = "ollama"
+
+// LocalName is the local provider's name as a profile row and a step action carry it.
+const LocalName = localProvider
+
+// LocalResult is one local call's answer: the JSON the schema described and the tokens it cost.
+type LocalResult struct {
+	Value     map[string]any
+	TokensIn  int
+	TokensOut int
+}
+
+// Local is the local machine as the line reaches it: probes, limits, and one call, all owned by its mount.
+type Local struct {
+	Env       string
+	Up        func() bool
+	ModelName func() string
+	Fits      func(chars int) bool
+	Allowed   func(tools []string) bool
+	Post      func(model, brief string, schema []byte) (LocalResult, error)
+}
+
+var local Local
+
+// RegisterLocal installs the local machine's mount, which is how the binary learns to reach it.
+func RegisterLocal(machine Local) {
+	lock.Lock()
+	defer lock.Unlock()
+	local = machine
+}
+
+// LocalMachine returns the registered local mount, with safe answers for anything it left unset.
+func LocalMachine() Local {
+	lock.Lock()
+	defer lock.Unlock()
+	out := local
+	if out.Up == nil {
+		out.Up = func() bool { return false }
+	}
+	if out.ModelName == nil {
+		out.ModelName = func() string { return "" }
+	}
+	if out.Fits == nil {
+		out.Fits = func(int) bool { return true }
+	}
+	if out.Allowed == nil {
+		out.Allowed = func(tools []string) bool {
+			for _, tool := range tools {
+				if tool == "write" || tool == "edit" || tool == "shell" {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	if out.Post == nil {
+		out.Post = func(string, string, []byte) (LocalResult, error) {
+			return LocalResult{}, errors.New("no local machine is mounted")
+		}
+	}
+	return out
+}
 
 // Local reports whether a machine mounts the provider running on this host.
 func (m Machine) Local() bool {

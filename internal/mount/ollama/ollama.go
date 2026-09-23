@@ -39,9 +39,16 @@ const DefaultWindow = 32768
 // minContext is Ollama's own default context window, in tokens, and the floor this mount requests.
 const minContext = 2048
 
-// init registers this mount so the doctor catches its model name outside the mounts.
+// init registers this mount and its names, so the doctor catches either outside the mounts.
 func init() {
-	mount.Register(mount.Host{Name: "ollama", Vendors: []string{DefaultModel}})
+	mount.Register(mount.Host{Name: "ollama", Vendors: []string{"ollama", DefaultModel}})
+	mount.RegisterLocal(mount.Local{
+		Env: Env, Up: Up, ModelName: ModelName, Fits: Fits, Allowed: Allowed,
+		Post: func(model, brief string, schema []byte) (mount.LocalResult, error) {
+			result, err := Post(BaseURL(), model, brief, schema)
+			return mount.LocalResult{Value: result.Value, TokensIn: result.TokensIn, TokensOut: result.TokensOut}, err
+		},
+	})
 }
 
 // ModelName is the local model every mount uses: the environment, then the overlay, then the
