@@ -11,6 +11,7 @@ Komodo's code assembly line: one static binary is the conveyor and devices, mark
 - **No MCP in 1.0.** Machines, skills, and dependencies are swappable parts; MCPs land in a later hot-swap pass.
 - **No repo config is required.** Nothing refuses to run for a missing file.
 - **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
+- **Versions are alpha, beta, then release.** A beta becomes `x.y.z` only once both proofs are in the changelog; README's Versions section defines each stage.
 - **The prototype is history.** Tag `prototype-final` holds it, released as `1.0.0-alpha.1`–`.4`; nothing returns without a named task; run state was never committed, and is gone.
 
 ## Commands

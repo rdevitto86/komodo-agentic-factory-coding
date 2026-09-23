@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README is the reference and the requirements. This line is 1.0.0. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. The line was built on PR #103 through six stacked group PRs, one per roadmap group. Tasks are in `BACKLOG.md`.
+This README is the reference and the requirements. This line is 1.0.0, in beta until its two proofs are recorded; the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. The line was built on PR #103 through six stacked group PRs, one per roadmap group. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -233,6 +233,14 @@ Validation per PR, mechanical first, then human. Nothing runs on GitHub.
 | #103 | A through F merged. `komodo gate` green on `docs/v2-plan`. `komodo release check` reports no drift for 1.0.0. | Both proofs in `CHANGELOG.md`. Merge, and the tag is cut. |
 
 The repository ruleset must cover `main` only. Today it covers every branch and requires a pull request for any push, which the owner bypasses on each push and a collaborator cannot; scoping it to `main` is the one GitHub setting the plan needs.
+
+## Versions
+
+Every version here is SemVer with a prerelease stage, and a group's `version:` matches its changelog heading exactly.
+
+- **Alpha, `x.y.z-alpha.n`.** The shape still moves. The prototype shipped as `1.0.0-alpha.1`–`.4`.
+- **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land. A beta stays a beta until both proofs are in the changelog: one group driven headless by the run skill, and the exit test on a second host.
+- **Release, `x.y.z`.** A beta whose proofs are recorded and that ran real groups with no change to the line. The human cuts the tag; `komodo tag` never promotes a beta on its own.
 
 ## Names
 
