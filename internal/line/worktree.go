@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -104,6 +106,74 @@ func LoadRun(root string) (RunState, error) {
 		return state, err
 	}
 	return state, json.Unmarshal(data, &state)
+}
+
+// LockPath is where next --start records the pid and run holding this repo.
+func LockPath(root string) string {
+	return filepath.Join(root, StateDir, "run.lock")
+}
+
+// RunLock is one run's claim on the repo: the process that took it, and what it is running.
+type RunLock struct {
+	PID int    `json:"pid"`
+	Run string `json:"run"`
+}
+
+// AcquireLock takes the run lock for run, refusing when a live process already holds it and
+// naming the holder, or reclaiming a lock whose process has since exited.
+func AcquireLock(root, run string) error {
+	if err := CheckLock(root); err != nil {
+		return err
+	}
+	path := LockPath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(RunLock{PID: os.Getpid(), Run: run})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// LockEnv carries the launcher's pid into the host it starts, so that host's stations pass the lock.
+const LockEnv = "KOMODO_RUN_PID"
+
+// CheckLock refuses when a live process other than this host's own launcher holds the run lock.
+func CheckLock(root string) error {
+	data, err := os.ReadFile(LockPath(root))
+	if err != nil {
+		return nil
+	}
+	var held RunLock
+	if json.Unmarshal(data, &held) != nil || held.PID == 0 || !processAlive(held.PID) {
+		return nil
+	}
+	if held.PID == os.Getpid() || strconv.Itoa(held.PID) == os.Getenv(LockEnv) {
+		return nil
+	}
+	return fmt.Errorf("%s already holds the run lock, pid %d", held.Run, held.PID)
+}
+
+// ReleaseLock removes the run lock when this process holds it.
+func ReleaseLock(root string) {
+	data, err := os.ReadFile(LockPath(root))
+	if err != nil {
+		return
+	}
+	var held RunLock
+	if json.Unmarshal(data, &held) == nil && held.PID == os.Getpid() {
+		_ = os.Remove(LockPath(root))
+	}
+}
+
+// processAlive reports whether a pid still names a running process.
+func processAlive(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return process.Signal(syscall.Signal(0)) == nil
 }
 
 // ResultPath is where a task's result JSON lands.

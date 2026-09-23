@@ -9,10 +9,10 @@ You clear the open review threads on the current branch's pull request, one at a
 
 ## The order
 
-1. **`komodo threads`** — the unresolved threads: id, file, line, author, body.
+1. **`komodo threads`** — the unresolved inline review threads: id, file, line, author, body.
 2. **Spawn the responder role on one thread.** It works inside the branch's worktree and returns the JSON its schema names.
-3. **Apply its verdict.** A change lands as a commit; an explanation lands as a reply on that thread.
-4. **Repeat** until no thread is left, then run `komodo gate`.
+3. **Apply its verdict.** A change lands as a commit; an explanation lands as a reply on that thread. Resolve the thread once it is answered.
+4. **Repeat** until `komodo threads` returns none, then run `komodo gate`.
 
 ## Rules
 

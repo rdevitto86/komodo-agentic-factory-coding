@@ -110,11 +110,11 @@ func openRun(root, groupID string) (*Plan, error) {
 // planFor is the one place that resolves a group and renders its plan; every caller states
 // whether it wants a fresh group off BACKLOG.md or the group a run already has open.
 func planFor(root, needle string, intent Intent) (*Plan, error) {
-	parsed, group, ok, err := groupFor(root, needle)
+	parsed, group, only, ok, err := groupFor(root, needle)
 	if err != nil || !ok {
 		return nil, err
 	}
-	plan, err := buildPlan(root, parsed, group, intent == RunGroup)
+	plan, err := buildPlan(root, parsed, group, intent == RunGroup, only)
 	if err != nil || plan == nil {
 		return plan, err
 	}
@@ -130,32 +130,37 @@ func pinWaves(root string, plan *Plan) {
 	plan.Waves = state.Waves
 }
 
-// groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one.
-func groupFor(root, needle string) (backlog.Backlog, backlog.Group, bool, error) {
+// groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one; only
+// names the single task a task needle matched, empty when the needle named a group or nothing.
+func groupFor(root, needle string) (backlog.Backlog, backlog.Group, string, bool, error) {
 	path, err := backlog.Find(root)
 	if err != nil {
-		return backlog.Backlog{}, backlog.Group{}, false, err
+		return backlog.Backlog{}, backlog.Group{}, "", false, err
 	}
 	parsed, err := backlog.Load(path)
 	if err != nil {
-		return backlog.Backlog{}, backlog.Group{}, false, err
+		return backlog.Backlog{}, backlog.Group{}, "", false, err
 	}
-	group, ok := pick(parsed, needle)
-	return parsed, group, ok, nil
+	group, only, ok := pick(parsed, needle)
+	return parsed, group, only, ok, nil
 }
 
-// buildPlan renders one group as intake prints it, optionally keeping the tasks that closed.
-func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, includeClosed bool) (*Plan, error) {
+// buildPlan renders one group as intake prints it, optionally keeping the tasks that closed, and
+// narrowed to only when a task needle named one task rather than the whole group.
+func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, includeClosed bool, only string) (*Plan, error) {
 	var done []string
 	var tasks []backlog.Task
 	for _, task := range group.Tasks {
+		if only != "" && task.ID != only {
+			continue
+		}
 		if task.Owner() != "agent" || task.Status == "REFINEMENT" {
 			continue
 		}
 		if !includeClosed && !task.Ready() {
 			continue
 		}
-		if HasResult(root, task.ID) || !task.Open() {
+		if HasResult(root, task.ID) || task.Status == "DONE" {
 			done = append(done, task.ID)
 		}
 		tasks = append(tasks, task)
@@ -273,15 +278,19 @@ func planWaves(group backlog.Group, tasks []backlog.Task, done []string) ([][]st
 	return out, nil
 }
 
-// pick returns the named group, the group of a named task, or the next ready group.
-func pick(parsed backlog.Backlog, needle string) (backlog.Group, bool) {
+// pick returns the named group, the group of a named task, or the next ready group; the second
+// result is the task a task needle matched, so the caller narrows the plan to it, not its group.
+func pick(parsed backlog.Backlog, needle string) (backlog.Group, string, bool) {
 	if needle == "" {
-		return parsed.NextGroup()
+		group, ok := parsed.NextGroup()
+		return group, "", ok
 	}
 	if task, ok := parsed.Task(needle); ok {
-		return parsed.Group(task.GroupID)
+		group, ok := parsed.Group(task.GroupID)
+		return group, task.ID, ok
 	}
-	return parsed.Group(needle)
+	group, ok := parsed.Group(needle)
+	return group, "", ok
 }
 
 // groupBase is the branch a group declares, or the remote's default when it declares none.

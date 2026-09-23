@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/detect"
+	"komodo/internal/facet"
 	"komodo/internal/mount/ollama"
 )
 
@@ -36,6 +39,9 @@ func Step(root, needle string) (*Action, error) {
 	if plan == nil {
 		return &Action{Action: "done", Why: "nothing is ready", Skills: []string{}, Facets: []string{}, Commands: []string{}}, nil
 	}
+	if next := paused(root, plan); next != nil {
+		return next, nil
+	}
 	state, runErr := LoadRun(root)
 	if runErr != nil || state.Group != plan.Group {
 		return action(root, plan, Action{
@@ -51,6 +57,9 @@ func Step(root, needle string) (*Action, error) {
 	if full != nil {
 		plan = full
 	}
+	if next := paused(root, plan); next != nil {
+		return next, nil
+	}
 	path, err := backlog.Find(root)
 	if err != nil {
 		return nil, err
@@ -59,17 +68,32 @@ func Step(root, needle string) (*Action, error) {
 	if err != nil {
 		return nil, err
 	}
+	group, _ := parsed.Group(plan.Group)
+	blocked := map[string]bool{}
 	for index, wave := range plan.Waves {
 		for _, taskID := range wave {
+			if blocked[taskID] {
+				continue
+			}
 			attempt := LoadAttempt(root, taskID)
-			if HasResult(root, taskID) && attempt.Count == 0 {
+			if HasResult(root, taskID) && (attempt.Count == 0 || repairResultReady(root, taskID)) {
+				if group.Mode() == "single" {
+					// A single-mode task closes before the next briefs; they share one worktree.
+					if task, ok := parsed.Task(taskID); ok && task.Open() {
+						return action(root, plan, Action{
+							Action: "run", Command: "komodo close " + taskID + " --gate", Task: taskID, Wave: index + 1,
+							Why: taskID + " has a result and is still open",
+						}), nil
+					}
+				}
 				continue
 			}
 			if attempt.Count > plan.Profile.Repairs {
-				return action(root, plan, Action{
-					Action: "done", Task: taskID, Wave: index + 1,
-					Why: fmt.Sprintf("%s is blocked after %d repair(s): %s", taskID, plan.Profile.Repairs, firstLine(attempt.Failure)),
-				}), nil
+				blocked[taskID] = true
+				for _, dependent := range BlockedBy(group.Tasks, taskID) {
+					blocked[dependent] = true
+				}
+				continue
 			}
 			briefPath := filepath.Join(StateDir, "briefs", taskID+".md")
 			if staleBrief(root, taskID) {
@@ -90,17 +114,25 @@ func Step(root, needle string) (*Action, error) {
 			if task, ok := parsed.Task(taskID); ok {
 				tier = task.Tier()
 			}
+			worktree := filepath.Join(StateDir, "wt", taskID)
+			if group.Mode() == "single" {
+				// A single-mode group shares one builder and one worktree, matching brief.go.
+				worktree = filepath.Join(StateDir, "wt", plan.Group)
+			}
 			return actionForTier(root, plan, Action{
 				Action: "spawn", Role: "builder", Brief: briefPath, Task: taskID, Wave: index + 1,
-				Worktree: filepath.Join(StateDir, "wt", taskID),
+				Worktree: worktree,
 				Why:      why,
 			}, tier), nil
 		}
 		for _, taskID := range wave {
+			if blocked[taskID] {
+				continue
+			}
 			task, ok := parsed.Task(taskID)
 			if ok && task.Open() {
 				return action(root, plan, Action{
-					Action: "run", Command: "komodo close " + taskID, Task: taskID, Wave: index + 1,
+					Action: "run", Command: "komodo close " + taskID + " --gate", Task: taskID, Wave: index + 1,
 					Why: taskID + " has a result and is still open",
 				}), nil
 			}
@@ -112,9 +144,13 @@ func Step(root, needle string) (*Action, error) {
 			}), nil
 		}
 	}
-	if !reviewed(root, plan) {
+	if !reviewed(root, plan) && !reviewSkippable(root, plan) {
+		briefPath, err := reviewBrief(root, plan)
+		if err != nil {
+			return nil, err
+		}
 		return action(root, plan, Action{
-			Action: "spawn", Role: "reviewer", Brief: "komodo diff",
+			Action: "spawn", Role: "reviewer", Brief: briefPath,
 			Task: plan.Group + "-review", Worktree: plan.Worktree,
 			Why: "every wave is merged and the diff is unreviewed",
 		}), nil
@@ -123,7 +159,7 @@ func Step(root, needle string) (*Action, error) {
 	if len(blocking) > 0 {
 		return action(root, plan, Action{
 			Action: "done",
-			Why: fmt.Sprintf("the review left %d finding(s) at or above %s; fix them on %s, then komodo close --group",
+			Why: fmt.Sprintf("the review left %d finding(s) at or above %s; fix them on %s, then komodo step",
 				len(blocking), plan.Profile.SeverityFloor, plan.Branch),
 		}), nil
 	}
@@ -155,6 +191,8 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 		}
 	}
 	if next.Role != "" {
+		next.Skills = skillsFor(root, plan, next.Role, next.Task)
+		next.Facets = facetsFor(root, WorktreePath(root, next.Worktree), next.Task)
 		var matched Role
 		for _, role := range plan.Roles {
 			if role.Name == next.Role {
@@ -168,7 +206,7 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 				}
 			}
 		}
-		if next.Machine == "ollama" && (matched.Session || !ollama.Allowed(matched.Tools)) {
+		if next.Machine == "ollama" && !ollama.Allowed(matched.Tools) {
 			next.Machine = matched.Tier
 			if remote := plan.Profile.Tiers.Machine(matched.Tier); remote.Provider != "" && !remote.Local() {
 				next.Machine = remote.Provider + "/" + remote.Model
@@ -207,7 +245,8 @@ func reviewed(root string, plan *Plan) bool {
 	return !staleReview(root, plan)
 }
 
-// staleReview reports whether the branch moved after the review, which a repair always does.
+// staleReview reports whether the branch moved after the review, which a repair always does;
+// ship's own status-and-changelog commit is excluded, since it never invalidates a review already past it.
 func staleReview(root string, plan *Plan) bool {
 	_, path, err := ReadResultFile(root, plan.Group+"-review")
 	if err != nil {
@@ -217,15 +256,23 @@ func staleReview(root string, plan *Plan) bool {
 	if err != nil {
 		return false
 	}
-	stamp, err := git(WorktreePath(root, plan.Worktree), "log", "-1", "--format=%cI")
+	log, err := git(WorktreePath(root, plan.Worktree), "log", "--format=%cI%x09%s")
 	if err != nil {
 		return false
 	}
-	committed, err := time.Parse(time.RFC3339, stamp)
-	if err != nil {
-		return false
+	shipSubject := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
+	for _, entry := range strings.Split(log, "\n") {
+		stamp, subject, found := strings.Cut(entry, "\t")
+		if !found || subject == shipSubject {
+			continue
+		}
+		committed, err := time.Parse(time.RFC3339, stamp)
+		if err != nil {
+			return false
+		}
+		return committed.After(info.ModTime())
 	}
-	return committed.After(info.ModTime())
+	return false
 }
 
 // shipped reports whether every task in the group is closed out.
@@ -253,4 +300,131 @@ func staleBrief(root, taskID string) bool {
 		return false
 	}
 	return brief.ModTime().Before(attempt.ModTime())
+}
+
+// repairResultReady reports whether a repair already wrote its result after a brief that carries
+// the latest failure, so the task is ready to close rather than spawn a builder again.
+func repairResultReady(root, taskID string) bool {
+	if staleBrief(root, taskID) {
+		return false
+	}
+	_, path, err := ReadResultFile(root, taskID)
+	if err != nil {
+		return false
+	}
+	result, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	brief, err := os.Stat(filepath.Join(root, StateDir, "briefs", taskID+".md"))
+	if err != nil {
+		return false
+	}
+	return result.ModTime().After(brief.ModTime())
+}
+
+// paused is the wait action a station returns once the profile has closed its window for a new
+// wave, carrying when it reopens, or nil while the plan still has work to walk.
+func paused(root string, plan *Plan) *Action {
+	if plan.WaitUntil == "" {
+		return nil
+	}
+	return action(root, plan, Action{
+		Action: "done", Until: plan.WaitUntil,
+		Why: fmt.Sprintf("%s is paused until the window resets at %s", plan.Group, plan.WaitUntil),
+	})
+}
+
+// reviewBrief fills the reviewer role from the group's diff, tasks, and standards, writes it to
+// .komodo/briefs/<group>-review.md in the root and the group worktree, and returns that path.
+func reviewBrief(root string, plan *Plan) (string, error) {
+	definition, err := LoadRole(root, "reviewer")
+	if err != nil {
+		return "", err
+	}
+	input, err := DiffFor(root, plan)
+	if err != nil {
+		return "", err
+	}
+	slots := map[string]string{
+		"group_id": plan.Group, "title": plan.Title,
+		"tasks": input.Tasks, "standards": input.Standards, "diff": input.Diff, "base": plan.Base,
+	}
+	text, err := Fill(definition.Body, slots)
+	if err != nil {
+		return "", err
+	}
+	taskID := plan.Group + "-review"
+	result := filepath.Join(StateDir, "results", taskID+".json")
+	text = strings.TrimSpace(text) + resultLine(result, SchemaText(root, "reviewer"))
+	briefPath := filepath.Join(StateDir, "briefs", taskID+".md")
+	for _, base := range []string{root, WorktreePath(root, plan.Worktree)} {
+		full := filepath.Join(base, briefPath)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(full, []byte(text), 0o644); err != nil {
+			return "", err
+		}
+	}
+	return briefPath, nil
+}
+
+// reviewSkippable reports whether the diff sits at or under the profile's review-skip-lines cap.
+func reviewSkippable(root string, plan *Plan) bool {
+	if plan.Profile.ReviewSkipLines <= 0 {
+		return false
+	}
+	input, err := DiffFor(root, plan)
+	if err != nil {
+		return false
+	}
+	return input.Lines <= plan.Profile.ReviewSkipLines
+}
+
+// skillsFor names the standards a role reads for one task's own files, or every task's files in
+// the plan when the id names no task, which is what a review spawn's pseudo-task does.
+func skillsFor(root string, plan *Plan, role, taskID string) []string {
+	standards, err := LoadStandards(root)
+	if err != nil {
+		return []string{}
+	}
+	selected := StandardsFor(standards, taskFiles(plan, taskID), role)
+	names := make([]string, 0, len(selected))
+	for _, standard := range selected {
+		names = append(names, standard.Name)
+	}
+	return names
+}
+
+// taskFiles is one task's own files, or every task's files in the plan when the id names none.
+func taskFiles(plan *Plan, taskID string) []string {
+	for _, task := range plan.Tasks {
+		if task.ID == taskID {
+			return task.Files
+		}
+	}
+	var files []string
+	for _, task := range plan.Tasks {
+		files = append(files, task.Files...)
+	}
+	return files
+}
+
+// facetsFor names the facets a worktree's tree detects, plus what the task itself declares.
+func facetsFor(root, worktree, taskID string) []string {
+	tree, _ := detect.Detect(worktree)
+	var declared []string
+	if path, err := backlog.Find(root); err == nil {
+		if parsed, err := backlog.Load(path); err == nil {
+			if task, ok := parsed.Task(taskID); ok {
+				declared = task.Facets()
+			}
+		}
+	}
+	names, err := facet.Select(root, tree, declared)
+	if err != nil || names == nil {
+		return []string{}
+	}
+	return names
 }

@@ -35,6 +35,19 @@ func TestLoadSkillsWithFrontmatterIsNew(t *testing.T) {
 	}
 }
 
+func TestLoadSkillsWithCRLFFrontmatterIsNew(t *testing.T) {
+	root := skillsRepo(t, map[string]string{
+		"local-only": "---\r\nname: local-only\r\ndescription: what this repo only knows\r\n---\r\n\r\nBody.\r\n",
+	})
+	skills, skipped := LoadSkills(root)
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	if len(skills) != 1 || !skills[0].New || skills[0].Name != "local-only" {
+		t.Fatalf("skills = %+v", skills)
+	}
+}
+
 func TestLoadSkillsWithoutFrontmatterAppends(t *testing.T) {
 	root := skillsRepo(t, map[string]string{
 		"builder": "## Repo overrides\n\nRun `make test` before every commit.\n",

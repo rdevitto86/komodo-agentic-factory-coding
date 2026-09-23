@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Weighs a design question and returns the options, their trade-offs, and one recommendation. Reads only, never decides for the user.
+description: Weighs a design question; returns options, trade-offs, a recommendation. Read-only, never decides for the user.
 tier: heavy
 tools: [read, search]
 session: true

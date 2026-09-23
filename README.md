@@ -40,8 +40,8 @@ flowchart LR
 | Brief | `komodo brief <task>` | Fills the role template from the slots, writes the brief and the worktree, prints their paths. `--dry-run` prints slot sizes and a token estimate. |
 | Build | the run skill spawns the builder | Reads the brief path, owns the worktree, writes its result JSON. |
 | Close | `komodo close <task>` | Validates the result, reruns `done_when`, lints comments, flips the status. A failure writes the failure slot for one repair; a second failure marks BLOCKED with the note and the wave continues. |
-| QC | `komodo close --wave` | Merges the wave's worktrees in order, stops on conflict naming both tasks, runs the compile gate for the languages touched with one repair, then the repo's verify command. |
-| Review | `komodo diff`, then the run skill spawns the reviewer, or `komodo machine` runs it on Ollama | The diff, the group's tasks, and the standards the diff touches. Fresh context, another tier or vendor when the profile says so. One pass, one repair. |
+| QC | `komodo close --wave` | Merges the wave's worktrees in order, stops on conflict naming both tasks, runs the compile gate for the languages touched, then the repo's verify command. A failure stops the run for a person. |
+| Review | `komodo diff`, then the run skill spawns the reviewer, or `komodo machine` runs it on Ollama | The diff, the group's tasks, and the standards the diff touches. Fresh context, another tier or vendor when the profile says so. One pass: a finding at or above the floor stops the run for a fix on the group branch; the rest are filed. |
 | Ship | `komodo close --group` | Commit, push, PR with the report as body and labels the repo already defines, draft when a task is blocked, changelog line under the group's version, status DONE. |
 | Report | `komodo report` | Per task time, turns, tokens when the mount reports them, findings, what blocked. Accessibility format. |
 
@@ -123,9 +123,9 @@ Inside the worktree an agent has unlimited freedom: delete files, reset, checkou
 
 ## The binary
 
-`komodo` is one static Go binary: intake, brief, close, diff, report, lint, tag, release check, guard, install, doctor, machine, gate, run. Prebuilt for macOS arm64, Windows amd64, and Linux amd64 under `bin/` with a checksum manifest. Neither developer installs anything; there is no interpreter, no shell, no symlink, no build step on a dev machine. Whoever changes Go source rebuilds, and the pre-commit hook in this repo does it for them.
+`komodo` is one static Go binary: intake, brief, close, diff, report, lint, tag, release check, guard, install, doctor, machine, gate, run. Nothing under `bin/` is tracked: `bin/` is gitignored local build output, and `komodo gate --install` builds this host's own `bin/komodo-<os>-<arch>` before it writes the git hooks. Neither developer installs anything by hand; there is no interpreter, no shell, no symlink. Whoever changes Go source rebuilds, and the pre-commit hook in this repo does it for them.
 
-A Go binary is compiled per platform, so "any platform" means one small binary per target, not one file. Each is built with `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and `-ldflags "-s -w"`, which makes a rebuild byte-identical and keeps each file near 3 MB. `.gitattributes` marks `bin/**` binary, the files slot names a binary by path and size and never reads it, and `komodo diff` skips binary paths, so no brief, review, or session ever spends a token on a binary. Repo size is accepted; token spend is not.
+A Go binary is compiled per platform, so "any platform" means one small binary per target, not one file. Each is built with `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and `-ldflags "-s -w"`, which makes a rebuild byte-identical and keeps each file near 3 MB, and `GOTOOLCHAIN` is pinned to the `toolchain` line in `go.mod` so every developer's rebuild uses the same compiler. `komodo release build` cross-compiles the same three platforms into `dist/`, also gitignored, as the assets a GitHub release attaches. `komodo diff` skips `bin/` paths on the rare branch that still carries one, so no brief, review, or session ever spends a token on a binary.
 
 Go over Rust because 1013 lines of guard, hooks, and repo detection already exist, cross-compiling is two environment variables, and the process lives for milliseconds. Markdown stays markdown: rules, roles, skills, policy. Models never read Go.
 
@@ -133,7 +133,7 @@ Go over Rust because 1013 lines of guard, hooks, and repo detection already exis
 
 Every precheck runs locally and mechanically, before a commit and before a push, with no model and nothing on GitHub. GitHub Actions is not used: on a free account it bills minutes, fails on the runner instead of the desk, and adds a stage the line does not own.
 
-`komodo gate` is the whole check: `go vet`, `go test`, doctor, `guard check`, and a rebuild of the three binaries compared to the manifest. The line runs it inside `close <task>` before the task commit and inside `close --group` before the push. In this repo `komodo gate --install` writes pre-commit and pre-push hooks that run the same command through the platform's binary, so a human terminal gets the same gate. Other repos rely on the guard and their own verify command; the git hooks are for the toolkit only.
+`komodo gate` is the whole check: `go vet`, `go test`, doctor, `guard check`, and the comment lint. The line runs it inside `close <task>` before the task commit and inside `close --group` before the push. In this repo `komodo gate --install` builds this host's own binary into `bin/` and writes pre-commit and pre-push hooks that run the gate through it, so a human terminal gets the same gate. A hook on an unsupported platform prints a clear message instead of guessing a binary. Other repos rely on the guard and their own verify command; the git hooks are for the toolkit only.
 
 ## The repo layer
 
@@ -254,10 +254,11 @@ Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optio
 ```bash
 git clone <this repo> ~/komodo/ai/komodo-agentic-factory-coding
 cd ~/komodo/ai/komodo-agentic-factory-coding
-bin/komodo-darwin-arm64 install --host claude     # or the windows or linux binary; --host codex; --host both
+go run ./cmd/komodo gate --install                # builds bin/komodo-<os>-<arch>, then the git hooks
+bin/komodo-<os>-<arch> install --host claude       # or --host codex; --host both
 ```
 
-The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. In this repo, `komodo gate --install` puts the gate on pre-commit and pre-push once.
+The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. `komodo gate --install` builds this host's own binary into `bin/` and puts the gate on pre-commit and pre-push once; run it again after editing Go source.
 
 ## Usage
 
@@ -270,7 +271,7 @@ komodo run TG-03.5          # headless, credentials stripped
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
 komodo doctor               # references, portability, drift, prune
-komodo gate                 # vet, test, doctor, guard table, binaries; pre-commit and pre-push run it here
+komodo gate                 # vet, test, doctor, guard table, comments; pre-commit and pre-push run it here
 ```
 
 ## Layout
@@ -283,5 +284,5 @@ komodo gate                 # vet, test, doctor, guard table, binaries; pre-comm
 | `komodo/policy.json` | The four denials and the critical refs |
 | `komodo/facets/` | One directory per platform: Komodo's setup skill, appendices, commands, markers |
 | `cmd/komodo/`, `internal/` | The binary: line, guard, mounts including Ollama, gate, launcher |
-| `bin/` | Prebuilt binaries and the manifest |
+| `bin/` | Gitignored local build output, built by `komodo gate --install` |
 | `templates/project/` | Starters for a new repo |

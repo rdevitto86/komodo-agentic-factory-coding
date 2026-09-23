@@ -43,16 +43,21 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 		}
 		Stamp(root, entry)
 	}()
-	var previous string
-	for _, taskID := range plan.Waves[index] {
-		branch := TaskBranch(taskID)
-		if _, err := git(group, "merge", "--no-ff", "-m", "merge "+taskID, branch); err != nil {
-			result.Conflict = conflictMessage(previous, taskID, err)
-			_, _ = git(group, "merge", "--abort")
-			return result, nil
+	if plan.Mode == "single" {
+		// A single-mode group already committed every task on the group branch; nothing to merge.
+		result.Merged = append(result.Merged, plan.Waves[index]...)
+	} else {
+		var previous string
+		for _, taskID := range plan.Waves[index] {
+			branch := TaskBranch(taskID)
+			if _, err := git(group, "merge", "--no-ff", "-m", "merge "+taskID, branch); err != nil {
+				result.Conflict = conflictMessage(previous, taskID, err)
+				_, _ = git(group, "merge", "--abort")
+				return result, nil
+			}
+			result.Merged = append(result.Merged, taskID)
+			previous = taskID
 		}
-		result.Merged = append(result.Merged, taskID)
-		previous = taskID
 	}
 	result.Gates = RunGate(group, CompileCommands(group))
 	if _, failed := FirstFailure(result.Gates); failed {
@@ -129,20 +134,6 @@ func SplitFindings(findings []Finding, floor string) (repair, file []Finding) {
 		file = append(file, finding)
 	}
 	return repair, file
-}
-
-// RepairBrief renders the findings a repair must fix into the failure slot.
-func RepairBrief(findings []Finding) string {
-	if len(findings) == 0 {
-		return ""
-	}
-	var out []string
-	out = append(out, "The reviewer found these. Fix each one; never weaken a check to clear it.")
-	for _, finding := range findings {
-		out = append(out, fmt.Sprintf("- %s %s at %s:%d — %s. %s Fix: %s",
-			finding.Severity, finding.Class, finding.File, finding.Line, finding.Title, finding.Detail, finding.Fix))
-	}
-	return strings.Join(out, "\n")
 }
 
 // classType maps a finding class to the conventional-commit type its task carries.

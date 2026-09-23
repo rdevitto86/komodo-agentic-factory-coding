@@ -1,9 +1,11 @@
 package mount
 
 import (
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,16 +110,22 @@ func ConfigPaths() []string {
 	return out
 }
 
-// BinaryPath is the prebuilt binary for the platform the toolkit runs on.
+// BinaryPath is where gate --install builds this machine's binary, relative to the main checkout.
 func BinaryPath() string {
-	name := "komodo-linux-amd64"
-	switch runtime.GOOS {
-	case "darwin":
-		name = "komodo-darwin-arm64"
-	case "windows":
-		name = "komodo-windows-amd64.exe"
+	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		name += ".exe"
 	}
 	return filepath.Join("bin", name)
+}
+
+// MainCheckout is the checkout that owns root's git directory, so a worktree resolves to the repo it came from.
+func MainCheckout(root string) string {
+	out, err := exec.Command("git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return root
+	}
+	return filepath.Dir(strings.TrimSpace(string(out)))
 }
 
 // Machine is one model behind a tier: who serves it, which model, and at what effort.
@@ -158,7 +166,7 @@ func (m Machine) Local() bool {
 // FirstRemote returns the first mounted tier, standard first, whose machine is not local.
 func (t Tiers) FirstRemote() (Machine, bool) {
 	for _, machine := range []Machine{t.Standard, t.Heavy, t.Light} {
-		if machine.Provider != "" && !machine.Local() {
+		if machine.Provider != "" && machine.Provider != localProvider {
 			return machine, true
 		}
 	}
@@ -170,4 +178,51 @@ type Usage struct {
 	Plan     string    `json:"plan"`
 	FiveHour float64   `json:"five_hour"`
 	ResetsAt time.Time `json:"resets_at"`
+}
+
+// GuardTools is what the guard needs from one mount: its tool names, extra paths, and denial encoding.
+type GuardTools struct {
+	WriteTools   map[string]bool
+	PathFields   []string
+	ShellTool    string
+	CommandField string
+	ConfigPaths  []string
+	Deny         func(reason string) []byte
+}
+
+var (
+	guardLock sync.Mutex
+	guards    = map[string]GuardTools{}
+)
+
+// RegisterGuard adds one mount's tool names and denial encoding, keyed by its host name.
+func RegisterGuard(host string, tools GuardTools) {
+	guardLock.Lock()
+	defer guardLock.Unlock()
+	guards[host] = tools
+}
+
+// GuardHosts returns every registered mount's guard tools, sorted by host name.
+func GuardHosts() []GuardTools {
+	guardLock.Lock()
+	defer guardLock.Unlock()
+	names := make([]string, 0, len(guards))
+	for name := range guards {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]GuardTools, 0, len(names))
+	for _, name := range names {
+		out = append(out, guards[name])
+	}
+	return out
+}
+
+// GuardConfigPaths are every extra path a registered mount's guard protects.
+func GuardConfigPaths() []string {
+	var out []string
+	for _, tools := range GuardHosts() {
+		out = append(out, tools.ConfigPaths...)
+	}
+	return out
 }

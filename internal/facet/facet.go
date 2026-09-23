@@ -4,13 +4,16 @@ package facet
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
 	"komodo/internal/detect"
+	"komodo/internal/toolkit"
 )
 
 // FacetsDir is where the shipped facets live, relative to the repo root.
@@ -26,19 +29,12 @@ type Detect struct {
 	CI    []string `json:"ci"`
 }
 
-// Commands are the verify and compile defaults a facet ships.
-type Commands struct {
-	Verify  string `json:"verify"`
-	Compile string `json:"compile"`
-}
-
-// Facet is one platform's setup skill, role appendices, and commands, keyed by name.
+// Facet is one platform's setup skill, role appendices, and detection markers, keyed by name.
 type Facet struct {
-	Name     string
-	Skill    string
-	FacetMD  string
-	Commands Commands
-	Detect   Detect
+	Name    string
+	Skill   string
+	FacetMD string
+	Detect  Detect
 }
 
 // builderHeading and reviewerHeading find a facet's appendix under its own heading.
@@ -94,38 +90,34 @@ func Load(root, name string) (Facet, error) {
 	if !ValidName(name) {
 		return Facet{}, fmt.Errorf("facet: %q is not a valid facet name", name)
 	}
-	dir := filepath.Join(root, FacetsDir, name)
+	tree := toolkit.FS(root)
+	dir := path.Join("facets", name)
 
-	facetMD, err := os.ReadFile(filepath.Join(dir, "facet.md"))
+	facetMD, err := fs.ReadFile(tree, path.Join(dir, "facet.md"))
 	if err != nil {
 		return Facet{}, err
 	}
-	skill, err := os.ReadFile(filepath.Join(dir, "skill", "SKILL.md"))
+	skill, err := fs.ReadFile(tree, path.Join(dir, "skill", "SKILL.md"))
 	if err != nil {
 		return Facet{}, err
 	}
 
-	var commands Commands
-	if data, err := os.ReadFile(filepath.Join(dir, "commands.json")); err == nil {
-		_ = json.Unmarshal(data, &commands)
-	}
 	var detectMarkers Detect
-	if data, err := os.ReadFile(filepath.Join(dir, "detect.json")); err == nil {
+	if data, err := fs.ReadFile(tree, path.Join(dir, "detect.json")); err == nil {
 		_ = json.Unmarshal(data, &detectMarkers)
 	}
 
 	return Facet{
-		Name:     name,
-		Skill:    strings.TrimSpace(string(skill)),
-		FacetMD:  strings.TrimSpace(string(facetMD)),
-		Commands: commands,
-		Detect:   detectMarkers,
+		Name:    name,
+		Skill:   strings.TrimSpace(string(skill)),
+		FacetMD: strings.TrimSpace(string(facetMD)),
+		Detect:  detectMarkers,
 	}, nil
 }
 
 // LoadAll reads every shipped facet, sorted by name.
 func LoadAll(root string) ([]Facet, error) {
-	entries, err := os.ReadDir(filepath.Join(root, FacetsDir))
+	entries, err := fs.ReadDir(toolkit.FS(root), "facets")
 	if err != nil {
 		return nil, err
 	}

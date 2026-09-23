@@ -1,6 +1,6 @@
 ---
 name: builder
-description: Writes the code and tests one task names, proves it with that task's own commands, and returns a short result. Never picks its own work.
+description: Writes the code and tests a task names, proves them with its commands, returns a short result. Never picks its own work.
 tier: standard
 tools: [read, edit, write, shell, search]
 session: true

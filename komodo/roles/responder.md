@@ -1,6 +1,6 @@
 ---
 name: responder
-description: Answers one pull request review thread on the author's behalf, changing code when the reviewer is right and explaining when they are not.
+description: Answers one PR review thread for the author: fixes code when the reviewer is right, explains when not.
 tier: standard
 tools: [read, edit, write, shell, search]
 session: true

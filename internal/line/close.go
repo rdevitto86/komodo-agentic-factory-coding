@@ -64,7 +64,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	stampBuild(root, taskID, started)
 	entry := ledger.Entry{Task: taskID, Station: "close", Seconds: Since(started)}
 	if len(problems) == 0 {
-		if err := commitTask(cwd, task); err != nil {
+		if err := commitTask(cwd, task, commitBranch(root, parsed, task)); err != nil {
 			outcome.Problems = []string{"commit: " + err.Error()}
 			return outcome, nil
 		}
@@ -107,17 +107,14 @@ func taskWorktree(root, taskID string) string {
 	return root
 }
 
-// checkResult validates the result JSON against the role's schema.
+// checkResult validates the result JSON against the builder schema; a task's role is always
+// builder, never whatever the untrusted result claims, so it cannot pick a lighter check.
 func checkResult(root, taskID string) []string {
 	result, err := ReadResult(root, taskID)
 	if err != nil {
 		return []string{"result: " + err.Error()}
 	}
-	role := "builder"
-	if named, ok := result["role"].(string); ok && named != "" {
-		role = named
-	}
-	schema, err := LoadSchema(root, role)
+	schema, err := LoadSchema(root, "builder")
 	if err != nil {
 		return []string{"schema: " + err.Error()}
 	}
@@ -148,10 +145,29 @@ func lintComments(cwd string, task backlog.Task) []string {
 	return out
 }
 
-// commitTask commits a passing task on its own branch, so QC has something to merge.
-func commitTask(cwd string, task backlog.Task) error {
+// commitBranch is the branch cwd must be on to commit a task: its own task branch, or the
+// group branch for a single-mode group, since close already commits every task there directly.
+func commitBranch(root string, parsed backlog.Backlog, task backlog.Task) string {
+	if group, ok := parsed.Group(task.GroupID); ok && group.Mode() == "single" {
+		if state, err := LoadRun(root); err == nil && state.Branch != "" {
+			return state.Branch
+		}
+	}
+	return TaskBranch(task.ID)
+}
+
+// commitTask commits a passing task onto branch, so QC has something to merge, and refuses
+// when cwd sits on any other branch, which is someone else's checkout, not the task's own.
+func commitTask(cwd string, task backlog.Task, branch string) error {
 	if _, err := git(cwd, "rev-parse", "--git-dir"); err != nil {
 		return nil
+	}
+	current, err := git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
+	}
+	if current != branch {
+		return fmt.Errorf("cwd is on %s, not %s; refusing to commit onto the wrong checkout", current, branch)
 	}
 	status, err := git(cwd, "status", "--porcelain")
 	if err != nil {

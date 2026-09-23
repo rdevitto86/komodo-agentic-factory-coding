@@ -1,6 +1,6 @@
 ---
 name: tester
-description: Writes tests against an existing interface and proves they fail before they pass. Touches test files only.
+description: Writes tests against an existing interface, proves failure before passing. Test files only.
 tier: standard
 tools: [read, edit, write, shell, search]
 session: true

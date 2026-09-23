@@ -1,18 +1,17 @@
 {
   "critical_refs": ["main", "master"],
   "config_paths": [
-    "~/.claude/**",
-    "~/.claude.json",
-    "~/.codex/**",
     "~/.komodo/**",
     "**/.git/config",
     "**/.git/hooks/**",
-    "bin/**"
+    "bin/**",
+    ".komodo/policy.json",
+    "komodo/policy.json"
   ],
   "trailer_patterns": [
-    "(?i)co-authored[-]by\\s*:",
-    "(?i)generated[ ]with",
-    "(?i)generated[ ]by",
+    "(?im)^co-authored-by\\s*[:=]",
+    "(?im)^generated[ -]with\\s*[:=]",
+    "(?im)^generated[ -]by\\s*[:=]",
     "\\x{1F916}"
   ]
 }

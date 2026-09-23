@@ -4,6 +4,8 @@ package codex
 import (
 	"encoding/json"
 	"fmt"
+	"komodo/internal/mount/ollama"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -11,8 +13,6 @@ import (
 	"komodo/internal/facet"
 	"komodo/internal/install"
 	"komodo/internal/mount"
-	"komodo/internal/mount/ollama"
-	"komodo/internal/profile"
 	repopkg "komodo/internal/repo"
 )
 
@@ -22,8 +22,8 @@ const Dir = ".codex"
 // SkillsDir is where this host reads skills from.
 const SkillsDir = ".agents/skills"
 
-// models maps a role's tier to this host's model, which is what a profile row sets.
-var models = map[string]string{"light": "small", "standard": "standard", "heavy": "large"}
+// models maps a role's tier to this host's real model id, which is what a profile row sets.
+var models = map[string]string{"light": "gpt-6-luna", "standard": "gpt-6-sol", "heavy": "gpt-6-astra"}
 
 // efforts maps a role's tier to this host's reasoning effort.
 var efforts = map[string]string{"light": "low", "standard": "medium", "heavy": "high"}
@@ -41,7 +41,7 @@ func Render(root string, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
-	local := profile.OllamaUp()
+	local := ollama.Up()
 	for _, role := range roles {
 		if !role.Session {
 			continue
@@ -70,15 +70,12 @@ func Render(root string, binary string) (install.Plan, error) {
 			[]byte(loaded.Skill), "the "+loaded.Name+" facet's setup skill")
 	}
 
-	hooks, err := hooksFile(binary)
+	hooks, err := hooksFile(root, binary)
 	if err != nil {
 		return plan, err
 	}
 	plan.Add(filepath.Join(root, Dir, "hooks.json"), hooks, "the guard before every tool call")
-	plan.AddSeed(filepath.Join(root, "AGENTS.md"), []byte("# Agent Rules\n\nSee `.codex/komodo/AGENTS.md`.\n"), "the repo's own rules")
-	if local {
-		plan.Add(filepath.Join(root, Dir, "config.toml"), configFile(), "the local machine as this host's own provider")
-	}
+	plan.Add(filepath.Join(root, "AGENTS.md"), rootAgentsMD(root, rules), "the universal rules, reached directly since this host reads AGENTS.md every session")
 	return plan, nil
 }
 
@@ -108,8 +105,8 @@ func facetSkills(root string) []string {
 	return names
 }
 
-// agentFile renders one role as this host's TOML agent; every tier's model comes from the
-// local machine once it is up, since the local profile runs the builder locally too.
+// agentFile renders one role as this host's TOML agent; the local branch also names the
+// built-in "ollama" provider directly, since a project config.toml ignores model_provider.
 func agentFile(role mount.Role, local bool) string {
 	sandbox := "read-only"
 	if role.Writes() {
@@ -117,39 +114,60 @@ func agentFile(role mount.Role, local bool) string {
 	}
 	model := models[role.Tier]
 	if local {
-		model = profile.OllamaModel
+		model = ollama.Model
 	}
 	lines := []string{
 		fmt.Sprintf("name = %q", role.Name),
 		fmt.Sprintf("description = %q", role.Description),
 		fmt.Sprintf("model = %q", model),
 		fmt.Sprintf("model_reasoning_effort = %q", efforts[role.Tier]),
+	}
+	if local {
+		lines = append(lines, `model_provider = "ollama"`)
+	}
+	lines = append(lines,
 		fmt.Sprintf("sandbox_mode = %q", sandbox),
 		"developer_instructions = \"\"\"",
 		role.Instructions(),
 		"\"\"\"",
-	}
+	)
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// configFile points this host's own provider setting at the local machine.
-func configFile() []byte {
-	lines := []string{
-		`oss_provider = "ollama"`,
-		"",
-		"[model_providers.ollama]",
-		fmt.Sprintf("base_url = %q", ollama.BaseURL()+"/v1"),
+// rulesMarker delimits the rendered rules inside AGENTS.md, which this host reads directly.
+const rulesMarker = "<!-- komodo:rules -->"
+
+// rootAgentsMD merges the rendered rules into the repo's own AGENTS.md, replacing an earlier
+// render's block in place and leaving everything else the repo wrote untouched.
+func rootAgentsMD(root, rules string) []byte {
+	block := rulesMarker + "\n" + rules
+	existing, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil {
+		return []byte(block)
 	}
-	return []byte(strings.Join(lines, "\n") + "\n")
+	text := string(existing)
+	if start := strings.Index(text, rulesMarker); start >= 0 {
+		return []byte(text[:start] + block)
+	}
+	if len(text) > 0 && !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	return []byte(text + "\n" + block)
 }
 
-// hooksFile registers the guard before every tool call.
-func hooksFile(binary string) ([]byte, error) {
+// hooksFile registers the guard before every tool call; a worktree's binary path resolves
+// against the main checkout, since a worktree never holds the built binary itself.
+func hooksFile(root, binary string) ([]byte, error) {
+	if !filepath.IsAbs(binary) {
+		binary = filepath.Join(mount.MainCheckout(root), binary)
+	}
 	hooks := map[string]any{
-		"hooks": []any{map[string]any{
-			"event":   "PreToolUse",
-			"command": binary + " guard",
-		}},
+		"hooks": map[string]any{
+			"PreToolUse": []any{map[string]any{
+				"matcher": guardShellTool,
+				"hooks":   []any{map[string]any{"type": "command", "command": binary + " guard"}},
+			}},
+		},
 	}
 	body, err := json.MarshalIndent(hooks, "", "  ")
 	if err != nil {
@@ -174,11 +192,12 @@ func init() {
 	})
 }
 
-// Headless returns this host's non-interactive command for one skill and one target.
+// Headless returns this host's non-interactive command for one skill and one target; exec
+// defaults to a read-only sandbox, so the line and a builder need workspace-write named explicitly.
 func Headless(skill, target string) (string, []string) {
 	prompt := "/" + skill
 	if target != "" {
 		prompt += " " + target
 	}
-	return "codex", []string{"exec", "--json", prompt}
+	return "codex", []string{"exec", "--json", "--sandbox", "workspace-write", prompt}
 }

@@ -152,6 +152,40 @@ func TestReviewerRoleDispatchesToTheReviewerTier(t *testing.T) {
 	}
 }
 
+func TestATaskNeedleNarrowsThePlanToThatTask(t *testing.T) {
+	root := repo(t, groupText)
+	plan, err := next(root, "TSK-05.1.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil {
+		t.Fatal("no plan")
+	}
+	if len(plan.Tasks) != 1 || plan.Tasks[0].ID != "TSK-05.1.3" {
+		t.Fatalf("tasks = %v, want only the named task, not the whole group", plan.Tasks)
+	}
+	if len(plan.Waves) != 1 || len(plan.Waves[0]) != 1 || plan.Waves[0][0] != "TSK-05.1.3" {
+		t.Fatalf("waves = %v; a dependency outside the planned set must count as met", plan.Waves)
+	}
+}
+
+const blockedGroupText = "### [TG-05.3] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-05.3.1] One [P: C] [BLOCKED]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
+
+func TestPlanForGroupNeverCountsABlockedTaskAsDone(t *testing.T) {
+	root := repo(t, blockedGroupText)
+	plan, err := planForGroup(root, "TG-05.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil {
+		t.Fatal("no plan")
+	}
+	if contains(plan.Skipped, "TSK-05.3.1") {
+		t.Fatal("a blocked task must not count as already done, only a DONE status may")
+	}
+}
+
 func TestNextTakesATaskIdOrAGroupId(t *testing.T) {
 	root := repo(t, groupText)
 	byTask, err := next(root, "TSK-05.1.2")

@@ -2,19 +2,19 @@ package codex
 
 import (
 	"encoding/json"
+	"komodo/internal/mount/ollama"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"komodo/internal/profile"
 )
 
 // toolkit builds a root with the rules, two roles, and a skill, with the local machine down.
 func toolkit(t *testing.T) string {
 	t.Helper()
-	t.Setenv(profile.OllamaEnv, "http://127.0.0.1:1")
+	t.Setenv(ollama.Env, "http://127.0.0.1:1")
 	root := t.TempDir()
 	write := func(rel, body string) {
 		path := filepath.Join(root, rel)
@@ -55,7 +55,7 @@ func TestAnAgentCarriesEveryTomlKey(t *testing.T) {
 	root := toolkit(t)
 	agent := body(t, root, filepath.Join(Dir, "agents", "builder.toml"))
 	for _, want := range []string{
-		`name = "builder"`, `description = "Writes code."`, `model = "standard"`,
+		`name = "builder"`, `description = "Writes code."`, `model = "gpt-6-sol"`,
 		`model_reasoning_effort = "medium"`, `sandbox_mode = "workspace-write"`, "developer_instructions =",
 	} {
 		if !strings.Contains(agent, want) {
@@ -70,7 +70,7 @@ func TestAReadOnlyRoleGetsAReadOnlySandbox(t *testing.T) {
 	if !strings.Contains(agent, `sandbox_mode = "read-only"`) {
 		t.Fatalf("agent = %s", agent)
 	}
-	if !strings.Contains(agent, `model = "large"`) || !strings.Contains(agent, `model_reasoning_effort = "high"`) {
+	if !strings.Contains(agent, `model = "gpt-6-astra"`) || !strings.Contains(agent, `model_reasoning_effort = "high"`) {
 		t.Fatalf("the heavy tier did not map: %s", agent)
 	}
 }
@@ -86,19 +86,25 @@ func TestTheGuardIsRegisteredAndNoMCP(t *testing.T) {
 	root := toolkit(t)
 	raw := body(t, root, filepath.Join(Dir, "hooks.json"))
 	var hooks struct {
-		Hooks []struct {
-			Event   string `json:"event"`
-			Command string `json:"command"`
+		Hooks struct {
+			PreToolUse []struct {
+				Matcher string `json:"matcher"`
+				Hooks   []struct {
+					Type    string `json:"type"`
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"PreToolUse"`
 		} `json:"hooks"`
 	}
 	if err := json.Unmarshal([]byte(raw), &hooks); err != nil {
-		t.Fatalf("hooks are not JSON: %v", err)
+		t.Fatalf("hooks are not in the host's nested hooks.PreToolUse shape: %v", err)
 	}
-	if len(hooks.Hooks) != 1 || hooks.Hooks[0].Event != "PreToolUse" {
-		t.Fatalf("hooks = %+v", hooks.Hooks)
+	entries := hooks.Hooks.PreToolUse
+	if len(entries) != 1 || entries[0].Matcher != "Bash" || len(entries[0].Hooks) != 1 || entries[0].Hooks[0].Type != "command" {
+		t.Fatalf("PreToolUse = %+v", entries)
 	}
-	if !strings.HasSuffix(hooks.Hooks[0].Command, " guard") {
-		t.Fatalf("command = %q", hooks.Hooks[0].Command)
+	if !strings.HasSuffix(entries[0].Hooks[0].Command, " guard") {
+		t.Fatalf("command = %q", entries[0].Hooks[0].Command)
 	}
 	plan, _ := Render(root, "komodo")
 	for _, change := range plan.Changes {
@@ -244,31 +250,28 @@ func withLocalMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { listener.Close() })
-	t.Setenv(profile.OllamaEnv, "http://"+listener.Addr().String())
+	t.Setenv(ollama.Env, "http://"+listener.Addr().String())
 }
 
 func TestTheLocalProfilePointsEveryTierAtTheLocalMachine(t *testing.T) {
 	root := toolkit(t)
 	withLocalMachine(t)
 	agent := body(t, root, filepath.Join(Dir, "agents", "builder.toml"))
-	if !strings.Contains(agent, `model = "`+profile.OllamaModel+`"`) {
+	if !strings.Contains(agent, `model = "`+ollama.Model+`"`) {
 		t.Fatalf("the builder did not take the local model: %s", agent)
 	}
 	agent = body(t, root, filepath.Join(Dir, "agents", "reviewer.toml"))
-	if !strings.Contains(agent, `model = "`+profile.OllamaModel+`"`) {
+	if !strings.Contains(agent, `model = "`+ollama.Model+`"`) {
 		t.Fatalf("the reviewer did not take the local model: %s", agent)
 	}
 }
 
-func TestTheLocalProfileSetsOssProviderAndTheBaseURL(t *testing.T) {
+func TestTheLocalProfileSetsModelProviderOnTheAgent(t *testing.T) {
 	root := toolkit(t)
 	withLocalMachine(t)
-	config := body(t, root, filepath.Join(Dir, "config.toml"))
-	if !strings.Contains(config, `oss_provider = "ollama"`) {
-		t.Fatalf("config.toml did not set oss_provider: %s", config)
-	}
-	if !strings.Contains(config, "[model_providers.ollama]") || !strings.Contains(config, "base_url =") {
-		t.Fatalf("config.toml did not set the ollama base_url: %s", config)
+	agent := body(t, root, filepath.Join(Dir, "agents", "builder.toml"))
+	if !strings.Contains(agent, `model_provider = "ollama"`) {
+		t.Fatalf("the local agent did not name the ollama provider: %s", agent)
 	}
 }
 
@@ -285,20 +288,88 @@ func TestTiersPutsEveryTierOnTheLocalMachine(t *testing.T) {
 			t.Fatalf("%s = %q, want ollama", machine.name, machine.got)
 		}
 	}
-	if tiers.Light.Model != profile.OllamaModel {
+	if tiers.Light.Model != ollama.Model {
 		t.Fatalf("model = %q", tiers.Light.Model)
 	}
 }
 
-func TestConfigTomlIsAbsentWithoutTheLocalMachine(t *testing.T) {
+func TestConfigTomlIsNeverRendered(t *testing.T) {
 	root := toolkit(t)
+	withLocalMachine(t)
 	plan, err := Render(root, "komodo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, change := range plan.Changes {
 		if change.Path == filepath.Join(root, Dir, "config.toml") {
-			t.Fatal("config.toml was rendered with the local machine down")
+			t.Fatal("config.toml was rendered; a project config.toml ignores model_provider and model_providers")
 		}
+	}
+}
+
+func TestHeadlessPassesAWorkspaceWriteSandbox(t *testing.T) {
+	_, args := Headless("run", "TSK-01.1.1")
+	if !contains(args, "--sandbox") || !contains(args, "workspace-write") {
+		t.Fatalf("args = %v, want a workspace-write sandbox", args)
+	}
+}
+
+// contains reports whether value appears among items.
+func contains(items []string, value string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func TestTheRulesReachRootAgentsMDDirectlyNotAPointer(t *testing.T) {
+	root := toolkit(t)
+	agents := body(t, root, "AGENTS.md")
+	if strings.Contains(agents, ".codex/komodo/AGENTS.md") {
+		t.Fatalf("AGENTS.md points at the rendered rules instead of carrying them: %q", agents)
+	}
+	if !strings.Contains(agents, "Answer first") {
+		t.Fatalf("AGENTS.md does not carry the rendered rules: %q", agents)
+	}
+}
+
+func TestTheRulesKeepARepoOwnedAgentsMDAndReplaceOnlyTheirOwnBlock(t *testing.T) {
+	root := toolkit(t)
+	path := filepath.Join(root, "AGENTS.md")
+	if err := os.WriteFile(path, []byte("# This repo\n\nOwn instructions.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agents := body(t, root, "AGENTS.md")
+	if !strings.Contains(agents, "Own instructions.") || !strings.Contains(agents, "Answer first") {
+		t.Fatalf("agents.md = %q", agents)
+	}
+	if strings.Count(agents, "Answer first") != 1 {
+		t.Fatalf("a second render duplicated the rules block: %q", agents)
+	}
+}
+
+func TestAWorktreesHookPointsAtTheMainCheckoutsBinary(t *testing.T) {
+	root := toolkit(t)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"}, {"config", "user.email", "t@e.st"}, {"config", "user.name", "t"},
+		{"add", "-A"}, {"commit", "-q", "-m", "seed"}, {"worktree", "add", "-q", "-b", "task/x", filepath.Join(root, ".komodo", "wt", "x")},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	worktree := filepath.Join(root, ".komodo", "wt", "x")
+	raw, err := hooksFile(worktree, "bin/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), filepath.Join(main, "bin", "komodo")+" guard") {
+		t.Fatalf("hooks = %s; a worktree's hook must run the main checkout's binary, which a worktree lacks", raw)
 	}
 }

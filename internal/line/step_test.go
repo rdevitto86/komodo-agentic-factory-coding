@@ -2,7 +2,9 @@ package line
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,11 @@ import (
 
 const stepBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
+
+// singleModeBacklog is a two-task group that shares one builder and one worktree.
+const singleModeBacklog = "### [TG-13.1] A single-mode group\n```yaml\ntype: feat\nversion: 2.0.0\nmode: single\n```\n\n" +
+	"#### [TSK-13.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - test -f a/one.go\n```\n\n" +
+	"#### [TSK-13.1.2] Two [P: C] [READY]\n```yaml\nfiles: [a/two.go]\ndone_when:\n  - test -f a/two.go\n```\n"
 
 // stepRepo builds a repo with a backlog and one role, ready for the station walk.
 func stepRepo(t *testing.T) string {
@@ -91,8 +98,8 @@ func TestStepClosesATaskThatHasAResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Command != "komodo close TSK-12.1.1" {
-		t.Fatalf("action = %+v", next)
+	if next.Command != "komodo close TSK-12.1.1 --gate" {
+		t.Fatalf("action = %+v; a task close must pass --gate so the local gate runs", next)
 	}
 }
 
@@ -119,6 +126,7 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	if err := book.Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
 		t.Fatal(err)
 	}
+	gitWorktreeWithReview(t, root, "TG-12.1")
 	next, err := Step(root, "")
 	if err != nil {
 		t.Fatal(err)
@@ -137,6 +145,118 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	next, _ = Step(root, "")
 	if next.Action != "done" {
 		t.Fatalf("action = %+v", next)
+	}
+}
+
+// TestTheReviewerSpawnCarriesAWrittenBriefPath checks the reviewer spawn's brief is a path to a
+// filled brief on disk, not the bare command string a reviewer with no shell tool cannot run.
+func TestTheReviewerSpawnCarriesAWrittenBriefPath(t *testing.T) {
+	root := stepRepo(t)
+	role := "---\nname: reviewer\ndescription: Reviews.\ntier: heavy\ntools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\n" +
+		"Review of group {{group_id}}: {{title}}\n\n{{tasks}}\n\n{{standards}}\n\n{{diff}}\n"
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "reviewer.md"), []byte(role), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	startRun(t, root)
+	writeStepResult(t, root, "TSK-12.1.1")
+	markDone(t, root, "TSK-12.1.1")
+	if err := Book(root).Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	gitWorktreeWithReview(t, root, "TG-12.1")
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Brief == "komodo diff" || next.Brief == "" {
+		t.Fatalf("brief = %q, want a written brief path the reviewer's read-only tools can open", next.Brief)
+	}
+	text, err := os.ReadFile(filepath.Join(root, next.Brief))
+	if err != nil {
+		t.Fatalf("brief path %q does not exist: %v", next.Brief, err)
+	}
+	if !strings.Contains(string(text), "Review of group TG-12.1") || !strings.Contains(string(text), "Your result") {
+		t.Fatalf("brief does not carry the filled review and its result instruction:\n%s", text)
+	}
+}
+
+// gitWorktreeFor makes a group's own worktree path a git repo with one commit on main,
+// mirroring what a run's own group worktree looks like once cut.
+func gitWorktreeFor(t *testing.T, root, groupID string) string {
+	t.Helper()
+	worktree := filepath.Join(root, StateDir, "wt", groupID)
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = worktree
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	commit(t, worktree, "a/one.go", "package a\n", "seed")
+	return worktree
+}
+
+// gitWorktreeWithReview is gitWorktreeFor, plus a branch that diverged past the profile's
+// review-skip-lines cap, so step must spawn the reviewer instead of skipping it.
+func gitWorktreeWithReview(t *testing.T, root, groupID string) string {
+	t.Helper()
+	worktree := gitWorktreeFor(t, root, groupID)
+	cmd := exec.Command("git", "checkout", "-q", "-b", "feat/a-group")
+	cmd.Dir = worktree
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %v: %s", err, out)
+	}
+	commit(t, worktree, "a/one.go", "package a\n\n"+strings.Repeat("x\n", 45), "grow")
+	return worktree
+}
+
+func TestASmallDiffSkipsTheReviewStation(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	writeStepResult(t, root, "TSK-12.1.1")
+	markDone(t, root, "TSK-12.1.1")
+	if err := Book(root).Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	gitWorktreeFor(t, root, "TG-12.1")
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "run" || next.Command != "komodo close --group" {
+		t.Fatalf("action = %+v; a diff at or under the profile's review-skip-lines cap must reach ship without a reviewer spawn", next)
+	}
+}
+
+func TestBlockingFindingsPointAtStepNotTheRefusedClose(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	writeStepResult(t, root, "TSK-12.1.1")
+	markDone(t, root, "TSK-12.1.1")
+	if err := Book(root).Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	review := ResultPath(root, "TG-12.1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"findings":[{"severity":"high","class":"bug","file":"a/one.go","line":1,"title":"t","detail":"d","fix":"f"}]}`
+	if err := os.WriteFile(review, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "done" || !strings.Contains(next.Why, "komodo step") || strings.Contains(next.Why, "close --group") {
+		t.Fatalf("why = %q; blocking findings must point at komodo step, not the refused komodo close --group", next.Why)
 	}
 }
 
@@ -162,6 +282,70 @@ func TestEveryActionNamesItsResolvedParts(t *testing.T) {
 	}
 }
 
+// noKomodoRepo writes only a backlog for the text given, so the toolkit falls back to the
+// embedded komodo/ tree for its roles, skills, and facets, unlike stepRepo's own overrides.
+func noKomodoRepo(t *testing.T, text string) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestASpawnNamesTheStandardsItsFilesPullIn(t *testing.T) {
+	root := noKomodoRepo(t, stepBacklog)
+	startRun(t, root)
+	briefPath := filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")
+	if err := os.MkdirAll(filepath.Dir(briefPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(briefPath, []byte("brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, skill := range next.Skills {
+		if skill == "go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("skills = %v, want the go standard for a/one.go", next.Skills)
+	}
+}
+
+const stepBacklogWithFacet = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\nfacets: [github-actions]\n```\n"
+
+func TestASpawnNamesTheFacetsItsTaskDeclares(t *testing.T) {
+	root := noKomodoRepo(t, stepBacklogWithFacet)
+	startRun(t, root)
+	briefPath := filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")
+	if err := os.MkdirAll(filepath.Dir(briefPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(briefPath, []byte("brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, name := range next.Facets {
+		if name == "github-actions" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("facets = %v, want github-actions from the task's own facets field", next.Facets)
+	}
+}
+
 func TestTheReviewerSpawnCarriesTheBeforeReviewCommand(t *testing.T) {
 	root := stepRepo(t)
 	startRun(t, root)
@@ -171,6 +355,7 @@ func TestTheReviewerSpawnCarriesTheBeforeReviewCommand(t *testing.T) {
 	if err := book.Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
 		t.Fatal(err)
 	}
+	gitWorktreeWithReview(t, root, "TG-12.1")
 	commandsDir := filepath.Join(root, StateDir, "wt", "TG-12.1", StateDir)
 	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -234,7 +419,7 @@ func TestAnOllamaMachineBecomesACommandNotASpawn(t *testing.T) {
 	}
 }
 
-func TestASessionReviewerFallsBackToItsOwnHeavyTierNotStandard(t *testing.T) {
+func TestAReadOnlySessionRoleReachesItsLocalMachine(t *testing.T) {
 	plan := &Plan{
 		Roles: []Role{{Name: "reviewer", Tier: "heavy", Machine: "ollama", Session: true, Tools: []string{"read", "search"}}},
 		Profile: profile.Profile{Tiers: mount.Tiers{
@@ -245,8 +430,8 @@ func TestASessionReviewerFallsBackToItsOwnHeavyTierNotStandard(t *testing.T) {
 		Worktree: ".",
 	}
 	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "reviewer", Task: "x"}, "")
-	if got.Machine != "claude/opus" {
-		t.Fatalf("machine = %s, want the reviewer's own heavy tier, not the first remote tier", got.Machine)
+	if got.Machine != "ollama" || got.Action != "run" || got.Command != "komodo machine --role reviewer x" {
+		t.Fatalf("action = %+v; a read-only session role must reach its own local machine, not be refused it", got)
 	}
 }
 
@@ -347,6 +532,148 @@ func TestSpawnNamesTheWorktreeTheAgentWorksIn(t *testing.T) {
 	}
 }
 
+// TestSingleModeSpawnSharesTheGroupWorktree proves step names the group's own worktree for a
+// single-mode task's spawn, the same one brief.go already picks, so the two never disagree.
+func TestSingleModeSpawnSharesTheGroupWorktree(t *testing.T) {
+	root := repo(t, singleModeBacklog)
+	if err := SaveRun(root, RunState{Run: "TG-13.1-1", Group: "TG-13.1", Base: "main", Branch: "feat/a-single-mode-group", Worktree: root}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, StateDir, "briefs", "TSK-13.1.1.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("a brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(StateDir, "wt", "TG-13.1")
+	if next.Action != "spawn" || next.Worktree != want {
+		t.Fatalf("worktree = %q, want the group's own worktree %q (action %s)", next.Worktree, want, next.Action)
+	}
+}
+
+// TestSingleModeWalksBriefCloseAndCloseWave proves a two-task single-mode group builds every
+// task in the group's own worktree on the group branch, then closes the wave with no merge.
+func TestSingleModeWalksBriefCloseAndCloseWave(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", singleModeBacklog, "seed")
+	role := "---\nname: builder\ndescription: Writes code.\ntier: standard\ntools: [read, edit, write, shell, search]\n" +
+		"session: true\nreturns: builder.schema.json\n---\n\nTask {{task_id}}: {{title}}\n\n{{task_block}}\n" +
+		"{{repo_rules}}{{repo_context}}{{context}}{{files}}{{repo_profile}}{{standards}}{{done_when}}{{failure}}\n"
+	commit(t, root, filepath.Join(RolesDir, "builder.md"), role, "role")
+	schema := `{"type":"object","required":["result"],"properties":{"result":{"type":"string","enum":["DONE","BLOCKED"]}}}`
+	commit(t, root, filepath.Join(RolesDir, "builder.schema.json"), schema, "schema")
+
+	plan, err := PlanForStation(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Mode != "single" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	worktree := WorktreePath(root, plan.Worktree)
+	if err := AddWorktree(root, plan.Branch, plan.Base, worktree); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveRun(root, RunState{
+		Run: plan.Group + "-1", Group: plan.Group, Base: plan.Base, Branch: plan.Branch,
+		Worktree: worktree, Waves: plan.Waves,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each task briefs, spawns, and closes in turn, on the group branch, before the next briefs.
+	files := map[string]string{"TSK-13.1.1": "a/one.go", "TSK-13.1.2": "a/two.go"}
+	for _, taskID := range []string{"TSK-13.1.1", "TSK-13.1.2"} {
+		next, err := Step(root, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Command != "komodo brief "+taskID {
+			t.Fatalf("action = %+v, want a brief for %s", next, taskID)
+		}
+		brief, err := BuildBrief(root, worktree, taskID, "builder", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if brief.Worktree != plan.Worktree {
+			t.Fatalf("brief worktree = %q, want the group's own worktree %q", brief.Worktree, plan.Worktree)
+		}
+		if err := WriteBrief(root, brief, plan.Branch); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := git(root, "rev-parse", "--verify", "refs/heads/"+TaskBranch(taskID)); err == nil {
+			t.Fatalf("%s cut a task branch; single mode shares the group worktree with no split", taskID)
+		}
+
+		next, err = Step(root, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Action != "spawn" || next.Worktree != plan.Worktree {
+			t.Fatalf("spawn = %+v, want the group's own worktree %q", next, plan.Worktree)
+		}
+
+		path := filepath.Join(worktree, files[taskID])
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("package a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		writeResult(t, root, taskID, map[string]any{"result": "DONE"})
+
+		next, err = Step(root, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Command != "komodo close "+taskID+" --gate" {
+			t.Fatalf("action = %+v, want a close for %s", next, taskID)
+		}
+		outcome, err := CloseTask(root, taskID, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outcome.Status != "DONE" {
+			t.Fatalf("outcome = %+v", outcome)
+		}
+	}
+
+	log, err := git(worktree, "log", "--format=%s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log, "TSK-13.1.1") || !strings.Contains(log, "TSK-13.1.2") {
+		t.Fatalf("log = %q; every task must commit directly onto the group branch", log)
+	}
+
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Command != "komodo close --wave 1" {
+		t.Fatalf("action = %+v, want the wave close", next)
+	}
+	closed, err := PlanForStation(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CloseWave(root, closed, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK || result.Conflict != "" {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(result.Merged) != 2 {
+		t.Fatalf("merged = %v", result.Merged)
+	}
+}
+
 // fail records a failed close for a task, which is what a repair reads.
 func fail(t *testing.T, root, taskID string, count int) {
 	t.Helper()
@@ -409,7 +736,37 @@ func TestARepairSpawnsOnceItsBriefIsFresh(t *testing.T) {
 	}
 }
 
-func TestARepairGivesUpAtTheProfilesLimit(t *testing.T) {
+// TestARepairThatWroteItsResultClosesInsteadOfSpawningAgain drives step through a first
+// failure, a repair brief, and a repair result, and checks the next action closes, not spawns.
+func TestARepairThatWroteItsResultClosesInsteadOfSpawningAgain(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	seed(t, root, "TSK-12.1.1")
+	fail(t, root, "TSK-12.1.1", 1)
+	path := filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")
+	if err := os.WriteFile(path, []byte("repair brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "builder" {
+		t.Fatalf("action = %+v; a fresh repair brief must spawn the builder", next)
+	}
+	writeStepResult(t, root, "TSK-12.1.1")
+	next, err = Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "run" || next.Command != "komodo close TSK-12.1.1 --gate" {
+		t.Fatalf("action = %+v; a repair that wrote its result must close, not spawn forever", next)
+	}
+}
+
+// TestARepairGivesUpAtTheProfilesLimitAndTheRunContinues checks step stops repairing a task
+// past the profile's limit but keeps walking the run, rather than ending it outright.
+func TestARepairGivesUpAtTheProfilesLimitAndTheRunContinues(t *testing.T) {
 	root := stepRepo(t)
 	startRun(t, root)
 	seed(t, root, "TSK-12.1.1")
@@ -418,8 +775,72 @@ func TestARepairGivesUpAtTheProfilesLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Action != "done" {
-		t.Fatalf("action = %+v; the line must stop, not repair forever", next)
+	if next.Action != "run" || next.Command != "komodo close --wave 1" {
+		t.Fatalf("action = %+v; a blocked task must stop repairing without ending the whole run", next)
+	}
+}
+
+// TestABlockedTaskSkipsItsDependentsAndReachesADraftShip drives step past a permanently
+// failed task and its dependent, and checks the run still reaches the review station.
+func TestABlockedTaskSkipsItsDependentsAndReachesADraftShip(t *testing.T) {
+	text := "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
+		"#### [TSK-12.1.2] Two [P: C] [READY]\n```yaml\nfiles: [a/two.go]\ndone_when: [\"go test ./a/...\"]\ndepends_on: [TSK-12.1.1]\n```\n"
+	root := repo(t, text)
+	role := "---\nname: reviewer\ndescription: Reviews.\ntier: heavy\ntools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "reviewer.md"), []byte(role), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state := RunState{
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}, {"TSK-12.1.2"}},
+	}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, root, "TSK-12.1.1")
+	fail(t, root, "TSK-12.1.1", 5)
+	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
+	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 2, Station: "qc", Outcome: "done"})
+	gitWorktreeWithReview(t, root, "TG-12.1")
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "reviewer" {
+		t.Fatalf("action = %+v; a blocked task must skip its dependent, not end the whole run", next)
+	}
+}
+
+// TestAPausedProfileWaitsRatherThanShipsUnbuiltWork registers a mount whose usage pauses the
+// window, and checks step waits instead of walking a plan whose waves the pause emptied.
+func TestAPausedProfileWaitsRatherThanShipsUnbuiltWork(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	marker := filepath.Join(root, ".fakehost-pause-marker")
+	if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resetsAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	mount.Register(mount.Host{
+		Name: "fakehost-pause",
+		Installed: func(r string) bool {
+			_, err := os.Stat(filepath.Join(r, ".fakehost-pause-marker"))
+			return err == nil
+		},
+		Tiers: func(string, bool) mount.Tiers {
+			return mount.Tiers{Standard: mount.Machine{Provider: "vendora", Model: "model-a"}}
+		},
+		Probe: func() (mount.Usage, bool) {
+			return mount.Usage{Plan: "pro", FiveHour: 0.95, ResetsAt: resetsAt}, true
+		},
+	})
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "done" || next.Until != resetsAt.Format(time.RFC3339) {
+		t.Fatalf("action = %+v; a paused profile must wait, not ship a plan whose waves it emptied", next)
 	}
 }
 
@@ -430,6 +851,10 @@ const twoGroups = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n`
 
 func TestALaterReadyGroupCannotStealAnUnshippedRun(t *testing.T) {
 	root := repo(t, twoGroups)
+	role := "---\nname: reviewer\ndescription: Reviews.\ntier: heavy\ntools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "reviewer.md"), []byte(role), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	state := RunState{
 		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
 		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}},
@@ -439,6 +864,7 @@ func TestALaterReadyGroupCannotStealAnUnshippedRun(t *testing.T) {
 	}
 	seed(t, root, "TSK-12.1.1")
 	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
+	gitWorktreeWithReview(t, root, "TG-12.1")
 	next, err := Step(root, "")
 	if err != nil {
 		t.Fatal(err)

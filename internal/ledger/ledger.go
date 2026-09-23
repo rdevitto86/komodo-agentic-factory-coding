@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -177,13 +178,13 @@ func Aggregate(entries []Entry) Metrics {
 		if entry.FailureClass != "" {
 			metrics.FailuresBy[entry.FailureClass]++
 		}
-		if entry.Model != "" {
-			metrics.TokensByModel[entry.Model] += entry.TokensIn + entry.TokensOut
+		if key := modelKey(entry); key != "" {
+			metrics.TokensByModel[key] += entry.TokensIn + entry.TokensOut
 		}
 		if entry.Findings > 0 && entry.Group != "" {
 			metrics.FindingsBy[entry.Group] += entry.Findings
 		}
-		if entry.Task != "" {
+		if entry.Station == "close" && entry.Task != "" {
 			tasks[entry.Task] = true
 			if entry.Outcome == "repair" {
 				repaired[entry.Task] = true
@@ -201,17 +202,24 @@ func Aggregate(entries []Entry) Metrics {
 	return metrics
 }
 
+// modelKey names who spent tokens: the model when a station set one, else the host, labelled as such.
+func modelKey(entry Entry) string {
+	if entry.Model != "" {
+		return entry.Model
+	}
+	if entry.Host != "" {
+		return entry.Host + " (host, no model)"
+	}
+	return ""
+}
+
 // median returns the middle value, averaging the two middles of an even count.
 func median(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
 	}
 	sorted := append([]float64(nil), values...)
-	for index := 1; index < len(sorted); index++ {
-		for back := index; back > 0 && sorted[back] < sorted[back-1]; back-- {
-			sorted[back], sorted[back-1] = sorted[back-1], sorted[back]
-		}
-	}
+	sort.Float64s(sorted)
 	middle := len(sorted) / 2
 	if len(sorted)%2 == 1 {
 		return sorted[middle]
@@ -255,7 +263,7 @@ func sortedKeys(values map[string]float64) []string {
 	for key := range values {
 		keys = append(keys, key)
 	}
-	sortStrings(keys)
+	sort.Strings(keys)
 	return keys
 }
 
@@ -265,15 +273,6 @@ func sortedIntKeys(values map[string]int) []string {
 	for key := range values {
 		keys = append(keys, key)
 	}
-	sortStrings(keys)
+	sort.Strings(keys)
 	return keys
-}
-
-// sortStrings orders a small slice in place.
-func sortStrings(keys []string) {
-	for index := 1; index < len(keys); index++ {
-		for back := index; back > 0 && keys[back] < keys[back-1]; back-- {
-			keys[back], keys[back-1] = keys[back-1], keys[back]
-		}
-	}
 }

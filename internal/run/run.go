@@ -2,7 +2,9 @@
 package run
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"komodo/internal/guard"
+	"komodo/internal/ledger"
+	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/pr"
 	"komodo/internal/profile"
 )
 
@@ -23,7 +29,10 @@ const GroupBudget = 90 * time.Minute
 const Skill = "run"
 
 // dropped are the environment variables that would hand a headless run a push credential.
-var dropped = []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK"}
+var dropped = []string{
+	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK",
+	"GIT_CONFIG_PARAMETERS",
+}
 
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
@@ -34,6 +43,7 @@ type Options struct {
 	Env    []string
 	Stdout io.Writer
 	Stderr io.Writer
+	PR     *pr.Client
 }
 
 // Scrub returns the environment with every push credential removed and git left unable to prompt.
@@ -41,7 +51,7 @@ func Scrub(base []string) []string {
 	out := make([]string, 0, len(base)+6)
 	for _, entry := range base {
 		key, _, found := strings.Cut(entry, "=")
-		if !found || contains(dropped, key) || isOverride(key) {
+		if !found || contains(dropped, key) || credentialShaped(key) || isOverride(key) {
 			continue
 		}
 		out = append(out, entry)
@@ -51,10 +61,27 @@ func Scrub(base []string) []string {
 		"GIT_CONFIG_COUNT=1",
 		"GIT_CONFIG_KEY_0=credential.helper",
 		"GIT_CONFIG_VALUE_0=",
-		"GIT_SSH_COMMAND=ssh -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile="+os.DevNull,
+		"GIT_SSH_COMMAND=ssh -F "+os.DevNull+" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile="+os.DevNull,
 		"GH_CONFIG_DIR="+filepath.Join(os.TempDir(), "komodo-gh-noauth"),
 	)
 }
+
+// credentialShaped reports whether a key names a forge's secret, such as GITHUB_PAT or GITLAB_TOKEN,
+// so a push credential is dropped while the model host keeps its own login.
+func credentialShaped(key string) bool {
+	forge, secret := false, false
+	for _, part := range strings.Split(key, "_") {
+		forge = forge || forgeWords[part]
+		secret = secret || secretWords[part]
+	}
+	return forge && secret
+}
+
+// forgeWords and secretWords are the name parts that together mark a push credential.
+var (
+	forgeWords  = map[string]bool{"GIT": true, "GITHUB": true, "GH": true, "GITLAB": true, "GL": true, "BITBUCKET": true}
+	secretWords = map[string]bool{"TOKEN": true, "PAT": true, "SECRET": true, "PASSWORD": true, "KEY": true}
+)
 
 // isOverride reports whether Scrub sets this key itself, so an inherited value never survives.
 func isOverride(key string) bool {
@@ -77,16 +104,24 @@ func Command(root, target string) (string, []string, error) {
 	return name, args, nil
 }
 
-// Launch drives the host non-interactively and returns its exit code.
+// Launch drives the host non-interactively, finishes any push a scrubbed ship handed off, and
+// returns the host's exit code.
 func Launch(options Options) (int, error) {
 	name, args, err := Command(options.Root, options.Target)
 	if err != nil {
 		return 1, err
 	}
-	return launch(options, name, args)
+	code, err := launch(options, name, args)
+	if !options.DryRun {
+		if shipErr := finishShip(options); shipErr != nil && err == nil {
+			err = shipErr
+		}
+	}
+	return code, err
 }
 
-// launch runs one resolved command under the budget in a scrubbed environment.
+// launch runs one resolved command under the budget, in its own process group, in a scrubbed
+// environment, teeing its stdout to the host's own usage events file.
 func launch(options Options, name string, args []string) (int, error) {
 	stdout, stderr := options.Stdout, options.Stderr
 	if stdout == nil {
@@ -112,7 +147,18 @@ func launch(options Options, name string, args []string) (int, error) {
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = options.Root
 	command.Env = Scrub(base)
-	command.Stdout, command.Stderr = stdout, stderr
+	setProcessGroup(command)
+	command.Cancel = func() error {
+		killProcessGroup(command)
+		return nil
+	}
+	command.WaitDelay = 5 * time.Second
+	out := stdout
+	if events, err := eventsFile(options); err == nil && events != nil {
+		defer events.Close()
+		out = io.MultiWriter(stdout, events)
+	}
+	command.Stdout, command.Stderr = out, stderr
 	err := command.Run()
 	if ctx.Err() == context.DeadlineExceeded {
 		return 124, fmt.Errorf("the run passed its %s budget and was killed", budget)
@@ -125,6 +171,86 @@ func launch(options Options, name string, args []string) (int, error) {
 		return 1, err
 	}
 	return 0, nil
+}
+
+// eventsFile opens the JSON events file the installed host writes for one target, or returns
+// nothing when there is no target or no host to name the file after.
+func eventsFile(options Options) (*os.File, error) {
+	if options.Target == "" {
+		return nil, nil
+	}
+	host := profile.Select(options.Root).Host
+	if host == "" {
+		return nil, nil
+	}
+	dir := filepath.Join(options.Root, line.StateDir, host)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	return os.Create(filepath.Join(dir, options.Target+".jsonl"))
+}
+
+// finishShip pushes and opens the pull request a scrubbed ship handed off, in the launcher's own
+// credentialed environment, stamps ship done, and removes the handoff so a rerun never pushes twice.
+func finishShip(options Options) error {
+	path := filepath.Join(options.Root, line.StateDir, "ship.json")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var handoff line.ShipHandoff
+	if err := json.Unmarshal(data, &handoff); err != nil {
+		return err
+	}
+	if err := pushable(options.Root, handoff.Branch); err != nil {
+		return err
+	}
+	if err := gitPush(options.Root, handoff.Branch); err != nil {
+		return err
+	}
+	client := options.PR
+	if client == nil {
+		client = pr.New(options.Root)
+	}
+	url, err := client.Create(handoff.Base, handoff.Branch, handoff.Title, handoff.Body, handoff.Draft)
+	if err != nil {
+		return err
+	}
+	if known, err := client.Labels(); err == nil {
+		_ = client.Label(url, pr.KeepKnown(handoff.Labels, known))
+	}
+	line.Stamp(options.Root, ledger.Entry{Station: "ship", Outcome: "done"})
+	return os.Remove(path)
+}
+
+// pushable refuses a handoff branch that is a refspec, an option, an invalid name, or a critical ref,
+// since an agent can write ship.json and the launcher pushes with real credentials.
+func pushable(root, branch string) error {
+	if branch == "" || strings.HasPrefix(branch, "-") || strings.ContainsAny(branch, ":+ ") {
+		return fmt.Errorf("ship.json names %q, which is not a plain branch; nothing was pushed", branch)
+	}
+	if err := exec.Command("git", "-C", root, "check-ref-format", "--branch", branch).Run(); err != nil {
+		return fmt.Errorf("ship.json names %q, which is not a valid branch; nothing was pushed", branch)
+	}
+	if guard.Load(root, root).IsCritical(branch) {
+		return fmt.Errorf("ship.json names the critical ref %q; landing is the human's merge button", branch)
+	}
+	return nil
+}
+
+// gitPush pushes one branch to origin from the run's root, in the launcher's ambient environment.
+func gitPush(root, branch string) error {
+	cmd := exec.Command("git", "push", "-u", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
+	cmd.Dir = root
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git push: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
 // contains reports whether the slice already holds the value.

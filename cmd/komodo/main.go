@@ -6,10 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"komodo/internal/backlog"
@@ -26,6 +29,7 @@ import (
 	"komodo/internal/profile"
 	"komodo/internal/release"
 	"komodo/internal/run"
+	"komodo/internal/toolkit"
 
 	_ "komodo/internal/mount/claude"
 	_ "komodo/internal/mount/codex"
@@ -46,6 +50,7 @@ const usage = `komodo: the code assembly line.
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
+  komodo release build        Build the per-platform binaries as release assets
   komodo install --host X     Mount this repo on a host, or on both
   komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
   komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
@@ -53,9 +58,10 @@ const usage = `komodo: the code assembly line.
   komodo run [group|task]     Drive the line headless on this host, under a budget
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
+  komodo threads --resolve id Mark one review thread resolved
   komodo machine <task>       Post a brief to the Ollama mount, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
-  komodo gate [--install]     The local precheck: vet, test, binaries
+  komodo gate [--install]     The local precheck: vet, test, doctor, guard, comments
 `
 
 // main dispatches one subcommand.
@@ -225,8 +231,9 @@ func runAdd(root string, args []string) {
 	priority := set.String("priority", "M", "C, H, M, or L")
 	status := set.String("status", "REFINEMENT", "the status to open the task in")
 	taskType := set.String("type", "feat", "the conventional-commit type")
-	_ = set.Parse(args)
-	if set.NArg() < 2 {
+	positional, rest := splitFlags(args, "files", "done-when", "priority", "status", "type")
+	_ = set.Parse(rest)
+	if len(positional) < 2 {
 		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
 	}
 	path, _ := load(root)
@@ -238,8 +245,8 @@ func runAdd(root string, args []string) {
 	fields.Set("files", split(*files))
 	fields.Set("done_when", split(*doneWhen))
 	fields.Set("type", *taskType)
-	title := strings.Join(set.Args()[1:], " ")
-	out, id, err := backlog.AppendTask(string(data), set.Arg(0), title, fields, *priority, *status)
+	title := strings.Join(positional[1:], " ")
+	out, id, err := backlog.AppendTask(string(data), positional[0], title, fields, *priority, *status)
 	if err != nil {
 		fail(err)
 	}
@@ -261,13 +268,17 @@ func split(value string) []any {
 	return items
 }
 
-// runGate runs the local precheck, or installs it as a git hook.
+// runGate runs the local precheck, or builds the local binary and installs it as a git hook.
 func runGate(root string, args []string) {
 	set := flag.NewFlagSet("gate", flag.ExitOnError)
-	install := set.Bool("install", false, "write the pre-commit and pre-push hooks")
-	rebuild := set.Bool("rebuild", false, "rebuild every binary and rewrite the manifest")
+	install := set.Bool("install", false, "build the local binary and write the pre-commit and pre-push hooks")
 	_ = set.Parse(args)
 	if *install {
+		path, err := gate.BuildLocal(root, os.Stdout)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Println("built", path)
 		written, err := gate.Install(filepath.Join(root, ".git"))
 		if err != nil {
 			fail(err)
@@ -275,13 +286,6 @@ func runGate(root string, args []string) {
 		for _, path := range written {
 			fmt.Println("wrote", path)
 		}
-		return
-	}
-	if *rebuild {
-		if err := gate.WriteManifest(root, os.Stdout); err != nil {
-			fail(err)
-		}
-		fmt.Println("wrote bin/" + gate.ManifestName)
 		return
 	}
 	checks := []gate.Check{
@@ -330,7 +334,6 @@ func runGate(root string, args []string) {
 			}
 			return nil
 		}},
-		gate.Binaries(root),
 	}
 	if err := gate.Run(checks, os.Stdout); err != nil {
 		fail(err)
@@ -358,6 +361,9 @@ func runNext(root string, args []string) {
 		return
 	}
 	if *start {
+		if err := line.CheckLock(root); err != nil {
+			fail(err)
+		}
 		state, err := line.Start(root, plan, *base)
 		if err != nil {
 			fail(err)
@@ -367,11 +373,7 @@ func runNext(root string, args []string) {
 		plan.Base = *base
 	}
 	if *asJSON {
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(plan); err != nil {
-			fail(err)
-		}
+		printCompactJSON(os.Stdout, planForJSON(plan))
 		return
 	}
 	fmt.Printf("%s %s\n", plan.Group, plan.Title)
@@ -381,6 +383,44 @@ func runNext(root string, args []string) {
 	}
 	if len(plan.Skipped) > 0 {
 		fmt.Printf("  done already: %s\n", strings.Join(plan.Skipped, ", "))
+	}
+}
+
+// planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.
+type planOutput struct {
+	Group     string          `json:"group"`
+	Title     string          `json:"title"`
+	Type      string          `json:"type"`
+	Version   string          `json:"version"`
+	Mode      string          `json:"mode"`
+	Base      string          `json:"base"`
+	Branch    string          `json:"branch"`
+	Worktree  string          `json:"worktree"`
+	Tasks     []line.PlanTask `json:"tasks"`
+	Waves     [][]string      `json:"waves"`
+	Skipped   []string        `json:"skipped,omitempty"`
+	Roles     []roleOutput    `json:"roles"`
+	WaitUntil string          `json:"wait_until,omitempty"`
+}
+
+// roleOutput is one role's name, tier, and resolved machine, without its description.
+type roleOutput struct {
+	Name    string `json:"name"`
+	Tier    string `json:"tier"`
+	Machine string `json:"machine,omitempty"`
+}
+
+// planForJSON drops a plan's role descriptions and its whole profile, which no station reads.
+func planForJSON(plan *line.Plan) planOutput {
+	roles := make([]roleOutput, len(plan.Roles))
+	for i, role := range plan.Roles {
+		roles[i] = roleOutput{Name: role.Name, Tier: role.Tier, Machine: role.Machine}
+	}
+	return planOutput{
+		Group: plan.Group, Title: plan.Title, Type: plan.Type, Version: plan.Version,
+		Mode: plan.Mode, Base: plan.Base, Branch: plan.Branch, Worktree: plan.Worktree,
+		Tasks: plan.Tasks, Waves: plan.Waves, Skipped: plan.Skipped,
+		Roles: roles, WaitUntil: plan.WaitUntil,
 	}
 }
 
@@ -462,22 +502,40 @@ func runClose(root string, args []string) {
 	if err := encoder.Encode(outcome); err != nil {
 		fail(err)
 	}
-	if outcome.Status != "DONE" {
-		os.Exit(1)
+	if outcome.Status == "IN_PROGRESS" {
+		fmt.Fprintf(os.Stderr, "komodo: %s failed and is IN_PROGRESS for a repair; run komodo step\n", outcome.Task)
 	}
+	if code := closeExitCode(outcome.Status); code != 0 {
+		os.Exit(code)
+	}
+}
+
+// closeExitCode is 0 for a closed task and one awaiting its repair, and 1 for a blocked one.
+func closeExitCode(status string) int {
+	if status == "DONE" || status == "IN_PROGRESS" {
+		return 0
+	}
+	return 1
+}
+
+// commentsArgs strips the check subcommand, if present, then splits what remains into paths and flags.
+func commentsArgs(args []string, valueFlags ...string) (paths, rest []string) {
+	if len(args) > 0 && args[0] == "check" {
+		args = args[1:]
+	}
+	return splitFlags(args, valueFlags...)
 }
 
 // runComments lints the comments in the named files, or in every tracked source file.
 func runComments(root string, args []string) {
 	set := flag.NewFlagSet("comments", flag.ExitOnError)
 	require := set.String("require", "nonobvious", "none, nonobvious, or exported")
-	_ = set.Parse(args)
-	paths := set.Args()
-	if len(paths) > 0 && paths[0] == "check" {
-		paths = paths[1:]
-	}
+	paths, rest := commentsArgs(args, "require")
+	_ = set.Parse(rest)
 	if len(paths) == 0 {
 		paths = trackedFiles(root)
+	} else if err := verifyPaths(root, paths); err != nil {
+		fail(err)
 	}
 	problems, err := comments.Check(root, paths, *require)
 	if err != nil {
@@ -543,8 +601,7 @@ func runShip(root, base string) {
 	if base != "" {
 		plan.Base = base
 	}
-	body := line.ReportBody(plan, &line.ShipResult{}, nil)
-	result, err := line.ShipGroup(root, plan, body, pr.New(root))
+	result, err := line.ShipGroup(root, plan, nil, pr.New(root))
 	if err != nil {
 		fail(err)
 	}
@@ -558,6 +615,15 @@ func printJSON(value any) {
 	if err := encoder.Encode(value); err != nil {
 		fail(err)
 	}
+}
+
+// printCompactJSON writes one value as single-line JSON, for output a machine reads every loop.
+func printCompactJSON(w io.Writer, value any) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		fail(err)
+	}
+	fmt.Fprintln(w, string(data))
 }
 
 // currentPlan is the plan for the run in progress, with its recorded base and branch.
@@ -598,42 +664,94 @@ func runReport(root string) {
 
 // runTag tags every changelog version no tag points at and pushes it.
 func runTag(root string) {
-	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
-	if err != nil {
+	if err := tag(root, os.Stdout); err != nil {
 		fail(err)
-	}
-	pending := release.Taggable(text, gitLines(root, "tag", "--list"))
-	if len(pending) == 0 {
-		fmt.Println("every changelog version is tagged")
-		return
-	}
-	for _, version := range pending {
-		name := release.TagName(version)
-		if _, err := gitRun(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
-			fail(err)
-		}
-		if _, err := gitRun(root, "push", "origin", name); err != nil {
-			fail(err)
-		}
-		fmt.Println("tagged", name)
 	}
 }
 
-// runRelease audits the drift between the changelog, the tags, and the groups.
-func runRelease(root string, args []string) {
-	if len(args) == 0 || args[0] != "check" {
-		fail(fmt.Errorf("usage: komodo release check"))
+// tag refuses to run off the branch origin's HEAD names, then tags and pushes every version origin lacks.
+func tag(root string, out io.Writer) error {
+	branch, err := gitRun(root, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
+	}
+	if base := line.DefaultBase(root); branch != base {
+		return fmt.Errorf("refusing to tag off %q, only the default branch %q tags", branch, base)
 	}
 	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
 	if err != nil {
+		return err
+	}
+	pending := release.Taggable(text, remoteTags(root))
+	if len(pending) == 0 {
+		fmt.Fprintln(out, "every changelog version is tagged")
+		return nil
+	}
+	local := gitLines(root, "tag", "--list")
+	for _, version := range pending {
+		name := release.TagName(version)
+		if !contains(local, name) {
+			if _, err := gitRun(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
+				return err
+			}
+		}
+		if _, err := gitRun(root, "push", "origin", name); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "tagged", name)
+	}
+	return nil
+}
+
+// contains reports whether the slice holds the value.
+func contains(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+// remoteTags lists origin's tag names, so a local tag a failed push left behind is not mistaken for shipped.
+func remoteTags(root string) []string {
+	out, err := gitRun(root, "ls-remote", "--tags", "origin")
+	if err != nil {
+		return nil
+	}
+	var tags []string
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(fields[1], "refs/tags/"), "^{}")
+		if name != "" && !contains(tags, name) {
+			tags = append(tags, name)
+		}
+	}
+	return tags
+}
+
+// runRelease audits the drift between the changelog, the tags, and the groups, or builds release assets.
+func runRelease(root string, args []string) {
+	if len(args) == 0 || (args[0] != "check" && args[0] != "build") {
+		fail(fmt.Errorf("usage: komodo release check | komodo release build"))
+	}
+	if args[0] == "build" {
+		paths, err := release.BuildAssets(root, filepath.Join(root, "dist"), os.Stdout)
+		if err != nil {
+			fail(err)
+		}
+		for _, path := range paths {
+			fmt.Println("wrote", path)
+		}
+		return
+	}
+	drift, err := checkRelease(root)
+	if err != nil {
 		fail(err)
 	}
-	_, parsed := load(root)
-	var versions []string
-	for _, group := range parsed.Groups {
-		versions = append(versions, group.Version())
-	}
-	drift := release.Check(text, gitLines(root, "tag", "--list"), versions)
 	for _, item := range drift {
 		fmt.Printf("%s: %s\n", item.Subject, item.Detail)
 	}
@@ -641,6 +759,36 @@ func runRelease(root string, args []string) {
 	if len(drift) > 0 {
 		os.Exit(1)
 	}
+}
+
+// checkRelease audits the changelog against the tags and every shipped group's version.
+func checkRelease(root string) ([]release.Drift, error) {
+	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		return nil, err
+	}
+	_, parsed := load(root)
+	var versions []string
+	for _, group := range parsed.Groups {
+		if !shipped(group) {
+			continue
+		}
+		versions = append(versions, group.Version())
+	}
+	return release.Check(text, gitLines(root, "tag", "--list"), versions), nil
+}
+
+// shipped reports whether every task in the group is DONE.
+func shipped(group backlog.Group) bool {
+	if len(group.Tasks) == 0 {
+		return false
+	}
+	for _, task := range group.Tasks {
+		if task.Status != "DONE" {
+			return false
+		}
+	}
+	return true
 }
 
 // gitRun runs one git command in the repo root.
@@ -685,7 +833,7 @@ func runStep(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	printJSON(next)
+	printCompactJSON(os.Stdout, next)
 }
 
 // runRun drives the line headless on the profile's host and exits with the host's code.
@@ -695,20 +843,39 @@ func runRun(root string, args []string) {
 	budget := flags.Duration("budget", run.GroupBudget, "how long the run may take before it is killed")
 	target, rest := splitPositional(args, "budget")
 	_ = flags.Parse(rest)
+	if !*dry {
+		label := target
+		if label == "" {
+			label = "the open run"
+		}
+		if err := line.AcquireLock(root, label); err != nil {
+			fail(err)
+		}
+		_ = os.Setenv(line.LockEnv, strconv.Itoa(os.Getpid()))
+	}
 	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry})
+	line.ReleaseLock(root)
 	if err != nil {
 		fail(err)
 	}
 	os.Exit(code)
 }
 
-// runThreads prints the unresolved review threads on a pull request, or on this branch's.
+// runThreads prints the unresolved review threads on a pull request, or resolves one by id.
 func runThreads(root string, args []string) {
-	number := ""
-	if len(args) > 0 {
-		number = args[0]
+	set := flag.NewFlagSet("threads", flag.ExitOnError)
+	resolve := set.String("resolve", "", "resolve the review thread with this id")
+	number, rest := splitPositional(args, "resolve")
+	_ = set.Parse(rest)
+	client := pr.New(root)
+	if *resolve != "" {
+		if err := client.Resolve(*resolve); err != nil {
+			fail(err)
+		}
+		fmt.Println("resolved", *resolve)
+		return
 	}
-	threads, err := pr.New(root).Threads(number)
+	threads, err := client.Threads(number)
 	if err != nil {
 		fail(err)
 	}
@@ -732,17 +899,21 @@ func runMachine(root string, args []string) {
 		fail(err)
 	}
 	if !ollama.Allowed(definition.Tools) {
-		fail(fmt.Errorf("%s writes, and a write role cannot run on ollama; falls back to the standard tier", *role))
+		fail(fmt.Errorf("%s writes, and a write role cannot run on ollama; step routes it to a remote machine instead", *role))
 	}
 	brief, err := os.ReadFile(filepath.Join(root, line.StateDir, "briefs", taskID+".md"))
 	if err != nil {
 		fail(err)
 	}
-	schema, err := os.ReadFile(filepath.Join(root, line.RolesDir, definition.Returns))
+	schema, err := fs.ReadFile(toolkit.FS(root), path.Join("roles", definition.Returns))
 	if err != nil {
 		fail(err)
 	}
-	model, err := localModel(profile.Select(root).Tiers, definition.Tier)
+	tier := definition.Tier
+	if *role == "reviewer" {
+		tier = "reviewer"
+	}
+	model, err := localModel(profile.Select(root).Tiers, tier)
 	if err != nil {
 		fail(err)
 	}
@@ -774,14 +945,19 @@ func runMachine(root string, args []string) {
 	fmt.Println("wrote", line.ResultPath(root, taskID))
 }
 
-// localModel resolves a role's tier to the model of whichever tier the local machine mounts.
+// localModel resolves a role's tier to the model of whichever tier the local machine mounts;
+// reviewer resolves through Tiers.Reviewer, which Tiers.Machine does not know.
 func localModel(tiers mount.Tiers, tier string) (string, error) {
-	if machine := tiers.Machine(tier); machine.Provider == "ollama" {
+	machine := tiers.Machine(tier)
+	if tier == "reviewer" {
+		machine = tiers.Reviewer
+	}
+	if machine.Provider == "ollama" {
 		return machine.Model, nil
 	}
 	for _, fallback := range []string{"light", "standard", "heavy"} {
-		if machine := tiers.Machine(fallback); machine.Provider == "ollama" {
-			return "", fmt.Errorf("%s tier does not mount the local machine; falls back to %s", tier, fallback)
+		if candidate := tiers.Machine(fallback); candidate.Provider == "ollama" {
+			return "", fmt.Errorf("%s tier does not mount the local machine; %s does, and komodo machine does not switch tiers", tier, fallback)
 		}
 	}
 	return "", fmt.Errorf("no tier mounts the local machine")
@@ -822,6 +998,39 @@ func splitPositional(args []string, valueFlags ...string) (positional string, re
 		rest = append(rest, arg)
 	}
 	return positional, rest
+}
+
+// splitFlags pulls every flag and its value out of args, keeping every other token as a positional, in order.
+func splitFlags(args []string, valueFlags ...string) (positional, rest []string) {
+	positional = make([]string, 0, len(args))
+	rest = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if takesValue(arg, valueFlags) {
+			rest = append(rest, arg)
+			if i+1 < len(args) {
+				i++
+				rest = append(rest, args[i])
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			rest = append(rest, arg)
+			continue
+		}
+		positional = append(positional, arg)
+	}
+	return positional, rest
+}
+
+// verifyPaths fails on the first path that does not exist under root, so a stray flag cannot pass silently.
+func verifyPaths(root string, paths []string) error {
+	for _, path := range paths {
+		if _, err := os.Stat(filepath.Join(root, path)); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 // runGuard is the hook on stdin, or the table the gate runs.

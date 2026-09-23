@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Read-only research across a codebase or a technical domain. Trace a call path, survey a pattern, gather documentation. Returns findings, never edits.
+description: Read-only research across a codebase or domain: traces a path, surveys a pattern, gathers docs. Returns findings, never edits.
 tier: standard
 tools: [read, search]
 session: true

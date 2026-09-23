@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"komodo/internal/glob"
 )
 
 // ContextDir is where a repo declares brief context, relative to the repo root.
@@ -39,18 +41,33 @@ func LoadContext(root string) ([]Context, []string) {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", entry.Name(), err))
 			continue
 		}
-		match := frontmatter.FindStringSubmatch(string(data))
+		match := frontmatter.FindStringSubmatch(normalizeNewlines(data))
 		if match == nil {
 			skipped = append(skipped, entry.Name()+": no frontmatter block")
 			continue
 		}
 		context := Context{Name: entry.Name(), Body: strings.TrimSpace(match[2])}
-		for _, line := range strings.Split(match[1], "\n") {
-			key, value, found := strings.Cut(line, ":")
+		lines := strings.Split(match[1], "\n")
+		for i := 0; i < len(lines); i++ {
+			key, value, found := strings.Cut(lines[i], ":")
 			if !found || strings.TrimSpace(key) != "paths" {
 				continue
 			}
-			context.Paths = trimQuotes(splitList(strings.TrimSpace(value)))
+			value = strings.TrimSpace(value)
+			if value != "" {
+				context.Paths = trimQuotes(splitList(value))
+				continue
+			}
+			var items []string
+			for i+1 < len(lines) {
+				next := strings.TrimSpace(lines[i+1])
+				if !strings.HasPrefix(next, "- ") {
+					break
+				}
+				items = append(items, strings.TrimPrefix(next, "- "))
+				i++
+			}
+			context.Paths = trimQuotes(items)
 		}
 		contexts = append(contexts, context)
 	}
@@ -63,14 +80,19 @@ func (c Context) Matches(files []string) bool {
 	if len(c.Paths) == 0 {
 		return true
 	}
-	for _, glob := range c.Paths {
+	for _, pattern := range c.Paths {
 		for _, file := range files {
-			if matchGlob(glob, file) {
+			if glob.Match(pattern, file) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// normalizeNewlines collapses CRLF to LF so a frontmatter block parses either way.
+func normalizeNewlines(data []byte) string {
+	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
 
 // splitList reads an inline [a, b] frontmatter list into its items.
@@ -96,26 +118,4 @@ func trimQuotes(items []string) []string {
 		out = append(out, strings.Trim(item, `"'`))
 	}
 	return out
-}
-
-// matchGlob reports whether a path matches one of the shipped glob shapes.
-func matchGlob(pattern, path string) bool {
-	path = strings.ReplaceAll(path, "\\", "/")
-	switch {
-	case strings.HasSuffix(pattern, "/**"):
-		dir := strings.TrimSuffix(strings.TrimPrefix(pattern, "**/"), "/**")
-		for _, part := range strings.Split(path, "/") {
-			if part == dir {
-				return true
-			}
-		}
-		return false
-	case strings.HasPrefix(pattern, "**/*."):
-		return strings.HasSuffix(path, strings.TrimPrefix(pattern, "**/*"))
-	case strings.HasPrefix(pattern, "**/"):
-		name := strings.TrimPrefix(pattern, "**/")
-		return path == name || strings.HasSuffix(path, "/"+name)
-	default:
-		return path == pattern
-	}
 }

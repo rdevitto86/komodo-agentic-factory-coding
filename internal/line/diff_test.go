@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	repopkg "komodo/internal/repo"
 )
 
 // gitRepo builds a throwaway repository with one commit on main.
@@ -192,5 +194,84 @@ func TestASingleOversizedPieceIsStillClipped(t *testing.T) {
 	}
 	if !strings.Contains(got, "clipped") && !strings.Contains(got, "truncated") {
 		t.Fatalf("a clipped diff must say so; got the tail %q", got[max(0, len(got)-120):])
+	}
+}
+
+// gitCmd runs one git command in dir, failing the test on a non-zero exit.
+func gitCmd(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+}
+
+func TestDiffForUsesTheRefAddWorktreeResolvedNotAStaleLocalBase(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "shared.go", "package shared\n", "seed")
+	gitCmd(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	gitCmd(t, root, "checkout", "-q", "-b", "other-group")
+	commit(t, root, "other/group.go", "package other\n", "another group's commit")
+	gitCmd(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	gitCmd(t, root, "checkout", "-q", "-b", "feat/this-group")
+	commit(t, root, "a/one.go", "package a\n", "this group's commit")
+
+	plan := &Plan{Group: "TG-10.1", Base: "main", Worktree: "."}
+	input, err := DiffFor(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(input.Files, "a/one.go") {
+		t.Fatalf("files = %v, want this group's own file", input.Files)
+	}
+	if contains(input.Files, "other/group.go") {
+		t.Fatalf("files = %v; a stale local base let another group's commit into the review", input.Files)
+	}
+}
+
+func TestDiffForCarriesRepoStandardsAndTheFacetReviewerAppendix(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	override := "Extract this repo's own error-wrapping convention.\n"
+	commit(t, root, filepath.Join(repopkg.StandardsDir, "go.md"), override, "repo standard")
+	commit(t, root, "a/one.go", "package a\n", "the change")
+
+	plan := &Plan{Group: "TG-10.1", Base: "main~1", Worktree: "."}
+	input, err := DiffFor(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(input.Standards, "error-wrapping convention") {
+		t.Fatalf("standards is missing the repo override:\n%s", input.Standards)
+	}
+}
+
+func TestDiffForDecodesAQuotedNonASCIIPathAndKeepsItsChunk(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commit(t, root, "a/one.go", "package a\n", "an ascii file")
+	commit(t, root, "a/héllo.go", "package a\n", "a non-ascii file")
+
+	plan := &Plan{Group: "TG-10.1", Base: "main~1", Worktree: "."}
+	input, err := DiffFor(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(input.Files, "a/héllo.go") {
+		t.Fatalf("files = %v; a C-quoted non-ASCII path must decode to its real name", input.Files)
+	}
+	if strings.Contains(input.Diff, "could not be matched") {
+		t.Fatalf("the non-ASCII file's chunk vanished:\n%s", input.Diff)
+	}
+	if !strings.Contains(input.Diff, `h\303\251llo.go`) {
+		t.Fatalf("the non-ASCII file's own hunk did not reach the diff:\n%s", input.Diff)
+	}
+}
+
+func TestDiffPiecesMarksAFileWithNoMatchingChunk(t *testing.T) {
+	pieces := diffPieces([]string{"a/one.go", "a/missing.go"}, map[string]string{"a/one.go": "diff --git a/one.go b/one.go"})
+	if len(pieces) != 2 || !strings.Contains(pieces[1], "could not be matched") {
+		t.Fatalf("pieces = %v; a file with no matching chunk must carry a marker, not vanish", pieces)
 	}
 }

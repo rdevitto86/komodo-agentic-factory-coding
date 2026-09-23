@@ -3,12 +3,16 @@ package guard
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"komodo/internal/mount"
+	"komodo/internal/profile"
+	"komodo/internal/toolkit"
 )
 
 // Policy is what the guard refuses, read from the toolkit and widened by a repo.
@@ -22,13 +26,17 @@ type Policy struct {
 
 // DefaultPolicy is what the guard denies when no policy file can be read.
 func DefaultPolicy() Policy {
+	paths := append([]string{
+		".komodo/policy.json", "komodo/policy.json",
+		"~/.komodo/**", "**/.git/config", "**/.git/hooks/**", "bin/**",
+	}, mount.ConfigPaths()...)
+	paths = append(paths, mount.GuardConfigPaths()...)
 	policy := Policy{
 		CriticalRefs: []string{"main", "master"},
-		ConfigPaths: append([]string{
-			"~/.komodo/**", "**/.git/config", "**/.git/hooks/**", "bin/**",
-		}, mount.ConfigPaths()...),
+		ConfigPaths:  paths,
 		TrailerPatterns: []string{
-			`(?i)co-authored[-]by\s*:`, `(?i)generated[ ]with`, `(?i)generated[ ]by`, `\x{1F916}`,
+			`(?im)^co-authored-by\s*[:=]`, `(?im)^generated[ -]with\s*[:=]`,
+			`(?im)^generated[ -]by\s*[:=]`, `\x{1F916}`,
 		},
 	}
 	policy.compile()
@@ -45,19 +53,50 @@ func (p *Policy) compile() {
 	}
 }
 
-// Load reads the toolkit's policy and merges the repo's, which may only add.
+// Load reads the toolkit's policy and merges the repo's and the machine's, which may only add.
 func Load(toolkitRoot, repoRoot string) Policy {
 	policy := DefaultPolicy()
-	if shipped, ok := readPolicy(filepath.Join(toolkitRoot, "komodo", "policy.json")); ok {
-		policy = shipped
+	if shipped, ok := readShippedPolicy(toolkitRoot); ok {
+		policy.CriticalRefs = union(policy.CriticalRefs, shipped.CriticalRefs)
+		policy.ConfigPaths = union(policy.ConfigPaths, shipped.ConfigPaths)
+		policy.TrailerPatterns = union(policy.TrailerPatterns, shipped.TrailerPatterns)
 	}
 	if extra, ok := readPolicy(filepath.Join(repoRoot, ".komodo", "policy.json")); ok {
 		policy.CriticalRefs = union(policy.CriticalRefs, extra.CriticalRefs)
 		policy.ConfigPaths = union(policy.ConfigPaths, extra.ConfigPaths)
 		policy.TrailerPatterns = union(policy.TrailerPatterns, extra.TrailerPatterns)
 	}
+	policy.CriticalRefs = union(policy.CriticalRefs, overlayCriticalRefs(profile.MachineOverlayPath()))
 	policy.compile()
 	return policy
+}
+
+// overlayCriticalRefs reads the machine overlay's critical refs, tolerating its absence.
+func overlayCriticalRefs(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var overlay struct {
+		CriticalRefs []string `json:"critical_refs"`
+	}
+	if json.Unmarshal(data, &overlay) != nil {
+		return nil
+	}
+	return overlay.CriticalRefs
+}
+
+// readShippedPolicy parses the toolkit's own policy.json, on disk or embedded.
+func readShippedPolicy(toolkitRoot string) (Policy, bool) {
+	var policy Policy
+	data, err := fs.ReadFile(toolkit.FS(toolkitRoot), "policy.json")
+	if err != nil {
+		return policy, false
+	}
+	if json.Unmarshal(data, &policy) != nil {
+		return policy, false
+	}
+	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0
 }
 
 // readPolicy parses one policy file, reporting whether it was usable.
@@ -117,7 +156,13 @@ func (p Policy) HasTrailer(text string) bool {
 	return false
 }
 
-// IsConfigPath reports whether a path is one the hosts or the toolkit own.
+// foldsCase reports whether the platform's own disk reads a path case-insensitively.
+func foldsCase() bool {
+	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
+}
+
+// IsConfigPath reports whether a path is one the hosts or the toolkit own, folding case on a
+// platform whose disk does, so Bin/komodo-darwin-arm64 matches bin/**.
 func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	normal := strings.ReplaceAll(path, "\\", "/")
 	home, _ := os.UserHomeDir()
@@ -127,12 +172,19 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 			relative = filepath.ToSlash(rel)
 		}
 	}
+	compareNormal, compareRelative := normal, relative
+	if foldsCase() {
+		compareNormal, compareRelative = strings.ToLower(normal), strings.ToLower(relative)
+	}
 	for _, pattern := range p.ConfigPaths {
 		expanded := pattern
 		if strings.HasPrefix(pattern, "~/") && home != "" {
 			expanded = filepath.ToSlash(filepath.Join(home, pattern[2:]))
 		}
-		if matchPath(expanded, normal) || matchPath(expanded, relative) {
+		if foldsCase() {
+			expanded = strings.ToLower(expanded)
+		}
+		if matchPath(expanded, compareNormal) || matchPath(expanded, compareRelative) {
 			return true
 		}
 	}

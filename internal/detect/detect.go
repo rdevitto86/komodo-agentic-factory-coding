@@ -52,16 +52,50 @@ var skipDir = map[string]bool{
 	"vendor":       true,
 	".komodo":      true,
 	"bin":          true,
+	"venv":         true,
+	"env":          true,
+	"target":       true,
+	"dist":         true,
+	"build":        true,
+	"__pycache__":  true,
 }
 
 // samTransform matches a SAM transform declaration in a CloudFormation template.
 var samTransform = regexp.MustCompile(`(?m)^\s*Transform:\s*.*Serverless`)
 
-// terraformProvider matches a Terraform provider block.
-var terraformProvider = regexp.MustCompile(`(?m)^\s*provider\s+"[^"]+"\s*\{`)
+// terraformProvider captures a Terraform provider block's name.
+var terraformProvider = regexp.MustCompile(`(?m)^\s*provider\s+"([^"]+)"\s*\{`)
+
+// terraformFacetMarker maps a Terraform provider name to the cloud or data marker a facet matches.
+var terraformFacetMarker = map[string]struct{ kind, value string }{
+	"aws":        {"cloud", "aws"},
+	"google":     {"cloud", "gcp"},
+	"azurerm":    {"cloud", "azure"},
+	"postgresql": {"data", "sql"},
+}
 
 // composeServices matches a Docker Compose services block.
 var composeServices = regexp.MustCompile(`(?m)^services:`)
+
+// verifyDiscovery is the root-only file order QC resolves a verify command from, first hit wins.
+var verifyDiscovery = []struct{ File, Command string }{
+	{".komodo/verify.sh", "sh .komodo/verify.sh"},
+	{"scripts/verify.sh", "sh scripts/verify.sh"},
+	{"Makefile", "make verify"},
+	{"Taskfile.yml", "task verify"},
+	{"Taskfile.yaml", "task verify"},
+	{"justfile", "just verify"},
+}
+
+// VerifyCommand returns the root-only verify command a repo's script or task runner names, or empty when none matches.
+func VerifyCommand(root string) string {
+	for _, candidate := range verifyDiscovery {
+		if _, err := os.Stat(filepath.Join(root, candidate.File)); err == nil {
+			return candidate.Command
+		}
+	}
+	return ""
+}
 
 // Load walks the tree, returns the fresh profile, and rewrites the cache only when it changed.
 func Load(root string) Profile {
@@ -134,7 +168,7 @@ func Detect(root string) (Profile, []string) {
 				cloud["aws"] = true
 			}
 		case "schema.prisma":
-			data["prisma"] = true
+			data["sql"] = true
 			manifests = append(manifests, rel)
 		case "dbt_project.yml":
 			data["dbt"] = true
@@ -149,8 +183,16 @@ func Detect(root string) (Profile, []string) {
 		}
 		if strings.HasSuffix(name, ".tf") {
 			manifests = append(manifests, rel)
-			if body, readErr := os.ReadFile(path); readErr == nil && terraformProvider.Match(body) {
-				cloud["terraform"] = true
+			if body, readErr := os.ReadFile(path); readErr == nil {
+				for _, match := range terraformProvider.FindAllStringSubmatch(string(body), -1) {
+					if marker, ok := terraformFacetMarker[match[1]]; ok {
+						if marker.kind == "cloud" {
+							cloud[marker.value] = true
+						} else {
+							data[marker.value] = true
+						}
+					}
+				}
 			}
 		}
 		if strings.HasSuffix(name, ".sql") && strings.Contains(rel, "migrat") {
@@ -167,6 +209,9 @@ func Detect(root string) (Profile, []string) {
 	}
 
 	verify, compile := commands(found)
+	if override := VerifyCommand(root); override != "" {
+		verify = override
+	}
 
 	profile := Profile{
 		Languages: sorted(languages),

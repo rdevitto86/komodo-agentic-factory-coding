@@ -10,9 +10,9 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 
 ## 2.0.0 — 2026-09-22
 
+- **TG-03.7** The sanity pass: safety, correctness, portability (27 task(s))
 - **TG-03.6** The gate and the exit test (11 task(s))
-
-## 2.0.0 — 2026-09-22
+- **TG-03.5** The repo layer and the local machines (9 task(s))
 
 ### The line
 
@@ -937,6 +937,3 @@ The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose sta
 ### Added
 - `setup.sh` symlink installer, `claude/settings.json`, first skill set (`add-route`, `new-component`, `new-page`, `new-service`) under `claude/skills/`.
 
-## 2.0.0 — 2026-09-22
-
-- **TG-03.5** The repo layer and the local machines (9 task(s))

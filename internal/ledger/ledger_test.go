@@ -97,26 +97,63 @@ func TestReadSkipsALineThatIsNotAnEntry(t *testing.T) {
 	}
 }
 
+// TestAggregateCountsWhatTheStationsStamped builds its fixture from the entry shapes
+// add, machine, build and close actually write, not from shapes no station writes.
 func TestAggregateCountsWhatTheStationsStamped(t *testing.T) {
 	entries := []Entry{
-		{Station: "build", Task: "a", Seconds: 10, Model: "sonnet", TokensIn: 100, TokensOut: 50},
-		{Station: "build", Task: "b", Seconds: 20, Model: "sonnet", TokensIn: 100, TokensOut: 50, Outcome: "repair"},
-		{Station: "build", Task: "c", Seconds: 30, Model: "opus", TokensIn: 10, TokensOut: 5},
-		{Station: "close", Task: "c", Seconds: 2, FailureClass: "done_when"},
-		{Station: "review", Group: "TG-01.1", Findings: 3},
+		{Station: "add", Task: "TSK-1", Outcome: "added"},
+		{Station: "machine", Task: "TG-01.1-review", Role: "reviewer", Tier: "heavy",
+			Provider: "ollama", Model: "llama3.2", TokensIn: 40, TokensOut: 10, Outcome: "done"},
+		{Station: "build", Task: "TSK-1", Seconds: 10, Host: "claude", TokensIn: 100, TokensOut: 50, Turns: 3},
+		{Station: "build", Task: "TSK-2", Seconds: 30, Host: "claude", TokensIn: 10, TokensOut: 5, Turns: 1},
+		{Station: "close", Task: "TSK-1", Seconds: 2, Outcome: "done"},
+		{Station: "close", Task: "TSK-2", Seconds: 8, Outcome: "repair", FailureClass: "done_when"},
 	}
 	metrics := Aggregate(entries)
-	if metrics.MedianSeconds["build"] != 20 || metrics.MedianSeconds["close"] != 2 {
+	if metrics.MedianSeconds["build"] != 20 || metrics.MedianSeconds["close"] != 5 {
 		t.Fatalf("medians = %v", metrics.MedianSeconds)
 	}
-	if metrics.TokensByModel["sonnet"] != 300 || metrics.TokensByModel["opus"] != 15 {
+	if metrics.TokensByModel["llama3.2"] != 50 || metrics.TokensByModel["claude (host, no model)"] != 165 {
 		t.Fatalf("tokens = %v", metrics.TokensByModel)
 	}
-	if metrics.FailuresBy["done_when"] != 1 || metrics.FindingsBy["TG-01.1"] != 3 {
+	if metrics.FailuresBy["done_when"] != 1 {
 		t.Fatalf("metrics = %+v", metrics)
 	}
-	if metrics.Tasks != 3 || metrics.Repairs != 1 {
+	if metrics.Tasks != 2 || metrics.Repairs != 1 {
 		t.Fatalf("tasks = %d repairs = %d", metrics.Tasks, metrics.Repairs)
+	}
+}
+
+// TestTokensByModelFallsBackToHostWhenNoStationSetAModel proves a build's tokens,
+// stamped only under Host, still surface, labelled as a host tally, not a model.
+func TestTokensByModelFallsBackToHostWhenNoStationSetAModel(t *testing.T) {
+	entries := []Entry{
+		{Station: "build", Task: "TSK-1", Host: "claude", TokensIn: 100, TokensOut: 50},
+	}
+	metrics := Aggregate(entries)
+	if metrics.TokensByModel["claude"] != 0 {
+		t.Fatalf("the host tally was keyed as a bare model name: %v", metrics.TokensByModel)
+	}
+	if metrics.TokensByModel["claude (host, no model)"] != 150 {
+		t.Fatalf("tokens = %v", metrics.TokensByModel)
+	}
+}
+
+// TestRepairRateCountsOnlyTasksThatReachedClose proves add and review-pseudo-task
+// stamps, which never reach the close station, do not inflate the denominator.
+func TestRepairRateCountsOnlyTasksThatReachedClose(t *testing.T) {
+	entries := []Entry{
+		{Station: "add", Task: "TSK-1", Outcome: "added"},
+		{Station: "add", Task: "TSK-2", Outcome: "added"},
+		{Station: "machine", Task: "TG-01.1-review", Role: "reviewer", Model: "llama3.2", Outcome: "done"},
+		{Station: "close", Task: "TSK-1", Outcome: "done"},
+	}
+	metrics := Aggregate(entries)
+	if metrics.Tasks != 1 {
+		t.Fatalf("tasks = %d, want 1 (only TSK-1 reached close)", metrics.Tasks)
+	}
+	if metrics.RepairRate != 0 {
+		t.Fatalf("repair rate = %v", metrics.RepairRate)
 	}
 }
 
@@ -130,7 +167,7 @@ func TestMedianAveragesAnEvenCount(t *testing.T) {
 }
 
 func TestRenderOpensWithTheVerdict(t *testing.T) {
-	text := Render(Aggregate([]Entry{{Station: "build", Task: "a", Seconds: 4, Outcome: "repair"}}))
+	text := Render(Aggregate([]Entry{{Station: "close", Task: "a", Seconds: 4, Outcome: "repair"}}))
 	first, _, _ := strings.Cut(text, "\n")
 	if !strings.HasPrefix(first, "1 task(s), 1 repaired, repair rate 100%") {
 		t.Fatalf("first line = %q", first)
