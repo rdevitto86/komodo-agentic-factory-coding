@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -164,6 +165,96 @@ func TestPlanForJSONDropsRoleDescriptionsAndTheWholeProfile(t *testing.T) {
 	}
 	if !strings.Contains(got, "claude/sonnet") {
 		t.Fatalf("output = %q, want the resolved machine", got)
+	}
+}
+
+const shippedGroup = "### [TG-90.1] A shipped group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-90.1.1] Do it [P: C] [DONE]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n"
+
+const pendingGroup = "### [TG-90.2] A pending group\n```yaml\ntype: feat\nversion: 3.0.0\n```\n\n" +
+	"#### [TSK-90.2.1] Not done [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"true\"]\n```\n"
+
+const releaseChangelog = "# Changelog\n\n## 2.0.0 — 2026-09-22\n\n- shipped\n"
+
+// runGit runs one git command in dir, failing the test on error.
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+}
+
+func TestCheckReleaseSkipsAGroupWhoseTasksAreNotAllDone(t *testing.T) {
+	root := t.TempDir()
+	backlog := shippedGroup + pendingGroup
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "CHANGELOG.md"), []byte(releaseChangelog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	drift, err := checkRelease(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range drift {
+		if item.Subject == "3.0.0" {
+			t.Fatalf("drift = %+v; a group whose tasks are not all DONE must not be checked", drift)
+		}
+	}
+}
+
+// tagRepo builds a repo with a bare origin, checked out on branch, carrying the changelog.
+func tagRepo(t *testing.T, branch, changelog string) (root, bare string) {
+	t.Helper()
+	root = t.TempDir()
+	bare = filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "checkout", "-b", branch)
+	if err := os.WriteFile(filepath.Join(root, "CHANGELOG.md"), []byte(changelog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "seed")
+	return root, bare
+}
+
+func TestTagRefusesToTagOffANonDefaultBranch(t *testing.T) {
+	root, bare := tagRepo(t, "feat/other", releaseChangelog)
+	var out bytes.Buffer
+	if err := tag(root, &out); err == nil {
+		t.Fatal("want an error refusing a non-default branch, got none")
+	} else if !strings.Contains(err.Error(), "feat/other") {
+		t.Fatalf("err = %q, want it to name the branch", err.Error())
+	}
+	remote, err := exec.Command("git", "ls-remote", "--tags", bare).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remote) != 0 {
+		t.Fatalf("origin tags = %q, want none pushed off a non-default branch", remote)
+	}
+}
+
+func TestTagRetriesAPushAfterALocalTagSurvivedAFailedPush(t *testing.T) {
+	root, bare := tagRepo(t, "main", releaseChangelog)
+	runGit(t, root, "tag", "-a", "v2.0.0", "-m", "release 2.0.0")
+	var out bytes.Buffer
+	if err := tag(root, &out); err != nil {
+		t.Fatal(err)
+	}
+	remote, err := exec.Command("git", "ls-remote", "--tags", bare).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(remote), "v2.0.0") {
+		t.Fatalf("origin tags = %q; a local tag a failed push left behind must still reach origin", remote)
 	}
 }
 

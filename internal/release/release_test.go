@@ -73,6 +73,32 @@ func TestCheckNamesEveryDrift(t *testing.T) {
 	}
 }
 
+func TestCheckFlagsAVersionNamedByMoreThanOneHeading(t *testing.T) {
+	repeated := "# Changelog\n\n## 2.0.0 — 2026-09-22\n\n- a\n\n## 2.0.0 — 2026-09-21\n\n- b\n"
+	drift := Check(repeated, nil, nil)
+	var subjects []string
+	for _, item := range drift {
+		subjects = append(subjects, item.Subject)
+	}
+	if !strings.Contains(strings.Join(subjects, ","), "2.0.0") {
+		t.Fatalf("drift = %+v; a version under two headings must be flagged", drift)
+	}
+}
+
+func TestCheckFlagsAHeadingOutOfOrder(t *testing.T) {
+	outOfOrder := "# Changelog\n\n## 1.0.0 — 2026-09-01\n\n- a\n\n## 2.0.0 — 2026-09-22\n\n- b\n"
+	drift := Check(outOfOrder, nil, nil)
+	found := false
+	for _, item := range drift {
+		if item.Subject == "2.0.0" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("drift = %+v; a heading newer than the one above it must be flagged", drift)
+	}
+}
+
 func TestCheckIsQuietWhenEverythingAgrees(t *testing.T) {
 	if drift := Check(changelog, []string{"v2.0.0", "v1.3.0"}, []string{"2.0.0"}); len(drift) != 0 {
 		t.Fatalf("drift = %+v", drift)
