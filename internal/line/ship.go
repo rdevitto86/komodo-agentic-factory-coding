@@ -1,6 +1,7 @@
 package line
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,14 +29,53 @@ type ShipResult struct {
 	Published *CommandResult `json:"published,omitempty"`
 }
 
+// ShipHandoff is what a scrubbed ship leaves for a credentialed process to push and open.
+type ShipHandoff struct {
+	Branch string   `json:"branch"`
+	Base   string   `json:"base"`
+	Title  string   `json:"title"`
+	Body   string   `json:"body"`
+	Labels []string `json:"labels,omitempty"`
+	Draft  bool     `json:"draft"`
+}
+
+// scrubbed reports whether the headless launcher stripped this process of every push credential.
+func scrubbed() bool {
+	return os.Getenv("GIT_TERMINAL_PROMPT") == "0" &&
+		os.Getenv("GIT_CONFIG_KEY_0") == "credential.helper" &&
+		os.Getenv("GIT_CONFIG_VALUE_0") == ""
+}
+
+// writeShipHandoff writes the branch, title, body, labels and draft flag a later push finishes.
+func writeShipHandoff(root string, handoff ShipHandoff) error {
+	dir := filepath.Join(root, StateDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(handoff, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "ship.json"), append(data, '\n'), 0o644)
+}
+
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
-func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (result *ShipResult, err error) {
+// A scrubbed environment commits and hands the push off instead of failing on a credential it lacks.
+func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) (result *ShipResult, err error) {
+	if plan.WaitUntil != "" {
+		return nil, fmt.Errorf("%s is paused until %s; a plan whose waves a pause blanked cannot ship",
+			plan.Group, plan.WaitUntil)
+	}
 	group := WorktreePath(root, plan.Worktree)
 	path, err := backlog.Find(group)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := backlog.Load(path)
+	rootPath, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	rootParsed, err := backlog.Load(rootPath)
 	if err != nil {
 		return nil, err
 	}
@@ -44,21 +84,20 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (result 
 		return nil, fmt.Errorf("the review left %d finding(s) at or above %s; fix them on %s, then ship",
 			len(blocking), plan.Profile.SeverityFloor, plan.Branch)
 	}
-	filed, err := FileFindings(group, plan.Group, minor)
-	if err != nil {
-		return nil, err
-	}
 	started := time.Now()
-	result = &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Filed: filed}
+	result = &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base}
+	outcome := ""
 	defer func() {
-		outcome := "done"
-		if err != nil {
-			outcome = "failed"
+		if outcome == "" {
+			outcome = "done"
+			if err != nil {
+				outcome = "failed"
+			}
 		}
 		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome})
 	}()
 	for _, task := range plan.Tasks {
-		current, ok := parsed.Task(task.ID)
+		current, ok := rootParsed.Task(task.ID)
 		if !ok {
 			continue
 		}
@@ -96,17 +135,37 @@ func ShipGroup(root string, plan *Plan, body string, client *pr.Client) (result 
 			return nil, fmt.Errorf("gate: %w", err)
 		}
 	}
+	title := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
+	body := ReportBody(plan, result, waves)
+	if scrubbed() {
+		outcome = "handoff"
+		handoff := ShipHandoff{
+			Branch: plan.Branch, Base: plan.Base, Title: title, Body: body,
+			Labels: []string{plan.Type, "agent"}, Draft: result.Draft,
+		}
+		if err := writeShipHandoff(root, handoff); err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
 	if _, err := git(group, "push", "-u", "origin", plan.Branch); err != nil {
 		return nil, err
 	}
+	filed, err := FileFindings(group, plan.Group, minor)
+	if err != nil {
+		return result, err
+	}
+	result.Filed = filed
 	if command := AfterPublishCommand(group); command != "" {
 		published := RunCommand(group, command)
 		result.Published = &published
+		if !published.OK() {
+			return result, fmt.Errorf("after_publish: %s", FailureText(published))
+		}
 	}
 	if client == nil {
 		return result, nil
 	}
-	title := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
 	url, err := client.Create(plan.Base, plan.Branch, title, body, result.Draft)
 	if err != nil {
 		return result, err
@@ -134,21 +193,22 @@ func ChangelogLine(plan *Plan, result *ShipResult) string {
 var versionHeading = regexp.MustCompile(`(?m)^## (\d+\.\d+\.\d+)`)
 
 // AppendChangelog puts a line under the version's heading, creating the heading when it is new.
+// The heading is matched with or without its date suffix, so a ship never duplicates its own.
 func AppendChangelog(path, version, line string) error {
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	text := string(data)
-	heading := "## " + version
 	if strings.Contains(text, "\n"+line+"\n") {
 		return nil
 	}
-	if index := strings.Index(text, heading+"\n"); index >= 0 {
-		cut := index + len(heading) + 1
+	own := regexp.MustCompile(`(?m)^## ` + regexp.QuoteMeta(version) + `(?: .*)?\n`)
+	if match := own.FindStringIndex(text); match != nil {
+		cut := match[1]
 		return os.WriteFile(path, []byte(text[:cut]+"\n"+line+"\n"+strings.TrimPrefix(text[cut:], "\n")), 0o644)
 	}
-	entry := fmt.Sprintf("%s — %s\n\n%s\n", heading, time.Now().UTC().Format("2006-01-02"), line)
+	entry := fmt.Sprintf("## %s — %s\n\n%s\n", version, time.Now().UTC().Format("2006-01-02"), line)
 	if match := versionHeading.FindStringIndex(text); match != nil {
 		return os.WriteFile(path, []byte(text[:match[0]]+entry+"\n"+text[match[0]:]), 0o644)
 	}

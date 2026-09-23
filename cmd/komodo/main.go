@@ -543,8 +543,7 @@ func runShip(root, base string) {
 	if base != "" {
 		plan.Base = base
 	}
-	body := line.ReportBody(plan, &line.ShipResult{}, nil)
-	result, err := line.ShipGroup(root, plan, body, pr.New(root))
+	result, err := line.ShipGroup(root, plan, nil, pr.New(root))
 	if err != nil {
 		fail(err)
 	}
