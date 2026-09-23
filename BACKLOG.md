@@ -1035,3 +1035,25 @@ context:
   - "the rules forbid force-pushing and rewriting published history, but the guard allows git push --force, --force-with-lease and a +refspec to any branch that is not critical; deny them, or make it a policy switch, and add table rows"
 type: fix
 ```
+
+#### [TSK-03.8.8] A mount names its own events file, and the base is resolved in one place [P: L] [REFINEMENT]
+```yaml
+files: [internal/mount/registry.go, internal/mount/codex, internal/run, internal/line/diff.go, internal/line/worktree.go]
+done_when:
+  - go test ./internal/mount/... ./internal/run/... ./internal/line/...
+context:
+  - "internal/run tees headless stdout to .komodo/<host>/<task>.jsonl because that happens to match codex.EventsPath; add Host.EventsPath so the mount owns the path and the launcher asks for it"
+  - "diff.go's resolveBase copies AddWorktree's origin/<base>-first choice; export one resolver from worktree.go and call it from both, so the review can never diff a different base than the group was cut from"
+type: chore
+```
+
+#### [TSK-03.8.9] The guard reads a heredoc body and quoted text as data, not redirects [P: M] [REFINEMENT]
+```yaml
+files: [internal/guard]
+done_when:
+  - go test ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "a python heredoc whose quoted string held .komodo/<host>/<task>.jsonl was refused as a write to /, because redirectRe matches the > inside the text; match redirects only outside quotes and outside a heredoc body, and add allowed rows for both"
+type: fix
+```
