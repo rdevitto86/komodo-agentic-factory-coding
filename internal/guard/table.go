@@ -57,6 +57,33 @@ func Table(policy Policy) []Case {
 		bash("forced refspec onto master", "git push origin +feat/x:master", "feat/x", true, "open a pull request"),
 		bash("gh pr merge", "gh pr merge 12 --squash", "feat/x", true, "merge button"),
 
+		// 1b. A wrapper, a chain, or an assignment never hides the real command.
+		bash("push to main through env", "env git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through sudo", "sudo git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through nice", "nice -n 10 git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through timeout", "timeout 30 git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through xargs", "xargs git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main in parens", "(git push origin main)", "feat/x", true, "open a pull request"),
+		bash("push to main in a brace group", "{ git push; }", "main", true, "open a pull request"),
+		bash("push to main after a backgrounded command", "true & git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through sh -c", "sh -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main through bash -c", "bash -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main through a clustered bash -lc", "bash -lc 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main through bash -c after an option value", "bash -o pipefail -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main through zsh -c", "zsh -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("push to main in a chained subshell", "(cd x && git push origin main)", "feat/x", true, "open a pull request"),
+		bash("push to main through eval", "eval 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("an assignment overrides the credential scrub", "GIT_ASKPASS=/tmp/evil git status", "feat/x", true, "scrub"),
+		bash("push to main through sudo with a flag value", "sudo -u root git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through env with a flag value", "env -u HOME git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through timeout with a flag value", "timeout -s KILL 5 git push origin main", "feat/x", true, "open a pull request"),
+		bash("env's own assignment overrides the credential scrub", "env GIT_ASKPASS=x git status", "feat/x", true, "scrub"),
+		bash("push to main through command", "command git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through exec", "exec git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through nohup", "nohup git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through time", "time git push origin main", "feat/x", true, "open a pull request"),
+		bash("push to main through stdbuf with a glued flag", "stdbuf -o0 git push origin main", "feat/x", true, "open a pull request"),
+
 		// 2. A write never leaves the worktree root.
 		write("edit above the root", "../outside/file.go", true, "outside the worktree"),
 		write("write an absolute path elsewhere", "/etc/hosts", true, "outside the worktree"),
@@ -64,6 +91,13 @@ func Table(policy Policy) []Case {
 		bash("mv out of the tree", "mv a.go /tmp/elsewhere.go", "feat/x", true, "outside the worktree"),
 		bash("redirect above the root", "echo x > ../outside.txt", "feat/x", true, "outside the worktree"),
 		bash("tee above the root", "cat a | tee ../outside.txt", "feat/x", true, "outside the worktree"),
+
+		// 2b. dd, sed, perl, find, and >| write paths too.
+		bash("dd of= parses the assignment", "dd if=/dev/zero of=.git/config", "feat/x", true, "host or toolkit config"),
+		bash("sed -i above the root", "sed -i 's/a/b/' ../outside.txt", "feat/x", true, "outside the worktree"),
+		bash("perl -i above the root", "perl -i -pe 's/a/b/' ../outside.txt", "feat/x", true, "outside the worktree"),
+		bash("find -delete above the root", "find ../sibling -delete", "feat/x", true, "outside the worktree"),
+		bash("noclobber override above the root", "echo x >| ../outside.txt", "feat/x", true, "outside the worktree"),
 
 		// A commit message never carries a trailer. The config rows come from the policy itself.
 		bash("co-author trailer", "git commit -m 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", true, "trailer"),
@@ -103,6 +137,10 @@ func Table(policy Policy) []Case {
 		bash("read a pull request", "gh pr view 12", "feat/x", false, ""),
 		bash("commit with a body and no trailer", "git commit -m 'feat: x\n\nWhat it does.'", "feat/x", false, ""),
 		bash("sudo is not one of the four denials", "sudo make install", "feat/x", false, ""),
+		bash("sudo with a flag value runs a harmless command", "sudo -u root ls", "feat/x", false, ""),
+		bash("time runs a harmless command", "time go test ./...", "feat/x", false, ""),
+		bash("nice runs a harmless command", "nice -n 10 go test ./...", "feat/x", false, ""),
+		bash("a background job that touches nothing critical", "sleep 1 & echo done", "feat/x", false, ""),
 		write("a new source file", "internal/line/new.go", false, ""),
 		write("a file in the state directory", ".komodo/results/TSK-01.1.1.json", false, ""),
 		write("the repo's own rules", "AGENTS.md", false, ""),
