@@ -19,6 +19,7 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 	"komodo/internal/profile"
 )
 
@@ -146,10 +147,10 @@ func launch(options Options, name string, args []string) (int, error) {
 	defer cancel()
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = options.Root
-	command.Env = Scrub(base)
-	setProcessGroup(command)
+	command.Env = withBinPath(Scrub(base), options.Root)
+	proc.Group(command)
 	command.Cancel = func() error {
-		killProcessGroup(command)
+		proc.KillGroup(command)
 		return nil
 	}
 	command.WaitDelay = 5 * time.Second
@@ -173,21 +174,39 @@ func launch(options Options, name string, args []string) (int, error) {
 	return 0, nil
 }
 
-// eventsFile opens the JSON events file the installed host writes for one target, or returns
-// nothing when there is no target or no host to name the file after.
+// withBinPath puts the repo's own bin/ first on PATH, so the host finds komodo where the gate built it.
+func withBinPath(env []string, root string) []string {
+	bin := filepath.Join(root, "bin")
+	out := make([]string, 0, len(env)+1)
+	found := false
+	for _, entry := range env {
+		if key, value, ok := strings.Cut(entry, "="); ok && key == "PATH" {
+			entry = "PATH=" + bin + string(os.PathListSeparator) + value
+			found = true
+		}
+		out = append(out, entry)
+	}
+	if !found {
+		out = append(out, "PATH="+bin)
+	}
+	return out
+}
+
+// eventsFile opens the events file the installed mount names for one target, or returns
+// nothing when there is no target or the mount reads no events.
 func eventsFile(options Options) (*os.File, error) {
 	if options.Target == "" {
 		return nil, nil
 	}
-	host := profile.Select(options.Root).Host
-	if host == "" {
+	host, ok := mount.Get(profile.Select(options.Root).Host)
+	if !ok || host.EventsPath == nil {
 		return nil, nil
 	}
-	dir := filepath.Join(options.Root, line.StateDir, host)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	path := host.EventsPath(options.Root, options.Target)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	return os.Create(filepath.Join(dir, options.Target+".jsonl"))
+	return os.Create(path)
 }
 
 // finishShip pushes and opens the pull request a scrubbed ship handed off, in the launcher's own
@@ -222,7 +241,19 @@ func finishShip(options Options) error {
 	if known, err := client.Labels(); err == nil {
 		_ = client.Label(url, pr.KeepKnown(handoff.Labels, known))
 	}
-	line.Stamp(options.Root, ledger.Entry{Station: "ship", Outcome: "done"})
+	worktree := handoff.Worktree
+	if worktree == "" {
+		worktree = options.Root
+	}
+	if _, err := line.FileFindings(worktree, handoff.Group, handoff.Minor); err != nil {
+		return err
+	}
+	if handoff.AfterPublish != "" {
+		if published := line.RunCommand(worktree, handoff.AfterPublish); !published.OK() {
+			return fmt.Errorf("after_publish: %s", line.FailureText(published))
+		}
+	}
+	line.Stamp(options.Root, ledger.Entry{Group: handoff.Group, Station: "ship", Outcome: "done"})
 	return os.Remove(path)
 }
 

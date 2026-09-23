@@ -24,7 +24,7 @@ import (
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
-	"komodo/internal/mount/ollama"
+	_ "komodo/internal/mount/ollama"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
 	"komodo/internal/release"
@@ -59,7 +59,7 @@ const usage = `komodo: the code assembly line.
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
   komodo threads --resolve id Mark one review thread resolved
-  komodo machine <task>       Post a brief to the Ollama mount, write the result, stamp the ledger
+  komodo machine <task>       Post a brief to the local machine, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
   komodo gate [--install]     The local precheck: vet, test, doctor, guard, comments
 `
@@ -165,7 +165,7 @@ func load(root string) (string, backlog.Backlog) {
 // runLint prints every grammar problem and exits non-zero when there is one.
 func runLint(root string) {
 	_, parsed := load(root)
-	problems := backlog.Lint(parsed)
+	problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
 	for _, problem := range problems {
 		fmt.Println(problem)
 	}
@@ -293,7 +293,7 @@ func runGate(root string, args []string) {
 		gate.Command("go test", root, "go", "test", "./..."),
 		{Name: "komodo lint", Run: func(_ io.Writer) error {
 			_, parsed := load(root)
-			problems := backlog.Lint(parsed)
+			problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
 			for _, problem := range problems {
 				fmt.Println(problem)
 			}
@@ -346,6 +346,7 @@ func runNext(root string, args []string) {
 	asJSON := set.Bool("json", false, "print JSON")
 	start := set.Bool("start", false, "cut the group branch in its own worktree")
 	base := set.String("base", "", "the branch to cut from, default the remote's default branch")
+	force := set.Bool("force", false, "cut the group even while another run is open")
 	needle, rest := splitPositional(args, "base")
 	_ = set.Parse(rest)
 	plan, err := line.PlanForStation(root, needle)
@@ -363,6 +364,11 @@ func runNext(root string, args []string) {
 	if *start {
 		if err := line.CheckLock(root); err != nil {
 			fail(err)
+		}
+		if !*force {
+			if err := line.RefuseOpenRun(root, plan.Group); err != nil {
+				fail(err)
+			}
 		}
 		state, err := line.Start(root, plan, *base)
 		if err != nil {
@@ -435,10 +441,8 @@ func runBrief(root string, args []string) {
 	if task == "" {
 		fail(fmt.Errorf("usage: komodo brief <task> [--role builder] [--dry-run]"))
 	}
-	cwd := root
-	if state, err := line.LoadRun(root); err == nil && state.Worktree != "" {
-		cwd = state.Worktree
-	}
+	// A repair reads the task's own worktree, where the failed attempt's edits still sit.
+	cwd := line.TaskWorktree(root, task)
 	previous := *failure
 	if previous == "" {
 		previous = line.RepairText(root, task)
@@ -463,9 +467,13 @@ func runBrief(root string, args []string) {
 	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
 		branch = state.Branch
 	}
+	if err := line.RefuseCollision(root, task); err != nil {
+		fail(err)
+	}
 	if err := line.WriteBrief(root, brief, branch); err != nil {
 		fail(err)
 	}
+	line.Stamp(root, ledger.Entry{Task: task, Station: "brief", Role: *role, TokensIn: brief.Tokens, Outcome: "written"})
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(brief); err != nil {
@@ -653,9 +661,19 @@ func runDiff(root string) {
 	fmt.Print(input.Text)
 }
 
-// runReport prints what the run did.
+// runReport prints what the run did, for the group the run record names.
 func runReport(root string) {
-	report, err := line.BuildReport(root, currentPlan(root))
+	plan, err := line.PlanForRun(root)
+	if err != nil {
+		fail(err)
+	}
+	if plan == nil {
+		fail(fmt.Errorf("no run is in progress and nothing is ready"))
+	}
+	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
+	}
+	report, err := line.BuildReport(root, plan)
 	if err != nil {
 		fail(err)
 	}
@@ -885,7 +903,7 @@ func runThreads(root string, args []string) {
 	printJSON(threads)
 }
 
-// runMachine posts one task's brief to the Ollama mount, writes the result, and stamps the ledger.
+// runMachine posts one task's brief to the local machine, writes the result, and stamps the ledger.
 func runMachine(root string, args []string) {
 	set := flag.NewFlagSet("machine", flag.ExitOnError)
 	role := set.String("role", "builder", "the role the brief was written for")
@@ -898,8 +916,9 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	if !ollama.Allowed(definition.Tools) {
-		fail(fmt.Errorf("%s writes, and a write role cannot run on ollama; step routes it to a remote machine instead", *role))
+	local := mount.LocalMachine()
+	if !local.Allowed(definition.Tools) {
+		fail(fmt.Errorf("%s writes, and a write role cannot run on the local machine; step routes it to a remote one instead", *role))
 	}
 	brief, err := os.ReadFile(filepath.Join(root, line.StateDir, "briefs", taskID+".md"))
 	if err != nil {
@@ -917,7 +936,7 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	result, err := ollama.Post(ollama.BaseURL(), model, string(brief), schema)
+	result, err := local.Post(model, string(brief), schema)
 	if err != nil {
 		fail(err)
 	}
@@ -933,7 +952,7 @@ func runMachine(root string, args []string) {
 	}
 	entry := ledger.Entry{
 		Task: taskID, Station: "machine", Role: *role, Tier: definition.Tier,
-		Provider: "ollama", Model: model,
+		Provider: mount.LocalName, Model: model,
 		TokensIn: result.TokensIn, TokensOut: result.TokensOut, Outcome: "done",
 	}
 	if state, err := line.LoadRun(root); err == nil {
@@ -952,11 +971,11 @@ func localModel(tiers mount.Tiers, tier string) (string, error) {
 	if tier == "reviewer" {
 		machine = tiers.Reviewer
 	}
-	if machine.Provider == "ollama" {
+	if machine.Local() {
 		return machine.Model, nil
 	}
 	for _, fallback := range []string{"light", "standard", "heavy"} {
-		if candidate := tiers.Machine(fallback); candidate.Provider == "ollama" {
+		if candidate := tiers.Machine(fallback); candidate.Local() {
 			return "", fmt.Errorf("%s tier does not mount the local machine; %s does, and komodo machine does not switch tiers", tier, fallback)
 		}
 	}
@@ -1123,6 +1142,7 @@ func runDoctor(root string, args []string) {
 	set := flag.NewFlagSet("doctor", flag.ExitOnError)
 	noGit := set.Bool("no-git", false, "skip the checks that shell out to git")
 	prune := set.Bool("prune", false, "remove stale worktrees and delete merged branches")
+	remote := set.Bool("remote", false, "also audit the forge's branch rulesets through gh")
 	asJSON := set.Bool("json", false, "print JSON")
 	_ = set.Parse(args)
 	if *prune {
@@ -1138,7 +1158,7 @@ func runDoctor(root string, args []string) {
 			fmt.Println(item)
 		}
 	}
-	problems, err := doctor.Run(root, doctor.Options{NoGit: *noGit})
+	problems, err := doctor.Run(root, doctor.Options{NoGit: *noGit, Remote: *remote})
 	if err != nil {
 		fail(err)
 	}

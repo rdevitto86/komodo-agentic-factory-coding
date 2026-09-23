@@ -152,6 +152,13 @@ func TestDocCommentAboveARustAttributeIsSeen(t *testing.T) {
 	}
 }
 
+func TestDocCommentAboveACSharpAttributeIsSeen(t *testing.T) {
+	text := "namespace A;\n\n/// <summary>Returns the legacy total.</summary>\n[Obsolete(\"use Total\")]\npublic int Exported() {\n\tvar x = 1;\n\treturn x;\n}\n"
+	if got := UndocumentedFunctions(text, "a/b.cs", "Exported"); len(got) != 0 {
+		t.Fatalf("a doc comment above a C# attribute was not seen: %+v", got)
+	}
+}
+
 func TestDocCommentAboveAJavaAnnotationIsSeen(t *testing.T) {
 	text := "package a;\n\n// Handles the health check endpoint.\n@GetMapping(\"/health\")\npublic String exported() {\n\tString x = \"ok\";\n\treturn x;\n}\n"
 	if got := UndocumentedFunctions(text, "a/b.java", "exported"); len(got) != 0 {

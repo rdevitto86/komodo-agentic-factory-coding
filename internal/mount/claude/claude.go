@@ -257,7 +257,7 @@ func agentFile(role mount.Role, ollama bool) string {
 	if ollama && tier == "light" {
 		tier = "standard"
 	}
-	model := models[tier]
+	model := modelFor(tier)
 	head := []string{
 		"---",
 		"name: " + role.Name,
@@ -356,11 +356,12 @@ func init() {
 	})
 }
 
-// Headless returns this host's non-interactive command for one skill and one target.
+// Headless returns this host's non-interactive command for one skill and one target, with prompts
+// bypassed since none can be answered, the guard hook as the wall, and the standard tier driving.
 func Headless(skill, target string) (string, []string) {
 	prompt := "/" + skill
 	if target != "" {
 		prompt += " " + target
 	}
-	return "claude", []string{"-p", prompt, "--permission-mode", "acceptEdits"}
+	return "claude", []string{"-p", prompt, "--permission-mode", "bypassPermissions", "--model", modelFor("standard")}
 }

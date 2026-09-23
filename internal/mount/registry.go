@@ -1,6 +1,9 @@
 package mount
 
 import (
+	"encoding/json"
+	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -24,13 +27,15 @@ type Host struct {
 	Probe       func() (Usage, bool)
 	Usage       func(root, task string, since, until time.Time) (TaskUsage, bool)
 	Headless    func(skill, target string) (string, []string)
+	EventsPath  func(root, task string) string
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.
 type TaskUsage struct {
-	TokensIn  int `json:"tokens_in"`
-	TokensOut int `json:"tokens_out"`
-	Turns     int `json:"turns"`
+	TokensIn     int `json:"tokens_in"`
+	TokensOut    int `json:"tokens_out"`
+	TokensCached int `json:"tokens_cached"`
+	Turns        int `json:"turns"`
 }
 
 var (
@@ -158,6 +163,67 @@ func (t Tiers) Machine(tier string) Machine {
 // localProvider names the provider that answers on the machine running the line itself.
 const localProvider = "ollama"
 
+// LocalName is the local provider's name as a profile row and a step action carry it.
+const LocalName = localProvider
+
+// LocalResult is one local call's answer: the JSON the schema described and the tokens it cost.
+type LocalResult struct {
+	Value     map[string]any
+	TokensIn  int
+	TokensOut int
+}
+
+// Local is the local machine as the line reaches it: probes, limits, and one call, all owned by its mount.
+type Local struct {
+	Env       string
+	Up        func() bool
+	ModelName func() string
+	Fits      func(chars int) bool
+	Allowed   func(tools []string) bool
+	Post      func(model, brief string, schema []byte) (LocalResult, error)
+}
+
+var local Local
+
+// RegisterLocal installs the local machine's mount, which is how the binary learns to reach it.
+func RegisterLocal(machine Local) {
+	lock.Lock()
+	defer lock.Unlock()
+	local = machine
+}
+
+// LocalMachine returns the registered local mount, with safe answers for anything it left unset.
+func LocalMachine() Local {
+	lock.Lock()
+	defer lock.Unlock()
+	out := local
+	if out.Up == nil {
+		out.Up = func() bool { return false }
+	}
+	if out.ModelName == nil {
+		out.ModelName = func() string { return "" }
+	}
+	if out.Fits == nil {
+		out.Fits = func(int) bool { return true }
+	}
+	if out.Allowed == nil {
+		out.Allowed = func(tools []string) bool {
+			for _, tool := range tools {
+				if tool == "write" || tool == "edit" || tool == "shell" {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	if out.Post == nil {
+		out.Post = func(string, string, []byte) (LocalResult, error) {
+			return LocalResult{}, errors.New("no local machine is mounted")
+		}
+	}
+	return out
+}
+
 // Local reports whether a machine mounts the provider running on this host.
 func (m Machine) Local() bool {
 	return m.Provider == localProvider
@@ -225,4 +291,37 @@ func GuardConfigPaths() []string {
 		out = append(out, tools.ConfigPaths...)
 	}
 	return out
+}
+
+// Overlay is the developer's own ~/.komodo/config.json as the mounts read it.
+type Overlay struct {
+	LocalModel    string            `json:"local_model"`
+	LocalWindow   int               `json:"local_window"`
+	LocalReviewer bool              `json:"local_reviewer"`
+	Models        map[string]string `json:"models"`
+}
+
+// OverlayPath is where a developer's own overlay lives, or empty when there is no home.
+func OverlayPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".komodo", "config.json")
+}
+
+// LoadOverlay reads the overlay, tolerating a missing or malformed file as an empty one.
+func LoadOverlay() Overlay {
+	var overlay Overlay
+	data, err := os.ReadFile(OverlayPath())
+	if err != nil {
+		return overlay
+	}
+	_ = json.Unmarshal(data, &overlay)
+	return overlay
+}
+
+// OverlayModel is the model the overlay names for one tier, or empty.
+func OverlayModel(tier string) string {
+	return LoadOverlay().Models[tier]
 }

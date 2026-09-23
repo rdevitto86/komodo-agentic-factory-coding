@@ -257,11 +257,11 @@ func TestTheLocalProfilePointsEveryTierAtTheLocalMachine(t *testing.T) {
 	root := toolkit(t)
 	withLocalMachine(t)
 	agent := body(t, root, filepath.Join(Dir, "agents", "builder.toml"))
-	if !strings.Contains(agent, `model = "`+ollama.Model+`"`) {
+	if !strings.Contains(agent, `model = "`+ollama.ModelName()+`"`) {
 		t.Fatalf("the builder did not take the local model: %s", agent)
 	}
 	agent = body(t, root, filepath.Join(Dir, "agents", "reviewer.toml"))
-	if !strings.Contains(agent, `model = "`+ollama.Model+`"`) {
+	if !strings.Contains(agent, `model = "`+ollama.ModelName()+`"`) {
 		t.Fatalf("the reviewer did not take the local model: %s", agent)
 	}
 }
@@ -288,7 +288,7 @@ func TestTiersPutsEveryTierOnTheLocalMachine(t *testing.T) {
 			t.Fatalf("%s = %q, want ollama", machine.name, machine.got)
 		}
 	}
-	if tiers.Light.Model != ollama.Model {
+	if tiers.Light.Model != ollama.ModelName() {
 		t.Fatalf("model = %q", tiers.Light.Model)
 	}
 }

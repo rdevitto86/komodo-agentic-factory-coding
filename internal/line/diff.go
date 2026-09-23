@@ -31,7 +31,7 @@ type ReviewInput struct {
 // DiffFor renders the group's diff against its base with the task blocks and the standards it touches.
 func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 	worktree := WorktreePath(root, plan.Worktree)
-	ref := resolveBase(worktree, plan.Base)
+	ref := StartRef(worktree, plan.Base)
 	names, err := git(worktree, "diff", "--name-only", ref+"...HEAD")
 	if err != nil {
 		return nil, err
@@ -63,16 +63,6 @@ func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 		fmt.Sprintf("\n# Diff against %s\n```diff\n%s\n```", plan.Base, input.Diff),
 	}, "\n")
 	return input, nil
-}
-
-// resolveBase mirrors the ref AddWorktree cut the group from: the remote-tracked copy of base
-// when it exists, else base itself, so a stale local base never leaks another group's commits in.
-func resolveBase(dir, base string) string {
-	ref := "origin/" + base
-	if _, err := git(dir, "rev-parse", "--verify", ref); err != nil {
-		return base
-	}
-	return ref
 }
 
 // diffPieces renders one diff chunk per changed file, naming a binary by size and any file

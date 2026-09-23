@@ -3,6 +3,7 @@ package line
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,16 +63,23 @@ func AddWorktree(root, branch, base, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	start := "origin/" + base
-	if _, err := git(root, "rev-parse", "--verify", start); err != nil {
-		start = base
-	}
+	start := StartRef(root, base)
 	if _, err := git(root, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
 		_, err := git(root, "worktree", "add", path, branch)
 		return err
 	}
 	_, err := git(root, "worktree", "add", "-b", branch, path, start)
 	return err
+}
+
+// StartRef is the ref a group is cut from and diffed against: the remote-tracked copy of base
+// when it exists, else base itself, so a stale local base never leaks another group's commits in.
+func StartRef(dir, base string) string {
+	ref := "origin/" + base
+	if _, err := git(dir, "rev-parse", "--verify", ref); err != nil {
+		return base
+	}
+	return ref
 }
 
 // WorktreePath resolves a plan's worktree: a run records it absolute, a plan builds it relative to the root.
@@ -133,7 +141,22 @@ func AcquireLock(root, run string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	// Exclusive create, so two launchers cannot both take it; a dead holder's lock is removed once.
+	for attempt := 0; attempt < 2; attempt++ {
+		handle, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			_, err = handle.Write(data)
+			return errors.Join(err, handle.Close())
+		}
+		if !os.IsExist(err) {
+			return err
+		}
+		if checkErr := CheckLock(root); checkErr != nil {
+			return checkErr
+		}
+		_ = os.Remove(path)
+	}
+	return fmt.Errorf("could not take the run lock at %s", path)
 }
 
 // LockEnv carries the launcher's pid into the host it starts, so that host's stations pass the lock.

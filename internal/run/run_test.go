@@ -163,6 +163,9 @@ func TestLaunchTeesTheHeadlessJSONToTheHostsUsageEventsFile(t *testing.T) {
 		Headless: func(skill, target string) (string, []string) {
 			return "/bin/sh", []string{"-c", `echo '{"type":"turn.completed"}'`}
 		},
+		EventsPath: func(root, task string) string {
+			return filepath.Join(root, line.StateDir, "codex", task+".jsonl")
+		},
 	})
 	root := t.TempDir()
 	var out, errOut bytes.Buffer

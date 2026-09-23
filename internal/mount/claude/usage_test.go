@@ -29,7 +29,7 @@ func TestSumTranscriptCountsOnlyAssistantTurns(t *testing.T) {
 	if usage.Turns != 2 {
 		t.Fatalf("turns = %d", usage.Turns)
 	}
-	if usage.TokensIn != 158 || usage.TokensOut != 30 {
+	if usage.TokensIn != 153 || usage.TokensCached != 5 || usage.TokensOut != 30 {
 		t.Fatalf("usage = %+v", usage)
 	}
 }
@@ -87,4 +87,37 @@ func unmarshal(body string, target *entry) error { return json.Unmarshal([]byte(
 func marshal(value entry) (string, error) {
 	data, err := json.Marshal(value)
 	return string(data), err
+}
+
+func TestUsageSumsOnlyTheSpawnedTranscriptsThatWereHandedTheBrief(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "repo")
+	dir := TranscriptDir(root)
+	spawned := filepath.Join(dir, "session", "subagents")
+	if err := os.MkdirAll(spawned, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	turn := `{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":1,"cache_read_input_tokens":100}}}`
+	files := map[string]string{
+		filepath.Join(dir, "session.jsonl"):       `{"type":"user","message":{"content":"komodo brief TSK-01.1.1 wrote .komodo/briefs/TSK-01.1.1.md"}}` + "\n" + turn,
+		filepath.Join(spawned, "agent-a.jsonl"):   `{"type":"user","message":{"content":"Your brief is .komodo/briefs/TSK-01.1.1.md"}}` + "\n" + turn + "\n" + turn,
+		filepath.Join(spawned, "agent-b.jsonl"):   `{"type":"user","message":{"content":"Your brief is .komodo/briefs/TSK-01.1.2.md"}}` + "\n" + turn,
+		filepath.Join(spawned, "agent-fix.jsonl"): `{"type":"user","message":{"content":"Repair: .komodo/briefs/TSK-01.1.1.md"}}` + "\n" + turn,
+	}
+	for path, body := range files {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	usage, ok := Usage(root, "TSK-01.1.1", time.Time{}, time.Time{})
+	if !ok {
+		t.Fatal("no usage was attributed")
+	}
+	if usage.Turns != 3 || usage.TokensIn != 30 || usage.TokensCached != 300 || usage.TokensOut != 3 {
+		t.Fatalf("usage = %+v; the session's own turn or another task's agent was counted", usage)
+	}
+	if _, ok := Usage(root, "TSK-01.1.9", time.Time{}, time.Time{}); ok {
+		t.Fatal("usage was attributed to a task no agent was handed")
+	}
 }

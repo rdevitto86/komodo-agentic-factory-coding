@@ -37,13 +37,13 @@ flowchart LR
 | Station | Command | Does |
 |---|---|---|
 | Intake | `komodo next` | Prints the next READY group, or one task, as JSON: waves by directory, dependencies, resolved machines. Creates the group branch in its own worktree from the remote base, so your working tree never blocks a run. Tags any untagged changelog version. Skips tasks with a valid result on disk, which is resume. |
-| Brief | `komodo brief <task>` | Fills the role template from the slots, writes the brief and the worktree, prints their paths. `--dry-run` prints slot sizes and a token estimate. |
+| Brief | `komodo brief <task>` | Fills the role template from the slots, writes the brief and the worktree, prints their paths, stamps the ledger. A repair reads the task's own worktree. Refuses a task whose directories overlap a closed, unmerged task branch. `--dry-run` prints slot sizes and a token estimate. |
 | Build | the run skill spawns the builder | Reads the brief path, owns the worktree, writes its result JSON. |
-| Close | `komodo close <task>` | Validates the result, reruns `done_when`, lints comments, flips the status. A failure writes the failure slot for one repair; a second failure marks BLOCKED with the note and the wave continues. |
+| Close | `komodo close <task>` | Validates the result, reruns `done_when` under the task's `timeout` (default 10 minutes, the process group killed past it), lints comments, flips the status. A failure writes the failure slot for one repair; a second failure marks BLOCKED with the note and the wave continues. |
 | QC | `komodo close --wave` | Merges the wave's worktrees in order, stops on conflict naming both tasks, runs the compile gate for the languages touched, then the repo's verify command. A failure stops the run for a person. |
 | Review | `komodo diff`, then the run skill spawns the reviewer, or `komodo machine` runs it on Ollama | The diff, the group's tasks, and the standards the diff touches. Fresh context, another tier or vendor when the profile says so. One pass: a finding at or above the floor stops the run for a fix on the group branch; the rest are filed. |
 | Ship | `komodo close --group` | Commit, push, PR with the report as body and labels the repo already defines, draft when a task is blocked, changelog line under the group's version, status DONE. |
-| Report | `komodo report` | Per task time, turns, tokens when the mount reports them, findings, what blocked. Accessibility format. |
+| Report | `komodo report` | Per task time, turns, tokens when the mount reports them, findings, what blocked, for the run record's own group even after it ships. Accessibility format. |
 
 Waves: tasks in disjoint directories run at once, each in its own worktree. `mode: single` is one builder for the group.
 
@@ -59,7 +59,7 @@ Every brief slot has a cap and is clipped head and tail with a marker the model 
 | context | the task's `context` anchors, resolved to sections | 10k per file, 24k total |
 | files | the task's `files`, existing ones read | 10k per file, 24k total |
 | standards | by extension and role, shipped plus the repo layer | 6k per standard |
-| done when | the task's commands | none |
+| done when | the task's commands, each run under the task's `timeout` (default 10 minutes) | none |
 | failure | the failed output and the previous attempt's diff, on repair only | 80k |
 
 The reviewer's brief is the diff, the tasks, and the touched standards. The output device is `roles/<role>.schema.json`; close checks type, required, and enum, and rejects anything else.
@@ -70,10 +70,10 @@ Every station stamps a ledger line as it runs, with no model in the loop. Two fi
 
 | File | Written by | Reset |
 |---|---|---|
-| `line.jsonl` | every station of a run: intake, brief, build, close, QC, review, ship | Truncated when `komodo next --start` begins a new run |
+| `line.jsonl` | every station of a run: intake, brief, build, close, QC, review, ship | Archived as `line.<run>.jsonl` when `komodo next --start` begins a new run |
 | `adhoc.jsonl` | any station run off the line, and every task a session crafts with `komodo add` | Truncated by its next writer when the first line is older than 24 hours or the file is over 1 MB |
 
-A line carries the run, group, task, wave, station, role, tier, host, provider, model, seconds, tokens in and out, turns, outcome, and the failure class when there is one. Seconds come from timestamps the binary already holds. Tokens and turns come from the mount reading the host's own transcript or stream output after the fact; a host that exposes nothing gets an empty field, never a guess. Review findings come from the reviewer's result JSON, which it writes anyway.
+A line carries the run, group, task, wave, station, role, tier, host, provider, model, seconds, tokens in, out, and cached, turns, outcome, and the failure class when there is one. Close, QC, ship, and a local machine call are timed by the binary; a build or a spawned review is the wall clock from its brief to its result. Tokens and turns come from the mount reading the spawned agent's own transcript or stream output after the fact, never the session driving the line; a host that exposes nothing gets an empty field, never a guess. Review findings come from the reviewer's result JSON, which it writes anyway.
 
 `komodo report` reads the run's file. `komodo metrics` aggregates whatever the two files hold: median seconds per station, failure rate by class, tokens per task by model, repair rate, findings per group. Text, zero tokens. The run skill never reads either file, so telemetry costs the loop nothing. Freehand work that calls no `komodo` command is invisible to both files by design; the guard stays read-only.
 
@@ -90,11 +90,13 @@ A role declares a tier, light, standard, or heavy, and never a model. A profile 
 | Profile | Host | light | standard | heavy | reviewer |
 |---|---|---|---|---|---|
 | `claude` | Claude Code | haiku | sonnet | opus | opus |
-| `hybrid` | Claude Code with Ollama up | ollama | sonnet | opus | ollama |
+| `hybrid` | Claude Code with Ollama up | ollama | sonnet | opus | opus, or ollama with `local_reviewer` |
 | `codex` | Codex | small | standard | large | large |
 | `local` | Codex with Ollama | local small | local coder | local coder | local coder |
 
-A tier that resolves to `ollama` runs through `komodo machine` and carries only read-only roles. A write role on that tier falls back to the host's standard tier, and the report says so once. No model is ever spent to reach a local model.
+A tier that resolves to `ollama` runs through `komodo machine` and carries only read-only roles. A write role on that tier, or a brief larger than the local window, falls back to the host's own tier, and `komodo step` says so in `why`. No model is ever spent to reach a local model.
+
+The local model is whatever `OLLAMA_MODEL` names, else `local_model` in the overlay, else the first model the server lists. The overlay, `~/.komodo/config.json`, also renames a tier for this host (`"models": {"heavy": "sonnet"}`), caps the local window (`local_window`, default 32768 tokens), and opts the reviewer onto the local machine (`local_reviewer`). It can only lower a cap and never widen what the guard denies.
 
 Plan overlays sit on top: Pro lowers the heavy ceiling, caps parallel builders at two, skips review under a 40-line diff, and pauses at 75 percent of the five-hour window. Max keeps the defaults and pauses at 90 percent. Unknown is the conservative one. The probe reads the host's own config file, never a CLI status line that once misreported a Max account as Pro. Intake pauses before a wave, never inside one.
 
@@ -112,14 +114,18 @@ Skills: `run` is three lines, call `komodo step`, do what it says, repeat, and t
 
 One hook, on PreToolUse for shell, edit, and write, on every host. Everything else is a command a human or the run skill calls.
 
+The guard catches a cooperative model's mistakes; it is not a sandbox. It reads one shell command at a time through a parser that two review rounds bypassed thirteen ways before they were closed, and a denylist over bash is never complete. The hard boundaries sit where a shell cannot reach: the forge's ruleset on every critical ref, which `komodo doctor --remote` audits, and the headless credential scrub, which leaves a run nothing to push with.
+
 Denied, and nothing else:
 
 1. **Critical branches.** Commit, push, merge, delete, or force on `main`, `master`, and any ref the policy lists. Greenfield repos protect nothing else.
 2. **Paths outside the tasked worktree.** An edit, write, delete, or move that leaves the worktree root, or the repo root off the line.
 3. **Host and toolkit config.** The home directories of the hosts, the machine overlay, the git config and hooks, and the toolkit's binaries.
-4. **Trailers.** Co-author and generated-by lines in a commit.
+4. **Trailers.** Co-author and generated-by lines in a commit, including one fed through `-F -` from a heredoc.
 
-Inside the worktree an agent has unlimited freedom: delete files, reset, checkout, force-push its own branch, delete its own branches. The rules file says the same. The guard fails open on an internal error and `komodo guard check` runs a 60-command table in the gate, so a broken guard fails the build and never a run. GitHub free has no branch protection, so the guard and the launcher's credential scrub are the only things between an agent and `main`. Merge is your button.
+One rule sits beside the four and applies to every branch: pushed history is never rewritten, so a force push, `--force-with-lease`, or a `+refspec` is refused wherever it points.
+
+Inside the worktree an agent has unlimited freedom: delete files, reset, checkout, rebase, delete its own branches. Pushed history is the one exception: a force push, `--force-with-lease`, or a `+refspec` is refused on every branch, since a human may have pulled it. The rules file says the same. The guard fails open on an internal error and `komodo guard check` runs a table of over 200 commands in the gate, so a broken guard fails the build and never a run. The forge's ruleset on `main`, which `komodo doctor --remote` audits, and the launcher's credential scrub are the boundaries the guard cannot be; between them and `main` the guard is the last check. Merge is your button.
 
 ## The binary
 
@@ -160,7 +166,7 @@ A task may say `tier: heavy` to get the big model for one hard task, or `facets:
 
 Ollama is mounted by the binary itself. `komodo machine <task>` posts the brief to Ollama's chat endpoint with the role's schema as the response format, writes the result JSON where close expects it, and stamps the ledger with the token counts the response carries. No host, no MCP, no other model in between: the call is mechanical and costs nothing but local compute. V1's HTTP server at 127.0.0.1:8000 is gone, and install removes its entry.
 
-A local machine carries read-only roles: reviewer, summarizer, and any session role that only reads. So on Claude Code the `hybrid` profile builds with Claude and reviews on Ollama, and a review never shares a vendor with the build. A builder needs tools, which is the host's job, so a local builder needs a host that mounts Ollama natively: on Codex the `local` profile points every tier at Ollama through the host's provider setting. Both Komodo machines pull the same models.
+A local machine carries read-only roles: reviewer, summarizer, and any session role that only reads. So on Claude Code the `hybrid` profile builds with Claude and, when the overlay sets `local_reviewer`, reviews on Ollama, so a review never shares a vendor with the build; without that line the review stays on the host's heavy tier, because a small local model reading a large diff is not a review. A builder needs tools, which is the host's job, so a local builder needs a host that mounts Ollama natively: on Codex the `local` profile points every tier at Ollama through the host's provider setting. Both Komodo machines pull the same models.
 
 ## Hot swap
 
@@ -249,7 +255,7 @@ One vocabulary, used the same way in this file, the backlog, the code, the skill
 
 ## Setup
 
-Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optional.
+Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optional; when it answers, the light tier moves to it and the reviewer stays remote unless `~/.komodo/config.json` says `"local_reviewer": true`.
 
 ```bash
 git clone <this repo> ~/komodo/ai/komodo-agentic-factory-coding
@@ -270,7 +276,7 @@ The install is a copy. After editing anything under `komodo/`, run it again. `ko
 komodo run TG-03.5          # headless, credentials stripped
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
-komodo doctor               # references, portability, drift, prune
+komodo doctor               # references, portability, drift, prune; --remote audits the forge's rulesets
 komodo gate                 # vet, test, doctor, guard table, comments; pre-commit and pre-push run it here
 ```
 

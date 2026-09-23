@@ -3,14 +3,19 @@ package line
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"komodo/internal/detect"
+	"komodo/internal/proc"
 	repopkg "komodo/internal/repo"
 )
+
+// CommandTimeout is the wall clock a station command gets unless the task names its own.
+const CommandTimeout = proc.DefaultTimeout
+
+// GateTimeout is the wall clock the toolkit's own gate gets, since it runs the whole test suite.
+const GateTimeout = 20 * time.Minute
 
 // VerifyCommand is the repo's own verify command, from its commands file, else detect's root-only
 // discovery order, else go test for a Go module, so QC never drifts from what detect reports.
@@ -71,21 +76,16 @@ type CommandResult struct {
 // OK reports whether the command exited zero.
 func (r CommandResult) OK() bool { return r.ExitCode == 0 }
 
-// RunCommand runs one shell command in a directory and captures its combined output.
+// RunCommand runs one shell command in a directory under the default wall clock and captures its output.
 func RunCommand(cwd, command string) CommandResult {
-	started := time.Now()
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Dir = cwd
-	output, err := cmd.CombinedOutput()
-	result := CommandResult{Command: command, Seconds: time.Since(started).Seconds()}
-	result.Output = Clip(strings.TrimSpace(string(output)), 12000, "output")
-	if err != nil {
-		result.ExitCode = 1
-		if exit, ok := err.(*exec.ExitError); ok {
-			result.ExitCode = exit.ExitCode()
-		}
-	}
-	return result
+	return RunCommandFor(cwd, command, CommandTimeout)
+}
+
+// RunCommandFor runs one shell command in a directory under timeout, killing its process group when it hangs.
+func RunCommandFor(cwd, command string, timeout time.Duration) CommandResult {
+	ran := proc.Shell(cwd, command, timeout)
+	return CommandResult{Command: command, ExitCode: ran.ExitCode, Seconds: ran.Seconds,
+		Output: Clip(ran.Output, 12000, "output")}
 }
 
 // RunGate runs commands in order and stops at the first failure.

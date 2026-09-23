@@ -131,6 +131,8 @@ func commandFindings(command, root, cwd, branch string, policy Policy) []string 
 	for _, body := range substitutions(command) {
 		findings = append(findings, commandFindings(body, root, cwd, branch, policy)...)
 	}
+	// stdin is what a heredoc feeds a command, which git commit -F - reads as its message.
+	stdin := heredocBodies(command)
 	command = stripHeredocs(command)
 	// current tracks the branch across segments, since a switch or checkout changes it mid-chain.
 	current := branch
@@ -198,7 +200,7 @@ func commandFindings(command, root, cwd, branch string, policy Policy) []string 
 			}
 			if name == "git" {
 				var gitResult []string
-				gitResult, current = gitFindings(kept, current, cwd, policy)
+				gitResult, current = gitFindings(kept, current, cwd, policy, stdin)
 				findings = append(findings, gitResult...)
 			}
 			if name == "gh" && len(kept) > 2 && kept[1] == "pr" && kept[2] == "merge" {
@@ -627,6 +629,28 @@ func stripHeredocs(command string) string {
 	return strings.Join(out, "\n")
 }
 
+// heredocBodies joins every terminated heredoc body in a command, which is what its stdin holds.
+func heredocBodies(command string) string {
+	lines := strings.Split(command, "\n")
+	var bodies []string
+	for index := 0; index < len(lines); index++ {
+		match := heredocRe.FindStringSubmatchIndex(lines[index])
+		if match == nil || quotedAt(lines[index], match[0]) {
+			continue
+		}
+		tag := lines[index][match[2]:match[3]]
+		end := index + 1
+		for end < len(lines) && strings.TrimSpace(lines[end]) != tag {
+			end++
+		}
+		if end < len(lines) {
+			bodies = append(bodies, strings.Join(lines[index+1:end], "\n"))
+			index = end
+		}
+	}
+	return strings.Join(bodies, "\n")
+}
+
 // quotedAt reports whether a byte offset in a line sits inside a quoted string.
 func quotedAt(line string, offset int) bool {
 	quote := byte(0)
@@ -688,7 +712,7 @@ func pathFindings(path, cwd, root string, policy Policy) []string {
 }
 
 // gitFindings refuses the git operations that touch a critical ref, and reports the branch after the call.
-func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, string) {
+func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin string) ([]string, string) {
 	args := tokens[1:]
 	var findings []string
 	var configs []string
@@ -717,8 +741,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 			}
 			switch name {
 			case "--git-dir", "--work-tree":
-				// These point git at another repository, whose branch the guard does not track.
-				elsewhere = value
+				// Another repository's branch is not tracked; this checkout's own .git and . are.
+				if clean := filepath.Clean(value); clean != "." && clean != ".git" {
+					elsewhere = value
+				}
 			case "--config-env":
 				configs = append(configs, value)
 			}
@@ -759,7 +785,13 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 			case "--mirror", "--all":
 				mirrorFlag = arg
 			}
+			if isForceFlag(arg) {
+				findings = append(findings, fmt.Sprintf("git push %s: pushed history is never rewritten; push a new commit instead", arg))
+			}
 			if !strings.HasPrefix(arg, "-") {
+				if strings.HasPrefix(arg, "+") {
+					findings = append(findings, fmt.Sprintf("git push %s: a forced refspec rewrites pushed history; push a new commit instead", arg))
+				}
 				positional = append(positional, arg)
 			}
 		}
@@ -798,14 +830,14 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 		if policy.IsCritical(branch) {
 			findings = append(findings, fmt.Sprintf("git commit on %s: create a branch first", branch))
 		}
-		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd))) {
+		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd, stdin))) {
 			findings = append(findings, "commit message carries a co-author or generated-by trailer")
 		}
 	case "merge":
 		if policy.IsCritical(branch) {
 			findings = append(findings, fmt.Sprintf("git merge on %s: landing is the human's merge button", branch))
 		}
-		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd))) {
+		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd, stdin))) {
 			findings = append(findings, "commit message carries a co-author or generated-by trailer")
 		}
 	case "branch":
@@ -847,9 +879,21 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 	return findings, branch
 }
 
+// isForceFlag reports whether a push option rewrites the remote's history.
+func isForceFlag(arg string) bool {
+	if arg == "-f" || arg == "--force" || arg == "--force-if-includes" {
+		return true
+	}
+	if strings.HasPrefix(arg, "--force-with-lease") {
+		return true
+	}
+	// A short cluster such as -fu carries the same force.
+	return strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg[1:], "f")
+}
+
 // commitMessage composes the text of a commit or merge's own message: every -m paragraph, an
 // -F file's content, and a --trailer's raw key=value line, in the order git reads them.
-func commitMessage(rest []string, cwd string) string {
+func commitMessage(rest []string, cwd, stdin string) string {
 	var parts []string
 	for index := 0; index < len(rest); index++ {
 		arg := rest[index]
@@ -866,10 +910,10 @@ func commitMessage(rest []string, cwd string) string {
 		case arg == "-F" || arg == "--file":
 			if index+1 < len(rest) {
 				index++
-				parts = append(parts, readMessageFile(rest[index], cwd))
+				parts = append(parts, readMessageFile(rest[index], cwd, stdin))
 			}
 		case strings.HasPrefix(arg, "--file="):
-			parts = append(parts, readMessageFile(strings.TrimPrefix(arg, "--file="), cwd))
+			parts = append(parts, readMessageFile(strings.TrimPrefix(arg, "--file="), cwd, stdin))
 		case arg == "--trailer":
 			if index+1 < len(rest) {
 				index++
@@ -890,10 +934,10 @@ func normalizeMessage(text string) string {
 	return messageBreakRe.ReplaceAllString(text, "\n")
 }
 
-// readMessageFile reads a commit message file relative to cwd, tolerating a missing one.
-func readMessageFile(path, cwd string) string {
-	if path == "-" {
-		return ""
+// readMessageFile reads a commit message file relative to cwd, or the heredoc a - or /dev/stdin names.
+func readMessageFile(path, cwd, stdin string) string {
+	if path == "-" || path == "/dev/stdin" {
+		return stdin
 	}
 	resolved := expandHome(path)
 	if !filepath.IsAbs(resolved) {
@@ -921,23 +965,40 @@ func hasAnyCritical(policy Policy) bool {
 	return len(policy.CriticalRefs) > 0
 }
 
-// switchTarget finds the ref a switch or checkout targets, and whether it creates a new one.
+// switchTarget finds the ref a switch or checkout targets, and whether it creates a fresh one;
+// a ref before -- and paths is a restore, and -B, -C, and --force-create reset, not create.
 func switchTarget(rest []string) (target string, create bool, ok bool) {
 	for index, arg := range rest {
-		switch arg {
-		case "-b", "-B", "-c", "--create", "--orphan":
-			if index+1 < len(rest) {
-				return rest[index+1], true, true
-			}
-			return "", false, false
-		case "--":
+		if arg == "--" {
 			return "", false, false
 		}
+		if arg == "-b" || arg == "-c" || arg == "--create" || arg == "--orphan" {
+			return switchOperand(rest, index+1, true)
+		}
+		if arg == "-B" || arg == "-C" || arg == "--force-create" {
+			return switchOperand(rest, index+1, false)
+		}
 		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			if restoresPaths(rest[index+1:]) {
+				return "", false, false
+			}
 			return arg, false, true
 		}
 	}
 	return "", false, false
+}
+
+// switchOperand is the ref after a create flag, or nothing when the flag ends the command.
+func switchOperand(rest []string, index int, create bool) (string, bool, bool) {
+	if index < len(rest) {
+		return rest[index], create, true
+	}
+	return "", false, false
+}
+
+// restoresPaths reports whether the tokens after a ref are -- and at least one path.
+func restoresPaths(rest []string) bool {
+	return len(rest) >= 2 && rest[0] == "--"
 }
 
 // previousBranch reports whether a switch target names an earlier branch, as - and @{-1} do.

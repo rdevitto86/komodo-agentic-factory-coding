@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
 )
 
@@ -596,16 +597,38 @@ func TestTheProTierDropsTheHeavyCeiling(t *testing.T) {
 	}
 }
 
-func TestOllamaTakesTheLightTierAndTheReviewer(t *testing.T) {
+func TestOllamaTakesTheLightTierAndNeverTheReviewerUnasked(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(ollama.ModelEnv, "coder:3b")
 	tiers := Tiers("max_5x", true)
-	if tiers.Light.Provider != "ollama" || tiers.Reviewer.Provider != "ollama" {
+	if tiers.Light.Provider != "ollama" || tiers.Light.Model != "coder:3b" {
 		t.Fatalf("tiers = %+v", tiers)
 	}
-	if tiers.Standard.Provider == "ollama" {
-		t.Fatal("the builder was moved to the local machine")
+	if tiers.Standard.Provider == "ollama" || tiers.Reviewer.Provider == "ollama" {
+		t.Fatalf("a write or review tier was moved to the local machine: %+v", tiers)
 	}
-	if tiers.Light.Model != ollama.Model || tiers.Reviewer.Model != ollama.Model {
-		t.Fatalf("tiers did not carry the profile's model: %+v", tiers)
+}
+
+func TestOverlayMovesTheReviewerToOllamaAndRenamesATier(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(ollama.ModelEnv, "")
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := `{"local_model":"coder:7b","local_reviewer":true,"models":{"heavy":"sonnet"}}`
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tiers := Tiers("max_5x", true)
+	if tiers.Reviewer.Provider != "ollama" || tiers.Reviewer.Model != "coder:7b" {
+		t.Fatalf("reviewer = %+v", tiers.Reviewer)
+	}
+	if tiers.Heavy.Model != "sonnet" {
+		t.Fatalf("heavy = %+v", tiers.Heavy)
+	}
+	if got := agentFile(mount.Role{Name: "architect", Tier: "heavy"}, false); !strings.Contains(got, "model: sonnet") {
+		t.Fatalf("the agent file did not carry the overlay's model:\n%s", got)
 	}
 }
 
@@ -663,5 +686,20 @@ func TestAWorktreesHookPointsAtTheMainCheckoutsBinary(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), filepath.Join(main, "bin", "komodo")+" guard") {
 		t.Fatalf("settings = %s; a worktree's hook must run the main checkout's binary, which a worktree lacks", raw)
+	}
+}
+
+func TestHeadlessBypassesPromptsAndDrivesOnTheStandardTier(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	name, args := Headless("run", "TG-01.1")
+	joined := strings.Join(args, " ")
+	if name != "claude" || !strings.Contains(joined, "-p /run TG-01.1") {
+		t.Fatalf("command = %s %s", name, joined)
+	}
+	if !strings.Contains(joined, "--permission-mode bypassPermissions") {
+		t.Fatalf("a headless run cannot answer a prompt: %s", joined)
+	}
+	if !strings.Contains(joined, "--model "+models["standard"]) {
+		t.Fatalf("the driver did not take the standard tier: %s", joined)
 	}
 }

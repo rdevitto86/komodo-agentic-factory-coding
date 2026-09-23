@@ -42,6 +42,7 @@ Take the highest tier any changed file reaches. Above `low-med`, measure fan-out
 - Do not report what the diff did not change. Do not report formatting the formatter owns.
 - Fewer, verified findings beat many speculative ones. An empty findings list is a valid answer.
 - `fix` is one sentence naming the change, not a patch.
+- The diff may end with a clip marker naming files it omitted. Name those files in `summary` as unreviewed and never guess at them.
 
 ## Result JSON
 Return only the JSON object the schema describes: a one-line `summary`, a `blast_radius` tier, one line of `blast_radius_why`, and a `findings` array.

@@ -4,20 +4,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-
 	"time"
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
+	"komodo/internal/proc"
+	profilepkg "komodo/internal/profile"
 )
 
-// MaxRepairs is how many times one task may come back for a repair before it blocks.
+// MaxRepairs is how many times one task may come back for a repair when the profile names no count.
 const MaxRepairs = 1
+
+// repairLimit is the profile's repair count, which the overlay may lower, else MaxRepairs.
+func repairLimit(root string) int {
+	if limit := resolveProfile(root).Repairs; limit > 0 {
+		return limit
+	}
+	return MaxRepairs
+}
 
 // Outcome is what the output device decided about one task.
 type Outcome struct {
@@ -49,7 +57,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	if !ok {
 		return nil, fmt.Errorf("no task %s in %s", taskID, path)
 	}
-	cwd := taskWorktree(root, taskID)
+	cwd := TaskWorktree(root, taskID)
 	started := time.Now()
 	outcome := &Outcome{Task: taskID}
 	problems := checkResult(root, taskID)
@@ -81,7 +89,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	}
 	outcome.Attempt = attempt.Count
 	outcome.Failure = attempt.Failure
-	if attempt.Count > MaxRepairs {
+	if attempt.Count > repairLimit(root) {
 		outcome.Status = "BLOCKED"
 		entry.Outcome = "blocked"
 		Stamp(root, entry)
@@ -93,8 +101,8 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	return outcome, writeStatus(path, taskID, "IN_PROGRESS")
 }
 
-// taskWorktree is where a task was built, falling back to the repo root.
-func taskWorktree(root, taskID string) string {
+// TaskWorktree is where a task is built: its own worktree, else the run's, else the repo root.
+func TaskWorktree(root, taskID string) string {
 	path := filepath.Join(root, StateDir, "wt", taskID)
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return path
@@ -121,19 +129,25 @@ func checkResult(root, taskID string) []string {
 	return Validate(schema, any(result))
 }
 
-// runDoneWhen reruns every done_when command in the worktree and names each failure.
+// runDoneWhen reruns every done_when command in the worktree under the task's clock and names each failure.
 func runDoneWhen(cwd string, task backlog.Task) []string {
 	var problems []string
 	for _, command := range task.DoneWhen() {
-		cmd := exec.Command("sh", "-c", command)
-		cmd.Dir = cwd
-		output, err := cmd.CombinedOutput()
-		if err != nil {
+		ran := proc.Shell(cwd, command, TaskTimeout(task))
+		if !ran.OK() {
 			problems = append(problems, fmt.Sprintf("done_when `%s` failed: %v\n%s",
-				command, err, Clip(strings.TrimSpace(string(output)), 4000, "output")))
+				command, ran.Err(), Clip(ran.Output, 4000, "output")))
 		}
 	}
 	return problems
+}
+
+// TaskTimeout is the wall clock a task's commands get: its own timeout key, else the station default.
+func TaskTimeout(task backlog.Task) time.Duration {
+	if parsed, err := time.ParseDuration(task.Timeout()); err == nil && parsed > 0 {
+		return parsed
+	}
+	return CommandTimeout
 }
 
 // lintComments runs the comment lint over the files a task named.
@@ -226,13 +240,11 @@ func isToolkit(root string) bool {
 	return err == nil
 }
 
-// gateCommand runs the local gate in the worktree.
+// gateCommand runs the local gate in the worktree under its own wall clock.
 func gateCommand(cwd string) error {
-	cmd := exec.Command("go", "run", "./cmd/komodo", "gate")
-	cmd.Dir = cwd
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v\n%s", err, Clip(strings.TrimSpace(string(output)), 4000, "gate"))
+	ran := proc.Exec(cwd, GateTimeout, "go", "run", "./cmd/komodo", "gate")
+	if !ran.OK() {
+		return fmt.Errorf("%v\n%s", ran.Err(), Clip(ran.Output, 4000, "gate"))
 	}
 	return nil
 }
@@ -327,15 +339,43 @@ func fillUsage(root, taskID string, until time.Time, entry *ledger.Entry) {
 	}
 }
 
-// stampBuild records what the machine spent between its brief and this close, which is the build itself.
+// stampBuild records what the machine spent between its brief and this close, which is the build
+// itself, naming the machine the profile resolved for the task's tier.
 func stampBuild(root, taskID string, closed time.Time) {
 	written := briefTime(root, taskID)
 	if written.IsZero() {
 		return
 	}
-	entry := ledger.Entry{Task: taskID, Station: "build", Seconds: closed.Sub(written).Seconds()}
+	entry := ledger.Entry{Task: taskID, Station: "build", Role: "builder", Seconds: closed.Sub(written).Seconds()}
+	fillMachine(root, taskID, &entry)
 	fillUsage(root, taskID, closed, &entry)
 	Stamp(root, entry)
+}
+
+// fillMachine names the tier, provider, and model the profile resolves for a task's builder.
+func fillMachine(root, taskID string, entry *ledger.Entry) {
+	tier := "standard"
+	if role, err := LoadRole(root, "builder"); err == nil && role.Tier != "" {
+		tier = role.Tier
+	}
+	if path, err := backlog.Find(root); err == nil {
+		if parsed, err := backlog.Load(path); err == nil {
+			if task, ok := parsed.Task(taskID); ok && task.Tier() != "" {
+				tier = task.Tier()
+			}
+		}
+	}
+	machine := resolveProfile(root).Tiers.Machine(tier)
+	entry.Tier, entry.Provider, entry.Model = tier, machine.Provider, machine.Model
+}
+
+// resolveProfile is the selected profile narrowed by the developer's overlay, which every station shares.
+func resolveProfile(root string) profilepkg.Profile {
+	chosen := profilepkg.Select(root)
+	if path := profilepkg.MachineOverlayPath(); path != "" {
+		chosen = profilepkg.Overlay(chosen, path)
+	}
+	return chosen
 }
 
 // briefTime is when the task's brief was written, which opens the window the usage covers.

@@ -90,6 +90,9 @@ func (t Task) Context() []string { return t.Fields.List("context") }
 // Tier is the machine size that overrides the role's tier for one task, empty when unset.
 func (t Task) Tier() string { return t.Fields.String("tier") }
 
+// Timeout is the wall clock one done_when command may take, as a Go duration, or empty for the default.
+func (t Task) Timeout() string { return t.Fields.String("timeout") }
+
 // Facets are the facet names one task adds to detection, beyond what the tree and the repo override.
 func (t Task) Facets() []string { return t.Fields.List("facets") }
 

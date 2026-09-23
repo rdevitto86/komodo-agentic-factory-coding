@@ -224,11 +224,7 @@ func blockText(parsed backlog.Backlog, task backlog.Task) string {
 // resolveCaps resolves the profile's slot caps, narrowed by the developer's own overlay, so a
 // brief never carries more than the host running it can afford.
 func resolveCaps(root string) profilepkg.Caps {
-	chosen := profilepkg.Select(root)
-	if path := profilepkg.MachineOverlayPath(); path != "" {
-		chosen = profilepkg.Overlay(chosen, path)
-	}
-	return chosen.Caps
+	return resolveProfile(root).Caps
 }
 
 // repoRules is the repo's own AGENTS.md, clipped, or a one-line default.
@@ -268,9 +264,13 @@ func contextSlot(cwd string, task backlog.Task, perFileCap, totalCap int) string
 		}
 		text := string(data)
 		if anchor != "" {
-			if section := Section(text, anchor); section != "" {
-				text = section
+			section := Section(text, anchor)
+			if section == "" {
+				// A mistyped anchor names its miss instead of spending the slot on the whole file.
+				parts = append(parts, fmt.Sprintf("### %s\n[%s has no section %q; komodo lint reports it]", ref, path, anchor))
+				continue
 			}
+			text = section
 		}
 		parts = append(parts, fmt.Sprintf("### %s\n%s", ref, Clip(text, perFileCap, ref)))
 	}

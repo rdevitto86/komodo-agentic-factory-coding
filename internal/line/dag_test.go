@@ -11,7 +11,7 @@ func TestTwoTasksOwningNestedTreesNeverShareAWave(t *testing.T) {
 		"#### [TSK-21.1.1] Wide [P: C] [READY]\n```yaml\nfiles: [internal]\ndone_when: [\"true\"]\n```\n\n" +
 		"#### [TSK-21.1.2] Narrow [P: C] [READY]\n```yaml\nfiles: [internal/profile]\ndone_when: [\"true\"]\n```\n"
 	parsed := backlog.Parse(text)
-	waves, err := Waves(parsed.Groups[0].Tasks, nil)
+	waves, err := Waves(parsed.Groups[0].Tasks, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

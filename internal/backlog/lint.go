@@ -2,8 +2,19 @@ package backlog
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 )
+
+var slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+
+// Slug is the anchor form of a heading: lower case, runs of punctuation and space folded to one dash.
+func Slug(text string) string {
+	return strings.Trim(slugPattern.ReplaceAllString(strings.ToLower(text), "-"), "-")
+}
 
 // Lint returns every problem that would stop the line running this backlog deterministically.
 func Lint(parsed Backlog) []string {
@@ -49,6 +60,11 @@ func Lint(parsed Backlog) []string {
 		if !contains(Types, task.Type()) {
 			problems = append(problems, fmt.Sprintf("%s: type must be one of %s", where, strings.Join(Types, "|")))
 		}
+		if timeout := task.Timeout(); timeout != "" {
+			if parsed, err := time.ParseDuration(timeout); err != nil || parsed <= 0 {
+				problems = append(problems, fmt.Sprintf("%s: timeout %q is not a positive duration such as 15m", where, timeout))
+			}
+		}
 		if tier := task.Tier(); tier != "" && !contains(Tiers, tier) {
 			problems = append(problems, fmt.Sprintf("%s: tier must be one of %s", where, strings.Join(Tiers, "|")))
 		}
@@ -77,4 +93,40 @@ func Lint(parsed Backlog) []string {
 		}
 	}
 	return problems
+}
+
+// LintContext reports every context anchor whose file exists under root but holds no matching
+// heading, so a mistyped anchor fails at lint instead of sending a builder the whole file.
+func LintContext(root string, parsed Backlog) []string {
+	var problems []string
+	for _, task := range parsed.Tasks() {
+		if !task.Open() {
+			continue
+		}
+		for _, ref := range task.Context() {
+			path, anchor, found := strings.Cut(ref, "#")
+			if !found || anchor == "" || strings.ContainsAny(ref, " \t") {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(root, path))
+			if err != nil {
+				continue
+			}
+			if !hasHeading(string(data), anchor) {
+				problems = append(problems, fmt.Sprintf("%s (line %d): context %s names no heading in %s", task.ID, task.Heading+1, ref, path))
+			}
+		}
+	}
+	return problems
+}
+
+// hasHeading reports whether a markdown text holds a heading whose slug matches the anchor.
+func hasHeading(text, anchor string) bool {
+	want := Slug(anchor)
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "#") && Slug(strings.TrimSpace(strings.TrimLeft(line, "#"))) == want {
+			return true
+		}
+	}
+	return false
 }

@@ -2,7 +2,9 @@ package claude
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,37 +45,55 @@ func TranscriptDir(root string) string {
 	return filepath.Join(home, ".claude", projectsDir, slug(root))
 }
 
-// Usage reports one task's spend, and reports nothing when more than one session wrote in the window.
+// Usage sums the spawned agents' transcripts that were handed the named brief, never the
+// parent's, and reports nothing when no spawned transcript names it.
 func Usage(root, task string, since, until time.Time) (mount.TaskUsage, bool) {
 	dir := TranscriptDir(root)
 	if dir == "" {
 		return mount.TaskUsage{}, false
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return mount.TaskUsage{}, false
-	}
+	marker := []byte("briefs/" + task + ".md")
 	var usage mount.TaskUsage
-	sessions := 0
-	for _, item := range entries {
-		if item.IsDir() || !strings.HasSuffix(item.Name(), ".jsonl") {
-			continue
+	matched := 0
+	_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") || !isSpawned(dir, path) {
+			return nil
 		}
-		info, err := item.Info()
+		info, err := entry.Info()
 		if err != nil || info.ModTime().Before(since) {
-			continue
+			return nil
 		}
-		counted, ok := sumTranscript(filepath.Join(dir, item.Name()), since, until)
-		if !ok {
-			continue
+		if !mentions(path, marker) {
+			return nil
 		}
-		usage = counted
-		sessions++
-	}
-	if sessions != 1 || usage.Turns == 0 {
+		counted, ok := sumTranscript(path, since, until)
+		if !ok || counted.Turns == 0 {
+			return nil
+		}
+		usage.TokensIn += counted.TokensIn
+		usage.TokensOut += counted.TokensOut
+		usage.TokensCached += counted.TokensCached
+		usage.Turns += counted.Turns
+		matched++
+		return nil
+	})
+	if matched == 0 {
 		return mount.TaskUsage{}, false
 	}
 	return usage, true
+}
+
+// isSpawned reports whether a transcript sits below a session directory, which is where this
+// host writes a spawned agent's transcript, as opposed to the session's own file beside it.
+func isSpawned(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && strings.Contains(filepath.ToSlash(rel), "/")
+}
+
+// mentions reports whether a transcript carries the marker anywhere, reading it as bytes only.
+func mentions(path string, marker []byte) bool {
+	data, err := os.ReadFile(path)
+	return err == nil && bytes.Contains(data, marker)
 }
 
 // sumTranscript reads one transcript for counts only; no message text is copied anywhere.
@@ -101,7 +121,8 @@ func sumTranscript(path string, since, until time.Time) (mount.TaskUsage, bool) 
 			}
 		}
 		counts := parsed.Message.Usage
-		usage.TokensIn += counts.InputTokens + counts.CacheReadTokens + counts.CacheCreationTokens
+		usage.TokensIn += counts.InputTokens + counts.CacheCreationTokens
+		usage.TokensCached += counts.CacheReadTokens
 		usage.TokensOut += counts.OutputTokens
 		usage.Turns++
 	}

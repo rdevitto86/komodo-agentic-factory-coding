@@ -10,7 +10,8 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/detect"
 	"komodo/internal/facet"
-	"komodo/internal/mount/ollama"
+	"komodo/internal/ledger"
+	"komodo/internal/mount"
 )
 
 // Action is the one next thing a session should do. The station order lives here and nowhere else.
@@ -155,6 +156,7 @@ func Step(root, needle string) (*Action, error) {
 			Why: "every wave is merged and the diff is unreviewed",
 		}), nil
 	}
+	stampReview(root, plan)
 	blocking, _ := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	if len(blocking) > 0 {
 		return action(root, plan, Action{
@@ -206,7 +208,11 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 				}
 			}
 		}
-		if next.Machine == "ollama" && !ollama.Allowed(matched.Tools) {
+		local := mount.LocalMachine()
+		if next.Machine == mount.LocalName && (!local.Allowed(matched.Tools) || !fitsLocal(root, next.Brief)) {
+			if local.Allowed(matched.Tools) {
+				next.Why += "; the brief is larger than the local machine's window, so a remote machine reads it"
+			}
 			next.Machine = matched.Tier
 			if remote := plan.Profile.Tiers.Machine(matched.Tier); remote.Provider != "" && !remote.Local() {
 				next.Machine = remote.Provider + "/" + remote.Model
@@ -214,13 +220,25 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 				next.Machine = remote.Provider + "/" + remote.Model
 			}
 		}
-		if next.Machine == "ollama" {
+		if next.Machine == mount.LocalName {
 			next.Action = "run"
 			next.Command = "komodo machine --role " + next.Role + " " + next.Task
 			next.Role = ""
 		}
 	}
 	return &next
+}
+
+// fitsLocal reports whether a brief on disk fits the local machine's window; no brief always fits.
+func fitsLocal(root, brief string) bool {
+	if brief == "" {
+		return true
+	}
+	info, err := os.Stat(filepath.Join(root, brief))
+	if err != nil {
+		return true
+	}
+	return mount.LocalMachine().Fits(int(info.Size()))
 }
 
 // waveMerged reports whether QC already merged this wave into the group branch.
@@ -243,6 +261,34 @@ func reviewed(root string, plan *Plan) bool {
 		return false
 	}
 	return !staleReview(root, plan)
+}
+
+// stampReview records the review station once per result: the seconds from the review brief to
+// its result, and how many findings it returned, so a spawned review is timed like a local one.
+func stampReview(root string, plan *Plan) {
+	taskID := plan.Group + "-review"
+	_, path, err := ReadResultFile(root, taskID)
+	if err != nil {
+		return
+	}
+	result, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if entries, err := Book(root).Read("line.jsonl"); err == nil {
+		for _, entry := range entries {
+			if entry.Station == "review" && entry.Group == plan.Group && !entry.At.Before(result.ModTime()) {
+				return
+			}
+		}
+	}
+	entry := ledger.Entry{Group: plan.Group, Task: taskID, Station: "review", Role: "reviewer",
+		Findings: len(ReviewFindings(root, plan.Group)), Outcome: "done"}
+	if brief, err := os.Stat(filepath.Join(root, StateDir, "briefs", taskID+".md")); err == nil {
+		entry.Seconds = result.ModTime().Sub(brief.ModTime()).Seconds()
+	}
+	fillUsage(root, taskID, result.ModTime(), &entry)
+	Stamp(root, entry)
 }
 
 // staleReview reports whether the branch moved after the review, which a repair always does;

@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"komodo/internal/mount"
@@ -22,15 +24,93 @@ const Env = "OLLAMA_BASE_URL"
 // DefaultURL is where the local machine answers unless the environment says otherwise.
 const DefaultURL = "http://localhost:11434"
 
-// Model is the model name every mount pulls from the local machine, so both hosts agree.
-const Model = "llama3.2"
+// DefaultModel is the model the mount falls back to when nothing names one and the server lists none.
+const DefaultModel = "llama3.2"
+
+// ModelEnv names the environment variable that picks the local model over the overlay and the server.
+const ModelEnv = "OLLAMA_MODEL"
+
+// WindowEnv names the environment variable that caps the local context window, in tokens.
+const WindowEnv = "OLLAMA_NUM_CTX"
+
+// DefaultWindow is the largest brief the mount sends a local model without being told otherwise.
+const DefaultWindow = 32768
 
 // minContext is Ollama's own default context window, in tokens, and the floor this mount requests.
 const minContext = 2048
 
-// init registers this mount so the doctor catches its model name outside the mounts.
+// init registers this mount and its names, so the doctor catches either outside the mounts.
 func init() {
-	mount.Register(mount.Host{Name: "ollama", Vendors: []string{Model}})
+	mount.Register(mount.Host{Name: "ollama", Vendors: []string{"ollama", DefaultModel}})
+	mount.RegisterLocal(mount.Local{
+		Env: Env, Up: Up, ModelName: ModelName, Fits: Fits, Allowed: Allowed,
+		Post: func(model, brief string, schema []byte) (mount.LocalResult, error) {
+			result, err := Post(BaseURL(), model, brief, schema)
+			return mount.LocalResult{Value: result.Value, TokensIn: result.TokensIn, TokensOut: result.TokensOut}, err
+		},
+	})
+}
+
+// ModelName is the local model every mount uses: the environment, then the overlay, then the
+// first model the server lists, then the default, so both hosts always agree.
+func ModelName() string {
+	if name := os.Getenv(ModelEnv); name != "" {
+		return name
+	}
+	if name := mount.LoadOverlay().LocalModel; name != "" {
+		return name
+	}
+	if name := firstTag(); name != "" {
+		return name
+	}
+	return DefaultModel
+}
+
+// Window is the largest context, in tokens, the mount asks a local model for.
+func Window() int {
+	if raw := os.Getenv(WindowEnv); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	if window := mount.LoadOverlay().LocalWindow; window > 0 {
+		return window
+	}
+	return DefaultWindow
+}
+
+// Fits reports whether a brief of this many characters fits the local window with room to answer.
+func Fits(chars int) bool {
+	return chars/4+1024 <= Window()
+}
+
+var (
+	tagOnce  sync.Once
+	tagFirst string
+)
+
+// firstTag asks the server once per process for the first model it holds, or nothing when it cannot say.
+func firstTag() string {
+	tagOnce.Do(func() {
+		if !Up() {
+			return
+		}
+		client := &http.Client{Timeout: 2 * time.Second}
+		response, err := client.Get(BaseURL() + "/api/tags")
+		if err != nil {
+			return
+		}
+		defer response.Body.Close()
+		var listed struct {
+			Models []struct {
+				Name string `json:"name"`
+			} `json:"models"`
+		}
+		if json.NewDecoder(response.Body).Decode(&listed) == nil && len(listed.Models) > 0 {
+			tagFirst = listed.Models[0].Name
+		}
+	})
+	return tagFirst
 }
 
 // writeTools are the verbs that make a role's machine call unsafe to run against Ollama.
@@ -124,6 +204,9 @@ type Result struct {
 // Post sends one brief to the chat endpoint and parses the answer against the schema.
 func Post(base, model, brief string, schema []byte) (Result, error) {
 	window := contextSize(brief)
+	if window > Window() {
+		return Result{}, fmt.Errorf("the brief needs a %d-token window and the local machine allows %d; route it to a remote machine or raise %s", window, Window(), WindowEnv)
+	}
 	body, err := json.Marshal(request{
 		Model:    model,
 		Messages: []message{{Role: "user", Content: brief}},

@@ -114,7 +114,7 @@ func agentFile(role mount.Role, local bool) string {
 	}
 	model := models[role.Tier]
 	if local {
-		model = ollama.Model
+		model = ollama.ModelName()
 	}
 	lines := []string{
 		fmt.Sprintf("name = %q", role.Name),
@@ -189,6 +189,7 @@ func init() {
 		Probe:       Probe,
 		Usage:       Usage,
 		Headless:    Headless,
+		EventsPath:  EventsPath,
 	})
 }
 

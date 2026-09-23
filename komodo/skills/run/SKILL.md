@@ -16,8 +16,12 @@ You drive one group through the line. The station order lives in the binary. You
 ## What the JSON means
 
 - **`run`** — run `command` verbatim from the repo root, then loop.
-- **`spawn`** — spawn the `role` agent on `brief`, in `worktree`, served by `machine`. Its context is `skills`, `facets`, and `commands`; give it no more.
+- **`spawn`** — spawn the `role` agent on `brief`, in `worktree`. `machine` is `provider/model`; pass the model half as the spawn's model, so a task's `tier` is honoured. Its context is `skills`, `facets`, and `commands`; give it no more.
 - **`done`** — stop and report `why`.
+
+## The binary
+
+`komodo` is `bin/komodo-<os>-<arch>` at the repo root, built by `komodo gate --install`. In the toolkit repo `go run ./cmd/komodo` is the same binary.
 
 ## Rules
 

@@ -36,7 +36,7 @@ func repo(t *testing.T, text string) string {
 
 func TestWavesSplitByDirectoryAndDependency(t *testing.T) {
 	parsed := backlog.Parse(groupText)
-	waves, err := Waves(parsed.Groups[0].Tasks, nil)
+	waves, err := Waves(parsed.Groups[0].Tasks, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestWavesSplitByDirectoryAndDependency(t *testing.T) {
 
 func TestWavesSkipWhatIsDone(t *testing.T) {
 	parsed := backlog.Parse(groupText)
-	waves, err := Waves(parsed.Groups[0].Tasks, []string{"TSK-05.1.1"})
+	waves, err := Waves(parsed.Groups[0].Tasks, []string{"TSK-05.1.1"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
