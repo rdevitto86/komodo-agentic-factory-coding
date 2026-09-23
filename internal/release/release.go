@@ -133,10 +133,19 @@ var versionTag = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
 func Check(changelog string, tags, groupVersions []string) []Drift {
 	var drift []Drift
 	named := map[string]bool{}
-	for _, version := range Versions(changelog) {
+	counts := map[string]int{}
+	versions := Versions(changelog)
+	for index, version := range versions {
 		named[version.Number] = true
 		if version.Body == "" {
 			drift = append(drift, Drift{version.Number, "the changelog heading has no body"})
+		}
+		counts[version.Number]++
+		if counts[version.Number] == 2 {
+			drift = append(drift, Drift{version.Number, "more than one heading names this version"})
+		}
+		if index > 0 && Compare(version.Number, versions[index-1].Number) > 0 {
+			drift = append(drift, Drift{version.Number, "this heading is out of order, newer than the heading above it"})
 		}
 	}
 	for _, tag := range tags {

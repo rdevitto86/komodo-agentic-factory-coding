@@ -653,25 +653,73 @@ func runReport(root string) {
 
 // runTag tags every changelog version no tag points at and pushes it.
 func runTag(root string) {
-	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
-	if err != nil {
+	if err := tag(root, os.Stdout); err != nil {
 		fail(err)
 	}
-	pending := release.Taggable(text, gitLines(root, "tag", "--list"))
-	if len(pending) == 0 {
-		fmt.Println("every changelog version is tagged")
-		return
+}
+
+// tag refuses to run off the branch origin's HEAD names, then tags and pushes every version origin lacks.
+func tag(root string, out io.Writer) error {
+	branch, err := gitRun(root, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
 	}
+	if base := line.DefaultBase(root); branch != base {
+		return fmt.Errorf("refusing to tag off %q, only the default branch %q tags", branch, base)
+	}
+	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		return err
+	}
+	pending := release.Taggable(text, remoteTags(root))
+	if len(pending) == 0 {
+		fmt.Fprintln(out, "every changelog version is tagged")
+		return nil
+	}
+	local := gitLines(root, "tag", "--list")
 	for _, version := range pending {
 		name := release.TagName(version)
-		if _, err := gitRun(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
-			fail(err)
+		if !contains(local, name) {
+			if _, err := gitRun(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
+				return err
+			}
 		}
 		if _, err := gitRun(root, "push", "origin", name); err != nil {
-			fail(err)
+			return err
 		}
-		fmt.Println("tagged", name)
+		fmt.Fprintln(out, "tagged", name)
 	}
+	return nil
+}
+
+// contains reports whether the slice holds the value.
+func contains(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+// remoteTags lists origin's tag names, so a local tag a failed push left behind is not mistaken for shipped.
+func remoteTags(root string) []string {
+	out, err := gitRun(root, "ls-remote", "--tags", "origin")
+	if err != nil {
+		return nil
+	}
+	var tags []string
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(fields[1], "refs/tags/"), "^{}")
+		if name != "" && !contains(tags, name) {
+			tags = append(tags, name)
+		}
+	}
+	return tags
 }
 
 // runRelease audits the drift between the changelog, the tags, and the groups, or builds release assets.
@@ -689,16 +737,10 @@ func runRelease(root string, args []string) {
 		}
 		return
 	}
-	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
+	drift, err := checkRelease(root)
 	if err != nil {
 		fail(err)
 	}
-	_, parsed := load(root)
-	var versions []string
-	for _, group := range parsed.Groups {
-		versions = append(versions, group.Version())
-	}
-	drift := release.Check(text, gitLines(root, "tag", "--list"), versions)
 	for _, item := range drift {
 		fmt.Printf("%s: %s\n", item.Subject, item.Detail)
 	}
@@ -706,6 +748,36 @@ func runRelease(root string, args []string) {
 	if len(drift) > 0 {
 		os.Exit(1)
 	}
+}
+
+// checkRelease audits the changelog against the tags and every shipped group's version.
+func checkRelease(root string) ([]release.Drift, error) {
+	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		return nil, err
+	}
+	_, parsed := load(root)
+	var versions []string
+	for _, group := range parsed.Groups {
+		if !shipped(group) {
+			continue
+		}
+		versions = append(versions, group.Version())
+	}
+	return release.Check(text, gitLines(root, "tag", "--list"), versions), nil
+}
+
+// shipped reports whether every task in the group is DONE.
+func shipped(group backlog.Group) bool {
+	if len(group.Tasks) == 0 {
+		return false
+	}
+	for _, task := range group.Tasks {
+		if task.Status != "DONE" {
+			return false
+		}
+	}
+	return true
 }
 
 // gitRun runs one git command in the repo root.
