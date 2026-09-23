@@ -1,12 +1,15 @@
 package line
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
 	"komodo/internal/facet"
+	repopkg "komodo/internal/repo"
 )
 
 const briefBacklog = "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -166,6 +169,110 @@ func TestBuildBriefAddsTheFacetsATaskNames(t *testing.T) {
 	}
 }
 
+func TestBuildBriefMergesARepoStandardsOverride(t *testing.T) {
+	root := briefRepo(t)
+	dir := filepath.Join(root, repopkg.StandardsDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "house.md"), []byte("# House\n\nOur own extra rule.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "Our own extra rule.") {
+		t.Fatalf("a repo standards override under .komodo/standards never reached the brief:\n%s", brief.Text)
+	}
+}
+
+// manyFiles builds a task with count files of length each, on disk under root, and returns the task.
+func manyFiles(t *testing.T, root string, count, length int) backlog.Task {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("a/f%02d.go", i)
+		if err := os.WriteFile(filepath.Join(root, name), []byte(strings.Repeat("x", length)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, name)
+	}
+	text := "### [TG-08.1] Many\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-08.1.1] Many [P: C] [READY]\n```yaml\nfiles: [" + strings.Join(names, ", ") + "]\ndone_when: [\"go test\"]\n```\n"
+	parsed := backlog.Parse(text)
+	task, _ := parsed.Task("TSK-08.1.1")
+	return task
+}
+
+func TestFilesSlotEnforcesTheTotalCapPastTwelveFiles(t *testing.T) {
+	root := t.TempDir()
+	task := manyFiles(t, root, 15, 5000)
+	got := filesSlot(root, task, CapPerFile, CapFilesTotal)
+	if len(got) > CapFilesTotal+500 {
+		t.Fatalf("files slot = %d chars, want it clipped near the %d total cap", len(got), CapFilesTotal)
+	}
+}
+
+func TestContextSlotEnforcesItsTotalCap(t *testing.T) {
+	root := t.TempDir()
+	text := "### [TG-08.2] Many\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-08.2.1] Many [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test\"]\n" +
+		"context:\n  - one.md\n  - two.md\n  - three.md\n```\n"
+	parsed := backlog.Parse(text)
+	task, _ := parsed.Task("TSK-08.2.1")
+	for _, name := range []string{"one.md", "two.md", "three.md"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(strings.Repeat("y", 9000)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := contextSlot(root, task, CapPerFile, CapFilesTotal)
+	if len(got) > CapFilesTotal+500 {
+		t.Fatalf("context slot = %d chars, want it clipped near the %d total cap", len(got), CapFilesTotal)
+	}
+}
+
+func TestRepoContextSlotEnforcesItsTotalCap(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, repopkg.ContextDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\npaths: []\n---\n" + strings.Repeat("z", 7000)
+	for _, name := range []string{"one.md", "two.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text := "### [TG-08.3] Many\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-08.3.1] Many [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test\"]\n```\n"
+	parsed := backlog.Parse(text)
+	task, _ := parsed.Task("TSK-08.3.1")
+	got := repoContextSlot(root, task, CapRepoContext)
+	if len(got) > CapRepoContext+500 {
+		t.Fatalf("repo context slot = %d chars, want it clipped near the %d cap", len(got), CapRepoContext)
+	}
+}
+
+func TestSingleModeBriefsShareTheGroupWorktree(t *testing.T) {
+	root := briefRepo(t)
+	text := strings.Replace(briefBacklog, "type: feat\nversion: 2.0.0", "type: feat\nversion: 2.0.0\nmode: single", 1)
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(StateDir, "wt", "TG-07.1")
+	if brief.Worktree != want {
+		t.Fatalf("worktree = %q, want the group's own worktree %q so single mode never splits at QC", brief.Worktree, want)
+	}
+}
+
 func TestFillRefusesAnUnsuppliedSlot(t *testing.T) {
 	if _, err := Fill("{{known}} {{unknown}}", map[string]string{"known": "x"}); err == nil {
 		t.Fatal("want an error naming the unsupplied slot")
@@ -205,11 +312,23 @@ func TestMatchGlobHandlesTheShippedShapes(t *testing.T) {
 		{"**/Dockerfile", "deploy/Dockerfile.dev", false},
 		{"**/migrations/**", "db/migrations/001.sql", true},
 		{"**/migrations/**", "db/schema/001.sql", false},
+		{"internal/repo/**", "internal/repo/context.go", true},
+		{"internal/repo/**", "internal/other/context.go", false},
 	}
 	for _, item := range cases {
 		if got := MatchGlob(item.pattern, item.path); got != item.want {
 			t.Errorf("MatchGlob(%q, %q) = %v", item.pattern, item.path, got)
 		}
+	}
+}
+
+func TestIsTextRejectsInvalidUTF8WhenTheWholeFileWasRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.bin")
+	if err := os.WriteFile(path, []byte{0x81, 0x82, 0x83}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if IsText(path) {
+		t.Fatal("invalid UTF-8 read in full must not pass as text")
 	}
 }
 

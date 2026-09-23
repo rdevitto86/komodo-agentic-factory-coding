@@ -13,6 +13,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/detect"
 	"komodo/internal/facet"
+	profilepkg "komodo/internal/profile"
 	repopkg "komodo/internal/repo"
 	"komodo/internal/toolkit"
 )
@@ -135,6 +136,7 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 	if !ok {
 		return nil, fmt.Errorf("no task %s in %s", taskID, path)
 	}
+	group, _ := parsed.Group(task.GroupID)
 	definition, err := LoadRole(root, role)
 	if err != nil {
 		return nil, err
@@ -143,32 +145,39 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 	if err != nil {
 		return nil, err
 	}
+	caps := resolveCaps(root)
 	result := filepath.Join(StateDir, "results", taskID+".json")
 	tree, _ := detect.Detect(cwd)
 	slots := map[string]string{
 		"task_id":      task.ID,
 		"title":        task.Title,
 		"task_block":   blockText(parsed, task),
-		"repo_rules":   repoRules(cwd),
-		"repo_context": repoContextSlot(cwd, task),
-		"context":      contextSlot(cwd, task),
-		"files":        filesSlot(cwd, task),
+		"repo_rules":   repoRules(cwd, caps.RepoRules),
+		"repo_context": repoContextSlot(cwd, task, caps.RepoContext),
+		"context":      contextSlot(cwd, task, caps.PerFile, caps.FilesTotal),
+		"files":        filesSlot(cwd, task, caps.PerFile, caps.FilesTotal),
 		"repo_profile": repoProfileSlot(tree),
-		"standards":    standardsSlot(StandardsFor(standards, task.Files(), role)) + facetAppendixSlot(root, tree, task, role),
-		"done_when":    doneWhenSlot(task),
-		"failure":      failureSlot(failure),
-		"result_path":  result,
-		"schema":       SchemaText(root, role),
+		"standards": standardsSlot(StandardsFor(standards, task.Files(), role)) +
+			repoStandardsSlot(root) + facetAppendixSlot(root, tree, task, role),
+		"done_when":   doneWhenSlot(task),
+		"failure":     failureSlot(failure, caps.Failure),
+		"result_path": result,
+		"schema":      SchemaText(root, role),
 	}
 	text, err := Fill(definition.Body, slots)
 	if err != nil {
 		return nil, err
 	}
 	text = strings.TrimSpace(text) + resultLine(result, slots["schema"])
+	worktree := filepath.Join(StateDir, "wt", taskID)
+	if group.Mode() == "single" {
+		// A single-mode group shares one builder and one worktree, so its tasks never split at QC.
+		worktree = filepath.Join(StateDir, "wt", group.ID)
+	}
 	brief := &Brief{
 		Task: taskID, Role: role, Result: result, Text: text, Tokens: Tokens(text),
 		Path:     filepath.Join(StateDir, "briefs", taskID+".md"),
-		Worktree: filepath.Join(StateDir, "wt", taskID),
+		Worktree: worktree,
 		Slots:    map[string]int{},
 	}
 	for name, value := range slots {
@@ -212,32 +221,43 @@ func blockText(parsed backlog.Backlog, task backlog.Task) string {
 	return strings.Join(parsed.Lines[task.BlockStart+1:task.BlockEnd], "\n")
 }
 
+// resolveCaps resolves the profile's slot caps, narrowed by the developer's own overlay, so a
+// brief never carries more than the host running it can afford.
+func resolveCaps(root string) profilepkg.Caps {
+	chosen := profilepkg.Select(root)
+	if path := profilepkg.MachineOverlayPath(); path != "" {
+		chosen = profilepkg.Overlay(chosen, path)
+	}
+	return chosen.Caps
+}
+
 // repoRules is the repo's own AGENTS.md, clipped, or a one-line default.
-func repoRules(cwd string) string {
+func repoRules(cwd string, limit int) string {
 	data, err := os.ReadFile(filepath.Join(cwd, "AGENTS.md"))
 	if err == nil {
-		return Clip(string(data), CapRepoRules, "AGENTS.md")
+		return Clip(string(data), limit, "AGENTS.md")
 	}
 	return "No repo-level rules file. Follow the standards below and the code's existing idioms."
 }
 
-// repoContextSlot renders every repo context file whose paths match the task's files, clipped.
-func repoContextSlot(cwd string, task backlog.Task) string {
+// repoContextSlot renders every repo context file whose paths match the task's files, clipped to
+// the slot's total, since the README names one cap for the whole joined slot, not one per file.
+func repoContextSlot(cwd string, task backlog.Task, limit int) string {
 	contexts, _ := repopkg.LoadContext(cwd)
 	var parts []string
 	for _, context := range contexts {
 		if context.Matches(task.Files()) {
-			parts = append(parts, Clip(context.Body, CapRepoContext, context.Name))
+			parts = append(parts, context.Body)
 		}
 	}
 	if len(parts) == 0 {
 		return "None declared for this repo."
 	}
-	return strings.Join(parts, "\n\n---\n\n")
+	return Clip(strings.Join(parts, "\n\n---\n\n"), limit, "repo context")
 }
 
-// contextSlot resolves each context anchor to its section, clipped.
-func contextSlot(cwd string, task backlog.Task) string {
+// contextSlot resolves each context anchor to its section, clipped per file and by the joined total.
+func contextSlot(cwd string, task backlog.Task, perFileCap, totalCap int) string {
 	var parts []string
 	for _, ref := range task.Context() {
 		path, anchor, _ := strings.Cut(ref, "#")
@@ -252,23 +272,24 @@ func contextSlot(cwd string, task backlog.Task) string {
 				text = section
 			}
 		}
-		parts = append(parts, fmt.Sprintf("### %s\n%s", ref, Clip(text, CapPerFile, ref)))
+		parts = append(parts, fmt.Sprintf("### %s\n%s", ref, Clip(text, perFileCap, ref)))
 	}
 	if len(parts) == 0 {
 		return "None beyond the files below."
 	}
-	return strings.Join(parts, "\n\n")
+	return Clip(strings.Join(parts, "\n\n"), totalCap, "context")
 }
 
-// filesSlot reads every listed file, names a binary one by size, and never reads bin/.
-func filesSlot(cwd string, task backlog.Task) string {
+// filesSlot reads every listed file, names a binary one by size, and never reads bin/, clipped
+// per file and by the joined total, since a per-file floor alone lets many files past it.
+func filesSlot(cwd string, task backlog.Task, perFileCap, totalCap int) string {
 	files := task.Files()
 	if len(files) == 0 {
 		return "No files listed."
 	}
-	perFile := CapPerFile
-	if perFile*len(files) > CapFilesTotal {
-		perFile = CapFilesTotal / len(files)
+	perFile := perFileCap
+	if perFile*len(files) > totalCap {
+		perFile = totalCap / len(files)
 		if perFile < 2000 {
 			perFile = 2000
 		}
@@ -295,7 +316,7 @@ func filesSlot(cwd string, task backlog.Task) string {
 			parts = append(parts, fmt.Sprintf("### %s\n```\n%s\n```", path, Clip(string(data), perFile, path)))
 		}
 	}
-	return strings.Join(parts, "\n\n")
+	return Clip(strings.Join(parts, "\n\n"), totalCap, "files")
 }
 
 // standardsSlot renders each selected standard, clipped by its own cap.
@@ -375,12 +396,12 @@ func doneWhenSlot(task backlog.Task) string {
 }
 
 // failureSlot carries the previous attempt into a repair brief, clipped.
-func failureSlot(failure string) string {
+func failureSlot(failure string, limit int) string {
 	if strings.TrimSpace(failure) == "" {
 		return ""
 	}
 	return "\n# Previous attempt failed\nFix the cause. Never weaken the check.\n```\n" +
-		Clip(failure, CapFailure, "failure") + "\n```"
+		Clip(failure, limit, "failure") + "\n```"
 }
 
 // WriteBrief creates the task worktree from the group branch and writes the brief into it.

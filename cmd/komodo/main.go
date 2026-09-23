@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"komodo/internal/backlog"
@@ -360,6 +361,9 @@ func runNext(root string, args []string) {
 		return
 	}
 	if *start {
+		if err := line.CheckLock(root); err != nil {
+			fail(err)
+		}
 		state, err := line.Start(root, plan, *base)
 		if err != nil {
 			fail(err)
@@ -756,7 +760,18 @@ func runRun(root string, args []string) {
 	budget := flags.Duration("budget", run.GroupBudget, "how long the run may take before it is killed")
 	target, rest := splitPositional(args, "budget")
 	_ = flags.Parse(rest)
+	if !*dry {
+		label := target
+		if label == "" {
+			label = "the open run"
+		}
+		if err := line.AcquireLock(root, label); err != nil {
+			fail(err)
+		}
+		_ = os.Setenv(line.LockEnv, strconv.Itoa(os.Getpid()))
+	}
 	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry})
+	line.ReleaseLock(root)
 	if err != nil {
 		fail(err)
 	}

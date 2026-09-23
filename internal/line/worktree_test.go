@@ -1,8 +1,12 @@
 package line
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -76,5 +80,110 @@ func TestAnAbsoluteWorktreeIsNotJoinedToTheRoot(t *testing.T) {
 	}
 	if got := WorktreePath(root, ""); got != root {
 		t.Fatalf("path = %s; no worktree means the root", got)
+	}
+}
+
+func TestAcquireLockTakesAFreshLock(t *testing.T) {
+	root := t.TempDir()
+	if err := AcquireLock(root, "TG-01.1"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(LockPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held RunLock
+	if err := json.Unmarshal(data, &held); err != nil {
+		t.Fatal(err)
+	}
+	if held.PID != os.Getpid() || held.Run != "TG-01.1" {
+		t.Fatalf("lock = %+v", held)
+	}
+}
+
+func TestAcquireLockRefusesALivePid(t *testing.T) {
+	root := t.TempDir()
+	holder := exec.Command("sleep", "30")
+	if err := holder.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = holder.Process.Kill(); _ = holder.Wait() })
+	data, err := json.Marshal(RunLock{PID: holder.Process.Pid, Run: "TG-01.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(LockPath(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(LockPath(root), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(LockEnv, "")
+	err = AcquireLock(root, "TG-02.1")
+	if err == nil {
+		t.Fatal("a second run must not steal a lock a live pid holds")
+	}
+	if !strings.Contains(err.Error(), "TG-01.1") {
+		t.Fatalf("err = %v, want it to name the holder", err)
+	}
+}
+
+func TestAcquireLockReclaimsADeadPid(t *testing.T) {
+	root := t.TempDir()
+	child := exec.Command("true")
+	if err := child.Run(); err != nil {
+		t.Fatal(err)
+	}
+	dead := RunLock{PID: child.Process.Pid, Run: "TG-01.1"}
+	data, err := json.Marshal(dead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(LockPath(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(LockPath(root), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AcquireLock(root, "TG-02.1"); err != nil {
+		t.Fatalf("a lock whose pid has exited must be reclaimed: %v", err)
+	}
+}
+
+func TestTheLaunchersOwnSessionPassesTheLockAndAStrangerDoesNot(t *testing.T) {
+	root := t.TempDir()
+	holder := exec.Command("sleep", "30")
+	if err := holder.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = holder.Process.Kill(); _ = holder.Wait() })
+	data, err := json.Marshal(RunLock{PID: holder.Process.Pid, Run: "TG-01.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(LockPath(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(LockPath(root), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(LockEnv, "")
+	if err := CheckLock(root); err == nil || !strings.Contains(err.Error(), "TG-01.1") {
+		t.Fatalf("err = %v; a live launcher's lock must stop a stranger's next --start", err)
+	}
+	t.Setenv(LockEnv, strconv.Itoa(holder.Process.Pid))
+	if err := CheckLock(root); err != nil {
+		t.Fatalf("the launcher's own session must pass its lock: %v", err)
+	}
+}
+
+func TestReleaseLockFreesOnlyItsOwnLock(t *testing.T) {
+	root := t.TempDir()
+	if err := AcquireLock(root, "TG-01.1"); err != nil {
+		t.Fatal(err)
+	}
+	ReleaseLock(root)
+	if _, err := os.Stat(LockPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("stat = %v; the holder's release must remove the lock", err)
 	}
 }
