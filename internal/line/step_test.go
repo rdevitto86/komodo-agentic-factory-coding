@@ -121,6 +121,7 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	if err := book.Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
 		t.Fatal(err)
 	}
+	gitWorktreeWithReview(t, root, "TG-12.1")
 	next, err := Step(root, "")
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +140,38 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	next, _ = Step(root, "")
 	if next.Action != "done" {
 		t.Fatalf("action = %+v", next)
+	}
+}
+
+// TestTheReviewerSpawnCarriesAWrittenBriefPath checks the reviewer spawn's brief is a path to a
+// filled brief on disk, not the bare command string a reviewer with no shell tool cannot run.
+func TestTheReviewerSpawnCarriesAWrittenBriefPath(t *testing.T) {
+	root := stepRepo(t)
+	role := "---\nname: reviewer\ndescription: Reviews.\ntier: heavy\ntools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\n" +
+		"Review of group {{group_id}}: {{title}}\n\n{{tasks}}\n\n{{standards}}\n\n{{diff}}\n"
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "reviewer.md"), []byte(role), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	startRun(t, root)
+	writeStepResult(t, root, "TSK-12.1.1")
+	markDone(t, root, "TSK-12.1.1")
+	if err := Book(root).Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	gitWorktreeWithReview(t, root, "TG-12.1")
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Brief == "komodo diff" || next.Brief == "" {
+		t.Fatalf("brief = %q, want a written brief path the reviewer's read-only tools can open", next.Brief)
+	}
+	text, err := os.ReadFile(filepath.Join(root, next.Brief))
+	if err != nil {
+		t.Fatalf("brief path %q does not exist: %v", next.Brief, err)
+	}
+	if !strings.Contains(string(text), "Review of group TG-12.1") || !strings.Contains(string(text), "Your result") {
+		t.Fatalf("brief does not carry the filled review and its result instruction:\n%s", text)
 	}
 }
 
@@ -162,6 +195,20 @@ func gitWorktreeFor(t *testing.T, root, groupID string) string {
 		}
 	}
 	commit(t, worktree, "a/one.go", "package a\n", "seed")
+	return worktree
+}
+
+// gitWorktreeWithReview is gitWorktreeFor, plus a branch that diverged past the profile's
+// review-skip-lines cap, so step must spawn the reviewer instead of skipping it.
+func gitWorktreeWithReview(t *testing.T, root, groupID string) string {
+	t.Helper()
+	worktree := gitWorktreeFor(t, root, groupID)
+	cmd := exec.Command("git", "checkout", "-q", "-b", "feat/a-group")
+	cmd.Dir = worktree
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %v: %s", err, out)
+	}
+	commit(t, worktree, "a/one.go", "package a\n\n"+strings.Repeat("x\n", 45), "grow")
 	return worktree
 }
 
@@ -303,6 +350,7 @@ func TestTheReviewerSpawnCarriesTheBeforeReviewCommand(t *testing.T) {
 	if err := book.Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "qc", Wave: 1, Outcome: "done"}); err != nil {
 		t.Fatal(err)
 	}
+	gitWorktreeWithReview(t, root, "TG-12.1")
 	commandsDir := filepath.Join(root, StateDir, "wt", "TG-12.1", StateDir)
 	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -607,6 +655,7 @@ func TestABlockedTaskSkipsItsDependentsAndReachesADraftShip(t *testing.T) {
 	fail(t, root, "TSK-12.1.1", 5)
 	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
 	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 2, Station: "qc", Outcome: "done"})
+	gitWorktreeWithReview(t, root, "TG-12.1")
 	next, err := Step(root, "")
 	if err != nil {
 		t.Fatal(err)
@@ -655,6 +704,10 @@ const twoGroups = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n`
 
 func TestALaterReadyGroupCannotStealAnUnshippedRun(t *testing.T) {
 	root := repo(t, twoGroups)
+	role := "---\nname: reviewer\ndescription: Reviews.\ntier: heavy\ntools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "reviewer.md"), []byte(role), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	state := RunState{
 		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
 		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}},
@@ -664,6 +717,7 @@ func TestALaterReadyGroupCannotStealAnUnshippedRun(t *testing.T) {
 	}
 	seed(t, root, "TSK-12.1.1")
 	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
+	gitWorktreeWithReview(t, root, "TG-12.1")
 	next, err := Step(root, "")
 	if err != nil {
 		t.Fatal(err)
