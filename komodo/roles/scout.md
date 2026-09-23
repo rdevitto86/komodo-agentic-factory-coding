@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Fast, cheap file location. "Where is X", "which files touch Y", "does Z exist". Returns paths only.
+description: Fast, cheap file location: "where is X", "which files touch Y", "does Z exist". Paths only.
 tier: light
 tools: [read, search]
 session: true

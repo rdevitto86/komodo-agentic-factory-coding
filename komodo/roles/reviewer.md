@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Reads a diff cold and returns verified findings with severity. Bugs, security, test gaps, simplification, narrative comments. Never writes.
+description: Reads a diff cold; returns verified findings with severity: bugs, security, test gaps, simplification, narrative comments. Never writes.
 tier: heavy
 tools: [read, search]
 session: true
