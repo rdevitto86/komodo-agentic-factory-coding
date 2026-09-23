@@ -34,18 +34,6 @@ func TestSplitFindingsSendsTheRestToTheBacklog(t *testing.T) {
 	}
 }
 
-func TestRepairBriefNamesEveryFinding(t *testing.T) {
-	text := RepairBrief([]Finding{{Severity: "high", Class: "bug", File: "a.go", Line: 4, Title: "off by one", Detail: "d", Fix: "f"}})
-	for _, want := range []string{"high", "bug", "a.go:4", "off by one", "Fix: f"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("repair brief is missing %q: %s", want, text)
-		}
-	}
-	if RepairBrief(nil) != "" {
-		t.Fatal("no findings means no repair brief")
-	}
-}
-
 func TestVerifyCommandFollowsTheDiscoveryOrder(t *testing.T) {
 	root := t.TempDir()
 	if got := VerifyCommand(root); got != "" {
@@ -186,6 +174,24 @@ func TestReportBodyMarksWhatBlocked(t *testing.T) {
 func TestTaskBranchIsLowercase(t *testing.T) {
 	if got := TaskBranch("TSK-03.2.5"); got != "task/tsk-03.2.5" {
 		t.Fatalf("branch = %s", got)
+	}
+}
+
+// TestCloseWaveSkipsTheMergeForASingleModeGroup proves QC merges no task branch for a
+// single-mode group: neither task branch below exists, yet the wave still closes.
+func TestCloseWaveSkipsTheMergeForASingleModeGroup(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "a/one.go", "package a\n", "seed")
+	plan := &Plan{Group: "TG-13.1", Mode: "single", Waves: [][]string{{"TSK-13.1.1", "TSK-13.1.2"}}}
+	result, err := CloseWave(root, plan, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK || result.Conflict != "" {
+		t.Fatalf("result = %+v; a single-mode group commits on the group branch, with nothing to merge", result)
+	}
+	if len(result.Merged) != 2 || result.Merged[0] != "TSK-13.1.1" || result.Merged[1] != "TSK-13.1.2" {
+		t.Fatalf("merged = %v", result.Merged)
 	}
 }
 

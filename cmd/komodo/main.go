@@ -502,9 +502,20 @@ func runClose(root string, args []string) {
 	if err := encoder.Encode(outcome); err != nil {
 		fail(err)
 	}
-	if outcome.Status != "DONE" {
-		os.Exit(1)
+	if outcome.Status == "IN_PROGRESS" {
+		fmt.Fprintf(os.Stderr, "komodo: %s failed and is IN_PROGRESS for a repair; run komodo step\n", outcome.Task)
 	}
+	if code := closeExitCode(outcome.Status); code != 0 {
+		os.Exit(code)
+	}
+}
+
+// closeExitCode is 0 for a closed task and one awaiting its repair, and 1 for a blocked one.
+func closeExitCode(status string) int {
+	if status == "DONE" || status == "IN_PROGRESS" {
+		return 0
+	}
+	return 1
 }
 
 // commentsArgs strips the check subcommand, if present, then splits what remains into paths and flags.

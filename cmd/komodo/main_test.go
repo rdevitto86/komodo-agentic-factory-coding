@@ -199,3 +199,11 @@ func TestAFlagAfterTheTargetIsStillParsed(t *testing.T) {
 		}
 	}
 }
+
+func TestARepairableCloseExitsZeroSoTheLoopContinues(t *testing.T) {
+	for status, want := range map[string]int{"DONE": 0, "IN_PROGRESS": 0, "BLOCKED": 1} {
+		if got := closeExitCode(status); got != want {
+			t.Fatalf("closeExitCode(%s) = %d, want %d", status, got, want)
+		}
+	}
+}

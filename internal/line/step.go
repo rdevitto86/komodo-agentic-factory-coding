@@ -77,6 +77,15 @@ func Step(root, needle string) (*Action, error) {
 			}
 			attempt := LoadAttempt(root, taskID)
 			if HasResult(root, taskID) && (attempt.Count == 0 || repairResultReady(root, taskID)) {
+				if group.Mode() == "single" {
+					// A single-mode task closes before the next briefs; they share one worktree.
+					if task, ok := parsed.Task(taskID); ok && task.Open() {
+						return action(root, plan, Action{
+							Action: "run", Command: "komodo close " + taskID + " --gate", Task: taskID, Wave: index + 1,
+							Why: taskID + " has a result and is still open",
+						}), nil
+					}
+				}
 				continue
 			}
 			if attempt.Count > plan.Profile.Repairs {
@@ -105,9 +114,14 @@ func Step(root, needle string) (*Action, error) {
 			if task, ok := parsed.Task(taskID); ok {
 				tier = task.Tier()
 			}
+			worktree := filepath.Join(StateDir, "wt", taskID)
+			if group.Mode() == "single" {
+				// A single-mode group shares one builder and one worktree, matching brief.go.
+				worktree = filepath.Join(StateDir, "wt", plan.Group)
+			}
 			return actionForTier(root, plan, Action{
 				Action: "spawn", Role: "builder", Brief: briefPath, Task: taskID, Wave: index + 1,
-				Worktree: filepath.Join(StateDir, "wt", taskID),
+				Worktree: worktree,
 				Why:      why,
 			}, tier), nil
 		}
