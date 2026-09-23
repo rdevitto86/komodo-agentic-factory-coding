@@ -129,8 +129,21 @@ func TestReplyPostsOnTheThreadItself(t *testing.T) {
 	}
 }
 
-// TestRespondLoopTerminates proves a resolved thread drops out of the next Threads
-// call, so a reply followed by a resolve ends the respond loop.
+func TestResolveMarksTheThreadItself(t *testing.T) {
+	client, calls := fake(t, `{"data":{"resolveReviewThread":{"thread":{"id":"PRT_1"}}}}`)
+	if err := client.Resolve("PRT_1"); err != nil {
+		t.Fatal(err)
+	}
+	got := (*calls)[0]
+	for _, want := range []string{"resolveReviewThread", "id=PRT_1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("call %q is missing %q", got, want)
+		}
+	}
+}
+
+// TestRespondLoopTerminates proves a reply followed by a Resolve call drops the
+// thread out of the next Threads call, so the respond loop ends.
 func TestRespondLoopTerminates(t *testing.T) {
 	open := `{"data":{"resource":{"reviewThreads":{"nodes":[` +
 		`{"id":"PRT_1","isResolved":false,"path":"a.go","line":4,` +
@@ -139,7 +152,8 @@ func TestRespondLoopTerminates(t *testing.T) {
 		`{"id":"PRT_1","isResolved":true,"path":"a.go","line":4,` +
 		`"comments":{"nodes":[{"body":"fix","author":{"login":"rev"}}]}}]}}}}`
 	replyOut := `{"data":{"addPullRequestReviewThreadReply":{"comment":{"id":"PRRC_1"}}}}`
-	client, _ := fake(t, pullFixture, open, replyOut, pullFixture, resolved)
+	resolveOut := `{"data":{"resolveReviewThread":{"thread":{"id":"PRT_1"}}}}`
+	client, _ := fake(t, pullFixture, open, replyOut, resolveOut, pullFixture, resolved)
 
 	first, err := client.Threads("7")
 	if err != nil {
@@ -149,6 +163,9 @@ func TestRespondLoopTerminates(t *testing.T) {
 		t.Fatalf("first threads = %+v, want one unresolved thread", first)
 	}
 	if err := client.Reply(first[0].ID, "fixed in abc123"); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Resolve(first[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	second, err := client.Threads("7")
