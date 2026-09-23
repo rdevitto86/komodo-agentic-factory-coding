@@ -49,6 +49,7 @@ const usage = `komodo: the code assembly line.
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
+  komodo release build        Build the per-platform binaries as release assets
   komodo install --host X     Mount this repo on a host, or on both
   komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
   komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
@@ -58,7 +59,7 @@ const usage = `komodo: the code assembly line.
   komodo threads [pr]         The unresolved review threads, as JSON
   komodo machine <task>       Post a brief to the Ollama mount, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
-  komodo gate [--install]     The local precheck: vet, test, binaries
+  komodo gate [--install]     The local precheck: vet, test, doctor, guard, comments
 `
 
 // main dispatches one subcommand.
@@ -264,13 +265,17 @@ func split(value string) []any {
 	return items
 }
 
-// runGate runs the local precheck, or installs it as a git hook.
+// runGate runs the local precheck, or builds the local binary and installs it as a git hook.
 func runGate(root string, args []string) {
 	set := flag.NewFlagSet("gate", flag.ExitOnError)
-	install := set.Bool("install", false, "write the pre-commit and pre-push hooks")
-	rebuild := set.Bool("rebuild", false, "rebuild every binary and rewrite the manifest")
+	install := set.Bool("install", false, "build the local binary and write the pre-commit and pre-push hooks")
 	_ = set.Parse(args)
 	if *install {
+		path, err := gate.BuildLocal(root, os.Stdout)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Println("built", path)
 		written, err := gate.Install(filepath.Join(root, ".git"))
 		if err != nil {
 			fail(err)
@@ -278,13 +283,6 @@ func runGate(root string, args []string) {
 		for _, path := range written {
 			fmt.Println("wrote", path)
 		}
-		return
-	}
-	if *rebuild {
-		if err := gate.WriteManifest(root, os.Stdout); err != nil {
-			fail(err)
-		}
-		fmt.Println("wrote bin/" + gate.ManifestName)
 		return
 	}
 	checks := []gate.Check{
@@ -333,7 +331,6 @@ func runGate(root string, args []string) {
 			}
 			return nil
 		}},
-		gate.Binaries(root),
 	}
 	if err := gate.Run(checks, os.Stdout); err != nil {
 		fail(err)
@@ -622,10 +619,20 @@ func runTag(root string) {
 	}
 }
 
-// runRelease audits the drift between the changelog, the tags, and the groups.
+// runRelease audits the drift between the changelog, the tags, and the groups, or builds release assets.
 func runRelease(root string, args []string) {
-	if len(args) == 0 || args[0] != "check" {
-		fail(fmt.Errorf("usage: komodo release check"))
+	if len(args) == 0 || (args[0] != "check" && args[0] != "build") {
+		fail(fmt.Errorf("usage: komodo release check | komodo release build"))
+	}
+	if args[0] == "build" {
+		paths, err := release.BuildAssets(root, filepath.Join(root, "dist"), os.Stdout)
+		if err != nil {
+			fail(err)
+		}
+		for _, path := range paths {
+			fmt.Println("wrote", path)
+		}
+		return
 	}
 	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
 	if err != nil {
