@@ -1,9 +1,11 @@
 package mount
 
 import (
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,16 +110,22 @@ func ConfigPaths() []string {
 	return out
 }
 
-// BinaryPath is the prebuilt binary for the platform the toolkit runs on.
+// BinaryPath is where gate --install builds this machine's binary, relative to the main checkout.
 func BinaryPath() string {
-	name := "komodo-linux-amd64"
-	switch runtime.GOOS {
-	case "darwin":
-		name = "komodo-darwin-arm64"
-	case "windows":
-		name = "komodo-windows-amd64.exe"
+	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		name += ".exe"
 	}
 	return filepath.Join("bin", name)
+}
+
+// MainCheckout is the checkout that owns root's git directory, so a worktree resolves to the repo it came from.
+func MainCheckout(root string) string {
+	out, err := exec.Command("git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return root
+	}
+	return filepath.Dir(strings.TrimSpace(string(out)))
 }
 
 // Machine is one model behind a tier: who serves it, which model, and at what effort.
@@ -158,7 +166,7 @@ func (m Machine) Local() bool {
 // FirstRemote returns the first mounted tier, standard first, whose machine is not local.
 func (t Tiers) FirstRemote() (Machine, bool) {
 	for _, machine := range []Machine{t.Standard, t.Heavy, t.Light} {
-		if machine.Provider != "" && !machine.Local() {
+		if machine.Provider != "" && machine.Provider != localProvider {
 			return machine, true
 		}
 	}
