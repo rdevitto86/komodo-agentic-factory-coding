@@ -8,7 +8,7 @@ globs: ["**/*.c", "**/*.h"]
 
 Follow the comments standard: a doc line on every public function, a comment on a private one only when long or non-obvious.
 
-**Hosted, application-level C.** Firmware, ISR discipline, RTOS, and bare-metal constraints are the cpp standard's domain — load that instead for embedded work; this standard assumes a normal OS process.
+**C only where it is forced.** New code in C needs one of two reasons: a vendor SDK or HAL that is C-only, or a measured hot path where C buys what the default language cannot. Otherwise embedded work is Zig and robotics is C++. Firmware constraints live in the embedded standard; this one assumes a normal OS process.
 
 ## Conventions
 

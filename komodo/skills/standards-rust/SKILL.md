@@ -6,6 +6,8 @@ globs: ["**/*.rs", "**/Cargo.toml"]
 
 # Rust
 
+Komodo's default for routers and nodes: networked services that forward, relay, or hold state for peers. A suggestion, not a mandate: an existing codebase keeps its language.
+
 Follow the comments standard: a doc line on every public function, a comment on a private one only when long or non-obvious.
 
 ## Tooling

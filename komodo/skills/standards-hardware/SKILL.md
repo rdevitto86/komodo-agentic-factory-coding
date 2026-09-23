@@ -6,7 +6,7 @@ globs: ["**/*.brd", "**/*.kicad_pcb", "**/*.kicad_sch", "**/*.sch"]
 
 # Hardware
 
-Physical design and integration. Firmware code rules live in the cpp standard — this covers everything upstream of it.
+Physical design and integration. Firmware code rules live in the embedded standard, with Zig as the default language — this covers everything upstream of it.
 
 ## Confirm before designing
 

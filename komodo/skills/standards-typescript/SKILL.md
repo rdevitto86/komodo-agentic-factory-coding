@@ -6,6 +6,8 @@ globs: ["**/*.cjs", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.svelte", "**/*.ts",
 
 # TypeScript and JavaScript
 
+Komodo's default for user interfaces, with Vue or Svelte on top. A suggestion, not a mandate: an existing codebase keeps its language.
+
 ## Comments
 - A JSDoc line on every exported function, class, and type: one sentence saying what it does or returns.
 - A non-exported function gets a one-line `//` comment when its body is longer than a screen or its behaviour is not obvious.

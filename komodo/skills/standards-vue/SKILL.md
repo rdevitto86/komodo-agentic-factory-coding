@@ -6,6 +6,8 @@ globs: ["**/*.vue"]
 
 # Vue 3
 
+One of Komodo's two default UI frameworks, with Svelte; TypeScript always. A suggestion, not a mandate: an existing codebase keeps its language.
+
 Composition API with `<script setup lang="ts">`, always. The Options API is never correct here.
 
 The TypeScript and web UI standards apply to every `<script>` block alongside this one.
