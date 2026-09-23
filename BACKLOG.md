@@ -649,7 +649,7 @@ type: test
 
 #### [TSK-03.7.4] The review station hands the reviewer a filled brief of the right diff [P: H] [READY]
 ```yaml
-files: [internal/line/diff.go, internal/line/diff_test.go, komodo/roles/reviewer.md]
+files: [internal/line/diff.go, internal/line/diff_test.go, internal/line/step.go, komodo/roles/reviewer.md]
 done_when:
   - go test ./internal/line/...
 depends_on: [TSK-03.7.11]
@@ -721,7 +721,7 @@ type: fix
 
 #### [TSK-03.7.9] The guard protects its own policy, every path spelling, and trailers in every form [P: C] [READY]
 ```yaml
-files: [internal/guard, internal/mount/registry.go, komodo/policy.json]
+files: [internal/guard, internal/mount/registry.go, internal/mount/claude/guard.go, internal/mount/codex/guard.go, komodo/policy.json]
 done_when:
   - go test ./internal/guard/...
   - go run ./cmd/komodo guard check
@@ -781,7 +781,7 @@ type: fix
 
 #### [TSK-03.7.13] Close trusts nothing the result says about itself, and a repairable failure keeps the loop alive [P: H] [READY]
 ```yaml
-files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, komodo/skills/run/SKILL.md]
+files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, internal/line/step.go, komodo/skills/run/SKILL.md]
 done_when:
   - go test ./internal/line/... -shuffle=on
 depends_on: [TSK-03.7.12]
@@ -790,6 +790,7 @@ context:
   - "with no task worktree, close runs git add -A in the root checkout and commits the user's unrelated changes onto whatever branch is checked out; refuse to commit unless the cwd is the task's own worktree on its task branch"
   - "QC and review failures have no repair path, and RepairBrief and FailureText have test callers only; wire them into the failure slot, or delete them and correct the README"
   - "close exits 1 on a repairable failure and the run skill stops on any non-zero exit, so even the first repair needs a human restart; a failure that leaves the task IN_PROGRESS for repair is not an error, so exit 0 and say so, and keep non-zero for real errors"
+  - "TSK-03.7.12 briefs a single-mode task into the group worktree and cuts no task branch; finish it: step spawns a single-mode builder in the group worktree, and CloseWave merges no task branch for a single-mode group, since close already committed each task on the group branch"
 type: fix
 ```
 
@@ -806,14 +807,15 @@ type: fix
 
 #### [TSK-03.7.15] Every CLI command reads every flag, and machine-read output is compact [P: M] [READY]
 ```yaml
-files: [cmd/komodo/main.go, cmd/komodo/main_test.go]
+files: [cmd/komodo/main.go, cmd/komodo/main_test.go, internal/pr/pr.go, internal/pr/pr_test.go]
 done_when:
-  - go test ./cmd/...
+  - go test ./cmd/... ./internal/pr/...
 depends_on: [TSK-03.7.11]
 context:
   - "komodo add parses with flag.Parse, so flags after the group and title are swallowed into the title and the task is written with no files; it was missed when every other command moved to splitPositional. comments check reads its flags as paths and passes vacuously; strip check first and fail on a path that does not exist"
   - "komodo machine --role reviewer looks up the heavy tier and never Tiers.Reviewer, and its error says it falls back when nothing does; resolve the reviewer through Tiers.Reviewer and say what actually happens"
   - "step and next --json print indented JSON the run skill reads every loop, and next --json carries every role's description and the whole profile; print compact JSON and drop what no station reads"
+  - "the respond loop can reply to a review thread but never resolve it, so a human must click resolve on every one; add pr.Client.Resolve(threadID) over the resolveReviewThread mutation and komodo threads --resolve <id>"
 type: fix
 ```
 
@@ -946,3 +948,116 @@ context:
   - "doctor's always-on total sums every shipped skill's description, but a host preloads only the skills the mount rendered; count the rendered set, so the number tracks what a session actually loads"
 type: fix
 ```
+
+#### [TSK-03.7.27] Always-on context fits its cap with a host installed [P: H] [READY]
+```yaml
+files: [AGENTS.md, komodo/AGENTS.md, komodo/rules, komodo/roles]
+done_when:
+  - go run ./cmd/komodo doctor
+  - go test ./...
+context:
+  - "doctor's always-on budget is 1500 tokens; with the first host installed it measures about 1770: the repo's AGENTS.md about 506, the rendered universal rules about 827, session role descriptions about 257, rendered skill descriptions about 180. Bring the total to at most 1400 so a repo's own skills have headroom"
+  - "the repo's AGENTS.md says everything lands on PR #103, which is stale, and its layout table repeats README.md; keep only what an agent would otherwise guess"
+  - "tighten the universal rules and the session role descriptions without dropping a rule: merge duplicates, cut restated examples, shorten wording. A rule that survives only as a fragment is lost, not kept; list every rule before and after and show none is missing"
+type: chore
+```
+
+### [TG-03.8] The line plans what it is handed
+```yaml
+type: fix
+version: 2.0.1
+base: docs/v2-plan
+```
+
+#### [TSK-03.8.1] brief refuses an ad hoc task that collides with an unmerged branch [P: H] [REFINEMENT]
+```yaml
+files: [internal/line/brief.go, internal/line/brief_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "komodo brief cut an ad hoc task on internal/doctor while a closed, unmerged task on internal/doctor sat in the open run; their doctor.go diverged by about 430 lines and the merge had to be resolved by hand"
+  - "refuse, naming the other task, when the task's dirs overlap any task branch in the open run that has not merged into the group branch"
+type: fix
+```
+
+#### [TSK-03.8.2] A task added to the open group mid-run joins a later wave [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/next.go, internal/line/step.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "pinWaves restores the run's recorded waves wholesale, so a task appended to the group after intake is in no wave and step never reaches it; it runs only by hand through komodo brief"
+  - "keep the pinned waves for the tasks they hold, and plan any task they miss into waves after the last pinned one"
+type: fix
+```
+
+#### [TSK-03.8.3] max_parallel caps a wave inside the planner, not after it [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/dag.go, internal/line/next.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "splitByParallel cuts finished waves, so a five-task wave with max_parallel 4 leaves one task alone in its own wave and pushes every dependent of the first four a wave later; TG-03.7 ran TSK-03.7.7 alone in wave 4 while TSK-03.7.11, ready and disjoint, waited for wave 5"
+  - "give Waves the cap as wave capacity, so a task carried over for capacity shares its next wave with the tasks that became ready"
+type: fix
+```
+
+#### [TSK-03.8.4] The comment lint accepts a C# attribute between the doc comment and the declaration [P: L] [REFINEMENT]
+```yaml
+files: [internal/comments]
+done_when:
+  - go test ./internal/comments/...
+context:
+  - "a public C# member with a /// summary above an [Obsolete] line is flagged undocumented; skip bracketed attribute lines when looking up from the declaration, as the Rust and Java attributes already are"
+type: fix
+```
+
+#### [TSK-03.8.5] One spec shape: architecture, system design, and an optional PRD [P: M] [READY]
+```yaml
+files: [komodo/skills/standards-specs, templates/project/docs/spec, komodo/roles/planner.md, komodo/rules/backlog.md, templates/project/BACKLOG.md.tmpl]
+done_when:
+  - go run ./cmd/komodo doctor
+context:
+  - "split the SDD into docs/spec/architecture.md (the stable shape: purpose, components, boundaries, data flow, decisions) and docs/spec/system-design.md (the detail: data model, interfaces, non-functional requirements, operations, recovery); docs/spec/prd.md stays optional and planner-facing; retire SDD.md"
+  - "every heading lives in exactly one file, so a task cites one place and the two never drift; the skill names which file owns each section"
+  - "architecture.md stays small enough for the planner and the reviewer to read whole; a builder gets system-design.md sections through task context"
+  - "standards-specs lists eight SDD sections and REQ-nn IDs while the templates carry V1 section numbering with gaps (§0, §1, §3, §5) and PRD-1 IDs; the skill and the templates name the same sections and one ID scheme"
+  - "use plain headings with no § numbers, so a task cites docs/spec/system-design.md#interfaces and a renumbering never breaks a citation; update the context examples in rules/backlog.md and BACKLOG.md.tmpl"
+  - "standards-specs calls the SDD required, which contradicts no repo config being required; say a repo may keep its design in README.md or in these files, and a task cites whichever holds it"
+  - "planner.md carries a {{spec}} slot nothing fills; drop it and tell the planner to read the spec files by path"
+type: fix
+```
+
+#### [TSK-03.8.6] A context anchor that names no section fails instead of sending the whole file [P: H] [READY]
+```yaml
+files: [internal/line/brief.go, internal/line/brief_test.go, internal/backlog]
+done_when:
+  - go test ./internal/line/... ./internal/backlog/...
+context:
+  - "contextSlot falls back to the whole file, clipped, when Section finds no heading for the anchor, so a mistyped anchor silently spends thousands of tokens on the wrong text"
+  - "the brief names the missing section instead of inlining the file, and komodo lint reports a context anchor whose file exists but holds no matching heading"
+type: fix
+```
+
+#### [TSK-03.8.7] The guard refuses a force push [P: M] [REFINEMENT]
+```yaml
+files: [internal/guard, komodo/policy.json]
+done_when:
+  - go test ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "the rules forbid force-pushing and rewriting published history, but the guard allows git push --force, --force-with-lease and a +refspec to any branch that is not critical; deny them, or make it a policy switch, and add table rows"
+type: fix
+```
+
+#### [TSK-03.8.8] A mount names its own events file, and the base is resolved in one place [P: L] [REFINEMENT]
+```yaml
+files: [internal/mount/registry.go, internal/mount/codex, internal/run, internal/line/diff.go, internal/line/worktree.go]
+done_when:
+  - go test ./internal/mount/... ./internal/run/... ./internal/line/...
+context:
+  - "internal/run tees headless stdout to .komodo/<host>/<task>.jsonl because that happens to match codex.EventsPath; add Host.EventsPath so the mount owns the path and the launcher asks for it"
+  - "diff.go's resolveBase copies AddWorktree's origin/<base>-first choice; export one resolver from worktree.go and call it from both, so the review can never diff a different base than the group was cut from"
+type: chore
+```
+
