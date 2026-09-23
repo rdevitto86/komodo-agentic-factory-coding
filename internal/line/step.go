@@ -131,8 +131,12 @@ func Step(root, needle string) (*Action, error) {
 		}
 	}
 	if !reviewed(root, plan) && !reviewSkippable(root, plan) {
+		briefPath, err := reviewBrief(root, plan)
+		if err != nil {
+			return nil, err
+		}
 		return action(root, plan, Action{
-			Action: "spawn", Role: "reviewer", Brief: "komodo diff",
+			Action: "spawn", Role: "reviewer", Brief: briefPath,
 			Task: plan.Group + "-review", Worktree: plan.Worktree,
 			Why: "every wave is merged and the diff is unreviewed",
 		}), nil
@@ -315,6 +319,41 @@ func paused(root string, plan *Plan) *Action {
 		Action: "done", Until: plan.WaitUntil,
 		Why: fmt.Sprintf("%s is paused until the window resets at %s", plan.Group, plan.WaitUntil),
 	})
+}
+
+// reviewBrief fills the reviewer role from the group's diff, tasks, and standards, writes it to
+// .komodo/briefs/<group>-review.md in the root and the group worktree, and returns that path.
+func reviewBrief(root string, plan *Plan) (string, error) {
+	definition, err := LoadRole(root, "reviewer")
+	if err != nil {
+		return "", err
+	}
+	input, err := DiffFor(root, plan)
+	if err != nil {
+		return "", err
+	}
+	slots := map[string]string{
+		"group_id": plan.Group, "title": plan.Title,
+		"tasks": input.Tasks, "standards": input.Standards, "diff": input.Diff, "base": plan.Base,
+	}
+	text, err := Fill(definition.Body, slots)
+	if err != nil {
+		return "", err
+	}
+	taskID := plan.Group + "-review"
+	result := filepath.Join(StateDir, "results", taskID+".json")
+	text = strings.TrimSpace(text) + resultLine(result, SchemaText(root, "reviewer"))
+	briefPath := filepath.Join(StateDir, "briefs", taskID+".md")
+	for _, base := range []string{root, WorktreePath(root, plan.Worktree)} {
+		full := filepath.Join(base, briefPath)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(full, []byte(text), 0o644); err != nil {
+			return "", err
+		}
+	}
+	return briefPath, nil
 }
 
 // reviewSkippable reports whether the diff sits at or under the profile's review-skip-lines cap.
