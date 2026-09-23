@@ -171,3 +171,50 @@ type Usage struct {
 	FiveHour float64   `json:"five_hour"`
 	ResetsAt time.Time `json:"resets_at"`
 }
+
+// GuardTools is what the guard needs from one mount: its tool names, extra paths, and denial encoding.
+type GuardTools struct {
+	WriteTools   map[string]bool
+	PathFields   []string
+	ShellTool    string
+	CommandField string
+	ConfigPaths  []string
+	Deny         func(reason string) []byte
+}
+
+var (
+	guardLock sync.Mutex
+	guards    = map[string]GuardTools{}
+)
+
+// RegisterGuard adds one mount's tool names and denial encoding, keyed by its host name.
+func RegisterGuard(host string, tools GuardTools) {
+	guardLock.Lock()
+	defer guardLock.Unlock()
+	guards[host] = tools
+}
+
+// GuardHosts returns every registered mount's guard tools, sorted by host name.
+func GuardHosts() []GuardTools {
+	guardLock.Lock()
+	defer guardLock.Unlock()
+	names := make([]string, 0, len(guards))
+	for name := range guards {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]GuardTools, 0, len(names))
+	for _, name := range names {
+		out = append(out, guards[name])
+	}
+	return out
+}
+
+// GuardConfigPaths are every extra path a registered mount's guard protects.
+func GuardConfigPaths() []string {
+	var out []string
+	for _, tools := range GuardHosts() {
+		out = append(out, tools.ConfigPaths...)
+	}
+	return out
+}
