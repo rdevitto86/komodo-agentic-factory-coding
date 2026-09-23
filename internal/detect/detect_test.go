@@ -54,7 +54,7 @@ func TestDetectFindsCloudMarkers(t *testing.T) {
 
 	profile, _ := Detect(root)
 
-	want := map[string]bool{"aws": true, "gcp": true, "azure": true, "terraform": true}
+	want := map[string]bool{"aws": true, "gcp": true, "azure": true}
 	if len(profile.Cloud) != len(want) {
 		t.Fatalf("cloud = %v", profile.Cloud)
 	}
@@ -62,6 +62,31 @@ func TestDetectFindsCloudMarkers(t *testing.T) {
 		if !want[name] {
 			t.Fatalf("unexpected cloud marker %q", name)
 		}
+	}
+}
+
+func TestDetectMapsEachTerraformProviderToTheFacetMarkerItSets(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "infra/main.tf", `provider "google" {
+  project = "example"
+}
+
+provider "azurerm" {
+  features {}
+}
+
+provider "postgresql" {
+  host = "localhost"
+}
+`)
+
+	profile, _ := Detect(root)
+
+	if len(profile.Cloud) != 2 || profile.Cloud[0] != "azure" || profile.Cloud[1] != "gcp" {
+		t.Fatalf("cloud = %v, want [azure gcp]", profile.Cloud)
+	}
+	if len(profile.Data) != 1 || profile.Data[0] != "sql" {
+		t.Fatalf("data = %v, want [sql]", profile.Data)
 	}
 }
 
@@ -75,7 +100,7 @@ func TestDetectFindsDataAndCI(t *testing.T) {
 
 	profile, _ := Detect(root)
 
-	wantData := map[string]bool{"prisma": true, "dbt": true, "compose": true, "sql": true}
+	wantData := map[string]bool{"dbt": true, "compose": true, "sql": true}
 	if len(profile.Data) != len(wantData) {
 		t.Fatalf("data = %v", profile.Data)
 	}
@@ -86,6 +111,49 @@ func TestDetectFindsDataAndCI(t *testing.T) {
 	}
 	if len(profile.CI) != 1 || profile.CI[0] != "github-actions" {
 		t.Fatalf("ci = %v", profile.CI)
+	}
+}
+
+func TestDetectSkipsVenvEnvTargetDistBuildAndPycache(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "README.md", "# nothing here\n")
+	write(t, root, "venv/lib/foo.py", "print('hi')\n")
+	write(t, root, "env/lib/foo.rb", "puts 'hi'\n")
+	write(t, root, "target/debug/foo.rs", "fn main() {}\n")
+	write(t, root, "dist/foo.js", "console.log('hi')\n")
+	write(t, root, "build/foo.java", "class Foo {}\n")
+	write(t, root, "__pycache__/foo.php", "<?php ?>\n")
+
+	profile, _ := Detect(root)
+
+	if len(profile.Languages) != 0 {
+		t.Fatalf("languages = %v, want none of venv/env/target/dist/build/__pycache__ walked", profile.Languages)
+	}
+}
+
+func TestDetectPrefersTheRootVerifyDiscoveryOverManifestCommands(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example\n")
+	write(t, root, "Makefile", "verify:\n\tgo test ./...\n")
+
+	profile, _ := Detect(root)
+
+	if profile.Verify != "make verify" {
+		t.Fatalf("verify = %q, want make verify to win over the go.mod fallback", profile.Verify)
+	}
+}
+
+func TestVerifyCommandIsRootOnly(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "sub/Makefile", "verify:\n\techo hi\n")
+
+	if got := VerifyCommand(root); got != "" {
+		t.Fatalf("VerifyCommand = %q, want empty for a Makefile outside the root", got)
+	}
+
+	write(t, root, "Makefile", "verify:\n\techo hi\n")
+	if got := VerifyCommand(root); got != "make verify" {
+		t.Fatalf("VerifyCommand = %q, want make verify once the Makefile is at the root", got)
 	}
 }
 
@@ -137,25 +205,24 @@ func TestLoadWritesAndReusesTheCache(t *testing.T) {
 func TestLoadRecomputesWhenAManifestIsAdded(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "go.mod", "module example\n")
-	_ = Load(root)
-
-	future := time.Now().Add(time.Hour)
-	if err := os.Chtimes(filepath.Join(root, "go.mod"), future, future); err != nil {
-		t.Fatal(err)
+	first := Load(root)
+	if len(first.Cloud) != 0 {
+		t.Fatalf("cloud = %v, want none before cdk.json exists", first.Cloud)
 	}
-	write(t, root, "package.json", "{}")
+
+	write(t, root, "cdk.json", "{}")
 
 	updated := Load(root)
-	if updated.Verify != "go test ./..." {
-		t.Fatalf("verify = %q, want go.mod to still win the discovery order", updated.Verify)
+	if len(updated.Cloud) != 1 || updated.Cloud[0] != "aws" {
+		t.Fatalf("cloud = %v, want [aws] once cdk.json is added", updated.Cloud)
 	}
 
 	data, err := os.ReadFile(filepath.Join(root, cacheFile))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(data) == 0 {
-		t.Fatal("cache file is empty")
+	if !strings.Contains(string(data), "aws") {
+		t.Fatalf("cache = %s, want the fresh cloud marker saved", data)
 	}
 }
 
