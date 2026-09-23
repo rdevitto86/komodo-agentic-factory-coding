@@ -606,7 +606,7 @@ version: 2.0.0
 base: docs/v2-plan
 ```
 
-#### [TSK-03.7.1] The binaries leave the tree, and the gate builds with a pinned toolchain [P: H] [READY]
+#### [TSK-03.7.1] The binaries leave the tree, and the gate builds with a pinned toolchain [P: H] [DONE]
 ```yaml
 files: [.gitattributes, .gitignore, bin, go.mod, internal/gate, internal/release, AGENTS.md, README.md]
 done_when:
@@ -621,7 +621,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.2] Every doctor check fires when it should and only then [P: H] [READY]
+#### [TSK-03.7.2] Every doctor check fires when it should and only then [P: H] [DONE]
 ```yaml
 files: [internal/doctor]
 done_when:
@@ -636,7 +636,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.3] The MCP swap point is proven, or the changelog stops claiming it [P: M] [READY]
+#### [TSK-03.7.3] The MCP swap point is proven, or the changelog stops claiming it [P: M] [DONE]
 ```yaml
 files: [internal/line/swap_test.go, CHANGELOG.md]
 done_when:
@@ -647,7 +647,7 @@ context:
 type: test
 ```
 
-#### [TSK-03.7.4] The review station hands the reviewer a filled brief of the right diff [P: H] [READY]
+#### [TSK-03.7.4] The review station hands the reviewer a filled brief of the right diff [P: H] [DONE]
 ```yaml
 files: [internal/line/diff.go, internal/line/diff_test.go, internal/line/step.go, komodo/roles/reviewer.md]
 done_when:
@@ -661,7 +661,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.5] Detection agrees with what QC runs, and selects the facets it names [P: M] [READY]
+#### [TSK-03.7.5] Detection agrees with what QC runs, and selects the facets it names [P: M] [DONE]
 ```yaml
 files: [internal/detect, internal/facet, komodo/facets]
 done_when:
@@ -675,7 +675,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.6] The toolkit ships inside the binary, so the line runs in any repo [P: C] [READY]
+#### [TSK-03.7.6] The toolkit ships inside the binary, so the line runs in any repo [P: C] [DONE]
 ```yaml
 files: [komodo.go, internal/toolkit, internal/line, internal/mount, internal/guard, internal/facet, internal/doctor, cmd/komodo]
 done_when:
@@ -688,7 +688,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.7] The guard sees through shell wrappers, chains and assignments [P: C] [READY]
+#### [TSK-03.7.7] The guard sees through shell wrappers, chains and assignments [P: C] [DONE]
 ```yaml
 files: [internal/guard]
 done_when:
@@ -704,7 +704,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.8] The guard reads git the way git does [P: C] [READY]
+#### [TSK-03.7.8] The guard reads git the way git does [P: C] [DONE]
 ```yaml
 files: [internal/guard]
 done_when:
@@ -719,7 +719,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.9] The guard protects its own policy, every path spelling, and trailers in every form [P: C] [READY]
+#### [TSK-03.7.9] The guard protects its own policy, every path spelling, and trailers in every form [P: C] [DONE]
 ```yaml
 files: [internal/guard, internal/mount/registry.go, internal/mount/claude/guard.go, internal/mount/codex/guard.go, komodo/policy.json]
 done_when:
@@ -735,7 +735,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.10] Step routes every state to the station that ends it [P: C] [READY]
+#### [TSK-03.7.10] Step routes every state to the station that ends it [P: C] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/step_test.go]
 done_when:
@@ -750,7 +750,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.11] Ship reads the truth, tells it, and hands the push to whoever holds the credentials [P: C] [READY]
+#### [TSK-03.7.11] Ship reads the truth, tells it, and hands the push to whoever holds the credentials [P: C] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go, internal/line/step.go, cmd/komodo/main.go, CHANGELOG.md]
 done_when:
@@ -765,7 +765,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.12] Briefs and plans honour their caps, their mode, their needle, and one run at a time [P: H] [READY]
+#### [TSK-03.7.12] Briefs and plans honour their caps, their mode, their needle, and one run at a time [P: H] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/line/next.go, internal/line/dag.go, internal/line/clip.go, internal/line/verify.go, internal/line/worktree.go, cmd/komodo/main.go]
 done_when:
@@ -779,7 +779,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.13] Close trusts nothing the result says about itself, and a repairable failure keeps the loop alive [P: H] [READY]
+#### [TSK-03.7.13] Close trusts nothing the result says about itself, and a repairable failure keeps the loop alive [P: H] [DONE]
 ```yaml
 files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, internal/line/step.go, komodo/skills/run/SKILL.md]
 done_when:
@@ -794,7 +794,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.14] The backlog writer round-trips everything it writes [P: H] [READY]
+#### [TSK-03.7.14] The backlog writer round-trips everything it writes [P: H] [DONE]
 ```yaml
 files: [internal/backlog]
 done_when:
@@ -805,7 +805,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.15] Every CLI command reads every flag, and machine-read output is compact [P: M] [READY]
+#### [TSK-03.7.15] Every CLI command reads every flag, and machine-read output is compact [P: M] [DONE]
 ```yaml
 files: [cmd/komodo/main.go, cmd/komodo/main_test.go, internal/pr/pr.go, internal/pr/pr_test.go]
 done_when:
@@ -819,7 +819,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.16] Release and tag tell the truth about versions [P: M] [READY]
+#### [TSK-03.7.16] Release and tag tell the truth about versions [P: M] [DONE]
 ```yaml
 files: [internal/release, cmd/komodo/main.go]
 done_when:
@@ -831,7 +831,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.17] Metrics report what was measured and nothing else [P: H] [READY]
+#### [TSK-03.7.17] Metrics report what was measured and nothing else [P: H] [DONE]
 ```yaml
 files: [internal/ledger]
 done_when:
@@ -842,7 +842,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.18] respond reads real review threads and stops when none are left [P: H] [READY]
+#### [TSK-03.7.18] respond reads real review threads and stops when none are left [P: H] [DONE]
 ```yaml
 files: [internal/pr, komodo/skills/respond/SKILL.md]
 done_when:
@@ -852,7 +852,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.19] One glob matcher, and the repo layer reads what people write [P: H] [READY]
+#### [TSK-03.7.19] One glob matcher, and the repo layer reads what people write [P: H] [DONE]
 ```yaml
 files: [internal/glob, internal/repo]
 done_when:
@@ -863,7 +863,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.20] The comment lint reads every language's doc forms [P: M] [READY]
+#### [TSK-03.7.20] The comment lint reads every language's doc forms [P: M] [DONE]
 ```yaml
 files: [internal/comments]
 done_when:
@@ -874,7 +874,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.21] The first mount loads its rules, anchors its hook, and deletes nothing it did not write [P: C] [READY]
+#### [TSK-03.7.21] The first mount loads its rules, anchors its hook, and deletes nothing it did not write [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude, internal/mount/registry.go]
 done_when:
@@ -888,7 +888,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.22] The second mount names real models, reaches the local machine, and can write [P: H] [READY]
+#### [TSK-03.7.22] The second mount names real models, reaches the local machine, and can write [P: H] [DONE]
 ```yaml
 files: [internal/mount/codex]
 done_when:
@@ -901,7 +901,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.23] A headless run finishes its group and leaves nothing running [P: H] [READY]
+#### [TSK-03.7.23] A headless run finishes its group and leaves nothing running [P: H] [DONE]
 ```yaml
 files: [internal/run]
 done_when:
@@ -914,7 +914,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.24] The local machine is one mount, sized to the brief it reads [P: M] [READY]
+#### [TSK-03.7.24] The local machine is one mount, sized to the brief it reads [P: M] [DONE]
 ```yaml
 files: [internal/mount/ollama, internal/profile]
 done_when:
@@ -926,7 +926,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.25] Seven standards fit the cap they are clipped at [P: M] [READY]
+#### [TSK-03.7.25] Seven standards fit the cap they are clipped at [P: M] [DONE]
 ```yaml
 files: [komodo/skills]
 done_when:
@@ -937,7 +937,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.7.26] The last host name outside the mounts, a field nobody reads, and an honest always-on count [P: M] [READY]
+#### [TSK-03.7.26] The last host name outside the mounts, a field nobody reads, and an honest always-on count [P: M] [DONE]
 ```yaml
 files: [templates/project, internal/profile, internal/doctor]
 done_when:
@@ -949,7 +949,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.7.27] Always-on context fits its cap with a host installed [P: H] [READY]
+#### [TSK-03.7.27] Always-on context fits its cap with a host installed [P: H] [DONE]
 ```yaml
 files: [AGENTS.md, komodo/AGENTS.md, komodo/rules, komodo/roles]
 done_when:
