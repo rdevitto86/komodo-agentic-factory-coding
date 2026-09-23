@@ -946,3 +946,53 @@ context:
   - "doctor's always-on total sums every shipped skill's description, but a host preloads only the skills the mount rendered; count the rendered set, so the number tracks what a session actually loads"
 type: fix
 ```
+
+### [TG-03.8] The line plans what it is handed
+```yaml
+type: fix
+version: 2.0.1
+base: docs/v2-plan
+```
+
+#### [TSK-03.8.1] brief refuses an ad hoc task that collides with an unmerged branch [P: H] [REFINEMENT]
+```yaml
+files: [internal/line/brief.go, internal/line/brief_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "komodo brief cut an ad hoc task on internal/doctor while a closed, unmerged task on internal/doctor sat in the open run; their doctor.go diverged by about 430 lines and the merge had to be resolved by hand"
+  - "refuse, naming the other task, when the task's dirs overlap any task branch in the open run that has not merged into the group branch"
+type: fix
+```
+
+#### [TSK-03.8.2] A task added to the open group mid-run joins a later wave [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/next.go, internal/line/step.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "pinWaves restores the run's recorded waves wholesale, so a task appended to the group after intake is in no wave and step never reaches it; it runs only by hand through komodo brief"
+  - "keep the pinned waves for the tasks they hold, and plan any task they miss into waves after the last pinned one"
+type: fix
+```
+
+#### [TSK-03.8.3] max_parallel caps a wave inside the planner, not after it [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/dag.go, internal/line/next.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "splitByParallel cuts finished waves, so a five-task wave with max_parallel 4 leaves one task alone in its own wave and pushes every dependent of the first four a wave later; TG-03.7 ran TSK-03.7.7 alone in wave 4 while TSK-03.7.11, ready and disjoint, waited for wave 5"
+  - "give Waves the cap as wave capacity, so a task carried over for capacity shares its next wave with the tasks that became ready"
+type: fix
+```
+
+#### [TSK-03.8.4] The comment lint accepts a C# attribute between the doc comment and the declaration [P: L] [REFINEMENT]
+```yaml
+files: [internal/comments]
+done_when:
+  - go test ./internal/comments/...
+context:
+  - "a public C# member with a /// summary above an [Obsolete] line is flagged undocumented; skip bracketed attribute lines when looking up from the declaration, as the Rust and Java attributes already are"
+type: fix
+```
