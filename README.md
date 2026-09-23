@@ -114,6 +114,8 @@ Skills: `run` is three lines, call `komodo step`, do what it says, repeat, and t
 
 One hook, on PreToolUse for shell, edit, and write, on every host. Everything else is a command a human or the run skill calls.
 
+The guard catches a cooperative model's mistakes; it is not a sandbox. It reads one shell command at a time through a parser that two review rounds bypassed thirteen ways before they were closed, and a denylist over bash is never complete. The hard boundaries sit where a shell cannot reach: the forge's ruleset on every critical ref, which `komodo doctor --remote` audits, and the headless credential scrub, which leaves a run nothing to push with.
+
 Denied, and nothing else:
 
 1. **Critical branches.** Commit, push, merge, delete, or force on `main`, `master`, and any ref the policy lists. Greenfield repos protect nothing else.

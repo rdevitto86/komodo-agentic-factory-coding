@@ -189,6 +189,7 @@ func init() {
 		Probe:       Probe,
 		Usage:       Usage,
 		Headless:    Headless,
+		EventsPath:  EventsPath,
 	})
 }
 

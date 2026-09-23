@@ -192,21 +192,21 @@ func withBinPath(env []string, root string) []string {
 	return out
 }
 
-// eventsFile opens the JSON events file the installed host writes for one target, or returns
-// nothing when there is no target or no host to name the file after.
+// eventsFile opens the events file the installed mount names for one target, or returns
+// nothing when there is no target or the mount reads no events.
 func eventsFile(options Options) (*os.File, error) {
 	if options.Target == "" {
 		return nil, nil
 	}
-	host := profile.Select(options.Root).Host
-	if host == "" {
+	host, ok := mount.Get(profile.Select(options.Root).Host)
+	if !ok || host.EventsPath == nil {
 		return nil, nil
 	}
-	dir := filepath.Join(options.Root, line.StateDir, host)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	path := host.EventsPath(options.Root, options.Target)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	return os.Create(filepath.Join(dir, options.Target+".jsonl"))
+	return os.Create(path)
 }
 
 // finishShip pushes and opens the pull request a scrubbed ship handed off, in the launcher's own

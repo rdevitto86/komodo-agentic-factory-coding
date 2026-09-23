@@ -1038,7 +1038,7 @@ context:
 ```yaml
 type: fix
 version: 2.0.1
-base: docs/v2-plan
+base: main
 ```
 
 #### [TSK-03.8.1] brief refuses an ad hoc task that collides with an unmerged branch [P: H] [DONE]
@@ -1074,7 +1074,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.4] The comment lint accepts a C# attribute between the doc comment and the declaration [P: L] [REFINEMENT]
+#### [TSK-03.8.4] The comment lint accepts a C# attribute between the doc comment and the declaration [P: L] [DONE]
 ```yaml
 files: [internal/comments]
 done_when:
@@ -1122,7 +1122,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.8] A mount names its own events file, and the base is resolved in one place [P: L] [REFINEMENT]
+#### [TSK-03.8.8] A mount names its own events file, and the base is resolved in one place [P: L] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/codex, internal/run, internal/line/diff.go, internal/line/worktree.go]
 done_when:
@@ -1154,7 +1154,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.12] The guard's limits are stated, and the hard boundaries sit outside it [P: H] [REFINEMENT]
+#### [TSK-03.8.12] The guard's limits are stated, and the hard boundaries sit outside it [P: H] [DONE]
 ```yaml
 files: [README.md, komodo/policy.json, internal/guard, internal/run]
 done_when:

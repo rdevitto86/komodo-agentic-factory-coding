@@ -76,7 +76,7 @@ var (
 	goMethod     = regexp.MustCompile(`^func\s*\([^)]*\)\s*(\w+)`)
 	goFunc       = regexp.MustCompile(`^func\s+(\w+)`)
 	markerShape  = regexp.MustCompile(`^(NOTE|FIXME|TODO):\s+\S`)
-	annotation   = regexp.MustCompile(`^(?:@\w+(?:\(.*\))?|#!?\[.*\])$`)
+	annotation   = regexp.MustCompile(`^(?:@\w+(?:\(.*\))?|#!?\[.*\]|\[[A-Za-z_][^\]]*\])$`)
 	dunder       = regexp.MustCompile(`^__\w+__$`)
 	testFileName = []*regexp.Regexp{
 		regexp.MustCompile(`_test\.[^.]+$`), regexp.MustCompile(`^test_`),

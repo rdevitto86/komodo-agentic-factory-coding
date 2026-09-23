@@ -10,7 +10,7 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 
 ## 2.0.1 — 2026-09-23
 
-- **TG-03.8** The line plans what it is handed (13 task(s))
+- **TG-03.8** The line plans what it is handed (16 task(s))
 
 ### Fixed
 
@@ -26,7 +26,9 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 - The guard refuses a force push, `--force-with-lease`, and a `+refspec` on every branch; the rules say the same. Six allowed rows were added so the table stays balanced.
 - The headless ship files the minor findings and runs `after_publish` after the credentialed push, as the in-session ship does.
 - `komodo report` reads the run's own group after it ships instead of planning the next one.
-- The review diff is resolved from the same ref the group was cut from, through one resolver.
+- The review diff is resolved from the same ref the group was cut from, through one resolver, and a mount names its own events file.
+- The comment lint sees a doc comment above a C# attribute.
+- The README states what the guard is not: a sandbox. The hard boundaries are the forge's ruleset and the credential scrub.
 
 ### Changed
 
