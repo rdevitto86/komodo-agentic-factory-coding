@@ -9,3 +9,7 @@ CLAUDE.local.md
 
 # Editor / OS noise
 .DS_Store
+
+# Local build output, built by `komodo gate --install` and `komodo release build`
+/bin/
+/dist/

@@ -3,9 +3,12 @@ package gate
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -35,22 +38,6 @@ func TestRunReportsEveryCheckPassing(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "1 check(s) passed") {
 		t.Fatalf("out = %q", out.String())
-	}
-}
-
-func TestReadManifestParsesSumLines(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ManifestName)
-	body := "aaa  komodo-darwin-arm64\nbbb  komodo-linux-amd64\n\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sums, err := ReadManifest(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sums["komodo-darwin-arm64"] != "aaa" || len(sums) != 2 {
-		t.Fatalf("sums = %v", sums)
 	}
 }
 
@@ -94,17 +81,95 @@ func TestInstallWritesBothHooks(t *testing.T) {
 	}
 }
 
-func TestTargetsCoverThreePlatforms(t *testing.T) {
-	if len(Targets) != 3 {
-		t.Fatalf("targets = %d", len(Targets))
+func TestToolchainReadsThePinnedVersion(t *testing.T) {
+	dir := t.TempDir()
+	mod := "module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	seen := map[string]bool{}
-	for _, target := range Targets {
-		seen[target.GOOS] = true
+	got, err := Toolchain(dir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{"darwin", "windows", "linux"} {
-		if !seen[want] {
-			t.Errorf("no target for %s", want)
+	if got != "go1.27.1" {
+		t.Fatalf("toolchain = %q", got)
+	}
+}
+
+func TestToolchainFailsWithoutAPin(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Toolchain(dir); err == nil {
+		t.Fatal("want an error when go.mod names no toolchain")
+	}
+}
+
+func TestLocalTargetMatchesRuntime(t *testing.T) {
+	target := LocalTarget()
+	if target.GOOS != runtime.GOOS || target.Arch != runtime.GOARCH {
+		t.Fatalf("target = %+v", target)
+	}
+	want := fmt.Sprintf("komodo-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		want += ".exe"
+	}
+	if target.Name != want {
+		t.Fatalf("name = %q, want %q", target.Name, want)
+	}
+}
+
+// writeFakeBinary drops an executable shell script named name on a fake PATH entry.
+func writeFakeBinary(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// runHook runs the hook script under sh, with fakeDir first on PATH.
+func runHook(fakeDir, script string) (string, error) {
+	cmd := exec.Command("sh", script)
+	cmd.Env = []string{"PATH=" + fakeDir + ":" + os.Getenv("PATH")}
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := cmd.Run()
+	return out.String(), err
+}
+
+// TestHookScriptPicksBinaryPerPlatform proves the case statement never falls back to the Windows exe.
+func TestHookScriptPicksBinaryPerPlatform(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeBinary(t, dir, "git", "#!/bin/sh\necho /fake/root\n")
+	script := filepath.Join(dir, "hook")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ unameS, unameM, wantBin string }{
+		{"Darwin", "arm64", "komodo-darwin-arm64"},
+		{"Darwin", "x86_64", "komodo-darwin-amd64"},
+		{"Linux", "x86_64", "komodo-linux-amd64"},
+		{"Linux", "aarch64", "komodo-linux-arm64"},
+		{"MINGW64_NT-10.0", "x86_64", "komodo-windows-amd64.exe"},
+	}
+	for _, c := range cases {
+		writeFakeBinary(t, dir, "uname", fmt.Sprintf(
+			"#!/bin/sh\ncase \"$1\" in\n-s) echo '%s' ;;\n-m) echo '%s' ;;\nesac\n", c.unameS, c.unameM))
+		out, err := runHook(dir, script)
+		if err == nil {
+			t.Fatalf("%s-%s: want failure, no binary is built in the fake root", c.unameS, c.unameM)
 		}
+		if want := "no binary at /fake/root/bin/" + c.wantBin; !strings.Contains(out, want) {
+			t.Errorf("%s-%s: out = %q, want contains %q", c.unameS, c.unameM, out, want)
+		}
+	}
+	writeFakeBinary(t, dir, "uname", "#!/bin/sh\ncase \"$1\" in\n-s) echo 'FreeBSD' ;;\n-m) echo 'amd64' ;;\nesac\n")
+	out, err := runHook(dir, script)
+	if err == nil {
+		t.Fatal("want failure for an unrecognised platform")
+	}
+	if !strings.Contains(out, "no binary for this platform") || strings.Contains(out, "windows") {
+		t.Fatalf("an unknown platform must not fall back to the Windows binary: out = %q", out)
 	}
 }

@@ -22,13 +22,13 @@ Komodo's code assembly line: one static binary is the conveyor and the devices, 
 - **The gate is local.** `komodo gate` runs before every commit and push, mechanically, with no model. Nothing runs on GitHub.
 - **No MCP in V2.** Machines, skills, and external dependencies are the swappable parts; MCPs come in a later hot-swap pass.
 - **No repo config is required.** Nothing refuses to run because a file is missing.
-- **Standard library only.** Go with no dependencies; prebuilt binaries under `bin/` with a manifest.
+- **Standard library only.** Go with no dependencies; `bin/` is gitignored local build output, built by `komodo gate --install`.
 - **V1 is history.** The tag `v1-final` holds it; nothing is copied back without a task naming it. Run state was never committed and is gone.
 
 ## Commands
 
 ```bash
-go run ./cmd/komodo gate               # vet, test, doctor, guard table, binaries
+go run ./cmd/komodo gate               # vet, test, doctor, guard table, comments
 go run ./cmd/komodo lint               # after every backlog edit
 go run ./cmd/komodo doctor             # references, portability, drift
 ```

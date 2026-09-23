@@ -10,25 +10,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"runtime"
 	"strings"
 )
 
-// ManifestName is the checksum file that pins every prebuilt binary.
-const ManifestName = "MANIFEST.sha256"
-
-// Target is one prebuilt binary: its file name and the platform it is built for.
+// Target is one komodo binary: its file name and the platform it is built for.
 type Target struct {
 	Name string
 	GOOS string
 	Arch string
-}
-
-// Targets are the three platforms the toolkit ships a binary for.
-var Targets = []Target{
-	{Name: "komodo-darwin-arm64", GOOS: "darwin", Arch: "arm64"},
-	{Name: "komodo-windows-amd64.exe", GOOS: "windows", Arch: "amd64"},
-	{Name: "komodo-linux-amd64", GOOS: "linux", Arch: "amd64"},
 }
 
 // Check is one step of the gate, named for the line the runner prints.
@@ -49,33 +39,57 @@ func Run(checks []Check, out io.Writer) error {
 	return nil
 }
 
-// Command builds a check that runs one command in the repo root.
+// Command builds a check that runs one command in the repo root, pinned to the repo's toolchain.
 func Command(name, root string, args ...string) Check {
 	return Check{Name: name, Run: func(out io.Writer) error {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = root
 		cmd.Stdout, cmd.Stderr = out, out
+		if toolchain, err := Toolchain(root); err == nil {
+			cmd.Env = append(os.Environ(), "GOTOOLCHAIN="+toolchain)
+		}
 		return cmd.Run()
 	}}
 }
 
-// Binaries builds the check that rebuilds every target and compares it to the manifest.
-func Binaries(root string) Check {
-	return Check{Name: "binaries match " + ManifestName, Run: func(out io.Writer) error {
-		return VerifyBinaries(root, out)
-	}}
+// Toolchain reads the toolchain version go.mod pins, for example "go1.27.1".
+func Toolchain(root string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "toolchain "); ok {
+			return strings.TrimSpace(rest), nil
+		}
+	}
+	return "", fmt.Errorf("go.mod names no toolchain")
+}
+
+// LocalTarget is the binary this host builds for its own platform.
+func LocalTarget() Target {
+	name := fmt.Sprintf("komodo-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return Target{Name: name, GOOS: runtime.GOOS, Arch: runtime.GOARCH}
 }
 
 // buildFlags are the flags that make a rebuild byte-identical.
 var buildFlags = []string{"-trimpath", "-buildvcs=false", "-ldflags", "-s -w"}
 
-// Build compiles one target into dir and returns the path it wrote.
+// Build compiles one target into dir, pinned to the repo's toolchain, and returns the path it wrote.
 func Build(root, dir string, target Target) (string, error) {
+	toolchain, err := Toolchain(root)
+	if err != nil {
+		return "", err
+	}
 	path := filepath.Join(dir, target.Name)
 	args := append([]string{"build", "-o", path}, buildFlags...)
 	cmd := exec.Command("go", append(args, "./cmd/komodo")...)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+target.GOOS, "GOARCH="+target.Arch)
+	cmd.Env = append(os.Environ(),
+		"CGO_ENABLED=0", "GOOS="+target.GOOS, "GOARCH="+target.Arch, "GOTOOLCHAIN="+toolchain)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -94,111 +108,35 @@ func Sum(path string) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
-// ReadManifest parses a sha256 manifest into name to digest.
-func ReadManifest(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	sums := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			continue
-		}
-		sums[strings.TrimPrefix(fields[1], "*")] = fields[0]
-	}
-	return sums, nil
-}
-
-// WriteManifest rebuilds every target into bin/ and writes the checksum manifest.
-func WriteManifest(root string, out io.Writer) error {
+// BuildLocal builds this host's own binary into root/bin and returns the path it wrote.
+func BuildLocal(root string, out io.Writer) (string, error) {
 	dir := filepath.Join(root, "bin")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+		return "", err
 	}
-	sums := map[string]string{}
-	for _, target := range Targets {
-		path, err := Build(root, dir, target)
-		if err != nil {
-			return err
-		}
-		sum, err := Sum(path)
-		if err != nil {
-			return err
-		}
-		sums[target.Name] = sum
-		fmt.Fprintf(out, "built %s\n", target.Name)
-	}
-	return writeSums(filepath.Join(dir, ManifestName), sums)
-}
-
-// writeSums renders a manifest sorted by name.
-func writeSums(path string, sums map[string]string) error {
-	names := make([]string, 0, len(sums))
-	for name := range sums {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	var body strings.Builder
-	for _, name := range names {
-		fmt.Fprintf(&body, "%s  %s\n", sums[name], name)
-	}
-	return os.WriteFile(path, []byte(body.String()), 0o644)
-}
-
-// VerifyBinaries rebuilds every target and fails when one differs from the manifest.
-func VerifyBinaries(root string, out io.Writer) error {
-	manifest := filepath.Join(root, "bin", ManifestName)
-	want, err := ReadManifest(manifest)
+	target := LocalTarget()
+	path, err := Build(root, dir, target)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", manifest, err)
+		return "", err
 	}
-	dir, err := os.MkdirTemp("", "komodo-gate")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
-	for _, target := range Targets {
-		expected, ok := want[target.Name]
-		if !ok {
-			return fmt.Errorf("%s names no %s", ManifestName, target.Name)
-		}
-		path, err := Build(root, dir, target)
-		if err != nil {
-			return err
-		}
-		got, err := Sum(path)
-		if err != nil {
-			return err
-		}
-		if got != expected {
-			return fmt.Errorf("%s changed: manifest %s, rebuild %s; run `komodo gate --rebuild`", target.Name, expected[:12], got[:12])
-		}
-		shipped := filepath.Join(root, "bin", target.Name)
-		onDisk, err := Sum(shipped)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", shipped, err)
-		}
-		if onDisk != expected {
-			return fmt.Errorf("%s on disk does not match %s; run `komodo gate --rebuild`", target.Name, ManifestName)
-		}
-		fmt.Fprintf(out, "  %s %s\n", target.Name, got[:12])
-	}
-	return nil
+	fmt.Fprintf(out, "built %s\n", target.Name)
+	return path, nil
 }
 
 const hookScript = `#!/bin/sh
-# Runs the local gate through the platform's prebuilt binary. Written by komodo gate --install.
+# Runs the local gate through this host's own built binary. Written by komodo gate --install.
 set -e
 root=$(git rev-parse --show-toplevel)
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) bin="$root/bin/komodo-darwin-arm64" ;;
+  Darwin-x86_64) bin="$root/bin/komodo-darwin-amd64" ;;
   Linux-x86_64) bin="$root/bin/komodo-linux-amd64" ;;
-  *) bin="$root/bin/komodo-windows-amd64.exe" ;;
+  Linux-aarch64) bin="$root/bin/komodo-linux-arm64" ;;
+  MINGW*|MSYS*|CYGWIN*) bin="$root/bin/komodo-windows-amd64.exe" ;;
+  *) echo "gate: no binary for this platform ($(uname -s)-$(uname -m)); run go build ./cmd/komodo yourself" >&2; exit 1 ;;
 esac
 if [ ! -x "$bin" ]; then
-  echo "gate: no binary at $bin" >&2
+  echo "gate: no binary at $bin; run 'komodo gate --install' to build it" >&2
   exit 1
 fi
 exec "$bin" gate

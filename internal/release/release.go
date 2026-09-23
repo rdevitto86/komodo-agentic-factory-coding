@@ -1,14 +1,41 @@
-// Package release reads the changelog, tags the versions it names, and audits the drift between them.
+// Package release reads the changelog, tags the versions it names, and builds the release binaries.
 package release
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"komodo/internal/gate"
 )
+
+// Targets are the platforms a release ships a binary for.
+var Targets = []gate.Target{
+	{Name: "komodo-darwin-arm64", GOOS: "darwin", Arch: "arm64"},
+	{Name: "komodo-windows-amd64.exe", GOOS: "windows", Arch: "amd64"},
+	{Name: "komodo-linux-amd64", GOOS: "linux", Arch: "amd64"},
+}
+
+// BuildAssets builds every release target into dir and returns the paths it wrote.
+func BuildAssets(root, dir string, out io.Writer) ([]string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, target := range Targets {
+		path, err := gate.Build(root, dir, target)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(out, "built %s\n", target.Name)
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
 
 var headingRe = regexp.MustCompile(`(?m)^##\s+\[?v?(\d+\.\d+\.\d+)\]?`)
 

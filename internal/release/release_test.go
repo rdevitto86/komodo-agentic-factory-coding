@@ -1,6 +1,9 @@
 package release
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -79,5 +82,30 @@ func TestCheckIsQuietWhenEverythingAgrees(t *testing.T) {
 func TestTagNameAndMessage(t *testing.T) {
 	if TagName("2.0.0") != "v2.0.0" || TagMessage("2.0.0") != "release 2.0.0" {
 		t.Fatal("tag name or message is wrong")
+	}
+}
+
+func TestBuildAssetsWritesEveryTarget(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	var out bytes.Buffer
+	paths, err := BuildAssets(root, dir, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != len(Targets) {
+		t.Fatalf("paths = %v", paths)
+	}
+	for _, target := range Targets {
+		info, err := os.Stat(filepath.Join(dir, target.Name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() == 0 {
+			t.Fatalf("%s is empty", target.Name)
+		}
 	}
 }
