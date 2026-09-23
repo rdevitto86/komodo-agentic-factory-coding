@@ -183,6 +183,47 @@ func TestOversizedAlwaysOnContextIsFound(t *testing.T) {
 	}
 }
 
+// alwaysOnFired reports whether the always-on context problem is among those found.
+func alwaysOnFired(problems []Problem) bool {
+	for _, problem := range problems {
+		if problem.Where == "always-on context" {
+			return true
+		}
+	}
+	return false
+}
+
+// hostRenderingSkills fakes an installed host whose render carries exactly the given skills.
+func hostRenderingSkills(root string, skills map[string]string) mount.Host {
+	return mount.Host{Name: "testhost", Installed: func(string) bool { return true },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "testhost", Root: root}
+			for name, body := range skills {
+				plan.AddProject(filepath.Join(root, ".testhost", "skills", name, "SKILL.md"), []byte(body), "the "+name+" skill")
+			}
+			return plan, nil
+		}}
+}
+
+// TestTheAlwaysOnBudgetTracksTheRenderedSkillsNotTheShippedOnes fails against the pre-fix
+// checkBudgets, which sums every shipped skill and ignores what a host actually renders.
+func TestTheAlwaysOnBudgetTracksTheRenderedSkillsNotTheShippedOnes(t *testing.T) {
+	root := clean(t)
+	huge := "---\nname: standards-huge\ndescription: " + strings.Repeat("word ", 1600) + "\n---\n\n# Huge\n"
+	write(t, root, "komodo/skills/standards-huge/SKILL.md", huge)
+	small := "---\nname: run\ndescription: three words here\n---\n\nBody.\n"
+
+	registerHost(t, hostRenderingSkills(root, map[string]string{"run": small}))
+	if got := problemsFrom(t, root)["budgets"]; alwaysOnFired(got) {
+		t.Fatalf("budgets = %+v; a shipped skill the host never rendered must not count", got)
+	}
+
+	registerHost(t, hostRenderingSkills(root, map[string]string{"run": small, "standards-huge": huge}))
+	if got := problemsFrom(t, root)["budgets"]; !alwaysOnFired(got) {
+		t.Fatalf("budgets = %+v; a rendered skill's description must join the always-on total", got)
+	}
+}
+
 func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	root := clean(t)
 	rendered := filepath.Join(root, "existing.txt")
@@ -382,11 +423,13 @@ func TestAStandardsCapMeasuresTheBodyNotTheWholeFile(t *testing.T) {
 
 func TestAlwaysOnBudgetCountsSkillAndAgentDescriptions(t *testing.T) {
 	root := clean(t)
+	skills := map[string]string{}
 	for i := 0; i < 40; i++ {
 		name := fmt.Sprintf("standards-x%02d", i)
-		write(t, root, "komodo/skills/"+name+"/SKILL.md",
-			"---\nname: "+name+"\ndescription: "+strings.Repeat("word ", 40)+"\n---\n\n# X\n")
+		skills[name] = "---\nname: " + name + "\ndescription: " + strings.Repeat("word ", 40) + "\n---\n\n# X\n"
+		write(t, root, "komodo/skills/"+name+"/SKILL.md", skills[name])
 	}
+	registerHost(t, hostRenderingSkills(root, skills))
 	found := false
 	for _, problem := range problemsFrom(t, root)["budgets"] {
 		if problem.Where == "always-on context" {

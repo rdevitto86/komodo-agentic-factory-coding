@@ -18,6 +18,7 @@ import (
 
 	"komodo/internal/detect"
 	"komodo/internal/guard"
+	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/profile"
@@ -47,11 +48,12 @@ type Options struct {
 // Run walks every check and returns what it found.
 func Run(root string, options Options) ([]Problem, error) {
 	var problems []Problem
+	rendered := renderInstalled(root)
 	problems = append(problems, checkReferences(root)...)
 	problems = append(problems, checkRoles(root)...)
 	problems = append(problems, checkLeaks(root)...)
-	problems = append(problems, checkBudgets(root)...)
-	problems = append(problems, checkDrift(root)...)
+	problems = append(problems, checkBudgets(root, rendered)...)
+	problems = append(problems, checkDrift(rendered)...)
 	problems = append(problems, checkProfileDrift(root)...)
 	problems = append(problems, checkPromises(root)...)
 	if !options.NoGit {
@@ -194,7 +196,7 @@ func isMountImport(line string) bool {
 }
 
 // checkBudgets reports the always-on context, the run skill, and any standard over its cap.
-func checkBudgets(root string) []Problem {
+func checkBudgets(root string, rendered []renderedHost) []Problem {
 	var problems []Problem
 	total := 0
 	if data, err := os.ReadFile(filepath.Join(root, "AGENTS.md")); err == nil {
@@ -203,10 +205,8 @@ func checkBudgets(root string) []Problem {
 	if rules, err := mount.Rules(root); err == nil {
 		total += tokens(len(rules))
 	}
+	total += renderedSkillTokens(rendered)
 	skills, skillsErr := mount.LoadSkills(root)
-	for _, skill := range skills {
-		total += tokens(len(frontmatterField(skill.Body, "description")))
-	}
 	if roles, err := mount.LoadRoles(root); err == nil {
 		for _, role := range roles {
 			if role.Session {
@@ -266,11 +266,18 @@ func frontmatterField(text, key string) string {
 	return ""
 }
 
-// checkDrift reports a rendered host file that differs from what the source renders now.
-func checkDrift(root string) []Problem {
+// renderedHost is one installed host's render, or the error rendering it produced.
+type renderedHost struct {
+	Name string
+	Plan install.Plan
+	Err  error
+}
+
+// renderInstalled renders every installed host once, so the budget and drift checks read one plan.
+func renderInstalled(root string) []renderedHost {
 	defer freezeProfile(root)()
 	defer pinOllamaDown()()
-	var problems []Problem
+	var out []renderedHost
 	for _, host := range mount.Hosts() {
 		if host.Render == nil {
 			continue
@@ -279,11 +286,36 @@ func checkDrift(root string) []Problem {
 			continue
 		}
 		plan, err := host.Render(root, mount.BinaryPath())
-		if err != nil {
-			problems = append(problems, Problem{"drift", host.Name, err.Error()})
+		out = append(out, renderedHost{Name: host.Name, Plan: plan, Err: err})
+	}
+	return out
+}
+
+// renderedSkillTokens sums the descriptions of the skills a host renders, the part it preloads every session.
+func renderedSkillTokens(rendered []renderedHost) int {
+	total := 0
+	for _, host := range rendered {
+		if host.Err != nil {
 			continue
 		}
-		for _, action := range plan.Actions() {
+		for _, change := range host.Plan.Changes {
+			if change.Project && filepath.Base(change.Path) == "SKILL.md" {
+				total += tokens(len(frontmatterField(string(change.Body), "description")))
+			}
+		}
+	}
+	return total
+}
+
+// checkDrift reports a rendered host file that differs from what the source renders now.
+func checkDrift(rendered []renderedHost) []Problem {
+	var problems []Problem
+	for _, host := range rendered {
+		if host.Err != nil {
+			problems = append(problems, Problem{"drift", host.Name, host.Err.Error()})
+			continue
+		}
+		for _, action := range host.Plan.Actions() {
 			if action.Seed {
 				continue
 			}
