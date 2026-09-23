@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Turns a goal and a spec into backlog tasks in the backlog grammar: files, done_when commands, dependencies. Reads only.
+description: Turns a goal and spec into backlog tasks per the grammar: files, done_when, dependencies. Read-only.
 tier: standard
 tools: [read, search]
 session: true
