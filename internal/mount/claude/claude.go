@@ -102,7 +102,7 @@ func Render(root string, binary string) (install.Plan, error) {
 		if path == ".mcp.json" && !namesLocalServer(full) {
 			continue
 		}
-		plan.AddRemoval(full, "the V1 render and the old local server entry")
+		plan.AddRemoval(full, "the prototype's render and the old local server entry")
 	}
 	return plan, nil
 }

@@ -8,10 +8,10 @@ Komodo's code assembly line: one static binary is the conveyor and devices, mark
 - **Models read markdown, never Go.** Rules, roles, skills, and policy are the only files a machine sees.
 - **One agent hook.** The guard on PreToolUse; nothing else runs in the loop.
 - **The gate is local.** `komodo gate` runs pre-commit and pre-push, no model; nothing runs on GitHub.
-- **No MCP in V2.** Machines, skills, and dependencies are swappable parts; MCPs land in a later hot-swap pass.
+- **No MCP in 1.0.** Machines, skills, and dependencies are swappable parts; MCPs land in a later hot-swap pass.
 - **No repo config is required.** Nothing refuses to run for a missing file.
 - **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
-- **V1 is history.** Tag `v1-final` holds it; nothing returns without a named task; run state was never committed, and is gone.
+- **The prototype is history.** Tag `prototype-final` holds it, released as `1.0.0-alpha.1`–`.4`; nothing returns without a named task; run state was never committed, and is gone.
 
 ## Commands
 

@@ -195,7 +195,7 @@ func ChangelogLine(plan *Plan, result *ShipResult) string {
 	return line
 }
 
-var versionHeading = regexp.MustCompile(`(?m)^## (\d+\.\d+\.\d+)`)
+var versionHeading = regexp.MustCompile(`(?m)^## \[?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)`)
 
 // AppendChangelog puts a line under the version's heading, creating the heading when it is new.
 // The heading is matched with or without its date suffix, so a ship never duplicates its own.

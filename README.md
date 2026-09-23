@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README is the reference and the requirements. The repo was cleared to the markdown source on 2026-09-21; V1 lives at the tag `v1-final`; its run state was gitignored and did not survive the clear. Every task lands on PR #103 through six stacked group PRs, one per roadmap group. Tasks are in `BACKLOG.md`.
+This README is the reference and the requirements. This line is 1.0.0. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. The line was built on PR #103 through six stacked group PRs, one per roadmap group. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -177,9 +177,9 @@ The line is fixed; everything a station consumes is swappable without touching t
 | Machine | a profile row, per tier, per host | the mount that carries the brief |
 | Skill | `komodo/skills/`, `.komodo/skills/`, a facet's skill | a slot in the brief, a file in the project render |
 | External dependency: infra, data, CI | a facet, `.komodo/facets`, `commands.json` | the standards slot, the profile slot, the verify and compile commands |
-| MCP | a facet's `mcp.json`, reserved | nothing in V2 |
+| MCP | a facet's `mcp.json`, reserved | nothing in 1.0 |
 
-MCPs are deferred. V2 gets the line working with models, skills, and external dependencies as the swappable parts; a later hot-swap pass renders a facet's MCP servers into the project config, and nothing else in the line will know an MCP exists. A role, a skill, and the binary hold no name of a model, a server, or a platform, so each of the four points is proven by a test that swaps it and watches the station change.
+MCPs are deferred. 1.0 gets the line working with models, skills, and external dependencies as the swappable parts; a later hot-swap pass renders a facet's MCP servers into the project config, and nothing else in the line will know an MCP exists. A role, a skill, and the binary hold no name of a model, a server, or a platform, so each of the four points is proven by a test that swaps it and watches the station change.
 
 ## The non-proprietary day
 
@@ -187,7 +187,7 @@ Both developers run Claude Code today. Nothing outside `internal/mount/` names a
 
 ## Roadmap
 
-Six groups, all `2.0.0`, all on PR #103. Sessions build the first four; the run skill runs the last two as its own proof.
+Six groups, all `1.0.0`, all on PR #103. Sessions build the first four; the run skill runs the last two as its own proof.
 
 | Group | Delivers | Proof |
 |---|---|---|
@@ -224,19 +224,19 @@ Validation per PR, mechanical first, then human. Nothing runs on GitHub.
 
 | PR | Mechanical | Human |
 |---|---|---|
-| A | Every `done_when` of TG-03.1 exits zero. The V1 linter from a scratch worktree of `v1-final` reports zero problems. No file under `komodo/standards/`, `komodo/briefs/`, or `komodo/roles/merger.md`. Every role has a `.schema.json`. | Read `komodo/AGENTS.md` and `komodo/policy.json` end to end. The rules say worktree freedom and four denials, nothing V1. |
+| A | Every `done_when` of TG-03.1 exits zero. The V1 linter from a scratch worktree of `prototype-final` reports zero problems. No file under `komodo/standards/`, `komodo/briefs/`, or `komodo/roles/merger.md`. Every role has a `.schema.json`. | Read `komodo/AGENTS.md` and `komodo/policy.json` end to end. The rules say worktree freedom and four denials, nothing V1. |
 | B | `komodo gate` green: vet, test, byte-identical binaries. `komodo lint` on this backlog. `komodo next --json` prints TG-03.3 with its waves. `komodo brief --dry-run TSK-03.3.1` prints every slot under its cap. `komodo close` on a hand-written result JSON flips a status and stamps the ledger. `komodo step` prints one action. | Read one brief. It is the whole input a builder gets and nothing in it names a host. |
 | C | `komodo gate` green with `guard check`: 60 commands, half allowed, each denial named. `komodo install --host claude --dry-run` lists the render and nothing outside the mounts names a host. `komodo doctor`: always-on context under 1500 tokens, no leak, no drift. The plan probe prints the overlay and never an email or an id. | Install on this Mac. In a session, an agent is denied a commit to `main` and allowed `rm` inside its worktree. |
 | D | `komodo doctor`: the run skill under 800 tokens, four skills, none names a host. The launcher test proves the scrub: no push token, credential helper, or SSH identity reaches the child. `komodo run --dry-run TG-03.5` prints the host command it would launch. | `/run` in a session prints the first `step` action and stops when told. |
 | E | Opened by `close --group`, body is the report. `komodo gate` green, `komodo doctor` green including profile drift. `komodo detect` on this repo prints Go and no cloud. The Ollama mount test passes against the fake, and `komodo machine` reviews one real diff on a local model. The swap of a facet by `.komodo/facets` reaches a brief. | The proof numbers for TSK-03.4.3 are in the changelog and no station needed a human turn. Read the PR body: it is a usable report. |
 | F | `komodo gate` green as the pre-commit and pre-push hook on both developer machines. The retired-words grep finds nothing. The swap tests pass. `test ! -d .github/workflows`. | The Codex exit test ran with zero changes outside the mounts and its numbers are in the changelog. The README describes what exists. |
-| #103 | A through F merged. `komodo gate` green on `docs/v2-plan`. `komodo release check` reports no drift for 2.0.0. | Both proofs in `CHANGELOG.md`. Merge, and the tag is cut. |
+| #103 | A through F merged. `komodo gate` green on `docs/v2-plan`. `komodo release check` reports no drift for 1.0.0. | Both proofs in `CHANGELOG.md`. Merge, and the tag is cut. |
 
 The repository ruleset must cover `main` only. Today it covers every branch and requires a pull request for any push, which the owner bypasses on each push and a collaborator cannot; scoping it to `main` is the one GitHub setting the plan needs.
 
 ## Names
 
-One vocabulary, used the same way in this file, the backlog, the code, the skills, and every command and flag. V1's words for these parts are retired, and TSK-03.6.2 greps them out of everything a model or a developer reads.
+One vocabulary, used the same way in this file, the backlog, the code, the skills, and every command and flag. The prototype's words for these parts are retired, and TSK-03.6.2 greps them out of everything a model or a developer reads.
 
 | Name | Means |
 |---|---|

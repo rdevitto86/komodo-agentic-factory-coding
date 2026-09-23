@@ -2,13 +2,9 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
-## V1 abandoned — 2026-09-21
+## 1.0.0 — unreleased
 
-The 1.x line ends at 1.3.0. V1 was a Python orchestrator that spawned the host as a worker and rebuilt what the host ships: worktrees, parallel agents, hooks with deny, headless mode. By its last release, every open backlog item was about keeping the orchestrator safe from itself, and the account, hook, and report defects it kept fixing were its own. It was abandoned, not finished, in favour of V2: one static binary as the assembly line, markdown as everything a model reads, one guard, and a model mounted per host.
-
-V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the last commit on `main` before the repo was cleared. The repo was renamed from `komodo-agentic-toolkit-coding` to `komodo-agentic-coding-assembly-line`, then `komodo-agentic-factory-code`, then `komodo-agentic-factory-coding`, all within the same week. The V2 plan, its requirements, and a table mapping every V1 capability to its V2 task or its reason for dropping are in `README.md` on PR #103, which carries the group work.
-
-## 2.0.0 — 2026-09-22
+The first release. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
 - **TG-03.8** The line plans what it is handed (16 task(s))
 - **TG-03.7** The sanity pass: safety, correctness, portability (27 task(s))
@@ -21,10 +17,10 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 
 ### Removed
 
-- The Python orchestrator and everything it rebuilt on top of the host: worker spawning, its own worktree management, its own hook and permission model, headless mode, `komodo.json` and `komodo/config.py`. V1 is preserved whole at the tag `v1-final`.
+- The Python orchestrator and everything it rebuilt on top of the host: worker spawning, its own worktree management, its own hook and permission model, headless mode, `komodo.json` and `komodo/config.py`. The prototype is preserved whole at the tag `prototype-final`.
 - The merger role; QC stops on a conflict and hands it to a human instead of a role resolving it.
 - `komodo/briefs/` and `komodo/standards/` as separate directories: a role file now carries its own JSON schema beside it, and a standard is a skill triggered by its own frontmatter globs.
-- The MCP server V1 ran at `127.0.0.1:8000`; `install` removes its entry and no facet ships an `mcp.json` that does anything in V2.
+- The MCP server the prototype ran at `127.0.0.1:8000`; `install` removes its entry and no facet ships an `mcp.json` that does anything in 1.0.
 - Any GitHub Actions workflow; no `.github/workflows` directory exists and nothing bills CI minutes.
 
 ### What replaced it
@@ -71,7 +67,9 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 - `komodo doctor --remote` audits the forge's branch rulesets through `gh` and reports any active one that reaches past the default branch.
 - The reviewer names the files a clip marker omitted as unreviewed.
 
-## [1.3.0] — 2026-09-21
+## [1.0.0-alpha.4] — 2026-09-21
+
+Formerly 1.3.0, the last of the Python orchestrator. It spawned the host as a worker and rebuilt what the host ships: worktrees, parallel agents, hooks with deny, headless mode. By this release every open backlog item was about keeping the orchestrator safe from itself, and it was abandoned, not finished, in favour of 1.0.0: one static binary as the assembly line, markdown as everything a model reads, one guard, and a model mounted per host. It is preserved whole at the tag `prototype-final`, the last commit on `main` before the repo was cleared. The repo was renamed from `komodo-agentic-toolkit-coding` to `komodo-agentic-coding-assembly-line`, then `komodo-agentic-factory-code`, then `komodo-agentic-factory-coding`, all within the same week.
 
 ### Added
 - The harness reads the logged-in Claude account once per run from `claude auth status` and derives its own limits from it. A `claude.ai` subscription is metered in tokens, so `--max-budget-usd` is dropped from the worker command line entirely; an API key, Bedrock or Vertex keeps it, and an undetected account keeps it too. The email and org id the command also returns are never read
@@ -91,7 +89,9 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 - A worker stopped by a ceiling now says which ceiling bound and what it had spent when it did, so the next raise is not a guess
 - The repair attempt is handed the diff the first attempt left in the worktree, instead of re-deriving it from the error string alone
 
-## [1.2.0] — 2026-09-18
+## [1.0.0-alpha.3] — 2026-09-18
+
+Formerly 1.2.0.
 
 ### Changed
 - A task's status vocabulary is `REFINEMENT`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`. `READY` replaces `TODO`, and `REFINEMENT` holds open work the harness never picks up: `next_group` and the pipeline select on the new `Task.ready`, and `tasks lint` stops demanding `files` or `done_when` until a task is promoted out of refinement. Parsing maps a legacy `TODO` token to `READY`, so an unmigrated backlog still runs
@@ -99,7 +99,9 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 ### Removed
 - The `TODO.md` entry in `.gitignore`, left over from the project template that retired the file
 
-## [1.1.0] — 2026-09-17
+## [1.0.0-alpha.2] — 2026-09-17
+
+Formerly 1.1.0.
 
 ### Added
 - The turn-end summary splits `## ⚠️ Flagged Changes` into `## 📌 Callouts` and `## ⚠️ Warnings`, so a filed review finding no longer reads as something going wrong; run notes are the only warnings
@@ -128,7 +130,9 @@ V1 is preserved whole at the tag `v1-final` and the branch `archive/v1`, at the 
 - publish drops completed tasks from BACKLOG.md instead of marking them DONE; git history and the changelog hold what shipped
 - A task group declares `version: x.y.z` in `BACKLOG.md`, and `komodo tasks lint` refuses a group without one. Close-out copies that version into the changelog heading in the same commit as the code, so the changelog and the git tag can no longer disagree
 
-## [1.0.0] — 2026-09-16
+## [1.0.0-alpha.1] — 2026-09-16
+
+Formerly 1.0.0.
 
 The harness rebuilt from scratch as a standalone orchestrator. The 0.x prose state machine, its text firewall, and the comment `apply` path are gone; what replaces them is code with the same intent and a fraction of the cost.
 
