@@ -997,16 +997,18 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.5] One spec shape: the SDD a brief slices, and an optional PRD [P: M] [READY]
+#### [TSK-03.8.5] One spec shape: architecture, system design, and an optional PRD [P: M] [READY]
 ```yaml
-files: [komodo/skills/standards-specs, templates/project/docs/spec, komodo/roles/planner.md]
+files: [komodo/skills/standards-specs, templates/project/docs/spec, komodo/roles/planner.md, komodo/rules/backlog.md, templates/project/BACKLOG.md.tmpl]
 done_when:
   - go run ./cmd/komodo doctor
 context:
-  - "docs/spec/SDD.md is the one design document: architecture and system design are its sections, never files of their own. docs/spec/PRD.md stays optional and planner-facing"
-  - "standards-specs lists eight SDD sections and REQ-nn IDs; the templates carry V1 section numbering with gaps (§0, §1, §3, §5) and PRD-1 IDs. Make the skill and both templates name the same sections and the same ID scheme"
-  - "use plain headings with no § numbers, so a task cites docs/spec/SDD.md#components and a renumbering never breaks a citation"
-  - "standards-specs calls the SDD required, one per repo, which contradicts no repo config being required; say a repo may keep its design in README.md or the SDD, and a task cites whichever holds it"
+  - "split the SDD into docs/spec/architecture.md (the stable shape: purpose, components, boundaries, data flow, decisions) and docs/spec/system-design.md (the detail: data model, interfaces, non-functional requirements, operations, recovery); docs/spec/prd.md stays optional and planner-facing; retire SDD.md"
+  - "every heading lives in exactly one file, so a task cites one place and the two never drift; the skill names which file owns each section"
+  - "architecture.md stays small enough for the planner and the reviewer to read whole; a builder gets system-design.md sections through task context"
+  - "standards-specs lists eight SDD sections and REQ-nn IDs while the templates carry V1 section numbering with gaps (§0, §1, §3, §5) and PRD-1 IDs; the skill and the templates name the same sections and one ID scheme"
+  - "use plain headings with no § numbers, so a task cites docs/spec/system-design.md#interfaces and a renumbering never breaks a citation; update the context examples in rules/backlog.md and BACKLOG.md.tmpl"
+  - "standards-specs calls the SDD required, which contradicts no repo config being required; say a repo may keep its design in README.md or in these files, and a task cites whichever holds it"
   - "planner.md carries a {{spec}} slot nothing fills; drop it and tell the planner to read the spec files by path"
 type: fix
 ```
