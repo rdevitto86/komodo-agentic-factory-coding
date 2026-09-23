@@ -373,3 +373,33 @@ func TestAWorktreesHookPointsAtTheMainCheckoutsBinary(t *testing.T) {
 		t.Fatalf("hooks = %s; a worktree's hook must run the main checkout's binary, which a worktree lacks", raw)
 	}
 }
+
+func TestRenderListsOnlyTheStandardsTheRepoCanUse(t *testing.T) {
+	root := toolkit(t)
+	for rel, text := range map[string]string{
+		"komodo/skills/standards-go/SKILL.md":    "---\nname: standards-go\nglobs: [\"**/*.go\"]\n---\n\nGo.\n",
+		"komodo/skills/standards-swift/SKILL.md": "---\nname: standards-swift\nglobs: [\"**/*.swift\"]\n---\n\nSwift.\n",
+		"main.go":                                "package main\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := Render(root, "bin/komodo-linux-amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, change := range plan.Changes {
+		if filepath.Base(change.Path) == "SKILL.md" {
+			names = append(names, filepath.Base(filepath.Dir(change.Path)))
+		}
+	}
+	joined := strings.Join(names, ",")
+	if !strings.Contains(joined, "standards-go") || strings.Contains(joined, "standards-swift") {
+		t.Fatalf("skills = %s; a repo with no Swift must not list the Swift standard", joined)
+	}
+}

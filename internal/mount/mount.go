@@ -5,10 +5,14 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"komodo/internal/glob"
+	"komodo/internal/install"
+	repopkg "komodo/internal/repo"
 	"komodo/internal/toolkit"
 )
 
@@ -175,4 +179,148 @@ func splitList(value string) []string {
 		}
 	}
 	return out
+}
+
+// PruneSkills plans the removal of each toolkit skill under dir this render does not select,
+// leaving any skill the toolkit never ships, such as one the developer wrote.
+func PruneSkills(plan *install.Plan, root, dir string) {
+	shipped, _ := LoadSkills(root)
+	owned := map[string]bool{}
+	for _, skill := range shipped {
+		owned[skill.Name] = true
+	}
+	written := map[string]bool{}
+	for _, change := range plan.Changes {
+		if filepath.Base(change.Path) == "SKILL.md" && !change.Remove {
+			written[filepath.Dir(change.Path)] = true
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if !entry.IsDir() || written[path] {
+			continue
+		}
+		if owned[entry.Name()] || strings.HasPrefix(entry.Name(), "facet-") || strings.HasPrefix(entry.Name(), "standards-") {
+			plan.Changes = append(plan.Changes, install.Change{Path: path, Remove: true, Project: true,
+				Why: "a toolkit skill this repo no longer selects"})
+		}
+	}
+}
+
+// SelectStandards keeps every skill that is not a standard, a standard a repo override forces, and a
+// standard whose globs match a repo file, so a session lists only standards the repo can use.
+func SelectStandards(root string, skills []Skill) []Skill {
+	return selectedStandards(skills, repoFiles(root), forcedStandards(root))
+}
+
+// forcedStandards names every standard a repo override touches, which renders regardless of profile.
+func forcedStandards(root string) map[string]bool {
+	out := map[string]bool{}
+	standards, _ := repopkg.LoadStandards(root)
+	for _, override := range standards {
+		out["standards-"+override.Name] = true
+	}
+	return out
+}
+
+// standardFrontmatter isolates a skill's frontmatter block, to read its globs.
+var standardFrontmatter = regexp.MustCompile(`(?s)\A---\n(.*?)\n---\n`)
+
+// repoFiles lists the repo's files, relative and slash-separated, so a standard renders only where its globs match.
+func repoFiles(root string) []string {
+	var files []string
+	shipped := toolkitTrees(root)
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || len(files) >= maxRepoFiles {
+			return filepath.SkipDir
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			if path != root && (skippedDirs[name] || shipped[path] || (strings.HasPrefix(name, ".") && name != ".github")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if rel, err := filepath.Rel(root, path); err == nil {
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	return files
+}
+
+// toolkitTrees are the toolkit's own shipped markdown and templates, skipped when root is the
+// toolkit itself, since a facet named gcp there is source, not a repo on that cloud.
+func toolkitTrees(root string) map[string]bool {
+	if _, err := os.Stat(filepath.Join(root, "cmd", "komodo", "main.go")); err != nil {
+		return nil
+	}
+	return map[string]bool{filepath.Join(root, "komodo"): true, filepath.Join(root, "templates"): true}
+}
+
+// maxRepoFiles bounds the walk; skippedDirs are dependency, build, and state trees no standard targets.
+const maxRepoFiles = 20000
+
+var skippedDirs = map[string]bool{
+	"node_modules": true, "vendor": true, "bin": true, "venv": true, "env": true,
+	"target": true, "dist": true, "build": true, "__pycache__": true,
+}
+
+// standardGlobs reads the globs frontmatter field from a standards skill's raw body.
+func standardGlobs(body string) []string {
+	match := standardFrontmatter.FindStringSubmatch(body)
+	if match == nil {
+		return nil
+	}
+	for _, line := range strings.Split(match[1], "\n") {
+		key, value, found := strings.Cut(line, ":")
+		if found && strings.TrimSpace(key) == "globs" {
+			return splitGlobs(strings.TrimSpace(value))
+		}
+	}
+	return nil
+}
+
+// splitGlobs reads a quoted, comma-separated glob list into its patterns.
+func splitGlobs(value string) []string {
+	value = strings.TrimSuffix(strings.TrimPrefix(value, "["), "]")
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		if trimmed := strings.Trim(strings.TrimSpace(item), `"'`); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+// selectedStandards keeps every skill that is not a standard, a standard a repo override forces,
+// and a standard whose globs match a repo file; a standard with no globs always renders.
+func selectedStandards(skills []Skill, files []string, forced map[string]bool) []Skill {
+	out := make([]Skill, 0, len(skills))
+	for _, skill := range skills {
+		if !strings.HasPrefix(skill.Name, "standards-") || forced[skill.Name] {
+			out = append(out, skill)
+			continue
+		}
+		if globs := standardGlobs(skill.Body); len(globs) == 0 || matchesAny(globs, files) {
+			out = append(out, skill)
+		}
+	}
+	return out
+}
+
+// matchesAny reports whether any glob pattern matches any of the files.
+func matchesAny(globs, files []string) bool {
+	for _, pattern := range globs {
+		for _, file := range files {
+			if glob.Match(pattern, file) {
+				return true
+			}
+		}
+	}
+	return false
 }
