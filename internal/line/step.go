@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"komodo/internal/backlog"
@@ -226,7 +227,8 @@ func reviewed(root string, plan *Plan) bool {
 	return !staleReview(root, plan)
 }
 
-// staleReview reports whether the branch moved after the review, which a repair always does.
+// staleReview reports whether the branch moved after the review, which a repair always does;
+// ship's own status-and-changelog commit is excluded, since it never invalidates a review already past it.
 func staleReview(root string, plan *Plan) bool {
 	_, path, err := ReadResultFile(root, plan.Group+"-review")
 	if err != nil {
@@ -236,15 +238,23 @@ func staleReview(root string, plan *Plan) bool {
 	if err != nil {
 		return false
 	}
-	stamp, err := git(WorktreePath(root, plan.Worktree), "log", "-1", "--format=%cI")
+	log, err := git(WorktreePath(root, plan.Worktree), "log", "--format=%cI%x09%s")
 	if err != nil {
 		return false
 	}
-	committed, err := time.Parse(time.RFC3339, stamp)
-	if err != nil {
-		return false
+	shipSubject := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
+	for _, entry := range strings.Split(log, "\n") {
+		stamp, subject, found := strings.Cut(entry, "\t")
+		if !found || subject == shipSubject {
+			continue
+		}
+		committed, err := time.Parse(time.RFC3339, stamp)
+		if err != nil {
+			return false
+		}
+		return committed.After(info.ModTime())
 	}
-	return committed.After(info.ModTime())
+	return false
 }
 
 // shipped reports whether every task in the group is closed out.

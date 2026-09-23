@@ -1,13 +1,17 @@
 package line
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/pr"
 )
 
 const shipBacklog = "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -17,6 +21,9 @@ const shipBacklog = "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\
 func shipRepo(t *testing.T) (root, group string) {
 	t.Helper()
 	root = t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(shipBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
 	group = filepath.Join(root, "group")
@@ -49,6 +56,26 @@ func runGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// commitDated writes a file and commits it with an explicit author and committer date.
+func commitDated(t *testing.T, root, name, body, message string, when time.Time) {
+	t.Helper()
+	path := filepath.Join(root, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "-A")
+	stamp := when.Format(time.RFC3339)
+	cmd := exec.Command("git", "commit", "-m", message, "--date", stamp)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GIT_COMMITTER_DATE="+stamp)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+}
+
 func TestShipGroupRunsTheAfterPublishCommand(t *testing.T) {
 	root, group := shipRepo(t)
 	if err := os.MkdirAll(filepath.Join(group, StateDir), 0o755); err != nil {
@@ -62,7 +89,7 @@ func TestShipGroupRunsTheAfterPublishCommand(t *testing.T) {
 		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
 		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
 	}
-	result, err := ShipGroup(root, plan, "", nil)
+	result, err := ShipGroup(root, plan, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +107,84 @@ func TestShipGroupWithNoAfterPublishLeavesPublishedUnset(t *testing.T) {
 		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
 		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
 	}
-	result, err := ShipGroup(root, plan, "", nil)
+	result, err := ShipGroup(root, plan, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Published != nil {
 		t.Fatalf("published = %+v, want nil", result.Published)
+	}
+}
+
+func TestAfterPublishFailureFailsTheShip(t *testing.T) {
+	root, group := shipRepo(t)
+	if err := os.MkdirAll(filepath.Join(group, StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commands := `{"after_publish":"exit 3"}`
+	if err := os.WriteFile(filepath.Join(group, StateDir, "commands.json"), []byte(commands), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	result, err := ShipGroup(root, plan, nil, nil)
+	if err == nil {
+		t.Fatal("a failed after_publish command must fail the ship, not exit clean")
+	}
+	if result == nil || result.Published == nil || result.Published.ExitCode != 3 {
+		t.Fatalf("published = %+v", result.Published)
+	}
+}
+
+func TestShipRefusesAPlanWhosePauseBlankedItsWaves(t *testing.T) {
+	root, _ := shipRepo(t)
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks:     []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+		WaitUntil: time.Now().Add(time.Hour).Format(time.RFC3339),
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "paused") {
+		t.Fatalf("err = %v; a plan whose waves a pause blanked must not ship", err)
+	}
+}
+
+func TestShipWritesAHandoffInsteadOfPushingWhenScrubbed(t *testing.T) {
+	root, group := shipRepo(t)
+	t.Setenv("GIT_TERMINAL_PROMPT", "0")
+	t.Setenv("GIT_CONFIG_KEY_0", "credential.helper")
+	t.Setenv("GIT_CONFIG_VALUE_0", "")
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		t.Fatalf("gh must not run while the environment is scrubbed: %v", args)
+		return "", nil
+	}}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.URL != "" {
+		t.Fatalf("url = %q; a scrubbed ship never reaches the pull request client", result.URL)
+	}
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	cmd.Dir = group
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("upstream = %s; a scrubbed ship must not push", out)
+	}
+	data, err := os.ReadFile(filepath.Join(root, StateDir, "ship.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handoff ShipHandoff
+	if err := json.Unmarshal(data, &handoff); err != nil {
+		t.Fatal(err)
+	}
+	if handoff.Branch != "feat/a-group" || handoff.Base != "main" || handoff.Title == "" {
+		t.Fatalf("handoff = %+v", handoff)
 	}
 }
 
@@ -104,7 +203,7 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
-	if _, err := ShipGroup(root, plan, "body", nil); err == nil || !strings.Contains(err.Error(), "push") {
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "push") {
 		t.Fatalf("err = %v; the fixture has no remote, so ship must fail at the push and not before", err)
 	}
 	shipped, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
@@ -120,6 +219,49 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 	}
 	if strings.Contains(string(stale), "[DONE]") {
 		t.Fatal("ship must write the worktree it commits, not the root it was invoked from")
+	}
+}
+
+func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", flipBacklog, "the backlog")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(flipBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	review := ResultPath(root, "TG-11.1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	findings := `{"findings":[{"class":"simplify","severity":"low","file":"a/one.go","line":1,"title":"t","detail":"d","fix":"f"}]}`
+	if err := os.WriteFile(review, []byte(findings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "main", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+	}
+	plan.Profile.SeverityFloor = "high"
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "push") {
+		t.Fatalf("err = %v; the fixture has no remote yet, so ship must fail at the push", err)
+	}
+	before, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(before), "#### [") != 1 {
+		t.Fatalf("a failed push must not file a finding:\n%s", before)
+	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, worktree, "remote", "add", "origin", bare)
+	result, err := ShipGroup(root, plan, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Filed) != 1 {
+		t.Fatalf("filed = %v, want exactly one finding filed once the push succeeds", result.Filed)
 	}
 }
 
@@ -139,7 +281,7 @@ func TestAFailedGateRecordsShipAsFailedNotDone(t *testing.T) {
 	if err := SaveRun(root, state); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ShipGroup(root, plan, "", nil); err == nil || !strings.Contains(err.Error(), "gate") {
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "gate") {
 		t.Fatalf("err = %v; the group worktree has no cmd/komodo, so the gate must fail", err)
 	}
 	entries, err := Book(root).All()
@@ -168,12 +310,97 @@ func TestShipCommitsTheStatusItWrote(t *testing.T) {
 		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
-	_, _ = ShipGroup(root, plan, "body", nil)
+	_, _ = ShipGroup(root, plan, nil, nil)
 	status, err := git(worktree, "status", "--porcelain")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("status = %q; the status flip and the changelog must land in the commit, not after it", status)
+	}
+}
+
+const closedRootBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-12.1.1] One [P: C] [BLOCKED]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
+
+const staleWorktreeBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
+
+func TestShipReadsStatusFromTheRootCloseWrites(t *testing.T) {
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", staleWorktreeBacklog, "the backlog")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, worktree, "remote", "add", "origin", bare)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closedRootBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "main", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
+	}
+	result, err := ShipGroup(root, plan, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Blocked) != 1 || result.Blocked[0] != "TSK-12.1.1" {
+		t.Fatalf("blocked = %v; ship must read status from the root close writes, not the stale worktree copy", result.Blocked)
+	}
+	if !result.Draft {
+		t.Fatal("a blocked task must ship as a draft")
+	}
+}
+
+func TestShipRendersTheBodyAfterBlockedIsKnown(t *testing.T) {
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", staleWorktreeBacklog, "the backlog")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, worktree, "remote", "add", "origin", bare)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closedRootBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "main", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
+	}
+	var calls []string
+	client := &pr.Client{Dir: worktree, Run: func(_ string, args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "https://example.com/pull/1", nil
+	}}
+	if _, err := ShipGroup(root, plan, nil, client); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) == 0 || !strings.Contains(calls[0], "[ ] **TSK-12.1.1**") {
+		t.Fatalf("calls = %v; the body must render after Blocked is known, so a blocked task ships unticked", calls)
+	}
+}
+
+func TestShipsOwnCommitDoesNotRestaleTheReview(t *testing.T) {
+	worktree := gitRepo(t)
+	now := time.Now()
+	commitDated(t, worktree, "a/one.go", "package a\n", "seed", now.Add(-2*time.Hour))
+	root := t.TempDir()
+	plan := &Plan{Group: "TG-13.1", Title: "A group", Type: "feat", Worktree: worktree}
+	review := ResultPath(root, "TG-13.1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(review, []byte(`{"findings":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reviewTime := now.Add(-time.Hour)
+	if err := os.Chtimes(review, reviewTime, reviewTime); err != nil {
+		t.Fatal(err)
+	}
+	message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
+	commitDated(t, worktree, "CHANGELOG.md", "# Changelog\n", message, now)
+	if !reviewed(root, plan) {
+		t.Fatal("ship's own commit must not restale a review that already passed it")
 	}
 }
