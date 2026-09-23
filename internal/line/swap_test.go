@@ -3,6 +3,7 @@ package line
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -277,6 +278,31 @@ func TestFacetSwapReachesTheStandardsSlotTheProfileSlotAndTheRender(t *testing.T
 			t.Fatal("the render adds the facet's own setup skill, which must not be empty")
 		}
 	})
+}
+
+// TestFacetMCPJSONChangesNothing proves a facet's mcp.json, when present, changes nothing
+// in V2: MCP is the fifth swap point and stays deferred.
+func TestFacetMCPJSONChangesNothing(t *testing.T) {
+	root := t.TempDir()
+	writeFacet(t, root, "aws", "# AWS\n\n## Builder appendix\nUse least privilege IAM.\n", "")
+
+	before, err := facet.Load(root, "aws")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mcpPath := filepath.Join(root, facet.FacetsDir, "aws", "mcp.json")
+	if err := os.WriteFile(mcpPath, []byte(`{"mcpServers":{"aws":{"command":"aws-mcp"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := facet.Load(root, "aws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("facet = %+v; a facet's mcp.json must change nothing in V2 while MCP is deferred", after)
+	}
 }
 
 // TestCommandsJSONSwapReplacesVerifyAtQC proves a commands.json change replaces the
