@@ -16,6 +16,11 @@ import (
 const stepBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
 
+// singleModeBacklog is a two-task group that shares one builder and one worktree.
+const singleModeBacklog = "### [TG-13.1] A single-mode group\n```yaml\ntype: feat\nversion: 2.0.0\nmode: single\n```\n\n" +
+	"#### [TSK-13.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - test -f a/one.go\n```\n\n" +
+	"#### [TSK-13.1.2] Two [P: C] [READY]\n```yaml\nfiles: [a/two.go]\ndone_when:\n  - test -f a/two.go\n```\n"
+
 // stepRepo builds a repo with a backlog and one role, ready for the station walk.
 func stepRepo(t *testing.T) string {
 	t.Helper()
@@ -524,6 +529,148 @@ func TestSpawnNamesTheWorktreeTheAgentWorksIn(t *testing.T) {
 	want := filepath.Join(StateDir, "wt", "TSK-12.1.1")
 	if next.Action != "spawn" || next.Worktree != want {
 		t.Fatalf("worktree = %q, want %q (action %s)", next.Worktree, want, next.Action)
+	}
+}
+
+// TestSingleModeSpawnSharesTheGroupWorktree proves step names the group's own worktree for a
+// single-mode task's spawn, the same one brief.go already picks, so the two never disagree.
+func TestSingleModeSpawnSharesTheGroupWorktree(t *testing.T) {
+	root := repo(t, singleModeBacklog)
+	if err := SaveRun(root, RunState{Run: "TG-13.1-1", Group: "TG-13.1", Base: "main", Branch: "feat/a-single-mode-group", Worktree: root}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, StateDir, "briefs", "TSK-13.1.1.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("a brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(StateDir, "wt", "TG-13.1")
+	if next.Action != "spawn" || next.Worktree != want {
+		t.Fatalf("worktree = %q, want the group's own worktree %q (action %s)", next.Worktree, want, next.Action)
+	}
+}
+
+// TestSingleModeWalksBriefCloseAndCloseWave proves a two-task single-mode group builds every
+// task in the group's own worktree on the group branch, then closes the wave with no merge.
+func TestSingleModeWalksBriefCloseAndCloseWave(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", singleModeBacklog, "seed")
+	role := "---\nname: builder\ndescription: Writes code.\ntier: standard\ntools: [read, edit, write, shell, search]\n" +
+		"session: true\nreturns: builder.schema.json\n---\n\nTask {{task_id}}: {{title}}\n\n{{task_block}}\n" +
+		"{{repo_rules}}{{repo_context}}{{context}}{{files}}{{repo_profile}}{{standards}}{{done_when}}{{failure}}\n"
+	commit(t, root, filepath.Join(RolesDir, "builder.md"), role, "role")
+	schema := `{"type":"object","required":["result"],"properties":{"result":{"type":"string","enum":["DONE","BLOCKED"]}}}`
+	commit(t, root, filepath.Join(RolesDir, "builder.schema.json"), schema, "schema")
+
+	plan, err := PlanForStation(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Mode != "single" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	worktree := WorktreePath(root, plan.Worktree)
+	if err := AddWorktree(root, plan.Branch, plan.Base, worktree); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveRun(root, RunState{
+		Run: plan.Group + "-1", Group: plan.Group, Base: plan.Base, Branch: plan.Branch,
+		Worktree: worktree, Waves: plan.Waves,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each task briefs, spawns, and closes in turn, on the group branch, before the next briefs.
+	files := map[string]string{"TSK-13.1.1": "a/one.go", "TSK-13.1.2": "a/two.go"}
+	for _, taskID := range []string{"TSK-13.1.1", "TSK-13.1.2"} {
+		next, err := Step(root, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Command != "komodo brief "+taskID {
+			t.Fatalf("action = %+v, want a brief for %s", next, taskID)
+		}
+		brief, err := BuildBrief(root, worktree, taskID, "builder", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if brief.Worktree != plan.Worktree {
+			t.Fatalf("brief worktree = %q, want the group's own worktree %q", brief.Worktree, plan.Worktree)
+		}
+		if err := WriteBrief(root, brief, plan.Branch); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := git(root, "rev-parse", "--verify", "refs/heads/"+TaskBranch(taskID)); err == nil {
+			t.Fatalf("%s cut a task branch; single mode shares the group worktree with no split", taskID)
+		}
+
+		next, err = Step(root, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Action != "spawn" || next.Worktree != plan.Worktree {
+			t.Fatalf("spawn = %+v, want the group's own worktree %q", next, plan.Worktree)
+		}
+
+		path := filepath.Join(worktree, files[taskID])
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("package a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		writeResult(t, root, taskID, map[string]any{"result": "DONE"})
+
+		next, err = Step(root, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Command != "komodo close "+taskID+" --gate" {
+			t.Fatalf("action = %+v, want a close for %s", next, taskID)
+		}
+		outcome, err := CloseTask(root, taskID, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outcome.Status != "DONE" {
+			t.Fatalf("outcome = %+v", outcome)
+		}
+	}
+
+	log, err := git(worktree, "log", "--format=%s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log, "TSK-13.1.1") || !strings.Contains(log, "TSK-13.1.2") {
+		t.Fatalf("log = %q; every task must commit directly onto the group branch", log)
+	}
+
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Command != "komodo close --wave 1" {
+		t.Fatalf("action = %+v, want the wave close", next)
+	}
+	closed, err := PlanForStation(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := CloseWave(root, closed, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK || result.Conflict != "" {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(result.Merged) != 2 {
+		t.Fatalf("merged = %v", result.Merged)
 	}
 }
 

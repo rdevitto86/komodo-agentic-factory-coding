@@ -277,13 +277,17 @@ func TestATaskBranchDoesNotCarryRebuiltBinaries(t *testing.T) {
 	cwd := gitRepo(t)
 	commit(t, cwd, "a/one.go", "package a\n", "seed")
 	commit(t, cwd, "bin/komodo-linux-amd64", "old\n", "binaries")
+	branch := TaskBranch("TSK-30.1.1")
+	if _, err := git(cwd, "checkout", "-q", "-b", branch); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(cwd, "bin", "komodo-linux-amd64"), []byte("rebuilt\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cwd, "a", "one.go"), []byte("package a\n\n// Two is two.\nfunc Two() int { return 2 }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := commitTask(cwd, taskWith(t, "a/one.go")); err != nil {
+	if err := commitTask(cwd, taskWith(t, "a/one.go"), branch); err != nil {
 		t.Fatal(err)
 	}
 	changed, err := git(cwd, "show", "--name-only", "--format=", "HEAD")
@@ -298,13 +302,85 @@ func TestATaskBranchDoesNotCarryRebuiltBinaries(t *testing.T) {
 	}
 }
 
+func TestCommitTaskRefusesAnyBranchThatIsNotItsOwn(t *testing.T) {
+	cwd := gitRepo(t)
+	commit(t, cwd, "a/one.go", "package a\n", "seed")
+	if err := os.WriteFile(filepath.Join(cwd, "a", "one.go"), []byte("package a\n\nfunc Two() int { return 2 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := commitTask(cwd, taskWith(t, "a/one.go"), TaskBranch("TSK-30.1.1"))
+	if err == nil {
+		t.Fatal("commitTask must refuse a checkout that is not the task's own branch")
+	}
+	if !strings.Contains(err.Error(), "main") {
+		t.Fatalf("error = %v; it must name the branch it found", err)
+	}
+	changed, _ := git(cwd, "status", "--porcelain")
+	if strings.TrimSpace(changed) == "" {
+		t.Fatal("the refused commit must leave the change uncommitted")
+	}
+}
+
+func TestCommitBranchIsTheGroupBranchForASingleModeGroup(t *testing.T) {
+	text := "### [TG-30.2] G\n```yaml\ntype: feat\nversion: 1.0.0\nmode: single\n```\n\n" +
+		"#### [TSK-30.2.1] T [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n"
+	parsed := backlog.Parse(text)
+	task, ok := parsed.Task("TSK-30.2.1")
+	if !ok {
+		t.Fatal("no task")
+	}
+	root := t.TempDir()
+	if err := SaveRun(root, RunState{Group: "TG-30.2", Branch: "feat/g-single"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := commitBranch(root, parsed, task); got != "feat/g-single" {
+		t.Fatalf("branch = %q, want the group branch for a single-mode group", got)
+	}
+}
+
+func TestCommitBranchIsTheTaskBranchOtherwise(t *testing.T) {
+	text := "### [TG-30.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-30.1.1] T [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n"
+	parsed := backlog.Parse(text)
+	task, ok := parsed.Task("TSK-30.1.1")
+	if !ok {
+		t.Fatal("no task")
+	}
+	if got := commitBranch(t.TempDir(), parsed, task); got != "task/tsk-30.1.1" {
+		t.Fatalf("branch = %q, want the task's own branch by default", got)
+	}
+}
+
+func TestCloseIgnoresTheRoleTheResultNames(t *testing.T) {
+	root := closeRepo(t)
+	reviewer := `{"type":"object"}`
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "reviewer.schema.json"), []byte(reviewer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bad := goodResult()
+	delete(bad, "summary")
+	bad["role"] = "reviewer"
+	writeResult(t, root, "TSK-08.1.1", bad)
+	outcome, err := CloseTask(root, "TSK-08.1.1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Status != "IN_PROGRESS" || len(outcome.Problems) == 0 {
+		t.Fatalf("outcome = %+v; a result cannot pick a lighter schema by naming its own role", outcome)
+	}
+}
+
 func TestATaskThatOwnsABuiltPathStillCommitsIt(t *testing.T) {
 	cwd := gitRepo(t)
 	commit(t, cwd, "bin/MANIFEST.sha256", "old\n", "manifest")
+	branch := TaskBranch("TSK-30.1.1")
+	if _, err := git(cwd, "checkout", "-q", "-b", branch); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(cwd, "bin", "MANIFEST.sha256"), []byte("new\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := commitTask(cwd, taskWith(t, "bin/MANIFEST.sha256")); err != nil {
+	if err := commitTask(cwd, taskWith(t, "bin/MANIFEST.sha256"), branch); err != nil {
 		t.Fatal(err)
 	}
 	changed, err := git(cwd, "show", "--name-only", "--format=", "HEAD")
