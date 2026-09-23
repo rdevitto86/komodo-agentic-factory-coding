@@ -1226,3 +1226,13 @@ context:
   - "report planned the next ready group once the run shipped; doctor --remote reads the forge's branch rulesets through gh and names any active one that reaches past the default branch"
 type: fix
 ```
+
+#### [TSK-03.8.19] Proof payload: the run skill drives one task end to end [P: L] [READY]
+```yaml
+files:
+  - README.md
+done_when:
+  - test -f README.md
+type: docs
+```
+
