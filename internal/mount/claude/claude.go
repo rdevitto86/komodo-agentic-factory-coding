@@ -15,7 +15,7 @@ import (
 	"komodo/internal/glob"
 	"komodo/internal/install"
 	"komodo/internal/mount"
-	"komodo/internal/profile"
+	"komodo/internal/mount/ollama"
 	repopkg "komodo/internal/repo"
 	"komodo/internal/toolkit"
 )
@@ -58,12 +58,12 @@ func Render(root string, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
-	ollama := profile.OllamaUp()
+	localUp := ollama.Up()
 	for _, role := range roles {
 		if !role.Session {
 			continue
 		}
-		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role, ollama)), "the "+role.Name+" role as an agent")
+		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role, localUp)), "the "+role.Name+" role as an agent")
 	}
 
 	detected := detect.Load(root)

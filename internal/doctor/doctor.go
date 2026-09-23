@@ -21,7 +21,7 @@ import (
 	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
-	"komodo/internal/profile"
+	"komodo/internal/mount/ollama"
 	"komodo/internal/release"
 	"komodo/internal/toolkit"
 )
@@ -361,14 +361,14 @@ func freezeProfile(root string) func() {
 
 // pinOllamaDown points the local machine probe at a closed port for the caller's duration.
 func pinOllamaDown() func() {
-	previous, existed := os.LookupEnv(profile.OllamaEnv)
-	_ = os.Setenv(profile.OllamaEnv, "127.0.0.1:1")
+	previous, existed := os.LookupEnv(ollama.Env)
+	_ = os.Setenv(ollama.Env, "127.0.0.1:1")
 	return func() {
 		if existed {
-			_ = os.Setenv(profile.OllamaEnv, previous)
+			_ = os.Setenv(ollama.Env, previous)
 			return
 		}
-		_ = os.Unsetenv(profile.OllamaEnv)
+		_ = os.Unsetenv(ollama.Env)
 	}
 }
 

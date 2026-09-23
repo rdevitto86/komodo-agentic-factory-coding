@@ -1,11 +1,11 @@
 package codex
 
 import (
+	"komodo/internal/mount/ollama"
 	"os"
 	"path/filepath"
 
 	"komodo/internal/mount"
-	"komodo/internal/profile"
 )
 
 // Probe returns nothing: this host exposes no plan or window to read.
@@ -19,10 +19,10 @@ func Installed(root string) bool {
 
 // Tiers is this host's profile row; with Ollama up every tier runs on the local provider,
 // with the model the profile shares across every mount.
-func Tiers(plan string, ollama bool) mount.Tiers {
-	if ollama {
-		local := mount.Machine{Provider: "ollama", Model: profile.OllamaModel}
-		return mount.Tiers{Light: local, Standard: local, Heavy: local, Reviewer: local}
+func Tiers(plan string, local bool) mount.Tiers {
+	if local {
+		machine := mount.Machine{Provider: "ollama", Model: ollama.Model}
+		return mount.Tiers{Light: machine, Standard: machine, Heavy: machine, Reviewer: machine}
 	}
 	return mount.Tiers{
 		Light:    mount.Machine{Provider: "codex", Model: models["light"], Effort: efforts["light"]},

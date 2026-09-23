@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"komodo/internal/profile"
+	"komodo/internal/mount/ollama"
 )
 
 // toolkitRepo builds a root with the rules, two roles, a skill, and the policy, with the local machine down.
 func toolkitRepo(t *testing.T) string {
 	t.Helper()
-	t.Setenv(profile.OllamaEnv, "http://127.0.0.1:1")
+	t.Setenv(ollama.Env, "http://127.0.0.1:1")
 	root := t.TempDir()
 	write := func(rel, body string) {
 		path := filepath.Join(root, rel)
@@ -122,7 +122,7 @@ func TestAnAgentCarriesHostToolNamesAndAModel(t *testing.T) {
 // scoutRoot builds a root whose only session role is on the light tier.
 func scoutRoot(t *testing.T) string {
 	t.Helper()
-	t.Setenv(profile.OllamaEnv, "http://127.0.0.1:1")
+	t.Setenv(ollama.Env, "http://127.0.0.1:1")
 	root := t.TempDir()
 	write := func(rel, body string) {
 		path := filepath.Join(root, rel)
@@ -157,7 +157,7 @@ func TestALightTierSessionRoleRendersAsStandardWithTheLocalMachineUp(t *testing.
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	t.Setenv(profile.OllamaEnv, "http://"+listener.Addr().String())
+	t.Setenv(ollama.Env, "http://"+listener.Addr().String())
 	agent := body(t, root, filepath.Join(Dir, "agents", "scout.md"))
 	if !strings.Contains(agent, "model: "+models["standard"]) {
 		t.Fatalf("scout did not fall back to the standard model: %s", agent)
@@ -604,7 +604,7 @@ func TestOllamaTakesTheLightTierAndTheReviewer(t *testing.T) {
 	if tiers.Standard.Provider == "ollama" {
 		t.Fatal("the builder was moved to the local machine")
 	}
-	if tiers.Light.Model != profile.OllamaModel || tiers.Reviewer.Model != profile.OllamaModel {
+	if tiers.Light.Model != ollama.Model || tiers.Reviewer.Model != ollama.Model {
 		t.Fatalf("tiers did not carry the profile's model: %+v", tiers)
 	}
 }

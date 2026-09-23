@@ -113,3 +113,29 @@ func TestBaseURLReadsTheEnvironment(t *testing.T) {
 		t.Fatalf("base url = %s", got)
 	}
 }
+
+func TestPostSendsAContextSizedToTheBrief(t *testing.T) {
+	brief := strings.Repeat("a", 10000)
+	server, got := fakeOllama(t, `{"result":"DONE"}`, 12, 34)
+	defer server.Close()
+	if _, err := Post(server.URL, "llama3", brief, []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	if want := contextSize(brief); got.Options.NumCtx != want {
+		t.Fatalf("num_ctx = %d, want %d", got.Options.NumCtx, want)
+	}
+	if got.Options.NumCtx <= minContext {
+		t.Fatal("a brief longer than the default did not raise the context window")
+	}
+}
+
+func TestPostFailsWhenThePromptCountShowsTruncation(t *testing.T) {
+	brief := "a short brief"
+	window := contextSize(brief)
+	server, _ := fakeOllama(t, `{"result":"DONE"}`, window, 5)
+	defer server.Close()
+	_, err := Post(server.URL, "llama3", brief, []byte(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("err = %v, want a truncation error", err)
+	}
+}

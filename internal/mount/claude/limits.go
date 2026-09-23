@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"komodo/internal/mount"
-	"komodo/internal/profile"
+	"komodo/internal/mount/ollama"
 )
 
 // configFile is the host's own config, which is the only place the plan is read from.
@@ -93,7 +93,7 @@ func Installed(root string) bool {
 }
 
 // Tiers is this host's profile row: a model per tier, lowered by the plan and by Ollama.
-func Tiers(plan string, ollama bool) mount.Tiers {
+func Tiers(plan string, local bool) mount.Tiers {
 	heavy := mount.Machine{Provider: "claude", Model: models["heavy"]}
 	if plan == "pro" {
 		heavy = mount.Machine{Provider: "claude", Model: models["standard"]}
@@ -104,9 +104,9 @@ func Tiers(plan string, ollama bool) mount.Tiers {
 		Heavy:    heavy,
 		Reviewer: heavy,
 	}
-	if ollama {
-		tiers.Light = mount.Machine{Provider: "ollama", Model: profile.OllamaModel}
-		tiers.Reviewer = mount.Machine{Provider: "ollama", Model: profile.OllamaModel}
+	if local {
+		tiers.Light = mount.Machine{Provider: "ollama", Model: ollama.Model}
+		tiers.Reviewer = mount.Machine{Provider: "ollama", Model: ollama.Model}
 	}
 	return tiers
 }

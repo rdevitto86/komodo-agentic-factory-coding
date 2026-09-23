@@ -12,7 +12,7 @@ import (
 	"komodo/internal/detect"
 	"komodo/internal/install"
 	"komodo/internal/mount"
-	"komodo/internal/profile"
+	"komodo/internal/mount/ollama"
 )
 
 // write puts one file into a fixture repo.
@@ -372,10 +372,10 @@ func TestCheckDriftIgnoresTheLiveOllamaEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	t.Setenv(profile.OllamaEnv, "http://"+listener.Addr().String())
+	t.Setenv(ollama.Env, "http://"+listener.Addr().String())
 	seen := false
 	registerHost(t, mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
-		seen = profile.OllamaUp()
+		seen = ollama.Up()
 		return install.Plan{Host: "testhost", Root: root}, nil
 	}})
 	problemsFrom(t, root)
