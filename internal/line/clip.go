@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"komodo/internal/glob"
 )
 
 // Slot caps, in characters, as the README's Devices table sets them.
@@ -74,7 +76,8 @@ func IsText(path string) bool {
 		return false
 	}
 	defer handle.Close()
-	buffer := make([]byte, 8000)
+	const probe = 8000
+	buffer := make([]byte, probe)
 	read, _ := handle.Read(buffer)
 	buffer = buffer[:read]
 	if len(buffer) == 0 {
@@ -85,27 +88,11 @@ func IsText(path string) bool {
 			return false
 		}
 	}
-	return utf8.Valid(buffer) || read == len(buffer)
+	// A short read reached EOF, so an invalid tail is real, not a buffer boundary cutting a rune.
+	return utf8.Valid(buffer) || read == probe
 }
 
 // MatchGlob reports whether a path matches one of the shipped glob shapes.
 func MatchGlob(pattern, path string) bool {
-	path = strings.ReplaceAll(path, "\\", "/")
-	switch {
-	case strings.HasSuffix(pattern, "/**"):
-		dir := strings.TrimSuffix(strings.TrimPrefix(pattern, "**/"), "/**")
-		for _, part := range strings.Split(path, "/") {
-			if part == dir {
-				return true
-			}
-		}
-		return false
-	case strings.HasPrefix(pattern, "**/*."):
-		return strings.HasSuffix(path, strings.TrimPrefix(pattern, "**/*"))
-	case strings.HasPrefix(pattern, "**/"):
-		name := strings.TrimPrefix(pattern, "**/")
-		return path == name || strings.HasSuffix(path, "/"+name)
-	default:
-		return path == pattern
-	}
+	return glob.Match(pattern, path)
 }

@@ -8,28 +8,18 @@ import (
 	"strings"
 	"time"
 
+	"komodo/internal/detect"
 	repopkg "komodo/internal/repo"
 )
 
-// verifyOrder is the discovery order V1 used, first hit wins.
-var verifyOrder = []struct{ file, command string }{
-	{".komodo/verify.sh", "sh .komodo/verify.sh"},
-	{"scripts/verify.sh", "sh scripts/verify.sh"},
-	{"Makefile", "make verify"},
-	{"Taskfile.yml", "task verify"},
-	{"Taskfile.yaml", "task verify"},
-	{"justfile", "just verify"},
-}
-
-// VerifyCommand is the repo's own verify command, from its commands file or the discovery order.
+// VerifyCommand is the repo's own verify command, from its commands file, else detect's root-only
+// discovery order, else go test for a Go module, so QC never drifts from what detect reports.
 func VerifyCommand(root string) string {
 	if override := repopkg.LoadCommands(root).Verify; override != "" {
 		return override
 	}
-	for _, candidate := range verifyOrder {
-		if _, err := os.Stat(filepath.Join(root, candidate.file)); err == nil {
-			return candidate.command
-		}
+	if command := detect.VerifyCommand(root); command != "" {
+		return command
 	}
 	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
 		return "go test ./..."
