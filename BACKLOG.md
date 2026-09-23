@@ -781,7 +781,7 @@ type: fix
 
 #### [TSK-03.7.13] Close trusts nothing the result says about itself, and a repairable failure keeps the loop alive [P: H] [DONE]
 ```yaml
-files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, internal/line/step.go, komodo/skills/run/SKILL.md]
+files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, internal/line/step.go, cmd/komodo/main.go, cmd/komodo/main_test.go, README.md, komodo/skills/run/SKILL.md]
 done_when:
   - go test ./internal/line/... -shuffle=on
 depends_on: [TSK-03.7.12]
@@ -1133,3 +1133,36 @@ context:
 type: chore
 ```
 
+#### [TSK-03.8.10] The local machine is reached through the registry, so nothing outside the mounts names it [P: M] [REFINEMENT]
+```yaml
+files: [internal/mount/registry.go, internal/mount/ollama, cmd/komodo/main.go, internal/line/step.go, internal/line/next.go, internal/doctor/doctor.go, internal/profile/profile.go]
+done_when:
+  - go test ./...
+  - go run ./cmd/komodo doctor
+context:
+  - "registering ollama as a vendor makes the doctor report 22 places outside internal/mount that name it: komodo machine in main.go, the machine routing in step.go and next.go, doctor's pinOllamaDown and drift, and profile's selection; route each through a registry entry for the local machine, then register the name as a vendor"
+type: refactor
+```
+
+#### [TSK-03.8.11] A running local server does not take every tier [P: H] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/limits.go, internal/mount/codex/limits.go, internal/line/step.go]
+done_when:
+  - go test ./internal/mount/... ./internal/line/...
+context:
+  - "with the local server up, each mount's Tiers maps every tier to the local model, so step routed the TG-03.7 group review (a 124 KB brief over 6749 changed lines) to a 3B model; route to the local machine only the tiers and roles the profile names, and never a brief larger than the local model's window"
+type: fix
+```
+
+#### [TSK-03.8.12] The guard's limits are stated, and the hard boundaries sit outside it [P: H] [REFINEMENT]
+```yaml
+files: [README.md, komodo/policy.json, internal/guard, internal/run]
+done_when:
+  - go test ./internal/guard/... ./internal/run/...
+  - go run ./cmd/komodo guard check
+context:
+  - "two TG-03.7 review rounds found 13 guard bypasses in a row (substitutions, env -i, shell keywords, include.path, and more); a denylist over bash cannot be complete. Say in README.md that the guard catches a cooperative model's mistakes and is not a sandbox"
+  - "put the hard boundaries where a shell cannot reach: branch protection on the remote for every critical ref (checked by doctor through the forge's API), and the headless credential scrub as the only push path; consider running headless hosts under the host's own sandbox with the network allowed only to the model"
+  - "the second review's low finding: --git-dir=.git and --work-tree=. on the same checkout are refused like another checkout; exempt them as -C . is"
+type: fix
+```
