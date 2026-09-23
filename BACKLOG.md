@@ -781,7 +781,7 @@ type: fix
 
 #### [TSK-03.7.13] Close trusts nothing the result says about itself, and a repairable failure keeps the loop alive [P: H] [READY]
 ```yaml
-files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, komodo/skills/run/SKILL.md]
+files: [internal/line/close.go, internal/line/wave.go, internal/line/close_test.go, internal/line/step.go, komodo/skills/run/SKILL.md]
 done_when:
   - go test ./internal/line/... -shuffle=on
 depends_on: [TSK-03.7.12]
@@ -790,6 +790,7 @@ context:
   - "with no task worktree, close runs git add -A in the root checkout and commits the user's unrelated changes onto whatever branch is checked out; refuse to commit unless the cwd is the task's own worktree on its task branch"
   - "QC and review failures have no repair path, and RepairBrief and FailureText have test callers only; wire them into the failure slot, or delete them and correct the README"
   - "close exits 1 on a repairable failure and the run skill stops on any non-zero exit, so even the first repair needs a human restart; a failure that leaves the task IN_PROGRESS for repair is not an error, so exit 0 and say so, and keep non-zero for real errors"
+  - "TSK-03.7.12 briefs a single-mode task into the group worktree and cuts no task branch; finish it: step spawns a single-mode builder in the group worktree, and CloseWave merges no task branch for a single-mode group, since close already committed each task on the group branch"
 type: fix
 ```
 
