@@ -375,7 +375,7 @@ func TestCheckDriftIgnoresTheLiveOllamaEndpoint(t *testing.T) {
 	t.Setenv(ollama.Env, "http://"+listener.Addr().String())
 	seen := false
 	registerHost(t, mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
-		seen = ollama.Up()
+		seen = seen || os.Getenv(ollama.Env) == "http://"+listener.Addr().String()
 		return install.Plan{Host: "testhost", Root: root}, nil
 	}})
 	problemsFrom(t, root)
@@ -520,5 +520,22 @@ func TestPruneNeverDeletesACriticalRef(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "main") {
 		t.Fatalf("main was deleted: %s", out)
+	}
+}
+
+func TestAFileInstalledWithOllamaUpIsNotDrift(t *testing.T) {
+	root := clean(t)
+	write(t, root, "rendered.md", "up\n")
+	registerHost(t, mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
+		plan := install.Plan{Host: "testhost", Root: root}
+		state := "down\n"
+		if ollama.Up() {
+			state = "up\n"
+		}
+		plan.Add(filepath.Join(root, "rendered.md"), []byte(state), "a file the local machine shapes")
+		return plan, nil
+	}})
+	if got := problemsFrom(t, root)["drift"]; len(got) != 0 {
+		t.Fatalf("drift = %+v", got)
 	}
 }

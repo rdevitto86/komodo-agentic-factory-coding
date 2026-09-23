@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -48,12 +49,12 @@ type Options struct {
 // Run walks every check and returns what it found.
 func Run(root string, options Options) ([]Problem, error) {
 	var problems []Problem
-	rendered := renderInstalled(root)
+	rendered := renderInstalled(root, pinOllamaDown)
 	problems = append(problems, checkReferences(root)...)
 	problems = append(problems, checkRoles(root)...)
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root, rendered)...)
-	problems = append(problems, checkDrift(rendered)...)
+	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinOllamaUp))...)
 	problems = append(problems, checkProfileDrift(root)...)
 	problems = append(problems, checkPromises(root)...)
 	if !options.NoGit {
@@ -273,10 +274,10 @@ type renderedHost struct {
 	Err  error
 }
 
-// renderInstalled renders every installed host once, so the budget and drift checks read one plan.
-func renderInstalled(root string) []renderedHost {
+// renderInstalled renders every installed host once with the local machine pinned, so every check reads one plan.
+func renderInstalled(root string, pin func() func()) []renderedHost {
 	defer freezeProfile(root)()
-	defer pinOllamaDown()()
+	defer pin()()
 	var out []renderedHost
 	for _, host := range mount.Hosts() {
 		if host.Render == nil {
@@ -307,8 +308,19 @@ func renderedSkillTokens(rendered []renderedHost) int {
 	return total
 }
 
-// checkDrift reports a rendered host file that differs from what the source renders now.
-func checkDrift(rendered []renderedHost) []Problem {
+// checkDrift reports a host file that matches neither the render with the local machine down nor up.
+func checkDrift(rendered, renderedUp []renderedHost) []Problem {
+	matchesUp := map[string]bool{}
+	for _, host := range renderedUp {
+		if host.Err != nil {
+			continue
+		}
+		for _, action := range host.Plan.Actions() {
+			if action.Verb != "update" && action.Verb != "remove" && action.Verb != "create" {
+				matchesUp[action.Path] = true
+			}
+		}
+	}
 	var problems []Problem
 	for _, host := range rendered {
 		if host.Err != nil {
@@ -316,7 +328,7 @@ func checkDrift(rendered []renderedHost) []Problem {
 			continue
 		}
 		for _, action := range host.Plan.Actions() {
-			if action.Seed {
+			if action.Seed || matchesUp[action.Path] {
 				continue
 			}
 			switch action.Verb {
@@ -364,6 +376,24 @@ func pinOllamaDown() func() {
 	previous, existed := os.LookupEnv(ollama.Env)
 	_ = os.Setenv(ollama.Env, "127.0.0.1:1")
 	return func() {
+		if existed {
+			_ = os.Setenv(ollama.Env, previous)
+			return
+		}
+		_ = os.Unsetenv(ollama.Env)
+	}
+}
+
+// pinOllamaUp points the local machine probe at a loopback listener this audit owns, never the live one.
+func pinOllamaUp() func() {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return pinOllamaDown()
+	}
+	previous, existed := os.LookupEnv(ollama.Env)
+	_ = os.Setenv(ollama.Env, "http://"+listener.Addr().String())
+	return func() {
+		_ = listener.Close()
 		if existed {
 			_ = os.Setenv(ollama.Env, previous)
 			return
