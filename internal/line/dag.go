@@ -57,7 +57,7 @@ func dirsOverlap(left, right backlog.Task) bool {
 }
 
 // Waves groups tasks so members of one wave share no directory and no unmet dependency.
-func Waves(tasks []backlog.Task, done []string) ([][]backlog.Task, error) {
+func Waves(tasks []backlog.Task, done []string, capacity int) ([][]backlog.Task, error) {
 	ordered, err := Topological(tasks)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func Waves(tasks []backlog.Task, done []string) ([][]backlog.Task, error) {
 					break
 				}
 			}
-			if ready && !clash {
+			if ready && !clash && (capacity <= 0 || len(wave) < capacity) {
 				wave = append(wave, task)
 				continue
 			}

@@ -92,21 +92,35 @@ func Installed(root string) bool {
 	return err == nil
 }
 
-// Tiers is this host's profile row: a model per tier, lowered by the plan and by Ollama.
+// Tiers is this host's profile row: a model per tier, lowered by the plan, renamed by the overlay,
+// with the light tier on Ollama when it answers and the reviewer there only when the overlay opts in.
 func Tiers(plan string, local bool) mount.Tiers {
-	heavy := mount.Machine{Provider: "claude", Model: models["heavy"]}
+	heavyTier := "heavy"
 	if plan == "pro" {
-		heavy = mount.Machine{Provider: "claude", Model: models["standard"]}
+		heavyTier = "standard"
 	}
 	tiers := mount.Tiers{
-		Light:    mount.Machine{Provider: "claude", Model: models["light"]},
-		Standard: mount.Machine{Provider: "claude", Model: models["standard"]},
-		Heavy:    heavy,
-		Reviewer: heavy,
+		Light:    mount.Machine{Provider: "claude", Model: modelFor("light")},
+		Standard: mount.Machine{Provider: "claude", Model: modelFor("standard")},
+		Heavy:    mount.Machine{Provider: "claude", Model: modelFor(heavyTier)},
+		Reviewer: mount.Machine{Provider: "claude", Model: modelFor(heavyTier)},
+	}
+	if reviewer := mount.OverlayModel("reviewer"); reviewer != "" {
+		tiers.Reviewer.Model = reviewer
 	}
 	if local {
-		tiers.Light = mount.Machine{Provider: "ollama", Model: ollama.Model}
-		tiers.Reviewer = mount.Machine{Provider: "ollama", Model: ollama.Model}
+		tiers.Light = mount.Machine{Provider: "ollama", Model: ollama.ModelName()}
+		if mount.LoadOverlay().LocalReviewer {
+			tiers.Reviewer = mount.Machine{Provider: "ollama", Model: ollama.ModelName()}
+		}
 	}
 	return tiers
+}
+
+// modelFor is this host's model for a tier, unless the overlay names another.
+func modelFor(tier string) string {
+	if name := mount.OverlayModel(tier); name != "" {
+		return name
+	}
+	return models[tier]
 }

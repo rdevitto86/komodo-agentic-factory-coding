@@ -62,16 +62,23 @@ func AddWorktree(root, branch, base, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	start := "origin/" + base
-	if _, err := git(root, "rev-parse", "--verify", start); err != nil {
-		start = base
-	}
+	start := StartRef(root, base)
 	if _, err := git(root, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
 		_, err := git(root, "worktree", "add", path, branch)
 		return err
 	}
 	_, err := git(root, "worktree", "add", "-b", branch, path, start)
 	return err
+}
+
+// StartRef is the ref a group is cut from and diffed against: the remote-tracked copy of base
+// when it exists, else base itself, so a stale local base never leaks another group's commits in.
+func StartRef(dir, base string) string {
+	ref := "origin/" + base
+	if _, err := git(dir, "rev-parse", "--verify", ref); err != nil {
+		return base
+	}
+	return ref
 }
 
 // WorktreePath resolves a plan's worktree: a run records it absolute, a plan builds it relative to the root.

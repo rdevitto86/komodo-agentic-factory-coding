@@ -973,7 +973,7 @@ context:
   - "runNext --start calls only line.CheckLock and writes no lock. So two interactive sessions both start and drive the same group, which the task said next --start must prevent. AcquireLock checks and then writes with os.WriteFile, not O_EXCL. Two `komodo run` processes started together both see no lock and both proceed. Call AcquireLock from next --start, and create the lock file with O_CREATE|O_EXCL, retrying once after reclaiming a dead pid."
 ```
 
-#### [TSK-03.7.29] internal/run/run.go:214 A headless ship never files minor findings or runs after_publish [P: L] [REFINEMENT]
+#### [TSK-03.7.29] internal/run/run.go:214 A headless ship never files minor findings or runs after_publish [P: L] [DONE]
 ```yaml
 files:
   - internal/run/run.go
@@ -1041,7 +1041,7 @@ version: 2.0.1
 base: docs/v2-plan
 ```
 
-#### [TSK-03.8.1] brief refuses an ad hoc task that collides with an unmerged branch [P: H] [REFINEMENT]
+#### [TSK-03.8.1] brief refuses an ad hoc task that collides with an unmerged branch [P: H] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/line/brief_test.go]
 done_when:
@@ -1052,7 +1052,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.2] A task added to the open group mid-run joins a later wave [P: M] [REFINEMENT]
+#### [TSK-03.8.2] A task added to the open group mid-run joins a later wave [P: M] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/step.go]
 done_when:
@@ -1063,7 +1063,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.3] max_parallel caps a wave inside the planner, not after it [P: M] [REFINEMENT]
+#### [TSK-03.8.3] max_parallel caps a wave inside the planner, not after it [P: M] [DONE]
 ```yaml
 files: [internal/line/dag.go, internal/line/next.go]
 done_when:
@@ -1100,7 +1100,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.6] A context anchor that names no section fails instead of sending the whole file [P: H] [READY]
+#### [TSK-03.8.6] A context anchor that names no section fails instead of sending the whole file [P: H] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/line/brief_test.go, internal/backlog]
 done_when:
@@ -1111,7 +1111,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.7] The guard refuses a force push [P: M] [REFINEMENT]
+#### [TSK-03.8.7] The guard refuses a force push [P: M] [DONE]
 ```yaml
 files: [internal/guard, komodo/policy.json]
 done_when:
@@ -1144,7 +1144,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.8.11] A running local server does not take every tier [P: H] [REFINEMENT]
+#### [TSK-03.8.11] A running local server does not take every tier [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/limits.go, internal/mount/codex/limits.go, internal/line/step.go]
 done_when:
@@ -1164,5 +1164,65 @@ context:
   - "two TG-03.7 review rounds found 13 guard bypasses in a row (substitutions, env -i, shell keywords, include.path, and more); a denylist over bash cannot be complete. Say in README.md that the guard catches a cooperative model's mistakes and is not a sandbox"
   - "put the hard boundaries where a shell cannot reach: branch protection on the remote for every critical ref (checked by doctor through the forge's API), and the headless credential scrub as the only push path; consider running headless hosts under the host's own sandbox with the network allowed only to the model"
   - "the second review's low finding: --git-dir=.git and --work-tree=. on the same checkout are refused like another checkout; exempt them as -C . is"
+type: fix
+```
+
+#### [TSK-03.8.13] Every station command runs under a wall clock in its own process group [P: C] [DONE]
+```yaml
+files: [internal/proc, internal/line/verify.go, internal/line/close.go, internal/run/run.go, internal/backlog]
+done_when:
+  - go test ./internal/proc/... ./internal/line/... ./internal/run/...
+context:
+  - "done_when runs under the task's timeout key, default 10 minutes; the gates, the toolkit gate, and after_publish get their own; a hung child is killed with its group, never waited on"
+type: fix
+```
+
+#### [TSK-03.8.14] A repair brief reads the task's own worktree [P: H] [DONE]
+```yaml
+files: [cmd/komodo/main.go, internal/line/close.go]
+done_when:
+  - go test ./internal/line/... ./cmd/...
+context:
+  - "komodo brief read the files slot from the group worktree while the failed attempt's edits sat in the task worktree; TaskWorktree is the one resolver both brief and close use"
+type: fix
+```
+
+#### [TSK-03.8.15] Tokens are the spawned agent's, never the session's [P: H] [DONE]
+```yaml
+files: [internal/mount/claude/usage.go, internal/ledger/ledger.go, internal/line/close.go]
+done_when:
+  - go test ./internal/mount/... ./internal/ledger/... ./internal/line/...
+context:
+  - "Usage summed the driving session's transcript inside the brief-to-close window, so four parallel builds each carried the whole session; it now sums the spawned transcripts that were handed the task's brief, splits cache reads out, and the build stamp names tier, provider, and model"
+type: fix
+```
+
+#### [TSK-03.8.16] The headless launcher can drive a session and find the binary [P: C] [DONE]
+```yaml
+files: [internal/mount/claude/claude.go, internal/run/run.go, komodo/skills/run/SKILL.md]
+done_when:
+  - go test ./internal/mount/... ./internal/run/...
+context:
+  - "a headless session cannot answer a permission prompt, so the host is started with prompts bypassed and the guard hook as the wall, on the standard tier's model; the launcher puts bin/ first on PATH; the run skill says what komodo resolves to and that machine's model half is the spawn's model"
+type: fix
+```
+
+#### [TSK-03.8.17] The overlay names the local model, the local window, and a model per tier [P: H] [DONE]
+```yaml
+files: [internal/mount/registry.go, internal/mount/ollama/ollama.go, internal/mount/claude/limits.go, internal/mount/codex/limits.go, README.md]
+done_when:
+  - go test ./internal/mount/...
+context:
+  - "OLLAMA_MODEL, then local_model, then the first model the server lists; local_window caps what komodo machine sends; models renames a tier for the host so a proof can run on a cheaper machine"
+type: feat
+```
+
+#### [TSK-03.8.18] komodo report reads the run's own group, and doctor --remote audits the rulesets [P: M] [DONE]
+```yaml
+files: [cmd/komodo/main.go, internal/line/next.go, internal/doctor/doctor.go]
+done_when:
+  - go test ./internal/doctor/... ./internal/line/... ./cmd/...
+context:
+  - "report planned the next ready group once the run shipped; doctor --remote reads the forge's branch rulesets through gh and names any active one that reaches past the default branch"
 type: fix
 ```

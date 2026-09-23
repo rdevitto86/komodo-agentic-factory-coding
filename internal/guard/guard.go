@@ -759,7 +759,13 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 			case "--mirror", "--all":
 				mirrorFlag = arg
 			}
+			if isForceFlag(arg) {
+				findings = append(findings, fmt.Sprintf("git push %s: pushed history is never rewritten; push a new commit instead", arg))
+			}
 			if !strings.HasPrefix(arg, "-") {
+				if strings.HasPrefix(arg, "+") {
+					findings = append(findings, fmt.Sprintf("git push %s: a forced refspec rewrites pushed history; push a new commit instead", arg))
+				}
 				positional = append(positional, arg)
 			}
 		}
@@ -845,6 +851,18 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 		}
 	}
 	return findings, branch
+}
+
+// isForceFlag reports whether a push option rewrites the remote's history.
+func isForceFlag(arg string) bool {
+	if arg == "-f" || arg == "--force" || arg == "--force-if-includes" {
+		return true
+	}
+	if strings.HasPrefix(arg, "--force-with-lease") {
+		return true
+	}
+	// A short cluster such as -fu carries the same force.
+	return strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg[1:], "f")
 }
 
 // commitMessage composes the text of a commit or merge's own message: every -m paragraph, an

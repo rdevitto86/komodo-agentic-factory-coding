@@ -39,7 +39,7 @@ flowchart LR
 | Intake | `komodo next` | Prints the next READY group, or one task, as JSON: waves by directory, dependencies, resolved machines. Creates the group branch in its own worktree from the remote base, so your working tree never blocks a run. Tags any untagged changelog version. Skips tasks with a valid result on disk, which is resume. |
 | Brief | `komodo brief <task>` | Fills the role template from the slots, writes the brief and the worktree, prints their paths. `--dry-run` prints slot sizes and a token estimate. |
 | Build | the run skill spawns the builder | Reads the brief path, owns the worktree, writes its result JSON. |
-| Close | `komodo close <task>` | Validates the result, reruns `done_when`, lints comments, flips the status. A failure writes the failure slot for one repair; a second failure marks BLOCKED with the note and the wave continues. |
+| Close | `komodo close <task>` | Validates the result, reruns `done_when` under the task's `timeout` (default 10 minutes, the process group killed past it), lints comments, flips the status. A failure writes the failure slot for one repair; a second failure marks BLOCKED with the note and the wave continues. |
 | QC | `komodo close --wave` | Merges the wave's worktrees in order, stops on conflict naming both tasks, runs the compile gate for the languages touched, then the repo's verify command. A failure stops the run for a person. |
 | Review | `komodo diff`, then the run skill spawns the reviewer, or `komodo machine` runs it on Ollama | The diff, the group's tasks, and the standards the diff touches. Fresh context, another tier or vendor when the profile says so. One pass: a finding at or above the floor stops the run for a fix on the group branch; the rest are filed. |
 | Ship | `komodo close --group` | Commit, push, PR with the report as body and labels the repo already defines, draft when a task is blocked, changelog line under the group's version, status DONE. |
@@ -90,11 +90,13 @@ A role declares a tier, light, standard, or heavy, and never a model. A profile 
 | Profile | Host | light | standard | heavy | reviewer |
 |---|---|---|---|---|---|
 | `claude` | Claude Code | haiku | sonnet | opus | opus |
-| `hybrid` | Claude Code with Ollama up | ollama | sonnet | opus | ollama |
+| `hybrid` | Claude Code with Ollama up | ollama | sonnet | opus | opus, or ollama with `local_reviewer` |
 | `codex` | Codex | small | standard | large | large |
 | `local` | Codex with Ollama | local small | local coder | local coder | local coder |
 
-A tier that resolves to `ollama` runs through `komodo machine` and carries only read-only roles. A write role on that tier falls back to the host's standard tier, and the report says so once. No model is ever spent to reach a local model.
+A tier that resolves to `ollama` runs through `komodo machine` and carries only read-only roles. A write role on that tier, or a brief larger than the local window, falls back to the host's own tier, and `komodo step` says so in `why`. No model is ever spent to reach a local model.
+
+The local model is whatever `OLLAMA_MODEL` names, else `local_model` in the overlay, else the first model the server lists. The overlay, `~/.komodo/config.json`, also renames a tier for this host (`"models": {"heavy": "sonnet"}`), caps the local window (`local_window`, default 32768 tokens), and opts the reviewer onto the local machine (`local_reviewer`). It can only lower a cap and never widen what the guard denies.
 
 Plan overlays sit on top: Pro lowers the heavy ceiling, caps parallel builders at two, skips review under a 40-line diff, and pauses at 75 percent of the five-hour window. Max keeps the defaults and pauses at 90 percent. Unknown is the conservative one. The probe reads the host's own config file, never a CLI status line that once misreported a Max account as Pro. Intake pauses before a wave, never inside one.
 
@@ -119,7 +121,7 @@ Denied, and nothing else:
 3. **Host and toolkit config.** The home directories of the hosts, the machine overlay, the git config and hooks, and the toolkit's binaries.
 4. **Trailers.** Co-author and generated-by lines in a commit.
 
-Inside the worktree an agent has unlimited freedom: delete files, reset, checkout, force-push its own branch, delete its own branches. The rules file says the same. The guard fails open on an internal error and `komodo guard check` runs a 60-command table in the gate, so a broken guard fails the build and never a run. GitHub free has no branch protection, so the guard and the launcher's credential scrub are the only things between an agent and `main`. Merge is your button.
+Inside the worktree an agent has unlimited freedom: delete files, reset, checkout, rebase, delete its own branches. Pushed history is the one exception: a force push, `--force-with-lease`, or a `+refspec` is refused on every branch, since a human may have pulled it. The rules file says the same. The guard fails open on an internal error and `komodo guard check` runs a 60-command table in the gate, so a broken guard fails the build and never a run. GitHub free has no branch protection, so the guard and the launcher's credential scrub are the only things between an agent and `main`. Merge is your button.
 
 ## The binary
 
@@ -160,7 +162,7 @@ A task may say `tier: heavy` to get the big model for one hard task, or `facets:
 
 Ollama is mounted by the binary itself. `komodo machine <task>` posts the brief to Ollama's chat endpoint with the role's schema as the response format, writes the result JSON where close expects it, and stamps the ledger with the token counts the response carries. No host, no MCP, no other model in between: the call is mechanical and costs nothing but local compute. V1's HTTP server at 127.0.0.1:8000 is gone, and install removes its entry.
 
-A local machine carries read-only roles: reviewer, summarizer, and any session role that only reads. So on Claude Code the `hybrid` profile builds with Claude and reviews on Ollama, and a review never shares a vendor with the build. A builder needs tools, which is the host's job, so a local builder needs a host that mounts Ollama natively: on Codex the `local` profile points every tier at Ollama through the host's provider setting. Both Komodo machines pull the same models.
+A local machine carries read-only roles: reviewer, summarizer, and any session role that only reads. So on Claude Code the `hybrid` profile builds with Claude and, when the overlay sets `local_reviewer`, reviews on Ollama, so a review never shares a vendor with the build; without that line the review stays on the host's heavy tier, because a small local model reading a large diff is not a review. A builder needs tools, which is the host's job, so a local builder needs a host that mounts Ollama natively: on Codex the `local` profile points every tier at Ollama through the host's provider setting. Both Komodo machines pull the same models.
 
 ## Hot swap
 

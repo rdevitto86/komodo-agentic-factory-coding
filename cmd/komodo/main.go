@@ -165,7 +165,7 @@ func load(root string) (string, backlog.Backlog) {
 // runLint prints every grammar problem and exits non-zero when there is one.
 func runLint(root string) {
 	_, parsed := load(root)
-	problems := backlog.Lint(parsed)
+	problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
 	for _, problem := range problems {
 		fmt.Println(problem)
 	}
@@ -293,7 +293,7 @@ func runGate(root string, args []string) {
 		gate.Command("go test", root, "go", "test", "./..."),
 		{Name: "komodo lint", Run: func(_ io.Writer) error {
 			_, parsed := load(root)
-			problems := backlog.Lint(parsed)
+			problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
 			for _, problem := range problems {
 				fmt.Println(problem)
 			}
@@ -346,6 +346,7 @@ func runNext(root string, args []string) {
 	asJSON := set.Bool("json", false, "print JSON")
 	start := set.Bool("start", false, "cut the group branch in its own worktree")
 	base := set.String("base", "", "the branch to cut from, default the remote's default branch")
+	force := set.Bool("force", false, "cut the group even while another run is open")
 	needle, rest := splitPositional(args, "base")
 	_ = set.Parse(rest)
 	plan, err := line.PlanForStation(root, needle)
@@ -363,6 +364,11 @@ func runNext(root string, args []string) {
 	if *start {
 		if err := line.CheckLock(root); err != nil {
 			fail(err)
+		}
+		if !*force {
+			if err := line.RefuseOpenRun(root, plan.Group); err != nil {
+				fail(err)
+			}
 		}
 		state, err := line.Start(root, plan, *base)
 		if err != nil {
@@ -435,10 +441,8 @@ func runBrief(root string, args []string) {
 	if task == "" {
 		fail(fmt.Errorf("usage: komodo brief <task> [--role builder] [--dry-run]"))
 	}
-	cwd := root
-	if state, err := line.LoadRun(root); err == nil && state.Worktree != "" {
-		cwd = state.Worktree
-	}
+	// A repair reads the task's own worktree, where the failed attempt's edits still sit.
+	cwd := line.TaskWorktree(root, task)
 	previous := *failure
 	if previous == "" {
 		previous = line.RepairText(root, task)
@@ -462,6 +466,9 @@ func runBrief(root string, args []string) {
 	branch := brief.Task
 	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
 		branch = state.Branch
+	}
+	if err := line.RefuseCollision(root, task); err != nil {
+		fail(err)
 	}
 	if err := line.WriteBrief(root, brief, branch); err != nil {
 		fail(err)
@@ -653,9 +660,19 @@ func runDiff(root string) {
 	fmt.Print(input.Text)
 }
 
-// runReport prints what the run did.
+// runReport prints what the run did, for the group the run record names.
 func runReport(root string) {
-	report, err := line.BuildReport(root, currentPlan(root))
+	plan, err := line.PlanForRun(root)
+	if err != nil {
+		fail(err)
+	}
+	if plan == nil {
+		fail(fmt.Errorf("no run is in progress and nothing is ready"))
+	}
+	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
+	}
+	report, err := line.BuildReport(root, plan)
 	if err != nil {
 		fail(err)
 	}
@@ -1123,6 +1140,7 @@ func runDoctor(root string, args []string) {
 	set := flag.NewFlagSet("doctor", flag.ExitOnError)
 	noGit := set.Bool("no-git", false, "skip the checks that shell out to git")
 	prune := set.Bool("prune", false, "remove stale worktrees and delete merged branches")
+	remote := set.Bool("remote", false, "also audit the forge's branch rulesets through gh")
 	asJSON := set.Bool("json", false, "print JSON")
 	_ = set.Parse(args)
 	if *prune {
@@ -1138,7 +1156,7 @@ func runDoctor(root string, args []string) {
 			fmt.Println(item)
 		}
 	}
-	problems, err := doctor.Run(root, doctor.Options{NoGit: *noGit})
+	problems, err := doctor.Run(root, doctor.Options{NoGit: *noGit, Remote: *remote})
 	if err != nil {
 		fail(err)
 	}

@@ -1,9 +1,10 @@
 package line
 
 import (
+	"komodo/internal/backlog"
+
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -34,12 +35,8 @@ func Clip(text string, limit int, label string) string {
 	return head + marker + tail
 }
 
-var slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
-
-// slug reduces a heading or an anchor to its comparable form.
-func slug(text string) string {
-	return strings.Trim(slugPattern.ReplaceAllString(strings.ToLower(text), "-"), "-")
-}
+// slug is the anchor form of a heading.
+func slug(text string) string { return backlog.Slug(text) }
 
 // Section returns the markdown section whose heading matches the anchor, or the empty string.
 func Section(text, anchor string) string {

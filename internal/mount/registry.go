@@ -1,6 +1,8 @@
 package mount
 
 import (
+	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -28,9 +30,10 @@ type Host struct {
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.
 type TaskUsage struct {
-	TokensIn  int `json:"tokens_in"`
-	TokensOut int `json:"tokens_out"`
-	Turns     int `json:"turns"`
+	TokensIn     int `json:"tokens_in"`
+	TokensOut    int `json:"tokens_out"`
+	TokensCached int `json:"tokens_cached"`
+	Turns        int `json:"turns"`
 }
 
 var (
@@ -225,4 +228,37 @@ func GuardConfigPaths() []string {
 		out = append(out, tools.ConfigPaths...)
 	}
 	return out
+}
+
+// Overlay is the developer's own ~/.komodo/config.json as the mounts read it.
+type Overlay struct {
+	LocalModel    string            `json:"local_model"`
+	LocalWindow   int               `json:"local_window"`
+	LocalReviewer bool              `json:"local_reviewer"`
+	Models        map[string]string `json:"models"`
+}
+
+// OverlayPath is where a developer's own overlay lives, or empty when there is no home.
+func OverlayPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".komodo", "config.json")
+}
+
+// LoadOverlay reads the overlay, tolerating a missing or malformed file as an empty one.
+func LoadOverlay() Overlay {
+	var overlay Overlay
+	data, err := os.ReadFile(OverlayPath())
+	if err != nil {
+		return overlay
+	}
+	_ = json.Unmarshal(data, &overlay)
+	return overlay
+}
+
+// OverlayModel is the model the overlay names for one tier, or empty.
+func OverlayModel(tier string) string {
+	return LoadOverlay().Models[tier]
 }

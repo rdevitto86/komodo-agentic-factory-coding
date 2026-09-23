@@ -23,6 +23,7 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
+	"komodo/internal/pr"
 	"komodo/internal/release"
 	"komodo/internal/toolkit"
 )
@@ -42,8 +43,9 @@ type Problem struct {
 
 // Options are the switches the command passes in.
 type Options struct {
-	NoGit bool
-	Prune bool
+	NoGit  bool
+	Prune  bool
+	Remote bool
 }
 
 // Run walks every check and returns what it found.
@@ -64,7 +66,64 @@ func Run(root string, options Options) ([]Problem, error) {
 		}
 		problems = append(problems, found...)
 	}
+	if options.Remote {
+		problems = append(problems, CheckRulesets(root, base(root), pr.Run)...)
+	}
 	return problems, nil
+}
+
+// base is the remote's default branch, or main.
+func base(root string) string {
+	out, err := git(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+	if err != nil || out == "" {
+		return "main"
+	}
+	return strings.TrimPrefix(strings.TrimSpace(out), "refs/remotes/origin/")
+}
+
+// ruleset is the part of a forge branch ruleset the audit reads.
+type ruleset struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Target      string `json:"target"`
+	Enforcement string `json:"enforcement"`
+	Conditions  struct {
+		RefName struct {
+			Include []string `json:"include"`
+		} `json:"ref_name"`
+	} `json:"conditions"`
+}
+
+// CheckRulesets reads the forge's branch rulesets through gh and reports any active one that
+// reaches past the default branch, which would block the push of every group branch.
+func CheckRulesets(root, defaultBranch string, run pr.Runner) []Problem {
+	out, err := run(root, "api", "repos/{owner}/{repo}/rulesets")
+	if err != nil {
+		return []Problem{{"ruleset", "gh", "could not list rulesets: " + err.Error()}}
+	}
+	var listed []ruleset
+	if json.Unmarshal([]byte(out), &listed) != nil {
+		return []Problem{{"ruleset", "gh", "rulesets did not parse"}}
+	}
+	var problems []Problem
+	for _, item := range listed {
+		if item.Target != "branch" || item.Enforcement != "active" {
+			continue
+		}
+		detail, err := run(root, "api", fmt.Sprintf("repos/{owner}/{repo}/rulesets/%d", item.ID))
+		if err != nil || json.Unmarshal([]byte(detail), &item) != nil {
+			problems = append(problems, Problem{"ruleset", item.Name, "could not be read"})
+			continue
+		}
+		for _, ref := range item.Conditions.RefName.Include {
+			if ref == "~DEFAULT_BRANCH" || ref == "refs/heads/"+defaultBranch {
+				continue
+			}
+			problems = append(problems, Problem{"ruleset", item.Name,
+				fmt.Sprintf("includes %s; scope it to refs/heads/%s so a group branch can be pushed", ref, defaultBranch)})
+		}
+	}
+	return problems
 }
 
 var reference = regexp.MustCompile("`([A-Za-z0-9_./-]+\\.(?:md|json|go|yaml|yml|toml|sh|sha256))`")

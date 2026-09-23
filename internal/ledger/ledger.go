@@ -40,6 +40,7 @@ type Entry struct {
 	Seconds      float64   `json:"seconds,omitempty"`
 	TokensIn     int       `json:"tokens_in,omitempty"`
 	TokensOut    int       `json:"tokens_out,omitempty"`
+	TokensCached int       `json:"tokens_cached,omitempty"`
 	Turns        int       `json:"turns,omitempty"`
 	Outcome      string    `json:"outcome,omitempty"`
 	FailureClass string    `json:"failure_class,omitempty"`

@@ -21,7 +21,7 @@ func Installed(root string) bool {
 // with the model the profile shares across every mount.
 func Tiers(plan string, local bool) mount.Tiers {
 	if local {
-		machine := mount.Machine{Provider: "ollama", Model: ollama.Model}
+		machine := mount.Machine{Provider: "ollama", Model: ollama.ModelName()}
 		return mount.Tiers{Light: machine, Standard: machine, Heavy: machine, Reviewer: machine}
 	}
 	return mount.Tiers{

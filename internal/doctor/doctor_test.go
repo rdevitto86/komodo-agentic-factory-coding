@@ -539,3 +539,25 @@ func TestAFileInstalledWithOllamaUpIsNotDrift(t *testing.T) {
 		t.Fatalf("drift = %+v", got)
 	}
 }
+
+func TestCheckRulesetsFlagsARuleThatReachesEveryBranch(t *testing.T) {
+	run := func(_ string, args ...string) (string, error) {
+		if args[1] == "repos/{owner}/{repo}/rulesets" {
+			return `[{"id":1,"name":"Default","target":"branch","enforcement":"active"},{"id":2,"name":"Tags","target":"tag","enforcement":"active"}]`, nil
+		}
+		return `{"id":1,"name":"Default","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["~ALL"]}}}`, nil
+	}
+	problems := CheckRulesets(t.TempDir(), "main", run)
+	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "~ALL") {
+		t.Fatalf("problems = %+v", problems)
+	}
+	scoped := func(_ string, args ...string) (string, error) {
+		if args[1] == "repos/{owner}/{repo}/rulesets" {
+			return `[{"id":1,"name":"Default","target":"branch","enforcement":"active"}]`, nil
+		}
+		return `{"id":1,"conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}}}`, nil
+	}
+	if problems := CheckRulesets(t.TempDir(), "main", scoped); len(problems) != 0 {
+		t.Fatalf("a rule scoped to the default branch was flagged: %+v", problems)
+	}
+}

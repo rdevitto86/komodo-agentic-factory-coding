@@ -206,7 +206,10 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 				}
 			}
 		}
-		if next.Machine == "ollama" && !ollama.Allowed(matched.Tools) {
+		if next.Machine == "ollama" && (!ollama.Allowed(matched.Tools) || !fitsLocal(root, next.Brief)) {
+			if ollama.Allowed(matched.Tools) {
+				next.Why += "; the brief is larger than the local machine's window, so a remote machine reads it"
+			}
 			next.Machine = matched.Tier
 			if remote := plan.Profile.Tiers.Machine(matched.Tier); remote.Provider != "" && !remote.Local() {
 				next.Machine = remote.Provider + "/" + remote.Model
@@ -221,6 +224,18 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 		}
 	}
 	return &next
+}
+
+// fitsLocal reports whether a brief on disk fits the local machine's window; no brief always fits.
+func fitsLocal(root, brief string) bool {
+	if brief == "" {
+		return true
+	}
+	info, err := os.Stat(filepath.Join(root, brief))
+	if err != nil {
+		return true
+	}
+	return ollama.Fits(int(info.Size()))
 }
 
 // waveMerged reports whether QC already merged this wave into the group branch.

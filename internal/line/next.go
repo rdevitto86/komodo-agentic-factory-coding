@@ -77,7 +77,8 @@ func PlanForStation(root, needle string) (*Plan, error) {
 		return plan, nil
 	}
 	if plan == nil {
-		return planForGroup(root, state.Group)
+		// Nothing fresh is ready: the run's own group, unless it already shipped.
+		return openRun(root, state.Group)
 	}
 	if needle == "" {
 		if open, err := openRun(root, state.Group); err == nil && open != nil {
@@ -85,6 +86,16 @@ func PlanForStation(root, needle string) (*Plan, error) {
 		}
 	}
 	return plan, nil
+}
+
+// PlanForRun is the plan of the group the run record names, shipped or not, else the station's plan.
+func PlanForRun(root string) (*Plan, error) {
+	if state, err := LoadRun(root); err == nil && state.Group != "" {
+		if plan, err := planForGroup(root, state.Group); err == nil && plan != nil {
+			return plan, nil
+		}
+	}
+	return PlanForStation(root, "")
 }
 
 // openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
@@ -121,13 +132,32 @@ func planFor(root, needle string, intent Intent) (*Plan, error) {
 	return plan, nil
 }
 
-// pinWaves restores the waves the run recorded, so every station numbers them the same way.
+// pinWaves restores the waves the run recorded, so every station numbers them the same way, and
+// plans any task the record never saw, added mid-run, into waves after the last pinned one.
 func pinWaves(root string, plan *Plan) {
 	state, err := LoadRun(root)
 	if err != nil || state.Group != plan.Group || len(state.Waves) == 0 {
 		return
 	}
-	plan.Waves = state.Waves
+	pinned := map[string]bool{}
+	for _, wave := range state.Waves {
+		for _, id := range wave {
+			pinned[id] = true
+		}
+	}
+	waves := append([][]string(nil), state.Waves...)
+	for _, wave := range plan.Waves {
+		var late []string
+		for _, id := range wave {
+			if !pinned[id] {
+				late = append(late, id)
+			}
+		}
+		if len(late) > 0 {
+			waves = append(waves, late)
+		}
+	}
+	plan.Waves = waves
 }
 
 // groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one; only
@@ -185,7 +215,16 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 	if includeClosed {
 		skip = nil
 	}
-	waves, err := planWaves(group, tasks, skip)
+	chosen := profile.Select(root)
+	if path := profile.MachineOverlayPath(); path != "" {
+		chosen = profile.Overlay(chosen, path)
+	}
+	plan.Profile = chosen
+	capacity := chosen.MaxParallel
+	if plan.Mode == "single" {
+		capacity = 0
+	}
+	waves, err := planWaves(group, tasks, skip, capacity)
 	if err != nil {
 		return nil, err
 	}
@@ -194,11 +233,6 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 	if err != nil {
 		return nil, err
 	}
-	chosen := profile.Select(root)
-	if path := profile.MachineOverlayPath(); path != "" {
-		chosen = profile.Overlay(chosen, path)
-	}
-	plan.Profile = chosen
 	for index := range roles {
 		tier := roles[index].Tier
 		if roles[index].Name == "reviewer" {
@@ -207,9 +241,6 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 		roles[index].Machine = machineFor(chosen, tier)
 	}
 	plan.Roles = roles
-	if chosen.MaxParallel > 0 && plan.Mode != "single" {
-		plan.Waves = splitByParallel(plan.Waves, chosen.MaxParallel)
-	}
 	pinWaves(root, plan)
 	if chosen.Paused() && len(plan.Waves) > 0 {
 		plan.WaitUntil = chosen.WaitUntil().Format(time.RFC3339)
@@ -234,23 +265,8 @@ func machineFor(chosen profile.Profile, tier string) string {
 	return machine.Provider + "/" + machine.Model
 }
 
-// splitByParallel caps how many tasks a wave may run at once.
-func splitByParallel(waves [][]string, limit int) [][]string {
-	var out [][]string
-	for _, wave := range waves {
-		for start := 0; start < len(wave); start += limit {
-			end := start + limit
-			if end > len(wave) {
-				end = len(wave)
-			}
-			out = append(out, wave[start:end])
-		}
-	}
-	return out
-}
-
-// planWaves splits a group into waves, or into one wave when the group runs single.
-func planWaves(group backlog.Group, tasks []backlog.Task, done []string) ([][]string, error) {
+// planWaves splits a group into waves of at most capacity tasks, or into one wave when the group runs single.
+func planWaves(group backlog.Group, tasks []backlog.Task, done []string, capacity int) ([][]string, error) {
 	if group.Mode() == "single" {
 		var wave []string
 		for _, task := range tasks {
@@ -263,7 +279,7 @@ func planWaves(group backlog.Group, tasks []backlog.Task, done []string) ([][]st
 		}
 		return [][]string{wave}, nil
 	}
-	waves, err := Waves(tasks, done)
+	waves, err := Waves(tasks, done, capacity)
 	if err != nil {
 		return nil, err
 	}
@@ -299,6 +315,20 @@ func groupBase(root string, group backlog.Group) string {
 		return base
 	}
 	return DefaultBase(root)
+}
+
+// RefuseOpenRun refuses to cut a group while another one is open and not shipped, since two
+// open runs share one BACKLOG.md, one ledger, and one run record.
+func RefuseOpenRun(root, group string) error {
+	state, err := LoadRun(root)
+	if err != nil || state.Group == "" || state.Group == group {
+		return nil
+	}
+	open, err := openRun(root, state.Group)
+	if err != nil || open == nil {
+		return nil
+	}
+	return fmt.Errorf("%s is open and not shipped; finish it with komodo step, or cut %s anyway with --force", state.Group, group)
 }
 
 // Start cuts the group branch in its own worktree from the base and records the choice.

@@ -11,7 +11,8 @@ Universal rules for every model and tool on Komodo software, hosted or local, pl
 - **Verify the real source.** Read the file, manifest, or docs; never rely on memory for a limit.
 
 ## Git
-- **Inside your worktree you are free.** Delete, reset, checkout, restore, force-push, or delete your branches; nothing is precious.
+- **Inside your worktree you are free.** Delete, reset, checkout, restore, rebase, or delete your branches; nothing is precious.
+- **Never rewrite pushed history.** No force push, `--force-with-lease`, or `+refspec` on any branch; push a new commit.
 - **Never touch a critical ref.** No commit, push, merge, delete, or force on `main`, `master`, or a `komodo/policy.json` ref; work on a `<type>/<kebab-name>` branch.
 - **Never leave the worktree.** No edit, write, delete, or move outside its root, or on host/toolkit config: home dirs, machine overlay, `.git/config`, `.git/hooks`, and toolkit binaries.
 - **Never add a trailer.** No co-author, no generated-by line.
