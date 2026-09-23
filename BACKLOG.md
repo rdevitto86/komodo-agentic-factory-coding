@@ -949,6 +949,19 @@ context:
 type: fix
 ```
 
+#### [TSK-03.7.27] Always-on context fits its cap with a host installed [P: H] [READY]
+```yaml
+files: [AGENTS.md, komodo/AGENTS.md, komodo/rules, komodo/roles]
+done_when:
+  - go run ./cmd/komodo doctor
+  - go test ./...
+context:
+  - "doctor's always-on budget is 1500 tokens; with the first host installed it measures about 1770: the repo's AGENTS.md about 506, the rendered universal rules about 827, session role descriptions about 257, rendered skill descriptions about 180. Bring the total to at most 1400 so a repo's own skills have headroom"
+  - "the repo's AGENTS.md says everything lands on PR #103, which is stale, and its layout table repeats README.md; keep only what an agent would otherwise guess"
+  - "tighten the universal rules and the session role descriptions without dropping a rule: merge duplicates, cut restated examples, shorten wording. A rule that survives only as a fragment is lost, not kept; list every rule before and after and show none is missing"
+type: chore
+```
+
 ### [TG-03.8] The line plans what it is handed
 ```yaml
 type: fix
