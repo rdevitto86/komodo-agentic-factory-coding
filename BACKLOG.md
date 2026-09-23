@@ -962,6 +962,78 @@ context:
 type: chore
 ```
 
+#### [TSK-03.7.28] cmd/komodo/main.go:364 next --start never takes the run lock, and AcquireLock can race [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/main.go
+done_when:
+  - test -f cmd/komodo/main.go
+type: fix
+context:
+  - "runNext --start calls only line.CheckLock and writes no lock. So two interactive sessions both start and drive the same group, which the task said next --start must prevent. AcquireLock checks and then writes with os.WriteFile, not O_EXCL. Two `komodo run` processes started together both see no lock and both proceed. Call AcquireLock from next --start, and create the lock file with O_CREATE|O_EXCL, retrying once after reclaiming a dead pid."
+```
+
+#### [TSK-03.7.29] internal/run/run.go:214 A headless ship never files minor findings or runs after_publish [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/run.go
+done_when:
+  - test -f internal/run/run.go
+type: fix
+context:
+  - "When the environment is scrubbed, ShipGroup returns right after writing the handoff, before FileFindings and AfterPublishCommand. finishShip only pushes, creates the PR, and labels it. Every below-floor review finding from a headless run is silently dropped, and after_publish never runs. Have finishShip run FileFindings and the after_publish command after a successful push, with the same one-time guarantee the interactive path has."
+```
+
+#### [TSK-03.7.30] internal/guard/guard.go:740 A trailer passes through `git commit -F -` from a heredoc [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/guard.go
+done_when:
+  - test -f internal/guard/guard.go
+type: fix
+context:
+  - "readMessageFile returns an empty string for '-'. stripHeredocs also removes the body, because git is not a shell. So `git commit -F - <<'EOF'` with a Co-Authored-By line in the body passes the trailer check the task extended to -F. When -F is '-' or /dev/stdin, check the stripped heredoc body (or deny when it cannot be read) instead of returning an empty message."
+```
+
+#### [TSK-03.7.31] internal/guard/guard.go:682 Switch handling denies a file restore and misses a forced reset of main [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/guard.go
+done_when:
+  - test -f internal/guard/guard.go
+type: fix
+context:
+  - "switchTarget returns the first non-flag argument. So `git checkout main -- README.md`, which restores a file and does not switch, is denied as a switch onto a critical ref. The task explicitly wanted to remove false denies like this. Conversely, `git checkout -B main feat/x` and `git switch -C main feat/x` set create=true and skip the critical check. They silently reset local main, which update-ref on main is denied for. Stop at `--` treating what precedes it as a pathspec source when paths follow, and apply the critical-ref check to -B, -C, and --force-create targets."
+```
+
+#### [TSK-03.7.32] internal/toolkit/toolkit.go:20 Any top-level komodo/ directory in a target repo replaces the whole embedded toolkit [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/toolkit/toolkit.go
+done_when:
+  - test -f internal/toolkit/toolkit.go
+type: fix
+context:
+  - "FS switches to os.DirFS(root/komodo) whenever that directory exists. A target repo with an unrelated komodo/ package, or one holding only a .komodo-like leftover, loses every embedded role, schema, standard, and facet. Brief, step, and close then fail on missing roles. A root session can also plant komodo/roles/builder.schema.json to weaken close's result validation. Prefer disk only when root/komodo holds the toolkit's marker file (for example roles/builder.md and policy.json), or fall back per file to the embedded tree."
+```
+
+#### [TSK-03.7.33] internal/guard/guard.go:653 --git-dir=.git or --work-tree=. on the same checkout is denied for any write [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/guard.go
+done_when:
+  - test -f internal/guard/guard.go
+type: fix
+context:
+  - "-C . is exempt, but --git-dir and --work-tree set elsewhere for any value, so git --git-dir=.git commit -m x is refused as another checkout. Exempt a --git-dir or --work-tree that resolves to the current worktree root's .git or root, as -C . is exempt."
+```
+
+
+
+
+
+
+
 ### [TG-03.8] The line plans what it is handed
 ```yaml
 type: fix
