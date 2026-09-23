@@ -1047,13 +1047,3 @@ context:
 type: chore
 ```
 
-#### [TSK-03.8.9] The guard reads a heredoc body and quoted text as data, not redirects [P: M] [REFINEMENT]
-```yaml
-files: [internal/guard]
-done_when:
-  - go test ./internal/guard/...
-  - go run ./cmd/komodo guard check
-context:
-  - "a python heredoc whose quoted string held .komodo/<host>/<task>.jsonl was refused as a write to /, because redirectRe matches the > inside the text; match redirects only outside quotes and outside a heredoc body, and add allowed rows for both"
-type: fix
-```
