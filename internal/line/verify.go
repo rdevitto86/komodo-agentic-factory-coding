@@ -1,0 +1,127 @@
+package line
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	repopkg "komodo/internal/repo"
+)
+
+// verifyOrder is the discovery order V1 used, first hit wins.
+var verifyOrder = []struct{ file, command string }{
+	{".komodo/verify.sh", "sh .komodo/verify.sh"},
+	{"scripts/verify.sh", "sh scripts/verify.sh"},
+	{"Makefile", "make verify"},
+	{"Taskfile.yml", "task verify"},
+	{"Taskfile.yaml", "task verify"},
+	{"justfile", "just verify"},
+}
+
+// VerifyCommand is the repo's own verify command, from its commands file or the discovery order.
+func VerifyCommand(root string) string {
+	if override := repopkg.LoadCommands(root).Verify; override != "" {
+		return override
+	}
+	for _, candidate := range verifyOrder {
+		if _, err := os.Stat(filepath.Join(root, candidate.file)); err == nil {
+			return candidate.command
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+		return "go test ./..."
+	}
+	return ""
+}
+
+// BeforeReviewCommand is the repo's own command to run before the reviewer is spawned.
+func BeforeReviewCommand(root string) string {
+	return repopkg.LoadCommands(root).BeforeReview
+}
+
+// AfterPublishCommand is the repo's own command to run once a group has shipped.
+func AfterPublishCommand(root string) string {
+	return repopkg.LoadCommands(root).AfterPublish
+}
+
+// CompileCommands are the cheap whole-tree checks for the manifests a repo carries.
+func CompileCommands(root string) []string {
+	if override := repopkg.LoadCommands(root).Compile; override != "" {
+		return []string{override}
+	}
+	var commands []string
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+		commands = append(commands, "go build ./... && go vet ./...")
+	}
+	if _, err := os.Stat(filepath.Join(root, "package.json")); err == nil {
+		if _, err := os.Stat(filepath.Join(root, "tsconfig.json")); err == nil {
+			commands = append(commands, "npx tsc --noEmit -p .")
+		}
+	}
+	for _, manifest := range []string{"pyproject.toml", "setup.py"} {
+		if _, err := os.Stat(filepath.Join(root, manifest)); err == nil {
+			commands = append(commands, "python3 -m compileall -q .")
+			break
+		}
+	}
+	return commands
+}
+
+// CommandResult is one command's outcome, with its output trimmed for a report.
+type CommandResult struct {
+	Command  string  `json:"command"`
+	ExitCode int     `json:"exit_code"`
+	Output   string  `json:"output,omitempty"`
+	Seconds  float64 `json:"seconds"`
+}
+
+// OK reports whether the command exited zero.
+func (r CommandResult) OK() bool { return r.ExitCode == 0 }
+
+// RunCommand runs one shell command in a directory and captures its combined output.
+func RunCommand(cwd, command string) CommandResult {
+	started := time.Now()
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = cwd
+	output, err := cmd.CombinedOutput()
+	result := CommandResult{Command: command, Seconds: time.Since(started).Seconds()}
+	result.Output = Clip(strings.TrimSpace(string(output)), 12000, "output")
+	if err != nil {
+		result.ExitCode = 1
+		if exit, ok := err.(*exec.ExitError); ok {
+			result.ExitCode = exit.ExitCode()
+		}
+	}
+	return result
+}
+
+// RunGate runs commands in order and stops at the first failure.
+func RunGate(cwd string, commands []string) []CommandResult {
+	var results []CommandResult
+	for _, command := range commands {
+		result := RunCommand(cwd, command)
+		results = append(results, result)
+		if !result.OK() {
+			break
+		}
+	}
+	return results
+}
+
+// FirstFailure names the first command that did not exit zero.
+func FirstFailure(results []CommandResult) (CommandResult, bool) {
+	for _, result := range results {
+		if !result.OK() {
+			return result, true
+		}
+	}
+	return CommandResult{}, false
+}
+
+// FailureText renders a failed command for the failure slot.
+func FailureText(result CommandResult) string {
+	return fmt.Sprintf("`%s` exited %d\n\n%s", result.Command, result.ExitCode, result.Output)
+}

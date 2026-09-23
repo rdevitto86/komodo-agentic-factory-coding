@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "properties": {
+    "answer": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "citation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim",
+          "citation"
+        ]
+      }
+    },
+    "not_found": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "answer",
+    "evidence"
+  ]
+}

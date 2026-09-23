@@ -1,6 +1,11 @@
 # Local session and run state, never shared
 .claude/
-.komodo/
+.codex/
+.agents/
+/.komodo/
+
+# Personal overlays the install seeds once and never overwrites
+CLAUDE.local.md
 
 # Editor / OS noise
 .DS_Store

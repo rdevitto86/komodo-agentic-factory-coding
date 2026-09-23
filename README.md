@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-**Status: V2 is planned, not built.** This README is the plan and the requirements. The repo was cleared to the markdown source on 2026-09-21; V1 lives at the tag `v1-final` and the branch `archive/v1`. Every task lands on PR #103 through six stacked group PRs, one per roadmap group. Tasks are in `BACKLOG.md`.
+This README is the reference and the requirements. The repo was cleared to the markdown source on 2026-09-21; V1 lives at the tag `v1-final`; its run state was gitignored and did not survive the clear. Every task lands on PR #103 through six stacked group PRs, one per roadmap group. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -141,7 +141,7 @@ A repo may commit `.komodo/`. Nothing in it is required, a malformed file is ski
 
 - **`context/*.md`** with a `paths:` glob list: injected into any task whose files match.
 - **`standards/<name>.md`**: appends to a shipped standard of that name, or adds a new one.
-- **`skills/<name>/SKILL.md`**: a new skill, or a "Repo overrides" section appended to a shipped one. `komodo install --project` renders these into the host's project directory as gitignored copies.
+- **`skills/<name>/SKILL.md`**: a new skill, or a "Repo overrides" section appended to a shipped one. The project render writes these into the host's project directory as gitignored copies.
 - **`commands.json`**: verify, compile, before-review, after-publish, each a shell command the line runs at that station. Verify otherwise resolves by discovery: a Makefile target, a verify script, a package script, `go vet`.
 - **`policy.json`**: adds critical refs. **`facets`**: names a facet detection missed. Precedence is defaults, then detection, then the machine overlay, then the repo, then the task, and each layer can only add.
 
@@ -152,7 +152,7 @@ The line adapts to a repo by detecting it, not by being told. `komodo detect` re
 A facet is what detection selects: a shipped directory under `komodo/facets/` with a skill, a builder appendix, a reviewer appendix, and default commands. The skill holds Komodo's own setup for that platform, and only what a model is not trained on: accounts, regions, naming, deploy paths, and conventions, never a vendor tutorial. Until a platform is set up, its skill says so and lists what is unknown. Shipped at launch: `aws`, `gcp`, `azure`, `postgres`, `github-actions`. A facet is injected at two points and edits nothing:
 
 - **At the brief.** A ninth slot, the repo profile, about 200 characters. Facet appendices land in the standards slot under their own cap. A role's schema and tools never change.
-- **At the project render.** `install --project`, which intake runs, writes the host's project config from the profile: the facet skills, the standards skills, the repo skills, the rules file. Gitignored copies, rebuilt every time, so a clone plus one command gives a developer the right tools without a commit.
+- **At the project render.** `komodo next` runs it automatically, writing the host's project config from the profile: the facet skills, the standards skills, the repo skills, the rules file. Gitignored copies, rebuilt every time, so a clone plus one command gives a developer the right tools without a commit.
 
 A task may say `tier: heavy` to get the big model for one hard task, or `facets: [postgres]` to add one detection missed. A `.komodo/` file exists only to correct detection, and doctor fails when the cached profile or the rendered config has drifted from a fresh detection.
 
@@ -188,7 +188,7 @@ Six groups, all `2.0.0`, all on PR #103. Sessions build the first four; the run 
 | TG-03.1 The markdown | Standards as skills, briefs folded into roles with schemas, the policy file with four denials, the rules updated for worktree freedom, the merger role removed | Tests, no old directories |
 | TG-03.2 The conveyor and devices | The Go module and the binary: lint, next, brief, close, diff, report, tag, release check, the ledger and metrics, `step`; prebuilt binaries and the manifest | Every station has a test |
 | TG-03.3 The guard and the mounts | The guard with the 60-command table, install for Claude Code and Codex, doctor with portability and prune, profiles with the plan probe and auto-selection | Guard table in the gate; validate under 1500 tokens |
-| TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the V1 versus V2 timing proof | One group each way, numbers in the changelog |
+| TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the end-to-end timing proof | One group driven by the skill alone, numbers in the changelog |
 | TG-03.5 The repo layer, detection, and local machines | Context by glob, repo standards and skills, commands and additive policy; `detect`, facets for AWS, GCP, Azure, Postgres, and GitHub Actions with Komodo's setup skills, the profile slot, the project render from the profile; the Ollama mount; the hybrid and local profiles | Tests, doctor, the Ollama mount against a fake Ollama |
 | TG-03.6 The gate and the exit test | The local gate on pre-commit and pre-push with no CI; every swap point proven by test; one task under Codex with zero changes outside the mounts; README, names, and templates final; changelog 2.0.0 | Gate green locally, proofs recorded |
 
@@ -202,9 +202,9 @@ PR #103 is the integration PR: its branch `docs/v2-plan` carries the plan and re
 | A | `refactor/v2-markdown` | `docs/v2-plan` | TG-03.1, 4 tasks: standards to skills, briefs to roles with schemas, the policy, the rules, the merger gone | a session | `docs/v2-plan` |
 | B | `feat/v2-conveyor` | `refactor/v2-markdown` | TG-03.2, 8 tasks: the Go module, lint, the gate, next, brief, close, QC and ship, diff, report, tag, the ledger, step | a session | A |
 | C | `feat/v2-guard-mounts` | `feat/v2-conveyor` | TG-03.3, 5 tasks: the guard, install for both hosts, doctor, self-selecting profiles, usage | a session | B |
-| D | `feat/v2-skills-launcher` | `feat/v2-guard-mounts` | TG-03.4, 3 tasks: the four skills, the headless launcher, the proof task that PR E fills in | a session | C |
+| D | `feat/v2-skills-launcher` | `feat/v2-guard-mounts` | TG-03.4, 4 tasks: the four skills, the headless launcher, the proof task that PR E fills in, the edit-only permissions layer | a session | C |
 | E | `feat/v2-repo-layer` | `feat/v2-skills-launcher` | TG-03.5, 9 tasks: repo context, standards, skills, commands, the Ollama mount, detect, facets, the profile slot, the project render | the line itself, through `/run TG-03.5` | D |
-| F | `chore/v2-gate-exit` | `feat/v2-repo-layer` | TG-03.6, 5 tasks: the local gate hooks, names and README, the swap proofs, the Codex exit test, the changelog | the line, plus the human for Codex | E |
+| F | `chore/v2-gate-exit` | `feat/v2-repo-layer` | TG-03.6, 7 tasks: the local gate hooks, names and README, the swap proofs, the Codex exit test, the changelog, the drift check, the binary conflict | the line, plus the human for Codex | E |
 
 How a stack moves:
 
@@ -222,61 +222,11 @@ Validation per PR, mechanical first, then human. Nothing runs on GitHub.
 | B | `komodo gate` green: vet, test, byte-identical binaries. `komodo lint` on this backlog. `komodo next --json` prints TG-03.3 with its waves. `komodo brief --dry-run TSK-03.3.1` prints every slot under its cap. `komodo close` on a hand-written result JSON flips a status and stamps the ledger. `komodo step` prints one action. | Read one brief. It is the whole input a builder gets and nothing in it names a host. |
 | C | `komodo gate` green with `guard check`: 60 commands, half allowed, each denial named. `komodo install --host claude --dry-run` lists the render and nothing outside the mounts names a host. `komodo doctor`: always-on context under 1500 tokens, no leak, no drift. The plan probe prints the overlay and never an email or an id. | Install on this Mac. In a session, an agent is denied a commit to `main` and allowed `rm` inside its worktree. |
 | D | `komodo doctor`: the run skill under 800 tokens, four skills, none names a host. The launcher test proves the scrub: no push token, credential helper, or SSH identity reaches the child. `komodo run --dry-run TG-03.5` prints the host command it would launch. | `/run` in a session prints the first `step` action and stops when told. |
-| E | Opened by `close --group`, body is the report. `komodo gate` green, `komodo doctor` green including profile drift. `komodo detect` on this repo prints Go and no cloud. The Ollama mount test passes against the fake, and `komodo machine` reviews one real diff on a local model. The swap of a facet by `.komodo/facets` reaches a brief. | The proof numbers for TSK-03.4.3 are in the changelog and the run was not slower than V1 by more than one wave. Read the PR body: it is a usable report. |
+| E | Opened by `close --group`, body is the report. `komodo gate` green, `komodo doctor` green including profile drift. `komodo detect` on this repo prints Go and no cloud. The Ollama mount test passes against the fake, and `komodo machine` reviews one real diff on a local model. The swap of a facet by `.komodo/facets` reaches a brief. | The proof numbers for TSK-03.4.3 are in the changelog and no station needed a human turn. Read the PR body: it is a usable report. |
 | F | `komodo gate` green as the pre-commit and pre-push hook on both developer machines. The retired-words grep finds nothing. The swap tests pass. `test ! -d .github/workflows`. | The Codex exit test ran with zero changes outside the mounts and its numbers are in the changelog. The README describes what exists. |
 | #103 | A through F merged. `komodo gate` green on `docs/v2-plan`. `komodo release check` reports no drift for 2.0.0. | Both proofs in `CHANGELOG.md`. Merge, and the tag is cut. |
 
 The repository ruleset must cover `main` only. Today it covers every branch and requires a pull request for any push, which the owner bypasses on each push and a collaborator cannot; scoping it to `main` is the one GitHub setting the plan needs.
-
-## V1 coverage
-
-Every V1 capability, where it lands, or why it does not.
-
-| V1 capability | V2 |
-|---|---|
-| `run` with waves, worktrees, merge, verify, review, publish | next, brief, close, and the run skill, TG-03.2 and TG-03.4 |
-| `run --dry-run` token estimates | `brief --dry-run`, TSK-03.2.3 |
-| `run --resume` | Result files on disk, TSK-03.2.2 |
-| `mode: single` groups | Honored by next, TSK-03.2.2 |
-| Compile gate per wave with one repair | `close --wave`, TSK-03.2.5 |
-| Verify command discovery order | Kept, overridable by repo commands, TSK-03.2.5 and TSK-03.5.3 |
-| Blocked task with note, wave continues | close, TSK-03.2.4 |
-| Review with severity floor, findings filed to the backlog | diff and close, TSK-03.2.5 |
-| PR body sections, labels from the mapping, draft on block | `close --group`, TSK-03.2.5 |
-| Changelog entry per version | `close --group`, TSK-03.2.5 |
-| Preflight tag, `release check` | tag and release check, TSK-03.2.6 |
-| Clean-tree check | Replaced: intake works in its own worktree from the remote base, TSK-03.2.2 |
-| Report: phases, per-role cost, summary buckets | report and the ledger, TSK-03.2.6 and TSK-03.2.7; per-phase time becomes per-station time |
-| Plan detection, model ceiling, turn caps | Plan probe and overlays, TSK-03.3.4; turn caps are the host's |
-| Rate-window pause and warn | Intake waits before a wave, TSK-03.3.4 |
-| Group wall-clock budget | The launcher, TSK-03.4.2 |
-| `status --prune` and `--json` | `doctor --prune` and `--json`, TSK-03.3.3 |
-| `tasks lint`, `list`, `add` | Kept, TSK-03.2.1 |
-| `tasks plan` worker | The planner role through the backlog skill, TSK-03.4.1 |
-| `tasks migrate` | Dropped; the pre-1.0 grammar has no repos left |
-| `pr threads`, `label`, `comment`, `reply` | Kept inside the binary, TSK-03.4.1 |
-| `pr respond` worker | The respond skill in a session, TSK-03.4.1 |
-| `pr sync` worker and the merger role | Dropped; a conflict is the human's |
-| `install` with seeds, `--dry-run`, copy on Windows | Kept, TSK-03.3.2; `--host` and `--project` added |
-| `doctor`: references, policy leaks, leftovers, roles, changelog | Kept, TSK-03.3.3; portability and repo drift added |
-| `comments check` | Kept inside close and as a command, TSK-03.2.4 |
-| `hooks install`, pre-commit, pre-push | Kept for this repo only as `komodo gate --install`, mechanical and model-free; other repos rely on the guard, TSK-03.6.1 |
-| Go guard and Go inject | The guard subcommand, TSK-03.3.1; inject dropped, the backlog skill reads the file |
-| `gitops` refusals and the single pusher | The guard's four denials and the launcher's scrub, TSK-03.3.1 and TSK-03.4.2 |
-| Destructive command patterns | Dropped; greenfield, no prod, no AWS; the guard denies paths outside the worktree instead |
-| Scope by task file list | Replaced by the worktree boundary, TSK-03.3.1 |
-| `worker_env` credential scrub | The launcher, TSK-03.4.2 |
-| Brief slots with clip and caps | brief, TSK-03.2.3 |
-| Standards by extension, clipped in briefs, pointers in sessions | TSK-03.1.1 and TSK-03.3.2 |
-| Worker JSON validated against a schema | close, TSK-03.2.4 |
-| Ollama worker and the summarizer | The Ollama mount and the hybrid profile, TSK-03.5.4 and TSK-03.5.5 |
-| Profiles fast, thinking, local | claude, hybrid, codex, local, auto-selected, TSK-03.3.4 |
-| Always-on token budget in validate | Kept inside doctor, TSK-03.3.3 |
-| Verify gate | `komodo gate`, local, before every commit and push, TSK-03.2.1 and TSK-03.6.1 |
-| Project templates | Kept, TSK-03.6.2; the host rules file is rendered by `install --project` |
-| Personal overlay seed | Kept, TSK-03.3.2 |
-| Per-worker dollar caps and timeouts | Dropped; a subscription never charges them and the host owns turns |
-| Repo-level context, standards, exclusions | Built, TG-03.5; exclusions become the repo layer's additive rule |
 
 ## Names
 

@@ -21,7 +21,7 @@ version: 2.0.0
 * **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
 * **PR A:** `refactor/v2-markdown` from `docs/v2-plan`, opened by the session with `gh pr create`. Validated by every `done_when` here, the V1 linter from a scratch worktree of `v1-final` at zero problems, and a human read of `komodo/AGENTS.md` and `komodo/policy.json`. Merges into `docs/v2-plan`.
 
-#### [TSK-03.1.1] Standards become skills at the source [P: C] [READY]
+#### [TSK-03.1.1] Standards become skills at the source [P: C] [DONE]
 ```yaml
 files: [komodo/skills, komodo/standards]
 done_when:
@@ -34,7 +34,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.1.2] Briefs fold into roles, and each role carries its schema [P: C] [READY]
+#### [TSK-03.1.2] Briefs fold into roles, and each role carries its schema [P: C] [DONE]
 ```yaml
 files: [komodo/roles, komodo/briefs]
 done_when:
@@ -48,7 +48,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.1.3] The policy has four denials, and the rules give a worktree unlimited freedom [P: C] [READY]
+#### [TSK-03.1.3] The policy has four denials, and the rules give a worktree unlimited freedom [P: C] [DONE]
 ```yaml
 files: [komodo/policy.json, komodo/AGENTS.md, komodo/rules]
 done_when:
@@ -62,7 +62,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.1.4] The merger role goes; the responder stays as a session role [P: M] [READY]
+#### [TSK-03.1.4] The merger role goes; the responder stays as a session role [P: M] [DONE]
 ```yaml
 files: [komodo/roles/merger.md, komodo/roles/responder.md]
 done_when:
@@ -82,7 +82,7 @@ version: 2.0.0
 * **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
 * **PR B:** `feat/v2-conveyor` from `refactor/v2-markdown`, opened by the session. Validated by `komodo gate`, `komodo lint`, `komodo next --json` printing TG-03.3, `komodo brief --dry-run TSK-03.3.1`, `komodo close` on a hand-written result, `komodo step` printing one action, and a human read of one brief. Merges into `refactor/v2-markdown`.
 
-#### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [READY]
+#### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [DONE]
 ```yaml
 files: [go.mod, cmd/komodo/main.go, internal/backlog, internal/gate, bin, .gitattributes]
 done_when:
@@ -98,7 +98,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.2] Intake: `komodo next` [P: C] [READY]
+#### [TSK-03.2.2] Intake: `komodo next` [P: C] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/next_test.go, internal/line/worktree.go]
 done_when:
@@ -111,7 +111,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.3] Input device: `komodo brief` [P: C] [READY]
+#### [TSK-03.2.3] Input device: `komodo brief` [P: C] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/line/brief_test.go, internal/line/clip.go]
 done_when:
@@ -125,7 +125,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.4] Output device: `komodo close <task>` [P: C] [READY]
+#### [TSK-03.2.4] Output device: `komodo close <task>` [P: C] [DONE]
 ```yaml
 files: [internal/line/close.go, internal/line/close_test.go, internal/line/schema.go, internal/comments]
 done_when:
@@ -138,7 +138,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.5] QC and ship: `komodo close --wave` and `--group` [P: C] [READY]
+#### [TSK-03.2.5] QC and ship: `komodo close --wave` and `--group` [P: C] [DONE]
 ```yaml
 files: [internal/line/wave.go, internal/line/ship.go, internal/line/verify.go, internal/line/wave_test.go, internal/pr]
 done_when:
@@ -152,7 +152,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.6] `komodo diff`, `report`, `tag`, and `release check` [P: H] [READY]
+#### [TSK-03.2.6] `komodo diff`, `report`, `tag`, and `release check` [P: H] [DONE]
 ```yaml
 files: [internal/line/diff.go, internal/line/report.go, internal/release, internal/line/diff_test.go]
 done_when:
@@ -165,7 +165,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.7] The ledger and `komodo metrics` [P: H] [READY]
+#### [TSK-03.2.7] The ledger and `komodo metrics` [P: H] [DONE]
 ```yaml
 files: [internal/ledger, internal/line, cmd/komodo/main.go]
 done_when:
@@ -178,7 +178,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.2.8] `komodo step`: the binary drives the session [P: C] [READY]
+#### [TSK-03.2.8] `komodo step`: the binary drives the session [P: C] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/step_test.go, cmd/komodo/main.go]
 done_when:
@@ -199,7 +199,7 @@ version: 2.0.0
 * **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
 * **PR C:** `feat/v2-guard-mounts` from `feat/v2-conveyor`, opened by the session. Validated by `komodo gate` with `guard check`, `install --host claude --dry-run`, `komodo doctor` under the budgets with no leak, the probe printing an overlay and no identity, then a real install on this Mac where a session is denied a commit to `main` and allowed `rm` in its worktree. Merges into `feat/v2-conveyor`.
 
-#### [TSK-03.3.1] The guard: four denials, worktree scope, and the table in the gate [P: C] [READY]
+#### [TSK-03.3.1] The guard: four denials, worktree scope, and the table in the gate [P: C] [DONE]
 ```yaml
 files: [internal/guard, cmd/komodo/main.go]
 done_when:
@@ -213,7 +213,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.2] `komodo install --host claude|codex|both`: the mounts [P: C] [READY]
+#### [TSK-03.3.2] `komodo install --host claude|codex|both`: the mounts [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude, internal/mount/codex, internal/install, cmd/komodo/main.go]
 done_when:
@@ -227,7 +227,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.3] Doctor: references, leaks, drift, budgets, prune [P: H] [READY]
+#### [TSK-03.3.3] Doctor: references, leaks, drift, budgets, prune [P: H] [DONE]
 ```yaml
 files: [internal/doctor, cmd/komodo/main.go]
 done_when:
@@ -240,7 +240,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.4] Profiles select themselves: host, plan probe, Ollama, and pacing [P: H] [READY]
+#### [TSK-03.3.4] Profiles select themselves: host, plan probe, Ollama, and pacing [P: H] [DONE]
 ```yaml
 files: [internal/profile, internal/mount/claude/limits.go, internal/line/next.go]
 done_when:
@@ -253,7 +253,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.3.5] Each mount reports a machine's usage after the fact [P: H] [READY]
+#### [TSK-03.3.5] Each mount reports a machine's usage after the fact [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/usage.go, internal/mount/codex/usage.go, internal/ledger]
 done_when:
@@ -270,12 +270,12 @@ type: feat
 type: feat
 version: 2.0.0
 ```
-* **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof runs one group each way before anything is deleted.
-* **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
+* **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof is one group driven end to end by the skill alone, recorded before anything is deleted.
+* **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping, and a session start with no permission-rule warning. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
 
-#### [TSK-03.4.1] The run, review, backlog, and respond skills [P: C] [READY]
+#### [TSK-03.4.1] The run, review, backlog, and respond skills [P: C] [DONE]
 ```yaml
-files: [komodo/skills/run/SKILL.md, komodo/skills/review/SKILL.md, komodo/skills/backlog/SKILL.md, komodo/skills/respond/SKILL.md]
+files: [komodo/skills/run/SKILL.md, komodo/skills/review/SKILL.md, komodo/skills/backlog/SKILL.md, komodo/skills/respond/SKILL.md, cmd/komodo/main.go]
 done_when:
   - go run ./cmd/komodo doctor --no-git
 depends_on: [TSK-03.3.3]
@@ -283,12 +283,13 @@ context:
   - "run takes a group, a task, or nothing and is three lines: call komodo step, do what it says, repeat; the station order lives in the binary and never in a skill"
   - "review runs QC and the reviewer on the current diff; backlog writes tasks in the grammar with add and lint and is where the planner role works; respond lists unresolved threads and, as the responder role, changes code when the reviewer is right and replies when they are not"
   - "a skill names no host tool, path, flag, or vendor; it says spawn the builder role and the mount decides how"
+  - "respond needs the threads the pr package already reads, so komodo threads exposes them as JSON"
 type: feat
 ```
 
-#### [TSK-03.4.2] The headless launcher: `komodo run` [P: H] [READY]
+#### [TSK-03.4.2] The headless launcher: `komodo run` [P: H] [DONE]
 ```yaml
-files: [internal/run, cmd/komodo/main.go]
+files: [internal/run, cmd/komodo/main.go, internal/mount/registry.go]
 done_when:
   - go test ./internal/run/...
 depends_on: [TSK-03.4.1]
@@ -297,38 +298,55 @@ context:
 type: feat
 ```
 
-#### [TSK-03.4.3] Proof: one group under V1 and under the run skill [P: C] [READY]
+#### [TSK-03.4.3] Proof: the run skill drives a group end to end [P: C] [READY]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
-  - grep -q "Proof: V1 versus the run skill" CHANGELOG.md
+  - grep -q "Proof: the run skill drives a group" CHANGELOG.md
 depends_on: [TSK-03.4.1, TSK-03.4.2]
 owner: human
 context:
-  - "run TG-03.5 under the run skill in a Claude Code session, committing to this branch; record wall time, tokens, and turns beside the V1 numbers for TG-02.4 from its run state at the tag v1-final, under a Proof: V1 versus the run skill heading in the 2.0.0 changelog entry"
-  - "slower by more than one wave means the skill is wrong; fix the skill before TG-03.5 merges"
+  - "run TG-03.5 under the run skill in a session, committing to this branch; record wall time, tokens in, tokens out, and turns per station from .komodo/line.jsonl, under a Proof: the run skill drives a group heading in the 2.0.0 changelog entry"
+  - "the bar is absolute, not comparative: the group finishes inside the launcher's budget, with no human turn between stations and no station run out of the order komodo step gave"
+  - "a station the human had to drive means the skill is wrong; fix the skill before TG-03.5 merges"
+  - "there is no V1 baseline: V1 kept run state in the gitignored .komodo/runs and the V2 clean start deleted it, TG-02.4 is not a group at the tag v1-final, and V1 squash-merged one commit per group so no per-group timing survives in history; never re-add the comparison"
 type: docs
+```
+
+#### [TSK-03.4.4] The permissions layer denies on edit only [P: H] [DONE]
+```yaml
+files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, .claude/settings.json]
+done_when:
+  - go test ./internal/mount/...
+  - test -z "$(grep -c 'Write(' .claude/settings.json | grep -v '^0$')"
+depends_on: [TSK-03.3.2]
+context:
+  - "the host matches a file permission rule on Edit only; a Write(path) deny entry is inert and the host prints a warning for each one at session start"
+  - "denyList emits one Edit entry per config path and no Write entry; the guard is unchanged and still the real refusal"
+type: fix
 ```
 
 ### [TG-03.5] The repo layer and the local machines
 ```yaml
 type: feat
 version: 2.0.0
+base: docs/v2-plan
 ```
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
 * **PR E:** `feat/v2-repo-layer` from `feat/v2-skills-launcher`, cut by `/run TG-03.5` and opened by `close --group` with the report as the body. Validated by `komodo gate`, `komodo doctor` with profile drift, `komodo detect` printing Go and no cloud, the Ollama mount against the fake and one real local review, a facet swap reaching a brief, and the proof numbers for TSK-03.4.3 in the changelog. Merges into `feat/v2-skills-launcher`.
 
-#### [TSK-03.5.1] Repo context injects by glob [P: H] [READY]
+#### [TSK-03.5.1] Repo context injects by glob [P: H] [DONE]
 ```yaml
-files: [internal/repo/context.go, internal/repo/context_test.go, internal/line/brief.go, templates/project]
+files: [internal/repo/context.go, internal/repo/context_test.go, internal/line/brief.go, templates/project, .gitignore]
 done_when:
   - go test ./internal/repo/... ./internal/line/...
 context:
+  - "the gitignore entry .komodo/ is anchored to /.komodo/ so templates/project/.komodo can ship; unanchored it swallows the example at any depth"
   - ".komodo/context/*.md with a paths glob list in frontmatter fills the repo_context slot for any task whose files match, clipped; no globs means every task; a malformed file is skipped with one line in the report; templates/project gains one example"
 type: feat
 ```
 
-#### [TSK-03.5.2] Repo standards and repo skills, rendered by `install --project` [P: H] [READY]
+#### [TSK-03.5.2] Repo standards and repo skills, rendered by `install --project` [P: H] [DONE]
 ```yaml
 files: [internal/repo/standards.go, internal/repo/skills.go, internal/install, internal/mount/claude, internal/mount/codex, internal/doctor]
 done_when:
@@ -340,7 +358,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.3] Repo commands and additive policy [P: H] [READY]
+#### [TSK-03.5.3] Repo commands and additive policy [P: H] [DONE]
 ```yaml
 files: [internal/repo/commands.go, internal/line/verify.go, internal/guard]
 done_when:
@@ -353,7 +371,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.4] `komodo machine`: the binary is the Ollama mount [P: C] [READY]
+#### [TSK-03.5.4] `komodo machine`: the binary is the Ollama mount [P: C] [DONE]
 ```yaml
 files: [internal/mount/ollama, cmd/komodo/main.go]
 done_when:
@@ -364,7 +382,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.5] The hybrid and local profiles run on the Ollama mount [P: H] [READY]
+#### [TSK-03.5.5] The hybrid and local profiles run on the Ollama mount [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude, internal/mount/codex, internal/profile, komodo/roles/summarizer.md]
 done_when:
@@ -376,7 +394,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.6] `komodo detect`: the repo profile, cached by manifest hash [P: C] [READY]
+#### [TSK-03.5.6] `komodo detect`: the repo profile, cached by manifest hash [P: C] [DONE]
 ```yaml
 files: [internal/detect, cmd/komodo/main.go]
 done_when:
@@ -387,7 +405,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.7] Facets: Komodo's setup skills and appendices keyed by detection [P: C] [READY]
+#### [TSK-03.5.7] Facets: Komodo's setup skills and appendices keyed by detection [P: C] [DONE]
 ```yaml
 files: [komodo/facets, internal/facet]
 done_when:
@@ -403,7 +421,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.8] The repo profile slot, facet appendices, and the task keys tier and facets [P: H] [READY]
+#### [TSK-03.5.8] The repo profile slot, facet appendices, and the task keys tier and facets [P: H] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/backlog, komodo/rules/backlog.md, komodo/roles/builder.md, komodo/roles/reviewer.md]
 done_when:
@@ -416,7 +434,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.5.9] The project render comes from the profile, and intake runs it [P: H] [READY]
+#### [TSK-03.5.9] The project render comes from the profile, and intake runs it [P: H] [DONE]
 ```yaml
 files: [internal/install, internal/mount/claude, internal/mount/codex, internal/line/next.go, internal/doctor]
 done_when:
@@ -428,15 +446,28 @@ context:
 type: feat
 ```
 
+#### [TSK-03.5.10] internal/mount/registry.go:136 Machine.Local is exported API with one caller and the provider literal survives elsewhere [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/registry.go
+done_when:
+  - test -f internal/mount/registry.go
+type: refactor
+context:
+  - "Local is called only by FirstRemote eight lines below it and by nothing else in the tree. The constant it introduced does not remove the literal it was meant to replace: step.go, next.go and the machine command still compare the provider string directly. Unexport the predicate or inline the provider comparison into FirstRemote."
+```
+
+
 ### [TG-03.6] The gate and the exit test
 ```yaml
 type: chore
 version: 2.0.0
+base: docs/v2-plan
 ```
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
 * **PR F:** `chore/v2-gate-exit` from `feat/v2-repo-layer`, cut by `/run TG-03.6` and opened by `close --group`. Validated by the gate as the pre-commit and pre-push hook on both developer machines, the retired-words grep, the swap tests, no workflow directory, the Codex numbers in the changelog, and a human read of the final README. Merges into `feat/v2-repo-layer`; then #103 merges into `main`.
 
-#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [READY]
+#### [TSK-03.6.1] The gate is local, and nothing runs on GitHub [P: C] [DONE]
 ```yaml
 files: [internal/gate, internal/line/close.go, internal/line/ship.go, cmd/komodo/main.go]
 done_when:
@@ -448,7 +479,7 @@ context:
 type: chore
 ```
 
-#### [TSK-03.6.2] README, names, and the templates describe what exists [P: H] [READY]
+#### [TSK-03.6.2] README, names, and the templates describe what exists [P: H] [DONE]
 ```yaml
 files: [README.md, AGENTS.md, templates/project, komodo, cmd/komodo, internal]
 done_when:
@@ -469,11 +500,11 @@ done_when:
 depends_on: [TSK-03.6.2]
 owner: human
 context:
-  - "komodo install --host codex with zero changes outside internal/mount, then run one task with codex exec through the launcher; record the same numbers as TSK-03.4.3 under a Proof: the exit test under Codex heading"
+  - "komodo install --host codex with zero changes outside internal/mount, then run one task through the launcher; record the same numbers as TSK-03.4.3 under a Proof: the exit test under Codex heading"
 type: docs
 ```
 
-#### [TSK-03.6.4] Changelog 2.0.0 [P: M] [READY]
+#### [TSK-03.6.4] Changelog 2.0.0 [P: M] [DONE]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
@@ -484,7 +515,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.5] Every swap point is proven [P: C] [READY]
+#### [TSK-03.6.5] Every swap point is proven [P: C] [DONE]
 ```yaml
 files: [internal/line/swap_test.go, internal/profile, internal/facet, internal/repo]
 done_when:
@@ -493,5 +524,167 @@ depends_on: [TSK-03.6.1]
 context:
   - "one test per swap point, each with no code change and no restart: a profile row change moves a station to another machine and step names it; a skill body change under komodo/skills or .komodo/skills reaches the next brief and the next project render; a facet added by .komodo/facets or a task's facets key reaches the standards slot, the profile slot, and the render; a commands.json change replaces verify at QC"
   - "a role, a skill, and the binary hold no name of a model, a server, or a platform, so the test fails when any of them does; MCP is the fifth point and is deferred: the test asserts that a facet's mcp.json, when present, changes nothing in V2"
+type: test
+```
+
+#### [TSK-03.6.7] The prebuilt binaries stop conflicting on every stacked branch [P: M] [DONE]
+```yaml
+files: [.gitattributes, bin/MANIFEST.sha256]
+done_when:
+  - git check-attr binary bin/komodo-linux-amd64
+depends_on: [TSK-03.6.1]
+context:
+  - "three committed binaries and a manifest are rebuilt by komodo gate --rebuild on every branch, so any two branches off one base always conflict in bin/; #112 and #114 both hit it"
+  - "mark them binary with a merge strategy that takes the branch's own copy, or build them at release only and drop them from the tree"
+type: chore
+```
+
+#### [TSK-03.6.6] Doctor's drift check counts a file the install would create [P: M] [DONE]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-03.4.1]
+context:
+  - "checkDrift reports only update and remove, so a new skill or role that an installed mount has never rendered passes clean; TSK-03.4.1 added four skills and the gate stayed green with none of them mounted"
+  - "a create against a host that is already rendered is drift and must say run komodo install"
+type: fix
+```
+
+#### [TSK-03.6.8] The reviewer tier is set on both mounts and never dispatched [P: M] [DONE]
+```yaml
+files: [internal/line/next.go, internal/line/next_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.5.5]
+context:
+  - "machineFor dispatches on role.Tier and has no reviewer case, so mount.Tiers.Reviewer is populated by both hosts and never read; the shipped reviewer role declares tier heavy and resolves to Tiers.Heavy"
+  - "either dispatch the reviewer role to Tiers.Reviewer or drop the field from the Tiers struct; a set-but-unread field is a silent wrong machine"
+type: fix
+```
+
+#### [TSK-03.6.9] A declared key that nothing reads fails the gate [P: H] [DONE]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-03.6.6]
+context:
+  - "four mechanisms shipped wired to nothing and were each found by hand: RepairText and komodo brief --failure, SplitFindings and FileFindings and Profile.SeverityFloor, commands.json before_review and after_publish, and a task's tier key; every one parsed, linted, documented and inert"
+  - "doctor grows a check that every exported symbol the rules or the grammar promise has a caller outside its own tests, naming the promise and the symbol"
+type: feat
+```
+
+#### [TSK-03.6.10] One resolver decides which group a station plans for [P: H] [DONE]
+```yaml
+files: [internal/line/next.go, internal/line/step.go, internal/line/next_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.9]
+context:
+  - "five defects in one run came from a station planning from BACKLOG.md instead of the open run: the wrong base, renumbered waves twice, close and ship taking the next ready group, and step abandoning an unshipped run"
+  - "PlanForRun and pinWaves patched the callers one at a time; make it impossible instead, so a plan cannot be built without stating whether it is the open run or a fresh group"
+type: refactor
+```
+
+#### [TSK-03.6.11] `komodo diff` truncates the diff it hands the reviewer [P: H] [DONE]
+```yaml
+files: [internal/line/diff.go, internal/line/diff_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.1]
+context:
+  - "the third TG-03.5 review reported the input truncated mid-file and read the worktree directly instead; a reviewer silently working from a cut diff is a review of something other than the change"
+  - "either clip on a file boundary and say how many files were dropped, or page the diff; never end mid-hunk with no marker"
+type: fix
+```
+
+#### [TSK-03.6.12] The manifest hash in the profile cache decides nothing [P: L] [DONE]
+```yaml
+files: [internal/detect/detect.go, internal/detect/detect_test.go]
+done_when:
+  - go test ./internal/detect/...
+depends_on: [TSK-03.6.11]
+context:
+  - "Load now walks the tree on every call and returns the fresh profile, so hashManifests and sameManifests only decide whether the file is rewritten, never what a caller sees; the walk they exist to avoid always runs"
+  - "drop the hash comparison and keep the equality guard, or restore a cache read that genuinely skips the walk"
+type: refactor
+```
+
+#### [TSK-03.6.13] A run holds a lock, so two cannot drive one group [P: H] [READY]
+```yaml
+files: [internal/line/worktree.go, internal/line/worktree_test.go, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.6.1]
+context:
+  - "two komodo run processes drove TG-03.6 at once and both wrote run state, task branches and wave merges; the result happened to be coherent but nothing prevents two runs interleaving a wave merge or renumbering waves under each other"
+  - "next --start takes an exclusive lock under .komodo holding the pid and the run id; a second run exits naming the holder, and a stale lock whose pid is gone is reclaimed"
+type: feat
+```
+
+### [TG-03.7] The review findings from TG-03.6
+```yaml
+type: fix
+version: 2.0.1
+base: docs/v2-plan
+```
+
+#### [TSK-03.7.1] The binaries leave the tree, so no branch rebuilds them [P: H] [READY]
+```yaml
+files: [.gitattributes, bin, internal/gate, internal/release]
+done_when:
+  - go test ./internal/gate/... ./internal/release/...
+context:
+  - "TSK-03.6.7 set bin/** binary merge=binary -diff, which the review proved a no-op: git's binary macro already expands to -diff -merge -text, and the built-in binary driver behaves exactly like an unset merge attribute, so the paths still conflict"
+  - "take that task's second option instead: build the binaries at release and drop them from the tree, so no branch ever rebuilds a tracked artifact"
+type: fix
+```
+
+#### [TSK-03.7.2] checkPromises reads the sources it names and resolves real callers [P: H] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-03.7.1]
+context:
+  - "the check scans only komodo/rules/*.md for a bullet shaped - **`key`**, so severity_floor, before_review and after_publish, which live in BACKLOG.md, are out of scope; three of the four mechanisms it was written for cannot be seen"
+  - "called() counts any word-boundary match in a non-test file, so the tier key passes on the struct field roles[index].Tier whether or not Task.Tier() is ever called; resolve callers by identifier position with go/ast"
+type: fix
+```
+
+#### [TSK-03.7.3] The MCP swap point is proven or the changelog stops claiming it [P: M] [READY]
+```yaml
+files: [internal/line/swap_test.go, CHANGELOG.md]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.7.2]
+context:
+  - "TSK-03.6.5 requires the swap test to assert that a facet's mcp.json, when present, changes nothing in V2; swap_test.go carries four tests and no mention of mcp, yet the 2.0.0 changelog entry says it does"
+  - "add the assertion, or cut the claim; a changelog that overstates a proof is worse than one that omits it"
+type: fix
+```
+
+#### [TSK-03.7.4] A diff never drops a file without saying so [P: M] [READY]
+```yaml
+files: [internal/line/diff.go, internal/line/diff_test.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-03.7.3]
+context:
+  - "DiffFor appends a piece only when byFile holds the name, so a mismatch between git diff --name-only and the chunk keys removes a file silently; with core.quotepath at its default a non-ASCII path is C-quoted in both, the header stops matching diff --git a/, and its hunks are folded into the previous file"
+  - "handle the quoted header form and emit a marker for any name in Files with no chunk; TSK-03.6.11 forbids a silent drop"
+type: fix
+```
+
+#### [TSK-03.7.5] The detect recompute test asserts what its name claims [P: L] [READY]
+```yaml
+files: [internal/detect/detect_test.go]
+done_when:
+  - go test ./internal/detect/...
+depends_on: [TSK-03.7.4]
+context:
+  - "TestLoadRecomputesWhenAManifestIsAdded asserts Verify is go test ./..., which go.mod already produced, and that the cache file is non-empty, which the first Load guaranteed; both hold if Load returned a stale profile without walking"
+  - "assert a profile field the added manifest actually changes, or drop the test in favour of the one that does"
 type: test
 ```

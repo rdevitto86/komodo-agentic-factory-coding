@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "properties": {
+    "recommendation": {
+      "type": "string"
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "option": {
+            "type": "string"
+          },
+          "cost": {
+            "type": "string"
+          },
+          "benefit": {
+            "type": "string"
+          },
+          "changes_the_call": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "option",
+          "cost",
+          "benefit"
+        ]
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "recommendation",
+    "options"
+  ]
+}

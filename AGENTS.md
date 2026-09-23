@@ -6,12 +6,13 @@ Komodo's code assembly line: one static binary is the conveyor and the devices, 
 
 | Path | What |
 |---|---|
-| `komodo/rules/` | Universal rules and the backlog grammar |
+| `komodo/AGENTS.md`, `komodo/rules/` | Universal rules and the backlog grammar |
 | `komodo/roles/` | One file per role |
-| `komodo/standards/`, `komodo/briefs/` | V1 source that TG-03.1 reshapes into skills and role bodies |
-| `komodo/facets/` | Komodo's setup skill, appendices, and commands per platform, from TG-03.5 on |
+| `komodo/skills/` | `run`, `review`, `backlog`, `respond`, and one `standards-<x>` per language or domain |
+| `komodo/policy.json` | The four denials and the critical refs |
+| `komodo/facets/` | Komodo's setup skill, appendices, and commands per platform |
 | `templates/project/` | Starters for a new repo |
-| `cmd/komodo/`, `internal/`, `bin/` | The binary, from TG-03.2 on |
+| `cmd/komodo/`, `internal/`, `bin/` | The binary |
 
 ## Rules that hold here
 
@@ -22,12 +23,12 @@ Komodo's code assembly line: one static binary is the conveyor and the devices, 
 - **No MCP in V2.** Machines, skills, and external dependencies are the swappable parts; MCPs come in a later hot-swap pass.
 - **No repo config is required.** Nothing refuses to run because a file is missing.
 - **Standard library only.** Go with no dependencies; prebuilt binaries under `bin/` with a manifest.
-- **V1 is history.** The tag `v1-final` and the branch `archive/v1` hold it; nothing is copied back without a task naming it.
+- **V1 is history.** The tag `v1-final` holds it; nothing is copied back without a task naming it. Run state was never committed and is gone.
 
 ## Commands
 
 ```bash
-go run ./cmd/komodo gate               # vet, test, doctor, guard table, binaries; from TG-03.2 on
+go run ./cmd/komodo gate               # vet, test, doctor, guard table, binaries
 go run ./cmd/komodo lint               # after every backlog edit
 go run ./cmd/komodo doctor             # references, portability, drift
 ```
