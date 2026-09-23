@@ -195,7 +195,8 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 	worktree := gitRepo(t)
 	commit(t, worktree, "BACKLOG.md", flipBacklog, "the backlog")
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(flipBacklog), 0o644); err != nil {
+	closed := strings.Replace(flipBacklog, "[READY]", "[DONE]", 1)
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closed), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	plan := &Plan{
@@ -217,8 +218,30 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(stale), "[DONE]") {
+	if string(stale) != closed {
 		t.Fatal("ship must write the worktree it commits, not the root it was invoked from")
+	}
+}
+
+func TestShipNeverMarksATaskItSkippedAsDone(t *testing.T) {
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", flipBacklog, "the backlog")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(flipBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+	}
+	_, _ = ShipGroup(root, plan, nil, nil)
+	shipped, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(shipped), "[DONE]") {
+		t.Fatalf("a task close never marked DONE shipped as DONE:\n%s", shipped)
 	}
 }
 

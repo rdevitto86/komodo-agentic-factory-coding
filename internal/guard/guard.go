@@ -40,7 +40,12 @@ var (
 	// scrubbedVars are the environment variables a headless run's credential scrub sets.
 	scrubbedVars = map[string]bool{
 		"GIT_CONFIG_COUNT": true, "GIT_CONFIG_PARAMETERS": true, "GIT_SSH_COMMAND": true, "GIT_ASKPASS": true,
+		"GIT_TERMINAL_PROMPT": true, "GH_CONFIG_DIR": true, "SSH_AUTH_SOCK": true, "GIT_DIR": true, "GIT_WORK_TREE": true,
 	}
+	// scrubbedConfigRe matches the numbered git config pairs the scrub sets, GIT_CONFIG_KEY_0 and on.
+	scrubbedConfigRe = regexp.MustCompile(`^GIT_CONFIG_(KEY|VALUE)_[0-9]+$`)
+	// credentialConfigRe matches a -c or --config-env key that hands git a credential or a transport.
+	credentialConfigRe = regexp.MustCompile(`(?i)^(credential(\..*)?|core\.sshcommand|core\.askpass)$`)
 	// remotePushConfigRe matches a -c key that redirects where a bare push lands.
 	remotePushConfigRe = regexp.MustCompile(`^remote\.[^.]+\.(push|pushurl)$`)
 	// globalValueFlags are git's global options that take a value, other than -c and -C.
@@ -121,6 +126,9 @@ func commandFindings(command, root, cwd, branch string, policy Policy) []string 
 	// >| is a noclobber override; folding it into >> keeps the pipe splitter from misreading it.
 	command = strings.ReplaceAll(stripHeredocs(command), ">|", ">>")
 	var findings []string
+	for _, body := range substitutions(command) {
+		findings = append(findings, commandFindings(body, root, cwd, branch, policy)...)
+	}
 	// current tracks the branch across segments, since a switch or checkout changes it mid-chain.
 	current := branch
 	for _, chunk := range splitChain(command) {
@@ -137,7 +145,7 @@ func commandFindings(command, root, cwd, branch string, policy Policy) []string 
 			leading := true
 			for _, token := range tokens {
 				if leading && assignRe.MatchString(token) {
-					if name, _, _ := strings.Cut(token, "="); scrubbedVars[name] {
+					if name, _, _ := strings.Cut(token, "="); isScrubbed(name) {
 						findings = append(findings, fmt.Sprintf("%s overrides a variable the headless run scrubs", token))
 					}
 					continue
@@ -161,6 +169,14 @@ func commandFindings(command, root, cwd, branch string, policy Policy) []string 
 			switch {
 			case name == "cd":
 				cwd = changeDir(kept, cwd)
+			case name == "pushd" || name == "popd":
+				cwd = unresolvedDir
+			case name == "export" || name == "unset" || name == "declare" || name == "typeset":
+				for _, arg := range kept[1:] {
+					if varName, _, _ := strings.Cut(arg, "="); isScrubbed(varName) {
+						findings = append(findings, fmt.Sprintf("%s %s changes a variable the headless run scrubs", name, arg))
+					}
+				}
 			case name == "dd":
 				findings = append(findings, ddPaths(kept, cwd, root, policy)...)
 			case pathWriters[name] || isConditionalWriter(name, kept):
@@ -222,6 +238,53 @@ func splitChain(command string) []string {
 	return append(parts, current.String())
 }
 
+// isScrubbed reports whether a variable is one the headless scrub sets, removes, or relies on.
+func isScrubbed(name string) bool {
+	return scrubbedVars[name] || scrubbedConfigRe.MatchString(name)
+}
+
+// substitutions returns the body of every $(...) and backtick substitution outside single quotes,
+// each a command of its own that the shell runs before the line it sits in.
+func substitutions(command string) []string {
+	var out []string
+	runes := []rune(command)
+	single := false
+	for index := 0; index < len(runes); index++ {
+		switch char := runes[index]; {
+		case char == '\\' && !single:
+			index++
+		case char == '\'':
+			single = !single
+		case single:
+		case char == '$' && index+1 < len(runes) && runes[index+1] == '(':
+			depth, start := 1, index+2
+			end := start
+			for ; end < len(runes) && depth > 0; end++ {
+				switch runes[end] {
+				case '(':
+					depth++
+				case ')':
+					depth--
+				}
+			}
+			if depth == 0 {
+				out = append(out, string(runes[start:end-1]))
+			} else {
+				out = append(out, string(runes[start:]))
+			}
+			index = end - 1
+		case char == '`':
+			end := index + 1
+			for end < len(runes) && runes[end] != '`' {
+				end++
+			}
+			out = append(out, string(runes[index+1:min(end, len(runes))]))
+			index = end
+		}
+	}
+	return out
+}
+
 // splitBackground further splits a segment on a bare & job-control operator, not &&, >&, or &>.
 func splitBackground(segment string) []string {
 	runes := []rune(segment)
@@ -281,7 +344,7 @@ func unwrapCommand(kept []string) ([]string, []string) {
 		name := filepath.Base(kept[0])
 		kept = kept[1:]
 		for len(kept) > 0 && assignRe.MatchString(kept[0]) {
-			if varName, _, _ := strings.Cut(kept[0], "="); scrubbedVars[varName] {
+			if varName, _, _ := strings.Cut(kept[0], "="); isScrubbed(varName) {
 				findings = append(findings, fmt.Sprintf("%s overrides a variable the headless run scrubs", kept[0]))
 			}
 			kept = kept[1:]
@@ -299,6 +362,9 @@ func unwrapCommand(kept []string) ([]string, []string) {
 				continue
 			}
 			if wrapperValueFlags[name][flag] && len(kept) > 0 {
+				if name == "env" && flag == "-u" && isScrubbed(kept[0]) {
+					findings = append(findings, fmt.Sprintf("env -u %s removes a variable the headless run scrubs", kept[0]))
+				}
 				kept = kept[1:]
 			}
 		}
@@ -343,10 +409,21 @@ func containsToken(tokens []string, value string) bool {
 // changeDir resolves a cd's target against the current directory, so a later write judges
 // correctly against wherever the chain now stands, even outside the worktree root.
 func changeDir(kept []string, cwd string) string {
-	if len(kept) < 2 {
-		return cwd
+	target := ""
+	for _, arg := range kept[1:] {
+		if target == "" && (arg == "--" || arg == "-L" || arg == "-P" || arg == "-e" || arg == "-@") {
+			continue
+		}
+		target = arg
+		break
 	}
-	target := kept[1]
+	if target == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return unresolvedDir
+		}
+		return home
+	}
 	if unresolvedVarRe.MatchString(target) || otherHomeRe.MatchString(target) || target == "-" {
 		return unresolvedDir
 	}
@@ -566,16 +643,28 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy) ([]string, 
 			}
 			index += 2
 		default:
-			name, _, hasValue := strings.Cut(arg, "=")
+			name, value, hasValue := strings.Cut(arg, "=")
 			index++
-			if globalValueFlags[name] && !hasValue {
+			if globalValueFlags[name] && !hasValue && index < len(args) {
+				value = args[index]
 				index++
+			}
+			switch name {
+			case "--git-dir", "--work-tree":
+				// These point git at another repository, whose branch the guard does not track.
+				elsewhere = value
+			case "--config-env":
+				configs = append(configs, value)
 			}
 		}
 	}
 	for _, entry := range configs {
-		if name, _, _ := strings.Cut(entry, "="); remotePushConfigRe.MatchString(name) {
+		name, _, _ := strings.Cut(entry, "=")
+		if remotePushConfigRe.MatchString(name) {
 			findings = append(findings, fmt.Sprintf("git -c %s: a config write reaches push; open a pull request instead", entry))
+		}
+		if credentialConfigRe.MatchString(name) {
+			findings = append(findings, fmt.Sprintf("git -c %s: hands git a credential the headless run scrubs", entry))
 		}
 	}
 	if index >= len(args) {

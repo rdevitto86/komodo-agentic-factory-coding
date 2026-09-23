@@ -267,6 +267,30 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 	}
 }
 
+func TestFinishShipRefusesARefspecOrCriticalBranchAnAgentWrote(t *testing.T) {
+	for _, branch := range []string{"+HEAD:main", "--mirror", "main", "feat/x:main", "feat/x..y"} {
+		bare := filepath.Join(t.TempDir(), "origin.git")
+		runGit(t, "", "init", "--bare", bare)
+		root := t.TempDir()
+		runGit(t, root, "init", "-b", "main")
+		runGit(t, root, "config", "user.email", "a@example.com")
+		runGit(t, root, "config", "user.name", "a")
+		runGit(t, root, "remote", "add", "origin", bare)
+		runGit(t, root, "commit", "--allow-empty", "-m", "seed")
+		writeHandoff(t, root, line.ShipHandoff{Branch: branch, Base: "main", Title: "t", Body: "b"})
+		client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+			t.Fatalf("gh ran for %q: %v", branch, args)
+			return "", nil
+		}}
+		if err := finishShip(Options{Root: root, PR: client}); err == nil {
+			t.Fatalf("finishShip pushed the handoff branch %q", branch)
+		}
+		if out, _ := exec.Command("git", "ls-remote", bare).Output(); len(out) != 0 {
+			t.Fatalf("origin received refs for %q: %s", branch, out)
+		}
+	}
+}
+
 func TestFinishShipDoesNothingWithNoHandoff(t *testing.T) {
 	if err := finishShip(Options{Root: t.TempDir()}); err != nil {
 		t.Fatal(err)

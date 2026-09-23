@@ -101,11 +101,11 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		if !ok {
 			continue
 		}
-		switch current.Status {
-		case "BLOCKED":
-			result.Blocked = append(result.Blocked, task.ID)
-		default:
+		// Only a task close marked DONE shipped; a blocked one, or a dependent step skipped, did not.
+		if current.Status == "DONE" {
 			result.Done = append(result.Done, task.ID)
+		} else {
+			result.Blocked = append(result.Blocked, task.ID)
 		}
 	}
 	result.Draft = len(result.Blocked) > 0

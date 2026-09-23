@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -204,6 +205,9 @@ func finishShip(options Options) error {
 	if err := json.Unmarshal(data, &handoff); err != nil {
 		return err
 	}
+	if err := pushable(options.Root, handoff.Branch); err != nil {
+		return err
+	}
 	if err := gitPush(options.Root, handoff.Branch); err != nil {
 		return err
 	}
@@ -222,9 +226,24 @@ func finishShip(options Options) error {
 	return os.Remove(path)
 }
 
+// pushable refuses a handoff branch that is a refspec, an option, an invalid name, or a critical ref,
+// since an agent can write ship.json and the launcher pushes with real credentials.
+func pushable(root, branch string) error {
+	if branch == "" || strings.HasPrefix(branch, "-") || strings.ContainsAny(branch, ":+ ") {
+		return fmt.Errorf("ship.json names %q, which is not a plain branch; nothing was pushed", branch)
+	}
+	if err := exec.Command("git", "-C", root, "check-ref-format", "--branch", branch).Run(); err != nil {
+		return fmt.Errorf("ship.json names %q, which is not a valid branch; nothing was pushed", branch)
+	}
+	if guard.Load(root, root).IsCritical(branch) {
+		return fmt.Errorf("ship.json names the critical ref %q; landing is the human's merge button", branch)
+	}
+	return nil
+}
+
 // gitPush pushes one branch to origin from the run's root, in the launcher's ambient environment.
 func gitPush(root, branch string) error {
-	cmd := exec.Command("git", "push", "-u", "origin", branch)
+	cmd := exec.Command("git", "push", "-u", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
 	cmd.Dir = root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
