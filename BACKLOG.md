@@ -1458,7 +1458,7 @@ base: docs/queue-claude-default
 ```
 * **Why:** the light tier moves to Ollama whenever the server answers, and a small local model on a 24 GB machine is too weak to carry a station. For 1.0 Claude carries every tier; Ollama stays a swap the developer opts into.
 
-#### [TSK-03.18.1] Local tiers need the overlay's local switch as well as a live server [P: H] [READY]
+#### [TSK-03.18.1] Local tiers need the overlay's local switch as well as a live server [P: H] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/profile/profile.go, internal/profile/profile_test.go, README.md]
 done_when:
