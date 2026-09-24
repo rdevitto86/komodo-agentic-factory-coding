@@ -25,6 +25,7 @@ type flagTable struct {
 	module    map[string]bool
 	gluedOnly map[string]bool
 	digits    map[string]bool
+	preload   map[string]bool
 	clusters  bool
 	subOnly   bool
 }
@@ -40,12 +41,14 @@ var flagTables = map[string]flagTable{
 	"node": {
 		code:      set("e", "p"),
 		value:     set("r", "C"),
+		preload:   set("r", "--require", "--import", "--loader", "--experimental-loader"),
 		longCode:  set("--eval", "--print"),
 		longValue: set("--require", "--import", "--loader", "--experimental-loader", "--conditions", "--input-type", "--env-file", "--title"),
 	},
 	"ruby": {
 		code:      set("e"),
 		value:     set("r", "I", "C", "E", "F", "x", "K", "T", "W"),
+		preload:   set("r"),
 		gluedOnly: set("F", "x", "K", "T", "W"),
 		digits:    set("0"),
 		clusters:  true,
@@ -113,9 +116,10 @@ var bunSubcommands = set("run", "test", "install", "i", "add", "remove", "rm", "
 
 // interpCall is what one interpreter invocation will run: inline code, a script operand, or neither.
 type interpCall struct {
-	code    []string
-	operand string
-	module  bool
+	code     []string
+	operand  string
+	module   bool
+	preloads []string
 }
 
 // parseInterpreter reads an interpreter's arguments with that interpreter's own flag table.
@@ -144,8 +148,12 @@ func parseInterpreter(kept []string) interpCall {
 			case table.longCode[flag]:
 				code, next := nextValue(args, index, value, hasEq)
 				call.code, index = append(call.code, code), next
-			case table.longValue[flag] && !hasEq:
-				index++
+			case table.longValue[flag]:
+				preload, next := nextValue(args, index, value, hasEq)
+				if table.preload[flag] {
+					call.preloads = append(call.preloads, preload)
+				}
+				index = next
 			}
 			continue
 		}
@@ -204,7 +212,13 @@ func (call *interpCall) readShort(args []string, index int, table flagTable) (bo
 			return true, index
 		case table.value[letter]:
 			if rest == "" && !table.gluedOnly[letter] && index+1 < len(args) {
+				if table.preload[letter] {
+					call.preloads = append(call.preloads, args[index+1])
+				}
 				return false, index + 1
+			}
+			if table.preload[letter] && rest != "" {
+				call.preloads = append(call.preloads, rest)
 			}
 			return false, index
 		}
@@ -257,30 +271,15 @@ func parseSubcommandInterpreter(name string, args []string, table flagTable) int
 		}
 		switch {
 		case name == "deno" && arg == "eval":
-			for _, word := range args[index+1:] {
-				if !strings.HasPrefix(word, "-") {
-					call.code = append(call.code, word)
-					return call
-				}
+			if word := firstOperand(args[index+1:], table); word != "" {
+				call.code = append(call.code, word)
 			}
 			return call
 		case name == "deno" && scriptLike(arg):
 			call.operand = arg
 			return call
 		case arg == "run":
-			rest := args[index+1:]
-			for at := 0; at < len(rest); at++ {
-				word := rest[at]
-				flag, _, hasEq := strings.Cut(word, "=")
-				if strings.HasPrefix(word, "-") {
-					if !hasEq && (table.longValue[flag] || (len(flag) == 2 && table.value[flag[1:]])) {
-						at++
-					}
-					continue
-				}
-				call.operand = word
-				return call
-			}
+			call.operand = firstOperand(args[index+1:], table)
 			return call
 		case name == "bun" && !bunSubcommands[arg]:
 			call.operand = arg
@@ -289,6 +288,22 @@ func parseSubcommandInterpreter(name string, args []string, table flagTable) int
 		return call
 	}
 	return call
+}
+
+// firstOperand is the first word that is neither a flag nor a flag's separate value.
+func firstOperand(args []string, table flagTable) string {
+	for index := 0; index < len(args); index++ {
+		word := args[index]
+		flag, _, hasEq := strings.Cut(word, "=")
+		if strings.HasPrefix(word, "-") {
+			if !hasEq && (table.longValue[flag] || (len(flag) == 2 && table.value[flag[1:]])) {
+				index++
+			}
+			continue
+		}
+		return word
+	}
+	return ""
 }
 
 // scriptLike reports whether an interpreter operand names a file rather than a module, verb, or package script.
@@ -328,6 +343,9 @@ func hidesGitOrGh(text string) bool {
 // line already wrote, or one on disk; a script missing after an earlier command is not visible.
 func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, active bool) []string {
 	call := parseInterpreter(kept)
+	if found := s.preloadFindings(call.preloads, cwd); found != nil {
+		return found
+	}
 	if call.module {
 		return nil
 	}
@@ -365,7 +383,7 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, active 
 	}
 	text, exists, ok := readScript(call.operand, cwd)
 	switch {
-	case !exists && s.createdEarlier(), exists && s.blind:
+	case !exists && s.createdEarlier(), exists && (s.blind || !ok):
 		return []string{scriptNotVisible}
 	case ok && hidesGitOrGhInFile(text):
 		return []string{interpreterHidesGit}
@@ -387,8 +405,9 @@ func (s *scanner) resolvedScript(name, operand, cwd string) (string, bool) {
 		if write, found := s.recordedWrite(candidate, cwd); found {
 			return write.text, write.known
 		}
-		if text, _, ok := readScript(candidate, cwd); ok {
-			return text, !s.blind
+		text, exists, ok := readScript(candidate, cwd)
+		if exists {
+			return text, ok && !s.blind
 		}
 	}
 	if name == "bun" || name == "deno" {
@@ -396,6 +415,33 @@ func (s *scanner) resolvedScript(name, operand, cwd string) (string, bool) {
 		return "", true
 	}
 	return "", !s.createdEarlier()
+}
+
+// preloadFindings reads each file an interpreter loads before its program, as node -r ./p.js does;
+// a bare module name such as json or dotenv/config is left alone.
+func (s *scanner) preloadFindings(preloads []string, cwd string) []string {
+	for _, preload := range preloads {
+		if !strings.HasPrefix(preload, ".") && !strings.HasPrefix(preload, "/") && !scriptExtensions[strings.ToLower(filepath.Ext(preload))] {
+			continue
+		}
+		if write, found := s.recordedWrite(preload, cwd); found {
+			if !write.known {
+				return []string{scriptNotVisible}
+			}
+			if hidesGitOrGh(write.text) {
+				return []string{interpreterHidesGit}
+			}
+			continue
+		}
+		text, exists, ok := readScript(preload, cwd)
+		switch {
+		case exists && (!ok || s.blind), !exists && s.createdEarlier():
+			return []string{scriptNotVisible}
+		case ok && hidesGitOrGhInFile(text):
+			return []string{interpreterHidesGit}
+		}
+	}
+	return nil
 }
 
 // stdinFindings judges the program an interpreter reads from a heredoc or a pipe.
@@ -412,8 +458,8 @@ func stdinFindings(stdin string) []string {
 // maxScriptBytes caps how much of a script the guard reads; a larger file is judged unreadable.
 const maxScriptBytes = 256 << 10
 
-// readScript reads a script relative to cwd, reporting whether it exists and whether it is text
-// the guard can judge: under maxScriptBytes and holding no NUL byte.
+// readScript reads a script file relative to cwd, reporting whether it exists and whether it is text
+// the guard can judge: under maxScriptBytes and holding no NUL byte; a directory does not count.
 func readScript(target, cwd string) (text string, exists, ok bool) {
 	file := expandHome(target)
 	if !filepath.IsAbs(file) {
@@ -426,7 +472,10 @@ func readScript(target, cwd string) (text string, exists, ok bool) {
 	if err != nil {
 		return "", !os.IsNotExist(err), false
 	}
-	if info.IsDir() || info.Size() > maxScriptBytes {
+	if info.IsDir() {
+		return "", false, false
+	}
+	if info.Size() > maxScriptBytes {
 		return "", true, false
 	}
 	data, err := os.ReadFile(file)
