@@ -301,3 +301,27 @@ func TestTheReviewsFindingsReachTheLine(t *testing.T) {
 		t.Fatalf("blocking = %v, minor = %v; the floor decides which stop a ship", blocking, minor)
 	}
 }
+
+func TestACollisionIsASharedFileNotASharedDirectory(t *testing.T) {
+	root := gitRepo(t)
+	text := "### [TG-21.2] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-21.2.1] First [P: C] [READY]\n```yaml\nfiles: [internal/a/x.go]\ndone_when: [\"true\"]\n```\n\n" +
+		"#### [TSK-21.2.2] Sibling [P: C] [READY]\n```yaml\nfiles: [internal/a/y.go]\ndone_when: [\"true\"]\n```\n\n" +
+		"#### [TSK-21.2.3] Same [P: C] [READY]\n```yaml\nfiles: [internal/a/x.go]\ndone_when: [\"true\"]\n```\n"
+	commit(t, root, "BACKLOG.md", text, "seed")
+	gitCmd(t, root, "branch", "feat/group")
+	gitCmd(t, root, "checkout", "-q", "-b", TaskBranch("TSK-21.2.1"))
+	commit(t, root, "internal/a/x.go", "package a\n", "first")
+	gitCmd(t, root, "checkout", "-q", "main")
+	state := RunState{Group: "TG-21.2", Branch: "feat/group", Waves: [][]string{{"TSK-21.2.1", "TSK-21.2.2", "TSK-21.2.3"}}}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := RefuseCollision(root, "TSK-21.2.2"); err != nil {
+		t.Fatalf("a sibling file in the same directory must brief: %v", err)
+	}
+	err := RefuseCollision(root, "TSK-21.2.3")
+	if err == nil || !strings.Contains(err.Error(), "TSK-21.2.1") {
+		t.Fatalf("err = %v; the same file on an unmerged branch must refuse", err)
+	}
+}

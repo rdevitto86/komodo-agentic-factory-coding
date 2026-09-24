@@ -1837,7 +1837,7 @@ base: refactor/live-status-lives-in-the-run-and-the-bac
 ```
 * **Why:** across the last 11 runs build was 72 to 85 percent of wall time. TG-03.20 chained 3 of its 5 tasks on one file, so it was serial by design. Waves split by directory, one group runs at a time, every builder is Sonnet, and `komodo metrics` cannot say tasks per hour.
 
-#### [TSK-03.26.1] Waves split by file, not directory [P: H] [READY]
+#### [TSK-03.26.1] Waves split by file, not directory [P: H] [DONE]
 ```yaml
 files: [internal/line/dag.go, internal/line/dag_test.go, internal/line/collide.go, internal/line/wave_test.go, komodo/rules/backlog.md, README.md]
 done_when:

@@ -3,6 +3,7 @@ package line
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"komodo/internal/backlog"
@@ -44,11 +45,11 @@ func Topological(tasks []backlog.Task) ([]backlog.Task, error) {
 	return ordered, nil
 }
 
-// dirsOverlap reports whether two tasks claim the same directory, or one claims a parent of the other's.
-func dirsOverlap(left, right backlog.Task) bool {
-	for _, a := range left.Dirs() {
-		for _, b := range right.Dirs() {
-			if a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/") {
+// claimsOverlap reports whether two tasks list one file, or one lists a directory holding a path the other lists.
+func claimsOverlap(left, right backlog.Task) bool {
+	for _, a := range claims(left) {
+		for _, b := range claims(right) {
+			if a == b || a == "." || b == "." || strings.HasPrefix(b, a+"/") || strings.HasPrefix(a, b+"/") {
 				return true
 			}
 		}
@@ -56,7 +57,19 @@ func dirsOverlap(left, right backlog.Task) bool {
 	return false
 }
 
-// Waves groups tasks so members of one wave share no directory and no unmet dependency.
+// claims are a task's listed paths as clean slash paths, so ./a/ and a are one claim.
+func claims(task backlog.Task) []string {
+	var out []string
+	for _, raw := range task.Files() {
+		trimmed := strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
+		if trimmed != "" {
+			out = append(out, path.Clean(trimmed))
+		}
+	}
+	return out
+}
+
+// Waves groups tasks so members of one wave share no claimed file and no unmet dependency.
 func Waves(tasks []backlog.Task, done []string, capacity int) ([][]backlog.Task, error) {
 	ordered, err := Topological(tasks)
 	if err != nil {
@@ -89,7 +102,7 @@ func Waves(tasks []backlog.Task, done []string, capacity int) ([][]backlog.Task,
 			}
 			clash := false
 			for _, member := range wave {
-				if dirsOverlap(task, member) {
+				if claimsOverlap(task, member) {
 					clash = true
 					break
 				}
