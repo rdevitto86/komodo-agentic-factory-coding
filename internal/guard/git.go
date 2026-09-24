@@ -120,18 +120,24 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 				if deletes {
 					verb = "delete"
 				}
-				findings = append(findings, fmt.Sprintf("git %s %s: open a pull request instead", verb, target))
+				if deletes || normalizeMode(policy.Mode) != ModeUnsafe {
+					findings = append(findings, fmt.Sprintf("git %s %s: open a pull request instead", verb, target))
+				}
 			}
 		}
+	case "pull":
+		if policy.IsCritical(branch) && normalizeMode(policy.Mode) == ModeSafe {
+			findings = append(findings, fmt.Sprintf("git pull on %s: a critical ref is watched too", branch))
+		}
 	case "commit":
-		if policy.IsCritical(branch) {
+		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git commit on %s: create a branch first", branch))
 		}
 		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd, stdin))) {
 			findings = append(findings, "commit message carries a co-author or generated-by trailer")
 		}
 	case "merge":
-		if policy.IsCritical(branch) {
+		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git merge on %s: landing is the human's merge button", branch))
 		}
 		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd, stdin))) {
@@ -163,7 +169,7 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			if previousBranch(target) && hasAnyCritical(policy) {
 				findings = append(findings, fmt.Sprintf("git %s %s: the previous branch is not tracked; name the branch", sub, target))
 			}
-			if !create && policy.IsCritical(target) {
+			if !create && policy.IsCritical(target) && normalizeMode(policy.Mode) == ModeSafe {
 				findings = append(findings, fmt.Sprintf("git %s %s: a switch onto a critical ref is watched too", sub, target))
 			}
 			branch = target

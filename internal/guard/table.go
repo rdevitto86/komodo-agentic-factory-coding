@@ -15,13 +15,21 @@ type Case struct {
 	Tool    string
 	Input   map[string]any
 	Branch  string
+	Mode    Mode
 	Deny    bool
 	Finding string
 }
 
-// bash builds a table row for one shell command.
+// bash builds a table row for one shell command, judged under the default mode.
 func bash(name, command, branch string, deny bool, finding string) Case {
 	return Case{Name: name, Tool: "Bash", Input: map[string]any{"command": command}, Branch: branch, Deny: deny, Finding: finding}
+}
+
+// bashInMode builds a table row for one shell command, judged under an explicit mode.
+func bashInMode(name, command, branch string, mode Mode, deny bool, finding string) Case {
+	row := bash(name, command, branch, deny, finding)
+	row.Mode = mode
+	return row
 }
 
 // write builds a table row for one file write.
@@ -60,8 +68,8 @@ func Table(policy Policy) []Case {
 		bash("gh pr merge", "gh pr merge 12 --squash", "feat/x", true, "merge button"),
 		bash("a trailer fed through -F - from a heredoc", "git commit -F - <<'EOF'\nfeat: thing\n\nCo-Authored-By: Bot <bot@example.com>\nEOF", "feat/x", true, "trailer"),
 		bash("a clean message through -F - from a heredoc", "git commit -F - <<'EOF'\nfeat: thing\nEOF", "feat/x", false, ""),
-		bash("checkout -B resets local main", "git checkout -B main feat/x", "feat/x", true, "critical ref"),
-		bash("switch -C resets local main", "git switch -C main feat/x", "feat/x", true, "critical ref"),
+		bashInMode("checkout -B resets local main in safe mode", "git checkout -B main feat/x", "feat/x", ModeSafe, true, "critical ref"),
+		bashInMode("switch -C resets local main in safe mode", "git switch -C main feat/x", "feat/x", ModeSafe, true, "critical ref"),
 		bash("restoring a file from main is not a switch", "git checkout main -- README.md", "feat/x", false, ""),
 		// Pushed history is never rewritten, on any branch.
 		bash("force push to own branch", "git push --force origin feat/x", "feat/x", true, "never rewritten"),
@@ -74,10 +82,24 @@ func Table(policy Policy) []Case {
 		bash("wildcard refspec reaches every ref", "git push origin refs/heads/*:refs/heads/*", "feat/x", true, "wildcard refspec"),
 
 		// 1c. A switch or checkout is judged onto the ref it lands on, tracked across the whole chain.
-		bash("switch onto main", "git switch main", "feat/x", true, "critical ref is watched"),
-		bash("checkout onto master", "git checkout master", "feat/x", true, "critical ref is watched"),
+		bashInMode("switch onto main in safe mode", "git switch main", "feat/x", ModeSafe, true, "critical ref is watched"),
+		bashInMode("checkout onto master in safe mode", "git checkout master", "feat/x", ModeSafe, true, "critical ref is watched"),
 		bash("a switch then a push reaches main across the chain", "git switch main && git merge --ff-only feat/x && git push", "feat/x", true, "open a pull request"),
 		bash("git -C into another checkout hides the branch", "git -C ../other push origin main", "feat/x", true, "not tracked"),
+
+		// 1e. Mode scopes what a critical ref denies; safe is strictest, unsafe is loosest.
+		bashInMode("switch onto main is allowed in default mode", "git switch main", "feat/x", ModeDefault, false, ""),
+		bashInMode("switch onto main is allowed in unsafe mode", "git switch main", "feat/x", ModeUnsafe, false, ""),
+		bashInMode("pull on main is watched in safe mode", "git pull", "main", ModeSafe, true, "critical ref is watched"),
+		bashInMode("pull on main is allowed in default mode", "git pull", "main", ModeDefault, false, ""),
+		bashInMode("pull on main is allowed in unsafe mode", "git pull", "main", ModeUnsafe, false, ""),
+		bashInMode("commit on main is denied in safe mode", "git commit -m 'feat: thing'", "main", ModeSafe, true, "create a branch first"),
+		bashInMode("commit on main is denied in default mode", "git commit -m 'feat: thing'", "main", ModeDefault, true, "create a branch first"),
+		bashInMode("commit on main is allowed in unsafe mode", "git commit -m 'feat: thing'", "main", ModeUnsafe, false, ""),
+		bashInMode("push to main is denied in safe mode", "git push origin main", "feat/x", ModeSafe, true, "open a pull request"),
+		bashInMode("push to main is denied in default mode", "git push origin main", "feat/x", ModeDefault, true, "open a pull request"),
+		bashInMode("push to main is allowed in unsafe mode", "git push origin main", "feat/x", ModeUnsafe, false, ""),
+		bashInMode("a switch onto main then a commit is denied under default mode", "git switch main && git commit -m 'feat: thing'", "feat/x", ModeDefault, true, "create a branch first"),
 
 		// 1d. A global option shifts the subcommand; the guard still finds it.
 		bash("an alias expands to a push on main", "git -c alias.p=push p origin main", "feat/x", true, "open a pull request"),
@@ -322,7 +344,9 @@ func RunTable(root string, policy Policy) []string {
 		if path, ok := item.Input["file_path"].(string); ok && strings.HasPrefix(path, "~/") {
 			request.ToolInput = map[string]any{"file_path": expandHome(path)}
 		}
-		decision := Check(request, policy, item.Branch)
+		rowPolicy := policy
+		rowPolicy.Mode = item.Mode
+		decision := Check(request, rowPolicy, item.Branch)
 		switch {
 		case decision.Deny != item.Deny:
 			verb := "denied"
