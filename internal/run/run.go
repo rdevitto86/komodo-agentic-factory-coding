@@ -156,41 +156,43 @@ func drain(options Options) (int, error) {
 		if err := refreshRoot(options.Root); err != nil {
 			return 1, err
 		}
-		plan, err := line.PlanForStation(options.Root, "")
+		// Every open group drains first, oldest start first, then each ready group in file order.
+		order, err := drainOrder(options.Root)
 		if err != nil {
 			return 1, err
 		}
-		if plan == nil {
+		if len(order) == 0 {
 			fmt.Fprintln(stdout, "drain done: nothing is ready")
 			return 0, nil
 		}
-		if ran[plan.Group] {
-			fmt.Fprintf(stdout, "%s stopped: it came up again after it shipped\n", plan.Group)
+		next := order[0]
+		if ran[next] {
+			fmt.Fprintf(stdout, "%s stopped: it came up again after it shipped\n", next)
 			return 1, nil
 		}
 		remaining := total - time.Since(started)
 		if remaining <= 0 {
-			fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", plan.Group, total)
+			fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", next, total)
 			return 124, nil
 		}
 		group := options
-		group.Target = plan.Group
+		group.Target = next
 		group.Budget = min(GroupBudget, remaining)
 		launched := time.Now()
 		code, url, err := launchTarget(group)
 		if err != nil {
-			fmt.Fprintf(stdout, "%s stopped: %v\n", plan.Group, err)
+			fmt.Fprintf(stdout, "%s stopped: %v\n", next, err)
 			return max(code, 1), err
 		}
-		if !shipped(options.Root, plan.Group, launched) {
-			fmt.Fprintf(stdout, "%s stopped: it ended without shipping (exit %d)\n", plan.Group, code)
+		if !shipped(options.Root, next, launched) {
+			fmt.Fprintf(stdout, "%s stopped: it ended without shipping (exit %d)\n", next, code)
 			return max(code, 1), nil
 		}
 		if url == "" {
 			url = "no pull request was handed off"
 		}
-		fmt.Fprintf(stdout, "%s shipped: %s\n", plan.Group, url)
-		ran[plan.Group] = true
+		fmt.Fprintf(stdout, "%s shipped: %s\n", next, url)
+		ran[next] = true
 	}
 }
 
@@ -221,10 +223,10 @@ func drainBudget(root string, given time.Duration) (time.Duration, error) {
 	return GroupBudget * time.Duration(max(len(order), 1)), nil
 }
 
-// drainOrder is the groups a drain plans to run, in order, the open run first.
+// drainOrder is the groups a drain plans to run, in order: every open run first, then each ready group.
 func drainOrder(root string) ([]string, error) {
 	var order []string
-	if state, err := line.LoadRun(root); err == nil && line.RunIsOpen(root) {
+	for _, state := range line.OpenRuns(root) {
 		order = append(order, state.Group)
 	}
 	groups, err := line.ReadyGroups(root)
@@ -397,10 +399,14 @@ func eventsFile(options Options) (*os.File, error) {
 	return os.Create(path)
 }
 
-// finishShip pushes and opens the pull request a scrubbed ship handed off, in the launcher's own
-// credentialed environment, stamps ship done, removes the handoff, and returns the pull request.
+// finishShip pushes and opens the pull request the target's group handed off from a scrubbed ship,
+// in the launcher's own credentialed environment, stamps ship done, removes the handoff, and returns the pull request.
 func finishShip(options Options) (string, error) {
-	path := filepath.Join(options.Root, line.StateDir, "ship.json")
+	group := line.GroupFor(options.Root, options.Target)
+	if group == "" {
+		return "", nil
+	}
+	path := line.HandoffPath(options.Root, group)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return "", nil
@@ -411,6 +417,9 @@ func finishShip(options Options) (string, error) {
 	var handoff line.ShipHandoff
 	if err := json.Unmarshal(data, &handoff); err != nil {
 		return "", err
+	}
+	if handoff.Group != group {
+		return "", fmt.Errorf("the handoff under %s names group %q; nothing was pushed", group, handoff.Group)
 	}
 	if err := pushable(options.Root, handoff.Branch); err != nil {
 		return "", err

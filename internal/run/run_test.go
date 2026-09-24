@@ -276,18 +276,18 @@ func runGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// writeHandoff writes a ship handoff file the way a scrubbed ship leaves it.
+// writeHandoff writes a ship handoff file the way a scrubbed ship leaves it, under its group's run directory.
 func writeHandoff(t *testing.T, root string, handoff line.ShipHandoff) {
 	t.Helper()
-	dir := filepath.Join(root, line.StateDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	path := line.HandoffPath(root, handoff.Group)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	data, err := json.Marshal(handoff)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "ship.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -307,7 +307,7 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "seed")
 	writeHandoff(t, root, line.ShipHandoff{
-		Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", Labels: []string{"agent"},
+		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", Labels: []string{"agent"},
 	})
 	created := false
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
@@ -321,13 +321,13 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 		t.Fatalf("gh must not run any other command: %v", args)
 		return "", nil
 	}}
-	if _, err := finishShip(Options{Root: root, PR: client}); err != nil {
+	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil {
 		t.Fatal(err)
 	}
 	if !created {
 		t.Fatal("gh pr create never ran")
 	}
-	if _, err := os.Stat(filepath.Join(root, line.StateDir, "ship.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(line.HandoffPath(root, "TG-01.1")); !os.IsNotExist(err) {
 		t.Fatalf("ship.json survived a finished ship: %v", err)
 	}
 	entries, err := line.Book(root).All()
@@ -359,12 +359,12 @@ func TestFinishShipRefusesARefspecOrCriticalBranchAnAgentWrote(t *testing.T) {
 		runGit(t, root, "config", "user.name", "a")
 		runGit(t, root, "remote", "add", "origin", bare)
 		runGit(t, root, "commit", "--allow-empty", "-m", "seed")
-		writeHandoff(t, root, line.ShipHandoff{Branch: branch, Base: "main", Title: "t", Body: "b"})
+		writeHandoff(t, root, line.ShipHandoff{Group: "TG-01.1", Branch: branch, Base: "main", Title: "t", Body: "b"})
 		client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 			t.Fatalf("gh ran for %q: %v", branch, args)
 			return "", nil
 		}}
-		if _, err := finishShip(Options{Root: root, PR: client}); err == nil {
+		if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err == nil {
 			t.Fatalf("finishShip pushed the handoff branch %q", branch)
 		}
 		if out, _ := exec.Command("git", "ls-remote", bare).Output(); len(out) != 0 {
@@ -373,8 +373,45 @@ func TestFinishShipRefusesARefspecOrCriticalBranchAnAgentWrote(t *testing.T) {
 	}
 }
 
+func TestFinishShipReadsOnlyItsOwnGroupsHandoff(t *testing.T) {
+	root := t.TempDir()
+	writeHandoff(t, root, line.ShipHandoff{Group: "TG-02.1", Branch: "+HEAD:main", Base: "main", Title: "t", Body: "b"})
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		t.Fatalf("gh ran for another group's handoff: %v", args)
+		return "", nil
+	}}
+	if url, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil || url != "" {
+		t.Fatalf("url = %q, err = %v; TG-01.1 has no handoff of its own", url, err)
+	}
+	if _, err := os.Stat(line.HandoffPath(root, "TG-02.1")); err != nil {
+		t.Fatalf("another group's handoff was touched: %v", err)
+	}
+}
+
+func TestDrainOrderPutsEveryOpenRunFirst(t *testing.T) {
+	root := drainRepo(t)
+	started := time.Now().UTC()
+	for index, group := range []string{"TG-07.2", "TG-07.1"} {
+		state := line.RunState{Run: group + "-1", Group: group, Base: "main", Branch: "feat/" + group, Worktree: root,
+			Started: started.Add(time.Duration(index) * time.Second)}
+		if err := line.SaveRun(root, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	order, err := drainOrder(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(order, " "); got != "TG-07.2 TG-07.1" {
+		t.Fatalf("order = %q; both open runs drain first, oldest start first", got)
+	}
+}
+
 func TestFinishShipDoesNothingWithNoHandoff(t *testing.T) {
 	if _, err := finishShip(Options{Root: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := finishShip(Options{Root: t.TempDir(), Target: "TG-01.1"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -387,7 +424,7 @@ const drainText = "### [TG-07.1] First\n```yaml\ntype: feat\nversion: 1.0.0\n```
 // fakeScript plays one group: it records the launch, then copies in the files staged for that group.
 const fakeScript = `echo "$1" >> .komodo/fake/launched
 cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
-cp ".komodo/fake/$1.json" .komodo/ship.json 2>/dev/null
+mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json" 2>/dev/null
 exit 0`
 
 // drainRepo builds a remoted repo holding drainText, one local branch per group, and a fake host that plays each group.

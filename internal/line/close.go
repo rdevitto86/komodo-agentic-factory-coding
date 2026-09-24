@@ -162,7 +162,7 @@ func TaskWorktree(root, taskID string) string {
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return path
 	}
-	if state, err := LoadRun(root); err == nil && state.Worktree != "" {
+	if state, err := RunFor(root, taskID); err == nil && state.Worktree != "" {
 		if info, err := os.Stat(state.Worktree); err == nil && info.IsDir() {
 			return state.Worktree
 		}
@@ -218,7 +218,7 @@ func lintComments(cwd string, task backlog.Task) []string {
 // group branch for a single-mode group, since close already commits every task there directly.
 func commitBranch(root string, parsed backlog.Backlog, task backlog.Task) string {
 	if group, ok := parsed.Group(task.GroupID); ok && group.Mode() == "single" {
-		if state, err := LoadRun(root); err == nil && state.Branch != "" {
+		if state, err := LoadRunFor(root, task.GroupID); err == nil && state.Branch != "" {
 			return state.Branch
 		}
 	}

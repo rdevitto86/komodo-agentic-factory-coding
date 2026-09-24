@@ -10,10 +10,14 @@ import (
 // Book returns the ledger for one repo.
 func Book(root string) *ledger.Ledger { return ledger.New(filepath.Join(root, StateDir)) }
 
-// Stamp records one station event, filling the run and group from the run state.
+// Stamp records one station event, filling the run and group from the run its group or task belongs to.
 func Stamp(root string, entry ledger.Entry) {
 	if entry.Run == "" {
-		if state, err := LoadRun(root); err == nil {
+		id := entry.Group
+		if id == "" {
+			id = entry.Task
+		}
+		if state, err := RunFor(root, id); err == nil {
 			entry.Run, entry.Group = state.Run, state.Group
 		}
 	}

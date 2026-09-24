@@ -168,7 +168,7 @@ func waveMerged(root string, plan *Plan, index int) bool {
 		return false
 	}
 	for _, entry := range entries {
-		if entry.Station == "qc" && entry.Wave == index+1 && entry.Outcome == "done" {
+		if entry.Station == "qc" && entry.Group == plan.Group && entry.Wave == index+1 && entry.Outcome == "done" {
 			return true
 		}
 	}

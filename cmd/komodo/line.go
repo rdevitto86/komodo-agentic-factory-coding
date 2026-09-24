@@ -37,7 +37,7 @@ func runNext(root string, args []string) {
 		return
 	}
 	if *start {
-		if err := line.CheckLock(root); err != nil {
+		if err := line.CheckLock(root, plan.Group); err != nil {
 			fail(err)
 		}
 		if !*force {
@@ -151,7 +151,7 @@ func runBrief(root string, args []string) {
 		return
 	}
 	branch := brief.Task
-	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+	if state, err := line.RunFor(root, task); err == nil && state.Branch != "" {
 		branch = state.Branch
 	}
 	if err := line.RefuseCollision(root, task); err != nil {
@@ -172,14 +172,14 @@ func runBrief(root string, args []string) {
 func runClose(root string, args []string) {
 	set := flag.NewFlagSet("close", flag.ExitOnError)
 	withGate := set.Bool("gate", false, "run the local gate before the task commit")
-	wave := set.Int("wave", 0, "QC one wave of the current run, counting from 1")
-	group := set.Bool("group", false, "ship the current run: commit, push, pull request, changelog")
+	wave := set.Int("wave", 0, "QC one wave of the named group's run, or the open run, counting from 1")
+	group := set.Bool("group", false, "ship the named group's run, or the open run: commit, push, pull request, changelog")
 	fix := set.Bool("fix", false, "gate and commit a review fix round on the named group's branch")
 	base := set.String("base", "", "the branch the pull request targets")
 	task, rest := splitPositional(args, "wave", "base")
 	_ = set.Parse(rest)
 	if *wave > 0 {
-		runWave(root, *wave)
+		runWave(root, *wave, task)
 		return
 	}
 	if *fix {
@@ -197,11 +197,11 @@ func runClose(root string, args []string) {
 		return
 	}
 	if *group {
-		runShip(root, *base)
+		runShip(root, *base, task)
 		return
 	}
 	if task == "" {
-		fail(fmt.Errorf("usage: komodo close <task> [--gate] | --wave N | --group | --fix <group>"))
+		fail(fmt.Errorf("usage: komodo close <task> [--gate] | --wave N [group] | --group [group] | --fix <group>"))
 	}
 	outcome, err := line.CloseTask(root, task, *withGate)
 	if err != nil {
@@ -228,30 +228,40 @@ func closeExitCode(status string) int {
 	return 1
 }
 
-// fixPlan is the open run's plan with its recorded branch and worktree, refusing any other group.
+// fixPlan is the named group's open run plan with its recorded branch and worktree, refusing any other group.
 func fixPlan(root, group string) *line.Plan {
-	plan, err := line.PlanForStation(root, "")
+	plan, err := line.PlanForGroup(root, group)
 	if err != nil {
 		fail(err)
 	}
-	if plan == nil || plan.Group != group {
-		fail(fmt.Errorf("%s is not the open run's group", group))
+	state, runErr := line.LoadRunFor(root, group)
+	if plan == nil || plan.Group != group || runErr != nil {
+		fail(fmt.Errorf("%s is not an open run's group", group))
 	}
-	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+	if state.Branch != "" {
 		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
 	}
 	return plan
 }
 
-// runWave merges one wave into the group branch, then runs the compile and verify gates.
-func runWave(root string, number int) {
-	plan, err := line.PlanForStation(root, "")
+// runPlan is the named group's plan, or the open run's with no group, with its recorded base, branch, and worktree.
+func runPlan(root, group string) *line.Plan {
+	plan, err := line.PlanForGroup(root, group)
 	if err != nil {
 		fail(err)
 	}
 	if plan == nil {
 		fail(fmt.Errorf("no run is in progress"))
 	}
+	if state, err := line.LoadRunFor(root, plan.Group); err == nil && state.Branch != "" {
+		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
+	}
+	return plan
+}
+
+// runWave merges one wave into the group branch, then runs the compile and verify gates.
+func runWave(root string, number int, group string) {
+	plan := runPlan(root, group)
 	result, err := line.CloseWave(root, plan, number-1)
 	if err != nil {
 		fail(err)
@@ -263,17 +273,8 @@ func runWave(root string, number int) {
 }
 
 // runShip commits, pushes, opens the pull request, and writes the changelog line.
-func runShip(root, base string) {
-	plan, err := line.PlanForStation(root, "")
-	if err != nil {
-		fail(err)
-	}
-	if plan == nil {
-		fail(fmt.Errorf("no run is in progress"))
-	}
-	if state, err := line.LoadRun(root); err == nil {
-		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
-	}
+func runShip(root, base, group string) {
+	plan := runPlan(root, group)
 	if base != "" {
 		plan.Base = base
 	}
@@ -354,18 +355,20 @@ func runRun(root string, args []string) {
 		run.GroupBudget.String()+" per group)")
 	target, rest := splitPositional(args, "budget")
 	_ = flags.Parse(rest)
+	// A targeted run locks its own group, so another group on disjoint files may run beside it.
+	group := line.GroupFor(root, target)
 	if !*dry {
 		label := target
 		if label == "" {
 			label = "the open run"
 		}
-		if err := line.AcquireLock(root, label); err != nil {
+		if err := line.AcquireLock(root, group, label); err != nil {
 			fail(err)
 		}
 		_ = os.Setenv(line.LockEnv, strconv.Itoa(os.Getpid()))
 	}
 	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry})
-	line.ReleaseLock(root)
+	line.ReleaseLock(root, group)
 	if err != nil {
 		fail(err)
 	}

@@ -12,7 +12,7 @@ import (
 // RefuseCollision refuses to brief a task whose claimed files overlap a closed, unmerged task
 // branch of the open run, since QC would stop on a conflict a person has to resolve.
 func RefuseCollision(root, taskID string) error {
-	state, err := LoadRun(root)
+	state, err := RunFor(root, taskID)
 	if err != nil || state.Branch == "" {
 		return nil
 	}

@@ -234,10 +234,10 @@ func TestAnAbsoluteWorktreeIsNotJoinedToTheRoot(t *testing.T) {
 
 func TestAcquireLockTakesAFreshLock(t *testing.T) {
 	root := t.TempDir()
-	if err := AcquireLock(root, "TG-01.1"); err != nil {
+	if err := AcquireLock(root, "", "TG-01.1"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(LockPath(root))
+	data, err := os.ReadFile(LockPath(root, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,14 +261,14 @@ func TestAcquireLockRefusesALivePid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(LockPath(root)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(LockPath(root, "")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(LockPath(root), data, 0o644); err != nil {
+	if err := os.WriteFile(LockPath(root, ""), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(LockEnv, "")
-	err = AcquireLock(root, "TG-02.1")
+	err = AcquireLock(root, "", "TG-02.1")
 	if err == nil {
 		t.Fatal("a second run must not steal a lock a live pid holds")
 	}
@@ -288,13 +288,13 @@ func TestAcquireLockReclaimsADeadPid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(LockPath(root)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(LockPath(root, "")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(LockPath(root), data, 0o644); err != nil {
+	if err := os.WriteFile(LockPath(root, ""), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := AcquireLock(root, "TG-02.1"); err != nil {
+	if err := AcquireLock(root, "", "TG-02.1"); err != nil {
 		t.Fatalf("a lock whose pid has exited must be reclaimed: %v", err)
 	}
 }
@@ -310,29 +310,75 @@ func TestTheLaunchersOwnSessionPassesTheLockAndAStrangerDoesNot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(LockPath(root)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(LockPath(root, "")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(LockPath(root), data, 0o644); err != nil {
+	if err := os.WriteFile(LockPath(root, ""), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(LockEnv, "")
-	if err := CheckLock(root); err == nil || !strings.Contains(err.Error(), "TG-01.1") {
+	if err := CheckLock(root, ""); err == nil || !strings.Contains(err.Error(), "TG-01.1") {
 		t.Fatalf("err = %v; a live launcher's lock must stop a stranger's next --start", err)
 	}
 	t.Setenv(LockEnv, strconv.Itoa(holder.Process.Pid))
-	if err := CheckLock(root); err != nil {
+	if err := CheckLock(root, ""); err != nil {
 		t.Fatalf("the launcher's own session must pass its lock: %v", err)
 	}
 }
 
 func TestReleaseLockFreesOnlyItsOwnLock(t *testing.T) {
 	root := t.TempDir()
-	if err := AcquireLock(root, "TG-01.1"); err != nil {
+	if err := AcquireLock(root, "", "TG-01.1"); err != nil {
 		t.Fatal(err)
 	}
-	ReleaseLock(root)
-	if _, err := os.Stat(LockPath(root)); !os.IsNotExist(err) {
+	ReleaseLock(root, "")
+	if _, err := os.Stat(LockPath(root, "")); !os.IsNotExist(err) {
 		t.Fatalf("stat = %v; the holder's release must remove the lock", err)
+	}
+}
+
+// holdLock writes group's lock held by a live sleep, and clears LockEnv so this process is a stranger.
+func holdLock(t *testing.T, root, group, run string) {
+	t.Helper()
+	holder := exec.Command("sleep", "30")
+	if err := holder.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = holder.Process.Kill(); _ = holder.Wait() })
+	data, err := json.Marshal(RunLock{PID: holder.Process.Pid, Run: run})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(LockPath(root, group)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(LockPath(root, group), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(LockEnv, "")
+}
+
+func TestTwoGroupsEachHoldTheirOwnLock(t *testing.T) {
+	root := t.TempDir()
+	holdLock(t, root, "TG-01.1", "TG-01.1")
+	if got := LockPath(root, "TG-01.1"); got != filepath.Join(root, StateDir, "runs", "TG-01.1", "run.lock") {
+		t.Fatalf("lock path = %s", got)
+	}
+	if err := AcquireLock(root, "TG-02.1", "TG-02.1"); err != nil {
+		t.Fatalf("a second group must take its own lock beside a live first: %v", err)
+	}
+	if err := CheckLock(root, "TG-01.1"); err == nil || !strings.Contains(err.Error(), "TG-01.1") {
+		t.Fatalf("err = %v; a group's live lock must stop a second launcher on that group", err)
+	}
+	if err := CheckLock(root, ""); err == nil {
+		t.Fatal("a repo-wide drain must not start while a group's launcher is live")
+	}
+}
+
+func TestTheRepoLockCoversEveryGroup(t *testing.T) {
+	root := t.TempDir()
+	holdLock(t, root, "", "the open run")
+	if err := AcquireLock(root, "TG-02.1", "TG-02.1"); err == nil || !strings.Contains(err.Error(), "the open run") {
+		t.Fatalf("err = %v; a live drain must stop a group launcher", err)
 	}
 }

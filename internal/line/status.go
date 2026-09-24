@@ -13,15 +13,35 @@ type TaskStatus struct {
 	Status string `json:"status"`
 }
 
-// statusPath is where the run keeps live task status until ship writes it into BACKLOG.md.
-func statusPath(root string) string {
-	return filepath.Join(root, StateDir, "status.json")
+// statusPath is where a group keeps live task status until ship writes it into BACKLOG.md; a
+// task no group names keeps it in the repo's own file.
+func statusPath(root, group string) string {
+	if group == "" {
+		return filepath.Join(root, StateDir, "status.json")
+	}
+	return filepath.Join(RunDir(root, group), "status.json")
 }
 
-// LoadStatus reads the run's live task status, empty when the run has recorded none.
-func LoadStatus(root string) map[string]TaskStatus {
+// statusFiles maps every live status file to its group: the repo's own under "", then each group's.
+func statusFiles(root string) map[string]string {
+	migrateRun(root)
+	files := map[string]string{statusPath(root, ""): ""}
+	entries, err := os.ReadDir(filepath.Join(root, StateDir, RunsDir))
+	if err != nil {
+		return files
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			files[statusPath(root, entry.Name())] = entry.Name()
+		}
+	}
+	return files
+}
+
+// loadStatusFile reads one live status file, empty when it is missing.
+func loadStatusFile(path string) map[string]TaskStatus {
 	statuses := map[string]TaskStatus{}
-	data, err := os.ReadFile(statusPath(root))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return statuses
 	}
@@ -29,17 +49,29 @@ func LoadStatus(root string) map[string]TaskStatus {
 	return statuses
 }
 
-// RecordStatus sets one task's live status in .komodo/status.json, written atomically.
-func RecordStatus(root, taskID, status string) error {
-	statuses := LoadStatus(root)
-	statuses[taskID] = TaskStatus{Status: status}
-	return saveStatus(root, statuses)
+// LoadStatus reads every group's live task status, empty when no run has recorded any.
+func LoadStatus(root string) map[string]TaskStatus {
+	statuses := map[string]TaskStatus{}
+	for path := range statusFiles(root) {
+		for taskID, status := range loadStatusFile(path) {
+			statuses[taskID] = status
+		}
+	}
+	return statuses
 }
 
-// saveStatus writes the run's live status atomically, removing the file when none remains.
-func saveStatus(root string, statuses map[string]TaskStatus) error {
+// RecordStatus sets one task's live status in its group's status.json, written atomically.
+func RecordStatus(root, taskID, status string) error {
+	path := statusPath(root, GroupFor(root, taskID))
+	statuses := loadStatusFile(path)
+	statuses[taskID] = TaskStatus{Status: status}
+	return saveStatus(path, statuses)
+}
+
+// saveStatus writes one live status file atomically, removing it when none remains.
+func saveStatus(path string, statuses map[string]TaskStatus) error {
 	if len(statuses) == 0 {
-		if err := os.Remove(statusPath(root)); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		return nil
@@ -48,7 +80,6 @@ func saveStatus(root string, statuses map[string]TaskStatus) error {
 	if err != nil {
 		return err
 	}
-	path := statusPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -69,28 +100,37 @@ func saveStatus(root string, statuses map[string]TaskStatus) error {
 
 // ClearStatus drops the named tasks' live status, once ship has written it into BACKLOG.md.
 func ClearStatus(root string, taskIDs []string) error {
-	return pruneStatus(root, func(taskID string) bool { return !contains(taskIDs, taskID) })
+	return pruneStatus(root, nil, func(taskID string) bool { return !contains(taskIDs, taskID) })
 }
 
 // KeepStatus drops every task's live status except the named ones, so a new run starts clean.
 func KeepStatus(root string, taskIDs []string) error {
-	return pruneStatus(root, func(taskID string) bool { return contains(taskIDs, taskID) })
+	return pruneStatus(root, nil, func(taskID string) bool { return contains(taskIDs, taskID) })
 }
 
-// pruneStatus keeps only the live statuses keep accepts, writing nothing when none change.
-func pruneStatus(root string, keep func(taskID string) bool) error {
-	statuses := LoadStatus(root)
-	changed := false
-	for taskID := range statuses {
-		if !keep(taskID) {
-			delete(statuses, taskID)
-			changed = true
+// pruneStatus keeps only the live statuses keep accepts in every file whose group spare does not
+// name, writing nothing when none change.
+func pruneStatus(root string, spare map[string]bool, keep func(taskID string) bool) error {
+	for path, group := range statusFiles(root) {
+		if spare[group] {
+			continue
+		}
+		statuses := loadStatusFile(path)
+		changed := false
+		for taskID := range statuses {
+			if !keep(taskID) {
+				delete(statuses, taskID)
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		if err := saveStatus(path, statuses); err != nil {
+			return err
 		}
 	}
-	if !changed {
-		return nil
-	}
-	return saveStatus(root, statuses)
+	return nil
 }
 
 // OverlayStatus lays the run's live status over a parsed backlog, so a reader sees it as closed.
@@ -123,34 +163,32 @@ func LoadBacklog(root string) (backlog.Backlog, string, error) {
 	return OverlayStatus(parsed, shipped), path, nil
 }
 
-// shippedStatus is every DONE or BLOCKED status the recorded run's worktree BACKLOG.md holds for
-// one of its group's tasks root still has open, which is what its ship commit carries until it lands.
+// shippedStatus is every DONE or BLOCKED status a recorded run's worktree BACKLOG.md holds for
+// one of its own group's tasks root still has open, which is what its ship commit carries until it lands.
 func shippedStatus(root string, parsed backlog.Backlog) map[string]TaskStatus {
 	statuses := map[string]TaskStatus{}
-	state, err := LoadRun(root)
-	if err != nil || state.Group == "" {
-		return statuses
-	}
-	group, ok := parsed.Group(state.Group)
-	if !ok {
-		return statuses
-	}
-	worktree := state.Worktree
-	if worktree == "" {
-		worktree = filepath.Join(StateDir, "wt", state.Group)
-	}
-	path, err := backlog.Find(WorktreePath(root, worktree))
-	if err != nil {
-		return statuses
-	}
-	committed, err := backlog.Load(path)
-	if err != nil {
-		return statuses
-	}
-	for _, current := range group.Tasks {
-		task, ok := committed.Task(current.ID)
-		if ok && !task.Open() && current.Open() {
-			statuses[task.ID] = TaskStatus{Status: task.Status}
+	for _, state := range LoadRuns(root) {
+		group, ok := exactGroup(parsed, state.Group)
+		if !ok {
+			continue
+		}
+		worktree := state.Worktree
+		if worktree == "" {
+			worktree = filepath.Join(StateDir, "wt", state.Group)
+		}
+		path, err := backlog.Find(WorktreePath(root, worktree))
+		if err != nil {
+			continue
+		}
+		committed, err := backlog.Load(path)
+		if err != nil {
+			continue
+		}
+		for _, current := range group.Tasks {
+			task, ok := committed.Task(current.ID)
+			if ok && !task.Open() && current.Open() {
+				statuses[task.ID] = TaskStatus{Status: task.Status}
+			}
 		}
 	}
 	return statuses

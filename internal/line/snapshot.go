@@ -74,10 +74,20 @@ type Snapshot struct {
 	Handoff         bool
 	Shipped         bool
 	LightBuilder    bool
+	Open            []string
 }
 
 // LoadSnapshot reads the plan, the run record, and every task, wave, review, and ship file once.
 func LoadSnapshot(root, needle string) (Snapshot, error) {
+	if needle == "" {
+		if open := OpenRuns(root); len(open) > 1 {
+			snap := Snapshot{}
+			for _, state := range open {
+				snap.Open = append(snap.Open, state.Group)
+			}
+			return snap, nil
+		}
+	}
 	plan, err := PlanForStation(root, needle)
 	if err != nil || plan == nil {
 		return Snapshot{}, err
@@ -86,7 +96,7 @@ func LoadSnapshot(root, needle string) (Snapshot, error) {
 	if snap.Paused != nil {
 		return snap, nil
 	}
-	state, runErr := LoadRun(root)
+	state, runErr := LoadRunFor(root, plan.Group)
 	if runErr != nil || state.Group != plan.Group {
 		return snap, nil
 	}
@@ -130,7 +140,7 @@ func LoadSnapshot(root, needle string) (Snapshot, error) {
 		snap.ReviewSkippable = reviewSkippable(root, plan)
 	}
 	snap.Blocking, _ = SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
-	_, err = os.Stat(filepath.Join(root, StateDir, "ship.json"))
+	_, err = os.Stat(HandoffPath(root, plan.Group))
 	snap.Handoff = err == nil
 	snap.Shipped = shipped(root, plan, parsed)
 	return snap, nil
@@ -171,6 +181,12 @@ func Next(snap Snapshot) Action {
 
 // decide is Next, also reporting whether the walk passed the review, which is when Step stamps it.
 func decide(snap Snapshot) (Action, bool) {
+	if len(snap.Open) > 1 {
+		return Action{
+			Action: "done", Skills: []string{}, Facets: []string{}, Commands: []string{},
+			Why: fmt.Sprintf("%s are open; run komodo step <group> for one of them", strings.Join(snap.Open, " and ")),
+		}, false
+	}
 	plan := snap.Plan
 	if plan == nil {
 		return Action{Action: "done", Why: "nothing is ready", Skills: []string{}, Facets: []string{}, Commands: []string{}}, false
@@ -238,7 +254,7 @@ func decide(snap Snapshot) (Action, bool) {
 		}
 		if index >= len(snap.Waves) || !snap.Waves[index].Merged {
 			return Action{
-				Action: "run", Command: fmt.Sprintf("komodo close --wave %d", index+1), Wave: index + 1,
+				Action: "run", Command: fmt.Sprintf("komodo close --wave %d %s", index+1, plan.Group), Wave: index + 1,
 				Why: fmt.Sprintf("wave %d is closed and not merged", index+1),
 			}, false
 		}
@@ -264,7 +280,7 @@ func decide(snap Snapshot) (Action, bool) {
 	}
 	if !snap.Shipped {
 		return Action{
-			Action: "run", Command: "komodo close --group",
+			Action: "run", Command: "komodo close --group " + plan.Group,
 			Why: "the review is in and the group is not shipped",
 		}, true
 	}

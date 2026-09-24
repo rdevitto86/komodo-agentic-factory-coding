@@ -1896,7 +1896,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.26.5] Two groups with disjoint files run at once [P: H] [READY]
+#### [TSK-03.26.5] Two groups with disjoint files run at once [P: H] [DONE]
 ```yaml
 files: [internal/line/worktree.go, internal/line/worktree_test.go, internal/line/next.go, internal/line/next_test.go, internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/line/ship.go, internal/run/run.go, internal/run/run_test.go]
 done_when:

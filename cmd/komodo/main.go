@@ -25,8 +25,8 @@ const usage = `komodo: the code assembly line.
   komodo next [--json]        The next ready group: tasks, waves, machines
   komodo brief <task>         Fill the role template and write the brief
   komodo close <task>         Validate the result, rerun the checks, flip the status
-  komodo close --wave N       QC: merge the wave, compile, verify
-  komodo close --group        Ship: commit, push, the pull request, the changelog
+  komodo close --wave N [g]   QC: merge the group's wave, compile, verify
+  komodo close --group [g]    Ship: commit, push, the pull request, the changelog
   komodo comments check       The mechanical comment lint
   komodo diff                 The reviewer's whole input: tasks, standards, diff
   komodo report               What the run did, in the accessibility contract

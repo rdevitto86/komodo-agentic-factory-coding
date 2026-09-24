@@ -144,7 +144,7 @@ func TestStepReadsACloseFromTheRunNotTheBacklog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Command != "komodo close --wave 1" {
+	if next.Command != "komodo close --wave 1 TG-12.1" {
 		t.Fatalf("action = %+v; a task the run closed must not close again", next)
 	}
 }

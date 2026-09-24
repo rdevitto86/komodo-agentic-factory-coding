@@ -75,23 +75,40 @@ func PlanForStation(root, needle string) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	state, runErr := LoadRun(root)
-	if runErr != nil {
+	if needle == "" {
+		// With several open, the earliest started continues; step asks for a group instead.
+		for _, state := range LoadRuns(root) {
+			if open, err := openRun(root, state.Group); err == nil && open != nil {
+				return open, nil
+			}
+		}
+		return plan, nil
+	}
+	state, err := RunFor(root, needle)
+	if err != nil || state.Group == "" {
 		return plan, nil
 	}
 	if plan == nil {
 		// Nothing fresh is ready: the run's own group, unless it already shipped.
 		return openRun(root, state.Group)
 	}
-	if needle == "" {
-		if open, err := openRun(root, state.Group); err == nil && open != nil {
-			return open, nil
-		}
-	}
 	return plan, nil
 }
 
-// PlanForRun is the plan of the group the run record names, shipped or not, else the station's plan.
+// PlanForGroup is the run plan, closed tasks included, of the group an id names, else the station's plan.
+func PlanForGroup(root, id string) (*Plan, error) {
+	if id == "" {
+		return PlanForStation(root, "")
+	}
+	if state, err := RunFor(root, id); err == nil && state.Group == GroupFor(root, id) {
+		if plan, err := planForGroup(root, state.Group); err != nil || plan != nil {
+			return plan, err
+		}
+	}
+	return PlanForStation(root, id)
+}
+
+// PlanForRun is the plan of the group the latest run record names, shipped or not, else the station's plan.
 func PlanForRun(root string) (*Plan, error) {
 	if state, err := LoadRun(root); err == nil && state.Group != "" {
 		if plan, err := planForGroup(root, state.Group); err == nil && plan != nil {
@@ -101,14 +118,20 @@ func PlanForRun(root string) (*Plan, error) {
 	return PlanForStation(root, "")
 }
 
-// RunIsOpen reports whether the recorded run still has stations left; an unreadable plan counts as open.
+// RunIsOpen reports whether any recorded run still has stations left; an unreadable plan counts as open.
 func RunIsOpen(root string) bool {
-	state, err := LoadRun(root)
-	if err != nil || state.Group == "" {
-		return false
+	return len(OpenRuns(root)) > 0
+}
+
+// OpenRuns are the recorded runs that still have stations left, oldest start first.
+func OpenRuns(root string) []RunState {
+	var open []RunState
+	for _, state := range LoadRuns(root) {
+		if plan, err := openRun(root, state.Group); err != nil || plan != nil {
+			open = append(open, state)
+		}
 	}
-	open, err := openRun(root, state.Group)
-	return err != nil || open != nil
+	return open
 }
 
 // openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
@@ -144,7 +167,7 @@ func planFor(root, needle string, intent Intent) (*Plan, error) {
 // pinWaves restores the waves the run recorded, so every station numbers them the same way, and
 // plans any task the record never saw, added mid-run, into waves after the last pinned one.
 func pinWaves(root string, plan *Plan) {
-	state, err := LoadRun(root)
+	state, err := LoadRunFor(root, plan.Group)
 	if err != nil || state.Group != plan.Group || len(state.Waves) == 0 {
 		return
 	}
@@ -380,18 +403,52 @@ func groupBase(root string, group backlog.Group) string {
 	return DefaultBase(root)
 }
 
-// RefuseOpenRun refuses to cut a group while another one is open and not shipped, since two
-// open runs share one BACKLOG.md, one ledger, and one run record.
+// RefuseOpenRun refuses to cut a group while another open, unshipped group claims a file it
+// claims, since their task branches would conflict; a group it cannot read counts as overlapping.
 func RefuseOpenRun(root, group string) error {
-	state, err := LoadRun(root)
-	if err != nil || state.Group == "" || state.Group == group {
-		return nil
+	for _, state := range OpenRuns(root) {
+		if state.Group == group || !groupsOverlap(root, state.Group, group) {
+			continue
+		}
+		return fmt.Errorf("%s is open and not shipped and shares files with %s; finish it with komodo step %s, or cut %s anyway with --force",
+			state.Group, group, state.Group, group)
 	}
-	open, err := openRun(root, state.Group)
-	if err != nil || open == nil {
-		return nil
+	return nil
+}
+
+// groupsOverlap reports whether any task of one group claims a file a task of the other claims.
+func groupsOverlap(root, left, right string) bool {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return true
 	}
-	return fmt.Errorf("%s is open and not shipped; finish it with komodo step, or cut %s anyway with --force", state.Group, group)
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return true
+	}
+	first, okFirst := exactGroup(parsed, left)
+	second, okSecond := exactGroup(parsed, right)
+	if !okFirst || !okSecond {
+		return true
+	}
+	for _, a := range first.Tasks {
+		for _, b := range second.Tasks {
+			if plan.Overlap(a, b) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// exactGroup is the group whose id is exactly id, never a title match.
+func exactGroup(parsed backlog.Backlog, id string) (backlog.Group, bool) {
+	for _, group := range parsed.Groups {
+		if group.ID == id {
+			return group, true
+		}
+	}
+	return backlog.Group{}, false
 }
 
 // Start cuts the group branch in its own worktree from the base and records the choice.
@@ -420,11 +477,28 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	}
 	state.Worktree = path
 	state.Waves = plan.Waves
+	others := map[string]bool{}
+	for _, open := range OpenRuns(root) {
+		if open.Group != plan.Group {
+			others[open.Group] = true
+		}
+	}
+	for _, old := range LoadRuns(root) {
+		// A shipped group's record goes, so only open groups keep a run directory.
+		if old.Group != plan.Group && !others[old.Group] {
+			if err := os.RemoveAll(RunDir(root, old.Group)); err != nil {
+				return state, err
+			}
+		}
+	}
 	if err := keepGroupStatus(root, plan.Group); err != nil {
 		return state, err
 	}
-	if err := Book(root).TruncateRun(); err != nil {
-		return state, err
+	// Another open group's stations still read the run ledger, so it is archived only when this run is alone.
+	if len(others) == 0 {
+		if err := Book(root).TruncateRun(); err != nil {
+			return state, err
+		}
 	}
 	if err := SaveRun(root, state); err != nil {
 		return state, err
@@ -433,7 +507,8 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	return state, nil
 }
 
-// keepGroupStatus drops the live status of every task outside groupID, so another group's never ships here.
+// keepGroupStatus drops the live status of every task outside groupID, so another group's never
+// ships here, sparing each other open group's own status file.
 func keepGroupStatus(root, groupID string) error {
 	path, err := backlog.Find(root)
 	if err != nil {
@@ -449,7 +524,13 @@ func keepGroupStatus(root, groupID string) error {
 			taskIDs = append(taskIDs, task.ID)
 		}
 	}
-	return KeepStatus(root, taskIDs)
+	spare := map[string]bool{}
+	for _, open := range OpenRuns(root) {
+		if open.Group != groupID {
+			spare[open.Group] = true
+		}
+	}
+	return pruneStatus(root, spare, func(taskID string) bool { return contains(taskIDs, taskID) })
 }
 
 // RenderProject rebuilds the worktree's gitignored project config for every host installed on

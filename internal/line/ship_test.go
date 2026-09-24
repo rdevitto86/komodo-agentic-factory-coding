@@ -204,7 +204,7 @@ func TestShipWritesAHandoffInsteadOfPushingWhenScrubbed(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err == nil {
 		t.Fatalf("upstream = %s; a scrubbed ship must not push", out)
 	}
-	data, err := os.ReadFile(filepath.Join(root, StateDir, "ship.json"))
+	data, err := os.ReadFile(filepath.Join(root, StateDir, "runs", "TG-09.1", "ship.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

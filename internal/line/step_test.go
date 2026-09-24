@@ -1,6 +1,7 @@
 package line
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,7 +114,7 @@ func TestStepMergesTheWaveOnceEveryTaskIsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Command != "komodo close --wave 1" {
+	if next.Command != "komodo close --wave 1 TG-12.1" {
 		t.Fatalf("action = %+v", next)
 	}
 }
@@ -137,7 +138,7 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	}
 	writeStepResult(t, root, "TG-12.1-review")
 	next, _ = Step(root, "")
-	if next.Command != "komodo close --group" {
+	if next.Command != "komodo close --group TG-12.1" {
 		t.Fatalf("action = %+v", next)
 	}
 	if err := writeShipHandoff(root, ShipHandoff{Group: "TG-12.1", Branch: "feat/a-group"}); err != nil {
@@ -147,7 +148,7 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	if next.Action != "done" || !strings.Contains(next.Why, "handed off") {
 		t.Fatalf("action = %+v; a pending handoff must stop the loop, not ship again", next)
 	}
-	if err := os.Remove(filepath.Join(root, StateDir, "ship.json")); err != nil {
+	if err := os.Remove(HandoffPath(root, "TG-12.1")); err != nil {
 		t.Fatal(err)
 	}
 	if err := book.Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "ship", Outcome: "done"}); err != nil {
@@ -241,7 +242,7 @@ func TestASmallDiffSkipsTheReviewStation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Action != "run" || next.Command != "komodo close --group" {
+	if next.Action != "run" || next.Command != "komodo close --group TG-12.1" {
 		t.Fatalf("action = %+v; a diff at or under the profile's review-skip-lines cap must reach ship without a reviewer spawn", next)
 	}
 }
@@ -802,7 +803,7 @@ func TestSingleModeWalksBriefCloseAndCloseWave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Command != "komodo close --wave 1" {
+	if next.Command != "komodo close --wave 1 TG-13.1" {
 		t.Fatalf("action = %+v, want the wave close", next)
 	}
 	closed, err := PlanForStation(root, "")
@@ -922,7 +923,7 @@ func TestARepairGivesUpAtTheProfilesLimitAndTheRunContinues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Action != "run" || next.Command != "komodo close --wave 1" {
+	if next.Action != "run" || next.Command != "komodo close --wave 1 TG-12.1" {
 		t.Fatalf("action = %+v; a blocked task must stop repairing without ending the whole run", next)
 	}
 }
@@ -1213,6 +1214,156 @@ func TestASingleModeGroupSpawnsOneTaskAtATime(t *testing.T) {
 
 // wideWave is waveBacklog's one wave, pinned so the plan's parallel cap cannot split it.
 var wideWave = []string{"TSK-14.1.1", "TSK-14.1.2", "TSK-14.1.3"}
+
+// twoGroupBacklog holds two groups on disjoint files and a third that overlaps the first.
+const twoGroupBacklog = "### [TG-15.1] First\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-15.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n\n" +
+	"### [TG-15.2] Second\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	"#### [TSK-15.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"true\"]\n```\n\n" +
+	"### [TG-15.3] Third\n```yaml\ntype: feat\nversion: 2.2.0\n```\n\n" +
+	"#### [TSK-15.3.1] Three [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n"
+
+// twoOpenRuns cuts the first two groups side by side, each task briefed.
+func twoOpenRuns(t *testing.T) string {
+	t.Helper()
+	root := repo(t, twoGroupBacklog)
+	started := time.Now().UTC()
+	for index, group := range []string{"TG-15.1", "TG-15.2"} {
+		state := RunState{Run: group + "-1", Group: group, Base: "main", Branch: "feat/" + group, Worktree: root,
+			Started: started.Add(time.Duration(index) * time.Second)}
+		if err := SaveRun(root, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, taskID := range []string{"TSK-15.1.1", "TSK-15.2.1"} {
+		path := filepath.Join(root, StateDir, "briefs", taskID+".md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("brief"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func TestTwoGroupsOnDisjointFilesEachStepTheirOwnSpawn(t *testing.T) {
+	root := twoOpenRuns(t)
+	if err := RefuseOpenRun(root, "TG-15.2"); err != nil {
+		t.Fatalf("a group on disjoint files was refused: %v", err)
+	}
+	for group, task := range map[string]string{"TG-15.1": "TSK-15.1.1", "TG-15.2": "TSK-15.2.1"} {
+		next, err := Step(root, group)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Action != "spawn" || next.Role != "builder" || next.Task != task {
+			t.Fatalf("step %s = %+v, want its own %s spawn", group, next, task)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, StateDir, "runs", "TG-15.2", "run.json")); err != nil {
+		t.Fatalf("each group keeps its own run record: %v", err)
+	}
+}
+
+func TestAnOverlappingGroupIsRefusedWhileTheFirstIsOpen(t *testing.T) {
+	root := twoOpenRuns(t)
+	err := RefuseOpenRun(root, "TG-15.3")
+	if err == nil || !strings.Contains(err.Error(), "TG-15.1 is open") {
+		t.Fatalf("err = %v; a group sharing a/one.go with an open group must be refused", err)
+	}
+}
+
+func TestBareStepWithTwoOpenRunsNamesBoth(t *testing.T) {
+	root := twoOpenRuns(t)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "done" || !strings.Contains(next.Why, "TG-15.1") || !strings.Contains(next.Why, "TG-15.2") ||
+		!strings.Contains(next.Why, "komodo step <group>") {
+		t.Fatalf("action = %+v; a bare step with two open runs must name both and ask for one", next)
+	}
+}
+
+func TestAWaveMergedInOneGroupDoesNotMergeAnothers(t *testing.T) {
+	root := twoOpenRuns(t)
+	for _, taskID := range []string{"TSK-15.1.1", "TSK-15.2.1"} {
+		writeStepResult(t, root, taskID)
+		if err := RecordStatus(root, taskID, "DONE"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	Stamp(root, ledger.Entry{Group: "TG-15.1", Wave: 1, Station: "qc", Outcome: "done"})
+	next, err := Step(root, "TG-15.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Command != "komodo close --wave 1 TG-15.2" {
+		t.Fatalf("action = %+v; another group's merged wave 1 must not count as this group's", next)
+	}
+}
+
+func TestEachGroupKeepsItsOwnLiveStatusAndHandoff(t *testing.T) {
+	root := twoOpenRuns(t)
+	if err := RecordStatus(root, "TSK-15.1.1", "DONE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStatus(root, "TSK-15.2.1", "BLOCKED"); err != nil {
+		t.Fatal(err)
+	}
+	for group, want := range map[string]string{"TG-15.1": "TSK-15.1.1", "TG-15.2": "TSK-15.2.1"} {
+		statuses := loadStatusFile(filepath.Join(root, StateDir, "runs", group, "status.json"))
+		if len(statuses) != 1 || statuses[want].Status == "" {
+			t.Fatalf("%s status = %+v; a group's live status must hold only its own tasks", group, statuses)
+		}
+	}
+	if err := keepGroupStatus(root, "TG-15.1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadStatus(root); got["TSK-15.2.1"].Status != "BLOCKED" || got["TSK-15.1.1"].Status != "DONE" {
+		t.Fatalf("status = %+v; cutting one group must leave another open group's status alone", got)
+	}
+	if err := writeShipHandoff(root, ShipHandoff{Group: "TG-15.2", Branch: "feat/TG-15.2"}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := LoadSnapshot(root, "TG-15.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Handoff {
+		t.Fatal("another group's handoff must not stop this group")
+	}
+}
+
+func TestALegacyRunRecordIsMovedUnderItsGroupOnce(t *testing.T) {
+	root := t.TempDir()
+	legacy := RunState{Run: "TG-16.1-1", Group: "TG-16.1", Base: "main", Branch: "feat/legacy"}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string][]byte{"run.json": data, "ship.json": []byte(`{"group":"TG-16.1"}`)} {
+		if err := os.WriteFile(filepath.Join(root, StateDir, name), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := LoadRun(root)
+	if err != nil || got.Branch != "feat/legacy" {
+		t.Fatalf("state = %+v, err = %v; a legacy record must still be read", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, StateDir, "run.json")); !os.IsNotExist(err) {
+		t.Fatalf("stat = %v; the legacy record must be moved, not copied", err)
+	}
+	for _, name := range []string{"run.json", "ship.json"} {
+		if _, err := os.Stat(filepath.Join(root, StateDir, "runs", "TG-16.1", name)); err != nil {
+			t.Fatalf("%s was not moved under its group: %v", name, err)
+		}
+	}
+}
 
 // tieredRepo is a one-task run on a fake host with a light, standard, and heavy machine, its brief written.
 func tieredRepo(t *testing.T, fields, overlay string) string {

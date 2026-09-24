@@ -81,12 +81,12 @@ func TestNextDecidesFromTheSnapshotAlone(t *testing.T) {
 			s = closed(s)
 			s.Waves[0].Merged = false
 			return s
-		}, "run", "komodo close --wave 1", ""},
+		}, "run", "komodo close --wave 1 TG-20.1", ""},
 		{"blocked task skips its dependent", func(s Snapshot) Snapshot {
 			s.Tasks["TSK-20.1.1"] = TaskState{HasResult: true, Attempts: 2}
 			s.Tasks["TSK-20.1.2"] = TaskState{HasResult: true}
 			return s
-		}, "run", "komodo close --wave 1", ""},
+		}, "run", "komodo close --wave 1 TG-20.1", ""},
 		{"unreviewed", closed, "spawn", "", "TG-20.1-review"},
 		{"review blocks", func(s Snapshot) Snapshot {
 			s = closed(s)
@@ -103,7 +103,7 @@ func TestNextDecidesFromTheSnapshotAlone(t *testing.T) {
 			s = closed(s)
 			s.Reviewed = true
 			return s
-		}, "run", "komodo close --group", ""},
+		}, "run", "komodo close --group TG-20.1", ""},
 		{"shipped", func(s Snapshot) Snapshot {
 			s = closed(s)
 			s.Reviewed, s.Shipped = true, true
