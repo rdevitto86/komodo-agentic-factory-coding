@@ -244,6 +244,17 @@ bin/komodo-<os>-<arch> install --host claude       # or --host codex; --host bot
 
 The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. `komodo gate --install` builds this host's own binary into `bin/` and puts the gate on pre-commit and pre-push once; run it again after editing Go source.
 
+### Start a new repo
+
+From the root of the new repo, a git repository:
+
+```bash
+komodo init --name "Auth API"      # AGENTS.md, BACKLOG.md, CHANGELOG.md, docs/spec/, the PR template; keeps any file that exists
+komodo install --host claude       # mount the repo on a host
+$EDITOR BACKLOG.md                 # replace the example group with the first real one; komodo lint checks it
+komodo run                         # drive the line on the next ready group
+```
+
 ## Usage
 
 ```bash
@@ -269,4 +280,4 @@ komodo gate                 # vet, test, doctor, guard table, comments; pre-comm
 | `komodo/facets/` | One directory per platform: Komodo's setup skill, appendices, commands, markers |
 | `cmd/komodo/`, `internal/` | The binary: line, guard, mounts including Ollama, gate, launcher |
 | `bin/` | Gitignored local build output, built by `komodo gate --install` |
-| `templates/project/` | Starters for a new repo |
+| `templates/project/` | Starters `komodo init` writes into a new repo |

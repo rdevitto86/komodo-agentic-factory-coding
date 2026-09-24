@@ -18,6 +18,7 @@ import (
 
 const usage = `komodo: the code assembly line.
 
+  komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
   komodo lint                 Check BACKLOG.md against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo add <group> <title>  Append a task to a group
@@ -72,6 +73,8 @@ func main() {
 		fail(err)
 	}
 	switch os.Args[1] {
+	case "init":
+		runInit(root, os.Args[2:])
 	case "lint":
 		runLint(root)
 	case "list":
