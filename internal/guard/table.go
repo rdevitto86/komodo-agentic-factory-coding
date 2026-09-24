@@ -259,6 +259,15 @@ func Table(policy Policy) []Case {
 		bash("push to main through time", "time git push origin main", "feat/x", true, "open a pull request"),
 		bash("push to main through stdbuf with a glued flag", "stdbuf -o0 git push origin main", "feat/x", true, "open a pull request"),
 
+		// 1b. --no-verify and a hooksPath override skip the gate.
+		bash("commit --no-verify skips the gate", "git commit --no-verify -m x", "feat/x", true, "skips the gate"),
+		bash("a bundled -n skips the gate", "git commit -anm x", "feat/x", true, "skips the gate"),
+		bash("push --no-verify skips the gate", "git push --no-verify origin feat/x", "feat/x", true, "skips the gate"),
+		bash("-c core.hooksPath redirects the gate's own hooks", "git -c core.hooksPath=/dev/null commit -m x", "feat/x", true, "other hooks"),
+		bashInMode("commit --no-verify is allowed in unsafe mode", "git commit --no-verify -m x", "feat/x", ModeUnsafe, false, ""),
+		bash("push -n is --dry-run, not --no-verify", "git push -n origin feat/x", "feat/x", false, ""),
+		bash("merge -n is --no-stat, not --no-verify", "git merge -n feat/y", "feat/x", false, ""),
+
 		// 2. A write never leaves the worktree root.
 		write("edit above the root", "../outside/file.go", true, "outside the worktree"),
 		write("write an absolute path elsewhere", "/etc/hosts", true, "outside the worktree"),
