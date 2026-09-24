@@ -101,6 +101,55 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	return outcome, writeStatus(path, taskID, "IN_PROGRESS")
 }
 
+// CloseFix gates a review fix round in the group worktree, commits it on the group branch, clears
+// the review so the next step reviews again, and stamps the round in the ledger.
+func CloseFix(root string, plan *Plan) (*Outcome, error) {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	task, _ := fixTask(parsed, plan)
+	cwd := WorktreePath(root, plan.Worktree)
+	started := time.Now()
+	round := FixRounds(root, plan.Group) + 1
+	outcome := &Outcome{Task: task.ID}
+	problems := checkResult(root, task.ID)
+	if len(problems) == 0 && isToolkit(root) {
+		if err := gateCommand(cwd); err != nil {
+			problems = append(problems, "gate: "+err.Error())
+		}
+	}
+	outcome.Problems = problems
+	entry := ledger.Entry{Group: plan.Group, Task: fmt.Sprintf("%s-%d", task.ID, round), Station: "fix", Role: "builder"}
+	fillUsage(root, task.ID, time.Now(), &entry)
+	if len(problems) == 0 {
+		if err := commitTask(cwd, task, plan.Branch); err != nil {
+			outcome.Problems = []string{"commit: " + err.Error()}
+			return outcome, nil
+		}
+		outcome.Status = "DONE"
+		clearAttempt(root, task.ID)
+		for _, result := range ResultPaths(root, plan.Group+"-review") {
+			_ = os.Remove(result)
+		}
+		entry.Seconds, entry.Outcome = Since(started), "done"
+		Stamp(root, entry)
+		return outcome, nil
+	}
+	attempt, err := bumpAttempt(root, task.ID, strings.Join(problems, "\n"), diffOf(cwd))
+	if err != nil {
+		return nil, err
+	}
+	outcome.Status, outcome.Attempt, outcome.Failure = "IN_PROGRESS", attempt.Count, attempt.Failure
+	entry.Seconds, entry.Outcome, entry.FailureClass = Since(started), "repair", FailureClass(problems)
+	Stamp(root, entry)
+	return outcome, nil
+}
+
 // TaskWorktree is where a task is built: its own worktree, else the run's, else the repo root.
 func TaskWorktree(root, taskID string) string {
 	path := filepath.Join(root, StateDir, "wt", taskID)

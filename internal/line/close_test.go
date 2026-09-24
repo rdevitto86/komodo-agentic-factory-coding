@@ -391,3 +391,24 @@ func TestATaskThatOwnsABuiltPathStillCommitsIt(t *testing.T) {
 		t.Fatalf("committed %q; a task that declares a built path owns it", changed)
 	}
 }
+
+func TestAFailedFixRoundCountsAndCarriesItsFailure(t *testing.T) {
+	root := closeRepo(t)
+	if err := SaveRun(root, RunState{Run: "TG-08.1-1", Group: "TG-08.1", Base: "main", Branch: "feat/a-group", Worktree: root}); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{Group: "TG-08.1", Title: "A group", Worktree: ".", Tasks: []PlanTask{{ID: "TSK-08.1.1"}}}
+	outcome, err := CloseFix(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Status != "IN_PROGRESS" || outcome.Attempt != 1 {
+		t.Fatalf("outcome = %+v; a fix round with no result fails and waits for another brief", outcome)
+	}
+	if rounds := FixRounds(root, "TG-08.1"); rounds != 1 {
+		t.Fatalf("rounds = %d; a failed fix round still spends one of the profile's rounds", rounds)
+	}
+	if !strings.Contains(RepairText(root, "TG-08.1-fix"), "result") {
+		t.Fatal("the next fix brief must carry what the failed round tripped on")
+	}
+}
