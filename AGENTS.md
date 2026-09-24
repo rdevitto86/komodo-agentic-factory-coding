@@ -12,6 +12,7 @@ Komodo's code assembly line: one static binary is the conveyor and devices, mark
 - **No repo config is required.** Nothing refuses to run for a missing file.
 - **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
 - **Versions go alpha, beta, release.** README's Versions section defines each stage.
+- **A rating follows `docs/scorecard.md`.** Score `origin/main` against its levels, start from its last row, cite evidence per change.
 - **The prototype is history.** Tag `prototype-final` holds it; nothing returns without a named task.
 
 ## Commands

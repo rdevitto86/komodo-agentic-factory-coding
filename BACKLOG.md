@@ -1498,18 +1498,20 @@ type: fix
 ```yaml
 type: feat
 version: 1.1.0
-base: main
+base: docs/queue-ninety-plan
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
 
 #### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [READY]
 ```yaml
-files: [internal/line/step.go, internal/line/step_test.go, komodo/skills/run/SKILL.md]
+files: [internal/line/step.go, internal/line/snapshot.go, internal/line/step_test.go, komodo/skills/run/SKILL.md]
 done_when:
   - go test ./internal/line/...
   - go vet ./internal/line/...
   - go run ./cmd/komodo doctor
+depends_on: [TSK-03.21.3]
 context:
+  - "TSK-03.21.3 makes Next(snapshot) the pure decision; the wave-wide spawn is decided there, from the snapshot, never by a second read of the disk"
   - "Action gains Spawns []Action, json spawns, omitempty; when a parallel-mode wave holds two or more tasks that each have a current brief and no result, Step returns action spawn with every one in Spawns, each carrying its own brief, worktree, task, and machine as the single spawn does today"
   - "a task with no brief yet still returns its own run komodo brief action first, so every brief in the wave is written before the wave spawns; single-mode groups and a lone ready task keep today's single spawn with Spawns empty"
   - "the run skill: when spawns is present, spawn every entry in the same turn and wait for all of them, then loop; the one-action-per-turn rule reads as one step per turn"
@@ -1528,6 +1530,23 @@ context:
   - "when the committing checkout, git rev-parse --show-toplevel, holds cmd/komodo/main.go, the hook runs go run ./cmd/komodo gate from that toplevel, with --fuzz 10s on pre-push as today; any other repo keeps the built binary"
   - "tests: the rendered script carries the toplevel branch and the go run line; a repo without cmd/komodo keeps exec of the built binary"
 type: fix
+```
+
+#### [TSK-03.21.3] Step reads one snapshot and decides with a pure function [P: H] [READY]
+```yaml
+files: [internal/line/step.go, internal/line/snapshot.go, internal/line/snapshot_test.go]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+  - git diff --quiet HEAD -- internal/line/step_test.go
+  - go run ./cmd/komodo guard check
+context:
+  - "Step today infers the run's state from seven kinds of files as it walks: briefs, results, attempts, wt, run.json, ship.json, run.lock; waveMerged, reviewed, staleReview, shipped, staleBrief, repairResultReady, and paused each read the disk mid-decision"
+  - "snapshot.go adds Snapshot, loaded once by LoadSnapshot(root, needle): the plan, the parsed group, per task HasResult, attempt count, repairResultReady, staleBrief, and Open, per wave merged, reviewed, reviewSkippable, the blocking findings, the ship handoff, shipped, and the paused action"
+  - "Next(Snapshot) Action is pure: no os, no git, no ledger; Step becomes LoadSnapshot, then Next, then the side effects stampReview and actionForTier that Step already runs today, in the same order"
+  - "a refactor: every existing step test passes unchanged, which the done_when proves; snapshot_test.go adds a table over hand-built snapshots and FuzzNext, asserting Next never panics, returns run, spawn, or done, and never spawns a task whose snapshot already holds a result"
+type: refactor
+tier: heavy
 ```
 
 ### [TG-03.20] The guard holds its own denials, and the docs match the line
@@ -1613,4 +1632,367 @@ context:
   - "promises.go takes checkPromises, promises, fieldPromises, pascal, indexSymbols and their types; prune.go takes Prune, settleShippedRun, stateWorktrees, restoreFlips and their types; render.go takes renderInstalled, renderedSkillTokens, checkBudgets, checkDrift, checkProfileDrift, freezeProfile, pinLocalDown, pinLocalUp"
   - "doctor.go keeps Run, the other checks, and the small shared helpers"
 type: refactor
+```
+
+### [TG-03.22] The guard holds the forge, the gate, and every interpreter
+```yaml
+type: fix
+version: 1.0.1
+base: docs/queue-ninety-plan
+```
+* **Why:** a probe on 2026-09-24 against main's guard passed `gh api -X DELETE .../branches/main/protection`, `gh api -X PUT .../pulls/12/merge`, `git commit --no-verify`, `git -c core.hooksPath=/dev/null commit`, `python3 -c` and `node -e` bodies that push main, and a script written then run in one line. ADR 0004 names the forge ruleset as the hard boundary, and a session could delete it. The safety modes gate only critical-ref rules, so every one passed in every mode.
+
+#### [TSK-03.22.1] The guard refuses a gh call that writes to the forge [P: C] [DONE]
+```yaml
+files: [internal/guard/gh.go, internal/guard/shell.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "gh.go takes the gh case out of scanner.command in shell.go, which today refuses only gh pr merge, and returns ghFindings(kept, policy)"
+  - "gh api writes when -X or --method names anything but GET or HEAD, or when -f, -F, --field, --raw-field, or --input appear without -X GET; deny those in every mode with: gh api <METHOD> <endpoint>: a forge write goes through the line, never an agent"
+  - "two writes stay allowed, since the line and the respond skill need them: POST to repos/<o>/<r>/pulls, and POST to repos/<o>/<r>/issues/<n>/comments or repos/<o>/<r>/pulls/<n>/comments or .../comments/<id>/replies; an endpoint naming protection, rulesets, merge, git/refs, hooks, keys, secrets, or collaborators is denied whatever the method"
+  - "gh api graphql: deny when the query holds mutation, unless every mutation named is addComment, addPullRequestReviewComment, addPullRequestReviewThreadReply, resolveReviewThread, or createPullRequest; gh ruleset with a write verb, gh repo edit, gh repo delete, gh repo rename, gh secret set or delete, and gh api with --hostname plus any write are denied in every mode"
+  - "table rows: api -X DELETE repos/o/r/branches/main/protection denied, api -X PUT repos/o/r/pulls/12/merge denied, api --method PATCH repos/o/r/rulesets/1 denied, api repos/o/r/git/refs/heads/main -f sha=x denied, graphql with mutation mergePullRequest denied, repo edit --default-branch x denied; api repos/o/r/pulls allowed, api -X POST repos/o/r/pulls -f title=x allowed, api repos/o/r/issues/3/comments -f body=x allowed, graphql query without mutation allowed, pr view 12 allowed"
+type: fix
+```
+
+#### [TSK-03.22.2] The guard refuses a commit or push that skips the gate [P: C] [DONE]
+```yaml
+files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.22.1]
+context:
+  - "komodo gate is the only precheck, and --no-verify on commit, merge, push, rebase, am, or cherry-pick skips it; deny it in safe and default modes with: git <sub> --no-verify skips the gate; fix what it reports instead"
+  - "commit's -n is --no-verify, alone or inside a short cluster such as -an; push -n is --dry-run and merge -n is --no-stat, so only commit reads n that way"
+  - "-c core.hooksPath=<x> and --config-env core.hooksPath=<x> point git at other hooks; deny them in every mode, as a config write, beside the credential and remotePushConfigRe checks at the top of gitFindings"
+  - "table rows: commit --no-verify -m x denied, commit -anm x denied, push --no-verify origin feat/x denied, -c core.hooksPath=/dev/null commit -m x denied, commit --no-verify in unsafe mode allowed, push -n origin feat/x allowed, merge -n feat/y allowed"
+type: fix
+```
+
+#### [TSK-03.22.3] The guard reads what an interpreter's inline code runs [P: H] [DONE]
+```yaml
+files: [internal/guard/interp.go, internal/guard/shell.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.22.2]
+context:
+  - "interp.go names the interpreters: python, python3, node, ruby, perl, php, deno, bun, osascript, and their inline flags -c, -e, -E, --eval, -r, -p where each takes code; perl's -i path check in paths.go stays as it is"
+  - "an inline body, or a script operand that exists in the worktree, is refused when its text holds the word git with one of push, commit, merge, rebase, branch, update-ref, remote, config, or tag, or the word gh with api, pr, repo, ruleset, or secret; finding: an interpreter running git or gh hides its command; run it in the shell"
+  - "the check is textual on purpose: a list form such as [\"git\",\"push\",\"origin\",\"main\"] must be caught, so match words inside quotes and brackets, not shell tokens"
+  - "python -m pytest, node script.js whose file does not mention git, and python -c 'print(1)' stay allowed; the scan never runs an interpreter"
+  - "table rows: python3 -c with subprocess.run([\"git\",\"push\",\"origin\",\"main\"]) denied, node -e with execSync(\"git push origin main\") denied, ruby -e with system(\"gh api -X DELETE x\") denied; python3 -c 'print(1)' allowed, node -e 'console.log(2)' allowed, python -m pytest allowed"
+type: fix
+```
+
+#### [TSK-03.22.4] A script written and run in one command is read before it runs [P: H] [DONE]
+```yaml
+files: [internal/guard/shell.go, internal/guard/lexer.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.22.3]
+context:
+  - "scanner.sourced reads a script from disk; echo 'git push origin main' > x.sh; sh x.sh passes because x.sh does not exist when the guard runs"
+  - "the scanner records, per command line, each file a redirect or tee writes and the text it knows went there: echo and printf words, a heredoc body, or unknown; sourced, shell, the interpreter scan from TSK-03.22.3, and a command whose first word is a path to such a file all read the recorded text first"
+  - "a recorded file with unknown text, such as curl ... > x.sh; sh x.sh, is refused: a script written and run in one command is not visible to the guard; write it, then run it in a second call"
+  - "a command whose first word is ./name or a path to an existing file with a sh, bash, or zsh shebang is scanned like sh name"
+  - "table rows: echo 'git push origin main' > x.sh; sh x.sh denied, cat > x.sh <<'EOF' then git push origin main then EOF; bash x.sh denied, printf 'git push origin main' > x.sh && ./x.sh denied, curl -s u > x.sh; sh x.sh denied; echo 'ls' > x.sh; sh x.sh allowed"
+type: fix
+```
+
+#### [TSK-03.22.5] The guard refuses a push to a URL instead of a remote [P: H] [DONE]
+```yaml
+files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.22.4]
+context:
+  - "TG-03.23 makes a line worktree unable to push through origin; git push <url> <ref> goes around the remote's pushurl, so the guard closes that path"
+  - "in case push, the first positional is a URL when it holds :// or is scp form user@host:path, or is a path to a bare repo outside the worktree; deny in safe and default modes with: git push to a URL skips the remote the line configured; push to origin"
+  - "table rows: push https://github.com/o/r.git feat/x denied, push git@github.com:o/r.git feat/x denied, push ../elsewhere.git feat/x denied; push origin feat/x allowed, push https://github.com/o/r.git feat/x in unsafe mode allowed"
+type: fix
+```
+
+### [TG-03.23] A builder's worktree cannot push
+```yaml
+type: fix
+version: 1.0.1
+base: docs/queue-ninety-plan
+```
+* **Why:** the guard is a denylist over bash and will never be complete. The headless scrub removes push credentials, but an in-session builder still has them. A worktree with no working push URL turns every missed shell trick into a failed push, so the guard stops being the last check.
+
+#### [TSK-03.23.1] Every line worktree refuses a push, and ship pushes through an explicit URL [P: C] [READY]
+```yaml
+files: [internal/line/worktree.go, internal/line/worktree_test.go, internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+  - go run ./cmd/komodo doctor
+context:
+  - "AddWorktree, called by next.go for the group worktree and brief.go for each task worktree, sets extensions.worktreeConfig true on the repo once, then git -C <worktree> config --worktree remote.origin.pushurl refused://the-line-pushes"
+  - "if the repo's common config holds core.bare or core.worktree, worktreeConfig would misread them; skip the pushurl there and print one note naming the reason, never fail the cut"
+  - "ShipGroup's push in ship.go:156 reads the real URL from the main checkout with git -C <root> remote get-url --push origin, then runs git -c remote.origin.pushurl=<url> push -u origin <branch> from the group worktree; the launcher's gitPush in run.go already pushes from the root and needs no change"
+  - "the main checkout's own config never gains a pushurl; git -C <root> config --get remote.origin.pushurl is unchanged by a cut"
+  - "tests, against a bare remote in a temp dir: a push from a task worktree fails naming refused, a push from the root still works, ShipGroup from the group worktree pushes the branch"
+type: fix
+```
+
+### [TG-03.24] The local reviewer earns its seat
+```yaml
+type: feat
+version: 1.1.0
+base: docs/queue-ninety-plan
+```
+* **Why:** the local 3B reviewer returned 0 findings on most runs and missed a real bug in #161. A review station that always approves is a stage, not QC. A seeded-bug corpus gives each local model a recall number, and the line keeps review on the host until that number clears a bar.
+
+#### [TSK-03.24.1] komodo recall scores a reviewer against seeded bugs [P: H] [READY]
+```yaml
+files: [internal/recall/recall.go, internal/recall/recall_test.go, internal/recall/testdata, cmd/komodo/main.go, cmd/komodo/machine.go]
+done_when:
+  - go test ./internal/recall/... ./cmd/komodo/...
+  - go vet ./internal/recall/... ./cmd/komodo/...
+  - test "$(ls internal/recall/testdata/*.diff | wc -l)" -ge 15
+  - go run ./cmd/komodo doctor
+context:
+  - "testdata holds at least 12 bug cases and 3 clean cases, each a unified diff plus a .json naming file, line, and class, or clean: true; bug classes: off-by-one, nil dereference, dropped error, inverted condition, wrong comparison operator, path traversal, shell injection, map race, defer in a loop, a guard branch returning early, a test that asserts nothing, and a prune that skips an open run as #161 did"
+  - "recall builds each case's reviewer brief from komodo/roles/reviewer.md the way the line fills it for a diff, posts it with ollama.Post and the reviewer schema, and counts a catch when a finding names the case's file within 5 lines at medium or above"
+  - "komodo recall [--model m] prints caught over cases, recall, and false findings on the clean cases, then writes ~/.komodo/recall.json keyed by model with recall, cases, false_positives, and at; it never runs in the gate, since the gate calls no model"
+  - "tests drive a fake Ollama server, as the ollama mount's own tests do: a server that returns each case's expected finding scores 1.0, one that returns nothing scores 0"
+type: feat
+tier: heavy
+```
+
+#### [TSK-03.24.2] A local reviewer takes review only above its recall bar [P: H] [READY]
+```yaml
+files: [internal/mount/registry.go, internal/mount/mount_test.go, internal/mount/claude/limits.go, internal/mount/claude/claude_test.go]
+done_when:
+  - go test ./internal/mount/...
+  - go vet ./internal/mount/...
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-03.24.1]
+context:
+  - "registry.go gains ReviewerRecall(model) (recall float64, cases int, ok bool) reading ~/.komodo/recall.json beside OverlayPath, and Overlay gains local_reviewer_recall, default 0.6, which an overlay may only raise"
+  - "claude/limits.go routes the reviewer to ollama when LoadOverlay().LocalReviewer is set and the model's recall is at or above the bar over at least 10 cases; otherwise the reviewer stays on the heavy tier"
+  - "the profile's why says which: the local reviewer's recall is 0.42 over 15 cases, under 0.6, so review stays on opus; or no recall on record for <model>; run komodo recall"
+  - "tests: no recall file keeps review remote, recall 0.8 over 15 cases moves it local, recall 0.8 over 5 cases keeps it remote, an overlay bar of 0.9 with recall 0.8 keeps it remote"
+type: feat
+```
+
+### [TG-03.25] Live status lives in the run, and the backlog changes once at ship
+```yaml
+type: refactor
+version: 1.1.0
+base: feat/a-wave-builds-at-once-and-the-hook-check
+```
+* **Why:** close writes task status into `BACKLOG.md` from three places mid-run, ship writes it again, and prune's `restoreFlips` exists to undo the collisions that causes. With parallel spawns and concurrent groups, markdown as a live database gets worse. The run holds live status; the backlog changes once, in the ship commit.
+
+#### [TSK-03.25.1] Close records status in the run, and ship writes the backlog once [P: H] [READY]
+```yaml
+files: [internal/line/status.go, internal/line/status_test.go, internal/line/close.go, internal/line/close_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/snapshot.go, internal/doctor/prune.go, internal/doctor/doctor_test.go, cmd/komodo/backlog.go]
+done_when:
+  - go test ./internal/line/... ./internal/doctor/... ./cmd/komodo/...
+  - go vet ./internal/line/... ./internal/doctor/... ./cmd/komodo/...
+  - "! grep -n 'writeStatus(' internal/line/close.go"
+  - "! grep -n 'restoreFlips' internal/doctor/prune.go"
+  - go run ./cmd/komodo doctor
+context:
+  - "status.go keeps .komodo/status.json, taskID to IN_PROGRESS, DONE, or BLOCKED with the note, written atomically; close.go:83, 96, and 101 write there instead of BACKLOG.md"
+  - "the snapshot's Open for a task reads status.json first and the parsed backlog second, so step decides exactly as before"
+  - "ShipGroup writes every status in status.json into BACKLOG.md in the ship commit, as ship.go:117 already does for DONE, then clears status.json; a task worktree's BACKLOG.md is never edited, so wave merges never conflict on it"
+  - "prune drops restoreFlips and its call, since no status flip is left uncommitted; komodo list overlays status.json when a run is open, so a human still sees live status"
+type: refactor
+tier: heavy
+```
+
+### [TG-03.26] The line builds wide, picks the smallest machine that works, and measures itself
+```yaml
+type: feat
+version: 1.1.0
+base: refactor/live-status-lives-in-the-run-and-the-bac
+```
+* **Why:** across the last 11 runs build was 72 to 85 percent of wall time. TG-03.20 chained 3 of its 5 tasks on one file, so it was serial by design. Waves split by directory, one group runs at a time, every builder is Sonnet, and `komodo metrics` cannot say tasks per hour.
+
+#### [TSK-03.26.1] Waves split by file, not directory [P: H] [READY]
+```yaml
+files: [internal/line/dag.go, internal/line/dag_test.go, internal/line/collide.go, internal/line/wave_test.go, komodo/rules/backlog.md, README.md]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+  - go run ./cmd/komodo lint
+  - go run ./cmd/komodo doctor
+context:
+  - "dirsOverlap in dag.go becomes claimsOverlap: two tasks overlap when they list the same file, or one lists a directory that holds a path the other lists; two tasks editing different files in one directory share a wave"
+  - "RefuseCollision in collide.go applies the same rule against closed, unmerged task branches"
+  - "close --wave already merges in order, stops on a conflict naming both tasks, and runs the compile gate after, so a same-package clash still stops the run for a person"
+  - "komodo/rules/backlog.md: tasks that share no file run in parallel; a shared file or a directory claim serializes; README's Waves line says the same"
+  - "tests: two tasks on internal/a/x.go and internal/a/y.go share wave 1; tasks on internal/a/x.go and internal/a share nothing and serialize; the existing directory tests are updated to the file rule"
+type: feat
+```
+
+#### [TSK-03.26.2] Lint notes a group whose dependencies make it serial [P: M] [READY]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/backlog_test.go, cmd/komodo/backlog.go]
+done_when:
+  - go test ./internal/backlog/... ./cmd/komodo/...
+  - go vet ./internal/backlog/... ./cmd/komodo/...
+  - go run ./cmd/komodo lint
+context:
+  - "Notes(parsed) returns advice that never fails lint: for a group with at least 3 open tasks whose longest depends_on chain covers more than half of them, note <group>: <n> of <m> tasks are one chain; split the shared file or drop a dependency to build in parallel"
+  - "komodo lint prints each note prefixed note after the problems and still exits zero when there are no problems; DONE tasks never count"
+  - "tests: a 5-task group with a 3-task chain gets a note, a 5-task group with two 2-task chains gets none, a group whose chain is all DONE gets none"
+type: feat
+```
+
+#### [TSK-03.26.3] A small task builds on the light tier and repairs on standard [P: M] [READY]
+```yaml
+files: [internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/mount/registry.go]
+done_when:
+  - go test ./internal/line/... ./internal/mount/...
+  - go vet ./internal/line/... ./internal/mount/...
+context:
+  - "a builder spawn with no task tier, at most one source file plus its _test file in files, and no failed attempt, resolves on the light tier; its repair resolves on standard, so a failure costs one cheap attempt"
+  - "Overlay gains light_builder, default true; false keeps every builder on standard; a task tier key always wins"
+  - "why names it: TSK-x is one file, so it builds on light; or TSK-x failed once on light, so its repair builds on standard"
+  - "tests: a one-file task spawns on haiku, its repair on sonnet, a two-file task on sonnet, light_builder false keeps sonnet, tier heavy stays opus"
+type: feat
+```
+
+#### [TSK-03.26.4] Metrics report tasks per hour and tokens per changed line [P: M] [READY]
+```yaml
+files: [internal/ledger/ledger.go, internal/ledger/ledger_test.go, internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/ledger/... ./internal/line/...
+  - go vet ./internal/ledger/... ./internal/line/...
+  - go run ./cmd/komodo metrics
+context:
+  - "Entry gains lines, the added plus deleted count from git diff --shortstat <base>...<branch>, which ShipGroup stamps on its ship row"
+  - "Aggregate adds tasks per hour of line time, median wall seconds per task from the first brief to ship, tokens per changed line by model, and repair rate by tier; Render prints each under its own heading"
+  - "an entry without lines is skipped for tokens per line, never read as zero"
+type: feat
+```
+
+#### [TSK-03.26.5] Two groups with disjoint files run at once [P: H] [READY]
+```yaml
+files: [internal/line/worktree.go, internal/line/worktree_test.go, internal/line/next.go, internal/line/next_test.go, internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/line/ship.go, internal/run/run.go, internal/run/run_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/run/...
+  - go vet ./internal/line/... ./internal/run/...
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-03.26.1, TSK-03.26.3]
+context:
+  - "run state moves to .komodo/runs/<group>/: run.json, run.lock, ship.json; a legacy .komodo/run.json is read once and moved there"
+  - "RefuseOpenRun in next.go refuses a new group only when an open group's files overlap it under claimsOverlap from TSK-03.26.1; --force still overrides"
+  - "komodo step <group> continues that group; bare komodo step continues the one open group, and with two open it prints done naming both and asking for one"
+  - "the launcher's finishShip reads the handoff under its own group's directory; the ledger already carries run and group on every row"
+  - "tests: two groups on disjoint files both cut and each step returns its own spawn; overlapping groups refuse the second; bare step with two open runs names both"
+type: feat
+tier: heavy
+```
+
+### [TG-03.27] One git adapter, a leaf guard, and the planner in its own package
+```yaml
+type: refactor
+version: 1.1.0
+base: feat/the-line-builds-wide-picks-the-smallest
+```
+* **Why:** `line` is 3,505 source lines and imports 13 of 19 internal packages. git runs through four private helpers, and `worktree list --porcelain` is parsed three times in doctor alone. The guard runs on every tool call yet links the Ollama client through `profile` only to find the overlay path, which `mount.OverlayPath` already returns.
+
+#### [TSK-03.27.1] One git adapter replaces four private helpers [P: M] [READY]
+```yaml
+files: [internal/git/git.go, internal/git/git_test.go, internal/line/worktree.go, internal/line/collide.go, internal/doctor/doctor.go, internal/doctor/prune.go, cmd/komodo/release.go]
+done_when:
+  - go test ./...
+  - go vet ./...
+  - "! grep -nE '^func (git|gitOr|gitRun)\\(' internal/line/worktree.go internal/line/collide.go internal/doctor/doctor.go cmd/komodo/release.go"
+  - go run ./cmd/komodo doctor
+context:
+  - "internal/git exports Run(dir, args...) (string, error) with the trimming and error text line/worktree.go's git gives today, Or(dir, args...) string for collide.go's gitOr, and Worktrees(dir) ([]Worktree, error) with Path, Branch, and Head parsed from worktree list --porcelain"
+  - "doctor.go:78 and prune.go:17 and :91 call git.Worktrees instead of parsing porcelain themselves; behaviour and messages do not change"
+  - "internal/git imports only the standard library"
+type: refactor
+```
+
+#### [TSK-03.27.2] The guard reads the overlay path from mount and never links profile [P: M] [READY]
+```yaml
+files: [internal/guard/policy.go, internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test ./internal/guard/... ./internal/profile/...
+  - go vet ./internal/guard/... ./internal/profile/...
+  - "! go list -deps ./internal/guard | grep -qE '^komodo/internal/(profile|mount/ollama)$'"
+  - go run ./cmd/komodo guard check
+context:
+  - "policy.go:111 and :112 call profile.MachineOverlayPath, which returns the same path as mount.OverlayPath; call mount.OverlayPath and drop the profile import"
+  - "profile.MachineOverlayPath is deleted and its callers use mount.OverlayPath"
+type: refactor
+```
+
+#### [TSK-03.27.3] The planner moves out of line into its own package [P: M] [READY]
+```yaml
+files: [internal/plan/plan.go, internal/plan/plan_test.go, internal/line/dag.go, internal/line/dag_test.go, internal/line/next.go, internal/line/step.go, internal/line/collide.go]
+done_when:
+  - go test ./...
+  - go vet ./...
+  - test ! -f internal/line/dag.go
+  - "! go list -deps ./internal/plan | grep -q '^komodo/internal/line$'"
+depends_on: [TSK-03.27.1]
+context:
+  - "internal/plan takes Topological, Waves, BlockedBy, and claimsOverlap from dag.go, with its tests from dag_test.go; it imports backlog only"
+  - "line's callers in next.go, step.go, and collide.go call plan.Waves, plan.BlockedBy, and plan.Overlap; a move, so no body changes"
+type: refactor
+```
+
+#### [TSK-03.27.4] The devices move out of line into their own package [P: L] [REFINEMENT]
+```yaml
+context:
+  - "brief.go, diff.go, and clip.go are the input devices; they need an architect pass on what they share with close before a move"
+type: refactor
+```
+
+#### [TSK-03.27.5] The stations move out of line into their own package [P: L] [REFINEMENT]
+```yaml
+context:
+  - "close.go, verify.go, wave.go, and ship.go are the stations; the split waits on the devices move and the snapshot from TSK-03.21.3"
+type: refactor
+```
+
+### [TG-03.28] Every package clears 75 percent coverage
+```yaml
+type: test
+version: 1.1.0
+base: docs/queue-ninety-plan
+```
+* **Why:** `docs/scorecard.md` puts Code at 90 only when every package is at or above 70 percent. On `1eff696`, `internal/gate` is at 67.4 and `internal/pr` at 68.4. Both are tested here to 75, with room above the bar.
+
+#### [TSK-03.28.1] The gate's hook rendering and install paths are tested to 75 percent [P: M] [READY]
+```yaml
+files: [internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/gate/...
+  - go vet ./internal/gate/...
+  - "go test -cover ./internal/gate/ | awk '{for(i=1;i<=NF;i++) if($i ~ /%$/) {sub(/%/,\"\",$i); exit !($i+0 >= 75)}}'"
+context:
+  - "test only: no change to gate.go; cover the untested branches go test -coverprofile names, the hook script per platform, an unsupported platform's message, the fuzz lane flag, and a failing check's exit"
+type: test
+```
+
+#### [TSK-03.28.2] The pull request client is tested to 75 percent [P: M] [READY]
+```yaml
+files: [internal/pr/pr_test.go]
+done_when:
+  - go test ./internal/pr/...
+  - go vet ./internal/pr/...
+  - "go test -cover ./internal/pr/ | awk '{for(i=1;i<=NF;i++) if($i ~ /%$/) {sub(/%/,\"\",$i); exit !($i+0 >= 75)}}'"
+context:
+  - "test only: no change to pr.go; drive the client against an httptest server or a fake gh on PATH, as its existing tests do, covering labels that do not exist, a draft PR, an API error, and thread listing"
+type: test
 ```
