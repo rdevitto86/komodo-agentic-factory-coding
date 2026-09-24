@@ -1,12 +1,11 @@
 package line
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"komodo/internal/git"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -28,21 +27,9 @@ type RunState struct {
 	Started  time.Time  `json:"started"`
 }
 
-// git runs one git command in dir and returns its trimmed stdout.
-func git(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	return strings.TrimSpace(stdout.String()), nil
-}
-
 // DefaultBase is the remote's default branch, falling back to main.
 func DefaultBase(root string) string {
-	head, err := git(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+	head, err := git.Run(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
 	if err == nil && head != "" {
 		return strings.TrimPrefix(head, "refs/remotes/origin/")
 	}
@@ -51,7 +38,7 @@ func DefaultBase(root string) string {
 
 // Fetch updates the remote ref for one branch.
 func Fetch(root, base string) error {
-	_, err := git(root, "fetch", "origin", base)
+	_, err := git.Run(root, "fetch", "origin", base)
 	return err
 }
 
@@ -67,11 +54,11 @@ func AddWorktree(root, branch, base, path string) error {
 		return err
 	}
 	start := StartRef(root, base)
-	if _, err := git(root, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
-		if _, err := git(root, "worktree", "add", path, branch); err != nil {
+	if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
+		if _, err := git.Run(root, "worktree", "add", path, branch); err != nil {
 			return err
 		}
-	} else if _, err := git(root, "worktree", "add", "-b", branch, path, start); err != nil {
+	} else if _, err := git.Run(root, "worktree", "add", "-b", branch, path, start); err != nil {
 		return err
 	}
 	refuseWorktreePush(root, path)
@@ -80,19 +67,19 @@ func AddWorktree(root, branch, base, path string) error {
 
 // refuseWorktreePush sets path's pushurl to RefusedPushURL, noting a skip when core.bare or core.worktree is set.
 func refuseWorktreePush(root, path string) {
-	if bare, err := git(root, "config", "--get", "core.bare"); err == nil && bare == "true" {
+	if bare, err := git.Run(root, "config", "--get", "core.bare"); err == nil && bare == "true" {
 		fmt.Fprintln(os.Stderr, "komodo: core.bare is true on the repo's common config; skipping the worktree push refusal")
 		return
 	}
-	if _, err := git(root, "config", "--get", "core.worktree"); err == nil {
+	if _, err := git.Run(root, "config", "--get", "core.worktree"); err == nil {
 		fmt.Fprintln(os.Stderr, "komodo: core.worktree is set on the repo's common config; skipping the worktree push refusal")
 		return
 	}
-	if _, err := git(root, "config", "extensions.worktreeConfig", "true"); err != nil {
+	if _, err := git.Run(root, "config", "extensions.worktreeConfig", "true"); err != nil {
 		fmt.Fprintln(os.Stderr, "komodo: could not enable extensions.worktreeConfig; the worktree push refusal is not set:", err)
 		return
 	}
-	if _, err := git(path, "config", "--worktree", "remote.origin.pushurl", RefusedPushURL); err != nil {
+	if _, err := git.Run(path, "config", "--worktree", "remote.origin.pushurl", RefusedPushURL); err != nil {
 		fmt.Fprintln(os.Stderr, "komodo: could not set the worktree's refused pushurl:", err)
 	}
 }
@@ -101,7 +88,7 @@ func refuseWorktreePush(root, path string) {
 // when it exists, else base itself, so a stale local base never leaks another group's commits in.
 func StartRef(dir, base string) string {
 	ref := "origin/" + base
-	if _, err := git(dir, "rev-parse", "--verify", ref); err != nil {
+	if _, err := git.Run(dir, "rev-parse", "--verify", ref); err != nil {
 		return base
 	}
 	return ref

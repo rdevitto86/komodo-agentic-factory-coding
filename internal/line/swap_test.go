@@ -9,6 +9,7 @@ import (
 
 	"komodo/internal/detect"
 	"komodo/internal/facet"
+	"komodo/internal/git"
 	"komodo/internal/mount"
 	repopkg "komodo/internal/repo"
 )
@@ -310,7 +311,7 @@ func TestFacetMCPJSONChangesNothing(t *testing.T) {
 func TestCommandsJSONSwapReplacesVerifyAtQC(t *testing.T) {
 	root := gitRepo(t)
 	commit(t, root, "Makefile", "verify:\n\t@true\n", "seed")
-	if _, err := git(root, "branch", "task/tsk-14.1.1"); err != nil {
+	if _, err := git.Run(root, "branch", "task/tsk-14.1.1"); err != nil {
 		t.Fatal(err)
 	}
 	plan := &Plan{Group: "TG-14.1", Waves: [][]string{{"TSK-14.1.1"}}}

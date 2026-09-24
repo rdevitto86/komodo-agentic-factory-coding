@@ -1922,7 +1922,7 @@ base: feat/the-line-builds-wide-picks-the-smallest
 ```
 * **Why:** `line` is 3,505 source lines and imports 13 of 19 internal packages. git runs through four private helpers, and `worktree list --porcelain` is parsed three times in doctor alone. The guard runs on every tool call yet links the Ollama client through `profile` only to find the overlay path, which `mount.OverlayPath` already returns.
 
-#### [TSK-03.27.1] One git adapter replaces four private helpers [P: M] [READY]
+#### [TSK-03.27.1] One git adapter replaces four private helpers [P: M] [DONE]
 ```yaml
 files: [internal/git/git.go, internal/git/git_test.go, internal/line/worktree.go, internal/line/collide.go, internal/doctor/doctor.go, internal/doctor/prune.go, cmd/komodo/release.go]
 done_when:
@@ -1937,7 +1937,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.27.2] The guard reads the overlay path from mount and never links profile [P: M] [READY]
+#### [TSK-03.27.2] The guard reads the overlay path from mount and never links profile [P: M] [DONE]
 ```yaml
 files: [internal/guard/policy.go, internal/profile/profile.go, internal/profile/profile_test.go]
 done_when:

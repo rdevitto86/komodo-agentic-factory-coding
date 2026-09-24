@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/pr"
 )
 
@@ -113,7 +114,7 @@ func TestShipGroupPushesThroughTheRootsExplicitURL(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	bare, err := git(root, "remote", "get-url", "--push", "origin")
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +125,7 @@ func TestShipGroupPushesThroughTheRootsExplicitURL(t *testing.T) {
 	if !strings.Contains(string(out), "feat/a-group") {
 		t.Fatalf("branch = %s; ShipGroup must push the branch to the URL the root names", out)
 	}
-	if _, err := git(group, "config", "--get", "remote.origin.pushurl"); err == nil {
+	if _, err := git.Run(group, "config", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatal("the group worktree's own config must never gain a pushurl from a ship push")
 	}
 }
@@ -364,7 +365,7 @@ func TestShipCommitsTheStatusItWrote(t *testing.T) {
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
 	_, _ = ShipGroup(root, plan, nil, nil)
-	status, err := git(worktree, "status", "--porcelain")
+	status, err := git.Run(worktree, "status", "--porcelain")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,10 +502,10 @@ func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
 	if err != nil || !strings.Contains(string(out), "feat/a-group") {
 		t.Fatalf("branch = %s, err = %v; ship must land the branch on origin", out, err)
 	}
-	if merge, err := git(worktree, "config", "--get", "branch.feat/a-group.merge"); err != nil || merge != "refs/heads/feat/a-group" {
+	if merge, err := git.Run(worktree, "config", "--get", "branch.feat/a-group.merge"); err != nil || merge != "refs/heads/feat/a-group" {
 		t.Fatalf("upstream merge = %q, err = %v; ship must set the branch's upstream the way push -u does", merge, err)
 	}
-	if refused, err := git(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
+	if refused, err := git.Run(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
 		t.Fatalf("pushurl = %q; ship must leave the worktree's refusal in place", refused)
 	}
 }

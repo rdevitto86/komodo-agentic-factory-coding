@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/pr"
 )
@@ -127,12 +128,12 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		result.Changelog = line
 	}
-	if _, err := git(group, "add", "-A"); err != nil {
+	if _, err := git.Run(group, "add", "-A"); err != nil {
 		return nil, err
 	}
-	if status, _ := git(group, "status", "--porcelain"); status != "" {
+	if status, _ := git.Run(group, "status", "--porcelain"); status != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
-		if _, err := git(group, "commit", "-m", message); err != nil {
+		if _, err := git.Run(group, "commit", "-m", message); err != nil {
 			return nil, err
 		}
 	}
@@ -286,7 +287,7 @@ func ReportBody(plan *Plan, result *ShipResult, waves []*WaveResult) string {
 
 // pushFromWorktree pushes branch to the root's origin URL, past the worktree's refused pushurl, then sets its upstream.
 func pushFromWorktree(root, worktree, branch string) error {
-	pushURL, err := git(root, "remote", "get-url", "--push", "origin")
+	pushURL, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
 	}
@@ -299,8 +300,8 @@ func pushFromWorktree(root, worktree, branch string) error {
 		return fmt.Errorf("git push to origin %s: %v: %s", branch, err, redactURL(strings.TrimSpace(stderr.String()), pushURL))
 	}
 	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
-	if _, err := git(worktree, "fetch", "origin", branch); err == nil {
-		_, _ = git(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
+	if _, err := git.Run(worktree, "fetch", "origin", branch); err == nil {
+		_, _ = git.Run(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
 	}
 	return nil
 }

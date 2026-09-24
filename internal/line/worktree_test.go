@@ -2,6 +2,7 @@ package line
 
 import (
 	"encoding/json"
+	"komodo/internal/git"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,10 +45,10 @@ func TestAddWorktreeLeavesAPushFromTheRootWorking(t *testing.T) {
 	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := git(root, "push", "origin", "main"); err != nil {
+	if _, err := git.Run(root, "push", "origin", "main"); err != nil {
 		t.Fatalf("a push from the root must still work: %v", err)
 	}
-	if _, err := git(root, "config", "--get", "remote.origin.pushurl"); err == nil {
+	if _, err := git.Run(root, "config", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatal("the main checkout's own config must never gain a pushurl from a worktree cut")
 	}
 	out, err := exec.Command("git", "-C", bare, "branch", "--list", "main").CombinedOutput()
@@ -61,14 +62,14 @@ func TestAddWorktreeLeavesAPushFromTheRootWorking(t *testing.T) {
 
 func TestAddWorktreeSkipsTheRefusalWhenCommonConfigHoldsCoreWorktree(t *testing.T) {
 	root, _ := remotedRepo(t)
-	if _, err := git(root, "config", "core.worktree", "."); err != nil {
+	if _, err := git.Run(root, "config", "core.worktree", "."); err != nil {
 		t.Fatal(err)
 	}
 	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
 	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := git(worktree, "config", "--worktree", "--get", "remote.origin.pushurl"); err == nil {
+	if _, err := git.Run(worktree, "config", "--worktree", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatal("a repo whose common config holds core.worktree must skip the pushurl refusal")
 	}
 }
