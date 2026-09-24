@@ -12,8 +12,8 @@ import (
 var (
 	assignRe   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 	durationRe = regexp.MustCompile(`^[0-9]+[a-zA-Z]*$`)
-	// unresolvedVarRe matches a shell variable reference a write target still holds unexpanded.
-	unresolvedVarRe = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
+	// unresolvedVarRe matches a shell variable, positional, or special parameter a target still holds unexpanded.
+	unresolvedVarRe = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*|[0-9@*#!])\}?`)
 	// otherHomeRe matches ~name, another user's home, as opposed to ~/ or a bare ~.
 	otherHomeRe = regexp.MustCompile(`^~[^/\s]`)
 	pathWriters = map[string]bool{
@@ -27,14 +27,19 @@ var (
 		"env": true, "sudo": true, "nice": true, "timeout": true, "xargs": true,
 		"command": true, "exec": true, "nohup": true, "time": true, "stdbuf": true, "builtin": true,
 	}
-	// wrapperValueFlags names, per wrapper, the short flags that consume a separate following token.
+	// wrapperValueFlags names, per wrapper, the flags that consume a separate following token.
 	wrapperValueFlags = map[string]map[string]bool{
 		"sudo":    {"-u": true, "-g": true, "-C": true, "-D": true, "-h": true, "-p": true, "-r": true, "-t": true, "-U": true},
 		"env":     {"-u": true, "-C": true, "--unset": true},
 		"timeout": {"-s": true, "-k": true},
 		"nice":    {"-n": true},
-		"xargs":   {"-I": true, "-L": true, "-n": true, "-P": true, "-d": true, "-E": true, "-s": true, "-a": true},
-		"stdbuf":  {"-i": true, "-o": true, "-e": true},
+		"xargs": {
+			"-I": true, "-L": true, "-n": true, "-P": true, "-d": true, "-E": true, "-s": true, "-a": true,
+			"-J": true, "-R": true, "-S": true,
+			"--max-args": true, "--max-procs": true, "--delimiter": true, "--arg-file": true,
+			"--max-chars": true,
+		},
+		"stdbuf": {"-i": true, "-o": true, "-e": true},
 	}
 	// scrubbedVars are the environment variables a headless run's credential scrub sets.
 	scrubbedVars = map[string]bool{

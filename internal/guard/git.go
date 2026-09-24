@@ -100,6 +100,9 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			targets = positional[1:]
 		} else {
 			targets = []string{branch}
+			if hasAnyCritical(policy) && len(positional) == 1 && unresolvedTarget(positional[0]) {
+				findings = append(findings, fmt.Sprintf("git push %s: the target is only known when it runs; name the branch", positional[0]))
+			}
 		}
 		for _, spec := range targets {
 			target := strings.TrimPrefix(spec, "+")
@@ -108,6 +111,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			}
 			if target == "HEAD" {
 				target = branch
+			}
+			if hasAnyCritical(policy) && unresolvedTarget(spec) {
+				findings = append(findings, fmt.Sprintf("git push %s: the target is only known when it runs; name the branch", spec))
+				continue
 			}
 			if strings.Contains(target, "*") {
 				if hasAnyCritical(policy) {
@@ -144,18 +151,78 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			findings = append(findings, "commit message carries a co-author or generated-by trailer")
 		}
 	case "branch":
-		deleting := false
+		deleting, forcing, moving, renaming := false, false, false, false
 		for _, arg := range rest {
-			if arg == "-d" || arg == "-D" || arg == "--delete" {
+			switch {
+			case arg == "--delete" || longFlagPrefix(arg, "delete"):
 				deleting = true
+			case arg == "--force" || longFlagPrefix(arg, "force"):
+				forcing = true
+			case arg == "--move" || longFlagPrefix(arg, "move"):
+				moving, renaming = true, true
+			case arg == "--copy" || longFlagPrefix(arg, "copy"):
+				moving = true
+			case strings.HasPrefix(arg, "--"):
+				// a long flag with no bearing on deleting, forcing, or moving.
+			case strings.HasPrefix(arg, "-"):
+				// git bundles short flags, so -qf and -f are the same force.
+				for _, r := range arg[1:] {
+					switch r {
+					case 'd', 'D':
+						deleting = true
+					case 'f':
+						forcing = true
+					case 'm', 'M':
+						moving, renaming = true, true
+					case 'c', 'C':
+						moving = true
+					}
+				}
 			}
 		}
-		if !deleting {
+		if !deleting && !forcing && !moving {
 			return findings, branch
 		}
+		var positional []string
 		for _, arg := range rest {
-			if !strings.HasPrefix(arg, "-") && policy.IsCritical(arg) {
-				findings = append(findings, fmt.Sprintf("git branch --delete %s: a critical ref is never deleted", arg))
+			if !strings.HasPrefix(arg, "-") {
+				positional = append(positional, arg)
+			}
+		}
+		switch {
+		case deleting:
+			for _, arg := range positional {
+				switch {
+				case policy.IsCritical(arg):
+					findings = append(findings, fmt.Sprintf("git branch --delete %s: a critical ref is never deleted", arg))
+				case hasAnyCritical(policy) && unresolvedTarget(arg):
+					findings = append(findings, fmt.Sprintf("git branch --delete %s: the target is only known when it runs; name the branch", arg))
+				}
+			}
+		case moving:
+			// A rename moves a critical ref either way; one positional renames the current branch, a copy does not.
+			if renaming && len(positional) == 1 && policy.IsCritical(branch) {
+				findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never moved by hand", branch))
+			}
+			for _, arg := range positional {
+				switch {
+				case policy.IsCritical(arg):
+					findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never moved by hand", arg))
+				case hasAnyCritical(policy) && unresolvedTarget(arg):
+					findings = append(findings, fmt.Sprintf("git branch %s: the target is only known when it runs; name the branch", arg))
+				}
+			}
+		case forcing:
+			// -f without -m/-c names the ref being moved as its first positional; a later one is only a start point.
+			if len(positional) > 0 && policy.IsCritical(positional[0]) {
+				findings = append(findings, fmt.Sprintf("git branch -f %s: a critical ref is never moved by hand", positional[0]))
+			}
+			// An unresolved word anywhere means the real argument positions are not known either.
+			for _, arg := range positional {
+				if hasAnyCritical(policy) && unresolvedTarget(arg) {
+					findings = append(findings, fmt.Sprintf("git branch -f %s: the target is only known when it runs; name the branch", arg))
+					break
+				}
 			}
 		}
 	case "update-ref":
@@ -166,6 +233,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		}
 	case "switch", "checkout":
 		if target, create, ok := switchTarget(rest); ok {
+			if hasAnyCritical(policy) && unresolvedTarget(target) {
+				findings = append(findings, fmt.Sprintf("git %s %s: the target is only known when it runs; name the branch", sub, target))
+				break
+			}
 			if previousBranch(target) && hasAnyCritical(policy) {
 				findings = append(findings, fmt.Sprintf("git %s %s: the previous branch is not tracked; name the branch", sub, target))
 			}
@@ -176,6 +247,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		}
 	case "config":
 		if !hasReadFlag(rest) {
+			findings = append(findings, ".git/config is a host or toolkit config; the guard owns it")
+		}
+	case "remote":
+		if !readOnlyGitRemote(rest) {
 			findings = append(findings, ".git/config is a host or toolkit config; the guard owns it")
 		}
 	}
@@ -268,6 +343,19 @@ func hasAnyCritical(policy Policy) bool {
 	return len(policy.CriticalRefs) > 0
 }
 
+// longFlagPrefix reports whether arg abbreviates a long flag, as git accepts any unambiguous prefix.
+func longFlagPrefix(arg, name string) bool {
+	body, ok := strings.CutPrefix(arg, "--")
+	return ok && len(body) >= 1 && strings.HasPrefix(name, body)
+}
+
+// unresolvedTarget reports whether a push target still holds text a shell only fills in when it
+// runs: an xargs placeholder, a command substitution, a backtick, or an unresolved variable.
+func unresolvedTarget(target string) bool {
+	return strings.Contains(target, "{}") || strings.Contains(target, "$(") ||
+		strings.Contains(target, "`") || unresolvedVarRe.MatchString(target)
+}
+
 // switchTarget finds the ref a switch or checkout targets, and whether it creates a fresh one;
 // a ref before -- and paths is a restore, and -B, -C, and --force-create reset, not create.
 func switchTarget(rest []string) (target string, create bool, ok bool) {
@@ -330,8 +418,24 @@ func readOnlyGit(sub string, rest []string) bool {
 		return len(rest) > 0 && rest[0] == "list"
 	case "config":
 		return hasReadFlag(rest)
+	case "remote":
+		return readOnlyGitRemote(rest)
 	}
 	return readOnlyGitCommands[sub]
+}
+
+// remoteReadCommands are the git remote subcommands that only read.
+var remoteReadCommands = map[string]bool{"show": true, "get-url": true}
+
+// readOnlyGitRemote reports whether a git remote call only reads: bare, -v, show, or get-url.
+func readOnlyGitRemote(rest []string) bool {
+	for _, arg := range rest {
+		if arg == "-v" || arg == "--verbose" {
+			continue
+		}
+		return remoteReadCommands[arg]
+	}
+	return true
 }
 
 // branchListFlags are the git branch flags that only list.

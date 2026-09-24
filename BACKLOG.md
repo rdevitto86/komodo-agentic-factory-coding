@@ -1538,7 +1538,7 @@ base: docs/queue-scorecard-fixes
 ```
 * **Why:** a blind review on 2026-09-24 found `git branch -f main`, `git remote set-url`, and a push whose target is only known at run time all pass the guard. README still describes the landed stacked-PR plan, and `doctor.go` is 916 lines. Five tasks across three directories, so the run is also the first multi-wave headless proof.
 
-#### [TSK-03.20.1] The guard refuses moving or renaming a critical ref with git branch [P: H] [READY]
+#### [TSK-03.20.1] The guard refuses moving or renaming a critical ref with git branch [P: H] [DONE]
 ```yaml
 files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -1553,7 +1553,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.20.2] The guard refuses a git remote call that writes the config [P: H] [READY]
+#### [TSK-03.20.2] The guard refuses a git remote call that writes the config [P: H] [DONE]
 ```yaml
 files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -1568,7 +1568,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.20.3] The guard refuses a push whose target is only known when it runs [P: M] [READY]
+#### [TSK-03.20.3] The guard refuses a push whose target is only known when it runs [P: M] [DONE]
 ```yaml
 files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -1584,7 +1584,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.20.4] README describes the line that exists, not the stack that built it [P: M] [READY]
+#### [TSK-03.20.4] README describes the line that exists, not the stack that built it [P: M] [DONE]
 ```yaml
 files: [README.md]
 done_when:
@@ -1599,7 +1599,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.20.5] Doctor splits into files by concern, doctor.go under 500 lines [P: L] [READY]
+#### [TSK-03.20.5] Doctor splits into files by concern, doctor.go under 500 lines [P: L] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/promises.go, internal/doctor/prune.go, internal/doctor/render.go]
 done_when:
