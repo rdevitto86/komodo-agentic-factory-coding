@@ -37,6 +37,15 @@ func write(name, path string, deny bool, finding string) Case {
 	return Case{Name: name, Tool: "Write", Input: map[string]any{"file_path": path}, Branch: "feat/x", Deny: deny, Finding: finding}
 }
 
+// spawn builds a table row for one agent-spawn call, with or without an isolation option.
+func spawn(name, isolation string, deny bool, finding string) Case {
+	input := map[string]any{}
+	if isolation != "" {
+		input["isolation"] = isolation
+	}
+	return Case{Name: name, Tool: "Agent", Input: input, Branch: "feat/x", Deny: deny, Finding: finding}
+}
+
 // configCases builds one denied row per path the policy protects, so no host is named here.
 func configCases(policy Policy) []Case {
 	var out []Case
@@ -100,6 +109,11 @@ func Table(policy Policy) []Case {
 		bashInMode("push to main is denied in default mode", "git push origin main", "feat/x", ModeDefault, true, "open a pull request"),
 		bashInMode("push to main is allowed in unsafe mode", "git push origin main", "feat/x", ModeUnsafe, false, ""),
 		bashInMode("a switch onto main then a commit is denied under default mode", "git switch main && git commit -m 'feat: thing'", "feat/x", ModeDefault, true, "create a branch first"),
+		bashInMode("force push to main is still denied in unsafe mode", "git push --force origin main", "feat/x", ModeUnsafe, true, "never rewritten"),
+
+		// 1f. A spawn never cuts its own worktree; the line already cut it.
+		spawn("a spawn with isolation set is denied", "worktree", true, "a spawn never cuts its own worktree"),
+		spawn("a spawn without isolation is allowed", "", false, ""),
 
 		// 1d. A global option shifts the subcommand; the guard still finds it.
 		bash("an alias expands to a push on main", "git -c alias.p=push p origin main", "feat/x", true, "open a pull request"),

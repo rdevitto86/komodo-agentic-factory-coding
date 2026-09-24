@@ -109,6 +109,9 @@ func Check(request Request, policy Policy, branch string) Decision {
 			command := stringField(request.ToolInput, tools.CommandField)
 			findings = append(findings, commandFindings(command, root, root, branch, policy)...)
 		}
+		if tools.SpawnTools[request.ToolName] && stringField(request.ToolInput, tools.IsolationField) != "" {
+			findings = append(findings, "a spawn never cuts its own worktree; the line already cut it")
+		}
 	}
 	findings = unique(findings)
 	return Decision{Deny: len(findings) > 0, Findings: findings}

@@ -47,12 +47,14 @@ func outsideTemp(t *testing.T) string {
 func registerFakeHost() {
 	mount.Register(mount.Host{Name: "testhost", ConfigPaths: []string{"~/.testhost/**"}})
 	mount.RegisterGuard("testhost", mount.GuardTools{
-		WriteTools:   map[string]bool{"Write": true, "Edit": true, "MultiEdit": true, "NotebookEdit": true},
-		PathFields:   []string{"file_path", "notebook_path"},
-		ShellTool:    "Bash",
-		CommandField: "command",
-		ConfigPaths:  []string{".testhost/settings.json"},
-		Deny:         fakeDenyPayload,
+		WriteTools:     map[string]bool{"Write": true, "Edit": true, "MultiEdit": true, "NotebookEdit": true},
+		PathFields:     []string{"file_path", "notebook_path"},
+		ShellTool:      "Bash",
+		CommandField:   "command",
+		SpawnTools:     map[string]bool{"Agent": true},
+		IsolationField: "isolation",
+		ConfigPaths:    []string{".testhost/settings.json"},
+		Deny:           fakeDenyPayload,
 	})
 }
 

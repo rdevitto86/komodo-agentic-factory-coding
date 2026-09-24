@@ -1413,7 +1413,7 @@ base: docs/queue-spawn-guard
 ```
 * **Why:** the driving session passed an isolation option to its builder spawn on TG-03.11 and TG-03.15, rule or no rule. The builder worked in a second worktree and the driver ported its diff by hand. A markdown rule cannot hold it; the guard can.
 
-#### [TSK-03.17.1] The guard refuses a spawn that carries an isolation option [P: H] [READY]
+#### [TSK-03.17.1] The guard refuses a spawn that carries an isolation option [P: H] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/claude/guard.go, internal/mount/claude/claude_test.go, internal/guard/guard.go, internal/guard/hook.go, internal/guard/table.go]
 done_when:
