@@ -1278,3 +1278,63 @@ context:
   - "record the machine row's model, seconds, tokens in, and tokens out from .komodo/line.jsonl under a Proof: a local machine carries a station heading in 1.0.0-beta.1"
 type: docs
 ```
+
+### [TG-03.10] The gate lints what a commit carries
+```yaml
+type: fix
+version: 1.0.0-beta.1
+base: main
+```
+* **Why:** the gate's comment lint reads only tracked files, so a new file passes the gate by hand and then fails the pre-commit hook once it is staged. Found on PR #154.
+
+#### [TSK-03.10.1] The comment lint reads untracked files git does not ignore [P: H] [READY]
+```yaml
+files: [cmd/komodo/comments.go, cmd/komodo/cli_test.go]
+done_when:
+  - go test ./cmd/komodo/...
+  - go vet ./cmd/komodo/...
+context:
+  - "trackedFiles lists git ls-files only; list the cached and the untracked files that the exclude rules do not ignore, so the gate and the hook read the same set"
+  - "a test writes an untracked file with a restating doc comment and proves komodo comments check fails on it, and that an ignored file is never read"
+type: fix
+```
+
+### [TG-03.11] A pipe through a filter still feeds a shell
+```yaml
+type: fix
+version: 1.0.0-beta.1
+base: main
+```
+* **Why:** the guard follows stdin into a shell from the command just before it, but not across a longer pipeline. `echo 'git push origin main' | tr a a | sh` passes today.
+
+#### [TSK-03.11.1] Piped input reaches a shell across the whole pipeline [P: C] [READY]
+```yaml
+files: [internal/guard/shell.go, internal/guard/table.go]
+done_when:
+  - go test ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "pipedInput reads only commands[index-1]; walk back through every command that pipes into the next and gather each one's heredocs, here-strings, and echoed words"
+  - "add denied rows for a filter between echo and sh, and for a heredoc through two filters into bash; add an allowed row for a long pipeline that never reaches a shell"
+type: fix
+```
+
+### [TG-03.12] The local mount's own paths are tested
+```yaml
+type: test
+version: 1.0.0-beta.1
+base: main
+```
+* **Why:** the local mount sits at 59.8% statement coverage, the lowest in the repo, and it is the path a local review takes.
+
+#### [TSK-03.12.1] The local mount reaches 80 percent coverage against a fake server [P: M] [READY]
+```yaml
+files: [internal/mount/ollama/ollama_test.go]
+done_when:
+  - go test ./internal/mount/ollama/...
+  - go test -cover ./internal/mount/ollama | grep -Eq 'coverage: (8[0-9]|9[0-9]|100)\.'
+context:
+  - "cover ModelName's order of environment, overlay, server list, and default; Fits and the window override; dialAddress with and without a port; Up against a closed and an open listener"
+  - "test files only, standard library httptest; never reach a real local server"
+type: test
+```
