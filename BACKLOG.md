@@ -1674,7 +1674,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.22.3] The guard reads what an interpreter's inline code runs [P: H] [READY]
+#### [TSK-03.22.3] The guard reads what an interpreter's inline code runs [P: H] [DONE]
 ```yaml
 files: [internal/guard/interp.go, internal/guard/shell.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -1691,7 +1691,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.22.4] A script written and run in one command is read before it runs [P: H] [READY]
+#### [TSK-03.22.4] A script written and run in one command is read before it runs [P: H] [DONE]
 ```yaml
 files: [internal/guard/shell.go, internal/guard/lexer.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -1708,7 +1708,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.22.5] The guard refuses a push to a URL instead of a remote [P: H] [READY]
+#### [TSK-03.22.5] The guard refuses a push to a URL instead of a remote [P: H] [DONE]
 ```yaml
 files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -1905,7 +1905,7 @@ type: refactor
 version: 1.1.0
 base: feat/the-line-builds-wide-picks-the-smallest
 ```
-* **Why:** `line` is 7.4k lines and imports 13 of 19 internal packages. git runs through four private helpers, and `worktree list --porcelain` is parsed three times in doctor alone. The guard runs on every tool call yet links the Ollama client through `profile` only to find the overlay path, which `mount.OverlayPath` already returns.
+* **Why:** `line` is 3,505 source lines and imports 13 of 19 internal packages. git runs through four private helpers, and `worktree list --porcelain` is parsed three times in doctor alone. The guard runs on every tool call yet links the Ollama client through `profile` only to find the overlay path, which `mount.OverlayPath` already returns.
 
 #### [TSK-03.27.1] One git adapter replaces four private helpers [P: M] [READY]
 ```yaml
