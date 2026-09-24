@@ -434,6 +434,52 @@ func TestGhFindingsAllowsAReadOnlyRuleset(t *testing.T) {
 	}
 }
 
+// TestInterpFindingsCatchesAListLiteral proves a git call hidden inside a quoted, bracketed
+// list, not just a plain shell-tokenized string, is still refused.
+func TestInterpFindingsCatchesAListLiteral(t *testing.T) {
+	root := worktree(t)
+	command := `python3 -c 'subprocess.run(["git","push","origin","main"])'`
+	request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
+	if !Check(request, DefaultPolicy(), "feat/x").Deny {
+		t.Fatal("a list-literal git push was not denied")
+	}
+}
+
+// TestInterpFindingsReadsANamedScriptFile proves the guard reads a script operand's own text,
+// without ever running the interpreter.
+func TestInterpFindingsReadsANamedScriptFile(t *testing.T) {
+	root := worktree(t)
+	if err := os.WriteFile(filepath.Join(root, "deploy.js"), []byte(`execSync("git push origin main")`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": "node deploy.js"}}
+	if !Check(request, DefaultPolicy(), "feat/x").Deny {
+		t.Fatal("a script file hiding a git push was not denied")
+	}
+}
+
+// TestInterpFindingsAllowsAScriptWithNoGitOrGh proves a script file that never mentions git or gh stays open.
+func TestInterpFindingsAllowsAScriptWithNoGitOrGh(t *testing.T) {
+	root := worktree(t)
+	if err := os.WriteFile(filepath.Join(root, "script.js"), []byte(`console.log("hello")`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": "node script.js"}}
+	if Check(request, DefaultPolicy(), "feat/x").Deny {
+		t.Fatal("a script with no git or gh mention was denied")
+	}
+}
+
+// TestInterpFindingsAllowsPythonModulePytest proves python -m pytest, whose operand names no
+// worktree file, is never mistaken for a script.
+func TestInterpFindingsAllowsPythonModulePytest(t *testing.T) {
+	root := worktree(t)
+	request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": "python -m pytest"}}
+	if Check(request, DefaultPolicy(), "feat/x").Deny {
+		t.Fatal("python -m pytest was denied")
+	}
+}
+
 func TestHookFailsOpenOnABadPayload(t *testing.T) {
 	var out, errOut strings.Builder
 	if code := Hook(t.TempDir(), strings.NewReader("{not json"), &out, &errOut); code != 0 {

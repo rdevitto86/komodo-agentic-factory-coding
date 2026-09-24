@@ -158,6 +158,8 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		findings = append(findings, gitResult...)
 	case name == "gh":
 		findings = append(findings, ghFindings(kept, s.policy)...)
+	case interpreters[name]:
+		findings = append(findings, interpFindings(kept, cwd, s.root)...)
 	case name == "eval" && len(kept) > 1:
 		var evaluated []string
 		evaluated, branch = s.scan(strings.Join(kept[1:], " "), cwd, branch)
