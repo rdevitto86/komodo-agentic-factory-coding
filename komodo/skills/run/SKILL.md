@@ -28,6 +28,7 @@ You drive one group through the line. The station order lives in the binary. You
 - **One action per turn.** Never run ahead of `step`. Never batch two stations.
 - **A non-zero exit stops the loop.** Report the command and its output. Do not substitute another command.
 - **A spawned agent works in `worktree` and nowhere else.** Every path it is given resolves from there, including its brief and its result.
+- **Never pass an isolation option to a spawn.** The line already cut `worktree`; a second one strands the agent's diff.
 - **A spawned agent returns the JSON its schema names.** Save it where the brief says, then loop. Never finish its work yourself.
 - **Ad hoc work enters at any station.** `komodo brief <task>` on its own is legal, and so is a review with no group.
 - **Report in the accessibility contract** when the loop ends.
