@@ -298,7 +298,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.4.3] Proof: the run skill drives a group end to end [P: C] [READY]
+#### [TSK-03.4.3] Proof: the run skill drives a group end to end [P: C] [DONE]
 ```yaml
 files: [CHANGELOG.md]
 done_when:

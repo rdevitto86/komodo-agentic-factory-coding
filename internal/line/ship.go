@@ -210,8 +210,7 @@ func AppendChangelog(path, version, line string) error {
 	}
 	own := regexp.MustCompile(`(?m)^## ` + regexp.QuoteMeta(version) + `(?: .*)?\n`)
 	if match := own.FindStringIndex(text); match != nil {
-		cut := match[1]
-		return os.WriteFile(path, []byte(text[:cut]+"\n"+line+"\n"+strings.TrimPrefix(text[cut:], "\n")), 0o644)
+		return os.WriteFile(path, []byte(intoSection(text, match[1], line)), 0o644)
 	}
 	entry := fmt.Sprintf("## %s — %s\n\n%s\n", version, time.Now().UTC().Format("2006-01-02"), line)
 	if match := versionHeading.FindStringIndex(text); match != nil {
@@ -224,6 +223,31 @@ func AppendChangelog(path, version, line string) error {
 		text = "# Changelog\n\n"
 	}
 	return os.WriteFile(path, []byte(text+"\n"+entry), 0o644)
+}
+
+var groupBullet = regexp.MustCompile(`(?m)^- \*\*(TG-[^*]+)\*\*.*$`)
+
+// intoSection writes line into the version section starting at start: over the group's own
+// bullet when one exists, else above the first group bullet, else right under the heading.
+func intoSection(text string, start int, line string) string {
+	end := len(text)
+	if next := versionHeading.FindStringIndex(text[start:]); next != nil {
+		end = start + next[0]
+	}
+	section := text[start:end]
+	bullets := groupBullet.FindAllStringSubmatchIndex(section, -1)
+	if own := groupBullet.FindStringSubmatch(line); own != nil {
+		for _, bullet := range bullets {
+			if section[bullet[2]:bullet[3]] == own[1] {
+				return text[:start+bullet[0]] + line + text[start+bullet[1]:]
+			}
+		}
+	}
+	if len(bullets) > 0 {
+		cut := start + bullets[0][0]
+		return text[:cut] + line + "\n" + text[cut:]
+	}
+	return text[:start] + "\n" + line + "\n" + strings.TrimPrefix(text[start:], "\n")
 }
 
 // ReportBody renders the pull request body from the plan and what shipped.
