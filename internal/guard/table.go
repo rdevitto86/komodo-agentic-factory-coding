@@ -120,6 +120,9 @@ func Table(policy Policy) []Case {
 		bash("push to an scp-style remote skips the remote", "git push git@github.com:o/r.git feat/x", "feat/x", true, "skips the remote"),
 		bash("push to a bare repo outside the worktree skips the remote", "git push ../elsewhere.git feat/x", "feat/x", true, "skips the remote"),
 		bash("push to origin by name is not a URL", "git push origin feat/x", "feat/x", false, ""),
+		bash("push to an ssh-config alias in scp form skips the remote", "git push myalias:o/r.git feat/x", "feat/x", true, "skips the remote"),
+		bash("push to a dotless host in scp form skips the remote", "git push localhost:/tmp/r.git feat/x", "feat/x", true, "skips the remote"),
+		bash("a HEAD refspec to origin is not scp form", "git push origin HEAD:feat/x", "feat/x", false, ""),
 		bashInMode("push to a URL is allowed in unsafe mode", "git push https://github.com/o/r.git feat/x", "feat/x", ModeUnsafe, false, ""),
 		// A push target only the shell fills in when it runs is denied without knowing which ref it names.
 		bash("an xargs placeholder is not a known target", "echo main | xargs -I{} git push origin {}", "feat/x", true, "only known when it runs"),

@@ -2020,7 +2020,7 @@ base: main
 ```
 * **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
 
-#### [TSK-03.29.1] A push to an scp-style alias is a push to a URL [P: M] [READY]
+#### [TSK-03.29.1] A push to an scp-style alias is a push to a URL [P: M] [DONE]
 ```yaml
 files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:

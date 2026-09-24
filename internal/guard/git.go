@@ -361,8 +361,21 @@ func isForceFlag(arg string) bool {
 // pushURLFinding is reported when a push destination bypasses the remote the line configured.
 const pushURLFinding = "git push to a URL skips the remote the line configured; push to origin"
 
-// scpLikeRe matches git's scp-style remote form, user@host:path or host.tld:path.
-var scpLikeRe = regexp.MustCompile(`^(?:[\w.-]+@[\w.-]+|[\w-]+(?:\.[\w-]+)+):`)
+// scpForm reports whether git reads a destination as scp form: its first colon comes before any
+// slash. A single letter, a colon, and a slash or backslash is a Windows drive instead.
+func scpForm(dest string) bool {
+	colon := strings.IndexByte(dest, ':')
+	if colon <= 0 {
+		return false
+	}
+	if slash := strings.IndexByte(dest, '/'); slash >= 0 && slash < colon {
+		return false
+	}
+	if colon == 1 && len(dest) > 2 && (dest[2] == '/' || dest[2] == '\\') {
+		return false
+	}
+	return true
+}
 
 // pushesToURL reports whether a push names its repository as a URL, through --repo or the first
 // positional, or through a substitution or variable whose value is only known when it runs.
@@ -384,7 +397,7 @@ func pushesToURL(rest, positional []string, cwd, root string, repoFlag bool) boo
 // isPushURL reports whether a push destination is a URL, scp-style remote, or a path to a repository
 // outside the worktree root: one with a slash or a .git suffix, or a bare name that is a directory.
 func isPushURL(dest, cwd, root string) bool {
-	if strings.Contains(dest, "://") || scpLikeRe.MatchString(dest) {
+	if strings.Contains(dest, "://") || scpForm(dest) {
 		return true
 	}
 	resolved := dest

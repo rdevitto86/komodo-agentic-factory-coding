@@ -123,6 +123,37 @@ func TestPushToAURLSkipsTheRemote(t *testing.T) {
 	}
 }
 
+// TestScpFormReadsTheFirstColonBeforeAnySlash proves an alias or dotless host with a colon is scp form.
+func TestScpFormReadsTheFirstColonBeforeAnySlash(t *testing.T) {
+	cases := map[string]bool{
+		"myalias:o/r.git":      true,
+		"localhost:/tmp/r.git": true,
+		"git@github.com:o/r":   true,
+		"origin":               false,
+		"./dir:name/r.git":     false,
+		"../a/b:c":             false,
+		`C:\repos\r.git`:       false,
+		"C:/repos/r.git":       false,
+		":nohost":              false,
+		"feat/x:main":          false,
+	}
+	for dest, want := range cases {
+		if got := scpForm(dest); got != want {
+			t.Errorf("scpForm(%q) = %v, want %v", dest, got, want)
+		}
+	}
+	root := worktree(t)
+	for _, mode := range []Mode{ModeSafe, ModeDefault} {
+		policy := DefaultPolicy()
+		policy.Mode = mode
+		request := Request{ToolName: "Bash", Cwd: root,
+			ToolInput: map[string]any{"command": "git push myalias:o/r.git feat/x"}}
+		if decision := Check(request, policy, "feat/x"); !decision.Deny || !containsAny(decision.Findings, "skips the remote") {
+			t.Fatalf("mode %q: a push to an scp alias was not denied: %v", mode, decision.Findings)
+		}
+	}
+}
+
 // TestPushToAURLIsAllowedInUnsafeMode proves unsafe mode lets a push name its own destination.
 func TestPushToAURLIsAllowedInUnsafeMode(t *testing.T) {
 	root := worktree(t)
