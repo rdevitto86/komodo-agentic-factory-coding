@@ -703,3 +703,24 @@ func TestHeadlessBypassesPromptsAndDrivesOnTheStandardTier(t *testing.T) {
 		t.Fatalf("the driver did not take the standard tier: %s", joined)
 	}
 }
+
+func TestLeftoversNamesARetiredHookAndAllowRuleOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	settings := `{
+  "hooks": {
+    "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "/h/.claude/hooks/komodo-hooks inject"}]}],
+    "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "/repo/bin/komodo-darwin-arm64 guard"}]}]
+  },
+  "permissions": {"allow": ["Bash(python3 -m komodo:*)", "Bash(go test:*)"]}
+}`
+	if err := os.WriteFile(path, []byte(settings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found := leftoversIn(path)
+	if len(found) != 2 || !strings.Contains(found[0], "SessionStart") || !strings.Contains(found[1], "python3 -m komodo") {
+		t.Fatalf("found = %q; want the prototype hook and allow rule, never the current guard", found)
+	}
+	if got := leftoversIn(filepath.Join(t.TempDir(), "missing.json")); got != nil {
+		t.Fatalf("a missing file = %q, want nothing", got)
+	}
+}

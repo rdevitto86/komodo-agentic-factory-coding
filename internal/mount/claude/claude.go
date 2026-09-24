@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"komodo/internal/detect"
@@ -255,6 +256,7 @@ func init() {
 		Probe:       Probe,
 		Usage:       Usage,
 		Headless:    Headless,
+		Leftovers:   Leftovers,
 	})
 }
 
@@ -266,4 +268,68 @@ func Headless(skill, target string) (string, []string) {
 		prompt += " " + target
 	}
 	return "claude", []string{"-p", prompt, "--permission-mode", "bypassPermissions", "--model", modelFor("standard")}
+}
+
+// retiredCommands are the commands no hook or allow rule in this host's user settings may run.
+var retiredCommands = []string{"komodo-hooks", "python3 -m komodo"}
+
+// Leftovers names each hook and allow rule in this host's user settings that runs a retired command.
+func Leftovers() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return leftoversIn(filepath.Join(home, Dir, "settings.json"))
+}
+
+// leftoversIn reads one settings file and names each hook command and allow rule that runs a retired command.
+func leftoversIn(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+		Permissions struct {
+			Allow []string `json:"allow"`
+		} `json:"permissions"`
+	}
+	if json.Unmarshal(data, &settings) != nil {
+		return nil
+	}
+	events := make([]string, 0, len(settings.Hooks))
+	for event := range settings.Hooks {
+		events = append(events, event)
+	}
+	sort.Strings(events)
+	var found []string
+	for _, event := range events {
+		for _, group := range settings.Hooks[event] {
+			for _, hook := range group.Hooks {
+				if isRetired(hook.Command) {
+					found = append(found, fmt.Sprintf("%s: the %s hook runs the retired %q", path, event, hook.Command))
+				}
+			}
+		}
+	}
+	for _, rule := range settings.Permissions.Allow {
+		if isRetired(rule) {
+			found = append(found, fmt.Sprintf("%s: the allow rule %q names a retired command", path, rule))
+		}
+	}
+	return found
+}
+
+// isRetired reports whether a command or rule names one of the retired prototype commands.
+func isRetired(text string) bool {
+	for _, name := range retiredCommands {
+		if strings.Contains(text, name) {
+			return true
+		}
+	}
+	return false
 }

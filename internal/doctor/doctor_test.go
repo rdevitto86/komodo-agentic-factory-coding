@@ -11,6 +11,8 @@ import (
 
 	"komodo/internal/detect"
 	"komodo/internal/install"
+	"komodo/internal/ledger"
+	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
 )
@@ -559,5 +561,59 @@ func TestCheckRulesetsFlagsARuleThatReachesEveryBranch(t *testing.T) {
 	}
 	if problems := CheckRulesets(t.TempDir(), "main", scoped); len(problems) != 0 {
 		t.Fatalf("a rule scoped to the default branch was flagged: %+v", problems)
+	}
+}
+
+func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
+	const ready = "### [TG-01.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-01.1.1] Do it [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when:\n  - true\n```\n"
+	done := strings.Replace(ready, "[READY]", "[DONE]", 1)
+	root := gitRepo(t)
+	write(t, root, "BACKLOG.md", ready)
+	write(t, root, ".gitignore", "/.komodo/\n")
+	commitAll(t, root, "init")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	worktree := filepath.Join(root, ".komodo", "wt", "TG-01.1")
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run(root, "init", "-q", "--bare", bare)
+	run(root, "remote", "add", "origin", bare)
+	run(root, "push", "-q", "origin", "main")
+	run(root, "worktree", "add", "-q", "-b", "feat/g", worktree, "main")
+	write(t, worktree, "BACKLOG.md", done)
+	commitAll(t, worktree, "ship")
+	write(t, root, "BACKLOG.md", done)
+	state := line.RunState{Run: "r", Group: "TG-01.1", Base: "main", Branch: "feat/g", Worktree: worktree}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	line.Stamp(root, ledger.Entry{Station: "ship", Outcome: "done"})
+
+	if _, err := Prune(root, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != done || !exists(worktree) {
+		t.Fatal("prune settled a run whose branch origin does not hold yet")
+	}
+
+	run(worktree, "push", "-q", "origin", "feat/g:main")
+	got, err := Prune(root, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != ready {
+		t.Fatalf("BACKLOG.md kept its flip; done = %v", got)
+	}
+	if exists(worktree) {
+		t.Fatalf("the shipped worktree survived; done = %v", got)
+	}
+	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/g").Output(); strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("feat/g survived; done = %v", got)
 	}
 }
