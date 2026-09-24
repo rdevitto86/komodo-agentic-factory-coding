@@ -135,3 +135,19 @@ func TestBuildAssetsWritesEveryTarget(t *testing.T) {
 		}
 	}
 }
+
+func TestAPrereleaseSortsBeforeItsReleaseAndByItsNumber(t *testing.T) {
+	ordered := []string{"0.51.0", "1.0.0-alpha.1", "1.0.0-alpha.2", "1.0.0-alpha.10", "1.0.0-beta", "1.0.0", "1.0.1"}
+	for index := 1; index < len(ordered); index++ {
+		if Compare(ordered[index-1], ordered[index]) >= 0 {
+			t.Fatalf("%s should sort before %s", ordered[index-1], ordered[index])
+		}
+	}
+	text := "## 1.0.0 — 2026-09-23\n\n- one\n\n## [1.0.0-alpha.4] — 2026-09-21\n\n- two\n"
+	if drift := Check(text, []string{"v1.0.0-alpha.4"}, []string{"1.0.0"}); len(drift) != 0 {
+		t.Fatalf("drift = %+v", drift)
+	}
+	if got := Latest(text); got != "1.0.0" {
+		t.Fatalf("latest = %s", got)
+	}
+}

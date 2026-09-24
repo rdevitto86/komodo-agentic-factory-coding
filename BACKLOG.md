@@ -4,22 +4,22 @@ Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. I
 
 ---
 
-## [EPIC-03] V2, the assembly line
+## [EPIC-03] 1.0, the assembly line
 *Goal: one static binary is the conveyor and the devices, markdown is everything a model reads, one guard is the only hook, and a model is a machine mounted per host. Two model calls per task, build and review; everything between is deterministic. Claude Code with Ollama is the host today for both Komodo devs; Codex is the exit test. Requirements and design: `README.md`.*
 
-* **Everything lands on PR #103 through a stack.** Each group is one PR based on the group before it and merges into that parent; #103 merges into `main` last and the tag `v2.0.0` is cut then. Branches, bases, and the validation per PR are the README's Pull requests section, and each group below names its own.
+* **Everything lands on PR #103 through a stack.** Each group is one PR based on the group before it and merges into that parent; #103 merges into `main` last and the tag `v1.0.0` is cut then. Branches, bases, and the validation per PR are the README's Pull requests section, and each group below names its own.
 * **Sessions build TG-03.1 through TG-03.4.** The `run` skill runs TG-03.5 and TG-03.6, and TG-03.5 is the proof.
-* **The repo starts clean.** V1 is the tag `v1-final`; the only V1 files here are the markdown TG-03.1 reshapes.
+* **The repo starts clean.** The prototype is the tag `prototype-final`; the only prototype files here are the markdown TG-03.1 reshapes.
 * **Nothing runs on GitHub.** `komodo gate` is the only precheck, mechanical, local, before every commit and push. No workflow directory exists.
-* **No MCP in V2.** Machines, skills, and external dependencies are the swappable parts; a facet's `mcp.json` is reserved for a later pass and nothing reads it.
+* **No MCP in 1.0.** Machines, skills, and external dependencies are the swappable parts; a facet's `mcp.json` is reserved for a later pass and nothing reads it.
 
 ### [TG-03.1] The markdown
 ```yaml
 type: refactor
-version: 2.0.0
+version: 1.0.0-beta.1
 ```
 * **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
-* **PR A:** `refactor/v2-markdown` from `docs/v2-plan`, opened by the session with `gh pr create`. Validated by every `done_when` here, the V1 linter from a scratch worktree of `v1-final` at zero problems, and a human read of `komodo/AGENTS.md` and `komodo/policy.json`. Merges into `docs/v2-plan`.
+* **PR A:** `refactor/v2-markdown` from `docs/v2-plan`, opened by the session with `gh pr create`. Validated by every `done_when` here, the V1 linter from a scratch worktree of `prototype-final` at zero problems, and a human read of `komodo/AGENTS.md` and `komodo/policy.json`. Merges into `docs/v2-plan`.
 
 #### [TSK-03.1.1] Standards become skills at the source [P: C] [DONE]
 ```yaml
@@ -30,7 +30,7 @@ done_when:
   - grep -q '^globs:' komodo/skills/standards-go/SKILL.md
 context:
   - "each komodo/standards/<x>.md moves to komodo/skills/standards-<x>/SKILL.md with frontmatter name, description, and a globs list of the extensions and directories that trigger it; the body does not change"
-  - "the extension map V1 kept in standards.py, see the tag v1-final, moves into that frontmatter and nothing else holds it"
+  - "the extension map V1 kept in standards.py, see the tag prototype-final, moves into that frontmatter and nothing else holds it"
 type: refactor
 ```
 
@@ -44,7 +44,7 @@ done_when:
 context:
   - "a role file carries frontmatter name, tier, tools, session, returns, and a body that is the brief template with the slots task_block, repo_rules, repo_context, context, files, standards, done_when, failure"
   - "tools are the five Komodo verbs read, edit, write, shell, search; a host tool name never appears in a role"
-  - "the JSON schema each worker prompt carried in V1 briefs.py, see the tag v1-final, moves beside the role as <role>.schema.json; the builder's body says to write its result to the path the brief names"
+  - "the JSON schema each worker prompt carried in V1 briefs.py, see the tag prototype-final, moves beside the role as <role>.schema.json; the builder's body says to write its result to the path the brief names"
 type: refactor
 ```
 
@@ -77,9 +77,9 @@ type: refactor
 ### [TG-03.2] The conveyor and the devices
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.0.0-beta.1
 ```
-* **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `v1-final` under `komodo/hooks/src`, are the seed of the module.
+* **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `prototype-final` under `komodo/hooks/src`, are the seed of the module.
 * **PR B:** `feat/v2-conveyor` from `refactor/v2-markdown`, opened by the session. Validated by `komodo gate`, `komodo lint`, `komodo next --json` printing TG-03.3, `komodo brief --dry-run TSK-03.3.1`, `komodo close` on a hand-written result, `komodo step` printing one action, and a human read of one brief. Merges into `refactor/v2-markdown`.
 
 #### [TSK-03.2.1] The Go module, the binary, lint, and the gate [P: C] [DONE]
@@ -91,7 +91,7 @@ done_when:
   - go run ./cmd/komodo lint
   - go run ./cmd/komodo gate
 context:
-  - "go.mod at the repo root, module komodo, Go 1.22, no dependencies outside the standard library; the V1 hook sources at the tag v1-final come in under internal with their tests"
+  - "go.mod at the repo root, module komodo, Go 1.22, no dependencies outside the standard library; the V1 hook sources at the tag prototype-final come in under internal with their tests"
   - "internal/backlog ports tasks.py: parse, lint, list, add, set status, next task id, find backlog at the root or docs; komodo lint and komodo list and komodo add are the first subcommands"
   - "bin/ holds komodo-darwin-arm64, komodo-windows-amd64.exe, komodo-linux-amd64 and MANIFEST.sha256, built with CGO_ENABLED=0, -trimpath, -buildvcs=false, and -ldflags -s -w so a rebuild is byte-identical and each file stays near 3 MB; .gitattributes marks bin/** binary so no diff, brief, or review ever carries their bytes"
   - "komodo gate is the only precheck and runs locally: go vet, go test, the three binaries rebuilt and compared to the manifest, and doctor and guard check once they exist; gate --install writes pre-commit and pre-push for this repo that run it through the platform's binary; no workflow directory, no CI, nothing on GitHub"
@@ -194,7 +194,7 @@ type: feat
 ### [TG-03.3] The guard and the mounts
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.0.0-beta.1
 ```
 * **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
 * **PR C:** `feat/v2-guard-mounts` from `feat/v2-conveyor`, opened by the session. Validated by `komodo gate` with `guard check`, `install --host claude --dry-run`, `komodo doctor` under the budgets with no leak, the probe printing an overlay and no identity, then a real install on this Mac where a session is denied a commit to `main` and allowed `rm` in its worktree. Merges into `feat/v2-conveyor`.
@@ -268,7 +268,7 @@ type: feat
 ### [TG-03.4] The skills and the launcher
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.0.0-beta.1
 ```
 * **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof is one group driven end to end by the skill alone, recorded before anything is deleted.
 * **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping, and a session start with no permission-rule warning. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
@@ -309,7 +309,7 @@ context:
   - "run TG-03.5 under the run skill in a session, committing to this branch; record wall time, tokens in, tokens out, and turns per station from .komodo/line.jsonl, under a Proof: the run skill drives a group heading in the 2.0.0 changelog entry"
   - "the bar is absolute, not comparative: the group finishes inside the launcher's budget, with no human turn between stations and no station run out of the order komodo step gave"
   - "a station the human had to drive means the skill is wrong; fix the skill before TG-03.5 merges"
-  - "there is no V1 baseline: V1 kept run state in the gitignored .komodo/runs and the V2 clean start deleted it, TG-02.4 is not a group at the tag v1-final, and V1 squash-merged one commit per group so no per-group timing survives in history; never re-add the comparison"
+  - "there is no V1 baseline: V1 kept run state in the gitignored .komodo/runs and the V2 clean start deleted it, TG-02.4 is not a group at the tag prototype-final, and V1 squash-merged one commit per group so no per-group timing survives in history; never re-add the comparison"
 type: docs
 ```
 
@@ -329,7 +329,7 @@ type: fix
 ### [TG-03.5] The repo layer and the local machines
 ```yaml
 type: feat
-version: 2.0.0
+version: 1.0.0-beta.1
 base: docs/v2-plan
 ```
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
@@ -449,7 +449,7 @@ type: feat
 ### [TG-03.6] The gate and the exit test
 ```yaml
 type: chore
-version: 2.0.0
+version: 1.0.0-beta.1
 base: docs/v2-plan
 ```
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
@@ -492,11 +492,11 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.4] Changelog 2.0.0 [P: M] [DONE]
+#### [TSK-03.6.4] Changelog 1.0.0 [P: M] [DONE]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
-  - grep -q "## 2.0.0" CHANGELOG.md
+  - grep -q "## 1.0.0" CHANGELOG.md
 depends_on: [TSK-03.6.3, TSK-03.6.5]
 context:
   - "one heading: the line, what was removed, what replaced it, both proofs, the swap proofs"
@@ -602,7 +602,7 @@ type: refactor
 ### [TG-03.7] The sanity pass: safety, correctness, portability
 ```yaml
 type: fix
-version: 2.0.0
+version: 1.0.0-beta.1
 base: docs/v2-plan
 ```
 
@@ -1037,7 +1037,7 @@ context:
 ### [TG-03.8] The line plans what it is handed
 ```yaml
 type: fix
-version: 2.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 

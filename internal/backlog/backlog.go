@@ -34,7 +34,7 @@ var (
 	taskLike     = regexp.MustCompile(`^####\s+\[TSK-`)
 	fenceOpen    = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
 	fenceClose   = regexp.MustCompile("^```\\s*$")
-	versionRe    = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+	versionRe    = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
 	slugRe       = regexp.MustCompile(`[^a-z0-9]+`)
 	commandHint  = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*` +
 		`(!|go|npm|pnpm|bun|npx|python3?|py\b|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|zig|swift` +

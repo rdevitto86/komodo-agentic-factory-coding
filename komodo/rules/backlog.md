@@ -29,7 +29,7 @@ facets: [postgres]  # facet names this task adds to detection
 ## Rules
 - **Priority** is `C`, `H`, `M`, or `L`. **Status** is `REFINEMENT`, `READY`, `IN_PROGRESS`, `BLOCKED`, or `DONE`. The harness rewrites only the status token.
 - **`REFINEMENT`** is a task still being planned: the harness never runs it, never picks its group, and lint does not demand `files` or `done_when`. Promote it to `READY` once both are real.
-- **`version`** is required on every group, as `x.y.z`. It is the changelog heading close-out writes and the tag preflight cuts, so the two can never drift. Groups shipping together share one version.
+- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n` or `x.y.z-beta.n` for a prerelease. It is the changelog heading close-out writes and the tag preflight cuts, so the two can never drift. Groups shipping together share one version.
 - **`base`** is the branch a group cuts from. Omit it and the line uses the remote's default branch, which is wrong for a group stacked on another group's branch.
 - **`files`** lists every path the task will create or edit. Tasks in different directories run in parallel; same directory serializes.
 - **`done_when`** is shell commands that exit zero when the task is done. Never prose. Cover the whole package, not one file.

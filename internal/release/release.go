@@ -37,7 +37,10 @@ func BuildAssets(root, dir string, out io.Writer) ([]string, error) {
 	return paths, nil
 }
 
-var headingRe = regexp.MustCompile(`(?m)^##\s+\[?v?(\d+\.\d+\.\d+)\]?`)
+// semver matches x.y.z with an optional prerelease such as -alpha.1.
+const semver = `\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
+
+var headingRe = regexp.MustCompile(`(?m)^##\s+\[?v?(` + semver + `)\]?`)
 
 // Version is one changelog heading and the lines under it.
 type Version struct {
@@ -76,9 +79,11 @@ func Latest(text string) string {
 	return numbers[0]
 }
 
-// Compare orders two semantic versions, returning -1, 0, or 1.
+// Compare orders two semantic versions, returning -1, 0, or 1; a prerelease sorts before its release.
 func Compare(left, right string) int {
-	a, b := parts(left), parts(right)
+	leftCore, leftPre, _ := strings.Cut(left, "-")
+	rightCore, rightPre, _ := strings.Cut(right, "-")
+	a, b := parts(leftCore), parts(rightCore)
 	for index := 0; index < 3; index++ {
 		if a[index] != b[index] {
 			if a[index] < b[index] {
@@ -87,10 +92,48 @@ func Compare(left, right string) int {
 			return 1
 		}
 	}
+	switch {
+	case leftPre == rightPre:
+		return 0
+	case leftPre == "":
+		return 1
+	case rightPre == "":
+		return -1
+	}
+	return comparePrerelease(leftPre, rightPre)
+}
+
+// comparePrerelease orders two prerelease strings field by field, numbers numerically.
+func comparePrerelease(left, right string) int {
+	a, b := strings.Split(left, "."), strings.Split(right, ".")
+	for index := 0; index < len(a) && index < len(b); index++ {
+		x, xErr := strconv.Atoi(a[index])
+		y, yErr := strconv.Atoi(b[index])
+		switch {
+		case xErr == nil && yErr == nil && x != y:
+			if x < y {
+				return -1
+			}
+			return 1
+		case (xErr == nil) != (yErr == nil):
+			if xErr == nil {
+				return -1
+			}
+			return 1
+		case a[index] != b[index]:
+			return strings.Compare(a[index], b[index])
+		}
+	}
+	switch {
+	case len(a) < len(b):
+		return -1
+	case len(a) > len(b):
+		return 1
+	}
 	return 0
 }
 
-// parts splits a version into its three numbers.
+// parts splits a version core into its three numbers.
 func parts(version string) [3]int {
 	var out [3]int
 	for index, field := range strings.SplitN(version, ".", 3) {
@@ -127,7 +170,7 @@ type Drift struct {
 	Detail  string `json:"detail"`
 }
 
-var versionTag = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
+var versionTag = regexp.MustCompile(`^v?` + semver + `$`)
 
 // Check audits the changelog against the tags and the versions each group declares.
 func Check(changelog string, tags, groupVersions []string) []Drift {
