@@ -391,6 +391,19 @@ func extraCases() []Case {
 		bash("a sed script is not a path", `sed -i '' '/^x$/d' notes.txt`, "feat/x", false, ""),
 		bash("sed -e keeps the file checked", "sed -i -e 's/a/b/' ../outside.txt", "feat/x", true, "outside the worktree"),
 		bash("a descriptor copy is not a file", "go test ./... 2>&1 | tail -5", "feat/x", false, ""),
+
+		// 7. gh api guards a forge write; two writes stay open for the line and the respond skill.
+		bash("api DELETE branch protection", "gh api -X DELETE repos/o/r/branches/main/protection", "feat/x", true, "forge write"),
+		bash("api PUT merge", "gh api -X PUT repos/o/r/pulls/12/merge", "feat/x", true, "forge write"),
+		bash("api --method PATCH ruleset", "gh api --method PATCH repos/o/r/rulesets/1", "feat/x", true, "forge write"),
+		bash("api git refs field write", "gh api repos/o/r/git/refs/heads/main -f sha=x", "feat/x", true, "forge write"),
+		bash("graphql mutation mergePullRequest", `gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'`, "feat/x", true, "forge write"),
+		bash("repo edit default branch", "gh repo edit --default-branch x", "feat/x", true, "forge write"),
+		bash("api pulls read", "gh api repos/o/r/pulls", "feat/x", false, ""),
+		bash("api POST create pr", "gh api -X POST repos/o/r/pulls -f title=x", "feat/x", false, ""),
+		bash("api POST issue comment", "gh api repos/o/r/issues/3/comments -f body=x", "feat/x", false, ""),
+		bash("graphql query no mutation", "gh api graphql -f query='query { viewer { login } }'", "feat/x", false, ""),
+		bash("pr view", "gh pr view 12", "feat/x", false, ""),
 	}
 }
 

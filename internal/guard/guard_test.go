@@ -394,6 +394,46 @@ func TestHookIsSilentOnAnAllowedCall(t *testing.T) {
 	}
 }
 
+// TestGhFindingsRefusesEveryForgeWrite proves the gh denials context describes beyond the table's own rows.
+func TestGhFindingsRefusesEveryForgeWrite(t *testing.T) {
+	root := worktree(t)
+	for _, command := range []string{
+		"gh api --hostname example.com -X POST repos/o/r/pulls -f title=x",
+		"gh ruleset delete 1",
+		"gh repo delete o/r",
+		"gh repo rename new-name",
+		"gh secret set TOKEN --body x",
+		"gh secret delete TOKEN",
+	} {
+		request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
+		if !Check(request, DefaultPolicy(), "feat/x").Deny {
+			t.Errorf("%q was not denied", command)
+		}
+	}
+}
+
+// TestGhFindingsAllowsAnAllowedGraphqlMutation proves a mutation the line and the respond skill
+// need, such as adding a comment, passes even though the query holds the word mutation.
+func TestGhFindingsAllowsAnAllowedGraphqlMutation(t *testing.T) {
+	root := worktree(t)
+	command := `gh api graphql -f query='mutation { addComment(input: {subjectId: "x", body: "y"}) { clientMutationId } }'`
+	request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
+	if Check(request, DefaultPolicy(), "feat/x").Deny {
+		t.Fatal("a mutation the respond skill needs was denied")
+	}
+}
+
+// TestGhFindingsAllowsAReadOnlyRuleset proves gh ruleset list and view stay open.
+func TestGhFindingsAllowsAReadOnlyRuleset(t *testing.T) {
+	root := worktree(t)
+	for _, command := range []string{"gh ruleset list", "gh ruleset view 1"} {
+		request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
+		if Check(request, DefaultPolicy(), "feat/x").Deny {
+			t.Errorf("%q was denied", command)
+		}
+	}
+}
+
 func TestHookFailsOpenOnABadPayload(t *testing.T) {
 	var out, errOut strings.Builder
 	if code := Hook(t.TempDir(), strings.NewReader("{not json"), &out, &errOut); code != 0 {

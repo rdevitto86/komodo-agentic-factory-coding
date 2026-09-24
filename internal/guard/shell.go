@@ -156,8 +156,8 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		var gitResult []string
 		gitResult, branch = gitFindings(kept, branch, cwd, s.policy, stdin)
 		findings = append(findings, gitResult...)
-	case name == "gh" && len(kept) > 2 && kept[1] == "pr" && kept[2] == "merge":
-		findings = append(findings, "gh pr merge: landing is the human's merge button")
+	case name == "gh":
+		findings = append(findings, ghFindings(kept, s.policy)...)
 	case name == "eval" && len(kept) > 1:
 		var evaluated []string
 		evaluated, branch = s.scan(strings.Join(kept[1:], " "), cwd, branch)
