@@ -1,0 +1,148 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+
+	"komodo/internal/detect"
+	"komodo/internal/doctor"
+	"komodo/internal/guard"
+	"komodo/internal/line"
+	"komodo/internal/mount"
+)
+
+// runGuard is the hook on stdin, or the table the gate runs.
+func runGuard(root string, args []string) {
+	if len(args) > 0 && args[0] == "check" {
+		if !guard.Report(root, guard.Load(root, root), os.Stdout) {
+			exit(1)
+		}
+		return
+	}
+	exit(guard.Hook(root, os.Stdin, os.Stdout, os.Stderr))
+}
+
+// runInstall renders this repo's host configuration, or prints what it would change.
+func runInstall(root string, args []string) {
+	set := flag.NewFlagSet("install", flag.ExitOnError)
+	host := set.String("host", mount.Names()[0], "a mount name, several separated by commas, or both")
+	dryRun := set.Bool("dry-run", false, "print what would change and write nothing")
+	_ = set.Parse(args)
+	binary := mount.BinaryPath()
+	var chosen []mount.Host
+	for _, name := range strings.Split(*host, ",") {
+		name = strings.TrimSpace(name)
+		if name == "both" || name == "all" {
+			chosen = chosen[:0]
+			for _, host := range mount.Hosts() {
+				if host.Render != nil {
+					chosen = append(chosen, host)
+				}
+			}
+			break
+		}
+		found, ok := mount.Get(name)
+		if !ok {
+			fail(fmt.Errorf("unknown host %q; mounted: %s", name, strings.Join(mount.Names(), ", ")))
+		}
+		if found.Render == nil {
+			fail(fmt.Errorf("host %q has nothing to install; the binary itself is its mount", name))
+		}
+		chosen = append(chosen, found)
+	}
+	for _, host := range chosen {
+		plan, err := host.Render(root, binary)
+		if err != nil {
+			fail(err)
+		}
+		if *dryRun {
+			plan.Print(os.Stdout)
+			continue
+		}
+		done, err := plan.Apply()
+		if err != nil {
+			fail(err)
+		}
+		for _, action := range done {
+			fmt.Printf("%-7s %s\n", action.Verb, action.Path)
+		}
+		fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
+	}
+}
+
+// runDetect prints the cached repo profile, detecting fresh when the manifests it read have changed.
+func runDetect(root string, args []string) {
+	set := flag.NewFlagSet("detect", flag.ExitOnError)
+	asJSON := set.Bool("json", false, "print JSON")
+	_ = set.Parse(args)
+	found := detect.Load(root)
+	if *asJSON {
+		printJSON(found)
+		return
+	}
+	fmt.Printf("languages: %s\n", listOrNone(found.Languages))
+	fmt.Printf("cloud: %s\n", listOrNone(found.Cloud))
+	fmt.Printf("data: %s\n", listOrNone(found.Data))
+	fmt.Printf("ci: %s\n", listOrNone(found.CI))
+	fmt.Printf("verify: %s\n", stringOrNone(found.Verify))
+	fmt.Printf("compile: %s\n", stringOrNone(found.Compile))
+}
+
+// listOrNone joins a list for display, or names it empty.
+func listOrNone(items []string) string {
+	if len(items) == 0 {
+		return "none"
+	}
+	return strings.Join(items, ", ")
+}
+
+// stringOrNone names an empty command as none.
+func stringOrNone(value string) string {
+	if value == "" {
+		return "none"
+	}
+	return value
+}
+
+// runDoctor audits the repo and, with --prune, clears what a run stranded.
+func runDoctor(root string, args []string) {
+	set := flag.NewFlagSet("doctor", flag.ExitOnError)
+	noGit := set.Bool("no-git", false, "skip the checks that shell out to git")
+	prune := set.Bool("prune", false, "remove stale worktrees, delete merged branches, and settle a run origin has merged")
+	remote := set.Bool("remote", false, "also audit the forge's branch rulesets through gh")
+	asJSON := set.Bool("json", false, "print JSON")
+	_ = set.Parse(args)
+	if *prune {
+		base := line.DefaultBase(root)
+		if state, err := line.LoadRun(root); err == nil && state.Base != "" {
+			base = state.Base
+		}
+		done, err := doctor.Prune(root, base)
+		if err != nil {
+			fail(err)
+		}
+		for _, item := range done {
+			fmt.Println(item)
+		}
+	}
+	problems, err := doctor.Run(root, doctor.Options{NoGit: *noGit, Remote: *remote})
+	if err != nil {
+		fail(err)
+	}
+	if *asJSON {
+		printJSON(problems)
+	} else {
+		for _, problem := range problems {
+			fmt.Printf("%s %s: %s\n", problem.Check, problem.Where, problem.Detail)
+		}
+		for _, note := range doctor.HostLeftovers(root) {
+			fmt.Println("note " + note)
+		}
+		fmt.Printf("%d problem(s)\n", len(problems))
+	}
+	if len(problems) > 0 {
+		exit(1)
+	}
+}

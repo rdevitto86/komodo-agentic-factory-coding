@@ -223,3 +223,46 @@ func TestCommandDropsTheGitEnvironmentAHookSets(t *testing.T) {
 		t.Fatalf("a hook's git variables reached the child: %q", got)
 	}
 }
+
+// TestFuzzChecksCoverEveryTarget proves the gate builds one named check per fuzz target.
+func TestFuzzChecksCoverEveryTarget(t *testing.T) {
+	checks := FuzzChecks(t.TempDir(), "1s")
+	if len(checks) != len(FuzzTargets) {
+		t.Fatalf("checks = %d, targets = %d", len(checks), len(FuzzTargets))
+	}
+	for index, check := range checks {
+		if check.Name != "fuzz "+FuzzTargets[index].Name {
+			t.Fatalf("check %d is named %q", index, check.Name)
+		}
+	}
+}
+
+// TestTestArgsAlwaysRunsEveryPackage proves the race flag never narrows what the gate tests.
+func TestTestArgsAlwaysRunsEveryPackage(t *testing.T) {
+	args := TestArgs()
+	if args[0] != "go" || args[1] != "test" || args[len(args)-1] != "./..." {
+		t.Fatalf("args = %q", args)
+	}
+}
+
+// TestPrePushHookFuzzes proves only the pre-push hook adds the fuzz lane.
+func TestPrePushHookFuzzes(t *testing.T) {
+	if !strings.Contains(hookScript, `"pre-push" ]; then`) || !strings.Contains(hookScript, "gate --fuzz") {
+		t.Fatal("the hook script never fuzzes on push")
+	}
+}
+
+// TestBuildFlagsStampTheChangelogVersionAndCommit proves a build names what it was built from.
+func TestBuildFlagsStampTheChangelogVersionAndCommit(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "CHANGELOG.md"), []byte("# Changelog\n\n## 1.2.3-beta.1 — unreleased\n\n## 1.2.2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	flags := strings.Join(buildFlags(root), " ")
+	if !strings.Contains(flags, "-X main.version=1.2.3-beta.1") || !strings.Contains(flags, "-X main.commit=unknown") {
+		t.Fatalf("flags = %s", flags)
+	}
+	if !strings.Contains(flags, "-trimpath") || !strings.Contains(flags, "-buildvcs=false") {
+		t.Fatalf("flags lost reproducibility: %s", flags)
+	}
+}

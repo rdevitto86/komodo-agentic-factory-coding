@@ -244,16 +244,13 @@ func TestWorktreeRootFindsTheNearestGit(t *testing.T) {
 	}
 }
 
-func TestSplitWordsKeepsQuotedArguments(t *testing.T) {
-	words, err := splitWords(`git commit -m "feat: a thing"`)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestLexWordsKeepsQuotedArguments(t *testing.T) {
+	words := lexWords(`git commit -m "feat: a thing"`)
 	if len(words) != 4 || words[3] != "feat: a thing" {
 		t.Fatalf("words = %q", words)
 	}
-	if _, err := splitWords(`git commit -m "unterminated`); err == nil {
-		t.Fatal("an unterminated quote must error so the caller falls back")
+	if words := lexWords(`git commit -m "unterminated`); len(words) != 4 || words[3] != "unterminated" {
+		t.Fatalf("an unterminated quote runs to the end, got %q", words)
 	}
 }
 
