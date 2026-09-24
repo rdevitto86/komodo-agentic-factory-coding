@@ -9,7 +9,7 @@ import (
 )
 
 // gitFindings refuses the git operations that touch a critical ref, and reports the branch after the call.
-func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin string) ([]string, string) {
+func gitFindings(tokens []string, branch, cwd, root string, policy Policy, stdin string) ([]string, string) {
 	args := tokens[1:]
 	var findings []string
 	var configs []string
@@ -55,6 +55,12 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		if credentialConfigRe.MatchString(name) {
 			findings = append(findings, fmt.Sprintf("git -c %s: hands git a credential the headless run scrubs", entry))
 		}
+		if redirectURLConfigRe.MatchString(name) && normalizeMode(policy.Mode) != ModeUnsafe {
+			findings = append(findings, fmt.Sprintf("git -c %s: a config write sends git to another URL; push to origin", entry))
+		}
+		if hooksPathConfigRe.MatchString(name) {
+			findings = append(findings, fmt.Sprintf("git -c %s: a config write points git at other hooks; the guard owns .git/config", entry))
+		}
 	}
 	if index >= len(args) {
 		return findings, branch
@@ -70,12 +76,28 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 	if elsewhere != "" && !readOnlyGit(sub, rest) {
 		return append(findings, fmt.Sprintf("git -C %s %s: the branch there is not tracked; open a pull request instead", elsewhere, sub)), branch
 	}
+	if noVerifyCommands[sub] && normalizeMode(policy.Mode) != ModeUnsafe && hasNoVerify(sub, rest) {
+		findings = append(findings, fmt.Sprintf("git %s --no-verify skips the gate; fix what it reports instead", sub))
+	}
 	switch sub {
 	case "push":
 		var positional []string
 		deletes := false
 		mirrorFlag := ""
-		for _, arg := range rest {
+		repoFlag := false
+		for index := 0; index < len(rest); index++ {
+			arg := rest[index]
+			if arg == "--repo" || strings.HasPrefix(arg, "--repo=") {
+				repoFlag = true
+				if arg == "--repo" {
+					index++
+				}
+				continue
+			}
+			if pushValueFlags[arg] {
+				index++
+				continue
+			}
 			switch arg {
 			case "--delete", "-d":
 				deletes = true
@@ -95,10 +117,16 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		if mirrorFlag != "" && hasAnyCritical(policy) {
 			findings = append(findings, fmt.Sprintf("git push %s: reaches every ref, including a critical one; open a pull request instead", mirrorFlag))
 		}
+		if normalizeMode(policy.Mode) != ModeUnsafe && pushesToURL(rest, positional, cwd, root, repoFlag) {
+			findings = append(findings, pushURLFinding)
+		}
 		targets := positional
-		if len(positional) > 1 {
+		switch {
+		case repoFlag && len(positional) > 0:
+			// --repo names the repository, so every positional is a refspec.
+		case len(positional) > 1:
 			targets = positional[1:]
-		} else {
+		default:
 			targets = []string{branch}
 			if hasAnyCritical(policy) && len(positional) == 1 && unresolvedTarget(positional[0]) {
 				findings = append(findings, fmt.Sprintf("git push %s: the target is only known when it runs; name the branch", positional[0]))
@@ -257,6 +285,67 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 	return findings, branch
 }
 
+// redirectURLConfigRe matches a -c key that points a remote, or every matching URL, somewhere else.
+var redirectURLConfigRe = regexp.MustCompile(`(?i)^(remote\.[^.]+\.url|url\..+\.(insteadof|pushinsteadof))$`)
+
+// pushValueFlags are push's options whose value is the next word, never the repository or a refspec.
+var pushValueFlags = map[string]bool{
+	"-o": true, "--push-option": true, "--receive-pack": true, "--exec": true,
+}
+
+// hooksPathConfigRe matches a -c or --config-env key that points git at another hooks directory.
+var hooksPathConfigRe = regexp.MustCompile(`(?i)^core\.hookspath$`)
+
+// noVerifyCommands are the git subcommands whose --no-verify skips the gate's own hook.
+var noVerifyCommands = map[string]bool{
+	"commit": true, "merge": true, "push": true, "rebase": true, "am": true, "cherry-pick": true,
+}
+
+// hasNoVerify reports whether rest skips hooks: --no-verify or a prefix git resolves to it, or
+// commit's -n alone or in a short cluster before any option that takes a value.
+func hasNoVerify(sub string, rest []string) bool {
+	for index := 0; index < len(rest); index++ {
+		arg := rest[index]
+		if len(arg) >= len("--no-veri") && strings.HasPrefix("--no-verify", arg) {
+			return true
+		}
+		if sub != "commit" || !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if strings.HasPrefix(arg, "--") {
+			if commitLongValues[arg] {
+				index++
+			}
+			continue
+		}
+		for position, letter := range arg[1:] {
+			if letter == 'n' {
+				return true
+			}
+			if commitValueLetters[letter] {
+				// a bare -m or -F takes the next word, which is never a flag cluster.
+				if position == len(arg)-2 && commitNextWordLetters[letter] {
+					index++
+				}
+				break
+			}
+		}
+	}
+	return false
+}
+
+// commitLongValues are commit's long options whose value is the next word.
+var commitLongValues = map[string]bool{
+	"--message": true, "--file": true, "--reuse-message": true, "--reedit-message": true, "--template": true,
+	"--author": true, "--date": true, "--cleanup": true, "--fixup": true, "--squash": true, "--trailer": true,
+}
+
+// commitNextWordLetters take the next word when bare; -u and -S take only a glued value.
+var commitNextWordLetters = map[rune]bool{'m': true, 'F': true, 'C': true, 'c': true, 't': true}
+
+// commitValueLetters are commit's short options that take the rest of the cluster as their value.
+var commitValueLetters = map[rune]bool{'m': true, 'F': true, 'C': true, 'c': true, 't': true, 'u': true, 'S': true}
+
 // isForceFlag reports whether a push option rewrites the remote's history.
 func isForceFlag(arg string) bool {
 	if arg == "-f" || arg == "--force" || arg == "--force-if-includes" {
@@ -267,6 +356,55 @@ func isForceFlag(arg string) bool {
 	}
 	// A short cluster such as -fu carries the same force.
 	return strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg[1:], "f")
+}
+
+// pushURLFinding is reported when a push destination bypasses the remote the line configured.
+const pushURLFinding = "git push to a URL skips the remote the line configured; push to origin"
+
+// scpLikeRe matches git's scp-style remote form, user@host:path or host.tld:path.
+var scpLikeRe = regexp.MustCompile(`^(?:[\w.-]+@[\w.-]+|[\w-]+(?:\.[\w-]+)+):`)
+
+// pushesToURL reports whether a push names its repository as a URL, through --repo or the first
+// positional, or through a substitution or variable whose value is only known when it runs.
+func pushesToURL(rest, positional []string, cwd, root string, repoFlag bool) bool {
+	for index, arg := range rest {
+		if value, ok := strings.CutPrefix(arg, "--repo="); ok && isPushURL(value, cwd, root) {
+			return true
+		}
+		if arg == "--repo" && index+1 < len(rest) && isPushURL(rest[index+1], cwd, root) {
+			return true
+		}
+	}
+	if len(positional) > 1 && unresolvedTarget(positional[0]) {
+		return true
+	}
+	return len(positional) > 0 && !repoFlag && isPushURL(positional[0], cwd, root)
+}
+
+// isPushURL reports whether a push destination is a URL, scp-style remote, or a path to a repository
+// outside the worktree root: one with a slash or a .git suffix, or a bare name that is a directory.
+func isPushURL(dest, cwd, root string) bool {
+	if strings.Contains(dest, "://") || scpLikeRe.MatchString(dest) {
+		return true
+	}
+	resolved := dest
+	if !filepath.IsAbs(resolved) {
+		if cwd == unresolvedDir {
+			return strings.Contains(dest, "/")
+		}
+		resolved = filepath.Join(cwd, resolved)
+	}
+	resolved = filepath.Clean(resolved)
+	if !strings.Contains(dest, "/") && !strings.HasSuffix(dest, ".git") {
+		if info, err := os.Stat(resolved); err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	if root == "" {
+		root = cwd
+	}
+	root = filepath.Clean(root)
+	return resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator))
 }
 
 // commitMessage composes the text of a commit or merge's own message: every -m paragraph, an

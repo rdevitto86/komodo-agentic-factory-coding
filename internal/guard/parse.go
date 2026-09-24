@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"regexp"
 	"strings"
 )
 
@@ -8,6 +9,8 @@ import (
 type simpleCommand struct {
 	words   []word
 	writes  []string
+	appends map[string]bool
+	inputs  []string
 	stdin   []string
 	pipesTo bool
 }
@@ -44,15 +47,32 @@ func parse(tokens []token) []simpleCommand {
 			switch {
 			case t.doc != nil:
 				current.stdin = append(current.stdin, t.doc.body)
+				if t.doc.expand && bodyExpands(t.doc.body) {
+					current.stdin = append(current.stdin, unknownInput)
+				}
 			case t.text == "<<<":
 				current.stdin = append(current.stdin, target.value)
-			case t.text == "<&" || t.text == "<":
+				if target.expands {
+					current.stdin = append(current.stdin, unknownInput)
+				}
+			case t.text == "<":
+				current.inputs = append(current.inputs, target.value)
+			case t.text == "<&":
 			case t.text == ">&" && isDescriptor(target.value):
 			default:
 				current.writes = append(current.writes, target.value)
+				if t.text == ">>" || t.text == "&>>" {
+					if current.appends == nil {
+						current.appends = map[string]bool{}
+					}
+					current.appends[target.value] = true
+				}
 			}
 		case tokenWord:
-			current.words = append(current.words, expandBraces(t.word)...)
+			for _, expanded := range expandBraces(t.word) {
+				expanded.expands = t.word.expands
+				current.words = append(current.words, expanded)
+			}
 		}
 	}
 	flush(false)
@@ -87,6 +107,14 @@ func isDescriptor(target string) bool {
 
 // maxBraceWords caps how many words one brace expansion may yield, so a hostile pattern cannot explode.
 const maxBraceWords = 256
+
+// bodyExpandsRe matches a parameter an unquoted heredoc expands, such as $HOME or $1.
+var bodyExpandsRe = regexp.MustCompile(`\$[A-Za-z_0-9?@*#!$-]`)
+
+// bodyExpands reports whether an unquoted heredoc body holds a substitution or a parameter the shell fills in.
+func bodyExpands(body string) bool {
+	return len(expansionBodies(body)) > 0 || strings.Contains(body, "`") || bodyExpandsRe.MatchString(body)
+}
 
 // expandBraces expands every unquoted {a,b} list in a word, as bash does before it runs a command.
 func expandBraces(w word) []word {
