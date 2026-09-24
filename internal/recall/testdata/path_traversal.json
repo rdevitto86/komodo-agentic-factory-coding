@@ -1,0 +1,5 @@
+{
+  "file": "internal/files/serve.go",
+  "line": 17,
+  "class": "path-traversal"
+}

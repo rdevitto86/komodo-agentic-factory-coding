@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,9 @@ import (
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
 )
+
+// minRecallCases is the fewest scored cases a recall reading needs before the reviewer trusts it.
+const minRecallCases = 10
 
 // configFile is the host's own config, which is the only place the plan is read from.
 const configFile = ".claude.json"
@@ -110,11 +114,42 @@ func Tiers(plan string, local bool) mount.Tiers {
 	}
 	if local {
 		tiers.Light = mount.Machine{Provider: "ollama", Model: ollama.ModelName()}
-		if mount.LoadOverlay().LocalReviewer {
+		if mount.LoadOverlay().LocalReviewer && reviewerRecalls(ollama.ModelName()) {
 			tiers.Reviewer = mount.Machine{Provider: "ollama", Model: ollama.ModelName()}
 		}
 	}
 	return tiers
+}
+
+// reviewerRecalls reports whether model's recorded recall clears the overlay's bar over enough cases.
+func reviewerRecalls(model string) bool {
+	recall, cases, ok := mount.ReviewerRecall(model)
+	return ok && cases >= minRecallCases && recall >= mount.ReviewerRecallBar()
+}
+
+// ReviewerWhy explains, for the profile's why line, whether the local reviewer's recall moves review
+// to model or leaves it on heavy, the model still carrying that tier.
+func ReviewerWhy(model, heavy string) string {
+	recall, cases, ok := mount.ReviewerRecall(model)
+	if !ok {
+		return fmt.Sprintf("no recall on record for %s; run komodo recall", model)
+	}
+	bar := mount.ReviewerRecallBar()
+	if reviewerRecalls(model) {
+		return fmt.Sprintf("the local reviewer's recall is %.2f over %d cases, at or above %.2f, so review moves to %s",
+			recall, cases, bar, model)
+	}
+	return fmt.Sprintf("the local reviewer's recall is %.2f over %d cases, under %.2f, so review stays on %s",
+		recall, cases, bar, heavy)
+}
+
+// reviewerWhy is ReviewerWhy for the local model and this plan's heavy model, the form the registry calls.
+func reviewerWhy(plan string) string {
+	heavyTier := "heavy"
+	if plan == "pro" {
+		heavyTier = "standard"
+	}
+	return ReviewerWhy(ollama.ModelName(), modelFor(heavyTier))
 }
 
 // modelFor is this host's model for a tier, unless the overlay names another.

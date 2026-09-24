@@ -1,0 +1,5 @@
+{
+  "file": "internal/wallet/account.go",
+  "line": 15,
+  "class": "wrong-comparison-operator"
+}

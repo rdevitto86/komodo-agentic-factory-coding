@@ -1,0 +1,5 @@
+{
+  "file": "internal/gatekeeper/gate.go",
+  "line": 16,
+  "class": "guard-early-return"
+}

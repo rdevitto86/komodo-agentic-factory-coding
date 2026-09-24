@@ -30,6 +30,8 @@ type Host struct {
 	EventsPath  func(root, task string) string
 	// Leftovers names what a retired setup left in the host's user settings, such as a second agent hook.
 	Leftovers func() []string
+	// ReviewerWhy says where review lands and why, when the overlay opts the reviewer onto the local machine.
+	ReviewerWhy func(plan string) string
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.
@@ -301,12 +303,13 @@ func GuardConfigPaths() []string {
 
 // Overlay is the developer's own ~/.komodo/config.json as the mounts read it.
 type Overlay struct {
-	Local         bool              `json:"local"`
-	LocalURL      string            `json:"local_url"`
-	LocalModel    string            `json:"local_model"`
-	LocalWindow   int               `json:"local_window"`
-	LocalReviewer bool              `json:"local_reviewer"`
-	Models        map[string]string `json:"models"`
+	Local               bool              `json:"local"`
+	LocalURL            string            `json:"local_url"`
+	LocalModel          string            `json:"local_model"`
+	LocalWindow         int               `json:"local_window"`
+	LocalReviewer       bool              `json:"local_reviewer"`
+	LocalReviewerRecall float64           `json:"local_reviewer_recall"`
+	Models              map[string]string `json:"models"`
 }
 
 // OverlayPath is where a developer's own overlay lives, or empty when there is no home.
@@ -332,4 +335,44 @@ func LoadOverlay() Overlay {
 // OverlayModel is the model the overlay names for one tier, or empty.
 func OverlayModel(tier string) string {
 	return LoadOverlay().Models[tier]
+}
+
+// defaultReviewerRecallBar is the recall a local reviewer must clear before it takes review.
+const defaultReviewerRecallBar = 0.6
+
+// ReviewerRecallBar is the recall bar the local reviewer must clear, which an overlay may only raise.
+func ReviewerRecallBar() float64 {
+	if bar := LoadOverlay().LocalReviewerRecall; bar > defaultReviewerRecallBar {
+		return bar
+	}
+	return defaultReviewerRecallBar
+}
+
+// RecallPath is where komodo recall writes its scores, beside OverlayPath, or empty with no home.
+func RecallPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".komodo", "recall.json")
+}
+
+// ReviewerRecall reads model's recorded recall and case count from RecallPath, ok false when there is none.
+func ReviewerRecall(model string) (recall float64, cases int, ok bool) {
+	data, err := os.ReadFile(RecallPath())
+	if err != nil {
+		return 0, 0, false
+	}
+	var scores map[string]struct {
+		Recall float64 `json:"recall"`
+		Cases  int     `json:"cases"`
+	}
+	if json.Unmarshal(data, &scores) != nil {
+		return 0, 0, false
+	}
+	score, found := scores[model]
+	if !found {
+		return 0, 0, false
+	}
+	return score.Recall, score.Cases, true
 }

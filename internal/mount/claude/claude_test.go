@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -609,6 +610,18 @@ func TestOllamaTakesTheLightTierAndNeverTheReviewerUnasked(t *testing.T) {
 	}
 }
 
+// writeRecall writes ~/.komodo/recall.json for model with the given recall and case count.
+func writeRecall(t *testing.T, home, model string, recall float64, cases int) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{%q:{"recall":%v,"cases":%d}}`, model, recall, cases)
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "recall.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOverlayMovesTheReviewerToOllamaAndRenamesATier(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -620,6 +633,7 @@ func TestOverlayMovesTheReviewerToOllamaAndRenamesATier(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeRecall(t, home, "coder:7b", 0.8, 15)
 	tiers := Tiers("max_5x", true)
 	if tiers.Reviewer.Provider != "ollama" || tiers.Reviewer.Model != "coder:7b" {
 		t.Fatalf("reviewer = %+v", tiers.Reviewer)
@@ -629,6 +643,75 @@ func TestOverlayMovesTheReviewerToOllamaAndRenamesATier(t *testing.T) {
 	}
 	if got := agentFile(mount.Role{Name: "architect", Tier: "heavy"}, false); !strings.Contains(got, "model: sonnet") {
 		t.Fatalf("the agent file did not carry the overlay's model:\n%s", got)
+	}
+}
+
+func TestNoRecallFileKeepsReviewRemote(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(ollama.ModelEnv, "coder:7b")
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := `{"local_reviewer":true}`
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tiers := Tiers("max_5x", true)
+	if tiers.Reviewer.Provider == "ollama" {
+		t.Fatalf("reviewer moved local with no recall on record: %+v", tiers.Reviewer)
+	}
+}
+
+func TestRecallUnderTenCasesKeepsReviewRemote(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(ollama.ModelEnv, "coder:7b")
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := `{"local_reviewer":true}`
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRecall(t, home, "coder:7b", 0.8, 5)
+	tiers := Tiers("max_5x", true)
+	if tiers.Reviewer.Provider == "ollama" {
+		t.Fatalf("reviewer moved local on 5 cases, under the 10-case floor: %+v", tiers.Reviewer)
+	}
+}
+
+func TestAnOverlayBarAboveTheDefaultKeepsReviewRemote(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(ollama.ModelEnv, "coder:7b")
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := `{"local_reviewer":true,"local_reviewer_recall":0.9}`
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRecall(t, home, "coder:7b", 0.8, 15)
+	tiers := Tiers("max_5x", true)
+	if tiers.Reviewer.Provider == "ollama" {
+		t.Fatalf("reviewer moved local under the overlay's raised bar: %+v", tiers.Reviewer)
+	}
+}
+
+func TestReviewerWhyNamesTheGapOrTheMissingRecord(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if got := ReviewerWhy("coder:7b", "opus"); !strings.Contains(got, "no recall on record for coder:7b") {
+		t.Fatalf("why = %q", got)
+	}
+	writeRecall(t, home, "coder:7b", 0.42, 15)
+	if got := ReviewerWhy("coder:7b", "opus"); !strings.Contains(got, "0.42 over 15 cases") || !strings.Contains(got, "stays on opus") {
+		t.Fatalf("why = %q", got)
+	}
+	writeRecall(t, home, "coder:7b", 0.8, 15)
+	if got := ReviewerWhy("coder:7b", "opus"); !strings.Contains(got, "moves to coder:7b") {
+		t.Fatalf("why = %q", got)
 	}
 }
 

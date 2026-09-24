@@ -257,6 +257,7 @@ func init() {
 		Usage:       Usage,
 		Headless:    Headless,
 		Leftovers:   Leftovers,
+		ReviewerWhy: reviewerWhy,
 	})
 }
 

@@ -230,3 +230,26 @@ func TestPausedFollowsTheWindow(t *testing.T) {
 		t.Fatal("a quiet window paused the run")
 	}
 }
+
+// TestWhyNamesWhereReviewLandsWhenTheOverlayOptsTheReviewerIn checks the mount's reviewer reason reaches the profile.
+func TestWhyNamesWhereReviewLandsWhenTheOverlayOptsTheReviewerIn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	host := fakeHost("h", true, mount.Usage{Plan: "max"}, true)
+	host.ReviewerWhy = func(plan string) string { return "no recall on record for tiny; run komodo recall" }
+	without := SelectWith(t.TempDir(), []mount.Host{host}, true, true)
+	if strings.Contains(without.Why, "recall") {
+		t.Fatalf("why = %q; with local_reviewer unset the reviewer reason stays out", without.Why)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(`{"local": true, "local_reviewer": true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	with := SelectWith(t.TempDir(), []mount.Host{host}, true, true)
+	if !strings.Contains(with.Why, "no recall on record for tiny") {
+		t.Fatalf("why = %q; the mount's reviewer reason must reach the profile", with.Why)
+	}
+}
