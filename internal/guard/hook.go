@@ -60,7 +60,7 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 // hostGuard returns the registered mount whose write or shell tool names this request's tool.
 func hostGuard(toolName string) (mount.GuardTools, bool) {
 	for _, tools := range mount.GuardHosts() {
-		if tools.WriteTools[toolName] || (tools.ShellTool != "" && tools.ShellTool == toolName) {
+		if tools.WriteTools[toolName] || (tools.ShellTool != "" && tools.ShellTool == toolName) || tools.SpawnTools[toolName] {
 			return tools, true
 		}
 	}
