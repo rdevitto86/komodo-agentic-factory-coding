@@ -333,7 +333,8 @@ const pushURLFinding = "git push to a URL skips the remote the line configured; 
 // scpLikeRe matches git's scp-style remote form, user@host:path or host.tld:path.
 var scpLikeRe = regexp.MustCompile(`^(?:[\w.-]+@[\w.-]+|[\w-]+(?:\.[\w-]+)+):`)
 
-// pushesToURL reports whether a push names its repository as a URL, through --repo or as the first positional.
+// pushesToURL reports whether a push names its repository as a URL, through --repo or the first
+// positional, or through a substitution or variable whose value is only known when it runs.
 func pushesToURL(rest, positional []string, cwd string) bool {
 	for index, arg := range rest {
 		if value, ok := strings.CutPrefix(arg, "--repo="); ok && isPushURL(value, cwd) {
@@ -342,6 +343,9 @@ func pushesToURL(rest, positional []string, cwd string) bool {
 		if arg == "--repo" && index+1 < len(rest) && isPushURL(rest[index+1], cwd) {
 			return true
 		}
+	}
+	if len(positional) > 1 && unresolvedTarget(positional[0]) {
+		return true
 	}
 	return len(positional) > 0 && isPushURL(positional[0], cwd)
 }

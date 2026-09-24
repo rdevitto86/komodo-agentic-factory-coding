@@ -21,6 +21,7 @@ type scanner struct {
 	vars   map[string]string
 	writes map[string]scriptWrite
 	seen   int
+	blind  bool
 }
 
 // scriptWrite is what this command line put into one file: the text, or that the guard cannot see it.
@@ -170,7 +171,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		findings = append(findings, pathFindings(target, cwd, s.root, s.policy)...)
 	}
 	if len(cmd.writes) > 0 {
-		s.recordWrites(cmd, cwd, upstream)
+		s.recordWrites(cmd, cwd, strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n"))
 	}
 	tokens := s.expand(cmd.words)
 	for len(tokens) > 0 && reservedWords[tokens[0]] {
@@ -307,7 +308,7 @@ func (s *scanner) sourced(kept []string, cwd, branch, stdin string) ([]string, s
 		file = filepath.Join(cwd, file)
 	}
 	data, err := os.ReadFile(file)
-	if os.IsNotExist(err) && s.createdEarlier() {
+	if (os.IsNotExist(err) && s.createdEarlier()) || (err == nil && s.blind) {
 		return []string{scriptNotVisible}, branch
 	}
 	if err != nil {
@@ -470,23 +471,14 @@ func resolveWritePath(target, cwd string) (string, bool) {
 
 // writeContent is the text a redirect puts into its target: what echo or printf prints, or the
 // stdin a bare cat copies; any other command's output is unknown, since it may transform stdin.
-func writeContent(cmd simpleCommand, upstream []string) (string, bool) {
+func writeContent(cmd simpleCommand, stdin string) (string, bool) {
 	if text, printed, known := echoedText(cmd); printed {
 		return text, known
 	}
 	if len(cmd.words) == 0 {
 		return "", true
 	}
-	if filepath.Base(cmd.words[0].value) != "cat" {
-		return "", false
-	}
-	for _, w := range cmd.words[1:] {
-		if !strings.HasPrefix(w.value, "-") || w.value == "-" {
-			return "", false
-		}
-	}
-	stdin := strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n")
-	if strings.Contains(stdin, unknownInput) {
+	if !passesLiterally(cmd) || strings.Contains(stdin, unknownInput) {
 		return "", false
 	}
 	return stdin, true
@@ -494,8 +486,8 @@ func writeContent(cmd simpleCommand, upstream []string) (string, bool) {
 
 // recordWrites remembers what this line put into each redirect target, so a later read judges that
 // content, not disk; an append adds to what the file already held.
-func (s *scanner) recordWrites(cmd simpleCommand, cwd string, upstream []string) {
-	text, known := writeContent(cmd, upstream)
+func (s *scanner) recordWrites(cmd simpleCommand, cwd, stdin string) {
+	text, known := writeContent(cmd, stdin)
 	for _, target := range cmd.writes {
 		resolved, ok := resolveWritePath(target, cwd)
 		if !ok {
@@ -576,6 +568,49 @@ func (s *scanner) recordOutputWrites(name string, kept []string, cwd string) {
 			s.writes[resolved] = scriptWrite{}
 		}
 	}
+	s.blind = s.blind || writesBlind(name, kept)
+}
+
+// blindGitVerbs are git subcommands that rewrite worktree files the guard never sees.
+var blindGitVerbs = set("checkout", "restore", "switch", "reset", "apply", "am", "pull", "merge",
+	"rebase", "cherry-pick", "stash", "clone", "revert")
+
+// writesBlind reports whether a command rewrites files under names the guard cannot list: curl -O,
+// an archive extract, a patch, or a git call that changes the worktree.
+func writesBlind(name string, kept []string) bool {
+	switch name {
+	case "curl":
+		for _, arg := range kept[1:] {
+			if arg == "--remote-name" || arg == "--remote-name-all" ||
+				(strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg, "O")) {
+				return true
+			}
+		}
+	case "tar", "bsdtar":
+		for index, arg := range kept[1:] {
+			short := strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--")
+			// tar's mode is a dash cluster, or its first word in the old form tar xf a.tgz.
+			if arg == "--extract" || arg == "--get" || ((short || index == 0) && strings.Contains(arg, "x")) {
+				return true
+			}
+		}
+	case "unzip", "patch", "rsync", "scp", "gunzip", "bunzip2", "unxz":
+		return true
+	case "7z", "7za", "7zz":
+		return len(kept) > 1 && (kept[1] == "x" || kept[1] == "e")
+	case "git":
+		for index := 1; index < len(kept); index++ {
+			arg := kept[index]
+			if arg == "-C" || arg == "-c" {
+				index++
+				continue
+			}
+			if !strings.HasPrefix(arg, "-") {
+				return blindGitVerbs[arg]
+			}
+		}
+	}
+	return false
 }
 
 // recordTeeWrites remembers what tee's stdin put into each file it names.
@@ -633,13 +668,16 @@ func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, s
 	if !exists && scriptExtensions[strings.ToLower(filepath.Ext(target))] && s.createdEarlier() {
 		return []string{scriptNotVisible}, branch
 	}
+	if _, recorded := s.recordedWrite(target, cwd); !recorded && ok && s.blind {
+		return []string{scriptNotVisible}, branch
+	}
 	if !ok {
 		return nil, branch
 	}
 	switch interp := shebang(text); {
 	case interp == "" || shells[interp]:
 		return s.scan(text, cwd, branch)
-	case interpreters[interpName(interp)] && hidesGitOrGh(text):
+	case interpreters[interpName(interp)] && hidesGitOrGhInFile(text):
 		return []string{interpreterHidesGit}, branch
 	}
 	return nil, branch
