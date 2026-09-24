@@ -19,11 +19,21 @@ type scanner struct {
 	policy Policy
 	depth  int
 	vars   map[string]string
+	writes map[string]scriptWrite
 }
+
+// scriptWrite is what this command line put into one file: the text, or that the guard cannot see it.
+type scriptWrite struct {
+	text  string
+	known bool
+}
+
+// scriptNotVisible is the finding an unknown write earns when the same line tries to read it back.
+const scriptNotVisible = "a script written and run in one command is not visible to the guard; write it, then run it in a second call"
 
 // commandFindings returns every reason to refuse one shell command.
 func commandFindings(command, root, cwd, branch string, policy Policy) []string {
-	s := &scanner{root: root, policy: policy, vars: map[string]string{}}
+	s := &scanner{root: root, policy: policy, vars: map[string]string{}, writes: map[string]scriptWrite{}}
 	findings, _ := s.scan(command, cwd, branch)
 	return findings
 }
@@ -92,6 +102,9 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	for _, target := range cmd.writes {
 		findings = append(findings, pathFindings(target, cwd, s.root, s.policy)...)
 	}
+	if len(cmd.writes) > 0 {
+		s.recordWrites(cmd, cwd, upstream)
+	}
 	tokens := s.expand(cmd.words)
 	for len(tokens) > 0 && reservedWords[tokens[0]] {
 		tokens = tokens[1:]
@@ -152,6 +165,9 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		findings = append(findings, ddPaths(kept, cwd, s.root, s.policy)...)
 	case pathWriters[name] || isConditionalWriter(name, kept):
 		findings = append(findings, writerPaths(name, kept, cwd, s.root, s.policy)...)
+		if name == "tee" {
+			s.recordTeeWrites(kept, cwd, stdin)
+		}
 	case name == "git":
 		var gitResult []string
 		gitResult, branch = gitFindings(kept, branch, cwd, s.policy, stdin)
@@ -159,13 +175,17 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	case name == "gh":
 		findings = append(findings, ghFindings(kept, s.policy)...)
 	case interpreters[name]:
-		findings = append(findings, interpFindings(kept, cwd, s.root)...)
+		findings = append(findings, s.interpScriptFindings(kept, cwd)...)
 	case name == "eval" && len(kept) > 1:
 		var evaluated []string
 		evaluated, branch = s.scan(strings.Join(kept[1:], " "), cwd, branch)
 		findings = append(findings, evaluated...)
 	case shells[name]:
 		findings = append(findings, s.shell(kept, cwd, branch, stdin)...)
+	case looksLikeScriptPath(kept[0]):
+		var scriptFindings []string
+		scriptFindings, branch = s.scriptCommandFindings(kept[0], cwd, branch)
+		findings = append(findings, scriptFindings...)
 	}
 	return findings, cwd, branch
 }
@@ -194,6 +214,12 @@ func (s *scanner) sourced(kept []string, cwd, branch, stdin string) ([]string, s
 			return nil, branch
 		}
 		return s.scan(stdin, cwd, branch)
+	}
+	if write, found := s.recordedWrite(kept[1], cwd); found {
+		if !write.known {
+			return []string{scriptNotVisible}, branch
+		}
+		return s.scan(write.text, cwd, branch)
 	}
 	file := expandHome(kept[1])
 	if !filepath.IsAbs(file) {
@@ -344,6 +370,155 @@ func lexWords(text string) []string {
 
 // xargsInput stands in for the words xargs feeds its command at run time, whatever its placeholder.
 const xargsInput = "{}"
+
+// resolveWritePath resolves a redirect or tee target against cwd the same way pathFindings does,
+// reporting false when the guard cannot resolve it.
+func resolveWritePath(target, cwd string) (string, bool) {
+	if target == "" || unresolvedVarRe.MatchString(target) || otherHomeRe.MatchString(target) {
+		return "", false
+	}
+	resolved := expandHome(target)
+	if !filepath.IsAbs(resolved) {
+		if cwd == unresolvedDir {
+			return "", false
+		}
+		resolved = filepath.Join(cwd, resolved)
+	}
+	return filepath.Clean(resolved), true
+}
+
+// writeContent is the text a command's own echoed or printed words, or its heredoc and piped
+// stdin, put into whatever it redirects to; unknown when a command such as curl hides its output.
+func writeContent(cmd simpleCommand, upstream []string) (string, bool) {
+	if len(cmd.words) > 0 {
+		if name := filepath.Base(cmd.words[0].value); name == "echo" || name == "printf" {
+			var args []string
+			for _, w := range cmd.words[1:] {
+				if !strings.HasPrefix(w.value, "-") {
+					args = append(args, w.value)
+				}
+			}
+			return strings.Join(args, " "), true
+		}
+	}
+	if stdin := strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n"); stdin != "" {
+		return stdin, true
+	}
+	return "", false
+}
+
+// recordWrites remembers what this command line put into each of its redirect targets, so a
+// later read of the same file in the same line judges the write's real content, not disk.
+func (s *scanner) recordWrites(cmd simpleCommand, cwd string, upstream []string) {
+	text, known := writeContent(cmd, upstream)
+	for _, target := range cmd.writes {
+		if resolved, ok := resolveWritePath(target, cwd); ok {
+			s.writes[resolved] = scriptWrite{text: text, known: known}
+		}
+	}
+}
+
+// recordTeeWrites remembers what tee's stdin put into each file it names.
+func (s *scanner) recordTeeWrites(kept []string, cwd, stdin string) {
+	known := stdin != ""
+	for _, token := range kept[1:] {
+		if token == "" || strings.HasPrefix(token, "-") {
+			continue
+		}
+		if resolved, ok := resolveWritePath(token, cwd); ok {
+			s.writes[resolved] = scriptWrite{text: stdin, known: known}
+		}
+	}
+}
+
+// recordedWrite returns what this command line already wrote to target, when the guard saw it happen.
+func (s *scanner) recordedWrite(target, cwd string) (scriptWrite, bool) {
+	resolved, ok := resolveWritePath(target, cwd)
+	if !ok {
+		return scriptWrite{}, false
+	}
+	write, found := s.writes[resolved]
+	return write, found
+}
+
+// interpScriptFindings checks an interpreter's named script, reading a write this line already
+// recorded before ever reading the file from disk.
+func (s *scanner) interpScriptFindings(kept []string, cwd string) []string {
+	if _, ok := inlineCode(kept); ok {
+		return interpFindings(kept, cwd, s.root)
+	}
+	operand := scriptOperand(kept)
+	if operand == "" {
+		return interpFindings(kept, cwd, s.root)
+	}
+	write, found := s.recordedWrite(operand, cwd)
+	if !found {
+		return interpFindings(kept, cwd, s.root)
+	}
+	if !write.known {
+		return []string{scriptNotVisible}
+	}
+	if hidesGitOrGh(write.text) {
+		return []string{interpreterHidesGit}
+	}
+	return nil
+}
+
+// looksLikeScriptPath reports whether a command names itself by a path, as ./x.sh or /a/x.sh do,
+// rather than a bare name a shell resolves through PATH.
+func looksLikeScriptPath(target string) bool {
+	return strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") ||
+		strings.HasPrefix(target, "/") || strings.HasPrefix(target, "~/")
+}
+
+// scriptCommandFindings checks a command run by its own path: a write this line already recorded,
+// or an existing file that opens with a sh, bash, or zsh shebang, scanned the way sh name would be.
+func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, string) {
+	if write, found := s.recordedWrite(target, cwd); found {
+		if !write.known {
+			return []string{scriptNotVisible}, branch
+		}
+		return s.scan(write.text, cwd, branch)
+	}
+	if text, ok := readShellScriptFile(target, cwd); ok {
+		return s.scan(text, cwd, branch)
+	}
+	return nil, branch
+}
+
+// readShellScriptFile reads target relative to cwd and returns its text, only when it opens with
+// a sh, bash, or zsh shebang.
+func readShellScriptFile(target, cwd string) (string, bool) {
+	file := expandHome(target)
+	if !filepath.IsAbs(file) {
+		if cwd == unresolvedDir {
+			return "", false
+		}
+		file = filepath.Join(cwd, file)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return "", false
+	}
+	text := string(data)
+	line, _, _ := strings.Cut(text, "\n")
+	rest, ok := strings.CutPrefix(line, "#!")
+	if !ok {
+		return "", false
+	}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return "", false
+	}
+	interp := filepath.Base(fields[0])
+	if interp == "env" && len(fields) > 1 {
+		interp = filepath.Base(fields[1])
+	}
+	if !shells[interp] {
+		return "", false
+	}
+	return text, true
+}
 
 // unwrapCommand drops a wrapper's own name, assignments, flags, and duration argument to reach the real command.
 // It also reports every assignment that overrides a scrubbed variable, since those disappear with the flag.
