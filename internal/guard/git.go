@@ -101,7 +101,7 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		if mirrorFlag != "" && hasAnyCritical(policy) {
 			findings = append(findings, fmt.Sprintf("git push %s: reaches every ref, including a critical one; open a pull request instead", mirrorFlag))
 		}
-		if len(positional) > 0 && normalizeMode(policy.Mode) != ModeUnsafe && isPushURL(positional[0], cwd) {
+		if normalizeMode(policy.Mode) != ModeUnsafe && pushesToURL(rest, positional, cwd) {
 			findings = append(findings, pushURLFinding)
 		}
 		targets := positional
@@ -274,22 +274,30 @@ var noVerifyCommands = map[string]bool{
 	"commit": true, "merge": true, "push": true, "rebase": true, "am": true, "cherry-pick": true,
 }
 
-// hasNoVerify reports whether rest skips hooks: --no-verify anywhere, or commit's -n alone or
-// bundled into a short cluster such as -an; push's -n is --dry-run and merge's is --no-stat.
+// hasNoVerify reports whether rest skips hooks: --no-verify or a prefix git resolves to it, or
+// commit's -n alone or in a short cluster before any option that takes a value.
 func hasNoVerify(sub string, rest []string) bool {
 	for _, arg := range rest {
-		if arg == "--no-verify" {
+		if len(arg) >= len("--no-veri") && strings.HasPrefix("--no-verify", arg) {
 			return true
 		}
 		if sub != "commit" || !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
 			continue
 		}
-		if strings.ContainsRune(arg[1:], 'n') {
-			return true
+		for _, letter := range arg[1:] {
+			if letter == 'n' {
+				return true
+			}
+			if commitValueLetters[letter] {
+				break
+			}
 		}
 	}
 	return false
 }
+
+// commitValueLetters are commit's short options that take the rest of the cluster as their value.
+var commitValueLetters = map[rune]bool{'m': true, 'F': true, 'C': true, 'c': true, 't': true, 'u': true, 'S': true}
 
 // isForceFlag reports whether a push option rewrites the remote's history.
 func isForceFlag(arg string) bool {
@@ -306,8 +314,21 @@ func isForceFlag(arg string) bool {
 // pushURLFinding is reported when a push destination bypasses the remote the line configured.
 const pushURLFinding = "git push to a URL skips the remote the line configured; push to origin"
 
-// scpLikeRe matches git's scp-style remote form: user@host:path.
-var scpLikeRe = regexp.MustCompile(`^[\w.-]+@[\w.-]+:`)
+// scpLikeRe matches git's scp-style remote form, user@host:path or host.tld:path.
+var scpLikeRe = regexp.MustCompile(`^(?:[\w.-]+@[\w.-]+|[\w-]+(?:\.[\w-]+)+):`)
+
+// pushesToURL reports whether a push names its repository as a URL, through --repo or as the first positional.
+func pushesToURL(rest, positional []string, cwd string) bool {
+	for index, arg := range rest {
+		if value, ok := strings.CutPrefix(arg, "--repo="); ok && isPushURL(value, cwd) {
+			return true
+		}
+		if arg == "--repo" && index+1 < len(rest) && isPushURL(rest[index+1], cwd) {
+			return true
+		}
+	}
+	return len(positional) > 0 && isPushURL(positional[0], cwd)
+}
 
 // isPushURL reports whether a push destination is a URL, scp-style remote, or a path to a bare
 // repo outside cwd, any of which reaches a repository the remote's pushurl does not.

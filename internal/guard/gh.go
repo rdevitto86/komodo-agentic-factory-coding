@@ -8,7 +8,7 @@ import (
 
 // ghFindings refuses a gh call that writes to the forge, since a forge write goes through the
 // line, never an agent; it stays silent on every read and on the two writes the line itself needs.
-func ghFindings(kept []string, policy Policy) []string {
+func ghFindings(kept []string) []string {
 	if len(kept) < 2 {
 		return nil
 	}
@@ -41,18 +41,19 @@ var pullsCreateRe = regexp.MustCompile(`^/?repos/[^/]+/[^/]+/pulls(\?.*)?$`)
 // commentsCreateRe matches the POSTs the respond skill needs: an issue, a pull request, or a reply comment.
 var commentsCreateRe = regexp.MustCompile(`^/?repos/[^/]+/[^/]+/(issues/[0-9]+/comments|pulls/[0-9]+/comments|comments/[0-9]+/replies)(\?.*)?$`)
 
-// sensitiveEndpoints names the parts of the forge no gh api call reaches, whatever its method.
-var sensitiveEndpoints = []string{
-	"protection", "rulesets", "merge", "git/refs", "hooks", "keys", "secrets", "collaborators",
+// sensitiveSegments names the path segments of the forge no gh api call reaches, whatever its method.
+var sensitiveSegments = map[string]bool{
+	"protection": true, "rulesets": true, "merge": true, "merges": true, "hooks": true,
+	"keys": true, "secrets": true, "collaborators": true,
 }
 
 // apiFindings refuses a gh api call that writes, reaches a sensitive endpoint, or crosses to another host.
 func apiFindings(args []string) []string {
 	var method, hostname, endpoint, graphqlQuery string
-	hasFieldFlag := false
+	hasFieldFlag, queryFromFile := false, false
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
-		name, value, hasEq := strings.Cut(arg, "=")
+		name, value, hasEq := splitGhFlag(arg)
 		switch {
 		case name == "-X" || name == "--method":
 			method, index = nextValue(args, index, value, hasEq)
@@ -64,9 +65,11 @@ func apiFindings(args []string) []string {
 			field, index = nextValue(args, index, value, hasEq)
 			if key, val, ok := strings.Cut(field, "="); ok && key == "query" {
 				graphqlQuery += val
+				queryFromFile = queryFromFile || strings.HasPrefix(val, "@")
 			}
 		case name == "--input":
 			hasFieldFlag = true
+			queryFromFile = true
 			if !hasEq && index+1 < len(args) {
 				index++
 			}
@@ -81,6 +84,9 @@ func apiFindings(args []string) []string {
 		}
 	}
 	if endpoint == "graphql" {
+		if queryFromFile {
+			return []string{"gh api graphql: a query read from a file is not visible to the guard; pass it with -f query="}
+		}
 		if strings.Contains(strings.ToLower(graphqlQuery), "mutation") && !onlyAllowedMutations(graphqlQuery) {
 			return []string{"gh api graphql: a forge write goes through the line, never an agent"}
 		}
@@ -106,6 +112,21 @@ func apiFindings(args []string) []string {
 	return nil
 }
 
+// ghGluedFlags are gh api's short options that take a value, which pflag also reads glued, as -XDELETE.
+var ghGluedFlags = map[byte]bool{'X': true, 'f': true, 'F': true, 'H': true, 'p': true, 'q': true, 't': true}
+
+// splitGhFlag splits one gh api argument into its flag and value, reading the glued short form
+// -XDELETE or -fbody=x the way pflag does, and --name=value the usual way.
+func splitGhFlag(arg string) (name, value string, hasValue bool) {
+	if len(arg) > 2 && arg[0] == '-' && arg[1] != '-' && ghGluedFlags[arg[1]] {
+		return arg[:2], strings.TrimPrefix(arg[2:], "="), true
+	}
+	if strings.HasPrefix(arg, "--") {
+		return strings.Cut(arg, "=")
+	}
+	return arg, "", false
+}
+
 // nextValue reads a flag's value from its =value form, or from the word that follows it.
 func nextValue(args []string, index int, value string, hasEq bool) (string, int) {
 	if hasEq {
@@ -117,11 +138,19 @@ func nextValue(args []string, index int, value string, hasEq bool) (string, int)
 	return "", index
 }
 
-// endpointNamesSensitivePart reports whether an endpoint touches a part of the forge no call reaches.
+// endpointNamesSensitivePart reports whether an endpoint touches a part of the forge no call
+// reaches, matching whole path segments after repos/<owner>/<repo>, so a repo's own name never counts.
 func endpointNamesSensitivePart(endpoint string) bool {
-	lower := strings.ToLower(endpoint)
-	for _, part := range sensitiveEndpoints {
-		if strings.Contains(lower, part) {
+	path, _, _ := strings.Cut(strings.ToLower(strings.TrimPrefix(endpoint, "/")), "?")
+	segments := strings.Split(path, "/")
+	if len(segments) >= 3 && segments[0] == "repos" {
+		segments = segments[3:]
+	}
+	for index, segment := range segments {
+		if sensitiveSegments[segment] {
+			return true
+		}
+		if segment == "git" && index+1 < len(segments) && segments[index+1] == "refs" {
 			return true
 		}
 	}

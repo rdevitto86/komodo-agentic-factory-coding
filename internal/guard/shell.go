@@ -20,6 +20,7 @@ type scanner struct {
 	depth  int
 	vars   map[string]string
 	writes map[string]scriptWrite
+	seen   int
 }
 
 // scriptWrite is what this command line put into one file: the text, or that the guard cannot see it.
@@ -79,25 +80,46 @@ func pipedInput(commands []simpleCommand, index int) []string {
 	return input
 }
 
-// upstreamWords is one command's own contribution to piped input: its heredocs, here-strings, and echoed words.
+// upstreamWords is one command's own contribution to piped input: its heredocs, here-strings, and
+// echoed words, plus unknownInput when an escape or a format hides what it really prints.
 func upstreamWords(cmd simpleCommand) []string {
 	input := append([]string{}, cmd.stdin...)
-	if len(cmd.words) > 1 {
-		if name := filepath.Base(cmd.words[0].value); name == "echo" || name == "printf" {
-			var args []string
-			for _, w := range cmd.words[1:] {
-				if !strings.HasPrefix(w.value, "-") {
-					args = append(args, w.value)
-				}
-			}
-			input = append(input, strings.Join(args, " "))
+	if text, printed, known := echoedText(cmd); printed {
+		input = append(input, text)
+		if !known {
+			input = append(input, unknownInput)
 		}
 	}
 	return input
 }
 
+// unknownInput stands in for piped text the guard cannot see, such as printf output with an escape.
+const unknownInput = "\x00unknown input\x00"
+
+// echoedText is what an echo or printf prints, reporting whether the command is one and whether
+// its output is literal; a backslash escape, or printf's % format, hides the real text.
+func echoedText(cmd simpleCommand) (text string, printed, known bool) {
+	if len(cmd.words) < 2 {
+		return "", false, false
+	}
+	name := filepath.Base(cmd.words[0].value)
+	if name != "echo" && name != "printf" {
+		return "", false, false
+	}
+	var args []string
+	for _, w := range cmd.words[1:] {
+		if !strings.HasPrefix(w.value, "-") {
+			args = append(args, w.value)
+		}
+	}
+	text = strings.Join(args, " ")
+	known = !strings.Contains(text, "\\") && !(name == "printf" && strings.Contains(text, "%"))
+	return text, true, known
+}
+
 // command checks one simple command and returns its findings, the directory after it, and the branch.
 func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch string) ([]string, string, string) {
+	s.seen++
 	var findings []string
 	for _, target := range cmd.writes {
 		findings = append(findings, pathFindings(target, cwd, s.root, s.policy)...)
@@ -134,6 +156,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	}
 	stdin := strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n")
 	name := commandName(kept[0])
+	s.recordOutputWrites(name, kept, cwd)
 	switch {
 	case name == "cd":
 		cwd = changeDir(kept, cwd)
@@ -165,6 +188,9 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		findings = append(findings, ddPaths(kept, cwd, s.root, s.policy)...)
 	case pathWriters[name] || isConditionalWriter(name, kept):
 		findings = append(findings, writerPaths(name, kept, cwd, s.root, s.policy)...)
+		if interpreters[name] {
+			findings = append(findings, s.interpScriptFindings(kept, cwd)...)
+		}
 		if name == "tee" {
 			s.recordTeeWrites(kept, cwd, stdin)
 		}
@@ -173,7 +199,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		gitResult, branch = gitFindings(kept, branch, cwd, s.policy, stdin)
 		findings = append(findings, gitResult...)
 	case name == "gh":
-		findings = append(findings, ghFindings(kept, s.policy)...)
+		findings = append(findings, ghFindings(kept)...)
 	case interpreters[name]:
 		findings = append(findings, s.interpScriptFindings(kept, cwd)...)
 	case name == "eval" && len(kept) > 1:
@@ -200,6 +226,8 @@ func (s *scanner) shell(kept []string, cwd, branch, stdin string) []string {
 	case operand != "":
 		nested, _ := s.sourced([]string{kept[0], operand}, cwd, branch, stdin)
 		return nested
+	case strings.Contains(stdin, unknownInput):
+		return []string{scriptNotVisible}
 	case stdin != "":
 		nested, _ := s.scan(stdin, cwd, branch)
 		return nested
@@ -212,6 +240,9 @@ func (s *scanner) sourced(kept []string, cwd, branch, stdin string) ([]string, s
 	if len(kept) < 2 || kept[1] == "/dev/stdin" || kept[1] == "-" {
 		if stdin == "" {
 			return nil, branch
+		}
+		if strings.Contains(stdin, unknownInput) {
+			return []string{scriptNotVisible}, branch
 		}
 		return s.scan(stdin, cwd, branch)
 	}
@@ -229,6 +260,9 @@ func (s *scanner) sourced(kept []string, cwd, branch, stdin string) ([]string, s
 		file = filepath.Join(cwd, file)
 	}
 	data, err := os.ReadFile(file)
+	if os.IsNotExist(err) && s.createdEarlier() {
+		return []string{scriptNotVisible}, branch
+	}
 	if err != nil {
 		return nil, branch
 	}
@@ -390,30 +424,82 @@ func resolveWritePath(target, cwd string) (string, bool) {
 // writeContent is the text a command's own echoed or printed words, or its heredoc and piped
 // stdin, put into whatever it redirects to; unknown when a command such as curl hides its output.
 func writeContent(cmd simpleCommand, upstream []string) (string, bool) {
-	if len(cmd.words) > 0 {
-		if name := filepath.Base(cmd.words[0].value); name == "echo" || name == "printf" {
-			var args []string
-			for _, w := range cmd.words[1:] {
-				if !strings.HasPrefix(w.value, "-") {
-					args = append(args, w.value)
-				}
-			}
-			return strings.Join(args, " "), true
-		}
+	if text, printed, known := echoedText(cmd); printed {
+		return text, known
 	}
-	if stdin := strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n"); stdin != "" {
+	stdin := strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n")
+	if stdin != "" && !strings.Contains(stdin, unknownInput) {
 		return stdin, true
 	}
 	return "", false
 }
 
-// recordWrites remembers what this command line put into each of its redirect targets, so a
-// later read of the same file in the same line judges the write's real content, not disk.
+// recordWrites remembers what this line put into each redirect target, so a later read judges that
+// content, not disk; an append adds to what the file already held.
 func (s *scanner) recordWrites(cmd simpleCommand, cwd string, upstream []string) {
 	text, known := writeContent(cmd, upstream)
 	for _, target := range cmd.writes {
+		resolved, ok := resolveWritePath(target, cwd)
+		if !ok {
+			continue
+		}
+		write := scriptWrite{text: text, known: known}
+		if cmd.appends[target] {
+			before, found := s.writes[resolved]
+			if !found {
+				disk, exists, readable := readScript(resolved, cwd)
+				before = scriptWrite{text: disk, known: !exists || readable}
+			}
+			write = scriptWrite{text: before.text + "\n" + text, known: before.known && known}
+		}
+		s.writes[resolved] = write
+	}
+}
+
+// recordOutputWrites marks the files a command writes through its own flags, which the guard cannot
+// read: curl -o, wget -O, dd of=, and the destination of cp, mv, install, and ln.
+func (s *scanner) recordOutputWrites(name string, kept []string, cwd string) {
+	var targets []string
+	switch name {
+	case "curl", "wget":
+		short, long := "-o", "--output"
+		if name == "wget" {
+			short, long = "-O", "--output-document"
+		}
+		for index := 1; index < len(kept); index++ {
+			arg := kept[index]
+			switch {
+			case arg == short || arg == long:
+				if index+1 < len(kept) {
+					targets = append(targets, kept[index+1])
+					index++
+				}
+			case strings.HasPrefix(arg, long+"="):
+				targets = append(targets, strings.TrimPrefix(arg, long+"="))
+			case strings.HasPrefix(arg, short) && len(arg) > len(short) && !strings.HasPrefix(arg, "--"):
+				targets = append(targets, arg[len(short):])
+			}
+		}
+	case "dd":
+		for _, arg := range kept[1:] {
+			if value, ok := strings.CutPrefix(arg, "of="); ok {
+				targets = append(targets, value)
+			}
+		}
+	case "cp", "mv", "install", "ln":
+		var operands []string
+		for _, arg := range kept[1:] {
+			if !strings.HasPrefix(arg, "-") {
+				operands = append(operands, arg)
+			}
+		}
+		if len(operands) >= 2 {
+			targets = append(targets, operands[len(operands)-1])
+		}
+	}
+	for _, target := range targets {
 		if resolved, ok := resolveWritePath(target, cwd); ok {
-			s.writes[resolved] = scriptWrite{text: text, known: known}
+			s.writes[resolved] = scriptWrite{}
 		}
 	}
 }
@@ -441,38 +527,20 @@ func (s *scanner) recordedWrite(target, cwd string) (scriptWrite, bool) {
 	return write, found
 }
 
-// interpScriptFindings checks an interpreter's named script, reading a write this line already
-// recorded before ever reading the file from disk.
-func (s *scanner) interpScriptFindings(kept []string, cwd string) []string {
-	if _, ok := inlineCode(kept); ok {
-		return interpFindings(kept, cwd, s.root)
-	}
-	operand := scriptOperand(kept)
-	if operand == "" {
-		return interpFindings(kept, cwd, s.root)
-	}
-	write, found := s.recordedWrite(operand, cwd)
-	if !found {
-		return interpFindings(kept, cwd, s.root)
-	}
-	if !write.known {
-		return []string{scriptNotVisible}
-	}
-	if hidesGitOrGh(write.text) {
-		return []string{interpreterHidesGit}
-	}
-	return nil
+// createdEarlier reports whether an earlier command in this line could have written a script
+// the guard now finds missing on disk, as tar xf a.tgz && sh install.sh would.
+func (s *scanner) createdEarlier() bool {
+	return s.seen > 1
 }
 
-// looksLikeScriptPath reports whether a command names itself by a path, as ./x.sh or /a/x.sh do,
+// looksLikeScriptPath reports whether a command names itself by a path, as ./x.sh or bin/x.sh do,
 // rather than a bare name a shell resolves through PATH.
 func looksLikeScriptPath(target string) bool {
-	return strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") ||
-		strings.HasPrefix(target, "/") || strings.HasPrefix(target, "~/")
+	return strings.Contains(target, "/")
 }
 
-// scriptCommandFindings checks a command run by its own path: a write this line already recorded,
-// or an existing file that opens with a sh, bash, or zsh shebang, scanned the way sh name would be.
+// scriptCommandFindings checks a command run by path: a recorded write, or a text file scanned as sh
+// under a shell shebang or none, or read for hidden git or gh under an interpreter's.
 func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, string) {
 	if write, found := s.recordedWrite(target, cwd); found {
 		if !write.known {
@@ -480,44 +548,42 @@ func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, s
 		}
 		return s.scan(write.text, cwd, branch)
 	}
-	if text, ok := readShellScriptFile(target, cwd); ok {
+	text, exists, ok := readScript(target, cwd)
+	if !exists && scriptExtensions[strings.ToLower(filepath.Ext(target))] && s.createdEarlier() {
+		return []string{scriptNotVisible}, branch
+	}
+	if !ok {
+		return nil, branch
+	}
+	switch interp := shebang(text); {
+	case interp == "" || shells[interp]:
 		return s.scan(text, cwd, branch)
+	case interpreters[interp] && hidesGitOrGh(text):
+		return []string{interpreterHidesGit}, branch
 	}
 	return nil, branch
 }
 
-// readShellScriptFile reads target relative to cwd and returns its text, only when it opens with
-// a sh, bash, or zsh shebang.
-func readShellScriptFile(target, cwd string) (string, bool) {
-	file := expandHome(target)
-	if !filepath.IsAbs(file) {
-		if cwd == unresolvedDir {
-			return "", false
-		}
-		file = filepath.Join(cwd, file)
-	}
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return "", false
-	}
-	text := string(data)
+// shebang names the interpreter a script's first line asks for, through env when it uses it.
+func shebang(text string) string {
 	line, _, _ := strings.Cut(text, "\n")
 	rest, ok := strings.CutPrefix(line, "#!")
 	if !ok {
-		return "", false
+		return ""
 	}
 	fields := strings.Fields(rest)
 	if len(fields) == 0 {
-		return "", false
+		return ""
 	}
 	interp := filepath.Base(fields[0])
-	if interp == "env" && len(fields) > 1 {
-		interp = filepath.Base(fields[1])
+	if interp == "env" {
+		for _, field := range fields[1:] {
+			if !strings.HasPrefix(field, "-") {
+				return filepath.Base(field)
+			}
+		}
 	}
-	if !shells[interp] {
-		return "", false
-	}
-	return text, true
+	return interp
 }
 
 // unwrapCommand drops a wrapper's own name, assignments, flags, and duration argument to reach the real command.
