@@ -2106,3 +2106,58 @@ context:
   - "tests: a two-task group renders all four headings in order with each task's bullet; a stacked group names its base under Dependencies; a blocked task appears under Validation"
 type: fix
 ```
+
+### [TG-03.30] The line drains the backlog on its own
+```yaml
+type: feat
+version: 1.1.0
+base: docs/queue-drain
+```
+* **Why:** on 2026-09-24 every group needed a person to launch it, every blocking review needed a person to fix it, and every merge needed a person to re-render settings and re-point stacked bases. The line exists so the only human step is the merge button.
+
+#### [TSK-03.30.1] Step repairs its own review findings before it stops for a person [P: C] [READY]
+```yaml
+files: [internal/line/step.go, internal/line/step_test.go, internal/line/brief.go, internal/line/brief_test.go, internal/line/close.go, internal/line/close_test.go, internal/profile/profile.go, cmd/komodo/line.go]
+done_when:
+  - go test ./internal/line/... ./internal/profile/... ./cmd/komodo/...
+  - go vet ./internal/line/... ./internal/profile/... ./cmd/komodo/...
+  - go run ./cmd/komodo doctor
+context:
+  - "today a finding at or above the severity floor makes Step return done, and a person fixes the group branch by hand; TG-03.22 needed ten such rounds on 2026-09-24"
+  - "Step instead returns run komodo brief --review <group>, which writes .komodo/briefs/<group>-fix.md from the builder role: the group's tasks and files, and the blocking findings in the failure slot; then spawn builder on that brief in the group worktree; then run komodo close --fix <group>, which runs the gate, commits the fix on the group branch, and clears the review result so the next Step spawns a fresh review"
+  - "profile gains review_repairs, default 2, which an overlay may only lower; after that many fix rounds a blocking review still returns done naming the findings, the one stop a person owns"
+  - "the ledger stamps each fix round as station fix with its round number, and komodo report counts them"
+  - "tests: a blocking review returns the fix brief, then the builder spawn, then close --fix, then a review; two blocking reviews in a row with review_repairs 1 return done"
+type: feat
+tier: heavy
+```
+
+#### [TSK-03.30.2] A bare komodo run drains every ready group in order [P: C] [READY]
+```yaml
+files: [internal/run/run.go, internal/run/run_test.go, internal/line/next.go, internal/line/next_test.go]
+done_when:
+  - go test ./internal/run/... ./internal/line/...
+  - go vet ./internal/run/... ./internal/line/...
+  - go run ./cmd/komodo run --dry-run
+context:
+  - "Launch runs one target and exits; with no target it loops: re-render every installed host's project config at the root when doctor would report drift, pick the next ready group, launch it under its own group budget, finish its ship, and repeat"
+  - "the drain stops when nothing is ready, when a group ends without shipping, which is the review stop TSK-03.30.1 leaves, or when the whole --budget is spent; it prints one line per group: shipped with its pull request, or stopped with why"
+  - "next's ready rule skips a group whose base is neither the default branch nor a branch on origin, so a group stacked on an unshipped group waits for it rather than failing"
+  - "--dry-run with no target prints the groups the drain would run, in order, and launches nothing"
+  - "tests with a fake host: two ready groups both launch and ship in order; a group that ends unshipped stops the drain before the next; a group whose base branch is missing is skipped"
+type: feat
+tier: heavy
+```
+
+#### [TSK-03.30.3] README says the merge button is the only human step [P: M] [READY]
+```yaml
+files: [README.md]
+done_when:
+  - grep -q 'komodo run' README.md
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-03.30.1, TSK-03.30.2]
+context:
+  - "the Usage section leads with komodo run and no target: it drains every ready group, repairs review findings up to review_repairs rounds, re-renders host config, and opens one pull request per group; a person merges"
+  - "state the three stops a person owns: a review still blocking after its repair rounds, a merge conflict QC cannot resolve, and the plan pause"
+type: docs
+```
