@@ -1227,7 +1227,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.8.19] Proof payload: the run skill drives one task end to end [P: L] [READY]
+#### [TSK-03.8.19] Proof payload: the run skill drives one task end to end [P: L] [DONE]
 ```yaml
 files:
   - README.md
