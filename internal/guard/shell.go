@@ -74,10 +74,36 @@ func pipedInput(commands []simpleCommand, index int) []string {
 		return nil
 	}
 	var input []string
+	literal := true
 	for _, previous := range commands[start:index] {
 		input = append(input, upstreamWords(previous)...)
+		literal = literal && passesLiterally(previous)
+	}
+	if !literal {
+		input = append(input, unknownInput)
 	}
 	return input
+}
+
+// passesLiterally reports whether a pipeline stage emits only text the guard can read: echo, printf,
+// or a bare cat of its stdin, and never a filter such as sed that rewrites what flows through.
+func passesLiterally(cmd simpleCommand) bool {
+	if len(cmd.words) == 0 {
+		return true
+	}
+	name := filepath.Base(cmd.words[0].value)
+	if name == "echo" || name == "printf" {
+		return true
+	}
+	if name != "cat" {
+		return false
+	}
+	for _, w := range cmd.words[1:] {
+		if !strings.HasPrefix(w.value, "-") || w.value == "-" {
+			return false
+		}
+	}
+	return true
 }
 
 // upstreamWords is one command's own contribution to piped input: its heredocs, here-strings, and
@@ -207,7 +233,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		findings = append(findings, ddPaths(kept, cwd, s.root, s.policy)...)
 	case pathWriters[name] || isConditionalWriter(name, kept):
 		findings = append(findings, writerPaths(name, kept, cwd, s.root, s.policy)...)
-		if interpreters[name] {
+		if interpreters[interpName(name)] {
 			findings = append(findings, s.interpScriptFindings(kept, cwd, stdin)...)
 		}
 		if name == "tee" {
@@ -219,7 +245,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		findings = append(findings, gitResult...)
 	case name == "gh":
 		findings = append(findings, ghFindings(kept)...)
-	case interpreters[name]:
+	case interpreters[interpName(name)]:
 		findings = append(findings, s.interpScriptFindings(kept, cwd, stdin)...)
 	case name == "eval" && len(kept) > 1:
 		var evaluated []string
@@ -245,10 +271,11 @@ func (s *scanner) shell(kept []string, cwd, branch, stdin string) []string {
 	case operand != "":
 		nested, _ := s.sourced([]string{kept[0], operand}, cwd, branch, stdin)
 		return nested
-	case strings.Contains(stdin, unknownInput):
-		return []string{scriptNotVisible}
 	case stdin != "":
-		nested, _ := s.scan(stdin, cwd, branch)
+		nested, _ := s.scan(strings.ReplaceAll(stdin, unknownInput, ""), cwd, branch)
+		if len(nested) == 0 && strings.Contains(stdin, unknownInput) {
+			return []string{scriptNotVisible}
+		}
 		return nested
 	}
 	return nil
@@ -260,10 +287,11 @@ func (s *scanner) sourced(kept []string, cwd, branch, stdin string) ([]string, s
 		if stdin == "" {
 			return nil, branch
 		}
-		if strings.Contains(stdin, unknownInput) {
+		nested, next := s.scan(strings.ReplaceAll(stdin, unknownInput, ""), cwd, branch)
+		if len(nested) == 0 && strings.Contains(stdin, unknownInput) {
 			return []string{scriptNotVisible}, branch
 		}
-		return s.scan(stdin, cwd, branch)
+		return nested, next
 	}
 	if write, found := s.recordedWrite(kept[1], cwd); found {
 		if !write.known {
@@ -490,8 +518,8 @@ func (s *scanner) put(resolved, cwd string, write scriptWrite, appends bool) {
 	s.writes[resolved] = write
 }
 
-// recordOutputWrites marks the files a command writes through its own flags, which the guard cannot
-// read: curl -o, wget -O, dd of=, and the destination of cp, mv, install, and ln.
+// recordOutputWrites marks files a command writes that the guard cannot read: curl -o, wget -O,
+// dd of=, sed -i and perl -i edits, and the destination of cp, mv, install, and ln.
 func (s *scanner) recordOutputWrites(name string, kept []string, cwd string) {
 	var targets []string
 	switch name {
@@ -521,6 +549,10 @@ func (s *scanner) recordOutputWrites(name string, kept []string, cwd string) {
 					}
 				}
 			}
+		}
+	case "sed", "perl":
+		if isConditionalWriter(name, kept) {
+			targets = writerTargets(name, kept)
 		}
 	case "dd":
 		for _, arg := range kept[1:] {
@@ -607,7 +639,7 @@ func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, s
 	switch interp := shebang(text); {
 	case interp == "" || shells[interp]:
 		return s.scan(text, cwd, branch)
-	case interpreters[interp] && hidesGitOrGh(text):
+	case interpreters[interpName(interp)] && hidesGitOrGh(text):
 		return []string{interpreterHidesGit}, branch
 	}
 	return nil, branch

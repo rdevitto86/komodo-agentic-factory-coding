@@ -83,6 +83,9 @@ func apiFindings(args []string) []string {
 		}
 	}
 	if endpoint == "graphql" {
+		if hostname != "" && len(mutationFields(graphqlQuery)) > 0 {
+			return []string{fmt.Sprintf("gh api --hostname %s graphql: a forge write goes through the line, never an agent", hostname)}
+		}
 		if queryFromFile {
 			return []string{"gh api graphql: a query read from a file is not visible to the guard; pass it with -f query="}
 		}
@@ -176,24 +179,48 @@ func onlyAllowedMutations(query string) bool {
 	return true
 }
 
-// mutationFields returns the top-level field names inside every mutation's selection set, reading
-// past strings, arguments, commas, and aliases, since GraphQL treats commas as whitespace.
+// mutationFields returns the top-level field names of every mutation operation, finding the
+// mutation keyword and its selection set at document depth zero, past strings and # comments.
 func mutationFields(document string) []string {
 	var fields []string
-	lower := strings.ToLower(document)
-	for start := 0; ; {
-		at := strings.Index(lower[start:], "mutation")
-		if at < 0 {
-			return fields
+	depth := 0
+	inMutation := false
+	for index := 0; index < len(document); index++ {
+		char := document[index]
+		switch {
+		case char == '"':
+			index = skipGraphQLString(document, index)
+		case char == '#':
+			for index+1 < len(document) && document[index+1] != '\n' {
+				index++
+			}
+		case char == '(':
+			depth++
+		case char == ')':
+			depth--
+		case char == '{':
+			if depth == 0 && inMutation {
+				fields = append(fields, selectionNames(document[index+1:])...)
+				inMutation = false
+			}
+			depth++
+		case char == '}':
+			depth--
+		case depth == 0 && isNameStart(char):
+			end := index
+			for end < len(document) && isNameChar(document[end]) {
+				end++
+			}
+			switch name := document[index:end]; name {
+			case "mutation":
+				inMutation = true
+			case "query", "subscription", "fragment":
+				inMutation = false
+			}
+			index = end - 1
 		}
-		position := start + at + len("mutation")
-		open := strings.IndexByte(document[position:], '{')
-		if open < 0 {
-			return fields
-		}
-		fields = append(fields, selectionNames(document[position+open+1:])...)
-		start = position
 	}
+	return fields
 }
 
 // selectionNames reads the top-depth field names of one selection set, skipping strings and # comments.
