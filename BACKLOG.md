@@ -1493,3 +1493,124 @@ context:
   - "the switch-off test sets the local endpoint env and asserts Why carries no did-not-answer note, beside Name != hybrid"
 type: fix
 ```
+
+### [TG-03.21] A wave builds at once, and the hook checks the branch it commits
+```yaml
+type: feat
+version: 1.1.0
+base: main
+```
+* **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
+
+#### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [READY]
+```yaml
+files: [internal/line/step.go, internal/line/step_test.go, komodo/skills/run/SKILL.md]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+  - go run ./cmd/komodo doctor
+context:
+  - "Action gains Spawns []Action, json spawns, omitempty; when a parallel-mode wave holds two or more tasks that each have a current brief and no result, Step returns action spawn with every one in Spawns, each carrying its own brief, worktree, task, and machine as the single spawn does today"
+  - "a task with no brief yet still returns its own run komodo brief action first, so every brief in the wave is written before the wave spawns; single-mode groups and a lone ready task keep today's single spawn with Spawns empty"
+  - "the run skill: when spawns is present, spawn every entry in the same turn and wait for all of them, then loop; the one-action-per-turn rule reads as one step per turn"
+  - "tests: a three-task parallel wave with all briefs written returns three spawns; a single-mode group returns one; a wave with one result already on disk returns only the other two"
+type: feat
+```
+
+#### [TSK-03.21.2] The pre-commit hook runs the gate from the checkout it commits [P: H] [READY]
+```yaml
+files: [internal/gate/gate.go, internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/gate/...
+  - go vet ./internal/gate/...
+context:
+  - "hookScript finds the shared git dir's checkout for bin/; in a worktree that binary was built from another branch, so its compiled guard table and comment rules are not the ones being committed"
+  - "when the committing checkout, git rev-parse --show-toplevel, holds cmd/komodo/main.go, the hook runs go run ./cmd/komodo gate from that toplevel, with --fuzz 10s on pre-push as today; any other repo keeps the built binary"
+  - "tests: the rendered script carries the toplevel branch and the go run line; a repo without cmd/komodo keeps exec of the built binary"
+type: fix
+```
+
+### [TG-03.20] The guard holds its own denials, and the docs match the line
+```yaml
+type: fix
+version: 1.0.1
+base: docs/queue-scorecard-fixes
+```
+* **Why:** a blind review on 2026-09-24 found `git branch -f main`, `git remote set-url`, and a push whose target is only known at run time all pass the guard. README still describes the landed stacked-PR plan, and `doctor.go` is 916 lines. Five tasks across three directories, so the run is also the first multi-wave headless proof.
+
+#### [TSK-03.20.1] The guard refuses moving or renaming a critical ref with git branch [P: H] [READY]
+```yaml
+files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "case branch in gitFindings returns early unless deleting; it must also judge -f and --force, and -m, -M, --move, -c, -C, --copy"
+  - "with -f or --force, the first positional names the ref being moved; deny when it is critical, finding: a critical ref is never moved by hand"
+  - "with a move or copy flag, deny when any positional is critical, since both renaming main away and renaming onto main move it; same finding"
+  - "table rows: branch -f main HEAD denied, branch --force master x denied, branch -M main old denied, branch -m feat/x main denied; branch -f feat/y main allowed, branch feat/y main allowed, branch -m feat/x feat/z allowed"
+type: fix
+```
+
+#### [TSK-03.20.2] The guard refuses a git remote call that writes the config [P: H] [READY]
+```yaml
+files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.20.1]
+context:
+  - "git remote add, set-url, rename, remove, rm, set-head, set-branches, and prune write .git/config and can redirect the next push; add case remote to gitFindings denying them with the finding the config case already uses"
+  - "bare git remote, remote -v, remote show, and remote get-url only read; allow them, and add remote to readOnlyGit for those forms so git -C elsewhere may list remotes"
+  - "table rows: remote set-url origin https://evil.example/x denied, remote add evil https://evil.example/x denied, remote rename origin old denied, set-url --push denied; remote -v allowed, remote get-url origin allowed, bare remote allowed"
+type: fix
+```
+
+#### [TSK-03.20.3] The guard refuses a push whose target is only known when it runs [P: M] [READY]
+```yaml
+files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.20.2]
+context:
+  - "under xargs -I{} the guard sees git push origin {}; with a command substitution it sees the unexpanded $(...) or backtick text; either could be a critical ref"
+  - "in case push, when the policy protects any ref and a target still holds {}, $(, a backtick, or an unexpanded variable per unresolvedVarRe, deny with: git push <spec>: the target is only known when it runs; name the branch"
+  - "a variable the guard already resolved from an earlier assignment is not unexpanded; BR=main; git push origin $BR must stay denied as a critical push, and BR=feat/x; git push origin $BR must stay allowed"
+  - "table rows: echo main | xargs -I{} git push origin {} denied, git push origin \"$(git rev-parse --abbrev-ref HEAD)\" denied, git push origin `git branch --show-current` denied; git push origin feat/x allowed, BR=feat/x; git push origin $BR allowed"
+type: fix
+```
+
+#### [TSK-03.20.4] README describes the line that exists, not the stack that built it [P: M] [READY]
+```yaml
+files: [README.md]
+done_when:
+  - "! grep -q 'docs/v2-plan' README.md"
+  - "! grep -q 'v2.0.0' README.md"
+  - go run ./cmd/komodo doctor
+context:
+  - "the Pull requests section describes PR #103 and stacked group PRs A through F; that stack landed and 1.0.0 is cut"
+  - "replace the section with a short Pull requests section: each group ships as one PR from its own <type>/<slug> branch, cut from the group's base; close --group opens it with the report as the body; merging is the human's button; nothing runs on GitHub"
+  - "keep one sentence of history: 1.0 was built through PR #103 and six stacked group PRs, now merged; keep the ruleset paragraph and reword it to say the ruleset must cover main only"
+  - "the opening paragraph's sentence about PR #103 moves to that history sentence; change nothing else in README"
+type: docs
+```
+
+#### [TSK-03.20.5] Doctor splits into files by concern, doctor.go under 500 lines [P: L] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/promises.go, internal/doctor/prune.go, internal/doctor/render.go]
+done_when:
+  - go test ./internal/doctor/...
+  - go vet ./internal/doctor/...
+  - test "$(wc -l < internal/doctor/doctor.go)" -lt 500
+  - go run ./cmd/komodo doctor
+  - go run ./cmd/komodo comments check
+context:
+  - "a move, not a rewrite: no function changes its body, name, or signature, and no test changes"
+  - "promises.go takes checkPromises, promises, fieldPromises, pascal, indexSymbols and their types; prune.go takes Prune, settleShippedRun, stateWorktrees, restoreFlips and their types; render.go takes renderInstalled, renderedSkillTokens, checkBudgets, checkDrift, checkProfileDrift, freezeProfile, pinLocalDown, pinLocalUp"
+  - "doctor.go keeps Run, the other checks, and the small shared helpers"
+type: refactor
+```
