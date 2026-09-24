@@ -144,18 +144,44 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			findings = append(findings, "commit message carries a co-author or generated-by trailer")
 		}
 	case "branch":
-		deleting := false
+		deleting, forcing, moving := false, false, false
 		for _, arg := range rest {
-			if arg == "-d" || arg == "-D" || arg == "--delete" {
+			switch arg {
+			case "-d", "-D", "--delete":
 				deleting = true
+			case "-f", "--force":
+				forcing = true
+			case "-m", "-M", "--move", "-c", "-C", "--copy":
+				moving = true
 			}
 		}
-		if !deleting {
+		if !deleting && !forcing && !moving {
 			return findings, branch
 		}
+		var positional []string
 		for _, arg := range rest {
-			if !strings.HasPrefix(arg, "-") && policy.IsCritical(arg) {
-				findings = append(findings, fmt.Sprintf("git branch --delete %s: a critical ref is never deleted", arg))
+			if !strings.HasPrefix(arg, "-") {
+				positional = append(positional, arg)
+			}
+		}
+		switch {
+		case deleting:
+			for _, arg := range positional {
+				if policy.IsCritical(arg) {
+					findings = append(findings, fmt.Sprintf("git branch --delete %s: a critical ref is never deleted", arg))
+				}
+			}
+		case moving:
+			// Renaming a critical ref away or onto one both move it.
+			for _, arg := range positional {
+				if policy.IsCritical(arg) {
+					findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never moved by hand", arg))
+				}
+			}
+		case forcing:
+			// -f without -m/-c names the ref being moved as its first positional.
+			if len(positional) > 0 && policy.IsCritical(positional[0]) {
+				findings = append(findings, fmt.Sprintf("git branch -f %s: a critical ref is never moved by hand", positional[0]))
 			}
 		}
 	case "update-ref":
