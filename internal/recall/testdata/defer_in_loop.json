@@ -1,0 +1,5 @@
+{
+  "file": "internal/digest/sums.go",
+  "line": 18,
+  "class": "defer-in-loop"
+}

@@ -42,6 +42,7 @@ const usage = `komodo: the code assembly line.
   komodo threads --resolve id Mark one review thread resolved
   komodo machine <task>       Post a brief to the local machine, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
+  komodo recall [--model m]   Score the local reviewer against the seeded-bug corpus
   komodo version              The changelog version and commit this binary was built from
   komodo gate [--install]     The local precheck: vet, race tests, doctor, guard, comments; --fuzz 10s adds fuzzing
 `
@@ -111,6 +112,8 @@ func main() {
 		runMachine(root, os.Args[2:])
 	case "metrics":
 		runMetrics(root)
+	case "recall":
+		runRecall(root, os.Args[2:])
 	case "gate":
 		runGate(root, os.Args[2:])
 	case "-h", "--help", "help":
