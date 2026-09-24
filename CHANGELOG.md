@@ -4,6 +4,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 ## 1.0.1 — 2026-09-24
 
+- **TG-03.23** A builder's worktree cannot push (1 task(s))
 - **TG-03.22** The guard holds the forge, the gate, and every interpreter (5 task(s))
 - **TG-03.20** The guard holds its own denials, and the docs match the line (5 task(s))
 
