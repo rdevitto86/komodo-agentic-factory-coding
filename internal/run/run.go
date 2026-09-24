@@ -183,7 +183,10 @@ func launch(options Options, name string, args []string) (int, error) {
 	return 0, nil
 }
 
-// withBinPath links root/.komodo/bin/komodo to the running binary and puts that dir and root/bin first on PATH.
+// symlink links a path to a target; a test swaps it to act like Windows without Developer Mode.
+var symlink = os.Symlink
+
+// withBinPath puts komodo on the run's PATH as root/.komodo/bin, then the inherited PATH, then the repo's own root/bin.
 func withBinPath(env []string, root, executable string) ([]string, error) {
 	link := filepath.Join(root, line.StateDir, "bin")
 	name := "komodo"
@@ -197,23 +200,39 @@ func withBinPath(env []string, root, executable string) ([]string, error) {
 	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	if err := os.Symlink(executable, target); err != nil {
-		return nil, fmt.Errorf("cannot put komodo on the run's PATH: %w", err)
+	first := link
+	if err := symlink(executable, target); err != nil {
+		if err := copyExecutable(executable, target); err != nil {
+			first = filepath.Dir(executable)
+		}
 	}
-	prefix := link + string(os.PathListSeparator) + filepath.Join(root, "bin")
+	sep := string(os.PathListSeparator)
 	out := make([]string, 0, len(env)+1)
 	found := false
 	for _, entry := range env {
 		if key, value, ok := strings.Cut(entry, "="); ok && key == "PATH" {
-			entry = "PATH=" + prefix + string(os.PathListSeparator) + value
+			entry = "PATH=" + first + sep + value + sep + filepath.Join(root, "bin")
 			found = true
 		}
 		out = append(out, entry)
 	}
 	if !found {
-		out = append(out, "PATH="+prefix)
+		out = append(out, "PATH="+first+sep+filepath.Join(root, "bin"))
 	}
 	return out, nil
+}
+
+// copyExecutable copies the running binary to target, removing a partial copy when it fails.
+func copyExecutable(executable, target string) error {
+	data, err := os.ReadFile(executable)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(target, data, 0o755); err != nil {
+		_ = os.Remove(target)
+		return err
+	}
+	return nil
 }
 
 // eventsFile opens the events file the installed mount names for one target, or returns

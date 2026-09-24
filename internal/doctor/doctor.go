@@ -47,6 +47,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root, rendered)...)
 	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinLocalUp))...)
+	problems = append(problems, checkHookBinary(root, rendered)...)
 	problems = append(problems, checkProfileDrift(root)...)
 	problems = append(problems, checkPromises(root)...)
 	if !options.NoGit {

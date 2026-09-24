@@ -134,12 +134,27 @@ func BinaryPath() string {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	if path, err := Executable(); err == nil && filepath.Base(path) == name {
+	if path, err := Executable(); err == nil && !goRunBuild(path) {
 		if abs, err := filepath.Abs(path); err == nil {
 			return abs
 		}
 	}
 	return filepath.Join("bin", name)
+}
+
+// goRunBuild reports a binary the go tool built into a throwaway go-build directory or the build cache.
+func goRunBuild(path string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(path), "/") {
+		if strings.HasPrefix(segment, "go-build") {
+			return true
+		}
+	}
+	cache := os.Getenv("GOCACHE")
+	if cache == "" || cache == "off" {
+		return false
+	}
+	rel, err := filepath.Rel(cache, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // MainCheckout is the checkout that owns root's git directory, so a worktree resolves to the repo it came from.

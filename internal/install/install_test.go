@@ -34,6 +34,43 @@ func TestAddIgnoreAppendsAMissingEntryAndKeepsEveryExistingLine(t *testing.T) {
 	}
 }
 
+func TestAddIgnoreKeepsACRLFFilesLineEnding(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("a\r\nb"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := Plan{Host: "repo", Root: root}
+	plan.AddIgnore("/.komodo/", "state")
+	if len(plan.Changes) != 1 || string(plan.Changes[0].Body) != "a\r\nb\r\n/.komodo/\r\n" {
+		t.Fatalf("a CRLF .gitignore got %+v", plan.Changes)
+	}
+}
+
+func TestDriftIgnoresWhichKomodoBinaryTheHookRuns(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "settings.json")
+	installed := `{"hooks": [{"command": "C:\\tools\\komodo.exe guard"}]}`
+	if err := os.WriteFile(path, []byte(installed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := Plan{Host: "h", Root: root}
+	plan.Add(path, []byte(`{"hooks": [{"command": "/repo/bin/komodo-linux-amd64 guard"}]}`), "settings")
+	if got := plan.Drift(); len(got) != 1 || got[0].Verb != "same" {
+		t.Fatalf("drift = %+v, want same", got)
+	}
+	if got := plan.Actions(); got[0].Verb != "update" {
+		t.Fatalf("actions = %+v, want update so install still rewrites the path", got)
+	}
+	other := Plan{Host: "h", Root: root}
+	other.Add(path, []byte(`{"hooks": [{"command": "/usr/bin/other guard"}]}`), "settings")
+	if got := other.Drift(); got[0].Verb != "update" {
+		t.Fatalf("drift = %+v, want a non-komodo hook to count", got)
+	}
+	if got := HookBinaries([]byte(installed)); len(got) != 1 || got[0] != `C:\tools\komodo.exe` {
+		t.Fatalf("hook binaries = %q", got)
+	}
+}
+
 func TestActionsNameWhatWouldChange(t *testing.T) {
 	root := t.TempDir()
 	same := filepath.Join(root, "same.txt")

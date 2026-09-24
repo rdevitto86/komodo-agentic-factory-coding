@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"komodo/internal/detect"
@@ -52,6 +53,15 @@ func runInstall(root string, args []string) {
 			fail(fmt.Errorf("host %q has nothing to install; the binary itself is its mount", name))
 		}
 		chosen = append(chosen, found)
+	}
+	if !*dryRun {
+		hook := binary
+		if !filepath.IsAbs(hook) {
+			hook = filepath.Join(mount.MainCheckout(root), hook)
+		}
+		if _, err := os.Stat(hook); err != nil {
+			fail(fmt.Errorf("the guard hook would run %s, which does not exist; build it with komodo gate --install", hook))
+		}
 	}
 	ignore := install.Plan{Host: "repo", Root: root}
 	ignore.AddIgnore("/.komodo/", "the line's run state and worktrees stay out of git")
