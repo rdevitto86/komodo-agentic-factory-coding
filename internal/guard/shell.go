@@ -52,17 +52,30 @@ func (s *scanner) scan(command, cwd, branch string) ([]string, string) {
 	return findings, current
 }
 
-// pipedInput approximates what a pipe feeds a command: the heredocs, here-strings, and echoed words upstream.
+// pipedInput approximates what a pipe feeds a command: the heredocs, here-strings, and echoed
+// words from every command upstream in the same pipeline, not just the one right before it.
 func pipedInput(commands []simpleCommand, index int) []string {
-	if index == 0 || !commands[index-1].pipesTo {
+	start := index
+	for start > 0 && commands[start-1].pipesTo {
+		start--
+	}
+	if start == index {
 		return nil
 	}
-	previous := commands[index-1]
-	input := append([]string{}, previous.stdin...)
-	if len(previous.words) > 1 {
-		if name := filepath.Base(previous.words[0].value); name == "echo" || name == "printf" {
+	var input []string
+	for _, previous := range commands[start:index] {
+		input = append(input, upstreamWords(previous)...)
+	}
+	return input
+}
+
+// upstreamWords is one command's own contribution to piped input: its heredocs, here-strings, and echoed words.
+func upstreamWords(cmd simpleCommand) []string {
+	input := append([]string{}, cmd.stdin...)
+	if len(cmd.words) > 1 {
+		if name := filepath.Base(cmd.words[0].value); name == "echo" || name == "printf" {
 			var args []string
-			for _, w := range previous.words[1:] {
+			for _, w := range cmd.words[1:] {
 				if !strings.HasPrefix(w.value, "-") {
 					args = append(args, w.value)
 				}
