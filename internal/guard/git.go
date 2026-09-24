@@ -100,6 +100,9 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			targets = positional[1:]
 		} else {
 			targets = []string{branch}
+			if hasAnyCritical(policy) && len(positional) == 1 && unresolvedTarget(positional[0]) {
+				findings = append(findings, fmt.Sprintf("git push %s: the target is only known when it runs; name the branch", positional[0]))
+			}
 		}
 		for _, spec := range targets {
 			target := strings.TrimPrefix(spec, "+")
@@ -150,13 +153,27 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 	case "branch":
 		deleting, forcing, moving := false, false, false
 		for _, arg := range rest {
-			switch arg {
-			case "-d", "-D", "--delete":
+			switch {
+			case arg == "--delete" || longFlagPrefix(arg, "delete"):
 				deleting = true
-			case "-f", "--force":
+			case arg == "--force" || longFlagPrefix(arg, "force"):
 				forcing = true
-			case "-m", "-M", "--move", "-c", "-C", "--copy":
+			case arg == "--move" || longFlagPrefix(arg, "move") || arg == "--copy" || longFlagPrefix(arg, "copy"):
 				moving = true
+			case strings.HasPrefix(arg, "--"):
+				// a long flag with no bearing on deleting, forcing, or moving.
+			case strings.HasPrefix(arg, "-"):
+				// git bundles short flags, so -qf and -f are the same force.
+				for _, r := range arg[1:] {
+					switch r {
+					case 'd', 'D':
+						deleting = true
+					case 'f':
+						forcing = true
+					case 'm', 'M', 'c', 'C':
+						moving = true
+					}
+				}
 			}
 		}
 		if !deleting && !forcing && !moving {
@@ -171,8 +188,11 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		switch {
 		case deleting:
 			for _, arg := range positional {
-				if policy.IsCritical(arg) {
+				switch {
+				case policy.IsCritical(arg):
 					findings = append(findings, fmt.Sprintf("git branch --delete %s: a critical ref is never deleted", arg))
+				case hasAnyCritical(policy) && unresolvedTarget(arg):
+					findings = append(findings, fmt.Sprintf("git branch --delete %s: the target is only known when it runs; name the branch", arg))
 				}
 			}
 		case moving:
@@ -181,14 +201,24 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 				findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never moved by hand", branch))
 			}
 			for _, arg := range positional {
-				if policy.IsCritical(arg) {
+				switch {
+				case policy.IsCritical(arg):
 					findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never moved by hand", arg))
+				case hasAnyCritical(policy) && unresolvedTarget(arg):
+					findings = append(findings, fmt.Sprintf("git branch %s: the target is only known when it runs; name the branch", arg))
 				}
 			}
 		case forcing:
-			// -f without -m/-c names the ref being moved as its first positional.
+			// -f without -m/-c names the ref being moved as its first positional; a later one is only a start point.
 			if len(positional) > 0 && policy.IsCritical(positional[0]) {
 				findings = append(findings, fmt.Sprintf("git branch -f %s: a critical ref is never moved by hand", positional[0]))
+			}
+			// An unresolved word anywhere means the real argument positions are not known either.
+			for _, arg := range positional {
+				if hasAnyCritical(policy) && unresolvedTarget(arg) {
+					findings = append(findings, fmt.Sprintf("git branch -f %s: the target is only known when it runs; name the branch", arg))
+					break
+				}
 			}
 		}
 	case "update-ref":
@@ -303,6 +333,12 @@ func aliasValue(configs []string, sub string) string {
 // hasAnyCritical reports whether the policy protects any ref at all.
 func hasAnyCritical(policy Policy) bool {
 	return len(policy.CriticalRefs) > 0
+}
+
+// longFlagPrefix reports whether arg abbreviates a long flag, as git accepts any unambiguous prefix.
+func longFlagPrefix(arg, name string) bool {
+	body, ok := strings.CutPrefix(arg, "--")
+	return ok && len(body) >= 1 && strings.HasPrefix(name, body)
 }
 
 // unresolvedTarget reports whether a push target still holds text a shell only fills in when it
