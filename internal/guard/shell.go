@@ -294,7 +294,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		gitResult, branch = gitFindings(kept, branch, cwd, s.root, s.policy, stdin)
 		findings = append(findings, gitResult...)
 	case name == "gh":
-		findings = append(findings, ghFindings(kept, s.expandingValues(cmd.words))...)
+		findings = append(findings, ghFindings(kept, s.expandingValues(cmd.words), s.policy, cwd, stdin)...)
 	case interpreters[interpName(name)]:
 		findings = append(findings, s.interpScriptFindings(kept, cwd, stdin, s.expandingValues(cmd.words))...)
 	case name == "eval" && len(kept) > 1:

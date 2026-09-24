@@ -2076,7 +2076,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.5] The guard refuses a commit, pull request, or comment that carries a session link [P: C] [READY]
+#### [TSK-03.29.5] The guard refuses a commit, pull request, or comment that carries a session link [P: C] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/claude/guard.go, internal/guard/gh.go, internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:

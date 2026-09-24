@@ -168,15 +168,23 @@ func gitFindings(tokens []string, branch, cwd, root string, policy Policy, stdin
 		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git commit on %s: create a branch first", branch))
 		}
-		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd, stdin))) {
+		message := commitMessage(rest, cwd, stdin)
+		if policy.HasTrailer(normalizeMessage(message)) {
 			findings = append(findings, "commit message carries a co-author or generated-by trailer")
+		}
+		if hasPrivate(message) {
+			findings = append(findings, leakFinding)
 		}
 	case "merge":
 		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git merge on %s: landing is the human's merge button", branch))
 		}
-		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd, stdin))) {
+		message := commitMessage(rest, cwd, stdin)
+		if policy.HasTrailer(normalizeMessage(message)) {
 			findings = append(findings, "commit message carries a co-author or generated-by trailer")
+		}
+		if hasPrivate(message) {
+			findings = append(findings, leakFinding)
 		}
 	case "branch":
 		deleting, forcing, moving, renaming := false, false, false, false

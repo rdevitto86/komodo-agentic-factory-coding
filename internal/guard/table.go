@@ -5,8 +5,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"regexp/syntax"
 	"runtime"
 	"strings"
+
+	"komodo/internal/mount"
 )
 
 // Case is one row of the table the gate runs: a call, and whether the guard must refuse it.
@@ -350,6 +354,7 @@ func Table(policy Policy) []Case {
 		write("a file in the state directory", ".komodo/results/TSK-01.1.1.json", false, ""),
 		write("the repo's own rules", "AGENTS.md", false, ""),
 	}...)
+	table = append(table, privateCases()...)
 	table = append(table, foldedCaseCases()...)
 	table = append(table, extraCases()...)
 	return table
@@ -559,9 +564,84 @@ func extraCases() []Case {
 		bash("repo archive changes the repository", "gh repo archive o/r --yes", "feat/x", true, "forge write"),
 		bash("repo sync moves a branch on the forge", "gh repo sync o/r", "feat/x", true, "forge write"),
 		bash("repo deploy-key list reads", "gh repo deploy-key list", "feat/x", false, ""),
+		bash("a pull request body carrying a co-author trailer", "gh pr create --title t --body 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", true, leakFinding),
+		bash("an issue comment carrying a generated-by trailer", "gh issue comment 1 -b 'Done.\n\nGenerated-by: a tool'", "feat/x", true, leakFinding),
+		bash("a pull request body naming co-authors in prose", "gh pr create --title t --body 'Thanks to the co-authors of the spec.'", "feat/x", false, ""),
+		bash("an issue comment with plain text", "gh issue comment 1 -b 'Done.'", "feat/x", false, ""),
 		bash("php -f glued reads the script", "cat > d.php <<'EOF'\n<?php system('git push origin main');\nEOF\nphp -fd.php", "feat/x", true, interpreterHidesGit),
 		bash("perl one-liner with $ beside an expanding word", `perl -lane 'print $F[0]' "$LOG"`, "feat/x", false, ""),
 	}
+}
+
+// privateCases builds, per registered private pattern, rows that send a matching link out and plain text beside them.
+func privateCases() []Case {
+	var out []Case
+	for _, pattern := range mount.GuardPrivatePatterns() {
+		link, ok := privateSample(pattern)
+		if !ok {
+			continue
+		}
+		out = append(out,
+			bash("a commit message carrying "+pattern, "git commit -m 'feat: x\n\n"+link+"'", "feat/x", true, leakFinding),
+			bash("a commit message with plain text beside "+pattern, "git commit -m 'feat: x\n\nPlain text.'", "feat/x", false, ""),
+			bash("a pull request body carrying "+pattern, "gh pr create --base main --head feat/x --title t --body '"+link+"'", "feat/x", true, leakFinding),
+			bash("a pull request body with plain text beside "+pattern, "gh pr create --base main --head feat/x --title t --body 'Plain text.'", "feat/x", false, ""),
+			bash("a comment body file carrying "+pattern, "gh pr comment 1 --body-file - <<'EOF'\n"+link+"\nEOF", "feat/x", true, leakFinding),
+			bash("a comment body file with plain text beside "+pattern, "gh pr comment 1 --body-file - <<'EOF'\nPlain text.\nEOF", "feat/x", false, ""),
+			bash("an api comment field carrying "+pattern, "gh api repos/o/r/issues/1/comments -f body='"+link+"'", "feat/x", true, leakFinding),
+			bash("an api comment field with plain text beside "+pattern, "gh api repos/o/r/issues/1/comments -f body='Plain text.'", "feat/x", false, ""),
+		)
+	}
+	return out
+}
+
+// privateSample builds a link a private pattern matches, walking its syntax tree for one shortest match.
+func privateSample(pattern string) (string, bool) {
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		return "", false
+	}
+	parsed, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return "", false
+	}
+	var sample strings.Builder
+	if !writeSample(&sample, parsed.Simplify()) {
+		return "", false
+	}
+	link := "https://" + sample.String() + "_0123"
+	if !compiled.MatchString(link) {
+		link = sample.String()
+	}
+	return link, compiled.MatchString(link) && !strings.ContainsAny(link, "'\n")
+}
+
+// writeSample writes one short string a syntax node matches, reporting false for a node it cannot build.
+func writeSample(out *strings.Builder, node *syntax.Regexp) bool {
+	switch node.Op {
+	case syntax.OpLiteral:
+		out.WriteString(string(node.Rune))
+	case syntax.OpCharClass:
+		if len(node.Rune) < 2 {
+			return false
+		}
+		out.WriteRune(node.Rune[0])
+	case syntax.OpAnyChar, syntax.OpAnyCharNotNL:
+		out.WriteByte('x')
+	case syntax.OpConcat:
+		for _, sub := range node.Sub {
+			if !writeSample(out, sub) {
+				return false
+			}
+		}
+	case syntax.OpCapture, syntax.OpPlus, syntax.OpAlternate:
+		return writeSample(out, node.Sub[0])
+	case syntax.OpStar, syntax.OpQuest, syntax.OpEmptyMatch, syntax.OpBeginLine, syntax.OpEndLine,
+		syntax.OpBeginText, syntax.OpEndText, syntax.OpWordBoundary, syntax.OpNoWordBoundary:
+	default:
+		return false
+	}
+	return true
 }
 
 // foldedCaseCases builds the config-path rows that only a case-insensitive disk mismatches,
