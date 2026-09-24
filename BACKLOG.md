@@ -1755,7 +1755,7 @@ base: main
 ```
 * **Why:** the local 3B reviewer returned 0 findings on most runs and missed a real bug in #161. A review station that always approves is a stage, not QC. A seeded-bug corpus gives each local model a recall number, and the line keeps review on the host until that number clears a bar.
 
-#### [TSK-03.24.1] komodo recall scores a reviewer against seeded bugs [P: H] [READY]
+#### [TSK-03.24.1] komodo recall scores a reviewer against seeded bugs [P: H] [DONE]
 ```yaml
 files: [internal/recall/recall.go, internal/recall/recall_test.go, internal/recall/testdata, cmd/komodo/main.go, cmd/komodo/machine.go]
 done_when:
@@ -1772,7 +1772,7 @@ type: feat
 tier: heavy
 ```
 
-#### [TSK-03.24.2] A local reviewer takes review only above its recall bar [P: H] [READY]
+#### [TSK-03.24.2] A local reviewer takes review only above its recall bar [P: H] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/mount_test.go, internal/mount/claude/limits.go, internal/mount/claude/claude_test.go]
 done_when:

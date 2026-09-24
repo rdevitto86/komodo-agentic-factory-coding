@@ -2,6 +2,10 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
+## 1.1.0 — 2026-09-24
+
+- **TG-03.24** The local reviewer earns its seat (2 task(s))
+
 ## 1.0.1 — 2026-09-24
 
 - **TG-03.20** The guard holds its own denials, and the docs match the line (5 task(s))
