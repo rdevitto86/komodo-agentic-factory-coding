@@ -90,12 +90,13 @@ func planOverlay(profile Profile, plan string) Profile {
 // Select picks the profile with no flag: the host installed, the plan probed, the local machine
 // only when the overlay opts in with "local": true and it answers.
 func Select(root string) Profile {
-	local := mount.LoadOverlay().Local && mount.LocalMachine().Up()
-	return SelectWith(root, mount.Hosts(), local)
+	localSwitch := mount.LoadOverlay().Local
+	return SelectWith(root, mount.Hosts(), localSwitch, localSwitch && mount.LocalMachine().Up())
 }
 
 // SelectWith is Select over a given set of mounts, which is what a test drives.
-func SelectWith(root string, hosts []mount.Host, local bool) Profile {
+// localSwitch is the overlay's own opt-in; local is that switch on and the probe answering.
+func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profile {
 	profile := base()
 	host, found := installed(root, hosts)
 	if !found {
@@ -123,7 +124,11 @@ func SelectWith(root string, hosts []mount.Host, local bool) Profile {
 		}
 		profile.Why += " and the local machine answers"
 	} else if endpoint := os.Getenv(mount.LocalMachine().Env); endpoint != "" && host.HybridName != "" {
-		profile.Why += "; the local machine did not answer at " + endpoint + ", so the light tier stays on " + host.Name + "'s own light tier"
+		if localSwitch {
+			profile.Why += "; the local machine did not answer at " + endpoint + ", so the light tier stays on " + host.Name + "'s own light tier"
+		} else {
+			profile.Why += "; local tiers are off until the overlay sets local"
+		}
 	}
 	if plan == "" {
 		profile.Why += "; no plan probe, so the conservative overlay applies"
