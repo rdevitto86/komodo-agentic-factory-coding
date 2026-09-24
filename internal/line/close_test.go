@@ -412,3 +412,40 @@ func TestAFailedFixRoundCountsAndCarriesItsFailure(t *testing.T) {
 		t.Fatal("the next fix brief must carry what the failed round tripped on")
 	}
 }
+
+func TestAFixThatBreaksADoneWhenDoesNotCommit(t *testing.T) {
+	root := closeRepo(t)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "feat/a-group"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "test"},
+		{"add", "-A"},
+		{"commit", "-q", "-m", "seed"},
+	} {
+		if _, err := git(root, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	head, err := git(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "a", "one.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeResult(t, root, "TG-08.1-fix", goodResult())
+	plan := &Plan{Group: "TG-08.1", Title: "A group", Branch: "feat/a-group", Worktree: ".", Tasks: []PlanTask{{ID: "TSK-08.1.1"}}}
+	outcome, err := CloseFix(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Status == "DONE" || !strings.Contains(strings.Join(outcome.Problems, "\n"), "done_when") {
+		t.Fatalf("outcome = %+v; a fix that breaks a task's done_when must fail", outcome)
+	}
+	if after, _ := git(root, "rev-parse", "HEAD"); after != head {
+		t.Fatalf("HEAD moved from %s to %s; a failing fix round must not commit", head, after)
+	}
+	if !strings.Contains(RepairText(root, "TG-08.1-fix"), "done_when") {
+		t.Fatal("the next fix brief must carry the done_when failure")
+	}
+}

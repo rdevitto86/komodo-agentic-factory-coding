@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
@@ -456,5 +457,85 @@ func TestDrainDryRunListsTheGroupsInOrderAndLaunchesNothing(t *testing.T) {
 	}
 	if got := launched(t, root); got != "" {
 		t.Fatalf("a dry run launched %q", got)
+	}
+}
+
+func TestABareDrainBudgetsEveryGroupItPlans(t *testing.T) {
+	root := drainRepo(t)
+	total, err := drainBudget(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2*GroupBudget {
+		t.Fatalf("total = %s; two planned groups get %s each", total, GroupBudget)
+	}
+	if given, _ := drainBudget(root, time.Minute); given != time.Minute {
+		t.Fatalf("total = %s; a given --budget is the whole drain's budget", given)
+	}
+}
+
+func TestDrainStopsWhenTheWholeBudgetIsSpent(t *testing.T) {
+	root := drainRepo(t)
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Nanosecond, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 124 || !strings.Contains(out.String(), "TG-07.1 stopped: the whole 1ns budget is spent") {
+		t.Fatalf("code = %d, out = %s; a spent budget must stop the drain with the budget code", code, out.String())
+	}
+	if got := launched(t, root); got != "" {
+		t.Fatalf("launched = %q; nothing may launch once the budget is spent", got)
+	}
+}
+
+func TestDrainStopsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
+	root := drainRepo(t)
+	stageShip(t, root, "TG-07.1", "feat/first", drainText)
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 1 || !strings.Contains(out.String(), "TG-07.1 stopped: it came up again after it shipped") {
+		t.Fatalf("code = %d, out = %s; a shipped group that is still ready must stop the drain", code, out.String())
+	}
+	if got := launched(t, root); got != "TG-07.1" {
+		t.Fatalf("launched = %q; the repeated group must not launch twice", got)
+	}
+}
+
+func TestDrainReRendersTheRootWhenTheDoctorReportsDrift(t *testing.T) {
+	root := drainRepo(t)
+	rendered := filepath.Join(root, "rendered.md")
+	if err := os.WriteFile(rendered, []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	host, _ := mount.Get("fakehost-drain")
+	host.Render = func(dir, binary string) (install.Plan, error) {
+		plan := install.Plan{Host: host.Name, Root: dir}
+		plan.AddProject(filepath.Join(dir, "rendered.md"), []byte("fresh\n"), "kept in sync")
+		return plan, nil
+	}
+	mount.Register(host)
+	var out bytes.Buffer
+	if _, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "fresh\n" {
+		t.Fatalf("rendered.md = %q; a drifted root must be re-rendered before a group launches", data)
 	}
 }

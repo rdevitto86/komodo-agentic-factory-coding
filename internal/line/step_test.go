@@ -330,7 +330,10 @@ func walkFixRound(t *testing.T, root, worktree string) {
 		next.Brief != filepath.Join(StateDir, "briefs", "TG-12.1-fix.md") || next.Worktree != plan.Worktree {
 		t.Fatalf("action = %+v; a fresh fix brief must spawn the builder in the group worktree", next)
 	}
-	fixed := "package a\n\n" + strings.Repeat("y\n", 45)
+	fixed := "package a\n\n" + strings.Repeat("var _ = 0\n", 45)
+	if err := os.WriteFile(filepath.Join(worktree, "go.mod"), []byte("module example.com/w\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(worktree, "a", "one.go"), []byte(fixed), 0o644); err != nil {
 		t.Fatal(err)
 	}

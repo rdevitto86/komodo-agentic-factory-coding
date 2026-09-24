@@ -350,7 +350,8 @@ func runStep(root string, args []string) {
 func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
-	budget := flags.Duration("budget", run.GroupBudget, "how long the run may take before it is killed")
+	budget := flags.Duration("budget", 0, "how long the run may take before it is killed (default: "+
+		run.GroupBudget.String()+" per group)")
 	target, rest := splitPositional(args, "budget")
 	_ = flags.Parse(rest)
 	if !*dry {

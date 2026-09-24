@@ -101,8 +101,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	return outcome, writeStatus(path, taskID, "IN_PROGRESS")
 }
 
-// CloseFix gates a review fix round in the group worktree, commits it on the group branch, clears
-// the review so the next step reviews again, and stamps the round in the ledger.
+// CloseFix reruns the group's done_when, comment lint, and gate on a fix round, commits it, and clears the review.
 func CloseFix(root string, plan *Plan) (*Outcome, error) {
 	path, err := backlog.Find(root)
 	if err != nil {
@@ -118,6 +117,12 @@ func CloseFix(root string, plan *Plan) (*Outcome, error) {
 	round := FixRounds(root, plan.Group) + 1
 	outcome := &Outcome{Task: task.ID}
 	problems := checkResult(root, task.ID)
+	for _, planned := range plan.Tasks {
+		if groupTask, ok := parsed.Task(planned.ID); ok {
+			problems = append(problems, runDoneWhen(cwd, groupTask)...)
+		}
+	}
+	problems = append(problems, lintComments(cwd, task)...)
 	if len(problems) == 0 && isToolkit(root) {
 		if err := gateCommand(cwd); err != nil {
 			problems = append(problems, "gate: "+err.Error())

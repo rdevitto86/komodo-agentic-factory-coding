@@ -145,9 +145,9 @@ func drain(options Options) (int, error) {
 	if options.DryRun {
 		return 0, listDrain(options.Root, stdout)
 	}
-	total := options.Budget
-	if total <= 0 {
-		total = GroupBudget
+	total, err := drainBudget(options.Root, options.Budget)
+	if err != nil {
+		return 1, err
 	}
 	started := time.Now()
 	ran := map[string]bool{}
@@ -195,18 +195,9 @@ func drain(options Options) (int, error) {
 
 // listDrain prints the groups a drain would run, in order, the open run first, and launches nothing.
 func listDrain(root string, stdout io.Writer) error {
-	var order []string
-	if state, err := line.LoadRun(root); err == nil && line.RunIsOpen(root) {
-		order = append(order, state.Group)
-	}
-	groups, err := line.ReadyGroups(root)
+	order, err := drainOrder(root)
 	if err != nil {
 		return err
-	}
-	for _, group := range groups {
-		if !contains(order, group.ID) {
-			order = append(order, group.ID)
-		}
 	}
 	if len(order) == 0 {
 		fmt.Fprintln(stdout, "drain would run nothing: nothing is ready")
@@ -215,6 +206,36 @@ func listDrain(root string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "%d. %s\n", index+1, group)
 	}
 	return nil
+}
+
+// drainBudget is the whole drain's budget: the one given, else GroupBudget for every group the drain plans.
+func drainBudget(root string, given time.Duration) (time.Duration, error) {
+	if given > 0 {
+		return given, nil
+	}
+	order, err := drainOrder(root)
+	if err != nil {
+		return 0, err
+	}
+	return GroupBudget * time.Duration(max(len(order), 1)), nil
+}
+
+// drainOrder is the groups a drain plans to run, in order, the open run first.
+func drainOrder(root string) ([]string, error) {
+	var order []string
+	if state, err := line.LoadRun(root); err == nil && line.RunIsOpen(root) {
+		order = append(order, state.Group)
+	}
+	groups, err := line.ReadyGroups(root)
+	if err != nil {
+		return nil, err
+	}
+	for _, group := range groups {
+		if !contains(order, group.ID) {
+			order = append(order, group.ID)
+		}
+	}
+	return order, nil
 }
 
 // refreshRoot re-renders every installed host's project config at the root when the doctor reports drift.

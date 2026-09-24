@@ -349,7 +349,7 @@ func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Gr
 	ahead := map[string]bool{}
 	var out []backlog.Group
 	for _, group := range parsed.Groups {
-		if !hasReadyTask(group) {
+		if !group.HasReadyTask() {
 			continue
 		}
 		base := groupBase(root, group)
@@ -363,16 +363,6 @@ func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Gr
 		ahead[BranchName(group.Type(), group.Slug())] = true
 	}
 	return out
-}
-
-// hasReadyTask reports whether the group holds a ready task an agent owns.
-func hasReadyTask(group backlog.Group) bool {
-	for _, task := range group.Tasks {
-		if task.Ready() && task.Owner() == "agent" {
-			return true
-		}
-	}
-	return false
 }
 
 // hasOrigin reports whether the repo has an origin remote, without which no base can be checked.
