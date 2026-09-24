@@ -176,7 +176,7 @@ func agentFile(role mount.Role, ollama bool) string {
 	return strings.Join(head, "\n") + "\n" + role.Instructions() + "\n"
 }
 
-// settingsFile renders the hook registration and the permissions convenience layer.
+// settingsFile renders the hook registration, the permissions convenience layer, and attribution off.
 func settingsFile(root, binary string) ([]byte, error) {
 	policy, err := readPolicy(toolkit.FS(root))
 	if err != nil {
@@ -193,6 +193,8 @@ func settingsFile(root, binary string) ([]byte, error) {
 			}},
 		},
 		"permissions": map[string]any{"deny": denyList(policy)},
+		// No co-author trailer, no pull request footer, no session link, in every session and subagent.
+		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": true},
 	}
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {

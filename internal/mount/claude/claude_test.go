@@ -807,3 +807,26 @@ func TestLeftoversNamesARetiredHookAndAllowRuleOnly(t *testing.T) {
 		t.Fatalf("a missing file = %q, want nothing", got)
 	}
 }
+
+// TestSettingsTurnAttributionOff checks the rendered settings hide the trailer, the PR footer, and the session link.
+func TestSettingsTurnAttributionOff(t *testing.T) {
+	worktree := t.TempDir()
+	raw, err := settingsFile(worktree, "bin/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Attribution struct {
+			Commit     *string `json:"commit"`
+			PR         *string `json:"pr"`
+			SessionURL bool    `json:"sessionUrl"`
+		} `json:"attribution"`
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatal(err)
+	}
+	a := settings.Attribution
+	if a.Commit == nil || *a.Commit != "" || a.PR == nil || *a.PR != "" || !a.SessionURL {
+		t.Fatalf("attribution = %s; commit and pr must be empty and sessionUrl true", raw)
+	}
+}
