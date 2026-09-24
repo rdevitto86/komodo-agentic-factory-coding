@@ -24,6 +24,7 @@ type flagTable struct {
 	longValue map[string]bool
 	module    map[string]bool
 	gluedOnly map[string]bool
+	digits    map[string]bool
 	clusters  bool
 	subOnly   bool
 }
@@ -44,14 +45,16 @@ var flagTables = map[string]flagTable{
 	},
 	"ruby": {
 		code:      set("e"),
-		value:     set("r", "I", "C", "E", "F", "0", "x", "K", "T", "W"),
-		gluedOnly: set("F", "0", "x", "K", "T", "W"),
+		value:     set("r", "I", "C", "E", "F", "x", "K", "T", "W"),
+		gluedOnly: set("F", "x", "K", "T", "W"),
+		digits:    set("0"),
 		clusters:  true,
 	},
 	"perl": {
 		code:      set("e", "E"),
 		value:     set("M", "m", "I", "i", "l", "0", "F", "d", "D", "x", "C"),
-		gluedOnly: set("M", "m", "i", "l", "0", "F", "d", "D", "x", "C"),
+		gluedOnly: set("M", "m", "i", "F", "d", "D", "x", "C"),
+		digits:    set("l", "0"),
 		clusters:  true,
 	},
 	"php": {
@@ -149,8 +152,20 @@ func parseInterpreter(kept []string) interpCall {
 func (call *interpCall) readShort(args []string, index int, table flagTable) (bool, int) {
 	arg := args[index]
 	letters := arg[1:]
+	if !table.clusters && len(letters) > 1 && allIn(letters, table.code) {
+		// node reads -pe and -ep as --print --eval, so the next word is code.
+		if index+1 < len(args) {
+			call.code = append(call.code, args[index+1])
+			return false, index + 1
+		}
+		return false, index
+	}
 	for position := 0; position < len(letters); position++ {
 		letter := string(letters[position])
+		if table.digits[letter] {
+			position += digitRun(letters[position+1:])
+			continue
+		}
 		rest := strings.TrimPrefix(letters[position+1:], "=")
 		switch {
 		case table.code[letter]:
@@ -179,6 +194,29 @@ func (call *interpCall) readShort(args []string, index int, table flagTable) (bo
 		}
 	}
 	return false, index
+}
+
+// digitRun is how many characters an octal run, or x and a hex run, takes at the start of text.
+func digitRun(text string) int {
+	digits := "01234567"
+	count := 0
+	if strings.HasPrefix(text, "x") {
+		digits, count = "0123456789abcdefABCDEF", 1
+	}
+	for count < len(text) && strings.ContainsRune(digits, rune(text[count])) {
+		count++
+	}
+	return count
+}
+
+// allIn reports whether every letter of a short cluster is in the set.
+func allIn(letters string, members map[string]bool) bool {
+	for _, letter := range letters {
+		if !members[string(letter)] {
+			return false
+		}
+	}
+	return true
 }
 
 // parseSubcommandInterpreter reads bun and deno, whose first word is usually a verb, not a script.
@@ -243,13 +281,13 @@ func hidesGitOrGh(text string) bool {
 	return gitHidesRe.MatchString(text) || ghHidesRe.MatchString(text)
 }
 
-// interpScriptFindings checks what an interpreter will run: its inline code, a script this line
-// already wrote, or a script on disk; a script missing after an earlier command is not visible.
-func (s *scanner) interpScriptFindings(kept []string, cwd string) []string {
-	if len(kept) < 2 {
-		return nil
-	}
+// interpScriptFindings checks what an interpreter will run: inline code, its stdin, a script this
+// line already wrote, or one on disk; a script missing after an earlier command is not visible.
+func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []string {
 	call := parseInterpreter(kept)
+	if len(call.code) == 0 && (call.operand == "" || call.operand == "-") {
+		return stdinFindings(stdin)
+	}
 	if len(call.code) > 0 {
 		if hidesGitOrGh(strings.Join(call.code, "\n")) {
 			return []string{interpreterHidesGit}
@@ -273,6 +311,17 @@ func (s *scanner) interpScriptFindings(kept []string, cwd string) []string {
 	case !exists && s.createdEarlier():
 		return []string{scriptNotVisible}
 	case ok && hidesGitOrGh(text):
+		return []string{interpreterHidesGit}
+	}
+	return nil
+}
+
+// stdinFindings judges the program an interpreter reads from a heredoc or a pipe.
+func stdinFindings(stdin string) []string {
+	switch {
+	case strings.Contains(stdin, unknownInput):
+		return []string{scriptNotVisible}
+	case hidesGitOrGh(stdin):
 		return []string{interpreterHidesGit}
 	}
 	return nil

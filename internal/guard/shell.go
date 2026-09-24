@@ -189,7 +189,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	case pathWriters[name] || isConditionalWriter(name, kept):
 		findings = append(findings, writerPaths(name, kept, cwd, s.root, s.policy)...)
 		if interpreters[name] {
-			findings = append(findings, s.interpScriptFindings(kept, cwd)...)
+			findings = append(findings, s.interpScriptFindings(kept, cwd, stdin)...)
 		}
 		if name == "tee" {
 			s.recordTeeWrites(kept, cwd, stdin)
@@ -201,7 +201,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	case name == "gh":
 		findings = append(findings, ghFindings(kept)...)
 	case interpreters[name]:
-		findings = append(findings, s.interpScriptFindings(kept, cwd)...)
+		findings = append(findings, s.interpScriptFindings(kept, cwd, stdin)...)
 	case name == "eval" && len(kept) > 1:
 		var evaluated []string
 		evaluated, branch = s.scan(strings.Join(kept[1:], " "), cwd, branch)
@@ -476,8 +476,16 @@ func (s *scanner) recordOutputWrites(name string, kept []string, cwd string) {
 				}
 			case strings.HasPrefix(arg, long+"="):
 				targets = append(targets, strings.TrimPrefix(arg, long+"="))
-			case strings.HasPrefix(arg, short) && len(arg) > len(short) && !strings.HasPrefix(arg, "--"):
-				targets = append(targets, arg[len(short):])
+			case strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--"):
+				// curl -sSLo x and wget -qO x carry the output letter inside a cluster.
+				if at := strings.IndexByte(arg[1:], short[1]); at >= 0 {
+					if rest := arg[at+2:]; rest != "" {
+						targets = append(targets, rest)
+					} else if index+1 < len(kept) {
+						targets = append(targets, kept[index+1])
+						index++
+					}
+				}
 			}
 		}
 	case "dd":
@@ -506,7 +514,7 @@ func (s *scanner) recordOutputWrites(name string, kept []string, cwd string) {
 
 // recordTeeWrites remembers what tee's stdin put into each file it names.
 func (s *scanner) recordTeeWrites(kept []string, cwd, stdin string) {
-	known := stdin != ""
+	known := stdin != "" && !strings.Contains(stdin, unknownInput)
 	for _, token := range kept[1:] {
 		if token == "" || strings.HasPrefix(token, "-") {
 			continue
