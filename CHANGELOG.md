@@ -6,6 +6,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 The first beta of 1.0.0: feature-complete, with both proofs recorded below. 1.0.0 is cut by hand once real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
+- **TG-03.11** A pipe through a filter still feeds a shell (1 task(s))
 - **TG-03.10** The gate lints what a commit carries (1 task(s))
 - **TG-03.9** A local machine carries a station (2 task(s))
 - **TG-03.8** The line plans what it is handed (18 task(s))
