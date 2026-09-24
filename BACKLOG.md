@@ -1854,7 +1854,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.26.2] Lint notes a group whose dependencies make it serial [P: M] [READY]
+#### [TSK-03.26.2] Lint notes a group whose dependencies make it serial [P: M] [DONE]
 ```yaml
 files: [internal/backlog/lint.go, internal/backlog/backlog_test.go, cmd/komodo/backlog.go]
 done_when:
