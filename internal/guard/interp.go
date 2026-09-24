@@ -77,6 +77,17 @@ var flagTables = map[string]flagTable{
 	},
 }
 
+// versionSuffixRe matches the version a command name carries after its interpreter, as in python3.12.
+var versionSuffixRe = regexp.MustCompile(`^(python3|python|ruby|perl|node|php)[0-9][0-9.]*$`)
+
+// interpName maps a versioned interpreter name such as python3.12 or perl5.36 to the one the guard knows.
+func interpName(name string) string {
+	if match := versionSuffixRe.FindStringSubmatch(name); match != nil {
+		return match[1]
+	}
+	return name
+}
+
 // set builds a lookup from its members.
 func set(members ...string) map[string]bool {
 	out := map[string]bool{}
@@ -104,7 +115,7 @@ type interpCall struct {
 
 // parseInterpreter reads an interpreter's arguments with that interpreter's own flag table.
 func parseInterpreter(kept []string) interpCall {
-	name := commandName(kept[0])
+	name := interpName(commandName(kept[0]))
 	if name == "python3" {
 		name = "python"
 	}
@@ -301,7 +312,7 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []strin
 		return nil
 	}
 	if !scriptLike(call.operand) {
-		text, visible := s.resolvedScript(commandName(kept[0]), call.operand, cwd)
+		text, visible := s.resolvedScript(interpName(commandName(kept[0])), call.operand, cwd)
 		switch {
 		case !visible:
 			return []string{scriptNotVisible}
@@ -353,10 +364,10 @@ func (s *scanner) resolvedScript(name, operand, cwd string) (string, bool) {
 // stdinFindings judges the program an interpreter reads from a heredoc or a pipe.
 func stdinFindings(stdin string) []string {
 	switch {
-	case strings.Contains(stdin, unknownInput):
-		return []string{scriptNotVisible}
 	case hidesGitOrGh(stdin):
 		return []string{interpreterHidesGit}
+	case strings.Contains(stdin, unknownInput):
+		return []string{scriptNotVisible}
 	}
 	return nil
 }

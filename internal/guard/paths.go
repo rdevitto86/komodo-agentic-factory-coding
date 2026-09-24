@@ -75,6 +75,15 @@ func changeDir(kept []string, cwd string) string {
 // writerPaths checks the paths a path-writing command actually writes to: every argument,
 // unless the command only writes its last, since cp, mv, ln, and install read every other one.
 func writerPaths(name string, kept []string, cwd, root string, policy Policy) []string {
+	var findings []string
+	for _, token := range writerTargets(name, kept) {
+		findings = append(findings, pathFindings(token, cwd, root, policy)...)
+	}
+	return findings
+}
+
+// writerTargets lists the paths a writer command writes, past sed's and perl's script argument.
+func writerTargets(name string, kept []string) []string {
 	var targets []string
 	editor := name == "sed" || name == "perl"
 	script := false
@@ -100,11 +109,7 @@ func writerPaths(name string, kept []string, cwd, root string, policy Policy) []
 	if destOnlyWriters[name] && len(targets) > 1 {
 		targets = targets[len(targets)-1:]
 	}
-	var findings []string
-	for _, token := range targets {
-		findings = append(findings, pathFindings(token, cwd, root, policy)...)
-	}
-	return findings
+	return targets
 }
 
 // ddPaths checks dd's of= target, the only argument dd writes to.
