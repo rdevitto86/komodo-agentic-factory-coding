@@ -95,6 +95,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		result.StaleBase = plan.Base
 	}
 	outcome := ""
+	lines := 0
 	defer func() {
 		if outcome == "" {
 			outcome = "done"
@@ -102,7 +103,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 				outcome = "failed"
 			}
 		}
-		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome})
+		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome, Lines: lines})
 	}()
 	for _, task := range plan.Tasks {
 		current, ok := rootParsed.Task(task.ID)
@@ -151,6 +152,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := ClearStatus(root, shippedIDs); err != nil {
 		return nil, err
 	}
+	lines = ChangedLines(group, StartRef(group, plan.Base), plan.Branch)
 	if isToolkit(root) {
 		if err := gateCommand(group); err != nil {
 			return nil, fmt.Errorf("gate: %w", err)
@@ -212,6 +214,23 @@ func liveBase(root, base string) string {
 		return base
 	}
 	return DefaultBase(root)
+}
+
+var shortstatCount = regexp.MustCompile(`(\d+) (?:insertion|deletion)`)
+
+// ChangedLines is the added plus deleted line count between base and branch, or zero when git cannot say.
+func ChangedLines(dir, base, branch string) int {
+	out, err := git.Run(dir, "diff", "--shortstat", base+"..."+branch)
+	if err != nil {
+		return 0
+	}
+	total := 0
+	for _, match := range shortstatCount.FindAllStringSubmatch(out, -1) {
+		var count int
+		fmt.Sscan(match[1], &count)
+		total += count
+	}
+	return total
 }
 
 // ChangelogLine is the one line a group adds under its version.

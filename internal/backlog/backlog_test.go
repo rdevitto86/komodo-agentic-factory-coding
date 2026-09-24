@@ -345,3 +345,57 @@ func TestADeclaredDirectoryIsItsOwnScope(t *testing.T) {
 		t.Fatalf("dirs = %v", narrow.Dirs())
 	}
 }
+
+// chainGroup builds one group from task specs of id, status, and depends_on list.
+func chainGroup(specs ...[3]string) Backlog {
+	text := "### [TG-30.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n"
+	for _, spec := range specs {
+		text += "#### [" + spec[0] + "] Task [P: M] [" + spec[1] + "]\n```yaml\nfiles: [a/" + spec[0] + ".go]\ndone_when: [\"go test ./...\"]\n"
+		if spec[2] != "" {
+			text += "depends_on: [" + spec[2] + "]\n"
+		}
+		text += "```\n\n"
+	}
+	return Parse(text)
+}
+
+func TestNotesNameAGroupThatIsOneChain(t *testing.T) {
+	parsed := chainGroup(
+		[3]string{"TSK-30.1.1", "READY", ""},
+		[3]string{"TSK-30.1.2", "READY", "TSK-30.1.1"},
+		[3]string{"TSK-30.1.3", "READY", "TSK-30.1.2"},
+		[3]string{"TSK-30.1.4", "READY", ""},
+		[3]string{"TSK-30.1.5", "READY", ""})
+	notes := Notes(parsed)
+	if len(notes) != 1 || !strings.Contains(notes[0], "TG-30.1: 3 of 5 tasks are one chain") {
+		t.Fatalf("notes = %v; a 3-task chain in 5 tasks is serial", notes)
+	}
+	if problems := Lint(parsed); len(problems) != 0 {
+		t.Fatalf("problems = %v; a note never fails lint", problems)
+	}
+}
+
+func TestNotesSkipTwoShortChains(t *testing.T) {
+	parsed := chainGroup(
+		[3]string{"TSK-30.1.1", "READY", ""},
+		[3]string{"TSK-30.1.2", "READY", "TSK-30.1.1"},
+		[3]string{"TSK-30.1.3", "READY", ""},
+		[3]string{"TSK-30.1.4", "READY", "TSK-30.1.3"},
+		[3]string{"TSK-30.1.5", "READY", ""})
+	if notes := Notes(parsed); len(notes) != 0 {
+		t.Fatalf("notes = %v; two 2-task chains still build in parallel", notes)
+	}
+}
+
+func TestNotesNeverCountDoneTasks(t *testing.T) {
+	parsed := chainGroup(
+		[3]string{"TSK-30.1.1", "DONE", ""},
+		[3]string{"TSK-30.1.2", "DONE", "TSK-30.1.1"},
+		[3]string{"TSK-30.1.3", "DONE", "TSK-30.1.2"},
+		[3]string{"TSK-30.1.4", "READY", ""},
+		[3]string{"TSK-30.1.5", "READY", ""},
+		[3]string{"TSK-30.1.6", "READY", ""})
+	if notes := Notes(parsed); len(notes) != 0 {
+		t.Fatalf("notes = %v; a chain that is all DONE is no longer serial work", notes)
+	}
+}

@@ -8,7 +8,7 @@ import (
 	"komodo/internal/git"
 )
 
-// RefuseCollision refuses to brief a task whose directories overlap a closed, unmerged task
+// RefuseCollision refuses to brief a task whose claimed files overlap a closed, unmerged task
 // branch of the open run, since QC would stop on a conflict a person has to resolve.
 func RefuseCollision(root, taskID string) error {
 	state, err := LoadRun(root)
@@ -41,8 +41,8 @@ func RefuseCollision(root, taskID string) error {
 				continue
 			}
 			candidate, ok := parsed.Task(other)
-			if ok && dirsOverlap(task, candidate) {
-				return fmt.Errorf("%s shares a directory with %s, whose branch %s is closed but not merged into %s; merge that wave first, or pick disjoint files",
+			if ok && claimsOverlap(task, candidate) {
+				return fmt.Errorf("%s shares a file with %s, whose branch %s is closed but not merged into %s; merge that wave first, or pick disjoint files",
 					taskID, other, branch, state.Branch)
 			}
 		}

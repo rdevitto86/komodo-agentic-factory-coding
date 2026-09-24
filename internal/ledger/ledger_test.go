@@ -215,3 +215,47 @@ func TestAnEntryLeavesTokensEmptyWhenNoMountCanSay(t *testing.T) {
 		}
 	}
 }
+
+func TestAggregateMeasuresThroughput(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	at := func(minutes int) time.Time { return start.Add(time.Duration(minutes) * time.Minute) }
+	entries := []Entry{
+		{At: at(0), Run: "r1", Group: "TG-1", Station: "intake", Outcome: "started"},
+		{At: at(0), Run: "r1", Group: "TG-1", Task: "TSK-1", Station: "brief"},
+		{At: at(10), Run: "r1", Group: "TG-1", Task: "TSK-2", Station: "brief"},
+		{At: at(20), Run: "r1", Group: "TG-1", Task: "TSK-1", Station: "build", Tier: "light", Model: "haiku", TokensIn: 300, TokensOut: 100},
+		{At: at(20), Run: "r1", Group: "TG-1", Task: "TSK-1", Station: "close", Outcome: "repair"},
+		{At: at(25), Run: "r1", Group: "TG-1", Task: "TSK-1", Station: "brief"},
+		{At: at(30), Run: "r1", Group: "TG-1", Task: "TSK-1", Station: "close", Outcome: "done"},
+		{At: at(30), Run: "r1", Group: "TG-1", Task: "TSK-2", Station: "build", Tier: "standard", Model: "sonnet", TokensIn: 500, TokensOut: 300},
+		{At: at(30), Run: "r1", Group: "TG-1", Task: "TSK-2", Station: "close", Outcome: "done"},
+		{At: at(60), Run: "r1", Group: "TG-1", Station: "ship", Outcome: "done", Lines: 40},
+		{At: at(70), Run: "r2", Group: "TG-2", Task: "TSK-3", Station: "build", Model: "sonnet", TokensIn: 9000},
+		{At: at(80), Run: "r2", Group: "TG-2", Station: "ship", Outcome: "done"},
+		{At: at(40), Run: "r3", Group: "TG-3", Task: "TSK-4", Station: "brief"},
+		{At: at(40), Run: "r3", Group: "TG-3", Task: "TSK-4", Station: "build", Model: "opus", TokensIn: 500},
+		{At: at(45), Run: "r3", Group: "TG-3", Station: "ship", Outcome: "failed", Lines: 50},
+	}
+	metrics := Aggregate(entries)
+	if metrics.TasksPerHour != 2.0/(75.0/60.0) {
+		t.Fatalf("tasks per hour = %v; two tasks done over seventy-five minutes of run time", metrics.TasksPerHour)
+	}
+	if metrics.MedianTaskSec != 55*60 {
+		t.Fatalf("median = %v; briefs at 0 and 10 shipped at 60, a failed ship never counts", metrics.MedianTaskSec)
+	}
+	if _, ok := metrics.TokensPerLine["opus"]; ok {
+		t.Fatalf("tokens per line = %v; a failed ship's lines never count", metrics.TokensPerLine)
+	}
+	if metrics.TokensPerLine["haiku"] != 10 || metrics.TokensPerLine["sonnet"] != 20 {
+		t.Fatalf("tokens per line = %v; a ship without lines is skipped, never read as zero", metrics.TokensPerLine)
+	}
+	if metrics.RepairByTier["light"] != 1 || metrics.RepairByTier["standard"] != 0 {
+		t.Fatalf("repair by tier = %v", metrics.RepairByTier)
+	}
+	text := Render(metrics)
+	for _, heading := range []string{"## Tasks per hour", "## Median wall seconds per task", "## Tokens per changed line", "## Repair rate by tier"} {
+		if !strings.Contains(text, heading) {
+			t.Fatalf("text lacks %q:\n%s", heading, text)
+		}
+	}
+}
