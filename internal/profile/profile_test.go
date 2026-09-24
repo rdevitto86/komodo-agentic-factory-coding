@@ -42,7 +42,7 @@ func fakeHost(name string, installed bool, usage mount.Usage, probed bool) mount
 }
 
 func TestNoMountInstalledIsTheConservativeOverlay(t *testing.T) {
-	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", false, mount.Usage{}, false)}, false)
+	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", false, mount.Usage{}, false)}, false, false)
 	if got.Name != "none" || got.Plan != "unknown" {
 		t.Fatalf("profile = %+v", got)
 	}
@@ -53,7 +53,7 @@ func TestNoMountInstalledIsTheConservativeOverlay(t *testing.T) {
 
 func TestTheInstalledMountPicksTheProfile(t *testing.T) {
 	host := fakeHost("h", true, mount.Usage{Plan: "max_5x", FiveHour: 0.2}, true)
-	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
 	if got.Name != "h" || got.Host != "h" || got.Plan != "max_5x" {
 		t.Fatalf("profile = %+v", got)
 	}
@@ -64,7 +64,7 @@ func TestTheInstalledMountPicksTheProfile(t *testing.T) {
 
 func TestOllamaUpMakesItHybrid(t *testing.T) {
 	host := fakeHost("claude", true, mount.Usage{Plan: "max_5x"}, true)
-	got := SelectWith(t.TempDir(), []mount.Host{host}, true)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, true, true)
 	if got.Name != "hybrid" {
 		t.Fatalf("name = %s", got.Name)
 	}
@@ -77,7 +77,7 @@ func TestOllamaUpMakesItHybrid(t *testing.T) {
 }
 
 func TestAnotherHostWithOllamaIsLocal(t *testing.T) {
-	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("codex", true, mount.Usage{}, false)}, true)
+	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("codex", true, mount.Usage{}, false)}, true, true)
 	if got.Name != "local" {
 		t.Fatalf("name = %s", got.Name)
 	}
@@ -86,7 +86,7 @@ func TestAnotherHostWithOllamaIsLocal(t *testing.T) {
 func TestOllamaNotAnsweringReportsTheDegradeOnce(t *testing.T) {
 	t.Setenv(ollama.Env, "http://127.0.0.1:1")
 	host := fakeHost("claude", true, mount.Usage{Plan: "max_5x"}, true)
-	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, true, false)
 	if got.Name == "hybrid" {
 		t.Fatal("the profile stayed hybrid with the local machine down")
 	}
@@ -101,7 +101,7 @@ func TestOllamaNotAnsweringReportsTheDegradeOnce(t *testing.T) {
 func TestNoOllamaEnvIsSilentAboutTheLocalMachine(t *testing.T) {
 	t.Setenv(ollama.Env, "")
 	host := fakeHost("claude", true, mount.Usage{Plan: "max_5x"}, true)
-	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, true, false)
 	if strings.Contains(got.Why, "did not answer") {
 		t.Fatalf("why = %q", got.Why)
 	}
@@ -109,7 +109,7 @@ func TestNoOllamaEnvIsSilentAboutTheLocalMachine(t *testing.T) {
 
 func TestProPlanLowersTheCeilingAndThePace(t *testing.T) {
 	host := fakeHost("h", true, mount.Usage{Plan: "pro"}, true)
-	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
 	if got.MaxParallel != 2 || got.PauseAt != 0.75 || got.ReviewSkipLines != 40 {
 		t.Fatalf("pro overlay = %+v", got)
 	}
@@ -120,7 +120,7 @@ func TestProPlanLowersTheCeilingAndThePace(t *testing.T) {
 
 func TestNoProbeIsUnknownNotAFailedRun(t *testing.T) {
 	host := fakeHost("h", true, mount.Usage{}, false)
-	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
 	if got.Plan != "unknown" || got.Host != "h" {
 		t.Fatalf("profile = %+v", got)
 	}
@@ -136,7 +136,7 @@ func TestAnOverlayOnlyLowersACapAndAddsARef(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := Overlay(SelectWith(root, []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_20x"}, true)}, false), path)
+	got := Overlay(SelectWith(root, []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_20x"}, true)}, false, false), path)
 	if got.Caps.PerFile != 2000 {
 		t.Fatalf("the overlay did not lower the cap: %d", got.Caps.PerFile)
 	}
@@ -158,7 +158,7 @@ func TestAnOverlayOnlyLowersACapAndAddsARef(t *testing.T) {
 }
 
 func TestAMissingOverlayChangesNothing(t *testing.T) {
-	before := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false)
+	before := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
 	after := Overlay(before, filepath.Join(t.TempDir(), "absent.json"))
 	if after.MaxParallel != before.MaxParallel || after.Caps.PerFile != before.Caps.PerFile {
 		t.Fatal("an absent overlay changed the profile")
@@ -190,11 +190,17 @@ func TestSelectNeedsTheOverlaySwitchAsWellAsAnAnsweringServer(t *testing.T) {
 			return tiers
 		},
 	})
-	mount.RegisterLocal(mount.Local{Up: func() bool { return true }})
-	t.Cleanup(func() { mount.RegisterLocal(mount.Local{}) })
+	previousLocal := mount.LocalMachine()
+	mount.RegisterLocal(mount.Local{Env: ollama.Env, Up: func() bool { return true }})
+	t.Cleanup(func() { mount.RegisterLocal(previousLocal) })
+	t.Setenv(ollama.Env, "http://127.0.0.1:1")
 
-	if got := Select(root); got.Name == "hybrid" {
+	got := Select(root)
+	if got.Name == "hybrid" {
 		t.Fatalf("ollama answered without the overlay switch and every tier still went hybrid: %+v", got)
+	}
+	if strings.Contains(got.Why, "did not answer") {
+		t.Fatalf("the switch-off case reported a failed probe instead of the switch: %q", got.Why)
 	}
 
 	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
@@ -212,7 +218,7 @@ func TestSelectNeedsTheOverlaySwitchAsWellAsAnAnsweringServer(t *testing.T) {
 func TestPausedFollowsTheWindow(t *testing.T) {
 	resets := time.Now().Add(time.Hour)
 	host := fakeHost("h", true, mount.Usage{Plan: "max_5x", FiveHour: 0.95, ResetsAt: resets}, true)
-	got := SelectWith(t.TempDir(), []mount.Host{host}, false)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
 	if !got.Paused() {
 		t.Fatalf("utilization %v against pause_at %v did not pause", got.Utilization, got.PauseAt)
 	}
@@ -220,7 +226,7 @@ func TestPausedFollowsTheWindow(t *testing.T) {
 		t.Fatalf("wait until = %v", got.WaitUntil())
 	}
 	quiet := fakeHost("h", true, mount.Usage{Plan: "max_5x", FiveHour: 0.1}, true)
-	if SelectWith(t.TempDir(), []mount.Host{quiet}, false).Paused() {
+	if SelectWith(t.TempDir(), []mount.Host{quiet}, false, false).Paused() {
 		t.Fatal("a quiet window paused the run")
 	}
 }
