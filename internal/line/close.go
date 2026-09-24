@@ -373,7 +373,7 @@ func fillMachine(root, taskID string, entry *ledger.Entry) {
 // resolveProfile is the selected profile narrowed by the developer's overlay, which every station shares.
 func resolveProfile(root string) profilepkg.Profile {
 	chosen := profilepkg.Select(root)
-	if path := profilepkg.MachineOverlayPath(); path != "" {
+	if path := mount.OverlayPath(); path != "" {
 		chosen = profilepkg.Overlay(chosen, path)
 	}
 	return chosen

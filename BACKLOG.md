@@ -1937,7 +1937,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.27.2] The guard reads the overlay path from mount and never links profile [P: M] [READY]
+#### [TSK-03.27.2] The guard reads the overlay path from mount and never links profile [P: M] [DONE]
 ```yaml
 files: [internal/guard/policy.go, internal/profile/profile.go, internal/profile/profile_test.go]
 done_when:

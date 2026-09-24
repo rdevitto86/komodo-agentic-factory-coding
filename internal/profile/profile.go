@@ -4,7 +4,6 @@ package profile
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"time"
 
 	"komodo/internal/mount"
@@ -187,15 +186,6 @@ func Overlay(profile Profile, path string) Profile {
 	}
 	profile.CriticalRefs = append(profile.CriticalRefs, overlay.CriticalRefs...)
 	return profile
-}
-
-// MachineOverlayPath is where a developer's own overlay lives.
-func MachineOverlayPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".komodo", "config.json")
 }
 
 // lower keeps the smaller of the two, so an overlay never raises a cap.

@@ -232,7 +232,7 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 		skip = nil
 	}
 	chosen := profile.Select(root)
-	if path := profile.MachineOverlayPath(); path != "" {
+	if path := mount.OverlayPath(); path != "" {
 		chosen = profile.Overlay(chosen, path)
 	}
 	plan.Profile = chosen
