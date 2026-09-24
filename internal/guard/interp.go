@@ -344,7 +344,7 @@ func hidesGitOrGh(text string) bool {
 }
 
 // interpScriptFindings checks an interpreter's inline code, stdin, or script, written earlier or on
-// disk, then leaves the line blind, since that code can write any file.
+// disk, then leaves the line blind when it judged any, since that code can write any file.
 func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, expanding map[string]bool) []string {
 	call := parseInterpreter(kept)
 	if found := s.preloadFindings(call.preloads, cwd); found != nil {
@@ -353,10 +353,12 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, expandi
 	if call.module {
 		return nil
 	}
-	defer func() { s.blind = true }()
 	if len(call.code) == 0 && (call.operand == "" || call.operand == "-") {
+		// A bare call such as python3 --version runs no program, so the line stays sighted.
+		s.blind = s.blind || stdin != ""
 		return stdinFindings(stdin)
 	}
+	defer func() { s.blind = true }()
 	if len(call.code) > 0 {
 		code := strings.Join(call.code, "\n")
 		switch {

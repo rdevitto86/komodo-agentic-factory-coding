@@ -692,6 +692,8 @@ func TestInterpreterHidesALaterScriptOnDisk(t *testing.T) {
 		"node x.sh; sh x.sh":                               true,
 		"sh x.sh; python3 -c 'print(1)'":                   false,
 		"python3 -m json.tool a.json; sh x.sh":             false,
+		"python3 --version; sh x.sh":                       false,
+		"node -v && sh x.sh":                               false,
 	}
 	for command, deny := range cases {
 		request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}

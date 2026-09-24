@@ -13,13 +13,16 @@ const leakFinding = "a session link or trailer never leaves the machine"
 
 // ghFindings refuses a gh call that writes to the forge, except the two writes the line needs,
 // and any call whose outgoing text carries a private pattern or a trailer.
-func ghFindings(kept []string, expanding map[string]bool, policy Policy, cwd, stdin string) []string {
+func ghFindings(kept []string, source *messageSource, policy Policy) []string {
 	if len(kept) < 2 {
 		return nil
 	}
-	findings := forgeFindings(kept, expanding)
-	if text := outgoingText(kept, cwd, stdin); hasPrivate(text) || policy.HasTrailer(normalizeMessage(text)) {
+	findings := forgeFindings(kept, source.expanding)
+	if text := outgoingText(kept, source); hasPrivate(text) || policy.HasTrailer(normalizeMessage(text)) {
 		findings = append(findings, leakFinding)
+	}
+	if source.hidden {
+		findings = append(findings, scriptNotVisible)
 	}
 	return findings
 }
@@ -44,20 +47,20 @@ var bodyVerbs = map[string]map[string]bool{
 }
 
 // outgoingText is what a gh call sends to the forge: a pr or issue body, or an api payload.
-func outgoingText(kept []string, cwd, stdin string) string {
+func outgoingText(kept []string, source *messageSource) string {
 	switch kept[1] {
 	case "api":
-		return apiText(kept[2:], cwd, stdin)
+		return apiText(kept[2:], source)
 	case "pr", "issue":
 		if rest := afterRepoFlags(kept[2:]); len(rest) > 0 && bodyVerbs[kept[1]][rest[0]] {
-			return ghBody(rest[1:], cwd, stdin)
+			return ghBody(rest[1:], source)
 		}
 	}
 	return ""
 }
 
 // ghBody composes a pr or issue body from every --body and --body-file, as commitMessage reads -m.
-func ghBody(args []string, cwd, stdin string) string {
+func ghBody(args []string, source *messageSource) string {
 	var parts []string
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
@@ -65,28 +68,28 @@ func ghBody(args []string, cwd, stdin string) string {
 		case arg == "-b" || arg == "--body":
 			if index+1 < len(args) {
 				index++
-				parts = append(parts, args[index])
+				parts = append(parts, source.literal(args[index], args[index]))
 			}
 		case strings.HasPrefix(arg, "--body="):
-			parts = append(parts, strings.TrimPrefix(arg, "--body="))
+			parts = append(parts, source.literal(arg, strings.TrimPrefix(arg, "--body=")))
 		case arg == "-F" || arg == "--body-file":
 			if index+1 < len(args) {
 				index++
-				parts = append(parts, readMessageFile(args[index], cwd, stdin))
+				parts = append(parts, source.file(args[index], args[index]))
 			}
 		case strings.HasPrefix(arg, "--body-file="):
-			parts = append(parts, readMessageFile(strings.TrimPrefix(arg, "--body-file="), cwd, stdin))
+			parts = append(parts, source.file(arg, strings.TrimPrefix(arg, "--body-file=")))
 		case strings.HasPrefix(arg, "-b") && !strings.HasPrefix(arg, "--"):
-			parts = append(parts, strings.TrimPrefix(arg[2:], "="))
+			parts = append(parts, source.literal(arg, strings.TrimPrefix(arg[2:], "=")))
 		case strings.HasPrefix(arg, "-F") && !strings.HasPrefix(arg, "--"):
-			parts = append(parts, readMessageFile(strings.TrimPrefix(arg[2:], "="), cwd, stdin))
+			parts = append(parts, source.file(arg, strings.TrimPrefix(arg[2:], "=")))
 		}
 	}
 	return strings.Join(parts, "\n\n")
 }
 
 // apiText composes what a gh api call sends: every field's value, an @file field's content, and --input's.
-func apiText(args []string, cwd, stdin string) string {
+func apiText(args []string, source *messageSource) string {
 	var parts []string
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
@@ -98,12 +101,12 @@ func apiText(args []string, cwd, stdin string) string {
 			_, text, _ := strings.Cut(field, "=")
 			parts = append(parts, text)
 			if (name == "-F" || name == "--field") && strings.HasPrefix(text, "@") {
-				parts = append(parts, readMessageFile(text[1:], cwd, stdin))
+				parts = append(parts, source.file(field, text[1:]))
 			}
 		case name == "--input":
 			var file string
 			file, index = nextValue(args, index, value, hasEq)
-			parts = append(parts, readMessageFile(file, cwd, stdin))
+			parts = append(parts, source.file(arg, file))
 		case strings.HasPrefix(arg, "-"):
 			if apiValueFlags[name] && !hasEq && index+1 < len(args) {
 				index++
