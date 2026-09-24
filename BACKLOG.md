@@ -1481,7 +1481,7 @@ base: docs/queue-review-fixes
 ```
 * **Why:** the Claude review of TG-03.18 found three medium issues: a false "did not answer" note when the switch is off, a test that clobbers the registered local machine, and a test too weak to catch the note.
 
-#### [TSK-03.19.1] Profile selection names the switch, and its tests restore shared state [P: H] [READY]
+#### [TSK-03.19.1] Profile selection names the switch, and its tests restore shared state [P: H] [DONE]
 ```yaml
 files: [internal/profile/profile.go, internal/profile/profile_test.go]
 done_when:
