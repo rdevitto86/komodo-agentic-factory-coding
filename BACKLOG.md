@@ -1307,7 +1307,7 @@ base: main
 ```
 * **Why:** the guard follows stdin into a shell from the command just before it, but not across a longer pipeline. `echo 'git push origin main' | tr a a | sh` passes today.
 
-#### [TSK-03.11.1] Piped input reaches a shell across the whole pipeline [P: C] [READY]
+#### [TSK-03.11.1] Piped input reaches a shell across the whole pipeline [P: C] [DONE]
 ```yaml
 files: [internal/guard/shell.go, internal/guard/table.go]
 done_when:
