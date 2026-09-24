@@ -354,3 +354,58 @@ func TestPlanForStationMovesOnOnceTheRunIsShipped(t *testing.T) {
 		t.Fatalf("plan = %+v; a shipped run must release the line to the next ready group", plan)
 	}
 }
+
+const stackedText = "### [TG-05.3] Stacked on a missing branch\n```yaml\ntype: feat\nversion: 2.0.0\nbase: feat/missing\n```\n\n" +
+	"#### [TSK-05.3.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
+	"### [TG-05.4] Off the default\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	"#### [TSK-05.4.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go test ./b/...\"]\n```\n\n" +
+	"### [TG-05.5] Stacked on the one before\n```yaml\ntype: feat\nversion: 2.2.0\nbase: feat/off-the-default\n```\n\n" +
+	"#### [TSK-05.5.1] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
+
+// stackedRepo is a remoted repo whose backlog stacks groups on branches origin may not hold.
+func stackedRepo(t *testing.T) string {
+	t.Helper()
+	root, _ := remotedRepo(t)
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/main")
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(stackedText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestNextSkipsAGroupWhoseBaseIsNotOnOrigin(t *testing.T) {
+	root := stackedRepo(t)
+	plan, err := next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Group != "TG-05.4" {
+		t.Fatalf("plan = %+v; a group stacked on a missing branch must wait, not be picked", plan)
+	}
+}
+
+func TestNextPicksAStackedGroupOnceItsBaseReachesOrigin(t *testing.T) {
+	root := stackedRepo(t)
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/missing")
+	plan, err := next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Group != "TG-05.3" || plan.Base != "feat/missing" {
+		t.Fatalf("plan = %+v; the stacked group's base is on origin now", plan)
+	}
+}
+
+func TestReadyGroupsCountsAnEarlierGroupsBranchAsABase(t *testing.T) {
+	groups, err := ReadyGroups(stackedRepo(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, group := range groups {
+		got = append(got, group.ID)
+	}
+	if strings.Join(got, ",") != "TG-05.4,TG-05.5" {
+		t.Fatalf("ready = %v; want the default-based group, then the group stacked on it", got)
+	}
+}
