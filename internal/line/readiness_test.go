@@ -80,6 +80,26 @@ func TestATaskAddedMidRunJoinsAWaveAfterThePinnedOnes(t *testing.T) {
 	}
 }
 
+func TestATaskClosedBeforeTheRunNeverJoinsALateWave(t *testing.T) {
+	root := repo(t, groupText)
+	state := RunState{Run: "r", Group: "TG-05.1", Base: "main", Branch: "feat/a-group", Worktree: root,
+		Waves: [][]string{{"TSK-05.1.1", "TSK-05.1.2"}, {"TSK-05.1.3"}}}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	shipped := "\n#### [TSK-05.1.0] Shipped [P: C] [DONE]\n```yaml\nfiles: [c/zero.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(groupText+shipped), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := planForGroup(root, "TG-05.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Waves) != 2 {
+		t.Fatalf("waves = %v; a task DONE before the run started must not be rebuilt", plan.Waves)
+	}
+}
+
 func TestWaveCapacityCarriesOverflowIntoTheNextWaveWithItsPeers(t *testing.T) {
 	text := "### [TG-90.3] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n"
 	for _, name := range []string{"a", "b", "c", "d", "e"} {

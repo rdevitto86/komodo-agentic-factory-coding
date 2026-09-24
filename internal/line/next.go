@@ -145,6 +145,12 @@ func pinWaves(root string, plan *Plan) {
 			pinned[id] = true
 		}
 	}
+	for _, task := range plan.Tasks {
+		// DONE with no result closed before this run, so it never joins a late wave.
+		if task.Status == "DONE" && !HasResult(root, task.ID) {
+			pinned[task.ID] = true
+		}
+	}
 	waves := append([][]string(nil), state.Waves...)
 	for _, wave := range plan.Waves {
 		var late []string
