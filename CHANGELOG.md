@@ -4,6 +4,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 ## 1.0.0-beta.1 — unreleased
 
+- **TG-03.8** The line plans what it is handed (18 task(s))
 The first beta of 1.0.0: feature-complete, with the headless and exit-test proofs still to record before 1.0.0 is cut. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
 - **TG-03.8** The line plans what it is handed (16 task(s))
