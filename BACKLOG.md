@@ -1437,7 +1437,7 @@ base: fix/a-spawn-never-cuts-its-own-worktree
 ```
 * **Why:** TG-03.14's check fails the doctor on any linked worktree outside `.komodo/wt`, and the gate runs the doctor. A user's own `git worktree add ../feature` would block every commit.
 
-#### [TSK-03.16.1] Doctor prints a stray worktree as a note and still exits zero [P: H] [READY]
+#### [TSK-03.16.1] Doctor prints a stray worktree as a note and still exits zero [P: H] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go, cmd/komodo/host.go]
 done_when:
