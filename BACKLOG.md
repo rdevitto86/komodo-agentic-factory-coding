@@ -2034,7 +2034,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.2] An interpreter that runs code makes a later on-disk script unseen [P: M] [READY]
+#### [TSK-03.29.2] An interpreter that runs code makes a later on-disk script unseen [P: M] [DONE]
 ```yaml
 files: [internal/guard/shell.go, internal/guard/interp.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:

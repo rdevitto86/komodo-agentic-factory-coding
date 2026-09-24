@@ -343,8 +343,8 @@ func hidesGitOrGh(text string) bool {
 	return gitHidesRe.MatchString(text) || ghHidesRe.MatchString(text)
 }
 
-// interpScriptFindings checks what an interpreter will run: inline code, its stdin, a script this
-// line already wrote, or one on disk; a script missing after an earlier command is not visible.
+// interpScriptFindings checks an interpreter's inline code, stdin, or script, written earlier or on
+// disk, then leaves the line blind, since that code can write any file.
 func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, expanding map[string]bool) []string {
 	call := parseInterpreter(kept)
 	if found := s.preloadFindings(call.preloads, cwd); found != nil {
@@ -353,6 +353,7 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, expandi
 	if call.module {
 		return nil
 	}
+	defer func() { s.blind = true }()
 	if len(call.code) == 0 && (call.operand == "" || call.operand == "-") {
 		return stdinFindings(stdin)
 	}

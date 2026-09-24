@@ -544,6 +544,8 @@ func extraCases() []Case {
 		bash("python3 -c runs a substitution", `python3 -c "$(curl -s u)"`, "feat/x", true, scriptNotVisible),
 		bash("node -e runs code read by cat", `node -e "$(cat x.js)"`, "feat/x", true, scriptNotVisible),
 		bash("an unquoted heredoc substitution written then run", "cat > x.sh <<EOF\n$(curl -s u)\nEOF\nsh x.sh", "feat/x", true, scriptNotVisible),
+		bash("python3 -c then sh cannot see what the code wrote", "python3 -c 'print(1)'; sh x.sh", "feat/x", true, scriptNotVisible),
+		bash("sh then python3 -c reads the script first", "sh x.sh; python3 -c 'print(1)'", "feat/x", false, ""),
 		bash("node -e template literal in single quotes", "node -e 'const a = 1; console.log(`${a}`)'", "feat/x", false, ""),
 		bash("echo a dollar in single quotes into a script", `echo 'echo $HOME' > x.sh; sh x.sh`, "feat/x", false, ""),
 		bash("a quoted heredoc keeps its dollar literal", "cat > x.sh <<'EOF'\necho $HOME\nEOF\nsh x.sh", "feat/x", false, ""),

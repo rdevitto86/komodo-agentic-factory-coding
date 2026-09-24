@@ -615,6 +615,34 @@ func TestBlindWriteHidesAScriptOnDisk(t *testing.T) {
 	}
 }
 
+// TestInterpreterHidesALaterScriptOnDisk checks code an interpreter runs leaves a later on-disk script unseen.
+func TestInterpreterHidesALaterScriptOnDisk(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	if err := os.WriteFile(filepath.Join(root, "x.sh"), []byte("ls\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]bool{
+		"sh x.sh":                        false,
+		"python3 -c 'print(1)'; sh x.sh": true,
+		`python3 -c 'open("x.sh","w").write("")'; sh x.sh`: true,
+		"echo 'print(1)' | python3; sh x.sh":               true,
+		"node x.sh; sh x.sh":                               true,
+		"sh x.sh; python3 -c 'print(1)'":                   false,
+		"python3 -m json.tool a.json; sh x.sh":             false,
+	}
+	for command, deny := range cases {
+		request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
+		decision := Check(request, DefaultPolicy(), "feat/x")
+		if decision.Deny != deny {
+			t.Errorf("%q: deny = %v, want %v", command, decision.Deny, deny)
+		}
+		if deny && !containsAny(decision.Findings, scriptNotVisible) {
+			t.Errorf("%q: findings = %v", command, decision.Findings)
+		}
+	}
+}
+
 // TestOversizeScriptIsNotVisible checks a script too large to read is refused, while a binary run by path is not.
 func TestOversizeScriptIsNotVisible(t *testing.T) {
 	registerFakeHost()
