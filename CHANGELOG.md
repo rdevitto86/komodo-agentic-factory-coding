@@ -4,7 +4,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 ## 1.0.0-beta.1 — unreleased
 
-The first beta of 1.0.0: feature-complete, with both proofs recorded below. 1.0.0 is cut by hand once real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
+The first beta of 1.0.0: feature-complete, with the three proofs recorded below. 1.0.0 is cut by hand once real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
 - **TG-03.16** A stray worktree is a note, not a failure (1 task(s))
 - **TG-03.17** A spawn never cuts its own worktree (1 task(s))
@@ -53,6 +53,23 @@ Each station ran in the order `komodo step` gave, with 0 repairs. The bar was no
 | ship | — | 12.9 | — | — | — |
 
 The review returned schema-valid JSON with 0 findings. Ship handed off once and the launcher pushed it. The Codex exit test is parked until that host has an account.
+
+### Proof: real groups ran with no change to the line
+
+Four groups ran `komodo run <group> --budget 30m`, headless on Claude, with the local reviewer on. Each ran every station in `step` order with no hand edit to the line or the run. Each shipped a PR that touched only its declared files plus `BACKLOG.md` and `CHANGELOG.md`.
+
+| Group | PR | Build seconds | Build tokens in / out | Repairs | Review tokens in / out |
+|---|---|---|---|---|---|
+| TG-03.12 | #159 | 101.4 | 67,821 / 8,610 | 0 | 5,619 / 62 |
+| TG-03.13 | #161 | 196.6 + 62.5 | 198,723 / 25,098 | 1, comments | 6,254 / 57 |
+| TG-03.17 | #167 | 184.7 | 154,861 / 16,649 | 0 | 6,694 / 176 |
+| TG-03.16 | #168 | 90.0 | 68,578 / 8,096 | 0 | 6,072 / 132 |
+
+The runs are `TG-03.12-1790258917`, `TG-03.13-1790260778`, `TG-03.17-1790262942`, and `TG-03.16-1790263367` in `.komodo/line.jsonl`. The TG-03.13 repair was the line's own: close caught a comment lint failure and rebriefed the builder.
+
+Three other runs did not count. On TG-03.11 and TG-03.15 the driver passed an isolation option to its builder spawn, so it ported the diff by hand. TG-03.17 makes the guard refuse that spawn. On TG-03.14 the new doctor check correctly blocked on that stray worktree, and the close was rerun by hand once it was removed.
+
+Two gaps stay open past 1.0.0. The local 3B reviewer approves almost everything: it missed a real bug in #161. TG-03.17 also shipped matching the wrong spawn tool name, fixed by a one-line commit after the run.
 
 ### The line
 
