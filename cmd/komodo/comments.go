@@ -41,9 +41,9 @@ func runComments(root string, args []string) {
 	}
 }
 
-// trackedFiles lists what git tracks, which is what the lint walks by default.
+// trackedFiles lists what git tracks plus untracked files the exclude rules keep, what the lint walks by default.
 func trackedFiles(root string) []string {
-	cmd := exec.Command("git", "ls-files")
+	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {

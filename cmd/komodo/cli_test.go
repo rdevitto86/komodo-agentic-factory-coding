@@ -206,6 +206,31 @@ func TestCommentsCheckAndReportRunOnACleanRepo(t *testing.T) {
 	}
 }
 
+// TestCommentsCheckReadsUntrackedFilesButSkipsIgnoredOnes proves the default file set matches git's own.
+func TestCommentsCheckReadsUntrackedFilesButSkipsIgnoredOnes(t *testing.T) {
+	root := fixtureRepo(t)
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("ignored.py\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restating := "import os\n\n# greet\ndef greet():\n    pass\n"
+	if err := os.WriteFile(filepath.Join(root, "greet.py"), []byte(restating), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ignored.py"), []byte(restating), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "", "comments", "check")
+	if got.code != 1 {
+		t.Fatalf("comments check on an untracked restating comment exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if !strings.Contains(got.stdout, "greet.py") {
+		t.Fatalf("comments check never read the untracked file: %s", got.stdout)
+	}
+	if strings.Contains(got.stdout, "ignored.py") {
+		t.Fatalf("comments check read a file the exclude rules ignore: %s", got.stdout)
+	}
+}
+
 // TestInstallDryRunWritesNothing proves a dry-run install prints its plan and leaves the tree alone.
 func TestInstallDryRunWritesNothing(t *testing.T) {
 	root := fixtureRepo(t)
