@@ -66,12 +66,24 @@ func starterFill(root, name string, now time.Time) *strings.Replacer {
 
 // writeStarters copies every file in tree under root, filling placeholders, dropping .tmpl, never overwriting.
 func writeStarters(out io.Writer, tree fs.FS, root string, fill *strings.Replacer) error {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
 	return fs.WalkDir(tree, ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
 		}
 		target := strings.TrimSuffix(name, ".tmpl")
-		dest := filepath.Join(root, filepath.FromSlash(target))
+		dir, inside, err := insideDir(root, realRoot, filepath.Dir(filepath.FromSlash(target)))
+		if err != nil {
+			return err
+		}
+		if !inside {
+			fmt.Fprintf(out, "skip %s: outside the repo\n", target)
+			return nil
+		}
+		dest := filepath.Join(dir, filepath.Base(target))
 		if _, err := os.Lstat(dest); err == nil {
 			fmt.Fprintf(out, "keep %s\n", target)
 			return nil
@@ -82,13 +94,59 @@ func writeStarters(out io.Writer, tree fs.FS, root string, fill *strings.Replace
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		file, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, fs.ErrExist) {
+			fmt.Fprintf(out, "keep %s\n", target)
+			return nil
+		} else if err != nil {
 			return err
 		}
-		if err := os.WriteFile(dest, []byte(fill.Replace(string(data))), 0o644); err != nil {
+		_, err = file.WriteString(fill.Replace(string(data)))
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "create %s\n", target)
 		return nil
 	})
+}
+
+// insideDir creates rel under root one directory at a time, stopping at any that resolves outside realRoot.
+func insideDir(root, realRoot, rel string) (string, bool, error) {
+	dir := root
+	if rel == "." {
+		return dir, true, nil
+	}
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		dir = filepath.Join(dir, part)
+		if err := os.Mkdir(dir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+			return "", false, err
+		}
+		resolved, err := filepath.EvalSymlinks(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", false, nil
+		} else if err != nil {
+			return "", false, err
+		}
+		if !within(realRoot, resolved) {
+			return "", false, nil
+		}
+		info, err := os.Stat(resolved)
+		if err != nil {
+			return "", false, err
+		}
+		if !info.IsDir() {
+			return "", false, fmt.Errorf("%s is not a directory", dir)
+		}
+		dir = resolved
+	}
+	return dir, true, nil
+}
+
+// within reports whether path is base or lies beneath it.
+func within(base, path string) bool {
+	rel, err := filepath.Rel(base, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
