@@ -149,7 +149,9 @@ func BuildLocal(root string, out io.Writer) (string, error) {
 const hookScript = `#!/bin/sh
 # Runs the local gate through this host's own built binary. Written by komodo gate --install.
 set -e
-root=$(git rev-parse --show-toplevel)
+# The shared git dir sits in the main checkout, where bin/ lives, even when committing from a worktree.
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+root=${common%/.git}
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) bin="$root/bin/komodo-darwin-arm64" ;;
   Darwin-x86_64) bin="$root/bin/komodo-darwin-amd64" ;;

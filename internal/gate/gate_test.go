@@ -141,7 +141,7 @@ func runHook(fakeDir, script string) (string, error) {
 // TestHookScriptPicksBinaryPerPlatform proves the case statement never falls back to the Windows exe.
 func TestHookScriptPicksBinaryPerPlatform(t *testing.T) {
 	dir := t.TempDir()
-	writeFakeBinary(t, dir, "git", "#!/bin/sh\necho /fake/root\n")
+	writeFakeBinary(t, dir, "git", "#!/bin/sh\necho /fake/root/.git\n")
 	script := filepath.Join(dir, "hook")
 	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
 		t.Fatal(err)
@@ -171,6 +171,40 @@ func TestHookScriptPicksBinaryPerPlatform(t *testing.T) {
 	}
 	if !strings.Contains(out, "no binary for this platform") || strings.Contains(out, "windows") {
 		t.Fatalf("an unknown platform must not fall back to the Windows binary: out = %q", out)
+	}
+}
+
+func TestHookFromAWorktreeUsesTheMainCheckoutBinary(t *testing.T) {
+	main := t.TempDir()
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git(main, "init", "-q", "-b", "main")
+	git(main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	worktree := filepath.Join(t.TempDir(), "wt")
+	git(main, "worktree", "add", "-q", "-b", "feat/x", worktree)
+	fakes := t.TempDir()
+	writeFakeBinary(t, fakes, "uname", "#!/bin/sh\ncase \"$1\" in\n-s) echo 'Darwin' ;;\n-m) echo 'arm64' ;;\nesac\n")
+	binary := filepath.Join(main, "bin", "komodo-darwin-arm64")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeBinary(t, filepath.Dir(binary), "komodo-darwin-arm64", "#!/bin/sh\necho ran \"$1\"\n")
+	script := filepath.Join(fakes, "hook")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = worktree
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "ran gate") {
+		t.Fatalf("err = %v, out = %q; a worktree's hook must run the main checkout's binary", err, out)
 	}
 }
 
