@@ -1257,7 +1257,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.9.2] Proof payload: a local machine reviews one group [P: L] [READY]
+#### [TSK-03.9.2] Proof payload: a local machine reviews one group [P: L] [DONE]
 ```yaml
 files:
   - README.md
@@ -1266,7 +1266,7 @@ done_when:
 type: docs
 ```
 
-#### [TSK-03.9.3] Proof: a local machine carries a station [P: C] [READY]
+#### [TSK-03.9.3] Proof: a local machine carries a station [P: C] [DONE]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
