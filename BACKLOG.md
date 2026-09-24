@@ -1472,3 +1472,24 @@ context:
   - "README: selection line, the profile table's hybrid and local rows, and the overlay paragraph say local tiers are opt-in with \"local\": true"
 type: fix
 ```
+
+### [TG-03.19] The local switch never reports a probe it skipped
+```yaml
+type: fix
+version: 1.0.0-beta.1
+base: docs/queue-review-fixes
+```
+* **Why:** the Claude review of TG-03.18 found three medium issues: a false "did not answer" note when the switch is off, a test that clobbers the registered local machine, and a test too weak to catch the note.
+
+#### [TSK-03.19.1] Profile selection names the switch, and its tests restore shared state [P: H] [READY]
+```yaml
+files: [internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test -count=3 -shuffle=on ./internal/profile/...
+  - go vet ./internal/profile/...
+context:
+  - "SelectWith prints the did-not-answer note only when the overlay switch is on and the probe failed; with the switch off and OLLAMA_BASE_URL set, Why says local tiers are off until the overlay sets local"
+  - "the test that calls RegisterLocal restores the previous local machine with t.Cleanup, so every other test sees the one ollama's init registered"
+  - "the switch-off test sets the local endpoint env and asserts Why carries no did-not-answer note, beside Name != hybrid"
+type: fix
+```
