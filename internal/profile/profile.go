@@ -130,6 +130,9 @@ func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profil
 			profile.Why += "; local tiers are off until the overlay sets local"
 		}
 	}
+	if local && host.ReviewerWhy != nil && mount.LoadOverlay().LocalReviewer {
+		profile.Why += "; " + host.ReviewerWhy(profile.Plan)
+	}
 	if plan == "" {
 		profile.Why += "; no plan probe, so the conservative overlay applies"
 	}

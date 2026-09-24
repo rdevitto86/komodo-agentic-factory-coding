@@ -218,15 +218,6 @@ func Run(root, model string, post Post) (Score, error) {
 	return score, nil
 }
 
-// Path is where the recall scores live, ~/.komodo/recall.json, or empty when there is no home.
-func Path() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".komodo", "recall.json")
-}
-
 // Save writes score under model in the file at file, keeping every other model's score.
 func Save(file, model string, score Score) error {
 	if file == "" {

@@ -30,6 +30,8 @@ type Host struct {
 	EventsPath  func(root, task string) string
 	// Leftovers names what a retired setup left in the host's user settings, such as a second agent hook.
 	Leftovers func() []string
+	// ReviewerWhy says where review lands and why, when the overlay opts the reviewer onto the local machine.
+	ReviewerWhy func(plan string) string
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.

@@ -143,6 +143,15 @@ func ReviewerWhy(model, heavy string) string {
 		recall, cases, bar, heavy)
 }
 
+// reviewerWhy is ReviewerWhy for the local model and this plan's heavy model, the form the registry calls.
+func reviewerWhy(plan string) string {
+	heavyTier := "heavy"
+	if plan == "pro" {
+		heavyTier = "standard"
+	}
+	return ReviewerWhy(ollama.ModelName(), modelFor(heavyTier))
+}
+
 // modelFor is this host's model for a tier, unless the overlay names another.
 func modelFor(tier string) string {
 	if name := mount.OverlayModel(tier); name != "" {

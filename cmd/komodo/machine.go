@@ -132,10 +132,10 @@ func runRecall(root string, args []string) {
 	}
 	fmt.Printf("%s: caught %d/%d, recall %.2f, %d false findings on the clean cases\n",
 		*model, score.Caught, score.Cases, score.Recall, score.FalsePositives)
-	if err := recall.Save(recall.Path(), *model, score); err != nil {
+	if err := recall.Save(mount.RecallPath(), *model, score); err != nil {
 		fail(err)
 	}
-	fmt.Println("wrote", recall.Path())
+	fmt.Println("wrote", mount.RecallPath())
 }
 
 // localModel resolves a role's tier to the model of whichever tier the local machine mounts;
