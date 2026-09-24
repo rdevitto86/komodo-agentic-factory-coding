@@ -1502,7 +1502,7 @@ base: main
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
 
-#### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [READY]
+#### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/snapshot.go, internal/line/step_test.go, komodo/skills/run/SKILL.md]
 done_when:

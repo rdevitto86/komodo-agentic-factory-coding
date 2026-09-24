@@ -17,6 +17,7 @@ You drive one group through the line. The station order lives in the binary. You
 
 - **`run`** — run `command` verbatim from the repo root, then loop.
 - **`spawn`** — spawn the `role` agent on `brief`, in `worktree`. `machine` is `provider/model`; pass the model half as the spawn's model, so a task's `tier` is honoured. Its context is `skills`, `facets`, and `commands`; give it no more.
+- **`spawns`** — a wave builds at once. Spawn every entry in the same turn, each as its own `spawn` above. Wait for all of them, then loop.
 - **`done`** — stop and report `why`.
 
 ## The binary
@@ -25,7 +26,8 @@ You drive one group through the line. The station order lives in the binary. You
 
 ## Rules
 
-- **One action per turn.** Never run ahead of `step`. Never batch two stations.
+- **One step per turn.** Never run ahead of `step`. Never batch two stations; a `spawns` list is one step.
+- **A headless driver never asks.** Every action `step` returns, `komodo close --group` included, is already approved by the human who launched the run.
 - **A non-zero exit stops the loop.** Report the command and its output. Do not substitute another command.
 - **A spawned agent works in `worktree` and nowhere else.** Every path it is given resolves from there, including its brief and its result.
 - **Never pass an isolation option to a spawn.** The line already cut `worktree`; a second one strands the agent's diff.

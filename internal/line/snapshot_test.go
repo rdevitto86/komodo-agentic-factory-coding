@@ -62,9 +62,14 @@ func TestNextDecidesFromTheSnapshotAlone(t *testing.T) {
 			s.Tasks["TSK-20.1.1"] = TaskState{Open: true, StaleBrief: true}
 			return s
 		}, "run", "komodo brief TSK-20.1.1", "TSK-20.1.1"},
-		{"briefed", func(s Snapshot) Snapshot { return s }, "spawn", "", "TSK-20.1.1"},
+		{"briefed", func(s Snapshot) Snapshot {
+			s.Tasks["TSK-20.1.2"] = TaskState{Open: true, HasResult: true}
+			return s
+		}, "spawn", "", "TSK-20.1.1"},
+		{"a wave briefed together spawns together", func(s Snapshot) Snapshot { return s }, "spawn", "", ""},
 		{"failed with a stale result spawns its repair", func(s Snapshot) Snapshot {
 			s.Tasks["TSK-20.1.1"] = TaskState{Open: true, HasResult: true, Attempts: 1}
+			s.Tasks["TSK-20.1.2"] = TaskState{Open: true, HasResult: true}
 			return s
 		}, "spawn", "", "TSK-20.1.1"},
 		{"result in, still open", func(s Snapshot) Snapshot {
@@ -161,8 +166,10 @@ func FuzzNext(f *testing.F) {
 		switch next.Action {
 		case "run", "done":
 		case "spawn":
-			if next.Role == "builder" && s.Tasks[next.Task].Closeable() {
-				t.Fatalf("Next spawned %s, whose result is ready to close", next.Task)
+			for _, spawn := range append([]Action{next}, next.Spawns...) {
+				if spawn.Role == "builder" && s.Tasks[spawn.Task].Closeable() {
+					t.Fatalf("Next spawned %s, whose result is ready to close", spawn.Task)
+				}
 			}
 		default:
 			t.Fatalf("Next answered %q", next.Action)

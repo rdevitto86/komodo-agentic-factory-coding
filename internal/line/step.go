@@ -29,6 +29,7 @@ type Action struct {
 	Facets   []string `json:"facets"`
 	Commands []string `json:"commands"`
 	Until    string   `json:"until,omitempty"`
+	Spawns   []Action `json:"spawns,omitempty"`
 }
 
 // Step reads one snapshot, decides with Next, then writes the review stamp and brief it needs.
@@ -49,7 +50,26 @@ func Step(root, needle string) (*Action, error) {
 	if pastReview {
 		stampReview(root, snap.Plan)
 	}
+	if len(next.Spawns) > 0 {
+		return waveSpawn(root, snap, next), nil
+	}
 	return actionForTier(root, snap.Plan, next, snap.Tasks[next.Task].Tier), nil
+}
+
+// waveSpawn resolves each spawn in a wave like a single one; a spawn that resolves to a local
+// command runs alone, since a command is one step, not a spawn.
+func waveSpawn(root string, snap Snapshot, next Action) *Action {
+	spawns := next.Spawns
+	next.Spawns = nil
+	wave := actionForTier(root, snap.Plan, next, "")
+	for _, spawn := range spawns {
+		resolved := actionForTier(root, snap.Plan, spawn, snap.Tasks[spawn.Task].Tier)
+		if resolved.Action != "spawn" {
+			return resolved
+		}
+		wave.Spawns = append(wave.Spawns, *resolved)
+	}
+	return wave
 }
 
 // action fills the machine, skills, facets, and commands a station resolved.

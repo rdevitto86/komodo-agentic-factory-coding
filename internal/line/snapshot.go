@@ -156,6 +156,8 @@ func decide(snap Snapshot) (Action, bool) {
 	single := snap.Group.Mode() == "single"
 	blocked := map[string]bool{}
 	for index, wave := range plan.Waves {
+		// A parallel wave spawns once every task in it has a brief, all in one action.
+		var spawns []Action
 		for _, taskID := range wave {
 			if blocked[taskID] {
 				continue
@@ -185,7 +187,20 @@ func decide(snap Snapshot) (Action, bool) {
 					Why: why,
 				}, false
 			}
-			return builderSpawn(plan, single, task, taskID, index), false
+			spawn := builderSpawn(plan, single, task, taskID, index)
+			if single {
+				return spawn, false
+			}
+			spawns = append(spawns, spawn)
+		}
+		switch {
+		case len(spawns) == 1:
+			return spawns[0], false
+		case len(spawns) > 1:
+			return Action{
+				Action: "spawn", Wave: index + 1, Spawns: spawns,
+				Why: fmt.Sprintf("wave %d has %d briefed tasks and no results; spawn them together", index+1, len(spawns)),
+			}, false
 		}
 		for _, taskID := range wave {
 			if !blocked[taskID] && snap.Tasks[taskID].Open {

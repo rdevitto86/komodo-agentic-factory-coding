@@ -942,3 +942,94 @@ func TestARepairMakesItsReviewStale(t *testing.T) {
 		t.Fatal("a commit landing after the review makes it stale; a repair must be re-reviewed")
 	}
 }
+
+// waveBacklog is a three-task group whose tasks share no directory, so one wave holds all three.
+const waveBacklog = "### [TG-14.1] A wide group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-14.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\n```\n\n" +
+	"#### [TSK-14.1.2] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\n```\n\n" +
+	"#### [TSK-14.1.3] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\n```\n"
+
+// briefWave cuts a group with its waves pinned to one, and writes a brief for each named task.
+func briefWave(t *testing.T, text, group string, wave []string, taskIDs ...string) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	root := repo(t, text)
+	if err := SaveRun(root, RunState{Run: group + "-1", Group: group, Base: "main", Branch: "feat/wide", Worktree: root, Waves: [][]string{wave}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, taskID := range taskIDs {
+		path := filepath.Join(root, StateDir, "briefs", taskID+".md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("a brief"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// spawnedTasks names the tasks a wave spawn carries, checking each is a whole builder spawn.
+func spawnedTasks(t *testing.T, next *Action) []string {
+	t.Helper()
+	var tasks []string
+	for _, spawn := range next.Spawns {
+		want := filepath.Join(StateDir, "wt", spawn.Task)
+		if spawn.Action != "spawn" || spawn.Role != "builder" || spawn.Machine == "" ||
+			spawn.Brief != filepath.Join(StateDir, "briefs", spawn.Task+".md") || spawn.Worktree != want {
+			t.Fatalf("spawn = %+v", spawn)
+		}
+		tasks = append(tasks, spawn.Task)
+	}
+	return tasks
+}
+
+func TestABriefedParallelWaveSpawnsEveryTaskAtOnce(t *testing.T) {
+	root := briefWave(t, waveBacklog, "TG-14.1", wideWave, "TSK-14.1.1", "TSK-14.1.2", "TSK-14.1.3")
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(spawnedTasks(t, next), " ")
+	if next.Action != "spawn" || next.Wave != 1 || got != "TSK-14.1.1 TSK-14.1.2 TSK-14.1.3" {
+		t.Fatalf("action = %+v, spawns %q", next, got)
+	}
+}
+
+func TestAWaveWithOneResultSpawnsOnlyTheOtherTwo(t *testing.T) {
+	root := briefWave(t, waveBacklog, "TG-14.1", wideWave, "TSK-14.1.1", "TSK-14.1.2", "TSK-14.1.3")
+	writeStepResult(t, root, "TSK-14.1.2")
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(spawnedTasks(t, next), " ")
+	if next.Action != "spawn" || got != "TSK-14.1.1 TSK-14.1.3" {
+		t.Fatalf("action = %+v, spawns %q", next, got)
+	}
+}
+
+func TestAWaveWritesEveryBriefBeforeItSpawns(t *testing.T) {
+	root := briefWave(t, waveBacklog, "TG-14.1", wideWave, "TSK-14.1.1", "TSK-14.1.3")
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "run" || next.Command != "komodo brief TSK-14.1.2" || len(next.Spawns) != 0 {
+		t.Fatalf("action = %+v", next)
+	}
+}
+
+func TestASingleModeGroupSpawnsOneTaskAtATime(t *testing.T) {
+	root := briefWave(t, singleModeBacklog, "TG-13.1", []string{"TSK-13.1.1", "TSK-13.1.2"}, "TSK-13.1.1", "TSK-13.1.2")
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Task != "TSK-13.1.1" || len(next.Spawns) != 0 {
+		t.Fatalf("action = %+v", next)
+	}
+}
+
+// wideWave is waveBacklog's one wave, pinned so the plan's parallel cap cannot split it.
+var wideWave = []string{"TSK-14.1.1", "TSK-14.1.2", "TSK-14.1.3"}
