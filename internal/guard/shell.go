@@ -686,7 +686,7 @@ func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, s
 		}
 		text, exists, ok = write.text, true, true
 	}
-	if !exists && scriptExtensions[strings.ToLower(filepath.Ext(target))] && s.createdEarlier() {
+	if !exists && (s.blind || (scriptExtensions[strings.ToLower(filepath.Ext(target))] && s.createdEarlier())) {
 		return []string{scriptNotVisible}, branch
 	}
 	if _, recorded := s.recordedWrite(target, cwd); !recorded && ok && s.blind {

@@ -13,19 +13,37 @@ func ghFindings(kept []string) []string {
 	}
 	switch kept[1] {
 	case "pr":
-		if len(kept) > 2 && kept[2] == "merge" {
+		if rest := afterRepoFlags(kept[2:]); len(rest) > 0 && rest[0] == "merge" {
 			return []string{"gh pr merge: landing is the human's merge button"}
 		}
 	case "api":
 		return apiFindings(kept[2:])
 	case "ruleset":
-		return rulesetFindings(kept[2:])
+		return rulesetFindings(afterRepoFlags(kept[2:]))
 	case "repo":
-		return repoFindings(kept[2:])
+		return repoFindings(afterRepoFlags(kept[2:]))
 	case "secret":
-		return secretFindings(kept[2:])
+		return secretFindings(afterRepoFlags(kept[2:]))
 	}
 	return nil
+}
+
+// afterRepoFlags drops the -R or --repo flags gh accepts before a subcommand's verb.
+func afterRepoFlags(args []string) []string {
+	for len(args) > 0 {
+		switch {
+		case args[0] == "-R" || args[0] == "--repo":
+			if len(args) < 2 {
+				return nil
+			}
+			args = args[2:]
+		case strings.HasPrefix(args[0], "--repo=") || (strings.HasPrefix(args[0], "-R") && len(args[0]) > 2):
+			args = args[1:]
+		default:
+			return args
+		}
+	}
+	return args
 }
 
 // apiValueFlags are gh api's own options that consume the next word, besides the ones read below.
@@ -83,13 +101,13 @@ func apiFindings(args []string) []string {
 		}
 	}
 	if endpoint == "graphql" {
-		if hostname != "" && len(mutationFields(graphqlQuery)) > 0 {
+		if _, saw := mutationFields(graphqlQuery); hostname != "" && saw {
 			return []string{fmt.Sprintf("gh api --hostname %s graphql: a forge write goes through the line, never an agent", hostname)}
 		}
 		if queryFromFile {
 			return []string{"gh api graphql: a query read from a file is not visible to the guard; pass it with -f query="}
 		}
-		if strings.Contains(strings.ToLower(graphqlQuery), "mutation") && !onlyAllowedMutations(graphqlQuery) {
+		if fields, saw := mutationFields(graphqlQuery); saw && !allAllowed(fields) {
 			return []string{"gh api graphql: a forge write goes through the line, never an agent"}
 		}
 		return nil
@@ -178,9 +196,8 @@ var allowedMutations = map[string]bool{
 	"resolveReviewThread": true, "createPullRequest": true,
 }
 
-// onlyAllowedMutations reports whether every mutation a GraphQL document names is one the line allows.
-func onlyAllowedMutations(query string) bool {
-	fields := mutationFields(query)
+// allAllowed reports whether a mutation names at least one field and every field is one the line allows.
+func allAllowed(fields []string) bool {
 	if len(fields) == 0 {
 		return false
 	}
@@ -192,10 +209,9 @@ func onlyAllowedMutations(query string) bool {
 	return true
 }
 
-// mutationFields returns the top-level field names of every mutation operation, finding the
-// mutation keyword and its selection set at document depth zero, past strings and # comments.
-func mutationFields(document string) []string {
-	var fields []string
+// mutationFields returns every mutation operation's top-level fields and whether any operation is a
+// mutation, reading the keyword and its selection set at depth zero, past strings and # comments.
+func mutationFields(document string) (fields []string, saw bool) {
 	depth := 0
 	inMutation := false
 	for index := 0; index < len(document); index++ {
@@ -214,7 +230,7 @@ func mutationFields(document string) []string {
 		case char == '{':
 			if depth == 0 && inMutation {
 				fields = append(fields, selectionNames(document[index+1:])...)
-				inMutation = false
+				inMutation, saw = false, true
 			}
 			depth++
 		case char == '}':
@@ -226,14 +242,14 @@ func mutationFields(document string) []string {
 			}
 			switch name := document[index:end]; name {
 			case "mutation":
-				inMutation = true
+				inMutation, saw = true, true
 			case "query", "subscription", "fragment":
 				inMutation = false
 			}
 			index = end - 1
 		}
 	}
-	return fields
+	return fields, saw
 }
 
 // selectionNames reads the top-depth field names of one selection set, skipping strings and # comments.
@@ -324,7 +340,7 @@ func repoFindings(args []string) []string {
 }
 
 // secretWriteVerbs are the gh secret subcommands that set or remove a secret.
-var secretWriteVerbs = map[string]bool{"set": true, "delete": true}
+var secretWriteVerbs = map[string]bool{"set": true, "delete": true, "remove": true}
 
 // secretFindings refuses a gh secret call that sets or deletes a secret.
 func secretFindings(args []string) []string {

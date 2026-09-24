@@ -115,6 +115,7 @@ var bunSubcommands = set("run", "test", "install", "i", "add", "remove", "rm", "
 type interpCall struct {
 	code    []string
 	operand string
+	module  bool
 }
 
 // parseInterpreter reads an interpreter's arguments with that interpreter's own flag table.
@@ -196,6 +197,9 @@ func (call *interpCall) readShort(args []string, index int, table flagTable) (bo
 		case table.module[letter]:
 			if letter == "f" && index+1 < len(args) && rest == "" {
 				call.operand = args[index+1]
+			} else {
+				// python -m names an installed module, which reads stdin as data, not as a program.
+				call.module = true
 			}
 			return true, index
 		case table.value[letter]:
@@ -324,6 +328,9 @@ func hidesGitOrGh(text string) bool {
 // line already wrote, or one on disk; a script missing after an earlier command is not visible.
 func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []string {
 	call := parseInterpreter(kept)
+	if call.module {
+		return nil
+	}
 	if len(call.code) == 0 && (call.operand == "" || call.operand == "-") {
 		return stdinFindings(stdin)
 	}
@@ -379,6 +386,10 @@ func (s *scanner) resolvedScript(name, operand, cwd string) (string, bool) {
 		if text, _, ok := readScript(candidate, cwd); ok {
 			return text, !s.blind
 		}
+	}
+	if name == "bun" || name == "deno" {
+		// bun run build and deno task names a package.json or deno.json script, not a file.
+		return "", true
 	}
 	return "", !s.createdEarlier()
 }

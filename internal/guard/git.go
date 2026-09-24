@@ -117,7 +117,7 @@ func gitFindings(tokens []string, branch, cwd, root string, policy Policy, stdin
 		if mirrorFlag != "" && hasAnyCritical(policy) {
 			findings = append(findings, fmt.Sprintf("git push %s: reaches every ref, including a critical one; open a pull request instead", mirrorFlag))
 		}
-		if normalizeMode(policy.Mode) != ModeUnsafe && pushesToURL(rest, positional, cwd, root) {
+		if normalizeMode(policy.Mode) != ModeUnsafe && pushesToURL(rest, positional, cwd, root, repoFlag) {
 			findings = append(findings, pushURLFinding)
 		}
 		targets := positional
@@ -346,7 +346,7 @@ var scpLikeRe = regexp.MustCompile(`^(?:[\w.-]+@[\w.-]+|[\w-]+(?:\.[\w-]+)+):`)
 
 // pushesToURL reports whether a push names its repository as a URL, through --repo or the first
 // positional, or through a substitution or variable whose value is only known when it runs.
-func pushesToURL(rest, positional []string, cwd, root string) bool {
+func pushesToURL(rest, positional []string, cwd, root string, repoFlag bool) bool {
 	for index, arg := range rest {
 		if value, ok := strings.CutPrefix(arg, "--repo="); ok && isPushURL(value, cwd, root) {
 			return true
@@ -358,17 +358,7 @@ func pushesToURL(rest, positional []string, cwd, root string) bool {
 	if len(positional) > 1 && unresolvedTarget(positional[0]) {
 		return true
 	}
-	return len(positional) > 0 && !repoGiven(rest) && isPushURL(positional[0], cwd, root)
-}
-
-// repoGiven reports whether --repo named the repository, so the first positional is a refspec.
-func repoGiven(rest []string) bool {
-	for _, arg := range rest {
-		if arg == "--repo" || strings.HasPrefix(arg, "--repo=") {
-			return true
-		}
-	}
-	return false
+	return len(positional) > 0 && !repoFlag && isPushURL(positional[0], cwd, root)
 }
 
 // isPushURL reports whether a push destination is a URL, scp-style remote, or a path to a repository
