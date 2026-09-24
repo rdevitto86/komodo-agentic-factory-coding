@@ -2161,3 +2161,31 @@ context:
   - "state the three stops a person owns: a review still blocking after its repair rounds, a merge conflict QC cannot resolve, and the plan pause"
 type: docs
 ```
+
+### [TG-03.31] Gaps the first run in another repo found
+```yaml
+type: fix
+version: 1.1.1
+```
+* **Why:** the smoke run in a separate repo on 2026-09-24 and the final lane's reviews left three gaps out of scope for 1.1.0.
+
+#### [TSK-03.31.1] A re-run of a group whose branch is on origin starts from a clean base [P: M] [REFINEMENT]
+```yaml
+context:
+  - "StartRef cuts a task from origin/<group branch> whenever that branch exists, so a group run again after an earlier push inherits the old commits and can conflict"
+type: fix
+```
+
+#### [TSK-03.31.2] Before-review and after-publish commands read the root's commands.json too [P: M] [REFINEMENT]
+```yaml
+context:
+  - "VerifyCommand and CompileCommands fall back from the worktree's .komodo/commands.json to the root's and to detection; BeforeReviewCommand and AfterPublishCommand still read only the worktree's"
+type: fix
+```
+
+#### [TSK-03.31.3] Tasks that name the guard's table name its split files [P: L] [REFINEMENT]
+```yaml
+context:
+  - "the table split moved rows into table_extra.go and table_private.go; tasks that list only internal/guard/table.go under files would miss them"
+type: docs
+```
