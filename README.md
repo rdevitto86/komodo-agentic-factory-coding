@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README is the reference and the requirements. This line is 1.0.0, released with its proofs recorded in the changelog; the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. The line was built on PR #103 through six stacked group PRs, one per roadmap group. Tasks are in `BACKLOG.md`.
+This README is the reference and the requirements. This line is 1.0.0, released with its proofs recorded in the changelog; the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -200,39 +200,9 @@ Six groups, all `1.0.0`, all on PR #103. Sessions build the first four; the run 
 
 ## Pull requests
 
-PR #103 is the integration PR: its branch `docs/v2-plan` carries the plan and receives every group, and it merges into `main` once, at the end. Each roadmap group is one PR stacked on the group before it, so a group is reviewed against only its own diff and the line is exercised on real PRs before it ships. A group PR merges into its parent with a merge commit, so task commits survive; when a parent merges, GitHub retargets the next PR to `docs/v2-plan` on its own.
+1.0 was built through PR #103 and six stacked group PRs, now merged. Each group ships as one PR from its own `<type>/<slug>` branch, cut from the group's base. `close --group` opens it with the report as the body. Merging is the human's button; nothing runs on GitHub.
 
-| PR | Branch | Base | Work | Opened by | Merges into |
-|---|---|---|---|---|---|
-| #103 | `docs/v2-plan` | `main` | The plan; the integration point | done | `main`, last, by the human; the tag `v2.0.0` is cut on merge |
-| A | `refactor/v2-markdown` | `docs/v2-plan` | TG-03.1, 4 tasks: standards to skills, briefs to roles with schemas, the policy, the rules, the merger gone | a session | `docs/v2-plan` |
-| B | `feat/v2-conveyor` | `refactor/v2-markdown` | TG-03.2, 8 tasks: the Go module, lint, the gate, next, brief, close, QC and ship, diff, report, tag, the ledger, step | a session | A |
-| C | `feat/v2-guard-mounts` | `feat/v2-conveyor` | TG-03.3, 5 tasks: the guard, install for both hosts, doctor, self-selecting profiles, usage | a session | B |
-| D | `feat/v2-skills-launcher` | `feat/v2-guard-mounts` | TG-03.4, 4 tasks: the four skills, the headless launcher, the proof task that PR E fills in, the edit-only permissions layer | a session | C |
-| E | `feat/v2-repo-layer` | `feat/v2-skills-launcher` | TG-03.5, 9 tasks: repo context, standards, skills, commands, the Ollama mount, detect, facets, the profile slot, the project render | the line itself, through `/run TG-03.5` | D |
-| F | `chore/v2-gate-exit` | `feat/v2-repo-layer` | TG-03.6, 7 tasks: the local gate hooks, names and README, the swap proofs, the Codex exit test, the changelog, the drift check, the binary conflict | the line, plus the human for Codex | E |
-
-How a stack moves:
-
-1. **Cut.** `komodo next --start --base <parent>` cuts the group branch from the parent's head in its own worktree. Before B exists, a session cuts the branch by hand.
-2. **Build.** Tasks land as one commit each on the group branch; the gate runs before every commit from B on.
-3. **Open.** `close --group` opens the PR against the parent with the report as the body; before B exists, `gh pr create --base <parent>`.
-4. **Validate.** The mechanical steps below pass on the desk, then the human steps; the reviewer role reads the diff cold from B on.
-5. **Merge.** The human merges A first and walks down the stack; #103 merges last.
-
-Validation per PR, mechanical first, then human. Nothing runs on GitHub.
-
-| PR | Mechanical | Human |
-|---|---|---|
-| A | Every `done_when` of TG-03.1 exits zero. The V1 linter from a scratch worktree of `prototype-final` reports zero problems. No file under `komodo/standards/`, `komodo/briefs/`, or `komodo/roles/merger.md`. Every role has a `.schema.json`. | Read `komodo/AGENTS.md` and `komodo/policy.json` end to end. The rules say worktree freedom and four denials, nothing V1. |
-| B | `komodo gate` green: vet, test, byte-identical binaries. `komodo lint` on this backlog. `komodo next --json` prints TG-03.3 with its waves. `komodo brief --dry-run TSK-03.3.1` prints every slot under its cap. `komodo close` on a hand-written result JSON flips a status and stamps the ledger. `komodo step` prints one action. | Read one brief. It is the whole input a builder gets and nothing in it names a host. |
-| C | `komodo gate` green with `guard check`: 60 commands, half allowed, each denial named. `komodo install --host claude --dry-run` lists the render and nothing outside the mounts names a host. `komodo doctor`: always-on context under 1500 tokens, no leak, no drift. The plan probe prints the overlay and never an email or an id. | Install on this Mac. In a session, an agent is denied a commit to `main` and allowed `rm` inside its worktree. |
-| D | `komodo doctor`: the run skill under 800 tokens, four skills, none names a host. The launcher test proves the scrub: no push token, credential helper, or SSH identity reaches the child. `komodo run --dry-run TG-03.5` prints the host command it would launch. | `/run` in a session prints the first `step` action and stops when told. |
-| E | Opened by `close --group`, body is the report. `komodo gate` green, `komodo doctor` green including profile drift. `komodo detect` on this repo prints Go and no cloud. The Ollama mount test passes against the fake, and `komodo machine` reviews one real diff on a local model. The swap of a facet by `.komodo/facets` reaches a brief. | The proof numbers for TSK-03.4.3 are in the changelog and no station needed a human turn. Read the PR body: it is a usable report. |
-| F | `komodo gate` green as the pre-commit and pre-push hook on both developer machines. The retired-words grep finds nothing. The swap tests pass. `test ! -d .github/workflows`. | The Codex exit test ran with zero changes outside the mounts and its numbers are in the changelog. The README describes what exists. |
-| #103 | A through F merged. `komodo gate` green on `docs/v2-plan`. `komodo release check` reports no drift for 1.0.0. | Both proofs in `CHANGELOG.md`. Merge, and the tag is cut. |
-
-The repository ruleset must cover `main` only. Today it covers every branch and requires a pull request for any push, which the owner bypasses on each push and a collaborator cannot; scoping it to `main` is the one GitHub setting the plan needs.
+The repository ruleset must cover `main` only, which `komodo doctor --remote` audits.
 
 ## Versions
 
