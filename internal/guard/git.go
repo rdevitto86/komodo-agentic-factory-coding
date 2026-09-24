@@ -55,6 +55,9 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		if credentialConfigRe.MatchString(name) {
 			findings = append(findings, fmt.Sprintf("git -c %s: hands git a credential the headless run scrubs", entry))
 		}
+		if redirectURLConfigRe.MatchString(name) && normalizeMode(policy.Mode) != ModeUnsafe {
+			findings = append(findings, fmt.Sprintf("git -c %s: a config write sends git to another URL; push to origin", entry))
+		}
 		if hooksPathConfigRe.MatchString(name) {
 			findings = append(findings, fmt.Sprintf("git -c %s: a config write points git at other hooks; the guard owns .git/config", entry))
 		}
@@ -81,7 +84,12 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		var positional []string
 		deletes := false
 		mirrorFlag := ""
-		for _, arg := range rest {
+		for index := 0; index < len(rest); index++ {
+			arg := rest[index]
+			if pushValueFlags[arg] {
+				index++
+				continue
+			}
 			switch arg {
 			case "--delete", "-d":
 				deletes = true
@@ -264,6 +272,14 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		}
 	}
 	return findings, branch
+}
+
+// redirectURLConfigRe matches a -c key that points a remote, or every matching URL, somewhere else.
+var redirectURLConfigRe = regexp.MustCompile(`(?i)^(remote\.[^.]+\.url|url\..+\.(insteadof|pushinsteadof))$`)
+
+// pushValueFlags are push's options whose value is the next word, never the repository or a refspec.
+var pushValueFlags = map[string]bool{
+	"-o": true, "--push-option": true, "--receive-pack": true, "--exec": true, "--repo": true,
 }
 
 // hooksPathConfigRe matches a -c or --config-env key that points git at another hooks directory.

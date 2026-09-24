@@ -106,15 +106,34 @@ func echoedText(cmd simpleCommand) (text string, printed, known bool) {
 	if name != "echo" && name != "printf" {
 		return "", false, false
 	}
-	var args []string
+	args := make([]string, 0, len(cmd.words)-1)
 	for _, w := range cmd.words[1:] {
-		if !strings.HasPrefix(w.value, "-") {
-			args = append(args, w.value)
-		}
+		args = append(args, w.value)
 	}
+	args = dropPrintOptions(name, args)
 	text = strings.Join(args, " ")
 	known = !strings.Contains(text, "\\") && !(name == "printf" && strings.Contains(text, "%"))
 	return text, true, known
+}
+
+// echoOptionRe matches one of echo's own leading options, such as -n, -e, or -ne.
+var echoOptionRe = regexp.MustCompile(`^-[neE]+$`)
+
+// dropPrintOptions removes echo's leading -n, -e, and -E, or printf's leading -v name and --, keeping every later word.
+func dropPrintOptions(name string, args []string) []string {
+	for len(args) > 0 {
+		switch {
+		case name == "echo" && echoOptionRe.MatchString(args[0]):
+			args = args[1:]
+		case name == "printf" && args[0] == "-v" && len(args) > 1:
+			args = args[2:]
+		case name == "printf" && args[0] == "--":
+			return args[1:]
+		default:
+			return args
+		}
+	}
+	return args
 }
 
 // command checks one simple command and returns its findings, the directory after it, and the branch.
@@ -421,17 +440,28 @@ func resolveWritePath(target, cwd string) (string, bool) {
 	return filepath.Clean(resolved), true
 }
 
-// writeContent is the text a command's own echoed or printed words, or its heredoc and piped
-// stdin, put into whatever it redirects to; unknown when a command such as curl hides its output.
+// writeContent is the text a redirect puts into its target: what echo or printf prints, or the
+// stdin a bare cat copies; any other command's output is unknown, since it may transform stdin.
 func writeContent(cmd simpleCommand, upstream []string) (string, bool) {
 	if text, printed, known := echoedText(cmd); printed {
 		return text, known
 	}
-	stdin := strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n")
-	if stdin != "" && !strings.Contains(stdin, unknownInput) {
-		return stdin, true
+	if len(cmd.words) == 0 {
+		return "", true
 	}
-	return "", false
+	if filepath.Base(cmd.words[0].value) != "cat" {
+		return "", false
+	}
+	for _, w := range cmd.words[1:] {
+		if !strings.HasPrefix(w.value, "-") || w.value == "-" {
+			return "", false
+		}
+	}
+	stdin := strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n")
+	if strings.Contains(stdin, unknownInput) {
+		return "", false
+	}
+	return stdin, true
 }
 
 // recordWrites remembers what this line put into each redirect target, so a later read judges that
@@ -443,17 +473,21 @@ func (s *scanner) recordWrites(cmd simpleCommand, cwd string, upstream []string)
 		if !ok {
 			continue
 		}
-		write := scriptWrite{text: text, known: known}
-		if cmd.appends[target] {
-			before, found := s.writes[resolved]
-			if !found {
-				disk, exists, readable := readScript(resolved, cwd)
-				before = scriptWrite{text: disk, known: !exists || readable}
-			}
-			write = scriptWrite{text: before.text + "\n" + text, known: before.known && known}
-		}
-		s.writes[resolved] = write
+		s.put(resolved, cwd, scriptWrite{text: text, known: known}, cmd.appends[target])
 	}
+}
+
+// put records one write to a resolved path, adding to what the line or disk held when it appends.
+func (s *scanner) put(resolved, cwd string, write scriptWrite, appends bool) {
+	if appends {
+		before, found := s.writes[resolved]
+		if !found {
+			disk, exists, readable := readScript(resolved, cwd)
+			before = scriptWrite{text: disk, known: !exists || readable}
+		}
+		write = scriptWrite{text: before.text + "\n" + write.text, known: before.known && write.known}
+	}
+	s.writes[resolved] = write
 }
 
 // recordOutputWrites marks the files a command writes through its own flags, which the guard cannot
@@ -515,12 +549,19 @@ func (s *scanner) recordOutputWrites(name string, kept []string, cwd string) {
 // recordTeeWrites remembers what tee's stdin put into each file it names.
 func (s *scanner) recordTeeWrites(kept []string, cwd, stdin string) {
 	known := stdin != "" && !strings.Contains(stdin, unknownInput)
+	appends := false
+	var files []string
 	for _, token := range kept[1:] {
-		if token == "" || strings.HasPrefix(token, "-") {
-			continue
+		switch {
+		case token == "--append" || (strings.HasPrefix(token, "-") && !strings.HasPrefix(token, "--") && strings.Contains(token, "a")):
+			appends = true
+		case token != "" && !strings.HasPrefix(token, "-"):
+			files = append(files, token)
 		}
-		if resolved, ok := resolveWritePath(token, cwd); ok {
-			s.writes[resolved] = scriptWrite{text: stdin, known: known}
+	}
+	for _, file := range files {
+		if resolved, ok := resolveWritePath(file, cwd); ok {
+			s.put(resolved, cwd, scriptWrite{text: stdin, known: known}, appends)
 		}
 	}
 }
@@ -550,13 +591,13 @@ func looksLikeScriptPath(target string) bool {
 // scriptCommandFindings checks a command run by path: a recorded write, or a text file scanned as sh
 // under a shell shebang or none, or read for hidden git or gh under an interpreter's.
 func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, string) {
+	text, exists, ok := readScript(target, cwd)
 	if write, found := s.recordedWrite(target, cwd); found {
 		if !write.known {
 			return []string{scriptNotVisible}, branch
 		}
-		return s.scan(write.text, cwd, branch)
+		text, exists, ok = write.text, true, true
 	}
-	text, exists, ok := readScript(target, cwd)
 	if !exists && scriptExtensions[strings.ToLower(filepath.Ext(target))] && s.createdEarlier() {
 		return []string{scriptNotVisible}, branch
 	}
