@@ -1257,7 +1257,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.9.2] Proof payload: a local machine reviews one group [P: L] [READY]
+#### [TSK-03.9.2] Proof payload: a local machine reviews one group [P: L] [DONE]
 ```yaml
 files:
   - README.md

@@ -6,6 +6,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 The first beta of 1.0.0: feature-complete, with the headless proof recorded below and the local-machine proof still to record before 1.0.0 is cut. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
+- **TG-03.9** A local machine carries a station (2 task(s))
 - **TG-03.8** The line plans what it is handed (18 task(s))
 - **TG-03.7** The sanity pass: safety, correctness, portability (27 task(s))
 - **TG-03.6** The gate and the exit test (11 task(s))
