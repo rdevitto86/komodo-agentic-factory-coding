@@ -1727,7 +1727,7 @@ type: fix
 ```yaml
 type: fix
 version: 1.0.1
-base: docs/queue-ninety-plan
+base: fix/the-guard-holds-the-forge-the-gate-and-e
 ```
 * **Why:** the guard is a denylist over bash and will never be complete. The headless scrub removes push credentials, but an in-session builder still has them. A worktree with no working push URL turns every missed shell trick into a failed push, so the guard stops being the last check.
 
