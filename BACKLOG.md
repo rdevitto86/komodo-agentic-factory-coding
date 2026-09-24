@@ -1996,3 +1996,67 @@ context:
   - "test only: no change to pr.go; drive the client against an httptest server or a fake gh on PATH, as its existing tests do, covering labels that do not exist, a draft PR, an API error, and thread listing"
 type: test
 ```
+
+### [TG-03.29] The guard's last two open gaps, and two line bugs the TG-03.22 run found
+```yaml
+type: fix
+version: 1.0.1
+base: main
+```
+* **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
+
+#### [TSK-03.29.1] A push to an scp-style alias is a push to a URL [P: M] [READY]
+```yaml
+files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "git reads any destination whose first colon comes before any slash as scp form, so git push myalias:o/r.git feat/x and git push localhost:/tmp/r.git feat/x reach a host through ssh config and skip origin's pushurl"
+  - "isPushURL treats such a destination as a URL in safe and default modes; a single-letter host followed by a colon and a backslash or slash is a Windows drive, not scp form"
+  - "table rows: push myalias:o/r.git feat/x denied, push localhost:/tmp/r.git feat/x denied; push origin feat/x allowed, push origin HEAD:feat/x allowed"
+type: fix
+```
+
+#### [TSK-03.29.2] An interpreter that runs code makes a later on-disk script unseen [P: M] [READY]
+```yaml
+files: [internal/guard/shell.go, internal/guard/interp.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.29.1]
+context:
+  - "python3 -c 'open(\"x.sh\",\"w\").write(...)' ; sh x.sh passes when x.sh already holds ls, since the guard scans the stale disk text; an interpreter running inline code or a script can write any file"
+  - "interpScriptFindings sets s.blind whenever it judges inline code, stdin, or a script operand, so a later read of an existing file in the same line is scriptNotVisible, as curl -O and tar x already do"
+  - "a guard test writes x.sh holding ls to a temp worktree, then python3 -c 'print(1)'; sh x.sh is denied and sh x.sh alone is allowed"
+type: fix
+```
+
+#### [TSK-03.29.3] Ship opens its pull request against the default branch when the stored base is gone [P: H] [READY]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+context:
+  - "a group's base is read when its run starts; #178's branch was deleted mid-run once #178 merged, so TG-03.22's ship handed gh pr create a base that no longer existed and the pull request failed"
+  - "ShipGroup checks git ls-remote --heads origin <base>; when it is empty, it uses DefaultBase(root) for the handoff and the pull request, and adds one line to the report body naming the switch"
+  - "tests, against a bare remote: a present base is kept; a deleted base becomes the default branch and the body says so"
+type: fix
+```
+
+#### [TSK-03.29.4] A backlog value holding both quote kinds round-trips through yamlite [P: M] [READY]
+```yaml
+files: [internal/backlog/yamlite.go, internal/backlog/backlog_test.go, internal/backlog/fuzz_test.go]
+done_when:
+  - go test ./internal/backlog/...
+  - go vet ./internal/backlog/...
+  - go run ./cmd/komodo lint
+context:
+  - "the value emitter wraps text holding a double quote in single quotes without escaping a single quote inside it, so FileFindings wrote a context line lint cannot read"
+  - "use YAML's own rule: inside single quotes a single quote is written twice, and scalar turns '' back into one; a value with no single quote keeps today's output byte for byte"
+  - "tests: a value holding both quote kinds survives dump then parse; the fuzz target over the parser adds a round-trip property for dumped values"
+type: fix
+```
