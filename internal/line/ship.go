@@ -79,14 +79,11 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err != nil {
 		return nil, err
 	}
-	rootPath, err := backlog.Find(root)
+	rootParsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
 	}
-	rootParsed, err := backlog.Load(rootPath)
-	if err != nil {
-		return nil, err
-	}
+	live := LoadStatus(root)
 	blocking, minor := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	if len(blocking) > 0 {
 		return nil, fmt.Errorf("the review left %d finding(s) at or above %s; fix them on %s, then ship",
@@ -125,6 +122,16 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 			return nil, err
 		}
 	}
+	// This group's live status lands in BACKLOG.md once, in the ship commit.
+	var shippedIDs []string
+	for _, task := range plan.Tasks {
+		shippedIDs = append(shippedIDs, task.ID)
+		if status, ok := live[task.ID]; ok && status.Status != "" {
+			if err := writeStatus(path, task.ID, status.Status); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if line := ChangelogLine(plan, result); line != "" {
 		changelog := filepath.Join(group, "CHANGELOG.md")
 		if err := AppendChangelog(changelog, plan.Version, line); err != nil {
@@ -140,6 +147,9 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		if _, err := git.Run(group, "commit", "-m", message); err != nil {
 			return nil, err
 		}
+	}
+	if err := ClearStatus(root, shippedIDs); err != nil {
+		return nil, err
 	}
 	if isToolkit(root) {
 		if err := gateCommand(group); err != nil {
@@ -197,7 +207,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 
 // liveBase is base while origin still has it, or the default branch once base is deleted.
 func liveBase(root, base string) string {
-	heads, err := git(root, "ls-remote", "--heads", "origin", "refs/heads/"+base)
+	heads, err := git.Run(root, "ls-remote", "--heads", "origin", "refs/heads/"+base)
 	if err != nil || heads != "" {
 		return base
 	}

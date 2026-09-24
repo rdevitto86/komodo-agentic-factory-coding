@@ -2,11 +2,9 @@ package doctor
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"komodo/internal/backlog"
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/line"
@@ -48,24 +46,16 @@ func Prune(root, base string) ([]string, error) {
 	return done, nil
 }
 
-// settleShippedRun sweeps merged worktrees and restores flips for the current branch, skipping while a run is open.
+// settleShippedRun sweeps worktrees origin has merged, skipping while a run is open.
 func settleShippedRun(root, base string) []string {
 	if _, err := git.Run(root, "fetch", "--quiet", "origin", base); err != nil {
 		return nil
 	}
 	remote := "origin/" + base
-	open := line.RunIsOpen(root)
+	if line.RunIsOpen(root) {
+		return nil
+	}
 	var done []string
-	if state, err := line.LoadRun(root); err == nil && state.Branch != "" && !open {
-		if _, err := git.Run(root, "merge-base", "--is-ancestor", state.Branch, remote); err == nil {
-			if restoreFlips(root, remote) {
-				done = append(done, "restored BACKLOG.md; "+remote+" holds its status flips")
-			}
-		}
-	}
-	if open {
-		return done
-	}
 	for _, worktree := range stateWorktrees(root) {
 		if status, err := git.Run(worktree.Path, "status", "--porcelain"); err != nil || status != "" {
 			continue
@@ -97,56 +87,4 @@ func stateWorktrees(root string) []git.Worktree {
 		}
 	}
 	return found
-}
-
-// restoreFlips puts BACKLOG.md back to HEAD when every change in it is a status token remote already holds.
-func restoreFlips(root, remote string) bool {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return false
-	}
-	name := filepath.ToSlash(rel(root, path))
-	head, err := gitRaw(root, "show", "HEAD:"+name)
-	if err != nil {
-		return false
-	}
-	merged, err := gitRaw(root, "show", remote+":"+name)
-	if err != nil {
-		return false
-	}
-	data, err := os.ReadFile(path)
-	if err != nil || string(data) == head {
-		return false
-	}
-	current, before, after := backlog.Parse(string(data)), backlog.Parse(head), backlog.Parse(merged)
-	reverted := string(data)
-	for _, group := range current.Groups {
-		for _, task := range group.Tasks {
-			old, ok := before.Task(task.ID)
-			if !ok {
-				return false
-			}
-			if old.Status == task.Status {
-				continue
-			}
-			if landed, ok := after.Task(task.ID); !ok || landed.Status != task.Status {
-				return false
-			}
-			if reverted, err = backlog.SetStatus(reverted, task.ID, old.Status); err != nil {
-				return false
-			}
-		}
-	}
-	if reverted != head {
-		return false
-	}
-	return os.WriteFile(path, []byte(head), 0o644) == nil
-}
-
-// gitRaw runs git in root and returns its output untrimmed, for a file's exact bytes.
-func gitRaw(root string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = root
-	out, err := cmd.Output()
-	return string(out), err
 }

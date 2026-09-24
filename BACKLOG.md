@@ -1502,7 +1502,7 @@ base: main
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
 
-#### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [READY]
+#### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/snapshot.go, internal/line/step_test.go, komodo/skills/run/SKILL.md]
 done_when:
@@ -1520,7 +1520,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.21.2] The pre-commit hook runs the gate from the checkout it commits [P: H] [READY]
+#### [TSK-03.21.2] The pre-commit hook runs the gate from the checkout it commits [P: H] [DONE]
 ```yaml
 files: [internal/gate/gate.go, internal/gate/gate_test.go]
 done_when:
@@ -1533,7 +1533,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.21.3] Step reads one snapshot and decides with a pure function [P: H] [READY]
+#### [TSK-03.21.3] Step reads one snapshot and decides with a pure function [P: H] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/snapshot.go, internal/line/snapshot_test.go]
 done_when:
@@ -1550,7 +1550,7 @@ type: refactor
 tier: heavy
 ```
 
-#### [TSK-03.21.4] A worktree cut never runs without its push refusal [P: H] [READY]
+#### [TSK-03.21.4] A worktree cut never runs without its push refusal [P: H] [DONE]
 ```yaml
 files: [internal/line/worktree.go, internal/line/worktree_test.go]
 done_when:
@@ -1811,7 +1811,7 @@ base: feat/a-wave-builds-at-once-and-the-hook-check
 ```
 * **Why:** close writes task status into `BACKLOG.md` from three places mid-run, ship writes it again, and prune's `restoreFlips` exists to undo the collisions that causes. With parallel spawns and concurrent groups, markdown as a live database gets worse. The run holds live status; the backlog changes once, in the ship commit.
 
-#### [TSK-03.25.1] Close records status in the run, and ship writes the backlog once [P: H] [READY]
+#### [TSK-03.25.1] Close records status in the run, and ship writes the backlog once [P: H] [DONE]
 ```yaml
 files: [internal/line/status.go, internal/line/status_test.go, internal/line/close.go, internal/line/close_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/snapshot.go, internal/doctor/prune.go, internal/doctor/doctor_test.go, cmd/komodo/backlog.go]
 done_when:

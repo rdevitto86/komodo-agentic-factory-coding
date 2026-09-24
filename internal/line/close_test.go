@@ -66,7 +66,7 @@ func goodResult() map[string]any {
 	}
 }
 
-func TestCloseFlipsTheStatusWhenEverythingPasses(t *testing.T) {
+func TestCloseRecordsDoneInTheRunWhenEverythingPasses(t *testing.T) {
 	root := closeRepo(t)
 	writeResult(t, root, "TSK-08.1.1", goodResult())
 	outcome, err := CloseTask(root, "TSK-08.1.1", false)
@@ -76,9 +76,12 @@ func TestCloseFlipsTheStatusWhenEverythingPasses(t *testing.T) {
 	if outcome.Status != "DONE" {
 		t.Fatalf("outcome = %+v", outcome)
 	}
+	if got := LoadStatus(root)["TSK-08.1.1"]; got.Status != "DONE" {
+		t.Fatalf("status = %+v; the run must record DONE", got)
+	}
 	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if !strings.Contains(string(data), "[TSK-08.1.1] Do it [P: C] [DONE]") {
-		t.Fatal("the status token was not flipped")
+	if !strings.Contains(string(data), "[TSK-08.1.1] Do it [P: C] [READY]") {
+		t.Fatal("close edited BACKLOG.md; the status lives in the run until ship")
 	}
 }
 
@@ -152,9 +155,13 @@ func TestSecondFailureBlocksTheTask(t *testing.T) {
 	if second.Status != "BLOCKED" || second.Attempt != 2 {
 		t.Fatalf("second = %+v", second)
 	}
+	got := LoadStatus(root)["TSK-08.1.1"]
+	if got.Status != "BLOCKED" {
+		t.Fatalf("status = %+v; the blocked status was not recorded", got)
+	}
 	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if !strings.Contains(string(data), "[BLOCKED]") {
-		t.Fatal("the blocked status was not written")
+	if strings.Contains(string(data), "[BLOCKED]") {
+		t.Fatal("close edited BACKLOG.md; the status lives in the run until ship")
 	}
 }
 
@@ -423,11 +430,11 @@ func TestAFixThatBreaksADoneWhenDoesNotCommit(t *testing.T) {
 		{"add", "-A"},
 		{"commit", "-q", "-m", "seed"},
 	} {
-		if _, err := git(root, args...); err != nil {
+		if _, err := git.Run(root, args...); err != nil {
 			t.Fatal(err)
 		}
 	}
-	head, err := git(root, "rev-parse", "HEAD")
+	head, err := git.Run(root, "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +450,7 @@ func TestAFixThatBreaksADoneWhenDoesNotCommit(t *testing.T) {
 	if outcome.Status == "DONE" || !strings.Contains(strings.Join(outcome.Problems, "\n"), "done_when") {
 		t.Fatalf("outcome = %+v; a fix that breaks a task's done_when must fail", outcome)
 	}
-	if after, _ := git(root, "rev-parse", "HEAD"); after != head {
+	if after, _ := git.Run(root, "rev-parse", "HEAD"); after != head {
 		t.Fatalf("HEAD moved from %s to %s; a failing fix round must not commit", head, after)
 	}
 	if !strings.Contains(RepairText(root, "TG-08.1-fix"), "done_when") {

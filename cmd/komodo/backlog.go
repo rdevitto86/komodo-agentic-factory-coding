@@ -33,7 +33,11 @@ func runList(root string, args []string) {
 	status := set.String("status", "", "only tasks with this status")
 	needle, rest := splitPositional(args, "status")
 	_ = set.Parse(rest)
-	_, parsed := load(root)
+	// A run keeps live status in .komodo, not BACKLOG.md, until it ships; list reads what step reads.
+	parsed, _, err := line.LoadBacklog(root)
+	if err != nil {
+		fail(err)
+	}
 	groups := parsed.Groups
 	if needle != "" {
 		group, ok := parsed.Group(needle)

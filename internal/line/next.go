@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
 	"komodo/internal/profile"
@@ -114,11 +115,7 @@ func openRun(root, groupID string) (*Plan, error) {
 	if err != nil || plan == nil {
 		return nil, err
 	}
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
 	}
@@ -179,11 +176,7 @@ func pinWaves(root string, plan *Plan) {
 // groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one; only
 // names the single task a task needle matched, empty when the needle named a group or nothing.
 func groupFor(root, needle string) (backlog.Backlog, backlog.Group, string, bool, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return backlog.Backlog{}, backlog.Group{}, "", false, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return backlog.Backlog{}, backlog.Group{}, "", false, err
 	}
@@ -367,13 +360,13 @@ func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Gr
 
 // hasOrigin reports whether the repo has an origin remote, without which no base can be checked.
 func hasOrigin(root string) bool {
-	_, err := git(root, "remote", "get-url", "origin")
+	_, err := git.Run(root, "remote", "get-url", "origin")
 	return err == nil
 }
 
 // onOrigin reports whether origin holds the branch, as the last fetch or push recorded it.
 func onOrigin(root, branch string) bool {
-	_, err := git(root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
+	_, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 	return err == nil
 }
 
@@ -425,6 +418,9 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	}
 	state.Worktree = path
 	state.Waves = plan.Waves
+	if err := keepGroupStatus(root, plan.Group); err != nil {
+		return state, err
+	}
 	if err := Book(root).TruncateRun(); err != nil {
 		return state, err
 	}
@@ -433,6 +429,25 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	}
 	Stamp(root, ledger.Entry{Run: state.Run, Group: state.Group, Station: "intake", Outcome: "started"})
 	return state, nil
+}
+
+// keepGroupStatus drops the live status of every task outside groupID, so another group's never ships here.
+func keepGroupStatus(root, groupID string) error {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return err
+	}
+	var taskIDs []string
+	if group, ok := parsed.Group(groupID); ok {
+		for _, task := range group.Tasks {
+			taskIDs = append(taskIDs, task.ID)
+		}
+	}
+	return KeepStatus(root, taskIDs)
 }
 
 // RenderProject rebuilds the worktree's gitignored project config for every host installed on

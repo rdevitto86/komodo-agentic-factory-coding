@@ -163,8 +163,17 @@ func BuildLocal(root string, out io.Writer) (string, error) {
 }
 
 const hookScript = `#!/bin/sh
-# Runs the local gate through this host's own built binary. Written by komodo gate --install.
+# Runs the local gate from the checkout being committed, else this host's built binary. Written by komodo gate --install.
 set -e
+# The toolkit's own checkout gates from its source, so the guard table and comment rules are the ones committed.
+top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [ -n "$top" ] && [ -f "$top/cmd/komodo/main.go" ]; then
+  cd "$top"
+  if [ "$(basename "$0")" = "pre-push" ]; then
+    exec go run ./cmd/komodo gate --fuzz 10s
+  fi
+  exec go run ./cmd/komodo gate
+fi
 # The shared git dir sits in the main checkout, where bin/ lives, even when committing from a worktree.
 common=$(git rev-parse --path-format=absolute --git-common-dir)
 root=${common%/.git}
