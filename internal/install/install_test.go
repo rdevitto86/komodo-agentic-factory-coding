@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+func TestAddIgnoreAppendsAMissingEntryAndKeepsEveryExistingLine(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".gitignore")
+	if err := os.WriteFile(path, []byte("node_modules/\n*.log"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := Plan{Host: "repo", Root: root}
+	plan.AddIgnore("/.komodo/", "state")
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "node_modules/\n*.log\n/.komodo/\n" {
+		t.Fatalf(".gitignore = %q", got)
+	}
+	again := Plan{Host: "repo", Root: root}
+	again.AddIgnore("/.komodo/", "state")
+	if len(again.Changes) != 0 {
+		t.Fatal("an entry already present was added twice")
+	}
+	fresh := Plan{Host: "repo", Root: t.TempDir()}
+	fresh.AddIgnore("/.komodo/", "state")
+	if len(fresh.Changes) != 1 || string(fresh.Changes[0].Body) != "/.komodo/\n" {
+		t.Fatalf("a repo with no .gitignore got %+v", fresh.Changes)
+	}
+}
+
 func TestActionsNameWhatWouldChange(t *testing.T) {
 	root := t.TempDir()
 	same := filepath.Join(root, "same.txt")

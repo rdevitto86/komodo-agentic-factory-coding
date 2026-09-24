@@ -21,7 +21,7 @@ You drive one group through the line. The station order lives in the binary. You
 
 ## The binary
 
-`komodo` is `bin/komodo-<os>-<arch>` at the repo root, built by `komodo gate --install`. In the toolkit repo `go run ./cmd/komodo` is the same binary.
+In a headless run `komodo` is on PATH. In a session it is the absolute path the guard hook in the host's project settings names. In the toolkit repo `go run ./cmd/komodo` is the same binary.
 
 ## Rules
 

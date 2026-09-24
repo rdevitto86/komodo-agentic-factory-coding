@@ -57,6 +57,24 @@ func (p *Plan) AddSeed(path string, body []byte, why string) {
 	p.Changes = append(p.Changes, Change{Path: path, Body: body, Mode: 0o644, Seed: true, Why: why})
 }
 
+// AddIgnore appends entry to the root's .gitignore when no line already names it, keeping every existing line.
+func (p *Plan) AddIgnore(entry, why string) {
+	path := filepath.Join(p.Root, ".gitignore")
+	existing, _ := os.ReadFile(path)
+	bare := strings.Trim(entry, "/")
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.Trim(strings.TrimSpace(line), "/") == bare {
+			return
+		}
+	}
+	body := append([]byte{}, existing...)
+	if len(body) > 0 && body[len(body)-1] != '\n' {
+		body = append(body, '\n')
+	}
+	body = append(body, []byte(entry+"\n")...)
+	p.Add(path, body, why)
+}
+
 // AddRemoval appends a path the install deletes when it is present.
 func (p *Plan) AddRemoval(path, why string) {
 	p.Changes = append(p.Changes, Change{Path: path, Remove: true, Why: why})

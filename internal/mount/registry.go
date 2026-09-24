@@ -119,11 +119,25 @@ func ConfigPaths() []string {
 	return out
 }
 
-// BinaryPath is where gate --install builds this machine's binary, relative to the main checkout.
+// Executable resolves the running binary's own path with symlinks followed; a test swaps it.
+var Executable = func() (string, error) {
+	path, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(path)
+}
+
+// BinaryPath is the running toolkit binary's absolute path, or bin/<name> relative to the main checkout under go run.
 func BinaryPath() string {
 	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
 		name += ".exe"
+	}
+	if path, err := Executable(); err == nil && filepath.Base(path) == name {
+		if abs, err := filepath.Abs(path); err == nil {
+			return abs
+		}
 	}
 	return filepath.Join("bin", name)
 }

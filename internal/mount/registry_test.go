@@ -59,6 +59,24 @@ func TestBinaryPathNamesThisPlatform(t *testing.T) {
 	}
 }
 
+func TestBinaryPathIsTheRunningBinaryWhenItCarriesThePlatformName(t *testing.T) {
+	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	want := filepath.Join(t.TempDir(), name)
+	saved := Executable
+	t.Cleanup(func() { Executable = saved })
+	Executable = func() (string, error) { return want, nil }
+	if got := BinaryPath(); got != want {
+		t.Fatalf("binary path = %s, want %s", got, want)
+	}
+	Executable = func() (string, error) { return filepath.Join(t.TempDir(), "komodo.test"), nil }
+	if got := BinaryPath(); got != filepath.Join("bin", name) {
+		t.Fatalf("binary path under go run = %s, want the relative bin path", got)
+	}
+}
+
 func TestMainCheckoutFallsBackToRootOutsideGit(t *testing.T) {
 	root := t.TempDir()
 	if got := MainCheckout(root); got != root {
