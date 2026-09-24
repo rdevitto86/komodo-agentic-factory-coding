@@ -1449,3 +1449,26 @@ context:
   - "tests: a worktree outside .komodo/wt yields one note and zero problems; the main checkout and state worktrees yield none"
 type: fix
 ```
+
+### [TG-03.18] Claude carries every tier until local is opted in
+```yaml
+type: fix
+version: 1.0.0-beta.1
+base: docs/queue-claude-default
+```
+* **Why:** the light tier moves to Ollama whenever the server answers, and a small local model on a 24 GB machine is too weak to carry a station. For 1.0 Claude carries every tier; Ollama stays a swap the developer opts into.
+
+#### [TSK-03.18.1] Local tiers need the overlay's local switch as well as a live server [P: H] [READY]
+```yaml
+files: [internal/mount/registry.go, internal/profile/profile.go, internal/profile/profile_test.go, README.md]
+done_when:
+  - go test ./internal/profile/... ./internal/mount/...
+  - go vet ./internal/profile/... ./internal/mount/...
+  - go run ./cmd/komodo doctor
+context:
+  - "Overlay gains Local bool, json local; Select passes local only when the overlay sets it and the local machine answers, so a running server alone changes nothing"
+  - "local_reviewer still needs local; without local, Why never mentions the local machine and no degrade note prints"
+  - "tests: Ollama up without the switch keeps every tier on the host; with the switch the hybrid profile returns"
+  - "README: selection line, the profile table's hybrid and local rows, and the overlay paragraph say local tiers are opt-in with \"local\": true"
+type: fix
+```
