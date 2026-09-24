@@ -39,7 +39,7 @@ var apiValueFlags = map[string]bool{
 var pullsCreateRe = regexp.MustCompile(`^/?repos/[^/]+/[^/]+/pulls(\?.*)?$`)
 
 // commentsCreateRe matches the POSTs the respond skill needs: an issue, a pull request, or a reply comment.
-var commentsCreateRe = regexp.MustCompile(`^/?repos/[^/]+/[^/]+/(issues/[0-9]+/comments|pulls/[0-9]+/comments|comments/[0-9]+/replies)(\?.*)?$`)
+var commentsCreateRe = regexp.MustCompile(`^/?repos/[^/]+/[^/]+/(issues/[0-9]+/comments|pulls/[0-9]+/comments|pulls/[0-9]+/comments/[0-9]+/replies)(\?.*)?$`)
 
 // sensitiveSegments names the path segments of the forge no gh api call reaches, whatever its method.
 var sensitiveSegments = map[string]bool{
@@ -157,11 +157,8 @@ func endpointNamesSensitivePart(endpoint string) bool {
 	return false
 }
 
-// mutationCallRe matches a GraphQL field name immediately followed by its argument list.
-var mutationCallRe = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
-
-// graphqlKeywords are the GraphQL syntax words a call name is never mistaken for.
-var graphqlKeywords = map[string]bool{"mutation": true, "query": true, "subscription": true, "fragment": true, "on": true}
+// graphqlCommentRe matches a GraphQL comment, which runs from # to the end of the line.
+var graphqlCommentRe = regexp.MustCompile(`#[^\n]*`)
 
 // allowedMutations are the writes the line and the respond skill need through gh api graphql.
 var allowedMutations = map[string]bool{
@@ -169,20 +166,99 @@ var allowedMutations = map[string]bool{
 	"resolveReviewThread": true, "createPullRequest": true,
 }
 
-// onlyAllowedMutations reports whether every mutation a GraphQL query names is one the line allows.
+// onlyAllowedMutations reports whether every mutation a GraphQL document names is one the line allows.
 func onlyAllowedMutations(query string) bool {
-	named := false
-	for _, match := range mutationCallRe.FindAllStringSubmatch(query, -1) {
-		name := match[1]
-		if graphqlKeywords[name] {
-			continue
-		}
-		named = true
-		if !allowedMutations[name] {
+	fields := mutationFields(graphqlCommentRe.ReplaceAllString(query, ""))
+	if len(fields) == 0 {
+		return false
+	}
+	for _, field := range fields {
+		if !allowedMutations[field] {
 			return false
 		}
 	}
-	return named
+	return true
+}
+
+// mutationFields returns the top-level field names inside every mutation's selection set, reading
+// past strings, arguments, commas, and aliases, since GraphQL treats commas as whitespace.
+func mutationFields(document string) []string {
+	var fields []string
+	lower := strings.ToLower(document)
+	for start := 0; ; {
+		at := strings.Index(lower[start:], "mutation")
+		if at < 0 {
+			return fields
+		}
+		position := start + at + len("mutation")
+		open := strings.IndexByte(document[position:], '{')
+		if open < 0 {
+			return fields
+		}
+		fields = append(fields, selectionNames(document[position+open+1:])...)
+		start = position
+	}
+}
+
+// selectionNames reads the field names at the top depth of one selection set, up to its closing brace.
+func selectionNames(body string) []string {
+	var names []string
+	depth := 0
+	for index := 0; index < len(body); index++ {
+		char := body[index]
+		switch {
+		case char == '"':
+			index = skipGraphQLString(body, index)
+		case char == '{' || char == '(':
+			depth++
+		case char == '}' || char == ')':
+			if depth == 0 {
+				return names
+			}
+			depth--
+		case depth == 0 && isNameStart(char):
+			end := index
+			for end < len(body) && isNameChar(body[end]) {
+				end++
+			}
+			name := body[index:end]
+			next := strings.TrimLeft(body[end:], " \t\r\n,")
+			if !strings.HasPrefix(next, ":") {
+				names = append(names, name)
+			}
+			index = end - 1
+		}
+	}
+	return names
+}
+
+// skipGraphQLString returns the index of the quote that closes the string opening at index.
+func skipGraphQLString(body string, index int) int {
+	if strings.HasPrefix(body[index:], `"""`) {
+		if end := strings.Index(body[index+3:], `"""`); end >= 0 {
+			return index + 3 + end + 2
+		}
+		return len(body)
+	}
+	for next := index + 1; next < len(body); next++ {
+		switch body[next] {
+		case '\\':
+			next++
+		case '"':
+			return next
+		}
+	}
+	return len(body)
+}
+
+// isNameStart reports whether a byte can open a GraphQL name.
+func isNameStart(char byte) bool {
+	return char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')
+}
+
+// isNameChar reports whether a byte can continue a GraphQL name.
+func isNameChar(char byte) bool {
+	return isNameStart(char) || (char >= '0' && char <= '9')
 }
 
 // rulesetReadVerbs are the gh ruleset subcommands that only read.
