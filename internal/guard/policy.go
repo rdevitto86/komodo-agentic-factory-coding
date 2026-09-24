@@ -20,8 +20,48 @@ type Policy struct {
 	CriticalRefs    []string `json:"critical_refs"`
 	ConfigPaths     []string `json:"config_paths"`
 	TrailerPatterns []string `json:"trailer_patterns"`
+	Mode            Mode     `json:"mode"`
 
 	trailers []*regexp.Regexp
+}
+
+// Mode scopes which critical-ref rules the guard enforces: safe, default, or unsafe.
+type Mode string
+
+// The three modes a policy carries, strictest first.
+const (
+	ModeSafe    Mode = "safe"
+	ModeDefault Mode = "default"
+	ModeUnsafe  Mode = "unsafe"
+)
+
+// modeRank orders a mode from strictest to loosest, for tightening and loosening a policy.
+var modeRank = map[Mode]int{ModeSafe: 0, ModeDefault: 1, ModeUnsafe: 2}
+
+// normalizeMode reads an empty or unknown mode as default.
+func normalizeMode(mode Mode) Mode {
+	if _, ok := modeRank[mode]; ok {
+		return mode
+	}
+	return ModeDefault
+}
+
+// tightenMode keeps the stricter of two modes, the only direction a repo policy may move.
+func tightenMode(current, proposed Mode) Mode {
+	current, proposed = normalizeMode(current), normalizeMode(proposed)
+	if modeRank[proposed] < modeRank[current] {
+		return proposed
+	}
+	return current
+}
+
+// loosenMode keeps the looser of two modes, the only direction the machine overlay may move.
+func loosenMode(current, proposed Mode) Mode {
+	current, proposed = normalizeMode(current), normalizeMode(proposed)
+	if modeRank[proposed] > modeRank[current] {
+		return proposed
+	}
+	return current
 }
 
 // DefaultPolicy is what the guard denies when no policy file can be read.
@@ -60,13 +100,16 @@ func Load(toolkitRoot, repoRoot string) Policy {
 		policy.CriticalRefs = union(policy.CriticalRefs, shipped.CriticalRefs)
 		policy.ConfigPaths = union(policy.ConfigPaths, shipped.ConfigPaths)
 		policy.TrailerPatterns = union(policy.TrailerPatterns, shipped.TrailerPatterns)
+		policy.Mode = tightenMode(policy.Mode, shipped.Mode)
 	}
 	if extra, ok := readPolicy(filepath.Join(repoRoot, ".komodo", "policy.json")); ok {
 		policy.CriticalRefs = union(policy.CriticalRefs, extra.CriticalRefs)
 		policy.ConfigPaths = union(policy.ConfigPaths, extra.ConfigPaths)
 		policy.TrailerPatterns = union(policy.TrailerPatterns, extra.TrailerPatterns)
+		policy.Mode = tightenMode(policy.Mode, extra.Mode)
 	}
 	policy.CriticalRefs = union(policy.CriticalRefs, overlayCriticalRefs(profile.MachineOverlayPath()))
+	policy.Mode = loosenMode(policy.Mode, overlayMode(profile.MachineOverlayPath()))
 	policy.compile()
 	return policy
 }
@@ -86,6 +129,21 @@ func overlayCriticalRefs(path string) []string {
 	return overlay.CriticalRefs
 }
 
+// overlayMode reads the machine overlay's mode, tolerating its absence.
+func overlayMode(path string) Mode {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var overlay struct {
+		Mode Mode `json:"mode"`
+	}
+	if json.Unmarshal(data, &overlay) != nil {
+		return ""
+	}
+	return overlay.Mode
+}
+
 // readShippedPolicy parses the toolkit's own policy.json, on disk or embedded.
 func readShippedPolicy(toolkitRoot string) (Policy, bool) {
 	var policy Policy
@@ -96,7 +154,7 @@ func readShippedPolicy(toolkitRoot string) (Policy, bool) {
 	if json.Unmarshal(data, &policy) != nil {
 		return policy, false
 	}
-	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0
+	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != ""
 }
 
 // readPolicy parses one policy file, reporting whether it was usable.
@@ -109,7 +167,7 @@ func readPolicy(path string) (Policy, bool) {
 	if json.Unmarshal(data, &policy) != nil {
 		return policy, false
 	}
-	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0
+	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != ""
 }
 
 // union adds what the repo names without dropping anything the toolkit names.

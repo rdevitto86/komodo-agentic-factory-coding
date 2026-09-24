@@ -196,6 +196,48 @@ func TestOverlayCriticalRefsReachesLoad(t *testing.T) {
 	}
 }
 
+// TestRepoPolicyOnlyTightensMode proves a repo's own policy may narrow the mode but never widen it.
+func TestRepoPolicyOnlyTightensMode(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	extra := `{"critical_refs":[],"config_paths":[],"mode":"unsafe"}`
+	if err := os.WriteFile(filepath.Join(repo, ".komodo", "policy.json"), []byte(extra), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policy := Load(t.TempDir(), repo)
+	if policy.Mode != ModeDefault {
+		t.Fatalf("a repo policy widened the mode to %q", policy.Mode)
+	}
+}
+
+// TestMachineOverlayOnlyLoosensMode proves the machine overlay may widen the mode but never narrow it.
+func TestMachineOverlayOnlyLoosensMode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := `{"mode":"unsafe"}`
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policy := Load(t.TempDir(), t.TempDir())
+	if policy.Mode != ModeUnsafe {
+		t.Fatalf("the machine overlay's loosened mode never reached the guard: %q", policy.Mode)
+	}
+}
+
+// TestNormalizeModeReadsEmptyAndUnknownAsDefault proves an unset or misspelled mode is never unsafe.
+func TestNormalizeModeReadsEmptyAndUnknownAsDefault(t *testing.T) {
+	for _, mode := range []Mode{"", "loose", "yolo"} {
+		if normalizeMode(mode) != ModeDefault {
+			t.Fatalf("normalizeMode(%q) = %q, want default", mode, normalizeMode(mode))
+		}
+	}
+}
+
 func TestIsCriticalHonoursATrailingStar(t *testing.T) {
 	policy := DefaultPolicy()
 	policy.CriticalRefs = append(policy.CriticalRefs, "release/*")
