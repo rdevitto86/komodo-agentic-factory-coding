@@ -304,24 +304,44 @@ var noVerifyCommands = map[string]bool{
 // hasNoVerify reports whether rest skips hooks: --no-verify or a prefix git resolves to it, or
 // commit's -n alone or in a short cluster before any option that takes a value.
 func hasNoVerify(sub string, rest []string) bool {
-	for _, arg := range rest {
+	for index := 0; index < len(rest); index++ {
+		arg := rest[index]
 		if len(arg) >= len("--no-veri") && strings.HasPrefix("--no-verify", arg) {
 			return true
 		}
-		if sub != "commit" || !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+		if sub != "commit" || !strings.HasPrefix(arg, "-") {
 			continue
 		}
-		for _, letter := range arg[1:] {
+		if strings.HasPrefix(arg, "--") {
+			if commitLongValues[arg] {
+				index++
+			}
+			continue
+		}
+		for position, letter := range arg[1:] {
 			if letter == 'n' {
 				return true
 			}
 			if commitValueLetters[letter] {
+				// a bare -m or -F takes the next word, which is never a flag cluster.
+				if position == len(arg)-2 && commitNextWordLetters[letter] {
+					index++
+				}
 				break
 			}
 		}
 	}
 	return false
 }
+
+// commitLongValues are commit's long options whose value is the next word.
+var commitLongValues = map[string]bool{
+	"--message": true, "--file": true, "--reuse-message": true, "--reedit-message": true, "--template": true,
+	"--author": true, "--date": true, "--cleanup": true, "--fixup": true, "--squash": true, "--trailer": true,
+}
+
+// commitNextWordLetters take the next word when bare; -u and -S take only a glued value.
+var commitNextWordLetters = map[rune]bool{'m': true, 'F': true, 'C': true, 'c': true, 't': true}
 
 // commitValueLetters are commit's short options that take the rest of the cluster as their value.
 var commitValueLetters = map[rune]bool{'m': true, 'F': true, 'C': true, 'c': true, 't': true, 'u': true, 'S': true}

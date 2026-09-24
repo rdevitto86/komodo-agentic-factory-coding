@@ -199,12 +199,13 @@ func dropPrintOptions(name string, args []string) []string {
 // command checks one simple command and returns its findings, the directory after it, and the branch.
 func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch string) ([]string, string, string) {
 	s.seen++
+	stdin := s.stdinOf(cmd, upstream, cwd)
 	var findings []string
 	for _, target := range cmd.writes {
 		findings = append(findings, pathFindings(target, cwd, s.root, s.policy)...)
 	}
 	if len(cmd.writes) > 0 {
-		s.recordWrites(cmd, cwd, s.stdinOf(cmd, upstream, cwd))
+		s.recordWrites(cmd, cwd, stdin)
 	}
 	tokens := s.expand(cmd.words)
 	for len(tokens) > 0 && reservedWords[tokens[0]] {
@@ -233,7 +234,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	if len(kept) == 0 {
 		return findings, cwd, branch
 	}
-	stdin := s.stdinOf(cmd, upstream, cwd)
+
 	name := commandName(kept[0])
 	s.recordOutputWrites(name, kept, cwd)
 	switch {
@@ -723,7 +724,7 @@ func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, s
 	if !exists && (s.blind || (scriptExtensions[strings.ToLower(filepath.Ext(target))] && s.createdEarlier())) {
 		return []string{scriptNotVisible}, branch
 	}
-	if !recorded && ok && s.blind {
+	if !recorded && ((ok && s.blind) || (exists && !ok && !binaryFile(target, cwd))) {
 		return []string{scriptNotVisible}, branch
 	}
 	if !ok {
@@ -736,6 +737,22 @@ func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, s
 		return []string{interpreterHidesGit}, branch
 	}
 	return nil, branch
+}
+
+// binaryFile reports whether a path run as a command is a compiled program, with an early NUL byte.
+func binaryFile(target, cwd string) bool {
+	file := expandHome(target)
+	if !filepath.IsAbs(file) {
+		file = filepath.Join(cwd, file)
+	}
+	handle, err := os.Open(file)
+	if err != nil {
+		return false
+	}
+	defer handle.Close()
+	head := make([]byte, 8192)
+	count, _ := handle.Read(head)
+	return strings.ContainsRune(string(head[:count]), 0)
 }
 
 // shebang names the interpreter a script's first line asks for, through env when it uses it.

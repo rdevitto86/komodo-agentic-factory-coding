@@ -544,6 +544,11 @@ func extraCases() []Case {
 		bash("node -e template literal in single quotes", "node -e 'const a = 1; console.log(`${a}`)'", "feat/x", false, ""),
 		bash("echo a dollar in single quotes into a script", `echo 'echo $HOME' > x.sh; sh x.sh`, "feat/x", false, ""),
 		bash("a quoted heredoc keeps its dollar literal", "cat > x.sh <<'EOF'\necho $HOME\nEOF\nsh x.sh", "feat/x", false, ""),
+		bash("deno eval skips a flag value before the code", `deno eval --ext ts 'new Deno.Command("git", {args: ["push","origin","main"]}).outputSync()'`, "feat/x", true, interpreterHidesGit),
+		bash("node -r preloads a recorded push", `echo 'require("child_process").execSync("git push origin main")' > p.js; node -r ./p.js -e 1`, "feat/x", true, interpreterHidesGit),
+		bash("node -r a package name stays allowed", "node -r dotenv/config server.js", "feat/x", false, ""),
+		bash("commit -m with a message starting -n", `git commit -m "-n flag fixed"`, "feat/x", false, ""),
+		bash("commit --message with a message starting -n", `git commit --message "-n flag fixed"`, "feat/x", false, ""),
 	}
 }
 

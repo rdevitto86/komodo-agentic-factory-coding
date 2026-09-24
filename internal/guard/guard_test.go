@@ -583,3 +583,26 @@ func TestBlindWriteHidesAScriptOnDisk(t *testing.T) {
 		}
 	}
 }
+
+// TestOversizeScriptIsNotVisible checks a script too large to read is refused, while a binary run by path is not.
+func TestOversizeScriptIsNotVisible(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	padding := strings.Repeat("# pad\n", maxScriptBytes/6+10)
+	if err := os.WriteFile(filepath.Join(root, "big.py"), []byte(padding+"import os; os.system('git push origin main')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tool"), append([]byte{0x7f, 'E', 'L', 'F', 0}, make([]byte, maxScriptBytes)...), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]bool{
+		"python3 big.py": true,
+		"./tool --help":  false,
+	}
+	for command, deny := range cases {
+		request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
+		if got := Check(request, DefaultPolicy(), "feat/x").Deny; got != deny {
+			t.Errorf("%q: deny = %v, want %v", command, got, deny)
+		}
+	}
+}
