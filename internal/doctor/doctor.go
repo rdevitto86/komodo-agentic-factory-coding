@@ -676,23 +676,20 @@ func Prune(root, base string) ([]string, error) {
 	return done, nil
 }
 
-// settleShippedRun clears what a shipped run leaves once origin's base holds its branch: the run's
-// clean worktrees and their branches, and the status flips BACKLOG.md still carries uncommitted.
+// settleShippedRun sweeps every clean worktree under .komodo/wt whose branch origin's base now holds,
+// whatever the run state holds; only the current run's own branch triggers its status flip restore.
 func settleShippedRun(root, base string) []string {
-	state, err := line.LoadRun(root)
-	if err != nil || state.Branch == "" || line.RunIsOpen(root) {
-		return nil
-	}
 	if _, err := git(root, "fetch", "--quiet", "origin", base); err != nil {
 		return nil
 	}
 	remote := "origin/" + base
-	if _, err := git(root, "merge-base", "--is-ancestor", state.Branch, remote); err != nil {
-		return nil
-	}
 	var done []string
-	if restoreFlips(root, remote) {
-		done = append(done, "restored BACKLOG.md; "+remote+" holds its status flips")
+	if state, err := line.LoadRun(root); err == nil && state.Branch != "" && !line.RunIsOpen(root) {
+		if _, err := git(root, "merge-base", "--is-ancestor", state.Branch, remote); err == nil {
+			if restoreFlips(root, remote) {
+				done = append(done, "restored BACKLOG.md; "+remote+" holds its status flips")
+			}
+		}
 	}
 	for _, worktree := range stateWorktrees(root) {
 		if status, err := git(worktree.path, "status", "--porcelain"); err != nil || status != "" {
