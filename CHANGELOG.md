@@ -6,6 +6,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 The first beta of 1.0.0: feature-complete, with both proofs recorded below. 1.0.0 is cut by hand once real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
+- **TG-03.15** The guard reads a safety mode (1 task(s))
 - **TG-03.14** The doctor names a worktree the line did not cut (1 task(s))
 - **TG-03.13** Prune settles every merged run, not only the last (1 task(s))
 - **TG-03.12** The local mount's own paths are tested (1 task(s))

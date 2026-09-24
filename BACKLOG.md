@@ -1390,7 +1390,7 @@ base: main
 ```
 * **Why:** the guard refuses `git switch main` and so blocks pulling the merged base. A mode lets the user pick: safe watches a switch onto a critical ref, default allows switching and pulling there, unsafe also allows a commit or push there.
 
-#### [TSK-03.15.1] Policy carries a mode that scopes the critical-ref rules [P: H] [READY]
+#### [TSK-03.15.1] Policy carries a mode that scopes the critical-ref rules [P: H] [DONE]
 ```yaml
 files: [internal/guard/policy.go, internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
