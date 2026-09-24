@@ -85,18 +85,18 @@ A line carries the run, group, task, wave, station, role, tier, host, provider, 
 | Review | diff plus tasks | reviewer schema | subagent, other tier or vendor | TOML agent | `komodo machine`: the binary posts the brief and reads the JSON back |
 | Ad hoc | rules and standards | none | agents and skills | agents and skills | `komodo machine` for any read-only role |
 
-A role declares a tier, light, standard, or heavy, and never a model. A profile maps tiers to a provider, model, and effort for one host. Selection is automatic: the host from the mount installed, the plan from the probe, local tiers when Ollama answers. No flag for the default run.
+A role declares a tier, light, standard, or heavy, and never a model. A profile maps tiers to a provider, model, and effort for one host. Selection is automatic: the host from the mount installed, the plan from the probe, local tiers only when the overlay opts in with `"local": true` and Ollama answers. No flag for the default run.
 
 | Profile | Host | light | standard | heavy | reviewer |
 |---|---|---|---|---|---|
 | `claude` | Claude Code | haiku | sonnet | opus | opus |
-| `hybrid` | Claude Code with Ollama up | ollama | sonnet | opus | opus, or ollama with `local_reviewer` |
+| `hybrid` | Claude Code, `"local": true`, Ollama up | ollama | sonnet | opus | opus, or ollama with `local_reviewer` |
 | `codex` | Codex | small | standard | large | large |
-| `local` | Codex with Ollama | local small | local coder | local coder | local coder |
+| `local` | Codex, `"local": true`, Ollama up | local small | local coder | local coder | local coder |
 
 A tier that resolves to `ollama` runs through `komodo machine` and carries only read-only roles. A write role on that tier, or a brief larger than the local window, falls back to the host's own tier, and `komodo step` says so in `why`. No model is ever spent to reach a local model.
 
-The local model is whatever `OLLAMA_MODEL` names, else `local_model` in the overlay, else the first model the server lists. The endpoint is `OLLAMA_BASE_URL`, else `local_url` in the overlay, else `http://localhost:11434`; one `local_url` points every machine at a shared server. The overlay, `~/.komodo/config.json`, also renames a tier for this host (`"models": {"heavy": "sonnet"}`), caps the local window (`local_window`, default 32768 tokens), and opts the reviewer onto the local machine (`local_reviewer`). It can only lower a cap and never widen what the guard denies.
+The local model is whatever `OLLAMA_MODEL` names, else `local_model` in the overlay, else the first model the server lists. The endpoint is `OLLAMA_BASE_URL`, else `local_url` in the overlay, else `http://localhost:11434`; one `local_url` points every machine at a shared server. The overlay, `~/.komodo/config.json`, opts local tiers in at all (`"local": true`; a running server alone changes nothing), renames a tier for this host (`"models": {"heavy": "sonnet"}`), caps the local window (`local_window`, default 32768 tokens), and opts the reviewer onto the local machine (`local_reviewer`). It can only lower a cap and never widen what the guard denies.
 
 Plan overlays sit on top: Pro lowers the heavy ceiling, caps parallel builders at two, skips review under a 40-line diff, and pauses at 75 percent of the five-hour window. Max keeps the defaults and pauses at 90 percent. Unknown is the conservative one. The probe reads the host's own config file, never a CLI status line that once misreported a Max account as Pro. Intake pauses before a wave, never inside one.
 
@@ -263,7 +263,7 @@ One vocabulary, used the same way in this file, the backlog, the code, the skill
 
 ## Setup
 
-Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optional; when it answers, the light tier moves to it and the reviewer stays remote unless `~/.komodo/config.json` says `"local_reviewer": true`.
+Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optional; set `"local": true` in `~/.komodo/config.json` and, once it answers, the light tier moves to it and the reviewer stays remote unless the overlay also says `"local_reviewer": true`.
 
 ```bash
 git clone <this repo> ~/komodo/ai/komodo-agentic-factory-coding

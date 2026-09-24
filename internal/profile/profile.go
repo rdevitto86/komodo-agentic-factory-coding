@@ -87,9 +87,11 @@ func planOverlay(profile Profile, plan string) Profile {
 	return profile
 }
 
-// Select picks the profile with no flag: the host installed, the plan probed, the local machine if it answers.
+// Select picks the profile with no flag: the host installed, the plan probed, the local machine
+// only when the overlay opts in with "local": true and it answers.
 func Select(root string) Profile {
-	return SelectWith(root, mount.Hosts(), mount.LocalMachine().Up())
+	local := mount.LoadOverlay().Local && mount.LocalMachine().Up()
+	return SelectWith(root, mount.Hosts(), local)
 }
 
 // SelectWith is Select over a given set of mounts, which is what a test drives.

@@ -165,6 +165,50 @@ func TestAMissingOverlayChangesNothing(t *testing.T) {
 	}
 }
 
+func TestSelectNeedsTheOverlaySwitchAsWellAsAnAnsweringServer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".fake-select-marker"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hostSnapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(hostSnapshot) })
+	mount.Register(mount.Host{
+		Name:       "fake-select",
+		HybridName: "hybrid",
+		Installed: func(r string) bool {
+			_, err := os.Stat(filepath.Join(r, ".fake-select-marker"))
+			return err == nil
+		},
+		Tiers: func(plan string, ollama bool) mount.Tiers {
+			tiers := mount.Tiers{Standard: mount.Machine{Provider: "fake-select"}}
+			if ollama {
+				tiers.Light = mount.Machine{Provider: "ollama"}
+			}
+			return tiers
+		},
+	})
+	mount.RegisterLocal(mount.Local{Up: func() bool { return true }})
+	t.Cleanup(func() { mount.RegisterLocal(mount.Local{}) })
+
+	if got := Select(root); got.Name == "hybrid" {
+		t.Fatalf("ollama answered without the overlay switch and every tier still went hybrid: %+v", got)
+	}
+
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := filepath.Join(home, ".komodo", "config.json")
+	if err := os.WriteFile(overlay, []byte(`{"local":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Select(root); got.Name != "hybrid" {
+		t.Fatalf("the overlay switch and an answering server did not return the hybrid profile: %+v", got)
+	}
+}
+
 func TestPausedFollowsTheWindow(t *testing.T) {
 	resets := time.Now().Add(time.Hour)
 	host := fakeHost("h", true, mount.Usage{Plan: "max_5x", FiveHour: 0.95, ResetsAt: resets}, true)
