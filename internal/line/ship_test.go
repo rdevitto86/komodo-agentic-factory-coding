@@ -17,7 +17,8 @@ import (
 const shipBacklog = "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-09.1.1] Do it [P: C] [DONE]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - true\n```\n"
 
-// shipRepo builds a group worktree carrying its own backlog and a remote origin, so ShipGroup can push.
+// shipRepo builds a group worktree and a main checkout, both remoted at a bare origin, so
+// ShipGroup can read the push URL from the root and push from the group.
 func shipRepo(t *testing.T) (root, group string) {
 	t.Helper()
 	root = t.TempDir()
@@ -26,6 +27,8 @@ func shipRepo(t *testing.T) (root, group string) {
 	}
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
 	group = filepath.Join(root, "group")
 	if err := os.MkdirAll(group, 0o755); err != nil {
 		t.Fatal(err)
@@ -98,6 +101,31 @@ func TestShipGroupRunsTheAfterPublishCommand(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(group, "published.txt")); err != nil {
 		t.Fatalf("after_publish did not run: %v", err)
+	}
+}
+
+func TestShipGroupPushesThroughTheRootsExplicitURL(t *testing.T) {
+	root, group := shipRepo(t)
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	bare, err := git(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("git", "-C", bare, "branch", "--list", "feat/a-group").CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "feat/a-group") {
+		t.Fatalf("branch = %s; ShipGroup must push the branch to the URL the root names", out)
+	}
+	if _, err := git(group, "config", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatal("the group worktree's own config must never gain a pushurl from a ship push")
 	}
 }
 
@@ -204,8 +232,9 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "push") {
-		t.Fatalf("err = %v; the fixture has no remote, so ship must fail at the push and not before", err)
+	unreachableOrigin(t, root)
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
+		t.Fatalf("err = %v; the origin is unreachable, so ship must fail at the push itself and not before", err)
 	}
 	shipped, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
 	if err != nil {
@@ -266,8 +295,9 @@ func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
 	plan.Profile.SeverityFloor = "high"
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "push") {
-		t.Fatalf("err = %v; the fixture has no remote yet, so ship must fail at the push", err)
+	unreachableOrigin(t, root)
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin main") {
+		t.Fatalf("err = %v; the origin is unreachable, so ship must fail at the push itself", err)
 	}
 	before, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
 	if err != nil {
@@ -278,7 +308,7 @@ func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
 	}
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
-	runGit(t, worktree, "remote", "add", "origin", bare)
+	runGit(t, root, "remote", "set-url", "origin", bare)
 	result, err := ShipGroup(root, plan, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -352,13 +382,14 @@ const staleWorktreeBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversio
 func TestShipReadsStatusFromTheRootCloseWrites(t *testing.T) {
 	worktree := gitRepo(t)
 	commit(t, worktree, "BACKLOG.md", staleWorktreeBacklog, "the backlog")
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", bare)
-	runGit(t, worktree, "remote", "add", "origin", bare)
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closedRootBacklog), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
 		Base: "main", Branch: "main", Worktree: worktree,
@@ -379,13 +410,14 @@ func TestShipReadsStatusFromTheRootCloseWrites(t *testing.T) {
 func TestShipRendersTheBodyAfterBlockedIsKnown(t *testing.T) {
 	worktree := gitRepo(t)
 	commit(t, worktree, "BACKLOG.md", staleWorktreeBacklog, "the backlog")
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", bare)
-	runGit(t, worktree, "remote", "add", "origin", bare)
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closedRootBacklog), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
 		Base: "main", Branch: "main", Worktree: worktree,
@@ -425,5 +457,73 @@ func TestShipsOwnCommitDoesNotRestaleTheReview(t *testing.T) {
 	commitDated(t, worktree, "CHANGELOG.md", "# Changelog\n", message, now)
 	if !reviewed(root, plan) {
 		t.Fatal("ship's own commit must not restale a review that already passed it")
+	}
+}
+
+// TestShipGroupPushesFromAWorktreeThatRefusesPush cuts the group the way the line does, with its
+// refused pushurl, and proves ship still lands the branch on origin.
+func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
+	root := t.TempDir()
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(shipBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "seed")
+	runGit(t, root, "push", "origin", "main")
+	runGit(t, root, "fetch", "origin")
+	worktree := filepath.Join(root, StateDir, "wt", "TG-09.1")
+	if err := AddWorktree(root, "feat/a-group", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", worktree, "push", "origin", "feat/a-group").CombinedOutput(); err == nil {
+		t.Fatalf("the cut worktree must refuse a plain push, out = %s", out)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "one.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "add", "-A")
+	runGit(t, worktree, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group",
+		Worktree: filepath.Join(StateDir, "wt", "TG-09.1"),
+		Tasks:    []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("git", "-C", bare, "branch", "--list", "feat/a-group").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "feat/a-group") {
+		t.Fatalf("branch = %s, err = %v; ship must land the branch on origin", out, err)
+	}
+	if merge, err := git(worktree, "config", "--get", "branch.feat/a-group.merge"); err != nil || merge != "refs/heads/feat/a-group" {
+		t.Fatalf("upstream merge = %q, err = %v; ship must set the branch's upstream the way push -u does", merge, err)
+	}
+	if refused, err := git(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
+		t.Fatalf("pushurl = %q; ship must leave the worktree's refusal in place", refused)
+	}
+}
+
+// unreachableOrigin makes root a repo whose origin names a path that does not exist, so a ship
+// resolves the URL and then fails at the push itself.
+func unreachableOrigin(t *testing.T, root string) {
+	t.Helper()
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", filepath.Join(t.TempDir(), "missing.git"))
+}
+
+// TestPushErrorsNeverCarryACredential checks a failed push redacts a token the origin URL holds.
+func TestPushErrorsNeverCarryACredential(t *testing.T) {
+	text := redactURL("fatal: unable to access 'https://x-access-token:SECRET@github.com/o/r.git/': 403", "https://x-access-token:SECRET@github.com/o/r.git")
+	if strings.Contains(text, "SECRET") {
+		t.Fatalf("text = %q; a push error must never carry a token", text)
+	}
+	if other := redactURL("remote: https://u:p@example.com/x denied", ""); strings.Contains(other, "u:p") {
+		t.Fatalf("other = %q; any URL credential must be redacted", other)
 	}
 }

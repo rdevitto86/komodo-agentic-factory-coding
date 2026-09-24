@@ -1731,7 +1731,7 @@ base: main
 ```
 * **Why:** the guard is a denylist over bash and will never be complete. The headless scrub removes push credentials, but an in-session builder still has them. A worktree with no working push URL turns every missed shell trick into a failed push, so the guard stops being the last check.
 
-#### [TSK-03.23.1] Every line worktree refuses a push, and ship pushes through an explicit URL [P: C] [READY]
+#### [TSK-03.23.1] Every line worktree refuses a push, and ship pushes through an explicit URL [P: C] [DONE]
 ```yaml
 files: [internal/line/worktree.go, internal/line/worktree_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
