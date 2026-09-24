@@ -183,8 +183,8 @@ func TestReportBodyMarksWhatBlocked(t *testing.T) {
 	plan := &Plan{Group: "TG-09.1", Title: "A group", Tasks: []PlanTask{{ID: "a", Title: "One"}, {ID: "b", Title: "Two"}}}
 	result := &ShipResult{Done: []string{"a"}, Blocked: []string{"b"}}
 	waves := []*WaveResult{{Wave: 1, Merged: []string{"a"}, Conflict: "b conflicts with a"}}
-	body := ReportBody(plan, result, waves)
-	for _, want := range []string{"- [x] **a**", "- [ ] **b**", "## QC", "conflict", "## Blocked"} {
+	body := ReportBody(plan, result, waves, BodyContext{})
+	for _, want := range []string{"- **a** — One", "- **b** — Two", "## Validation", "conflict", "- **Unproven** b Two is blocked"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body is missing %q:\n%s", want, body)
 		}

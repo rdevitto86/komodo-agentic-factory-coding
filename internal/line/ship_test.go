@@ -431,7 +431,7 @@ func TestShipRendersTheBodyAfterBlockedIsKnown(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, client); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) == 0 || !strings.Contains(calls[0], "[ ] **TSK-12.1.1**") {
+	if len(calls) == 0 || !strings.Contains(calls[0], "- **Unproven** TSK-12.1.1 One is blocked") {
 		t.Fatalf("calls = %v; the body must render after Blocked is known, so a blocked task ships unticked", calls)
 	}
 }
@@ -574,5 +574,91 @@ func TestShipTargetsTheDefaultBranchWhenTheBaseIsDeleted(t *testing.T) {
 	}
 	if !strings.Contains(create, "Base feat/gone is gone from origin, so this targets trunk.") {
 		t.Fatalf("create = %q; the body must name the switch", create)
+	}
+}
+
+// twoTaskPlan is a stacked two-task group whose second task declared two files.
+func twoTaskPlan() *Plan {
+	return &Plan{
+		Group: "TG-09.1", Title: "A group", Base: "feat/stack",
+		Tasks: []PlanTask{
+			{ID: "TSK-09.1.1", Title: "Do one", Files: []string{"a/one.go"}},
+			{ID: "TSK-09.1.2", Title: "Do two", Files: []string{"a/two.go", "a/two_test.go"}},
+		},
+	}
+}
+
+func TestReportBodyRendersTheFourSectionsInOrder(t *testing.T) {
+	plan := twoTaskPlan()
+	result := &ShipResult{Base: "feat/stack", Done: []string{"TSK-09.1.1", "TSK-09.1.2"}}
+	waves := []*WaveResult{{Wave: 1, Gates: []CommandResult{{Command: "go vet ./..."}}, Verify: &CommandResult{Command: "go test ./...", ExitCode: 1}}}
+	context := BodyContext{Why: "The line needs it.", DefaultBase: "main", BlastRadius: "low", BlastRadiusWhy: "one package"}
+	body := ReportBody(plan, result, waves, context)
+	last := -1
+	for _, heading := range []string{"## Summary", "## Changes", "## Validation", "## Dependencies"} {
+		at := strings.Index(body, heading)
+		if at <= last {
+			t.Fatalf("%s is missing or out of order:\n%s", heading, body)
+		}
+		last = at
+	}
+	for _, want := range []string{
+		"The line needs it.",
+		"- **TSK-09.1.1** — Do one (`a/one.go`)",
+		"- **TSK-09.1.2** — Do two (`a/two.go`, `a/two_test.go`)",
+		"- `go vet ./...` passed", "- `go test ./...` exited 1", "- **Blast radius** low: one package",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body is missing %q:\n%s", want, body)
+		}
+	}
+	for _, banned := range []string{"Co-authored-by", "Generated", "session"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("body carries %q:\n%s", banned, body)
+		}
+	}
+}
+
+func TestReportBodyNamesAStackedBaseUnderDependencies(t *testing.T) {
+	body := ReportBody(twoTaskPlan(), &ShipResult{Base: "feat/stack"}, nil, BodyContext{DefaultBase: "main"})
+	deps := body[strings.Index(body, "## Dependencies"):]
+	if !strings.Contains(deps, "`feat/stack`") {
+		t.Fatalf("dependencies do not name the base:\n%s", body)
+	}
+	plain := ReportBody(twoTaskPlan(), &ShipResult{Base: "main"}, nil, BodyContext{DefaultBase: "main"})
+	if strings.Contains(plain, "## Dependencies") {
+		t.Fatalf("a group on the default branch has no dependencies:\n%s", plain)
+	}
+}
+
+func TestReportBodyKeepsABlockedTaskUnderValidation(t *testing.T) {
+	body := ReportBody(twoTaskPlan(), &ShipResult{Blocked: []string{"TSK-09.1.2"}}, nil, BodyContext{})
+	validation := body[strings.Index(body, "## Validation"):]
+	if !strings.Contains(validation, "TSK-09.1.2 Do two is blocked") {
+		t.Fatalf("the blocked task is not under Validation:\n%s", body)
+	}
+}
+
+func TestTemplateSectionsFollowTheRepoTemplate(t *testing.T) {
+	dir := t.TempDir()
+	if got := templateSections(dir); strings.Join(got, ",") != "Summary,Changes,Validation,Dependencies" {
+		t.Fatalf("no template: sections = %v", got)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".github"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := "<!-- note -->\n\n## Validation\n\n## Summary\n\n## Notes\n\n## Changes\n"
+	if err := os.WriteFile(filepath.Join(dir, templatePath), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := templateSections(dir); strings.Join(got, ",") != "Validation,Summary,Changes,Dependencies" {
+		t.Fatalf("template: sections = %v", got)
+	}
+}
+
+func TestGroupWhyReadsOnlyItsOwnGroup(t *testing.T) {
+	text := "### [TG-01.1] One\n* **Why:** first reason\n\n### [TG-01.2] Two\n* **Why:** second reason\n"
+	if got := groupWhy(text, "TG-01.2"); got != "second reason" {
+		t.Fatalf("why = %q", got)
 	}
 }

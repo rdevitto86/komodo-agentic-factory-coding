@@ -2093,7 +2093,7 @@ type: fix
 tier: heavy
 ```
 
-#### [TSK-03.29.6] Ship writes its pull request body in the repo's template sections [P: H] [READY]
+#### [TSK-03.29.6] Ship writes its pull request body in the repo's template sections [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
