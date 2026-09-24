@@ -116,6 +116,83 @@ func TestScrubDoesNotLetAnInheritedOverrideSurvive(t *testing.T) {
 	}
 }
 
+func TestTheRunsPathFindsKomodoAsTheRunningBinaryAndReplacesAStaleLink(t *testing.T) {
+	root := t.TempDir()
+	executable := filepath.Join(t.TempDir(), "komodo-built")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(root, line.StateDir, "bin")
+	if err := os.MkdirAll(stale, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "gone"), filepath.Join(stale, "komodo")); err != nil {
+		t.Fatal(err)
+	}
+	out, err := withBinPath([]string{"PATH=/usr/bin", "HOME=/h"}, root, executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, _ := env(out, "PATH")
+	dirs := filepath.SplitList(path)
+	if len(dirs) != 3 || dirs[1] != "/usr/bin" || dirs[2] != filepath.Join(root, "bin") {
+		t.Fatalf("PATH = %q, want the link dir, the inherited PATH, then root/bin", path)
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Join(dirs[0], "komodo"))
+	if err != nil {
+		t.Fatalf("no komodo on the run's PATH: %v", err)
+	}
+	want, _ := filepath.EvalSymlinks(executable)
+	if resolved != want {
+		t.Fatalf("komodo on PATH = %s, want %s", resolved, want)
+	}
+}
+
+func TestTheRunsPathCopiesKomodoWhenASymlinkIsRefused(t *testing.T) {
+	saved := symlink
+	t.Cleanup(func() { symlink = saved })
+	symlink = func(string, string) error { return os.ErrPermission }
+	root := t.TempDir()
+	executable := filepath.Join(t.TempDir(), "komodo-built")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := withBinPath([]string{"PATH=/usr/bin"}, root, executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, _ := env(out, "PATH")
+	dirs := filepath.SplitList(path)
+	link := filepath.Join(root, line.StateDir, "bin")
+	if len(dirs) != 3 || dirs[0] != link {
+		t.Fatalf("PATH = %q, want the copy's dir first", path)
+	}
+	names, _ := filepath.Glob(filepath.Join(link, "komodo*"))
+	if len(names) != 1 {
+		t.Fatalf("no copy of komodo in %s", link)
+	}
+	if data, _ := os.ReadFile(names[0]); string(data) != "#!/bin/sh\n" {
+		t.Fatalf("copy holds %q", data)
+	}
+}
+
+func TestTheRunsPathFallsBackToTheBinarysOwnDirWhenNothingCanBeWritten(t *testing.T) {
+	saved := symlink
+	t.Cleanup(func() { symlink = saved })
+	symlink = func(string, string) error { return os.ErrPermission }
+	root := t.TempDir()
+	executable := filepath.Join(t.TempDir(), "missing", "komodo")
+	out, err := withBinPath([]string{"PATH=/usr/bin"}, root, executable)
+	if err != nil {
+		t.Fatalf("a refused link and copy failed the run: %v", err)
+	}
+	path, _ := env(out, "PATH")
+	dirs := filepath.SplitList(path)
+	if len(dirs) != 3 || dirs[0] != filepath.Dir(executable) || dirs[1] != "/usr/bin" {
+		t.Fatalf("PATH = %q, want the binary's own dir first", path)
+	}
+}
+
 func TestLaunchWithNoMountSaysToInstall(t *testing.T) {
 	code, err := Launch(Options{Root: t.TempDir(), Target: "TG-01.1", DryRun: true})
 	if code == 0 || err == nil {

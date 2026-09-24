@@ -137,7 +137,7 @@ func checkDrift(rendered, renderedUp []renderedHost) []Problem {
 		if host.Err != nil {
 			continue
 		}
-		for _, action := range host.Plan.Actions() {
+		for _, action := range host.Plan.Drift() {
 			if action.Verb != "update" && action.Verb != "remove" && action.Verb != "create" {
 				matchesUp[action.Path] = true
 			}
@@ -149,7 +149,7 @@ func checkDrift(rendered, renderedUp []renderedHost) []Problem {
 			problems = append(problems, Problem{"drift", host.Name, host.Err.Error()})
 			continue
 		}
-		for _, action := range host.Plan.Actions() {
+		for _, action := range host.Plan.Drift() {
 			if action.Seed || matchesUp[action.Path] {
 				continue
 			}
@@ -160,6 +160,40 @@ func checkDrift(rendered, renderedUp []renderedHost) []Problem {
 			case "create":
 				problems = append(problems, Problem{"drift", action.Path,
 					"the source renders this file now but the mount has never written it; run komodo install"})
+			}
+		}
+	}
+	return problems
+}
+
+// checkHookBinary reports an installed host file whose guard hook names a binary that does not exist.
+func checkHookBinary(root string, rendered []renderedHost) []Problem {
+	var problems []Problem
+	for _, host := range rendered {
+		if host.Err != nil {
+			continue
+		}
+		for _, change := range host.Plan.Changes {
+			if change.Remove || len(install.HookBinaries(change.Body)) == 0 {
+				continue
+			}
+			installed, err := os.ReadFile(change.Path)
+			if err != nil {
+				continue
+			}
+			for _, binary := range install.HookBinaries(installed) {
+				resolved := binary
+				if !filepath.IsAbs(resolved) {
+					resolved = filepath.Join(root, resolved)
+				}
+				if _, err := os.Stat(resolved); err != nil {
+					where := change.Path
+					if rel, err := filepath.Rel(root, change.Path); err == nil && !strings.HasPrefix(rel, "..") {
+						where = rel
+					}
+					problems = append(problems, Problem{"hook", where,
+						fmt.Sprintf("the guard hook runs %s, which does not exist; run komodo install", binary)})
+				}
 			}
 		}
 	}

@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -57,6 +59,58 @@ func (p *Plan) AddSeed(path string, body []byte, why string) {
 	p.Changes = append(p.Changes, Change{Path: path, Body: body, Mode: 0o644, Seed: true, Why: why})
 }
 
+// AddIgnore appends entry to the root's .gitignore when no line already names it, keeping every existing line.
+func (p *Plan) AddIgnore(entry, why string) {
+	path := filepath.Join(p.Root, ".gitignore")
+	existing, _ := os.ReadFile(path)
+	bare := strings.Trim(entry, "/")
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.Trim(strings.TrimSpace(line), "/") == bare {
+			return
+		}
+	}
+	newline := "\n"
+	if bytes.Contains(existing, []byte("\r\n")) {
+		newline = "\r\n"
+	}
+	body := append([]byte{}, existing...)
+	if len(body) > 0 && body[len(body)-1] != '\n' {
+		body = append(body, newline...)
+	}
+	body = append(body, []byte(entry+newline)...)
+	p.Add(path, body, why)
+}
+
+// hookCommand matches a JSON "command" string that runs some binary's guard subcommand.
+var hookCommand = regexp.MustCompile(`"command"\s*:\s*"((?:[^"\\]|\\.)*) guard"`)
+
+// HookBinaries lists every binary path a rendered or installed file runs as the guard hook.
+func HookBinaries(body []byte) []string {
+	var out []string
+	for _, match := range hookCommand.FindAllSubmatch(body, -1) {
+		if path, err := strconv.Unquote(`"` + string(match[1]) + `"`); err == nil {
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+// normaliseHooks rewrites a guard hook that runs any komodo binary to one fixed name, so drift ignores which copy runs.
+func normaliseHooks(body []byte) []byte {
+	return hookCommand.ReplaceAllFunc(body, func(match []byte) []byte {
+		raw := hookCommand.FindSubmatch(match)[1]
+		path, err := strconv.Unquote(`"` + string(raw) + `"`)
+		if err != nil {
+			return match
+		}
+		base := path[strings.LastIndexAny(path, `/\`)+1:]
+		if !strings.HasPrefix(base, "komodo") {
+			return match
+		}
+		return []byte(`"command": "komodo guard"`)
+	})
+}
+
 // AddRemoval appends a path the install deletes when it is present.
 func (p *Plan) AddRemoval(path, why string) {
 	p.Changes = append(p.Changes, Change{Path: path, Remove: true, Why: why})
@@ -72,6 +126,16 @@ type Action struct {
 
 // Actions describes the plan against the current tree without touching it.
 func (p Plan) Actions() []Action {
+	return p.actions(func(body []byte) []byte { return body })
+}
+
+// Drift describes the plan like Actions, but a guard hook naming any komodo binary matches any other.
+func (p Plan) Drift() []Action {
+	return p.actions(normaliseHooks)
+}
+
+// actions compares each change to the tree after passing both sides through normalise.
+func (p Plan) actions(normalise func([]byte) []byte) []Action {
 	var out []Action
 	for _, change := range p.Changes {
 		relative := change.Path
@@ -90,7 +154,7 @@ func (p Plan) Actions() []Action {
 			out = append(out, Action{Verb: "keep", Path: relative, Why: "seeded once, never overwritten", Seed: true})
 		case err != nil:
 			out = append(out, Action{Verb: "create", Path: relative, Why: change.Why, Seed: change.Seed})
-		case !bytes.Equal(existing, change.Body):
+		case !bytes.Equal(normalise(existing), normalise(change.Body)):
 			out = append(out, Action{Verb: "update", Path: relative, Why: change.Why})
 		default:
 			out = append(out, Action{Verb: "same", Path: relative, Why: change.Why})

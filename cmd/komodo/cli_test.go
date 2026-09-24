@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/mount"
 )
 
 // exitCode is what the swapped exit panics with, so a test can recover the code main chose.
@@ -244,6 +246,66 @@ func TestInstallDryRunWritesNothing(t *testing.T) {
 		if !strings.Contains(line, ".komodo") {
 			t.Fatalf("a dry run changed the tree: %v", status)
 		}
+	}
+}
+
+// fakeToolkitBinary points the running binary at a real file outside any go-build dir, so install renders and accepts it.
+func fakeToolkitBinary(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := mount.Executable
+	t.Cleanup(func() { mount.Executable = saved })
+	mount.Executable = func() (string, error) { return path, nil }
+	return path
+}
+
+// TestInstallIgnoresTheStateDirOnceAndKeepsTheFilesLineEndings proves install adds /.komodo/ once, in the file's line ending.
+func TestInstallIgnoresTheStateDirOnceAndKeepsTheFilesLineEndings(t *testing.T) {
+	fakeToolkitBinary(t)
+	cases := []struct {
+		name, before, after string
+	}{
+		{"missing", "node_modules/\n", "node_modules/\n/.komodo/\n"},
+		{"unanchored", "node_modules/\n.komodo/\n", "node_modules/\n.komodo/\n"},
+		{"crlf", "node_modules/\r\n*.log\r\n", "node_modules/\r\n*.log\r\n/.komodo/\r\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := fixtureRepo(t)
+			path := filepath.Join(root, ".gitignore")
+			if err := os.WriteFile(path, []byte(c.before), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for run := 1; run <= 2; run++ {
+				got := runCLI(t, root, "", "install")
+				if got.code != 0 {
+					t.Fatalf("install run %d exited %d: %s%s", run, got.code, got.stdout, got.stderr)
+				}
+				data, _ := os.ReadFile(path)
+				if string(data) != c.after {
+					t.Fatalf("after install run %d .gitignore = %q, want %q", run, data, c.after)
+				}
+			}
+		})
+	}
+}
+
+// TestInstallRefusesAHookBinaryThatDoesNotExist proves install never renders a guard hook naming a missing file.
+func TestInstallRefusesAHookBinaryThatDoesNotExist(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "komodo")
+	saved := mount.Executable
+	t.Cleanup(func() { mount.Executable = saved })
+	mount.Executable = func() (string, error) { return missing, nil }
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "install")
+	if got.code == 0 || !strings.Contains(got.stderr, "does not exist") {
+		t.Fatalf("install with a missing binary exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if dry := runCLI(t, root, "", "install", "--dry-run"); dry.code != 0 {
+		t.Fatalf("install --dry-run with a missing binary exited %d: %s", dry.code, dry.stderr)
 	}
 }
 

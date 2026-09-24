@@ -4,11 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"komodo/internal/detect"
 	"komodo/internal/doctor"
 	"komodo/internal/guard"
+	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 )
@@ -52,24 +54,43 @@ func runInstall(root string, args []string) {
 		}
 		chosen = append(chosen, found)
 	}
+	if !*dryRun {
+		hook := binary
+		if !filepath.IsAbs(hook) {
+			hook = filepath.Join(mount.MainCheckout(root), hook)
+		}
+		if _, err := os.Stat(hook); err != nil {
+			fail(fmt.Errorf("the guard hook would run %s, which does not exist; build it with komodo gate --install", hook))
+		}
+	}
+	ignore := install.Plan{Host: "repo", Root: root}
+	ignore.AddIgnore("/.komodo/", "the line's run state and worktrees stay out of git")
+	if len(ignore.Changes) > 0 {
+		applyPlan(ignore, *dryRun)
+	}
 	for _, host := range chosen {
 		plan, err := host.Render(root, binary)
 		if err != nil {
 			fail(err)
 		}
-		if *dryRun {
-			plan.Print(os.Stdout)
-			continue
-		}
-		done, err := plan.Apply()
-		if err != nil {
-			fail(err)
-		}
-		for _, action := range done {
-			fmt.Printf("%-7s %s\n", action.Verb, action.Path)
-		}
-		fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
+		applyPlan(plan, *dryRun)
 	}
+}
+
+// applyPlan prints a plan under --dry-run, or writes it and lists what it changed.
+func applyPlan(plan install.Plan, dryRun bool) {
+	if dryRun {
+		plan.Print(os.Stdout)
+		return
+	}
+	done, err := plan.Apply()
+	if err != nil {
+		fail(err)
+	}
+	for _, action := range done {
+		fmt.Printf("%-7s %s\n", action.Verb, action.Path)
+	}
+	fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
 }
 
 // runDetect prints the cached repo profile, detecting fresh when the manifests it read have changed.

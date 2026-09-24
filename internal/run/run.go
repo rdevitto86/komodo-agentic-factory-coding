@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -292,7 +293,15 @@ func launch(options Options, name string, args []string) (int, error) {
 	defer cancel()
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = options.Root
-	command.Env = withBinPath(Scrub(base), options.Root)
+	executable, err := mount.Executable()
+	if err != nil {
+		return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
+	}
+	env, err := withBinPath(Scrub(base), options.Root, executable)
+	if err != nil {
+		return 1, err
+	}
+	command.Env = env
 	proc.Group(command)
 	command.Cancel = func() error {
 		proc.KillGroup(command)
@@ -305,7 +314,7 @@ func launch(options Options, name string, args []string) (int, error) {
 		out = io.MultiWriter(stdout, events)
 	}
 	command.Stdout, command.Stderr = out, stderr
-	err := command.Run()
+	err = command.Run()
 	if ctx.Err() == context.DeadlineExceeded {
 		return 124, fmt.Errorf("the run passed its %s budget and was killed", budget)
 	}
@@ -319,22 +328,56 @@ func launch(options Options, name string, args []string) (int, error) {
 	return 0, nil
 }
 
-// withBinPath puts the repo's own bin/ first on PATH, so the host finds komodo where the gate built it.
-func withBinPath(env []string, root string) []string {
-	bin := filepath.Join(root, "bin")
+// symlink links a path to a target; a test swaps it to act like Windows without Developer Mode.
+var symlink = os.Symlink
+
+// withBinPath puts komodo on the run's PATH as root/.komodo/bin, then the inherited PATH, then the repo's own root/bin.
+func withBinPath(env []string, root, executable string) ([]string, error) {
+	link := filepath.Join(root, line.StateDir, "bin")
+	name := "komodo"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		return nil, err
+	}
+	target := filepath.Join(link, name)
+	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	first := link
+	if err := symlink(executable, target); err != nil {
+		if err := copyExecutable(executable, target); err != nil {
+			first = filepath.Dir(executable)
+		}
+	}
+	sep := string(os.PathListSeparator)
 	out := make([]string, 0, len(env)+1)
 	found := false
 	for _, entry := range env {
 		if key, value, ok := strings.Cut(entry, "="); ok && key == "PATH" {
-			entry = "PATH=" + bin + string(os.PathListSeparator) + value
+			entry = "PATH=" + first + sep + value + sep + filepath.Join(root, "bin")
 			found = true
 		}
 		out = append(out, entry)
 	}
 	if !found {
-		out = append(out, "PATH="+bin)
+		out = append(out, "PATH="+first+sep+filepath.Join(root, "bin"))
 	}
-	return out
+	return out, nil
+}
+
+// copyExecutable copies the running binary to target, removing a partial copy when it fails.
+func copyExecutable(executable, target string) error {
+	data, err := os.ReadFile(executable)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(target, data, 0o755); err != nil {
+		_ = os.Remove(target)
+		return err
+	}
+	return nil
 }
 
 // eventsFile opens the events file the installed mount names for one target, or returns
