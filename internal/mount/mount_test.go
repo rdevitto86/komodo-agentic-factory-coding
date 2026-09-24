@@ -3,11 +3,65 @@ package mount
 import (
 	"komodo/internal/install"
 
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// writeRecallFile writes home's ~/.komodo/recall.json holding one model's score.
+func writeRecallFile(t *testing.T, home, model string, recall float64, cases int) {
+	t.Helper()
+	dir := filepath.Join(home, ".komodo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{%q:{"recall":%v,"cases":%d}}`, model, recall, cases)
+	if err := os.WriteFile(filepath.Join(dir, "recall.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReviewerRecallReadsTheScoreFileBesideTheOverlay(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if _, _, ok := ReviewerRecall("coder:7b"); ok {
+		t.Fatal("a missing recall.json reported a score")
+	}
+	writeRecallFile(t, home, "coder:7b", 0.8, 15)
+	recall, cases, ok := ReviewerRecall("coder:7b")
+	if !ok || recall != 0.8 || cases != 15 {
+		t.Fatalf("recall = %v, cases = %v, ok = %v", recall, cases, ok)
+	}
+	if _, _, ok := ReviewerRecall("other"); ok {
+		t.Fatal("an unscored model reported a score")
+	}
+}
+
+func TestReviewerRecallBarDefaultsAndOnlyRaises(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if got := ReviewerRecallBar(); got != 0.6 {
+		t.Fatalf("bar = %v, want the 0.6 default", got)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lower := filepath.Join(home, ".komodo", "config.json")
+	if err := os.WriteFile(lower, []byte(`{"local_reviewer_recall":0.3}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReviewerRecallBar(); got != 0.6 {
+		t.Fatalf("bar = %v, an overlay lowered it below the default", got)
+	}
+	if err := os.WriteFile(lower, []byte(`{"local_reviewer_recall":0.9}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReviewerRecallBar(); got != 0.9 {
+		t.Fatalf("bar = %v, want the overlay's raised 0.9", got)
+	}
+}
 
 // toolkitRepo builds a root holding the rules, one role, and one skill.
 func toolkitRepo(t *testing.T) string {
