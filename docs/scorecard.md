@@ -39,9 +39,9 @@ while IFS=$'\t' read -r id cmd; do bash -c "$cmd" >/dev/null 2>&1 && echo "$id p
 
 | Id | Criterion | Proof | Delivered by |
 |---|---|---|---|
-| `S90a` | Forge writes through `gh api` are refused | `grep -q 'branches/main/protection' internal/guard/table.go` | TSK-03.22.1 |
-| `S90b` | Gate bypass is refused | `grep -q -- '--no-verify' internal/guard/table.go` | TSK-03.22.2 |
-| `S90c` | Interpreter bodies and scripts written then run are read | `grep -q 'python3 -c' internal/guard/table.go` | TSK-03.22.3, TSK-03.22.4 |
+| `S90a` | Forge writes through `gh api` are refused | `grep -q 'branches/main/protection' internal/guard/table*.go` | TSK-03.22.1 |
+| `S90b` | Gate bypass is refused | `grep -q -- '--no-verify' internal/guard/table*.go` | TSK-03.22.2 |
+| `S90c` | Interpreter bodies and scripts written then run are read | `grep -q 'python3 -c' internal/guard/table*.go` | TSK-03.22.3, TSK-03.22.4 |
 | `S90d` | A builder's worktree cannot push | `grep -q 'refused://' internal/line/worktree.go` | TSK-03.23.1 |
 | `S95a` | A local reviewer reviews only above its recorded recall | `grep -q 'func ReviewerRecall' internal/mount/registry.go` | TSK-03.24.2 |
 
