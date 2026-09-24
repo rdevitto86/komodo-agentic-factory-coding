@@ -4,8 +4,9 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 ## 1.0.0-beta.1 — unreleased
 
-The first beta of 1.0.0: feature-complete, with the headless proof recorded below and the local-machine proof still to record before 1.0.0 is cut. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
+The first beta of 1.0.0: feature-complete, with both proofs recorded below. 1.0.0 is cut by hand once real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
+- **TG-03.9** A local machine carries a station (2 task(s))
 - **TG-03.8** The line plans what it is handed (18 task(s))
 - **TG-03.7** The sanity pass: safety, correctness, portability (27 task(s))
 - **TG-03.6** The gate and the exit test (11 task(s))
@@ -30,6 +31,20 @@ Each station ran in the order `komodo step` gave, with 0 repairs. The bar was no
 - **#146:** tasks shipped earlier were replanned into a late wave.
 - **#147:** a worktree's git hook looked for `bin/` in the worktree.
 - **#149:** `step` reissued ship while a handoff was pending.
+
+### Proof: a local machine carries a station
+
+`komodo run TG-03.9 --budget 30m`, headless on Claude, with `local_reviewer` set in `~/.komodo/config.json`. `step` routed the review to `komodo machine`, so no hosted model read the diff. It shipped as #152, from run `TG-03.9-1790214162`, on the first launch with no fix needed.
+
+| Station | Machine | Seconds | Tokens in | Tokens out | Turns |
+|---|---|---|---|---|---|
+| build | claude/sonnet | 71.6 | 50,992 | 3,369 | 17 |
+| close | — | 9.1 | — | — | — |
+| QC | — | 8.1 | — | — | — |
+| review | ollama/qwen2.5-coder:3b | 5.1 | 3,018 | 63 | 1 |
+| ship | — | 12.9 | — | — | — |
+
+The review returned schema-valid JSON with 0 findings. Ship handed off once and the launcher pushed it. The Codex exit test is parked until that host has an account.
 
 ### The line
 
