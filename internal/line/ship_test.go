@@ -527,3 +527,46 @@ func TestPushErrorsNeverCarryACredential(t *testing.T) {
 		t.Fatalf("other = %q; any URL credential must be redacted", other)
 	}
 }
+
+func TestShipStampsTheChangedLinesOnItsRow(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package b\n\nvar x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if err := SaveRun(root, RunState{Run: "TG-09.1-1", Group: "TG-09.1", Base: "main", Branch: "feat/a-group"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := Book(root).All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Station == "ship" {
+			if entry.Lines != 5 {
+				t.Fatalf("lines = %d; one line replaced and three added is five changed", entry.Lines)
+			}
+			return
+		}
+	}
+	t.Fatal("ship stamped no row")
+}
+
+func TestChangedLinesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
+	_, group := shipRepo(t)
+	if got := ChangedLines(group, "no-such-base", "feat/a-group"); got != 0 {
+		t.Fatalf("lines = %d; an unknown base is no count, never a guess", got)
+	}
+}

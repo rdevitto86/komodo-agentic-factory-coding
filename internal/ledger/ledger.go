@@ -45,6 +45,7 @@ type Entry struct {
 	Outcome      string    `json:"outcome,omitempty"`
 	FailureClass string    `json:"failure_class,omitempty"`
 	Findings     int       `json:"findings,omitempty"`
+	Lines        int       `json:"lines,omitempty"`
 }
 
 // Ledger writes and reads one repo's two metric files.
@@ -170,6 +171,10 @@ type Metrics struct {
 	Tasks         int                `json:"tasks"`
 	Repairs       int                `json:"repairs"`
 	RepairRate    float64            `json:"repair_rate"`
+	TasksPerHour  float64            `json:"tasks_per_hour"`
+	MedianTaskSec float64            `json:"median_wall_seconds_per_task"`
+	TokensPerLine map[string]float64 `json:"tokens_per_changed_line_by_model"`
+	RepairByTier  map[string]float64 `json:"repair_rate_by_tier"`
 }
 
 // Aggregate reduces entries to the numbers the metrics command prints.
@@ -209,7 +214,129 @@ func Aggregate(entries []Entry) Metrics {
 	if metrics.Tasks > 0 {
 		metrics.RepairRate = float64(metrics.Repairs) / float64(metrics.Tasks)
 	}
+	metrics.TasksPerHour, metrics.MedianTaskSec = pace(entries)
+	metrics.TokensPerLine = tokensPerLine(entries)
+	metrics.RepairByTier = repairByTier(entries)
 	return metrics
+}
+
+// shipKey names one group's ship within one run.
+func shipKey(entry Entry) string { return entry.Run + "/" + entry.Group }
+
+// pace is tasks done per run hour, and median seconds from a task's first brief to its group's ship.
+func pace(entries []Entry) (perHour, medianTask float64) {
+	first, last := map[string]time.Time{}, map[string]time.Time{}
+	shipped := map[string]time.Time{}
+	briefed := map[string]Entry{}
+	done := map[string]bool{}
+	for _, entry := range entries {
+		if entry.Run == "" || entry.At.IsZero() {
+			continue
+		}
+		if at, ok := first[entry.Run]; !ok || entry.At.Before(at) {
+			first[entry.Run] = entry.At
+		}
+		if entry.At.After(last[entry.Run]) {
+			last[entry.Run] = entry.At
+		}
+		key := entry.Run + "/" + entry.Task
+		switch {
+		case entry.Station == "ship" && entry.Group != "":
+			if entry.At.After(shipped[shipKey(entry)]) {
+				shipped[shipKey(entry)] = entry.At
+			}
+		case entry.Station == "brief" && entry.Task != "" && entry.Group != "":
+			if prior, ok := briefed[key]; !ok || entry.At.Before(prior.At) {
+				briefed[key] = entry
+			}
+		case entry.Station == "close" && entry.Task != "" && entry.Outcome == "done":
+			done[key] = true
+		}
+	}
+	var hours float64
+	for run, start := range first {
+		hours += last[run].Sub(start).Hours()
+	}
+	if hours > 0 {
+		perHour = float64(len(done)) / hours
+	}
+	var walls []float64
+	for _, brief := range briefed {
+		if at, ok := shipped[shipKey(brief)]; ok && at.After(brief.At) {
+			walls = append(walls, at.Sub(brief.At).Seconds())
+		}
+	}
+	return perHour, median(walls)
+}
+
+// tokensPerLine divides each model's tokens by the changed lines of the shipped groups it worked on.
+func tokensPerLine(entries []Entry) map[string]float64 {
+	lines := map[string]int{}
+	for _, entry := range entries {
+		if entry.Station == "ship" && entry.Group != "" && entry.Lines > 0 {
+			lines[shipKey(entry)] = entry.Lines
+		}
+	}
+	tokens := map[string]int{}
+	spent := map[string]map[string]bool{}
+	for _, entry := range entries {
+		key := modelKey(entry)
+		if key == "" || entry.TokensIn+entry.TokensOut == 0 || lines[shipKey(entry)] == 0 {
+			continue
+		}
+		tokens[key] += entry.TokensIn + entry.TokensOut
+		if spent[key] == nil {
+			spent[key] = map[string]bool{}
+		}
+		spent[key][shipKey(entry)] = true
+	}
+	out := map[string]float64{}
+	for model, total := range tokens {
+		changed := 0
+		for group := range spent[model] {
+			changed += lines[group]
+		}
+		out[model] = float64(total) / float64(changed)
+	}
+	return out
+}
+
+// repairByTier is the share of closed tasks that needed a repair, by the tier their build ran on.
+func repairByTier(entries []Entry) map[string]float64 {
+	tier := map[string]string{}
+	closed := map[string]bool{}
+	repaired := map[string]bool{}
+	for _, entry := range entries {
+		if entry.Task == "" {
+			continue
+		}
+		key := entry.Run + "/" + entry.Task
+		switch {
+		case entry.Station == "build" && entry.Tier != "" && tier[key] == "":
+			tier[key] = entry.Tier
+		case entry.Station == "close":
+			closed[key] = true
+			if entry.Outcome == "repair" {
+				repaired[key] = true
+			}
+		}
+	}
+	counts, repairs := map[string]int{}, map[string]int{}
+	for key := range closed {
+		name := tier[key]
+		if name == "" {
+			continue
+		}
+		counts[name]++
+		if repaired[key] {
+			repairs[name]++
+		}
+	}
+	out := map[string]float64{}
+	for name, count := range counts {
+		out[name] = float64(repairs[name]) / float64(count)
+	}
+	return out
 }
 
 // modelKey names who spent tokens: the model when a station set one, else the host, labelled as such.
@@ -262,6 +389,24 @@ func Render(metrics Metrics) string {
 		out = append(out, "", "## Findings by group")
 		for _, group := range sortedIntKeys(metrics.FindingsBy) {
 			out = append(out, fmt.Sprintf("- **%s** %d", group, metrics.FindingsBy[group]))
+		}
+	}
+	if metrics.TasksPerHour > 0 {
+		out = append(out, "", "## Tasks per hour", fmt.Sprintf("- **line time** %.2f", metrics.TasksPerHour))
+	}
+	if metrics.MedianTaskSec > 0 {
+		out = append(out, "", "## Median wall seconds per task", fmt.Sprintf("- **brief to ship** %.0fs", metrics.MedianTaskSec))
+	}
+	if len(metrics.TokensPerLine) > 0 {
+		out = append(out, "", "## Tokens per changed line")
+		for _, model := range sortedKeys(metrics.TokensPerLine) {
+			out = append(out, fmt.Sprintf("- **%s** %.1f", model, metrics.TokensPerLine[model]))
+		}
+	}
+	if len(metrics.RepairByTier) > 0 {
+		out = append(out, "", "## Repair rate by tier")
+		for _, tier := range sortedKeys(metrics.RepairByTier) {
+			out = append(out, fmt.Sprintf("- **%s** %.0f%%", tier, metrics.RepairByTier[tier]*100))
 		}
 	}
 	return strings.Join(out, "\n") + "\n"

@@ -1882,7 +1882,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.26.4] Metrics report tasks per hour and tokens per changed line [P: M] [READY]
+#### [TSK-03.26.4] Metrics report tasks per hour and tokens per changed line [P: M] [DONE]
 ```yaml
 files: [internal/ledger/ledger.go, internal/ledger/ledger_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
