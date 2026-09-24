@@ -74,27 +74,35 @@ func AddWorktree(root, branch, base, path string) error {
 	} else if _, err := git(root, "worktree", "add", "-b", branch, path, start); err != nil {
 		return err
 	}
-	refuseWorktreePush(root, path)
+	if err := refuseWorktreePush(root, path); err != nil {
+		// A retry recuts a missing worktree, so a cut without its refusal is never left behind.
+		_, _ = git(root, "worktree", "remove", "--force", path)
+		return err
+	}
 	return nil
 }
 
-// refuseWorktreePush sets path's pushurl to RefusedPushURL, noting a skip when core.bare or core.worktree is set.
-func refuseWorktreePush(root, path string) {
+// refuseWorktreePush sets path's pushurl to RefusedPushURL, erroring when it cannot; core.bare
+// and core.worktree repos cannot hold worktree config, so those only note a skip.
+func refuseWorktreePush(root, path string) error {
 	if bare, err := git(root, "config", "--get", "core.bare"); err == nil && bare == "true" {
 		fmt.Fprintln(os.Stderr, "komodo: core.bare is true on the repo's common config; skipping the worktree push refusal")
-		return
+		return nil
 	}
 	if _, err := git(root, "config", "--get", "core.worktree"); err == nil {
 		fmt.Fprintln(os.Stderr, "komodo: core.worktree is set on the repo's common config; skipping the worktree push refusal")
-		return
+		return nil
 	}
-	if _, err := git(root, "config", "extensions.worktreeConfig", "true"); err != nil {
-		fmt.Fprintln(os.Stderr, "komodo: could not enable extensions.worktreeConfig; the worktree push refusal is not set:", err)
-		return
+	// Concurrent cuts race on the shared config's lock, so it is written only when not already on.
+	if on, err := git(root, "config", "--get", "extensions.worktreeConfig"); err != nil || on != "true" {
+		if _, err := git(root, "config", "extensions.worktreeConfig", "true"); err != nil {
+			return fmt.Errorf("enable extensions.worktreeConfig for the worktree push refusal: %w", err)
+		}
 	}
 	if _, err := git(path, "config", "--worktree", "remote.origin.pushurl", RefusedPushURL); err != nil {
-		fmt.Fprintln(os.Stderr, "komodo: could not set the worktree's refused pushurl:", err)
+		return fmt.Errorf("set the worktree's refused pushurl: %w", err)
 	}
+	return nil
 }
 
 // StartRef is the ref a group is cut from and diffed against: the remote-tracked copy of base

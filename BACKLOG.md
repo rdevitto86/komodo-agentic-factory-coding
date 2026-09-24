@@ -1550,7 +1550,7 @@ type: refactor
 tier: heavy
 ```
 
-#### [TSK-03.21.4] A worktree cut never runs without its push refusal [P: H] [READY]
+#### [TSK-03.21.4] A worktree cut never runs without its push refusal [P: H] [DONE]
 ```yaml
 files: [internal/line/worktree.go, internal/line/worktree_test.go]
 done_when:

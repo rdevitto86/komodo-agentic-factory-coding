@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // remotedRepo builds a real git repo with one commit on main, remoted at a bare origin in a temp dir.
@@ -70,6 +71,71 @@ func TestAddWorktreeSkipsTheRefusalWhenCommonConfigHoldsCoreWorktree(t *testing.
 	}
 	if _, err := git(worktree, "config", "--worktree", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatal("a repo whose common config holds core.worktree must skip the pushurl refusal")
+	}
+}
+
+func TestAddWorktreeStillCutsWhenCommonConfigIsBare(t *testing.T) {
+	root, _ := remotedRepo(t)
+	if _, err := git(root, "config", "core.bare", "true"); err != nil {
+		t.Fatal(err)
+	}
+	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
+	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(worktree, "a.txt")); err != nil {
+		t.Fatalf("a bare common config must still cut the worktree: %v", err)
+	}
+	if _, err := git(worktree, "config", "--worktree", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatal("a repo whose common config is bare must write no worktree pushurl")
+	}
+}
+
+func TestASecondCutLeavesTheSharedConfigAlone(t *testing.T) {
+	root, _ := remotedRepo(t)
+	if err := AddWorktree(root, "task/x", "main", filepath.Join(root, StateDir, "wt", "TSK-01.1.1")); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, ".git", "config")
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(config, old, old); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(root, StateDir, "wt", "TSK-01.1.2")
+	if err := AddWorktree(root, "task/y", "main", second); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(old) {
+		t.Fatalf("config written at %v; a second cut must not rewrite extensions.worktreeConfig", info.ModTime())
+	}
+	if got, err := git(second, "config", "--worktree", "--get", "remote.origin.pushurl"); err != nil || got != RefusedPushURL {
+		t.Fatalf("pushurl = %q, %v; the second cut must still refuse a push", got, err)
+	}
+}
+
+func TestAFailedPushurlWriteFailsTheCut(t *testing.T) {
+	root, _ := remotedRepo(t)
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakes := t.TempDir()
+	wrapper := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"--worktree\" ]; then echo 'error: could not lock config file' >&2; exit 255; fi\ndone\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(fakes, "git"), []byte(wrapper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakes+string(os.PathListSeparator)+os.Getenv("PATH"))
+	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
+	err = AddWorktree(root, "task/x", "main", worktree)
+	if err == nil || !strings.Contains(err.Error(), "refused pushurl") {
+		t.Fatalf("err = %v; a pushurl write that fails must fail the cut", err)
+	}
+	if _, statErr := os.Stat(worktree); statErr == nil {
+		t.Fatal("a cut without its push refusal must not be left for a builder")
 	}
 }
 
