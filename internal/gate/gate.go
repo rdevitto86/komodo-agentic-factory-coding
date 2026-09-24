@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -98,8 +99,23 @@ func LocalTarget() Target {
 	return Target{Name: name, GOOS: runtime.GOOS, Arch: runtime.GOARCH}
 }
 
-// buildFlags are the flags that make a rebuild byte-identical.
-var buildFlags = []string{"-trimpath", "-buildvcs=false", "-ldflags", "-s -w"}
+// changelogVersionRe matches the first version heading in the changelog, which names the build.
+var changelogVersionRe = regexp.MustCompile(`(?m)^## (\S+)`)
+
+// buildFlags are the flags that make a rebuild of one commit byte-identical, stamping its version and commit.
+func buildFlags(root string) []string {
+	version, commit := "dev", "unknown"
+	if data, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md")); err == nil {
+		if match := changelogVersionRe.FindSubmatch(data); match != nil {
+			version = string(match[1])
+		}
+	}
+	if out, err := exec.Command("git", "-C", root, "rev-parse", "--short=12", "HEAD").Output(); err == nil {
+		commit = strings.TrimSpace(string(out))
+	}
+	ldflags := fmt.Sprintf("-s -w -X main.version=%s -X main.commit=%s", version, commit)
+	return []string{"-trimpath", "-buildvcs=false", "-ldflags", ldflags}
+}
 
 // Build compiles one target into dir, pinned to the repo's toolchain, and returns the path it wrote.
 func Build(root, dir string, target Target) (string, error) {
@@ -108,7 +124,7 @@ func Build(root, dir string, target Target) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(dir, target.Name)
-	args := append([]string{"build", "-o", path}, buildFlags...)
+	args := append([]string{"build", "-o", path}, buildFlags(root)...)
 	cmd := exec.Command("go", append(args, "./cmd/komodo")...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),
@@ -164,6 +180,10 @@ if [ ! -x "$bin" ]; then
   echo "gate: no binary at $bin; run 'komodo gate --install' to build it" >&2
   exit 1
 fi
+# A push carries more weight than a commit, so it also fuzzes the parsers for a few seconds each.
+if [ "$(basename "$0")" = "pre-push" ]; then
+  exec "$bin" gate --fuzz 10s
+fi
 exec "$bin" gate
 `
 
@@ -182,4 +202,37 @@ func Install(gitDir string) ([]string, error) {
 		written = append(written, path)
 	}
 	return written, nil
+}
+
+// FuzzTarget is one fuzz function and the package that holds it.
+type FuzzTarget struct {
+	Name    string
+	Package string
+}
+
+// FuzzTargets are the parsers the gate fuzzes: shell commands, task grammar, and ledger lines.
+var FuzzTargets = []FuzzTarget{
+	{Name: "FuzzCheck", Package: "./internal/guard"},
+	{Name: "FuzzLex", Package: "./internal/guard"},
+	{Name: "FuzzParse", Package: "./internal/backlog"},
+	{Name: "FuzzRead", Package: "./internal/ledger"},
+}
+
+// FuzzChecks builds one check per fuzz target, each run for the given duration such as 10s.
+func FuzzChecks(root, duration string) []Check {
+	var checks []Check
+	for _, target := range FuzzTargets {
+		checks = append(checks, Command("fuzz "+target.Name, root,
+			"go", "test", "-run=^$", "-fuzz=^"+target.Name+"$", "-fuzztime="+duration, target.Package))
+	}
+	return checks
+}
+
+// TestArgs is the go test command line: under the race detector when cgo can build it, else plain.
+func TestArgs() []string {
+	out, err := exec.Command("go", "env", "CGO_ENABLED").Output()
+	if err == nil && strings.TrimSpace(string(out)) == "1" {
+		return []string{"go", "test", "-race", "./..."}
+	}
+	return []string{"go", "test", "./..."}
 }
