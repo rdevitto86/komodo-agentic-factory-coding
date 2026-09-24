@@ -187,7 +187,7 @@ func groupFor(root, needle string) (backlog.Backlog, backlog.Group, string, bool
 	if err != nil {
 		return backlog.Backlog{}, backlog.Group{}, "", false, err
 	}
-	group, only, ok := pick(parsed, needle)
+	group, only, ok := pick(root, parsed, needle)
 	return parsed, group, only, ok, nil
 }
 
@@ -312,10 +312,13 @@ func planWaves(group backlog.Group, tasks []backlog.Task, done []string, capacit
 
 // pick returns the named group, the group of a named task, or the next ready group; the second
 // result is the task a task needle matched, so the caller narrows the plan to it, not its group.
-func pick(parsed backlog.Backlog, needle string) (backlog.Group, string, bool) {
+func pick(root string, parsed backlog.Backlog, needle string) (backlog.Group, string, bool) {
 	if needle == "" {
-		group, ok := parsed.NextGroup()
-		return group, "", ok
+		groups := readyGroups(root, parsed, false)
+		if len(groups) == 0 {
+			return backlog.Group{}, "", false
+		}
+		return groups[0], "", true
 	}
 	if task, ok := parsed.Task(needle); ok {
 		group, ok := parsed.Group(task.GroupID)
@@ -323,6 +326,65 @@ func pick(parsed backlog.Backlog, needle string) (backlog.Group, string, bool) {
 	}
 	group, ok := parsed.Group(needle)
 	return group, "", ok
+}
+
+// ReadyGroups lists, in file order, the groups a drain would run, counting an earlier group's branch as a base.
+func ReadyGroups(root string) ([]backlog.Group, error) {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	return readyGroups(root, parsed, true), nil
+}
+
+// readyGroups is every group holding a ready agent task whose base can be cut from; stacked also
+// accepts the branch of a group listed before it, and without stacked only the first is returned.
+func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Group {
+	defaultBase := DefaultBase(root)
+	checkOrigin := hasOrigin(root)
+	ahead := map[string]bool{}
+	var out []backlog.Group
+	for _, group := range parsed.Groups {
+		if !hasReadyTask(group) {
+			continue
+		}
+		base := groupBase(root, group)
+		if checkOrigin && base != defaultBase && !ahead[base] && !onOrigin(root, base) {
+			continue
+		}
+		out = append(out, group)
+		if !stacked {
+			return out
+		}
+		ahead[BranchName(group.Type(), group.Slug())] = true
+	}
+	return out
+}
+
+// hasReadyTask reports whether the group holds a ready task an agent owns.
+func hasReadyTask(group backlog.Group) bool {
+	for _, task := range group.Tasks {
+		if task.Ready() && task.Owner() == "agent" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasOrigin reports whether the repo has an origin remote, without which no base can be checked.
+func hasOrigin(root string) bool {
+	_, err := git(root, "remote", "get-url", "origin")
+	return err == nil
+}
+
+// onOrigin reports whether origin holds the branch, as the last fetch or push recorded it.
+func onOrigin(root, branch string) bool {
+	_, err := git(root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
+	return err == nil
 }
 
 // groupBase is the branch a group declares, or the remote's default when it declares none.
@@ -361,7 +423,7 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 			return RunState{}, err
 		}
 	}
-	if err := renderProject(root, path); err != nil {
+	if err := RenderProject(root, path); err != nil {
 		return RunState{}, err
 	}
 	state := RunState{
@@ -383,9 +445,9 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	return state, nil
 }
 
-// renderProject rebuilds the worktree's gitignored project config for every host installed on
+// RenderProject rebuilds the worktree's gitignored project config for every host installed on
 // root, from the profile and the repo layer, so a run always has the right tools.
-func renderProject(root, worktree string) error {
+func RenderProject(root, worktree string) error {
 	binary := mount.BinaryPath()
 	for _, host := range mount.Hosts() {
 		if host.Installed == nil || host.Render == nil || !host.Installed(root) {

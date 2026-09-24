@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"komodo/internal/doctor"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
@@ -105,20 +106,143 @@ func Command(root, target string) (string, []string, error) {
 	return name, args, nil
 }
 
-// Launch drives the host non-interactively, finishes any push a scrubbed ship handed off, and
-// returns the host's exit code.
+// Launch drives the host non-interactively on one target and returns its exit code; with no
+// target it drains every ready group in order.
 func Launch(options Options) (int, error) {
+	if options.Target == "" {
+		return drain(options)
+	}
+	code, _, err := launchTarget(options)
+	return code, err
+}
+
+// launchTarget runs the host on one target, then finishes any push a scrubbed ship handed off,
+// returning the host's exit code and the pull request it opened.
+func launchTarget(options Options) (int, string, error) {
 	name, args, err := Command(options.Root, options.Target)
 	if err != nil {
-		return 1, err
+		return 1, "", err
 	}
 	code, err := launch(options, name, args)
+	url := ""
 	if !options.DryRun {
-		if shipErr := finishShip(options); shipErr != nil && err == nil {
+		created, shipErr := finishShip(options)
+		url = created
+		if shipErr != nil && err == nil {
 			err = shipErr
 		}
 	}
-	return code, err
+	return code, url, err
+}
+
+// drain launches the next ready group, one at a time, until nothing is ready, a group ends
+// unshipped, or the whole budget is spent, printing one line per group.
+func drain(options Options) (int, error) {
+	stdout := options.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	if options.DryRun {
+		return 0, listDrain(options.Root, stdout)
+	}
+	total := options.Budget
+	if total <= 0 {
+		total = GroupBudget
+	}
+	started := time.Now()
+	ran := map[string]bool{}
+	for {
+		if err := refreshRoot(options.Root); err != nil {
+			return 1, err
+		}
+		plan, err := line.PlanForStation(options.Root, "")
+		if err != nil {
+			return 1, err
+		}
+		if plan == nil {
+			fmt.Fprintln(stdout, "drain done: nothing is ready")
+			return 0, nil
+		}
+		if ran[plan.Group] {
+			fmt.Fprintf(stdout, "%s stopped: it came up again after it shipped\n", plan.Group)
+			return 1, nil
+		}
+		remaining := total - time.Since(started)
+		if remaining <= 0 {
+			fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", plan.Group, total)
+			return 124, nil
+		}
+		group := options
+		group.Target = plan.Group
+		group.Budget = min(GroupBudget, remaining)
+		launched := time.Now()
+		code, url, err := launchTarget(group)
+		if err != nil {
+			fmt.Fprintf(stdout, "%s stopped: %v\n", plan.Group, err)
+			return max(code, 1), err
+		}
+		if !shipped(options.Root, plan.Group, launched) {
+			fmt.Fprintf(stdout, "%s stopped: it ended without shipping (exit %d)\n", plan.Group, code)
+			return max(code, 1), nil
+		}
+		if url == "" {
+			url = "no pull request was handed off"
+		}
+		fmt.Fprintf(stdout, "%s shipped: %s\n", plan.Group, url)
+		ran[plan.Group] = true
+	}
+}
+
+// listDrain prints the groups a drain would run, in order, the open run first, and launches nothing.
+func listDrain(root string, stdout io.Writer) error {
+	var order []string
+	if state, err := line.LoadRun(root); err == nil && line.RunIsOpen(root) {
+		order = append(order, state.Group)
+	}
+	groups, err := line.ReadyGroups(root)
+	if err != nil {
+		return err
+	}
+	for _, group := range groups {
+		if !contains(order, group.ID) {
+			order = append(order, group.ID)
+		}
+	}
+	if len(order) == 0 {
+		fmt.Fprintln(stdout, "drain would run nothing: nothing is ready")
+	}
+	for index, group := range order {
+		fmt.Fprintf(stdout, "%d. %s\n", index+1, group)
+	}
+	return nil
+}
+
+// refreshRoot re-renders every installed host's project config at the root when the doctor reports drift.
+func refreshRoot(root string) error {
+	problems, err := doctor.Run(root, doctor.Options{NoGit: true})
+	if err != nil {
+		return err
+	}
+	for _, problem := range problems {
+		if problem.Check == "drift" {
+			return line.RenderProject(root, root)
+		}
+	}
+	return nil
+}
+
+// shipped reports whether the ledger records a finished ship for the group at or after since.
+func shipped(root, group string, since time.Time) bool {
+	entries, err := line.Book(root).All()
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Station == "ship" && entry.Group == group && entry.Outcome == "done" && !entry.At.Before(since) {
+			return true
+		}
+	}
+	return false
 }
 
 // launch runs one resolved command under the budget, in its own process group, in a scrubbed
@@ -210,25 +334,25 @@ func eventsFile(options Options) (*os.File, error) {
 }
 
 // finishShip pushes and opens the pull request a scrubbed ship handed off, in the launcher's own
-// credentialed environment, stamps ship done, and removes the handoff so a rerun never pushes twice.
-func finishShip(options Options) error {
+// credentialed environment, stamps ship done, removes the handoff, and returns the pull request.
+func finishShip(options Options) (string, error) {
 	path := filepath.Join(options.Root, line.StateDir, "ship.json")
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	var handoff line.ShipHandoff
 	if err := json.Unmarshal(data, &handoff); err != nil {
-		return err
+		return "", err
 	}
 	if err := pushable(options.Root, handoff.Branch); err != nil {
-		return err
+		return "", err
 	}
 	if err := gitPush(options.Root, handoff.Branch); err != nil {
-		return err
+		return "", err
 	}
 	client := options.PR
 	if client == nil {
@@ -236,7 +360,7 @@ func finishShip(options Options) error {
 	}
 	url, err := client.Create(handoff.Base, handoff.Branch, handoff.Title, handoff.Body, handoff.Draft)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if known, err := client.Labels(); err == nil {
 		_ = client.Label(url, pr.KeepKnown(handoff.Labels, known))
@@ -246,15 +370,15 @@ func finishShip(options Options) error {
 		worktree = options.Root
 	}
 	if _, err := line.FileFindings(worktree, handoff.Group, handoff.Minor); err != nil {
-		return err
+		return url, err
 	}
 	if handoff.AfterPublish != "" {
 		if published := line.RunCommand(worktree, handoff.AfterPublish); !published.OK() {
-			return fmt.Errorf("after_publish: %s", line.FailureText(published))
+			return url, fmt.Errorf("after_publish: %s", line.FailureText(published))
 		}
 	}
 	line.Stamp(options.Root, ledger.Entry{Group: handoff.Group, Station: "ship", Outcome: "done"})
-	return os.Remove(path)
+	return url, os.Remove(path)
 }
 
 // pushable refuses a handoff branch that is a refspec, an option, an invalid name, or a critical ref,
