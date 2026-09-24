@@ -1,9 +1,11 @@
 package line
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -153,7 +155,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		return result, nil
 	}
-	if _, err := git(group, "push", "-u", "origin", plan.Branch); err != nil {
+	if err := pushFromWorktree(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
 	filed, err := FileFindings(group, plan.Group, minor)
@@ -280,4 +282,36 @@ func ReportBody(plan *Plan, result *ShipResult, waves []*WaveResult) string {
 		out = append(out, "", "## Blocked", "- "+strings.Join(result.Blocked, ", "))
 	}
 	return strings.Join(out, "\n") + "\n"
+}
+
+// pushFromWorktree pushes branch to the root's origin URL, past the worktree's refused pushurl, then sets its upstream.
+func pushFromWorktree(root, worktree, branch string) error {
+	pushURL, err := git(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
+	}
+	ref := "refs/heads/" + branch
+	cmd := exec.Command("git", "push", pushURL, ref+":"+ref)
+	cmd.Dir = worktree
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git push to origin %s: %v: %s", branch, err, redactURL(strings.TrimSpace(stderr.String()), pushURL))
+	}
+	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
+	if _, err := git(worktree, "fetch", "origin", branch); err == nil {
+		_, _ = git(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
+	}
+	return nil
+}
+
+// credentialRe matches the user and secret a URL can carry before its host.
+var credentialRe = regexp.MustCompile(`://[^/@\s]+@`)
+
+// redactURL removes a push URL and any URL credentials from text, so a token never reaches an error.
+func redactURL(text, url string) string {
+	if url != "" {
+		text = strings.ReplaceAll(text, url, "origin")
+	}
+	return credentialRe.ReplaceAllString(text, "://***@")
 }

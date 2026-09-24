@@ -10,6 +10,69 @@ import (
 	"testing"
 )
 
+// remotedRepo builds a real git repo with one commit on main, remoted at a bare origin in a temp dir.
+func remotedRepo(t *testing.T) (root, bare string) {
+	t.Helper()
+	root = gitRepo(t)
+	commit(t, root, "a.txt", "a\n", "seed")
+	bare = filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "remote", "add", "origin", bare)
+	return root, bare
+}
+
+func TestAddWorktreeRefusesAPushFromATaskWorktree(t *testing.T) {
+	root, _ := remotedRepo(t)
+	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
+	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "push", "origin", "task/x")
+	cmd.Dir = worktree
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("a push from a task worktree must be refused, out = %s", out)
+	}
+	if !strings.Contains(string(out), "refused") {
+		t.Fatalf("out = %s; the refusal must name refused", out)
+	}
+}
+
+func TestAddWorktreeLeavesAPushFromTheRootWorking(t *testing.T) {
+	root, bare := remotedRepo(t)
+	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
+	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(root, "push", "origin", "main"); err != nil {
+		t.Fatalf("a push from the root must still work: %v", err)
+	}
+	if _, err := git(root, "config", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatal("the main checkout's own config must never gain a pushurl from a worktree cut")
+	}
+	out, err := exec.Command("git", "-C", bare, "branch", "--list", "main").CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "main") {
+		t.Fatalf("branch = %s; the root's push to the bare remote must have landed", out)
+	}
+}
+
+func TestAddWorktreeSkipsTheRefusalWhenCommonConfigHoldsCoreWorktree(t *testing.T) {
+	root, _ := remotedRepo(t)
+	if _, err := git(root, "config", "core.worktree", "."); err != nil {
+		t.Fatal(err)
+	}
+	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
+	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(worktree, "config", "--worktree", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatal("a repo whose common config holds core.worktree must skip the pushurl refusal")
+	}
+}
+
 func TestResultIsFoundInTheWorktreeTheBuilderIsSandboxedTo(t *testing.T) {
 	root := t.TempDir()
 	worktree := filepath.Join(root, StateDir, "wt", "TG-01.1")
