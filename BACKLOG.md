@@ -1404,3 +1404,48 @@ context:
   - "table Case gains a Mode field, empty meaning default; add rows for each mode's switch, pull, commit, and push on main, and a chained git switch main && git commit under default"
 type: feat
 ```
+
+### [TG-03.17] A spawn never cuts its own worktree
+```yaml
+type: fix
+version: 1.0.0-beta.1
+base: docs/queue-spawn-guard
+```
+* **Why:** the driving session passed an isolation option to its builder spawn on TG-03.11 and TG-03.15, rule or no rule. The builder worked in a second worktree and the driver ported its diff by hand. A markdown rule cannot hold it; the guard can.
+
+#### [TSK-03.17.1] The guard refuses a spawn that carries an isolation option [P: H] [READY]
+```yaml
+files: [internal/mount/registry.go, internal/mount/claude/guard.go, internal/mount/claude/claude_test.go, internal/guard/guard.go, internal/guard/hook.go, internal/guard/table.go]
+done_when:
+  - go test ./internal/guard/... ./internal/mount/...
+  - go vet ./internal/guard/... ./internal/mount/...
+  - go run ./cmd/komodo guard check
+  - go run ./cmd/komodo doctor
+context:
+  - "GuardTools gains SpawnTools, the host's agent-spawn tool names, and IsolationField, the input key that asks for a separate worktree; the claude mount fills both, and hookMatcher adds the spawn tools"
+  - "Check denies a spawn tool call whose isolation field is set and not empty, finding: a spawn never cuts its own worktree; the line already cut it. hostGuard recognizes the spawn tools so the host's denial payload is used"
+  - "guard.go and hook.go read spawn tool and field names from GuardTools only; table.go names the tool the way its Bash and Write rows already do"
+  - "table rows: a spawn with isolation set is denied, a spawn without it is allowed, and a force push to main in unsafe mode is still denied"
+type: fix
+```
+
+### [TG-03.16] A stray worktree is a note, not a failure
+```yaml
+type: fix
+version: 1.0.0-beta.1
+base: fix/a-spawn-never-cuts-its-own-worktree
+```
+* **Why:** TG-03.14's check fails the doctor on any linked worktree outside `.komodo/wt`, and the gate runs the doctor. A user's own `git worktree add ../feature` would block every commit.
+
+#### [TSK-03.16.1] Doctor prints a stray worktree as a note and still exits zero [P: H] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go, cmd/komodo/host.go]
+done_when:
+  - go test ./internal/doctor/... ./cmd/komodo/...
+  - go vet ./internal/doctor/... ./cmd/komodo/...
+context:
+  - "move checkWorktrees out of checkGit into an exported StrayWorktrees(root) []string, one line per worktree naming its path and branch, beside HostLeftovers"
+  - "the doctor command prints each as a note line after the host leftovers; a stray worktree never adds a problem or a non-zero exit"
+  - "tests: a worktree outside .komodo/wt yields one note and zero problems; the main checkout and state worktrees yield none"
+type: fix
+```
