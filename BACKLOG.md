@@ -1498,7 +1498,7 @@ type: fix
 ```yaml
 type: feat
 version: 1.1.0
-base: docs/queue-ninety-plan
+base: main
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
 
@@ -1638,7 +1638,7 @@ type: refactor
 ```yaml
 type: fix
 version: 1.0.1
-base: docs/queue-ninety-plan
+base: main
 ```
 * **Why:** a probe on 2026-09-24 against main's guard passed `gh api -X DELETE .../branches/main/protection`, `gh api -X PUT .../pulls/12/merge`, `git commit --no-verify`, `git -c core.hooksPath=/dev/null commit`, `python3 -c` and `node -e` bodies that push main, and a script written then run in one line. ADR 0004 names the forge ruleset as the hard boundary, and a session could delete it. The safety modes gate only critical-ref rules, so every one passed in every mode.
 
@@ -1727,7 +1727,7 @@ type: fix
 ```yaml
 type: fix
 version: 1.0.1
-base: docs/queue-ninety-plan
+base: main
 ```
 * **Why:** the guard is a denylist over bash and will never be complete. The headless scrub removes push credentials, but an in-session builder still has them. A worktree with no working push URL turns every missed shell trick into a failed push, so the guard stops being the last check.
 
@@ -1751,7 +1751,7 @@ type: fix
 ```yaml
 type: feat
 version: 1.1.0
-base: docs/queue-ninety-plan
+base: main
 ```
 * **Why:** the local 3B reviewer returned 0 findings on most runs and missed a real bug in #161. A review station that always approves is a stage, not QC. A seeded-bug corpus gives each local model a recall number, and the line keeps review on the host until that number clears a bar.
 
@@ -1969,7 +1969,7 @@ type: refactor
 ```yaml
 type: test
 version: 1.1.0
-base: docs/queue-ninety-plan
+base: main
 ```
 * **Why:** `docs/scorecard.md` puts Code at 90 only when every package is at or above 70 percent. On `1eff696`, `internal/gate` is at 67.4 and `internal/pr` at 68.4. Both are tested here to 75, with room above the bar.
 
