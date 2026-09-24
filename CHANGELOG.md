@@ -4,13 +4,32 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 ## 1.0.0-beta.1 — unreleased
 
-- **TG-03.8** The line plans what it is handed (18 task(s))
-The first beta of 1.0.0: feature-complete, with the headless and exit-test proofs still to record before 1.0.0 is cut. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
+The first beta of 1.0.0: feature-complete, with the headless proof recorded below and the exit-test proof still to record before 1.0.0 is cut. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
-- **TG-03.8** The line plans what it is handed (16 task(s))
+- **TG-03.8** The line plans what it is handed (18 task(s))
 - **TG-03.7** The sanity pass: safety, correctness, portability (27 task(s))
 - **TG-03.6** The gate and the exit test (11 task(s))
 - **TG-03.5** The repo layer and the local machines (9 task(s))
+
+### Proof: the run skill drives a group
+
+`komodo run TG-03.8 --budget 30m`, headless on Claude, carrying the one payload task `TSK-03.8.19`. It shipped as #148, from run `TG-03.8-1790212792` in `.komodo/line.jsonl`.
+
+| Station | Seconds | Tokens in | Tokens out | Turns |
+|---|---|---|---|---|
+| brief | — | 4,177 | — | — |
+| build (Sonnet) | 27.5 | 27,242 | 1,099 | 8 |
+| close | 6.9 | — | — | — |
+| QC | 7.7 | — | — | — |
+| review | 31.2 | 40,166 | 1,857 | 4 |
+| ship | 0.9 | — | — | — |
+
+Each station ran in the order `komodo step` gave, with 0 repairs. The bar was not met on the first pass: three launches stopped on four headless-only bugs, each fixed before the next launch.
+
+- **#145:** ship tests inherited the run's credential scrub.
+- **#146:** tasks shipped earlier were replanned into a late wave.
+- **#147:** a worktree's git hook looked for `bin/` in the worktree.
+- **#149:** `step` reissued ship while a handoff was pending.
 
 ### The line
 

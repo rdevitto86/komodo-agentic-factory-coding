@@ -142,6 +142,26 @@ func TestAppendChangelogLandsUnderTheVersion(t *testing.T) {
 	}
 }
 
+func TestAppendChangelogReplacesTheGroupsLineBelowTheIntro(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "CHANGELOG.md")
+	body := "# Changelog\n\n## 2.0.0 — unreleased\n\nThe intro paragraph.\n\n- **TG-03.8** The line (16 task(s))\n- **TG-03.7** The pass (27 task(s))\n\n## 1.3.0 — 2026-09-01\n\n- **TG-03.8** Kept\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendChangelog(path, "2.0.0", "- **TG-03.8** The line (18 task(s))"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendChangelog(path, "2.0.0", "- **TG-03.9** New"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	want := "# Changelog\n\n## 2.0.0 — unreleased\n\nThe intro paragraph.\n\n- **TG-03.9** New\n- **TG-03.8** The line (18 task(s))\n- **TG-03.7** The pass (27 task(s))\n\n## 1.3.0 — 2026-09-01\n\n- **TG-03.8** Kept\n"
+	if string(data) != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", data, want)
+	}
+}
+
 func TestAppendChangelogOpensANewVersion(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "CHANGELOG.md")
