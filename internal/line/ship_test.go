@@ -17,7 +17,8 @@ import (
 const shipBacklog = "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-09.1.1] Do it [P: C] [DONE]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - true\n```\n"
 
-// shipRepo builds a group worktree carrying its own backlog and a remote origin, so ShipGroup can push.
+// shipRepo builds a group worktree and a main checkout, both remoted at a bare origin, so
+// ShipGroup can read the push URL from the root and push from the group.
 func shipRepo(t *testing.T) (root, group string) {
 	t.Helper()
 	root = t.TempDir()
@@ -26,6 +27,8 @@ func shipRepo(t *testing.T) (root, group string) {
 	}
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
 	group = filepath.Join(root, "group")
 	if err := os.MkdirAll(group, 0o755); err != nil {
 		t.Fatal(err)
@@ -98,6 +101,31 @@ func TestShipGroupRunsTheAfterPublishCommand(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(group, "published.txt")); err != nil {
 		t.Fatalf("after_publish did not run: %v", err)
+	}
+}
+
+func TestShipGroupPushesThroughTheRootsExplicitURL(t *testing.T) {
+	root, group := shipRepo(t)
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	bare, err := git(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("git", "-C", bare, "branch", "--list", "feat/a-group").CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "feat/a-group") {
+		t.Fatalf("branch = %s; ShipGroup must push the branch to the URL the root names", out)
+	}
+	if _, err := git(group, "config", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatal("the group worktree's own config must never gain a pushurl from a ship push")
 	}
 }
 
@@ -278,7 +306,8 @@ func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
 	}
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
-	runGit(t, worktree, "remote", "add", "origin", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
 	result, err := ShipGroup(root, plan, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -352,13 +381,14 @@ const staleWorktreeBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversio
 func TestShipReadsStatusFromTheRootCloseWrites(t *testing.T) {
 	worktree := gitRepo(t)
 	commit(t, worktree, "BACKLOG.md", staleWorktreeBacklog, "the backlog")
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", bare)
-	runGit(t, worktree, "remote", "add", "origin", bare)
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closedRootBacklog), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
 		Base: "main", Branch: "main", Worktree: worktree,
@@ -379,13 +409,14 @@ func TestShipReadsStatusFromTheRootCloseWrites(t *testing.T) {
 func TestShipRendersTheBodyAfterBlockedIsKnown(t *testing.T) {
 	worktree := gitRepo(t)
 	commit(t, worktree, "BACKLOG.md", staleWorktreeBacklog, "the backlog")
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", bare)
-	runGit(t, worktree, "remote", "add", "origin", bare)
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closedRootBacklog), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
 		Base: "main", Branch: "main", Worktree: worktree,

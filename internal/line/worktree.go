@@ -58,18 +58,42 @@ func Fetch(root, base string) error {
 // BranchName is the branch a group's work lands on: its type and its slug.
 func BranchName(groupType, slug string) string { return groupType + "/" + slug }
 
-// AddWorktree creates branch at the base's head in its own worktree under .komodo/wt.
+// RefusedPushURL is the pushurl set on a line worktree so any push inside it fails and names the reason.
+const RefusedPushURL = "refused://the-line-pushes"
+
+// AddWorktree creates branch at the base's head in its own worktree under .komodo/wt, then
+// configures that worktree to refuse a push, so only ship, from the root, ever reaches origin.
 func AddWorktree(root, branch, base, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	start := StartRef(root, base)
 	if _, err := git(root, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
-		_, err := git(root, "worktree", "add", path, branch)
+		if _, err := git(root, "worktree", "add", path, branch); err != nil {
+			return err
+		}
+	} else if _, err := git(root, "worktree", "add", "-b", branch, path, start); err != nil {
 		return err
 	}
-	_, err := git(root, "worktree", "add", "-b", branch, path, start)
-	return err
+	refuseWorktreePush(root, path)
+	return nil
+}
+
+// refuseWorktreePush points path's pushurl at RefusedPushURL, skipping and noting when the
+// repo's common config already holds core.bare or core.worktree.
+func refuseWorktreePush(root, path string) {
+	if bare, err := git(root, "config", "--get", "core.bare"); err == nil && bare == "true" {
+		fmt.Fprintln(os.Stderr, "komodo: core.bare is true on the repo's common config; skipping the worktree push refusal")
+		return
+	}
+	if _, err := git(root, "config", "--get", "core.worktree"); err == nil {
+		fmt.Fprintln(os.Stderr, "komodo: core.worktree is set on the repo's common config; skipping the worktree push refusal")
+		return
+	}
+	if _, err := git(root, "config", "extensions.worktreeConfig", "true"); err != nil {
+		return
+	}
+	_, _ = git(path, "config", "--worktree", "remote.origin.pushurl", RefusedPushURL)
 }
 
 // StartRef is the ref a group is cut from and diffed against: the remote-tracked copy of base

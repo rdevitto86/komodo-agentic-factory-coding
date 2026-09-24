@@ -153,7 +153,11 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		return result, nil
 	}
-	if _, err := git(group, "push", "-u", "origin", plan.Branch); err != nil {
+	pushURL, err := git(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := git(group, "-c", "remote.origin.pushurl="+pushURL, "push", "-u", "origin", plan.Branch); err != nil {
 		return nil, err
 	}
 	filed, err := FileFindings(group, plan.Group, minor)
