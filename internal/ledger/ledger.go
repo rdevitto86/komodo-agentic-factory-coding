@@ -405,8 +405,11 @@ func Render(metrics Metrics) string {
 			out = append(out, fmt.Sprintf("- **%s** %d", group, metrics.FindingsBy[group]))
 		}
 	}
+	out = append(out, "", "## Tasks per hour")
 	if metrics.TasksPerHour > 0 {
-		out = append(out, "", "## Tasks per hour", fmt.Sprintf("- **line time** %.2f", metrics.TasksPerHour))
+		out = append(out, fmt.Sprintf("- **line time** %.2f", metrics.TasksPerHour))
+	} else {
+		out = append(out, "- **none yet** no shipped group is on record yet")
 	}
 	if metrics.MedianTaskSec > 0 {
 		out = append(out, "", "## Median wall seconds per task", fmt.Sprintf("- **brief to ship** %.0fs", metrics.MedianTaskSec))

@@ -177,6 +177,13 @@ func TestRenderOpensWithTheVerdict(t *testing.T) {
 	}
 }
 
+func TestAnEmptyLedgerStillShowsTheThroughputHeading(t *testing.T) {
+	text := Render(Aggregate(nil))
+	if !strings.Contains(text, "## Tasks per hour") || !strings.Contains(text, "no shipped group is on record yet") {
+		t.Fatalf("text = %s; an empty ledger must still name tasks per hour", text)
+	}
+}
+
 func TestAnEmptyLedgerAggregatesToNothing(t *testing.T) {
 	metrics := Aggregate(nil)
 	if metrics.Tasks != 0 || metrics.RepairRate != 0 || len(metrics.MedianSeconds) != 0 {
