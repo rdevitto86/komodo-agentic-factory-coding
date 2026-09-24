@@ -1266,7 +1266,7 @@ done_when:
 type: docs
 ```
 
-#### [TSK-03.9.3] Proof: a local machine carries a station [P: C] [READY]
+#### [TSK-03.9.3] Proof: a local machine carries a station [P: C] [DONE]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
