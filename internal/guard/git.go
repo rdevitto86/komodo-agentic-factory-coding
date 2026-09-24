@@ -112,7 +112,7 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			if target == "HEAD" {
 				target = branch
 			}
-			if hasAnyCritical(policy) && unresolvedTarget(target) {
+			if hasAnyCritical(policy) && unresolvedTarget(spec) {
 				findings = append(findings, fmt.Sprintf("git push %s: the target is only known when it runs; name the branch", spec))
 				continue
 			}
@@ -151,14 +151,16 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			findings = append(findings, "commit message carries a co-author or generated-by trailer")
 		}
 	case "branch":
-		deleting, forcing, moving := false, false, false
+		deleting, forcing, moving, renaming := false, false, false, false
 		for _, arg := range rest {
 			switch {
 			case arg == "--delete" || longFlagPrefix(arg, "delete"):
 				deleting = true
 			case arg == "--force" || longFlagPrefix(arg, "force"):
 				forcing = true
-			case arg == "--move" || longFlagPrefix(arg, "move") || arg == "--copy" || longFlagPrefix(arg, "copy"):
+			case arg == "--move" || longFlagPrefix(arg, "move"):
+				moving, renaming = true, true
+			case arg == "--copy" || longFlagPrefix(arg, "copy"):
 				moving = true
 			case strings.HasPrefix(arg, "--"):
 				// a long flag with no bearing on deleting, forcing, or moving.
@@ -170,7 +172,9 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 						deleting = true
 					case 'f':
 						forcing = true
-					case 'm', 'M', 'c', 'C':
+					case 'm', 'M':
+						moving, renaming = true, true
+					case 'c', 'C':
 						moving = true
 					}
 				}
@@ -196,8 +200,8 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 				}
 			}
 		case moving:
-			// Renaming a critical ref away or onto one both move it; one positional renames the current branch.
-			if len(positional) == 1 && policy.IsCritical(branch) {
+			// A rename moves a critical ref either way; one positional renames the current branch, a copy does not.
+			if renaming && len(positional) == 1 && policy.IsCritical(branch) {
 				findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never moved by hand", branch))
 			}
 			for _, arg := range positional {
@@ -229,6 +233,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		}
 	case "switch", "checkout":
 		if target, create, ok := switchTarget(rest); ok {
+			if hasAnyCritical(policy) && unresolvedTarget(target) {
+				findings = append(findings, fmt.Sprintf("git %s %s: the target is only known when it runs; name the branch", sub, target))
+				break
+			}
 			if previousBranch(target) && hasAnyCritical(policy) {
 				findings = append(findings, fmt.Sprintf("git %s %s: the previous branch is not tracked; name the branch", sub, target))
 			}

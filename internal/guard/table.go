@@ -95,6 +95,8 @@ func Table(policy Policy) []Case {
 		bash("a bundled force on its own branch", "git branch -qf feat/y HEAD", "feat/x", false, ""),
 		bash("an abbreviated move between its own branches", "git branch --mov feat/x feat/z", "feat/x", false, ""),
 		bash("a verbose branch listing only reads", "git branch -vv", "feat/x", false, ""),
+		bash("copying main to a backup leaves main", "git branch -c main-backup", "main", false, ""),
+		bash("a forced copy of main to a backup leaves main", "git branch -C main-backup", "main", false, ""),
 		bash("update-ref main", "git update-ref refs/heads/main HEAD", "feat/x", true, "never moved by hand"),
 		bash("push a refspec onto main", "git push origin feat/x:main", "feat/x", true, "open a pull request"),
 		bash("forced refspec onto master", "git push origin +feat/x:master", "feat/x", true, "open a pull request"),
@@ -125,6 +127,10 @@ func Table(policy Policy) []Case {
 		bash("a variable resolved earlier in the line still names a critical ref", "BR=main; git push origin $BR", "feat/x", true, "open a pull request"),
 		bash("an xargs placeholder as the sole positional hides the remote", "echo origin main | xargs git push", "feat/x", true, "only known when it runs"),
 		bash("a command substitution as the sole positional hides the remote", `git push "$(echo origin main)"`, "feat/x", true, "only known when it runs"),
+		bash("a command substitution spanning the colon hides the target", `git push origin "$(echo feat/x:main)"`, "feat/x", true, "only known when it runs"),
+		bash("an xargs checkout hides the branch a later commit lands on", "echo main | xargs git checkout && git commit -m x", "feat/x", true, "only known when it runs"),
+		bash("a command substitution switch target is not a known ref", `git switch "$(echo main)"`, "feat/x", true, "only known when it runs"),
+		bash("a refspec between its own branches", "git push origin feat/x:feat/y", "feat/x", false, ""),
 
 		// 1c. A switch or checkout is judged onto the ref it lands on, tracked across the whole chain.
 		bashInMode("switch onto main in safe mode", "git switch main", "feat/x", ModeSafe, true, "critical ref is watched"),
