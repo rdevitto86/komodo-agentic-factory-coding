@@ -43,7 +43,7 @@ func spawn(name, isolation string, deny bool, finding string) Case {
 	if isolation != "" {
 		input["isolation"] = isolation
 	}
-	return Case{Name: name, Tool: "Task", Input: input, Branch: "feat/x", Deny: deny, Finding: finding}
+	return Case{Name: name, Tool: "Agent", Input: input, Branch: "feat/x", Deny: deny, Finding: finding}
 }
 
 // configCases builds one denied row per path the policy protects, so no host is named here.

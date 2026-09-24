@@ -19,7 +19,7 @@ var guardWriteTools = map[string]bool{"Edit": true, "Write": true, "MultiEdit": 
 var guardPathFields = []string{"file_path", "notebook_path"}
 
 // guardSpawnTools are this host's tool names that start a second agent session.
-var guardSpawnTools = map[string]bool{"Task": true}
+var guardSpawnTools = map[string]bool{"Agent": true, "Task": true}
 
 // isolationField is the tool_input key a spawn call uses to ask for a separate worktree.
 const isolationField = "isolation"

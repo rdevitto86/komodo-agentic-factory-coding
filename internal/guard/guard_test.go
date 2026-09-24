@@ -51,7 +51,7 @@ func registerFakeHost() {
 		PathFields:     []string{"file_path", "notebook_path"},
 		ShellTool:      "Bash",
 		CommandField:   "command",
-		SpawnTools:     map[string]bool{"Task": true},
+		SpawnTools:     map[string]bool{"Agent": true},
 		IsolationField: "isolation",
 		ConfigPaths:    []string{".testhost/settings.json"},
 		Deny:           fakeDenyPayload,
