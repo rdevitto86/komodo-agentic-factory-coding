@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 )
 
@@ -41,6 +43,7 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 		if result.OK {
 			entry.Outcome = "done"
 		}
+		entry.Checks = waveChecks(result)
 		Stamp(root, entry)
 	}()
 	if plan.Mode == "single" {
@@ -50,20 +53,20 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 		var previous string
 		for _, taskID := range plan.Waves[index] {
 			branch := TaskBranch(taskID)
-			if _, err := git(group, "merge", "--no-ff", "-m", "merge "+taskID, branch); err != nil {
+			if _, err := git.Run(group, "merge", "--no-ff", "-m", "merge "+taskID, branch); err != nil {
 				result.Conflict = conflictMessage(previous, taskID, err)
-				_, _ = git(group, "merge", "--abort")
+				_, _ = git.Run(group, "merge", "--abort")
 				return result, nil
 			}
 			result.Merged = append(result.Merged, taskID)
 			previous = taskID
 		}
 	}
-	result.Gates = RunGate(group, CompileCommands(group))
+	result.Gates = RunGate(group, CompileCommands(root, group))
 	if _, failed := FirstFailure(result.Gates); failed {
 		return result, nil
 	}
-	if command := VerifyCommand(group); command != "" {
+	if command := VerifyCommand(root, group); command != "" {
 		verify := RunCommand(group, command)
 		result.Verify = &verify
 		if !verify.OK() {
@@ -72,6 +75,57 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 	}
 	result.OK = true
 	return result, nil
+}
+
+// waveChecks are the gates and verify one wave ran, as its QC ledger row records them.
+func waveChecks(result *WaveResult) []ledger.Check {
+	var checks []ledger.Check
+	for _, gate := range result.Gates {
+		checks = append(checks, ledger.Check{Kind: "compile", Command: gate.Command, ExitCode: gate.ExitCode, Seconds: gate.Seconds})
+	}
+	if result.Verify != nil {
+		checks = append(checks, ledger.Check{Kind: "verify", Command: result.Verify.Command,
+			ExitCode: result.Verify.ExitCode, Seconds: result.Verify.Seconds})
+	}
+	return checks
+}
+
+// RecordedWaves rebuilds the group's wave results from the QC rows its current run stamped, the last row per wave.
+func RecordedWaves(root, group string) []*WaveResult {
+	state, err := LoadRunFor(root, group)
+	if err != nil || state.Run == "" {
+		return nil
+	}
+	entries, err := Book(root).Read(ledger.RunFile)
+	if err != nil {
+		return nil
+	}
+	byWave := map[int]*WaveResult{}
+	var order []int
+	for _, entry := range entries {
+		if entry.Station != "qc" || entry.Group != group || entry.Run != state.Run || entry.Wave == 0 {
+			continue
+		}
+		if _, seen := byWave[entry.Wave]; !seen {
+			order = append(order, entry.Wave)
+		}
+		wave := &WaveResult{Wave: entry.Wave, OK: entry.Outcome == "done"}
+		for _, check := range entry.Checks {
+			ran := CommandResult{Command: check.Command, ExitCode: check.ExitCode, Seconds: check.Seconds}
+			if check.Kind == "verify" {
+				wave.Verify = &ran
+			} else {
+				wave.Gates = append(wave.Gates, ran)
+			}
+		}
+		byWave[entry.Wave] = wave
+	}
+	sort.Ints(order)
+	out := make([]*WaveResult, 0, len(order))
+	for _, number := range order {
+		out = append(out, byWave[number])
+	}
+	return out
 }
 
 // conflictMessage names both tasks in a conflict, which is where a human takes over.

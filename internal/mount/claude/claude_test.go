@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -246,6 +247,32 @@ func TestTheHookCommandStaysAbsoluteWhenTheBinaryAlreadyIs(t *testing.T) {
 		if change.Path == filepath.Join(root, Dir, "settings.json") {
 			if !strings.Contains(string(change.Body), "/opt/komodo/bin/komodo guard") {
 				t.Fatalf("settings.json = %s", change.Body)
+			}
+			return
+		}
+	}
+	t.Fatal("settings.json is not in the plan")
+}
+
+func TestTheHookCommandIsTheRunningBinaryInAForeignRepo(t *testing.T) {
+	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	toolkitBinary := filepath.Join(t.TempDir(), name)
+	saved := mount.Executable
+	t.Cleanup(func() { mount.Executable = saved })
+	mount.Executable = func() (string, error) { return toolkitBinary, nil }
+	root := toolkitRepo(t)
+	plan, err := Render(root, mount.BinaryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range plan.Changes {
+		if change.Path == filepath.Join(root, Dir, "settings.json") {
+			want, _ := json.Marshal(toolkitBinary + " guard")
+			if !strings.Contains(string(change.Body), string(want)) {
+				t.Fatalf("settings.json = %s, want the hook %s", change.Body, want)
 			}
 			return
 		}

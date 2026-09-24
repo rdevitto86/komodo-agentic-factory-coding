@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -239,6 +240,24 @@ func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	got := problemsFrom(t, root)["drift"]
 	if len(got) != 1 || got[0].Where != "missing.txt" || !strings.Contains(got[0].Detail, "run komodo install") {
 		t.Fatalf("drift = %+v", got)
+	}
+}
+
+func TestAHookNamingAMissingBinaryIsFoundAndAnotherKomodoCopyIsNotDrift(t *testing.T) {
+	root := clean(t)
+	gone, _ := json.Marshal(filepath.Join(root, "gone", "komodo") + " guard")
+	write(t, root, "settings.json", `{"command": `+string(gone)+`}`)
+	registerHost(t, mount.Host{Name: "testhost", Render: func(root, binary string) (install.Plan, error) {
+		plan := install.Plan{Host: "testhost", Root: root}
+		plan.Add(filepath.Join(root, "settings.json"), []byte(`{"command": "/elsewhere/komodo-linux-amd64 guard"}`), "the guard")
+		return plan, nil
+	}})
+	found := problemsFrom(t, root)
+	if len(found["drift"]) != 0 {
+		t.Fatalf("drift = %+v; another komodo copy is not drift", found["drift"])
+	}
+	if got := found["hook"]; len(got) != 1 || got[0].Where != "settings.json" || !strings.Contains(got[0].Detail, "does not exist") {
+		t.Fatalf("hook = %+v", got)
 	}
 }
 
@@ -624,7 +643,6 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	run(root, "worktree", "add", "-q", "-b", "feat/g", worktree, "main")
 	write(t, worktree, "BACKLOG.md", done)
 	commitAll(t, worktree, "ship")
-	write(t, root, "BACKLOG.md", done)
 	state := line.RunState{Run: "r", Group: "TG-01.1", Base: "main", Branch: "feat/g", Worktree: worktree}
 	if err := line.SaveRun(root, state); err != nil {
 		t.Fatal(err)
@@ -634,7 +652,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	if _, err := Prune(root, "main"); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != done || !exists(worktree) {
+	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != ready || !exists(worktree) {
 		t.Fatal("prune settled a run whose branch origin does not hold yet")
 	}
 
@@ -644,7 +662,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != ready {
-		t.Fatalf("BACKLOG.md kept its flip; done = %v", got)
+		t.Fatalf("prune rewrote BACKLOG.md; no status flip is left uncommitted to restore; done = %v", got)
 	}
 	if exists(worktree) {
 		t.Fatalf("the shipped worktree survived; done = %v", got)

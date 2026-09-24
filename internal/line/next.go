@@ -1,14 +1,14 @@
+// Package line is the conveyor: intake, the input and output devices, QC, and ship.
 package line
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
 	"komodo/internal/backlog"
-	"komodo/internal/ledger"
+	"komodo/internal/git"
 	"komodo/internal/mount"
+	"komodo/internal/plan"
 	"komodo/internal/profile"
 )
 
@@ -72,23 +72,40 @@ func PlanForStation(root, needle string) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	state, runErr := LoadRun(root)
-	if runErr != nil {
+	if needle == "" {
+		// With several open, the earliest started continues; step asks for a group instead.
+		for _, state := range LoadRuns(root) {
+			if open, err := openRun(root, state.Group); err == nil && open != nil {
+				return open, nil
+			}
+		}
+		return plan, nil
+	}
+	state, err := RunFor(root, needle)
+	if err != nil || state.Group == "" {
 		return plan, nil
 	}
 	if plan == nil {
 		// Nothing fresh is ready: the run's own group, unless it already shipped.
 		return openRun(root, state.Group)
 	}
-	if needle == "" {
-		if open, err := openRun(root, state.Group); err == nil && open != nil {
-			return open, nil
-		}
-	}
 	return plan, nil
 }
 
-// PlanForRun is the plan of the group the run record names, shipped or not, else the station's plan.
+// PlanForGroup is the run plan, closed tasks included, of the group an id names, else the station's plan.
+func PlanForGroup(root, id string) (*Plan, error) {
+	if id == "" {
+		return PlanForStation(root, "")
+	}
+	if state, err := RunFor(root, id); err == nil && state.Group == GroupFor(root, id) {
+		if plan, err := planForGroup(root, state.Group); err != nil || plan != nil {
+			return plan, err
+		}
+	}
+	return PlanForStation(root, id)
+}
+
+// PlanForRun is the plan of the group the latest run record names, shipped or not, else the station's plan.
 func PlanForRun(root string) (*Plan, error) {
 	if state, err := LoadRun(root); err == nil && state.Group != "" {
 		if plan, err := planForGroup(root, state.Group); err == nil && plan != nil {
@@ -98,14 +115,20 @@ func PlanForRun(root string) (*Plan, error) {
 	return PlanForStation(root, "")
 }
 
-// RunIsOpen reports whether the recorded run still has stations left; an unreadable plan counts as open.
+// RunIsOpen reports whether any recorded run still has stations left; an unreadable plan counts as open.
 func RunIsOpen(root string) bool {
-	state, err := LoadRun(root)
-	if err != nil || state.Group == "" {
-		return false
+	return len(OpenRuns(root)) > 0
+}
+
+// OpenRuns are the recorded runs that still have stations left, oldest start first.
+func OpenRuns(root string) []RunState {
+	var open []RunState
+	for _, state := range LoadRuns(root) {
+		if plan, err := openRun(root, state.Group); err != nil || plan != nil {
+			open = append(open, state)
+		}
 	}
-	open, err := openRun(root, state.Group)
-	return err != nil || open != nil
+	return open
 }
 
 // openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
@@ -114,11 +137,7 @@ func openRun(root, groupID string) (*Plan, error) {
 	if err != nil || plan == nil {
 		return nil, err
 	}
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +164,7 @@ func planFor(root, needle string, intent Intent) (*Plan, error) {
 // pinWaves restores the waves the run recorded, so every station numbers them the same way, and
 // plans any task the record never saw, added mid-run, into waves after the last pinned one.
 func pinWaves(root string, plan *Plan) {
-	state, err := LoadRun(root)
+	state, err := LoadRunFor(root, plan.Group)
 	if err != nil || state.Group != plan.Group || len(state.Waves) == 0 {
 		return
 	}
@@ -179,15 +198,11 @@ func pinWaves(root string, plan *Plan) {
 // groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one; only
 // names the single task a task needle matched, empty when the needle named a group or nothing.
 func groupFor(root, needle string) (backlog.Backlog, backlog.Group, string, bool, error) {
-	path, err := backlog.Find(root)
+	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return backlog.Backlog{}, backlog.Group{}, "", false, err
 	}
-	parsed, err := backlog.Load(path)
-	if err != nil {
-		return backlog.Backlog{}, backlog.Group{}, "", false, err
-	}
-	group, only, ok := pick(parsed, needle)
+	group, only, ok := pick(root, parsed, needle)
 	return parsed, group, only, ok, nil
 }
 
@@ -232,7 +247,7 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 		skip = nil
 	}
 	chosen := profile.Select(root)
-	if path := profile.MachineOverlayPath(); path != "" {
+	if path := mount.OverlayPath(); path != "" {
 		chosen = profile.Overlay(chosen, path)
 	}
 	plan.Profile = chosen
@@ -295,7 +310,7 @@ func planWaves(group backlog.Group, tasks []backlog.Task, done []string, capacit
 		}
 		return [][]string{wave}, nil
 	}
-	waves, err := Waves(tasks, done, capacity)
+	waves, err := plan.Waves(tasks, done, capacity)
 	if err != nil {
 		return nil, err
 	}
@@ -312,10 +327,13 @@ func planWaves(group backlog.Group, tasks []backlog.Task, done []string, capacit
 
 // pick returns the named group, the group of a named task, or the next ready group; the second
 // result is the task a task needle matched, so the caller narrows the plan to it, not its group.
-func pick(parsed backlog.Backlog, needle string) (backlog.Group, string, bool) {
+func pick(root string, parsed backlog.Backlog, needle string) (backlog.Group, string, bool) {
 	if needle == "" {
-		group, ok := parsed.NextGroup()
-		return group, "", ok
+		groups := readyGroups(root, parsed, false)
+		if len(groups) == 0 {
+			return backlog.Group{}, "", false
+		}
+		return groups[0], "", true
 	}
 	if task, ok := parsed.Task(needle); ok {
 		group, ok := parsed.Group(task.GroupID)
@@ -325,81 +343,61 @@ func pick(parsed backlog.Backlog, needle string) (backlog.Group, string, bool) {
 	return group, "", ok
 }
 
+// ReadyGroups lists, in file order, the groups a drain would run, counting an earlier group's branch as a base.
+func ReadyGroups(root string) ([]backlog.Group, error) {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	return readyGroups(root, parsed, true), nil
+}
+
+// readyGroups is every group holding a ready agent task whose base can be cut from; stacked also
+// accepts the branch of a group listed before it, and without stacked only the first is returned.
+func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Group {
+	defaultBase := DefaultBase(root)
+	checkOrigin := hasOrigin(root)
+	ahead := map[string]bool{}
+	var out []backlog.Group
+	for _, group := range parsed.Groups {
+		if !group.HasReadyTask() {
+			continue
+		}
+		base := groupBase(root, group)
+		if checkOrigin && base != defaultBase && !ahead[base] && !onOrigin(root, base) {
+			continue
+		}
+		out = append(out, group)
+		if !stacked {
+			return out
+		}
+		ahead[BranchName(group.Type(), group.Slug())] = true
+	}
+	return out
+}
+
+// hasOrigin reports whether the repo has an origin remote, without which no base can be checked.
+func hasOrigin(root string) bool {
+	_, err := git.Run(root, "remote", "get-url", "origin")
+	return err == nil
+}
+
+// onOrigin reports whether origin holds the branch, as the last fetch or push recorded it.
+func onOrigin(root, branch string) bool {
+	_, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
+	return err == nil
+}
+
 // groupBase is the branch a group declares, or the remote's default when it declares none.
 func groupBase(root string, group backlog.Group) string {
 	if base := group.Base(); base != "" {
 		return base
 	}
 	return DefaultBase(root)
-}
-
-// RefuseOpenRun refuses to cut a group while another one is open and not shipped, since two
-// open runs share one BACKLOG.md, one ledger, and one run record.
-func RefuseOpenRun(root, group string) error {
-	state, err := LoadRun(root)
-	if err != nil || state.Group == "" || state.Group == group {
-		return nil
-	}
-	open, err := openRun(root, state.Group)
-	if err != nil || open == nil {
-		return nil
-	}
-	return fmt.Errorf("%s is open and not shipped; finish it with komodo step, or cut %s anyway with --force", state.Group, group)
-}
-
-// Start cuts the group branch in its own worktree from the base and records the choice.
-func Start(root string, plan *Plan, base string) (RunState, error) {
-	if base != "" {
-		plan.Base = base
-	}
-	if err := Fetch(root, plan.Base); err != nil {
-		return RunState{}, err
-	}
-	path := WorktreePath(root, plan.Worktree)
-	if _, err := os.Stat(path); err != nil {
-		if err := AddWorktree(root, plan.Branch, plan.Base, path); err != nil {
-			return RunState{}, err
-		}
-	}
-	if err := renderProject(root, path); err != nil {
-		return RunState{}, err
-	}
-	state := RunState{
-		Run:     fmt.Sprintf("%s-%d", plan.Group, time.Now().Unix()),
-		Group:   plan.Group,
-		Base:    plan.Base,
-		Branch:  plan.Branch,
-		Started: time.Now().UTC(),
-	}
-	state.Worktree = path
-	state.Waves = plan.Waves
-	if err := Book(root).TruncateRun(); err != nil {
-		return state, err
-	}
-	if err := SaveRun(root, state); err != nil {
-		return state, err
-	}
-	Stamp(root, ledger.Entry{Run: state.Run, Group: state.Group, Station: "intake", Outcome: "started"})
-	return state, nil
-}
-
-// renderProject rebuilds the worktree's gitignored project config for every host installed on
-// root, from the profile and the repo layer, so a run always has the right tools.
-func renderProject(root, worktree string) error {
-	binary := mount.BinaryPath()
-	for _, host := range mount.Hosts() {
-		if host.Installed == nil || host.Render == nil || !host.Installed(root) {
-			continue
-		}
-		plan, err := host.Render(worktree, binary)
-		if err != nil {
-			return err
-		}
-		if _, err := plan.Project().Apply(); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // contains reports whether the slice holds the value.

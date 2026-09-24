@@ -10,6 +10,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
+	"komodo/internal/plan"
 	"komodo/internal/profile"
 )
 
@@ -107,7 +108,7 @@ func TestWaveCapacityCarriesOverflowIntoTheNextWaveWithItsPeers(t *testing.T) {
 	}
 	text += "#### [TSK-90.3.f] Dep [P: C] [READY]\n```yaml\nfiles: [f/x.go]\ndone_when: [\"true\"]\ndepends_on: [TSK-90.3.a]\n```\n"
 	parsed := backlog.Parse(text)
-	waves, err := Waves(parsed.Groups[0].Tasks, nil, 4)
+	waves, err := plan.Waves(parsed.Groups[0].Tasks, nil, 4)
 	if err != nil {
 		t.Fatal(err)
 	}

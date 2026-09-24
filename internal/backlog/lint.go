@@ -95,6 +95,47 @@ func Lint(parsed Backlog) []string {
 	return problems
 }
 
+// Advice that never fails lint: each group whose longest open dependency chain covers most of its open tasks.
+func Notes(parsed Backlog) []string {
+	var notes []string
+	for _, group := range parsed.Groups {
+		open := map[string]Task{}
+		for _, task := range group.Tasks {
+			if task.Status != "DONE" {
+				open[task.ID] = task
+			}
+		}
+		if len(open) < 3 {
+			continue
+		}
+		depth := map[string]int{}
+		var chain func(string) int
+		chain = func(id string) int {
+			if known, ok := depth[id]; ok {
+				return known
+			}
+			depth[id] = 1
+			longest := 0
+			for _, dep := range open[id].DependsOn() {
+				if _, ok := open[dep]; ok {
+					longest = max(longest, chain(dep))
+				}
+			}
+			depth[id] = longest + 1
+			return depth[id]
+		}
+		longest := 0
+		for id := range open {
+			longest = max(longest, chain(id))
+		}
+		if longest*2 > len(open) {
+			notes = append(notes, fmt.Sprintf("%s: %d of %d tasks are one chain; split the shared file or drop a dependency to build in parallel",
+				group.ID, longest, len(open)))
+		}
+	}
+	return notes
+}
+
 // LintContext reports every context anchor whose file exists under root but holds no matching
 // heading, so a mistyped anchor fails at lint instead of sending a builder the whole file.
 func LintContext(root string, parsed Backlog) []string {

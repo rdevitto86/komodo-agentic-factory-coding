@@ -208,6 +208,54 @@ func TestHookFromAWorktreeUsesTheMainCheckoutBinary(t *testing.T) {
 	}
 }
 
+// TestHookInTheToolkitGatesFromTheCheckoutItCommits proves a checkout holding cmd/komodo runs its
+// own source, not the main checkout's binary, and a push still fuzzes.
+func TestHookInTheToolkitGatesFromTheCheckoutItCommits(t *testing.T) {
+	if !strings.Contains(hookScript, "git rev-parse --show-toplevel") || !strings.Contains(hookScript, "exec go run ./cmd/komodo gate") {
+		t.Fatal("the hook script never gates from the committing checkout")
+	}
+	main := t.TempDir()
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git(main, "init", "-q", "-b", "main")
+	git(main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	worktree := filepath.Join(t.TempDir(), "wt")
+	git(main, "worktree", "add", "-q", "-b", "feat/x", worktree)
+	source := filepath.Join(worktree, "cmd", "komodo", "main.go")
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakes := t.TempDir()
+	writeFakeBinary(t, fakes, "go", "#!/bin/sh\necho go \"$@\" in \"$(pwd -P)\"\n")
+	sub := filepath.Join(worktree, "cmd")
+	want, err := filepath.EvalSymlinks(worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for hook, args := range map[string]string{"pre-commit": "run ./cmd/komodo gate in", "pre-push": "run ./cmd/komodo gate --fuzz 10s in"} {
+		script := filepath.Join(fakes, hook)
+		if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", script)
+		cmd.Dir = sub
+		cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+		out, err := cmd.CombinedOutput()
+		if err != nil || strings.TrimSpace(string(out)) != "go "+args+" "+want {
+			t.Fatalf("%s: err = %v, out = %q; want go %s %s", hook, err, out, args, want)
+		}
+	}
+}
+
 func TestCommandDropsTheGitEnvironmentAHookSets(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses sh")
@@ -264,5 +312,161 @@ func TestBuildFlagsStampTheChangelogVersionAndCommit(t *testing.T) {
 	}
 	if !strings.Contains(flags, "-trimpath") || !strings.Contains(flags, "-buildvcs=false") {
 		t.Fatalf("flags lost reproducibility: %s", flags)
+	}
+}
+
+// TestBuildFlagsReadsTheCommitFromGit proves a repo's HEAD names the build, not "unknown".
+func TestBuildFlagsReadsTheCommitFromGit(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	flags := strings.Join(buildFlags(root), " ")
+	if strings.Contains(flags, "-X main.commit=unknown") {
+		t.Fatalf("flags = %s, want a real commit", flags)
+	}
+}
+
+// fakeGo writes an executable script named "go" that fakes env, build, and rev-parse for the tests below.
+func fakeGo(t *testing.T, dir, body string) {
+	t.Helper()
+	writeFakeBinary(t, dir, "go", body)
+}
+
+// TestCommandPinsTheGoToolchainWhenGoModNamesOne proves a successful pin reaches the child's environment.
+func TestCommandPinsTheGoToolchainWhenGoModNamesOne(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	root := t.TempDir()
+	mod := "module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(mod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	check := Command("env", root, "sh", "-c", "echo ${GOTOOLCHAIN:-unset}")
+	if err := check.Run(&out); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "go1.27.1" {
+		t.Fatalf("GOTOOLCHAIN = %q", got)
+	}
+}
+
+// TestBuildWritesTheOutputABuildProduces proves a successful go build lands at the target path.
+func TestBuildWritesTheOutputABuildProduces(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	dir := t.TempDir()
+	path, err := Build(root, dir, Target{Name: "komodo-fake", GOOS: "linux", Arch: "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, readErr := os.ReadFile(path); readErr != nil || strings.TrimSpace(string(body)) != "built" {
+		t.Fatalf("path = %q, body = %q, err = %v", path, body, readErr)
+	}
+}
+
+// TestBuildFailsWithoutAPinnedToolchain proves Build refuses to guess a toolchain.
+func TestBuildFailsWithoutAPinnedToolchain(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(root, t.TempDir(), LocalTarget()); err == nil {
+		t.Fatal("want an error when go.mod names no toolchain")
+	}
+}
+
+// TestBuildWrapsAFailedGoBuild proves a build failure names the target and carries the compiler's stderr.
+func TestBuildWrapsAFailedGoBuild(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\necho boom >&2\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	_, err := Build(root, t.TempDir(), Target{Name: "komodo-fake", GOOS: "linux", Arch: "amd64"})
+	if err == nil || !strings.Contains(err.Error(), "komodo-fake") || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestBuildLocalWritesUnderRootBin proves a local build lands under root/bin and reports its name.
+func TestBuildLocalWritesUnderRootBin(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	var out bytes.Buffer
+	path, err := BuildLocal(root, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(root, "bin", LocalTarget().Name); path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+	if !strings.Contains(out.String(), "built "+LocalTarget().Name) {
+		t.Fatalf("out = %q", out.String())
+	}
+}
+
+// TestBuildLocalFailsWhenBinIsAFile proves a blocked bin/ directory surfaces its error.
+func TestBuildLocalFailsWhenBinIsAFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "bin"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildLocal(root, io.Discard); err == nil {
+		t.Fatal("want an error when bin/ cannot be created")
+	}
+}
+
+// TestInstallFailsWhenHooksIsAFile proves a blocked hooks/ directory surfaces its error.
+func TestInstallFailsWhenHooksIsAFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "hooks"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir); err == nil {
+		t.Fatal("want an error when hooks/ cannot be created")
+	}
+}
+
+// TestInstallFailsWhenAHookPathIsADirectory proves a blocked hook file surfaces its error.
+func TestInstallFailsWhenAHookPathIsADirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "hooks", "pre-commit"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir); err == nil {
+		t.Fatal("want an error when a hook path is already a directory")
+	}
+}
+
+// TestTestArgsDropsTheRaceFlagWithoutCgo proves the plain branch runs when cgo is unavailable.
+func TestTestArgsDropsTheRaceFlagWithoutCgo(t *testing.T) {
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\necho 0\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	args := TestArgs()
+	if strings.Join(args, " ") != "go test ./..." {
+		t.Fatalf("args = %q", args)
 	}
 }

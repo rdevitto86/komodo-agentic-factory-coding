@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"komodo/internal/mount"
-	"komodo/internal/profile"
 	"komodo/internal/toolkit"
 )
 
@@ -108,8 +107,8 @@ func Load(toolkitRoot, repoRoot string) Policy {
 		policy.TrailerPatterns = union(policy.TrailerPatterns, extra.TrailerPatterns)
 		policy.Mode = tightenMode(policy.Mode, extra.Mode)
 	}
-	policy.CriticalRefs = union(policy.CriticalRefs, overlayCriticalRefs(profile.MachineOverlayPath()))
-	policy.Mode = loosenMode(policy.Mode, overlayMode(profile.MachineOverlayPath()))
+	policy.CriticalRefs = union(policy.CriticalRefs, overlayCriticalRefs(mount.OverlayPath()))
+	policy.Mode = loosenMode(policy.Mode, overlayMode(mount.OverlayPath()))
 	policy.compile()
 	return policy
 }

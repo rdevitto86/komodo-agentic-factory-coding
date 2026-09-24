@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"komodo/internal/line"
+	"komodo/internal/mount"
 )
 
 // exitCode is what the swapped exit panics with, so a test can recover the code main chose.
@@ -154,6 +158,56 @@ func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 	}
 }
 
+// TestListShowsTheOpenRunsLiveStatus proves list overlays status.json while BACKLOG.md stays as committed.
+func TestListShowsTheOpenRunsLiveStatus(t *testing.T) {
+	root := fixtureRepo(t)
+	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "[READY]") {
+		t.Fatalf("list before the run = %s", got.stdout)
+	}
+	state := line.RunState{Run: "TG-90.2-1", Group: "TG-90.2", Base: "main", Branch: "feat/a-pending-group", Worktree: root}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := line.RecordStatus(root, "TSK-90.2.1", "DONE"); err != nil {
+		t.Fatal(err)
+	}
+	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "TSK-90.2.1       [DONE]") {
+		t.Fatalf("list during the run = %s; it must show the run's live status", got.stdout)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); !strings.Contains(string(data), "[TSK-90.2.1] Not done [P: C] [READY]") {
+		t.Fatal("list rewrote BACKLOG.md")
+	}
+}
+
+// TestListAfterShipShowsWhatStepSees proves list reads the ship commit's status once status.json is cleared.
+func TestListAfterShipShowsWhatStepSees(t *testing.T) {
+	root := fixtureRepo(t)
+	worktree := filepath.Join(root, line.StateDir, "wt", "TG-90.2")
+	runGit(t, root, "worktree", "add", "-b", "feat/a-pending-group", worktree)
+	state := line.RunState{Run: "TG-90.2-1", Group: "TG-90.2", Base: "main", Branch: "feat/a-pending-group", Worktree: worktree}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := line.RecordStatus(root, "TSK-90.2.1", "DONE"); err != nil {
+		t.Fatal(err)
+	}
+	plan := &line.Plan{
+		Group: "TG-90.2", Title: "A pending group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "feat/a-pending-group", Worktree: worktree,
+		Tasks: []line.PlanTask{{ID: "TSK-90.2.1", Title: "Not done", Status: "READY"}},
+	}
+	_, _ = line.ShipGroup(root, plan, nil, nil)
+	if len(line.LoadStatus(root)) != 0 {
+		t.Fatal("ship left the group's live status behind")
+	}
+	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "TSK-90.2.1       [DONE]") {
+		t.Fatalf("list after ship = %s; it must show the ship commit's status, as step does", got.stdout)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); !strings.Contains(string(data), "[TSK-90.2.1] Not done [P: C] [READY]") {
+		t.Fatal("ship rewrote the root's BACKLOG.md")
+	}
+}
+
 // TestGuardHookDeniesAndAllowsThroughMain proves the hook path reads stdin and sets the exit code.
 func TestGuardHookDeniesAndAllowsThroughMain(t *testing.T) {
 	root := fixtureRepo(t)
@@ -247,6 +301,96 @@ func TestInstallDryRunWritesNothing(t *testing.T) {
 	}
 }
 
+// fakeToolkitBinary points the running binary at a real file outside any go-build dir, so install renders and accepts it.
+func fakeToolkitBinary(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := mount.Executable
+	t.Cleanup(func() { mount.Executable = saved })
+	mount.Executable = func() (string, error) { return path, nil }
+	return path
+}
+
+// renderedIgnores are the lines install appends for the default host's rendered project copies, in newline's ending.
+func renderedIgnores(t *testing.T, root, newline string) string {
+	t.Helper()
+	host, _ := mount.Get(mount.Names()[0])
+	plan, err := host.Render(root, mount.BinaryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out string
+	for _, change := range plan.Project().Changes {
+		if change.Remove {
+			continue
+		}
+		rel, err := filepath.Rel(root, change.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out += "/" + filepath.ToSlash(rel) + newline
+	}
+	if out == "" {
+		t.Fatal("the default host renders no project copy, so the test proves nothing")
+	}
+	return out
+}
+
+// TestInstallIgnoresTheStateDirAndRenderedCopiesOnceAndKeepsTheFilesLineEndings proves each ignore line lands once, in the file's ending.
+func TestInstallIgnoresTheStateDirAndRenderedCopiesOnceAndKeepsTheFilesLineEndings(t *testing.T) {
+	fakeToolkitBinary(t)
+	cases := []struct {
+		name, before, after string
+	}{
+		{"missing", "node_modules/\n", "node_modules/\n/.komodo/\n"},
+		{"unanchored", "node_modules/\n.komodo/\n", "node_modules/\n.komodo/\n"},
+		{"crlf", "node_modules/\r\n*.log\r\n", "node_modules/\r\n*.log\r\n/.komodo/\r\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := fixtureRepo(t)
+			path := filepath.Join(root, ".gitignore")
+			if err := os.WriteFile(path, []byte(c.before), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			newline := "\n"
+			if strings.Contains(c.before, "\r\n") {
+				newline = "\r\n"
+			}
+			want := c.after + renderedIgnores(t, root, newline)
+			for run := 1; run <= 2; run++ {
+				got := runCLI(t, root, "", "install")
+				if got.code != 0 {
+					t.Fatalf("install run %d exited %d: %s%s", run, got.code, got.stdout, got.stderr)
+				}
+				data, _ := os.ReadFile(path)
+				if string(data) != want {
+					t.Fatalf("after install run %d .gitignore = %q, want %q", run, data, want)
+				}
+			}
+		})
+	}
+}
+
+// TestInstallRefusesAHookBinaryThatDoesNotExist proves install never renders a guard hook naming a missing file.
+func TestInstallRefusesAHookBinaryThatDoesNotExist(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "komodo")
+	saved := mount.Executable
+	t.Cleanup(func() { mount.Executable = saved })
+	mount.Executable = func() (string, error) { return missing, nil }
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "install")
+	if got.code == 0 || !strings.Contains(got.stderr, "does not exist") {
+		t.Fatalf("install with a missing binary exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if dry := runCLI(t, root, "", "install", "--dry-run"); dry.code != 0 {
+		t.Fatalf("install --dry-run with a missing binary exited %d: %s", dry.code, dry.stderr)
+	}
+}
+
 // TestGateRunsEveryCheckOnAGoModule proves the gate reaches its markdown checks once vet and test pass.
 func TestGateRunsEveryCheckOnAGoModule(t *testing.T) {
 	root := fixtureRepo(t)
@@ -288,5 +432,30 @@ func TestNextStartOpensARunTheOtherStationsRead(t *testing.T) {
 		if got.stdout == "" && got.stderr == "" {
 			t.Fatalf("komodo %v printed nothing", args)
 		}
+	}
+}
+
+func TestBareDiffPairsTheOpenGroupWithItsOwnBranch(t *testing.T) {
+	root := fixtureRepo(t)
+	text := "# Backlog\n\n### [TG-91.1] First\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-91.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n\n" +
+		"### [TG-91.2] Second\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+		"#### [TSK-91.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"true\"]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now().UTC()
+	for index, group := range []string{"TG-91.1", "TG-91.2"} {
+		state := line.RunState{Run: group + "-1", Group: group, Base: "main", Branch: "feat/" + group,
+			Worktree: root, Started: started.Add(time.Duration(index) * time.Second)}
+		if err := line.SaveRun(root, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if plan := currentPlan(root); plan.Group != "TG-91.1" || plan.Branch != "feat/TG-91.1" {
+		t.Fatalf("plan = %s on %s; a bare diff must pair the earliest open group with its own branch", plan.Group, plan.Branch)
+	}
+	if got := runCLI(t, root, "", "diff"); got.code != 0 || !strings.Contains(got.stdout, "Review of group TG-91.1") {
+		t.Fatalf("diff = %+v; a bare diff must review the earliest open group", got)
 	}
 }

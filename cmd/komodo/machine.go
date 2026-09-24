@@ -105,7 +105,7 @@ func runMachine(root string, args []string) {
 		Provider: mount.LocalName, Model: model, Seconds: time.Since(started).Seconds(),
 		TokensIn: result.TokensIn, TokensOut: result.TokensOut, Outcome: "done",
 	}
-	if state, err := line.LoadRun(root); err == nil {
+	if state, err := line.RunFor(root, taskID); err == nil {
 		entry.Run, entry.Group = state.Run, state.Group
 	}
 	if err := line.Book(root).Stamp(entry); err != nil {

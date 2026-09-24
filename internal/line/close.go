@@ -10,6 +10,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
 	"komodo/internal/proc"
@@ -43,7 +44,7 @@ type Attempt struct {
 	Diff    string `json:"diff,omitempty"`
 }
 
-// CloseTask validates a task's result, reruns its checks, and flips its status.
+// CloseTask validates a task's result, reruns its checks, and records its status in the run.
 func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	path, err := backlog.Find(root)
 	if err != nil {
@@ -80,7 +81,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		clearAttempt(root, taskID)
 		entry.Outcome = "done"
 		Stamp(root, entry)
-		return outcome, writeStatus(path, taskID, "DONE")
+		return outcome, RecordStatus(root, taskID, "DONE")
 	}
 	entry.FailureClass = FailureClass(problems)
 	attempt, err := bumpAttempt(root, taskID, strings.Join(problems, "\n"), diffOf(cwd))
@@ -93,12 +94,66 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		outcome.Status = "BLOCKED"
 		entry.Outcome = "blocked"
 		Stamp(root, entry)
-		return outcome, writeStatus(path, taskID, "BLOCKED")
+		return outcome, RecordStatus(root, taskID, "BLOCKED")
 	}
 	outcome.Status = "IN_PROGRESS"
 	entry.Outcome = "repair"
 	Stamp(root, entry)
-	return outcome, writeStatus(path, taskID, "IN_PROGRESS")
+	return outcome, RecordStatus(root, taskID, "IN_PROGRESS")
+}
+
+// CloseFix reruns the group's done_when, comment lint, and gate on a fix round, commits it, and clears the review.
+func CloseFix(root string, plan *Plan) (*Outcome, error) {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	task, _ := fixTask(parsed, plan)
+	cwd := WorktreePath(root, plan.Worktree)
+	started := time.Now()
+	round := FixRounds(root, plan.Group) + 1
+	outcome := &Outcome{Task: task.ID}
+	problems := checkResult(root, task.ID)
+	for _, planned := range plan.Tasks {
+		if groupTask, ok := parsed.Task(planned.ID); ok {
+			problems = append(problems, runDoneWhen(cwd, groupTask)...)
+		}
+	}
+	problems = append(problems, lintComments(cwd, task)...)
+	if len(problems) == 0 && isToolkit(root) {
+		if err := gateCommand(cwd); err != nil {
+			problems = append(problems, "gate: "+err.Error())
+		}
+	}
+	outcome.Problems = problems
+	entry := ledger.Entry{Group: plan.Group, Task: fmt.Sprintf("%s-%d", task.ID, round), Station: "fix", Role: "builder"}
+	fillUsage(root, task.ID, time.Now(), &entry)
+	if len(problems) == 0 {
+		if err := commitTask(cwd, task, plan.Branch); err != nil {
+			outcome.Problems = []string{"commit: " + err.Error()}
+			return outcome, nil
+		}
+		outcome.Status = "DONE"
+		clearAttempt(root, task.ID)
+		for _, result := range ResultPaths(root, plan.Group+"-review") {
+			_ = os.Remove(result)
+		}
+		entry.Seconds, entry.Outcome = Since(started), "done"
+		Stamp(root, entry)
+		return outcome, nil
+	}
+	attempt, err := bumpAttempt(root, task.ID, strings.Join(problems, "\n"), diffOf(cwd))
+	if err != nil {
+		return nil, err
+	}
+	outcome.Status, outcome.Attempt, outcome.Failure = "IN_PROGRESS", attempt.Count, attempt.Failure
+	entry.Seconds, entry.Outcome, entry.FailureClass = Since(started), "repair", FailureClass(problems)
+	Stamp(root, entry)
+	return outcome, nil
 }
 
 // TaskWorktree is where a task is built: its own worktree, else the run's, else the repo root.
@@ -107,7 +162,7 @@ func TaskWorktree(root, taskID string) string {
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return path
 	}
-	if state, err := LoadRun(root); err == nil && state.Worktree != "" {
+	if state, err := RunFor(root, taskID); err == nil && state.Worktree != "" {
 		if info, err := os.Stat(state.Worktree); err == nil && info.IsDir() {
 			return state.Worktree
 		}
@@ -163,7 +218,7 @@ func lintComments(cwd string, task backlog.Task) []string {
 // group branch for a single-mode group, since close already commits every task there directly.
 func commitBranch(root string, parsed backlog.Backlog, task backlog.Task) string {
 	if group, ok := parsed.Group(task.GroupID); ok && group.Mode() == "single" {
-		if state, err := LoadRun(root); err == nil && state.Branch != "" {
+		if state, err := LoadRunFor(root, task.GroupID); err == nil && state.Branch != "" {
 			return state.Branch
 		}
 	}
@@ -173,35 +228,72 @@ func commitBranch(root string, parsed backlog.Backlog, task backlog.Task) string
 // commitTask commits a passing task onto branch, so QC has something to merge, and refuses
 // when cwd sits on any other branch, which is someone else's checkout, not the task's own.
 func commitTask(cwd string, task backlog.Task, branch string) error {
-	if _, err := git(cwd, "rev-parse", "--git-dir"); err != nil {
+	if _, err := git.Run(cwd, "rev-parse", "--git-dir"); err != nil {
 		return nil
 	}
-	current, err := git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	current, err := git.Run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return err
 	}
 	if current != branch {
 		return fmt.Errorf("cwd is on %s, not %s; refusing to commit onto the wrong checkout", current, branch)
 	}
-	status, err := git(cwd, "status", "--porcelain")
+	status, err := git.Run(cwd, "status", "--porcelain")
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(status) == "" {
 		return nil
 	}
-	if _, err := git(cwd, "add", "-A"); err != nil {
+	if err := stageWork(cwd, task.Files()); err != nil {
 		return err
 	}
 	if err := unstageBuilt(cwd, task); err != nil {
 		return err
 	}
-	if staged, err := git(cwd, "diff", "--cached", "--name-only"); err != nil || strings.TrimSpace(staged) == "" {
+	if staged, err := git.Run(cwd, "diff", "--cached", "--name-only"); err != nil || strings.TrimSpace(staged) == "" {
 		return err
 	}
 	message := fmt.Sprintf("%s: %s (%s)", task.Type(), task.Title, task.ID)
-	_, err = git(cwd, "commit", "-m", message)
+	_, err = git.Run(cwd, "commit", "-m", message)
 	return err
+}
+
+// stageWork stages every change in cwd except the state dir and each mount's rendered project copies, unless declared.
+func stageWork(cwd string, declared []string) error {
+	args := []string{"add", "-A", "--", "."}
+	var rescued []string
+	for _, excluded := range append([]string{StateDir}, mount.ProjectPaths(cwd)...) {
+		covered := false
+		var inside []string
+		for _, file := range declared {
+			file = strings.TrimSuffix(strings.TrimPrefix(strings.ReplaceAll(file, "\\", "/"), "./"), "/")
+			switch {
+			case file == excluded || strings.HasPrefix(excluded, file+"/"):
+				covered = true
+			case strings.HasPrefix(file, excluded+"/"):
+				inside = append(inside, file)
+			}
+		}
+		if covered {
+			continue
+		}
+		args = append(args, ":(exclude,literal)"+excluded)
+		rescued = append(rescued, inside...)
+	}
+	if _, err := git.Run(cwd, args...); err != nil {
+		return err
+	}
+	for _, file := range rescued {
+		// A declared file under an excluded path is staged on its own, when git sees a change there.
+		if changed, err := git.Run(cwd, "status", "--porcelain", "--", file); err != nil || changed == "" {
+			continue
+		}
+		if _, err := git.Run(cwd, "add", "-A", "--", file); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Built are the regenerated paths a task branch never carries, because they conflict on every merge.
@@ -216,7 +308,7 @@ func unstageBuilt(cwd string, task backlog.Task) error {
 		if _, err := os.Stat(filepath.Join(cwd, path)); err != nil {
 			continue
 		}
-		if _, err := git(cwd, "reset", "--quiet", "HEAD", "--", path); err != nil {
+		if _, err := git.Run(cwd, "reset", "--quiet", "HEAD", "--", path); err != nil {
 			return err
 		}
 	}
@@ -251,24 +343,11 @@ func gateCommand(cwd string) error {
 
 // diffOf is the worktree's own diff, which a repair brief carries back to the machine.
 func diffOf(cwd string) string {
-	out, err := git(cwd, "diff", "HEAD")
+	out, err := git.Run(cwd, "diff", "HEAD")
 	if err != nil {
 		return ""
 	}
 	return out
-}
-
-// writeStatus rewrites one task's status token in BACKLOG.md.
-func writeStatus(path, taskID, status string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	out, err := backlog.SetStatus(string(data), taskID, status)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(out), 0o644)
 }
 
 // attemptPath is where a task's failure record lives.
@@ -372,7 +451,7 @@ func fillMachine(root, taskID string, entry *ledger.Entry) {
 // resolveProfile is the selected profile narrowed by the developer's overlay, which every station shares.
 func resolveProfile(root string) profilepkg.Profile {
 	chosen := profilepkg.Select(root)
-	if path := profilepkg.MachineOverlayPath(); path != "" {
+	if path := mount.OverlayPath(); path != "" {
 		chosen = profilepkg.Overlay(chosen, path)
 	}
 	return chosen

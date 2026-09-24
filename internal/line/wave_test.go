@@ -36,19 +36,19 @@ func TestSplitFindingsSendsTheRestToTheBacklog(t *testing.T) {
 
 func TestVerifyCommandFollowsTheDiscoveryOrder(t *testing.T) {
 	root := t.TempDir()
-	if got := VerifyCommand(root); got != "" {
+	if got := VerifyCommand(root, root); got != "" {
 		t.Fatalf("an empty repo has no verify command, got %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := VerifyCommand(root); got != "go test ./..." {
+	if got := VerifyCommand(root, root); got != "go test ./..." {
 		t.Fatalf("verify = %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("verify:\n\t@true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := VerifyCommand(root); got != "make verify" {
+	if got := VerifyCommand(root, root); got != "make verify" {
 		t.Fatalf("the discovery order did not prefer the Makefile: %q", got)
 	}
 }
@@ -66,23 +66,23 @@ func TestRepoCommandsOverrideDiscovery(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "commands.json"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := VerifyCommand(root); got != "make check" {
+	if got := VerifyCommand(root, root); got != "make check" {
 		t.Fatalf("verify = %q", got)
 	}
-	if got := CompileCommands(root); len(got) != 1 || got[0] != "go build ./..." {
+	if got := CompileCommands(root, root); len(got) != 1 || got[0] != "go build ./..." {
 		t.Fatalf("compile = %v", got)
 	}
 }
 
 func TestCompileCommandsFollowTheManifests(t *testing.T) {
 	root := t.TempDir()
-	if got := CompileCommands(root); len(got) != 0 {
+	if got := CompileCommands(root, root); len(got) != 0 {
 		t.Fatalf("an empty repo compiles nothing, got %v", got)
 	}
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := CompileCommands(root); len(got) != 1 || !strings.Contains(got[0], "go build") {
+	if got := CompileCommands(root, root); len(got) != 1 || !strings.Contains(got[0], "go build") {
 		t.Fatalf("compile = %v", got)
 	}
 }
@@ -183,8 +183,8 @@ func TestReportBodyMarksWhatBlocked(t *testing.T) {
 	plan := &Plan{Group: "TG-09.1", Title: "A group", Tasks: []PlanTask{{ID: "a", Title: "One"}, {ID: "b", Title: "Two"}}}
 	result := &ShipResult{Done: []string{"a"}, Blocked: []string{"b"}}
 	waves := []*WaveResult{{Wave: 1, Merged: []string{"a"}, Conflict: "b conflicts with a"}}
-	body := ReportBody(plan, result, waves)
-	for _, want := range []string{"- [x] **a**", "- [ ] **b**", "## QC", "conflict", "## Blocked"} {
+	body := ReportBody(plan, result, waves, BodyContext{})
+	for _, want := range []string{"- **a** — One", "- **b** — Two", "## Validation", "conflict", "- **Unproven** b Two is blocked"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body is missing %q:\n%s", want, body)
 		}
@@ -299,5 +299,29 @@ func TestTheReviewsFindingsReachTheLine(t *testing.T) {
 	blocking, minor := SplitFindings(got, "high")
 	if len(blocking) != 1 || len(minor) != 1 {
 		t.Fatalf("blocking = %v, minor = %v; the floor decides which stop a ship", blocking, minor)
+	}
+}
+
+func TestACollisionIsASharedFileNotASharedDirectory(t *testing.T) {
+	root := gitRepo(t)
+	text := "### [TG-21.2] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-21.2.1] First [P: C] [READY]\n```yaml\nfiles: [web/a/x.ts]\ndone_when: [\"true\"]\n```\n\n" +
+		"#### [TSK-21.2.2] Sibling [P: C] [READY]\n```yaml\nfiles: [web/a/y.ts]\ndone_when: [\"true\"]\n```\n\n" +
+		"#### [TSK-21.2.3] Same [P: C] [READY]\n```yaml\nfiles: [web/a/x.ts]\ndone_when: [\"true\"]\n```\n"
+	commit(t, root, "BACKLOG.md", text, "seed")
+	gitCmd(t, root, "branch", "feat/group")
+	gitCmd(t, root, "checkout", "-q", "-b", TaskBranch("TSK-21.2.1"))
+	commit(t, root, "web/a/x.ts", "export const x = 1\n", "first")
+	gitCmd(t, root, "checkout", "-q", "main")
+	state := RunState{Group: "TG-21.2", Branch: "feat/group", Waves: [][]string{{"TSK-21.2.1", "TSK-21.2.2", "TSK-21.2.3"}}}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := RefuseCollision(root, "TSK-21.2.2"); err != nil {
+		t.Fatalf("a sibling file in the same directory must brief: %v", err)
+	}
+	err := RefuseCollision(root, "TSK-21.2.3")
+	if err == nil || !strings.Contains(err.Error(), "TSK-21.2.1") {
+		t.Fatalf("err = %v; the same file on an unmerged branch must refuse", err)
 	}
 }

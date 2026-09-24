@@ -1502,7 +1502,7 @@ base: main
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
 
-#### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [READY]
+#### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/snapshot.go, internal/line/step_test.go, komodo/skills/run/SKILL.md]
 done_when:
@@ -1520,7 +1520,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.21.2] The pre-commit hook runs the gate from the checkout it commits [P: H] [READY]
+#### [TSK-03.21.2] The pre-commit hook runs the gate from the checkout it commits [P: H] [DONE]
 ```yaml
 files: [internal/gate/gate.go, internal/gate/gate_test.go]
 done_when:
@@ -1533,7 +1533,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.21.3] Step reads one snapshot and decides with a pure function [P: H] [READY]
+#### [TSK-03.21.3] Step reads one snapshot and decides with a pure function [P: H] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/snapshot.go, internal/line/snapshot_test.go]
 done_when:
@@ -1550,7 +1550,7 @@ type: refactor
 tier: heavy
 ```
 
-#### [TSK-03.21.4] A worktree cut never runs without its push refusal [P: H] [READY]
+#### [TSK-03.21.4] A worktree cut never runs without its push refusal [P: H] [DONE]
 ```yaml
 files: [internal/line/worktree.go, internal/line/worktree_test.go]
 done_when:
@@ -1811,7 +1811,7 @@ base: feat/a-wave-builds-at-once-and-the-hook-check
 ```
 * **Why:** close writes task status into `BACKLOG.md` from three places mid-run, ship writes it again, and prune's `restoreFlips` exists to undo the collisions that causes. With parallel spawns and concurrent groups, markdown as a live database gets worse. The run holds live status; the backlog changes once, in the ship commit.
 
-#### [TSK-03.25.1] Close records status in the run, and ship writes the backlog once [P: H] [READY]
+#### [TSK-03.25.1] Close records status in the run, and ship writes the backlog once [P: H] [DONE]
 ```yaml
 files: [internal/line/status.go, internal/line/status_test.go, internal/line/close.go, internal/line/close_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/snapshot.go, internal/doctor/prune.go, internal/doctor/doctor_test.go, cmd/komodo/backlog.go]
 done_when:
@@ -1837,7 +1837,7 @@ base: refactor/live-status-lives-in-the-run-and-the-bac
 ```
 * **Why:** across the last 11 runs build was 72 to 85 percent of wall time. TG-03.20 chained 3 of its 5 tasks on one file, so it was serial by design. Waves split by directory, one group runs at a time, every builder is Sonnet, and `komodo metrics` cannot say tasks per hour.
 
-#### [TSK-03.26.1] Waves split by file, not directory [P: H] [READY]
+#### [TSK-03.26.1] Waves split by file, not directory [P: H] [DONE]
 ```yaml
 files: [internal/line/dag.go, internal/line/dag_test.go, internal/line/collide.go, internal/line/wave_test.go, komodo/rules/backlog.md, README.md]
 done_when:
@@ -1854,7 +1854,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.26.2] Lint notes a group whose dependencies make it serial [P: M] [READY]
+#### [TSK-03.26.2] Lint notes a group whose dependencies make it serial [P: M] [DONE]
 ```yaml
 files: [internal/backlog/lint.go, internal/backlog/backlog_test.go, cmd/komodo/backlog.go]
 done_when:
@@ -1868,7 +1868,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.26.3] A small task builds on the light tier and repairs on standard [P: M] [READY]
+#### [TSK-03.26.3] A small task builds on the light tier and repairs on standard [P: M] [DONE]
 ```yaml
 files: [internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/mount/registry.go]
 done_when:
@@ -1882,7 +1882,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.26.4] Metrics report tasks per hour and tokens per changed line [P: M] [READY]
+#### [TSK-03.26.4] Metrics report tasks per hour and tokens per changed line [P: M] [DONE]
 ```yaml
 files: [internal/ledger/ledger.go, internal/ledger/ledger_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -1896,7 +1896,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.26.5] Two groups with disjoint files run at once [P: H] [READY]
+#### [TSK-03.26.5] Two groups with disjoint files run at once [P: H] [DONE]
 ```yaml
 files: [internal/line/worktree.go, internal/line/worktree_test.go, internal/line/next.go, internal/line/next_test.go, internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/line/ship.go, internal/run/run.go, internal/run/run_test.go]
 done_when:
@@ -1922,7 +1922,7 @@ base: feat/the-line-builds-wide-picks-the-smallest
 ```
 * **Why:** `line` is 3,505 source lines and imports 13 of 19 internal packages. git runs through four private helpers, and `worktree list --porcelain` is parsed three times in doctor alone. The guard runs on every tool call yet links the Ollama client through `profile` only to find the overlay path, which `mount.OverlayPath` already returns.
 
-#### [TSK-03.27.1] One git adapter replaces four private helpers [P: M] [READY]
+#### [TSK-03.27.1] One git adapter replaces four private helpers [P: M] [DONE]
 ```yaml
 files: [internal/git/git.go, internal/git/git_test.go, internal/line/worktree.go, internal/line/collide.go, internal/doctor/doctor.go, internal/doctor/prune.go, cmd/komodo/release.go]
 done_when:
@@ -1937,7 +1937,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.27.2] The guard reads the overlay path from mount and never links profile [P: M] [READY]
+#### [TSK-03.27.2] The guard reads the overlay path from mount and never links profile [P: M] [DONE]
 ```yaml
 files: [internal/guard/policy.go, internal/profile/profile.go, internal/profile/profile_test.go]
 done_when:
@@ -1951,7 +1951,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.27.3] The planner moves out of line into its own package [P: M] [READY]
+#### [TSK-03.27.3] The planner moves out of line into its own package [P: M] [DONE]
 ```yaml
 files: [internal/plan/plan.go, internal/plan/plan_test.go, internal/line/dag.go, internal/line/dag_test.go, internal/line/next.go, internal/line/step.go, internal/line/collide.go]
 done_when:
@@ -1988,7 +1988,7 @@ base: main
 ```
 * **Why:** `docs/scorecard.md` puts Code at 90 only when every package is at or above 70 percent. On `1eff696`, `internal/gate` is at 67.4 and `internal/pr` at 68.4. Both are tested here to 75, with room above the bar.
 
-#### [TSK-03.28.1] The gate's hook rendering and install paths are tested to 75 percent [P: M] [READY]
+#### [TSK-03.28.1] The gate's hook rendering and install paths are tested to 75 percent [P: M] [DONE]
 ```yaml
 files: [internal/gate/gate_test.go]
 done_when:
@@ -2000,7 +2000,7 @@ context:
 type: test
 ```
 
-#### [TSK-03.28.2] The pull request client is tested to 75 percent [P: M] [READY]
+#### [TSK-03.28.2] The pull request client is tested to 75 percent [P: M] [DONE]
 ```yaml
 files: [internal/pr/pr_test.go]
 done_when:
@@ -2020,7 +2020,7 @@ base: main
 ```
 * **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
 
-#### [TSK-03.29.1] A push to an scp-style alias is a push to a URL [P: M] [READY]
+#### [TSK-03.29.1] A push to an scp-style alias is a push to a URL [P: M] [DONE]
 ```yaml
 files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -2034,7 +2034,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.2] An interpreter that runs code makes a later on-disk script unseen [P: M] [READY]
+#### [TSK-03.29.2] An interpreter that runs code makes a later on-disk script unseen [P: M] [DONE]
 ```yaml
 files: [internal/guard/shell.go, internal/guard/interp.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -2049,7 +2049,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.3] Ship opens its pull request against the default branch when the stored base is gone [P: H] [READY]
+#### [TSK-03.29.3] Ship opens its pull request against the default branch when the stored base is gone [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -2062,7 +2062,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.4] A backlog value holding both quote kinds round-trips through yamlite [P: M] [READY]
+#### [TSK-03.29.4] A backlog value holding both quote kinds round-trips through yamlite [P: M] [DONE]
 ```yaml
 files: [internal/backlog/yamlite.go, internal/backlog/backlog_test.go, internal/backlog/fuzz_test.go]
 done_when:
@@ -2076,7 +2076,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.5] The guard refuses a commit, pull request, or comment that carries a session link [P: C] [READY]
+#### [TSK-03.29.5] The guard refuses a commit, pull request, or comment that carries a session link [P: C] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/claude/guard.go, internal/guard/gh.go, internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -2093,7 +2093,7 @@ type: fix
 tier: heavy
 ```
 
-#### [TSK-03.29.6] Ship writes its pull request body in the repo's template sections [P: H] [READY]
+#### [TSK-03.29.6] Ship writes its pull request body in the repo's template sections [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -2105,4 +2105,87 @@ context:
   - "when the repo has .github/PULL_REQUEST_TEMPLATE.md, its ## headings set the section order; with no template, the four sections above are the default; the body never carries a trailer, generated-by line, or session link"
   - "tests: a two-task group renders all four headings in order with each task's bullet; a stacked group names its base under Dependencies; a blocked task appears under Validation"
 type: fix
+```
+
+### [TG-03.30] The line drains the backlog on its own
+```yaml
+type: feat
+version: 1.1.0
+base: docs/queue-drain
+```
+* **Why:** on 2026-09-24 every group needed a person to launch it, every blocking review needed a person to fix it, and every merge needed a person to re-render settings and re-point stacked bases. The line exists so the only human step is the merge button.
+
+#### [TSK-03.30.1] Step repairs its own review findings before it stops for a person [P: C] [DONE]
+```yaml
+files: [internal/line/step.go, internal/line/step_test.go, internal/line/brief.go, internal/line/brief_test.go, internal/line/close.go, internal/line/close_test.go, internal/profile/profile.go, cmd/komodo/line.go]
+done_when:
+  - go test ./internal/line/... ./internal/profile/... ./cmd/komodo/...
+  - go vet ./internal/line/... ./internal/profile/... ./cmd/komodo/...
+  - go run ./cmd/komodo doctor
+context:
+  - "today a finding at or above the severity floor makes Step return done, and a person fixes the group branch by hand; TG-03.22 needed ten such rounds on 2026-09-24"
+  - "Step instead returns run komodo brief --review <group>, which writes .komodo/briefs/<group>-fix.md from the builder role: the group's tasks and files, and the blocking findings in the failure slot; then spawn builder on that brief in the group worktree; then run komodo close --fix <group>, which runs the gate, commits the fix on the group branch, and clears the review result so the next Step spawns a fresh review"
+  - "profile gains review_repairs, default 2, which an overlay may only lower; after that many fix rounds a blocking review still returns done naming the findings, the one stop a person owns"
+  - "the ledger stamps each fix round as station fix with its round number, and komodo report counts them"
+  - "tests: a blocking review returns the fix brief, then the builder spawn, then close --fix, then a review; two blocking reviews in a row with review_repairs 1 return done"
+type: feat
+tier: heavy
+```
+
+#### [TSK-03.30.2] A bare komodo run drains every ready group in order [P: C] [DONE]
+```yaml
+files: [internal/run/run.go, internal/run/run_test.go, internal/line/next.go, internal/line/next_test.go]
+done_when:
+  - go test ./internal/run/... ./internal/line/...
+  - go vet ./internal/run/... ./internal/line/...
+  - go run ./cmd/komodo run --dry-run
+context:
+  - "Launch runs one target and exits; with no target it loops: re-render every installed host's project config at the root when doctor would report drift, pick the next ready group, launch it under its own group budget, finish its ship, and repeat"
+  - "the drain stops when nothing is ready, when a group ends without shipping, which is the review stop TSK-03.30.1 leaves, or when the whole --budget is spent; it prints one line per group: shipped with its pull request, or stopped with why"
+  - "next's ready rule skips a group whose base is neither the default branch nor a branch on origin, so a group stacked on an unshipped group waits for it rather than failing"
+  - "--dry-run with no target prints the groups the drain would run, in order, and launches nothing"
+  - "tests with a fake host: two ready groups both launch and ship in order; a group that ends unshipped stops the drain before the next; a group whose base branch is missing is skipped"
+type: feat
+tier: heavy
+```
+
+#### [TSK-03.30.3] README says the merge button is the only human step [P: M] [DONE]
+```yaml
+files: [README.md]
+done_when:
+  - grep -q 'komodo run' README.md
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-03.30.1, TSK-03.30.2]
+context:
+  - "the Usage section leads with komodo run and no target: it drains every ready group, repairs review findings up to review_repairs rounds, re-renders host config, and opens one pull request per group; a person merges"
+  - "state the three stops a person owns: a review still blocking after its repair rounds, a merge conflict QC cannot resolve, and the plan pause"
+type: docs
+```
+
+### [TG-03.31] Gaps the first run in another repo found
+```yaml
+type: fix
+version: 1.1.1
+```
+* **Why:** the smoke run in a separate repo on 2026-09-24 and the final lane's reviews left three gaps out of scope for 1.1.0.
+
+#### [TSK-03.31.1] A re-run of a group whose branch is on origin starts from a clean base [P: M] [REFINEMENT]
+```yaml
+context:
+  - "StartRef cuts a task from origin/<group branch> whenever that branch exists, so a group run again after an earlier push inherits the old commits and can conflict"
+type: fix
+```
+
+#### [TSK-03.31.2] Before-review and after-publish commands read the root's commands.json too [P: M] [REFINEMENT]
+```yaml
+context:
+  - "VerifyCommand and CompileCommands fall back from the worktree's .komodo/commands.json to the root's and to detection; BeforeReviewCommand and AfterPublishCommand still read only the worktree's"
+type: fix
+```
+
+#### [TSK-03.31.3] Tasks that name the guard's table name its split files [P: L] [REFINEMENT]
+```yaml
+context:
+  - "the table split moved rows into table_extra.go and table_private.go; tasks that list only internal/guard/table.go under files would miss them"
+type: docs
 ```

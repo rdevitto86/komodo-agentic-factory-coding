@@ -9,6 +9,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
+	"komodo/internal/plan"
 )
 
 const groupText = "### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
@@ -36,7 +37,7 @@ func repo(t *testing.T, text string) string {
 
 func TestWavesSplitByDirectoryAndDependency(t *testing.T) {
 	parsed := backlog.Parse(groupText)
-	waves, err := Waves(parsed.Groups[0].Tasks, nil, 0)
+	waves, err := plan.Waves(parsed.Groups[0].Tasks, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +54,7 @@ func TestWavesSplitByDirectoryAndDependency(t *testing.T) {
 
 func TestWavesSkipWhatIsDone(t *testing.T) {
 	parsed := backlog.Parse(groupText)
-	waves, err := Waves(parsed.Groups[0].Tasks, []string{"TSK-05.1.1"}, 0)
+	waves, err := plan.Waves(parsed.Groups[0].Tasks, []string{"TSK-05.1.1"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,14 +72,14 @@ func TestTopologicalRefusesACycle(t *testing.T) {
 		"#### [TSK-06.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/x.go]\ndone_when: [\"go test\"]\ndepends_on: [TSK-06.1.2]\n```\n\n" +
 		"#### [TSK-06.1.2] Two [P: C] [READY]\n```yaml\nfiles: [b/y.go]\ndone_when: [\"go test\"]\ndepends_on: [TSK-06.1.1]\n```\n"
 	parsed := backlog.Parse(text)
-	if _, err := Topological(parsed.Groups[0].Tasks); err == nil || !strings.Contains(err.Error(), "cycle") {
+	if _, err := plan.Topological(parsed.Groups[0].Tasks); err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestBlockedByWalksTransitively(t *testing.T) {
 	parsed := backlog.Parse(groupText)
-	got := BlockedBy(parsed.Groups[0].Tasks, "TSK-05.1.1")
+	got := plan.BlockedBy(parsed.Groups[0].Tasks, "TSK-05.1.1")
 	if len(got) != 1 || got[0] != "TSK-05.1.3" {
 		t.Fatalf("blocked = %v", got)
 	}
@@ -352,5 +353,60 @@ func TestPlanForStationMovesOnOnceTheRunIsShipped(t *testing.T) {
 	}
 	if plan == nil || plan.Group != "TG-05.2" {
 		t.Fatalf("plan = %+v; a shipped run must release the line to the next ready group", plan)
+	}
+}
+
+const stackedText = "### [TG-05.3] Stacked on a missing branch\n```yaml\ntype: feat\nversion: 2.0.0\nbase: feat/missing\n```\n\n" +
+	"#### [TSK-05.3.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
+	"### [TG-05.4] Off the default\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	"#### [TSK-05.4.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go test ./b/...\"]\n```\n\n" +
+	"### [TG-05.5] Stacked on the one before\n```yaml\ntype: feat\nversion: 2.2.0\nbase: feat/off-the-default\n```\n\n" +
+	"#### [TSK-05.5.1] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
+
+// stackedRepo is a remoted repo whose backlog stacks groups on branches origin may not hold.
+func stackedRepo(t *testing.T) string {
+	t.Helper()
+	root, _ := remotedRepo(t)
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/main")
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(stackedText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestNextSkipsAGroupWhoseBaseIsNotOnOrigin(t *testing.T) {
+	root := stackedRepo(t)
+	plan, err := next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Group != "TG-05.4" {
+		t.Fatalf("plan = %+v; a group stacked on a missing branch must wait, not be picked", plan)
+	}
+}
+
+func TestNextPicksAStackedGroupOnceItsBaseReachesOrigin(t *testing.T) {
+	root := stackedRepo(t)
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/missing")
+	plan, err := next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Group != "TG-05.3" || plan.Base != "feat/missing" {
+		t.Fatalf("plan = %+v; the stacked group's base is on origin now", plan)
+	}
+}
+
+func TestReadyGroupsCountsAnEarlierGroupsBranchAsABase(t *testing.T) {
+	groups, err := ReadyGroups(stackedRepo(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, group := range groups {
+		got = append(got, group.ID)
+	}
+	if strings.Join(got, ",") != "TG-05.4,TG-05.5" {
+		t.Fatalf("ready = %v; want the default-based group, then the group stacked on it", got)
 	}
 }

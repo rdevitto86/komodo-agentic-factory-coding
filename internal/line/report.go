@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"komodo/internal/backlog"
 )
 
 // Report is what one run did, in the accessibility contract.
@@ -20,11 +18,7 @@ type Report struct {
 
 // BuildReport reads the run's results and blocks and renders the report a human reads.
 func BuildReport(root string, plan *Plan) (*Report, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
 	}

@@ -4,10 +4,34 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 ## 1.1.0 — 2026-09-24
 
+- **TG-03.30** The line drains the backlog on its own (3 task(s))
 - **TG-03.24** The local reviewer earns its seat (2 task(s))
+- **TG-03.28** Every package clears 75 percent coverage (2 task(s))
+- **TG-03.21** A wave builds at once, and the hook checks the branch it commits (4 task(s))
+- **TG-03.25** Live status lives in the run, and the backlog changes once at ship (1 task(s))
+- **TG-03.26** The line builds wide, picks the smallest machine that works, and measures itself (5 task(s))
+- **TG-03.27** One git adapter, a leaf guard, and the planner in its own package (3 task(s))
+- **komodo init** starts a new repo on the line: backlog, rules, changelog, spec, and the pull request template
+- **Other repos** — the guard hook and the headless PATH name the toolkit binary's absolute path, install ignores the line's state and rendered host files, a commit never carries them, and QC runs a repo's detected tests
+
+### Proof: the line runs in another repo
+
+A fresh Go repo, cloned from a bare origin with `trunk` as its base, ran `komodo run TG-01.1 --budget 25m` headless with a binary built from this release. Each station ran in `step` order with no hand edit.
+
+| Station | Seconds | Machine |
+|---|---|---|
+| brief | 0 | — |
+| build | 29 | claude/sonnet |
+| close | 0 | — |
+| QC: `go build ./... && go vet ./...`, `go test ./...` | 0 | — |
+| review | 26 | claude/opus |
+| ship | 0 | — |
+
+The ship commit held only `BACKLOG.md` and `CHANGELOG.md`, and the branch added `internal/token/token.go` and its test, which pass. Opening the pull request failed as expected, because a bare local origin is not a GitHub host. The first attempt surfaced three defects, each fixed here: the guard hook named a binary path that did not exist in the other repo, the ship commit carried the line's own state, and the ship report missed QC's checks.
 
 ## 1.0.1 — 2026-09-24
 
+- **TG-03.29** The guard's last two open gaps, and two line bugs the TG-03.22 run found (6 task(s))
 - **TG-03.23** A builder's worktree cannot push (1 task(s))
 - **TG-03.22** The guard holds the forge, the gate, and every interpreter (5 task(s))
 - **TG-03.20** The guard holds its own denials, and the docs match the line (5 task(s))

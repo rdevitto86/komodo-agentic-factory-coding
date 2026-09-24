@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/pr"
 )
 
@@ -113,7 +114,7 @@ func TestShipGroupPushesThroughTheRootsExplicitURL(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	bare, err := git(root, "remote", "get-url", "--push", "origin")
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +125,7 @@ func TestShipGroupPushesThroughTheRootsExplicitURL(t *testing.T) {
 	if !strings.Contains(string(out), "feat/a-group") {
 		t.Fatalf("branch = %s; ShipGroup must push the branch to the URL the root names", out)
 	}
-	if _, err := git(group, "config", "--get", "remote.origin.pushurl"); err == nil {
+	if _, err := git.Run(group, "config", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatal("the group worktree's own config must never gain a pushurl from a ship push")
 	}
 }
@@ -203,7 +204,7 @@ func TestShipWritesAHandoffInsteadOfPushingWhenScrubbed(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err == nil {
 		t.Fatalf("upstream = %s; a scrubbed ship must not push", out)
 	}
-	data, err := os.ReadFile(filepath.Join(root, StateDir, "ship.json"))
+	data, err := os.ReadFile(filepath.Join(root, StateDir, "runs", "TG-09.1", "ship.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,12 +365,82 @@ func TestShipCommitsTheStatusItWrote(t *testing.T) {
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
 	_, _ = ShipGroup(root, plan, nil, nil)
-	status, err := git(worktree, "status", "--porcelain")
+	status, err := git.Run(worktree, "status", "--porcelain")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("status = %q; the status flip and the changelog must land in the commit, not after it", status)
+	}
+}
+
+func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
+	for _, status := range []string{"DONE", "BLOCKED"} {
+		worktree := gitRepo(t)
+		commit(t, worktree, "BACKLOG.md", flipBacklog, "the backlog")
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(flipBacklog), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := RecordStatus(root, "TSK-11.1.1", status); err != nil {
+			t.Fatal(err)
+		}
+		plan := &Plan{
+			Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+			Base: "main", Branch: "feat/a-group", Worktree: worktree,
+			Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+		}
+		unreachableOrigin(t, root)
+		_, _ = ShipGroup(root, plan, nil, nil)
+		committed, err := git.Run(worktree, "show", "HEAD:BACKLOG.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(committed, "[TSK-11.1.1] One [P: C] ["+status+"]") {
+			t.Fatalf("the ship commit does not carry %s:\n%s", status, committed)
+		}
+		if len(LoadStatus(root)) != 0 {
+			t.Fatalf("%s: status.json survived the ship commit", status)
+		}
+		if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != flipBacklog {
+			t.Fatalf("%s: ship rewrote the root's BACKLOG.md", status)
+		}
+	}
+}
+
+func TestShipLeavesAnotherGroupsLiveStatusAlone(t *testing.T) {
+	text := flipBacklog + "\n### [TG-11.2] Another group\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+		"#### [TSK-11.2.1] Other [P: C] [READY]\n```yaml\nfiles: [b/other.go]\ndone_when: [\"go test ./b/...\"]\n```\n"
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", text, "the backlog")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, taskID := range []string{"TSK-11.1.1", "TSK-11.2.1"} {
+		if err := RecordStatus(root, taskID, "DONE"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := &Plan{
+		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+	}
+	unreachableOrigin(t, root)
+	_, _ = ShipGroup(root, plan, nil, nil)
+	committed, err := git.Run(worktree, "show", "HEAD:BACKLOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(committed, "[TSK-11.1.1] One [P: C] [DONE]") {
+		t.Fatalf("the ship commit does not carry its own task's DONE:\n%s", committed)
+	}
+	if !strings.Contains(committed, "[TSK-11.2.1] Other [P: C] [READY]") {
+		t.Fatalf("the ship commit wrote another group's status:\n%s", committed)
+	}
+	if got := LoadStatus(root); len(got) != 1 || got["TSK-11.2.1"].Status != "DONE" {
+		t.Fatalf("status = %+v; ship must clear only its own group's tasks", got)
 	}
 }
 
@@ -431,7 +502,7 @@ func TestShipRendersTheBodyAfterBlockedIsKnown(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, client); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) == 0 || !strings.Contains(calls[0], "[ ] **TSK-12.1.1**") {
+	if len(calls) == 0 || !strings.Contains(calls[0], "- **Unproven** TSK-12.1.1 One is blocked") {
 		t.Fatalf("calls = %v; the body must render after Blocked is known, so a blocked task ships unticked", calls)
 	}
 }
@@ -501,10 +572,10 @@ func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
 	if err != nil || !strings.Contains(string(out), "feat/a-group") {
 		t.Fatalf("branch = %s, err = %v; ship must land the branch on origin", out, err)
 	}
-	if merge, err := git(worktree, "config", "--get", "branch.feat/a-group.merge"); err != nil || merge != "refs/heads/feat/a-group" {
+	if merge, err := git.Run(worktree, "config", "--get", "branch.feat/a-group.merge"); err != nil || merge != "refs/heads/feat/a-group" {
 		t.Fatalf("upstream merge = %q, err = %v; ship must set the branch's upstream the way push -u does", merge, err)
 	}
-	if refused, err := git(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
+	if refused, err := git.Run(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
 		t.Fatalf("pushurl = %q; ship must leave the worktree's refusal in place", refused)
 	}
 }
@@ -525,5 +596,183 @@ func TestPushErrorsNeverCarryACredential(t *testing.T) {
 	}
 	if other := redactURL("remote: https://u:p@example.com/x denied", ""); strings.Contains(other, "u:p") {
 		t.Fatalf("other = %q; any URL credential must be redacted", other)
+	}
+}
+
+// shipWithBase ships the shipRepo group against base and returns the gh pr create call and result.
+func shipWithBase(t *testing.T, base string, pushBase bool) (string, *ShipResult) {
+	t.Helper()
+	root, group := shipRepo(t)
+	runGit(t, root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+	if pushBase {
+		runGit(t, group, "push", "origin", "HEAD:refs/heads/"+base)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: base, Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	var create string
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			create = strings.Join(args, "\x00")
+		}
+		return "https://example.com/pull/1", nil
+	}}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return create, result
+}
+
+func TestShipKeepsABaseOriginStillHas(t *testing.T) {
+	create, result := shipWithBase(t, "feat/stack", true)
+	if result.Base != "feat/stack" || result.StaleBase != "" {
+		t.Fatalf("base = %q, stale = %q; a present base is kept", result.Base, result.StaleBase)
+	}
+	if !strings.Contains(create, "--base\x00feat/stack\x00") || strings.Contains(create, "is gone from origin") {
+		t.Fatalf("create = %q", create)
+	}
+}
+
+func TestShipTargetsTheDefaultBranchWhenTheBaseIsDeleted(t *testing.T) {
+	create, result := shipWithBase(t, "feat/gone", false)
+	if result.Base != "trunk" || result.StaleBase != "feat/gone" {
+		t.Fatalf("base = %q, stale = %q; a deleted base becomes the default branch", result.Base, result.StaleBase)
+	}
+	if !strings.Contains(create, "--base\x00trunk\x00") {
+		t.Fatalf("create = %q; the pull request must target the default branch", create)
+	}
+	if !strings.Contains(create, "Base feat/gone is gone from origin, so this targets trunk.") {
+		t.Fatalf("create = %q; the body must name the switch", create)
+	}
+}
+
+// twoTaskPlan is a stacked two-task group whose second task declared two files.
+func twoTaskPlan() *Plan {
+	return &Plan{
+		Group: "TG-09.1", Title: "A group", Base: "feat/stack",
+		Tasks: []PlanTask{
+			{ID: "TSK-09.1.1", Title: "Do one", Files: []string{"a/one.go"}},
+			{ID: "TSK-09.1.2", Title: "Do two", Files: []string{"a/two.go", "a/two_test.go"}},
+		},
+	}
+}
+
+func TestReportBodyRendersTheFourSectionsInOrder(t *testing.T) {
+	plan := twoTaskPlan()
+	result := &ShipResult{Base: "feat/stack", Done: []string{"TSK-09.1.1", "TSK-09.1.2"}}
+	waves := []*WaveResult{{Wave: 1, Gates: []CommandResult{{Command: "go vet ./..."}}, Verify: &CommandResult{Command: "go test ./...", ExitCode: 1}}}
+	context := BodyContext{Why: "The line needs it.", DefaultBase: "main", BlastRadius: "low", BlastRadiusWhy: "one package"}
+	body := ReportBody(plan, result, waves, context)
+	last := -1
+	for _, heading := range []string{"## Summary", "## Changes", "## Validation", "## Dependencies"} {
+		at := strings.Index(body, heading)
+		if at <= last {
+			t.Fatalf("%s is missing or out of order:\n%s", heading, body)
+		}
+		last = at
+	}
+	for _, want := range []string{
+		"The line needs it.",
+		"- **TSK-09.1.1** — Do one (`a/one.go`)",
+		"- **TSK-09.1.2** — Do two (`a/two.go`, `a/two_test.go`)",
+		"- `go vet ./...` passed", "- `go test ./...` exited 1", "- **Blast radius** low: one package",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body is missing %q:\n%s", want, body)
+		}
+	}
+	for _, banned := range []string{"Co-authored-by", "Generated", "session"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("body carries %q:\n%s", banned, body)
+		}
+	}
+}
+
+func TestReportBodyNamesAStackedBaseUnderDependencies(t *testing.T) {
+	body := ReportBody(twoTaskPlan(), &ShipResult{Base: "feat/stack"}, nil, BodyContext{DefaultBase: "main"})
+	deps := body[strings.Index(body, "## Dependencies"):]
+	if !strings.Contains(deps, "`feat/stack`") {
+		t.Fatalf("dependencies do not name the base:\n%s", body)
+	}
+	plain := ReportBody(twoTaskPlan(), &ShipResult{Base: "main"}, nil, BodyContext{DefaultBase: "main"})
+	if strings.Contains(plain, "## Dependencies") {
+		t.Fatalf("a group on the default branch has no dependencies:\n%s", plain)
+	}
+}
+
+func TestReportBodyKeepsABlockedTaskUnderValidation(t *testing.T) {
+	body := ReportBody(twoTaskPlan(), &ShipResult{Blocked: []string{"TSK-09.1.2"}}, nil, BodyContext{})
+	validation := body[strings.Index(body, "## Validation"):]
+	if !strings.Contains(validation, "TSK-09.1.2 Do two is blocked") {
+		t.Fatalf("the blocked task is not under Validation:\n%s", body)
+	}
+}
+
+func TestTemplateSectionsFollowTheRepoTemplate(t *testing.T) {
+	dir := t.TempDir()
+	if got := templateSections(dir); strings.Join(got, ",") != "Summary,Changes,Validation,Dependencies" {
+		t.Fatalf("no template: sections = %v", got)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".github"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := "<!-- note -->\n\n## Validation\n\n## Summary\n\n## Notes\n\n## Changes\n"
+	if err := os.WriteFile(filepath.Join(dir, templatePath), []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := templateSections(dir); strings.Join(got, ",") != "Validation,Summary,Changes,Dependencies" {
+		t.Fatalf("template: sections = %v", got)
+	}
+}
+
+func TestGroupWhyReadsOnlyItsOwnGroup(t *testing.T) {
+	text := "### [TG-01.1] One\n* **Why:** first reason\n\n### [TG-01.2] Two\n* **Why:** second reason\n"
+	if got := groupWhy(text, "TG-01.2"); got != "second reason" {
+		t.Fatalf("why = %q", got)
+	}
+}
+
+func TestShipStampsTheChangedLinesOnItsRow(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package b\n\nvar x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if err := SaveRun(root, RunState{Run: "TG-09.1-1", Group: "TG-09.1", Base: "main", Branch: "feat/a-group"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := Book(root).All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Station == "ship" {
+			if entry.Lines != 5 {
+				t.Fatalf("lines = %d; one line replaced and three added is five changed", entry.Lines)
+			}
+			return
+		}
+	}
+	t.Fatal("ship stamped no row")
+}
+
+func TestChangedLinesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
+	_, group := shipRepo(t)
+	if got := ChangedLines(group, "no-such-base", "feat/a-group"); got != 0 {
+		t.Fatalf("lines = %d; an unknown base is no count, never a guess", got)
 	}
 }

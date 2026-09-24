@@ -12,12 +12,15 @@ import (
 	"komodo/internal/line"
 )
 
-// runLint prints every grammar problem and exits non-zero when there is one.
+// runLint prints every grammar problem, then each advisory note, and exits non-zero only on a problem.
 func runLint(root string) {
 	_, parsed := load(root)
 	problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
 	for _, problem := range problems {
 		fmt.Println(problem)
+	}
+	for _, note := range backlog.Notes(parsed) {
+		fmt.Println("note " + note)
 	}
 	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n",
 		len(parsed.Tasks()), len(parsed.Groups), len(problems))
@@ -33,7 +36,11 @@ func runList(root string, args []string) {
 	status := set.String("status", "", "only tasks with this status")
 	needle, rest := splitPositional(args, "status")
 	_ = set.Parse(rest)
-	_, parsed := load(root)
+	// A run keeps live status in .komodo, not BACKLOG.md, until it ships; list reads what step reads.
+	parsed, _, err := line.LoadBacklog(root)
+	if err != nil {
+		fail(err)
+	}
 	groups := parsed.Groups
 	if needle != "" {
 		group, ok := parsed.Group(needle)

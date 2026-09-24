@@ -18,14 +18,15 @@ import (
 
 const usage = `komodo: the code assembly line.
 
+  komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
   komodo lint                 Check BACKLOG.md against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo add <group> <title>  Append a task to a group
   komodo next [--json]        The next ready group: tasks, waves, machines
   komodo brief <task>         Fill the role template and write the brief
   komodo close <task>         Validate the result, rerun the checks, flip the status
-  komodo close --wave N       QC: merge the wave, compile, verify
-  komodo close --group        Ship: commit, push, the pull request, the changelog
+  komodo close --wave N [g]   QC: merge the group's wave, compile, verify
+  komodo close --group [g]    Ship: commit, push, the pull request, the changelog
   komodo comments check       The mechanical comment lint
   komodo diff                 The reviewer's whole input: tasks, standards, diff
   komodo report               What the run did, in the accessibility contract
@@ -72,6 +73,8 @@ func main() {
 		fail(err)
 	}
 	switch os.Args[1] {
+	case "init":
+		runInit(root, os.Args[2:])
 	case "lint":
 		runLint(root)
 	case "list":

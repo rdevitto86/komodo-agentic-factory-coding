@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/git"
 	repopkg "komodo/internal/repo"
 )
 
@@ -160,7 +161,7 @@ func TestDiffForClipsOnAFileBoundary(t *testing.T) {
 	if !strings.Contains(marker, "files omitted") {
 		t.Fatalf("marker does not name how many files were dropped: %q", marker)
 	}
-	unclipped, err := git(WorktreePath(root, plan.Worktree), "diff", plan.Base+"...HEAD")
+	unclipped, err := git.Run(WorktreePath(root, plan.Worktree), "diff", plan.Base+"...HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}

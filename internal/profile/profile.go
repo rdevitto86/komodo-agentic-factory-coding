@@ -4,7 +4,6 @@ package profile
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"time"
 
 	"komodo/internal/mount"
@@ -30,6 +29,7 @@ type Profile struct {
 	SeverityFloor   string      `json:"severity_floor"`
 	MaxParallel     int         `json:"max_parallel"`
 	Repairs         int         `json:"repairs"`
+	ReviewRepairs   int         `json:"review_repairs"`
 	ReviewSkipLines int         `json:"review_skip_lines"`
 	PauseAt         float64     `json:"pause_at"`
 	WarnAt          float64     `json:"warn_at"`
@@ -50,6 +50,7 @@ func base() Profile {
 		SeverityFloor: "high",
 		MaxParallel:   4,
 		Repairs:       1,
+		ReviewRepairs: 2,
 		PauseAt:       0.9,
 		WarnAt:        0.75,
 		Labels:        []string{"agent"},
@@ -151,11 +152,12 @@ func installed(root string, hosts []mount.Host) (mount.Host, bool) {
 
 // overlayFile is the machine overlay, which may only lower a cap or add a critical ref.
 type overlayFile struct {
-	Caps         *Caps    `json:"caps"`
-	MaxParallel  *int     `json:"max_parallel"`
-	PauseAt      *float64 `json:"pause_at"`
-	WarnAt       *float64 `json:"warn_at"`
-	CriticalRefs []string `json:"critical_refs"`
+	Caps          *Caps    `json:"caps"`
+	MaxParallel   *int     `json:"max_parallel"`
+	ReviewRepairs *int     `json:"review_repairs"`
+	PauseAt       *float64 `json:"pause_at"`
+	WarnAt        *float64 `json:"warn_at"`
+	CriticalRefs  []string `json:"critical_refs"`
 }
 
 // Overlay applies ~/.komodo/config.json, which can only tighten what the profile allows.
@@ -179,6 +181,9 @@ func Overlay(profile Profile, path string) Profile {
 	if overlay.MaxParallel != nil {
 		profile.MaxParallel = lower(profile.MaxParallel, *overlay.MaxParallel)
 	}
+	if overlay.ReviewRepairs != nil {
+		profile.ReviewRepairs = lower(profile.ReviewRepairs, *overlay.ReviewRepairs)
+	}
 	if overlay.PauseAt != nil && *overlay.PauseAt > 0 && *overlay.PauseAt < profile.PauseAt {
 		profile.PauseAt = *overlay.PauseAt
 	}
@@ -187,15 +192,6 @@ func Overlay(profile Profile, path string) Profile {
 	}
 	profile.CriticalRefs = append(profile.CriticalRefs, overlay.CriticalRefs...)
 	return profile
-}
-
-// MachineOverlayPath is where a developer's own overlay lives.
-func MachineOverlayPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".komodo", "config.json")
 }
 
 // lower keeps the smaller of the two, so an overlay never raises a cap.

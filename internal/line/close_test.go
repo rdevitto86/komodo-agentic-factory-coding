@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 )
 
@@ -65,7 +66,7 @@ func goodResult() map[string]any {
 	}
 }
 
-func TestCloseFlipsTheStatusWhenEverythingPasses(t *testing.T) {
+func TestCloseRecordsDoneInTheRunWhenEverythingPasses(t *testing.T) {
 	root := closeRepo(t)
 	writeResult(t, root, "TSK-08.1.1", goodResult())
 	outcome, err := CloseTask(root, "TSK-08.1.1", false)
@@ -75,9 +76,12 @@ func TestCloseFlipsTheStatusWhenEverythingPasses(t *testing.T) {
 	if outcome.Status != "DONE" {
 		t.Fatalf("outcome = %+v", outcome)
 	}
+	if got := LoadStatus(root)["TSK-08.1.1"]; got.Status != "DONE" {
+		t.Fatalf("status = %+v; the run must record DONE", got)
+	}
 	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if !strings.Contains(string(data), "[TSK-08.1.1] Do it [P: C] [DONE]") {
-		t.Fatal("the status token was not flipped")
+	if !strings.Contains(string(data), "[TSK-08.1.1] Do it [P: C] [READY]") {
+		t.Fatal("close edited BACKLOG.md; the status lives in the run until ship")
 	}
 }
 
@@ -151,9 +155,13 @@ func TestSecondFailureBlocksTheTask(t *testing.T) {
 	if second.Status != "BLOCKED" || second.Attempt != 2 {
 		t.Fatalf("second = %+v", second)
 	}
+	got := LoadStatus(root)["TSK-08.1.1"]
+	if got.Status != "BLOCKED" {
+		t.Fatalf("status = %+v; the blocked status was not recorded", got)
+	}
 	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if !strings.Contains(string(data), "[BLOCKED]") {
-		t.Fatal("the blocked status was not written")
+	if strings.Contains(string(data), "[BLOCKED]") {
+		t.Fatal("close edited BACKLOG.md; the status lives in the run until ship")
 	}
 }
 
@@ -278,7 +286,7 @@ func TestATaskBranchDoesNotCarryRebuiltBinaries(t *testing.T) {
 	commit(t, cwd, "a/one.go", "package a\n", "seed")
 	commit(t, cwd, "bin/komodo-linux-amd64", "old\n", "binaries")
 	branch := TaskBranch("TSK-30.1.1")
-	if _, err := git(cwd, "checkout", "-q", "-b", branch); err != nil {
+	if _, err := git.Run(cwd, "checkout", "-q", "-b", branch); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cwd, "bin", "komodo-linux-amd64"), []byte("rebuilt\n"), 0o644); err != nil {
@@ -290,7 +298,7 @@ func TestATaskBranchDoesNotCarryRebuiltBinaries(t *testing.T) {
 	if err := commitTask(cwd, taskWith(t, "a/one.go"), branch); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := git(cwd, "show", "--name-only", "--format=", "HEAD")
+	changed, err := git.Run(cwd, "show", "--name-only", "--format=", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +323,7 @@ func TestCommitTaskRefusesAnyBranchThatIsNotItsOwn(t *testing.T) {
 	if !strings.Contains(err.Error(), "main") {
 		t.Fatalf("error = %v; it must name the branch it found", err)
 	}
-	changed, _ := git(cwd, "status", "--porcelain")
+	changed, _ := git.Run(cwd, "status", "--porcelain")
 	if strings.TrimSpace(changed) == "" {
 		t.Fatal("the refused commit must leave the change uncommitted")
 	}
@@ -374,7 +382,7 @@ func TestATaskThatOwnsABuiltPathStillCommitsIt(t *testing.T) {
 	cwd := gitRepo(t)
 	commit(t, cwd, "bin/MANIFEST.sha256", "old\n", "manifest")
 	branch := TaskBranch("TSK-30.1.1")
-	if _, err := git(cwd, "checkout", "-q", "-b", branch); err != nil {
+	if _, err := git.Run(cwd, "checkout", "-q", "-b", branch); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cwd, "bin", "MANIFEST.sha256"), []byte("new\n"), 0o644); err != nil {
@@ -383,11 +391,69 @@ func TestATaskThatOwnsABuiltPathStillCommitsIt(t *testing.T) {
 	if err := commitTask(cwd, taskWith(t, "bin/MANIFEST.sha256"), branch); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := git(cwd, "show", "--name-only", "--format=", "HEAD")
+	changed, err := git.Run(cwd, "show", "--name-only", "--format=", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(changed, "bin/MANIFEST.sha256") {
 		t.Fatalf("committed %q; a task that declares a built path owns it", changed)
+	}
+}
+
+func TestAFailedFixRoundCountsAndCarriesItsFailure(t *testing.T) {
+	root := closeRepo(t)
+	if err := SaveRun(root, RunState{Run: "TG-08.1-1", Group: "TG-08.1", Base: "main", Branch: "feat/a-group", Worktree: root}); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{Group: "TG-08.1", Title: "A group", Worktree: ".", Tasks: []PlanTask{{ID: "TSK-08.1.1"}}}
+	outcome, err := CloseFix(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Status != "IN_PROGRESS" || outcome.Attempt != 1 {
+		t.Fatalf("outcome = %+v; a fix round with no result fails and waits for another brief", outcome)
+	}
+	if rounds := FixRounds(root, "TG-08.1"); rounds != 1 {
+		t.Fatalf("rounds = %d; a failed fix round still spends one of the profile's rounds", rounds)
+	}
+	if !strings.Contains(RepairText(root, "TG-08.1-fix"), "result") {
+		t.Fatal("the next fix brief must carry what the failed round tripped on")
+	}
+}
+
+func TestAFixThatBreaksADoneWhenDoesNotCommit(t *testing.T) {
+	root := closeRepo(t)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "feat/a-group"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "test"},
+		{"add", "-A"},
+		{"commit", "-q", "-m", "seed"},
+	} {
+		if _, err := git.Run(root, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	head, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "a", "one.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeResult(t, root, "TG-08.1-fix", goodResult())
+	plan := &Plan{Group: "TG-08.1", Title: "A group", Branch: "feat/a-group", Worktree: ".", Tasks: []PlanTask{{ID: "TSK-08.1.1"}}}
+	outcome, err := CloseFix(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Status == "DONE" || !strings.Contains(strings.Join(outcome.Problems, "\n"), "done_when") {
+		t.Fatalf("outcome = %+v; a fix that breaks a task's done_when must fail", outcome)
+	}
+	if after, _ := git.Run(root, "rev-parse", "HEAD"); after != head {
+		t.Fatalf("HEAD moved from %s to %s; a failing fix round must not commit", head, after)
+	}
+	if !strings.Contains(RepairText(root, "TG-08.1-fix"), "done_when") {
+		t.Fatal("the next fix brief must carry the done_when failure")
 	}
 }

@@ -230,13 +230,21 @@ func (b Backlog) Group(needle string) (Group, bool) {
 // NextGroup is the first group in file order holding at least one ready agent task.
 func (b Backlog) NextGroup() (Group, bool) {
 	for _, group := range b.Groups {
-		for _, task := range group.Tasks {
-			if task.Ready() && task.Owner() == "agent" {
-				return group, true
-			}
+		if group.HasReadyTask() {
+			return group, true
 		}
 	}
 	return Group{}, false
+}
+
+// HasReadyTask reports whether the group holds a ready task an agent owns.
+func (g Group) HasReadyTask() bool {
+	for _, task := range g.Tasks {
+		if task.Ready() && task.Owner() == "agent" {
+			return true
+		}
+	}
+	return false
 }
 
 // Find locates BACKLOG.md at the repo root or under docs/.

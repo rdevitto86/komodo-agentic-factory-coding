@@ -4,11 +4,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"komodo/internal/detect"
 	"komodo/internal/doctor"
+	"komodo/internal/git"
 	"komodo/internal/guard"
+	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 )
@@ -52,24 +55,69 @@ func runInstall(root string, args []string) {
 		}
 		chosen = append(chosen, found)
 	}
+	if !*dryRun {
+		hook := binary
+		if !filepath.IsAbs(hook) {
+			hook = filepath.Join(mount.MainCheckout(root), hook)
+		}
+		if _, err := os.Stat(hook); err != nil {
+			fail(fmt.Errorf("the guard hook would run %s, which does not exist; build it with komodo gate --install", hook))
+		}
+	}
+	var plans []install.Plan
 	for _, host := range chosen {
 		plan, err := host.Render(root, binary)
 		if err != nil {
 			fail(err)
 		}
-		if *dryRun {
-			plan.Print(os.Stdout)
-			continue
-		}
-		done, err := plan.Apply()
-		if err != nil {
-			fail(err)
-		}
-		for _, action := range done {
-			fmt.Printf("%-7s %s\n", action.Verb, action.Path)
-		}
-		fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
+		plans = append(plans, plan)
 	}
+	if ignore := repoIgnores(root, plans); len(ignore.Changes) > 0 {
+		applyPlan(ignore, *dryRun)
+	}
+	for _, plan := range plans {
+		applyPlan(plan, *dryRun)
+	}
+}
+
+// repoIgnores plans the .gitignore lines for the state dir and each rendered project copy git does not already ignore.
+func repoIgnores(root string, plans []install.Plan) install.Plan {
+	ignore := install.Plan{Host: "repo", Root: root}
+	ignore.AddIgnore("/"+line.StateDir+"/", "the line's run state and worktrees stay out of git")
+	for _, plan := range plans {
+		for _, change := range plan.Project().Changes {
+			if change.Remove {
+				continue
+			}
+			rel, err := filepath.Rel(root, change.Path)
+			if err != nil || strings.HasPrefix(rel, "..") {
+				continue
+			}
+			rel = filepath.ToSlash(rel)
+			// A path an existing rule already covers needs no line of its own.
+			if _, err := git.Run(root, "check-ignore", "-q", "--no-index", "--", rel); err == nil {
+				continue
+			}
+			ignore.AddIgnore("/"+rel, "a rendered copy the install rebuilds on every machine")
+		}
+	}
+	return ignore
+}
+
+// applyPlan prints a plan under --dry-run, or writes it and lists what it changed.
+func applyPlan(plan install.Plan, dryRun bool) {
+	if dryRun {
+		plan.Print(os.Stdout)
+		return
+	}
+	done, err := plan.Apply()
+	if err != nil {
+		fail(err)
+	}
+	for _, action := range done {
+		fmt.Printf("%-7s %s\n", action.Verb, action.Path)
+	}
+	fmt.Printf("%s: %d file(s) changed\n", plan.Host, len(done))
 }
 
 // runDetect prints the cached repo profile, detecting fresh when the manifests it read have changed.

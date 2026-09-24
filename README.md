@@ -36,8 +36,8 @@ flowchart LR
 
 | Station | Command | Does |
 |---|---|---|
-| Intake | `komodo next` | Prints the next READY group, or one task, as JSON: waves by directory, dependencies, resolved machines. Creates the group branch in its own worktree from the remote base, so your working tree never blocks a run. Tags any untagged changelog version. Skips tasks with a valid result on disk, which is resume. |
-| Brief | `komodo brief <task>` | Fills the role template from the slots, writes the brief and the worktree, prints their paths, stamps the ledger. A repair reads the task's own worktree. Refuses a task whose directories overlap a closed, unmerged task branch. `--dry-run` prints slot sizes and a token estimate. |
+| Intake | `komodo next` | Prints the next READY group, or one task, as JSON: waves by file, dependencies, resolved machines. Creates the group branch in its own worktree from the remote base, so your working tree never blocks a run. Tags any untagged changelog version. Skips tasks with a valid result on disk, which is resume. |
+| Brief | `komodo brief <task>` | Fills the role template from the slots, writes the brief and the worktree, prints their paths, stamps the ledger. A repair reads the task's own worktree. Refuses a task whose files overlap a closed, unmerged task branch. `--dry-run` prints slot sizes and a token estimate. |
 | Build | the run skill spawns the builder | Reads the brief path, owns the worktree, writes its result JSON. |
 | Close | `komodo close <task>` | Validates the result, reruns `done_when` under the task's `timeout` (default 10 minutes, the process group killed past it), lints comments, flips the status. A failure writes the failure slot for one repair; a second failure marks BLOCKED with the note and the wave continues. |
 | QC | `komodo close --wave` | Merges the wave's worktrees in order, stops on conflict naming both tasks, runs the compile gate for the languages touched, then the repo's verify command. A failure stops the run for a person. |
@@ -45,7 +45,7 @@ flowchart LR
 | Ship | `komodo close --group` | Commit, push, PR with the report as body and labels the repo already defines, draft when a task is blocked, changelog line under the group's version, status DONE. |
 | Report | `komodo report` | Per task time, turns, tokens when the mount reports them, findings, what blocked, for the run record's own group even after it ships. Accessibility format. |
 
-Waves: tasks in disjoint directories run at once, each in its own worktree. `mode: single` is one builder for the group.
+Waves: tasks that share no file run at once, each in its own worktree; a shared file or a directory claim serializes. `mode: single` is one builder for the group.
 
 ### Devices
 
@@ -244,19 +244,40 @@ bin/komodo-<os>-<arch> install --host claude       # or --host codex; --host bot
 
 The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. `komodo gate --install` builds this host's own binary into `bin/` and puts the gate on pre-commit and pre-push once; run it again after editing Go source.
 
+### Start a new repo
+
+From the root of the new repo, a git repository:
+
+```bash
+komodo init --name "Auth API"      # AGENTS.md, BACKLOG.md, CHANGELOG.md, docs/spec/, the PR template; keeps any file that exists
+komodo install --host claude       # mount the repo on a host
+$EDITOR BACKLOG.md                 # replace the example group with the first real one; komodo lint checks it
+komodo run                         # drive the line on the next ready group
+```
+
 ## Usage
 
 ```bash
+komodo run                  # headless, credentials stripped: drains every ready group
+komodo run TG-03.5          # headless, one group
 /run                        # in a session: the next ready group down the line
 /run TG-03.5                # one group
 /run TSK-03.5.2             # one task
 /review                     # QC and the reviewer on the current diff
-komodo run TG-03.5          # headless, credentials stripped
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
 komodo doctor               # references, portability, drift, prune; --remote audits the forge's rulesets
 komodo gate                 # vet, test, doctor, guard table, comments; pre-commit and pre-push run it here
 ```
+
+With no target, `komodo run` drains every ready group in order: for each it builds
+the tasks, repairs review findings for up to `review_repairs` rounds, re-renders
+the host config when doctor reports drift, and opens one pull request per group.
+Merging is the only step a person does across a clean drain.
+
+A drain stops for a person at one of three points: a review still blocking after
+its repair rounds, a merge conflict QC cannot resolve, or a plan the profile has
+paused.
 
 ## Layout
 
@@ -269,4 +290,4 @@ komodo gate                 # vet, test, doctor, guard table, comments; pre-comm
 | `komodo/facets/` | One directory per platform: Komodo's setup skill, appendices, commands, markers |
 | `cmd/komodo/`, `internal/` | The binary: line, guard, mounts including Ollama, gate, launcher |
 | `bin/` | Gitignored local build output, built by `komodo gate --install` |
-| `templates/project/` | Starters for a new repo |
+| `templates/project/` | Starters `komodo init` writes into a new repo |

@@ -119,13 +119,70 @@ func ConfigPaths() []string {
 	return out
 }
 
-// BinaryPath is where gate --install builds this machine's binary, relative to the main checkout.
+// ProjectPaths lists every path a registered mount renders under root as a project copy, relative and slash-separated.
+func ProjectPaths(root string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, host := range Hosts() {
+		if host.Render == nil {
+			continue
+		}
+		plan, err := host.Render(root, BinaryPath())
+		if err != nil {
+			continue
+		}
+		for _, change := range plan.Project().Changes {
+			rel, err := filepath.Rel(root, change.Path)
+			if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
+			}
+			rel = filepath.ToSlash(rel)
+			if !seen[rel] {
+				seen[rel] = true
+				out = append(out, rel)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Executable resolves the running binary's own path with symlinks followed; a test swaps it.
+var Executable = func() (string, error) {
+	path, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(path)
+}
+
+// BinaryPath is the running toolkit binary's absolute path, or bin/<name> relative to the main checkout under go run.
 func BinaryPath() string {
 	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
+	if path, err := Executable(); err == nil && !goRunBuild(path) {
+		if abs, err := filepath.Abs(path); err == nil {
+			return abs
+		}
+	}
 	return filepath.Join("bin", name)
+}
+
+// goRunBuild reports a binary the go tool built into a throwaway go-build directory or the build cache.
+func goRunBuild(path string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(path), "/") {
+		if strings.HasPrefix(segment, "go-build") {
+			return true
+		}
+	}
+	cache := os.Getenv("GOCACHE")
+	if cache == "" || cache == "off" {
+		return false
+	}
+	rel, err := filepath.Rel(cache, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // MainCheckout is the checkout that owns root's git directory, so a worktree resolves to the repo it came from.
@@ -261,7 +318,9 @@ type GuardTools struct {
 	// IsolationField is the input key a spawn call uses to ask for a separate worktree.
 	IsolationField string
 	ConfigPaths    []string
-	Deny           func(reason string) []byte
+	// PrivatePatterns are regular expressions for text the host considers private, such as a session link.
+	PrivatePatterns []string
+	Deny            func(reason string) []byte
 }
 
 var (
@@ -301,6 +360,15 @@ func GuardConfigPaths() []string {
 	return out
 }
 
+// GuardPrivatePatterns are every private-text pattern a registered mount's guard refuses to send out.
+func GuardPrivatePatterns() []string {
+	var out []string
+	for _, tools := range GuardHosts() {
+		out = append(out, tools.PrivatePatterns...)
+	}
+	return out
+}
+
 // Overlay is the developer's own ~/.komodo/config.json as the mounts read it.
 type Overlay struct {
 	Local               bool              `json:"local"`
@@ -310,6 +378,13 @@ type Overlay struct {
 	LocalReviewer       bool              `json:"local_reviewer"`
 	LocalReviewerRecall float64           `json:"local_reviewer_recall"`
 	Models              map[string]string `json:"models"`
+	LightBuilder        *bool             `json:"light_builder"`
+}
+
+// LightBuilder reports whether a small task's first build may run on the light tier; unset means true.
+func LightBuilder() bool {
+	overlay := LoadOverlay()
+	return overlay.LightBuilder == nil || *overlay.LightBuilder
 }
 
 // OverlayPath is where a developer's own overlay lives, or empty when there is no home.

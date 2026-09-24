@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/pr"
 )
@@ -21,6 +22,7 @@ type ShipResult struct {
 	Group     string         `json:"group"`
 	Branch    string         `json:"branch"`
 	Base      string         `json:"base"`
+	StaleBase string         `json:"stale_base,omitempty"`
 	URL       string         `json:"url,omitempty"`
 	Draft     bool           `json:"draft"`
 	Labels    []string       `json:"labels,omitempty"`
@@ -52,17 +54,21 @@ func scrubbed() bool {
 		os.Getenv("GIT_CONFIG_VALUE_0") == ""
 }
 
-// writeShipHandoff writes the branch, title, body, labels and draft flag a later push finishes.
+// writeShipHandoff writes the branch, title, body, labels and draft flag a later push finishes,
+// under the handoff's own group's run directory.
 func writeShipHandoff(root string, handoff ShipHandoff) error {
-	dir := filepath.Join(root, StateDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if !PlainGroup(handoff.Group) {
+		return fmt.Errorf("a ship handoff needs a plain group id, not %q", handoff.Group)
+	}
+	path := HandoffPath(root, handoff.Group)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(handoff, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "ship.json"), append(data, '\n'), 0o644)
+	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
@@ -72,27 +78,32 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return nil, fmt.Errorf("%s is paused until %s; a plan whose waves a pause blanked cannot ship",
 			plan.Group, plan.WaitUntil)
 	}
+	if waves == nil {
+		// Ship runs as its own process after QC, so it reads what each wave ran from the ledger.
+		waves = RecordedWaves(root, plan.Group)
+	}
 	group := WorktreePath(root, plan.Worktree)
 	path, err := backlog.Find(group)
 	if err != nil {
 		return nil, err
 	}
-	rootPath, err := backlog.Find(root)
+	rootParsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
 	}
-	rootParsed, err := backlog.Load(rootPath)
-	if err != nil {
-		return nil, err
-	}
+	live := LoadStatus(root)
 	blocking, minor := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	if len(blocking) > 0 {
 		return nil, fmt.Errorf("the review left %d finding(s) at or above %s; fix them on %s, then ship",
 			len(blocking), plan.Profile.SeverityFloor, plan.Branch)
 	}
 	started := time.Now()
-	result = &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base}
+	result = &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: liveBase(root, plan.Base)}
+	if result.Base != plan.Base {
+		result.StaleBase = plan.Base
+	}
 	outcome := ""
+	lines := 0
 	defer func() {
 		if outcome == "" {
 			outcome = "done"
@@ -100,7 +111,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 				outcome = "failed"
 			}
 		}
-		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome})
+		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome, Lines: lines})
 	}()
 	for _, task := range plan.Tasks {
 		current, ok := rootParsed.Task(task.ID)
@@ -120,6 +131,16 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 			return nil, err
 		}
 	}
+	// This group's live status lands in BACKLOG.md once, in the ship commit.
+	var shippedIDs []string
+	for _, task := range plan.Tasks {
+		shippedIDs = append(shippedIDs, task.ID)
+		if status, ok := live[task.ID]; ok && status.Status != "" {
+			if err := writeStatus(path, task.ID, status.Status); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if line := ChangelogLine(plan, result); line != "" {
 		changelog := filepath.Join(group, "CHANGELOG.md")
 		if err := AppendChangelog(changelog, plan.Version, line); err != nil {
@@ -127,26 +148,39 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		result.Changelog = line
 	}
-	if _, err := git(group, "add", "-A"); err != nil {
+	var declared []string
+	for _, task := range plan.Tasks {
+		declared = append(declared, task.Files...)
+	}
+	if err := stageWork(group, declared); err != nil {
 		return nil, err
 	}
-	if status, _ := git(group, "status", "--porcelain"); status != "" {
+	if staged, _ := git.Run(group, "diff", "--cached", "--name-only"); staged != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
-		if _, err := git(group, "commit", "-m", message); err != nil {
+		if _, err := git.Run(group, "commit", "-m", message); err != nil {
 			return nil, err
 		}
 	}
+	if err := ClearStatus(root, shippedIDs); err != nil {
+		return nil, err
+	}
+	lines = ChangedLines(group, StartRef(group, plan.Base), plan.Branch)
 	if isToolkit(root) {
 		if err := gateCommand(group); err != nil {
 			return nil, fmt.Errorf("gate: %w", err)
 		}
 	}
 	title := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
-	body := ReportBody(plan, result, waves)
+	context := BodyContext{Sections: templateSections(group), DefaultBase: DefaultBase(root)}
+	if data, err := os.ReadFile(path); err == nil {
+		context.Why = groupWhy(string(data), plan.Group)
+	}
+	context.BlastRadius, context.BlastRadiusWhy = reviewBlast(root, plan.Group)
+	body := ReportBody(plan, result, waves, context)
 	if scrubbed() {
 		outcome = "handoff"
 		handoff := ShipHandoff{
-			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: plan.Base, Title: title, Body: body,
+			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
 			Labels: []string{plan.Type, "agent"}, Draft: result.Draft,
 			Minor: minor, AfterPublish: AfterPublishCommand(group),
 		}
@@ -173,7 +207,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if client == nil {
 		return result, nil
 	}
-	url, err := client.Create(plan.Base, plan.Branch, title, body, result.Draft)
+	url, err := client.Create(result.Base, plan.Branch, title, body, result.Draft)
 	if err != nil {
 		return result, err
 	}
@@ -183,6 +217,32 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		_ = client.Label(url, result.Labels)
 	}
 	return result, nil
+}
+
+// liveBase is base while origin still has it, or the default branch once base is deleted.
+func liveBase(root, base string) string {
+	heads, err := git.Run(root, "ls-remote", "--heads", "origin", "refs/heads/"+base)
+	if err != nil || heads != "" {
+		return base
+	}
+	return DefaultBase(root)
+}
+
+var shortstatCount = regexp.MustCompile(`(\d+) (?:insertion|deletion)`)
+
+// ChangedLines is the added plus deleted line count between base and branch, or zero when git cannot say.
+func ChangedLines(dir, base, branch string) int {
+	out, err := git.Run(dir, "diff", "--shortstat", base+"..."+branch)
+	if err != nil {
+		return 0
+	}
+	total := 0
+	for _, match := range shortstatCount.FindAllStringSubmatch(out, -1) {
+		var count int
+		fmt.Sscan(match[1], &count)
+		total += count
+	}
+	return total
 }
 
 // ChangelogLine is the one line a group adds under its version.
@@ -252,41 +312,9 @@ func intoSection(text string, start int, line string) string {
 	return text[:start] + "\n" + line + "\n" + strings.TrimPrefix(text[start:], "\n")
 }
 
-// ReportBody renders the pull request body from the plan and what shipped.
-func ReportBody(plan *Plan, result *ShipResult, waves []*WaveResult) string {
-	var out []string
-	out = append(out, fmt.Sprintf("%s: %s", plan.Group, plan.Title))
-	out = append(out, "")
-	out = append(out, "## What landed")
-	for _, task := range plan.Tasks {
-		mark := "x"
-		if contains(result.Blocked, task.ID) {
-			mark = " "
-		}
-		out = append(out, fmt.Sprintf("- [%s] **%s** %s", mark, task.ID, task.Title))
-	}
-	if len(waves) > 0 {
-		out = append(out, "", "## QC")
-		for _, wave := range waves {
-			line := fmt.Sprintf("- **Wave %d** merged %s", wave.Wave, strings.Join(wave.Merged, ", "))
-			if wave.Conflict != "" {
-				line += "; conflict: " + wave.Conflict
-			}
-			if wave.Verify != nil {
-				line += fmt.Sprintf("; verify exited %d", wave.Verify.ExitCode)
-			}
-			out = append(out, line)
-		}
-	}
-	if len(result.Blocked) > 0 {
-		out = append(out, "", "## Blocked", "- "+strings.Join(result.Blocked, ", "))
-	}
-	return strings.Join(out, "\n") + "\n"
-}
-
 // pushFromWorktree pushes branch to the root's origin URL, past the worktree's refused pushurl, then sets its upstream.
 func pushFromWorktree(root, worktree, branch string) error {
-	pushURL, err := git(root, "remote", "get-url", "--push", "origin")
+	pushURL, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
 	}
@@ -299,8 +327,8 @@ func pushFromWorktree(root, worktree, branch string) error {
 		return fmt.Errorf("git push to origin %s: %v: %s", branch, err, redactURL(strings.TrimSpace(stderr.String()), pushURL))
 	}
 	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
-	if _, err := git(worktree, "fetch", "origin", branch); err == nil {
-		_, _ = git(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
+	if _, err := git.Run(worktree, "fetch", "origin", branch); err == nil {
+		_, _ = git.Run(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
 	}
 	return nil
 }
