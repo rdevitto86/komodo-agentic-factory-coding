@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -102,6 +104,7 @@ func TestPostRejectsANonOKStatus(t *testing.T) {
 
 func TestBaseURLDefaultsToLocalhost(t *testing.T) {
 	t.Setenv("OLLAMA_BASE_URL", "")
+	t.Setenv("HOME", t.TempDir())
 	if got := BaseURL(); got != "http://localhost:11434" {
 		t.Fatalf("base url = %s", got)
 	}
@@ -111,6 +114,44 @@ func TestBaseURLReadsTheEnvironment(t *testing.T) {
 	t.Setenv("OLLAMA_BASE_URL", "http://example.local:9999/")
 	if got := BaseURL(); got != "http://example.local:9999" {
 		t.Fatalf("base url = %s", got)
+	}
+}
+
+func TestBaseURLReadsTheOverlayUnderTheEnvironment(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OLLAMA_BASE_URL", "")
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := `{"local_url": "http://10.0.0.5:11434/"}`
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := BaseURL(); got != "http://10.0.0.5:11434" {
+		t.Fatalf("base url = %s; the overlay's local_url must apply", got)
+	}
+	t.Setenv("OLLAMA_BASE_URL", "http://example.local:9999")
+	if got := BaseURL(); got != "http://example.local:9999" {
+		t.Fatalf("base url = %s; the environment must win over the overlay", got)
+	}
+}
+
+func TestDialAddressDefaultsThePortByScheme(t *testing.T) {
+	cases := map[string]string{
+		"http://10.0.0.5":        "10.0.0.5:80",
+		"https://ollama.example": "ollama.example:443",
+		"http://10.0.0.5:11434/": "10.0.0.5:11434",
+	}
+	for endpoint, want := range cases {
+		if got, ok := dialAddress(endpoint); !ok || got != want {
+			t.Errorf("%s: got %q, want %q", endpoint, got, want)
+		}
+	}
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+	if !dialable(server.URL) {
+		t.Fatalf("%s did not dial", server.URL)
 	}
 }
 

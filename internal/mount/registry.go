@@ -295,6 +295,7 @@ func GuardConfigPaths() []string {
 
 // Overlay is the developer's own ~/.komodo/config.json as the mounts read it.
 type Overlay struct {
+	LocalURL      string            `json:"local_url"`
 	LocalModel    string            `json:"local_model"`
 	LocalWindow   int               `json:"local_window"`
 	LocalReviewer bool              `json:"local_reviewer"`

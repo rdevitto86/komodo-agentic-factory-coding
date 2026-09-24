@@ -126,28 +126,28 @@ func Allowed(tools []string) bool {
 	return true
 }
 
-// BaseURL is where Ollama answers, from the environment or the default.
+// BaseURL is where Ollama answers: the environment, then the overlay's local_url, then the default.
 func BaseURL() string {
 	base := os.Getenv(Env)
+	if base == "" {
+		base = mount.LoadOverlay().LocalURL
+	}
 	if base == "" {
 		base = DefaultURL
 	}
 	return strings.TrimRight(base, "/")
 }
 
-// Up reports whether the local machine answers where the environment says it lives.
+// Up reports whether the local machine answers at BaseURL.
 func Up() bool {
-	endpoint := os.Getenv(Env)
-	if endpoint == "" {
-		endpoint = DefaultURL
-	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
+	return dialable(BaseURL())
+}
+
+// dialable reports whether an endpoint accepts a TCP connection.
+func dialable(endpoint string) bool {
+	host, ok := dialAddress(endpoint)
+	if !ok {
 		return false
-	}
-	host := parsed.Host
-	if host == "" {
-		host = endpoint
 	}
 	connection, err := net.DialTimeout("tcp", host, 400*time.Millisecond)
 	if err != nil {
@@ -155,6 +155,25 @@ func Up() bool {
 	}
 	_ = connection.Close()
 	return true
+}
+
+// dialAddress is the host:port an endpoint dials, the scheme's port when the URL names none.
+func dialAddress(endpoint string) (string, bool) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", false
+	}
+	if parsed.Host == "" {
+		return endpoint, true
+	}
+	if parsed.Port() != "" {
+		return parsed.Host, true
+	}
+	port := "80"
+	if parsed.Scheme == "https" {
+		port = "443"
+	}
+	return net.JoinHostPort(parsed.Hostname(), port), true
 }
 
 // contextSize sizes the request window to the brief, at roughly four characters per token,

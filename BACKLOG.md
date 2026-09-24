@@ -480,7 +480,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.6.3] Proof: the exit test under Codex [P: H] [READY]
+#### [TSK-03.6.3] Proof: the exit test under Codex [P: H] [REFINEMENT]
 ```yaml
 files: [CHANGELOG.md]
 done_when:
@@ -489,6 +489,7 @@ depends_on: [TSK-03.6.2]
 owner: human
 context:
   - "komodo install --host codex with zero changes outside internal/mount, then run one task through the launcher; record the same numbers as TSK-03.4.3 under a Proof: the exit test under Codex heading"
+  - "parked: no OpenAI account yet; the Codex mount stays built and tested, and TSK-03.9.3 is the second beta proof instead"
 type: docs
 ```
 
@@ -1236,3 +1237,44 @@ done_when:
 type: docs
 ```
 
+
+### [TG-03.9] A local machine carries a station
+```yaml
+type: feat
+version: 1.0.0-beta.1
+base: main
+```
+* **Why:** the second host needs an account nobody holds yet. A local model carrying the review proves a machine swaps in with no code change, and one overlay key points every machine at one endpoint, local now and a static address later.
+
+#### [TSK-03.9.1] One overlay key points every machine at the local endpoint [P: H] [DONE]
+```yaml
+files: [internal/mount/registry.go, internal/mount/ollama/ollama.go, internal/mount/ollama/ollama_test.go, cmd/komodo/main.go]
+done_when:
+  - go test ./internal/mount/...
+context:
+  - "local_url in ~/.komodo/config.json sets the endpoint under OLLAMA_BASE_URL and over the localhost default; a URL with no port dials its scheme's port"
+  - "the machine station stamps its seconds, so the proof has a wall time"
+type: feat
+```
+
+#### [TSK-03.9.2] Proof payload: a local machine reviews one group [P: L] [READY]
+```yaml
+files:
+  - README.md
+done_when:
+  - test -f README.md
+type: docs
+```
+
+#### [TSK-03.9.3] Proof: a local machine carries a station [P: C] [READY]
+```yaml
+files: [CHANGELOG.md]
+done_when:
+  - grep -q "Proof: a local machine carries a station" CHANGELOG.md
+depends_on: [TSK-03.9.2]
+owner: human
+context:
+  - "local_reviewer true in ~/.komodo/config.json, then komodo run TG-03.9; the review station runs as komodo machine on the local model"
+  - "record the machine row's model, seconds, tokens in, and tokens out from .komodo/line.jsonl under a Proof: a local machine carries a station heading in 1.0.0-beta.1"
+type: docs
+```
