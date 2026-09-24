@@ -55,6 +55,9 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		if credentialConfigRe.MatchString(name) {
 			findings = append(findings, fmt.Sprintf("git -c %s: hands git a credential the headless run scrubs", entry))
 		}
+		if hooksPathConfigRe.MatchString(name) {
+			findings = append(findings, fmt.Sprintf("git -c %s: a config write points git at other hooks; the guard owns .git/config", entry))
+		}
 	}
 	if index >= len(args) {
 		return findings, branch
@@ -69,6 +72,9 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 	}
 	if elsewhere != "" && !readOnlyGit(sub, rest) {
 		return append(findings, fmt.Sprintf("git -C %s %s: the branch there is not tracked; open a pull request instead", elsewhere, sub)), branch
+	}
+	if noVerifyCommands[sub] && normalizeMode(policy.Mode) != ModeUnsafe && hasNoVerify(sub, rest) {
+		findings = append(findings, fmt.Sprintf("git %s --no-verify skips the gate; fix what it reports instead", sub))
 	}
 	switch sub {
 	case "push":
@@ -255,6 +261,31 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		}
 	}
 	return findings, branch
+}
+
+// hooksPathConfigRe matches a -c or --config-env key that points git at another hooks directory.
+var hooksPathConfigRe = regexp.MustCompile(`(?i)^core\.hookspath$`)
+
+// noVerifyCommands are the git subcommands whose --no-verify skips the gate's own hook.
+var noVerifyCommands = map[string]bool{
+	"commit": true, "merge": true, "push": true, "rebase": true, "am": true, "cherry-pick": true,
+}
+
+// hasNoVerify reports whether rest skips hooks: --no-verify anywhere, or commit's -n alone or
+// bundled into a short cluster such as -an; push's -n is --dry-run and merge's is --no-stat.
+func hasNoVerify(sub string, rest []string) bool {
+	for _, arg := range rest {
+		if arg == "--no-verify" {
+			return true
+		}
+		if sub != "commit" || !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+			continue
+		}
+		if strings.ContainsRune(arg[1:], 'n') {
+			return true
+		}
+	}
+	return false
 }
 
 // isForceFlag reports whether a push option rewrites the remote's history.
