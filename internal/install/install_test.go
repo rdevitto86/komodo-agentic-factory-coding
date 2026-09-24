@@ -34,6 +34,20 @@ func TestAddIgnoreAppendsAMissingEntryAndKeepsEveryExistingLine(t *testing.T) {
 	}
 }
 
+func TestAddIgnoreFoldsSeveralEntriesIntoOneChange(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("a\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := Plan{Host: "repo", Root: root}
+	plan.AddIgnore("/.komodo/", "state")
+	plan.AddIgnore("/.host/skills/run/SKILL.md", "rendered")
+	plan.AddIgnore("/.komodo/", "state")
+	if len(plan.Changes) != 1 || string(plan.Changes[0].Body) != "a\r\n/.komodo/\r\n/.host/skills/run/SKILL.md\r\n" {
+		t.Fatalf("several entries got %+v", plan.Changes)
+	}
+}
+
 func TestAddIgnoreKeepsACRLFFilesLineEnding(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("a\r\nb"), 0o644); err != nil {

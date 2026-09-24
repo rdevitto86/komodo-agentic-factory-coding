@@ -78,6 +78,10 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return nil, fmt.Errorf("%s is paused until %s; a plan whose waves a pause blanked cannot ship",
 			plan.Group, plan.WaitUntil)
 	}
+	if waves == nil {
+		// Ship runs as its own process after QC, so it reads what each wave ran from the ledger.
+		waves = RecordedWaves(root, plan.Group)
+	}
 	group := WorktreePath(root, plan.Worktree)
 	path, err := backlog.Find(group)
 	if err != nil {
@@ -144,10 +148,14 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		result.Changelog = line
 	}
-	if _, err := git.Run(group, "add", "-A"); err != nil {
+	var declared []string
+	for _, task := range plan.Tasks {
+		declared = append(declared, task.Files...)
+	}
+	if err := stageWork(group, declared); err != nil {
 		return nil, err
 	}
-	if status, _ := git.Run(group, "status", "--porcelain"); status != "" {
+	if staged, _ := git.Run(group, "diff", "--cached", "--name-only"); staged != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
 		if _, err := git.Run(group, "commit", "-m", message); err != nil {
 			return nil, err

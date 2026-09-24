@@ -17,19 +17,34 @@ const CommandTimeout = proc.DefaultTimeout
 // GateTimeout is the wall clock the toolkit's own gate gets, since it runs the whole test suite.
 const GateTimeout = 20 * time.Minute
 
-// VerifyCommand is the repo's own verify command, from its commands file, else detect's root-only
-// discovery order, else go test for a Go module, so QC never drifts from what detect reports.
-func VerifyCommand(root string) string {
-	if override := repopkg.LoadCommands(root).Verify; override != "" {
+// VerifyCommand is QC's verify command: the worktree's commands file, the root's, then detection on the worktree.
+func VerifyCommand(root, worktree string) string {
+	if override := overrideCommands(root, worktree).Verify; override != "" {
 		return override
 	}
-	if command := detect.VerifyCommand(root); command != "" {
-		return command
+	if found, _ := detect.Detect(worktree); found.Verify != "" {
+		return found.Verify
 	}
-	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
-		return "go test ./..."
+	if cached, ok := detect.LoadCached(root); ok {
+		return cached.Verify
 	}
 	return ""
+}
+
+// overrideCommands reads the worktree's commands file, filling each empty field from the root's, since state is gitignored.
+func overrideCommands(root, worktree string) repopkg.Commands {
+	own := repopkg.LoadCommands(worktree)
+	if root == worktree {
+		return own
+	}
+	shared := repopkg.LoadCommands(root)
+	if own.Verify == "" {
+		own.Verify = shared.Verify
+	}
+	if own.Compile == "" {
+		own.Compile = shared.Compile
+	}
+	return own
 }
 
 // BeforeReviewCommand is the repo's own command to run before the reviewer is spawned.
@@ -42,11 +57,22 @@ func AfterPublishCommand(root string) string {
 	return repopkg.LoadCommands(root).AfterPublish
 }
 
-// CompileCommands are the cheap whole-tree checks for the manifests a repo carries.
-func CompileCommands(root string) []string {
-	if override := repopkg.LoadCommands(root).Compile; override != "" {
+// CompileCommands are QC's cheap whole-tree checks: a commands file override, else the worktree's manifests, else the root's profile.
+func CompileCommands(root, worktree string) []string {
+	if override := overrideCommands(root, worktree).Compile; override != "" {
 		return []string{override}
 	}
+	commands := manifestCompiles(worktree)
+	if len(commands) == 0 {
+		if cached, ok := detect.LoadCached(root); ok && cached.Compile != "" {
+			commands = append(commands, cached.Compile)
+		}
+	}
+	return commands
+}
+
+// manifestCompiles are the compile checks for the manifests root carries.
+func manifestCompiles(root string) []string {
 	var commands []string
 	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
 		commands = append(commands, "go build ./... && go vet ./...")

@@ -31,6 +31,9 @@ func runInit(root string, args []string) {
 	if err := writeStarters(os.Stdout, tree, root, starterFill(root, *name, time.Now())); err != nil {
 		fail(err)
 	}
+	if ignore := repoIgnores(root, nil); len(ignore.Changes) > 0 {
+		applyPlan(ignore, false)
+	}
 	fmt.Println("\nnext:")
 	fmt.Printf("  komodo install --host %s\n", mount.Names()[0])
 	fmt.Println("  komodo lint")

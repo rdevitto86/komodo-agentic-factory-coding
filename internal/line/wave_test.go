@@ -36,19 +36,19 @@ func TestSplitFindingsSendsTheRestToTheBacklog(t *testing.T) {
 
 func TestVerifyCommandFollowsTheDiscoveryOrder(t *testing.T) {
 	root := t.TempDir()
-	if got := VerifyCommand(root); got != "" {
+	if got := VerifyCommand(root, root); got != "" {
 		t.Fatalf("an empty repo has no verify command, got %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := VerifyCommand(root); got != "go test ./..." {
+	if got := VerifyCommand(root, root); got != "go test ./..." {
 		t.Fatalf("verify = %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("verify:\n\t@true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := VerifyCommand(root); got != "make verify" {
+	if got := VerifyCommand(root, root); got != "make verify" {
 		t.Fatalf("the discovery order did not prefer the Makefile: %q", got)
 	}
 }
@@ -66,23 +66,23 @@ func TestRepoCommandsOverrideDiscovery(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "commands.json"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := VerifyCommand(root); got != "make check" {
+	if got := VerifyCommand(root, root); got != "make check" {
 		t.Fatalf("verify = %q", got)
 	}
-	if got := CompileCommands(root); len(got) != 1 || got[0] != "go build ./..." {
+	if got := CompileCommands(root, root); len(got) != 1 || got[0] != "go build ./..." {
 		t.Fatalf("compile = %v", got)
 	}
 }
 
 func TestCompileCommandsFollowTheManifests(t *testing.T) {
 	root := t.TempDir()
-	if got := CompileCommands(root); len(got) != 0 {
+	if got := CompileCommands(root, root); len(got) != 0 {
 		t.Fatalf("an empty repo compiles nothing, got %v", got)
 	}
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := CompileCommands(root); len(got) != 1 || !strings.Contains(got[0], "go build") {
+	if got := CompileCommands(root, root); len(got) != 1 || !strings.Contains(got[0], "go build") {
 		t.Fatalf("compile = %v", got)
 	}
 }

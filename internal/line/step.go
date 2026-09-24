@@ -104,7 +104,7 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 	next.Skills = []string{}
 	next.Facets = []string{}
 	next.Commands = []string{}
-	if command := VerifyCommand(WorktreePath(root, plan.Worktree)); command != "" {
+	if command := VerifyCommand(root, WorktreePath(root, plan.Worktree)); command != "" {
 		next.Commands = append(next.Commands, command)
 	}
 	if next.Role == "reviewer" {

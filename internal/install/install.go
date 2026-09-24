@@ -63,6 +63,12 @@ func (p *Plan) AddSeed(path string, body []byte, why string) {
 func (p *Plan) AddIgnore(entry, why string) {
 	path := filepath.Join(p.Root, ".gitignore")
 	existing, _ := os.ReadFile(path)
+	pending := -1
+	for index, change := range p.Changes {
+		if change.Path == path && !change.Remove {
+			pending, existing = index, change.Body
+		}
+	}
 	bare := strings.Trim(entry, "/")
 	for _, line := range strings.Split(string(existing), "\n") {
 		if strings.Trim(strings.TrimSpace(line), "/") == bare {
@@ -78,6 +84,10 @@ func (p *Plan) AddIgnore(entry, why string) {
 		body = append(body, newline...)
 	}
 	body = append(body, []byte(entry+newline)...)
+	if pending >= 0 {
+		p.Changes[pending].Body = body
+		return
+	}
 	p.Add(path, body, why)
 }
 

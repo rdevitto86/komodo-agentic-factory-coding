@@ -119,6 +119,34 @@ func ConfigPaths() []string {
 	return out
 }
 
+// ProjectPaths lists every path a registered mount renders under root as a project copy, relative and slash-separated.
+func ProjectPaths(root string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, host := range Hosts() {
+		if host.Render == nil {
+			continue
+		}
+		plan, err := host.Render(root, BinaryPath())
+		if err != nil {
+			continue
+		}
+		for _, change := range plan.Project().Changes {
+			rel, err := filepath.Rel(root, change.Path)
+			if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
+			}
+			rel = filepath.ToSlash(rel)
+			if !seen[rel] {
+				seen[rel] = true
+				out = append(out, rel)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Executable resolves the running binary's own path with symlinks followed; a test swaps it.
 var Executable = func() (string, error) {
 	path, err := os.Executable()

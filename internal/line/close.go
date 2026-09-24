@@ -245,7 +245,7 @@ func commitTask(cwd string, task backlog.Task, branch string) error {
 	if strings.TrimSpace(status) == "" {
 		return nil
 	}
-	if _, err := git.Run(cwd, "add", "-A"); err != nil {
+	if err := stageWork(cwd, task.Files()); err != nil {
 		return err
 	}
 	if err := unstageBuilt(cwd, task); err != nil {
@@ -257,6 +257,43 @@ func commitTask(cwd string, task backlog.Task, branch string) error {
 	message := fmt.Sprintf("%s: %s (%s)", task.Type(), task.Title, task.ID)
 	_, err = git.Run(cwd, "commit", "-m", message)
 	return err
+}
+
+// stageWork stages every change in cwd except the state dir and each mount's rendered project copies, unless declared.
+func stageWork(cwd string, declared []string) error {
+	args := []string{"add", "-A", "--", "."}
+	var rescued []string
+	for _, excluded := range append([]string{StateDir}, mount.ProjectPaths(cwd)...) {
+		covered := false
+		var inside []string
+		for _, file := range declared {
+			file = strings.TrimSuffix(strings.TrimPrefix(strings.ReplaceAll(file, "\\", "/"), "./"), "/")
+			switch {
+			case file == excluded || strings.HasPrefix(excluded, file+"/"):
+				covered = true
+			case strings.HasPrefix(file, excluded+"/"):
+				inside = append(inside, file)
+			}
+		}
+		if covered {
+			continue
+		}
+		args = append(args, ":(exclude,literal)"+excluded)
+		rescued = append(rescued, inside...)
+	}
+	if _, err := git.Run(cwd, args...); err != nil {
+		return err
+	}
+	for _, file := range rescued {
+		// A declared file under an excluded path is staged on its own, when git sees a change there.
+		if changed, err := git.Run(cwd, "status", "--porcelain", "--", file); err != nil || changed == "" {
+			continue
+		}
+		if _, err := git.Run(cwd, "add", "-A", "--", file); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Built are the regenerated paths a task branch never carries, because they conflict on every merge.

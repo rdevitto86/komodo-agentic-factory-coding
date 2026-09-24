@@ -313,8 +313,33 @@ func fakeToolkitBinary(t *testing.T) string {
 	return path
 }
 
-// TestInstallIgnoresTheStateDirOnceAndKeepsTheFilesLineEndings proves install adds /.komodo/ once, in the file's line ending.
-func TestInstallIgnoresTheStateDirOnceAndKeepsTheFilesLineEndings(t *testing.T) {
+// renderedIgnores are the lines install appends for the default host's rendered project copies, in newline's ending.
+func renderedIgnores(t *testing.T, root, newline string) string {
+	t.Helper()
+	host, _ := mount.Get(mount.Names()[0])
+	plan, err := host.Render(root, mount.BinaryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out string
+	for _, change := range plan.Project().Changes {
+		if change.Remove {
+			continue
+		}
+		rel, err := filepath.Rel(root, change.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out += "/" + filepath.ToSlash(rel) + newline
+	}
+	if out == "" {
+		t.Fatal("the default host renders no project copy, so the test proves nothing")
+	}
+	return out
+}
+
+// TestInstallIgnoresTheStateDirAndRenderedCopiesOnceAndKeepsTheFilesLineEndings proves each ignore line lands once, in the file's ending.
+func TestInstallIgnoresTheStateDirAndRenderedCopiesOnceAndKeepsTheFilesLineEndings(t *testing.T) {
 	fakeToolkitBinary(t)
 	cases := []struct {
 		name, before, after string
@@ -330,14 +355,19 @@ func TestInstallIgnoresTheStateDirOnceAndKeepsTheFilesLineEndings(t *testing.T) 
 			if err := os.WriteFile(path, []byte(c.before), 0o644); err != nil {
 				t.Fatal(err)
 			}
+			newline := "\n"
+			if strings.Contains(c.before, "\r\n") {
+				newline = "\r\n"
+			}
+			want := c.after + renderedIgnores(t, root, newline)
 			for run := 1; run <= 2; run++ {
 				got := runCLI(t, root, "", "install")
 				if got.code != 0 {
 					t.Fatalf("install run %d exited %d: %s%s", run, got.code, got.stdout, got.stderr)
 				}
 				data, _ := os.ReadFile(path)
-				if string(data) != c.after {
-					t.Fatalf("after install run %d .gitignore = %q, want %q", run, data, c.after)
+				if string(data) != want {
+					t.Fatalf("after install run %d .gitignore = %q, want %q", run, data, want)
 				}
 			}
 		})

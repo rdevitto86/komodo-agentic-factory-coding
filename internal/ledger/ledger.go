@@ -46,6 +46,15 @@ type Entry struct {
 	FailureClass string    `json:"failure_class,omitempty"`
 	Findings     int       `json:"findings,omitempty"`
 	Lines        int       `json:"lines,omitempty"`
+	Checks       []Check   `json:"checks,omitempty"`
+}
+
+// Check is one command a station ran, its kind (compile or verify), and its exit code.
+type Check struct {
+	Kind     string  `json:"kind"`
+	Command  string  `json:"command"`
+	ExitCode int     `json:"exit_code"`
+	Seconds  float64 `json:"seconds,omitempty"`
 }
 
 // Ledger writes and reads one repo's two metric files.
