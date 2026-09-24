@@ -159,11 +159,7 @@ func Step(root, needle string) (*Action, error) {
 	stampReview(root, plan)
 	blocking, _ := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	if len(blocking) > 0 {
-		return action(root, plan, Action{
-			Action: "done",
-			Why: fmt.Sprintf("the review left %d finding(s) at or above %s; fix them on %s, then komodo step",
-				len(blocking), plan.Profile.SeverityFloor, plan.Branch),
-		}), nil
+		return repairReview(root, plan, blocking), nil
 	}
 	if _, err := os.Stat(filepath.Join(root, StateDir, "ship.json")); err == nil {
 		return action(root, plan, Action{Action: "done",
@@ -265,6 +261,90 @@ func reviewed(root string, plan *Plan) bool {
 		return false
 	}
 	return !staleReview(root, plan)
+}
+
+// repairReview walks one fix round for blocking findings: brief, builder spawn, then close --fix,
+// and stops for a person once the profile's review_repairs rounds are spent.
+func repairReview(root string, plan *Plan, blocking []Finding) *Action {
+	rounds := FixRounds(root, plan.Group)
+	if rounds >= plan.Profile.ReviewRepairs {
+		titles := make([]string, 0, len(blocking))
+		for _, finding := range blocking {
+			titles = append(titles, fmt.Sprintf("%s:%d %s", finding.File, finding.Line, finding.Title))
+		}
+		return action(root, plan, Action{
+			Action: "done",
+			Why: fmt.Sprintf(
+				"the review left %d finding(s) at or above %s after %d fix round(s): %s; fix them on %s, then komodo step",
+				len(blocking), plan.Profile.SeverityFloor, rounds, strings.Join(titles, "; "), plan.Branch,
+			),
+		})
+	}
+	taskID := plan.Group + "-fix"
+	if staleFixBrief(root, plan.Group) {
+		return action(root, plan, Action{
+			Action: "run", Command: "komodo brief --review " + plan.Group, Task: taskID,
+			Why: fmt.Sprintf("the review left %d finding(s) at or above %s; fix round %d needs a brief",
+				len(blocking), plan.Profile.SeverityFloor, rounds+1),
+		})
+	}
+	if !fixResultReady(root, plan.Group) {
+		return action(root, plan, Action{
+			Action: "spawn", Role: "builder", Brief: filepath.Join(StateDir, "briefs", taskID+".md"),
+			Task: taskID, Worktree: plan.Worktree,
+			Why: fmt.Sprintf("fix round %d has a brief and no result", rounds+1),
+		})
+	}
+	return action(root, plan, Action{
+		Action: "run", Command: "komodo close --fix " + plan.Group, Task: taskID,
+		Why: fmt.Sprintf("fix round %d has a result to gate and commit", rounds+1),
+	})
+}
+
+// FixRounds counts the review fix rounds the ledger holds for a group, passed or failed.
+func FixRounds(root, groupID string) int {
+	entries, err := Book(root).Read("line.jsonl")
+	if err != nil {
+		return 0
+	}
+	rounds := 0
+	for _, entry := range entries {
+		if entry.Station == "fix" && entry.Group == groupID {
+			rounds++
+		}
+	}
+	return rounds
+}
+
+// staleFixBrief reports whether a group has no fix brief, or one older than its review or last failed fix.
+func staleFixBrief(root, groupID string) bool {
+	brief, err := os.Stat(filepath.Join(root, StateDir, "briefs", groupID+"-fix.md"))
+	if err != nil {
+		return true
+	}
+	if _, path, err := ReadResultFile(root, groupID+"-review"); err == nil {
+		if review, err := os.Stat(path); err == nil && brief.ModTime().Before(review.ModTime()) {
+			return true
+		}
+	}
+	return staleBrief(root, groupID+"-fix")
+}
+
+// fixResultReady reports whether the builder wrote a fix result after the current fix brief.
+func fixResultReady(root, groupID string) bool {
+	_, path, err := ReadResultFile(root, groupID+"-fix")
+	if err != nil {
+		return false
+	}
+	result, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	brief, err := os.Stat(filepath.Join(root, StateDir, "briefs", groupID+"-fix.md"))
+	if err != nil {
+		return false
+	}
+	return result.ModTime().After(brief.ModTime())
 }
 
 // stampReview records the review station once per result: the seconds from the review brief to
