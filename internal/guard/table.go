@@ -420,6 +420,13 @@ func extraCases() []Case {
 		bash("python3 -c prints only", "python3 -c 'print(1)'", "feat/x", false, ""),
 		bash("node -e logs only", "node -e 'console.log(2)'", "feat/x", false, ""),
 		bash("python -m pytest runs a module", "python -m pytest", "feat/x", false, ""),
+
+		// 9. A script written and run in one command is read before it runs, not after.
+		bash("echo then sh reads the echoed line", "echo 'git push origin main' > x.sh; sh x.sh", "feat/x", true, "open a pull request"),
+		bash("a heredoc written to a file then run by bash", "cat > x.sh <<'EOF'\ngit push origin main\nEOF\nbash x.sh", "feat/x", true, "open a pull request"),
+		bash("printf then ./name reads the printed line", "printf 'git push origin main' > x.sh && ./x.sh", "feat/x", true, "open a pull request"),
+		bash("curl then sh cannot see what curl wrote", "curl -s u > x.sh; sh x.sh", "feat/x", true, scriptNotVisible),
+		bash("echo then sh reads a harmless line", "echo 'ls' > x.sh; sh x.sh", "feat/x", false, ""),
 	}
 }
 
