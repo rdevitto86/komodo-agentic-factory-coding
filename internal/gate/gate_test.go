@@ -208,6 +208,54 @@ func TestHookFromAWorktreeUsesTheMainCheckoutBinary(t *testing.T) {
 	}
 }
 
+// TestHookInTheToolkitGatesFromTheCheckoutItCommits proves a checkout holding cmd/komodo runs its
+// own source, not the main checkout's binary, and a push still fuzzes.
+func TestHookInTheToolkitGatesFromTheCheckoutItCommits(t *testing.T) {
+	if !strings.Contains(hookScript, "git rev-parse --show-toplevel") || !strings.Contains(hookScript, "exec go run ./cmd/komodo gate") {
+		t.Fatal("the hook script never gates from the committing checkout")
+	}
+	main := t.TempDir()
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git(main, "init", "-q", "-b", "main")
+	git(main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	worktree := filepath.Join(t.TempDir(), "wt")
+	git(main, "worktree", "add", "-q", "-b", "feat/x", worktree)
+	source := filepath.Join(worktree, "cmd", "komodo", "main.go")
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakes := t.TempDir()
+	writeFakeBinary(t, fakes, "go", "#!/bin/sh\necho go \"$@\" in \"$(pwd -P)\"\n")
+	sub := filepath.Join(worktree, "cmd")
+	want, err := filepath.EvalSymlinks(worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for hook, args := range map[string]string{"pre-commit": "run ./cmd/komodo gate in", "pre-push": "run ./cmd/komodo gate --fuzz 10s in"} {
+		script := filepath.Join(fakes, hook)
+		if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", script)
+		cmd.Dir = sub
+		cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+		out, err := cmd.CombinedOutput()
+		if err != nil || strings.TrimSpace(string(out)) != "go "+args+" "+want {
+			t.Fatalf("%s: err = %v, out = %q; want go %s %s", hook, err, out, args, want)
+		}
+	}
+}
+
 func TestCommandDropsTheGitEnvironmentAHookSets(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses sh")

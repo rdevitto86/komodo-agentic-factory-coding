@@ -1520,7 +1520,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.21.2] The pre-commit hook runs the gate from the checkout it commits [P: H] [READY]
+#### [TSK-03.21.2] The pre-commit hook runs the gate from the checkout it commits [P: H] [DONE]
 ```yaml
 files: [internal/gate/gate.go, internal/gate/gate_test.go]
 done_when:
