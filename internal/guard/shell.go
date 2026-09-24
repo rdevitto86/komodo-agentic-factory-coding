@@ -242,7 +242,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		}
 	case name == "git":
 		var gitResult []string
-		gitResult, branch = gitFindings(kept, branch, cwd, s.policy, stdin)
+		gitResult, branch = gitFindings(kept, branch, cwd, s.root, s.policy, stdin)
 		findings = append(findings, gitResult...)
 	case name == "gh":
 		findings = append(findings, ghFindings(kept)...)
@@ -575,6 +575,27 @@ func (s *scanner) recordOutputWrites(name string, kept []string, cwd string) {
 var blindGitVerbs = set("checkout", "restore", "switch", "reset", "apply", "am", "pull", "merge",
 	"rebase", "cherry-pick", "stash", "clone", "revert")
 
+// onlyCreatesBranch reports whether a checkout or switch makes a branch at HEAD, which changes no file:
+// a create flag and a branch name with no start point.
+func onlyCreatesBranch(sub string, rest []string) bool {
+	if sub != "checkout" && sub != "switch" {
+		return false
+	}
+	create := false
+	var names []string
+	for _, arg := range rest {
+		switch arg {
+		case "-b", "-B", "-c", "-C", "--create", "--force-create":
+			create = true
+		default:
+			if !strings.HasPrefix(arg, "-") {
+				names = append(names, arg)
+			}
+		}
+	}
+	return create && len(names) == 1
+}
+
 // writesBlind reports whether a command rewrites files under names the guard cannot list: curl -O,
 // an archive extract, a patch, or a git call that changes the worktree.
 func writesBlind(name string, kept []string) bool {
@@ -606,7 +627,7 @@ func writesBlind(name string, kept []string) bool {
 				continue
 			}
 			if !strings.HasPrefix(arg, "-") {
-				return blindGitVerbs[arg]
+				return blindGitVerbs[arg] && !onlyCreatesBranch(arg, kept[index+1:])
 			}
 		}
 	}

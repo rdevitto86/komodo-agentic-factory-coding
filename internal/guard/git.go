@@ -9,7 +9,7 @@ import (
 )
 
 // gitFindings refuses the git operations that touch a critical ref, and reports the branch after the call.
-func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin string) ([]string, string) {
+func gitFindings(tokens []string, branch, cwd, root string, policy Policy, stdin string) ([]string, string) {
 	args := tokens[1:]
 	var findings []string
 	var configs []string
@@ -84,8 +84,16 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		var positional []string
 		deletes := false
 		mirrorFlag := ""
+		repoFlag := false
 		for index := 0; index < len(rest); index++ {
 			arg := rest[index]
+			if arg == "--repo" || strings.HasPrefix(arg, "--repo=") {
+				repoFlag = true
+				if arg == "--repo" {
+					index++
+				}
+				continue
+			}
 			if pushValueFlags[arg] {
 				index++
 				continue
@@ -109,13 +117,16 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		if mirrorFlag != "" && hasAnyCritical(policy) {
 			findings = append(findings, fmt.Sprintf("git push %s: reaches every ref, including a critical one; open a pull request instead", mirrorFlag))
 		}
-		if normalizeMode(policy.Mode) != ModeUnsafe && pushesToURL(rest, positional, cwd) {
+		if normalizeMode(policy.Mode) != ModeUnsafe && pushesToURL(rest, positional, cwd, root) {
 			findings = append(findings, pushURLFinding)
 		}
 		targets := positional
-		if len(positional) > 1 {
+		switch {
+		case repoFlag && len(positional) > 0:
+			// --repo names the repository, so every positional is a refspec.
+		case len(positional) > 1:
 			targets = positional[1:]
-		} else {
+		default:
 			targets = []string{branch}
 			if hasAnyCritical(policy) && len(positional) == 1 && unresolvedTarget(positional[0]) {
 				findings = append(findings, fmt.Sprintf("git push %s: the target is only known when it runs; name the branch", positional[0]))
@@ -279,7 +290,7 @@ var redirectURLConfigRe = regexp.MustCompile(`(?i)^(remote\.[^.]+\.url|url\..+\.
 
 // pushValueFlags are push's options whose value is the next word, never the repository or a refspec.
 var pushValueFlags = map[string]bool{
-	"-o": true, "--push-option": true, "--receive-pack": true, "--exec": true, "--repo": true,
+	"-o": true, "--push-option": true, "--receive-pack": true, "--exec": true,
 }
 
 // hooksPathConfigRe matches a -c or --config-env key that points git at another hooks directory.
@@ -335,36 +346,54 @@ var scpLikeRe = regexp.MustCompile(`^(?:[\w.-]+@[\w.-]+|[\w-]+(?:\.[\w-]+)+):`)
 
 // pushesToURL reports whether a push names its repository as a URL, through --repo or the first
 // positional, or through a substitution or variable whose value is only known when it runs.
-func pushesToURL(rest, positional []string, cwd string) bool {
+func pushesToURL(rest, positional []string, cwd, root string) bool {
 	for index, arg := range rest {
-		if value, ok := strings.CutPrefix(arg, "--repo="); ok && isPushURL(value, cwd) {
+		if value, ok := strings.CutPrefix(arg, "--repo="); ok && isPushURL(value, cwd, root) {
 			return true
 		}
-		if arg == "--repo" && index+1 < len(rest) && isPushURL(rest[index+1], cwd) {
+		if arg == "--repo" && index+1 < len(rest) && isPushURL(rest[index+1], cwd, root) {
 			return true
 		}
 	}
 	if len(positional) > 1 && unresolvedTarget(positional[0]) {
 		return true
 	}
-	return len(positional) > 0 && isPushURL(positional[0], cwd)
+	return len(positional) > 0 && !repoGiven(rest) && isPushURL(positional[0], cwd, root)
 }
 
-// isPushURL reports whether a push destination is a URL, scp-style remote, or a path to a bare
-// repo outside cwd, any of which reaches a repository the remote's pushurl does not.
-func isPushURL(dest, cwd string) bool {
+// repoGiven reports whether --repo named the repository, so the first positional is a refspec.
+func repoGiven(rest []string) bool {
+	for _, arg := range rest {
+		if arg == "--repo" || strings.HasPrefix(arg, "--repo=") {
+			return true
+		}
+	}
+	return false
+}
+
+// isPushURL reports whether a push destination is a URL, scp-style remote, or a path to a repository
+// outside the worktree root: one with a slash or a .git suffix, or a bare name that is a directory.
+func isPushURL(dest, cwd, root string) bool {
 	if strings.Contains(dest, "://") || scpLikeRe.MatchString(dest) {
 		return true
 	}
-	if !strings.Contains(dest, "/") {
-		return false
-	}
 	resolved := dest
 	if !filepath.IsAbs(resolved) {
+		if cwd == unresolvedDir {
+			return strings.Contains(dest, "/")
+		}
 		resolved = filepath.Join(cwd, resolved)
 	}
 	resolved = filepath.Clean(resolved)
-	root := filepath.Clean(cwd)
+	if !strings.Contains(dest, "/") && !strings.HasSuffix(dest, ".git") {
+		if info, err := os.Stat(resolved); err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	if root == "" {
+		root = cwd
+	}
+	root = filepath.Clean(root)
 	return resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator))
 }
 
