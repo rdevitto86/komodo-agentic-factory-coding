@@ -31,151 +31,25 @@ type Action struct {
 	Until    string   `json:"until,omitempty"`
 }
 
-// Step reads the run's state and the results on disk and returns the one next action.
+// Step reads one snapshot, decides with Next, then writes the review stamp and brief it needs.
 func Step(root, needle string) (*Action, error) {
-	plan, err := PlanForStation(root, needle)
+	snap, err := LoadSnapshot(root, needle)
 	if err != nil {
 		return nil, err
 	}
-	if plan == nil {
-		return &Action{Action: "done", Why: "nothing is ready", Skills: []string{}, Facets: []string{}, Commands: []string{}}, nil
+	next, pastReview := decide(snap)
+	if snap.Plan == nil {
+		return &next, nil
 	}
-	if next := paused(root, plan); next != nil {
-		return next, nil
-	}
-	state, runErr := LoadRun(root)
-	if runErr != nil || state.Group != plan.Group {
-		return action(root, plan, Action{
-			Action:  "run",
-			Command: "komodo next --start " + plan.Group + " --base " + plan.Base,
-			Why:     fmt.Sprintf("%s has not been cut yet, from %s", plan.Group, plan.Base),
-		}), nil
-	}
-	full, err := planForGroup(root, state.Group)
-	if err != nil {
-		return nil, err
-	}
-	if full != nil {
-		plan = full
-	}
-	if next := paused(root, plan); next != nil {
-		return next, nil
-	}
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
-	if err != nil {
-		return nil, err
-	}
-	group, _ := parsed.Group(plan.Group)
-	blocked := map[string]bool{}
-	for index, wave := range plan.Waves {
-		for _, taskID := range wave {
-			if blocked[taskID] {
-				continue
-			}
-			attempt := LoadAttempt(root, taskID)
-			if HasResult(root, taskID) && (attempt.Count == 0 || repairResultReady(root, taskID)) {
-				if group.Mode() == "single" {
-					// A single-mode task closes before the next briefs; they share one worktree.
-					if task, ok := parsed.Task(taskID); ok && task.Open() {
-						return action(root, plan, Action{
-							Action: "run", Command: "komodo close " + taskID + " --gate", Task: taskID, Wave: index + 1,
-							Why: taskID + " has a result and is still open",
-						}), nil
-					}
-				}
-				continue
-			}
-			if attempt.Count > plan.Profile.Repairs {
-				blocked[taskID] = true
-				for _, dependent := range BlockedBy(group.Tasks, taskID) {
-					blocked[dependent] = true
-				}
-				continue
-			}
-			briefPath := filepath.Join(StateDir, "briefs", taskID+".md")
-			if staleBrief(root, taskID) {
-				why := taskID + " has no brief yet"
-				if attempt.Count > 0 {
-					why = fmt.Sprintf("%s failed and needs a repair brief carrying the failure", taskID)
-				}
-				return action(root, plan, Action{
-					Action: "run", Command: "komodo brief " + taskID, Task: taskID, Wave: index + 1,
-					Why: why,
-				}), nil
-			}
-			why := taskID + " has a brief and no result"
-			if attempt.Count > 0 {
-				why = fmt.Sprintf("%s has a repair brief and %d failed attempt(s)", taskID, attempt.Count)
-			}
-			tier := ""
-			if task, ok := parsed.Task(taskID); ok {
-				tier = task.Tier()
-			}
-			worktree := filepath.Join(StateDir, "wt", taskID)
-			if group.Mode() == "single" {
-				// A single-mode group shares one builder and one worktree, matching brief.go.
-				worktree = filepath.Join(StateDir, "wt", plan.Group)
-			}
-			return actionForTier(root, plan, Action{
-				Action: "spawn", Role: "builder", Brief: briefPath, Task: taskID, Wave: index + 1,
-				Worktree: worktree,
-				Why:      why,
-			}, tier), nil
-		}
-		for _, taskID := range wave {
-			if blocked[taskID] {
-				continue
-			}
-			task, ok := parsed.Task(taskID)
-			if ok && task.Open() {
-				return action(root, plan, Action{
-					Action: "run", Command: "komodo close " + taskID + " --gate", Task: taskID, Wave: index + 1,
-					Why: taskID + " has a result and is still open",
-				}), nil
-			}
-		}
-		if !waveMerged(root, plan, index) {
-			return action(root, plan, Action{
-				Action: "run", Command: fmt.Sprintf("komodo close --wave %d", index+1), Wave: index + 1,
-				Why: fmt.Sprintf("wave %d is closed and not merged", index+1),
-			}), nil
-		}
-	}
-	if !reviewed(root, plan) && !reviewSkippable(root, plan) {
-		briefPath, err := reviewBrief(root, plan)
-		if err != nil {
+	if next.Role == "reviewer" {
+		if _, err := reviewBrief(root, snap.Plan); err != nil {
 			return nil, err
 		}
-		return action(root, plan, Action{
-			Action: "spawn", Role: "reviewer", Brief: briefPath,
-			Task: plan.Group + "-review", Worktree: plan.Worktree,
-			Why: "every wave is merged and the diff is unreviewed",
-		}), nil
 	}
-	stampReview(root, plan)
-	blocking, _ := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
-	if len(blocking) > 0 {
-		return action(root, plan, Action{
-			Action: "done",
-			Why: fmt.Sprintf("the review left %d finding(s) at or above %s; fix them on %s, then komodo step",
-				len(blocking), plan.Profile.SeverityFloor, plan.Branch),
-		}), nil
+	if pastReview {
+		stampReview(root, snap.Plan)
 	}
-	if _, err := os.Stat(filepath.Join(root, StateDir, "ship.json")); err == nil {
-		return action(root, plan, Action{Action: "done",
-			Why: plan.Group + " is committed and handed off; the launcher pushes and opens the pull request on exit"}), nil
-	}
-	if !shipped(root, plan, parsed) {
-		return action(root, plan, Action{
-			Action: "run", Command: "komodo close --group",
-			Why: "the review is in and the group is not shipped",
-		}), nil
-	}
-	return action(root, plan, Action{Action: "done", Why: plan.Group + " is shipped"}), nil
+	return actionForTier(root, snap.Plan, next, snap.Tasks[next.Task].Tier), nil
 }
 
 // action fills the machine, skills, facets, and commands a station resolved.
@@ -371,18 +245,6 @@ func repairResultReady(root, taskID string) bool {
 		return false
 	}
 	return result.ModTime().After(brief.ModTime())
-}
-
-// paused is the wait action a station returns once the profile has closed its window for a new
-// wave, carrying when it reopens, or nil while the plan still has work to walk.
-func paused(root string, plan *Plan) *Action {
-	if plan.WaitUntil == "" {
-		return nil
-	}
-	return action(root, plan, Action{
-		Action: "done", Until: plan.WaitUntil,
-		Why: fmt.Sprintf("%s is paused until the window resets at %s", plan.Group, plan.WaitUntil),
-	})
 }
 
 // reviewBrief fills the reviewer role from the group's diff, tasks, and standards, writes it to

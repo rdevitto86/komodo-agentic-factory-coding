@@ -1533,7 +1533,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.21.3] Step reads one snapshot and decides with a pure function [P: H] [READY]
+#### [TSK-03.21.3] Step reads one snapshot and decides with a pure function [P: H] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/snapshot.go, internal/line/snapshot_test.go]
 done_when:
