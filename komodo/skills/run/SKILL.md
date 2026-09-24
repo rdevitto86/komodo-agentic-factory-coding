@@ -16,8 +16,7 @@ You drive one group through the line. The station order lives in the binary. You
 ## What the JSON means
 
 - **`run`** — run `command` verbatim from the repo root, then loop.
-- **`spawn`** — spawn the `role` agent on `brief`, in `worktree`. `machine` is `provider/model`; pass the model half as the spawn's model, so a task's `tier` is honoured. Its context is `skills`, `facets`, and `commands`; give it no more.
-- **`spawns`** — a wave builds at once. Spawn every entry in the same turn, each as its own `spawn` above. Wait for all of them, then loop.
+- **`spawn`** — spawn the `role` agent on `brief`, in `worktree`. `machine` is `provider/model`; pass the model half as the spawn's model, so a task's `tier` is honoured. Its context is `skills`, `facets`, and `commands`; give it no more. When a `spawns` list is present, spawn only its entries, all in the same turn, and ignore the top-level `role` and `brief`. Wait for all of them, then loop.
 - **`done`** — stop and report `why`.
 
 ## The binary

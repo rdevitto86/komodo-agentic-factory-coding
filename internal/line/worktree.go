@@ -93,8 +93,8 @@ func refuseWorktreePush(root, path string) error {
 		fmt.Fprintln(os.Stderr, "komodo: core.worktree is set on the repo's common config; skipping the worktree push refusal")
 		return nil
 	}
-	// Concurrent cuts race on the shared config's lock, so it is written only when not already on.
-	if on, err := git(root, "config", "--get", "extensions.worktreeConfig"); err != nil || on != "true" {
+	// Written only when not already on locally, since concurrent cuts race on the shared config's lock.
+	if on, err := git(root, "config", "--local", "--get", "extensions.worktreeConfig"); err != nil || on != "true" {
 		if _, err := git(root, "config", "extensions.worktreeConfig", "true"); err != nil {
 			return fmt.Errorf("enable extensions.worktreeConfig for the worktree push refusal: %w", err)
 		}
