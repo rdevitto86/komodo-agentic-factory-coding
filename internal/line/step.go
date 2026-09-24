@@ -165,6 +165,10 @@ func Step(root, needle string) (*Action, error) {
 				len(blocking), plan.Profile.SeverityFloor, plan.Branch),
 		}), nil
 	}
+	if _, err := os.Stat(filepath.Join(root, StateDir, "ship.json")); err == nil {
+		return action(root, plan, Action{Action: "done",
+			Why: plan.Group + " is committed and handed off; the launcher pushes and opens the pull request on exit"}), nil
+	}
 	if !shipped(root, plan, parsed) {
 		return action(root, plan, Action{
 			Action: "run", Command: "komodo close --group",
