@@ -2,19 +2,15 @@ package line
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"komodo/internal/backlog"
 )
 
-// TaskStatus is one task's live status in the run, and the note that explains it.
+// TaskStatus is one task's live status in the run.
 type TaskStatus struct {
 	Status string `json:"status"`
-	Note   string `json:"note,omitempty"`
 }
 
 // statusPath is where the run keeps live task status until ship writes it into BACKLOG.md.
@@ -34,9 +30,20 @@ func LoadStatus(root string) map[string]TaskStatus {
 }
 
 // RecordStatus sets one task's live status in .komodo/status.json, written atomically.
-func RecordStatus(root, taskID, status, note string) error {
+func RecordStatus(root, taskID, status string) error {
 	statuses := LoadStatus(root)
-	statuses[taskID] = TaskStatus{Status: status, Note: note}
+	statuses[taskID] = TaskStatus{Status: status}
+	return saveStatus(root, statuses)
+}
+
+// saveStatus writes the run's live status atomically, removing the file when none remains.
+func saveStatus(root string, statuses map[string]TaskStatus) error {
+	if len(statuses) == 0 {
+		if err := os.Remove(statusPath(root)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
 	data, err := json.MarshalIndent(statuses, "", "  ")
 	if err != nil {
 		return err
@@ -60,12 +67,30 @@ func RecordStatus(root, taskID, status, note string) error {
 	return os.Rename(temp.Name(), path)
 }
 
-// ClearStatus drops the run's live status once ship has written it into BACKLOG.md.
-func ClearStatus(root string) error {
-	if err := os.Remove(statusPath(root)); err != nil && !os.IsNotExist(err) {
-		return err
+// ClearStatus drops the named tasks' live status, once ship has written it into BACKLOG.md.
+func ClearStatus(root string, taskIDs []string) error {
+	return pruneStatus(root, func(taskID string) bool { return !contains(taskIDs, taskID) })
+}
+
+// KeepStatus drops every task's live status except the named ones, so a new run starts clean.
+func KeepStatus(root string, taskIDs []string) error {
+	return pruneStatus(root, func(taskID string) bool { return contains(taskIDs, taskID) })
+}
+
+// pruneStatus keeps only the live statuses keep accepts, writing nothing when none change.
+func pruneStatus(root string, keep func(taskID string) bool) error {
+	statuses := LoadStatus(root)
+	changed := false
+	for taskID := range statuses {
+		if !keep(taskID) {
+			delete(statuses, taskID)
+			changed = true
+		}
 	}
-	return nil
+	if !changed {
+		return nil
+	}
+	return saveStatus(root, statuses)
 }
 
 // OverlayStatus lays the run's live status over a parsed backlog, so a reader sees it as closed.
@@ -98,55 +123,37 @@ func LoadBacklog(root string) (backlog.Backlog, string, error) {
 	return OverlayStatus(parsed, shipped), path, nil
 }
 
-// shippedStatus is every DONE or BLOCKED status a group worktree's BACKLOG.md holds for a task
-// root still has open, which is what a ship commit carries until its pull request lands.
+// shippedStatus is every DONE or BLOCKED status the recorded run's worktree BACKLOG.md holds for
+// one of its group's tasks root still has open, which is what its ship commit carries until it lands.
 func shippedStatus(root string, parsed backlog.Backlog) map[string]TaskStatus {
 	statuses := map[string]TaskStatus{}
-	entries, err := os.ReadDir(filepath.Join(root, StateDir, "wt"))
+	state, err := LoadRun(root)
+	if err != nil || state.Group == "" {
+		return statuses
+	}
+	group, ok := parsed.Group(state.Group)
+	if !ok {
+		return statuses
+	}
+	worktree := state.Worktree
+	if worktree == "" {
+		worktree = filepath.Join(StateDir, "wt", state.Group)
+	}
+	path, err := backlog.Find(WorktreePath(root, worktree))
 	if err != nil {
 		return statuses
 	}
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() && strings.HasPrefix(entry.Name(), "TG-") {
-			names = append(names, entry.Name())
-		}
+	committed, err := backlog.Load(path)
+	if err != nil {
+		return statuses
 	}
-	sort.Strings(names)
-	for _, name := range names {
-		path, err := backlog.Find(filepath.Join(root, StateDir, "wt", name))
-		if err != nil {
-			continue
-		}
-		committed, err := backlog.Load(path)
-		if err != nil {
-			continue
-		}
-		for _, task := range committed.Tasks() {
-			if task.Open() {
-				continue
-			}
-			if current, ok := parsed.Task(task.ID); ok && current.Open() {
-				statuses[task.ID] = TaskStatus{Status: task.Status}
-			}
+	for _, current := range group.Tasks {
+		task, ok := committed.Task(current.ID)
+		if ok && !task.Open() && current.Open() {
+			statuses[task.ID] = TaskStatus{Status: task.Status}
 		}
 	}
 	return statuses
-}
-
-// statusNote is the attempt count and the first line of the failure a status carries.
-func statusNote(attempt Attempt) string {
-	return fmt.Sprintf("attempt %d: %s", attempt.Count, firstLine(attempt.Failure))
-}
-
-// sortedKeys is a status map's task ids in order, so a ship writes them the same way every time.
-func sortedKeys(statuses map[string]TaskStatus) []string {
-	keys := make([]string, 0, len(statuses))
-	for id := range statuses {
-		keys = append(keys, id)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // writeStatus rewrites one task's status token in BACKLOG.md.

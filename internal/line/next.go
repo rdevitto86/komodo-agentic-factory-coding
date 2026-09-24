@@ -365,6 +365,9 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	}
 	state.Worktree = path
 	state.Waves = plan.Waves
+	if err := keepGroupStatus(root, plan.Group); err != nil {
+		return state, err
+	}
 	if err := Book(root).TruncateRun(); err != nil {
 		return state, err
 	}
@@ -373,6 +376,25 @@ func Start(root string, plan *Plan, base string) (RunState, error) {
 	}
 	Stamp(root, ledger.Entry{Run: state.Run, Group: state.Group, Station: "intake", Outcome: "started"})
 	return state, nil
+}
+
+// keepGroupStatus drops the live status of every task outside groupID, so another group's never ships here.
+func keepGroupStatus(root, groupID string) error {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return err
+	}
+	var taskIDs []string
+	if group, ok := parsed.Group(groupID); ok {
+		for _, task := range group.Tasks {
+			taskIDs = append(taskIDs, task.ID)
+		}
+	}
+	return KeepStatus(root, taskIDs)
 }
 
 // renderProject rebuilds the worktree's gitignored project config for every host installed on

@@ -117,10 +117,14 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 			return nil, err
 		}
 	}
-	// The run's live status lands in BACKLOG.md once, in the ship commit.
-	for _, taskID := range sortedKeys(live) {
-		if err := writeStatus(path, taskID, live[taskID].Status); err != nil {
-			return nil, err
+	// This group's live status lands in BACKLOG.md once, in the ship commit.
+	var shippedIDs []string
+	for _, task := range plan.Tasks {
+		shippedIDs = append(shippedIDs, task.ID)
+		if status, ok := live[task.ID]; ok && status.Status != "" {
+			if err := writeStatus(path, task.ID, status.Status); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if line := ChangelogLine(plan, result); line != "" {
@@ -139,7 +143,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 			return nil, err
 		}
 	}
-	if err := ClearStatus(root); err != nil {
+	if err := ClearStatus(root, shippedIDs); err != nil {
 		return nil, err
 	}
 	if isToolkit(root) {

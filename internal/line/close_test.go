@@ -155,8 +155,8 @@ func TestSecondFailureBlocksTheTask(t *testing.T) {
 		t.Fatalf("second = %+v", second)
 	}
 	got := LoadStatus(root)["TSK-08.1.1"]
-	if got.Status != "BLOCKED" || !strings.HasPrefix(got.Note, "attempt 2: ") {
-		t.Fatalf("status = %+v; the blocked status and its note were not recorded", got)
+	if got.Status != "BLOCKED" {
+		t.Fatalf("status = %+v; the blocked status was not recorded", got)
 	}
 	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
 	if strings.Contains(string(data), "[BLOCKED]") {

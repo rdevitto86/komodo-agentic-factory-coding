@@ -80,7 +80,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		clearAttempt(root, taskID)
 		entry.Outcome = "done"
 		Stamp(root, entry)
-		return outcome, RecordStatus(root, taskID, "DONE", "")
+		return outcome, RecordStatus(root, taskID, "DONE")
 	}
 	entry.FailureClass = FailureClass(problems)
 	attempt, err := bumpAttempt(root, taskID, strings.Join(problems, "\n"), diffOf(cwd))
@@ -93,12 +93,12 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		outcome.Status = "BLOCKED"
 		entry.Outcome = "blocked"
 		Stamp(root, entry)
-		return outcome, RecordStatus(root, taskID, "BLOCKED", statusNote(attempt))
+		return outcome, RecordStatus(root, taskID, "BLOCKED")
 	}
 	outcome.Status = "IN_PROGRESS"
 	entry.Outcome = "repair"
 	Stamp(root, entry)
-	return outcome, RecordStatus(root, taskID, "IN_PROGRESS", statusNote(attempt))
+	return outcome, RecordStatus(root, taskID, "IN_PROGRESS")
 }
 
 // TaskWorktree is where a task is built: its own worktree, else the run's, else the repo root.

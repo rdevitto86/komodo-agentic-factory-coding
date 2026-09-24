@@ -381,7 +381,7 @@ func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(flipBacklog), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := RecordStatus(root, "TSK-11.1.1", status, ""); err != nil {
+		if err := RecordStatus(root, "TSK-11.1.1", status); err != nil {
 			t.Fatal(err)
 		}
 		plan := &Plan{
@@ -407,7 +407,43 @@ func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
 	}
 }
 
-const closedRootBacklog ="### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+func TestShipLeavesAnotherGroupsLiveStatusAlone(t *testing.T) {
+	text := flipBacklog + "\n### [TG-11.2] Another group\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+		"#### [TSK-11.2.1] Other [P: C] [READY]\n```yaml\nfiles: [b/other.go]\ndone_when: [\"go test ./b/...\"]\n```\n"
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", text, "the backlog")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, taskID := range []string{"TSK-11.1.1", "TSK-11.2.1"} {
+		if err := RecordStatus(root, taskID, "DONE"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := &Plan{
+		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+	}
+	unreachableOrigin(t, root)
+	_, _ = ShipGroup(root, plan, nil, nil)
+	committed, err := git(worktree, "show", "HEAD:BACKLOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(committed, "[TSK-11.1.1] One [P: C] [DONE]") {
+		t.Fatalf("the ship commit does not carry its own task's DONE:\n%s", committed)
+	}
+	if !strings.Contains(committed, "[TSK-11.2.1] Other [P: C] [READY]") {
+		t.Fatalf("the ship commit wrote another group's status:\n%s", committed)
+	}
+	if got := LoadStatus(root); len(got) != 1 || got["TSK-11.2.1"].Status != "DONE" {
+		t.Fatalf("status = %+v; ship must clear only its own group's tasks", got)
+	}
+}
+
+const closedRootBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-12.1.1] One [P: C] [BLOCKED]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
 
 const staleWorktreeBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
