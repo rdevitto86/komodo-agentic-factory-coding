@@ -228,7 +228,7 @@ func TestTheHookCommandIsAnAbsolutePath(t *testing.T) {
 		t.Fatalf("command %q is not an absolute path; a cd would lose the hook", command)
 	}
 	matcher := settings.Hooks.PreToolUse[0].Matcher
-	for _, want := range []string{"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit"} {
+	for _, want := range []string{"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task"} {
 		if !strings.Contains(matcher, want) {
 			t.Fatalf("matcher %q is missing %q", matcher, want)
 		}

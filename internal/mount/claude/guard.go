@@ -18,15 +18,23 @@ var guardWriteTools = map[string]bool{"Edit": true, "Write": true, "MultiEdit": 
 // guardPathFields are the tool_input keys a write tool's path arrives in.
 var guardPathFields = []string{"file_path", "notebook_path"}
 
+// guardSpawnTools are this host's tool names that start a second agent session.
+var guardSpawnTools = map[string]bool{"Task": true}
+
+// isolationField is the tool_input key a spawn call uses to ask for a separate worktree.
+const isolationField = "isolation"
+
 // init registers this host's tool names and denial encoding, so the guard never names it.
 func init() {
 	mount.RegisterGuard("claude", mount.GuardTools{
-		WriteTools:   guardWriteTools,
-		PathFields:   guardPathFields,
-		ShellTool:    shellTool,
-		CommandField: "command",
-		ConfigPaths:  []string{filepath.ToSlash(filepath.Join(Dir, "settings.json"))},
-		Deny:         denyPayload,
+		WriteTools:     guardWriteTools,
+		PathFields:     guardPathFields,
+		ShellTool:      shellTool,
+		CommandField:   "command",
+		SpawnTools:     guardSpawnTools,
+		IsolationField: isolationField,
+		ConfigPaths:    []string{filepath.ToSlash(filepath.Join(Dir, "settings.json"))},
+		Deny:           denyPayload,
 	})
 }
 
@@ -34,6 +42,9 @@ func init() {
 func hookMatcher() string {
 	names := []string{shellTool}
 	for name := range guardWriteTools {
+		names = append(names, name)
+	}
+	for name := range guardSpawnTools {
 		names = append(names, name)
 	}
 	sort.Strings(names)

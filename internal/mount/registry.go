@@ -254,8 +254,12 @@ type GuardTools struct {
 	PathFields   []string
 	ShellTool    string
 	CommandField string
-	ConfigPaths  []string
-	Deny         func(reason string) []byte
+	// SpawnTools are this host's agent-spawn tool names, the ones that may start a second session.
+	SpawnTools map[string]bool
+	// IsolationField is the input key a spawn call uses to ask for a separate worktree.
+	IsolationField string
+	ConfigPaths    []string
+	Deny           func(reason string) []byte
 }
 
 var (
