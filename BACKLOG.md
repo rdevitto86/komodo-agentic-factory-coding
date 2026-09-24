@@ -1498,7 +1498,7 @@ type: fix
 ```yaml
 type: feat
 version: 1.1.0
-base: fix/a-builder-s-worktree-cannot-push
+base: main
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
 
@@ -2016,7 +2016,7 @@ type: test
 ```yaml
 type: fix
 version: 1.0.1
-base: fix/a-builder-s-worktree-cannot-push
+base: main
 ```
 * **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
 
@@ -2074,4 +2074,21 @@ context:
   - "use YAML's own rule: inside single quotes a single quote is written twice, and scalar turns '' back into one; a value with no single quote keeps today's output byte for byte"
   - "tests: a value holding both quote kinds survives dump then parse; the fuzz target over the parser adds a round-trip property for dumped values"
 type: fix
+```
+
+#### [TSK-03.29.5] The guard refuses a commit, pull request, or comment that carries a session link [P: C] [READY]
+```yaml
+files: [internal/mount/registry.go, internal/mount/claude/guard.go, internal/guard/gh.go, internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/... ./internal/mount/...
+  - go vet ./internal/guard/... ./internal/mount/...
+  - go run ./cmd/komodo guard check
+  - go run ./cmd/komodo doctor
+context:
+  - "a session link reached a pull request body on 2026-09-24 and leaked a private session to the web; the rule in komodo/AGENTS.md asks, and this makes the guard refuse"
+  - "GuardTools gains PrivatePatterns, regular expressions for text the host considers private; the claude mount registers its session URL there, since only internal/mount/ may name a host"
+  - "the guard refuses, in every mode, a git commit or merge message, and a gh pr create, edit, comment, or review, gh issue create or comment, or gh api field or --input text whose body holds a private pattern or a trailer pattern, reading --body, -b, --body-file, -F file, and -f body= the way commitMessage reads -m and -F; finding: a session link or trailer never leaves the machine"
+  - "table rows, with the pattern taken from the registered mount so no host is named in table.go: a commit -m carrying the link denied, gh pr create --body carrying it denied, gh pr comment --body-file holding it denied, gh api .../comments -f body= carrying it denied; the same commands with plain text allowed"
+type: fix
+tier: heavy
 ```
