@@ -1213,3 +1213,124 @@ func TestASingleModeGroupSpawnsOneTaskAtATime(t *testing.T) {
 
 // wideWave is waveBacklog's one wave, pinned so the plan's parallel cap cannot split it.
 var wideWave = []string{"TSK-14.1.1", "TSK-14.1.2", "TSK-14.1.3"}
+
+// tieredRepo is a one-task run on a fake host with a light, standard, and heavy machine, its brief written.
+func tieredRepo(t *testing.T, fields, overlay string) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if overlay != "" {
+		if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text := "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\n" + fields + "done_when: [\"go test ./a/...\"]\n```\n"
+	root := repo(t, text)
+	startRun(t, root)
+	if err := os.WriteFile(filepath.Join(root, ".fakehost-tiers-marker"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Register(mount.Host{
+		Name: "fakehost-tiers",
+		Installed: func(r string) bool {
+			_, err := os.Stat(filepath.Join(r, ".fakehost-tiers-marker"))
+			return err == nil
+		},
+		Tiers: func(string, bool) mount.Tiers {
+			return mount.Tiers{
+				Light:    mount.Machine{Provider: "vendora", Model: "haiku"},
+				Standard: mount.Machine{Provider: "vendora", Model: "sonnet"},
+				Heavy:    mount.Machine{Provider: "vendora", Model: "opus"},
+			}
+		},
+	})
+	path := filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// builderMachine steps once and returns the builder spawn's machine and why.
+func builderMachine(t *testing.T, root string) (string, string) {
+	t.Helper()
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "builder" {
+		t.Fatalf("action = %+v, want a builder spawn", next)
+	}
+	return next.Machine, next.Why
+}
+
+func TestAOneFileTaskBuildsOnLightAndRepairsOnStandard(t *testing.T) {
+	root := tieredRepo(t, "files: [a/one.go]\n", "")
+	machine, why := builderMachine(t, root)
+	if machine != "vendora/haiku" || !strings.Contains(why, "TSK-12.1.1 is one file, so it builds on light") {
+		t.Fatalf("machine = %q, why = %q; a one-file task must build on light", machine, why)
+	}
+	writeStepResult(t, root, "TSK-12.1.1")
+	fail(t, root, "TSK-12.1.1", 1)
+	if err := os.WriteFile(filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md"), []byte("repair brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	machine, why = builderMachine(t, root)
+	if machine != "vendora/sonnet" || !strings.Contains(why, "TSK-12.1.1 failed once on light, so its repair builds on standard") {
+		t.Fatalf("machine = %q, why = %q; a repair must build on standard", machine, why)
+	}
+}
+
+func TestASourceAndItsTestFileStillBuildOnLight(t *testing.T) {
+	root := tieredRepo(t, "files: [a/one.go, a/one_test.go]\n", "")
+	if machine, _ := builderMachine(t, root); machine != "vendora/haiku" {
+		t.Fatalf("machine = %q; a source file and its own test file are one small task", machine)
+	}
+}
+
+func TestATwoFileTaskBuildsOnStandard(t *testing.T) {
+	root := tieredRepo(t, "files: [a/one.go, a/two.go]\n", "")
+	machine, why := builderMachine(t, root)
+	if machine != "vendora/sonnet" || strings.Contains(why, "light") {
+		t.Fatalf("machine = %q, why = %q; a two-file task must build on standard", machine, why)
+	}
+}
+
+func TestLightBuilderFalseKeepsEveryBuilderOnStandard(t *testing.T) {
+	root := tieredRepo(t, "files: [a/one.go]\n", `{"light_builder": false}`)
+	if machine, _ := builderMachine(t, root); machine != "vendora/sonnet" {
+		t.Fatalf("machine = %q; light_builder false must keep the builder on standard", machine)
+	}
+}
+
+func TestATaskTierHeavyStaysOnHeavy(t *testing.T) {
+	root := tieredRepo(t, "files: [a/one.go]\ntier: heavy\n", "")
+	if machine, _ := builderMachine(t, root); machine != "vendora/opus" {
+		t.Fatalf("machine = %q; a task tier key must win over the light choice", machine)
+	}
+}
+
+func TestSmallTaskCountsOneSourceFilePlusItsOwnTest(t *testing.T) {
+	cases := map[string]bool{
+		"a/one.go":                 true,
+		"a/one.go a/one_test.go":   true,
+		"a/one_test.go a/one.go":   true,
+		"a/one.go a/two_test.go":   false,
+		"a/one.go a/two.go":        false,
+		"a/one.go a/one_test.go b": false,
+	}
+	for files, want := range cases {
+		if got := smallTask(strings.Fields(files)); got != want {
+			t.Errorf("smallTask(%s) = %v, want %v", files, got, want)
+		}
+	}
+}

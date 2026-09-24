@@ -1868,7 +1868,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.26.3] A small task builds on the light tier and repairs on standard [P: M] [READY]
+#### [TSK-03.26.3] A small task builds on the light tier and repairs on standard [P: M] [DONE]
 ```yaml
 files: [internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/mount/registry.go]
 done_when:

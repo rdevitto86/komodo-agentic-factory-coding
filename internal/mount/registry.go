@@ -350,6 +350,13 @@ type Overlay struct {
 	LocalReviewer       bool              `json:"local_reviewer"`
 	LocalReviewerRecall float64           `json:"local_reviewer_recall"`
 	Models              map[string]string `json:"models"`
+	LightBuilder        *bool             `json:"light_builder"`
+}
+
+// LightBuilder reports whether a small task's first build may run on the light tier; unset means true.
+func LightBuilder() bool {
+	overlay := LoadOverlay()
+	return overlay.LightBuilder == nil || *overlay.LightBuilder
 }
 
 // OverlayPath is where a developer's own overlay lives, or empty when there is no home.
