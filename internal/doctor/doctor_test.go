@@ -617,3 +617,110 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 		t.Fatalf("feat/g survived; done = %v", got)
 	}
 }
+
+func TestPruneSweepsAnEarlierRunsMergedWorktreeWhileTheCurrentRunIsStillOpen(t *testing.T) {
+	root := gitRepo(t)
+	write(t, root, "BACKLOG.md", "# Backlog\n")
+	write(t, root, ".gitignore", "/.komodo/\n")
+	commitAll(t, root, "init")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run(root, "init", "-q", "--bare", bare)
+	run(root, "remote", "add", "origin", bare)
+	run(root, "push", "-q", "origin", "main")
+
+	// branch builds a clean worktree off start.
+	branch := func(group, name, start string) string {
+		worktree := filepath.Join(root, ".komodo", "wt", group)
+		run(root, "worktree", "add", "-q", "-b", name, worktree, start)
+		write(t, worktree, group+".txt", "done\n")
+		commitAll(t, worktree, "ship "+group)
+		return worktree
+	}
+
+	// the first run ships and origin's main already holds it.
+	first := branch("TG-01.1", "feat/g", "main")
+	run(first, "push", "-q", "origin", "feat/g:main")
+	run(root, "fetch", "-q", "origin", "main")
+
+	// the second run is still open: its branch has not reached origin.
+	second := branch("TG-01.2", "feat/h", "origin/main")
+	state := line.RunState{Run: "r2", Group: "TG-01.2", Base: "main", Branch: "feat/h", Worktree: second}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Prune(root, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists(first) {
+		t.Fatalf("the first run's merged worktree survived because the second run is still open; done = %v", got)
+	}
+	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/g").Output(); strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("feat/g survived; done = %v", got)
+	}
+	if !exists(second) {
+		t.Fatalf("the second run's own unmerged worktree was removed; done = %v", got)
+	}
+	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/h").Output(); strings.TrimSpace(string(out)) == "" {
+		t.Fatalf("feat/h was deleted though origin does not hold it; done = %v", got)
+	}
+}
+
+func TestPruneRemovesBothRunsWorktreesWhenOnlyTheLatestIsRecorded(t *testing.T) {
+	root := gitRepo(t)
+	write(t, root, "BACKLOG.md", "# Backlog\n")
+	write(t, root, ".gitignore", "/.komodo/\n")
+	commitAll(t, root, "init")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run(root, "init", "-q", "--bare", bare)
+	run(root, "remote", "add", "origin", bare)
+	run(root, "push", "-q", "origin", "main")
+
+	// ship builds a worktree off start, commits, and merges it straight into origin's main.
+	ship := func(group, branch, start string) string {
+		worktree := filepath.Join(root, ".komodo", "wt", group)
+		run(root, "worktree", "add", "-q", "-b", branch, worktree, start)
+		write(t, worktree, group+".txt", "done\n")
+		commitAll(t, worktree, "ship "+group)
+		run(worktree, "push", "-q", "origin", branch+":main")
+		return worktree
+	}
+
+	first := ship("TG-01.1", "feat/g", "main")
+	run(root, "fetch", "-q", "origin", "main")
+	second := ship("TG-01.2", "feat/h", "origin/main")
+	state := line.RunState{Run: "r2", Group: "TG-01.2", Base: "main", Branch: "feat/h", Worktree: second}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Prune(root, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists(first) || exists(second) {
+		t.Fatalf("a shipped worktree from an earlier run survived one prune; done = %v", got)
+	}
+	for _, branch := range []string{"feat/g", "feat/h"} {
+		if out, _ := exec.Command("git", "-C", root, "branch", "--list", branch).Output(); strings.TrimSpace(string(out)) != "" {
+			t.Fatalf("%s survived; done = %v", branch, got)
+		}
+	}
+}
