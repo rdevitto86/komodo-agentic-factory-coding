@@ -257,9 +257,11 @@ func TestBlockingFindingsPointAtStepNotTheRefusedClose(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := `{"findings":[{"severity":"high","class":"bug","file":"a/one.go","line":1,"title":"t","detail":"d","fix":"f"}]}`
-	if err := os.WriteFile(review, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(review, []byte(blockingReview), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	for round := 0; round < 2; round++ {
+		Stamp(root, ledger.Entry{Group: "TG-12.1", Station: "fix", Outcome: "done"})
 	}
 	next, err := Step(root, "")
 	if err != nil {
@@ -267,6 +269,140 @@ func TestBlockingFindingsPointAtStepNotTheRefusedClose(t *testing.T) {
 	}
 	if next.Action != "done" || !strings.Contains(next.Why, "komodo step") || strings.Contains(next.Why, "close --group") {
 		t.Fatalf("why = %q; blocking findings must point at komodo step, not the refused komodo close --group", next.Why)
+	}
+}
+
+// blockingReview is a review result with one finding at the default severity floor.
+const blockingReview = `{"findings":[{"severity":"high","class":"bug","file":"a/one.go","line":1,` +
+	`"title":"t","detail":"d","fix":"f"}]}`
+
+// reviewedRun builds a run whose one wave is merged and whose group worktree holds an unreviewed diff.
+func reviewedRun(t *testing.T) (string, string) {
+	t.Helper()
+	root := stepRepo(t)
+	schema := `{"type":"object","required":["result"],"properties":{"result":{"type":"string","enum":["DONE","BLOCKED"]}}}`
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "builder.schema.json"), []byte(schema), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	startRun(t, root)
+	writeStepResult(t, root, "TSK-12.1.1")
+	markDone(t, root, "TSK-12.1.1")
+	Stamp(root, ledger.Entry{Group: "TG-12.1", Wave: 1, Station: "qc", Outcome: "done"})
+	return root, gitWorktreeWithReview(t, root, "TG-12.1")
+}
+
+// writeReview puts a reviewer result on disk for the group.
+func writeReview(t *testing.T, root, body string) {
+	t.Helper()
+	path := ResultPath(root, "TG-12.1-review")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// walkFixRound drives one blocking review through its fix brief, builder spawn, and close --fix,
+// and checks the next step spawns a fresh review.
+func walkFixRound(t *testing.T, root, worktree string) {
+	t.Helper()
+	writeReview(t, root, blockingReview)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "run" || next.Command != "komodo brief --review TG-12.1" {
+		t.Fatalf("action = %+v; a blocking review must ask for a fix brief", next)
+	}
+	plan, err := PlanForStation(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FixBrief(root, plan); err != nil {
+		t.Fatal(err)
+	}
+	next, err = Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "builder" || next.Task != "TG-12.1-fix" ||
+		next.Brief != filepath.Join(StateDir, "briefs", "TG-12.1-fix.md") || next.Worktree != plan.Worktree {
+		t.Fatalf("action = %+v; a fresh fix brief must spawn the builder in the group worktree", next)
+	}
+	fixed := "package a\n\n" + strings.Repeat("var _ = 0\n", 45)
+	if err := os.WriteFile(filepath.Join(worktree, "go.mod"), []byte("module example.com/w\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "a", "one.go"), []byte(fixed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeResult(t, root, "TG-12.1-fix", goodResult())
+	next, err = Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "run" || next.Command != "komodo close --fix TG-12.1" {
+		t.Fatalf("action = %+v; a fix result must be gated and committed", next)
+	}
+	outcome, err := CloseFix(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Status != "DONE" {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	next, err = Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "spawn" || next.Role != "reviewer" {
+		t.Fatalf("action = %+v; a committed fix must be reviewed again", next)
+	}
+}
+
+func TestABlockingReviewIsRepairedThenReviewedAgain(t *testing.T) {
+	root, worktree := reviewedRun(t)
+	walkFixRound(t, root, worktree)
+	log, err := git(worktree, "log", "-1", "--format=%s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log, "TG-12.1-fix") {
+		t.Fatalf("last commit = %q; the fix round must commit on the group branch", log)
+	}
+	if rounds := FixRounds(root, "TG-12.1"); rounds != 1 {
+		t.Fatalf("rounds = %d, want the ledger to hold one fix round", rounds)
+	}
+	writeReview(t, root, blockingReview)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Command != "komodo brief --review TG-12.1" {
+		t.Fatalf("action = %+v; a second blocking review under the default limit gets a second round", next)
+	}
+}
+
+func TestBlockingReviewsPastReviewRepairsStopForAPerson(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	overlay := filepath.Join(home, ".komodo", "config.json")
+	if err := os.MkdirAll(filepath.Dir(overlay), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overlay, []byte(`{"review_repairs":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, worktree := reviewedRun(t)
+	walkFixRound(t, root, worktree)
+	writeReview(t, root, blockingReview)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "done" || !strings.Contains(next.Why, "a/one.go:1 t") || !strings.Contains(next.Why, "1 fix round") {
+		t.Fatalf("action = %+v; past review_repairs a blocking review stops and names its findings", next)
 	}
 }
 

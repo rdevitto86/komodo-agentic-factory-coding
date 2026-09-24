@@ -111,10 +111,22 @@ func runBrief(root string, args []string) {
 	role := set.String("role", "builder", "the role the brief is for")
 	dryRun := set.Bool("dry-run", false, "print slot sizes and a token estimate, write nothing")
 	failure := set.String("failure", "", "the previous attempt's output, which makes this a repair")
+	review := set.Bool("review", false, "write the fix brief for a group's blocking review findings")
 	task, rest := splitPositional(args, "role", "failure")
 	_ = set.Parse(rest)
 	if task == "" {
-		fail(fmt.Errorf("usage: komodo brief <task> [--role builder] [--dry-run]"))
+		fail(fmt.Errorf("usage: komodo brief <task> [--role builder] [--dry-run] | --review <group>"))
+	}
+	if *review {
+		brief, err := line.FixBrief(root, fixPlan(root, task))
+		if err != nil {
+			fail(err)
+		}
+		line.Stamp(root, ledger.Entry{
+			Task: brief.Task, Station: "brief", Role: brief.Role, TokensIn: brief.Tokens, Outcome: "written",
+		})
+		printJSON(brief)
+		return
 	}
 	// A repair reads the task's own worktree, where the failed attempt's edits still sit.
 	cwd := line.TaskWorktree(root, task)
@@ -162,6 +174,7 @@ func runClose(root string, args []string) {
 	withGate := set.Bool("gate", false, "run the local gate before the task commit")
 	wave := set.Int("wave", 0, "QC one wave of the current run, counting from 1")
 	group := set.Bool("group", false, "ship the current run: commit, push, pull request, changelog")
+	fix := set.Bool("fix", false, "gate and commit a review fix round on the named group's branch")
 	base := set.String("base", "", "the branch the pull request targets")
 	task, rest := splitPositional(args, "wave", "base")
 	_ = set.Parse(rest)
@@ -169,12 +182,26 @@ func runClose(root string, args []string) {
 		runWave(root, *wave)
 		return
 	}
+	if *fix {
+		if task == "" {
+			fail(fmt.Errorf("usage: komodo close --fix <group>"))
+		}
+		outcome, err := line.CloseFix(root, fixPlan(root, task))
+		if err != nil {
+			fail(err)
+		}
+		printJSON(outcome)
+		if code := closeExitCode(outcome.Status); code != 0 {
+			exit(code)
+		}
+		return
+	}
 	if *group {
 		runShip(root, *base)
 		return
 	}
 	if task == "" {
-		fail(fmt.Errorf("usage: komodo close <task> [--gate] | --wave N | --group"))
+		fail(fmt.Errorf("usage: komodo close <task> [--gate] | --wave N | --group | --fix <group>"))
 	}
 	outcome, err := line.CloseTask(root, task, *withGate)
 	if err != nil {
@@ -199,6 +226,21 @@ func closeExitCode(status string) int {
 		return 0
 	}
 	return 1
+}
+
+// fixPlan is the open run's plan with its recorded branch and worktree, refusing any other group.
+func fixPlan(root, group string) *line.Plan {
+	plan, err := line.PlanForStation(root, "")
+	if err != nil {
+		fail(err)
+	}
+	if plan == nil || plan.Group != group {
+		fail(fmt.Errorf("%s is not the open run's group", group))
+	}
+	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
+	}
+	return plan
 }
 
 // runWave merges one wave into the group branch, then runs the compile and verify gates.
@@ -286,6 +328,9 @@ func runReport(root string) {
 		fail(err)
 	}
 	fmt.Print(report.Text)
+	if rounds := line.FixRounds(root, plan.Group); rounds > 0 {
+		fmt.Printf("- **%d review fix round(s)** ran on %s.\n", rounds, plan.Group)
+	}
 }
 
 // runStep prints the one next action of the run.
@@ -305,7 +350,8 @@ func runStep(root string, args []string) {
 func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
-	budget := flags.Duration("budget", run.GroupBudget, "how long the run may take before it is killed")
+	budget := flags.Duration("budget", 0, "how long the run may take before it is killed (default: "+
+		run.GroupBudget.String()+" per group)")
 	target, rest := splitPositional(args, "budget")
 	_ = flags.Parse(rest)
 	if !*dry {

@@ -247,16 +247,26 @@ The install is a copy. After editing anything under `komodo/`, run it again. `ko
 ## Usage
 
 ```bash
+komodo run                  # headless, credentials stripped: drains every ready group
+komodo run TG-03.5          # headless, one group
 /run                        # in a session: the next ready group down the line
 /run TG-03.5                # one group
 /run TSK-03.5.2             # one task
 /review                     # QC and the reviewer on the current diff
-komodo run TG-03.5          # headless, credentials stripped
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
 komodo doctor               # references, portability, drift, prune; --remote audits the forge's rulesets
 komodo gate                 # vet, test, doctor, guard table, comments; pre-commit and pre-push run it here
 ```
+
+With no target, `komodo run` drains every ready group in order: for each it builds
+the tasks, repairs review findings for up to `review_repairs` rounds, re-renders
+the host config when doctor reports drift, and opens one pull request per group.
+Merging is the only step a person does across a clean drain.
+
+A drain stops for a person at one of three points: a review still blocking after
+its repair rounds, a merge conflict QC cannot resolve, or a plan the profile has
+paused.
 
 ## Layout
 

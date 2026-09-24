@@ -9,6 +9,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/facet"
+	profilepkg "komodo/internal/profile"
 	repopkg "komodo/internal/repo"
 )
 
@@ -411,5 +412,35 @@ func TestABriefWithoutASchemaStillNamesTheResultPath(t *testing.T) {
 	}
 	if !strings.Contains(brief.Text, brief.Result) {
 		t.Fatal("the brief must name where the result goes even when no schema ships")
+	}
+}
+
+func TestAFixBriefCarriesTheGroupsTasksAndBlockingFindings(t *testing.T) {
+	root := briefRepo(t)
+	review := ResultPath(root, "TG-07.1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"findings":[{"severity":"high","class":"bug","file":"a/one.go","line":3,"title":"nil deref","detail":"d","fix":"f"},` +
+		`{"severity":"low","class":"simplify","file":"a/one.go","line":9,"title":"minor nit","detail":"d","fix":"f"}]}`
+	if err := os.WriteFile(review, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{Group: "TG-07.1", Title: "A group", Worktree: ".", Tasks: []PlanTask{{ID: "TSK-07.1.1"}},
+		Profile: profilepkg.Profile{SeverityFloor: "high"}}
+	brief, err := FixBrief(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"TG-07.1-fix", "TSK-07.1.1: Build the thing", "### a/one.go", "go test ./a/...", "nil deref"} {
+		if !strings.Contains(brief.Text, want) {
+			t.Fatalf("fix brief lacks %q:\n%s", want, brief.Text)
+		}
+	}
+	if strings.Contains(brief.Text, "minor nit") {
+		t.Fatal("a finding under the floor is filed, never carried into the fix brief")
+	}
+	if _, err := os.Stat(filepath.Join(root, StateDir, "briefs", "TG-07.1-fix.md")); err != nil {
+		t.Fatalf("the fix brief was not written: %v", err)
 	}
 }

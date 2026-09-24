@@ -2115,7 +2115,7 @@ base: docs/queue-drain
 ```
 * **Why:** on 2026-09-24 every group needed a person to launch it, every blocking review needed a person to fix it, and every merge needed a person to re-render settings and re-point stacked bases. The line exists so the only human step is the merge button.
 
-#### [TSK-03.30.1] Step repairs its own review findings before it stops for a person [P: C] [READY]
+#### [TSK-03.30.1] Step repairs its own review findings before it stops for a person [P: C] [DONE]
 ```yaml
 files: [internal/line/step.go, internal/line/step_test.go, internal/line/brief.go, internal/line/brief_test.go, internal/line/close.go, internal/line/close_test.go, internal/profile/profile.go, cmd/komodo/line.go]
 done_when:
@@ -2132,7 +2132,7 @@ type: feat
 tier: heavy
 ```
 
-#### [TSK-03.30.2] A bare komodo run drains every ready group in order [P: C] [READY]
+#### [TSK-03.30.2] A bare komodo run drains every ready group in order [P: C] [DONE]
 ```yaml
 files: [internal/run/run.go, internal/run/run_test.go, internal/line/next.go, internal/line/next_test.go]
 done_when:
@@ -2149,7 +2149,7 @@ type: feat
 tier: heavy
 ```
 
-#### [TSK-03.30.3] README says the merge button is the only human step [P: M] [READY]
+#### [TSK-03.30.3] README says the merge button is the only human step [P: M] [DONE]
 ```yaml
 files: [README.md]
 done_when:

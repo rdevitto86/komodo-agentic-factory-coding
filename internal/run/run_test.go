@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
@@ -242,7 +244,7 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 		t.Fatalf("gh must not run any other command: %v", args)
 		return "", nil
 	}}
-	if err := finishShip(Options{Root: root, PR: client}); err != nil {
+	if _, err := finishShip(Options{Root: root, PR: client}); err != nil {
 		t.Fatal(err)
 	}
 	if !created {
@@ -285,7 +287,7 @@ func TestFinishShipRefusesARefspecOrCriticalBranchAnAgentWrote(t *testing.T) {
 			t.Fatalf("gh ran for %q: %v", branch, args)
 			return "", nil
 		}}
-		if err := finishShip(Options{Root: root, PR: client}); err == nil {
+		if _, err := finishShip(Options{Root: root, PR: client}); err == nil {
 			t.Fatalf("finishShip pushed the handoff branch %q", branch)
 		}
 		if out, _ := exec.Command("git", "ls-remote", bare).Output(); len(out) != 0 {
@@ -295,7 +297,245 @@ func TestFinishShipRefusesARefspecOrCriticalBranchAnAgentWrote(t *testing.T) {
 }
 
 func TestFinishShipDoesNothingWithNoHandoff(t *testing.T) {
-	if err := finishShip(Options{Root: t.TempDir()}); err != nil {
+	if _, err := finishShip(Options{Root: t.TempDir()}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+const drainText = "### [TG-07.1] First\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+	"#### [TSK-07.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n\n" +
+	"### [TG-07.2] Second\n```yaml\ntype: feat\nversion: 1.1.0\n```\n\n" +
+	"#### [TSK-07.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"true\"]\n```\n"
+
+// fakeScript plays one group: it records the launch, then copies in the files staged for that group.
+const fakeScript = `echo "$1" >> .komodo/fake/launched
+cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
+cp ".komodo/fake/$1.json" .komodo/ship.json 2>/dev/null
+exit 0`
+
+// drainRepo builds a remoted repo holding drainText, one local branch per group, and a fake host that plays each group.
+func drainRepo(t *testing.T) string {
+	t.Helper()
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("no /bin/sh on this machine")
+	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "commit", "--allow-empty", "-m", "seed")
+	runGit(t, root, "push", "origin", "main")
+	runGit(t, root, "branch", "feat/first")
+	runGit(t, root, "branch", "feat/second")
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(drainText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, line.StateDir, "fake"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(saved) })
+	mount.Register(mount.Host{
+		Name:      "fakehost-drain",
+		Installed: func(string) bool { return true },
+		Headless: func(skill, target string) (string, []string) {
+			return "/bin/sh", []string{"-c", fakeScript, "sh", target}
+		},
+	})
+	return root
+}
+
+// stageShip stages what the fake host leaves for a group: its tasks closed and its branch handed off.
+func stageShip(t *testing.T, root, group, branch, backlogAfter string) {
+	t.Helper()
+	dir := filepath.Join(root, line.StateDir, "fake")
+	if err := os.WriteFile(filepath.Join(dir, group+".md"), []byte(backlogAfter), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(line.ShipHandoff{Group: group, Branch: branch, Base: "main", Title: "t", Body: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, group+".json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// fakeForge answers pr create with a numbered pull request and label with none.
+func fakeForge(t *testing.T, root string) *pr.Client {
+	created := 0
+	return &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		switch {
+		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
+			created++
+			return "https://example.invalid/pr/" + strconv.Itoa(created), nil
+		case len(args) > 0 && args[0] == "label":
+			return "[]", nil
+		}
+		t.Fatalf("gh must not run any other command: %v", args)
+		return "", nil
+	}}
+}
+
+// launched reads which groups the fake host was given, in order.
+func launched(t *testing.T, root string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, line.StateDir, "fake", "launched"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func TestDrainLaunchesAndShipsTwoReadyGroupsInOrder(t *testing.T) {
+	root := drainRepo(t)
+	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
+	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
+	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
+	}
+	if got := launched(t, root); got != "TG-07.1\nTG-07.2" {
+		t.Fatalf("launched = %q; want both groups in order", got)
+	}
+	for _, want := range []string{
+		"TG-07.1 shipped: https://example.invalid/pr/1",
+		"TG-07.2 shipped: https://example.invalid/pr/2",
+		"nothing is ready",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestDrainStopsAtAGroupThatEndsUnshipped(t *testing.T) {
+	root := drainRepo(t)
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code == 0 {
+		t.Fatalf("code = 0; a group that ends unshipped must stop the drain with a failure")
+	}
+	if got := launched(t, root); got != "TG-07.1" {
+		t.Fatalf("launched = %q; the drain must stop before the next group", got)
+	}
+	if !strings.Contains(out.String(), "TG-07.1 stopped: it ended without shipping") {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
+func TestDrainDryRunListsTheGroupsInOrderAndLaunchesNothing(t *testing.T) {
+	root := drainRepo(t)
+	stacked := drainText + "\n### [TG-07.3] Third\n```yaml\ntype: feat\nversion: 1.2.0\nbase: feat/second\n```\n\n" +
+		"#### [TSK-07.3.1] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\ndone_when: [\"true\"]\n```\n\n" +
+		"### [TG-07.4] Fourth\n```yaml\ntype: feat\nversion: 1.3.0\nbase: feat/missing\n```\n\n" +
+		"#### [TSK-07.4.1] Four [P: C] [READY]\n```yaml\nfiles: [d/four.go]\ndone_when: [\"true\"]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(stacked), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	code, err := Launch(Options{Root: root, DryRun: true, Stdout: &out, Stderr: &out})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v", code, err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "1. TG-07.1\n2. TG-07.2\n3. TG-07.3" {
+		t.Fatalf("dry run = %q; want the ready groups in order, without the one whose base is missing", got)
+	}
+	if got := launched(t, root); got != "" {
+		t.Fatalf("a dry run launched %q", got)
+	}
+}
+
+func TestABareDrainBudgetsEveryGroupItPlans(t *testing.T) {
+	root := drainRepo(t)
+	total, err := drainBudget(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2*GroupBudget {
+		t.Fatalf("total = %s; two planned groups get %s each", total, GroupBudget)
+	}
+	if given, _ := drainBudget(root, time.Minute); given != time.Minute {
+		t.Fatalf("total = %s; a given --budget is the whole drain's budget", given)
+	}
+}
+
+func TestDrainStopsWhenTheWholeBudgetIsSpent(t *testing.T) {
+	root := drainRepo(t)
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Nanosecond, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 124 || !strings.Contains(out.String(), "TG-07.1 stopped: the whole 1ns budget is spent") {
+		t.Fatalf("code = %d, out = %s; a spent budget must stop the drain with the budget code", code, out.String())
+	}
+	if got := launched(t, root); got != "" {
+		t.Fatalf("launched = %q; nothing may launch once the budget is spent", got)
+	}
+}
+
+func TestDrainStopsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
+	root := drainRepo(t)
+	stageShip(t, root, "TG-07.1", "feat/first", drainText)
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 1 || !strings.Contains(out.String(), "TG-07.1 stopped: it came up again after it shipped") {
+		t.Fatalf("code = %d, out = %s; a shipped group that is still ready must stop the drain", code, out.String())
+	}
+	if got := launched(t, root); got != "TG-07.1" {
+		t.Fatalf("launched = %q; the repeated group must not launch twice", got)
+	}
+}
+
+func TestDrainReRendersTheRootWhenTheDoctorReportsDrift(t *testing.T) {
+	root := drainRepo(t)
+	rendered := filepath.Join(root, "rendered.md")
+	if err := os.WriteFile(rendered, []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	host, _ := mount.Get("fakehost-drain")
+	host.Render = func(dir, binary string) (install.Plan, error) {
+		plan := install.Plan{Host: host.Name, Root: dir}
+		plan.AddProject(filepath.Join(dir, "rendered.md"), []byte("fresh\n"), "kept in sync")
+		return plan, nil
+	}
+	mount.Register(host)
+	var out bytes.Buffer
+	if _, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "fresh\n" {
+		t.Fatalf("rendered.md = %q; a drifted root must be re-rendered before a group launches", data)
 	}
 }

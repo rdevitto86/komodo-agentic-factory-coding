@@ -186,6 +186,121 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 	return brief, nil
 }
 
+// FixBrief fills the builder role with the group's tasks, files, and blocking review findings, and
+// writes it to .komodo/briefs/<group>-fix.md in the root and the group worktree.
+func FixBrief(root string, plan *Plan) (*Brief, error) {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	definition, err := LoadRole(root, "builder")
+	if err != nil {
+		return nil, err
+	}
+	standards, err := LoadStandards(root)
+	if err != nil {
+		return nil, err
+	}
+	blocking, _ := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
+	if len(blocking) == 0 {
+		return nil, fmt.Errorf("%s has no review finding at or above %s to fix", plan.Group, plan.Profile.SeverityFloor)
+	}
+	task, blocks := fixTask(parsed, plan)
+	cwd := WorktreePath(root, plan.Worktree)
+	caps := resolveCaps(root)
+	result := filepath.Join(StateDir, "results", task.ID+".json")
+	tree, _ := detect.Detect(cwd)
+	failure := findingsText(blocking)
+	if previous := RepairText(root, task.ID); previous != "" {
+		failure += "\n\n# The last fix round failed its gate\n" + previous
+	}
+	slots := map[string]string{
+		"task_id":      task.ID,
+		"title":        task.Title,
+		"task_block":   blocks,
+		"repo_rules":   repoRules(cwd, caps.RepoRules),
+		"repo_context": repoContextSlot(cwd, task, caps.RepoContext),
+		"context":      contextSlot(cwd, task, caps.PerFile, caps.FilesTotal),
+		"files":        filesSlot(cwd, task, caps.PerFile, caps.FilesTotal),
+		"repo_profile": repoProfileSlot(tree),
+		"standards": standardsSlot(StandardsFor(standards, task.Files(), "builder")) +
+			repoStandardsSlot(root) + facetAppendixSlot(root, tree, task, "builder"),
+		"done_when":   doneWhenSlot(task),
+		"failure":     failureSlot(failure, caps.Failure),
+		"result_path": result,
+		"schema":      SchemaText(root, "builder"),
+	}
+	text, err := Fill(definition.Body, slots)
+	if err != nil {
+		return nil, err
+	}
+	text = strings.TrimSpace(text) + resultLine(result, slots["schema"])
+	brief := &Brief{
+		Task: task.ID, Role: "builder", Result: result, Text: text, Tokens: Tokens(text),
+		Path:     filepath.Join(StateDir, "briefs", task.ID+".md"),
+		Worktree: plan.Worktree,
+		Slots:    map[string]int{},
+	}
+	for name, value := range slots {
+		brief.Slots[name] = len(value)
+	}
+	for _, base := range []string{root, cwd} {
+		full := filepath.Join(base, brief.Path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(full, []byte(text), 0o644); err != nil {
+			return nil, err
+		}
+	}
+	return brief, nil
+}
+
+// fixTask is one task standing for the whole group's fix round: every task's files, checks,
+// context, and facets, plus each task's own yaml block for the brief.
+func fixTask(parsed backlog.Backlog, plan *Plan) (backlog.Task, string) {
+	lists := map[string][]any{}
+	seen := map[string]bool{}
+	var blocks []string
+	for _, planned := range plan.Tasks {
+		task, ok := parsed.Task(planned.ID)
+		if !ok {
+			continue
+		}
+		blocks = append(blocks, "# "+task.ID+": "+task.Title+"\n"+blockText(parsed, task))
+		for key, values := range map[string][]string{
+			"files": task.Files(), "done_when": task.DoneWhen(), "context": task.Context(), "facets": task.Facets(),
+		} {
+			for _, value := range values {
+				if !seen[key+"\x00"+value] {
+					seen[key+"\x00"+value] = true
+					lists[key] = append(lists[key], value)
+				}
+			}
+		}
+	}
+	task := backlog.Task{ID: plan.Group + "-fix", Title: "Fix the review findings on " + plan.Title, GroupID: plan.Group}
+	task.Fields.Set("type", "fix")
+	for _, key := range []string{"files", "done_when", "context", "facets"} {
+		task.Fields.Set(key, lists[key])
+	}
+	return task, strings.Join(blocks, "\n\n")
+}
+
+// findingsText renders each blocking finding as one line a builder can act on.
+func findingsText(findings []Finding) string {
+	lines := []string{"# Blocking review findings"}
+	for _, finding := range findings {
+		lines = append(lines, fmt.Sprintf("- [%s] %s %s:%d %s: %s Fix: %s",
+			finding.Severity, finding.Class, finding.File, finding.Line, finding.Title, finding.Detail, finding.Fix))
+	}
+	return strings.Join(lines, "\n")
+}
+
 // resultLine tells the machine where its result JSON belongs and the exact shape it must have.
 func resultLine(result, schema string) string {
 	line := "\n\n# Your result\nWrite this JSON to `" + result + "`.\n"

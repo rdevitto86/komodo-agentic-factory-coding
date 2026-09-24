@@ -4,6 +4,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 ## 1.1.0 — 2026-09-24
 
+- **TG-03.30** The line drains the backlog on its own (3 task(s))
 - **TG-03.24** The local reviewer earns its seat (2 task(s))
 - **TG-03.28** Every package clears 75 percent coverage (2 task(s))
 
