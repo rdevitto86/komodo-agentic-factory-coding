@@ -232,8 +232,9 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "push") {
-		t.Fatalf("err = %v; the fixture has no remote, so ship must fail at the push and not before", err)
+	unreachableOrigin(t, root)
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
+		t.Fatalf("err = %v; the origin is unreachable, so ship must fail at the push itself and not before", err)
 	}
 	shipped, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
 	if err != nil {
@@ -294,8 +295,9 @@ func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
 	plan.Profile.SeverityFloor = "high"
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "push") {
-		t.Fatalf("err = %v; the fixture has no remote yet, so ship must fail at the push", err)
+	unreachableOrigin(t, root)
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin main") {
+		t.Fatalf("err = %v; the origin is unreachable, so ship must fail at the push itself", err)
 	}
 	before, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
 	if err != nil {
@@ -306,8 +308,7 @@ func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
 	}
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
-	runGit(t, root, "init")
-	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "remote", "set-url", "origin", bare)
 	result, err := ShipGroup(root, plan, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -502,5 +503,24 @@ func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
 	}
 	if refused, err := git(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
 		t.Fatalf("pushurl = %q; ship must leave the worktree's refusal in place", refused)
+	}
+}
+
+// unreachableOrigin makes root a repo whose origin names a path that does not exist, so a ship
+// resolves the URL and then fails at the push itself.
+func unreachableOrigin(t *testing.T, root string) {
+	t.Helper()
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", filepath.Join(t.TempDir(), "missing.git"))
+}
+
+// TestPushErrorsNeverCarryACredential checks a failed push redacts a token the origin URL holds.
+func TestPushErrorsNeverCarryACredential(t *testing.T) {
+	text := redactURL("fatal: unable to access 'https://x-access-token:SECRET@github.com/o/r.git/': 403", "https://x-access-token:SECRET@github.com/o/r.git")
+	if strings.Contains(text, "SECRET") {
+		t.Fatalf("text = %q; a push error must never carry a token", text)
+	}
+	if other := redactURL("remote: https://u:p@example.com/x denied", ""); strings.Contains(other, "u:p") {
+		t.Fatalf("other = %q; any URL credential must be redacted", other)
 	}
 }
