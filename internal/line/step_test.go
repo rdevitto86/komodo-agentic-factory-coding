@@ -139,6 +139,16 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	if next.Command != "komodo close --group" {
 		t.Fatalf("action = %+v", next)
 	}
+	if err := writeShipHandoff(root, ShipHandoff{Group: "TG-12.1", Branch: "feat/a-group"}); err != nil {
+		t.Fatal(err)
+	}
+	next, _ = Step(root, "")
+	if next.Action != "done" || !strings.Contains(next.Why, "handed off") {
+		t.Fatalf("action = %+v; a pending handoff must stop the loop, not ship again", next)
+	}
+	if err := os.Remove(filepath.Join(root, StateDir, "ship.json")); err != nil {
+		t.Fatal(err)
+	}
 	if err := book.Stamp(ledger.Entry{Run: "TG-12.1-1", Group: "TG-12.1", Station: "ship", Outcome: "done"}); err != nil {
 		t.Fatal(err)
 	}
