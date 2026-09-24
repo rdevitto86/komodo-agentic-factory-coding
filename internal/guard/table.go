@@ -115,6 +115,12 @@ func Table(policy Policy) []Case {
 		bash("mirror push reaches every ref", "git push --mirror", "feat/x", true, "reaches every ref"),
 		bash("push --all reaches every ref", "git push --all origin", "feat/x", true, "reaches every ref"),
 		bash("wildcard refspec reaches every ref", "git push origin refs/heads/*:refs/heads/*", "feat/x", true, "wildcard refspec"),
+		// A push destination that is a URL, scp form, or an outside path skips the remote the line configured.
+		bash("push to a URL skips the remote", "git push https://github.com/o/r.git feat/x", "feat/x", true, "skips the remote"),
+		bash("push to an scp-style remote skips the remote", "git push git@github.com:o/r.git feat/x", "feat/x", true, "skips the remote"),
+		bash("push to a bare repo outside the worktree skips the remote", "git push ../elsewhere.git feat/x", "feat/x", true, "skips the remote"),
+		bash("push to origin by name is not a URL", "git push origin feat/x", "feat/x", false, ""),
+		bashInMode("push to a URL is allowed in unsafe mode", "git push https://github.com/o/r.git feat/x", "feat/x", ModeUnsafe, false, ""),
 		// A push target only the shell fills in when it runs is denied without knowing which ref it names.
 		bash("an xargs placeholder is not a known target", "echo main | xargs -I{} git push origin {}", "feat/x", true, "only known when it runs"),
 		bash("a custom xargs placeholder is not a known target", "echo main | xargs -I% git push origin %", "feat/x", true, "only known when it runs"),

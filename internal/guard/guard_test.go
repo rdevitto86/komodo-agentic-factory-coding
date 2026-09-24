@@ -108,6 +108,33 @@ func TestEveryDeniedRowNamesAFinding(t *testing.T) {
 	}
 }
 
+// TestPushToAURLSkipsTheRemote proves a destination that is a URL, not a remote name, is denied
+// because it bypasses the remote's own pushurl.
+func TestPushToAURLSkipsTheRemote(t *testing.T) {
+	root := worktree(t)
+	request := Request{ToolName: "Bash", Cwd: root,
+		ToolInput: map[string]any{"command": "git push https://github.com/o/r.git feat/x"}}
+	decision := Check(request, DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatal("a push to a URL was not denied")
+	}
+	if !containsAny(decision.Findings, "skips the remote") {
+		t.Fatalf("findings = %v", decision.Findings)
+	}
+}
+
+// TestPushToAURLIsAllowedInUnsafeMode proves unsafe mode lets a push name its own destination.
+func TestPushToAURLIsAllowedInUnsafeMode(t *testing.T) {
+	root := worktree(t)
+	policy := DefaultPolicy()
+	policy.Mode = ModeUnsafe
+	request := Request{ToolName: "Bash", Cwd: root,
+		ToolInput: map[string]any{"command": "git push https://github.com/o/r.git feat/x"}}
+	if Check(request, policy, "feat/x").Deny {
+		t.Fatal("a push to a URL in unsafe mode was denied")
+	}
+}
+
 func TestCheckIsSilentOnAReadTool(t *testing.T) {
 	root := worktree(t)
 	request := Request{HookEventName: "PreToolUse", ToolName: "Read", Cwd: root,

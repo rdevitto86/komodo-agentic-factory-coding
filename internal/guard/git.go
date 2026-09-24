@@ -101,6 +101,9 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 		if mirrorFlag != "" && hasAnyCritical(policy) {
 			findings = append(findings, fmt.Sprintf("git push %s: reaches every ref, including a critical one; open a pull request instead", mirrorFlag))
 		}
+		if len(positional) > 0 && normalizeMode(policy.Mode) != ModeUnsafe && isPushURL(positional[0], cwd) {
+			findings = append(findings, pushURLFinding)
+		}
 		targets := positional
 		if len(positional) > 1 {
 			targets = positional[1:]
@@ -298,6 +301,30 @@ func isForceFlag(arg string) bool {
 	}
 	// A short cluster such as -fu carries the same force.
 	return strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg[1:], "f")
+}
+
+// pushURLFinding is reported when a push destination bypasses the remote the line configured.
+const pushURLFinding = "git push to a URL skips the remote the line configured; push to origin"
+
+// scpLikeRe matches git's scp-style remote form: user@host:path.
+var scpLikeRe = regexp.MustCompile(`^[\w.-]+@[\w.-]+:`)
+
+// isPushURL reports whether a push destination is a URL, scp-style remote, or a path to a bare
+// repo outside cwd, any of which reaches a repository the remote's pushurl does not.
+func isPushURL(dest, cwd string) bool {
+	if strings.Contains(dest, "://") || scpLikeRe.MatchString(dest) {
+		return true
+	}
+	if !strings.Contains(dest, "/") {
+		return false
+	}
+	resolved := dest
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(cwd, resolved)
+	}
+	resolved = filepath.Clean(resolved)
+	root := filepath.Clean(cwd)
+	return resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator))
 }
 
 // commitMessage composes the text of a commit or merge's own message: every -m paragraph, an
