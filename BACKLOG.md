@@ -16,7 +16,7 @@ Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. I
 ### [TG-03.1] The markdown
 ```yaml
 type: refactor
-version: 1.0.0-beta.1
+version: 1.0.0
 ```
 * **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
 * **PR A:** `refactor/v2-markdown` from `docs/v2-plan`, opened by the session with `gh pr create`. Validated by every `done_when` here, the V1 linter from a scratch worktree of `prototype-final` at zero problems, and a human read of `komodo/AGENTS.md` and `komodo/policy.json`. Merges into `docs/v2-plan`.
@@ -77,7 +77,7 @@ type: refactor
 ### [TG-03.2] The conveyor and the devices
 ```yaml
 type: feat
-version: 1.0.0-beta.1
+version: 1.0.0
 ```
 * **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `prototype-final` under `komodo/hooks/src`, are the seed of the module.
 * **PR B:** `feat/v2-conveyor` from `refactor/v2-markdown`, opened by the session. Validated by `komodo gate`, `komodo lint`, `komodo next --json` printing TG-03.3, `komodo brief --dry-run TSK-03.3.1`, `komodo close` on a hand-written result, `komodo step` printing one action, and a human read of one brief. Merges into `refactor/v2-markdown`.
@@ -194,7 +194,7 @@ type: feat
 ### [TG-03.3] The guard and the mounts
 ```yaml
 type: feat
-version: 1.0.0-beta.1
+version: 1.0.0
 ```
 * **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
 * **PR C:** `feat/v2-guard-mounts` from `feat/v2-conveyor`, opened by the session. Validated by `komodo gate` with `guard check`, `install --host claude --dry-run`, `komodo doctor` under the budgets with no leak, the probe printing an overlay and no identity, then a real install on this Mac where a session is denied a commit to `main` and allowed `rm` in its worktree. Merges into `feat/v2-conveyor`.
@@ -268,7 +268,7 @@ type: feat
 ### [TG-03.4] The skills and the launcher
 ```yaml
 type: feat
-version: 1.0.0-beta.1
+version: 1.0.0
 ```
 * **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof is one group driven end to end by the skill alone, recorded before anything is deleted.
 * **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping, and a session start with no permission-rule warning. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
@@ -329,7 +329,7 @@ type: fix
 ### [TG-03.5] The repo layer and the local machines
 ```yaml
 type: feat
-version: 1.0.0-beta.1
+version: 1.0.0
 base: docs/v2-plan
 ```
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
@@ -449,7 +449,7 @@ type: feat
 ### [TG-03.6] The gate and the exit test
 ```yaml
 type: chore
-version: 1.0.0-beta.1
+version: 1.0.0
 base: docs/v2-plan
 ```
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
@@ -603,7 +603,7 @@ type: refactor
 ### [TG-03.7] The sanity pass: safety, correctness, portability
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: docs/v2-plan
 ```
 
@@ -1038,7 +1038,7 @@ context:
 ### [TG-03.8] The line plans what it is handed
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: main
 ```
 
@@ -1241,7 +1241,7 @@ type: docs
 ### [TG-03.9] A local machine carries a station
 ```yaml
 type: feat
-version: 1.0.0-beta.1
+version: 1.0.0
 base: main
 ```
 * **Why:** the second host needs an account nobody holds yet. A local model carrying the review proves a machine swaps in with no code change, and one overlay key points every machine at one endpoint, local now and a static address later.
@@ -1282,7 +1282,7 @@ type: docs
 ### [TG-03.10] The gate lints what a commit carries
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: main
 ```
 * **Why:** the gate's comment lint reads only tracked files, so a new file passes the gate by hand and then fails the pre-commit hook once it is staged. Found on PR #154.
@@ -1302,7 +1302,7 @@ type: fix
 ### [TG-03.11] A pipe through a filter still feeds a shell
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: main
 ```
 * **Why:** the guard follows stdin into a shell from the command just before it, but not across a longer pipeline. `echo 'git push origin main' | tr a a | sh` passes today.
@@ -1322,7 +1322,7 @@ type: fix
 ### [TG-03.12] The local mount's own paths are tested
 ```yaml
 type: test
-version: 1.0.0-beta.1
+version: 1.0.0
 base: main
 ```
 * **Why:** the local mount sits at 59.8% statement coverage, the lowest in the repo, and it is the path a local review takes.
@@ -1342,7 +1342,7 @@ type: test
 ### [TG-03.13] Prune settles every merged run, not only the last
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: main
 ```
 * **Why:** `settleShippedRun` reads only the current run state, so a run's worktrees strand once the next group starts. TG-03.10's clean, merged worktrees survived `komodo doctor --prune`.
@@ -1363,7 +1363,7 @@ type: fix
 ### [TG-03.14] The doctor names a worktree the line did not cut
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: main
 ```
 * **Why:** a spawn that cut its own worktree stranded a diff outside `.komodo/wt` on TG-03.11, and no check reported it.
@@ -1385,7 +1385,7 @@ type: fix
 ### [TG-03.15] The guard reads a safety mode
 ```yaml
 type: feat
-version: 1.0.0-beta.1
+version: 1.0.0
 base: main
 ```
 * **Why:** the guard refuses `git switch main` and so blocks pulling the merged base. A mode lets the user pick: safe watches a switch onto a critical ref, default allows switching and pulling there, unsafe also allows a commit or push there.
@@ -1408,7 +1408,7 @@ type: feat
 ### [TG-03.17] A spawn never cuts its own worktree
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: docs/queue-spawn-guard
 ```
 * **Why:** the driving session passed an isolation option to its builder spawn on TG-03.11 and TG-03.15, rule or no rule. The builder worked in a second worktree and the driver ported its diff by hand. A markdown rule cannot hold it; the guard can.
@@ -1432,7 +1432,7 @@ type: fix
 ### [TG-03.16] A stray worktree is a note, not a failure
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: fix/a-spawn-never-cuts-its-own-worktree
 ```
 * **Why:** TG-03.14's check fails the doctor on any linked worktree outside `.komodo/wt`, and the gate runs the doctor. A user's own `git worktree add ../feature` would block every commit.
@@ -1453,7 +1453,7 @@ type: fix
 ### [TG-03.18] Claude carries every tier until local is opted in
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: docs/queue-claude-default
 ```
 * **Why:** the light tier moves to Ollama whenever the server answers, and a small local model on a 24 GB machine is too weak to carry a station. For 1.0 Claude carries every tier; Ollama stays a swap the developer opts into.
@@ -1476,7 +1476,7 @@ type: fix
 ### [TG-03.19] The local switch never reports a probe it skipped
 ```yaml
 type: fix
-version: 1.0.0-beta.1
+version: 1.0.0
 base: docs/queue-review-fixes
 ```
 * **Why:** the Claude review of TG-03.18 found three medium issues: a false "did not answer" note when the switch is off, a test that clobbers the registered local machine, and a test too weak to catch the note.
