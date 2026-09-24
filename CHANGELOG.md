@@ -2,6 +2,10 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
+## 1.1.0 — 2026-09-24
+
+- **TG-03.28** Every package clears 75 percent coverage (2 task(s))
+
 ## 1.0.1 — 2026-09-24
 
 - **TG-03.22** The guard holds the forge, the gate, and every interpreter (5 task(s))

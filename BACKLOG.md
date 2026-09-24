@@ -1973,7 +1973,7 @@ base: main
 ```
 * **Why:** `docs/scorecard.md` puts Code at 90 only when every package is at or above 70 percent. On `1eff696`, `internal/gate` is at 67.4 and `internal/pr` at 68.4. Both are tested here to 75, with room above the bar.
 
-#### [TSK-03.28.1] The gate's hook rendering and install paths are tested to 75 percent [P: M] [READY]
+#### [TSK-03.28.1] The gate's hook rendering and install paths are tested to 75 percent [P: M] [DONE]
 ```yaml
 files: [internal/gate/gate_test.go]
 done_when:
@@ -1985,7 +1985,7 @@ context:
 type: test
 ```
 
-#### [TSK-03.28.2] The pull request client is tested to 75 percent [P: M] [READY]
+#### [TSK-03.28.2] The pull request client is tested to 75 percent [P: M] [DONE]
 ```yaml
 files: [internal/pr/pr_test.go]
 done_when:
