@@ -1368,7 +1368,7 @@ base: main
 ```
 * **Why:** a spawn that cut its own worktree stranded a diff outside `.komodo/wt` on TG-03.11, and no check reported it.
 
-#### [TSK-03.14.1] Doctor reports a linked worktree outside the state directory [P: M] [READY]
+#### [TSK-03.14.1] Doctor reports a linked worktree outside the state directory [P: M] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
