@@ -1347,7 +1347,7 @@ base: main
 ```
 * **Why:** `settleShippedRun` reads only the current run state, so a run's worktrees strand once the next group starts. TG-03.10's clean, merged worktrees survived `komodo doctor --prune`.
 
-#### [TSK-03.13.1] Prune removes every clean state worktree whose branch origin holds [P: H] [READY]
+#### [TSK-03.13.1] Prune removes every clean state worktree whose branch origin holds [P: H] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
