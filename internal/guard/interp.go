@@ -68,12 +68,16 @@ var flagTables = map[string]flagTable{
 		value: set("l", "s", "i"),
 	},
 	"bun": {
-		code:     set("e", "p"),
-		longCode: set("--eval", "--print"),
-		subOnly:  true,
+		code:      set("e", "p"),
+		value:     set("c", "r", "d", "l"),
+		longCode:  set("--eval", "--print"),
+		longValue: set("--cwd", "--config", "--env-file", "--preload", "--tsconfig-override", "--define", "--loader", "--port", "--filter"),
+		subOnly:   true,
 	},
 	"deno": {
-		subOnly: true,
+		value:     set("c", "L"),
+		longValue: set("--config", "--import-map", "--env-file", "--ext", "--lock", "--cert", "--location", "--seed", "--log-level"),
+		subOnly:   true,
 	},
 }
 
@@ -242,6 +246,9 @@ func parseSubcommandInterpreter(name string, args []string, table flagTable) int
 			continue
 		}
 		if strings.HasPrefix(arg, "-") {
+			if !hasEq && (table.longValue[flag] || (len(flag) == 2 && table.value[flag[1:]])) {
+				index++
+			}
 			continue
 		}
 		switch {
@@ -257,11 +264,18 @@ func parseSubcommandInterpreter(name string, args []string, table flagTable) int
 			call.operand = arg
 			return call
 		case arg == "run":
-			for _, word := range args[index+1:] {
-				if !strings.HasPrefix(word, "-") {
-					call.operand = word
-					return call
+			rest := args[index+1:]
+			for at := 0; at < len(rest); at++ {
+				word := rest[at]
+				flag, _, hasEq := strings.Cut(word, "=")
+				if strings.HasPrefix(word, "-") {
+					if !hasEq && (table.longValue[flag] || (len(flag) == 2 && table.value[flag[1:]])) {
+						at++
+					}
+					continue
 				}
+				call.operand = word
+				return call
 			}
 			return call
 		case name == "bun" && !bunSubcommands[arg]:
@@ -349,7 +363,7 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []strin
 }
 
 // resolvedScript reads an extensionless operand the way its interpreter resolves it: the file,
-// node's .js, .mjs, .cjs, and index.js, or python's __main__.py; false when a recorded write hides it.
+// node's .js, .mjs, .cjs, and index.js, or python's __main__.py; false when the line may have hidden it.
 func (s *scanner) resolvedScript(name, operand, cwd string) (string, bool) {
 	candidates := []string{operand}
 	switch name {
@@ -366,7 +380,7 @@ func (s *scanner) resolvedScript(name, operand, cwd string) (string, bool) {
 			return text, !s.blind
 		}
 	}
-	return "", true
+	return "", !s.createdEarlier()
 }
 
 // stdinFindings judges the program an interpreter reads from a heredoc or a pipe.
