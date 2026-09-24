@@ -1498,7 +1498,7 @@ type: fix
 ```yaml
 type: feat
 version: 1.1.0
-base: main
+base: fix/a-builder-s-worktree-cannot-push
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
 
@@ -1547,6 +1547,20 @@ context:
   - "a refactor: every existing step test passes unchanged, which the done_when proves; snapshot_test.go adds a table over hand-built snapshots and FuzzNext, asserting Next never panics, returns run, spawn, or done, and never spawns a task whose snapshot already holds a result"
 type: refactor
 tier: heavy
+```
+
+#### [TSK-03.21.4] A worktree cut never runs without its push refusal [P: H] [READY]
+```yaml
+files: [internal/line/worktree.go, internal/line/worktree_test.go]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+context:
+  - "refuseWorktreePush writes extensions.worktreeConfig to the shared .git/config on every cut; two cuts at once, which this group's wave-wide spawns make real, can fail with could not lock config file and leave a worktree free to push, with only a stderr note"
+  - "write extensions.worktreeConfig only when git config --get does not already read true, and return an error from AddWorktree when the worktree pushurl write fails, so a cut without its refusal never reaches a builder"
+  - "the core.bare and core.worktree skips stay notes, since a repo shaped that way cannot hold worktree config at all"
+  - "tests: core.bare true on the common config writes no worktree pushurl and still cuts; a second cut does not rewrite extensions.worktreeConfig; a pushurl write that fails returns an error"
+type: fix
 ```
 
 ### [TG-03.20] The guard holds its own denials, and the docs match the line
@@ -2001,7 +2015,7 @@ type: test
 ```yaml
 type: fix
 version: 1.0.1
-base: main
+base: fix/a-builder-s-worktree-cannot-push
 ```
 * **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
 
