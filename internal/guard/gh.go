@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// ghFindings refuses a gh call that writes to the forge, since a forge write goes through the
-// line, never an agent; it stays silent on every read and on the two writes the line itself needs.
+// ghFindings refuses a gh call that writes to the forge, except the two writes the line needs.
 func ghFindings(kept []string) []string {
 	if len(kept) < 2 {
 		return nil
@@ -157,9 +156,6 @@ func endpointNamesSensitivePart(endpoint string) bool {
 	return false
 }
 
-// graphqlCommentRe matches a GraphQL comment, which runs from # to the end of the line.
-var graphqlCommentRe = regexp.MustCompile(`#[^\n]*`)
-
 // allowedMutations are the writes the line and the respond skill need through gh api graphql.
 var allowedMutations = map[string]bool{
 	"addComment": true, "addPullRequestReviewComment": true, "addPullRequestReviewThreadReply": true,
@@ -168,7 +164,7 @@ var allowedMutations = map[string]bool{
 
 // onlyAllowedMutations reports whether every mutation a GraphQL document names is one the line allows.
 func onlyAllowedMutations(query string) bool {
-	fields := mutationFields(graphqlCommentRe.ReplaceAllString(query, ""))
+	fields := mutationFields(query)
 	if len(fields) == 0 {
 		return false
 	}
@@ -200,7 +196,7 @@ func mutationFields(document string) []string {
 	}
 }
 
-// selectionNames reads the field names at the top depth of one selection set, up to its closing brace.
+// selectionNames reads the top-depth field names of one selection set, skipping strings and # comments.
 func selectionNames(body string) []string {
 	var names []string
 	depth := 0
@@ -209,6 +205,10 @@ func selectionNames(body string) []string {
 		switch {
 		case char == '"':
 			index = skipGraphQLString(body, index)
+		case char == '#':
+			for index+1 < len(body) && body[index+1] != '\n' {
+				index++
+			}
 		case char == '{' || char == '(':
 			depth++
 		case char == '}' || char == ')':

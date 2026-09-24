@@ -242,6 +242,9 @@ func parseSubcommandInterpreter(name string, args []string, table flagTable) int
 				}
 			}
 			return call
+		case name == "deno" && scriptLike(arg):
+			call.operand = arg
+			return call
 		case arg == "run":
 			for _, word := range args[index+1:] {
 				if !strings.HasPrefix(word, "-") {
@@ -294,7 +297,17 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []strin
 		}
 		return nil
 	}
-	if call.operand == "" || !scriptLike(call.operand) {
+	if call.operand == "" {
+		return nil
+	}
+	if !scriptLike(call.operand) {
+		text, visible := s.resolvedScript(commandName(kept[0]), call.operand, cwd)
+		switch {
+		case !visible:
+			return []string{scriptNotVisible}
+		case hidesGitOrGh(text):
+			return []string{interpreterHidesGit}
+		}
 		return nil
 	}
 	if write, found := s.recordedWrite(call.operand, cwd); found {
@@ -314,6 +327,27 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []strin
 		return []string{interpreterHidesGit}
 	}
 	return nil
+}
+
+// resolvedScript reads an extensionless operand the way its interpreter resolves it: the file,
+// node's .js, .mjs, .cjs, and index.js, or python's __main__.py; false when a recorded write hides it.
+func (s *scanner) resolvedScript(name, operand, cwd string) (string, bool) {
+	candidates := []string{operand}
+	switch name {
+	case "node":
+		candidates = append(candidates, operand+".js", operand+".mjs", operand+".cjs", filepath.Join(operand, "index.js"))
+	case "python", "python3":
+		candidates = append(candidates, filepath.Join(operand, "__main__.py"))
+	}
+	for _, candidate := range candidates {
+		if write, found := s.recordedWrite(candidate, cwd); found {
+			return write.text, write.known
+		}
+		if text, _, ok := readScript(candidate, cwd); ok {
+			return text, true
+		}
+	}
+	return "", true
 }
 
 // stdinFindings judges the program an interpreter reads from a heredoc or a pipe.

