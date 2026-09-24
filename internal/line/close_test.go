@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 )
 
@@ -278,7 +279,7 @@ func TestATaskBranchDoesNotCarryRebuiltBinaries(t *testing.T) {
 	commit(t, cwd, "a/one.go", "package a\n", "seed")
 	commit(t, cwd, "bin/komodo-linux-amd64", "old\n", "binaries")
 	branch := TaskBranch("TSK-30.1.1")
-	if _, err := git(cwd, "checkout", "-q", "-b", branch); err != nil {
+	if _, err := git.Run(cwd, "checkout", "-q", "-b", branch); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cwd, "bin", "komodo-linux-amd64"), []byte("rebuilt\n"), 0o644); err != nil {
@@ -290,7 +291,7 @@ func TestATaskBranchDoesNotCarryRebuiltBinaries(t *testing.T) {
 	if err := commitTask(cwd, taskWith(t, "a/one.go"), branch); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := git(cwd, "show", "--name-only", "--format=", "HEAD")
+	changed, err := git.Run(cwd, "show", "--name-only", "--format=", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +316,7 @@ func TestCommitTaskRefusesAnyBranchThatIsNotItsOwn(t *testing.T) {
 	if !strings.Contains(err.Error(), "main") {
 		t.Fatalf("error = %v; it must name the branch it found", err)
 	}
-	changed, _ := git(cwd, "status", "--porcelain")
+	changed, _ := git.Run(cwd, "status", "--porcelain")
 	if strings.TrimSpace(changed) == "" {
 		t.Fatal("the refused commit must leave the change uncommitted")
 	}
@@ -374,7 +375,7 @@ func TestATaskThatOwnsABuiltPathStillCommitsIt(t *testing.T) {
 	cwd := gitRepo(t)
 	commit(t, cwd, "bin/MANIFEST.sha256", "old\n", "manifest")
 	branch := TaskBranch("TSK-30.1.1")
-	if _, err := git(cwd, "checkout", "-q", "-b", branch); err != nil {
+	if _, err := git.Run(cwd, "checkout", "-q", "-b", branch); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cwd, "bin", "MANIFEST.sha256"), []byte("new\n"), 0o644); err != nil {
@@ -383,7 +384,7 @@ func TestATaskThatOwnsABuiltPathStillCommitsIt(t *testing.T) {
 	if err := commitTask(cwd, taskWith(t, "bin/MANIFEST.sha256"), branch); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := git(cwd, "show", "--name-only", "--format=", "HEAD")
+	changed, err := git.Run(cwd, "show", "--name-only", "--format=", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 )
 
@@ -50,9 +51,9 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 		var previous string
 		for _, taskID := range plan.Waves[index] {
 			branch := TaskBranch(taskID)
-			if _, err := git(group, "merge", "--no-ff", "-m", "merge "+taskID, branch); err != nil {
+			if _, err := git.Run(group, "merge", "--no-ff", "-m", "merge "+taskID, branch); err != nil {
 				result.Conflict = conflictMessage(previous, taskID, err)
-				_, _ = git(group, "merge", "--abort")
+				_, _ = git.Run(group, "merge", "--abort")
 				return result, nil
 			}
 			result.Merged = append(result.Merged, taskID)

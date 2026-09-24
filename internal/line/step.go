@@ -10,6 +10,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/detect"
 	"komodo/internal/facet"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
 )
@@ -306,7 +307,7 @@ func staleReview(root string, plan *Plan) bool {
 	if err != nil {
 		return false
 	}
-	log, err := git(WorktreePath(root, plan.Worktree), "log", "--format=%cI%x09%s")
+	log, err := git.Run(WorktreePath(root, plan.Worktree), "log", "--format=%cI%x09%s")
 	if err != nil {
 		return false
 	}

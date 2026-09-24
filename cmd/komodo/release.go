@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/line"
 	"komodo/internal/release"
 )
@@ -22,7 +22,7 @@ func runTag(root string) {
 
 // tag refuses to run off the branch origin's HEAD names, then tags and pushes every version origin lacks.
 func tag(root string, out io.Writer) error {
-	branch, err := gitRun(root, "rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := git.Run(root, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return err
 	}
@@ -42,11 +42,11 @@ func tag(root string, out io.Writer) error {
 	for _, version := range pending {
 		name := release.TagName(version)
 		if !contains(local, name) {
-			if _, err := gitRun(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
+			if _, err := git.Run(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
 				return err
 			}
 		}
-		if _, err := gitRun(root, "push", "origin", name); err != nil {
+		if _, err := git.Run(root, "push", "origin", name); err != nil {
 			return err
 		}
 		fmt.Fprintln(out, "tagged", name)
@@ -66,7 +66,7 @@ func contains(list []string, value string) bool {
 
 // remoteTags lists origin's tag names, so a local tag a failed push left behind is not mistaken for shipped.
 func remoteTags(root string) []string {
-	out, err := gitRun(root, "ls-remote", "--tags", "origin")
+	out, err := git.Run(root, "ls-remote", "--tags", "origin")
 	if err != nil {
 		return nil
 	}
@@ -142,17 +142,9 @@ func shipped(group backlog.Group) bool {
 	return true
 }
 
-// gitRun runs one git command in the repo root.
-func gitRun(root string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
-}
-
 // gitLines runs one git command and splits its output into lines.
 func gitLines(root string, args ...string) []string {
-	out, err := gitRun(root, args...)
+	out, err := git.Run(root, args...)
 	if err != nil {
 		return nil
 	}

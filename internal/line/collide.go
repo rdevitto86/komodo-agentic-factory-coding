@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 )
 
 // RefuseCollision refuses to brief a task whose directories overlap a closed, unmerged task
@@ -27,7 +28,7 @@ func RefuseCollision(root, taskID string) error {
 		return nil
 	}
 	merged := map[string]bool{}
-	for _, name := range strings.Split(gitOr(root, "branch", "--merged", state.Branch, "--format=%(refname:short)"), "\n") {
+	for _, name := range strings.Split(git.Or(root, "branch", "--merged", state.Branch, "--format=%(refname:short)"), "\n") {
 		merged[strings.TrimSpace(name)] = true
 	}
 	for _, wave := range state.Waves {
@@ -36,7 +37,7 @@ func RefuseCollision(root, taskID string) error {
 				continue
 			}
 			branch := TaskBranch(other)
-			if _, err := git(root, "rev-parse", "--verify", "refs/heads/"+branch); err != nil || merged[branch] {
+			if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/"+branch); err != nil || merged[branch] {
 				continue
 			}
 			candidate, ok := parsed.Task(other)
@@ -47,13 +48,4 @@ func RefuseCollision(root, taskID string) error {
 		}
 	}
 	return nil
-}
-
-// gitOr runs one git command and returns its output, or nothing when it fails.
-func gitOr(dir string, args ...string) string {
-	out, err := git(dir, args...)
-	if err != nil {
-		return ""
-	}
-	return out
 }

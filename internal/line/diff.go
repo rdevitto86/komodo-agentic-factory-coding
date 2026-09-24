@@ -8,6 +8,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/detect"
 	"komodo/internal/facet"
+	"komodo/internal/git"
 	repopkg "komodo/internal/repo"
 )
 
@@ -32,7 +33,7 @@ type ReviewInput struct {
 func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 	worktree := WorktreePath(root, plan.Worktree)
 	ref := StartRef(worktree, plan.Base)
-	names, err := git(worktree, "diff", "--name-only", ref+"...HEAD")
+	names, err := git.Run(worktree, "diff", "--name-only", ref+"...HEAD")
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +43,7 @@ func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 			input.Files = append(input.Files, unquotePath(trimmed))
 		}
 	}
-	body, err := git(worktree, "diff", ref+"...HEAD", "--", ":(exclude)bin")
+	body, err := git.Run(worktree, "diff", ref+"...HEAD", "--", ":(exclude)bin")
 	if err != nil {
 		return nil, err
 	}

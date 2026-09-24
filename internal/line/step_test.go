@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
 	"komodo/internal/profile"
@@ -616,7 +617,7 @@ func TestSingleModeWalksBriefCloseAndCloseWave(t *testing.T) {
 		if err := WriteBrief(root, brief, plan.Branch); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := git(root, "rev-parse", "--verify", "refs/heads/"+TaskBranch(taskID)); err == nil {
+		if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/"+TaskBranch(taskID)); err == nil {
 			t.Fatalf("%s cut a task branch; single mode shares the group worktree with no split", taskID)
 		}
 
@@ -653,7 +654,7 @@ func TestSingleModeWalksBriefCloseAndCloseWave(t *testing.T) {
 		}
 	}
 
-	log, err := git(worktree, "log", "--format=%s")
+	log, err := git.Run(worktree, "log", "--format=%s")
 	if err != nil {
 		t.Fatal(err)
 	}

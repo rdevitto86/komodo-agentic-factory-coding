@@ -10,6 +10,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
 	"komodo/internal/proc"
@@ -173,34 +174,34 @@ func commitBranch(root string, parsed backlog.Backlog, task backlog.Task) string
 // commitTask commits a passing task onto branch, so QC has something to merge, and refuses
 // when cwd sits on any other branch, which is someone else's checkout, not the task's own.
 func commitTask(cwd string, task backlog.Task, branch string) error {
-	if _, err := git(cwd, "rev-parse", "--git-dir"); err != nil {
+	if _, err := git.Run(cwd, "rev-parse", "--git-dir"); err != nil {
 		return nil
 	}
-	current, err := git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	current, err := git.Run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return err
 	}
 	if current != branch {
 		return fmt.Errorf("cwd is on %s, not %s; refusing to commit onto the wrong checkout", current, branch)
 	}
-	status, err := git(cwd, "status", "--porcelain")
+	status, err := git.Run(cwd, "status", "--porcelain")
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(status) == "" {
 		return nil
 	}
-	if _, err := git(cwd, "add", "-A"); err != nil {
+	if _, err := git.Run(cwd, "add", "-A"); err != nil {
 		return err
 	}
 	if err := unstageBuilt(cwd, task); err != nil {
 		return err
 	}
-	if staged, err := git(cwd, "diff", "--cached", "--name-only"); err != nil || strings.TrimSpace(staged) == "" {
+	if staged, err := git.Run(cwd, "diff", "--cached", "--name-only"); err != nil || strings.TrimSpace(staged) == "" {
 		return err
 	}
 	message := fmt.Sprintf("%s: %s (%s)", task.Type(), task.Title, task.ID)
-	_, err = git(cwd, "commit", "-m", message)
+	_, err = git.Run(cwd, "commit", "-m", message)
 	return err
 }
 
@@ -216,7 +217,7 @@ func unstageBuilt(cwd string, task backlog.Task) error {
 		if _, err := os.Stat(filepath.Join(cwd, path)); err != nil {
 			continue
 		}
-		if _, err := git(cwd, "reset", "--quiet", "HEAD", "--", path); err != nil {
+		if _, err := git.Run(cwd, "reset", "--quiet", "HEAD", "--", path); err != nil {
 			return err
 		}
 	}
@@ -251,7 +252,7 @@ func gateCommand(cwd string) error {
 
 // diffOf is the worktree's own diff, which a repair brief carries back to the machine.
 func diffOf(cwd string) string {
-	out, err := git(cwd, "diff", "HEAD")
+	out, err := git.Run(cwd, "diff", "HEAD")
 	if err != nil {
 		return ""
 	}

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"komodo/internal/git"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
 	"komodo/internal/release"
@@ -75,35 +75,23 @@ func HostLeftovers(root string) []string {
 
 // StrayWorktrees names each linked worktree parked outside .komodo/wt by its path and branch; it never fails a check.
 func StrayWorktrees(root string) []string {
-	out, err := git(root, "worktree", "list", "--porcelain")
+	worktrees, err := git.Worktrees(root)
 	if err != nil {
 		return nil
 	}
 	var notes []string
-	for index, block := range strings.Split(out, "\n\n") {
-		if index == 0 {
+	for index, current := range worktrees {
+		if index == 0 || strings.Contains(current.Path, filepath.Join(".komodo", "wt")) {
 			continue
 		}
-		var current stateWorktree
-		for _, field := range strings.Split(block, "\n") {
-			if path, ok := strings.CutPrefix(field, "worktree "); ok {
-				current.path = path
-			}
-			if ref, ok := strings.CutPrefix(field, "branch refs/heads/"); ok {
-				current.branch = ref
-			}
-		}
-		if current.path == "" || strings.Contains(current.path, filepath.Join(".komodo", "wt")) {
-			continue
-		}
-		notes = append(notes, current.path+" on branch "+current.branch)
+		notes = append(notes, current.Path+" on branch "+current.Branch)
 	}
 	return notes
 }
 
 // base is the remote's default branch, or main.
 func base(root string) string {
-	out, err := git(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+	out, err := git.Run(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
 	if err != nil || out == "" {
 		return "main"
 	}
@@ -287,7 +275,7 @@ func isMountImport(line string) bool {
 // checkGit reports conflict markers and the leftovers a run can strand.
 func checkGit(root string) ([]Problem, error) {
 	var problems []Problem
-	out, err := git(root, "ls-files", "-u")
+	out, err := git.Run(root, "ls-files", "-u")
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +296,7 @@ func checkGit(root string) ([]Problem, error) {
 	if err != nil {
 		return problems, err
 	}
-	tags := lines(git(root, "tag", "--list"))
+	tags := lines(git.Run(root, "tag", "--list"))
 	for _, drift := range release.Check(changelog, tags, nil) {
 		problems = append(problems, Problem{"changelog", drift.Subject, drift.Detail})
 	}
@@ -377,14 +365,6 @@ func rel(root, path string) string {
 		return relative
 	}
 	return path
-}
-
-// git runs one read-only git command in the repo root.
-func git(root string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = root
-	out, err := cmd.Output()
-	return strings.TrimSpace(string(out)), err
 }
 
 // lines splits a command's output, dropping the error and the blanks.
