@@ -176,7 +176,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 				}
 			}
 		case moving:
-			// Renaming a critical ref away or onto one both move it.
+			// Renaming a critical ref away or onto one both move it; one positional renames the current branch.
+			if len(positional) == 1 && policy.IsCritical(branch) {
+				findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never moved by hand", branch))
+			}
 			for _, arg := range positional {
 				if policy.IsCritical(arg) {
 					findings = append(findings, fmt.Sprintf("git branch %s: a critical ref is never moved by hand", arg))

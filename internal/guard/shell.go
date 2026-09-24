@@ -340,6 +340,9 @@ func lexWords(text string) []string {
 	return out
 }
 
+// xargsInput stands in for the words xargs feeds its command at run time, whatever its placeholder.
+const xargsInput = "{}"
+
 // unwrapCommand drops a wrapper's own name, assignments, flags, and duration argument to reach the real command.
 // It also reports every assignment that overrides a scrubbed variable, since those disappear with the flag.
 func unwrapCommand(kept []string) ([]string, []string) {
@@ -373,6 +376,9 @@ func unwrapCommand(kept []string) ([]string, []string) {
 		}
 		if (name == "timeout" || name == "nice") && len(kept) > 0 && durationRe.MatchString(kept[0]) {
 			kept = kept[1:]
+		}
+		if name == "xargs" && len(kept) > 0 {
+			kept = append(kept, xargsInput)
 		}
 	}
 	return kept, findings
