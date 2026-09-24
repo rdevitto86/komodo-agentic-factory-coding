@@ -118,6 +118,7 @@ func TestDispatchReachesEveryReadOnlyCommand(t *testing.T) {
 		{[]string{"machine"}, 1, "usage: komodo machine"},
 		{[]string{"machine", "TSK-90.2.1", "--role", "builder"}, 1, "cannot run on the local machine"},
 		{[]string{"machine", "TSK-90.2.1", "--role", "reviewer"}, 1, "no such file"},
+		{[]string{"recall", "--model", "m"}, 1, "127.0.0.1:1"},
 		{[]string{"run", "TG-90.2", "--dry-run"}, 1, "no mount is installed"},
 		{[]string{"diff"}, 0, ""},
 		{[]string{"close"}, 1, "usage: komodo close"},

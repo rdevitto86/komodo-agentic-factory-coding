@@ -1,0 +1,5 @@
+{
+  "file": "internal/page/window.go",
+  "line": 14,
+  "class": "off-by-one"
+}

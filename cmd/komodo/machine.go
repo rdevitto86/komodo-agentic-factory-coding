@@ -15,6 +15,7 @@ import (
 	"komodo/internal/mount"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
+	"komodo/internal/recall"
 	"komodo/internal/toolkit"
 )
 
@@ -111,6 +112,30 @@ func runMachine(root string, args []string) {
 		fail(err)
 	}
 	fmt.Println("wrote", line.ResultPath(root, taskID))
+}
+
+// runRecall scores the local machine's reviewer against the seeded bugs and records the score by model.
+func runRecall(root string, args []string) {
+	set := flag.NewFlagSet("recall", flag.ExitOnError)
+	model := set.String("model", "", "the local model to score, the local machine's own when empty")
+	_ = set.Parse(args)
+	local := mount.LocalMachine()
+	if *model == "" {
+		*model = local.ModelName()
+	}
+	if *model == "" {
+		fail(fmt.Errorf("no local model to score; pass --model"))
+	}
+	score, err := recall.Run(root, *model, local.Post)
+	if err != nil {
+		fail(err)
+	}
+	fmt.Printf("%s: caught %d/%d, recall %.2f, %d false findings on the clean cases\n",
+		*model, score.Caught, score.Cases, score.Recall, score.FalsePositives)
+	if err := recall.Save(recall.Path(), *model, score); err != nil {
+		fail(err)
+	}
+	fmt.Println("wrote", recall.Path())
 }
 
 // localModel resolves a role's tier to the model of whichever tier the local machine mounts;

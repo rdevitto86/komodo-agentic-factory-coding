@@ -1,0 +1,5 @@
+{
+  "file": "internal/session/store.go",
+  "line": 31,
+  "class": "nil-dereference"
+}
