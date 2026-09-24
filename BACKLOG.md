@@ -1287,7 +1287,7 @@ base: main
 ```
 * **Why:** the gate's comment lint reads only tracked files, so a new file passes the gate by hand and then fails the pre-commit hook once it is staged. Found on PR #154.
 
-#### [TSK-03.10.1] The comment lint reads untracked files git does not ignore [P: H] [READY]
+#### [TSK-03.10.1] The comment lint reads untracked files git does not ignore [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/comments.go, cmd/komodo/cli_test.go]
 done_when:
