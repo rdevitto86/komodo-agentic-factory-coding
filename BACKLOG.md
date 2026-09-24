@@ -2062,7 +2062,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.4] A backlog value holding both quote kinds round-trips through yamlite [P: M] [READY]
+#### [TSK-03.29.4] A backlog value holding both quote kinds round-trips through yamlite [P: M] [DONE]
 ```yaml
 files: [internal/backlog/yamlite.go, internal/backlog/backlog_test.go, internal/backlog/fuzz_test.go]
 done_when:

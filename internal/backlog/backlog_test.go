@@ -250,6 +250,32 @@ func TestDumpFieldsRoundTripsADoubleQuote(t *testing.T) {
 	}
 }
 
+func TestDumpFieldsRoundTripsBothQuoteKinds(t *testing.T) {
+	value := `the "guard" can't see it`
+	var fields Fields
+	fields.Set("note", value)
+	fields.Set("context", []any{value})
+	dumped := DumpFields(fields)
+	again, err := ParseFields(dumped)
+	if err != nil {
+		t.Fatalf("dumped block does not parse back: %v (dumped: %q)", err, dumped)
+	}
+	if got := again.String("note"); got != value {
+		t.Fatalf("note = %q, want %q (dumped: %q)", got, value, dumped)
+	}
+	if got := again.List("context"); len(got) != 1 || got[0] != value {
+		t.Fatalf("context = %q, want [%q] (dumped: %q)", got, value, dumped)
+	}
+}
+
+func TestDumpFieldsKeepsASingleQuoteOnlyValueByteForByte(t *testing.T) {
+	var fields Fields
+	fields.Set("note", "can't: stop")
+	if dumped := DumpFields(fields); dumped != "note: \"can't: stop\"\n" {
+		t.Fatalf("dumped = %q", dumped)
+	}
+}
+
 func TestDumpFieldsCollapsesEmbeddedNewlines(t *testing.T) {
 	var fields Fields
 	fields.Set("note", "first line\nsecond line")
