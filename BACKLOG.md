@@ -1378,5 +1378,29 @@ context:
   - "checkGit lists git worktree list --porcelain; report each linked worktree whose path is outside .komodo/wt as a problem naming its path and branch"
   - "name no host: the check reads paths only; prune never removes such a worktree, it only reports it"
   - "a test adds a worktree outside .komodo/wt and proves doctor reports it, and that the main checkout and state worktrees are never reported"
+  - "settleShippedRun sweeps clean merged worktrees even while a run is open, and a fresh worktree is clean and merged; skip the sweep while line.RunIsOpen, with a test"
 type: fix
+```
+
+### [TG-03.15] The guard reads a safety mode
+```yaml
+type: feat
+version: 1.0.0-beta.1
+base: main
+```
+* **Why:** the guard refuses `git switch main` and so blocks pulling the merged base. A mode lets the user pick: safe watches a switch onto a critical ref, default allows switching and pulling there, unsafe also allows a commit or push there.
+
+#### [TSK-03.15.1] Policy carries a mode that scopes the critical-ref rules [P: H] [READY]
+```yaml
+files: [internal/guard/policy.go, internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "Policy gains Mode: safe, default, or unsafe; empty or unknown reads as default; only the machine overlay may loosen it, a repo policy may only tighten it"
+  - "safe keeps today's denial of a switch or checkout onto a critical ref; default and unsafe allow it and git pull there, and the tracked branch still follows the switch"
+  - "safe and default deny a commit, push, or merge on a critical ref; unsafe allows those; every mode still denies force, history rewrite, deleting or moving a critical ref, a trailer, and a config write"
+  - "table Case gains a Mode field, empty meaning default; add rows for each mode's switch, pull, commit, and push on main, and a chained git switch main && git commit under default"
+type: feat
 ```
