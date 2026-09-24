@@ -9,17 +9,17 @@ Komodo's code assembly line: one static binary is the conveyor and devices, mark
 - **One agent hook.** The guard on PreToolUse; nothing else runs in the loop.
 - **The gate is local.** `komodo gate` runs pre-commit and pre-push, no model; nothing runs on GitHub.
 - **No MCP in 1.0.** MCPs land in a later hot-swap pass.
-- **No repo config is required.** Nothing refuses to run for a missing file.
+- **No repo config is required;** nothing refuses to run for a missing file.
 - **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
-- **Versions go alpha, beta, release.** README's Versions section defines each stage.
-- **A pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`.** Summary, Changes, Validation, Dependencies.
-- **A rating follows `docs/scorecard.md`.** Score `origin/main` against its levels, start from its last row, cite evidence per change.
-- **The prototype is history.** Tag `prototype-final` holds it; nothing returns without a named task.
+- **Versions go alpha, beta, release,** as README defines.
+- **A pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`.**
+- **A rating follows `docs/scorecard.md`:** `origin/main`, from its last row, with evidence.
+- **The prototype is history,** at tag `prototype-final`; nothing returns without a task.
 
 ## Commands
 
 ```bash
-go run ./cmd/komodo gate               # vet, test, doctor, guard table, comments
-go run ./cmd/komodo lint               # after every backlog edit
-go run ./cmd/komodo doctor             # references, portability, drift
+go run ./cmd/komodo gate     # the whole precheck
+go run ./cmd/komodo lint     # after a backlog edit
+go run ./cmd/komodo doctor   # drift and portability
 ```
