@@ -21,6 +21,7 @@ type ShipResult struct {
 	Group     string         `json:"group"`
 	Branch    string         `json:"branch"`
 	Base      string         `json:"base"`
+	StaleBase string         `json:"stale_base,omitempty"`
 	URL       string         `json:"url,omitempty"`
 	Draft     bool           `json:"draft"`
 	Labels    []string       `json:"labels,omitempty"`
@@ -91,7 +92,10 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 			len(blocking), plan.Profile.SeverityFloor, plan.Branch)
 	}
 	started := time.Now()
-	result = &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base}
+	result = &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: liveBase(root, plan.Base)}
+	if result.Base != plan.Base {
+		result.StaleBase = plan.Base
+	}
 	outcome := ""
 	defer func() {
 		if outcome == "" {
@@ -146,7 +150,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if scrubbed() {
 		outcome = "handoff"
 		handoff := ShipHandoff{
-			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: plan.Base, Title: title, Body: body,
+			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
 			Labels: []string{plan.Type, "agent"}, Draft: result.Draft,
 			Minor: minor, AfterPublish: AfterPublishCommand(group),
 		}
@@ -173,7 +177,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if client == nil {
 		return result, nil
 	}
-	url, err := client.Create(plan.Base, plan.Branch, title, body, result.Draft)
+	url, err := client.Create(result.Base, plan.Branch, title, body, result.Draft)
 	if err != nil {
 		return result, err
 	}
@@ -183,6 +187,15 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		_ = client.Label(url, result.Labels)
 	}
 	return result, nil
+}
+
+// liveBase is base while origin still has it, or the default branch once base is deleted.
+func liveBase(root, base string) string {
+	heads, err := git(root, "ls-remote", "--heads", "origin", "refs/heads/"+base)
+	if err != nil || heads != "" {
+		return base
+	}
+	return DefaultBase(root)
 }
 
 // ChangelogLine is the one line a group adds under its version.
@@ -257,6 +270,9 @@ func ReportBody(plan *Plan, result *ShipResult, waves []*WaveResult) string {
 	var out []string
 	out = append(out, fmt.Sprintf("%s: %s", plan.Group, plan.Title))
 	out = append(out, "")
+	if result.StaleBase != "" {
+		out = append(out, fmt.Sprintf("Base %s is gone from origin, so this targets %s.", result.StaleBase, result.Base), "")
+	}
 	out = append(out, "## What landed")
 	for _, task := range plan.Tasks {
 		mark := "x"

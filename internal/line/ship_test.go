@@ -527,3 +527,52 @@ func TestPushErrorsNeverCarryACredential(t *testing.T) {
 		t.Fatalf("other = %q; any URL credential must be redacted", other)
 	}
 }
+
+// shipWithBase ships the shipRepo group against base and returns the gh pr create call and result.
+func shipWithBase(t *testing.T, base string, pushBase bool) (string, *ShipResult) {
+	t.Helper()
+	root, group := shipRepo(t)
+	runGit(t, root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+	if pushBase {
+		runGit(t, group, "push", "origin", "HEAD:refs/heads/"+base)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: base, Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	var create string
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			create = strings.Join(args, "\x00")
+		}
+		return "https://example.com/pull/1", nil
+	}}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return create, result
+}
+
+func TestShipKeepsABaseOriginStillHas(t *testing.T) {
+	create, result := shipWithBase(t, "feat/stack", true)
+	if result.Base != "feat/stack" || result.StaleBase != "" {
+		t.Fatalf("base = %q, stale = %q; a present base is kept", result.Base, result.StaleBase)
+	}
+	if !strings.Contains(create, "--base\x00feat/stack\x00") || strings.Contains(create, "is gone from origin") {
+		t.Fatalf("create = %q", create)
+	}
+}
+
+func TestShipTargetsTheDefaultBranchWhenTheBaseIsDeleted(t *testing.T) {
+	create, result := shipWithBase(t, "feat/gone", false)
+	if result.Base != "trunk" || result.StaleBase != "feat/gone" {
+		t.Fatalf("base = %q, stale = %q; a deleted base becomes the default branch", result.Base, result.StaleBase)
+	}
+	if !strings.Contains(create, "--base\x00trunk\x00") {
+		t.Fatalf("create = %q; the pull request must target the default branch", create)
+	}
+	if !strings.Contains(create, "Base feat/gone is gone from origin, so this targets trunk.") {
+		t.Fatalf("create = %q; the body must name the switch", create)
+	}
+}

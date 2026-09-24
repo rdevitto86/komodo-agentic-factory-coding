@@ -2049,7 +2049,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.3] Ship opens its pull request against the default branch when the stored base is gone [P: H] [READY]
+#### [TSK-03.29.3] Ship opens its pull request against the default branch when the stored base is gone [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
