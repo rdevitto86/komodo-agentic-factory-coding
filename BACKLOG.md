@@ -2092,3 +2092,17 @@ context:
 type: fix
 tier: heavy
 ```
+
+#### [TSK-03.29.6] Ship writes its pull request body in the repo's template sections [P: H] [READY]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+context:
+  - ".github/PULL_REQUEST_TEMPLATE.md was deleted in the V2 clear and restored on 2026-09-24; ReportBody still writes What landed, QC, and Blocked, so every pull request the line opens skips Summary, Changes, Validation, and Dependencies"
+  - "ReportBody writes ## Summary from the group's Why line, ## Changes as one bullet per task with its title and the files it declared, ## Validation from the QC gates and verify command with their outcomes, the review's blast radius, and any unproven step, and ## Dependencies naming the base branch when it is not the default branch; a blocked task stays named under Validation"
+  - "when the repo has .github/PULL_REQUEST_TEMPLATE.md, its ## headings set the section order; with no template, the four sections above are the default; the body never carries a trailer, generated-by line, or session link"
+  - "tests: a two-task group renders all four headings in order with each task's bullet; a stacked group names its base under Dependencies; a blocked task appears under Validation"
+type: fix
+```
