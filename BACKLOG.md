@@ -1515,6 +1515,7 @@ context:
   - "Action gains Spawns []Action, json spawns, omitempty; when a parallel-mode wave holds two or more tasks that each have a current brief and no result, Step returns action spawn with every one in Spawns, each carrying its own brief, worktree, task, and machine as the single spawn does today"
   - "a task with no brief yet still returns its own run komodo brief action first, so every brief in the wave is written before the wave spawns; single-mode groups and a lone ready task keep today's single spawn with Spawns empty"
   - "the run skill: when spawns is present, spawn every entry in the same turn and wait for all of them, then loop; the one-action-per-turn rule reads as one step per turn"
+  - "the run skill also says a headless driver never asks: every action step returns, close --group included, is already approved by the human who launched the run; TG-03.24's run stopped to ask before close --group, and a second launch was needed"
   - "tests: a three-task parallel wave with all briefs written returns three spawns; a single-mode group returns one; a wave with one result already on disk returns only the other two"
 type: feat
 ```
@@ -1769,7 +1770,7 @@ base: main
 ```
 * **Why:** the local 3B reviewer returned 0 findings on most runs and missed a real bug in #161. A review station that always approves is a stage, not QC. A seeded-bug corpus gives each local model a recall number, and the line keeps review on the host until that number clears a bar.
 
-#### [TSK-03.24.1] komodo recall scores a reviewer against seeded bugs [P: H] [READY]
+#### [TSK-03.24.1] komodo recall scores a reviewer against seeded bugs [P: H] [DONE]
 ```yaml
 files: [internal/recall/recall.go, internal/recall/recall_test.go, internal/recall/testdata, cmd/komodo/main.go, cmd/komodo/machine.go]
 done_when:
@@ -1786,7 +1787,7 @@ type: feat
 tier: heavy
 ```
 
-#### [TSK-03.24.2] A local reviewer takes review only above its recall bar [P: H] [READY]
+#### [TSK-03.24.2] A local reviewer takes review only above its recall bar [P: H] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/mount_test.go, internal/mount/claude/limits.go, internal/mount/claude/claude_test.go]
 done_when:
