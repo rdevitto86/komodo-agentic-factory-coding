@@ -96,7 +96,7 @@ A role declares a tier, light, standard, or heavy, and never a model. A profile 
 
 A tier that resolves to `ollama` runs through `komodo machine` and carries only read-only roles. A write role on that tier, or a brief larger than the local window, falls back to the host's own tier, and `komodo step` says so in `why`. No model is ever spent to reach a local model.
 
-The local model is whatever `OLLAMA_MODEL` names, else `local_model` in the overlay, else the first model the server lists. The overlay, `~/.komodo/config.json`, also renames a tier for this host (`"models": {"heavy": "sonnet"}`), caps the local window (`local_window`, default 32768 tokens), and opts the reviewer onto the local machine (`local_reviewer`). It can only lower a cap and never widen what the guard denies.
+The local model is whatever `OLLAMA_MODEL` names, else `local_model` in the overlay, else the first model the server lists. The endpoint is `OLLAMA_BASE_URL`, else `local_url` in the overlay, else `http://localhost:11434`; one `local_url` points every machine at a shared server. The overlay, `~/.komodo/config.json`, also renames a tier for this host (`"models": {"heavy": "sonnet"}`), caps the local window (`local_window`, default 32768 tokens), and opts the reviewer onto the local machine (`local_reviewer`). It can only lower a cap and never widen what the guard denies.
 
 Plan overlays sit on top: Pro lowers the heavy ceiling, caps parallel builders at two, skips review under a 40-line diff, and pauses at 75 percent of the five-hour window. Max keeps the defaults and pauses at 90 percent. Unknown is the conservative one. The probe reads the host's own config file, never a CLI status line that once misreported a Max account as Pro. Intake pauses before a wave, never inside one.
 
@@ -239,7 +239,7 @@ The repository ruleset must cover `main` only. Today it covers every branch and 
 Every version here is SemVer with a prerelease stage, and a group's `version:` matches its changelog heading exactly.
 
 - **Alpha, `x.y.z-alpha.n`.** The shape still moves. The prototype shipped as `1.0.0-alpha.1`–`.4`.
-- **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land. A beta stays a beta until both proofs are in the changelog: one group driven headless by the run skill, and the exit test on a second host.
+- **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land. A beta stays a beta until both proofs are in the changelog: one group driven headless by the run skill, and a local machine carrying a station. The exit test on a second host waits for that host's account.
 - **Release, `x.y.z`.** A beta whose proofs are recorded and that ran real groups with no change to the line. The human cuts the tag; `komodo tag` never promotes a beta on its own.
 
 ## Names

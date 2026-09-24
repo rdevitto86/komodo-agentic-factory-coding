@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
@@ -936,6 +937,7 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
+	started := time.Now()
 	result, err := local.Post(model, string(brief), schema)
 	if err != nil {
 		fail(err)
@@ -952,7 +954,7 @@ func runMachine(root string, args []string) {
 	}
 	entry := ledger.Entry{
 		Task: taskID, Station: "machine", Role: *role, Tier: definition.Tier,
-		Provider: mount.LocalName, Model: model,
+		Provider: mount.LocalName, Model: model, Seconds: time.Since(started).Seconds(),
 		TokensIn: result.TokensIn, TokensOut: result.TokensOut, Outcome: "done",
 	}
 	if state, err := line.LoadRun(root); err == nil {
