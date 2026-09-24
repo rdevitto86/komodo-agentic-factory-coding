@@ -26,12 +26,22 @@ func TestTwoTasksOwningNestedTreesNeverShareAWave(t *testing.T) {
 }
 
 func TestTwoFilesInOneDirectoryShareAWave(t *testing.T) {
-	waves, err := Waves(twoTasks(t, "internal/a/x.go", "internal/a/y.go"), nil, 0)
+	waves, err := Waves(twoTasks(t, "web/a/x.ts", "web/a/y.ts"), nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(waves) != 1 || len(waves[0]) != 2 {
 		t.Fatalf("waves = %v; different files in one directory must share wave 1", waves)
+	}
+}
+
+func TestTwoGoFilesInOnePackageSerialize(t *testing.T) {
+	waves, err := Waves(twoTasks(t, "internal/backlog/lint.go", "internal/backlog/backlog.go"), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(waves) != 2 {
+		t.Fatalf("waves = %v; both builders may edit the package's shared test file", waves)
 	}
 }
 
@@ -60,7 +70,11 @@ func TestClaimsOverlapReadsPathsNotPrefixes(t *testing.T) {
 		left, right string
 		want        bool
 	}{
-		{"internal/a/x.go", "internal/a/y.go", false},
+		{"internal/a/x.go", "internal/a/y.go", true},
+		{"web/a/x.ts", "web/a/y.ts", false},
+		{"web/a/x.ts", "web/a/x.test.ts", true},
+		{".", "internal/a/x.go", true},
+		{"./", "internal/a/x.go", true},
 		{"internal/a/x.go", "internal/a", true},
 		{"internal/a/", "internal/a/b/c.go", true},
 		{"internal/ab", "internal/a", false},

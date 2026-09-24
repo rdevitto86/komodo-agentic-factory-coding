@@ -45,11 +45,11 @@ func Topological(tasks []backlog.Task) ([]backlog.Task, error) {
 	return ordered, nil
 }
 
-// claimsOverlap reports whether two tasks list one file, or one lists a directory holding a path the other lists.
+// claimsOverlap reports whether two tasks' claims, test files included, share a file or nest one in a directory.
 func claimsOverlap(left, right backlog.Task) bool {
 	for _, a := range claims(left) {
 		for _, b := range claims(right) {
-			if a == b || a == "." || b == "." || strings.HasPrefix(b, a+"/") || strings.HasPrefix(a, b+"/") {
+			if claimOverlaps(a, b) {
 				return true
 			}
 		}
@@ -57,14 +57,48 @@ func claimsOverlap(left, right backlog.Task) bool {
 	return false
 }
 
-// claims are a task's listed paths as clean slash paths, so ./a/ and a are one claim.
+// claimOverlaps reports whether two clean claims, either possibly a test-file pattern, name one file or nest.
+func claimOverlaps(a, b string) bool {
+	if a == b || a == "." || b == "." || strings.HasPrefix(b, a+"/") || strings.HasPrefix(a, b+"/") {
+		return true
+	}
+	if matched, _ := path.Match(a, b); matched && strings.Contains(a, "*") {
+		return true
+	}
+	if matched, _ := path.Match(b, a); matched && strings.Contains(b, "*") {
+		return true
+	}
+	return false
+}
+
+// claims are a task's listed paths as clean slash paths, plus the test files a builder may touch beside them.
 func claims(task backlog.Task) []string {
 	var out []string
 	for _, raw := range task.Files() {
 		trimmed := strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
 		if trimmed != "" {
-			out = append(out, path.Clean(trimmed))
+			clean := path.Clean(trimmed)
+			out = append(out, clean)
+			out = append(out, testClaims(clean)...)
 		}
+	}
+	return out
+}
+
+// testClaims names a file's conventional tests: its package's *_test.go for Go, same-stem variants otherwise.
+func testClaims(file string) []string {
+	ext := path.Ext(file)
+	if ext == "" || ext == path.Base(file) {
+		return nil
+	}
+	dir, base := path.Split(file)
+	stem := strings.TrimSuffix(base, ext)
+	if ext == ".go" {
+		return []string{path.Join(dir, stem+"_test.go"), path.Join(dir, "*_test.go")}
+	}
+	var out []string
+	for _, name := range []string{stem + ".test" + ext, stem + ".spec" + ext, "test_" + stem + ext, stem + "_test" + ext} {
+		out = append(out, path.Join(dir, name))
 	}
 	return out
 }

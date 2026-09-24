@@ -223,6 +223,11 @@ func Aggregate(entries []Entry) Metrics {
 // shipKey names one group's ship within one run.
 func shipKey(entry Entry) string { return entry.Run + "/" + entry.Group }
 
+// shippedRow reports whether an entry is a group's ship that landed as done or a handoff.
+func shippedRow(entry Entry) bool {
+	return entry.Station == "ship" && entry.Group != "" && (entry.Outcome == "done" || entry.Outcome == "handoff")
+}
+
 // pace is tasks done per run hour, and median seconds from a task's first brief to its group's ship.
 func pace(entries []Entry) (perHour, medianTask float64) {
 	first, last := map[string]time.Time{}, map[string]time.Time{}
@@ -241,7 +246,7 @@ func pace(entries []Entry) (perHour, medianTask float64) {
 		}
 		key := entry.Run + "/" + entry.Task
 		switch {
-		case entry.Station == "ship" && entry.Group != "":
+		case shippedRow(entry):
 			if entry.At.After(shipped[shipKey(entry)]) {
 				shipped[shipKey(entry)] = entry.At
 			}
@@ -273,7 +278,7 @@ func pace(entries []Entry) (perHour, medianTask float64) {
 func tokensPerLine(entries []Entry) map[string]float64 {
 	lines := map[string]int{}
 	for _, entry := range entries {
-		if entry.Station == "ship" && entry.Group != "" && entry.Lines > 0 {
+		if shippedRow(entry) && entry.Lines > 0 {
 			lines[shipKey(entry)] = entry.Lines
 		}
 	}

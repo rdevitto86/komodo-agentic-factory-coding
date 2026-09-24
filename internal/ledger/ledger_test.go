@@ -232,13 +232,19 @@ func TestAggregateMeasuresThroughput(t *testing.T) {
 		{At: at(60), Run: "r1", Group: "TG-1", Station: "ship", Outcome: "done", Lines: 40},
 		{At: at(70), Run: "r2", Group: "TG-2", Task: "TSK-3", Station: "build", Model: "sonnet", TokensIn: 9000},
 		{At: at(80), Run: "r2", Group: "TG-2", Station: "ship", Outcome: "done"},
+		{At: at(40), Run: "r3", Group: "TG-3", Task: "TSK-4", Station: "brief"},
+		{At: at(40), Run: "r3", Group: "TG-3", Task: "TSK-4", Station: "build", Model: "opus", TokensIn: 500},
+		{At: at(45), Run: "r3", Group: "TG-3", Station: "ship", Outcome: "failed", Lines: 50},
 	}
 	metrics := Aggregate(entries)
-	if metrics.TasksPerHour != 2.0/(70.0/60.0) {
-		t.Fatalf("tasks per hour = %v; two tasks done over seventy minutes of run time", metrics.TasksPerHour)
+	if metrics.TasksPerHour != 2.0/(75.0/60.0) {
+		t.Fatalf("tasks per hour = %v; two tasks done over seventy-five minutes of run time", metrics.TasksPerHour)
 	}
 	if metrics.MedianTaskSec != 55*60 {
-		t.Fatalf("median = %v; briefs at 0 and 10 shipped at 60", metrics.MedianTaskSec)
+		t.Fatalf("median = %v; briefs at 0 and 10 shipped at 60, a failed ship never counts", metrics.MedianTaskSec)
+	}
+	if _, ok := metrics.TokensPerLine["opus"]; ok {
+		t.Fatalf("tokens per line = %v; a failed ship's lines never count", metrics.TokensPerLine)
 	}
 	if metrics.TokensPerLine["haiku"] != 10 || metrics.TokensPerLine["sonnet"] != 20 {
 		t.Fatalf("tokens per line = %v; a ship without lines is skipped, never read as zero", metrics.TokensPerLine)
