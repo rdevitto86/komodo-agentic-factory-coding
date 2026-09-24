@@ -493,6 +493,50 @@ func TestAConflictMarkerOnTheFirstLineIsFound(t *testing.T) {
 	}
 }
 
+func TestALinkedWorktreeOutsideTheStateDirectoryIsFound(t *testing.T) {
+	root := gitRepo(t)
+	write(t, root, "AGENTS.md", "# Rules\n")
+	commitAll(t, root, "init")
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	outside := filepath.Join(t.TempDir(), "elsewhere")
+	run("worktree", "add", "-q", "-b", "feat/outside", outside, "main")
+	if resolved, err := filepath.EvalSymlinks(outside); err == nil {
+		outside = resolved
+	}
+	inside := filepath.Join(root, ".komodo", "wt", "TG-01.1")
+	run("worktree", "add", "-q", "-b", "feat/inside", inside, "main")
+
+	got, err := checkGit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundOutside := false
+	for _, problem := range got {
+		if problem.Check != "git" {
+			continue
+		}
+		if problem.Where == root || problem.Where == inside {
+			t.Fatalf("git = %+v, want the main checkout and state worktrees never reported", got)
+		}
+		if problem.Where == outside {
+			foundOutside = true
+			if !strings.Contains(problem.Detail, "feat/outside") {
+				t.Fatalf("git = %+v, want the branch named", got)
+			}
+		}
+	}
+	if !foundOutside {
+		t.Fatalf("git = %+v, want the worktree outside .komodo/wt reported", got)
+	}
+}
+
 func TestPruneNeverDeletesACriticalRef(t *testing.T) {
 	root := gitRepo(t)
 	write(t, root, "AGENTS.md", "# Rules\n")
@@ -672,6 +716,46 @@ func TestPruneSweepsAnEarlierRunsMergedWorktreeWhileTheCurrentRunIsStillOpen(t *
 	}
 	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/h").Output(); strings.TrimSpace(string(out)) == "" {
 		t.Fatalf("feat/h was deleted though origin does not hold it; done = %v", got)
+	}
+}
+
+func TestSettleShippedRunSkipsTheSweepWhileARunIsOpen(t *testing.T) {
+	const ready = "### [TG-01.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-01.1.1] Do it [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when:\n  - true\n```\n"
+	root := gitRepo(t)
+	write(t, root, "BACKLOG.md", ready)
+	write(t, root, ".gitignore", "/.komodo/\n")
+	commitAll(t, root, "init")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run(root, "init", "-q", "--bare", bare)
+	run(root, "remote", "add", "origin", bare)
+	run(root, "push", "-q", "origin", "main")
+
+	worktree := filepath.Join(root, ".komodo", "wt", "TG-01.1")
+	run(root, "worktree", "add", "-q", "-b", "feat/g", worktree, "main")
+	write(t, worktree, "done.txt", "done\n")
+	commitAll(t, worktree, "ship")
+	run(worktree, "push", "-q", "origin", "feat/g:main")
+
+	state := line.RunState{Run: "r", Group: "TG-01.1", Base: "main", Branch: "feat/g", Worktree: worktree}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Prune(root, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists(worktree) {
+		t.Fatalf("a clean, merged worktree was swept while its own run's group is still open; done = %v", got)
 	}
 }
 

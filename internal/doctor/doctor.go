@@ -609,7 +609,8 @@ func indexSymbols(files []string) symbolIndex {
 	return index
 }
 
-// checkGit reports conflict markers and the leftovers a run can strand.
+// checkGit reports conflict markers, a linked worktree parked outside the state directory, and the
+// leftovers a run can strand.
 func checkGit(root string) ([]Problem, error) {
 	var problems []Problem
 	out, err := git(root, "ls-files", "-u")
@@ -619,6 +620,7 @@ func checkGit(root string) ([]Problem, error) {
 	if strings.TrimSpace(out) != "" {
 		problems = append(problems, Problem{"git", "index", "the index holds unmerged paths"})
 	}
+	problems = append(problems, checkWorktrees(root)...)
 	for _, path := range textFiles(root) {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -676,20 +678,23 @@ func Prune(root, base string) ([]string, error) {
 	return done, nil
 }
 
-// settleShippedRun sweeps every clean worktree under .komodo/wt whose branch origin's base now holds,
-// whatever the run state holds; only the current run's own branch triggers its status flip restore.
+// settleShippedRun sweeps merged worktrees and restores flips for the current branch, skipping while a run is open.
 func settleShippedRun(root, base string) []string {
 	if _, err := git(root, "fetch", "--quiet", "origin", base); err != nil {
 		return nil
 	}
 	remote := "origin/" + base
+	open := line.RunIsOpen(root)
 	var done []string
-	if state, err := line.LoadRun(root); err == nil && state.Branch != "" && !line.RunIsOpen(root) {
+	if state, err := line.LoadRun(root); err == nil && state.Branch != "" && !open {
 		if _, err := git(root, "merge-base", "--is-ancestor", state.Branch, remote); err == nil {
 			if restoreFlips(root, remote) {
 				done = append(done, "restored BACKLOG.md; "+remote+" holds its status flips")
 			}
 		}
+	}
+	if open {
+		return done
 	}
 	for _, worktree := range stateWorktrees(root) {
 		if status, err := git(worktree.path, "status", "--porcelain"); err != nil || status != "" {
@@ -707,6 +712,36 @@ func settleShippedRun(root, base string) []string {
 		}
 	}
 	return done
+}
+
+// checkWorktrees reports every linked worktree parked outside .komodo/wt, naming its path and branch;
+// the main checkout and worktrees inside the state directory never fire.
+func checkWorktrees(root string) []Problem {
+	out, err := git(root, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil
+	}
+	var problems []Problem
+	for index, block := range strings.Split(out, "\n\n") {
+		if index == 0 {
+			continue
+		}
+		var current stateWorktree
+		for _, field := range strings.Split(block, "\n") {
+			if path, ok := strings.CutPrefix(field, "worktree "); ok {
+				current.path = path
+			}
+			if ref, ok := strings.CutPrefix(field, "branch refs/heads/"); ok {
+				current.branch = ref
+			}
+		}
+		if current.path == "" || strings.Contains(current.path, filepath.Join(".komodo", "wt")) {
+			continue
+		}
+		problems = append(problems, Problem{"git", current.path,
+			"a linked worktree on branch " + current.branch + " sits outside .komodo/wt"})
+	}
+	return problems
 }
 
 // stateWorktree is one worktree under the state directory and the branch it has checked out.
