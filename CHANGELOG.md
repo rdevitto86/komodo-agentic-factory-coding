@@ -2,9 +2,9 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
-## 1.0.0-beta.1 — unreleased
+## 1.0.0 — 2026-09-24
 
-The first beta of 1.0.0: feature-complete, with the three proofs recorded below. 1.0.0 is cut by hand once real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
+The first release: feature-complete, with the three proofs recorded below, the last one real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
 - **TG-03.19** The local switch never reports a probe it skipped (1 task(s))
 - **TG-03.18** Claude carries every tier until local is opted in (1 task(s))
