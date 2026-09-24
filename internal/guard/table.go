@@ -413,6 +413,13 @@ func extraCases() []Case {
 		bash("api POST issue comment", "gh api repos/o/r/issues/3/comments -f body=x", "feat/x", false, ""),
 		bash("graphql query no mutation", "gh api graphql -f query='query { viewer { login } }'", "feat/x", false, ""),
 		bash("pr view", "gh pr view 12", "feat/x", false, ""),
+		// 8. An interpreter's inline code or named script hides a git or gh call no differently than the shell.
+		bash("python3 -c hides a git push list literal", `python3 -c 'subprocess.run(["git","push","origin","main"])'`, "feat/x", true, interpreterHidesGit),
+		bash("node -e hides a git push", `node -e 'execSync("git push origin main")'`, "feat/x", true, interpreterHidesGit),
+		bash("ruby -e hides a gh api call", `ruby -e 'system("gh api -X DELETE x")'`, "feat/x", true, interpreterHidesGit),
+		bash("python3 -c prints only", "python3 -c 'print(1)'", "feat/x", false, ""),
+		bash("node -e logs only", "node -e 'console.log(2)'", "feat/x", false, ""),
+		bash("python -m pytest runs a module", "python -m pytest", "feat/x", false, ""),
 	}
 }
 
