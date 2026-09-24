@@ -91,9 +91,12 @@ func refuseWorktreePush(root, path string) {
 		return
 	}
 	if _, err := git(root, "config", "extensions.worktreeConfig", "true"); err != nil {
+		fmt.Fprintln(os.Stderr, "komodo: could not enable extensions.worktreeConfig; the worktree push refusal is not set:", err)
 		return
 	}
-	_, _ = git(path, "config", "--worktree", "remote.origin.pushurl", RefusedPushURL)
+	if _, err := git(path, "config", "--worktree", "remote.origin.pushurl", RefusedPushURL); err != nil {
+		fmt.Fprintln(os.Stderr, "komodo: could not set the worktree's refused pushurl:", err)
+	}
 }
 
 // StartRef is the ref a group is cut from and diffed against: the remote-tracked copy of base

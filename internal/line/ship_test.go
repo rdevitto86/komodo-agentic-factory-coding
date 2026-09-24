@@ -458,3 +458,49 @@ func TestShipsOwnCommitDoesNotRestaleTheReview(t *testing.T) {
 		t.Fatal("ship's own commit must not restale a review that already passed it")
 	}
 }
+
+// TestShipGroupPushesFromAWorktreeThatRefusesPush cuts the group the way the line does, with its
+// refused pushurl, and proves ship still lands the branch on origin.
+func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
+	root := t.TempDir()
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(shipBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "seed")
+	runGit(t, root, "push", "origin", "main")
+	runGit(t, root, "fetch", "origin")
+	worktree := filepath.Join(root, StateDir, "wt", "TG-09.1")
+	if err := AddWorktree(root, "feat/a-group", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", worktree, "push", "origin", "feat/a-group").CombinedOutput(); err == nil {
+		t.Fatalf("the cut worktree must refuse a plain push, out = %s", out)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "one.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "add", "-A")
+	runGit(t, worktree, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group",
+		Worktree: filepath.Join(StateDir, "wt", "TG-09.1"),
+		Tasks:    []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("git", "-C", bare, "branch", "--list", "feat/a-group").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "feat/a-group") {
+		t.Fatalf("branch = %s, err = %v; ship must land the branch on origin", out, err)
+	}
+	if refused, err := git(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
+		t.Fatalf("pushurl = %q; ship must leave the worktree's refusal in place", refused)
+	}
+}

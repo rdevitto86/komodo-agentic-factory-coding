@@ -153,11 +153,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		return result, nil
 	}
-	pushURL, err := git(root, "remote", "get-url", "--push", "origin")
-	if err != nil {
-		return nil, err
-	}
-	if _, err := git(group, "-c", "remote.origin.pushurl="+pushURL, "push", "-u", "origin", plan.Branch); err != nil {
+	if err := pushFromWorktree(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
 	filed, err := FileFindings(group, plan.Group, minor)
@@ -284,4 +280,22 @@ func ReportBody(plan *Plan, result *ShipResult, waves []*WaveResult) string {
 		out = append(out, "", "## Blocked", "- "+strings.Join(result.Blocked, ", "))
 	}
 	return strings.Join(out, "\n") + "\n"
+}
+
+// pushFromWorktree pushes branch to the URL the root's origin names, going around the refused pushurl
+// every line worktree carries, then records the upstream the way push -u would.
+func pushFromWorktree(root, worktree, branch string) error {
+	pushURL, err := git(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		return err
+	}
+	ref := "refs/heads/" + branch
+	if _, err := git(worktree, "push", pushURL, ref+":"+ref); err != nil {
+		return err
+	}
+	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
+	if _, err := git(worktree, "fetch", "origin", branch); err == nil {
+		_, _ = git(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
+	}
+	return nil
 }
