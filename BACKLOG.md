@@ -1494,6 +1494,42 @@ context:
 type: fix
 ```
 
+### [TG-03.21] A wave builds at once, and the hook checks the branch it commits
+```yaml
+type: feat
+version: 1.1.0
+base: main
+```
+* **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
+
+#### [TSK-03.21.1] Step returns every ready spawn in a wave, and the run skill launches them together [P: H] [READY]
+```yaml
+files: [internal/line/step.go, internal/line/step_test.go, komodo/skills/run/SKILL.md]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+  - go run ./cmd/komodo doctor
+context:
+  - "Action gains Spawns []Action, json spawns, omitempty; when a parallel-mode wave holds two or more tasks that each have a current brief and no result, Step returns action spawn with every one in Spawns, each carrying its own brief, worktree, task, and machine as the single spawn does today"
+  - "a task with no brief yet still returns its own run komodo brief action first, so every brief in the wave is written before the wave spawns; single-mode groups and a lone ready task keep today's single spawn with Spawns empty"
+  - "the run skill: when spawns is present, spawn every entry in the same turn and wait for all of them, then loop; the one-action-per-turn rule reads as one step per turn"
+  - "tests: a three-task parallel wave with all briefs written returns three spawns; a single-mode group returns one; a wave with one result already on disk returns only the other two"
+type: feat
+```
+
+#### [TSK-03.21.2] The pre-commit hook runs the gate from the checkout it commits [P: H] [READY]
+```yaml
+files: [internal/gate/gate.go, internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/gate/...
+  - go vet ./internal/gate/...
+context:
+  - "hookScript finds the shared git dir's checkout for bin/; in a worktree that binary was built from another branch, so its compiled guard table and comment rules are not the ones being committed"
+  - "when the committing checkout, git rev-parse --show-toplevel, holds cmd/komodo/main.go, the hook runs go run ./cmd/komodo gate from that toplevel, with --fuzz 10s on pre-push as today; any other repo keeps the built binary"
+  - "tests: the rendered script carries the toplevel branch and the go run line; a repo without cmd/komodo keeps exec of the built binary"
+type: fix
+```
+
 ### [TG-03.20] The guard holds its own denials, and the docs match the line
 ```yaml
 type: fix
