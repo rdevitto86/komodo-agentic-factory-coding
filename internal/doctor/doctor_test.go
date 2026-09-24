@@ -493,7 +493,7 @@ func TestAConflictMarkerOnTheFirstLineIsFound(t *testing.T) {
 	}
 }
 
-func TestALinkedWorktreeOutsideTheStateDirectoryIsFound(t *testing.T) {
+func TestAWorktreeOutsideTheStateDirectoryYieldsANoteNotAProblem(t *testing.T) {
 	root := gitRepo(t)
 	write(t, root, "AGENTS.md", "# Rules\n")
 	commitAll(t, root, "init")
@@ -513,27 +513,19 @@ func TestALinkedWorktreeOutsideTheStateDirectoryIsFound(t *testing.T) {
 	inside := filepath.Join(root, ".komodo", "wt", "TG-01.1")
 	run("worktree", "add", "-q", "-b", "feat/inside", inside, "main")
 
-	got, err := checkGit(root)
+	notes := StrayWorktrees(root)
+	if len(notes) != 1 || !strings.Contains(notes[0], outside) || !strings.Contains(notes[0], "feat/outside") {
+		t.Fatalf("StrayWorktrees = %+v, want one note naming the outside path and branch", notes)
+	}
+
+	problems, err := checkGit(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	foundOutside := false
-	for _, problem := range got {
-		if problem.Check != "git" {
-			continue
+	for _, problem := range problems {
+		if problem.Check == "git" && (problem.Where == outside || strings.Contains(problem.Detail, "worktree")) {
+			t.Fatalf("checkGit = %+v, want a stray worktree to never add a problem", problems)
 		}
-		if problem.Where == root || problem.Where == inside {
-			t.Fatalf("git = %+v, want the main checkout and state worktrees never reported", got)
-		}
-		if problem.Where == outside {
-			foundOutside = true
-			if !strings.Contains(problem.Detail, "feat/outside") {
-				t.Fatalf("git = %+v, want the branch named", got)
-			}
-		}
-	}
-	if !foundOutside {
-		t.Fatalf("git = %+v, want the worktree outside .komodo/wt reported", got)
 	}
 }
 
