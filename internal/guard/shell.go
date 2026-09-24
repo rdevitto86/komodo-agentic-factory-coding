@@ -139,8 +139,41 @@ func echoedText(cmd simpleCommand) (text string, printed, known bool) {
 	}
 	args = dropPrintOptions(name, args)
 	text = strings.Join(args, " ")
-	known = !strings.Contains(text, "\\") && !(name == "printf" && strings.Contains(text, "%"))
+	known = !strings.Contains(text, "\\") && !(name == "printf" && strings.Contains(text, "%")) && !anyExpands(cmd.words[1:])
 	return text, true, known
+}
+
+// stdinOf is everything a command reads on stdin: heredocs, here-strings, < files, and piped text,
+// with unknownInput standing in for a < file the guard cannot see.
+func (s *scanner) stdinOf(cmd simpleCommand, upstream []string, cwd string) string {
+	parts := append([]string{}, cmd.stdin...)
+	for _, input := range cmd.inputs {
+		if write, found := s.recordedWrite(input, cwd); found {
+			if !write.known {
+				parts = append(parts, unknownInput)
+			}
+			parts = append(parts, write.text)
+			continue
+		}
+		text, exists, ok := readScript(input, cwd)
+		switch {
+		case exists && ok && !s.blind:
+			parts = append(parts, text)
+		case exists || s.createdEarlier():
+			parts = append(parts, unknownInput)
+		}
+	}
+	return strings.Join(append(parts, upstream...), "\n")
+}
+
+// anyExpands reports whether any word holds a substitution or parameter the shell fills in at run time.
+func anyExpands(words []word) bool {
+	for _, w := range words {
+		if w.expands {
+			return true
+		}
+	}
+	return false
 }
 
 // echoOptionRe matches one of echo's own leading options, such as -n, -e, or -ne.
@@ -171,7 +204,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		findings = append(findings, pathFindings(target, cwd, s.root, s.policy)...)
 	}
 	if len(cmd.writes) > 0 {
-		s.recordWrites(cmd, cwd, strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n"))
+		s.recordWrites(cmd, cwd, s.stdinOf(cmd, upstream, cwd))
 	}
 	tokens := s.expand(cmd.words)
 	for len(tokens) > 0 && reservedWords[tokens[0]] {
@@ -200,7 +233,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	if len(kept) == 0 {
 		return findings, cwd, branch
 	}
-	stdin := strings.Join(append(append([]string{}, cmd.stdin...), upstream...), "\n")
+	stdin := s.stdinOf(cmd, upstream, cwd)
 	name := commandName(kept[0])
 	s.recordOutputWrites(name, kept, cwd)
 	switch {
@@ -235,7 +268,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	case pathWriters[name] || isConditionalWriter(name, kept):
 		findings = append(findings, writerPaths(name, kept, cwd, s.root, s.policy)...)
 		if interpreters[interpName(name)] {
-			findings = append(findings, s.interpScriptFindings(kept, cwd, stdin)...)
+			findings = append(findings, s.interpScriptFindings(kept, cwd, stdin, anyExpands(cmd.words))...)
 		}
 		if name == "tee" {
 			s.recordTeeWrites(kept, cwd, stdin)
@@ -245,9 +278,9 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		gitResult, branch = gitFindings(kept, branch, cwd, s.root, s.policy, stdin)
 		findings = append(findings, gitResult...)
 	case name == "gh":
-		findings = append(findings, ghFindings(kept)...)
+		findings = append(findings, ghFindings(kept, anyExpands(cmd.words))...)
 	case interpreters[interpName(name)]:
-		findings = append(findings, s.interpScriptFindings(kept, cwd, stdin)...)
+		findings = append(findings, s.interpScriptFindings(kept, cwd, stdin, anyExpands(cmd.words))...)
 	case name == "eval" && len(kept) > 1:
 		var evaluated []string
 		evaluated, branch = s.scan(strings.Join(kept[1:], " "), cwd, branch)
@@ -680,7 +713,8 @@ func looksLikeScriptPath(target string) bool {
 // under a shell shebang or none, or read for hidden git or gh under an interpreter's.
 func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, string) {
 	text, exists, ok := readScript(target, cwd)
-	if write, found := s.recordedWrite(target, cwd); found {
+	write, recorded := s.recordedWrite(target, cwd)
+	if recorded {
 		if !write.known {
 			return []string{scriptNotVisible}, branch
 		}
@@ -689,7 +723,7 @@ func (s *scanner) scriptCommandFindings(target, cwd, branch string) ([]string, s
 	if !exists && (s.blind || (scriptExtensions[strings.ToLower(filepath.Ext(target))] && s.createdEarlier())) {
 		return []string{scriptNotVisible}, branch
 	}
-	if _, recorded := s.recordedWrite(target, cwd); !recorded && ok && s.blind {
+	if !recorded && ok && s.blind {
 		return []string{scriptNotVisible}, branch
 	}
 	if !ok {
