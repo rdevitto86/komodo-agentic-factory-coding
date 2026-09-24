@@ -109,6 +109,10 @@ func gitFindings(tokens []string, branch, cwd string, policy Policy, stdin strin
 			if target == "HEAD" {
 				target = branch
 			}
+			if hasAnyCritical(policy) && unresolvedTarget(target) {
+				findings = append(findings, fmt.Sprintf("git push %s: the target is only known when it runs; name the branch", spec))
+				continue
+			}
 			if strings.Contains(target, "*") {
 				if hasAnyCritical(policy) {
 					findings = append(findings, fmt.Sprintf("git push %s: a wildcard refspec reaches every ref, including a critical one; open a pull request instead", spec))
@@ -296,6 +300,13 @@ func aliasValue(configs []string, sub string) string {
 // hasAnyCritical reports whether the policy protects any ref at all.
 func hasAnyCritical(policy Policy) bool {
 	return len(policy.CriticalRefs) > 0
+}
+
+// unresolvedTarget reports whether a push target still holds text a shell only fills in when it
+// runs: an xargs placeholder, a command substitution, a backtick, or an unresolved variable.
+func unresolvedTarget(target string) bool {
+	return strings.Contains(target, "{}") || strings.Contains(target, "$(") ||
+		strings.Contains(target, "`") || unresolvedVarRe.MatchString(target)
 }
 
 // switchTarget finds the ref a switch or checkout targets, and whether it creates a fresh one;

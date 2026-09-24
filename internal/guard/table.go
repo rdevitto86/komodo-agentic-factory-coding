@@ -96,6 +96,12 @@ func Table(policy Policy) []Case {
 		bash("mirror push reaches every ref", "git push --mirror", "feat/x", true, "reaches every ref"),
 		bash("push --all reaches every ref", "git push --all origin", "feat/x", true, "reaches every ref"),
 		bash("wildcard refspec reaches every ref", "git push origin refs/heads/*:refs/heads/*", "feat/x", true, "wildcard refspec"),
+		// A push target only the shell fills in when it runs is denied without knowing which ref it names.
+		bash("an xargs placeholder is not a known target", "echo main | xargs -I{} git push origin {}", "feat/x", true, "only known when it runs"),
+		bash("a command substitution target is not a known target", `git push origin "$(git rev-parse --abbrev-ref HEAD)"`, "feat/x", true, "only known when it runs"),
+		bash("a backtick target is not a known target", "git push origin `git branch --show-current`", "feat/x", true, "only known when it runs"),
+		bash("a variable resolved earlier in the line names its own branch", "BR=feat/x; git push origin $BR", "feat/x", false, ""),
+		bash("a variable resolved earlier in the line still names a critical ref", "BR=main; git push origin $BR", "feat/x", true, "open a pull request"),
 
 		// 1c. A switch or checkout is judged onto the ref it lands on, tracked across the whole chain.
 		bashInMode("switch onto main in safe mode", "git switch main", "feat/x", ModeSafe, true, "critical ref is watched"),
