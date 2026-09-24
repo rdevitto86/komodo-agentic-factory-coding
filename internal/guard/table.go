@@ -549,6 +549,13 @@ func extraCases() []Case {
 		bash("node -r a package name stays allowed", "node -r dotenv/config server.js", "feat/x", false, ""),
 		bash("commit -m with a message starting -n", `git commit -m "-n flag fixed"`, "feat/x", false, ""),
 		bash("commit --message with a message starting -n", `git commit --message "-n flag fixed"`, "feat/x", false, ""),
+		bash("a repeated query hides a merge behind a comment", `gh api graphql -f query='#' -f query='mutation{mergePullRequest(input:{pullRequestId:"x"}){clientMutationId}}'`, "feat/x", true, "forge write"),
+		bash("repo deploy-key add installs a write key", "gh repo deploy-key add k.pub --allow-write", "feat/x", true, "forge write"),
+		bash("repo archive changes the repository", "gh repo archive o/r --yes", "feat/x", true, "forge write"),
+		bash("repo sync moves a branch on the forge", "gh repo sync o/r", "feat/x", true, "forge write"),
+		bash("repo deploy-key list reads", "gh repo deploy-key list", "feat/x", false, ""),
+		bash("php -f glued reads the script", "cat > d.php <<'EOF'\n<?php system('git push origin main');\nEOF\nphp -fd.php", "feat/x", true, interpreterHidesGit),
+		bash("perl one-liner with $ beside an expanding word", `perl -lane 'print $F[0]' "$LOG"`, "feat/x", false, ""),
 	}
 }
 

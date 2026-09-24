@@ -202,13 +202,17 @@ func (call *interpCall) readShort(args []string, index int, table flagTable) (bo
 				return false, index + 1
 			}
 			return false, index
-		case table.module[letter]:
-			if letter == "f" && index+1 < len(args) && rest == "" {
+		case table.module[letter] && letter == "f":
+			// php -f names the script, glued as -fx.php or as the next word.
+			if rest != "" {
+				call.operand = rest
+			} else if index+1 < len(args) {
 				call.operand = args[index+1]
-			} else {
-				// python -m names an installed module, which reads stdin as data, not as a program.
-				call.module = true
 			}
+			return true, index
+		case table.module[letter]:
+			// python -m names an installed module, which reads stdin as data, not as a program.
+			call.module = true
 			return true, index
 		case table.value[letter]:
 			if rest == "" && !table.gluedOnly[letter] && index+1 < len(args) {
@@ -341,7 +345,7 @@ func hidesGitOrGh(text string) bool {
 
 // interpScriptFindings checks what an interpreter will run: inline code, its stdin, a script this
 // line already wrote, or one on disk; a script missing after an earlier command is not visible.
-func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, active bool) []string {
+func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, expanding map[string]bool) []string {
 	call := parseInterpreter(kept)
 	if found := s.preloadFindings(call.preloads, cwd); found != nil {
 		return found
@@ -357,7 +361,7 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, active 
 		switch {
 		case hidesGitOrGh(code):
 			return []string{interpreterHidesGit}
-		case active && unresolvedText(code):
+		case expandingIn(expanding, call.code...) && unresolvedText(code):
 			return []string{scriptNotVisible}
 		}
 		return nil

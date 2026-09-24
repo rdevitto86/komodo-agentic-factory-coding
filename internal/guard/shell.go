@@ -166,6 +166,21 @@ func (s *scanner) stdinOf(cmd simpleCommand, upstream []string, cwd string) stri
 	return strings.Join(append(parts, upstream...), "\n")
 }
 
+// expandingValues are the argument strings that came from words the shell expands at run time,
+// so a check can ask whether one particular argument holds a substitution, not the whole command.
+func (s *scanner) expandingValues(words []word) map[string]bool {
+	values := map[string]bool{}
+	for _, w := range words {
+		if !w.expands {
+			continue
+		}
+		for _, value := range s.expand([]word{w}) {
+			values[value] = true
+		}
+	}
+	return values
+}
+
 // anyExpands reports whether any word holds a substitution or parameter the shell fills in at run time.
 func anyExpands(words []word) bool {
 	for _, w := range words {
@@ -269,7 +284,7 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 	case pathWriters[name] || isConditionalWriter(name, kept):
 		findings = append(findings, writerPaths(name, kept, cwd, s.root, s.policy)...)
 		if interpreters[interpName(name)] {
-			findings = append(findings, s.interpScriptFindings(kept, cwd, stdin, anyExpands(cmd.words))...)
+			findings = append(findings, s.interpScriptFindings(kept, cwd, stdin, s.expandingValues(cmd.words))...)
 		}
 		if name == "tee" {
 			s.recordTeeWrites(kept, cwd, stdin)
@@ -279,9 +294,9 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		gitResult, branch = gitFindings(kept, branch, cwd, s.root, s.policy, stdin)
 		findings = append(findings, gitResult...)
 	case name == "gh":
-		findings = append(findings, ghFindings(kept, anyExpands(cmd.words))...)
+		findings = append(findings, ghFindings(kept, s.expandingValues(cmd.words))...)
 	case interpreters[interpName(name)]:
-		findings = append(findings, s.interpScriptFindings(kept, cwd, stdin, anyExpands(cmd.words))...)
+		findings = append(findings, s.interpScriptFindings(kept, cwd, stdin, s.expandingValues(cmd.words))...)
 	case name == "eval" && len(kept) > 1:
 		var evaluated []string
 		evaluated, branch = s.scan(strings.Join(kept[1:], " "), cwd, branch)

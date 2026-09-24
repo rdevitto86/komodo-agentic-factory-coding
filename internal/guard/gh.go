@@ -7,7 +7,7 @@ import (
 )
 
 // ghFindings refuses a gh call that writes to the forge, except the two writes the line needs.
-func ghFindings(kept []string, active bool) []string {
+func ghFindings(kept []string, expanding map[string]bool) []string {
 	if len(kept) < 2 {
 		return nil
 	}
@@ -17,7 +17,7 @@ func ghFindings(kept []string, active bool) []string {
 			return []string{"gh pr merge: landing is the human's merge button"}
 		}
 	case "api":
-		return apiFindings(kept[2:], active)
+		return apiFindings(kept[2:], expanding)
 	case "ruleset":
 		return rulesetFindings(afterRepoFlags(kept[2:]))
 	case "repo":
@@ -26,6 +26,16 @@ func ghFindings(kept []string, active bool) []string {
 		return secretFindings(afterRepoFlags(kept[2:]))
 	}
 	return nil
+}
+
+// expandingIn reports whether any of the given argument strings came from a word the shell expands.
+func expandingIn(expanding map[string]bool, values ...string) bool {
+	for _, value := range values {
+		if expanding[value] {
+			return true
+		}
+	}
+	return false
 }
 
 // unresolvedText reports whether text still holds a substitution, backtick, or variable the shell fills in.
@@ -70,7 +80,7 @@ var sensitiveSegments = map[string]bool{
 }
 
 // apiFindings refuses a gh api call that writes, reaches a sensitive endpoint, or crosses to another host.
-func apiFindings(args []string, active bool) []string {
+func apiFindings(args []string, expanding map[string]bool) []string {
 	var method, hostname, endpoint, graphqlQuery string
 	hasFieldFlag, queryFromFile := false, false
 	for index := 0; index < len(args); index++ {
@@ -86,8 +96,9 @@ func apiFindings(args []string, active bool) []string {
 			var field string
 			field, index = nextValue(args, index, value, hasEq)
 			if key, val, ok := strings.Cut(field, "="); ok && key == "query" {
-				graphqlQuery += val
-				queryFromFile = queryFromFile || strings.HasPrefix(val, "@") || (active && unresolvedText(val))
+				// gh sends the last query= it is given, so only the last one counts.
+				graphqlQuery = val
+				queryFromFile = strings.HasPrefix(val, "@") || (expandingIn(expanding, arg, field) && unresolvedText(val))
 			}
 		case name == "--input":
 			hasFieldFlag = true
@@ -333,15 +344,29 @@ func rulesetFindings(args []string) []string {
 	return []string{fmt.Sprintf("gh ruleset %s: a forge write goes through the line, never an agent", args[0])}
 }
 
-// repoWriteVerbs are the gh repo subcommands that change or remove the repository itself.
-var repoWriteVerbs = map[string]bool{"edit": true, "delete": true, "rename": true}
+// repoWriteVerbs are the gh repo subcommands that change the repository itself or its branches.
+var repoWriteVerbs = map[string]bool{
+	"edit": true, "delete": true, "rename": true, "archive": true, "unarchive": true, "sync": true,
+}
 
-// repoFindings refuses a gh repo call that edits, deletes, or renames the repository.
+// deployKeyWriteVerbs are the gh repo deploy-key subcommands that add or remove a key.
+var deployKeyWriteVerbs = map[string]bool{"add": true, "delete": true}
+
+// repoFindings refuses a gh repo call that changes the repository, its branches, or its deploy keys.
 func repoFindings(args []string) []string {
-	if len(args) == 0 || !repoWriteVerbs[args[0]] {
+	switch {
+	case len(args) == 0:
 		return nil
+	case args[0] == "deploy-key":
+		rest := afterRepoFlags(args[1:])
+		if len(rest) == 0 || !deployKeyWriteVerbs[rest[0]] {
+			return nil
+		}
+		return []string{fmt.Sprintf("gh repo deploy-key %s: a forge write goes through the line, never an agent", rest[0])}
+	case repoWriteVerbs[args[0]]:
+		return []string{fmt.Sprintf("gh repo %s: a forge write goes through the line, never an agent", args[0])}
 	}
-	return []string{fmt.Sprintf("gh repo %s: a forge write goes through the line, never an agent", args[0])}
+	return nil
 }
 
 // secretWriteVerbs are the gh secret subcommands that set or remove a secret.
