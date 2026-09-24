@@ -8,6 +8,7 @@ import (
 type simpleCommand struct {
 	words   []word
 	writes  []string
+	appends map[string]bool
 	stdin   []string
 	pipesTo bool
 }
@@ -50,6 +51,12 @@ func parse(tokens []token) []simpleCommand {
 			case t.text == ">&" && isDescriptor(target.value):
 			default:
 				current.writes = append(current.writes, target.value)
+				if t.text == ">>" || t.text == "&>>" {
+					if current.appends == nil {
+						current.appends = map[string]bool{}
+					}
+					current.appends[target.value] = true
+				}
 			}
 		case tokenWord:
 			current.words = append(current.words, expandBraces(t.word)...)

@@ -16,8 +16,215 @@ var interpreters = map[string]bool{
 	"php": true, "deno": true, "bun": true, "osascript": true,
 }
 
-// inlineCodeShortFlags are the single-letter flags that take inline code, alone or glued to it.
-var inlineCodeShortFlags = []string{"-c", "-e", "-E", "-r", "-p"}
+// flagTable is one interpreter's option grammar: code letters, value letters, and whether -ne clusters.
+type flagTable struct {
+	code      map[string]bool
+	value     map[string]bool
+	longCode  map[string]bool
+	longValue map[string]bool
+	module    map[string]bool
+	gluedOnly map[string]bool
+	clusters  bool
+	subOnly   bool
+}
+
+// flagTables holds each interpreter's own option grammar; python3 and python share one.
+var flagTables = map[string]flagTable{
+	"python": {
+		code:     set("c"),
+		value:    set("W", "X", "Q"),
+		module:   set("m"),
+		clusters: true,
+	},
+	"node": {
+		code:      set("e", "p"),
+		value:     set("r", "C"),
+		longCode:  set("--eval", "--print"),
+		longValue: set("--require", "--import", "--loader", "--experimental-loader", "--conditions", "--input-type", "--env-file", "--title"),
+	},
+	"ruby": {
+		code:      set("e"),
+		value:     set("r", "I", "C", "E", "F", "0", "x", "K", "T", "W"),
+		gluedOnly: set("F", "0", "x", "K", "T", "W"),
+		clusters:  true,
+	},
+	"perl": {
+		code:      set("e", "E"),
+		value:     set("M", "m", "I", "i", "l", "0", "F", "d", "D", "x", "C"),
+		gluedOnly: set("M", "m", "i", "l", "0", "F", "d", "D", "x", "C"),
+		clusters:  true,
+	},
+	"php": {
+		code:     set("r", "B", "R", "E"),
+		value:    set("d", "c", "z", "t"),
+		module:   set("f"),
+		clusters: false,
+	},
+	"osascript": {
+		code:  set("e"),
+		value: set("l", "s", "i"),
+	},
+	"bun": {
+		code:     set("e", "p"),
+		longCode: set("--eval", "--print"),
+		subOnly:  true,
+	},
+	"deno": {
+		subOnly: true,
+	},
+}
+
+// set builds a lookup from its members.
+func set(members ...string) map[string]bool {
+	out := map[string]bool{}
+	for _, member := range members {
+		out[member] = true
+	}
+	return out
+}
+
+// scriptExtensions mark an interpreter operand as a script file, as opposed to a subcommand or module name.
+var scriptExtensions = map[string]bool{
+	".py": true, ".js": true, ".mjs": true, ".cjs": true, ".ts": true, ".mts": true, ".tsx": true,
+	".rb": true, ".pl": true, ".pm": true, ".php": true, ".scpt": true, ".applescript": true, ".sh": true,
+}
+
+// bunSubcommands are bun's own verbs; any other first word is a script or a package.json script name.
+var bunSubcommands = set("run", "test", "install", "i", "add", "remove", "rm", "build", "x", "create",
+	"upgrade", "pm", "link", "unlink", "init", "outdated", "publish", "patch", "update", "exec", "repl")
+
+// interpCall is what one interpreter invocation will run: inline code, a script operand, or neither.
+type interpCall struct {
+	code    []string
+	operand string
+}
+
+// parseInterpreter reads an interpreter's arguments with that interpreter's own flag table.
+func parseInterpreter(kept []string) interpCall {
+	name := commandName(kept[0])
+	if name == "python3" {
+		name = "python"
+	}
+	table := flagTables[name]
+	args := kept[1:]
+	var call interpCall
+	if table.subOnly {
+		return parseSubcommandInterpreter(name, args, table)
+	}
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if arg == "--" {
+			if index+1 < len(args) {
+				call.operand = args[index+1]
+			}
+			return call
+		}
+		if strings.HasPrefix(arg, "--") {
+			flag, value, hasEq := strings.Cut(arg, "=")
+			switch {
+			case table.longCode[flag]:
+				code, next := nextValue(args, index, value, hasEq)
+				call.code, index = append(call.code, code), next
+			case table.longValue[flag] && !hasEq:
+				index++
+			}
+			continue
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			if len(call.code) == 0 {
+				call.operand = arg
+			}
+			return call
+		}
+		stop, next := call.readShort(args, index, table)
+		index = next
+		if stop {
+			return call
+		}
+	}
+	return call
+}
+
+// readShort reads one short option or cluster, returning whether option parsing ends there.
+func (call *interpCall) readShort(args []string, index int, table flagTable) (bool, int) {
+	arg := args[index]
+	letters := arg[1:]
+	for position := 0; position < len(letters); position++ {
+		letter := string(letters[position])
+		rest := strings.TrimPrefix(letters[position+1:], "=")
+		switch {
+		case table.code[letter]:
+			if rest != "" {
+				call.code = append(call.code, rest)
+				return false, index
+			}
+			if index+1 < len(args) {
+				call.code = append(call.code, args[index+1])
+				return false, index + 1
+			}
+			return false, index
+		case table.module[letter]:
+			if letter == "f" && index+1 < len(args) && rest == "" {
+				call.operand = args[index+1]
+			}
+			return true, index
+		case table.value[letter]:
+			if rest == "" && !table.gluedOnly[letter] && index+1 < len(args) {
+				return false, index + 1
+			}
+			return false, index
+		}
+		if !table.clusters {
+			return false, index
+		}
+	}
+	return false, index
+}
+
+// parseSubcommandInterpreter reads bun and deno, whose first word is usually a verb, not a script.
+func parseSubcommandInterpreter(name string, args []string, table flagTable) interpCall {
+	var call interpCall
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		flag, value, hasEq := strings.Cut(arg, "=")
+		if table.longCode[flag] || (len(flag) == 2 && table.code[strings.TrimPrefix(flag, "-")] && strings.HasPrefix(flag, "-")) {
+			code, next := nextValue(args, index, value, hasEq)
+			call.code, index = append(call.code, code), next
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		switch {
+		case name == "deno" && arg == "eval":
+			for _, word := range args[index+1:] {
+				if !strings.HasPrefix(word, "-") {
+					call.code = append(call.code, word)
+					return call
+				}
+			}
+			return call
+		case arg == "run":
+			for _, word := range args[index+1:] {
+				if !strings.HasPrefix(word, "-") {
+					call.operand = word
+					return call
+				}
+			}
+			return call
+		case name == "bun" && !bunSubcommands[arg]:
+			call.operand = arg
+			return call
+		}
+		return call
+	}
+	return call
+}
+
+// scriptLike reports whether an interpreter operand names a file rather than a module, verb, or package script.
+func scriptLike(operand string) bool {
+	return strings.Contains(operand, "/") || scriptExtensions[strings.ToLower(filepath.Ext(operand))]
+}
 
 // gitVerbs name the git subcommands an interpreter's inline code must not hide.
 var gitVerbs = `push|commit|merge|rebase|branch|update-ref|remote|config|tag`
@@ -25,87 +232,75 @@ var gitVerbs = `push|commit|merge|rebase|branch|update-ref|remote|config|tag`
 // ghVerbs name the gh subcommands an interpreter's inline code must not hide.
 var ghVerbs = `api|pr|repo|ruleset|secret`
 
-// gitHidesRe matches the word git immediately followed by one of gitVerbs, across quotes and brackets.
-var gitHidesRe = regexp.MustCompile(`\bgit\b[^A-Za-z0-9]{0,12}\b(?:` + gitVerbs + `)\b`)
+// gitHidesRe matches git then a gitVerbs word within 60 characters, so flags and quotes never hide it.
+var gitHidesRe = regexp.MustCompile(`\bgit\b[\s\S]{0,60}?\b(?:` + gitVerbs + `)\b`)
 
-// ghHidesRe matches the word gh immediately followed by one of ghVerbs, the same way.
-var ghHidesRe = regexp.MustCompile(`\bgh\b[^A-Za-z0-9]{0,12}\b(?:` + ghVerbs + `)\b`)
+// ghHidesRe matches the word gh with one of ghVerbs the same way.
+var ghHidesRe = regexp.MustCompile(`\bgh\b[\s\S]{0,60}?\b(?:` + ghVerbs + `)\b`)
 
-// interpFindings refuses an interpreter whose inline code or named script text hides a git or gh call.
-func interpFindings(kept []string, cwd, root string) []string {
-	if len(kept) < 2 || !interpreters[commandName(kept[0])] {
-		return nil
-	}
-	text, ok := interpreterText(kept, cwd, root)
-	if !ok || !hidesGitOrGh(text) {
-		return nil
-	}
-	return []string{interpreterHidesGit}
-}
-
-// hidesGitOrGh reports whether text holds git or gh immediately followed by one of the verbs it hides for.
+// hidesGitOrGh reports whether text holds git or gh followed closely by one of the verbs it hides for.
 func hidesGitOrGh(text string) bool {
 	return gitHidesRe.MatchString(text) || ghHidesRe.MatchString(text)
 }
 
-// interpreterText is the inline code an interpreter runs, or the text of the script file it
-// names, when that file exists in the worktree; it never runs the interpreter.
-func interpreterText(kept []string, cwd, root string) (string, bool) {
-	if code, ok := inlineCode(kept); ok {
-		return code, true
+// interpScriptFindings checks what an interpreter will run: its inline code, a script this line
+// already wrote, or a script on disk; a script missing after an earlier command is not visible.
+func (s *scanner) interpScriptFindings(kept []string, cwd string) []string {
+	if len(kept) < 2 {
+		return nil
 	}
-	operand := scriptOperand(kept)
-	if operand == "" {
-		return "", false
+	call := parseInterpreter(kept)
+	if len(call.code) > 0 {
+		if hidesGitOrGh(strings.Join(call.code, "\n")) {
+			return []string{interpreterHidesGit}
+		}
+		return nil
 	}
-	file := expandHome(operand)
+	if call.operand == "" || !scriptLike(call.operand) {
+		return nil
+	}
+	if write, found := s.recordedWrite(call.operand, cwd); found {
+		if !write.known {
+			return []string{scriptNotVisible}
+		}
+		if hidesGitOrGh(write.text) {
+			return []string{interpreterHidesGit}
+		}
+		return nil
+	}
+	text, exists, ok := readScript(call.operand, cwd)
+	switch {
+	case !exists && s.createdEarlier():
+		return []string{scriptNotVisible}
+	case ok && hidesGitOrGh(text):
+		return []string{interpreterHidesGit}
+	}
+	return nil
+}
+
+// maxScriptBytes caps how much of a script the guard reads; a larger file is judged unreadable.
+const maxScriptBytes = 256 << 10
+
+// readScript reads a script relative to cwd, reporting whether it exists and whether it is text
+// the guard can judge: under maxScriptBytes and holding no NUL byte.
+func readScript(target, cwd string) (text string, exists, ok bool) {
+	file := expandHome(target)
 	if !filepath.IsAbs(file) {
 		if cwd == unresolvedDir {
-			return "", false
+			return "", true, false
 		}
 		file = filepath.Join(cwd, file)
 	}
-	data, err := os.ReadFile(file)
+	info, err := os.Stat(file)
 	if err != nil {
-		return "", false
+		return "", !os.IsNotExist(err), false
 	}
-	return string(data), true
-}
-
-// inlineCode returns the argument an inline-code flag carries, glued to the flag or as the word after it.
-func inlineCode(kept []string) (string, bool) {
-	for index := 1; index < len(kept); index++ {
-		token := kept[index]
-		if token == "--eval" {
-			if index+1 < len(kept) {
-				return kept[index+1], true
-			}
-			return "", false
-		}
-		if value, ok := strings.CutPrefix(token, "--eval="); ok {
-			return value, true
-		}
-		for _, flag := range inlineCodeShortFlags {
-			if token == flag {
-				if index+1 < len(kept) {
-					return kept[index+1], true
-				}
-				return "", false
-			}
-			if strings.HasPrefix(token, flag) && len(token) > len(flag) {
-				return token[len(flag):], true
-			}
-		}
+	if info.IsDir() || info.Size() > maxScriptBytes {
+		return "", true, false
 	}
-	return "", false
-}
-
-// scriptOperand is the first non-flag word after the interpreter's own name.
-func scriptOperand(kept []string) string {
-	for _, token := range kept[1:] {
-		if !strings.HasPrefix(token, "-") {
-			return token
-		}
+	data, err := os.ReadFile(file)
+	if err != nil || strings.ContainsRune(string(data), 0) {
+		return "", true, false
 	}
-	return ""
+	return string(data), true, true
 }

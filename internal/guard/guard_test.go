@@ -421,7 +421,7 @@ func TestHookIsSilentOnAnAllowedCall(t *testing.T) {
 	}
 }
 
-// TestGhFindingsRefusesEveryForgeWrite proves the gh denials context describes beyond the table's own rows.
+// TestGhFindingsRefusesEveryForgeWrite checks each gh write form the table does not list is denied.
 func TestGhFindingsRefusesEveryForgeWrite(t *testing.T) {
 	root := worktree(t)
 	for _, command := range []string{
