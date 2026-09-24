@@ -261,12 +261,72 @@ func migrateRun(root string) {
 			continue
 		}
 		if _, err := os.Stat(to); err == nil {
+			if name == "status.json" {
+				mergeLegacyStatus(from, to)
+			}
 			continue
 		}
 		_ = os.Rename(from, to)
 	}
 	// A group already holding its own record keeps it; the stale legacy copy goes.
 	_ = os.Remove(legacy)
+}
+
+// mergeLegacyStatus folds a legacy status file into its group's, the group's own entries winning,
+// then removes the legacy file so the two are never read side by side.
+func mergeLegacyStatus(legacy, group string) {
+	statuses := loadStatusFile(group)
+	for taskID, status := range loadStatusFile(legacy) {
+		if _, ok := statuses[taskID]; !ok {
+			statuses[taskID] = status
+		}
+	}
+	if saveStatus(group, statuses) == nil {
+		_ = os.Remove(legacy)
+	}
+}
+
+// cutLockWait is how long a cut waits for another cut to finish before refusing.
+const cutLockWait = 2 * time.Minute
+
+// CutLockPath is the repo-wide lock one cut holds from its overlap check until its run is saved.
+func CutLockPath(root string) string {
+	return filepath.Join(root, StateDir, "cut.lock")
+}
+
+// acquireCutLock takes the repo-wide cut lock by exclusive create, waiting out a live holder and
+// reclaiming a dead one's; the returned func releases it.
+func acquireCutLock(root string) (func(), error) {
+	path := CutLockPath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(cutLockWait)
+	for {
+		handle, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			_, writeErr := fmt.Fprintf(handle, "%d\n", os.Getpid())
+			if err := errors.Join(writeErr, handle.Close()); err != nil {
+				_ = os.Remove(path)
+				return nil, err
+			}
+			return func() { _ = os.Remove(path) }, nil
+		}
+		if !os.IsExist(err) {
+			return nil, err
+		}
+		if data, readErr := os.ReadFile(path); readErr == nil {
+			pid, convErr := strconv.Atoi(strings.TrimSpace(string(data)))
+			if convErr == nil && pid > 0 && !processAlive(pid) {
+				_ = os.Remove(path)
+				continue
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("another cut still holds %s after %s", path, cutLockWait)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // LockPath is where a run records the pid holding one group, or the whole repo when the group is empty.

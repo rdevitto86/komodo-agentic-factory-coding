@@ -33,11 +33,11 @@ func (t TaskState) BuilderTier(lightBuilder bool, taskID string) (string, string
 	return "light", taskID + " is one file, so it builds on light"
 }
 
-// smallTask reports whether files are at most one source file plus its own _test file.
+// smallTask reports whether files are exactly one file with an extension, optionally plus its own _test file.
 func smallTask(files []string) bool {
 	switch len(files) {
-	case 0, 1:
-		return true
+	case 1:
+		return filepath.Ext(files[0]) != ""
 	case 2:
 		return testPair(files[0], files[1]) || testPair(files[1], files[0])
 	}

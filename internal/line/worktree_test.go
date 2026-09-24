@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"komodo/internal/ledger"
 )
 
 // remotedRepo builds a real git repo with one commit on main, remoted at a bare origin in a temp dir.
@@ -380,5 +383,136 @@ func TestTheRepoLockCoversEveryGroup(t *testing.T) {
 	holdLock(t, root, "", "the open run")
 	if err := AcquireLock(root, "TG-02.1", "TG-02.1"); err == nil || !strings.Contains(err.Error(), "the open run") {
 		t.Fatalf("err = %v; a live drain must stop a group launcher", err)
+	}
+}
+
+// cutRepo is a real repo pushed to a bare origin, holding text as its backlog and a builder role.
+func cutRepo(t *testing.T, text string) string {
+	t.Helper()
+	root, _ := remotedRepo(t)
+	runGit(t, root, "push", "origin", "main")
+	staged := repo(t, text)
+	for _, name := range []string{"BACKLOG.md", filepath.Join(RolesDir, "builder.md")} {
+		data, err := os.ReadFile(filepath.Join(staged, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// freshPlan is the plan intake builds for one group, failing the test when there is none.
+func freshPlan(t *testing.T, root, group string) *Plan {
+	t.Helper()
+	plan, err := next(root, group)
+	if err != nil || plan == nil {
+		t.Fatalf("plan %s = %v, err = %v", group, plan, err)
+	}
+	return plan
+}
+
+func TestTwoConcurrentCutsOfOverlappingGroupsLetExactlyOneThrough(t *testing.T) {
+	root := cutRepo(t, twoGroupBacklog)
+	plans := []*Plan{freshPlan(t, root, "TG-15.1"), freshPlan(t, root, "TG-15.3")}
+	errs := make([]error, len(plans))
+	var wait sync.WaitGroup
+	for index, plan := range plans {
+		wait.Add(1)
+		go func(index int, plan *Plan) {
+			defer wait.Done()
+			_, errs[index] = Start(root, plan, "", false)
+		}(index, plan)
+	}
+	wait.Wait()
+	cut := 0
+	for _, err := range errs {
+		if err == nil {
+			cut++
+		} else if !strings.Contains(err.Error(), "is open and not shipped") {
+			t.Fatalf("err = %v; the losing cut must be refused for the overlap", err)
+		}
+	}
+	if cut != 1 {
+		t.Fatalf("errs = %v; exactly one of two overlapping cuts must succeed", errs)
+	}
+	if _, err := os.Stat(CutLockPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("stat = %v; the cut lock must be released on return", err)
+	}
+}
+
+func TestCuttingASecondGroupKeepsTheFirstGroupsRunAndLedger(t *testing.T) {
+	root := cutRepo(t, twoGroupBacklog)
+	if _, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Start(root, freshPlan(t, root, "TG-15.2"), "", false); err != nil {
+		t.Fatalf("a group on disjoint files must cut beside an open one: %v", err)
+	}
+	for _, group := range []string{"TG-15.1", "TG-15.2"} {
+		if _, err := os.Stat(filepath.Join(RunDir(root, group), "run.json")); err != nil {
+			t.Fatalf("%s lost its run directory: %v", group, err)
+		}
+	}
+	entries, err := Book(root).Read(ledger.RunFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		if entry.Station == "intake" {
+			seen[entry.Group] = true
+		}
+	}
+	if !seen["TG-15.1"] || !seen["TG-15.2"] {
+		t.Fatalf("ledger = %+v; the second cut must keep the first group's rows", entries)
+	}
+}
+
+func TestAGroupWithAFilelessTaskOverlapsEveryOpenGroup(t *testing.T) {
+	root := twoOpenRuns(t)
+	fileless := "\n### [TG-15.4] Fourth\n```yaml\ntype: feat\nversion: 2.3.0\n```\n\n" +
+		"#### [TSK-15.4.1] Four [P: C] [READY]\n```yaml\ndone_when: [\"true\"]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(twoGroupBacklog+fileless), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RefuseOpenRun(root, "TG-15.4"); err == nil || !strings.Contains(err.Error(), "is open") {
+		t.Fatalf("err = %v; a task declaring no files may touch any, so its group must be refused", err)
+	}
+}
+
+func TestALegacyStatusIsMergedIntoItsGroupsAndRemoved(t *testing.T) {
+	root := t.TempDir()
+	state := RunState{Run: "TG-16.1-1", Group: "TG-16.1", Base: "main", Branch: "feat/legacy"}
+	if err := SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyStatus := `{"TSK-16.1.1":{"status":"DONE"},"TSK-16.1.2":{"status":"BLOCKED"}}`
+	groupStatus := `{"TSK-16.1.2":{"status":"DONE"}}`
+	for path, body := range map[string]string{
+		filepath.Join(root, StateDir, "run.json"):             string(data),
+		filepath.Join(root, StateDir, "status.json"):          legacyStatus,
+		filepath.Join(RunDir(root, "TG-16.1"), "status.json"): groupStatus,
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	LoadRuns(root)
+	if _, err := os.Stat(filepath.Join(root, StateDir, "status.json")); !os.IsNotExist(err) {
+		t.Fatalf("stat = %v; the legacy status must be removed once merged", err)
+	}
+	merged := loadStatusFile(filepath.Join(RunDir(root, "TG-16.1"), "status.json"))
+	if merged["TSK-16.1.1"].Status != "DONE" || merged["TSK-16.1.2"].Status != "DONE" {
+		t.Fatalf("status = %+v; the legacy entry must join and the group's own must win", merged)
 	}
 }

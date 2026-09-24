@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -431,5 +432,30 @@ func TestNextStartOpensARunTheOtherStationsRead(t *testing.T) {
 		if got.stdout == "" && got.stderr == "" {
 			t.Fatalf("komodo %v printed nothing", args)
 		}
+	}
+}
+
+func TestBareDiffPairsTheOpenGroupWithItsOwnBranch(t *testing.T) {
+	root := fixtureRepo(t)
+	text := "# Backlog\n\n### [TG-91.1] First\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-91.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n\n" +
+		"### [TG-91.2] Second\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+		"#### [TSK-91.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"true\"]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now().UTC()
+	for index, group := range []string{"TG-91.1", "TG-91.2"} {
+		state := line.RunState{Run: group + "-1", Group: group, Base: "main", Branch: "feat/" + group,
+			Worktree: root, Started: started.Add(time.Duration(index) * time.Second)}
+		if err := line.SaveRun(root, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if plan := currentPlan(root); plan.Group != "TG-91.1" || plan.Branch != "feat/TG-91.1" {
+		t.Fatalf("plan = %s on %s; a bare diff must pair the earliest open group with its own branch", plan.Group, plan.Branch)
+	}
+	if got := runCLI(t, root, "", "diff"); got.code != 0 || !strings.Contains(got.stdout, "Review of group TG-91.1") {
+		t.Fatalf("diff = %+v; a bare diff must review the earliest open group", got)
 	}
 }

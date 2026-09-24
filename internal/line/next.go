@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"komodo/internal/backlog"
@@ -431,11 +432,31 @@ func groupsOverlap(root, left, right string) bool {
 	if !okFirst || !okSecond {
 		return true
 	}
+	// A task claiming no files may touch any, so its group overlaps every other.
+	if claimsNothing(first) || claimsNothing(second) {
+		return true
+	}
 	for _, a := range first.Tasks {
 		for _, b := range second.Tasks {
 			if plan.Overlap(a, b) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// claimsNothing reports whether any task of the group declares no files.
+func claimsNothing(group backlog.Group) bool {
+	for _, task := range group.Tasks {
+		declared := false
+		for _, file := range task.Files() {
+			if strings.TrimSpace(file) != "" {
+				declared = true
+			}
+		}
+		if !declared {
+			return true
 		}
 	}
 	return false
@@ -451,8 +472,22 @@ func exactGroup(parsed backlog.Backlog, id string) (backlog.Group, bool) {
 	return backlog.Group{}, false
 }
 
-// Start cuts the group branch in its own worktree from the base and records the choice.
-func Start(root string, plan *Plan, base string) (RunState, error) {
+// Start cuts the group branch in its own worktree from the base and records the choice, holding the
+// cut lock from the lock and overlap checks through the saved run; force skips the overlap check.
+func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
+	release, err := acquireCutLock(root)
+	if err != nil {
+		return RunState{}, err
+	}
+	defer release()
+	if err := CheckLock(root, plan.Group); err != nil {
+		return RunState{}, err
+	}
+	if !force {
+		if err := RefuseOpenRun(root, plan.Group); err != nil {
+			return RunState{}, err
+		}
+	}
 	if base != "" {
 		plan.Base = base
 	}

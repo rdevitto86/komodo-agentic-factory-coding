@@ -1456,6 +1456,20 @@ func TestATwoFileTaskBuildsOnStandard(t *testing.T) {
 	}
 }
 
+func TestATaskWithNoFilesBuildsOnStandard(t *testing.T) {
+	root := tieredRepo(t, "", "")
+	if machine, why := builderMachine(t, root); machine != "vendora/sonnet" || strings.Contains(why, "light") {
+		t.Fatalf("machine = %q, why = %q; a task declaring no files is not small", machine, why)
+	}
+}
+
+func TestATaskClaimingADirectoryBuildsOnStandard(t *testing.T) {
+	root := tieredRepo(t, "files: [internal/line]\n", "")
+	if machine, why := builderMachine(t, root); machine != "vendora/sonnet" || strings.Contains(why, "light") {
+		t.Fatalf("machine = %q, why = %q; a directory claim is not one file", machine, why)
+	}
+}
+
 func TestLightBuilderFalseKeepsEveryBuilderOnStandard(t *testing.T) {
 	root := tieredRepo(t, "files: [a/one.go]\n", `{"light_builder": false}`)
 	if machine, _ := builderMachine(t, root); machine != "vendora/sonnet" {
@@ -1478,6 +1492,8 @@ func TestSmallTaskCountsOneSourceFilePlusItsOwnTest(t *testing.T) {
 		"a/one.go a/two_test.go":   false,
 		"a/one.go a/two.go":        false,
 		"a/one.go a/one_test.go b": false,
+		"":                         false,
+		"internal/line":            false,
 	}
 	for files, want := range cases {
 		if got := smallTask(strings.Fields(files)); got != want {

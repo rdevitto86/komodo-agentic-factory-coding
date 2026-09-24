@@ -37,15 +37,7 @@ func runNext(root string, args []string) {
 		return
 	}
 	if *start {
-		if err := line.CheckLock(root, plan.Group); err != nil {
-			fail(err)
-		}
-		if !*force {
-			if err := line.RefuseOpenRun(root, plan.Group); err != nil {
-				fail(err)
-			}
-		}
-		state, err := line.Start(root, plan, *base)
+		state, err := line.Start(root, plan, *base, *force)
 		if err != nil {
 			fail(err)
 		}
@@ -294,7 +286,7 @@ func currentPlan(root string) *line.Plan {
 	if plan == nil {
 		fail(fmt.Errorf("no group is ready and no run is in progress"))
 	}
-	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+	if state, err := line.LoadRunFor(root, plan.Group); err == nil && state.Branch != "" {
 		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
 	}
 	if info, err := os.Stat(line.WorktreePath(root, plan.Worktree)); err != nil || !info.IsDir() {
@@ -321,7 +313,7 @@ func runReport(root string) {
 	if plan == nil {
 		fail(fmt.Errorf("no run is in progress and nothing is ready"))
 	}
-	if state, err := line.LoadRun(root); err == nil && state.Branch != "" {
+	if state, err := line.LoadRunFor(root, plan.Group); err == nil && state.Branch != "" {
 		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
 	}
 	report, err := line.BuildReport(root, plan)
