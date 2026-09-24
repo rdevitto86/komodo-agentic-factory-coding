@@ -6,6 +6,8 @@ globs: ["**/*.svelte"]
 
 # Svelte 5
 
+One of Komodo's two default UI frameworks, with Vue; TypeScript always. A suggestion, not a mandate: an existing codebase keeps its language.
+
 Runes only. Legacy Svelte 4 patterns are never correct here — model training skews toward them, so check every reactive construct against the table below.
 
 The TypeScript and web UI standards apply to every `<script>` block alongside this one.

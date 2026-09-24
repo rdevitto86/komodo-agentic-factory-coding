@@ -66,6 +66,8 @@ The first beta of 1.0.0: feature-complete, with the headless and exit-test proof
 - The overlay renames a tier for this host with `"models": {"heavy": "sonnet"}`, which the agents and the profile both read.
 - `komodo doctor --remote` audits the forge's branch rulesets through `gh` and reports any active one that reaches past the default branch.
 - The reviewer names the files a clip marker omitted as unreviewed.
+- Suggested language defaults, in the universal rules and each language standard: Zig for embedded, C++ for robotics and modules, Rust for routers and nodes, Go for web and cloud, Python for AI/ML, TypeScript with Vue or Svelte for UIs, and C only for a C-only vendor SDK or a measured hot path. Firmware rules move from `standards-cpp` into a language-neutral `standards-embedded`, and `standards-cpp` becomes the C++ standard it was named for.
+- A session lists only the skills its repo can use. Both hosts select standards by the repo's own files, the render prunes a toolkit skill it no longer selects, and the toolkit's own shipped trees never select a standard for itself. In this repo, always-on skill descriptions fell from 37 skills and about 836 tokens to 6 skills and 146.
 
 ## [1.0.0-alpha.4] — 2026-09-21
 

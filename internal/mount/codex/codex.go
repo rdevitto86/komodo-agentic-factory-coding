@@ -53,7 +53,7 @@ func Render(root string, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
-	skills = repoSkills(root, skills)
+	skills = repoSkills(root, mount.SelectStandards(root, skills))
 	for _, skill := range skills {
 		plan.AddProject(filepath.Join(root, SkillsDir, skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
 	}
@@ -69,6 +69,8 @@ func Render(root string, binary string) (install.Plan, error) {
 		plan.AddProject(filepath.Join(root, SkillsDir, "facet-"+loaded.Name, "SKILL.md"),
 			[]byte(loaded.Skill), "the "+loaded.Name+" facet's setup skill")
 	}
+
+	mount.PruneSkills(&plan, root, filepath.Join(root, SkillsDir))
 
 	hooks, err := hooksFile(root, binary)
 	if err != nil {

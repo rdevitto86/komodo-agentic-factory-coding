@@ -6,7 +6,9 @@ globs: ["**/*.zig", "**/*.zon", "**/build.zig"]
 
 # Zig
 
-Principles live here; a version number never does — Zig's compiler and standard library are pre-1.0 and change release to release, so anything version-dependent is phrased relative to the project's `build.zig.zon` (`minimum_zig_version`, where present). Read that manifest before assuming a feature or API is available.
+Komodo's default for embedded, replacing C; the embedded standard applies. Suggested, not mandated.
+
+Principles, never a version: Zig is pre-1.0, so version-dependent advice is relative to `build.zig.zon` (`minimum_zig_version`). Read it before assuming a feature exists.
 
 ## Memory & allocators
 

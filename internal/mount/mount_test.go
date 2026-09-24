@@ -1,6 +1,8 @@
 package mount
 
 import (
+	"komodo/internal/install"
+
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,5 +108,36 @@ func TestLoadRolesFallsBackToTheEmbeddedTree(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("roles = %+v, want builder among the embedded roles", roles)
+	}
+}
+
+func TestPruneSkillsRemovesOnlyStaleToolkitSkills(t *testing.T) {
+	root := t.TempDir()
+	skills := filepath.Join(root, "komodo", "skills")
+	for _, name := range []string{"run", "standards-go", "standards-swift"} {
+		if err := os.MkdirAll(filepath.Join(skills, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skills, name, "SKILL.md"), []byte("---\nname: "+name+"\n---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rendered := filepath.Join(root, ".host", "skills")
+	for _, name := range []string{"run", "standards-swift", "facet-old", "my-own"} {
+		if err := os.MkdirAll(filepath.Join(rendered, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := install.Plan{Root: root}
+	plan.AddProject(filepath.Join(rendered, "run", "SKILL.md"), []byte("x"), "kept")
+	PruneSkills(&plan, root, rendered)
+	removed := map[string]bool{}
+	for _, change := range plan.Changes {
+		if change.Remove {
+			removed[filepath.Base(change.Path)] = change.Project
+		}
+	}
+	if !removed["standards-swift"] || !removed["facet-old"] || len(removed) != 2 {
+		t.Fatalf("removed = %v; want only the stale standard and facet, as project changes", removed)
 	}
 }

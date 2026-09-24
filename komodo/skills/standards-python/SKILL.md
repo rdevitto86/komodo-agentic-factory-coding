@@ -6,6 +6,8 @@ globs: ["**/*.py", "**/*.pyi"]
 
 # Python
 
+Komodo's default for AI and ML scripts: training, evaluation, data preparation, and notebooks promoted to code. A service that outgrows a script moves to Go. A suggestion, not a mandate: an existing codebase keeps its language.
+
 ## Comments
 - A docstring on every public function, class, and module: one line saying what it does or returns.
 - A private function gets a docstring or one `#` line when its body is longer than a screen or its behaviour is not obvious.

@@ -6,6 +6,8 @@ globs: ["**/*.go"]
 
 # Go
 
+Komodo's default for web and cloud: HTTP services, APIs, workers, and infrastructure tooling. A suggestion, not a mandate: an existing codebase keeps its language.
+
 ## Comments
 - godoc on every exported identifier: name first, one sentence. `// Load reads the config and applies defaults.`
 - A private function gets a one-line comment when its body is longer than a screen or its behaviour is not obvious from its name.
