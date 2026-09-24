@@ -1,3 +1,4 @@
+// Package line is the conveyor: intake, the input and output devices, QC, and ship.
 package line
 
 import (
@@ -10,6 +11,7 @@ import (
 	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
+	"komodo/internal/plan"
 	"komodo/internal/profile"
 )
 
@@ -288,7 +290,7 @@ func planWaves(group backlog.Group, tasks []backlog.Task, done []string, capacit
 		}
 		return [][]string{wave}, nil
 	}
-	waves, err := Waves(tasks, done, capacity)
+	waves, err := plan.Waves(tasks, done, capacity)
 	if err != nil {
 		return nil, err
 	}

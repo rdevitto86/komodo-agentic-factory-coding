@@ -8,6 +8,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/mount"
+	"komodo/internal/plan"
 )
 
 // TaskState is what the disk held for one task when the snapshot was read.
@@ -202,10 +203,7 @@ func decide(snap Snapshot) (Action, bool) {
 				continue
 			}
 			if task.Attempts > plan.Profile.Repairs {
-				blocked[taskID] = true
-				for _, dependent := range BlockedBy(snap.Group.Tasks, taskID) {
-					blocked[dependent] = true
-				}
+				block(blocked, snap.Group.Tasks, taskID)
 				continue
 			}
 			if task.StaleBrief {
@@ -271,6 +269,14 @@ func decide(snap Snapshot) (Action, bool) {
 		}, true
 	}
 	return Action{Action: "done", Why: plan.Group + " is shipped"}, true
+}
+
+// block marks a task and every task that depends on it as blocked.
+func block(blocked map[string]bool, tasks []backlog.Task, taskID string) {
+	blocked[taskID] = true
+	for _, dependent := range plan.BlockedBy(tasks, taskID) {
+		blocked[dependent] = true
+	}
 }
 
 // closeAction closes a task whose result is in and whose backlog status is still open.

@@ -6,6 +6,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/git"
+	"komodo/internal/plan"
 )
 
 // RefuseCollision refuses to brief a task whose claimed files overlap a closed, unmerged task
@@ -41,7 +42,7 @@ func RefuseCollision(root, taskID string) error {
 				continue
 			}
 			candidate, ok := parsed.Task(other)
-			if ok && claimsOverlap(task, candidate) {
+			if ok && plan.Overlap(task, candidate) {
 				return fmt.Errorf("%s shares a file with %s, whose branch %s is closed but not merged into %s; merge that wave first, or pick disjoint files",
 					taskID, other, branch, state.Branch)
 			}

@@ -1,5 +1,5 @@
-// Package line is the conveyor: intake, the input and output devices, QC, and ship.
-package line
+// Package plan orders a group's tasks: dependency order, waves of disjoint claims, and blocked dependents.
+package plan
 
 import (
 	"fmt"
@@ -45,8 +45,8 @@ func Topological(tasks []backlog.Task) ([]backlog.Task, error) {
 	return ordered, nil
 }
 
-// claimsOverlap reports whether two tasks' claims, test files included, share a file or nest one in a directory.
-func claimsOverlap(left, right backlog.Task) bool {
+// Overlap reports whether two tasks' claims, test files included, share a file or nest one in a directory.
+func Overlap(left, right backlog.Task) bool {
 	for _, a := range claims(left) {
 		for _, b := range claims(right) {
 			if claimOverlaps(a, b) {
@@ -136,7 +136,7 @@ func Waves(tasks []backlog.Task, done []string, capacity int) ([][]backlog.Task,
 			}
 			clash := false
 			for _, member := range wave {
-				if claimsOverlap(task, member) {
+				if Overlap(task, member) {
 					clash = true
 					break
 				}

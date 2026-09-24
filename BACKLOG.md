@@ -1951,7 +1951,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-03.27.3] The planner moves out of line into its own package [P: M] [READY]
+#### [TSK-03.27.3] The planner moves out of line into its own package [P: M] [DONE]
 ```yaml
 files: [internal/plan/plan.go, internal/plan/plan_test.go, internal/line/dag.go, internal/line/dag_test.go, internal/line/next.go, internal/line/step.go, internal/line/collide.go]
 done_when:

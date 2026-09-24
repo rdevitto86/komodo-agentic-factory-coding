@@ -1,4 +1,4 @@
-package line
+package plan
 
 import (
 	"testing"
@@ -83,8 +83,8 @@ func TestClaimsOverlapReadsPathsNotPrefixes(t *testing.T) {
 	}
 	for _, c := range cases {
 		tasks := twoTasks(t, c.left, c.right)
-		if got := claimsOverlap(tasks[0], tasks[1]); got != c.want {
-			t.Errorf("claimsOverlap(%s, %s) = %v, want %v", c.left, c.right, got, c.want)
+		if got := Overlap(tasks[0], tasks[1]); got != c.want {
+			t.Errorf("Overlap(%s, %s) = %v, want %v", c.left, c.right, got, c.want)
 		}
 	}
 }
