@@ -39,6 +39,25 @@ func TestAddWorktreeRefusesAPushFromATaskWorktree(t *testing.T) {
 	}
 }
 
+func TestAGlobalWorktreeConfigStillEnablesItInTheRepo(t *testing.T) {
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(global, []byte("[extensions]\n\tworktreeConfig = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	root, _ := remotedRepo(t)
+	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
+	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
+		t.Fatalf("a global extensions.worktreeConfig must not skip the repo-local write: %v", err)
+	}
+	if on, err := git(root, "config", "--local", "--get", "extensions.worktreeConfig"); err != nil || on != "true" {
+		t.Fatalf("local extensions.worktreeConfig = %q, %v; want true", on, err)
+	}
+	if url, err := git(worktree, "config", "--worktree", "--get", "remote.origin.pushurl"); err != nil || url != RefusedPushURL {
+		t.Fatalf("pushurl = %q, %v; want the refusal", url, err)
+	}
+}
+
 func TestAddWorktreeLeavesAPushFromTheRootWorking(t *testing.T) {
 	root, bare := remotedRepo(t)
 	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")

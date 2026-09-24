@@ -1020,6 +1020,49 @@ func TestAWaveWritesEveryBriefBeforeItSpawns(t *testing.T) {
 	}
 }
 
+func TestALocalTaskInAWaveRunsAloneThenTheOthersSpawn(t *testing.T) {
+	text := strings.Replace(waveBacklog, "files: [a/one.go]", "files: [a/one.go]\ntier: light", 1)
+	root := briefWave(t, text, "TG-14.1", wideWave, "TSK-14.1.1", "TSK-14.1.2", "TSK-14.1.3")
+	role := "---\nname: builder\ndescription: Writes code.\ntier: standard\ntools: [read, search]\nsession: true\nreturns: builder.schema.json\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(root, RolesDir, "builder.md"), []byte(role), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".fakehost-wave-local-marker"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Register(mount.Host{
+		Name: "fakehost-wave-local",
+		Installed: func(r string) bool {
+			_, err := os.Stat(filepath.Join(r, ".fakehost-wave-local-marker"))
+			return err == nil
+		},
+		Tiers: func(string, bool) mount.Tiers {
+			return mount.Tiers{
+				Light:    mount.Machine{Provider: mount.LocalName, Model: "llama3.2"},
+				Standard: mount.Machine{Provider: "vendora", Model: "model-a"},
+			}
+		},
+	})
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Action != "run" || next.Command != "komodo machine --role builder TSK-14.1.1" || len(next.Spawns) != 0 {
+		t.Fatalf("action = %+v; a local task in a wave must run alone as one step", next)
+	}
+	writeStepResult(t, root, "TSK-14.1.1")
+	next, err = Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(spawnedTasks(t, next), " ")
+	if next.Action != "spawn" || got != "TSK-14.1.2 TSK-14.1.3" {
+		t.Fatalf("action = %+v, spawns %q; the other two must spawn once the local task returns", next, got)
+	}
+}
+
 func TestASingleModeGroupSpawnsOneTaskAtATime(t *testing.T) {
 	root := briefWave(t, singleModeBacklog, "TG-13.1", []string{"TSK-13.1.1", "TSK-13.1.2"}, "TSK-13.1.1", "TSK-13.1.2")
 	next, err := Step(root, "")
