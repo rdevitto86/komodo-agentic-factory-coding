@@ -1498,7 +1498,7 @@ type: fix
 ```yaml
 type: feat
 version: 1.1.0
-base: main
+base: fix/a-builder-s-worktree-cannot-push
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
 
@@ -1515,6 +1515,7 @@ context:
   - "Action gains Spawns []Action, json spawns, omitempty; when a parallel-mode wave holds two or more tasks that each have a current brief and no result, Step returns action spawn with every one in Spawns, each carrying its own brief, worktree, task, and machine as the single spawn does today"
   - "a task with no brief yet still returns its own run komodo brief action first, so every brief in the wave is written before the wave spawns; single-mode groups and a lone ready task keep today's single spawn with Spawns empty"
   - "the run skill: when spawns is present, spawn every entry in the same turn and wait for all of them, then loop; the one-action-per-turn rule reads as one step per turn"
+  - "the run skill also says a headless driver never asks: every action step returns, close --group included, is already approved by the human who launched the run; TG-03.24's run stopped to ask before close --group, and a second launch was needed"
   - "tests: a three-task parallel wave with all briefs written returns three spawns; a single-mode group returns one; a wave with one result already on disk returns only the other two"
 type: feat
 ```
@@ -1547,6 +1548,20 @@ context:
   - "a refactor: every existing step test passes unchanged, which the done_when proves; snapshot_test.go adds a table over hand-built snapshots and FuzzNext, asserting Next never panics, returns run, spawn, or done, and never spawns a task whose snapshot already holds a result"
 type: refactor
 tier: heavy
+```
+
+#### [TSK-03.21.4] A worktree cut never runs without its push refusal [P: H] [READY]
+```yaml
+files: [internal/line/worktree.go, internal/line/worktree_test.go]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+context:
+  - "refuseWorktreePush writes extensions.worktreeConfig to the shared .git/config on every cut; two cuts at once, which this group's wave-wide spawns make real, can fail with could not lock config file and leave a worktree free to push, with only a stderr note"
+  - "write extensions.worktreeConfig only when git config --get does not already read true, and return an error from AddWorktree when the worktree pushurl write fails, so a cut without its refusal never reaches a builder"
+  - "the core.bare and core.worktree skips stay notes, since a repo shaped that way cannot hold worktree config at all"
+  - "tests: core.bare true on the common config writes no worktree pushurl and still cuts; a second cut does not rewrite extensions.worktreeConfig; a pushurl write that fails returns an error"
+type: fix
 ```
 
 ### [TG-03.20] The guard holds its own denials, and the docs match the line
@@ -1755,7 +1770,7 @@ base: main
 ```
 * **Why:** the local 3B reviewer returned 0 findings on most runs and missed a real bug in #161. A review station that always approves is a stage, not QC. A seeded-bug corpus gives each local model a recall number, and the line keeps review on the host until that number clears a bar.
 
-#### [TSK-03.24.1] komodo recall scores a reviewer against seeded bugs [P: H] [READY]
+#### [TSK-03.24.1] komodo recall scores a reviewer against seeded bugs [P: H] [DONE]
 ```yaml
 files: [internal/recall/recall.go, internal/recall/recall_test.go, internal/recall/testdata, cmd/komodo/main.go, cmd/komodo/machine.go]
 done_when:
@@ -1772,7 +1787,7 @@ type: feat
 tier: heavy
 ```
 
-#### [TSK-03.24.2] A local reviewer takes review only above its recall bar [P: H] [READY]
+#### [TSK-03.24.2] A local reviewer takes review only above its recall bar [P: H] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/mount_test.go, internal/mount/claude/limits.go, internal/mount/claude/claude_test.go]
 done_when:
@@ -1995,4 +2010,68 @@ done_when:
 context:
   - "test only: no change to pr.go; drive the client against an httptest server or a fake gh on PATH, as its existing tests do, covering labels that do not exist, a draft PR, an API error, and thread listing"
 type: test
+```
+
+### [TG-03.29] The guard's last two open gaps, and two line bugs the TG-03.22 run found
+```yaml
+type: fix
+version: 1.0.1
+base: fix/a-builder-s-worktree-cannot-push
+```
+* **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
+
+#### [TSK-03.29.1] A push to an scp-style alias is a push to a URL [P: M] [READY]
+```yaml
+files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+context:
+  - "git reads any destination whose first colon comes before any slash as scp form, so git push myalias:o/r.git feat/x and git push localhost:/tmp/r.git feat/x reach a host through ssh config and skip origin's pushurl"
+  - "isPushURL treats such a destination as a URL in safe and default modes; a single-letter host followed by a colon and a backslash or slash is a Windows drive, not scp form"
+  - "table rows: push myalias:o/r.git feat/x denied, push localhost:/tmp/r.git feat/x denied; push origin feat/x allowed, push origin HEAD:feat/x allowed"
+type: fix
+```
+
+#### [TSK-03.29.2] An interpreter that runs code makes a later on-disk script unseen [P: M] [READY]
+```yaml
+files: [internal/guard/shell.go, internal/guard/interp.go, internal/guard/table.go, internal/guard/guard_test.go]
+done_when:
+  - go test ./internal/guard/...
+  - go vet ./internal/guard/...
+  - go run ./cmd/komodo guard check
+depends_on: [TSK-03.29.1]
+context:
+  - "python3 -c 'open(\"x.sh\",\"w\").write(...)' ; sh x.sh passes when x.sh already holds ls, since the guard scans the stale disk text; an interpreter running inline code or a script can write any file"
+  - "interpScriptFindings sets s.blind whenever it judges inline code, stdin, or a script operand, so a later read of an existing file in the same line is scriptNotVisible, as curl -O and tar x already do"
+  - "a guard test writes x.sh holding ls to a temp worktree, then python3 -c 'print(1)'; sh x.sh is denied and sh x.sh alone is allowed"
+type: fix
+```
+
+#### [TSK-03.29.3] Ship opens its pull request against the default branch when the stored base is gone [P: H] [READY]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+context:
+  - "a group's base is read when its run starts; #178's branch was deleted mid-run once #178 merged, so TG-03.22's ship handed gh pr create a base that no longer existed and the pull request failed"
+  - "ShipGroup checks git ls-remote --heads origin <base>; when it is empty, it uses DefaultBase(root) for the handoff and the pull request, and adds one line to the report body naming the switch"
+  - "tests, against a bare remote: a present base is kept; a deleted base becomes the default branch and the body says so"
+type: fix
+```
+
+#### [TSK-03.29.4] A backlog value holding both quote kinds round-trips through yamlite [P: M] [READY]
+```yaml
+files: [internal/backlog/yamlite.go, internal/backlog/backlog_test.go, internal/backlog/fuzz_test.go]
+done_when:
+  - go test ./internal/backlog/...
+  - go vet ./internal/backlog/...
+  - go run ./cmd/komodo lint
+context:
+  - "the value emitter wraps text holding a double quote in single quotes without escaping a single quote inside it, so FileFindings wrote a context line lint cannot read"
+  - "use YAML's own rule: inside single quotes a single quote is written twice, and scalar turns '' back into one; a value with no single quote keeps today's output byte for byte"
+  - "tests: a value holding both quote kinds survives dump then parse; the fuzz target over the parser adds a round-trip property for dumped values"
+type: fix
 ```
