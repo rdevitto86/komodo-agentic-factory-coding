@@ -1642,7 +1642,7 @@ base: docs/queue-ninety-plan
 ```
 * **Why:** a probe on 2026-09-24 against main's guard passed `gh api -X DELETE .../branches/main/protection`, `gh api -X PUT .../pulls/12/merge`, `git commit --no-verify`, `git -c core.hooksPath=/dev/null commit`, `python3 -c` and `node -e` bodies that push main, and a script written then run in one line. ADR 0004 names the forge ruleset as the hard boundary, and a session could delete it. The safety modes gate only critical-ref rules, so every one passed in every mode.
 
-#### [TSK-03.22.1] The guard refuses a gh call that writes to the forge [P: C] [READY]
+#### [TSK-03.22.1] The guard refuses a gh call that writes to the forge [P: C] [DONE]
 ```yaml
 files: [internal/guard/gh.go, internal/guard/shell.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -1658,7 +1658,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.22.2] The guard refuses a commit or push that skips the gate [P: C] [READY]
+#### [TSK-03.22.2] The guard refuses a commit or push that skips the gate [P: C] [DONE]
 ```yaml
 files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -1963,4 +1963,36 @@ type: refactor
 context:
   - "close.go, verify.go, wave.go, and ship.go are the stations; the split waits on the devices move and the snapshot from TSK-03.21.3"
 type: refactor
+```
+
+### [TG-03.28] Every package clears 75 percent coverage
+```yaml
+type: test
+version: 1.1.0
+base: docs/queue-ninety-plan
+```
+* **Why:** `docs/scorecard.md` puts Code at 90 only when every package is at or above 70 percent. On `1eff696`, `internal/gate` is at 67.4 and `internal/pr` at 68.4. Both are tested here to 75, with room above the bar.
+
+#### [TSK-03.28.1] The gate's hook rendering and install paths are tested to 75 percent [P: M] [READY]
+```yaml
+files: [internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/gate/...
+  - go vet ./internal/gate/...
+  - "go test -cover ./internal/gate/ | awk '{for(i=1;i<=NF;i++) if($i ~ /%$/) {sub(/%/,\"\",$i); exit !($i+0 >= 75)}}'"
+context:
+  - "test only: no change to gate.go; cover the untested branches go test -coverprofile names, the hook script per platform, an unsupported platform's message, the fuzz lane flag, and a failing check's exit"
+type: test
+```
+
+#### [TSK-03.28.2] The pull request client is tested to 75 percent [P: M] [READY]
+```yaml
+files: [internal/pr/pr_test.go]
+done_when:
+  - go test ./internal/pr/...
+  - go vet ./internal/pr/...
+  - "go test -cover ./internal/pr/ | awk '{for(i=1;i<=NF;i++) if($i ~ /%$/) {sub(/%/,\"\",$i); exit !($i+0 >= 75)}}'"
+context:
+  - "test only: no change to pr.go; drive the client against an httptest server or a fake gh on PATH, as its existing tests do, covering labels that do not exist, a draft PR, an API error, and thread listing"
+type: test
 ```
