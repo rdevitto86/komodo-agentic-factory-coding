@@ -1811,7 +1811,7 @@ base: feat/a-wave-builds-at-once-and-the-hook-check
 ```
 * **Why:** close writes task status into `BACKLOG.md` from three places mid-run, ship writes it again, and prune's `restoreFlips` exists to undo the collisions that causes. With parallel spawns and concurrent groups, markdown as a live database gets worse. The run holds live status; the backlog changes once, in the ship commit.
 
-#### [TSK-03.25.1] Close records status in the run, and ship writes the backlog once [P: H] [READY]
+#### [TSK-03.25.1] Close records status in the run, and ship writes the backlog once [P: H] [DONE]
 ```yaml
 files: [internal/line/status.go, internal/line/status_test.go, internal/line/close.go, internal/line/close_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/snapshot.go, internal/doctor/prune.go, internal/doctor/doctor_test.go, cmd/komodo/backlog.go]
 done_when:

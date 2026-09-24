@@ -114,11 +114,7 @@ func openRun(root, groupID string) (*Plan, error) {
 	if err != nil || plan == nil {
 		return nil, err
 	}
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
 	}
@@ -179,11 +175,7 @@ func pinWaves(root string, plan *Plan) {
 // groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one; only
 // names the single task a task needle matched, empty when the needle named a group or nothing.
 func groupFor(root, needle string) (backlog.Backlog, backlog.Group, string, bool, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return backlog.Backlog{}, backlog.Group{}, "", false, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return backlog.Backlog{}, backlog.Group{}, "", false, err
 	}

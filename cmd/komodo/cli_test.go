@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/line"
 )
 
 // exitCode is what the swapped exit panics with, so a test can recover the code main chose.
@@ -151,6 +153,27 @@ func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 	}
 	if lint := runCLI(t, root, "", "lint"); lint.code != 0 {
 		t.Fatalf("lint after add exited %d: %s", lint.code, lint.stdout)
+	}
+}
+
+// TestListShowsTheOpenRunsLiveStatus proves list overlays status.json while BACKLOG.md stays as committed.
+func TestListShowsTheOpenRunsLiveStatus(t *testing.T) {
+	root := fixtureRepo(t)
+	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "[READY]") {
+		t.Fatalf("list before the run = %s", got.stdout)
+	}
+	state := line.RunState{Run: "TG-90.2-1", Group: "TG-90.2", Base: "main", Branch: "feat/a-pending-group", Worktree: root}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := line.RecordStatus(root, "TSK-90.2.1", "DONE", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "TSK-90.2.1       [DONE]") {
+		t.Fatalf("list during the run = %s; it must show the run's live status", got.stdout)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); !strings.Contains(string(data), "[TSK-90.2.1] Not done [P: C] [READY]") {
+		t.Fatal("list rewrote BACKLOG.md")
 	}
 }
 

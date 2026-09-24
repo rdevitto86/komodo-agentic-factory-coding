@@ -77,14 +77,11 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err != nil {
 		return nil, err
 	}
-	rootPath, err := backlog.Find(root)
+	rootParsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
 	}
-	rootParsed, err := backlog.Load(rootPath)
-	if err != nil {
-		return nil, err
-	}
+	live := LoadStatus(root)
 	blocking, minor := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	if len(blocking) > 0 {
 		return nil, fmt.Errorf("the review left %d finding(s) at or above %s; fix them on %s, then ship",
@@ -120,6 +117,12 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 			return nil, err
 		}
 	}
+	// The run's live status lands in BACKLOG.md once, in the ship commit.
+	for _, taskID := range sortedKeys(live) {
+		if err := writeStatus(path, taskID, live[taskID].Status); err != nil {
+			return nil, err
+		}
+	}
 	if line := ChangelogLine(plan, result); line != "" {
 		changelog := filepath.Join(group, "CHANGELOG.md")
 		if err := AppendChangelog(changelog, plan.Version, line); err != nil {
@@ -135,6 +138,9 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		if _, err := git(group, "commit", "-m", message); err != nil {
 			return nil, err
 		}
+	}
+	if err := ClearStatus(root); err != nil {
+		return nil, err
 	}
 	if isToolkit(root) {
 		if err := gateCommand(group); err != nil {

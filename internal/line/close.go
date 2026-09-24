@@ -43,7 +43,7 @@ type Attempt struct {
 	Diff    string `json:"diff,omitempty"`
 }
 
-// CloseTask validates a task's result, reruns its checks, and flips its status.
+// CloseTask validates a task's result, reruns its checks, and records its status in the run.
 func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 	path, err := backlog.Find(root)
 	if err != nil {
@@ -80,7 +80,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		clearAttempt(root, taskID)
 		entry.Outcome = "done"
 		Stamp(root, entry)
-		return outcome, writeStatus(path, taskID, "DONE")
+		return outcome, RecordStatus(root, taskID, "DONE", "")
 	}
 	entry.FailureClass = FailureClass(problems)
 	attempt, err := bumpAttempt(root, taskID, strings.Join(problems, "\n"), diffOf(cwd))
@@ -93,12 +93,12 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 		outcome.Status = "BLOCKED"
 		entry.Outcome = "blocked"
 		Stamp(root, entry)
-		return outcome, writeStatus(path, taskID, "BLOCKED")
+		return outcome, RecordStatus(root, taskID, "BLOCKED", statusNote(attempt))
 	}
 	outcome.Status = "IN_PROGRESS"
 	entry.Outcome = "repair"
 	Stamp(root, entry)
-	return outcome, writeStatus(path, taskID, "IN_PROGRESS")
+	return outcome, RecordStatus(root, taskID, "IN_PROGRESS", statusNote(attempt))
 }
 
 // TaskWorktree is where a task is built: its own worktree, else the run's, else the repo root.
@@ -256,19 +256,6 @@ func diffOf(cwd string) string {
 		return ""
 	}
 	return out
-}
-
-// writeStatus rewrites one task's status token in BACKLOG.md.
-func writeStatus(path, taskID, status string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	out, err := backlog.SetStatus(string(data), taskID, status)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(out), 0o644)
 }
 
 // attemptPath is where a task's failure record lives.

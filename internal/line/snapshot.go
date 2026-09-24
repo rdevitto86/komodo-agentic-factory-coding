@@ -69,11 +69,8 @@ func LoadSnapshot(root, needle string) (Snapshot, error) {
 	if snap.Paused = pausedAction(plan); snap.Paused != nil {
 		return snap, nil
 	}
-	path, err := backlog.Find(root)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	parsed, err := backlog.Load(path)
+	// The run's live status reads first, the parsed backlog second, so a close never edits BACKLOG.md.
+	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return Snapshot{}, err
 	}

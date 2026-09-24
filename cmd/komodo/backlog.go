@@ -34,6 +34,10 @@ func runList(root string, args []string) {
 	needle, rest := splitPositional(args, "status")
 	_ = set.Parse(rest)
 	_, parsed := load(root)
+	if line.RunIsOpen(root) {
+		// A run keeps live status in .komodo, not BACKLOG.md, until it ships.
+		parsed = line.OverlayStatus(parsed, line.LoadStatus(root))
+	}
 	groups := parsed.Groups
 	if needle != "" {
 		group, ok := parsed.Group(needle)

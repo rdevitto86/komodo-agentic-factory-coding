@@ -624,7 +624,6 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	run(root, "worktree", "add", "-q", "-b", "feat/g", worktree, "main")
 	write(t, worktree, "BACKLOG.md", done)
 	commitAll(t, worktree, "ship")
-	write(t, root, "BACKLOG.md", done)
 	state := line.RunState{Run: "r", Group: "TG-01.1", Base: "main", Branch: "feat/g", Worktree: worktree}
 	if err := line.SaveRun(root, state); err != nil {
 		t.Fatal(err)
@@ -634,7 +633,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	if _, err := Prune(root, "main"); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != done || !exists(worktree) {
+	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != ready || !exists(worktree) {
 		t.Fatal("prune settled a run whose branch origin does not hold yet")
 	}
 
@@ -644,7 +643,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != ready {
-		t.Fatalf("BACKLOG.md kept its flip; done = %v", got)
+		t.Fatalf("prune rewrote BACKLOG.md; no status flip is left uncommitted to restore; done = %v", got)
 	}
 	if exists(worktree) {
 		t.Fatalf("the shipped worktree survived; done = %v", got)

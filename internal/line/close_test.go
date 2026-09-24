@@ -65,7 +65,7 @@ func goodResult() map[string]any {
 	}
 }
 
-func TestCloseFlipsTheStatusWhenEverythingPasses(t *testing.T) {
+func TestCloseRecordsDoneInTheRunWhenEverythingPasses(t *testing.T) {
 	root := closeRepo(t)
 	writeResult(t, root, "TSK-08.1.1", goodResult())
 	outcome, err := CloseTask(root, "TSK-08.1.1", false)
@@ -75,9 +75,12 @@ func TestCloseFlipsTheStatusWhenEverythingPasses(t *testing.T) {
 	if outcome.Status != "DONE" {
 		t.Fatalf("outcome = %+v", outcome)
 	}
+	if got := LoadStatus(root)["TSK-08.1.1"]; got.Status != "DONE" {
+		t.Fatalf("status = %+v; the run must record DONE", got)
+	}
 	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if !strings.Contains(string(data), "[TSK-08.1.1] Do it [P: C] [DONE]") {
-		t.Fatal("the status token was not flipped")
+	if !strings.Contains(string(data), "[TSK-08.1.1] Do it [P: C] [READY]") {
+		t.Fatal("close edited BACKLOG.md; the status lives in the run until ship")
 	}
 }
 
@@ -151,9 +154,13 @@ func TestSecondFailureBlocksTheTask(t *testing.T) {
 	if second.Status != "BLOCKED" || second.Attempt != 2 {
 		t.Fatalf("second = %+v", second)
 	}
+	got := LoadStatus(root)["TSK-08.1.1"]
+	if got.Status != "BLOCKED" || !strings.HasPrefix(got.Note, "attempt 2: ") {
+		t.Fatalf("status = %+v; the blocked status and its note were not recorded", got)
+	}
 	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if !strings.Contains(string(data), "[BLOCKED]") {
-		t.Fatal("the blocked status was not written")
+	if strings.Contains(string(data), "[BLOCKED]") {
+		t.Fatal("close edited BACKLOG.md; the status lives in the run until ship")
 	}
 }
 

@@ -373,7 +373,41 @@ func TestShipCommitsTheStatusItWrote(t *testing.T) {
 	}
 }
 
-const closedRootBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
+	for _, status := range []string{"DONE", "BLOCKED"} {
+		worktree := gitRepo(t)
+		commit(t, worktree, "BACKLOG.md", flipBacklog, "the backlog")
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(flipBacklog), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := RecordStatus(root, "TSK-11.1.1", status, ""); err != nil {
+			t.Fatal(err)
+		}
+		plan := &Plan{
+			Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+			Base: "main", Branch: "feat/a-group", Worktree: worktree,
+			Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+		}
+		unreachableOrigin(t, root)
+		_, _ = ShipGroup(root, plan, nil, nil)
+		committed, err := git(worktree, "show", "HEAD:BACKLOG.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(committed, "[TSK-11.1.1] One [P: C] ["+status+"]") {
+			t.Fatalf("the ship commit does not carry %s:\n%s", status, committed)
+		}
+		if len(LoadStatus(root)) != 0 {
+			t.Fatalf("%s: status.json survived the ship commit", status)
+		}
+		if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != flipBacklog {
+			t.Fatalf("%s: ship rewrote the root's BACKLOG.md", status)
+		}
+	}
+}
+
+const closedRootBacklog ="### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-12.1.1] One [P: C] [BLOCKED]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
 
 const staleWorktreeBacklog = "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
