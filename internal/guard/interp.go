@@ -284,11 +284,22 @@ var gitVerbs = `push|commit|merge|rebase|branch|update-ref|remote|config|tag`
 // ghVerbs name the gh subcommands an interpreter's inline code must not hide.
 var ghVerbs = `api|pr|repo|ruleset|secret`
 
-// gitHidesRe matches git then a gitVerbs word within 60 characters, so flags and quotes never hide it.
-var gitHidesRe = regexp.MustCompile(`\bgit\b[\s\S]{0,60}?\b(?:` + gitVerbs + `)\b`)
+// gitHidesRe matches git then a gitVerbs word anywhere after it, for short inline code.
+var gitHidesRe = regexp.MustCompile(`\bgit\b[\s\S]*?\b(?:` + gitVerbs + `)\b`)
 
-// ghHidesRe matches the word gh with one of ghVerbs the same way.
-var ghHidesRe = regexp.MustCompile(`\bgh\b[\s\S]{0,60}?\b(?:` + ghVerbs + `)\b`)
+// ghHidesRe matches gh then a ghVerbs word anywhere after it, the same way.
+var ghHidesRe = regexp.MustCompile(`\bgh\b[\s\S]*?\b(?:` + ghVerbs + `)\b`)
+
+// gitHidesInFileRe bounds the gap to 200 characters, so a whole script's unrelated words never pair.
+var gitHidesInFileRe = regexp.MustCompile(`\bgit\b[\s\S]{0,200}?\b(?:` + gitVerbs + `)\b`)
+
+// ghHidesInFileRe bounds the gh gap the same way.
+var ghHidesInFileRe = regexp.MustCompile(`\bgh\b[\s\S]{0,200}?\b(?:` + ghVerbs + `)\b`)
+
+// hidesGitOrGhInFile reports a hidden git or gh call in a script file's text, within the file bound.
+func hidesGitOrGhInFile(text string) bool {
+	return gitHidesInFileRe.MatchString(text) || ghHidesInFileRe.MatchString(text)
+}
 
 // hidesGitOrGh reports whether text holds git or gh followed closely by one of the verbs it hides for.
 func hidesGitOrGh(text string) bool {
@@ -308,15 +319,12 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []strin
 		}
 		return nil
 	}
-	if call.operand == "" {
-		return nil
-	}
 	if !scriptLike(call.operand) {
 		text, visible := s.resolvedScript(interpName(commandName(kept[0])), call.operand, cwd)
 		switch {
 		case !visible:
 			return []string{scriptNotVisible}
-		case hidesGitOrGh(text):
+		case hidesGitOrGhInFile(text):
 			return []string{interpreterHidesGit}
 		}
 		return nil
@@ -332,9 +340,9 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []strin
 	}
 	text, exists, ok := readScript(call.operand, cwd)
 	switch {
-	case !exists && s.createdEarlier():
+	case !exists && s.createdEarlier(), exists && s.blind:
 		return []string{scriptNotVisible}
-	case ok && hidesGitOrGh(text):
+	case ok && hidesGitOrGhInFile(text):
 		return []string{interpreterHidesGit}
 	}
 	return nil
@@ -355,7 +363,7 @@ func (s *scanner) resolvedScript(name, operand, cwd string) (string, bool) {
 			return write.text, write.known
 		}
 		if text, _, ok := readScript(candidate, cwd); ok {
-			return text, true
+			return text, !s.blind
 		}
 	}
 	return "", true

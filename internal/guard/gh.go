@@ -117,17 +117,30 @@ func apiFindings(args []string) []string {
 // ghGluedFlags are gh api's short options that take a value, which pflag also reads glued, as -XDELETE.
 var ghGluedFlags = map[byte]bool{'X': true, 'f': true, 'F': true, 'H': true, 'p': true, 'q': true, 't': true}
 
-// splitGhFlag splits one gh api argument into its flag and value, reading the glued short form
-// -XDELETE or -fbody=x the way pflag does, and --name=value the usual way.
+// splitGhFlag splits one gh api argument into its flag and value, walking a short cluster the way
+// pflag does: -iXPUT is -i then -X PUT, and a bare trailing value flag takes the next word.
 func splitGhFlag(arg string) (name, value string, hasValue bool) {
-	if len(arg) > 2 && arg[0] == '-' && arg[1] != '-' && ghGluedFlags[arg[1]] {
-		return arg[:2], strings.TrimPrefix(arg[2:], "="), true
-	}
 	if strings.HasPrefix(arg, "--") {
 		return strings.Cut(arg, "=")
 	}
+	if len(arg) < 2 || arg[0] != '-' {
+		return arg, "", false
+	}
+	for position := 1; position < len(arg); position++ {
+		letter := arg[position]
+		if ghGluedFlags[letter] {
+			rest := strings.TrimPrefix(arg[position+1:], "=")
+			return "-" + string(letter), rest, rest != ""
+		}
+		if !ghBoolFlags[letter] {
+			return arg, "", false
+		}
+	}
 	return arg, "", false
 }
+
+// ghBoolFlags are gh api's short options that take no value and may lead a cluster, as -i does.
+var ghBoolFlags = map[byte]bool{'i': true}
 
 // nextValue reads a flag's value from its =value form, or from the word that follows it.
 func nextValue(args []string, index int, value string, hasEq bool) (string, int) {
