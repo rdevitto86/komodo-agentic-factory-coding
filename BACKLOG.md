@@ -2020,7 +2020,7 @@ base: main
 ```
 * **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
 
-#### [TSK-03.29.1] A push to an scp-style alias is a push to a URL [P: M] [READY]
+#### [TSK-03.29.1] A push to an scp-style alias is a push to a URL [P: M] [DONE]
 ```yaml
 files: [internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -2034,7 +2034,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.2] An interpreter that runs code makes a later on-disk script unseen [P: M] [READY]
+#### [TSK-03.29.2] An interpreter that runs code makes a later on-disk script unseen [P: M] [DONE]
 ```yaml
 files: [internal/guard/shell.go, internal/guard/interp.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -2049,7 +2049,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.3] Ship opens its pull request against the default branch when the stored base is gone [P: H] [READY]
+#### [TSK-03.29.3] Ship opens its pull request against the default branch when the stored base is gone [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -2062,7 +2062,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.4] A backlog value holding both quote kinds round-trips through yamlite [P: M] [READY]
+#### [TSK-03.29.4] A backlog value holding both quote kinds round-trips through yamlite [P: M] [DONE]
 ```yaml
 files: [internal/backlog/yamlite.go, internal/backlog/backlog_test.go, internal/backlog/fuzz_test.go]
 done_when:
@@ -2076,7 +2076,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.29.5] The guard refuses a commit, pull request, or comment that carries a session link [P: C] [READY]
+#### [TSK-03.29.5] The guard refuses a commit, pull request, or comment that carries a session link [P: C] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/claude/guard.go, internal/guard/gh.go, internal/guard/git.go, internal/guard/table.go, internal/guard/guard_test.go]
 done_when:
@@ -2093,7 +2093,7 @@ type: fix
 tier: heavy
 ```
 
-#### [TSK-03.29.6] Ship writes its pull request body in the repo's template sections [P: H] [READY]
+#### [TSK-03.29.6] Ship writes its pull request body in the repo's template sections [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:

@@ -4,13 +4,120 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"komodo/internal/mount"
 )
 
-// ghFindings refuses a gh call that writes to the forge, except the two writes the line needs.
-func ghFindings(kept []string, expanding map[string]bool) []string {
+// leakFinding is reported when a commit, pull request, issue, or comment carries private text.
+const leakFinding = "a session link or trailer never leaves the machine"
+
+// ghFindings refuses a gh call that writes to the forge, except the two writes the line needs,
+// and any call whose outgoing text carries a private pattern or a trailer.
+func ghFindings(kept []string, source *messageSource, policy Policy) []string {
 	if len(kept) < 2 {
 		return nil
 	}
+	findings := forgeFindings(kept, source.expanding)
+	if text := outgoingText(kept, source); hasPrivate(text) || policy.HasTrailer(normalizeMessage(text)) {
+		findings = append(findings, leakFinding)
+	}
+	if source.hidden {
+		findings = append(findings, scriptNotVisible)
+	}
+	return findings
+}
+
+// hasPrivate reports whether text holds a pattern a registered mount considers private.
+func hasPrivate(text string) bool {
+	if text == "" {
+		return false
+	}
+	for _, pattern := range mount.GuardPrivatePatterns() {
+		if compiled, err := regexp.Compile(pattern); err == nil && compiled.MatchString(text) {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyVerbs are the gh pr and issue subcommands whose body text reaches the forge.
+var bodyVerbs = map[string]map[string]bool{
+	"pr":    {"create": true, "edit": true, "comment": true, "review": true},
+	"issue": {"create": true, "comment": true},
+}
+
+// outgoingText is what a gh call sends to the forge: a pr or issue body, or an api payload.
+func outgoingText(kept []string, source *messageSource) string {
+	switch kept[1] {
+	case "api":
+		return apiText(kept[2:], source)
+	case "pr", "issue":
+		if rest := afterRepoFlags(kept[2:]); len(rest) > 0 && bodyVerbs[kept[1]][rest[0]] {
+			return ghBody(rest[1:], source)
+		}
+	}
+	return ""
+}
+
+// ghBody composes a pr or issue body from every --body and --body-file, as commitMessage reads -m.
+func ghBody(args []string, source *messageSource) string {
+	var parts []string
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "-b" || arg == "--body":
+			if index+1 < len(args) {
+				index++
+				parts = append(parts, source.literal(args[index], args[index]))
+			}
+		case strings.HasPrefix(arg, "--body="):
+			parts = append(parts, source.literal(arg, strings.TrimPrefix(arg, "--body=")))
+		case arg == "-F" || arg == "--body-file":
+			if index+1 < len(args) {
+				index++
+				parts = append(parts, source.file(args[index], args[index]))
+			}
+		case strings.HasPrefix(arg, "--body-file="):
+			parts = append(parts, source.file(arg, strings.TrimPrefix(arg, "--body-file=")))
+		case strings.HasPrefix(arg, "-b") && !strings.HasPrefix(arg, "--"):
+			parts = append(parts, source.literal(arg, strings.TrimPrefix(arg[2:], "=")))
+		case strings.HasPrefix(arg, "-F") && !strings.HasPrefix(arg, "--"):
+			parts = append(parts, source.file(arg, strings.TrimPrefix(arg[2:], "=")))
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// apiText composes what a gh api call sends: every field's value, an @file field's content, and --input's.
+func apiText(args []string, source *messageSource) string {
+	var parts []string
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		name, value, hasEq := splitGhFlag(arg)
+		switch {
+		case name == "-f" || name == "-F" || name == "--field" || name == "--raw-field":
+			var field string
+			field, index = nextValue(args, index, value, hasEq)
+			_, text, _ := strings.Cut(field, "=")
+			parts = append(parts, text)
+			if (name == "-F" || name == "--field") && strings.HasPrefix(text, "@") {
+				parts = append(parts, source.file(field, text[1:]))
+			}
+		case name == "--input":
+			var file string
+			file, index = nextValue(args, index, value, hasEq)
+			parts = append(parts, source.file(arg, file))
+		case strings.HasPrefix(arg, "-"):
+			if apiValueFlags[name] && !hasEq && index+1 < len(args) {
+				index++
+			}
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// forgeFindings refuses a gh call that writes to the forge, except the writes the line needs.
+func forgeFindings(kept []string, expanding map[string]bool) []string {
 	switch kept[1] {
 	case "pr":
 		if rest := afterRepoFlags(kept[2:]); len(rest) > 0 && rest[0] == "merge" {

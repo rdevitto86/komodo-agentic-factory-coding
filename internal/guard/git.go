@@ -9,7 +9,7 @@ import (
 )
 
 // gitFindings refuses the git operations that touch a critical ref, and reports the branch after the call.
-func gitFindings(tokens []string, branch, cwd, root string, policy Policy, stdin string) ([]string, string) {
+func gitFindings(tokens []string, branch, cwd, root string, policy Policy, source *messageSource) ([]string, string) {
 	args := tokens[1:]
 	var findings []string
 	var configs []string
@@ -168,16 +168,12 @@ func gitFindings(tokens []string, branch, cwd, root string, policy Policy, stdin
 		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git commit on %s: create a branch first", branch))
 		}
-		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd, stdin))) {
-			findings = append(findings, "commit message carries a co-author or generated-by trailer")
-		}
+		findings = append(findings, messageFindings(commitMessage(rest, source), source, policy)...)
 	case "merge":
 		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git merge on %s: landing is the human's merge button", branch))
 		}
-		if policy.HasTrailer(normalizeMessage(commitMessage(rest, cwd, stdin))) {
-			findings = append(findings, "commit message carries a co-author or generated-by trailer")
-		}
+		findings = append(findings, messageFindings(commitMessage(rest, source), source, policy)...)
 	case "branch":
 		deleting, forcing, moving, renaming := false, false, false, false
 		for _, arg := range rest {
@@ -361,8 +357,21 @@ func isForceFlag(arg string) bool {
 // pushURLFinding is reported when a push destination bypasses the remote the line configured.
 const pushURLFinding = "git push to a URL skips the remote the line configured; push to origin"
 
-// scpLikeRe matches git's scp-style remote form, user@host:path or host.tld:path.
-var scpLikeRe = regexp.MustCompile(`^(?:[\w.-]+@[\w.-]+|[\w-]+(?:\.[\w-]+)+):`)
+// scpForm reports whether git reads a destination as scp form: its first colon comes before any
+// slash. A single letter, a colon, and a slash or backslash is a Windows drive instead.
+func scpForm(dest string) bool {
+	colon := strings.IndexByte(dest, ':')
+	if colon <= 0 {
+		return false
+	}
+	if slash := strings.IndexByte(dest, '/'); slash >= 0 && slash < colon {
+		return false
+	}
+	if colon == 1 && len(dest) > 2 && (dest[2] == '/' || dest[2] == '\\') {
+		return false
+	}
+	return true
+}
 
 // pushesToURL reports whether a push names its repository as a URL, through --repo or the first
 // positional, or through a substitution or variable whose value is only known when it runs.
@@ -384,7 +393,7 @@ func pushesToURL(rest, positional []string, cwd, root string, repoFlag bool) boo
 // isPushURL reports whether a push destination is a URL, scp-style remote, or a path to a repository
 // outside the worktree root: one with a slash or a .git suffix, or a bare name that is a directory.
 func isPushURL(dest, cwd, root string) bool {
-	if strings.Contains(dest, "://") || scpLikeRe.MatchString(dest) {
+	if strings.Contains(dest, "://") || scpForm(dest) {
 		return true
 	}
 	resolved := dest
@@ -409,7 +418,7 @@ func isPushURL(dest, cwd, root string) bool {
 
 // commitMessage composes the text of a commit or merge's own message: every -m paragraph, an
 // -F file's content, and a --trailer's raw key=value line, in the order git reads them.
-func commitMessage(rest []string, cwd, stdin string) string {
+func commitMessage(rest []string, source *messageSource) string {
 	var parts []string
 	for index := 0; index < len(rest); index++ {
 		arg := rest[index]
@@ -417,29 +426,44 @@ func commitMessage(rest []string, cwd, stdin string) string {
 		case arg == "-m" || arg == "--message":
 			if index+1 < len(rest) {
 				index++
-				parts = append(parts, rest[index])
+				parts = append(parts, source.literal(rest[index], rest[index]))
 			}
 		case strings.HasPrefix(arg, "--message="):
-			parts = append(parts, strings.TrimPrefix(arg, "--message="))
+			parts = append(parts, source.literal(arg, strings.TrimPrefix(arg, "--message=")))
 		case strings.HasPrefix(arg, "-m") && arg != "-m":
-			parts = append(parts, strings.TrimPrefix(arg, "-m"))
+			parts = append(parts, source.literal(arg, strings.TrimPrefix(arg, "-m")))
 		case arg == "-F" || arg == "--file":
 			if index+1 < len(rest) {
 				index++
-				parts = append(parts, readMessageFile(rest[index], cwd, stdin))
+				parts = append(parts, source.file(rest[index], rest[index]))
 			}
 		case strings.HasPrefix(arg, "--file="):
-			parts = append(parts, readMessageFile(strings.TrimPrefix(arg, "--file="), cwd, stdin))
+			parts = append(parts, source.file(arg, strings.TrimPrefix(arg, "--file=")))
 		case arg == "--trailer":
 			if index+1 < len(rest) {
 				index++
-				parts = append(parts, rest[index])
+				parts = append(parts, source.literal(rest[index], rest[index]))
 			}
 		case strings.HasPrefix(arg, "--trailer="):
-			parts = append(parts, strings.TrimPrefix(arg, "--trailer="))
+			parts = append(parts, source.literal(arg, strings.TrimPrefix(arg, "--trailer=")))
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// messageFindings refuses a commit or forge text that carries a trailer, a private pattern, or text the guard cannot see.
+func messageFindings(text string, source *messageSource, policy Policy) []string {
+	var findings []string
+	if policy.HasTrailer(normalizeMessage(text)) {
+		findings = append(findings, "commit message carries a co-author or generated-by trailer")
+	}
+	if hasPrivate(text) {
+		findings = append(findings, leakFinding)
+	}
+	if source.hidden {
+		findings = append(findings, scriptNotVisible)
+	}
+	return findings
 }
 
 // messageBreakRe is a ; or && a message smuggles a trailer past, read as a line break instead.
@@ -450,20 +474,50 @@ func normalizeMessage(text string) string {
 	return messageBreakRe.ReplaceAllString(text, "\n")
 }
 
-// readMessageFile reads a commit message file relative to cwd, or the heredoc a - or /dev/stdin names.
-func readMessageFile(path, cwd, stdin string) string {
+// messageSource reads a commit or forge call's outgoing text, noting when any of it is hidden.
+type messageSource struct {
+	s         *scanner
+	cwd       string
+	stdin     string
+	expanding map[string]bool
+	hidden    bool
+}
+
+// literal returns a message argument, marking it hidden when it came from a substitution or variable left unresolved.
+func (m *messageSource) literal(arg, value string) string {
+	if expandingIn(m.expanding, arg, value) && unresolvedText(value) {
+		m.hidden = true
+	}
+	return value
+}
+
+// file reads a message file: the heredoc a - or /dev/stdin names, this line's recorded write, or
+// disk, marking it hidden when the line may have written it unseen.
+func (m *messageSource) file(arg, path string) string {
 	if path == "-" || path == "/dev/stdin" {
-		return stdin
+		if strings.Contains(m.stdin, unknownInput) {
+			m.hidden = true
+		}
+		return m.stdin
 	}
-	resolved := expandHome(path)
-	if !filepath.IsAbs(resolved) {
-		resolved = filepath.Join(cwd, resolved)
-	}
-	data, err := os.ReadFile(resolved)
-	if err != nil {
+	if expandingIn(m.expanding, arg, path) && unresolvedText(path) {
+		m.hidden = true
 		return ""
 	}
-	return string(data)
+	if write, found := m.s.recordedWrite(path, m.cwd); found {
+		if !write.known {
+			m.hidden = true
+		}
+		return write.text
+	}
+	text, exists, ok := readScript(path, m.cwd)
+	switch {
+	case exists && ok && !m.s.blind:
+		return text
+	case exists || m.s.createdEarlier():
+		m.hidden = true
+	}
+	return ""
 }
 
 // aliasValue returns the git alias a -c option set for a subcommand name, or the empty string.

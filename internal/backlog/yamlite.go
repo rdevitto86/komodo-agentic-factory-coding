@@ -103,7 +103,11 @@ func scalar(raw string) any {
 	if text == "" {
 		return ""
 	}
-	if len(text) >= 2 && text[0] == text[len(text)-1] && (text[0] == '\'' || text[0] == '"') {
+	if len(text) >= 2 && text[0] == text[len(text)-1] && text[0] == '\'' {
+		// Inside single quotes YAML writes a single quote twice.
+		return strings.ReplaceAll(text[1:len(text)-1], "''", "'")
+	}
+	if len(text) >= 2 && text[0] == text[len(text)-1] && text[0] == '"' {
 		return text[1 : len(text)-1]
 	}
 	switch strings.ToLower(text) {
@@ -240,9 +244,9 @@ func quote(value any) string {
 	if !needs {
 		return text
 	}
-	// scalar never unescapes a quote, so a value holding one takes the other delimiter.
+	// A value holding a double quote takes single quotes, each single quote inside written twice.
 	if strings.Contains(text, "\"") {
-		return "'" + text + "'"
+		return "'" + strings.ReplaceAll(text, "'", "''") + "'"
 	}
 	return `"` + text + `"`
 }

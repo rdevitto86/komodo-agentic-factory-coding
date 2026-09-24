@@ -6,6 +6,7 @@ import (
 	"komodo/internal/mount"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -47,15 +48,76 @@ func outsideTemp(t *testing.T) string {
 func registerFakeHost() {
 	mount.Register(mount.Host{Name: "testhost", ConfigPaths: []string{"~/.testhost/**"}})
 	mount.RegisterGuard("testhost", mount.GuardTools{
-		WriteTools:     map[string]bool{"Write": true, "Edit": true, "MultiEdit": true, "NotebookEdit": true},
-		PathFields:     []string{"file_path", "notebook_path"},
-		ShellTool:      "Bash",
-		CommandField:   "command",
-		SpawnTools:     map[string]bool{"Agent": true},
-		IsolationField: "isolation",
-		ConfigPaths:    []string{".testhost/settings.json"},
-		Deny:           fakeDenyPayload,
+		WriteTools:      map[string]bool{"Write": true, "Edit": true, "MultiEdit": true, "NotebookEdit": true},
+		PathFields:      []string{"file_path", "notebook_path"},
+		ShellTool:       "Bash",
+		CommandField:    "command",
+		SpawnTools:      map[string]bool{"Agent": true},
+		IsolationField:  "isolation",
+		ConfigPaths:     []string{".testhost/settings.json"},
+		PrivatePatterns: []string{`testhost\.example/session_\w+`},
+		Deny:            fakeDenyPayload,
 	})
+}
+
+// TestPrivateTextNeverLeavesTheMachine checks every outgoing message a mount's private pattern or a trailer is refused.
+func TestPrivateTextNeverLeavesTheMachine(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	link := "https://testhost.example/session_01abc"
+	for name, body := range map[string]string{"leak.md": "See " + link + "\n", "plain.md": "Plain text.\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := map[string]bool{
+		"git commit -m 'feat: x\n\n" + link + "'":                    true,
+		"git commit -F leak.md":                                      true,
+		"git merge -m 'merge " + link + "' feat/y":                   true,
+		"gh pr create --title t --body '" + link + "'":               true,
+		"gh pr create --title t -b '" + link + "'":                   true,
+		"gh pr create --title t --body='" + link + "'":               true,
+		"gh pr create --title t --body-file leak.md":                 true,
+		"gh pr create --title t -F leak.md":                          true,
+		"gh pr edit 1 --body-file=leak.md":                           true,
+		"gh pr review 1 --comment -b '" + link + "'":                 true,
+		"gh pr comment 1 --body-file - <<'EOF'\n" + link + "\nEOF":   true,
+		"gh issue create --title t --body '" + link + "'":            true,
+		"gh issue comment 1 --body 'x\n\nCo-authored-by: A <a@b.c>'": true,
+		"gh api repos/o/r/issues/1/comments -f body='" + link + "'":  true,
+		"gh api repos/o/r/pulls/1/comments -F body=@leak.md":         true,
+		"gh api repos/o/r/issues/1/comments --input leak.md":         true,
+		"git commit -F plain.md":                                     false,
+		"gh pr create --title t --body-file plain.md":                false,
+		"gh pr comment 1 --body 'Plain text.'":                       false,
+		"gh api repos/o/r/issues/1/comments -F body=@plain.md":       false,
+		"gh issue view 1":         false,
+		"gh pr view 1 --comments": false,
+	}
+	for _, mode := range []Mode{ModeSafe, ModeDefault, ModeUnsafe} {
+		policy := DefaultPolicy()
+		policy.Mode = mode
+		for command, deny := range cases {
+			request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
+			decision := Check(request, policy, "feat/x")
+			if decision.Deny != deny {
+				t.Errorf("mode %q, %q: deny = %v, want %v (%v)", mode, command, decision.Deny, deny, decision.Findings)
+			}
+			if deny && !containsAny(decision.Findings, leakFinding) {
+				t.Errorf("mode %q, %q: findings = %v", mode, command, decision.Findings)
+			}
+		}
+	}
+}
+
+// TestPrivateSampleMatchesItsPattern checks the table builds a link each shape of pattern matches.
+func TestPrivateSampleMatchesItsPattern(t *testing.T) {
+	for _, pattern := range []string{`testhost\.example/session_\w+`, `(?i)host\.example/code/session`, `a[bc]+(d|e)?`} {
+		link, ok := privateSample(pattern)
+		if !ok || !regexp.MustCompile(pattern).MatchString(link) {
+			t.Errorf("privateSample(%q) = %q, %v", pattern, link, ok)
+		}
+	}
 }
 
 // fakeDenyPayload mirrors the JSON shape a real host's PreToolUse hook reads.
@@ -120,6 +182,37 @@ func TestPushToAURLSkipsTheRemote(t *testing.T) {
 	}
 	if !containsAny(decision.Findings, "skips the remote") {
 		t.Fatalf("findings = %v", decision.Findings)
+	}
+}
+
+// TestScpFormReadsTheFirstColonBeforeAnySlash proves an alias or dotless host with a colon is scp form.
+func TestScpFormReadsTheFirstColonBeforeAnySlash(t *testing.T) {
+	cases := map[string]bool{
+		"myalias:o/r.git":      true,
+		"localhost:/tmp/r.git": true,
+		"git@github.com:o/r":   true,
+		"origin":               false,
+		"./dir:name/r.git":     false,
+		"../a/b:c":             false,
+		`C:\repos\r.git`:       false,
+		"C:/repos/r.git":       false,
+		":nohost":              false,
+		"feat/x:main":          false,
+	}
+	for dest, want := range cases {
+		if got := scpForm(dest); got != want {
+			t.Errorf("scpForm(%q) = %v, want %v", dest, got, want)
+		}
+	}
+	root := worktree(t)
+	for _, mode := range []Mode{ModeSafe, ModeDefault} {
+		policy := DefaultPolicy()
+		policy.Mode = mode
+		request := Request{ToolName: "Bash", Cwd: root,
+			ToolInput: map[string]any{"command": "git push myalias:o/r.git feat/x"}}
+		if decision := Check(request, policy, "feat/x"); !decision.Deny || !containsAny(decision.Findings, "skips the remote") {
+			t.Fatalf("mode %q: a push to an scp alias was not denied: %v", mode, decision.Findings)
+		}
 	}
 }
 
@@ -580,6 +673,36 @@ func TestBlindWriteHidesAScriptOnDisk(t *testing.T) {
 		request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
 		if got := Check(request, DefaultPolicy(), "feat/x").Deny; got != deny {
 			t.Errorf("%q: deny = %v, want %v", command, got, deny)
+		}
+	}
+}
+
+// TestInterpreterHidesALaterScriptOnDisk checks code an interpreter runs leaves a later on-disk script unseen.
+func TestInterpreterHidesALaterScriptOnDisk(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	if err := os.WriteFile(filepath.Join(root, "x.sh"), []byte("ls\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]bool{
+		"sh x.sh":                        false,
+		"python3 -c 'print(1)'; sh x.sh": true,
+		`python3 -c 'open("x.sh","w").write("")'; sh x.sh`: true,
+		"echo 'print(1)' | python3; sh x.sh":               true,
+		"node x.sh; sh x.sh":                               true,
+		"sh x.sh; python3 -c 'print(1)'":                   false,
+		"python3 -m json.tool a.json; sh x.sh":             false,
+		"python3 --version; sh x.sh":                       false,
+		"node -v && sh x.sh":                               false,
+	}
+	for command, deny := range cases {
+		request := Request{ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}}
+		decision := Check(request, DefaultPolicy(), "feat/x")
+		if decision.Deny != deny {
+			t.Errorf("%q: deny = %v, want %v", command, decision.Deny, deny)
+		}
+		if deny && !containsAny(decision.Findings, scriptNotVisible) {
+			t.Errorf("%q: findings = %v", command, decision.Findings)
 		}
 	}
 }

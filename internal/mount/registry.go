@@ -290,7 +290,9 @@ type GuardTools struct {
 	// IsolationField is the input key a spawn call uses to ask for a separate worktree.
 	IsolationField string
 	ConfigPaths    []string
-	Deny           func(reason string) []byte
+	// PrivatePatterns are regular expressions for text the host considers private, such as a session link.
+	PrivatePatterns []string
+	Deny            func(reason string) []byte
 }
 
 var (
@@ -326,6 +328,15 @@ func GuardConfigPaths() []string {
 	var out []string
 	for _, tools := range GuardHosts() {
 		out = append(out, tools.ConfigPaths...)
+	}
+	return out
+}
+
+// GuardPrivatePatterns are every private-text pattern a registered mount's guard refuses to send out.
+func GuardPrivatePatterns() []string {
+	var out []string
+	for _, tools := range GuardHosts() {
+		out = append(out, tools.PrivatePatterns...)
 	}
 	return out
 }

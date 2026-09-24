@@ -181,6 +181,11 @@ func (s *scanner) expandingValues(words []word) map[string]bool {
 	return values
 }
 
+// messageSource reads one git or gh call's outgoing text through this line's recorded writes.
+func (s *scanner) messageSource(cmd simpleCommand, cwd, stdin string) *messageSource {
+	return &messageSource{s: s, cwd: cwd, stdin: stdin, expanding: s.expandingValues(cmd.words)}
+}
+
 // anyExpands reports whether any word holds a substitution or parameter the shell fills in at run time.
 func anyExpands(words []word) bool {
 	for _, w := range words {
@@ -291,10 +296,10 @@ func (s *scanner) command(cmd simpleCommand, upstream []string, cwd, branch stri
 		}
 	case name == "git":
 		var gitResult []string
-		gitResult, branch = gitFindings(kept, branch, cwd, s.root, s.policy, stdin)
+		gitResult, branch = gitFindings(kept, branch, cwd, s.root, s.policy, s.messageSource(cmd, cwd, stdin))
 		findings = append(findings, gitResult...)
 	case name == "gh":
-		findings = append(findings, ghFindings(kept, s.expandingValues(cmd.words))...)
+		findings = append(findings, ghFindings(kept, s.messageSource(cmd, cwd, stdin), s.policy)...)
 	case interpreters[interpName(name)]:
 		findings = append(findings, s.interpScriptFindings(kept, cwd, stdin, s.expandingValues(cmd.words))...)
 	case name == "eval" && len(kept) > 1:

@@ -24,17 +24,21 @@ var guardSpawnTools = map[string]bool{"Agent": true, "Task": true}
 // isolationField is the tool_input key a spawn call uses to ask for a separate worktree.
 const isolationField = "isolation"
 
+// sessionLinkPattern matches this host's session URL, which names a private session.
+const sessionLinkPattern = `(?i)claude\.ai/code/session`
+
 // init registers this host's tool names and denial encoding, so the guard never names it.
 func init() {
 	mount.RegisterGuard("claude", mount.GuardTools{
-		WriteTools:     guardWriteTools,
-		PathFields:     guardPathFields,
-		ShellTool:      shellTool,
-		CommandField:   "command",
-		SpawnTools:     guardSpawnTools,
-		IsolationField: isolationField,
-		ConfigPaths:    []string{filepath.ToSlash(filepath.Join(Dir, "settings.json"))},
-		Deny:           denyPayload,
+		WriteTools:      guardWriteTools,
+		PathFields:      guardPathFields,
+		ShellTool:       shellTool,
+		CommandField:    "command",
+		SpawnTools:      guardSpawnTools,
+		IsolationField:  isolationField,
+		ConfigPaths:     []string{filepath.ToSlash(filepath.Join(Dir, "settings.json"))},
+		PrivatePatterns: []string{sessionLinkPattern},
+		Deny:            denyPayload,
 	})
 }
 
