@@ -326,7 +326,7 @@ func hidesGitOrGh(text string) bool {
 
 // interpScriptFindings checks what an interpreter will run: inline code, its stdin, a script this
 // line already wrote, or one on disk; a script missing after an earlier command is not visible.
-func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []string {
+func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string, active bool) []string {
 	call := parseInterpreter(kept)
 	if call.module {
 		return nil
@@ -335,8 +335,12 @@ func (s *scanner) interpScriptFindings(kept []string, cwd, stdin string) []strin
 		return stdinFindings(stdin)
 	}
 	if len(call.code) > 0 {
-		if hidesGitOrGh(strings.Join(call.code, "\n")) {
+		code := strings.Join(call.code, "\n")
+		switch {
+		case hidesGitOrGh(code):
 			return []string{interpreterHidesGit}
+		case active && unresolvedText(code):
+			return []string{scriptNotVisible}
 		}
 		return nil
 	}

@@ -7,8 +7,9 @@ import (
 
 // word is one shell word after quote removal, with a mark per rune for whether a quote covered it.
 type word struct {
-	value  string
-	quoted []bool
+	value   string
+	quoted  []bool
+	expands bool
 }
 
 // anyQuoted reports whether any rune of the word sat inside quotes or behind a backslash.
@@ -343,12 +344,20 @@ func (l *lexer) readExpansion(b *wordBuilder, inDouble bool) {
 		}
 		l.out.substitutions = append(l.out.substitutions, expansionBodies(string(l.runes[inner:innerEnd]))...)
 	default:
+		b.expands = b.expands || isParamStart(l.peek(1))
 		l.pos++
 		b.add("$", inDouble)
 		return
 	}
+	b.expands = true
 	// A variable or substitution is never a brace or glob pattern, so it is marked quoted.
 	b.add(string(l.runes[start:min(l.pos, len(l.runes))]), true)
+}
+
+// isParamStart reports whether a rune after $ opens a parameter the shell expands: a name, a digit, or a special.
+func isParamStart(char rune) bool {
+	return char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+		(char >= '0' && char <= '9') || strings.ContainsRune("?@*#!$-", char)
 }
 
 // readANSI reads a $'...' string's inside and decodes its C escapes.
@@ -470,8 +479,9 @@ func expansionBodies(text string) []string {
 
 // wordBuilder accumulates a word's runes and their quote marks.
 type wordBuilder struct {
-	value  []rune
-	quoted []bool
+	value   []rune
+	quoted  []bool
+	expands bool
 }
 
 // add appends text, every rune carrying the same quote mark.
@@ -484,5 +494,5 @@ func (b *wordBuilder) add(text string, quoted bool) {
 
 // word returns what the builder holds.
 func (b *wordBuilder) word() word {
-	return word{value: string(b.value), quoted: append([]bool(nil), b.quoted...)}
+	return word{value: string(b.value), quoted: append([]bool(nil), b.quoted...), expands: b.expands}
 }

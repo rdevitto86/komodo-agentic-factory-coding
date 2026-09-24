@@ -7,7 +7,7 @@ import (
 )
 
 // ghFindings refuses a gh call that writes to the forge, except the two writes the line needs.
-func ghFindings(kept []string) []string {
+func ghFindings(kept []string, active bool) []string {
 	if len(kept) < 2 {
 		return nil
 	}
@@ -17,7 +17,7 @@ func ghFindings(kept []string) []string {
 			return []string{"gh pr merge: landing is the human's merge button"}
 		}
 	case "api":
-		return apiFindings(kept[2:])
+		return apiFindings(kept[2:], active)
 	case "ruleset":
 		return rulesetFindings(afterRepoFlags(kept[2:]))
 	case "repo":
@@ -26,6 +26,11 @@ func ghFindings(kept []string) []string {
 		return secretFindings(afterRepoFlags(kept[2:]))
 	}
 	return nil
+}
+
+// unresolvedText reports whether text still holds a substitution, backtick, or variable the shell fills in.
+func unresolvedText(text string) bool {
+	return strings.Contains(text, "$(") || strings.Contains(text, "`") || unresolvedVarRe.MatchString(text)
 }
 
 // afterRepoFlags drops the -R or --repo flags gh accepts before a subcommand's verb.
@@ -65,7 +70,7 @@ var sensitiveSegments = map[string]bool{
 }
 
 // apiFindings refuses a gh api call that writes, reaches a sensitive endpoint, or crosses to another host.
-func apiFindings(args []string) []string {
+func apiFindings(args []string, active bool) []string {
 	var method, hostname, endpoint, graphqlQuery string
 	hasFieldFlag, queryFromFile := false, false
 	for index := 0; index < len(args); index++ {
@@ -82,7 +87,7 @@ func apiFindings(args []string) []string {
 			field, index = nextValue(args, index, value, hasEq)
 			if key, val, ok := strings.Cut(field, "="); ok && key == "query" {
 				graphqlQuery += val
-				queryFromFile = queryFromFile || strings.HasPrefix(val, "@")
+				queryFromFile = queryFromFile || strings.HasPrefix(val, "@") || (active && unresolvedText(val))
 			}
 		case name == "--input":
 			hasFieldFlag = true
@@ -105,7 +110,7 @@ func apiFindings(args []string) []string {
 			return []string{fmt.Sprintf("gh api --hostname %s graphql: a forge write goes through the line, never an agent", hostname)}
 		}
 		if queryFromFile {
-			return []string{"gh api graphql: a query read from a file is not visible to the guard; pass it with -f query="}
+			return []string{"gh api graphql: a query read from a file or a substitution is not visible to the guard; pass it literally with -f query="}
 		}
 		if fields, saw := mutationFields(graphqlQuery); saw && !allAllowed(fields) {
 			return []string{"gh api graphql: a forge write goes through the line, never an agent"}
