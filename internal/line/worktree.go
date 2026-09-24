@@ -58,11 +58,10 @@ func Fetch(root, base string) error {
 // BranchName is the branch a group's work lands on: its type and its slug.
 func BranchName(groupType, slug string) string { return groupType + "/" + slug }
 
-// RefusedPushURL is the pushurl set on a line worktree so git push origin inside it fails and names the reason.
+// RefusedPushURL is the pushurl that makes git push origin fail inside a line worktree.
 const RefusedPushURL = "refused://the-line-pushes"
 
-// AddWorktree creates branch at the base's head in its own worktree under .komodo/wt, with a
-// worktree-scoped pushurl so git push origin there fails; the guard refuses a push to a URL.
+// AddWorktree cuts branch from base into its own worktree, whose scoped pushurl refuses git push origin.
 func AddWorktree(root, branch, base, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -79,8 +78,7 @@ func AddWorktree(root, branch, base, path string) error {
 	return nil
 }
 
-// refuseWorktreePush points path's pushurl at RefusedPushURL, skipping and noting when the
-// repo's common config already holds core.bare or core.worktree.
+// refuseWorktreePush sets path's pushurl to RefusedPushURL, noting a skip when core.bare or core.worktree is set.
 func refuseWorktreePush(root, path string) {
 	if bare, err := git(root, "config", "--get", "core.bare"); err == nil && bare == "true" {
 		fmt.Fprintln(os.Stderr, "komodo: core.bare is true on the repo's common config; skipping the worktree push refusal")

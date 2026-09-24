@@ -501,6 +501,9 @@ func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
 	if err != nil || !strings.Contains(string(out), "feat/a-group") {
 		t.Fatalf("branch = %s, err = %v; ship must land the branch on origin", out, err)
 	}
+	if merge, err := git(worktree, "config", "--get", "branch.feat/a-group.merge"); err != nil || merge != "refs/heads/feat/a-group" {
+		t.Fatalf("upstream merge = %q, err = %v; ship must set the branch's upstream the way push -u does", merge, err)
+	}
 	if refused, err := git(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
 		t.Fatalf("pushurl = %q; ship must leave the worktree's refusal in place", refused)
 	}

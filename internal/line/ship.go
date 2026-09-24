@@ -284,8 +284,7 @@ func ReportBody(plan *Plan, result *ShipResult, waves []*WaveResult) string {
 	return strings.Join(out, "\n") + "\n"
 }
 
-// pushFromWorktree pushes branch to the URL the root's origin names, going around the refused pushurl
-// every line worktree carries, then records the upstream the way push -u would.
+// pushFromWorktree pushes branch to the root's origin URL, past the worktree's refused pushurl, then sets its upstream.
 func pushFromWorktree(root, worktree, branch string) error {
 	pushURL, err := git(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
