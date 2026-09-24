@@ -98,6 +98,16 @@ func PlanForRun(root string) (*Plan, error) {
 	return PlanForStation(root, "")
 }
 
+// RunIsOpen reports whether the recorded run still has stations left; an unreadable plan counts as open.
+func RunIsOpen(root string) bool {
+	state, err := LoadRun(root)
+	if err != nil || state.Group == "" {
+		return false
+	}
+	open, err := openRun(root, state.Group)
+	return err != nil || open != nil
+}
+
 // openRun is the run's own group while it still has stations left, so a later ready group cannot steal it.
 func openRun(root, groupID string) (*Plan, error) {
 	plan, err := planForGroup(root, groupID)

@@ -1143,7 +1143,7 @@ func stringOrNone(value string) string {
 func runDoctor(root string, args []string) {
 	set := flag.NewFlagSet("doctor", flag.ExitOnError)
 	noGit := set.Bool("no-git", false, "skip the checks that shell out to git")
-	prune := set.Bool("prune", false, "remove stale worktrees and delete merged branches")
+	prune := set.Bool("prune", false, "remove stale worktrees, delete merged branches, and settle a run origin has merged")
 	remote := set.Bool("remote", false, "also audit the forge's branch rulesets through gh")
 	asJSON := set.Bool("json", false, "print JSON")
 	_ = set.Parse(args)
@@ -1169,6 +1169,9 @@ func runDoctor(root string, args []string) {
 	} else {
 		for _, problem := range problems {
 			fmt.Printf("%s %s: %s\n", problem.Check, problem.Where, problem.Detail)
+		}
+		for _, note := range doctor.HostLeftovers(root) {
+			fmt.Println("note " + note)
 		}
 		fmt.Printf("%d problem(s)\n", len(problems))
 	}
