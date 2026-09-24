@@ -1338,3 +1338,45 @@ context:
   - "test files only, standard library httptest; never reach a real local server"
 type: test
 ```
+
+### [TG-03.13] Prune settles every merged run, not only the last
+```yaml
+type: fix
+version: 1.0.0-beta.1
+base: main
+```
+* **Why:** `settleShippedRun` reads only the current run state, so a run's worktrees strand once the next group starts. TG-03.10's clean, merged worktrees survived `komodo doctor --prune`.
+
+#### [TSK-03.13.1] Prune removes every clean state worktree whose branch origin holds [P: H] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+  - go vet ./internal/doctor/...
+context:
+  - "settleShippedRun gates its worktree sweep on the current run's branch; sweep every clean .komodo/wt worktree whose branch is an ancestor of origin's base, whatever the run state holds"
+  - "keep the BACKLOG.md flip restore tied to the current run; never remove a dirty worktree or one whose branch origin lacks"
+  - "a test ships two runs in sequence and proves one prune removes both runs' worktrees and branches"
+type: fix
+```
+
+### [TG-03.14] The doctor names a worktree the line did not cut
+```yaml
+type: fix
+version: 1.0.0-beta.1
+base: main
+```
+* **Why:** a spawn that cut its own worktree stranded a diff outside `.komodo/wt` on TG-03.11, and no check reported it.
+
+#### [TSK-03.14.1] Doctor reports a linked worktree outside the state directory [P: M] [READY]
+```yaml
+files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./internal/doctor/...
+  - go vet ./internal/doctor/...
+context:
+  - "checkGit lists git worktree list --porcelain; report each linked worktree whose path is outside .komodo/wt as a problem naming its path and branch"
+  - "name no host: the check reads paths only; prune never removes such a worktree, it only reports it"
+  - "a test adds a worktree outside .komodo/wt and proves doctor reports it, and that the main checkout and state worktrees are never reported"
+type: fix
+```
