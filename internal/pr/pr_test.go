@@ -1,6 +1,9 @@
 package pr
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -23,8 +26,21 @@ func fake(t *testing.T, outputs ...string) (*Client, *[]string) {
 	return client, &calls
 }
 
+// fakeErr returns a runner that fails every call, so tests can drive an API error.
+func fakeErr(err error) (*Client, *[]string) {
+	var calls []string
+	client := &Client{Dir: ".", Run: func(_ string, args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "", err
+	}}
+	return client, &calls
+}
+
 // pullFixture is the pr-view JSON Threads reads to learn the pull request's URL.
 const pullFixture = `{"number":7,"url":"https://github.com/o/r/pull/7","state":"OPEN","title":"T","isDraft":false}`
+
+// draftFixture is the pr-view JSON for a pull request opened as a draft.
+const draftFixture = `{"number":9,"url":"https://github.com/o/r/pull/9","state":"OPEN","title":"T","isDraft":true}`
 
 func TestCreatePassesBaseHeadAndDraft(t *testing.T) {
 	client, calls := fake(t, "https://example.com/pull/1")
@@ -54,6 +70,38 @@ func TestViewParsesTheFieldsTheLineReads(t *testing.T) {
 	}
 }
 
+func TestViewOfADraftPull(t *testing.T) {
+	client, _ := fake(t, draftFixture)
+	pull, err := client.View("9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pull.Draft {
+		t.Fatalf("pull = %+v, want a draft", pull)
+	}
+}
+
+func TestViewOmitsTheNumberForTheCurrentBranch(t *testing.T) {
+	client, calls := fake(t, pullFixture)
+	if _, err := client.View(""); err != nil {
+		t.Fatal(err)
+	}
+	got := (*calls)[0]
+	if strings.Contains(got, "7") {
+		t.Fatalf("call %q should not name a pull request", got)
+	}
+	if !strings.Contains(got, "pr view --json") {
+		t.Fatalf("call %q is missing pr view --json", got)
+	}
+}
+
+func TestCreateReturnsAnAPIError(t *testing.T) {
+	client, _ := fakeErr(errors.New("rate limited"))
+	if _, err := client.Create("main", "feat/x", "T", "B", false); err == nil {
+		t.Fatal("want an error")
+	}
+}
+
 func TestLabelsListsWhatTheRepoDefines(t *testing.T) {
 	client, _ := fake(t, `[{"name":"feat"},{"name":"agent"}]`)
 	got, err := client.Labels()
@@ -69,6 +117,30 @@ func TestKeepKnownDropsLabelsTheRepoLacks(t *testing.T) {
 	got := KeepKnown([]string{"feat", "unknown"}, []string{"feat", "agent"})
 	if len(got) != 1 || got[0] != "feat" {
 		t.Fatalf("kept = %v", got)
+	}
+}
+
+func TestLabelsReturnsAnAPIError(t *testing.T) {
+	client, _ := fakeErr(errors.New("not found"))
+	if _, err := client.Labels(); err == nil {
+		t.Fatal("want an error")
+	}
+}
+
+func TestLabelAddsOnlyLabelsThatExist(t *testing.T) {
+	client, calls := fake(t, "")
+	kept := KeepKnown([]string{"feat", "ghost"}, []string{"feat", "agent"})
+	if err := client.Label("7", kept); err != nil {
+		t.Fatal(err)
+	}
+	got := (*calls)[len(*calls)-1]
+	for _, want := range []string{"pr edit 7", "--add-label feat"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("call %q is missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "ghost") {
+		t.Fatalf("call %q must not add a label the repo lacks", got)
 	}
 }
 
@@ -96,6 +168,13 @@ func TestThreadsReadsPathAndLine(t *testing.T) {
 	}
 	if !strings.Contains((*calls)[1], "reviewThreads") {
 		t.Fatalf("call %q did not query reviewThreads", (*calls)[1])
+	}
+}
+
+func TestThreadsReturnsAnAPIError(t *testing.T) {
+	client, _ := fakeErr(errors.New("timeout"))
+	if _, err := client.Threads("7"); err == nil {
+		t.Fatal("want an error")
 	}
 }
 
@@ -174,5 +253,61 @@ func TestRespondLoopTerminates(t *testing.T) {
 	}
 	if len(second) != 0 {
 		t.Fatalf("second threads = %+v, want none left once the thread is resolved", second)
+	}
+}
+
+func TestEditPassesTheGivenArgs(t *testing.T) {
+	client, calls := fake(t, "")
+	if err := client.Edit("7", "--title", "New title"); err != nil {
+		t.Fatal(err)
+	}
+	got := (*calls)[0]
+	for _, want := range []string{"pr edit 7", "--title", "New title"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("call %q is missing %q", got, want)
+		}
+	}
+}
+
+func TestCommentPostsTheBody(t *testing.T) {
+	client, calls := fake(t, "")
+	if err := client.Comment("7", "looks good"); err != nil {
+		t.Fatal(err)
+	}
+	got := (*calls)[0]
+	for _, want := range []string{"pr comment 7", "--body", "looks good"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("call %q is missing %q", got, want)
+		}
+	}
+}
+
+// scriptGh writes an executable gh stand-in to a temp dir and puts it on PATH.
+func scriptGh(t *testing.T, body string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+}
+
+func TestNewRunsTheRealGhOnPath(t *testing.T) {
+	scriptGh(t, "echo \"$@\"\n")
+	client := New(".")
+	out, err := client.Run(".", "pr", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "pr list" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestRunWrapsAFailingGh(t *testing.T) {
+	scriptGh(t, "echo boom >&2\nexit 1\n")
+	if _, err := Run(".", "pr", "list"); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v", err)
 	}
 }
