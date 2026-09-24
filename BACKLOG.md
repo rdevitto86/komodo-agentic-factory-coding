@@ -1327,7 +1327,7 @@ base: main
 ```
 * **Why:** the local mount sits at 59.8% statement coverage, the lowest in the repo, and it is the path a local review takes.
 
-#### [TSK-03.12.1] The local mount reaches 80 percent coverage against a fake server [P: M] [READY]
+#### [TSK-03.12.1] The local mount reaches 80 percent coverage against a fake server [P: M] [DONE]
 ```yaml
 files: [internal/mount/ollama/ollama_test.go]
 done_when:

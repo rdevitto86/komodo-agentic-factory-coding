@@ -3,13 +3,26 @@ package ollama
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+// clearEnv unsets everything ModelName and BaseURL might read from the process.
+func clearEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(ModelEnv, "")
+	t.Setenv(Env, "")
+	t.Setenv(WindowEnv, "")
+	t.Setenv("HOME", t.TempDir())
+	tagOnce = sync.Once{}
+	tagFirst = ""
+}
 
 func TestAllowedAcceptsReadOnlyTools(t *testing.T) {
 	if !Allowed([]string{"read", "search"}) {
@@ -178,5 +191,111 @@ func TestPostFailsWhenThePromptCountShowsTruncation(t *testing.T) {
 	_, err := Post(server.URL, "llama3", brief, []byte(`{}`))
 	if err == nil || !strings.Contains(err.Error(), "truncated") {
 		t.Fatalf("err = %v, want a truncation error", err)
+	}
+}
+
+// writeOverlay puts a config.json under home so BaseURL, ModelName and Window read it.
+func writeOverlay(t *testing.T, home, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".komodo", "config.json")
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestModelNameDefaultsWhenNothingNamesOne(t *testing.T) {
+	clearEnv(t)
+	// Point at a closed port so firstTag's Up check fails without reaching a real server.
+	t.Setenv(Env, "http://127.0.0.1:1")
+	if got := ModelName(); got != DefaultModel {
+		t.Fatalf("model = %s, want the default %s", got, DefaultModel)
+	}
+}
+
+func TestModelNameReadsTheServerListBeforeTheDefault(t *testing.T) {
+	clearEnv(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"models":[{"name":"llama4"}]}`))
+	}))
+	defer server.Close()
+	t.Setenv(Env, server.URL)
+	if got := ModelName(); got != "llama4" {
+		t.Fatalf("model = %s, want the server's first tag", got)
+	}
+}
+
+func TestModelNameReadsTheOverlayBeforeTheServer(t *testing.T) {
+	clearEnv(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeOverlay(t, home, `{"local_model": "overlay-model"}`)
+	if got := ModelName(); got != "overlay-model" {
+		t.Fatalf("model = %s, want the overlay's local_model", got)
+	}
+}
+
+func TestModelNameReadsTheEnvironmentBeforeTheOverlay(t *testing.T) {
+	clearEnv(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeOverlay(t, home, `{"local_model": "overlay-model"}`)
+	t.Setenv(ModelEnv, "env-model")
+	if got := ModelName(); got != "env-model" {
+		t.Fatalf("model = %s, want the environment's model", got)
+	}
+}
+
+func TestFitsAndTheWindowOverride(t *testing.T) {
+	clearEnv(t)
+	if !Fits(100) {
+		t.Fatal("a small brief should fit the default window")
+	}
+	if Fits(DefaultWindow * 10) {
+		t.Fatal("a brief far larger than the default window should not fit")
+	}
+	t.Setenv(WindowEnv, "1500")
+	if Fits(2000) {
+		t.Fatal("a brief that exceeds the overridden window should not fit")
+	}
+}
+
+func TestDialAddressWithoutAHost(t *testing.T) {
+	got, ok := dialAddress("not-a-url")
+	if !ok || got != "not-a-url" {
+		t.Fatalf("got = %q, %v; want the raw endpoint through unchanged", got, ok)
+	}
+}
+
+func TestDialAddressRejectsAnUnparsableEndpoint(t *testing.T) {
+	if _, ok := dialAddress("http://%zz"); ok {
+		t.Fatal("want dialAddress to reject an endpoint url.Parse cannot read")
+	}
+}
+
+func TestUpAgainstAClosedListener(t *testing.T) {
+	clearEnv(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	listener.Close()
+	t.Setenv(Env, "http://"+address)
+	if Up() {
+		t.Fatal("Up should be false once the listener is closed")
+	}
+}
+
+func TestUpAgainstAnOpenListener(t *testing.T) {
+	clearEnv(t)
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+	t.Setenv(Env, server.URL)
+	if !Up() {
+		t.Fatal("Up should be true against an open listener")
 	}
 }
