@@ -846,14 +846,14 @@ func TestSettingsTurnAttributionOff(t *testing.T) {
 		Attribution struct {
 			Commit     *string `json:"commit"`
 			PR         *string `json:"pr"`
-			SessionURL bool    `json:"sessionUrl"`
+			SessionURL *bool   `json:"sessionUrl"`
 		} `json:"attribution"`
 	}
 	if err := json.Unmarshal(raw, &settings); err != nil {
 		t.Fatal(err)
 	}
 	a := settings.Attribution
-	if a.Commit == nil || *a.Commit != "" || a.PR == nil || *a.PR != "" || !a.SessionURL {
-		t.Fatalf("attribution = %s; commit and pr must be empty and sessionUrl true", raw)
+	if a.Commit == nil || *a.Commit != "" || a.PR == nil || *a.PR != "" || a.SessionURL == nil || *a.SessionURL {
+		t.Fatalf("attribution = %s; commit and pr must be empty and sessionUrl false, since true appends the session link", raw)
 	}
 }

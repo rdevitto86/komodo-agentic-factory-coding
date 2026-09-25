@@ -194,7 +194,7 @@ func settingsFile(root, binary string) ([]byte, error) {
 		},
 		"permissions": map[string]any{"deny": denyList(policy)},
 		// No co-author trailer, no pull request footer, no session link, in every session and subagent.
-		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": true},
+		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": false},
 	}
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
