@@ -112,8 +112,8 @@ type ruleset struct {
 	} `json:"conditions"`
 }
 
-// CheckRulesets reads the forge's branch rulesets through gh and reports any active one that
-// reaches past the default branch, which would block the push of every group branch.
+// CheckRulesets reads the forge's branch rulesets through gh and reports a default branch nothing
+// protects, or any active ruleset that reaches past it, which would block the push of every group branch.
 func CheckRulesets(root, defaultBranch string, run pr.Runner) []Problem {
 	out, err := run(root, "api", "repos/{owner}/{repo}/rulesets")
 	if err != nil {
@@ -124,6 +124,7 @@ func CheckRulesets(root, defaultBranch string, run pr.Runner) []Problem {
 		return []Problem{{"ruleset", "gh", "rulesets did not parse"}}
 	}
 	var problems []Problem
+	covered := false
 	for _, item := range listed {
 		if item.Target != "branch" || item.Enforcement != "active" {
 			continue
@@ -134,14 +135,26 @@ func CheckRulesets(root, defaultBranch string, run pr.Runner) []Problem {
 			continue
 		}
 		for _, ref := range item.Conditions.RefName.Include {
+			covered = covered || ref == "~ALL"
 			if ref == "~DEFAULT_BRANCH" || ref == "refs/heads/"+defaultBranch {
+				covered = true
 				continue
 			}
 			problems = append(problems, Problem{"ruleset", item.Name,
 				fmt.Sprintf("includes %s; scope it to refs/heads/%s so a group branch can be pushed", ref, defaultBranch)})
 		}
 	}
+	if !covered && !branchProtected(root, defaultBranch, run) {
+		problems = append(problems, Problem{"ruleset", defaultBranch,
+			fmt.Sprintf("no active ruleset or branch protection covers refs/heads/%s; the forge is the boundary the guard cannot be", defaultBranch)})
+	}
 	return problems
+}
+
+// branchProtected reports whether the forge's classic branch protection covers the branch.
+func branchProtected(root, branch string, run pr.Runner) bool {
+	_, err := run(root, "api", fmt.Sprintf("repos/{owner}/{repo}/branches/%s/protection", branch))
+	return err == nil
 }
 
 var reference = regexp.MustCompile("`([A-Za-z0-9_./-]+\\.(?:md|json|go|yaml|yml|toml|sh|sha256))`")
