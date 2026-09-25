@@ -210,8 +210,13 @@ func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 		return nil, err
 	}
 	text := string(data)
+	filedTitles := filedTitles(text, groupID)
 	var added []string
 	for _, finding := range findings {
+		title := fmt.Sprintf("%s:%d %s", finding.File, finding.Line, finding.Title)
+		if filedTitles[title] {
+			continue
+		}
 		taskType := classType[finding.Class]
 		if taskType == "" {
 			taskType = "chore"
@@ -221,13 +226,29 @@ func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 		fields.Set("done_when", []any{"test -f " + finding.File})
 		fields.Set("type", taskType)
 		fields.Set("context", []any{strings.TrimSpace(finding.Detail + " " + finding.Fix)})
-		title := fmt.Sprintf("%s:%d %s", finding.File, finding.Line, finding.Title)
 		next, id, err := backlog.AppendTask(text, groupID, title, fields, "L", "REFINEMENT")
 		if err != nil {
 			return added, err
 		}
 		text = next
 		added = append(added, id)
+		filedTitles[title] = true
+	}
+	if len(added) == 0 {
+		return nil, nil
 	}
 	return added, os.WriteFile(path, []byte(text), 0o644)
+}
+
+// filedTitles is the set of task titles already filed under groupID.
+func filedTitles(text, groupID string) map[string]bool {
+	titles := make(map[string]bool)
+	group, ok := backlog.Parse(text).Group(groupID)
+	if !ok {
+		return titles
+	}
+	for _, task := range group.Tasks {
+		titles[task.Title] = true
+	}
+	return titles
 }

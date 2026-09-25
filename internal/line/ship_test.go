@@ -306,6 +306,43 @@ func TestFileFindingsBeforePushAndCommit(t *testing.T) {
 	}
 }
 
+func TestShipRetriedAroundAFailedPushDoesNotFileAFindingTwice(t *testing.T) {
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", flipBacklog, "the backlog")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(flipBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	review := ResultPath(root, "TG-11.1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	findings := `{"findings":[{"class":"simplify","severity":"low","file":"a/one.go","line":1,"title":"t","detail":"d","fix":"f"}]}`
+	if err := os.WriteFile(review, []byte(findings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+	}
+	plan.Profile.SeverityFloor = "high"
+	unreachableOrigin(t, root)
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
+		t.Fatalf("err = %v; the origin is unreachable, so the first ship must fail at the push", err)
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
+		t.Fatalf("err = %v; a retried ship must fail the same way", err)
+	}
+	shipped, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(shipped), "a/one.go:1 t") != 1 {
+		t.Fatalf("a retry must not file the same finding a second time:\n%s", shipped)
+	}
+}
+
 func TestAFailedGateRecordsShipAsFailedNotDone(t *testing.T) {
 	root, _ := shipRepo(t)
 	if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
