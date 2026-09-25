@@ -273,7 +273,8 @@ komodo gate                 # vet, test, doctor, guard table, comments; pre-comm
 With no target, `komodo run` drains every ready group in order: for each it builds
 the tasks, repairs review findings for up to `review_repairs` rounds, re-renders
 the host config when doctor reports drift, and opens one pull request per group.
-Merging is the only step a person does across a clean drain.
+Merging is the only step a person does across a clean drain; `komodo sync`
+follows it automatically, fast-forwarding the root and rebuilding what drifted.
 
 A drain stops for a person at one of three points: a review still blocking after
 its repair rounds, a merge conflict QC cannot resolve, or a plan the profile has
