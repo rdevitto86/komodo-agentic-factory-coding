@@ -2,7 +2,6 @@
 package run
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
@@ -249,7 +249,6 @@ func drainOrder(root string) ([]string, error) {
 	return order, nil
 }
 
-
 // shipped reports whether the ledger records a finished ship for the group at or after since.
 func shipped(root, group string, since time.Time) bool {
 	entries, err := line.Book(root).All()
@@ -460,7 +459,7 @@ func pushable(root, branch string) error {
 	if branch == "" || strings.HasPrefix(branch, "-") || strings.ContainsAny(branch, ":+ ") {
 		return fmt.Errorf("ship.json names %q, which is not a plain branch; nothing was pushed", branch)
 	}
-	if err := exec.Command("git", "-C", root, "check-ref-format", "--branch", branch).Run(); err != nil {
+	if _, err := git.Run(root, "check-ref-format", "--branch", branch); err != nil {
 		return fmt.Errorf("ship.json names %q, which is not a valid branch; nothing was pushed", branch)
 	}
 	if guard.Load(root, root).IsCritical(branch) {
@@ -471,14 +470,8 @@ func pushable(root, branch string) error {
 
 // gitPush pushes one branch to origin from the run's root, in the launcher's ambient environment.
 func gitPush(root, branch string) error {
-	cmd := exec.Command("git", "push", "-u", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
-	cmd.Dir = root
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git push: %v: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return nil
+	_, err := git.Run(root, "push", "-u", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
+	return err
 }
 
 // contains reports whether the slice already holds the value.

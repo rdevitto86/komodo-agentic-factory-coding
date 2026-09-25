@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -12,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"komodo/internal/git"
 	"komodo/internal/install"
 )
 
@@ -187,11 +187,11 @@ func goRunBuild(path string) bool {
 
 // MainCheckout is the checkout that owns root's git directory, so a worktree resolves to the repo it came from.
 func MainCheckout(root string) string {
-	out, err := exec.Command("git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	out, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return root
 	}
-	return filepath.Dir(strings.TrimSpace(string(out)))
+	return filepath.Dir(out)
 }
 
 // Machine is one model behind a tier: who serves it, which model, and at what effort.

@@ -1,11 +1,9 @@
 package line
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -387,12 +385,8 @@ func pushFromWorktree(root, worktree, branch string) error {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
 	}
 	ref := "refs/heads/" + branch
-	cmd := exec.Command("git", "push", pushURL, ref+":"+ref)
-	cmd.Dir = worktree
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git push to origin %s: %v: %s", branch, err, redactURL(strings.TrimSpace(stderr.String()), pushURL))
+	if _, err := git.Run(worktree, "push", pushURL, ref+":"+ref); err != nil {
+		return fmt.Errorf("git push to origin %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
 	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
 	if _, err := git.Run(worktree, "fetch", "origin", branch); err == nil {
