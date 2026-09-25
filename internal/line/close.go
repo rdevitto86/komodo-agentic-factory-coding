@@ -275,7 +275,7 @@ func stageWork(cwd string, declared []string) error {
 				inside = append(inside, file)
 			}
 		}
-		if covered {
+		if covered || ignoredAndUntracked(cwd, excluded) {
 			continue
 		}
 		args = append(args, ":(exclude,literal)"+excluded)
@@ -294,6 +294,16 @@ func stageWork(cwd string, declared []string) error {
 		}
 	}
 	return nil
+}
+
+// ignoredAndUntracked reports a path git ignores and tracks nothing under, so add -A skips it unexcluded.
+// Excluding such a path makes git add exit 1 once it exists on disk.
+func ignoredAndUntracked(cwd, path string) bool {
+	if _, err := git.Run(cwd, "check-ignore", "-q", "--", path); err != nil {
+		return false
+	}
+	tracked, err := git.Run(cwd, "ls-files", "--", path)
+	return err == nil && tracked == ""
 }
 
 // Built are the regenerated paths a task branch never carries, because they conflict on every merge.

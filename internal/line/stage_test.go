@@ -97,6 +97,27 @@ func TestCloseCommitsNeitherLineStateNorARenderedCopy(t *testing.T) {
 	}
 }
 
+// TestCloseStagesWhenTheStateDirIsIgnoredAndOnDisk proves an ignored state dir holding a brief never fails the stage.
+func TestCloseStagesWhenTheStateDirIsIgnoredAndOnDisk(t *testing.T) {
+	registerRenderingHost(t)
+	root := gitRepo(t)
+	commit(t, root, ".gitignore", "/"+StateDir+"/\n", "ignore state")
+	commit(t, root, "a/one.go", "package a\n", "seed")
+	writeFile(t, root, "a/one.go", "package a\n\nfunc One() {}\n")
+	writeFile(t, root, filepath.ToSlash(filepath.Join(StateDir, "briefs", "TSK-09.1.1.md")), "a brief\n")
+	writeFile(t, root, renderedCopy, "rendered\n")
+	if err := stageWork(root, []string{"a/one.go"}); err != nil {
+		t.Fatal(err)
+	}
+	staged, err := git.Run(root, "diff", "--cached", "--name-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if staged != "a/one.go" {
+		t.Fatalf("staged = %q; only the task's own file belongs in its commit", staged)
+	}
+}
+
 // TestQCRunsGoTestInAGoWorktreeWithNoCommandsFile proves QC resolves go build and go test from detection on the worktree.
 func TestQCRunsGoTestInAGoWorktreeWithNoCommandsFile(t *testing.T) {
 	root := gitRepo(t)
