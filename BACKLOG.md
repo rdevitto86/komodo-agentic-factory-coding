@@ -2377,7 +2377,7 @@ context:
   - "tests: a drain whose buildLocal fails returns 1 and launches no group; the sync-before-each-group test counts one 'root:' line per group plus the final check; drop the call-site comment restating Sync's doc"
 ```
 
-#### [TSK-03.32.6] komodo/AGENTS.md tells agents to run komodo sync [P: M] [REFINEMENT]
+#### [TSK-03.32.6] komodo/AGENTS.md tells agents to run komodo sync [P: M] [DONE]
 ```yaml
 files: [komodo/AGENTS.md]
 done_when:
