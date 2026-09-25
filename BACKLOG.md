@@ -2239,3 +2239,54 @@ context:
   - "say komodo on PATH wins whenever it is present, headless or not; go run ./cmd/komodo is only the fallback when nothing is on PATH"
 type: docs
 ```
+
+### [TG-03.32] The line keeps its own toolkit current
+```yaml
+type: feat
+version: 1.2.0
+```
+* **Why:** after every merge a person had to pull main, run komodo gate --install, and run komodo install --host; the guard rightly refuses an agent those writes, so the binary does them itself.
+
+#### [TSK-03.32.1] komodo sync brings the root up to origin and rebuilds what drifted [P: C] [REFINEMENT]
+```yaml
+files: [internal/run/sync.go, internal/run/sync_test.go, cmd/komodo/main.go, cmd/komodo/line.go]
+done_when:
+  - go test ./internal/run/... ./cmd/komodo/...
+  - go vet ./internal/run/... ./cmd/komodo/...
+  - go run ./cmd/komodo sync --dry-run
+context:
+  - "komodo sync fetches origin; when the root is on the default branch with a clean tree it fast-forwards to origin, never a merge commit; on any other branch or a dirty tree it skips that step and says why"
+  - "in the toolkit's own checkout, when the built bin/komodo-<platform> was built from a commit other than HEAD, it rebuilds it with gate.BuildLocal and rewrites the hooks with gate.Install; record the source commit beside the binary, such as bin/.built-from"
+  - "then it re-renders every installed host's project config when the doctor reports drift, as refreshRoot does"
+  - "it prints one line per step: updated, rebuilt, re-rendered, or already current; --dry-run prints them and writes nothing"
+  - "tests with temp repos: a clean default branch behind origin fast-forwards; a dirty tree is left alone; a stale build marker rebuilds; a current one does not"
+type: feat
+tier: heavy
+```
+
+#### [TSK-03.32.2] komodo run syncs before every group [P: H] [REFINEMENT]
+```yaml
+files: [internal/run/run.go, internal/run/run_test.go]
+done_when:
+  - go test ./internal/run/...
+  - go vet ./internal/run/...
+depends_on: [TSK-03.32.1]
+context:
+  - "Launch calls sync where it calls refreshRoot today, before each group, so a group merged mid-drain is on the root before the next one starts"
+  - "when sync rebuilt the binary, the run copies the new one to root/.komodo/bin before launching, so every station runs the fresh build"
+  - "a sync failure stops the drain with its step and error; it never falls back to the stale binary silently"
+type: feat
+```
+
+#### [TSK-03.32.3] Agents run komodo sync instead of asking the human [P: M] [REFINEMENT]
+```yaml
+files: [komodo/skills/run/SKILL.md, komodo/AGENTS.md, README.md]
+done_when:
+  - grep -q 'komodo sync' komodo/skills/run/SKILL.md
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-03.32.1]
+context:
+  - "after a pull request merges, or when the doctor reports drift, an agent runs komodo sync itself; it never hands the human gate --install, install --host, or a pull"
+  - "README's Usage names the merge button as the only human step and komodo sync as what follows it automatically"
+type: docs
+```
