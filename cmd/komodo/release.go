@@ -20,7 +20,8 @@ func runTag(root string) {
 	}
 }
 
-// tag refuses to run off the branch origin's HEAD names, then tags and pushes every version origin lacks.
+// tag refuses to run off the branch origin's HEAD names, then tags and pushes the newest unreleased
+// version at HEAD, naming any older unreleased one instead, since HEAD is not where it shipped.
 func tag(root string, out io.Writer) error {
 	branch, err := git.Run(root, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
@@ -33,24 +34,25 @@ func tag(root string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	pending := release.Taggable(text, remoteTags(root))
+	pending := release.Unreleased(text, remoteTags(root))
 	if len(pending) == 0 {
 		fmt.Fprintln(out, "every changelog version is tagged")
 		return nil
 	}
-	local := gitLines(root, "tag", "--list")
-	for _, version := range pending {
-		name := release.TagName(version)
-		if !contains(local, name) {
-			if _, err := git.Run(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
-				return err
-			}
-		}
-		if _, err := git.Run(root, "push", "origin", name); err != nil {
+	version := pending[len(pending)-1]
+	for _, older := range pending[:len(pending)-1] {
+		fmt.Fprintf(out, "%s: not tagged; it shipped before %s, so tag it by hand at its own commit\n", older, version)
+	}
+	name := release.TagName(version)
+	if !contains(gitLines(root, "tag", "--list"), name) {
+		if _, err := git.Run(root, "tag", "-a", name, "-m", release.TagMessage(version)); err != nil {
 			return err
 		}
-		fmt.Fprintln(out, "tagged", name)
 	}
+	if _, err := git.Run(root, "push", "origin", name); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "tagged", name)
 	return nil
 }
 
@@ -106,10 +108,26 @@ func runRelease(root string, args []string) {
 	for _, item := range drift {
 		fmt.Printf("%s: %s\n", item.Subject, item.Detail)
 	}
+	pending, err := untaggedVersions(root)
+	if err != nil {
+		fail(err)
+	}
+	for _, version := range pending {
+		fmt.Printf("%s: not released, no tag on origin; the human cuts it with komodo tag on the default branch\n", version)
+	}
 	fmt.Printf("%d drift(s)\n", len(drift))
 	if len(drift) > 0 {
 		exit(1)
 	}
+}
+
+// untaggedVersions lists the changelog versions newer than every tag on origin, which are not yet released.
+func untaggedVersions(root string) ([]string, error) {
+	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		return nil, err
+	}
+	return release.Unreleased(text, remoteTags(root)), nil
 }
 
 // checkRelease audits the changelog against the tags and every shipped group's version.

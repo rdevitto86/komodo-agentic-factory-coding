@@ -122,6 +122,13 @@ func Check(request Request, policy Policy, branch string) Decision {
 	return Decision{Deny: len(findings) > 0, Findings: findings}
 }
 
+// CheckCommand judges a shell command the line runs for a model, as the hook judges one an agent runs.
+func CheckCommand(command, cwd string, policy Policy) Decision {
+	root := WorktreeRoot(cwd)
+	findings := unique(commandFindings(command, root, cwd, CurrentBranch(cwd), policy))
+	return Decision{Deny: len(findings) > 0, Findings: findings}
+}
+
 // stringField reads one string out of a tool input.
 func stringField(input map[string]any, key string) string {
 	if value, ok := input[key].(string); ok {

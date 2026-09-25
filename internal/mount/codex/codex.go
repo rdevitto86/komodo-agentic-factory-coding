@@ -192,6 +192,7 @@ func init() {
 		Usage:       Usage,
 		Headless:    Headless,
 		EventsPath:  EventsPath,
+		Deferred:    "the Codex mount is deferred to a later version; its setup stays in the code, and nothing installs or selects it",
 	})
 }
 

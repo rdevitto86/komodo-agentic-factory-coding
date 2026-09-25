@@ -180,7 +180,7 @@ func keepGroupStatus(root, groupID string) error {
 // root, from the profile and the repo layer, so a run always has the right tools.
 func RenderProject(root, worktree string) error {
 	binary := mount.BinaryPath()
-	for _, host := range mount.Hosts() {
+	for _, host := range mount.Active() {
 		if host.Installed == nil || host.Render == nil || !host.Installed(root) {
 			continue
 		}

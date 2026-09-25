@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/pr"
@@ -142,7 +143,8 @@ func runBrief(root string, args []string) {
 		fmt.Printf("%-14s %7d chars, about %d tokens\n", "brief", len(brief.Text), brief.Tokens)
 		return
 	}
-	branch := brief.Task
+	// Off the line, a task's worktree starts from the branch the root has checked out.
+	branch := git.Or(root, "rev-parse", "--abbrev-ref", "HEAD")
 	if state, err := line.RunFor(root, task); err == nil && state.Branch != "" {
 		branch = state.Branch
 	}
@@ -365,4 +367,14 @@ func runRun(root string, args []string) {
 		fail(err)
 	}
 	exit(code)
+}
+
+// runSync brings the root up to origin, rebuilds a stale binary, and re-renders drifted config.
+func runSync(root string, args []string) {
+	flags := flag.NewFlagSet("sync", flag.ExitOnError)
+	dry := flags.Bool("dry-run", false, "print each step and write nothing")
+	_ = flags.Parse(args)
+	if _, err := run.Sync(run.SyncOptions{Root: root, DryRun: *dry, Stdout: os.Stdout}); err != nil {
+		fail(err)
+	}
 }

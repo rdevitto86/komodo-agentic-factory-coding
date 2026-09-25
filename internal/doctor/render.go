@@ -101,7 +101,7 @@ func renderInstalled(root string, pin func() func()) []renderedHost {
 	defer freezeProfile(root)()
 	defer pin()()
 	var out []renderedHost
-	for _, host := range mount.Hosts() {
+	for _, host := range mount.Active() {
 		if host.Render == nil {
 			continue
 		}

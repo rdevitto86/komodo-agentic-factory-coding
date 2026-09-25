@@ -99,6 +99,17 @@ func TestRunCommandCapturesOutputAndExit(t *testing.T) {
 	}
 }
 
+func TestRunCommandNeverRunsWhatTheGuardRefuses(t *testing.T) {
+	root := t.TempDir()
+	refused := RunCommand(root, "touch ran; git push origin HEAD:main")
+	if refused.OK() || !strings.Contains(refused.Output, "refused by the guard") {
+		t.Fatalf("result = %+v", refused)
+	}
+	if _, err := os.Stat(filepath.Join(root, "ran")); !os.IsNotExist(err) {
+		t.Fatalf("a refused command still ran: %v", err)
+	}
+}
+
 func TestRunGateStopsAtTheFirstFailure(t *testing.T) {
 	root := t.TempDir()
 	results := RunGate(root, []string{"true", "exit 1", "true"})

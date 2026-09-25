@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"komodo/internal/detect"
+	"komodo/internal/guard"
 	"komodo/internal/proc"
 	repopkg "komodo/internal/repo"
 )
@@ -115,9 +117,32 @@ func RunCommand(cwd, command string) CommandResult {
 
 // RunCommandFor runs one shell command in a directory under timeout, killing its process group when it hangs.
 func RunCommandFor(cwd, command string, timeout time.Duration) CommandResult {
-	ran := proc.Shell(cwd, command, timeout)
+	return runGuarded(cwd, command, timeout, nil)
+}
+
+// RunCommandEnv runs one shell command under the default wall clock in the given environment.
+func RunCommandEnv(cwd, command string, env []string) CommandResult {
+	return runGuarded(cwd, command, CommandTimeout, env)
+}
+
+// runGuarded runs a command a model may have written only once the guard allows it, as the hook would.
+func runGuarded(cwd, command string, timeout time.Duration, env []string) CommandResult {
+	if refused := guardRefusal(cwd, command); refused != "" {
+		return CommandResult{Command: command, ExitCode: guard.ExitDeny, Output: refused}
+	}
+	ran := proc.ShellEnv(cwd, command, timeout, env)
 	return CommandResult{Command: command, ExitCode: ran.ExitCode, Seconds: ran.Seconds,
 		Output: Clip(ran.Output, 12000, "output")}
+}
+
+// guardRefusal is the guard's reason to refuse a command the line runs in cwd, or empty when it may run.
+func guardRefusal(cwd, command string) string {
+	root := guard.WorktreeRoot(cwd)
+	decision := guard.CheckCommand(command, cwd, guard.Load(root, root))
+	if !decision.Deny {
+		return ""
+	}
+	return "refused by the guard: " + strings.Join(decision.Findings, "; ")
 }
 
 // RunGate runs commands in order and stops at the first failure.

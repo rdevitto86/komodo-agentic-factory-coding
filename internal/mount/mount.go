@@ -105,10 +105,25 @@ func LoadSkills(root string) ([]Skill, error) {
 		if err != nil {
 			continue
 		}
-		skills = append(skills, Skill{Name: entry.Name(), Body: string(data)})
+		skills = append(skills, Skill{Name: entry.Name(), Body: fillRules(tree, string(data))})
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
 	return skills, nil
+}
+
+// ruleRe matches a {{rules/name}} placeholder a skill uses to carry a shipped rule file inline.
+var ruleRe = regexp.MustCompile(`\{\{rules/([a-z0-9-]+)\}\}`)
+
+// fillRules replaces each {{rules/name}} with rules/name.md, so a skill reads the same in any repo.
+func fillRules(tree fs.FS, body string) string {
+	return ruleRe.ReplaceAllStringFunc(body, func(match string) string {
+		name := ruleRe.FindStringSubmatch(match)[1]
+		data, err := fs.ReadFile(tree, path.Join("rules", name+".md"))
+		if err != nil {
+			return match
+		}
+		return strings.TrimSpace(string(data))
+	})
 }
 
 // MergeOverride appends a repo skill that is new, or folds one that collides into the shipped skill of that name.

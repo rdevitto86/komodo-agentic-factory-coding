@@ -225,6 +225,38 @@ func tagRepo(t *testing.T, branch, changelog string) (root, bare string) {
 	return root, bare
 }
 
+func TestUntaggedVersionsNamesAChangelogVersionOriginHasNoTagFor(t *testing.T) {
+	root, _ := tagRepo(t, "main", releaseChangelog)
+	pending, err := untaggedVersions(root)
+	if err != nil || len(pending) != 1 || pending[0] != "2.0.0" {
+		t.Fatalf("pending = %v, err = %v; 2.0.0 has no tag on origin", pending, err)
+	}
+	runGit(t, root, "tag", "-a", "v2.0.0", "-m", "release 2.0.0")
+	runGit(t, root, "push", "-q", "origin", "v2.0.0")
+	if pending, err := untaggedVersions(root); err != nil || len(pending) != 0 {
+		t.Fatalf("pending = %v, err = %v; origin holds v2.0.0", pending, err)
+	}
+}
+
+func TestTagTagsOnlyTheNewestUnreleasedVersionAtHead(t *testing.T) {
+	changelog := "# Changelog\n\n## 3.0.0 — 2026-09-24\n\n- new\n\n" + strings.TrimPrefix(releaseChangelog, "# Changelog\n\n")
+	root, bare := tagRepo(t, "main", changelog)
+	var out bytes.Buffer
+	if err := tag(root, &out); err != nil {
+		t.Fatal(err)
+	}
+	remote, err := exec.Command("git", "ls-remote", "--tags", bare).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(remote), "v3.0.0") || strings.Contains(string(remote), "v2.0.0") {
+		t.Fatalf("origin tags = %q; only the newest version is tagged at HEAD", remote)
+	}
+	if !strings.Contains(out.String(), "2.0.0: not tagged") {
+		t.Fatalf("out = %q; the older untagged version is named, not tagged", out.String())
+	}
+}
+
 func TestTagRefusesToTagOffANonDefaultBranch(t *testing.T) {
 	root, bare := tagRepo(t, "feat/other", releaseChangelog)
 	var out bytes.Buffer

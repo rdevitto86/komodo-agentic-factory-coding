@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"komodo/internal/git"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -110,8 +111,8 @@ func buildFlags(root string) []string {
 			version = string(match[1])
 		}
 	}
-	if out, err := exec.Command("git", "-C", root, "rev-parse", "--short=12", "HEAD").Output(); err == nil {
-		commit = strings.TrimSpace(string(out))
+	if out, err := git.Run(root, "rev-parse", "--short=12", "HEAD"); err == nil {
+		commit = out
 	}
 	ldflags := fmt.Sprintf("-s -w -X main.version=%s -X main.commit=%s", version, commit)
 	return []string{"-trimpath", "-buildvcs=false", "-ldflags", ldflags}

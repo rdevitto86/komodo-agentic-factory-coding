@@ -275,7 +275,38 @@ func TestShipNeverMarksATaskItSkippedAsDone(t *testing.T) {
 	}
 }
 
-func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
+func TestFileFindingsBeforePushAndCommit(t *testing.T) {
+	root, group := shipRepo(t)
+	review := ResultPath(root, "TG-09.1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	findings := `{"findings":[{"class":"simplify","severity":"low","file":"a/one.go","line":1,"title":"t","detail":"d","fix":"f"}]}`
+	if err := os.WriteFile(review, []byte(findings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	plan.Profile.SeverityFloor = "high"
+	result, err := ShipGroup(root, plan, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Filed) != 1 {
+		t.Fatalf("filed = %v, want exactly one finding filed", result.Filed)
+	}
+	status, err := git.Run(group, "status", "--porcelain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("status = %q; findings filed before push must be in the commit, leaving worktree clean", status)
+	}
+}
+
+func TestShipRetriedAroundAFailedPushDoesNotFileAFindingTwice(t *testing.T) {
 	worktree := gitRepo(t)
 	commit(t, worktree, "BACKLOG.md", flipBacklog, "the backlog")
 	root := t.TempDir()
@@ -292,30 +323,23 @@ func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
 	}
 	plan := &Plan{
 		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
-		Base: "main", Branch: "main", Worktree: worktree,
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
 	plan.Profile.SeverityFloor = "high"
 	unreachableOrigin(t, root)
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin main") {
-		t.Fatalf("err = %v; the origin is unreachable, so ship must fail at the push itself", err)
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
+		t.Fatalf("err = %v; the origin is unreachable, so the first ship must fail at the push", err)
 	}
-	before, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
+		t.Fatalf("err = %v; a retried ship must fail the same way", err)
+	}
+	shipped, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(before), "#### [") != 1 {
-		t.Fatalf("a failed push must not file a finding:\n%s", before)
-	}
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", bare)
-	runGit(t, root, "remote", "set-url", "origin", bare)
-	result, err := ShipGroup(root, plan, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Filed) != 1 {
-		t.Fatalf("filed = %v, want exactly one finding filed once the push succeeds", result.Filed)
+	if strings.Count(string(shipped), "a/one.go:1 t") != 1 {
+		t.Fatalf("a retry must not file the same finding a second time:\n%s", shipped)
 	}
 }
 
@@ -774,5 +798,76 @@ func TestChangedLinesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
 	_, group := shipRepo(t)
 	if got := ChangedLines(group, "no-such-base", "feat/a-group"); got != 0 {
 		t.Fatalf("lines = %d; an unknown base is no count, never a guess", got)
+	}
+}
+
+func TestScopeLabelRules(t *testing.T) {
+	cases := []struct {
+		name  string
+		files []string
+		want  string
+	}{
+		{"guard", []string{"internal/guard/guard.go"}, "scope/guard"},
+		{"mount", []string{"internal/mount/mount.go"}, "scope/mount"},
+		{"skills", []string{"komodo/skills/build.md"}, "scope/skills"},
+		{"roles", []string{"komodo/roles/build.md"}, "scope/skills"},
+		{"agents", []string{"internal/profile/tier.go"}, "scope/agents"},
+		{"machine", []string{"internal/profile/machine.go"}, "scope/agents"},
+		{"harness", []string{"internal/line/ship.go"}, "scope/harness"},
+		{"profile without tier or machine", []string{"internal/profile/profile.go"}, "scope/harness"},
+		{"none", nil, "scope/harness"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := scopeLabel(c.files); got != c.want {
+				t.Fatalf("scopeLabel(%v) = %q, want %q", c.files, got, c.want)
+			}
+		})
+	}
+}
+
+func TestShipWarnsWhenTheRepoLacksAWantedLabel(t *testing.T) {
+	root, group := shipRepo(t)
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "label" {
+			return `[{"name":"@agent 🤖"}]`, nil
+		}
+		return "https://example.com/pull/1", nil
+	}}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Labels) != 1 || result.Labels[0] != "@agent 🤖" {
+		t.Fatalf("labels = %v", result.Labels)
+	}
+	found := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "scope/harness") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %v; a wanted label the repo lacks must be a warning", result.Warnings)
+	}
+}
+
+func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
+	root, _ := shipRepo(t)
+	refined := "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-09.1.1] Do it [P: C] [DONE]\n```yaml\nfiles: [a/one.go, a/two.go]\ndone_when:\n  - true\n  - echo more\ncontext: [docs/guide.md]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(refined), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "TSK-09.1.1") {
+		t.Fatalf("err = %v; ship must refuse when a task differs between root and worktree, naming the task", err)
 	}
 }

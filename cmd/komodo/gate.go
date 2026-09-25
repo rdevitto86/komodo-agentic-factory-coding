@@ -12,6 +12,7 @@ import (
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
 	"komodo/internal/guard"
+	"komodo/internal/line"
 )
 
 // runGate runs the local precheck, or builds the local binary and installs it as a git hook.
@@ -35,9 +36,7 @@ func runGate(root string, args []string) {
 		}
 		return
 	}
-	checks := []gate.Check{
-		gate.Command("go vet", root, "go", "vet", "./..."),
-		gate.Command("go test", root, gate.TestArgs()...),
+	checks := append(buildChecks(root), []gate.Check{
 		{Name: "komodo lint", Run: func(_ io.Writer) error {
 			_, parsed := load(root)
 			problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
@@ -81,11 +80,45 @@ func runGate(root string, args []string) {
 			}
 			return nil
 		}},
-	}
-	if *fuzz != "" {
+	}...)
+	if *fuzz != "" && toolkitCheckout(root) {
 		checks = append(checks, gate.FuzzChecks(root, *fuzz)...)
 	}
 	if err := gate.Run(checks, os.Stdout); err != nil {
 		fail(err)
 	}
+}
+
+// buildChecks are the toolkit's own vet and race tests in its checkout, else the compile and verify
+// commands QC runs, so the gate fits any repo's language.
+func buildChecks(root string) []gate.Check {
+	if toolkitCheckout(root) {
+		return []gate.Check{
+			gate.Command("go vet", root, "go", "vet", "./..."),
+			gate.Command("go test", root, gate.TestArgs()...),
+		}
+	}
+	var checks []gate.Check
+	seen := map[string]bool{}
+	for _, command := range append(line.CompileCommands(root, root), line.VerifyCommand(root, root)) {
+		if command == "" || seen[command] {
+			continue
+		}
+		seen[command] = true
+		checks = append(checks, gate.Check{Name: command, Run: func(out io.Writer) error {
+			result := line.RunCommand(root, command)
+			fmt.Fprintln(out, result.Output)
+			if !result.OK() {
+				return fmt.Errorf("exited %d", result.ExitCode)
+			}
+			return nil
+		}})
+	}
+	return checks
+}
+
+// toolkitCheckout reports whether root is the toolkit's own source, whose Go checks and fuzz targets the gate runs.
+func toolkitCheckout(root string) bool {
+	_, err := os.Stat(filepath.Join(root, "cmd", "komodo", "main.go"))
+	return err == nil
 }

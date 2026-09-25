@@ -2,7 +2,6 @@
 package run
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"komodo/internal/doctor"
+	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
@@ -39,14 +38,15 @@ var dropped = []string{
 
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
-	Root   string
-	Target string
-	Budget time.Duration
-	DryRun bool
-	Env    []string
-	Stdout io.Writer
-	Stderr io.Writer
-	PR     *pr.Client
+	Root       string
+	Target     string
+	Budget     time.Duration
+	DryRun     bool
+	Env        []string
+	Stdout     io.Writer
+	Stderr     io.Writer
+	PR         *pr.Client
+	Executable string
 }
 
 // Scrub returns the environment with every push credential removed and git left unable to prompt.
@@ -152,10 +152,17 @@ func drain(options Options) (int, error) {
 	}
 	started := time.Now()
 	ran := map[string]bool{}
+	executable := ""
 	for {
-		if err := refreshRoot(options.Root); err != nil {
+		// Sync fetches origin, rebuilds a stale binary, and re-renders drifted config.
+		built, err := Sync(SyncOptions{Root: options.Root, Stdout: options.Stdout})
+		if err != nil {
 			return 1, err
 		}
+		if built != "" {
+			executable = built
+		}
+
 		// Every open group drains first, oldest start first, then each ready group in file order.
 		order, err := drainOrder(options.Root)
 		if err != nil {
@@ -178,6 +185,7 @@ func drain(options Options) (int, error) {
 		group := options
 		group.Target = next
 		group.Budget = min(GroupBudget, remaining)
+		group.Executable = executable
 		launched := time.Now()
 		code, url, err := launchTarget(group)
 		if err != nil {
@@ -241,20 +249,6 @@ func drainOrder(root string) ([]string, error) {
 	return order, nil
 }
 
-// refreshRoot re-renders every installed host's project config at the root when the doctor reports drift.
-func refreshRoot(root string) error {
-	problems, err := doctor.Run(root, doctor.Options{NoGit: true})
-	if err != nil {
-		return err
-	}
-	for _, problem := range problems {
-		if problem.Check == "drift" {
-			return line.RenderProject(root, root)
-		}
-	}
-	return nil
-}
-
 // shipped reports whether the ledger records a finished ship for the group at or after since.
 func shipped(root, group string, since time.Time) bool {
 	entries, err := line.Book(root).All()
@@ -295,9 +289,13 @@ func launch(options Options, name string, args []string) (int, error) {
 	defer cancel()
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = options.Root
-	executable, err := mount.Executable()
-	if err != nil {
-		return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
+	executable := options.Executable
+	if executable == "" {
+		var err error
+		executable, err = mount.Executable()
+		if err != nil {
+			return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
+		}
 	}
 	env, err := withBinPath(Scrub(base), options.Root, executable)
 	if err != nil {
@@ -435,18 +433,19 @@ func finishShip(options Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if known, err := client.Labels(); err == nil {
-		_ = client.Label(url, pr.KeepKnown(handoff.Labels, known))
+	_, warnings := line.ApplyLabels(client, url, handoff.Labels)
+	if options.Stderr != nil {
+		for _, warning := range warnings {
+			fmt.Fprintf(options.Stderr, "ship: %s\n", warning)
+		}
 	}
 	worktree := handoff.Worktree
 	if worktree == "" {
 		worktree = options.Root
 	}
-	if _, err := line.FileFindings(worktree, handoff.Group, handoff.Minor); err != nil {
-		return url, err
-	}
+	// An agent can write after_publish into ship.json, so it runs scrubbed, never with the push credentials.
 	if handoff.AfterPublish != "" {
-		if published := line.RunCommand(worktree, handoff.AfterPublish); !published.OK() {
+		if published := line.RunCommandEnv(worktree, handoff.AfterPublish, Scrub(os.Environ())); !published.OK() {
 			return url, fmt.Errorf("after_publish: %s", line.FailureText(published))
 		}
 	}
@@ -460,7 +459,7 @@ func pushable(root, branch string) error {
 	if branch == "" || strings.HasPrefix(branch, "-") || strings.ContainsAny(branch, ":+ ") {
 		return fmt.Errorf("ship.json names %q, which is not a plain branch; nothing was pushed", branch)
 	}
-	if err := exec.Command("git", "-C", root, "check-ref-format", "--branch", branch).Run(); err != nil {
+	if _, err := git.Run(root, "check-ref-format", "--branch", branch); err != nil {
 		return fmt.Errorf("ship.json names %q, which is not a valid branch; nothing was pushed", branch)
 	}
 	if guard.Load(root, root).IsCritical(branch) {
@@ -471,14 +470,8 @@ func pushable(root, branch string) error {
 
 // gitPush pushes one branch to origin from the run's root, in the launcher's ambient environment.
 func gitPush(root, branch string) error {
-	cmd := exec.Command("git", "push", "-u", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
-	cmd.Dir = root
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git push: %v: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return nil
+	_, err := git.Run(root, "push", "-u", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
+	return err
 }
 
 // contains reports whether the slice already holds the value.

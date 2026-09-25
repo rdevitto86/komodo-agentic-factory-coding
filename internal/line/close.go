@@ -188,6 +188,10 @@ func checkResult(root, taskID string) []string {
 func runDoneWhen(cwd string, task backlog.Task) []string {
 	var problems []string
 	for _, command := range task.DoneWhen() {
+		if refused := guardRefusal(cwd, command); refused != "" {
+			problems = append(problems, fmt.Sprintf("done_when `%s` %s", command, refused))
+			continue
+		}
 		ran := proc.Shell(cwd, command, TaskTimeout(task))
 		if !ran.OK() {
 			problems = append(problems, fmt.Sprintf("done_when `%s` failed: %v\n%s",
@@ -414,7 +418,7 @@ func RepairText(root, taskID string) string {
 // fillUsage asks the installed mount what the machine spent, and leaves the fields empty when it cannot say.
 func fillUsage(root, taskID string, until time.Time, entry *ledger.Entry) {
 	since := briefTime(root, taskID)
-	for _, host := range mount.Hosts() {
+	for _, host := range mount.Active() {
 		if host.Usage == nil || host.Installed == nil || !host.Installed(root) {
 			continue
 		}

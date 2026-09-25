@@ -39,7 +39,7 @@ func runInstall(root string, args []string) {
 		name = strings.TrimSpace(name)
 		if name == "both" || name == "all" {
 			chosen = chosen[:0]
-			for _, host := range mount.Hosts() {
+			for _, host := range mount.Active() {
 				if host.Render != nil {
 					chosen = append(chosen, host)
 				}
@@ -52,6 +52,9 @@ func runInstall(root string, args []string) {
 		}
 		if found.Render == nil {
 			fail(fmt.Errorf("host %q has nothing to install; the binary itself is its mount", name))
+		}
+		if found.Deferred != "" {
+			fail(fmt.Errorf("host %q is not installable: %s", name, found.Deferred))
 		}
 		chosen = append(chosen, found)
 	}

@@ -195,3 +195,24 @@ func TestPruneSkillsRemovesOnlyStaleToolkitSkills(t *testing.T) {
 		t.Fatalf("removed = %v; want only the stale standard and facet, as project changes", removed)
 	}
 }
+
+func TestActiveLeavesOutADeferredHostButTheRegistryKeepsIt(t *testing.T) {
+	saved := Snapshot()
+	defer Restore(saved)
+	Register(Host{Name: "zz-later", Vendors: []string{"zz-vendor"}, Deferred: "not yet"})
+	for _, host := range Active() {
+		if host.Name == "zz-later" {
+			t.Fatal("a deferred host is still active")
+		}
+	}
+	if _, ok := Get("zz-later"); !ok {
+		t.Fatal("a deferred host left the registry")
+	}
+	found := false
+	for _, vendor := range Vendors() {
+		found = found || vendor == "zz-vendor"
+	}
+	if !found {
+		t.Fatal("a deferred host's vendor names are no longer checked for leaks")
+	}
+}

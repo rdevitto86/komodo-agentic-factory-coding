@@ -307,7 +307,7 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "seed")
 	writeHandoff(t, root, line.ShipHandoff{
-		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", Labels: []string{"agent"},
+		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", Labels: []string{"@agent"},
 	})
 	created := false
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
@@ -321,11 +321,15 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 		t.Fatalf("gh must not run any other command: %v", args)
 		return "", nil
 	}}
-	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil {
+	var stderr bytes.Buffer
+	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client, Stderr: &stderr}); err != nil {
 		t.Fatal(err)
 	}
 	if !created {
 		t.Fatal("gh pr create never ran")
+	}
+	if !strings.Contains(stderr.String(), "the repo has no @agent label") {
+		t.Fatalf("a handoff ship dropped the missing label silently: %q", stderr.String())
 	}
 	if _, err := os.Stat(line.HandoffPath(root, "TG-01.1")); !os.IsNotExist(err) {
 		t.Fatalf("ship.json survived a finished ship: %v", err)
@@ -346,6 +350,39 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 	out, err := exec.Command("git", "ls-remote", "--heads", bare, "feat/a-group").Output()
 	if err != nil || len(out) == 0 {
 		t.Fatalf("the branch never reached origin: %v %q", err, out)
+	}
+}
+
+func TestFinishShipRunsAfterPublishWithoutThePushCredentials(t *testing.T) {
+	t.Setenv("GH_TOKEN", "secret-token")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	root := t.TempDir()
+	runGit(t, root, "init")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "checkout", "-b", "feat/a-group")
+	runGit(t, root, "commit", "--allow-empty", "-m", "seed")
+	writeHandoff(t, root, line.ShipHandoff{
+		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", AfterPublish: "env > after.env",
+	})
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			return "https://example.invalid/pr/1", nil
+		}
+		return "[]", nil
+	}}
+	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "after.env"))
+	if err != nil {
+		t.Fatalf("after_publish never ran: %v", err)
+	}
+	env := string(data)
+	if strings.Contains(env, "secret-token") || !strings.Contains(env, "GIT_TERMINAL_PROMPT=0") {
+		t.Fatalf("after_publish, which an agent can write, ran with the push credentials:\n%s", env)
 	}
 }
 
@@ -651,5 +688,52 @@ func TestDrainReRendersTheRootWhenTheDoctorReportsDrift(t *testing.T) {
 	}
 	if string(data) != "fresh\n" {
 		t.Fatalf("rendered.md = %q; a drifted root must be re-rendered before a group launches", data)
+	}
+}
+
+func TestDrainPutsARebuiltBinaryOnThePathForTheNextGroup(t *testing.T) {
+	root := drainRepo(t)
+	toolkitCheckout(t, root, "stale-commit")
+	fakeBuild(t)
+	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
+	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
+	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if code != 0 || err != nil {
+		t.Fatalf("launch failed: code %d, err %v, out %s", code, err, out.String())
+	}
+	link := filepath.Join(root, line.StateDir, "bin", "komodo")
+	data, err := os.ReadFile(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "bin" {
+		t.Fatalf("komodo on PATH = %q, want the rebuilt binary's own bytes", data)
+	}
+}
+
+func TestDrainCallsSyncBeforeEachGroup(t *testing.T) {
+	root := drainRepo(t)
+	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
+	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
+	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if code != 0 || err != nil {
+		t.Fatalf("launch failed: code %d, err %v", code, err)
+	}
+	output := out.String()
+	if !strings.Contains(output, "root:") {
+		t.Fatalf("sync output missing root sync; output:\n%s", output)
+	}
+	if !strings.Contains(output, "TG-07.1 shipped") || !strings.Contains(output, "TG-07.2 shipped") {
+		t.Fatalf("both groups should have shipped; output:\n%s", output)
 	}
 }

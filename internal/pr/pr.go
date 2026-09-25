@@ -224,16 +224,25 @@ func (c *Client) Resolve(threadID string) error {
 	return err
 }
 
-// KeepKnown returns only the labels the repository already defines.
+// KeepKnown returns the known labels matching a wanted one by its name before the first space,
+// so '@agent' finds '@agent 🤖' and 'scope/guard' finds 'scope/guard 🛡️'.
 func KeepKnown(wanted, known []string) []string {
 	var out []string
 	for _, label := range wanted {
 		for _, candidate := range known {
-			if label == candidate {
-				out = append(out, label)
+			if labelName(candidate) == label {
+				out = append(out, candidate)
 				break
 			}
 		}
 	}
 	return out
+}
+
+// labelName is a label's name before its first space, dropping any trailing emoji.
+func labelName(label string) string {
+	if i := strings.Index(label, " "); i >= 0 {
+		return label[:i]
+	}
+	return label
 }

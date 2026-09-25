@@ -194,7 +194,7 @@ func settingsFile(root, binary string) ([]byte, error) {
 		},
 		"permissions": map[string]any{"deny": denyList(policy)},
 		// No co-author trailer, no pull request footer, no session link, in every session and subagent.
-		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": true},
+		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": false},
 	}
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
@@ -211,8 +211,13 @@ func denyList(policy policyFile) []string {
 		out = append(out, fmt.Sprintf("Bash(git push origin %s:*)", ref))
 		out = append(out, fmt.Sprintf("Bash(git push %s:*)", ref))
 	}
-	for _, path := range policy.ConfigPaths {
-		out = append(out, fmt.Sprintf("Edit(%s)", path))
+	// The hosts' own config, the hook's settings file included, is denied beside the policy's paths.
+	seen := map[string]bool{}
+	for _, path := range append(append(append([]string{}, policy.ConfigPaths...), mount.ConfigPaths()...), mount.GuardConfigPaths()...) {
+		if !seen[path] {
+			seen[path] = true
+			out = append(out, fmt.Sprintf("Edit(%s)", path))
+		}
 	}
 	return out
 }
@@ -270,7 +275,28 @@ func Headless(skill, target string) (string, []string) {
 	if target != "" {
 		prompt += " " + target
 	}
-	return "claude", []string{"-p", prompt, "--permission-mode", "bypassPermissions", "--model", modelFor("standard")}
+	args := []string{"-p", prompt, "--permission-mode", "bypassPermissions", "--model", modelFor("standard")}
+	if settings := sandboxSettings(mount.LoadOverlay()); settings != "" {
+		args = append(args, "--settings", settings)
+	}
+	return "claude", args
+}
+
+// sandboxSettings is the inline settings that sandbox every headless shell command when the overlay
+// opts in: no unsandboxed retry, and a refusal to start when the sandbox cannot.
+func sandboxSettings(overlay mount.Overlay) string {
+	if !overlay.Sandbox {
+		return ""
+	}
+	sandbox := map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false}
+	if len(overlay.SandboxWrite) > 0 {
+		sandbox["filesystem"] = map[string]any{"allowWrite": overlay.SandboxWrite}
+	}
+	if len(overlay.SandboxDomains) > 0 {
+		sandbox["network"] = map[string]any{"allowedDomains": overlay.SandboxDomains}
+	}
+	data, _ := json.Marshal(map[string]any{"sandbox": sandbox})
+	return string(data)
 }
 
 // retiredCommands are the commands no hook or allow rule in this host's user settings may run.

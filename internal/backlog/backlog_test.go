@@ -1,6 +1,8 @@
 package backlog
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -397,5 +399,51 @@ func TestNotesNeverCountDoneTasks(t *testing.T) {
 		[3]string{"TSK-30.1.6", "READY", ""})
 	if notes := Notes(parsed); len(notes) != 0 {
 		t.Fatalf("notes = %v; a chain that is all DONE is no longer serial work", notes)
+	}
+}
+
+func TestFindLooksAtTheRootThenDocs(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Find(root); err == nil {
+		t.Fatal("Find named a BACKLOG.md that does not exist")
+	}
+	docs := filepath.Join(root, "docs", "BACKLOG.md")
+	if err := os.MkdirAll(filepath.Dir(docs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(docs, []byte(sample), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := Find(root); err != nil || found != docs {
+		t.Fatalf("found = %q, err = %v; docs/BACKLOG.md is the fallback", found, err)
+	}
+	top := filepath.Join(root, "BACKLOG.md")
+	if err := os.WriteFile(top, []byte(sample), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := Find(root); err != nil || found != top {
+		t.Fatalf("found = %q, err = %v; the root's BACKLOG.md wins", found, err)
+	}
+	loaded, err := Load(top)
+	if err != nil || len(loaded.Tasks()) != 2 {
+		t.Fatalf("loaded %d task(s), err = %v", len(loaded.Tasks()), err)
+	}
+	if _, err := Load(filepath.Join(root, "missing.md")); err == nil {
+		t.Fatal("Load read a file that does not exist")
+	}
+}
+
+func TestLintContextNamesAnAnchorWithNoHeading(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "spec.md"), []byte("# Spec\n\n## Refunds\n\nText.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := "### [TG-02.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-02.1.1] Good [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"true\"]\ncontext: [spec.md#refunds]\n```\n\n" +
+		"#### [TSK-02.1.2] Bad [P: C] [READY]\n```yaml\nfiles: [b.go]\ndone_when: [\"true\"]\ncontext: [spec.md#returns]\n```\n\n" +
+		"#### [TSK-02.1.3] Shipped [P: C] [DONE]\n```yaml\nfiles: [c.go]\ndone_when: [\"true\"]\ncontext: [spec.md#returns]\n```\n"
+	problems := LintContext(root, Parse(text))
+	if len(problems) != 1 || !strings.Contains(problems[0], "TSK-02.1.2") || !strings.Contains(problems[0], "spec.md#returns") {
+		t.Fatalf("problems = %v; only the open task's missing anchor is a problem", problems)
 	}
 }

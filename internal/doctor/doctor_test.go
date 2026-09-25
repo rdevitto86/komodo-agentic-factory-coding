@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -616,6 +617,28 @@ func TestCheckRulesetsFlagsARuleThatReachesEveryBranch(t *testing.T) {
 	}
 	if problems := CheckRulesets(t.TempDir(), "main", scoped); len(problems) != 0 {
 		t.Fatalf("a rule scoped to the default branch was flagged: %+v", problems)
+	}
+}
+
+func TestCheckRulesetsFlagsADefaultBranchNothingProtects(t *testing.T) {
+	unprotected := func(_ string, args ...string) (string, error) {
+		if args[1] == "repos/{owner}/{repo}/rulesets" {
+			return `[]`, nil
+		}
+		return "", errors.New("HTTP 404: Branch not protected")
+	}
+	problems := CheckRulesets(t.TempDir(), "main", unprotected)
+	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "no active ruleset or branch protection") {
+		t.Fatalf("problems = %+v", problems)
+	}
+	classic := func(_ string, args ...string) (string, error) {
+		if args[1] == "repos/{owner}/{repo}/rulesets" {
+			return `[]`, nil
+		}
+		return `{"url":"x"}`, nil
+	}
+	if problems := CheckRulesets(t.TempDir(), "main", classic); len(problems) != 0 {
+		t.Fatalf("a branch under classic protection was flagged: %+v", problems)
 	}
 }
 

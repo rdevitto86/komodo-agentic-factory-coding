@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"strings"
 
+	"komodo/internal/git"
 	"komodo/internal/mount"
 )
 
@@ -16,13 +15,7 @@ const ExitDeny = 2
 
 // CurrentBranch is the branch a directory is on, or the empty string.
 func CurrentBranch(dir string) string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return git.Or(dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
 // Hook reads one payload, writes the denial the matching host reads, and returns the exit code.

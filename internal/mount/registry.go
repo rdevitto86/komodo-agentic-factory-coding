@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -12,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"komodo/internal/git"
 	"komodo/internal/install"
 )
 
@@ -32,6 +32,8 @@ type Host struct {
 	Leftovers func() []string
 	// ReviewerWhy says where review lands and why, when the overlay opts the reviewer onto the local machine.
 	ReviewerWhy func(plan string) string
+	// Deferred, when set, says why the mount is kept but unusable: nothing installs, selects, or renders it.
+	Deferred string
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.
@@ -63,6 +65,17 @@ func Hosts() []Host {
 		out = append(out, host)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// Active returns every registered mount that is not deferred, sorted by name.
+func Active() []Host {
+	var out []Host
+	for _, host := range Hosts() {
+		if host.Deferred == "" {
+			out = append(out, host)
+		}
+	}
 	return out
 }
 
@@ -187,11 +200,11 @@ func goRunBuild(path string) bool {
 
 // MainCheckout is the checkout that owns root's git directory, so a worktree resolves to the repo it came from.
 func MainCheckout(root string) string {
-	out, err := exec.Command("git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	out, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return root
 	}
-	return filepath.Dir(strings.TrimSpace(string(out)))
+	return filepath.Dir(out)
 }
 
 // Machine is one model behind a tier: who serves it, which model, and at what effort.
@@ -379,6 +392,12 @@ type Overlay struct {
 	LocalReviewerRecall float64           `json:"local_reviewer_recall"`
 	Models              map[string]string `json:"models"`
 	LightBuilder        *bool             `json:"light_builder"`
+	// Sandbox runs every headless shell command in the host's OS sandbox, confined to the worktree and temp.
+	Sandbox bool `json:"sandbox"`
+	// SandboxWrite adds paths a sandboxed command may write, such as a build cache outside the worktree.
+	SandboxWrite []string `json:"sandbox_write"`
+	// SandboxDomains pre-allows network hosts, since a headless run cannot answer the sandbox's prompt.
+	SandboxDomains []string `json:"sandbox_domains"`
 }
 
 // LightBuilder reports whether a small task's first build may run on the light tier; unset means true.

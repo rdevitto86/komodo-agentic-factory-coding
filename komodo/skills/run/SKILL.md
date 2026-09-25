@@ -21,7 +21,7 @@ You drive one group through the line. The station order lives in the binary. You
 
 ## The binary
 
-In a headless run `komodo` is on PATH. In a session it is the absolute path the guard hook in the host's project settings names. In the toolkit repo `go run ./cmd/komodo` is the same binary.
+`komodo` on PATH wins whenever it is present, headless or in a session. In a session when nothing is on PATH, `komodo` is the absolute path the guard hook in the host's project settings names. In the toolkit repo when nothing is on PATH, `go run ./cmd/komodo` is the fallback.
 
 ## Rules
 
@@ -32,4 +32,5 @@ In a headless run `komodo` is on PATH. In a session it is the absolute path the 
 - **Never pass an isolation option to a spawn.** The line already cut `worktree`; a second one strands the agent's diff.
 - **A spawned agent returns the JSON its schema names.** Save it where the brief says, then loop. Never finish its work yourself.
 - **Ad hoc work enters at any station.** `komodo brief <task>` on its own is legal, and so is a review with no group.
+- **After a pull request merges, or when `komodo doctor` reports drift, run `komodo sync` yourself.** Never hand the human `gate --install`, `install --host`, or a pull.
 - **Report in the accessibility contract** when the loop ends.

@@ -51,6 +51,17 @@ func TestTaggableSkipsWhatIsTagged(t *testing.T) {
 	}
 }
 
+func TestUnreleasedSkipsHistoryOlderThanTheNewestTag(t *testing.T) {
+	text := "# Changelog\n\n## 3.0.0-beta.1 — 2026-09-24\n\n- beta\n\n## 2.0.0 — 2026-09-21\n\n- the line\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
+	got := Unreleased(text, []string{"v2.0.0", "prototype-final"})
+	if len(got) != 1 || got[0] != "3.0.0-beta.1" {
+		t.Fatalf("unreleased = %v; 1.3.0 is untagged history older than v2.0.0", got)
+	}
+	if got := Unreleased(text, nil); len(got) != 3 {
+		t.Fatalf("unreleased = %v; with no tags every version is unreleased", got)
+	}
+}
+
 func TestTaggableOrdersOldestFirst(t *testing.T) {
 	got := Taggable(changelog, nil)
 	if len(got) != 2 || got[0] != "1.3.0" {

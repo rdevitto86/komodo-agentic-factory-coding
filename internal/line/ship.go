@@ -1,11 +1,9 @@
 package line
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -30,21 +28,21 @@ type ShipResult struct {
 	Done      []string       `json:"done,omitempty"`
 	Blocked   []string       `json:"blocked,omitempty"`
 	Filed     []string       `json:"filed,omitempty"`
+	Warnings  []string       `json:"warnings,omitempty"`
 	Published *CommandResult `json:"published,omitempty"`
 }
 
 // ShipHandoff is what a scrubbed ship leaves for a credentialed process to push and open.
 type ShipHandoff struct {
-	Group        string    `json:"group"`
-	Worktree     string    `json:"worktree"`
-	Branch       string    `json:"branch"`
-	Base         string    `json:"base"`
-	Title        string    `json:"title"`
-	Body         string    `json:"body"`
-	Labels       []string  `json:"labels,omitempty"`
-	Draft        bool      `json:"draft"`
-	Minor        []Finding `json:"minor,omitempty"`
-	AfterPublish string    `json:"after_publish,omitempty"`
+	Group        string   `json:"group"`
+	Worktree     string   `json:"worktree"`
+	Branch       string   `json:"branch"`
+	Base         string   `json:"base"`
+	Title        string   `json:"title"`
+	Body         string   `json:"body"`
+	Labels       []string `json:"labels,omitempty"`
+	Draft        bool     `json:"draft"`
+	AfterPublish string   `json:"after_publish,omitempty"`
 }
 
 // scrubbed reports whether the headless launcher stripped this process of every push credential.
@@ -90,6 +88,14 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	rootParsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
+	}
+	groupParsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if refined := refinedTasks(rootParsed, groupParsed, plan.Tasks); len(refined) > 0 {
+		return nil, fmt.Errorf("the root's BACKLOG.md differs from this group's at %s; rebase or edit before ship",
+			strings.Join(refined, ", "))
 	}
 	live := LoadStatus(root)
 	blocking, minor := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
@@ -155,6 +161,16 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := stageWork(group, declared); err != nil {
 		return nil, err
 	}
+	// File findings into BACKLOG.md before push so they are in the ship commit.
+	filed, err := FileFindings(group, plan.Group, minor)
+	if err != nil {
+		return result, err
+	}
+	result.Filed = filed
+	// Stage BACKLOG.md with findings for commit.
+	if err := stageWork(group, []string{"BACKLOG.md"}); err != nil {
+		return nil, err
+	}
 	if staged, _ := git.Run(group, "diff", "--cached", "--name-only"); staged != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
 		if _, err := git.Run(group, "commit", "-m", message); err != nil {
@@ -177,12 +193,13 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	}
 	context.BlastRadius, context.BlastRadiusWhy = reviewBlast(root, plan.Group)
 	body := ReportBody(plan, result, waves, context)
+	wanted := []string{"@agent", scopeLabel(declared)}
 	if scrubbed() {
 		outcome = "handoff"
 		handoff := ShipHandoff{
 			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
-			Labels: []string{plan.Type, "agent"}, Draft: result.Draft,
-			Minor: minor, AfterPublish: AfterPublishCommand(root, group),
+			Labels: wanted, Draft: result.Draft,
+			AfterPublish: AfterPublishCommand(root, group),
 		}
 		if err := writeShipHandoff(root, handoff); err != nil {
 			return nil, err
@@ -192,11 +209,6 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := pushFromWorktree(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
-	filed, err := FileFindings(group, plan.Group, minor)
-	if err != nil {
-		return result, err
-	}
-	result.Filed = filed
 	if command := AfterPublishCommand(root, group); command != "" {
 		published := RunCommand(group, command)
 		result.Published = &published
@@ -212,11 +224,65 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return result, err
 	}
 	result.URL = url
-	if known, err := client.Labels(); err == nil {
-		result.Labels = pr.KeepKnown([]string{plan.Type, "agent"}, known)
-		_ = client.Label(url, result.Labels)
-	}
+	result.Labels, result.Warnings = ApplyLabels(client, url, wanted)
 	return result, nil
+}
+
+// ApplyLabels adds the repo labels matching wanted to the pull request, warning on each miss or failure.
+func ApplyLabels(client *pr.Client, url string, wanted []string) (kept, warnings []string) {
+	known, err := client.Labels()
+	if err != nil {
+		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
+	}
+	kept = pr.KeepKnown(wanted, known)
+	for _, label := range wanted {
+		if !hasWanted(kept, label) {
+			warnings = append(warnings, fmt.Sprintf("the repo has no %s label", label))
+		}
+	}
+	if err := client.Label(url, kept); err != nil {
+		warnings = append(warnings, fmt.Sprintf("could not add label(s): %v", err))
+	}
+	return kept, warnings
+}
+
+// scopeLabel is the one scope label a group's task files earn, its rules checked in order.
+func scopeLabel(files []string) string {
+	for _, f := range files {
+		if strings.HasPrefix(f, "internal/guard/") {
+			return "scope/guard"
+		}
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f, "internal/mount/") {
+			return "scope/mount"
+		}
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f, "komodo/skills/") || strings.HasPrefix(f, "komodo/roles/") {
+			return "scope/skills"
+		}
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f, "internal/profile/") {
+			base := strings.ToLower(filepath.Base(f))
+			if strings.Contains(base, "tier") || strings.Contains(base, "machine") {
+				return "scope/agents"
+			}
+		}
+	}
+	return "scope/harness"
+}
+
+// hasWanted reports whether kept already carries the label wanted asked for, by its name before any space.
+func hasWanted(kept []string, wanted string) bool {
+	for _, label := range kept {
+		name, _, _ := strings.Cut(label, " ")
+		if name == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 // liveBase is base while origin still has it, or the default branch once base is deleted.
@@ -319,12 +385,8 @@ func pushFromWorktree(root, worktree, branch string) error {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
 	}
 	ref := "refs/heads/" + branch
-	cmd := exec.Command("git", "push", pushURL, ref+":"+ref)
-	cmd.Dir = worktree
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git push to origin %s: %v: %s", branch, err, redactURL(strings.TrimSpace(stderr.String()), pushURL))
+	if _, err := git.Run(worktree, "push", pushURL, ref+":"+ref); err != nil {
+		return fmt.Errorf("git push to origin %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
 	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
 	if _, err := git.Run(worktree, "fetch", "origin", branch); err == nil {
@@ -342,4 +404,39 @@ func redactURL(text, url string) string {
 		text = strings.ReplaceAll(text, url, "origin")
 	}
 	return credentialRe.ReplaceAllString(text, "://***@")
+}
+
+// refinedTasks returns task IDs whose body differs between root and group backlogs.
+// It compares files, done_when, and context fields for each task in the plan.
+func refinedTasks(root, group backlog.Backlog, planTasks []PlanTask) []string {
+	var refined []string
+	for _, pt := range planTasks {
+		rootTask, ok := root.Task(pt.ID)
+		if !ok {
+			continue
+		}
+		groupTask, ok := group.Task(pt.ID)
+		if !ok {
+			continue
+		}
+		if !slicesEqual(rootTask.Files(), groupTask.Files()) ||
+			!slicesEqual(rootTask.DoneWhen(), groupTask.DoneWhen()) ||
+			!slicesEqual(rootTask.Context(), groupTask.Context()) {
+			refined = append(refined, pt.ID)
+		}
+	}
+	return refined
+}
+
+// slicesEqual reports whether two string slices are equal in order.
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }

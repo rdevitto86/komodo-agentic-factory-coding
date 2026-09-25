@@ -209,6 +209,57 @@ func TestSettingsRegisterTheGuardOnceAndNoMCP(t *testing.T) {
 	}
 }
 
+func TestSettingsDenyEditsToTheHostsOwnConfig(t *testing.T) {
+	root := toolkitRepo(t)
+	raw := body(t, root, filepath.Join(Dir, "settings.json"))
+	for _, want := range []string{"Edit(~/.claude/**)", "Edit(~/.claude.json)", "Edit(.claude/settings.json)"} {
+		if !strings.Contains(raw, `"`+want+`"`) {
+			t.Fatalf("settings deny no %s, so the hook's own config is left to the guard alone:\n%s", want, raw)
+		}
+	}
+}
+
+func TestHeadlessSandboxesOnlyWhenTheOverlayOptsIn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	_, args := Headless("run", "TG-01.1")
+	if strings.Contains(strings.Join(args, " "), "--settings") {
+		t.Fatalf("args = %v; with no overlay the run is not sandboxed", args)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := `{"sandbox":true,"sandbox_write":["~/go/pkg/mod"],"sandbox_domains":["proxy.golang.org"]}`
+	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, args = Headless("run", "TG-01.1")
+	if len(args) < 2 || args[len(args)-2] != "--settings" {
+		t.Fatalf("args = %v; an opted-in run passes the sandbox as inline settings", args)
+	}
+	var settings struct {
+		Sandbox struct {
+			Enabled                  bool  `json:"enabled"`
+			FailIfUnavailable        bool  `json:"failIfUnavailable"`
+			AllowUnsandboxedCommands *bool `json:"allowUnsandboxedCommands"`
+			Filesystem               struct {
+				AllowWrite []string `json:"allowWrite"`
+			} `json:"filesystem"`
+			Network struct {
+				AllowedDomains []string `json:"allowedDomains"`
+			} `json:"network"`
+		} `json:"sandbox"`
+	}
+	if err := json.Unmarshal([]byte(args[len(args)-1]), &settings); err != nil {
+		t.Fatal(err)
+	}
+	s := settings.Sandbox
+	if !s.Enabled || !s.FailIfUnavailable || s.AllowUnsandboxedCommands == nil || *s.AllowUnsandboxedCommands ||
+		len(s.Filesystem.AllowWrite) != 1 || len(s.Network.AllowedDomains) != 1 {
+		t.Fatalf("sandbox = %s", args[len(args)-1])
+	}
+}
+
 func TestTheHookCommandIsAnAbsolutePath(t *testing.T) {
 	root := toolkitRepo(t)
 	raw := body(t, root, filepath.Join(Dir, "settings.json"))
@@ -846,14 +897,14 @@ func TestSettingsTurnAttributionOff(t *testing.T) {
 		Attribution struct {
 			Commit     *string `json:"commit"`
 			PR         *string `json:"pr"`
-			SessionURL bool    `json:"sessionUrl"`
+			SessionURL *bool   `json:"sessionUrl"`
 		} `json:"attribution"`
 	}
 	if err := json.Unmarshal(raw, &settings); err != nil {
 		t.Fatal(err)
 	}
 	a := settings.Attribution
-	if a.Commit == nil || *a.Commit != "" || a.PR == nil || *a.PR != "" || !a.SessionURL {
-		t.Fatalf("attribution = %s; commit and pr must be empty and sessionUrl true", raw)
+	if a.Commit == nil || *a.Commit != "" || a.PR == nil || *a.PR != "" || a.SessionURL == nil || *a.SessionURL {
+		t.Fatalf("attribution = %s; commit and pr must be empty and sessionUrl false, since true appends the session link", raw)
 	}
 }

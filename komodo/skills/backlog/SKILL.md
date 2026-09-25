@@ -7,9 +7,9 @@ description: Write and repair BACKLOG.md in the grammar the line parses. Add tas
 
 `BACKLOG.md` is the only queue. You write it in the grammar and prove it parses before you stop.
 
-## The grammar
+Never invent a field; the grammar below is everything the line parses.
 
-`komodo/rules/backlog.md` is the grammar the line parses. Read it before writing a task; never invent a field.
+{{rules/backlog}}
 
 ## The commands
 
