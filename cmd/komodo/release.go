@@ -106,10 +106,26 @@ func runRelease(root string, args []string) {
 	for _, item := range drift {
 		fmt.Printf("%s: %s\n", item.Subject, item.Detail)
 	}
+	pending, err := untaggedVersions(root)
+	if err != nil {
+		fail(err)
+	}
+	for _, version := range pending {
+		fmt.Printf("%s: not released, no tag on origin; the human cuts it with komodo tag on the default branch\n", version)
+	}
 	fmt.Printf("%d drift(s)\n", len(drift))
 	if len(drift) > 0 {
 		exit(1)
 	}
+}
+
+// untaggedVersions lists the changelog versions origin holds no tag for, which are not yet released.
+func untaggedVersions(root string) ([]string, error) {
+	text, err := release.ReadChangelog(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		return nil, err
+	}
+	return release.Taggable(text, remoteTags(root)), nil
 }
 
 // checkRelease audits the changelog against the tags and every shipped group's version.

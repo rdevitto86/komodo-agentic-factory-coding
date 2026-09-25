@@ -225,6 +225,19 @@ func tagRepo(t *testing.T, branch, changelog string) (root, bare string) {
 	return root, bare
 }
 
+func TestUntaggedVersionsNamesAChangelogVersionOriginHasNoTagFor(t *testing.T) {
+	root, _ := tagRepo(t, "main", releaseChangelog)
+	pending, err := untaggedVersions(root)
+	if err != nil || len(pending) != 1 || pending[0] != "2.0.0" {
+		t.Fatalf("pending = %v, err = %v; 2.0.0 has no tag on origin", pending, err)
+	}
+	runGit(t, root, "tag", "-a", "v2.0.0", "-m", "release 2.0.0")
+	runGit(t, root, "push", "-q", "origin", "v2.0.0")
+	if pending, err := untaggedVersions(root); err != nil || len(pending) != 0 {
+		t.Fatalf("pending = %v, err = %v; origin holds v2.0.0", pending, err)
+	}
+}
+
 func TestTagRefusesToTagOffANonDefaultBranch(t *testing.T) {
 	root, bare := tagRepo(t, "feat/other", releaseChangelog)
 	var out bytes.Buffer

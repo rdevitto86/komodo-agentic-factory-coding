@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README is the reference and the requirements. This line is 1.0.0, released with its proofs recorded in the changelog; the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `BACKLOG.md`.
+This README is the reference and the requirements. This line is 1.0.0, with its proofs recorded in the changelog; it is released once the human cuts the `v1.0.0` tag, and the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -36,7 +36,7 @@ flowchart LR
 
 | Station | Command | Does |
 |---|---|---|
-| Intake | `komodo next` | Prints the next READY group, or one task, as JSON: waves by file, dependencies, resolved machines. Creates the group branch in its own worktree from the remote base, so your working tree never blocks a run. Tags any untagged changelog version. Skips tasks with a valid result on disk, which is resume. |
+| Intake | `komodo next` | Prints the next READY group, or one task, as JSON: waves by file, dependencies, resolved machines. Creates the group branch in its own worktree from the remote base, so your working tree never blocks a run. Skips tasks with a valid result on disk, which is resume. |
 | Brief | `komodo brief <task>` | Fills the role template from the slots, writes the brief and the worktree, prints their paths, stamps the ledger. A repair reads the task's own worktree. Refuses a task whose files overlap a closed, unmerged task branch. `--dry-run` prints slot sizes and a token estimate. |
 | Build | the run skill spawns the builder | Reads the brief path, owns the worktree, writes its result JSON. |
 | Close | `komodo close <task>` | Validates the result, reruns `done_when` under the task's `timeout` (default 10 minutes, the process group killed past it), lints comments, flips the status. A failure writes the failure slot for one repair; a second failure marks BLOCKED with the note and the wave continues. |
@@ -125,7 +125,7 @@ Denied, and nothing else:
 
 One rule sits beside the four and applies to every branch: pushed history is never rewritten, so a force push, `--force-with-lease`, or a `+refspec` is refused wherever it points.
 
-Inside the worktree an agent has unlimited freedom: delete files, reset, checkout, rebase, delete its own branches. Pushed history is the one exception: a force push, `--force-with-lease`, or a `+refspec` is refused on every branch, since a human may have pulled it. The rules file says the same. The guard fails open on an internal error and `komodo guard check` runs a table of over 240 commands in the gate, so a broken guard fails the build and never a run. The forge's ruleset on `main`, which `komodo doctor --remote` audits, and the launcher's credential scrub are the boundaries the guard cannot be; between them and `main` the guard is the last check. Merge is your button.
+Inside the worktree an agent has unlimited freedom: delete files, reset, checkout, rebase, delete its own branches. Pushed history is the one exception: a force push, `--force-with-lease`, or a `+refspec` is refused on every branch, since a human may have pulled it. The rules file says the same. The guard fails open on an internal error and `komodo guard check` runs a table of over 490 commands in the gate, so a broken guard fails the build and never a run. The forge's ruleset on `main`, which `komodo doctor --remote` audits, and the launcher's credential scrub are the boundaries the guard cannot be; between them and `main` the guard is the last check. Merge is your button.
 
 ## The binary
 
@@ -148,7 +148,7 @@ A repo may commit `.komodo/`. Nothing in it is required, a malformed file is ski
 - **`context/*.md`** with a `paths:` glob list: injected into any task whose files match.
 - **`standards/<name>.md`**: appends to a shipped standard of that name, or adds a new one.
 - **`skills/<name>/SKILL.md`**: a new skill, or a "Repo overrides" section appended to a shipped one. The project render writes these into the host's project directory as gitignored copies.
-- **`commands.json`**: verify, compile, before-review, after-publish, each a shell command the line runs at that station. Verify otherwise resolves by discovery: a Makefile target, a verify script, a package script, `go vet`.
+- **`commands.json`**: verify, compile, before-review, after-publish, each a shell command the line runs at that station, judged by the guard first, since a model may have written it. Verify otherwise resolves by discovery: a Makefile target, a verify script, a package script, `go vet`.
 - **`policy.json`**: adds critical refs. **`facets`**: names a facet detection missed. Precedence is defaults, then detection, then the machine overlay, then the repo, then the task, and each layer can only add.
 
 ## Detection and facets
@@ -202,7 +202,7 @@ Six groups, all `1.0.0`, all on PR #103. Sessions build the first four; the run 
 
 1.0 was built through PR #103 and six stacked group PRs, now merged. Each group ships as one PR from its own `<type>/<slug>` branch, cut from the group's base. `close --group` opens it with the report as the body. Merging is the human's button; nothing runs on GitHub.
 
-The repository ruleset must cover `main` only, which `komodo doctor --remote` audits.
+The repository ruleset must cover `main` only, which `komodo doctor --remote` audits; it also fails when no ruleset or branch protection covers `main` at all.
 
 ## Versions
 
