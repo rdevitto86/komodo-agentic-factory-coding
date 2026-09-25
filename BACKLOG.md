@@ -2311,7 +2311,7 @@ base: docs/queue-three-line-bugs
 ```
 * **Why:** after every merge a person had to pull main, run komodo gate --install, and run komodo install --host; the guard rightly refuses an agent those writes, so the binary does them itself.
 
-#### [TSK-03.32.1] komodo sync brings the root up to origin and rebuilds what drifted [P: C] [READY]
+#### [TSK-03.32.1] komodo sync brings the root up to origin and rebuilds what drifted [P: C] [DONE]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go, cmd/komodo/main.go, cmd/komodo/line.go]
 done_when:
@@ -2328,7 +2328,7 @@ type: feat
 tier: heavy
 ```
 
-#### [TSK-03.32.2] komodo run syncs before every group [P: H] [READY]
+#### [TSK-03.32.2] komodo run syncs before every group [P: H] [DONE]
 ```yaml
 files: [internal/run/run.go, internal/run/run_test.go]
 done_when:
@@ -2342,7 +2342,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.32.3] Agents run komodo sync instead of asking the human [P: M] [READY]
+#### [TSK-03.32.3] Agents run komodo sync instead of asking the human [P: M] [DONE]
 ```yaml
 files: [komodo/skills/run/SKILL.md, komodo/AGENTS.md, README.md]
 done_when:
@@ -2353,4 +2353,50 @@ context:
   - "after a pull request merges, or when the doctor reports drift, an agent runs komodo sync itself; it never hands the human gate --install, install --host, or a pull"
   - "README's Usage names the merge button as the only human step and komodo sync as what follows it automatically"
 type: docs
+```
+
+#### [TSK-03.32.4] internal/run/sync.go:628 A build from a dirty tree is never marked as built from HEAD [P: M] [REFINEMENT]
+```yaml
+files: [internal/run/sync.go, internal/run/sync_test.go]
+done_when:
+  - go test ./internal/run/...
+type: fix
+context:
+  - "syncBinary compiles the working tree, edits included, then writes HEAD to bin/.built-from; skip the marker when git status --porcelain reports tracked changes"
+  - "also write the marker only after installHooks succeeds, so a failed hook rewrite is retried on the next sync"
+```
+
+#### [TSK-03.32.5] internal/run/run.go:380 A sync failure stops the drain naming its step [P: M] [REFINEMENT]
+```yaml
+files: [internal/run/sync.go, internal/run/run.go, internal/run/run_test.go]
+done_when:
+  - go test ./internal/run/...
+type: fix
+context:
+  - "wrap each Sync step's error with its name (root, binary, config) and have drain print a 'sync stopped: ...' line before returning"
+  - "tests: a drain whose buildLocal fails returns 1 and launches no group; the sync-before-each-group test counts one 'root:' line per group plus the final check; drop the call-site comment restating Sync's doc"
+```
+
+#### [TSK-03.32.6] komodo/AGENTS.md tells agents to run komodo sync [P: M] [REFINEMENT]
+```yaml
+files: [komodo/AGENTS.md]
+done_when:
+  - grep -q 'komodo sync' komodo/AGENTS.md
+type: docs
+context:
+  - "TSK-03.32.3 put the rule in the run skill and README; the builder's edit to komodo/AGENTS.md was refused twice by the host's permission check, so a person makes or approves this one"
+```
+
+#### [TSK-03.32.7] Ship can land onto an existing branch without opening a pull request [P: M] [REFINEMENT]
+```yaml
+context:
+  - "TG-03.31 and TG-03.32 shipped onto #201 by hand because close --group always opens a pull request and the guard refuses the scrubbed handoff env in a session; a --no-pr or into-branch ship keeps the ledger, labels, findings, and changelog on the line"
+type: feat
+```
+
+#### [TSK-03.32.8] Prune settles a run whose group was squash-merged and its branch deleted [P: M] [REFINEMENT]
+```yaml
+context:
+  - "after #200 squash-merged, doctor --prune left .komodo/runs/TG-03.31 and its worktrees, and the next next --start reused the stale worktree; it was cleared by hand"
+type: fix
 ```
