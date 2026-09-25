@@ -44,17 +44,23 @@ func overrideCommands(root, worktree string) repopkg.Commands {
 	if own.Compile == "" {
 		own.Compile = shared.Compile
 	}
+	if own.BeforeReview == "" {
+		own.BeforeReview = shared.BeforeReview
+	}
+	if own.AfterPublish == "" {
+		own.AfterPublish = shared.AfterPublish
+	}
 	return own
 }
 
 // BeforeReviewCommand is the repo's own command to run before the reviewer is spawned.
-func BeforeReviewCommand(root string) string {
-	return repopkg.LoadCommands(root).BeforeReview
+func BeforeReviewCommand(root, worktree string) string {
+	return overrideCommands(root, worktree).BeforeReview
 }
 
 // AfterPublishCommand is the repo's own command to run once a group has shipped.
-func AfterPublishCommand(root string) string {
-	return repopkg.LoadCommands(root).AfterPublish
+func AfterPublishCommand(root, worktree string) string {
+	return overrideCommands(root, worktree).AfterPublish
 }
 
 // CompileCommands are QC's cheap whole-tree checks: a commands file override, else the worktree's manifests, else the root's profile.
