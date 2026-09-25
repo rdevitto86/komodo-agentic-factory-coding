@@ -353,6 +353,39 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 	}
 }
 
+func TestFinishShipRunsAfterPublishWithoutThePushCredentials(t *testing.T) {
+	t.Setenv("GH_TOKEN", "secret-token")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	root := t.TempDir()
+	runGit(t, root, "init")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "checkout", "-b", "feat/a-group")
+	runGit(t, root, "commit", "--allow-empty", "-m", "seed")
+	writeHandoff(t, root, line.ShipHandoff{
+		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", AfterPublish: "env > after.env",
+	})
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			return "https://example.invalid/pr/1", nil
+		}
+		return "[]", nil
+	}}
+	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "after.env"))
+	if err != nil {
+		t.Fatalf("after_publish never ran: %v", err)
+	}
+	env := string(data)
+	if strings.Contains(env, "secret-token") || !strings.Contains(env, "GIT_TERMINAL_PROMPT=0") {
+		t.Fatalf("after_publish, which an agent can write, ran with the push credentials:\n%s", env)
+	}
+}
+
 func TestFinishShipRefusesARefspecOrCriticalBranchAnAgentWrote(t *testing.T) {
 	for _, branch := range []string{"+HEAD:main", "--mirror", "main", "feat/x:main", "feat/x..y"} {
 		bare := filepath.Join(t.TempDir(), "origin.git")

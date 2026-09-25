@@ -40,11 +40,21 @@ func (r Result) Err() error {
 
 // Shell runs one sh -c command in dir under timeout, killing its whole process group when the clock runs out.
 func Shell(dir, command string, timeout time.Duration) Result {
-	return Exec(dir, timeout, "sh", "-c", command)
+	return ShellEnv(dir, command, timeout, nil)
+}
+
+// ShellEnv is Shell in the given environment, or in this process's own when env is nil.
+func ShellEnv(dir, command string, timeout time.Duration, env []string) Result {
+	return run(dir, timeout, env, "sh", "-c", command)
 }
 
 // Exec runs one program in dir under timeout, killing its whole process group when the clock runs out.
 func Exec(dir string, timeout time.Duration, name string, args ...string) Result {
+	return run(dir, timeout, nil, name, args...)
+}
+
+// run is Exec in the given environment, or in this process's own when env is nil.
+func run(dir string, timeout time.Duration, env []string, name string, args ...string) Result {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
@@ -52,6 +62,7 @@ func Exec(dir string, timeout time.Duration, name string, args ...string) Result
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = env
 	Group(cmd)
 	cmd.Cancel = func() error {
 		KillGroup(cmd)

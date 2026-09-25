@@ -444,8 +444,9 @@ func finishShip(options Options) (string, error) {
 	if worktree == "" {
 		worktree = options.Root
 	}
+	// An agent can write after_publish into ship.json, so it runs scrubbed, never with the push credentials.
 	if handoff.AfterPublish != "" {
-		if published := line.RunCommand(worktree, handoff.AfterPublish); !published.OK() {
+		if published := line.RunCommandEnv(worktree, handoff.AfterPublish, Scrub(os.Environ())); !published.OK() {
 			return url, fmt.Errorf("after_publish: %s", line.FailureText(published))
 		}
 	}
