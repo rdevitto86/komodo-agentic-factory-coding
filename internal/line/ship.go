@@ -226,21 +226,26 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return result, err
 	}
 	result.URL = url
+	result.Labels, result.Warnings = ApplyLabels(client, url, wanted)
+	return result, nil
+}
+
+// ApplyLabels adds the repo labels matching wanted to the pull request, warning on each miss or failure.
+func ApplyLabels(client *pr.Client, url string, wanted []string) (kept, warnings []string) {
 	known, err := client.Labels()
 	if err != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("could not list labels: %v", err))
-		return result, nil
+		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
 	}
-	result.Labels = pr.KeepKnown(wanted, known)
+	kept = pr.KeepKnown(wanted, known)
 	for _, label := range wanted {
-		if !hasWanted(result.Labels, label) {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("the repo has no %s label", label))
+		if !hasWanted(kept, label) {
+			warnings = append(warnings, fmt.Sprintf("the repo has no %s label", label))
 		}
 	}
-	if err := client.Label(url, result.Labels); err != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("could not add label(s): %v", err))
+	if err := client.Label(url, kept); err != nil {
+		warnings = append(warnings, fmt.Sprintf("could not add label(s): %v", err))
 	}
-	return result, nil
+	return kept, warnings
 }
 
 // scopeLabel is the one scope label a group's task files earn, its rules checked in order.

@@ -307,7 +307,7 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "seed")
 	writeHandoff(t, root, line.ShipHandoff{
-		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", Labels: []string{"agent"},
+		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", Labels: []string{"@agent"},
 	})
 	created := false
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
@@ -321,11 +321,15 @@ func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *tes
 		t.Fatalf("gh must not run any other command: %v", args)
 		return "", nil
 	}}
-	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil {
+	var stderr bytes.Buffer
+	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client, Stderr: &stderr}); err != nil {
 		t.Fatal(err)
 	}
 	if !created {
 		t.Fatal("gh pr create never ran")
+	}
+	if !strings.Contains(stderr.String(), "the repo has no @agent label") {
+		t.Fatalf("a handoff ship dropped the missing label silently: %q", stderr.String())
 	}
 	if _, err := os.Stat(line.HandoffPath(root, "TG-01.1")); !os.IsNotExist(err) {
 		t.Fatalf("ship.json survived a finished ship: %v", err)

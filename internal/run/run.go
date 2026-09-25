@@ -435,8 +435,11 @@ func finishShip(options Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if known, err := client.Labels(); err == nil {
-		_ = client.Label(url, pr.KeepKnown(handoff.Labels, known))
+	_, warnings := line.ApplyLabels(client, url, handoff.Labels)
+	if options.Stderr != nil {
+		for _, warning := range warnings {
+			fmt.Fprintf(options.Stderr, "ship: %s\n", warning)
+		}
 	}
 	worktree := handoff.Worktree
 	if worktree == "" {

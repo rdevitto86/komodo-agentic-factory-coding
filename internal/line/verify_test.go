@@ -36,13 +36,13 @@ func TestBeforeReviewAndAfterPublishCommandsAreEmptyByDefault(t *testing.T) {
 
 func TestBeforeReviewAndAfterPublishCommandsFallbackAndWorktreeWins(t *testing.T) {
 	tests := []struct {
-		name                      string
-		createWorktreeCommands    bool
-		expectedBeforeReview      string
-		expectedAfterPublish      string
+		name                   string
+		createWorktreeCommands bool
+		expectedBeforeReview   string
+		expectedAfterPublish   string
 	}{
 		{
-			name:                 "fallback from root",
+			name:                   "fallback from root",
 			createWorktreeCommands: false,
 			expectedBeforeReview:   "make lint",
 			expectedAfterPublish:   "make notify",
