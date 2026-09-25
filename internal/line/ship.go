@@ -36,16 +36,15 @@ type ShipResult struct {
 
 // ShipHandoff is what a scrubbed ship leaves for a credentialed process to push and open.
 type ShipHandoff struct {
-	Group        string    `json:"group"`
-	Worktree     string    `json:"worktree"`
-	Branch       string    `json:"branch"`
-	Base         string    `json:"base"`
-	Title        string    `json:"title"`
-	Body         string    `json:"body"`
-	Labels       []string  `json:"labels,omitempty"`
-	Draft        bool      `json:"draft"`
-	Minor        []Finding `json:"minor,omitempty"`
-	AfterPublish string    `json:"after_publish,omitempty"`
+	Group        string   `json:"group"`
+	Worktree     string   `json:"worktree"`
+	Branch       string   `json:"branch"`
+	Base         string   `json:"base"`
+	Title        string   `json:"title"`
+	Body         string   `json:"body"`
+	Labels       []string `json:"labels,omitempty"`
+	Draft        bool     `json:"draft"`
+	AfterPublish string   `json:"after_publish,omitempty"`
 }
 
 // scrubbed reports whether the headless launcher stripped this process of every push credential.
@@ -202,7 +201,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		handoff := ShipHandoff{
 			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
 			Labels: wanted, Draft: result.Draft,
-			Minor: minor, AfterPublish: AfterPublishCommand(root, group),
+			AfterPublish: AfterPublishCommand(root, group),
 		}
 		if err := writeShipHandoff(root, handoff); err != nil {
 			return nil, err

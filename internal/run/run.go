@@ -442,9 +442,6 @@ func finishShip(options Options) (string, error) {
 	if worktree == "" {
 		worktree = options.Root
 	}
-	if _, err := line.FileFindings(worktree, handoff.Group, handoff.Minor); err != nil {
-		return url, err
-	}
 	if handoff.AfterPublish != "" {
 		if published := line.RunCommand(worktree, handoff.AfterPublish); !published.OK() {
 			return url, fmt.Errorf("after_publish: %s", line.FailureText(published))
