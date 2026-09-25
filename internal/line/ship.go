@@ -182,7 +182,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		handoff := ShipHandoff{
 			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
 			Labels: []string{plan.Type, "agent"}, Draft: result.Draft,
-			Minor: minor, AfterPublish: AfterPublishCommand(group),
+			Minor: minor, AfterPublish: AfterPublishCommand(root, group),
 		}
 		if err := writeShipHandoff(root, handoff); err != nil {
 			return nil, err
@@ -197,7 +197,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return result, err
 	}
 	result.Filed = filed
-	if command := AfterPublishCommand(group); command != "" {
+	if command := AfterPublishCommand(root, group); command != "" {
 		published := RunCommand(group, command)
 		result.Published = &published
 		if !published.OK() {

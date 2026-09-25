@@ -2176,7 +2176,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.31.2] Before-review and after-publish commands read the root's commands.json too [P: M] [REFINEMENT]
+#### [TSK-03.31.2] Before-review and after-publish commands read the root's commands.json too [P: M] [DONE]
 ```yaml
 context:
   - "VerifyCommand and CompileCommands fall back from the worktree's .komodo/commands.json to the root's and to detection; BeforeReviewCommand and AfterPublishCommand still read only the worktree's"

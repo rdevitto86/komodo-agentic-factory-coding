@@ -108,7 +108,7 @@ func actionForTier(root string, plan *Plan, next Action, taskTier string) *Actio
 		next.Commands = append(next.Commands, command)
 	}
 	if next.Role == "reviewer" {
-		if command := BeforeReviewCommand(WorktreePath(root, plan.Worktree)); command != "" {
+		if command := BeforeReviewCommand(root, WorktreePath(root, plan.Worktree)); command != "" {
 			next.Commands = append(next.Commands, command)
 		}
 	}
