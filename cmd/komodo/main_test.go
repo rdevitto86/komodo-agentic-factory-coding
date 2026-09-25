@@ -238,6 +238,25 @@ func TestUntaggedVersionsNamesAChangelogVersionOriginHasNoTagFor(t *testing.T) {
 	}
 }
 
+func TestTagTagsOnlyTheNewestUnreleasedVersionAtHead(t *testing.T) {
+	changelog := "# Changelog\n\n## 3.0.0 — 2026-09-24\n\n- new\n\n" + strings.TrimPrefix(releaseChangelog, "# Changelog\n\n")
+	root, bare := tagRepo(t, "main", changelog)
+	var out bytes.Buffer
+	if err := tag(root, &out); err != nil {
+		t.Fatal(err)
+	}
+	remote, err := exec.Command("git", "ls-remote", "--tags", bare).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(remote), "v3.0.0") || strings.Contains(string(remote), "v2.0.0") {
+		t.Fatalf("origin tags = %q; only the newest version is tagged at HEAD", remote)
+	}
+	if !strings.Contains(out.String(), "2.0.0: not tagged") {
+		t.Fatalf("out = %q; the older untagged version is named, not tagged", out.String())
+	}
+}
+
 func TestTagRefusesToTagOffANonDefaultBranch(t *testing.T) {
 	root, bare := tagRepo(t, "feat/other", releaseChangelog)
 	var out bytes.Buffer

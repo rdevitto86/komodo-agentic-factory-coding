@@ -87,7 +87,7 @@ while IFS=$'\t' read -r id cmd; do bash -c "$cmd" >/dev/null 2>&1 && echo "$id p
 - **70:** at least 10 consecutive headless ships with no hand edit, each with a run id in the ledger.
 - **80:** a multi-task, multi-wave group has shipped headless.
 - **90:** three groups have shipped headless on a repo other than this one, recorded in the changelog with run ids.
-- **95:** the exit test has run on a second host with no change outside the mounts.
+- **95:** the exit test has run on a second host with no change outside the mounts. Deferred with Codex to a later version.
 
 ### Docs and honesty
 - **80:** the README describes what exists, and doctor fails on drift.

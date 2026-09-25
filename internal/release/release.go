@@ -164,6 +164,23 @@ func Taggable(text string, tags []string) []string {
 	return out
 }
 
+// Unreleased lists the untagged versions newer than every version tag, oldest first; an older gap is history.
+func Unreleased(text string, tags []string) []string {
+	newest := ""
+	for _, tag := range tags {
+		if number := strings.TrimPrefix(tag, "v"); versionTag.MatchString(tag) && (newest == "" || Compare(number, newest) > 0) {
+			newest = number
+		}
+	}
+	var out []string
+	for _, version := range Taggable(text, tags) {
+		if newest == "" || Compare(version, newest) > 0 {
+			out = append(out, version)
+		}
+	}
+	return out
+}
+
 // Drift is one disagreement between the changelog, the tags, and BACKLOG.md.
 type Drift struct {
 	Subject string `json:"subject"`
