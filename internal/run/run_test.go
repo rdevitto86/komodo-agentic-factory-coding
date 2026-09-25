@@ -657,3 +657,25 @@ func TestDrainReRendersTheRootWhenTheDoctorReportsDrift(t *testing.T) {
 		t.Fatalf("rendered.md = %q; a drifted root must be re-rendered before a group launches", data)
 	}
 }
+
+func TestDrainCallsSyncBeforeEachGroup(t *testing.T) {
+	root := drainRepo(t)
+	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
+	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
+	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if code != 0 || err != nil {
+		t.Fatalf("launch failed: code %d, err %v", code, err)
+	}
+	output := out.String()
+	if !strings.Contains(output, "root:") {
+		t.Fatalf("sync output missing root sync; output:\n%s", output)
+	}
+	if !strings.Contains(output, "TG-07.1 shipped") || !strings.Contains(output, "TG-07.2 shipped") {
+		t.Fatalf("both groups should have shipped; output:\n%s", output)
+	}
+}

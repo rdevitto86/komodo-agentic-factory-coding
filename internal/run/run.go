@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"komodo/internal/doctor"
+	"komodo/internal/gate"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
@@ -153,9 +153,41 @@ func drain(options Options) (int, error) {
 	started := time.Now()
 	ran := map[string]bool{}
 	for {
-		if err := refreshRoot(options.Root); err != nil {
+		// Get mtime of built binary before sync to detect rebuild.
+		target := gate.LocalTarget()
+		builtPath := filepath.Join(options.Root, "bin", target.Name)
+		var beforeMtime time.Time
+		if info, err := os.Stat(builtPath); err == nil {
+			beforeMtime = info.ModTime()
+		}
+
+		// Sync fetches origin, rebuilds stale binary, and re-renders drifted config.
+		if err := Sync(SyncOptions{Root: options.Root, Stdout: options.Stdout}); err != nil {
 			return 1, err
 		}
+
+		// If sync rebuilt the binary, copy it to root/.komodo/bin for the next group.
+		if beforeMtime.IsZero() {
+			// Binary didn't exist before; skip copy since it's fresh.
+		} else if info, err := os.Stat(builtPath); err == nil && info.ModTime().After(beforeMtime) {
+			// Binary was rebuilt; copy it to root/.komodo/bin.
+			link := filepath.Join(options.Root, line.StateDir, "bin")
+			if err := os.MkdirAll(link, 0o755); err != nil {
+				return 1, err
+			}
+			name := target.Name
+			if runtime.GOOS == "windows" && !strings.HasSuffix(name, ".exe") {
+				name += ".exe"
+			}
+			destPath := filepath.Join(link, name)
+			if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
+				return 1, err
+			}
+			if err := copyExecutable(builtPath, destPath); err != nil {
+				return 1, err
+			}
+		}
+
 		// Every open group drains first, oldest start first, then each ready group in file order.
 		order, err := drainOrder(options.Root)
 		if err != nil {
@@ -241,19 +273,6 @@ func drainOrder(root string) ([]string, error) {
 	return order, nil
 }
 
-// refreshRoot re-renders every installed host's project config at the root when the doctor reports drift.
-func refreshRoot(root string) error {
-	problems, err := doctor.Run(root, doctor.Options{NoGit: true})
-	if err != nil {
-		return err
-	}
-	for _, problem := range problems {
-		if problem.Check == "drift" {
-			return line.RenderProject(root, root)
-		}
-	}
-	return nil
-}
 
 // shipped reports whether the ledger records a finished ship for the group at or after since.
 func shipped(root, group string, since time.Time) bool {
