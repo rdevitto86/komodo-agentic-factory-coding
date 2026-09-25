@@ -30,8 +30,8 @@ type SyncOptions struct {
 }
 
 // Sync brings the root up to origin, rebuilds a stale toolkit binary, and re-renders drifted config,
-// printing one line per step.
-func Sync(options SyncOptions) error {
+// printing one line per step; it returns the rebuilt binary's path, or "" when it rebuilt nothing.
+func Sync(options SyncOptions) (string, error) {
 	out := options.Stdout
 	if out == nil {
 		out = os.Stdout
@@ -42,12 +42,16 @@ func Sync(options SyncOptions) error {
 	}
 	head, err := syncRoot(options.Root, options.DryRun, out, suffix)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if err := syncBinary(options.Root, head, options.DryRun, out, suffix); err != nil {
-		return err
+	built, err := syncBinary(options.Root, head, options.DryRun, out, suffix)
+	if err != nil {
+		return "", err
 	}
-	return syncConfig(options.Root, options.DryRun, out, suffix)
+	if err := syncConfig(options.Root, options.DryRun, out, suffix); err != nil {
+		return "", err
+	}
+	return built, nil
 }
 
 // syncRoot fetches origin and fast-forwards a clean default branch to it, returning the commit HEAD ends on;
@@ -101,39 +105,43 @@ func syncRoot(root string, dryRun bool, out io.Writer, suffix string) (string, e
 }
 
 // syncBinary rebuilds the toolkit's own built binary and rewrites the hooks when the binary's
-// recorded source commit is not head.
-func syncBinary(root, head string, dryRun bool, out io.Writer, suffix string) error {
+// recorded source commit is not head, returning the rebuilt binary's path, or "" when it did not rebuild.
+func syncBinary(root, head string, dryRun bool, out io.Writer, suffix string) (string, error) {
 	if _, err := os.Stat(filepath.Join(root, "cmd", "komodo", "main.go")); err != nil {
 		fmt.Fprintf(out, "binary: skipped, not the toolkit's own checkout%s\n", suffix)
-		return nil
+		return "", nil
 	}
 	target := gate.LocalTarget()
-	if _, err := os.Stat(filepath.Join(root, "bin", target.Name)); err != nil {
+	binPath := filepath.Join(root, "bin", target.Name)
+	if _, err := os.Stat(binPath); err != nil {
 		fmt.Fprintf(out, "binary: skipped, no %s is built; komodo gate --install builds it%s\n", target.Name, suffix)
-		return nil
+		return "", nil
 	}
 	marker := filepath.Join(root, "bin", BuiltFrom)
 	if built, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(built)) == head {
 		fmt.Fprintf(out, "binary: already current%s\n", suffix)
-		return nil
+		return "", nil
 	}
-	if !dryRun {
-		if _, err := buildLocal(root, io.Discard); err != nil {
-			return err
-		}
-		if err := os.WriteFile(marker, []byte(head+"\n"), 0o644); err != nil {
-			return err
-		}
-		common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
-		if err != nil {
-			return err
-		}
-		if _, err := installHooks(common); err != nil {
-			return err
-		}
+	if dryRun {
+		fmt.Fprintf(out, "binary: rebuilt %s from %s%s\n", target.Name, short(head), suffix)
+		return "", nil
+	}
+	built, err := buildLocal(root, io.Discard)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(marker, []byte(head+"\n"), 0o644); err != nil {
+		return "", err
+	}
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	if _, err := installHooks(common); err != nil {
+		return "", err
 	}
 	fmt.Fprintf(out, "binary: rebuilt %s from %s%s\n", target.Name, short(head), suffix)
-	return nil
+	return built, nil
 }
 
 // syncConfig re-renders every installed host's project config at the root when the doctor reports drift.

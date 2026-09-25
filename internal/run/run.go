@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"komodo/internal/gate"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
@@ -39,14 +38,15 @@ var dropped = []string{
 
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
-	Root   string
-	Target string
-	Budget time.Duration
-	DryRun bool
-	Env    []string
-	Stdout io.Writer
-	Stderr io.Writer
-	PR     *pr.Client
+	Root       string
+	Target     string
+	Budget     time.Duration
+	DryRun     bool
+	Env        []string
+	Stdout     io.Writer
+	Stderr     io.Writer
+	PR         *pr.Client
+	Executable string
 }
 
 // Scrub returns the environment with every push credential removed and git left unable to prompt.
@@ -152,40 +152,15 @@ func drain(options Options) (int, error) {
 	}
 	started := time.Now()
 	ran := map[string]bool{}
+	executable := ""
 	for {
-		// Get mtime of built binary before sync to detect rebuild.
-		target := gate.LocalTarget()
-		builtPath := filepath.Join(options.Root, "bin", target.Name)
-		var beforeMtime time.Time
-		if info, err := os.Stat(builtPath); err == nil {
-			beforeMtime = info.ModTime()
-		}
-
-		// Sync fetches origin, rebuilds stale binary, and re-renders drifted config.
-		if err := Sync(SyncOptions{Root: options.Root, Stdout: options.Stdout}); err != nil {
+		// Sync fetches origin, rebuilds a stale binary, and re-renders drifted config.
+		built, err := Sync(SyncOptions{Root: options.Root, Stdout: options.Stdout})
+		if err != nil {
 			return 1, err
 		}
-
-		// If sync rebuilt the binary, copy it to root/.komodo/bin for the next group.
-		if beforeMtime.IsZero() {
-			// Binary didn't exist before; skip copy since it's fresh.
-		} else if info, err := os.Stat(builtPath); err == nil && info.ModTime().After(beforeMtime) {
-			// Binary was rebuilt; copy it to root/.komodo/bin.
-			link := filepath.Join(options.Root, line.StateDir, "bin")
-			if err := os.MkdirAll(link, 0o755); err != nil {
-				return 1, err
-			}
-			name := target.Name
-			if runtime.GOOS == "windows" && !strings.HasSuffix(name, ".exe") {
-				name += ".exe"
-			}
-			destPath := filepath.Join(link, name)
-			if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
-				return 1, err
-			}
-			if err := copyExecutable(builtPath, destPath); err != nil {
-				return 1, err
-			}
+		if built != "" {
+			executable = built
 		}
 
 		// Every open group drains first, oldest start first, then each ready group in file order.
@@ -210,6 +185,7 @@ func drain(options Options) (int, error) {
 		group := options
 		group.Target = next
 		group.Budget = min(GroupBudget, remaining)
+		group.Executable = executable
 		launched := time.Now()
 		code, url, err := launchTarget(group)
 		if err != nil {
@@ -314,9 +290,13 @@ func launch(options Options, name string, args []string) (int, error) {
 	defer cancel()
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = options.Root
-	executable, err := mount.Executable()
-	if err != nil {
-		return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
+	executable := options.Executable
+	if executable == "" {
+		var err error
+		executable, err = mount.Executable()
+		if err != nil {
+			return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
+		}
 	}
 	env, err := withBinPath(Scrub(base), options.Root, executable)
 	if err != nil {

@@ -87,7 +87,7 @@ func toolkitCheckout(t *testing.T, root, builtFrom string) {
 func TestSyncFastForwardsACleanDefaultBranchBehindOrigin(t *testing.T) {
 	root, ahead := syncRepo(t)
 	var out bytes.Buffer
-	if err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
 		t.Fatal(err)
 	}
 	if head := gitOut(t, root, "rev-parse", "HEAD"); head != ahead {
@@ -106,7 +106,7 @@ func TestSyncDryRunWritesNothing(t *testing.T) {
 	runGit(t, root, "fetch", "origin")
 	before := gitOut(t, root, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := Sync(SyncOptions{Root: root, DryRun: true, Stdout: &out}); err != nil {
+	if _, err := Sync(SyncOptions{Root: root, DryRun: true, Stdout: &out}); err != nil {
 		t.Fatal(err)
 	}
 	if head := gitOut(t, root, "rev-parse", "HEAD"); head != before {
@@ -124,7 +124,7 @@ func TestSyncLeavesADirtyTreeAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
 		t.Fatal(err)
 	}
 	if head := gitOut(t, root, "rev-parse", "HEAD"); head != before {
@@ -140,7 +140,7 @@ func TestSyncSkipsABranchOtherThanTheDefault(t *testing.T) {
 	runGit(t, root, "checkout", "-b", "feat/side")
 	before := gitOut(t, root, "rev-parse", "HEAD")
 	var out bytes.Buffer
-	if err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
 		t.Fatal(err)
 	}
 	if head := gitOut(t, root, "rev-parse", "HEAD"); head != before {
@@ -176,7 +176,7 @@ func TestSyncBinary(t *testing.T) {
 				runGit(t, root, "fetch", "origin")
 			}
 			var out bytes.Buffer
-			if err := Sync(SyncOptions{Root: root, DryRun: tc.dryRun, Stdout: &out}); err != nil {
+			if _, err := Sync(SyncOptions{Root: root, DryRun: tc.dryRun, Stdout: &out}); err != nil {
 				t.Fatal(err)
 			}
 			if *builds != tc.builds || *installs != tc.builds {

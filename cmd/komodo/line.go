@@ -372,7 +372,7 @@ func runSync(root string, args []string) {
 	flags := flag.NewFlagSet("sync", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print each step and write nothing")
 	_ = flags.Parse(args)
-	if err := run.Sync(run.SyncOptions{Root: root, DryRun: *dry, Stdout: os.Stdout}); err != nil {
+	if _, err := run.Sync(run.SyncOptions{Root: root, DryRun: *dry, Stdout: os.Stdout}); err != nil {
 		fail(err)
 	}
 }

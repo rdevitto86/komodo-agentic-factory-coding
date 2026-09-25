@@ -658,6 +658,31 @@ func TestDrainReRendersTheRootWhenTheDoctorReportsDrift(t *testing.T) {
 	}
 }
 
+func TestDrainPutsARebuiltBinaryOnThePathForTheNextGroup(t *testing.T) {
+	root := drainRepo(t)
+	toolkitCheckout(t, root, "stale-commit")
+	fakeBuild(t)
+	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
+	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
+	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if code != 0 || err != nil {
+		t.Fatalf("launch failed: code %d, err %v, out %s", code, err, out.String())
+	}
+	link := filepath.Join(root, line.StateDir, "bin", "komodo")
+	data, err := os.ReadFile(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "bin" {
+		t.Fatalf("komodo on PATH = %q, want the rebuilt binary's own bytes", data)
+	}
+}
+
 func TestDrainCallsSyncBeforeEachGroup(t *testing.T) {
 	root := drainRepo(t)
 	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
