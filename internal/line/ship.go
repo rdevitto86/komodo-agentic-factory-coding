@@ -30,6 +30,7 @@ type ShipResult struct {
 	Done      []string       `json:"done,omitempty"`
 	Blocked   []string       `json:"blocked,omitempty"`
 	Filed     []string       `json:"filed,omitempty"`
+	Warnings  []string       `json:"warnings,omitempty"`
 	Published *CommandResult `json:"published,omitempty"`
 }
 
@@ -195,11 +196,12 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	}
 	context.BlastRadius, context.BlastRadiusWhy = reviewBlast(root, plan.Group)
 	body := ReportBody(plan, result, waves, context)
+	wanted := []string{"@agent", scopeLabel(declared)}
 	if scrubbed() {
 		outcome = "handoff"
 		handoff := ShipHandoff{
 			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
-			Labels: []string{plan.Type, "agent"}, Draft: result.Draft,
+			Labels: wanted, Draft: result.Draft,
 			Minor: minor, AfterPublish: AfterPublishCommand(root, group),
 		}
 		if err := writeShipHandoff(root, handoff); err != nil {
@@ -225,11 +227,60 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return result, err
 	}
 	result.URL = url
-	if known, err := client.Labels(); err == nil {
-		result.Labels = pr.KeepKnown([]string{plan.Type, "agent"}, known)
-		_ = client.Label(url, result.Labels)
+	known, err := client.Labels()
+	if err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("could not list labels: %v", err))
+		return result, nil
+	}
+	result.Labels = pr.KeepKnown(wanted, known)
+	for _, label := range wanted {
+		if !hasWanted(result.Labels, label) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("the repo has no %s label", label))
+		}
+	}
+	if err := client.Label(url, result.Labels); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("could not add label(s): %v", err))
 	}
 	return result, nil
+}
+
+// scopeLabel is the one scope label a group's task files earn, its rules checked in order.
+func scopeLabel(files []string) string {
+	for _, f := range files {
+		if strings.HasPrefix(f, "internal/guard/") {
+			return "scope/guard"
+		}
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f, "internal/mount/") {
+			return "scope/mount"
+		}
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f, "komodo/skills/") || strings.HasPrefix(f, "komodo/roles/") {
+			return "scope/skills"
+		}
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f, "internal/profile/") {
+			base := strings.ToLower(filepath.Base(f))
+			if strings.Contains(base, "tier") || strings.Contains(base, "machine") {
+				return "scope/agents"
+			}
+		}
+	}
+	return "scope/harness"
+}
+
+// hasWanted reports whether kept already carries the label wanted asked for, by its name before any space.
+func hasWanted(kept []string, wanted string) bool {
+	for _, label := range kept {
+		name, _, _ := strings.Cut(label, " ")
+		if name == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 // liveBase is base while origin still has it, or the default branch once base is deleted.
