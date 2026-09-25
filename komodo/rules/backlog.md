@@ -1,8 +1,8 @@
-# Backlog grammar
+## The grammar
 
 `BACKLOG.md` is the queue. Humans and agents write it; the harness parses it deterministically. Nothing else feeds the pipeline.
 
-## Shape
+### Shape
 ````markdown
 ## [EPIC-01] Title
 ### [TG-01.1] Group title
@@ -26,10 +26,10 @@ facets: [postgres]  # facet names this task adds to detection
 ```
 ````
 
-## Rules
-- **Priority** is `C`, `H`, `M`, or `L`. **Status** is `REFINEMENT`, `READY`, `IN_PROGRESS`, `BLOCKED`, or `DONE`. The harness rewrites only the status token.
+### Fields
+- **Priority** is `C`, `H`, `M`, or `L`. **Status** is `REFINEMENT`, `READY`, `IN_PROGRESS`, `BLOCKED`, or `DONE`. The harness rewrites only the status token, and appends the finding tasks it files.
 - **`REFINEMENT`** is a task still being planned: the harness never runs it, never picks its group, and lint does not demand `files` or `done_when`. Promote it to `READY` once both are real.
-- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n` or `x.y.z-beta.n` for a prerelease. It is the changelog heading close-out writes and the tag preflight cuts, so the two can never drift. Groups shipping together share one version.
+- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n` or `x.y.z-beta.n` for a prerelease. It is the changelog heading ship writes and the tag `komodo tag` cuts, so the two can never drift. Groups shipping together share one version.
 - **`base`** is the branch a group cuts from. Omit it and the line uses the remote's default branch, which is wrong for a group stacked on another group's branch.
 - **`files`** lists every path the task will create or edit. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
 - **`done_when`** is shell commands that exit zero when the task is done. Never prose. Cover the whole package, not one file.
@@ -39,9 +39,9 @@ facets: [postgres]  # facet names this task adds to detection
 - **`facets`** lists facet names this task adds, beyond what detection and `.komodo/facets` already select.
 - A task the harness cannot run fails `komodo lint`; run it after every edit.
 
-## Adding a task
+### Adding a task
 Append a heading and block in the shape above, at the end of its group, with the next free `TSK-` suffix. Or run:
 ```
 komodo add TG-01.1 "Add refund metrics"
 ```
-Never delete a `[DONE]` task by hand; `komodo run` moves finished work into the changelog on the next run.
+Never delete a `[DONE]` task; it stays as the record, and ship writes its group's changelog line.

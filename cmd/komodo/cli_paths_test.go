@@ -148,6 +148,28 @@ func TestMachineWritesTheLocalReviewersResultAndStampsTheLedger(t *testing.T) {
 	}
 }
 
+func TestGateRunsTheReposOwnCompileAndVerifyCommands(t *testing.T) {
+	root := fixtureRepo(t)
+	commands := filepath.Join(root, ".komodo", "commands.json")
+	if err := os.MkdirAll(filepath.Dir(commands), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(commands, []byte(`{"compile":"echo compiled-ok","verify":"echo verified-ok"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "", "gate")
+	if strings.Contains(got.stdout, "gate: go vet") || !strings.Contains(got.stdout, "compiled-ok") || !strings.Contains(got.stdout, "verified-ok") {
+		t.Fatalf("exit %d\nstdout: %s\nstderr: %s; a repo outside the toolkit gates on its own commands", got.code, got.stdout, got.stderr)
+	}
+	if err := os.WriteFile(commands, []byte(`{"verify":"exit 3"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	failed := runCLI(t, root, "", "gate")
+	if failed.code != 1 || !strings.Contains(failed.stderr, "exit 3") {
+		t.Fatalf("exit %d\nstderr: %s; a failing verify fails the gate and names the command", failed.code, failed.stderr)
+	}
+}
+
 // fakeGh puts a gh on PATH that answers a pull request view and the review-thread calls.
 func fakeGh(t *testing.T) {
 	t.Helper()

@@ -119,6 +119,7 @@ func TestDispatchReachesEveryReadOnlyCommand(t *testing.T) {
 		{[]string{"release", "check"}, 0, ""},
 		{[]string{"install", "--host", "nope"}, 1, `unknown host "nope"`},
 		{[]string{"install", "--host", "ollama"}, 1, "nothing to install"},
+		{[]string{"install", "--host", "codex"}, 1, "deferred to a later version"},
 		{[]string{"machine"}, 1, "usage: komodo machine"},
 		{[]string{"machine", "TSK-90.2.1", "--role", "builder"}, 1, "cannot run on the local machine"},
 		{[]string{"machine", "TSK-90.2.1", "--role", "reviewer"}, 1, "no such file"},
@@ -129,7 +130,7 @@ func TestDispatchReachesEveryReadOnlyCommand(t *testing.T) {
 		{[]string{"close", "TSK-90.2.1"}, 0, "TSK-90.2.1"},
 		{[]string{"comments", "check"}, 0, ""},
 		{[]string{"release"}, 1, "usage"},
-		{[]string{"gate"}, 1, "gate: go vet"},
+		{[]string{"gate"}, 0, "gate: komodo guard check"},
 		{[]string{"tag"}, 0, "v2.0.0"},
 	}
 	for _, each := range cases {
@@ -391,7 +392,7 @@ func TestInstallRefusesAHookBinaryThatDoesNotExist(t *testing.T) {
 	}
 }
 
-// TestGateRunsEveryCheckOnAGoModule proves the gate reaches its markdown checks once vet and test pass.
+// TestGateRunsEveryCheckOnAGoModule proves a Go repo gates on its detected vet and tests, then the markdown checks.
 func TestGateRunsEveryCheckOnAGoModule(t *testing.T) {
 	root := fixtureRepo(t)
 	files := map[string]string{
@@ -409,7 +410,7 @@ func TestGateRunsEveryCheckOnAGoModule(t *testing.T) {
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "module")
 	got := runCLI(t, root, "", "gate")
-	for _, step := range []string{"gate: go vet", "gate: go test", "gate: komodo lint", "gate: komodo doctor"} {
+	for _, step := range []string{"go vet ./...", "gate: go test ./...", "gate: komodo lint", "gate: komodo doctor"} {
 		if !strings.Contains(got.stdout, step) {
 			t.Fatalf("the gate never reached %q: %s%s", step, got.stdout, got.stderr)
 		}

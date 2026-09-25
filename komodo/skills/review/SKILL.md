@@ -9,7 +9,7 @@ You review what the working tree changed. The gate is mechanical and runs first;
 
 ## The order
 
-1. **`komodo gate`** — vet, tests, lint, doctor, the guard table, the binaries. A failure here ends the review; report it and stop.
+1. **`komodo gate`** — the repo's compile and verify commands, then lint, doctor, the guard table, and the comment lint. A failure here ends the review; report it and stop.
 2. **`komodo diff`** — the reviewer's whole input: the tasks in scope, the standards their files trigger, and the diff.
 3. **Spawn the reviewer role** on that output. It reads cold, writes nothing, and returns the JSON its schema names.
 4. **Report** the findings, highest severity first.
