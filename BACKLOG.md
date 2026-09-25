@@ -2189,3 +2189,53 @@ context:
   - "the table split moved rows into table_extra.go and table_private.go; tasks that list only internal/guard/table.go under files would miss them"
 type: docs
 ```
+
+#### [TSK-03.31.4] internal/line/verify_test.go:37 Two new tests repeat the same setup instead of one table-driven test [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/verify_test.go
+done_when:
+  - test -f internal/line/verify_test.go
+type: refactor
+context:
+  - "TestBeforeReviewAndAfterPublishCommandsFallbackFromRoot and TestBeforeReviewAndAfterPublishCommandsWorktreeWins repeat the same MkdirAll, WriteFile and assert steps. The only differences are whether the worktree has a commands.json and which values are expected. The Go standard asks for table-driven tests with t.Run per case. Merge the two tests into one table-driven test, with one case per scenario (root only, worktree wins) and t.Run for each case."
+```
+
+#### [TSK-03.31.5] Ship files review findings before it pushes [P: H] [REFINEMENT]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+  - go vet ./internal/line/...
+context:
+  - "ShipGroup calls FileFindings after pushFromWorktree, so a filed finding lands in the group worktree's BACKLOG.md uncommitted and never reaches the pull request"
+  - "the TG-03.31 run on 2026-09-24 left TSK-03.31.4 dirty in .komodo/wt/TG-03.31; five earlier group worktrees held the same stranded findings"
+  - "file the findings into BACKLOG.md before the ship commit, so they ride in it; the handoff path files them the same way"
+  - "test: a ship with one minor finding leaves the group worktree clean and the finding in the pushed commit"
+type: fix
+```
+
+#### [TSK-03.31.6] Ship keeps a task's refinement body, not only its status [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "the ship commit rewrites BACKLOG.md from the group worktree's copy and flips statuses; a task refined at the root but never committed ships as DONE with no files or done_when"
+  - "TSK-03.31.2 shipped in #200 with only its context line; the files, done_when and context written at the root before the run were lost"
+  - "either the line refuses to start a group whose tasks differ between the root's BACKLOG.md and the base branch's, naming them, or the ship copies the root's task bodies for the group's tasks; pick the refusal unless it blocks a normal run"
+  - "test: a task refined only at the root either stops the run with its ID or ships with its full body"
+type: fix
+```
+
+#### [TSK-03.31.7] The run skill in the toolkit repo uses the binary the run launched with [P: M] [REFINEMENT]
+```yaml
+files: [komodo/skills/run/SKILL.md]
+done_when:
+  - go run ./cmd/komodo doctor
+context:
+  - "the skill says go run ./cmd/komodo is the same binary in the toolkit repo; it builds from the root checkout, so a headless komodo run launched with a fixed binary still runs main's code at every station"
+  - "the TG-03.31 run on 2026-09-24 hit this: run 2, launched with the #199 binary, failed close the same way run 1 did"
+  - "say komodo on PATH wins whenever it is present, headless or not; go run ./cmd/komodo is only the fallback when nothing is on PATH"
+type: docs
+```
