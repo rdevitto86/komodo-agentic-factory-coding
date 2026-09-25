@@ -763,3 +763,19 @@ func TestChangedLinesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
 		t.Fatalf("lines = %d; an unknown base is no count, never a guess", got)
 	}
 }
+
+func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
+	root, _ := shipRepo(t)
+	refined := "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-09.1.1] Do it [P: C] [DONE]\n```yaml\nfiles: [a/one.go, a/two.go]\ndone_when:\n  - true\n  - echo more\ncontext: [docs/guide.md]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(refined), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "TSK-09.1.1") {
+		t.Fatalf("err = %v; ship must refuse when a task differs between root and worktree, naming the task", err)
+	}
+}
