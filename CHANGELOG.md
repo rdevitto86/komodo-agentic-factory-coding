@@ -6,7 +6,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 The first release: feature-complete, with the proofs recorded below, among them real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
-- **TG-03.31** Gaps the first run in another repo found (1 task(s))
+- **TG-03.31** Gaps the first run in another repo found (6 task(s))
 - **TG-03.30** The line drains the backlog on its own (3 task(s))
 - **TG-03.24** The local reviewer earns its seat (2 task(s))
 - **TG-03.28** Every package clears 75 percent coverage (2 task(s))

@@ -2191,7 +2191,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.31.4] internal/line/verify_test.go:37 Two new tests repeat the same setup instead of one table-driven test [P: L] [READY]
+#### [TSK-03.31.4] internal/line/verify_test.go:37 Two new tests repeat the same setup instead of one table-driven test [P: L] [DONE]
 ```yaml
 files:
   - internal/line/verify_test.go
@@ -2202,7 +2202,7 @@ context:
   - "TestBeforeReviewAndAfterPublishCommandsFallbackFromRoot and TestBeforeReviewAndAfterPublishCommandsWorktreeWins repeat the same MkdirAll, WriteFile and assert steps. The only differences are whether the worktree has a commands.json and which values are expected. The Go standard asks for table-driven tests with t.Run per case. Merge the two tests into one table-driven test, with one case per scenario (root only, worktree wins) and t.Run for each case."
 ```
 
-#### [TSK-03.31.5] Ship files review findings before it pushes [P: H] [READY]
+#### [TSK-03.31.5] Ship files review findings before it pushes [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -2216,7 +2216,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.31.6] Ship keeps a task's refinement body, not only its status [P: M] [READY]
+#### [TSK-03.31.6] Ship keeps a task's refinement body, not only its status [P: M] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -2229,7 +2229,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.31.7] The run skill in the toolkit repo uses the binary the run launched with [P: M] [READY]
+#### [TSK-03.31.7] The run skill in the toolkit repo uses the binary the run launched with [P: M] [DONE]
 ```yaml
 files: [komodo/skills/run/SKILL.md]
 done_when:
@@ -2241,7 +2241,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.31.8] Ship labels every pull request with the repo's own labels [P: H] [READY]
+#### [TSK-03.31.8] Ship labels every pull request with the repo's own labels [P: H] [DONE]
 ```yaml
 files: [internal/pr/pr.go, internal/pr/pr_test.go, internal/line/ship.go]
 done_when:
@@ -2261,6 +2261,46 @@ type: fix
 context:
   - "each gets '@agent 🤖' and the scope TSK-03.31.8 would pick from its changed files; done by hand with gh pr edit, since it is a one-time repair"
 type: chore
+```
+
+#### [TSK-03.31.10] internal/line/ship.go:460 scope/agents keys on file names that do not exist [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+type: fix
+context:
+  - "scopeLabel wants 'tier' or 'machine' in a base name under internal/profile/, but the package holds only profile.go, so a real tier change is labelled scope/harness; map internal/profile/profile.go to scope/agents and test with that real path"
+```
+
+#### [TSK-03.31.11] internal/line/ship.go:98 The root-refinement refusal fires at group start, not at ship [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/ship.go, internal/line/worktree.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+type: fix
+context:
+  - "refinedTasks runs only inside ShipGroup, so a task refined at the root is built, reviewed and closed with its stale body before ship stops; compare against the base branch's BACKLOG.md when the group is cut, and keep the ship check as a backstop"
+```
+
+#### [TSK-03.31.12] internal/line/ship.go:437 Label-call failure warnings have no test [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+type: test
+context:
+  - "ApplyLabels warns when the label list or gh pr edit fails; add table cases whose fake Run fails on each and assert the warning text"
+```
+
+#### [TSK-03.31.13] internal/line/ship.go:173 Ship's label and staging helpers duplicate existing code [P: L] [REFINEMENT]
+```yaml
+files: [internal/line/ship.go, internal/pr/pr.go]
+done_when:
+  - go test ./internal/line/... ./internal/pr/...
+type: refactor
+context:
+  - "call FileFindings before the first stageWork and drop the second call and its comment; replace slicesEqual with slices.Equal; export one label-name helper from internal/pr and use it in place of hasWanted"
 ```
 
 ### [TG-03.32] The line keeps its own toolkit current
