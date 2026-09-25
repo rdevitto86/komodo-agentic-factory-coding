@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/pr"
@@ -142,7 +143,8 @@ func runBrief(root string, args []string) {
 		fmt.Printf("%-14s %7d chars, about %d tokens\n", "brief", len(brief.Text), brief.Tokens)
 		return
 	}
-	branch := brief.Task
+	// Off the line, a task's worktree starts from the branch the root has checked out.
+	branch := git.Or(root, "rev-parse", "--abbrev-ref", "HEAD")
 	if state, err := line.RunFor(root, task); err == nil && state.Branch != "" {
 		branch = state.Branch
 	}
