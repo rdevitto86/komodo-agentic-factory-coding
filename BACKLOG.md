@@ -1497,7 +1497,7 @@ type: fix
 ### [TG-03.21] A wave builds at once, and the hook checks the branch it commits
 ```yaml
 type: feat
-version: 1.1.0
+version: 1.0.0
 base: main
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
@@ -1567,7 +1567,7 @@ type: fix
 ### [TG-03.20] The guard holds its own denials, and the docs match the line
 ```yaml
 type: fix
-version: 1.0.1
+version: 1.0.0
 base: docs/queue-scorecard-fixes
 ```
 * **Why:** a blind review on 2026-09-24 found `git branch -f main`, `git remote set-url`, and a push whose target is only known at run time all pass the guard. README still describes the landed stacked-PR plan, and `doctor.go` is 916 lines. Five tasks across three directories, so the run is also the first multi-wave headless proof.
@@ -1652,7 +1652,7 @@ type: refactor
 ### [TG-03.22] The guard holds the forge, the gate, and every interpreter
 ```yaml
 type: fix
-version: 1.0.1
+version: 1.0.0
 base: main
 ```
 * **Why:** a probe on 2026-09-24 against main's guard passed `gh api -X DELETE .../branches/main/protection`, `gh api -X PUT .../pulls/12/merge`, `git commit --no-verify`, `git -c core.hooksPath=/dev/null commit`, `python3 -c` and `node -e` bodies that push main, and a script written then run in one line. ADR 0004 names the forge ruleset as the hard boundary, and a session could delete it. The safety modes gate only critical-ref rules, so every one passed in every mode.
@@ -1741,7 +1741,7 @@ type: fix
 ### [TG-03.23] A builder's worktree cannot push
 ```yaml
 type: fix
-version: 1.0.1
+version: 1.0.0
 base: main
 ```
 * **Why:** the guard is a denylist over bash and will never be complete. The headless scrub removes push credentials, but an in-session builder still has them. A worktree with no working push URL turns every missed shell trick into a failed push, so the guard stops being the last check.
@@ -1765,7 +1765,7 @@ type: fix
 ### [TG-03.24] The local reviewer earns its seat
 ```yaml
 type: feat
-version: 1.1.0
+version: 1.0.0
 base: main
 ```
 * **Why:** the local 3B reviewer returned 0 findings on most runs and missed a real bug in #161. A review station that always approves is a stage, not QC. A seeded-bug corpus gives each local model a recall number, and the line keeps review on the host until that number clears a bar.
@@ -1806,7 +1806,7 @@ type: feat
 ### [TG-03.25] Live status lives in the run, and the backlog changes once at ship
 ```yaml
 type: refactor
-version: 1.1.0
+version: 1.0.0
 base: feat/a-wave-builds-at-once-and-the-hook-check
 ```
 * **Why:** close writes task status into `BACKLOG.md` from three places mid-run, ship writes it again, and prune's `restoreFlips` exists to undo the collisions that causes. With parallel spawns and concurrent groups, markdown as a live database gets worse. The run holds live status; the backlog changes once, in the ship commit.
@@ -1832,7 +1832,7 @@ tier: heavy
 ### [TG-03.26] The line builds wide, picks the smallest machine that works, and measures itself
 ```yaml
 type: feat
-version: 1.1.0
+version: 1.0.0
 base: refactor/live-status-lives-in-the-run-and-the-bac
 ```
 * **Why:** across the last 11 runs build was 72 to 85 percent of wall time. TG-03.20 chained 3 of its 5 tasks on one file, so it was serial by design. Waves split by directory, one group runs at a time, every builder is Sonnet, and `komodo metrics` cannot say tasks per hour.
@@ -1917,7 +1917,7 @@ tier: heavy
 ### [TG-03.27] One git adapter, a leaf guard, and the planner in its own package
 ```yaml
 type: refactor
-version: 1.1.0
+version: 1.0.0
 base: feat/the-line-builds-wide-picks-the-smallest
 ```
 * **Why:** `line` is 3,505 source lines and imports 13 of 19 internal packages. git runs through four private helpers, and `worktree list --porcelain` is parsed three times in doctor alone. The guard runs on every tool call yet links the Ollama client through `profile` only to find the overlay path, which `mount.OverlayPath` already returns.
@@ -1983,7 +1983,7 @@ type: refactor
 ### [TG-03.28] Every package clears 75 percent coverage
 ```yaml
 type: test
-version: 1.1.0
+version: 1.0.0
 base: main
 ```
 * **Why:** `docs/scorecard.md` puts Code at 90 only when every package is at or above 70 percent. On `1eff696`, `internal/gate` is at 67.4 and `internal/pr` at 68.4. Both are tested here to 75, with room above the bar.
@@ -2015,7 +2015,7 @@ type: test
 ### [TG-03.29] The guard's last two open gaps, and two line bugs the TG-03.22 run found
 ```yaml
 type: fix
-version: 1.0.1
+version: 1.0.0
 base: main
 ```
 * **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
@@ -2110,7 +2110,7 @@ type: fix
 ### [TG-03.30] The line drains the backlog on its own
 ```yaml
 type: feat
-version: 1.1.0
+version: 1.0.0
 base: docs/queue-drain
 ```
 * **Why:** on 2026-09-24 every group needed a person to launch it, every blocking review needed a person to fix it, and every merge needed a person to re-render settings and re-point stacked bases. The line exists so the only human step is the merge button.
@@ -2165,9 +2165,10 @@ type: docs
 ### [TG-03.31] Gaps the first run in another repo found
 ```yaml
 type: fix
-version: 1.1.1
+version: 1.0.0
+base: docs/queue-three-line-bugs
 ```
-* **Why:** the smoke run in a separate repo on 2026-09-24 and the final lane's reviews left three gaps out of scope for 1.1.0.
+* **Why:** the smoke run in a separate repo on 2026-09-24 and the final lane's reviews left gaps out of scope for the first pass.
 
 #### [TSK-03.31.1] A re-run of a group whose branch is on origin starts from a clean base [P: M] [REFINEMENT]
 ```yaml
@@ -2190,7 +2191,7 @@ context:
 type: docs
 ```
 
-#### [TSK-03.31.4] internal/line/verify_test.go:37 Two new tests repeat the same setup instead of one table-driven test [P: L] [REFINEMENT]
+#### [TSK-03.31.4] internal/line/verify_test.go:37 Two new tests repeat the same setup instead of one table-driven test [P: L] [READY]
 ```yaml
 files:
   - internal/line/verify_test.go
@@ -2201,7 +2202,7 @@ context:
   - "TestBeforeReviewAndAfterPublishCommandsFallbackFromRoot and TestBeforeReviewAndAfterPublishCommandsWorktreeWins repeat the same MkdirAll, WriteFile and assert steps. The only differences are whether the worktree has a commands.json and which values are expected. The Go standard asks for table-driven tests with t.Run per case. Merge the two tests into one table-driven test, with one case per scenario (root only, worktree wins) and t.Run for each case."
 ```
 
-#### [TSK-03.31.5] Ship files review findings before it pushes [P: H] [REFINEMENT]
+#### [TSK-03.31.5] Ship files review findings before it pushes [P: H] [READY]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -2215,7 +2216,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.31.6] Ship keeps a task's refinement body, not only its status [P: M] [REFINEMENT]
+#### [TSK-03.31.6] Ship keeps a task's refinement body, not only its status [P: M] [READY]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -2228,7 +2229,7 @@ context:
 type: fix
 ```
 
-#### [TSK-03.31.7] The run skill in the toolkit repo uses the binary the run launched with [P: M] [REFINEMENT]
+#### [TSK-03.31.7] The run skill in the toolkit repo uses the binary the run launched with [P: M] [READY]
 ```yaml
 files: [komodo/skills/run/SKILL.md]
 done_when:
@@ -2240,14 +2241,37 @@ context:
 type: docs
 ```
 
+#### [TSK-03.31.8] Ship labels every pull request with the repo's own labels [P: H] [READY]
+```yaml
+files: [internal/pr/pr.go, internal/pr/pr_test.go, internal/line/ship.go]
+done_when:
+  - go test ./internal/pr/... ./internal/line/...
+  - go vet ./internal/pr/... ./internal/line/...
+context:
+  - "ship asks for the labels fix or feat and agent, and KeepKnown drops every one because the repo names its labels '@agent 🤖' and 'scope/harness ⚙️'; no pull request since #136 carries a label"
+  - "match a wanted label to a known one by its name before the first space, so '@agent' finds '@agent 🤖' and 'scope/guard' finds 'scope/guard 🛡️'"
+  - "ship wants '@agent' plus one scope from the group's task files: internal/guard/ is scope/guard, internal/mount/ is scope/mount, komodo/skills/ or komodo/roles/ is scope/skills, a tier or machine change in internal/profile/ is scope/agents, anything else scope/harness"
+  - "a wanted label the repo lacks goes in the ship result's warnings, never silently dropped; a label call that fails is a warning too"
+  - "tests: the prefix match, each scope rule, and a missing label warning"
+type: fix
+```
+
+#### [TSK-03.31.9] Backfill labels on every unlabeled pull request since #137 [P: M] [DONE]
+```yaml
+context:
+  - "each gets '@agent 🤖' and the scope TSK-03.31.8 would pick from its changed files; done by hand with gh pr edit, since it is a one-time repair"
+type: chore
+```
+
 ### [TG-03.32] The line keeps its own toolkit current
 ```yaml
 type: feat
-version: 1.2.0
+version: 1.0.0
+base: docs/queue-three-line-bugs
 ```
 * **Why:** after every merge a person had to pull main, run komodo gate --install, and run komodo install --host; the guard rightly refuses an agent those writes, so the binary does them itself.
 
-#### [TSK-03.32.1] komodo sync brings the root up to origin and rebuilds what drifted [P: C] [REFINEMENT]
+#### [TSK-03.32.1] komodo sync brings the root up to origin and rebuilds what drifted [P: C] [READY]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go, cmd/komodo/main.go, cmd/komodo/line.go]
 done_when:
@@ -2264,7 +2288,7 @@ type: feat
 tier: heavy
 ```
 
-#### [TSK-03.32.2] komodo run syncs before every group [P: H] [REFINEMENT]
+#### [TSK-03.32.2] komodo run syncs before every group [P: H] [READY]
 ```yaml
 files: [internal/run/run.go, internal/run/run_test.go]
 done_when:
@@ -2278,7 +2302,7 @@ context:
 type: feat
 ```
 
-#### [TSK-03.32.3] Agents run komodo sync instead of asking the human [P: M] [REFINEMENT]
+#### [TSK-03.32.3] Agents run komodo sync instead of asking the human [P: M] [READY]
 ```yaml
 files: [komodo/skills/run/SKILL.md, komodo/AGENTS.md, README.md]
 done_when:
