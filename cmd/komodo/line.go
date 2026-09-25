@@ -366,3 +366,13 @@ func runRun(root string, args []string) {
 	}
 	exit(code)
 }
+
+// runSync brings the root up to origin, rebuilds a stale binary, and re-renders drifted config.
+func runSync(root string, args []string) {
+	flags := flag.NewFlagSet("sync", flag.ExitOnError)
+	dry := flags.Bool("dry-run", false, "print each step and write nothing")
+	_ = flags.Parse(args)
+	if err := run.Sync(run.SyncOptions{Root: root, DryRun: *dry, Stdout: os.Stdout}); err != nil {
+		fail(err)
+	}
+}
