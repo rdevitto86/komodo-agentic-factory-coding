@@ -275,14 +275,9 @@ func TestShipNeverMarksATaskItSkippedAsDone(t *testing.T) {
 	}
 }
 
-func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
-	worktree := gitRepo(t)
-	commit(t, worktree, "BACKLOG.md", flipBacklog, "the backlog")
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(flipBacklog), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	review := ResultPath(root, "TG-11.1-review")
+func TestFileFindingsBeforePushAndCommit(t *testing.T) {
+	root, group := shipRepo(t)
+	review := ResultPath(root, "TG-09.1-review")
 	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -291,31 +286,23 @@ func TestFileFindingsOnlyAfterASuccessfulPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := &Plan{
-		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
-		Base: "main", Branch: "main", Worktree: worktree,
-		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
 	}
 	plan.Profile.SeverityFloor = "high"
-	unreachableOrigin(t, root)
-	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin main") {
-		t.Fatalf("err = %v; the origin is unreachable, so ship must fail at the push itself", err)
-	}
-	before, err := os.ReadFile(filepath.Join(worktree, "BACKLOG.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Count(string(before), "#### [") != 1 {
-		t.Fatalf("a failed push must not file a finding:\n%s", before)
-	}
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", bare)
-	runGit(t, root, "remote", "set-url", "origin", bare)
 	result, err := ShipGroup(root, plan, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Filed) != 1 {
-		t.Fatalf("filed = %v, want exactly one finding filed once the push succeeds", result.Filed)
+		t.Fatalf("filed = %v, want exactly one finding filed", result.Filed)
+	}
+	status, err := git.Run(group, "status", "--porcelain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("status = %q; findings filed before push must be in the commit, leaving worktree clean", status)
 	}
 }
 
