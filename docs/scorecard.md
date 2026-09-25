@@ -81,7 +81,7 @@ while IFS=$'\t' read -r id cmd; do bash -c "$cmd" >/dev/null 2>&1 && echo "$id p
 | `C90a` | Every package at or above 70 percent coverage | `go test -cover ./... 2>/dev/null \| awk '/coverage:/{for(i=1;i<=NF;i++) if($i ~ /%$/){sub(/%/,"",$i); if($i+0<70) bad=1}} END{exit bad}'` | TG-03.28 |
 | `C90b` | At least 5 fuzz targets | `test "$(grep -rh '^func Fuzz' internal cmd \| wc -l)" -ge 5` | `#154` |
 | `C90c` | No non-test file over 500 lines | `test -z "$(find internal cmd -name '*.go' ! -name '*_test.go' \| xargs wc -l \| awk '$2!="total" && $1>500')"` | `#176` |
-| `C95a` | Every package at or above 80 percent coverage | `go test -cover ./... 2>/dev/null \| awk '/coverage:/{for(i=1;i<=NF;i++) if($i ~ /%$/){sub(/%/,"",$i); if($i+0<80) bad=1}} END{exit bad}'` | not queued |
+| `C95a` | Every package at or above 80 percent coverage | `go test -cover ./... 2>/dev/null \| awk '/coverage:/{for(i=1;i<=NF;i++) if($i ~ /%$/){sub(/%/,"",$i); if($i+0<80) bad=1}} END{exit bad}'` | `#201` |
 
 ### Proven on real work
 - **70:** at least 10 consecutive headless ships with no hand edit, each with a run id in the ledger.

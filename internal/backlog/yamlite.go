@@ -27,9 +27,6 @@ func (f Fields) Get(key string) (any, bool) {
 	return value, ok
 }
 
-// Keys returns the block's keys in the order they were written.
-func (f Fields) Keys() []string { return append([]string(nil), f.keys...) }
-
 // Set stores a value, appending the key when it is new.
 func (f *Fields) Set(key string, value any) {
 	if f.values == nil {

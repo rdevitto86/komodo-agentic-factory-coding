@@ -163,28 +163,6 @@ func (g Group) Slug() string {
 	return text
 }
 
-// OpenTasks are the tasks that are neither DONE nor BLOCKED.
-func (g Group) OpenTasks() []Task {
-	var out []Task
-	for _, task := range g.Tasks {
-		if task.Open() {
-			out = append(out, task)
-		}
-	}
-	return out
-}
-
-// ReadyTasks are the open tasks past refinement, in file order.
-func (g Group) ReadyTasks() []Task {
-	var out []Task
-	for _, task := range g.Tasks {
-		if task.Ready() {
-			out = append(out, task)
-		}
-	}
-	return out
-}
-
 // Backlog is the whole parsed file: groups in order, plus every problem the parser saw.
 type Backlog struct {
 	Groups   []Group
