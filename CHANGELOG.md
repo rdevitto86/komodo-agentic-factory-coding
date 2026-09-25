@@ -2,6 +2,10 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
+## 1.1.1 — 2026-09-25
+
+- **TG-03.31** Gaps the first run in another repo found (1 task(s))
+
 ## 1.1.0 — 2026-09-24
 
 - **TG-03.30** The line drains the backlog on its own (3 task(s))
