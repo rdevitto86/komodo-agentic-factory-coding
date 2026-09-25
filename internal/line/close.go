@@ -418,7 +418,7 @@ func RepairText(root, taskID string) string {
 // fillUsage asks the installed mount what the machine spent, and leaves the fields empty when it cannot say.
 func fillUsage(root, taskID string, until time.Time, entry *ledger.Entry) {
 	since := briefTime(root, taskID)
-	for _, host := range mount.Hosts() {
+	for _, host := range mount.Active() {
 		if host.Usage == nil || host.Installed == nil || !host.Installed(root) {
 			continue
 		}

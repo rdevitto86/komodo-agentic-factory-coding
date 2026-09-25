@@ -92,7 +92,7 @@ func planOverlay(profile Profile, plan string) Profile {
 // only when the overlay opts in with "local": true and it answers.
 func Select(root string) Profile {
 	localSwitch := mount.LoadOverlay().Local
-	return SelectWith(root, mount.Hosts(), localSwitch, localSwitch && mount.LocalMachine().Up())
+	return SelectWith(root, mount.Active(), localSwitch, localSwitch && mount.LocalMachine().Up())
 }
 
 // SelectWith is Select over a given set of mounts, which is what a test drives.

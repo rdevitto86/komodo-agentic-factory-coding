@@ -66,7 +66,7 @@ func Run(root string, options Options) ([]Problem, error) {
 // HostLeftovers lists what an installed host's user settings carry from a retired setup; it never fails a check.
 func HostLeftovers(root string) []string {
 	var notes []string
-	for _, host := range mount.Hosts() {
+	for _, host := range mount.Active() {
 		if host.Leftovers != nil && host.Installed != nil && host.Installed(root) {
 			notes = append(notes, host.Leftovers()...)
 		}

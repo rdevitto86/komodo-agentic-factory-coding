@@ -32,6 +32,8 @@ type Host struct {
 	Leftovers func() []string
 	// ReviewerWhy says where review lands and why, when the overlay opts the reviewer onto the local machine.
 	ReviewerWhy func(plan string) string
+	// Deferred, when set, says why the mount is kept but unusable: nothing installs, selects, or renders it.
+	Deferred string
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.
@@ -63,6 +65,17 @@ func Hosts() []Host {
 		out = append(out, host)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// Active returns every registered mount that is not deferred, sorted by name.
+func Active() []Host {
+	var out []Host
+	for _, host := range Hosts() {
+		if host.Deferred == "" {
+			out = append(out, host)
+		}
+	}
 	return out
 }
 
