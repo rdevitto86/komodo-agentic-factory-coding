@@ -16,7 +16,7 @@ Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. I
 ### [TG-03.1] The markdown
 ```yaml
 type: refactor
-version: 1.0.0
+version: 1.0.0-beta.1
 ```
 * **Why:** everything a model reads is one of three neutral formats. Standards become skills so their trigger is their own frontmatter. Briefs fold into roles so a role is the brief and its schema. The policy shrinks to four denials for a greenfield shop, and the rules give an agent unlimited freedom inside its worktree.
 * **PR A:** `refactor/v2-markdown` from `docs/v2-plan`, opened by the session with `gh pr create`. Validated by every `done_when` here, the V1 linter from a scratch worktree of `prototype-final` at zero problems, and a human read of `komodo/AGENTS.md` and `komodo/policy.json`. Merges into `docs/v2-plan`.
@@ -77,7 +77,7 @@ type: refactor
 ### [TG-03.2] The conveyor and the devices
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 ```
 * **Why:** the line is one static Go binary with no interpreter, shell, or symlink on a dev machine. Every station is a subcommand with a test, and every station stamps the ledger. V1's 1013 lines of Go hooks, at the tag `prototype-final` under `komodo/hooks/src`, are the seed of the module.
 * **PR B:** `feat/v2-conveyor` from `refactor/v2-markdown`, opened by the session. Validated by `komodo gate`, `komodo lint`, `komodo next --json` printing TG-03.3, `komodo brief --dry-run TSK-03.3.1`, `komodo close` on a hand-written result, `komodo step` printing one action, and a human read of one brief. Merges into `refactor/v2-markdown`.
@@ -194,7 +194,7 @@ type: feat
 ### [TG-03.3] The guard and the mounts
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 ```
 * **Why:** one hook on every host, four denials, and unlimited freedom inside a worktree. A mount is the only code that knows a host. Profiles select themselves from the host, the plan, and whether Ollama answers.
 * **PR C:** `feat/v2-guard-mounts` from `feat/v2-conveyor`, opened by the session. Validated by `komodo gate` with `guard check`, `install --host claude --dry-run`, `komodo doctor` under the budgets with no leak, the probe printing an overlay and no identity, then a real install on this Mac where a session is denied a commit to `main` and allowed `rm` in its worktree. Merges into `feat/v2-conveyor`.
@@ -268,7 +268,7 @@ type: feat
 ### [TG-03.4] The skills and the launcher
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 ```
 * **Why:** the run skill is the list of stations and the two spawns, under 800 tokens. Ad hoc work enters at any station or stays off the line. The proof is one group driven end to end by the skill alone, recorded before anything is deleted.
 * **PR D:** `feat/v2-skills-launcher` from `feat/v2-guard-mounts`, opened by the session. Validated by `komodo doctor` with the run skill under 800 tokens, the launcher's scrub test, `komodo run --dry-run TG-03.5`, and `/run` in a session printing the first step and stopping, and a session start with no permission-rule warning. TSK-03.4.3 stays open and is filled in by PR E. Merges into `feat/v2-guard-mounts`.
@@ -329,7 +329,7 @@ type: fix
 ### [TG-03.5] The repo layer and the local machines
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/v2-plan
 ```
 * **Why:** one universal set of rules, one place a repo adds what only it knows, and a local machine on every host. Nothing here is required and nothing here widens what the guard denies.
@@ -449,7 +449,7 @@ type: feat
 ### [TG-03.6] The gate and the exit test
 ```yaml
 type: chore
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/v2-plan
 ```
 * **Why:** the gate is Go and runs on the desk before every commit and push, nothing runs on GitHub, every swap point is proven by a test, and the second host proves the mounts are the only host-specific code.
@@ -603,7 +603,7 @@ type: refactor
 ### [TG-03.7] The sanity pass: safety, correctness, portability
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/v2-plan
 ```
 
@@ -1038,7 +1038,7 @@ context:
 ### [TG-03.8] The line plans what it is handed
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 
@@ -1241,7 +1241,7 @@ type: docs
 ### [TG-03.9] A local machine carries a station
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** the second host needs an account nobody holds yet. A local model carrying the review proves a machine swaps in with no code change, and one overlay key points every machine at one endpoint, local now and a static address later.
@@ -1282,7 +1282,7 @@ type: docs
 ### [TG-03.10] The gate lints what a commit carries
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** the gate's comment lint reads only tracked files, so a new file passes the gate by hand and then fails the pre-commit hook once it is staged. Found on PR #154.
@@ -1302,7 +1302,7 @@ type: fix
 ### [TG-03.11] A pipe through a filter still feeds a shell
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** the guard follows stdin into a shell from the command just before it, but not across a longer pipeline. `echo 'git push origin main' | tr a a | sh` passes today.
@@ -1322,7 +1322,7 @@ type: fix
 ### [TG-03.12] The local mount's own paths are tested
 ```yaml
 type: test
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** the local mount sits at 59.8% statement coverage, the lowest in the repo, and it is the path a local review takes.
@@ -1342,7 +1342,7 @@ type: test
 ### [TG-03.13] Prune settles every merged run, not only the last
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** `settleShippedRun` reads only the current run state, so a run's worktrees strand once the next group starts. TG-03.10's clean, merged worktrees survived `komodo doctor --prune`.
@@ -1363,7 +1363,7 @@ type: fix
 ### [TG-03.14] The doctor names a worktree the line did not cut
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** a spawn that cut its own worktree stranded a diff outside `.komodo/wt` on TG-03.11, and no check reported it.
@@ -1385,7 +1385,7 @@ type: fix
 ### [TG-03.15] The guard reads a safety mode
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** the guard refuses `git switch main` and so blocks pulling the merged base. A mode lets the user pick: safe watches a switch onto a critical ref, default allows switching and pulling there, unsafe also allows a commit or push there.
@@ -1408,7 +1408,7 @@ type: feat
 ### [TG-03.17] A spawn never cuts its own worktree
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/queue-spawn-guard
 ```
 * **Why:** the driving session passed an isolation option to its builder spawn on TG-03.11 and TG-03.15, rule or no rule. The builder worked in a second worktree and the driver ported its diff by hand. A markdown rule cannot hold it; the guard can.
@@ -1432,7 +1432,7 @@ type: fix
 ### [TG-03.16] A stray worktree is a note, not a failure
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: fix/a-spawn-never-cuts-its-own-worktree
 ```
 * **Why:** TG-03.14's check fails the doctor on any linked worktree outside `.komodo/wt`, and the gate runs the doctor. A user's own `git worktree add ../feature` would block every commit.
@@ -1453,7 +1453,7 @@ type: fix
 ### [TG-03.18] Claude carries every tier until local is opted in
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/queue-claude-default
 ```
 * **Why:** the light tier moves to Ollama whenever the server answers, and a small local model on a 24 GB machine is too weak to carry a station. For 1.0 Claude carries every tier; Ollama stays a swap the developer opts into.
@@ -1476,7 +1476,7 @@ type: fix
 ### [TG-03.19] The local switch never reports a probe it skipped
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/queue-review-fixes
 ```
 * **Why:** the Claude review of TG-03.18 found three medium issues: a false "did not answer" note when the switch is off, a test that clobbers the registered local machine, and a test too weak to catch the note.
@@ -1497,7 +1497,7 @@ type: fix
 ### [TG-03.21] A wave builds at once, and the hook checks the branch it commits
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** TG-03.20's run built wave 1's three independent tasks one after another, about 12 minutes where 4 would do, because `step` returns one spawn per call. The same run's pre-commit hook in the group worktree ran the main checkout's `bin/`, so `guard check` judged main's 260-row table, not the branch's 315.
@@ -1567,7 +1567,7 @@ type: fix
 ### [TG-03.20] The guard holds its own denials, and the docs match the line
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/queue-scorecard-fixes
 ```
 * **Why:** a blind review on 2026-09-24 found `git branch -f main`, `git remote set-url`, and a push whose target is only known at run time all pass the guard. README still describes the landed stacked-PR plan, and `doctor.go` is 916 lines. Five tasks across three directories, so the run is also the first multi-wave headless proof.
@@ -1652,7 +1652,7 @@ type: refactor
 ### [TG-03.22] The guard holds the forge, the gate, and every interpreter
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** a probe on 2026-09-24 against main's guard passed `gh api -X DELETE .../branches/main/protection`, `gh api -X PUT .../pulls/12/merge`, `git commit --no-verify`, `git -c core.hooksPath=/dev/null commit`, `python3 -c` and `node -e` bodies that push main, and a script written then run in one line. ADR 0004 names the forge ruleset as the hard boundary, and a session could delete it. The safety modes gate only critical-ref rules, so every one passed in every mode.
@@ -1741,7 +1741,7 @@ type: fix
 ### [TG-03.23] A builder's worktree cannot push
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** the guard is a denylist over bash and will never be complete. The headless scrub removes push credentials, but an in-session builder still has them. A worktree with no working push URL turns every missed shell trick into a failed push, so the guard stops being the last check.
@@ -1765,7 +1765,7 @@ type: fix
 ### [TG-03.24] The local reviewer earns its seat
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** the local 3B reviewer returned 0 findings on most runs and missed a real bug in #161. A review station that always approves is a stage, not QC. A seeded-bug corpus gives each local model a recall number, and the line keeps review on the host until that number clears a bar.
@@ -1806,7 +1806,7 @@ type: feat
 ### [TG-03.25] Live status lives in the run, and the backlog changes once at ship
 ```yaml
 type: refactor
-version: 1.0.0
+version: 1.0.0-beta.1
 base: feat/a-wave-builds-at-once-and-the-hook-check
 ```
 * **Why:** close writes task status into `BACKLOG.md` from three places mid-run, ship writes it again, and prune's `restoreFlips` exists to undo the collisions that causes. With parallel spawns and concurrent groups, markdown as a live database gets worse. The run holds live status; the backlog changes once, in the ship commit.
@@ -1832,7 +1832,7 @@ tier: heavy
 ### [TG-03.26] The line builds wide, picks the smallest machine that works, and measures itself
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 base: refactor/live-status-lives-in-the-run-and-the-bac
 ```
 * **Why:** across the last 11 runs build was 72 to 85 percent of wall time. TG-03.20 chained 3 of its 5 tasks on one file, so it was serial by design. Waves split by directory, one group runs at a time, every builder is Sonnet, and `komodo metrics` cannot say tasks per hour.
@@ -1917,7 +1917,7 @@ tier: heavy
 ### [TG-03.27] One git adapter, a leaf guard, and the planner in its own package
 ```yaml
 type: refactor
-version: 1.0.0
+version: 1.0.0-beta.1
 base: feat/the-line-builds-wide-picks-the-smallest
 ```
 * **Why:** `line` is 3,505 source lines and imports 13 of 19 internal packages. git runs through four private helpers, and `worktree list --porcelain` is parsed three times in doctor alone. The guard runs on every tool call yet links the Ollama client through `profile` only to find the overlay path, which `mount.OverlayPath` already returns.
@@ -1983,7 +1983,7 @@ type: refactor
 ### [TG-03.28] Every package clears 75 percent coverage
 ```yaml
 type: test
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** `docs/scorecard.md` puts Code at 90 only when every package is at or above 70 percent. On `1eff696`, `internal/gate` is at 67.4 and `internal/pr` at 68.4. Both are tested here to 75, with room above the bar.
@@ -2015,7 +2015,7 @@ type: test
 ### [TG-03.29] The guard's last two open gaps, and two line bugs the TG-03.22 run found
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: main
 ```
 * **Why:** TG-03.22 shipped as #180 after ten review rounds with two medium findings left open. Its run also showed that a ship keeps a base branch deleted mid-run, so `gh pr create` failed, and that a filed finding holding both quote kinds writes YAML the backlog cannot read.
@@ -2110,7 +2110,7 @@ type: fix
 ### [TG-03.30] The line drains the backlog on its own
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/queue-drain
 ```
 * **Why:** on 2026-09-24 every group needed a person to launch it, every blocking review needed a person to fix it, and every merge needed a person to re-render settings and re-point stacked bases. The line exists so the only human step is the merge button.
@@ -2165,7 +2165,7 @@ type: docs
 ### [TG-03.31] Gaps the first run in another repo found
 ```yaml
 type: fix
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/queue-three-line-bugs
 ```
 * **Why:** the smoke run in a separate repo on 2026-09-24 and the final lane's reviews left gaps out of scope for the first pass.
@@ -2306,7 +2306,7 @@ context:
 ### [TG-03.32] The line keeps its own toolkit current
 ```yaml
 type: feat
-version: 1.0.0
+version: 1.0.0-beta.1
 base: docs/queue-three-line-bugs
 ```
 * **Why:** after every merge a person had to pull main, run komodo gate --install, and run komodo install --host; the guard rightly refuses an agent those writes, so the binary does them itself.

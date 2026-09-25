@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README is the reference and the requirements. This line is 1.0.0, with its proofs recorded in the changelog; it is released once the human cuts the `v1.0.0` tag, and the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `BACKLOG.md`.
+This README is the reference and the requirements. This line is `1.0.0-beta.1`: feature-complete, with its proofs recorded in the changelog. It becomes `1.0.0` when the human cuts the release, and the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -19,7 +19,7 @@ flowchart LR
     C2 --> S[Ship<br/>PR, changelog, tag]
     subgraph Mounts
         CC[Claude Code]
-        CX[Codex]
+        CX[Codex, deferred]
         OL[Ollama]
     end
     M1 -.-> Mounts
@@ -79,7 +79,7 @@ A line carries the run, group, task, wave, station, role, tier, host, provider, 
 
 ## Machines and mounts
 
-| Station | Input | Output | Claude Code mount | Codex mount | Ollama |
+| Station | Input | Output | Claude Code mount | Codex mount, deferred | Ollama |
 |---|---|---|---|---|---|
 | Build | brief file | builder schema | subagent, model from the profile | TOML agent | native provider on Codex; a builder needs tools, so Claude Code keeps its own |
 | Review | diff plus tasks | reviewer schema | subagent, other tier or vendor | TOML agent | `komodo machine`: the binary posts the brief and reads the JSON back |
@@ -91,8 +91,8 @@ A role declares a tier, light, standard, or heavy, and never a model. A profile 
 |---|---|---|---|---|---|
 | `claude` | Claude Code | haiku | sonnet | opus | opus |
 | `hybrid` | Claude Code, `"local": true`, Ollama up | ollama | sonnet | opus | opus, or ollama with `local_reviewer` |
-| `codex` | Codex | small | standard | large | large |
-| `local` | Codex, `"local": true`, Ollama up | local small | local coder | local coder | local coder |
+| `codex` | Codex, deferred | small | standard | large | large |
+| `local` | Codex, deferred, `"local": true`, Ollama up | local small | local coder | local coder | local coder |
 
 A tier that resolves to `ollama` runs through `komodo machine` and carries only read-only roles. A write role on that tier, or a brief larger than the local window, falls back to the host's own tier, and `komodo step` says so in `why`. No model is ever spent to reach a local model.
 
@@ -112,20 +112,24 @@ Skills: `run` is three lines, call `komodo step`, do what it says, repeat, and t
 
 ## The guard
 
-One hook, on PreToolUse for shell, edit, and write, on every host. Everything else is a command a human or the run skill calls.
+One hook, on PreToolUse for shell, edit, write, and agent spawns, on every host. Everything else is a command a human or the run skill calls.
 
 The guard catches a cooperative model's mistakes; it is not a sandbox. It reads each command through one lexer that tokenizes the way a POSIX shell does: quotes, escapes, ANSI-C strings, heredocs, substitutions, brace lists, comments, and variables the line itself sets. Two review rounds bypassed the earlier ad hoc splitters thirteen ways, and the lexer closed seven more; a fuzz target holds it to never panicking and never letting a harmless prefix hide a denial. A denylist over bash is still never complete. The hard boundaries sit where a shell cannot reach: the forge's ruleset on every critical ref, which `komodo doctor --remote` audits, and the headless credential scrub, which leaves a run nothing to push with.
 
-Denied, and nothing else:
+Denied:
 
 1. **Critical branches.** Commit, push, merge, delete, or force on `main`, `master`, and any ref the policy lists. Greenfield repos protect nothing else.
 2. **Paths outside the tasked worktree.** An edit, write, delete, or move that leaves the worktree root, or the repo root off the line.
 3. **Host and toolkit config.** The home directories of the hosts, the machine overlay, the git config and hooks, and the toolkit's binaries.
 4. **Trailers.** Co-author and generated-by lines in a commit, including one fed through `-F -` from a heredoc.
+5. **Forge writes.** A `gh` call that writes to the forge beyond opening a pull request or posting a comment, and `gh pr merge`.
+6. **Gate bypass.** A commit or push that skips the git hooks, as `--no-verify` does.
+7. **Hidden commands.** git or gh run from an interpreter's inline code, or from a script written and run in one command.
+8. **A spawn's own worktree.** An isolation option on an agent spawn; the line already cut the worktree.
 
-One rule sits beside the four and applies to every branch: pushed history is never rewritten, so a force push, `--force-with-lease`, or a `+refspec` is refused wherever it points.
+One rule applies to every branch: pushed history is never rewritten, so a force push, `--force-with-lease`, or a `+refspec` is refused wherever it points, since a human may have pulled it.
 
-Inside the worktree an agent has unlimited freedom: delete files, reset, checkout, rebase, delete its own branches. Pushed history is the one exception: a force push, `--force-with-lease`, or a `+refspec` is refused on every branch, since a human may have pulled it. The rules file says the same. The guard fails open on an internal error and `komodo guard check` runs a table of over 490 commands in the gate, so a broken guard fails the build and never a run. The forge's ruleset on `main`, which `komodo doctor --remote` audits, and the launcher's credential scrub are the boundaries the guard cannot be; between them and `main` the guard is the last check. Merge is your button.
+Inside the worktree an agent has unlimited freedom: delete files, reset, checkout, rebase, delete its own branches. The rules file says the same. The guard fails open on an internal error and `komodo guard check` runs a table of over 490 commands in the gate, so a broken guard fails the build and never a run. The forge's ruleset on `main`, which `komodo doctor --remote` audits, and the launcher's credential scrub are the boundaries the guard cannot be; between them and `main` the guard is the last check. Merge is your button.
 
 ## The binary
 
@@ -139,7 +143,7 @@ Go over Rust because 1013 lines of guard, hooks, and repo detection already exis
 
 Every precheck runs locally and mechanically, before a commit and before a push, with no model and nothing on GitHub. GitHub Actions is not used: on a free account it bills minutes, fails on the runner instead of the desk, and adds a stage the line does not own.
 
-`komodo gate` is the whole check: `go vet`, `go test` under the race detector when cgo can build it, doctor, `guard check`, and the comment lint. `komodo gate --fuzz 10s` adds a fuzz pass over the guard, its lexer, the backlog parser, and the ledger reader; the pre-push hook runs it, the pre-commit hook does not, so a commit stays fast. The line runs it inside `close <task>` before the task commit and inside `close --group` before the push. In this repo `komodo gate --install` builds this host's own binary into `bin/` and writes pre-commit and pre-push hooks that run the gate through it, so a human terminal gets the same gate. A hook on an unsupported platform prints a clear message instead of guessing a binary. Other repos rely on the guard and their own verify command; the git hooks are for the toolkit only.
+`komodo gate` is the whole check: the build checks, then lint, doctor, `guard check`, and the comment lint. In this repo the build checks are `go vet` and `go test` under the race detector when cgo can build it; in any other repo they are the compile and verify commands QC runs, from `commands.json` or detection, each judged by the guard first. `komodo gate --fuzz 10s` adds a fuzz pass over the guard, its lexer, the backlog parser, and the ledger reader, in this repo only; the pre-push hook runs it, the pre-commit hook does not, so a commit stays fast. The line runs it inside `close <task>` before the task commit and inside `close --group` before the push. In this repo `komodo gate --install` builds this host's own binary into `bin/` and writes pre-commit and pre-push hooks that run the gate through it, so a human terminal gets the same gate. A hook on an unsupported platform prints a clear message instead of guessing a binary. Other repos rely on the guard and their own verify command; the git hooks are for the toolkit only.
 
 ## The repo layer
 
@@ -166,7 +170,7 @@ A task may say `tier: heavy` to get the big model for one hard task, or `facets:
 
 Ollama is mounted by the binary itself. `komodo machine <task>` posts the brief to Ollama's chat endpoint with the role's schema as the response format, writes the result JSON where close expects it, and stamps the ledger with the token counts the response carries. No host, no MCP, no other model in between: the call is mechanical and costs nothing but local compute. V1's HTTP server at 127.0.0.1:8000 is gone, and install removes its entry.
 
-A local machine carries read-only roles: reviewer, summarizer, and any session role that only reads. So on Claude Code the `hybrid` profile builds with Claude and, when the overlay sets `local_reviewer`, reviews on Ollama, so a review never shares a vendor with the build; without that line the review stays on the host's heavy tier, because a small local model reading a large diff is not a review. A builder needs tools, which is the host's job, so a local builder needs a host that mounts Ollama natively: on Codex the `local` profile points every tier at Ollama through the host's provider setting. Both Komodo machines pull the same models.
+A local machine carries read-only roles: reviewer, summarizer, and any session role that only reads. So on Claude Code the `hybrid` profile builds with Claude and, when the overlay sets `local_reviewer`, reviews on Ollama, so a review never shares a vendor with the build; without that line the review stays on the host's heavy tier, because a small local model reading a large diff is not a review. A builder needs tools, which is the host's job, so a local builder needs a host that mounts Ollama natively: the Codex `local` profile does that, and waits with Codex for a later version. Both Komodo machines pull the same models.
 
 ## Hot swap
 
@@ -183,20 +187,7 @@ MCPs are deferred. 1.0 gets the line working with models, skills, and external d
 
 ## The non-proprietary day
 
-Both developers run Claude Code today. Nothing outside `internal/mount/` names a vendor, a host tool, a host path, or a host flag, and doctor fails on a leak. The exit test: install on a second host with zero changes outside the mounts, then run one group. Codex is the rehearsal; OpenCode or whatever wins later is a third mount. A Claude subscription covers only Anthropic's own apps, so any other host bills an API or runs locally.
-
-## Roadmap
-
-Six groups, all `1.0.0`, all on PR #103. Sessions build the first four; the run skill runs the last two as its own proof.
-
-| Group | Delivers | Proof |
-|---|---|---|
-| TG-03.1 The markdown | Standards as skills, briefs folded into roles with schemas, the policy file with four denials, the rules updated for worktree freedom, the merger role removed | Tests, no old directories |
-| TG-03.2 The conveyor and devices | The Go module and the binary: lint, next, brief, close, diff, report, tag, release check, the ledger and metrics, `step`; prebuilt binaries and the manifest | Every station has a test |
-| TG-03.3 The guard and the mounts | The guard with the 60-command table, install for Claude Code and Codex, doctor with portability and prune, profiles with the plan probe and auto-selection | Guard table in the gate; validate under 1500 tokens |
-| TG-03.4 The skills and the launcher | run, review, backlog, respond; `komodo run` headless with the scrub and a wall-clock budget; the end-to-end timing proof | One group driven by the skill alone, numbers in the changelog |
-| TG-03.5 The repo layer, detection, and local machines | Context by glob, repo standards and skills, commands and additive policy; `detect`, facets for AWS, GCP, Azure, Postgres, and GitHub Actions with Komodo's setup skills, the profile slot, the project render from the profile; the Ollama mount; the hybrid and local profiles | Tests, doctor, the Ollama mount against a fake Ollama |
-| TG-03.6 The gate and the exit test | The local gate on pre-commit and pre-push with no CI; every swap point proven by test; one task under Codex with zero changes outside the mounts; README, names, and templates final; changelog 2.0.0 | Gate green locally, proofs recorded |
+Both developers run Claude Code today. Nothing outside `internal/mount/` names a vendor, a host tool, a host path, or a host flag, and doctor fails on a leak. The exit test: install on a second host with zero changes outside the mounts, then run one group. Codex is deferred to a later version: its mount stays in the code and passes its tests, but `install` refuses it and no profile selects it, so the exit test waits for its return. OpenCode or whatever wins later is a further mount. A Claude subscription covers only Anthropic's own apps, so any other host bills an API or runs locally.
 
 ## Pull requests
 
@@ -209,7 +200,7 @@ The repository ruleset must cover `main` only, which `komodo doctor --remote` au
 Every version here is SemVer with a prerelease stage, and a group's `version:` matches its changelog heading exactly.
 
 - **Alpha, `x.y.z-alpha.n`.** The shape still moves. The prototype shipped as `1.0.0-alpha.1`–`.4`.
-- **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land. A beta stays a beta until both proofs are in the changelog: one group driven headless by the run skill, and a local machine carrying a station. The exit test on a second host waits for that host's account.
+- **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land. A beta stays a beta until both proofs are in the changelog: one group driven headless by the run skill, and a local machine carrying a station. The exit test on a second host is deferred with Codex.
 - **Release, `x.y.z`.** A beta whose proofs are recorded and that ran real groups with no change to the line. The human cuts the tag; `komodo tag` never promotes a beta on its own.
 
 ## Names
@@ -227,7 +218,7 @@ One vocabulary, used the same way in this file, the backlog, the code, the skill
 | Role | One markdown file: what a machine is at a station or in a session |
 | Skill | A markdown procedure a session or a brief can load |
 | Facet | What detection selects for a platform: a skill, appendices, commands |
-| Guard | The one agent hook, four denials |
+| Guard | The one agent hook on shell, edit, write, and spawn |
 | Gate | The local precheck before a commit and a push |
 | Ledger | The two local metrics files |
 
@@ -239,7 +230,7 @@ Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optio
 git clone <this repo> ~/komodo/ai/komodo-agentic-factory-coding
 cd ~/komodo/ai/komodo-agentic-factory-coding
 go run ./cmd/komodo gate --install                # builds bin/komodo-<os>-<arch>, then the git hooks
-bin/komodo-<os>-<arch> install --host claude       # or --host codex; --host both
+bin/komodo-<os>-<arch> install --host claude       # the one host mounted today; Codex is deferred
 ```
 
 The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. `komodo gate --install` builds this host's own binary into `bin/` and puts the gate on pre-commit and pre-push once; run it again after editing Go source.
@@ -267,7 +258,7 @@ komodo run TG-03.5          # headless, one group
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
 komodo doctor               # references, portability, drift, prune; --remote audits the forge's rulesets
-komodo gate                 # vet, test, doctor, guard table, comments; pre-commit and pre-push run it here
+komodo gate                 # build checks, lint, doctor, guard table, comments; pre-commit and pre-push run it here
 ```
 
 With no target, `komodo run` drains every ready group in order: for each it builds
@@ -287,7 +278,7 @@ paused.
 | `komodo/AGENTS.md`, `komodo/rules/` | Universal rules, the accessibility contract, the backlog grammar |
 | `komodo/roles/` | One file per role: tier, tools, session flag, schema, brief template |
 | `komodo/skills/` | `run`, `review`, `backlog`, `respond`, and one `standards-<x>` per language or domain |
-| `komodo/policy.json` | The four denials and the critical refs |
+| `komodo/policy.json` | The critical refs, config paths, and trailer patterns the guard reads |
 | `komodo/facets/` | One directory per platform: Komodo's setup skill, appendices, commands, markers |
 | `cmd/komodo/`, `internal/` | The binary: line, guard, mounts including Ollama, gate, launcher |
 | `bin/` | Gitignored local build output, built by `komodo gate --install` |

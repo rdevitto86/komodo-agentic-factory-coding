@@ -2,9 +2,9 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
-## 1.0.0 — 2026-09-24
+## 1.0.0-beta.1 — 2026-09-24
 
-The first release: feature-complete, with the proofs recorded below, among them real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
+The first beta: feature-complete, with the proofs recorded below, among them real groups run with no change to the line. It becomes 1.0.0 when the human cuts the release. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.
 
 - **TG-03.32** The line keeps its own toolkit current (3 task(s))
 - **TG-03.31** Gaps the first run in another repo found (6 task(s))
@@ -39,7 +39,7 @@ The first release: feature-complete, with the proofs recorded below, among them 
 
 ### Proof: the line runs in another repo
 
-A fresh Go repo, cloned from a bare origin with `trunk` as its base, ran `komodo run TG-01.1 --budget 25m` headless with a binary built from this release. Each station ran in `step` order with no hand edit.
+A fresh Go repo, cloned from a bare origin with `trunk` as its base, ran `komodo run TG-01.1 --budget 25m` headless with a binary built from this beta. Each station ran in `step` order with no hand edit.
 
 | Station | Seconds | Machine |
 |---|---|---|
@@ -101,7 +101,7 @@ The runs are `TG-03.12-1790258917`, `TG-03.13-1790260778`, `TG-03.17-1790262942`
 
 Three other runs did not count. On TG-03.11 and TG-03.15 the driver passed an isolation option to its builder spawn, so it ported the diff by hand. TG-03.17 makes the guard refuse that spawn. On TG-03.14 the new doctor check correctly blocked on that stray worktree, and the close was rerun by hand once it was removed.
 
-Two gaps stay open past 1.0.0. The local 3B reviewer approves almost everything: it missed a real bug in #161. TG-03.17 also shipped matching the wrong spawn tool name, fixed by a one-line commit after the run.
+Two gaps stay open past this beta. The local 3B reviewer approves almost everything: it missed a real bug in #161. TG-03.17 also shipped matching the wrong spawn tool name, fixed by a one-line commit after the run.
 
 ### The line
 
