@@ -155,6 +155,16 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := stageWork(group, declared); err != nil {
 		return nil, err
 	}
+	// File findings into BACKLOG.md before push so they are in the ship commit.
+	filed, err := FileFindings(group, plan.Group, minor)
+	if err != nil {
+		return result, err
+	}
+	result.Filed = filed
+	// Stage BACKLOG.md with findings for commit.
+	if err := stageWork(group, []string{"BACKLOG.md"}); err != nil {
+		return nil, err
+	}
 	if staged, _ := git.Run(group, "diff", "--cached", "--name-only"); staged != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
 		if _, err := git.Run(group, "commit", "-m", message); err != nil {
@@ -192,11 +202,6 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := pushFromWorktree(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
-	filed, err := FileFindings(group, plan.Group, minor)
-	if err != nil {
-		return result, err
-	}
-	result.Filed = filed
 	if command := AfterPublishCommand(root, group); command != "" {
 		published := RunCommand(group, command)
 		result.Published = &published
