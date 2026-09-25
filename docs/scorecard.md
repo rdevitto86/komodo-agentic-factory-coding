@@ -39,11 +39,11 @@ while IFS=$'\t' read -r id cmd; do bash -c "$cmd" >/dev/null 2>&1 && echo "$id p
 
 | Id | Criterion | Proof | Delivered by |
 |---|---|---|---|
-| `S90a` | Forge writes through `gh api` are refused | `grep -q 'branches/main/protection' internal/guard/table*.go` | TSK-03.22.1 |
-| `S90b` | Gate bypass is refused | `grep -q -- '--no-verify' internal/guard/table*.go` | TSK-03.22.2 |
-| `S90c` | Interpreter bodies and scripts written then run are read | `grep -q 'python3 -c' internal/guard/table*.go` | TSK-03.22.3, TSK-03.22.4 |
-| `S90d` | A builder's worktree cannot push | `grep -q 'refused://' internal/line/worktree.go` | TSK-03.23.1 |
-| `S95a` | A local reviewer reviews only above its recorded recall | `grep -q 'func ReviewerRecall' internal/mount/registry.go` | TSK-03.24.2 |
+| `S90a` | Forge writes through `gh api` are refused | `go run ./cmd/komodo guard check >/dev/null && grep -q 'branches/main/protection' internal/guard/table*.go` | TSK-03.22.1 |
+| `S90b` | Gate bypass is refused | `go run ./cmd/komodo guard check >/dev/null && grep -q -- '--no-verify' internal/guard/table*.go` | TSK-03.22.2 |
+| `S90c` | Interpreter bodies and scripts written then run are read | `go run ./cmd/komodo guard check >/dev/null && grep -q 'python3 -c' internal/guard/table*.go` | TSK-03.22.3, TSK-03.22.4 |
+| `S90d` | A builder's worktree cannot push | `go test ./internal/line -run '^TestAddWorktreeRefusesAPushFromATaskWorktree$' -count=1 -v 2>&1 \| grep -q -- '^--- PASS: TestAddWorktreeRefusesAPushFromATaskWorktree '` | TSK-03.23.1 |
+| `S95a` | A local reviewer reviews only above its recorded recall | `test "$(go test ./internal/mount/claude -run '^(TestOverlayMovesTheReviewerToOllamaAndRenamesATier\|TestRecallUnderTenCasesKeepsReviewRemote\|TestNoRecallFileKeepsReviewRemote)$' -count=1 -v 2>&1 \| grep -c -- '^--- PASS')" -eq 3` | TSK-03.24.2 |
 
 `S95b`, no new bypass found for three consecutive history rows, is read from the history.
 
@@ -53,10 +53,10 @@ while IFS=$'\t' read -r id cmd; do bash -c "$cmd" >/dev/null 2>&1 && echo "$id p
 
 | Id | Criterion | Proof | Delivered by |
 |---|---|---|---|
-| `T80a` | Every ready spawn in a wave launches together | `grep -q 'json:"spawns' internal/line/step.go` | TSK-03.21.1 |
-| `T80b` | Waves split by file | `grep -rqE 'func (claimsOverlap\|Overlap)\(' internal/line internal/plan` | TSK-03.26.1 |
-| `T90a` | Groups with disjoint files run at once | `grep -rq '"runs"' internal/line` | TSK-03.26.5 |
-| `T90b` | Small tasks build on the light tier | `grep -q 'light_builder' internal/mount/registry.go` | TSK-03.26.3 |
+| `T80a` | Every ready spawn in a wave launches together | `go test ./internal/line -run '^TestABriefedParallelWaveSpawnsEveryTaskAtOnce$' -count=1 -v 2>&1 \| grep -q -- '^--- PASS: TestABriefedParallelWaveSpawnsEveryTaskAtOnce '` | TSK-03.21.1 |
+| `T80b` | Waves split by file | `test "$(go test ./internal/plan -run '^(TestOneSharedFileSerializes\|TestClaimsOverlapReadsPathsNotPrefixes)$' -count=1 -v 2>&1 \| grep -c -- '^--- PASS')" -eq 2` | TSK-03.26.1 |
+| `T90a` | Groups with disjoint files run at once | `test "$(go test ./internal/line -run '^(TestTwoGroupsOnDisjointFilesEachStepTheirOwnSpawn\|TestAnOverlappingGroupIsRefusedWhileTheFirstIsOpen)$' -count=1 -v 2>&1 \| grep -c -- '^--- PASS')" -eq 2` | TSK-03.26.5 |
+| `T90b` | Small tasks build on the light tier | `test "$(go test ./internal/line -run '^(TestAOneFileTaskBuildsOnLightAndRepairsOnStandard\|TestASourceAndItsTestFileStillBuildOnLight)$' -count=1 -v 2>&1 \| grep -c -- '^--- PASS')" -eq 2` | TSK-03.26.3 |
 | `T90c` | `komodo metrics` reports tasks per hour | `go run ./cmd/komodo metrics \| grep -qi 'per hour'` | TSK-03.26.4 |
 
 `T95a`, a sustained tasks-per-hour figure from another repo, is read from the changelog.
@@ -66,11 +66,11 @@ while IFS=$'\t' read -r id cmd; do bash -c "$cmd" >/dev/null 2>&1 && echo "$id p
 
 | Id | Criterion | Proof | Delivered by |
 |---|---|---|---|
-| `A90a` | `step` decides through a pure, fuzzed `Next` | `grep -q 'func Next(' internal/line/snapshot.go && grep -q 'func FuzzNext' internal/line/snapshot_test.go` | TSK-03.21.3 |
-| `A90b` | Live status stays out of `BACKLOG.md` until ship | `! grep -q 'writeStatus(' internal/line/close.go` | TSK-03.25.1 |
-| `A90c` | One git adapter | `test -f internal/git/git.go` | TSK-03.27.1 |
+| `A90a` | `step` decides through a pure, fuzzed `Next` | `grep -q 'func Next(' internal/line/snapshot.go && go test ./internal/line -run '^FuzzNext$' -count=1 -v 2>&1 \| grep -q -- '^--- PASS: FuzzNext '` | TSK-03.21.3 |
+| `A90b` | Live status stays out of `BACKLOG.md` until ship | `go test ./internal/line -run '^TestCloseRecordsDoneInTheRunWhenEverythingPasses$' -count=1 -v 2>&1 \| grep -q -- '^--- PASS: TestCloseRecordsDoneInTheRunWhenEverythingPasses '` | TSK-03.25.1 |
+| `A90c` | One git adapter | `test -f internal/git/git.go && ! grep -rnE --include='*.go' 'exec\.Command(Context)?\((ctx, )?"git"' internal cmd \| grep -v '_test.go' \| grep -qv '^internal/git/'` | TSK-03.27.1 |
 | `A90d` | The guard links neither `profile` nor `mount/ollama` | `! go list -deps ./internal/guard \| grep -qE '^komodo/internal/(profile\|mount/ollama)$'` | TSK-03.27.2 |
-| `A90e` | The planner has its own package | `test -f internal/plan/plan.go` | TSK-03.27.3 |
+| `A90e` | The planner has its own package | `go list -deps ./internal/line \| grep -qx komodo/internal/plan && go test ./internal/plan -count=1 >/dev/null` | TSK-03.27.3 |
 | `A95a` | `line` is under 2,500 non-test lines | `test "$(cat $(ls internal/line/*.go \| grep -v _test) \| wc -l)" -lt 2500` | TSK-03.27.4, TSK-03.27.5 |
 
 ### Code quality
