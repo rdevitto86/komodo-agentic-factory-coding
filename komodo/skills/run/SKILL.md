@@ -21,7 +21,7 @@ You drive one group through the line. The station order lives in the binary. You
 
 ## The binary
 
-In a headless run `komodo` is on PATH. In a session it is the absolute path the guard hook in the host's project settings names. In the toolkit repo `go run ./cmd/komodo` is the same binary.
+`komodo` on PATH wins whenever it is present, headless or in a session. In a session when nothing is on PATH, `komodo` is the absolute path the guard hook in the host's project settings names. In the toolkit repo when nothing is on PATH, `go run ./cmd/komodo` is the fallback.
 
 ## Rules
 
