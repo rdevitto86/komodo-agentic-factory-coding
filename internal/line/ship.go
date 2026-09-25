@@ -91,6 +91,14 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err != nil {
 		return nil, err
 	}
+	groupParsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if refined := refinedTasks(rootParsed, groupParsed, plan.Tasks); len(refined) > 0 {
+		return nil, fmt.Errorf("the root's BACKLOG.md differs from this group's at %s; rebase or edit before ship",
+			strings.Join(refined, ", "))
+	}
 	live := LoadStatus(root)
 	blocking, minor := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	if len(blocking) > 0 {
@@ -347,4 +355,39 @@ func redactURL(text, url string) string {
 		text = strings.ReplaceAll(text, url, "origin")
 	}
 	return credentialRe.ReplaceAllString(text, "://***@")
+}
+
+// refinedTasks returns task IDs whose body differs between root and group backlogs.
+// It compares files, done_when, and context fields for each task in the plan.
+func refinedTasks(root, group backlog.Backlog, planTasks []PlanTask) []string {
+	var refined []string
+	for _, pt := range planTasks {
+		rootTask, ok := root.Task(pt.ID)
+		if !ok {
+			continue
+		}
+		groupTask, ok := group.Task(pt.ID)
+		if !ok {
+			continue
+		}
+		if !slicesEqual(rootTask.Files(), groupTask.Files()) ||
+			!slicesEqual(rootTask.DoneWhen(), groupTask.DoneWhen()) ||
+			!slicesEqual(rootTask.Context(), groupTask.Context()) {
+			refined = append(refined, pt.ID)
+		}
+	}
+	return refined
+}
+
+// slicesEqual reports whether two string slices are equal in order.
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
