@@ -120,6 +120,14 @@ func TestKeepKnownDropsLabelsTheRepoLacks(t *testing.T) {
 	}
 }
 
+func TestKeepKnownMatchesByNameBeforeTheFirstSpace(t *testing.T) {
+	known := []string{"@agent 🤖", "scope/guard 🛡️", "scope/harness ⚙️"}
+	got := KeepKnown([]string{"@agent", "scope/guard"}, known)
+	if strings.Join(got, ",") != "@agent 🤖,scope/guard 🛡️" {
+		t.Fatalf("kept = %v", got)
+	}
+}
+
 func TestLabelsReturnsAnAPIError(t *testing.T) {
 	client, _ := fakeErr(errors.New("not found"))
 	if _, err := client.Labels(); err == nil {

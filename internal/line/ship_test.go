@@ -764,6 +764,61 @@ func TestChangedLinesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
 	}
 }
 
+func TestScopeLabelRules(t *testing.T) {
+	cases := []struct {
+		name  string
+		files []string
+		want  string
+	}{
+		{"guard", []string{"internal/guard/guard.go"}, "scope/guard"},
+		{"mount", []string{"internal/mount/mount.go"}, "scope/mount"},
+		{"skills", []string{"komodo/skills/build.md"}, "scope/skills"},
+		{"roles", []string{"komodo/roles/build.md"}, "scope/skills"},
+		{"agents", []string{"internal/profile/tier.go"}, "scope/agents"},
+		{"machine", []string{"internal/profile/machine.go"}, "scope/agents"},
+		{"harness", []string{"internal/line/ship.go"}, "scope/harness"},
+		{"profile without tier or machine", []string{"internal/profile/profile.go"}, "scope/harness"},
+		{"none", nil, "scope/harness"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := scopeLabel(c.files); got != c.want {
+				t.Fatalf("scopeLabel(%v) = %q, want %q", c.files, got, c.want)
+			}
+		})
+	}
+}
+
+func TestShipWarnsWhenTheRepoLacksAWantedLabel(t *testing.T) {
+	root, group := shipRepo(t)
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "label" {
+			return `[{"name":"@agent 🤖"}]`, nil
+		}
+		return "https://example.com/pull/1", nil
+	}}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Labels) != 1 || result.Labels[0] != "@agent 🤖" {
+		t.Fatalf("labels = %v", result.Labels)
+	}
+	found := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "scope/harness") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %v; a wanted label the repo lacks must be a warning", result.Warnings)
+	}
+}
+
 func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
 	root, _ := shipRepo(t)
 	refined := "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
