@@ -32,4 +32,5 @@ You drive one group through the line. The station order lives in the binary. You
 - **Never pass an isolation option to a spawn.** The line already cut `worktree`; a second one strands the agent's diff.
 - **A spawned agent returns the JSON its schema names.** Save it where the brief says, then loop. Never finish its work yourself.
 - **Ad hoc work enters at any station.** `komodo brief <task>` on its own is legal, and so is a review with no group.
+- **After a pull request merges, or when `komodo doctor` reports drift, run `komodo sync` yourself.** Never hand the human `gate --install`, `install --host`, or a pull.
 - **Report in the accessibility contract** when the loop ends.
