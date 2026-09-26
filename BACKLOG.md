@@ -378,7 +378,7 @@ context:
 ### [TG-04.6] The relay line stops cleanly when a group does not ship
 ```yaml
 type: fix
-version: 1.0.0-alpha.6
+version: 1.0.0-alpha.5
 ```
 * **Why:** running phase 1 in two lanes on 2026-09-26 found three relay-line defects; each cost a stopped lane or a hand repair.
 
@@ -963,6 +963,112 @@ context:
 type: docs
 ```
 
+### [TG-05.7] Every epic has a draft branch, and group PRs stack on it
+```yaml
+type: feat
+version: 1.0.0-alpha.6
+```
+* **Why:** every group opened its own PR against `main`, and the owner approved each by hand; on 2026-09-26 that was 14 PRs in one afternoon. An epic branch collects its groups' PRs, and a person merges once per epic.
+
+#### [TSK-05.7.1] Decision 0028 and REQ-13 say where every branch cuts from and where every PR lands [P: C] [READY]
+```yaml
+files: [docs/decisions.md, docs/prd.md, docs/system-design.md]
+done_when:
+  - grep -q '^## 0028' docs/decisions.md
+  - grep -q 'epic branch' docs/prd.md
+context:
+  - "the owner's words, 2026-09-26: each epic has a branch named feat/v<its version>, cut from main and opened as a draft PR to main; every group PR targets its epic's branch, or stacks on the group it depends on; people review and merge at the final state, the epic's PR"
+  - "the conductor merges a reviewed, checked group PR into its epic branch; only a person merges an epic PR into main"
+  - "a group PR holds at most 20 files and 2,000 changed lines, and 1,000 is preferred; an epic PR has no cap, since it gathers many group PRs"
+  - "an epic's version names its branch, so every group's version must equal its epic's exactly"
+  - "naming: only an epic branch is named by version, strictly feat/v<version>; a group branch and PR keep their own unique names, each naming its group, so every change traces to its task group"
+  - "REQ-13 becomes: a group branch cuts from its epic's branch, or stacks on the branch of a group it depends on; update system-design's git and shipping sections to match"
+type: docs
+```
+
+#### [TSK-05.7.2] Lint pins every group's version to its epic's [P: C] [READY]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+  - go run ./cmd/komodo lint
+context:
+  - "the epic branch is named from the version, so a wrong version sends a builder's work to the wrong branch; an epic's goal line names its version as Ships as `x.y.z`"
+  - "a group whose version differs from its epic's is a problem naming both; an epic with no version is a problem"
+```
+
+#### [TSK-05.7.3] A group with no declared base cuts from its epic's branch [P: C] [READY]
+```yaml
+files: [internal/backlog/backlog.go, internal/line/next.go, internal/line/next_test.go, komodo/rules/backlog.md]
+done_when:
+  - go test ./internal/backlog/... ./internal/line/...
+depends_on: [TSK-05.7.2]
+context:
+  - "EpicBranch is feat/v plus the group's version; groupBase is the declared base, else the epic branch, else the remote's default when the epic branch is missing and cannot be opened"
+  - "lint's base rule accepts the group's epic branch; the grammar in komodo/rules/backlog.md says a group cuts from its epic's branch and states that its version picks the branch"
+  - "a group's branch is <type>/<group id>-<slug>, such as feat/tg-05.2-the-host-contract, and its PR title ends with the group id, such as (TG-05.2), so each traces to its group"
+  - "only feat/v<version> is an epic branch: lint refuses a group whose declared base looks like one but names another epic's version"
+  - "test (REQ-13): a group with no base plans onto feat/v<version>; one with depends_on stacks on its parent's branch; a group branch carries its group id"
+```
+
+#### [TSK-05.7.4] The line opens an epic's branch and draft PR on its first cut [P: C] [READY]
+```yaml
+files: [internal/line/epic.go, internal/line/epic_test.go, internal/line/cut.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-05.7.3]
+context:
+  - "when a group cuts and its epic branch is not on origin, the conductor cuts it from main, pushes it with its own credential, and opens a draft PR to main titled feat: <epic title> (<version>), with the epic's goal as the summary"
+  - "where drafts are unavailable, the PR is labelled status: wip, as TSK-07.8.3 does for group PRs; a draft base never stops a group PR from targeting or stacking on it"
+```
+
+#### [TSK-05.7.5] The conductor merges a reviewed group into its epic branch [P: C] [READY]
+```yaml
+files: [internal/line/merge.go, internal/line/merge_test.go, internal/pr/pr.go, internal/pr/pr_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/pr/...
+depends_on: [TSK-05.7.4]
+context:
+  - "after ship, when the review left nothing at or above the floor and every check passed, the conductor merges the group PR into its epic branch with a merge commit, never a squash, so a stacked child keeps its base"
+  - "it never merges into main or a critical ref from komodo/policy.json, and a model session never merges; a refused merge leaves the PR open and names why"
+```
+
+#### [TSK-05.7.6] A group PR holds at most 20 files and 2,000 changed lines [P: H] [READY]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/profile/...
+depends_on: [TSK-05.7.5]
+context:
+  - "the profile carries pr_files 20, pr_lines_preferred 1000 and pr_lines_max 2000; ship refuses a group PR over either ceiling and names a split, and a PR over the preferred size says so in its body"
+  - "an epic PR has no cap"
+  - "lint refusing a group whose tasks list more than 20 files lands with TG-07.1's group files"
+```
+
+#### [TSK-05.7.7] The rules and skills send every PR to its epic branch [P: H] [READY]
+```yaml
+files: [komodo/AGENTS.md, komodo/skills/standards-sdlc/SKILL.md, komodo/skills/respond/SKILL.md, komodo/roles/responder.md]
+done_when:
+  - grep -q 'epic branch' komodo/AGENTS.md
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-05.7.1]
+context:
+  - "AGENTS.md's Git section: a group PR targets its epic branch, and landing into main is a person's merge of the epic PR; keep the file's size unchanged, since the always-on context sits at its cap"
+  - "the SDLC standard and the responder: branches, PR targets, stacking, drafts and the size limits, as decision 0028 states them"
+type: docs
+```
+
+#### [TSK-05.7.8] Doctor reports an epic missing its branch or draft PR, and a group PR aimed at main [P: M] [READY]
+```yaml
+files: [internal/doctor/epics.go, internal/doctor/epics_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-05.7.4]
+context:
+  - "with --remote: an epic holding ready groups whose branch or draft PR is missing on origin, and an open group PR whose base is main while its epic branch exists"
+  - "the guard is frozen until TG-06.2, so the rule that a model session may not push to or merge an epic branch lands there (TSK-06.2.1)"
+```
+
 ### [TG-05.5] Metrics and the clock
 ```yaml
 type: feat
@@ -1221,6 +1327,7 @@ context:
   - docs/system-design.md#security
   - "delete the bash interpreter and expansion code; keep a tokenizer that finds a git or gh subcommand and a write target; the matcher covers Bash, PowerShell and Monitor"
   - "the table keeps one row per rule, including a model session's push refused (REQ-26), and drops the rows for hidden intent"
+  - "a model session may not push to or merge an epic branch; only the conductor does (decision 0028, TSK-05.7.8)"
 tier: heavy
 type: refactor
 ```
@@ -2120,7 +2227,7 @@ type: test
 ---
 
 ## [EPIC-08] Phase 4: install, platforms and eval
-*Goal: the success criteria hold on macOS, Linux and Windows, and the owner cuts 1.0.0. Ships as `1.0.0-beta.2`; TG-08.8 is `1.0.0`.*
+*Goal: the success criteria hold on macOS, Linux and Windows. Ships as `1.0.0-beta.2`.*
 
 ### [TG-08.1] Spike S6: Windows
 ```yaml
@@ -2382,6 +2489,9 @@ context:
 owner: human
 type: test
 ```
+
+## [EPIC-09] 1.0.0 LTS
+*Goal: the owner cuts 1.0.0 once all five success criteria hold. Ships as `1.0.0`.*
 
 ### [TG-08.8] 1.0.0 LTS
 ```yaml
