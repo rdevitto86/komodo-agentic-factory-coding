@@ -55,9 +55,9 @@ func TestResumeStartsAFreshBuildWhenTheHostCannotResume(t *testing.T) {
 	}
 }
 
-// TestResumeDrivesOnWhenNothingIsPending leaves a state with a finished review alone and
-// simply carries the group forward, starting no session at all.
-func TestResumeDrivesOnWhenNothingIsPending(t *testing.T) {
+// TestResumeRerunsAReviewCutOff reviews a group killed at Reviewing again, since state.json saves a
+// state on entry and so never records a finished review there.
+func TestResumeRerunsAReviewCutOff(t *testing.T) {
 	r := newRig(t)
 	start := State{Group: "TG-1", Current: Reviewing}
 	*r.saved = append(*r.saved, start)
@@ -66,8 +66,23 @@ func TestResumeDrivesOnWhenNothingIsPending(t *testing.T) {
 	if err != nil || final.Current != Shipped {
 		t.Fatalf("resume = %s, %v; want Shipped", final.Current, err)
 	}
+	if len(r.host.starts) != 1 || r.host.starts[0].Role != "reviewer" {
+		t.Fatalf("resume starts = %+v, want one reviewer session", r.host.starts)
+	}
+}
+
+// TestResumeRerunsAPrepareCutOff carries a group killed at Preparing on to Shipped instead of stalling.
+func TestResumeRerunsAPrepareCutOff(t *testing.T) {
+	r := newRig(t)
+	start := State{Group: "TG-1", Current: Preparing}
+	*r.saved = append(*r.saved, start)
+
+	final, err := r.driver.Resume(context.Background(), start)
+	if err != nil || final.Current != Shipped {
+		t.Fatalf("resume = %s, %v; want Shipped, not a stall at Preparing", final.Current, err)
+	}
 	if len(r.host.starts) != 0 {
-		t.Fatalf("resume starts = %+v, want none since the review had already finished", r.host.starts)
+		t.Fatalf("resume starts = %+v, want none for Prepare and Ship", r.host.starts)
 	}
 }
 

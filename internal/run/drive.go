@@ -109,7 +109,7 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 	}
 	return &conductor.Driver{
 		Host:          contract,
-		Stations:      &stations{Line: &conductor.Line{Root: root, Plan: plan, Client: client}, root: root, group: plan.Group},
+		Stations:      &conductor.Line{Root: root, Plan: plan, Client: client},
 		Ledger:        line.Book(root),
 		Run:           run,
 		Builder:       builder,
@@ -119,41 +119,20 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 		Save: func(s conductor.State) error {
 			return conductor.SaveState(conductor.StatePath(root, plan.Group), s)
 		},
+		WriteReview: func(group string, result mount.Result) error {
+			return writeReview(root, group, result)
+		},
 	}, nil
 }
 
-// stations wraps the line's own stations, leaving the group's review where ShipGroup reads it.
-type stations struct {
-	*conductor.Line
-	root, group string
-}
-
-// Ship writes the group's review result from its saved state, then ships it.
-func (s *stations) Ship() error {
-	if err := s.writeReview(); err != nil {
-		return err
-	}
-	return s.Line.Ship()
-}
-
-// writeReview rebuilds the group's review result from its saved state.json, so ShipGroup's own
-// findings gate reads the same severities the conductor already cleared.
-func (s *stations) writeReview() error {
-	state, err := conductor.LoadState(conductor.StatePath(s.root, s.group))
+// writeReview saves the reviewer's whole result, findings with their files and titles, where
+// ShipGroup reads it, so its findings gate and the findings it files match what the reviewer said.
+func writeReview(root, group string, result mount.Result) error {
+	data, err := json.Marshal(result.Value)
 	if err != nil {
 		return err
 	}
-	findings := make([]line.Finding, len(state.Findings))
-	for i, finding := range state.Findings {
-		findings[i] = line.Finding{Severity: finding.Severity}
-	}
-	data, err := json.Marshal(struct {
-		Findings []line.Finding `json:"findings"`
-	}{findings})
-	if err != nil {
-		return err
-	}
-	path := line.ResultPath(s.root, s.group+"-review")
+	path := line.ResultPath(root, group+"-review")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

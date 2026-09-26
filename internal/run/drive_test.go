@@ -150,6 +150,16 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	if builds != 1 || reviews != 1 {
 		t.Fatalf("builds = %d, reviews = %d; want exactly one each", builds, reviews)
 	}
+
+	// The reviewer's own result is what ship read, not a copy rebuilt from state.
+	review, err := os.ReadFile(line.ResultPath(root, "TG-40.1-review"))
+	if err != nil || !strings.Contains(string(review), `"findings"`) {
+		t.Fatalf("review result = %q, %v; the reviewer's result must be saved for ship", review, err)
+	}
+	shipped, err := exec.Command("git", "-C", bareRemote(t, root), "show", "feat/a-fake-group:BACKLOG.md").CombinedOutput()
+	if err != nil || strings.Contains(string(shipped), "[READY]") || !strings.Contains(string(shipped), "[DONE]") {
+		t.Fatalf("shipped BACKLOG.md = %s, %v; Prepare must mark every task DONE", shipped, err)
+	}
 }
 
 // bareRemote reads root's own push URL for origin, which is the bare repo the group's branch lands on.

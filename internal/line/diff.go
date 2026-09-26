@@ -32,7 +32,12 @@ type ReviewInput struct {
 // DiffFor renders the group's diff against its base with the task blocks and the standards it touches.
 func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 	worktree := WorktreePath(root, plan.Worktree)
-	ref := StartRef(worktree, plan.Base)
+	base := plan.Base
+	// A group cut from another base, such as its epic's branch, is reviewed against that base.
+	if run, err := LoadRunFor(root, plan.Group); err == nil && run.Group == plan.Group && run.Base != "" {
+		base = run.Base
+	}
+	ref := StartRef(worktree, base)
 	names, err := git.Run(worktree, "diff", "--name-only", ref+"...HEAD")
 	if err != nil {
 		return nil, err

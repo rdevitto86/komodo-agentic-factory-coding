@@ -59,8 +59,32 @@ func (d *Driver) Resume(ctx context.Context, s State) (State, error) {
 		if err := d.build(ctx, &s, station, req, handle); err != nil {
 			return s, fmt.Errorf("resuming %s at %s: %w", s.Group, s.Current, err)
 		}
+	} else if interrupted(s) {
+		// Next waits on a flag this state's cut-off work never set, so the work runs again.
+		r := round{fixes: s.Fixes, builder: mount.Handle(s.Builder), repairs: s.Repairs}
+		err := d.work(ctx, &s, &r)
+		s.Fixes, s.Builder, s.Repairs = r.fixes, string(r.builder), r.repairs
+		if err != nil {
+			s.Escalate = true
+			if saveErr := d.Save(s); saveErr != nil {
+				return s, saveErr
+			}
+			return s, fmt.Errorf("resuming %s at %s: %w", s.Group, s.Current, err)
+		}
 	}
 	return d.Drive(ctx, s)
+}
+
+// interrupted reports whether a saved station state's work was cut off: state.json records a state
+// only on entry, so a group still at Reviewing, Checking, Preparing or Shipping never finished it.
+func interrupted(s State) bool {
+	switch s.Current {
+	case Reviewing, Checking, Preparing:
+		return true
+	case Shipping:
+		return !s.ShipDone
+	}
+	return false
 }
 
 // pendingSession names the station and request a stopped Building or Repairing group was

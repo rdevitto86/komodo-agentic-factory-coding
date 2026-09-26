@@ -31,7 +31,7 @@ var errNotWired = errors.New("the conductor needs a host, stations, a ledger and
 type Stations interface {
 	// Check reruns every check and returns one fix per failure, none when all passed.
 	Check() ([]string, error)
-	// Prepare integrates the group and returns one fix per conflict or integration failure.
+	// Prepare verifies the group's integrated worktree and returns one fix per failure.
 	Prepare() ([]string, error)
 	// Ship pushes the group and opens its draft PR.
 	Ship() error
@@ -51,6 +51,8 @@ type Driver struct {
 	Repairs int
 	// Save writes the group's state to state.json.
 	Save func(State) error
+	// WriteReview keeps the reviewer's whole result where Ship's findings gate reads it; nil skips it.
+	WriteReview func(group string, result mount.Result) error
 }
 
 // round is what one Drive call carries between states: the open fix list, the builder session, repairs spent.
@@ -171,6 +173,11 @@ func (d *Driver) review(ctx context.Context, s *State, r *round) error {
 	if err != nil {
 		return err
 	}
+	if d.WriteReview != nil {
+		if err := d.WriteReview(s.Group, result); err != nil {
+			return err
+		}
+	}
 	data, err := json.Marshal(result.Value["findings"])
 	if err != nil {
 		return err
@@ -272,7 +279,6 @@ type Line struct {
 	Root   string
 	Plan   *line.Plan
 	Client *pr.Client
-	waves  []*line.WaveResult
 }
 
 // Check reruns the compile gates, then the verify command, in the group's worktree.
@@ -290,30 +296,23 @@ func (l *Line) Check() ([]string, error) {
 	return nil, nil
 }
 
-// Prepare merges each wave into the group branch and reruns its integration gates and verify.
+// Prepare reruns every check in the worktree the one group builder worked, since there are no task
+// branches to merge, then marks each task DONE so Ship commits and reports them.
 func (l *Line) Prepare() ([]string, error) {
-	l.waves = nil
-	for index := range l.Plan.Waves {
-		wave, err := line.CloseWave(l.Root, l.Plan, index)
-		if err != nil {
+	fixes, err := l.Check()
+	if err != nil || len(fixes) > 0 {
+		return fixes, err
+	}
+	for _, task := range l.Plan.Tasks {
+		if err := line.RecordStatus(l.Root, task.ID, "DONE"); err != nil {
 			return nil, err
-		}
-		l.waves = append(l.waves, wave)
-		if wave.Conflict != "" {
-			return []string{wave.Conflict}, nil
-		}
-		if failure, failed := line.FirstFailure(wave.Gates); failed {
-			return []string{line.FailureText(failure)}, nil
-		}
-		if wave.Verify != nil && !wave.Verify.OK() {
-			return []string{line.FailureText(*wave.Verify)}, nil
 		}
 	}
 	return nil, nil
 }
 
-// Ship commits, pushes and opens the group's draft PR with the waves Prepare integrated.
+// Ship commits, pushes and opens the group's draft PR.
 func (l *Line) Ship() error {
-	_, err := line.ShipGroup(l.Root, l.Plan, l.waves, l.Client)
+	_, err := line.ShipGroup(l.Root, l.Plan, nil, l.Client)
 	return err
 }

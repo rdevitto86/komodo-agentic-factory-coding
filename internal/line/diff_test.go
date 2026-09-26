@@ -231,6 +231,28 @@ func TestDiffForUsesTheRefAddWorktreeResolvedNotAStaleLocalBase(t *testing.T) {
 	}
 }
 
+func TestDiffForUsesTheBaseTheRunWasCutFrom(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "shared.go", "package shared\n", "seed")
+	gitCmd(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	gitCmd(t, root, "checkout", "-q", "-b", "feat/1.0.0-alpha.6")
+	commit(t, root, "epic/earlier.go", "package epic\n", "an earlier group on the epic branch")
+	gitCmd(t, root, "update-ref", "refs/remotes/origin/feat/1.0.0-alpha.6", "HEAD")
+	gitCmd(t, root, "checkout", "-q", "-b", "feat/this-group")
+	commit(t, root, "a/one.go", "package a\n", "this group's commit")
+	if err := SaveRun(root, RunState{Run: "TG-10.1-1", Group: "TG-10.1", Base: "feat/1.0.0-alpha.6", Branch: "feat/this-group"}); err != nil {
+		t.Fatal(err)
+	}
+
+	input, err := DiffFor(root, &Plan{Group: "TG-10.1", Base: "main", Worktree: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(input.Files, "a/one.go") || contains(input.Files, "epic/earlier.go") {
+		t.Fatalf("files = %v; the review must diff against the epic branch the run was cut from", input.Files)
+	}
+}
+
 func TestDiffForCarriesRepoStandardsAndTheFacetReviewerAppendix(t *testing.T) {
 	root := gitRepo(t)
 	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
