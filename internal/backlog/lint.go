@@ -45,8 +45,9 @@ func Lint(parsed Backlog) []string {
 			problems = append(problems, fmt.Sprintf("%s: duplicate group id (lines %d and %d)", group.ID, line+1, group.Heading+1))
 		}
 		seen[group.ID] = group.Heading
-		if len(group.Tasks) > 12 {
-			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", group.ID, len(group.Tasks)))
+		// Filed findings wait in REFINEMENT and no builder works them, so only the rest count toward the cap.
+		if built := buildable(group); built > 12 {
+			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", group.ID, built))
 		}
 		var depBranches []string
 		for _, dep := range group.DependsOn() {
@@ -194,4 +195,15 @@ func hasHeading(text, anchor string) bool {
 		}
 	}
 	return false
+}
+
+// buildable counts the group's tasks a builder session works: every one not waiting in REFINEMENT.
+func buildable(group Group) int {
+	count := 0
+	for _, task := range group.Tasks {
+		if task.Status != "REFINEMENT" {
+			count++
+		}
+	}
+	return count
 }

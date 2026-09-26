@@ -127,3 +127,20 @@ func TestLintAcceptsBuildTaskWithNoTier(t *testing.T) {
 		t.Fatalf("build task with no tier should be allowed; got %v", problems)
 	}
 }
+
+func TestLintLeavesFiledFindingsOutOfTheTaskCap(t *testing.T) {
+	text := "### [TG-42.1] Four tasks and twelve filed findings\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n"
+	for i := 1; i <= 16; i++ {
+		status := "DONE"
+		if i > 4 {
+			status = "REFINEMENT"
+		}
+		text += "#### [TSK-42.1." + string(rune('0'+i/10)) + string(rune('0'+i%10)) + "] Task " + string(rune('0'+i)) + " [P: L] [" + status + "]\n"
+		text += "```yaml\nfiles: [a/t" + string(rune('0'+i)) + ".go]\ndone_when: [\"go test ./...\"]\n```\n\n"
+	}
+	for _, problem := range Lint(Parse(text)) {
+		if strings.Contains(problem, "exceeds limit of 12") {
+			t.Fatalf("filed REFINEMENT findings must not count toward the cap; got %q", problem)
+		}
+	}
+}
