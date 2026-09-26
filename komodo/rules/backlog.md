@@ -8,7 +8,7 @@
 ### [TG-01.1] Group title
 ```yaml
 type: feat          # feat fix chore docs test refactor perf build ci (branch and commit type)
-version: 1.4.0      # the version this group ships; close-out writes it into the changelog heading
+version: 1.4.0      # the version this group ships; ship files the group's changelog line under it
 mode: parallel      # parallel (default) or single: one builder takes the whole group
 base: main          # the branch this group is cut from; omit for the remote's default branch
 depends_on: [TG-01.0]  # groups whose branch base may name
@@ -30,7 +30,7 @@ facets: [postgres]  # facet names this task adds to detection
 ### Fields
 - **Priority** is `C`, `H`, `M`, or `L`. **Status** is `REFINEMENT`, `READY`, `IN_PROGRESS`, `BLOCKED`, or `DONE`. The harness rewrites only the status token, and appends the finding tasks it files.
 - **`REFINEMENT`** is a task still being planned: the harness never runs it, never picks its group, and lint does not demand `files` or `done_when`. Promote it to `READY` once both are real.
-- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n` or `x.y.z-beta.n` for a prerelease. It is the changelog heading ship writes and the tag `komodo tag` cuts, so the two can never drift. Groups shipping together share one version.
+- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n` or `x.y.z-beta.n` for a prerelease. It is the changelog version ship writes a fragment for and the tag `komodo tag` cuts, so the two can never drift. Groups shipping together share one version.
 - **`base`** is the branch a group cuts from. Omit it for the remote's default branch, write `main`, or name the branch of a group listed in this group's `depends_on`; any other value fails `komodo lint`.
 - **`files`** lists every path the task will create or edit. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
 - **`done_when`** is shell commands that exit zero when the task is done. Never prose. Cover the whole package, not one file.

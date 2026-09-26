@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/line"
 	"komodo/internal/release"
@@ -88,8 +90,14 @@ func remoteTags(root string) []string {
 
 // runRelease audits the drift between the changelog, the tags, and the groups, or builds release assets.
 func runRelease(root string, args []string) {
-	if len(args) == 0 || (args[0] != "check" && args[0] != "build") {
-		fail(fmt.Errorf("usage: komodo release check | komodo release build"))
+	if len(args) == 0 || (args[0] != "check" && args[0] != "build" && args[0] != "fold") {
+		fail(fmt.Errorf("usage: komodo release check | komodo release build | komodo release fold"))
+	}
+	if args[0] == "fold" {
+		if err := fold(root, os.Stdout); err != nil {
+			fail(err)
+		}
+		return
 	}
 	if args[0] == "build" {
 		paths, err := release.BuildAssets(root, filepath.Join(root, "dist"), os.Stdout)
@@ -119,6 +127,30 @@ func runRelease(root string, args []string) {
 	if len(drift) > 0 {
 		exit(1)
 	}
+}
+
+// fold writes every changelog fragment into CHANGELOG.md and deletes them, on any branch but the default.
+func fold(root string, out io.Writer) error {
+	branch, err := git.Run(root, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
+	}
+	if base := line.DefaultBase(root); branch == base {
+		return fmt.Errorf("refusing to fold on %q; fold on a branch and open a pull request", base)
+	}
+	fragments, err := changelog.Fragments(root)
+	if err != nil {
+		return err
+	}
+	if len(fragments) == 0 {
+		fmt.Fprintln(out, "no changelog fragments to fold")
+		return nil
+	}
+	if err := changelog.FoldFiles(root, time.Now().UTC().Format("2006-01-02")); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "folded %d version(s) into %s\n", len(fragments), changelog.File)
+	return nil
 }
 
 // untaggedVersions lists the changelog versions newer than every tag on origin, which are not yet released.

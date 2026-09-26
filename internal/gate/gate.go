@@ -7,11 +7,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 )
@@ -100,15 +100,12 @@ func LocalTarget() Target {
 	return Target{Name: name, GOOS: runtime.GOOS, Arch: runtime.GOARCH}
 }
 
-// changelogVersionRe matches the first version heading in the changelog, which names the build.
-var changelogVersionRe = regexp.MustCompile(`(?m)^## (\S+)`)
-
 // buildFlags are the flags that make a rebuild of one commit byte-identical, stamping its version and commit.
 func buildFlags(root string) []string {
 	version, commit := "dev", "unknown"
-	if data, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md")); err == nil {
-		if match := changelogVersionRe.FindSubmatch(data); match != nil {
-			version = string(match[1])
+	if text, err := changelog.Read(root); err == nil {
+		if latest := changelog.Latest(text); latest != "" {
+			version = latest
 		}
 	}
 	if out, err := git.Run(root, "rev-parse", "--short=12", "HEAD"); err == nil {

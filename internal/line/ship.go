@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/pr"
@@ -157,9 +158,9 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 			}
 		}
 	}
+	// A fragment per group, never an edit to CHANGELOG.md, so two open pull requests never conflict there.
 	if line := ChangelogLine(plan, result); line != "" {
-		changelog := filepath.Join(group, "CHANGELOG.md")
-		if err := AppendChangelog(changelog, plan.Version, line); err != nil {
+		if err := changelog.WriteFragment(group, plan.Version, plan.Group, line); err != nil {
 			return nil, err
 		}
 		result.Changelog = line
@@ -354,62 +355,6 @@ func ChangelogLine(plan *Plan, result *ShipResult) string {
 		line += fmt.Sprintf("; blocked: %s", strings.Join(result.Blocked, ", "))
 	}
 	return line
-}
-
-// sectionHeading is any second-level heading: a version, or a titled history section.
-var sectionHeading = regexp.MustCompile(`(?m)^## `)
-
-// AppendChangelog puts a line under the version's heading, creating the heading when it is new.
-// The heading is matched with or without its date suffix, so a ship never duplicates its own.
-func AppendChangelog(path, version, line string) error {
-	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	text := string(data)
-	if strings.Contains(text, "\n"+line+"\n") {
-		return nil
-	}
-	own := regexp.MustCompile(`(?m)^## ` + regexp.QuoteMeta(version) + `(?: .*)?\n`)
-	if match := own.FindStringIndex(text); match != nil {
-		return os.WriteFile(path, []byte(intoSection(text, match[1], line)), 0o644)
-	}
-	entry := fmt.Sprintf("## %s — %s\n\n%s\n", version, time.Now().UTC().Format("2006-01-02"), line)
-	if match := sectionHeading.FindStringIndex(text); match != nil {
-		return os.WriteFile(path, []byte(text[:match[0]]+entry+"\n"+text[match[0]:]), 0o644)
-	}
-	if text != "" && !strings.HasSuffix(text, "\n") {
-		text += "\n"
-	}
-	if text == "" {
-		text = "# Changelog\n\n"
-	}
-	return os.WriteFile(path, []byte(text+"\n"+entry), 0o644)
-}
-
-var groupBullet = regexp.MustCompile(`(?m)^- \*\*(TG-[^*]+)\*\*.*$`)
-
-// intoSection writes line into the version section starting at start: over the group's own
-// bullet when one exists, else above the first group bullet, else right under the heading.
-func intoSection(text string, start int, line string) string {
-	end := len(text)
-	if next := sectionHeading.FindStringIndex(text[start:]); next != nil {
-		end = start + next[0]
-	}
-	section := text[start:end]
-	bullets := groupBullet.FindAllStringSubmatchIndex(section, -1)
-	if own := groupBullet.FindStringSubmatch(line); own != nil {
-		for _, bullet := range bullets {
-			if section[bullet[2]:bullet[3]] == own[1] {
-				return text[:start+bullet[0]] + line + text[start+bullet[1]:]
-			}
-		}
-	}
-	if len(bullets) > 0 {
-		cut := start + bullets[0][0]
-		return text[:cut] + line + "\n" + text[cut:]
-	}
-	return text[:start] + "\n" + line + "\n" + strings.TrimPrefix(text[start:], "\n")
 }
 
 // PushFromWorktree pushes branch from worktree to the root's origin URL, past its refused pushurl, and sets its upstream.

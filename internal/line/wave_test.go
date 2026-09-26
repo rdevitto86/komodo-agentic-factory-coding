@@ -122,63 +122,6 @@ func TestChangelogLineCountsWhatShipped(t *testing.T) {
 	}
 }
 
-func TestAppendChangelogLandsUnderTheVersion(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "CHANGELOG.md")
-	body := "# Changelog\n\n## 2.0.0 — 2026-09-21\n\n- **TG-03.1** The markdown\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := AppendChangelog(path, "2.0.0", "- **TG-03.2** The conveyor"); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(path)
-	text := string(data)
-	if !strings.Contains(text, "- **TG-03.2** The conveyor") {
-		t.Fatal("the line was not written")
-	}
-	if strings.Index(text, "TG-03.2") > strings.Index(text, "## 1.3.0") {
-		t.Fatal("the line landed under the wrong version")
-	}
-}
-
-func TestAppendChangelogReplacesTheGroupsLineBelowTheIntro(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "CHANGELOG.md")
-	body := "# Changelog\n\n## 2.0.0 — unreleased\n\nThe intro paragraph.\n\n- **TG-03.8** The line (16 task(s))\n- **TG-03.7** The pass (27 task(s))\n\n## 1.3.0 — 2026-09-01\n\n- **TG-03.8** Kept\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := AppendChangelog(path, "2.0.0", "- **TG-03.8** The line (18 task(s))"); err != nil {
-		t.Fatal(err)
-	}
-	if err := AppendChangelog(path, "2.0.0", "- **TG-03.9** New"); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(path)
-	want := "# Changelog\n\n## 2.0.0 — unreleased\n\nThe intro paragraph.\n\n- **TG-03.9** New\n- **TG-03.8** The line (18 task(s))\n- **TG-03.7** The pass (27 task(s))\n\n## 1.3.0 — 2026-09-01\n\n- **TG-03.8** Kept\n"
-	if string(data) != want {
-		t.Fatalf("got:\n%s\nwant:\n%s", data, want)
-	}
-}
-
-func TestAppendChangelogOpensANewVersion(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "CHANGELOG.md")
-	body := "# Changelog\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := AppendChangelog(path, "2.0.0", "- **TG-03.2** The conveyor"); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(path)
-	text := string(data)
-	if !strings.Contains(text, "## 2.0.0") || strings.Index(text, "## 2.0.0") > strings.Index(text, "## 1.3.0") {
-		t.Fatalf("the new version did not open above the old one:\n%s", text)
-	}
-}
-
 func TestReportBodyMarksWhatBlocked(t *testing.T) {
 	plan := &Plan{Group: "TG-09.1", Title: "A group", Tasks: []PlanTask{{ID: "a", Title: "One"}, {ID: "b", Title: "Two"}}}
 	result := &ShipResult{Done: []string{"a"}, Blocked: []string{"b"}}
@@ -323,20 +266,5 @@ func TestACollisionIsASharedFileNotASharedDirectory(t *testing.T) {
 	err := RefuseCollision(root, "TSK-21.2.3")
 	if err == nil || !strings.Contains(err.Error(), "TSK-21.2.1") {
 		t.Fatalf("err = %v; the same file on an unmerged branch must refuse", err)
-	}
-}
-
-func TestAppendChangelogPutsANewVersionAboveATitledSection(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "CHANGELOG.md")
-	body := "# Changelog\n\nIntro.\n\n## The first line — 2026-09-24\n\nHistory.\n\n## [1.0.0-alpha.4] — 2026-09-21\n\n- old\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := AppendChangelog(path, "1.0.0-alpha.5", "- **TG-04.1** New"); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(path)
-	if text := string(data); strings.Index(text, "## 1.0.0-alpha.5") > strings.Index(text, "## The first line") {
-		t.Fatalf("the new version landed below the titled section:\n%s", text)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/pr"
 )
@@ -922,6 +923,42 @@ func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
 	}
 	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "TSK-09.1.1") {
 		t.Fatalf("err = %v; ship must refuse when a task differs between root and worktree, naming the task", err)
+	}
+}
+
+func TestShipWritesAChangelogFragmentAndLeavesTheChangelogAlone(t *testing.T) {
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", staleWorktreeBacklog, "the backlog")
+	commit(t, worktree, "CHANGELOG.md", "# Changelog\n", "the changelog")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closedRootBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
+	plan := &Plan{
+		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "main", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
+	}
+	client := &pr.Client{Dir: worktree, Run: func(string, ...string) (string, error) {
+		return "https://example.com/pull/1", nil
+	}}
+	saveReview(t, root, "TG-12.1", `{"findings":[]}`)
+	if _, err := ShipGroup(root, plan, nil, client); err != nil {
+		t.Fatal(err)
+	}
+	fragment, err := os.ReadFile(changelog.FragmentPath(worktree, "2.0.0", "TG-12.1"))
+	if err != nil || !strings.HasPrefix(string(fragment), "- **TG-12.1** A group") {
+		t.Fatalf("fragment = %q, %v", fragment, err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(worktree, "CHANGELOG.md")); string(data) != "# Changelog\n" {
+		t.Fatalf("ship edited CHANGELOG.md:\n%s", data)
+	}
+	if tracked, _ := git.Run(worktree, "ls-files", changelog.Dir); tracked == "" {
+		t.Fatal("the fragment is not in the ship commit")
 	}
 }
 

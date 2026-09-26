@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
+	"komodo/internal/changelog"
 	"komodo/internal/gate"
 )
 
@@ -80,73 +81,7 @@ func Latest(text string) string {
 }
 
 // Compare orders two semantic versions, returning -1, 0, or 1; a prerelease sorts before its release.
-func Compare(left, right string) int {
-	leftCore, leftPre, _ := strings.Cut(left, "-")
-	rightCore, rightPre, _ := strings.Cut(right, "-")
-	a, b := parts(leftCore), parts(rightCore)
-	for index := 0; index < 3; index++ {
-		if a[index] != b[index] {
-			if a[index] < b[index] {
-				return -1
-			}
-			return 1
-		}
-	}
-	switch {
-	case leftPre == rightPre:
-		return 0
-	case leftPre == "":
-		return 1
-	case rightPre == "":
-		return -1
-	}
-	return comparePrerelease(leftPre, rightPre)
-}
-
-// comparePrerelease orders two prerelease strings field by field, numbers numerically.
-func comparePrerelease(left, right string) int {
-	a, b := strings.Split(left, "."), strings.Split(right, ".")
-	for index := 0; index < len(a) && index < len(b); index++ {
-		x, xErr := strconv.Atoi(a[index])
-		y, yErr := strconv.Atoi(b[index])
-		switch {
-		case xErr == nil && yErr == nil && x != y:
-			if x < y {
-				return -1
-			}
-			return 1
-		case (xErr == nil) != (yErr == nil):
-			if xErr == nil {
-				return -1
-			}
-			return 1
-		case a[index] != b[index]:
-			return strings.Compare(a[index], b[index])
-		}
-	}
-	switch {
-	case len(a) < len(b):
-		return -1
-	case len(a) > len(b):
-		return 1
-	}
-	return 0
-}
-
-// parts splits a version core into its three numbers.
-func parts(version string) [3]int {
-	var out [3]int
-	for index, field := range strings.SplitN(version, ".", 3) {
-		if index > 2 {
-			break
-		}
-		number, err := strconv.Atoi(strings.TrimSpace(field))
-		if err == nil {
-			out[index] = number
-		}
-	}
-	return out
-}
+func Compare(left, right string) int { return changelog.Compare(left, right) }
 
 // Taggable lists the versions the changelog names that no tag points at.
 func Taggable(text string, tags []string) []string {
@@ -227,16 +162,17 @@ func Check(changelog string, tags, groupVersions []string) []Drift {
 	return drift
 }
 
-// ReadChangelog reads a changelog file, returning the empty string when there is none.
+// ReadChangelog reads a changelog file with the fragments beside it folded in, or the empty string when there is none.
 func ReadChangelog(path string) (string, error) {
 	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return "", nil
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
 	}
+	fragments, err := changelog.Fragments(filepath.Dir(path))
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	return changelog.Fold(string(data), fragments), nil
 }
 
 // TagName is the annotated tag name for one version.
