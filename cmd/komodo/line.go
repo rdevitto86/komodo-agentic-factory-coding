@@ -9,10 +9,12 @@ import (
 	"strconv"
 	"strings"
 
+	"komodo/internal/conductor"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/pr"
+	"komodo/internal/preflight"
 	"komodo/internal/run"
 )
 
@@ -58,6 +60,32 @@ func runNext(root string, args []string) {
 	if len(plan.Skipped) > 0 {
 		fmt.Printf("  done already: %s\n", strings.Join(plan.Skipped, ", "))
 	}
+}
+
+// runResume prints the state a killed run left for one group, so a resumed komodo run knows
+// whether to continue its last session or start a fresh one from the group's WIP commit.
+func runResume(root string, args []string) {
+	set := flag.NewFlagSet("resume", flag.ExitOnError)
+	asJSON := set.Bool("json", false, "print JSON")
+	target, rest := splitPositional(args)
+	_ = set.Parse(rest)
+	group := line.GroupFor(root, target)
+	if group == "" {
+		group = target
+	}
+	if group == "" {
+		fail(fmt.Errorf("usage: komodo resume <group>"))
+	}
+	state, err := conductor.LoadState(conductor.StatePath(root, group))
+	if err != nil {
+		fail(fmt.Errorf("%s has no saved state to resume: %w", group, err))
+	}
+	if *asJSON {
+		printCompactJSON(os.Stdout, state)
+		return
+	}
+	fmt.Printf("%s is at %s with %d session(s) recorded; komodo run %s continues it\n",
+		state.Group, state.Current, len(state.Sessions), state.Group)
 }
 
 // planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.
@@ -341,14 +369,26 @@ func runStep(root string, args []string) {
 	printCompactJSON(os.Stdout, next)
 }
 
-// runRun drives the line headless on the profile's host and exits with the host's code.
+// runRun runs preflight, then drives the line headless on the profile's host and exits with the
+// host's code; a dry run skips both the preflight and the lock, since nothing runs for real.
 func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
+	noShip := flags.Bool("no-ship", false,
+		"stop each group at shipped-ready, skipping the forge credential check and the push")
 	budget := flags.Duration("budget", 0, "how long the run may take before it is killed (default: "+
 		run.GroupBudget.String()+" per group)")
 	target, rest := splitPositional(args, "budget")
 	_ = flags.Parse(rest)
+	// A headless session the run itself started must never call komodo run again.
+	if os.Getenv(line.LockEnv) != "" {
+		fail(fmt.Errorf("komodo run is already driving this run; a session it started must not call it again"))
+	}
+	if !*dry {
+		if err := runPreflight(root, *noShip); err != nil {
+			fail(err)
+		}
+	}
 	// A targeted run locks its own group, so another group on disjoint files may run beside it.
 	group := line.GroupFor(root, target)
 	if !*dry {
@@ -361,12 +401,28 @@ func runRun(root string, args []string) {
 		}
 		_ = os.Setenv(line.LockEnv, strconv.Itoa(os.Getpid()))
 	}
-	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry})
+	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry, NoShip: *noShip})
 	line.ReleaseLock(root, group)
 	if err != nil {
 		fail(err)
 	}
 	exit(code)
+}
+
+// runPreflight runs every preflight check and joins each failure with the fix it names.
+func runPreflight(root string, noShip bool) error {
+	failures, err := preflight.Run(root, preflight.Options{NoShip: noShip})
+	if err != nil {
+		return err
+	}
+	if len(failures) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		lines = append(lines, fmt.Sprintf("%s: %s", failure.Name, failure.Fix))
+	}
+	return fmt.Errorf("preflight failed:\n%s", strings.Join(lines, "\n"))
 }
 
 // runSync brings the root up to origin, rebuilds a stale binary, and re-renders drifted config.
