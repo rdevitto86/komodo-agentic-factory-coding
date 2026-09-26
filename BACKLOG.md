@@ -921,9 +921,9 @@ version: 1.0.0-alpha.6
 base: feat/the-conductor-drives-the-stages
 depends_on: [TG-05.4]
 ```
-* **Why:** TG-05.4 built the conductor, but no mount implements the host contract, so nothing can start a real session through it; TSK-05.4.4 and TSK-05.4.5 move here and wait on the adapter.
+* **Why:** TG-05.4 built the conductor, but no mount implements the host contract, so nothing can start a real session through it; TSK-05.4.4 and TSK-05.4.5 moved here; after TSK-05.6.2 closed with no change, they move again to TG-05.9.
 
-#### [TSK-05.6.1] The Claude mount implements the host contract [P: C] [READY]
+#### [TSK-05.6.1] The Claude mount implements the host contract [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/contract.go, internal/mount/claude/contract_test.go, internal/mount/claude/testdata]
 done_when:
@@ -933,34 +933,6 @@ context:
   - docs/system-design.md#how-the-conductor-runs-a-claude-code-session
   - "Start runs claude with Session's argv and environment in the worktree, in its own process group; Stream parses stdout with Parse; Result is the result event's structured_output; Stop kills the process group; Resume passes --resume with the session ID; Preflight checks HostVersion and LoggedIn; Capabilities declares resume, sandbox, hooks and structured output"
   - "tests run a fake claude script on PATH that replays recorded start and resume streams (decision 0025), with local paths and account fields replaced"
-```
-
-#### [TSK-05.6.2] `komodo run` runs the conductor, not a model relaying stages [P: C] [READY]
-```yaml
-files: [internal/run/run.go, internal/run/run_test.go, cmd/komodo/line.go, internal/mount/claude/claude.go]
-done_when:
-  - go test ./internal/run/... ./cmd/komodo/...
-  - "! grep -q bypassPermissions internal/mount/claude/claude.go"
-depends_on: [TSK-05.6.1]
-context:
-  - docs/system-design.md#the-komodo-command
-  - "was TSK-05.4.4: Launch runs preflight, then the conductor with the Claude contract and internal/line's stations; Headless and its /run prompt go, and so does komodo step once nothing calls it"
-  - "the builder's brief comes from the group's card and its slots (TSK-07.2.4); Prepare integrates the group branch the one builder worked, with no task branches to merge"
-  - "tests clear KOMODO_RUN_PID, so a suite run inside a line session never trips the nested-run guard"
-```
-
-#### [TSK-05.6.3] The run skill launches and watches, and never relays a stage [P: H] [READY]
-```yaml
-files: [komodo/skills/run/SKILL.md]
-done_when:
-  - "! grep -q 'komodo step' komodo/skills/run/SKILL.md"
-  - go run ./cmd/komodo doctor
-depends_on: [TSK-05.6.2]
-context:
-  - docs/system-design.md#orchestrator-commands
-  - "was TSK-05.4.5: the skill starts komodo run in the background, reports komodo status, and stops or resumes groups; it never calls brief, close or step"
-  - "it ships only with TSK-05.6.2, since a line session may not call komodo run while the relay still drives it"
-type: docs
 ```
 
 ### [TG-05.7] Every epic has a draft branch, and group PRs stack on it
@@ -1117,6 +1089,71 @@ context:
 type: docs
 ```
 
+### [TG-05.9] `komodo run` drives a group through the conductor, end to end
+```yaml
+type: feat
+version: 1.0.0-alpha.6
+depends_on: [TG-05.6]
+```
+* **Why:** TSK-05.6.2 closed with no change, since its checks already held, so `komodo run` still relays stages through a model; TSK-05.6.3's skill then pointed at a conductor nothing starts. This group wires it, and its last check is a group driven to Shipped against a fake host.
+
+#### [TSK-05.9.1] A mount hands the conductor its host contract [P: C] [READY]
+```yaml
+files: [internal/mount/registry.go, internal/mount/mount_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
+done_when:
+  - go test ./internal/mount/...
+  - go test ./internal/mount/claude/ -run TestTheClaudeMountHandsOutItsContract
+context:
+  - "mount.Host gains Contract func(root, worktree string) Contract; the Claude mount registers NewMount with the profile's turn cap; a mount without one, such as Codex or Ollama, leaves it nil and komodo run says it cannot drive that host"
+```
+
+#### [TSK-05.9.2] The builder's and reviewer's start requests come from the role, the group and the profile [P: C] [READY]
+```yaml
+files: [internal/run/requests.go, internal/run/requests_test.go, internal/line/step.go]
+done_when:
+  - go test ./internal/run/ -run TestStartRequests
+context:
+  - "the builder's brief fills the builder role for the whole group: each task's BuildBrief, in wave order; the reviewer's brief is what reviewBrief writes, exported as ReviewBrief"
+  - "each request carries its role's tools and its schema from komodo/roles/<role>.schema.json, the model and effort from profile.Machine for builder, and the reviewer tier's machine for the reviewer"
+  - "tests: the builder request names every task of a two-task group and the builder schema; the reviewer request carries the group's diff"
+```
+
+#### [TSK-05.9.3] The stations fit one group builder, and the review lands where ship reads it [P: C] [READY]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/conductor/...
+context:
+  - "Prepare no longer merges task branches, since the group builder works the group worktree itself: it reruns the compile gates and verify there, and records every plan task DONE in live status for ShipGroup"
+  - "the conductor writes the reviewer's result to the group's review result path, so ShipGroup's missing-review refusal passes only when a review really ran"
+```
+
+#### [TSK-05.9.4] `komodo run <group>` drives the group to Shipped through the conductor [P: C] [READY]
+```yaml
+files: [internal/run/run.go, internal/run/drive.go, internal/run/drive_test.go, cmd/komodo/line.go]
+done_when:
+  - go test ./internal/run/ -run TestRunDrivesAGroupEndToEnd
+  - go test ./internal/run/... ./cmd/komodo/...
+depends_on: [TSK-05.9.1, TSK-05.9.2, TSK-05.9.3]
+context:
+  - "was TSK-05.6.2: cut the group when no run is open, load its state.json or start one at Ready, build the Driver from the contract, the requests, the stations and the ledger, then Drive or Resume, and exit non-zero unless it reached Shipped; the drain drives each ready group the same way"
+  - "the relay, Headless and its /run prompt, stays behind komodo run --relay until TSK-05.5.4's proof passes, then goes"
+  - "TestRunDrivesAGroupEndToEnd puts a fake claude script on PATH that replays a builder result and then a reviewer result, with a bare origin and a fake forge client; the group reaches Shipped, its branch is pushed, and the ledger holds one build and one review session"
+```
+
+#### [TSK-05.9.5] The run skill launches and watches, and never relays a stage [P: H] [READY]
+```yaml
+files: [komodo/skills/run/SKILL.md]
+done_when:
+  - "! grep -q 'komodo step' komodo/skills/run/SKILL.md"
+  - "! grep -q 'komodo status' komodo/skills/run/SKILL.md"
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-05.9.4]
+context:
+  - "was TSK-05.6.3: the skill starts komodo run <group> in the background and reports komodo resume <group>; it never calls brief, close or step, and names no command that does not exist yet; komodo status lands with TSK-08.4.4"
+type: docs
+```
+
 ### [TG-05.5] Metrics and the clock
 ```yaml
 type: feat
@@ -1163,7 +1200,7 @@ context:
 done_when:
   - go run ./cmd/komodo report
 context:
-  - "the phase exit: promote TG-06.2, run it with komodo run, and confirm a PR within 60 minutes with zero tokens outside build, review and repair sessions; record the run ID in the PR"
+  - "the phase exit, once TG-05.9 ships: promote TG-06.2, run it with komodo run, and confirm a PR within 60 minutes with zero tokens outside build, review and repair sessions; record the run ID in the PR"
 owner: human
 type: test
 ```
