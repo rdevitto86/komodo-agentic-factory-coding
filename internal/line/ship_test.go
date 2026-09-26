@@ -788,6 +788,26 @@ func TestReportBodyKeepsABlockedTaskUnderValidation(t *testing.T) {
 	}
 }
 
+func TestReportBodyNotesADiffOverThePreferredLines(t *testing.T) {
+	context := BodyContext{DefaultBase: "main", SizeNote: sizeNote(1500, 1000)}
+	body := ReportBody(twoTaskPlan(), &ShipResult{Base: "feat/stack"}, nil, context)
+	if !strings.Contains(body, "over the preferred 1000") {
+		t.Fatalf("body does not note the preferred size:\n%s", body)
+	}
+}
+
+func TestSizeNoteIsEmptyAtOrUnderThePreferred(t *testing.T) {
+	if sizeNote(1000, 1000) != "" {
+		t.Fatal("a diff at the preferred count must not get a note")
+	}
+	if sizeNote(500, 1000) != "" {
+		t.Fatal("a diff under the preferred count must not get a note")
+	}
+	if sizeNote(1500, 0) != "" {
+		t.Fatal("a zero preferred must never note")
+	}
+}
+
 func TestTemplateSectionsFollowTheRepoTemplate(t *testing.T) {
 	dir := t.TempDir()
 	if got := templateSections(dir); strings.Join(got, ",") != "Summary,Changes,Validation,Dependencies" {
@@ -852,6 +872,101 @@ func TestChangedLinesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
 	_, group := shipRepo(t)
 	if got := ChangedLines(group, "no-such-base", "feat/a-group"); got != 0 {
 		t.Fatalf("lines = %d; an unknown base is no count, never a guess", got)
+	}
+}
+
+func TestChangedFilesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
+	_, group := shipRepo(t)
+	if got := ChangedFiles(group, "no-such-base", "feat/a-group"); got != 0 {
+		t.Fatalf("files = %d; an unknown base is no count, never a guess", got)
+	}
+}
+
+func TestCheckPRSizeRefusesOverEitherCeiling(t *testing.T) {
+	if err := checkPRSize("TG-1", 5, 100, 0, 0); err != nil {
+		t.Fatalf("a zero ceiling must never refuse: %v", err)
+	}
+	if err := checkPRSize("TG-1", 21, 100, 20, 2000); err == nil || !strings.Contains(err.Error(), "split") {
+		t.Fatalf("err = %v; a file count over the cap must name a split", err)
+	}
+	if err := checkPRSize("TG-1", 5, 2001, 20, 2000); err == nil || !strings.Contains(err.Error(), "split") {
+		t.Fatalf("err = %v; a line count over the cap must name a split", err)
+	}
+}
+
+func TestShipRefusesAGroupOverThePullRequestFileCeiling(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	for _, name := range []string{"two.go", "three.go"} {
+		if err := os.WriteFile(filepath.Join(group, name), []byte("package a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	plan.Profile.PRFiles = 1
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
+		t.Fatalf("err = %v; a diff over the file ceiling must refuse and name a split", err)
+	}
+}
+
+func TestShipRefusesAGroupOverThePullRequestLineCeiling(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package b\n\nvar x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	plan.Profile.PRLinesMax = 4
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
+		t.Fatalf("err = %v; a diff over the line ceiling must refuse and name a split", err)
+	}
+}
+
+func TestShipNotesTheBodyWhenOverThePreferredLines(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package b\n\nvar x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	plan.Profile.PRLinesPreferred = 4
+	var calls []string
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, "\x00"))
+		return "https://example.com/pull/1", nil
+	}}
+	if _, err := ShipGroup(root, plan, nil, client); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, call := range calls {
+		if strings.Contains(call, "over the preferred 4") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("calls = %v; a diff over the preferred lines must note it in the body", calls)
 	}
 }
 
