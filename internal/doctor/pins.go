@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -21,8 +20,16 @@ var modelHasVersion = regexp.MustCompile(`[0-9]`)
 // bareModelWords are generic, vendor-free words that name no version, such as an alias would use.
 var bareModelWords = map[string]bool{"latest": true, "default": true}
 
-// goToolchain is the Go toolchain running this binary, "go1.27.1"; a test swaps it.
-var goToolchain = func() string { return runtime.Version() }
+// goToolchain is the Go toolchain the machine's go command runs in root, "go1.27.1"; a test swaps it.
+var goToolchain = func(root string) string {
+	cmd := exec.Command("go", "env", "GOVERSION")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
 
 // cliVersion runs a host's own CLI with --version and returns what it printed, trimmed; a test swaps it.
 var cliVersion = func(name string) (string, error) {
@@ -88,7 +95,7 @@ func checkToolchain(root string) []Problem {
 	if err != nil {
 		return nil
 	}
-	if running := goToolchain(); running != declared {
+	if running := goToolchain(root); running != "" && running != declared {
 		return []Problem{{"pins", "go.mod",
 			fmt.Sprintf("the toolchain is pinned to %s; this machine runs %s", declared, running)}}
 	}

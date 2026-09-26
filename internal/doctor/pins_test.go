@@ -43,7 +43,7 @@ func swapCLIVersion(t *testing.T, fn func(string) (string, error)) {
 func swapGoToolchain(t *testing.T, version string) {
 	t.Helper()
 	previous := goToolchain
-	goToolchain = func() string { return version }
+	goToolchain = func(string) string { return version }
 	t.Cleanup(func() { goToolchain = previous })
 }
 

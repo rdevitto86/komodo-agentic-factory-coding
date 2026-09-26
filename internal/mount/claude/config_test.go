@@ -88,9 +88,9 @@ func TestSessionCLAUDEConfigDirNotInEnvironment(t *testing.T) {
 	}
 }
 
-// TestSessionUsesProjectLocalSettingsSources verifies that the session argv
-// includes --setting-sources project,local to exclude personal settings.
-func TestSessionUsesProjectLocalSettingsSources(t *testing.T) {
+// TestSessionLoadsOnlyLocalSettings verifies that the session argv loads local settings alone, so neither
+// personal settings nor the project's shared skills reach a line session.
+func TestSessionLoadsOnlyLocalSettings(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
 		Tools:  []string{},
@@ -99,8 +99,8 @@ func TestSessionUsesProjectLocalSettingsSources(t *testing.T) {
 	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 	joined := strings.Join(argv, " ")
 
-	if !strings.Contains(joined, "--setting-sources project,local") {
-		t.Fatalf("argv must include --setting-sources project,local to exclude personal layer:\n%s", joined)
+	if !strings.Contains(joined, "--setting-sources local") {
+		t.Fatalf("argv must include --setting-sources local to exclude the personal layer and shared skills:\n%s", joined)
 	}
 }
 
