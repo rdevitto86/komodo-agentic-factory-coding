@@ -209,7 +209,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		return result, nil
 	}
-	if err := pushFromWorktree(root, group, plan.Branch); err != nil {
+	if err := PushFromWorktree(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
 	if command := AfterPublishCommand(root, group); command != "" {
@@ -405,8 +405,8 @@ func intoSection(text string, start int, line string) string {
 	return text[:start] + "\n" + line + "\n" + strings.TrimPrefix(text[start:], "\n")
 }
 
-// pushFromWorktree pushes branch to the root's origin URL, past the worktree's refused pushurl, then sets its upstream.
-func pushFromWorktree(root, worktree, branch string) error {
+// PushFromWorktree pushes branch from worktree to the root's origin URL, past its refused pushurl, and sets its upstream.
+func PushFromWorktree(root, worktree, branch string) error {
 	pushURL, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)

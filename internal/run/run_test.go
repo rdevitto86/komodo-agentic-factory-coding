@@ -386,6 +386,46 @@ func TestFinishShipRunsAfterPublishWithoutThePushCredentials(t *testing.T) {
 	}
 }
 
+func TestFinishShipPushesFromTheGroupsWorktreeSoThePrePushGateJudgesTheBranch(t *testing.T) {
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", "-b", "main", bare)
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "commit", "--allow-empty", "-m", "seed")
+	worktree := filepath.Join(root, ".komodo", "wt", "TG-01.1")
+	runGit(t, root, "worktree", "add", "-b", "feat/a-group", worktree)
+	runGit(t, worktree, "commit", "--allow-empty", "-m", "group")
+	marker := filepath.Join(t.TempDir(), "pushed-from")
+	hook := "#!/bin/sh\ngit rev-parse --show-toplevel > " + marker + "\n"
+	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-push"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHandoff(t, root, line.ShipHandoff{
+		Group: "TG-01.1", Worktree: worktree, Branch: "feat/a-group", Base: "main", Title: "t", Body: "b",
+	})
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			return "https://example.invalid/pr/1", nil
+		}
+		return "[]", nil
+	}}
+	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("the pre-push hook never ran: %v", err)
+	}
+	got, _ := filepath.EvalSymlinks(strings.TrimSpace(string(data)))
+	want, _ := filepath.EvalSymlinks(worktree)
+	if got != want {
+		t.Fatalf("the push ran from %s, want the group's worktree %s", got, want)
+	}
+}
+
 func TestFinishShipRefusesARefspecOrCriticalBranchAnAgentWrote(t *testing.T) {
 	for _, branch := range []string{"+HEAD:main", "--mirror", "main", "feat/x:main", "feat/x..y"} {
 		bare := filepath.Join(t.TempDir(), "origin.git")

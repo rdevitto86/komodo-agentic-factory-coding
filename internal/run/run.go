@@ -422,7 +422,12 @@ func finishShip(options Options) (string, error) {
 	if err := pushable(options.Root, handoff.Branch); err != nil {
 		return "", err
 	}
-	if err := gitPush(options.Root, handoff.Branch); err != nil {
+	worktree := handoff.Worktree
+	if worktree == "" {
+		worktree = options.Root
+	}
+	// The push runs from the group's worktree, so the pre-push gate judges the branch, not the root checkout.
+	if err := line.PushFromWorktree(options.Root, worktree, handoff.Branch); err != nil {
 		return "", err
 	}
 	client := options.PR
@@ -438,10 +443,6 @@ func finishShip(options Options) (string, error) {
 		for _, warning := range warnings {
 			fmt.Fprintf(options.Stderr, "ship: %s\n", warning)
 		}
-	}
-	worktree := handoff.Worktree
-	if worktree == "" {
-		worktree = options.Root
 	}
 	// An agent can write after_publish into ship.json, so it runs scrubbed, never with the push credentials.
 	if handoff.AfterPublish != "" {
@@ -466,12 +467,6 @@ func pushable(root, branch string) error {
 		return fmt.Errorf("ship.json names the critical ref %q; landing is the human's merge button", branch)
 	}
 	return nil
-}
-
-// gitPush pushes one branch to origin from the run's root, in the launcher's ambient environment.
-func gitPush(root, branch string) error {
-	_, err := git.Run(root, "push", "-u", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
-	return err
 }
 
 // contains reports whether the slice already holds the value.
