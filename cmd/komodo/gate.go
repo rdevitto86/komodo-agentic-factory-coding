@@ -114,6 +114,11 @@ func buildChecks(root string) []gate.Check {
 			return nil
 		}})
 	}
+	if len(checks) == 0 {
+		checks = append(checks, gate.Check{Name: "detect build checks", Run: func(_ io.Writer) error {
+			return fmt.Errorf("no build checks found; add compile or verify to .komodo/commands.json")
+		}})
+	}
 	return checks
 }
 
