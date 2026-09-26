@@ -764,7 +764,7 @@ func TestDrainPutsARebuiltBinaryOnThePathForTheNextGroup(t *testing.T) {
 	}
 }
 
-func TestDrainCallsSyncBeforeEachGroup(t *testing.T) {
+func TestDrainSyncsOnceBeforeAndOnceAfterTheWholeRunNeverBetweenGroups(t *testing.T) {
 	root := drainRepo(t)
 	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
 	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
@@ -778,10 +778,50 @@ func TestDrainCallsSyncBeforeEachGroup(t *testing.T) {
 		t.Fatalf("launch failed: code %d, err %v", code, err)
 	}
 	output := out.String()
-	if !strings.Contains(output, "root:") {
-		t.Fatalf("sync output missing root sync; output:\n%s", output)
+	if got := strings.Count(output, "root: already current"); got != 2 {
+		t.Fatalf("root sync ran %d times, want exactly 2: once before the run and once after; output:\n%s", got, output)
 	}
 	if !strings.Contains(output, "TG-07.1 shipped") || !strings.Contains(output, "TG-07.2 shipped") {
 		t.Fatalf("both groups should have shipped; output:\n%s", output)
+	}
+}
+
+// staleMarkerScript plays the first group like fakeScript, but also overwrites the build marker mid-run.
+const staleMarkerScript = `echo "$1" >> .komodo/fake/launched
+cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
+mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json" 2>/dev/null
+if [ "$1" = "TG-07.1" ]; then echo stale > bin/.built-from; fi
+exit 0`
+
+func TestAStaleBuildMarkerDuringARunChangesNothingUntilTheRunEnds(t *testing.T) {
+	root := drainRepo(t)
+	head := gitOut(t, root, "rev-parse", "HEAD")
+	toolkitCheckout(t, root, head)
+	builds, installs := fakeBuild(t)
+	host, _ := mount.Get("fakehost-drain")
+	host.Headless = func(_, target string) (string, []string) {
+		return "/bin/sh", []string{"-c", staleMarkerScript, "sh", target}
+	}
+	mount.Register(host)
+	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
+	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
+	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if code != 0 || err != nil {
+		t.Fatalf("launch failed: code %d, err %v, out %s", code, err, out.String())
+	}
+	if *builds != 1 || *installs != 1 {
+		t.Fatalf("builds = %d, installs = %d; a marker gone stale mid-run rebuilds once, only after the run ends", *builds, *installs)
+	}
+	recorded, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(recorded)) != head {
+		t.Fatalf("marker = %q, want %q; the run's own end-of-run sync must fix it", recorded, head)
 	}
 }
