@@ -31,23 +31,10 @@ func VerifyCommand(root, worktree string) string {
 	return ""
 }
 
-// overrideCommands reads the worktree's commands file, filling before_review and after_publish from the root's,
-// since state is gitignored; compile and verify come from the root only, so a worktree write can't run unguarded.
-func overrideCommands(root, worktree string) repopkg.Commands {
-	own := repopkg.LoadCommands(worktree)
-	if root == worktree {
-		return own
-	}
-	shared := repopkg.LoadCommands(root)
-	own.Verify = shared.Verify
-	own.Compile = shared.Compile
-	if own.BeforeReview == "" {
-		own.BeforeReview = shared.BeforeReview
-	}
-	if own.AfterPublish == "" {
-		own.AfterPublish = shared.AfterPublish
-	}
-	return own
+// overrideCommands reads the root's commands file only; the worktree's copy is gitignored
+// and unguarded, so it never sets verify, compile, before_review, or after_publish.
+func overrideCommands(root, _ string) repopkg.Commands {
+	return repopkg.LoadCommands(root)
 }
 
 // BeforeReviewCommand is the repo's own command to run before the reviewer is spawned.
@@ -112,16 +99,16 @@ func RunCommand(cwd, command string) CommandResult {
 
 // RunCommandFor runs one shell command in a directory under timeout, killing its process group when it hangs.
 func RunCommandFor(cwd, command string, timeout time.Duration) CommandResult {
-	return runGuarded(cwd, command, timeout, nil)
+	return runCommand(cwd, command, timeout, nil)
 }
 
 // RunCommandEnv runs one shell command under the default wall clock in the given environment.
 func RunCommandEnv(cwd, command string, env []string) CommandResult {
-	return runGuarded(cwd, command, CommandTimeout, env)
+	return runCommand(cwd, command, CommandTimeout, env)
 }
 
-// runGuarded runs a command with timeout, killing its process group when it hangs.
-func runGuarded(cwd, command string, timeout time.Duration, env []string) CommandResult {
+// runCommand runs a command with timeout, killing its process group when it hangs.
+func runCommand(cwd, command string, timeout time.Duration, env []string) CommandResult {
 	ran := proc.ShellEnv(cwd, command, timeout, env)
 	return CommandResult{Command: command, ExitCode: ran.ExitCode, Seconds: ran.Seconds,
 		Output: Clip(ran.Output, 12000, "output")}

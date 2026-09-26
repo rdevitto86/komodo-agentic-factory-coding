@@ -163,8 +163,11 @@ func TestVerifyCommandFallsBackToTheRootsCommandsFile(t *testing.T) {
 	if got := CompileCommands(root, group); len(got) != 1 || got[0] != "make build" {
 		t.Fatalf("compile = %v", got)
 	}
-	writeFile(t, group, filepath.ToSlash(filepath.Join(StateDir, "commands.json")), `{"verify":"make own"}`)
+	writeFile(t, group, filepath.ToSlash(filepath.Join(StateDir, "commands.json")), `{"verify":"make own","compile":"make own"}`)
 	if got := VerifyCommand(root, group); got != "make check" {
 		t.Fatalf("verify = %q, want the root's command; a worktree's own commands.json must never override it", got)
+	}
+	if got := CompileCommands(root, group); len(got) != 1 || got[0] != "make build" {
+		t.Fatalf("compile = %v, want the root's command; a worktree's own commands.json must never override it", got)
 	}
 }

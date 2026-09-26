@@ -25,14 +25,12 @@ func TestGateFailsWhenNoCompileOrVerifyCommandFound(t *testing.T) {
 // TestGateStillRunsToolkitChecksWhenNoCommandsJsonExists verifies the gate runs go vet and go test for the toolkit.
 func TestGateStillRunsToolkitChecksWhenNoCommandsJsonExists(t *testing.T) {
 	root := emptyRepo(t)
-	// Create cmd/komodo/main.go to make it look like the toolkit checkout.
 	if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Create go.mod so go commands work.
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
