@@ -22,8 +22,11 @@ import (
 // Dir is the host's project directory, relative to the repo root.
 const Dir = ".claude"
 
-// models maps a role's tier to this host's model, which is what a profile row sets.
-var models = map[string]string{"light": "haiku", "standard": "sonnet", "heavy": "opus"}
+// HostVersion is the CLI release every line session is pinned to; doctor fails when the installed one differs.
+const HostVersion = "2.1.283"
+
+// models pins each tier to a full model ID, never an alias, so every machine runs the same model.
+var models = map[string]string{"light": "claude-haiku-4-5-20251001", "standard": "claude-sonnet-5", "heavy": "claude-opus-5-5"}
 
 // tools maps the five Komodo verbs to this host's tool names, here and nowhere else.
 var tools = map[string][]string{
@@ -254,6 +257,7 @@ func namesLocalServer(path string) bool {
 func init() {
 	mount.Register(mount.Host{
 		Name:        "claude",
+		Version:     HostVersion,
 		ConfigPaths: []string{"~/.claude/**", "~/.claude.json"},
 		Vendors:     []string{"claude", "anthropic", "sonnet", "opus", "haiku"},
 		HybridName:  "hybrid",

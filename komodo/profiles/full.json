@@ -1,0 +1,12 @@
+{
+  "roles": {
+    "builder": { "tier": "standard", "effort": "medium" },
+    "correctness": { "tier": "heavy", "effort": "high" },
+    "security": { "tier": "heavy", "effort": "high" },
+    "readiness": { "tier": "heavy", "effort": "high" },
+    "quality": { "tier": "standard", "effort": "medium" },
+    "planner": { "tier": "heavy", "effort": "high" },
+    "scout": { "tier": "light", "effort": "low" },
+    "orchestrator": { "tier": "standard", "effort": "medium" }
+  }
+}
