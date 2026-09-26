@@ -476,6 +476,7 @@ context:
   - "argv: -p, --setting-sources project,local, --plugin-dir, --settings, --tools, --permission-mode dontAsk, --model, --effort, --strict-mcp-config, --output-format stream-json, --verbose, --json-schema, and --resume to resume; env CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=3, CLAUDE_CODE_MAX_TURNS per role, DISABLE_AUTOUPDATER=1, and GOCACHE and GOTMPDIR inside the worktree; no CLAUDE_CONFIG_DIR (decision 0025); --max-budget-usd on API billing"
   - "the process starts in the group's worktree in its own process group, and stop kills the tree; spikes S2 and S5 set the permission and schema flags"
   - "tests assert the argv and environment for the builder and for a lens"
+  - "once decision 0026 is accepted: GOPATH and GOMODCACHE inside the worktree too, GOPROXY=off and GOFLAGS=-modcacherw, after the conductor runs go mod download outside the sandbox"
 ```
 
 #### [TSK-05.2.3] The stream reports turns, usage, cost, rate limits and the session ID [P: C] [READY]
@@ -703,7 +704,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** decision 0012 turns the sandbox on by default, which holds only if Go's cache, module downloads and race tests work inside it.
 
-#### [TSK-06.1.1] S1 on macOS: Go builds, module downloads and race tests pass under the sandbox [P: C] [REFINEMENT]
+#### [TSK-06.1.1] S1 on macOS: Go builds, module downloads and race tests pass under the sandbox [P: C] [DONE]
 ```yaml
 files: [docs/decisions.md]
 done_when:
@@ -712,7 +713,7 @@ owner: human
 type: docs
 ```
 
-#### [TSK-06.1.2] S1 on WSL2 [P: H] [REFINEMENT]
+#### [TSK-06.1.2] S1 on WSL2 [P: H] [DONE]
 ```yaml
 files: [docs/decisions.md]
 done_when:
