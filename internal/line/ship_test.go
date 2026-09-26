@@ -871,3 +871,41 @@ func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
 		t.Fatalf("err = %v; ship must refuse when a task differs between root and worktree, naming the task", err)
 	}
 }
+
+func TestCatchUpRebasesOntoAMovedBaseKeepingEdits(t *testing.T) {
+	_, group := shipRepo(t)
+	runGit(t, group, "branch", "main", "HEAD~0")
+	runGit(t, group, "checkout", "-q", "main")
+	commitDated(t, group, "two.go", "package a\n", "base moved", time.Now())
+	runGit(t, group, "checkout", "-q", "feat/a-group")
+	commitDated(t, group, "three.go", "package a\n", "group work", time.Now())
+	if err := os.WriteFile(filepath.Join(group, "CHANGELOG.md"), []byte("# Changelog\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "CHANGELOG.md")
+	if err := catchUp(group, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(group, "two.go")); err != nil {
+		t.Fatal("the base's commit is not under the group branch")
+	}
+	if _, err := os.Stat(filepath.Join(group, "CHANGELOG.md")); err != nil {
+		t.Fatal("the uncommitted ship edit was lost")
+	}
+}
+
+func TestCatchUpStopsOnAConflictNamingTheFile(t *testing.T) {
+	_, group := shipRepo(t)
+	runGit(t, group, "branch", "main", "HEAD~0")
+	runGit(t, group, "checkout", "-q", "main")
+	commitDated(t, group, "one.go", "package base\n", "base edits one.go", time.Now())
+	runGit(t, group, "checkout", "-q", "feat/a-group")
+	commitDated(t, group, "one.go", "package group\n", "group edits one.go", time.Now())
+	err := catchUp(group, "main")
+	if err == nil || !strings.Contains(err.Error(), "one.go") {
+		t.Fatalf("want a conflict naming one.go, got %v", err)
+	}
+	if status, _ := exec.Command("git", "-C", group, "status", "--porcelain").Output(); strings.Contains(string(status), "UU") {
+		t.Fatal("the rebase was left half done")
+	}
+}

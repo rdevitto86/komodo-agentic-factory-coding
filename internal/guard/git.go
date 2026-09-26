@@ -14,6 +14,7 @@ func gitFindings(tokens []string, branch, cwd, root string, policy Policy, sourc
 	var findings []string
 	var configs []string
 	elsewhere := ""
+	dashC := -1
 	index := 0
 	for index < len(args) && strings.HasPrefix(args[index], "-") {
 		arg := args[index]
@@ -22,6 +23,7 @@ func gitFindings(tokens []string, branch, cwd, root string, policy Policy, sourc
 			// git -C <dir> reads and writes the branch of that checkout, not this one.
 			if index+1 < len(args) && args[index+1] != "." {
 				elsewhere = args[index+1]
+				dashC = index
 			}
 			index += 2
 		case arg == "-c":
@@ -74,6 +76,14 @@ func gitFindings(tokens []string, branch, cwd, root string, policy Policy, sourc
 		}
 	}
 	if elsewhere != "" && !readOnlyGit(sub, rest) {
+		if dir, there, ok := checkoutInside(elsewhere, cwd, root); ok && dashC >= 0 {
+			// A checkout inside this repo, such as a line worktree, is judged against its own branch.
+			stripped := append([]string{tokens[0]}, args[:dashC]...)
+			stripped = append(stripped, args[dashC+2:]...)
+			// The inner call sees the same -c configs, so its findings already hold the ones above.
+			inner, _ := gitFindings(stripped, there, dir, root, policy, source)
+			return inner, branch
+		}
 		return append(findings, fmt.Sprintf("git -C %s %s: the branch there is not tracked; open a pull request instead", elsewhere, sub)), branch
 	}
 	if noVerifyCommands[sub] && normalizeMode(policy.Mode) != ModeUnsafe && hasNoVerify(sub, rest) {
@@ -442,4 +452,25 @@ func longFlagPrefix(arg, name string) bool {
 func unresolvedTarget(target string) bool {
 	return strings.Contains(target, "{}") || strings.Contains(target, "$(") ||
 		strings.Contains(target, "`") || unresolvedVarRe.MatchString(target)
+}
+
+// checkoutInside resolves a -C target under root and names its branch; ok is false outside root or detached.
+func checkoutInside(target, cwd, root string) (dir, branch string, ok bool) {
+	if root == "" {
+		return "", "", false
+	}
+	dir = target
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(cwd, dir)
+	}
+	dir = filepath.Clean(dir)
+	rel, err := filepath.Rel(filepath.Clean(root), dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", false
+	}
+	branch = CurrentBranch(dir)
+	if branch == "" || branch == "HEAD" {
+		return "", "", false
+	}
+	return dir, branch, true
 }
