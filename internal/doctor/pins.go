@@ -95,8 +95,8 @@ func checkToolchain(root string) []Problem {
 	return nil
 }
 
-// checkRelease reports when the built komodo binary this repo would run was built from a commit
-// other than HEAD, so a merge that never rebuilt it is caught before a session runs on it.
+// checkRelease reports when the built komodo binary's build inputs differ from HEAD's, so a merge
+// with a real code change is caught, while a docs-only or repeat-run commit never trips it.
 func checkRelease(root string) []Problem {
 	head, err := git.Run(root, "rev-parse", "HEAD")
 	if err != nil {
@@ -106,9 +106,13 @@ func checkRelease(root string) []Problem {
 	if err != nil {
 		return nil
 	}
-	if built := strings.TrimSpace(string(data)); built != head {
-		return []Problem{{"pins", filepath.Join("bin", gate.BuiltFrom),
-			fmt.Sprintf("the komodo binary was built from %s, not HEAD (%s); run komodo gate --rebuild", built, head)}}
+	built := strings.TrimSpace(string(data))
+	if built == head {
+		return nil
 	}
-	return nil
+	if changed, err := gate.BuildInputsChanged(root, built, head); err == nil && !changed {
+		return nil
+	}
+	return []Problem{{"pins", filepath.Join("bin", gate.BuiltFrom),
+		fmt.Sprintf("the komodo binary was built from %s, not HEAD (%s); run komodo gate --rebuild", built, head)}}
 }

@@ -384,7 +384,7 @@ func TestOnlyTheDetectedProfilesStandardsRender(t *testing.T) {
 	}
 	var names []string
 	for _, change := range plan.Changes {
-		if strings.Contains(change.Path, filepath.Join(Dir, "skills", "standards-")) {
+		if strings.Contains(change.Path, filepath.Join("skills", "standards-")) {
 			names = append(names, filepath.Base(filepath.Dir(change.Path)))
 		}
 	}

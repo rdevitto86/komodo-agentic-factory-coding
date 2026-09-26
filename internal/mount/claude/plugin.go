@@ -1,10 +1,13 @@
 package claude
 
 import (
+	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"komodo/internal/detect"
+	"komodo/internal/install"
 	"komodo/internal/mount"
 )
 
@@ -63,4 +66,33 @@ func BuilderPluginSkills(detected detect.Profile, skills []mount.Skill) []string
 func isForcedStandard(name string) bool {
 	// No repo override source exists yet.
 	return false
+}
+
+// RenderBuilderPlugin adds the builder's plugin directory: a manifest and the build skill and its
+// language standards. It returns their names, which the caller omits from the shared directory.
+func RenderBuilderPlugin(plan *install.Plan, root string, detected detect.Profile, skills []mount.Skill) map[string]bool {
+	byName := map[string]mount.Skill{}
+	for _, skill := range skills {
+		byName[skill.Name] = skill
+	}
+	dir := filepath.Join(root, Dir, "plugins", "builder")
+	plan.AddProject(filepath.Join(dir, ".claude-plugin", "plugin.json"), pluginManifest("builder"),
+		"the builder plugin's manifest")
+
+	owned := map[string]bool{}
+	for _, name := range BuilderPluginSkills(detected, skills) {
+		skill, ok := byName[name]
+		if !ok {
+			continue
+		}
+		plan.AddProject(filepath.Join(dir, "skills", name, "SKILL.md"), []byte(skill.Body),
+			"the "+name+" skill, scoped to the builder plugin")
+		owned[name] = true
+	}
+	return owned
+}
+
+// pluginManifest is the minimal manifest a plugin directory needs to name itself.
+func pluginManifest(name string) []byte {
+	return []byte(fmt.Sprintf("{\n  \"name\": %q\n}\n", name))
 }

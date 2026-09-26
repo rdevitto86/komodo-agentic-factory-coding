@@ -141,9 +141,18 @@ const BuiltFrom = ".built-from"
 // zeroOID is git's null object id, the "from" a checkout hook passes when there was no prior commit.
 const zeroOID = "0000000000000000000000000000000000000000"
 
-// changedBuildInputs reports whether a .go file, go.mod, or go.sum differs between two commits.
+// changedBuildInputs reports whether a .go file, go.mod, or go.sum differs between two commits,
+// treating the checkout hook's zero OID for a first commit as no change to rebuild.
 func changedBuildInputs(root, from, to string) (bool, error) {
 	if from == "" || from == zeroOID || from == to {
+		return false, nil
+	}
+	return BuildInputsChanged(root, from, to)
+}
+
+// BuildInputsChanged reports whether a .go file, go.mod, or go.sum differs between two commits.
+func BuildInputsChanged(root, from, to string) (bool, error) {
+	if from == to {
 		return false, nil
 	}
 	out, err := git.Run(root, "diff", "--name-only", from, to)

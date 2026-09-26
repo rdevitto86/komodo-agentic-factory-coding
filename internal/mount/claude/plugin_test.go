@@ -1,10 +1,12 @@
 package claude
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"komodo/internal/detect"
+	"komodo/internal/install"
 	"komodo/internal/mount"
 )
 
@@ -103,6 +105,47 @@ func TestBuilderPluginSkillsOmitsMissingStandards(t *testing.T) {
 	for i, w := range want {
 		if got[i] != w {
 			t.Fatalf("skill[%d] = %q, want %q", i, got[i], w)
+		}
+	}
+}
+
+// TestRenderBuilderPluginListsExactlyThoseSkills verifies (REQ-16) that the rendered builder plugin
+// directory holds exactly the skills BuilderPluginSkills names, and no others.
+func TestRenderBuilderPluginListsExactlyThoseSkills(t *testing.T) {
+	root := "/repo"
+	detected := detect.Profile{Languages: []string{"Go"}}
+	skills := []mount.Skill{
+		{Name: "build", Body: "# Build\n"},
+		{Name: "standards-go", Body: "# Go\n"},
+		{Name: "review-correctness", Body: "# Review\n"},
+		{Name: "plan", Body: "# Plan\n"},
+	}
+
+	var plan install.Plan
+	owned := RenderBuilderPlugin(&plan, root, detected, skills)
+
+	if len(owned) != 2 || !owned["build"] || !owned["standards-go"] {
+		t.Fatalf("owned = %+v, want exactly build and standards-go", owned)
+	}
+
+	dir := filepath.Join(root, Dir, "plugins", "builder", "skills")
+	for _, name := range []string{"build", "standards-go"} {
+		want := filepath.Join(dir, name, "SKILL.md")
+		found := false
+		for _, change := range plan.Changes {
+			if change.Path == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("builder plugin must render %q", want)
+		}
+	}
+	for _, name := range []string{"review-correctness", "plan"} {
+		for _, change := range plan.Changes {
+			if strings.Contains(change.Path, name) {
+				t.Fatalf("builder plugin must not render %q: %s", name, change.Path)
+			}
 		}
 	}
 }
