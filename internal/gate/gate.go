@@ -138,6 +138,75 @@ func Build(root, dir string, target Target) (string, error) {
 	return path, nil
 }
 
+// BuiltFrom is the file beside a built binary that records the commit it was built from.
+const BuiltFrom = ".built-from"
+
+// zeroOID is git's null object id, the "from" a checkout hook passes when there was no prior commit.
+const zeroOID = "0000000000000000000000000000000000000000"
+
+// changedBuildInputs reports whether a .go file, go.mod, or go.sum differs between two commits.
+func changedBuildInputs(root, from, to string) (bool, error) {
+	if from == "" || from == zeroOID || from == to {
+		return false, nil
+	}
+	out, err := git.Run(root, "diff", "--name-only", from, to)
+	if err != nil {
+		return false, err
+	}
+	for _, name := range strings.Split(out, "\n") {
+		if name == "go.mod" || name == "go.sum" || strings.HasSuffix(name, ".go") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Rebuild builds this host's binary and stamps bin/.built-from with to, only when a .go file,
+// go.mod or go.sum differs between from and to.
+func Rebuild(root, from, to string, out io.Writer) error {
+	changed, err := changedBuildInputs(root, from, to)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	gitDir, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return err
+	}
+	_, _, err = Stamp(root, gitDir, to, BuildLocal, Install, out)
+	return err
+}
+
+// Stamp builds this host's binary, then on a clean tree installs the git hooks and records to as the
+// built commit; a dirty tracked tree still builds, but installs and stamps nothing.
+func Stamp(
+	root, gitDir, to string,
+	build func(string, io.Writer) (string, error),
+	install func(string) ([]string, error),
+	out io.Writer,
+) (path string, stamped bool, err error) {
+	path, err = build(root, out)
+	if err != nil {
+		return "", false, err
+	}
+	dirty, err := git.Run(root, "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return "", false, err
+	}
+	if dirty != "" {
+		return path, false, nil
+	}
+	if _, err := install(gitDir); err != nil {
+		return "", false, err
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", BuiltFrom), []byte(to+"\n"), 0o644); err != nil {
+		return "", false, err
+	}
+	return path, true, nil
+}
+
 // Sum returns the hex sha256 of one file.
 func Sum(path string) (string, error) {
 	data, err := os.ReadFile(path)
@@ -166,45 +235,83 @@ func BuildLocal(root string, out io.Writer) (string, error) {
 const hookScript = `#!/bin/sh
 # Runs the local gate from the checkout being committed, else this host's built binary. Written by komodo gate --install.
 set -e
+name=$(basename "$0")
 # The toolkit's own checkout gates from its source, so the guard table and comment rules are the ones committed.
 top=$(git rev-parse --show-toplevel 2>/dev/null || true)
 if [ -n "$top" ] && [ -f "$top/cmd/komodo/main.go" ]; then
   cd "$top"
-  if [ "$(basename "$0")" = "pre-push" ]; then
-    exec go run ./cmd/komodo gate --fuzz 10s
+  cmd="go run ./cmd/komodo"
+else
+  # The shared git dir sits in the main checkout, where bin/ lives, even when committing from a worktree.
+  common=$(git rev-parse --path-format=absolute --git-common-dir)
+  root=${common%/.git}
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64) bin="$root/bin/komodo-darwin-arm64" ;;
+    Darwin-x86_64) bin="$root/bin/komodo-darwin-amd64" ;;
+    Linux-x86_64) bin="$root/bin/komodo-linux-amd64" ;;
+    Linux-aarch64) bin="$root/bin/komodo-linux-arm64" ;;
+    MINGW*|MSYS*|CYGWIN*) bin="$root/bin/komodo-windows-amd64.exe" ;;
+    *) echo "gate: no binary for this platform ($(uname -s)-$(uname -m)); run go build ./cmd/komodo yourself" >&2; exit 1 ;;
+  esac
+  if [ ! -x "$bin" ]; then
+    echo "gate: no binary at $bin; run 'komodo gate --install' to build it" >&2
+    exit 1
   fi
-  exec go run ./cmd/komodo gate
+  cmd="$bin"
 fi
-# The shared git dir sits in the main checkout, where bin/ lives, even when committing from a worktree.
-common=$(git rev-parse --path-format=absolute --git-common-dir)
-root=${common%/.git}
-case "$(uname -s)-$(uname -m)" in
-  Darwin-arm64) bin="$root/bin/komodo-darwin-arm64" ;;
-  Darwin-x86_64) bin="$root/bin/komodo-darwin-amd64" ;;
-  Linux-x86_64) bin="$root/bin/komodo-linux-amd64" ;;
-  Linux-aarch64) bin="$root/bin/komodo-linux-arm64" ;;
-  MINGW*|MSYS*|CYGWIN*) bin="$root/bin/komodo-windows-amd64.exe" ;;
-  *) echo "gate: no binary for this platform ($(uname -s)-$(uname -m)); run go build ./cmd/komodo yourself" >&2; exit 1 ;;
+case "$name" in
+  # A push carries more weight than a commit, so it also fuzzes the parsers for a few seconds each.
+  pre-push)
+    exec $cmd gate --fuzz 10s
+    ;;
+  post-merge)
+    # Only the main working tree rebuilds; the line merges task branches in a worktree it cut.
+    gitdir=$(git rev-parse --path-format=absolute --git-dir)
+    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
+    if [ "$gitdir" = "$gitcommon" ]; then
+      exec $cmd gate --rebuild --from "$(git rev-parse --quiet --verify ORIG_HEAD 2>/dev/null || true)" --to "$(git rev-parse HEAD)"
+    fi
+    exit 0
+    ;;
+  post-checkout)
+    # Only a branch checkout ($3 = 1) in the main working tree rebuilds; a worktree the line cut never does.
+    gitdir=$(git rev-parse --path-format=absolute --git-dir)
+    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
+    if [ "$3" = "1" ] && [ "$gitdir" = "$gitcommon" ]; then
+      exec $cmd gate --rebuild --from "$1" --to "$2"
+    fi
+    exit 0
+    ;;
+  post-rewrite)
+    # Reads old-new commit pairs from stdin; a rebase rewrites many, so only the span end to end matters.
+    old=""
+    new=""
+    while read -r pairOld pairNew rest; do
+      if [ -z "$old" ]; then old=$pairOld; fi
+      new=$pairNew
+    done
+    # Only the main working tree rebuilds; the line rebases a task's branch in a worktree it cut.
+    gitdir=$(git rev-parse --path-format=absolute --git-dir)
+    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
+    if [ "$gitdir" = "$gitcommon" ]; then
+      exec $cmd gate --rebuild --from "$old" --to "$new"
+    fi
+    exit 0
+    ;;
+  *)
+    exec $cmd gate
+    ;;
 esac
-if [ ! -x "$bin" ]; then
-  echo "gate: no binary at $bin; run 'komodo gate --install' to build it" >&2
-  exit 1
-fi
-# A push carries more weight than a commit, so it also fuzzes the parsers for a few seconds each.
-if [ "$(basename "$0")" = "pre-push" ]; then
-  exec "$bin" gate --fuzz 10s
-fi
-exec "$bin" gate
 `
 
-// Install writes the pre-commit and pre-push hooks that run this gate.
+// Install writes the pre-commit, pre-push, post-merge, post-checkout and post-rewrite hooks that run this gate.
 func Install(gitDir string) ([]string, error) {
 	dir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	var written []string
-	for _, name := range []string{"pre-commit", "pre-push"} {
+	for _, name := range []string{"pre-commit", "pre-push", "post-merge", "post-checkout", "post-rewrite"} {
 		path := filepath.Join(dir, name)
 		if err := os.WriteFile(path, []byte(hookScript), 0o755); err != nil {
 			return nil, err

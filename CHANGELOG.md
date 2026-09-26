@@ -4,6 +4,7 @@ Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolki
 
 ## 1.0.0-alpha.5 — 2026-09-26
 
+- **TG-04.2** Line endings are LF everywhere, and a pull rebuilds the binary (4 task(s))
 - **TG-04.1** The line stops judging its own commands, and the gate fails loudly (2 task(s))
 
 ## The first 1.0.0 line — 2026-09-24

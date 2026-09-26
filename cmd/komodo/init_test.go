@@ -12,7 +12,7 @@ import (
 var starterFiles = []string{
 	"AGENTS.md", "BACKLOG.md", "CHANGELOG.md",
 	"docs/prd.md", "docs/architecture.md", "docs/system-design.md", "docs/decisions.md",
-	".github/PULL_REQUEST_TEMPLATE.md", ".komodo/context/example.md",
+	".github/PULL_REQUEST_TEMPLATE.md", ".komodo/context/example.md", ".gitattributes",
 }
 
 // emptyRepo is a fresh git repo holding nothing.
