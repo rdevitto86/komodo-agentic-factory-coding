@@ -84,8 +84,8 @@ func runResume(root string, args []string) {
 		printCompactJSON(os.Stdout, state)
 		return
 	}
-	fmt.Printf("%s is at %s with %d session(s) recorded; komodo run %s continues it\n",
-		state.Group, state.Current, len(state.Sessions), state.Group)
+	fmt.Printf("%s is at %s with %d session(s) and %d repair round(s) recorded\n",
+		state.Group, state.Current, len(state.Sessions), state.Repairs)
 }
 
 // planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.

@@ -8,17 +8,17 @@ import (
 	"komodo/internal/line"
 )
 
-// TestRunResumePrintsTheSavedStateForKomodoRunToContinue reads a group's saved state.json and
+// TestRunResumePrintsTheSavedState reads a group's saved state.json and
 // reports it, without starting anything itself.
-func TestRunResumePrintsTheSavedStateForKomodoRunToContinue(t *testing.T) {
+func TestRunResumePrintsTheSavedState(t *testing.T) {
 	root := t.TempDir()
-	state := conductor.State{Group: "TG-1", Current: conductor.Building, Sessions: []string{"builder-1"}}
+	state := conductor.State{Group: "TG-1", Current: conductor.Building, Sessions: []string{"builder-1"}, Repairs: 1}
 	if err := conductor.SaveState(conductor.StatePath(root, "TG-1"), state); err != nil {
 		t.Fatal(err)
 	}
 
 	got := captureStdout(t, func() { runResume(root, []string{"TG-1"}) })
-	if !strings.Contains(got, "TG-1 is at Building with 1 session(s) recorded") {
+	if !strings.Contains(got, "TG-1 is at Building with 1 session(s) and 1 repair round(s) recorded") {
 		t.Fatalf("resume output = %q, want the saved state summary", got)
 	}
 
