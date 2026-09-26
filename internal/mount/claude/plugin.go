@@ -76,7 +76,7 @@ func RenderBuilderPlugin(plan *install.Plan, root string, detected detect.Profil
 		byName[skill.Name] = skill
 	}
 	dir := filepath.Join(root, Dir, "plugins", "builder")
-	plan.AddProject(filepath.Join(dir, ".claude-plugin", "plugin.json"), pluginManifest("builder"),
+	plan.AddScoped(filepath.Join(dir, ".claude-plugin", "plugin.json"), pluginManifest("builder"),
 		"the builder plugin's manifest")
 
 	owned := map[string]bool{}
@@ -85,7 +85,7 @@ func RenderBuilderPlugin(plan *install.Plan, root string, detected detect.Profil
 		if !ok {
 			continue
 		}
-		plan.AddProject(filepath.Join(dir, "skills", name, "SKILL.md"), []byte(skill.Body),
+		plan.AddScoped(filepath.Join(dir, "skills", name, "SKILL.md"), []byte(skill.Body),
 			"the "+name+" skill, scoped to the builder plugin")
 		owned[name] = true
 	}

@@ -122,7 +122,8 @@ func renderedSkillTokens(rendered []renderedHost) int {
 			continue
 		}
 		for _, change := range host.Plan.Changes {
-			if change.Project && filepath.Base(change.Path) == "SKILL.md" {
+			// A scoped skill loads only in its role's session, so it is no part of the always-on context.
+			if change.Project && !change.Scoped && filepath.Base(change.Path) == "SKILL.md" {
 				total += tokens(len(frontmatterField(string(change.Body), "description")))
 			}
 		}
