@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"komodo/internal/conductor"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
@@ -59,6 +60,32 @@ func runNext(root string, args []string) {
 	if len(plan.Skipped) > 0 {
 		fmt.Printf("  done already: %s\n", strings.Join(plan.Skipped, ", "))
 	}
+}
+
+// runResume prints the state a killed run left for one group, so a resumed komodo run knows
+// whether to continue its last session or start a fresh one from the group's WIP commit.
+func runResume(root string, args []string) {
+	set := flag.NewFlagSet("resume", flag.ExitOnError)
+	asJSON := set.Bool("json", false, "print JSON")
+	target, rest := splitPositional(args)
+	_ = set.Parse(rest)
+	group := line.GroupFor(root, target)
+	if group == "" {
+		group = target
+	}
+	if group == "" {
+		fail(fmt.Errorf("usage: komodo resume <group>"))
+	}
+	state, err := conductor.LoadState(conductor.StatePath(root, group))
+	if err != nil {
+		fail(fmt.Errorf("%s has no saved state to resume: %w", group, err))
+	}
+	if *asJSON {
+		printCompactJSON(os.Stdout, state)
+		return
+	}
+	fmt.Printf("%s is at %s with %d session(s) recorded; komodo run %s continues it\n",
+		state.Group, state.Current, len(state.Sessions), state.Group)
 }
 
 // planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.
