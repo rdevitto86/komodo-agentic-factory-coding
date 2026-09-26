@@ -415,6 +415,111 @@ func TestABriefWithoutASchemaStillNamesTheResultPath(t *testing.T) {
 	}
 }
 
+// TestBuildBriefFillsFilesAndContextFromTheQueueCard proves a brief reads the group's compiled
+// ingest card from .komodo/queue, expanding the task's own glob, not a sibling's files.
+func TestBuildBriefFillsFilesAndContextFromTheQueueCard(t *testing.T) {
+	root := briefRepo(t)
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The task itself declares a glob; the card carries what it expanded to on disk.
+	globBacklog := "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-07.1.1] Build the thing [P: C] [READY]\n```yaml\nfiles: [a/*.go]\n" +
+		"done_when:\n  - go test ./a/...\ncontext:\n  - docs/spec/SDD.md#The plan\n  - docs/spec/SDD.md#Other\n```\n"
+	write("BACKLOG.md", globBacklog)
+	write("a/two.go", "package a\n\nfunc Two() {}\n")
+	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
+		`{"group":"TG-07.1","files":["a/one.go","a/two.go"],"context":["docs/spec/SDD.md#Other"]}`)
+
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "func Two()") {
+		t.Fatalf("the brief did not read the queue card's expanded file list:\n%s", brief.Text)
+	}
+	if !strings.Contains(brief.Text, "### docs/spec/SDD.md#Other") || strings.Contains(brief.Text, "Build it.") {
+		t.Fatalf("the brief did not swap in the queue card's own context references:\n%s", brief.Text)
+	}
+}
+
+// TestBuildBriefKeepsOnlyATasksOwnFilesFromTheCard proves that in a multi-task group, each task's
+// brief carries only the files its own pattern matches, never a sibling's.
+func TestBuildBriefKeepsOnlyATasksOwnFilesFromTheCard(t *testing.T) {
+	root := briefRepo(t)
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	twoTaskBacklog := "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-07.1.1] First task [P: C] [READY]\n```yaml\nfiles: [a/one.go]\n" +
+		"done_when:\n  - go test ./a/...\n```\n\n" +
+		"#### [TSK-07.1.2] Second task [P: C] [READY]\n```yaml\nfiles: [b/two.go]\n" +
+		"done_when:\n  - go test ./b/...\n```\n"
+	write("BACKLOG.md", twoTaskBacklog)
+	write("b/two.go", "package b\n\nfunc Two() {}\n")
+	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
+		`{"group":"TG-07.1","files":["a/one.go","b/two.go"],"context":[],`+
+			`"tasks":[{"id":"TSK-07.1.1","title":"First task"},{"id":"TSK-07.1.2","title":"Second task"}]}`)
+
+	first, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(first.Text, "### a/one.go") || strings.Contains(first.Text, "### b/two.go") {
+		t.Fatalf("the first task's brief must list only a/one.go, not its sibling:\n%s", first.Text)
+	}
+
+	second, err := BuildBrief(root, root, "TSK-07.1.2", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(second.Text, "### b/two.go") || strings.Contains(second.Text, "### a/one.go") {
+		t.Fatalf("the second task's brief must list only b/two.go, not its sibling:\n%s", second.Text)
+	}
+}
+
+// TestBuildBriefFallsBackToTheTaskWithoutAQueueCard proves a brief still works before komodo
+// ingest has ever run for the group.
+func TestBuildBriefFallsBackToTheTaskWithoutAQueueCard(t *testing.T) {
+	root := briefRepo(t)
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "Build it.") {
+		t.Fatalf("the task's own context must still fill the brief with no queue card:\n%s", brief.Text)
+	}
+}
+
+// TestBuildBriefIsDeterministic proves the same card and tree give the same brief bytes on every
+// machine: building twice from the same root must never depend on map iteration or a clock.
+func TestBuildBriefIsDeterministic(t *testing.T) {
+	root := briefRepo(t)
+	first, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Text != second.Text {
+		t.Fatalf("brief bytes differ between two builds of the same card and tree:\n%s\n---\n%s", first.Text, second.Text)
+	}
+}
+
 func TestAFixBriefCarriesTheGroupsTasksAndBlockingFindings(t *testing.T) {
 	root := briefRepo(t)
 	review := ResultPath(root, "TG-07.1-review")

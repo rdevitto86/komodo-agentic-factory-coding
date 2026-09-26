@@ -1,6 +1,7 @@
 package line
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,116 @@ import (
 	"komodo/internal/facet"
 	repopkg "komodo/internal/repo"
 )
+
+// queueCard is the subset of a compiled ingest card a brief reads from disk, never importing ingest.
+type queueCard struct {
+	Files   []string        `json:"files"`
+	Context []string        `json:"context"`
+	Tasks   []queueCardTask `json:"tasks"`
+}
+
+// queueCardTask is one task's id and title, enough to detect a card built from a stale backlog.
+type queueCardTask struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// loadCard reads a group's compiled card from .komodo/queue, or reports it missing.
+func loadCard(root, groupID string) (queueCard, bool) {
+	data, err := os.ReadFile(filepath.Join(root, StateDir, "queue", groupID+".json"))
+	if err != nil {
+		return queueCard{}, false
+	}
+	var card queueCard
+	if json.Unmarshal(data, &card) != nil {
+		return queueCard{}, false
+	}
+	return card, true
+}
+
+// cardStale reports whether the card's task ids and titles differ from the group's; a card with
+// no task list at all is trusted, so a hand-written queue fixture keeps working.
+func cardStale(card queueCard, group backlog.Group) bool {
+	if len(card.Tasks) == 0 {
+		return false
+	}
+	if len(card.Tasks) != len(group.Tasks) {
+		return true
+	}
+	byID := make(map[string]string, len(card.Tasks))
+	for _, entry := range card.Tasks {
+		byID[entry.ID] = entry.Title
+	}
+	for _, task := range group.Tasks {
+		if byID[task.ID] != task.Title {
+			return true
+		}
+	}
+	return false
+}
+
+// cardTask overrides a task's files and context with the subset of its group's card matching its
+// own declared patterns, falling back to those patterns when the card is missing, stale, or empty.
+func cardTask(root string, task backlog.Task, group backlog.Group) backlog.Task {
+	card, ok := loadCard(root, group.ID)
+	if !ok || cardStale(card, group) {
+		return task
+	}
+	if files := ownFiles(card.Files, task.Files()); len(files) > 0 {
+		task.Fields.Set("files", toAnyList(files))
+	}
+	if context := ownContext(card.Context, task.Context()); len(context) > 0 {
+		task.Fields.Set("context", toAnyList(context))
+	}
+	return task
+}
+
+// ownFiles keeps the card's expanded files that match one of the given patterns, in the card's
+// order, so a sibling's files never reach a brief that never declared them.
+func ownFiles(cardFiles, patterns []string) []string {
+	var out []string
+	for _, file := range cardFiles {
+		for _, pattern := range patterns {
+			if matchesPattern(pattern, file) {
+				out = append(out, file)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// matchesPattern reports whether file is the pattern itself, sits under it as a directory, or
+// matches it as a glob, mirroring how ingest expands a task's own file patterns.
+func matchesPattern(pattern, file string) bool {
+	clean := strings.TrimSuffix(pattern, "/")
+	return file == clean || strings.HasPrefix(file, clean+"/") || MatchGlob(pattern, file)
+}
+
+// ownContext keeps the card's context references the task itself declared, in the card's order,
+// since a context anchor is literal and never expands the way a file pattern does.
+func ownContext(cardContext, own []string) []string {
+	declared := make(map[string]bool, len(own))
+	for _, ref := range own {
+		declared[ref] = true
+	}
+	var out []string
+	for _, ref := range cardContext {
+		if declared[ref] {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// toAnyList wraps a string slice for Fields.Set, which stores list values as []any.
+func toAnyList(items []string) []any {
+	out := make([]any, len(items))
+	for i, item := range items {
+		out[i] = item
+	}
+	return out
+}
 
 // repoRules is the repo's own AGENTS.md, clipped, or a one-line default.
 func repoRules(cwd string, limit int) string {

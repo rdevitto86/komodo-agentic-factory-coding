@@ -1448,7 +1448,7 @@ depends_on: [TG-07.1]
 ```
 * **Why:** builders spent 987 `grep` and 356 `sed` calls finding context the binary could pack (evidence 6). Proves REQ-7 and REQ-9's derived checks.
 
-#### [TSK-07.2.1] `komodo ingest` compiles each READY group into a card with a stable hash [P: C] [READY]
+#### [TSK-07.2.1] `komodo ingest` compiles each READY group into a card with a stable hash [P: C] [DONE]
 ```yaml
 files: [internal/ingest/card.go, internal/ingest/card_test.go, cmd/komodo/ingest.go]
 done_when:
@@ -1458,7 +1458,7 @@ context:
   - "cards land in .komodo/queue/<group>.json; files expand globs and directories, and a new file is allowed where its parent exists; no session starts (REQ-7)"
 ```
 
-#### [TSK-07.2.2] Checks are derived per language the group touches [P: C] [READY]
+#### [TSK-07.2.2] Checks are derived per language the group touches [P: C] [DONE]
 ```yaml
 files: [internal/ingest/checks.go, internal/ingest/checks_test.go]
 done_when:
@@ -1467,7 +1467,7 @@ context:
   - "Go: build, vet and test of each touched package; TypeScript: the type check and the repo's test script; hand-written checks add, never replace (REQ-9); detection comes from internal/detect"
 ```
 
-#### [TSK-07.2.3] Context packs replace exploration [P: H] [READY]
+#### [TSK-07.2.3] Context packs replace exploration [P: H] [DONE]
 ```yaml
 files: [internal/ingest/pack.go, internal/ingest/pack_test.go]
 done_when:
@@ -1478,7 +1478,7 @@ context:
 tier: heavy
 ```
 
-#### [TSK-07.2.4] Briefs fill their slots from the card, stable slots first [P: H] [READY]
+#### [TSK-07.2.4] Briefs fill their slots from the card, stable slots first [P: H] [DONE]
 ```yaml
 files: [internal/line/brief.go, internal/line/brief_slots.go, internal/line/brief_test.go]
 done_when:
@@ -1488,6 +1488,114 @@ context:
   - docs/system-design.md#briefs
   - "test: the same card and tree give the same brief bytes"
 ```
+
+#### [TSK-07.2.5] internal/line/brief_slots.go:70 cardTask replaces a task's declared files with only the card's matches [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/brief_slots.go
+done_when:
+  - test -f internal/line/brief_slots.go
+type: fix
+context:
+  - "Ingest drops a new file whose parent folder doesn't exist yet, so files: [cmd/komodo/ingest.go, internal/ingest/card.go] with no internal/ingest/ yet briefs only cmd/komodo/ingest.go. The files slot loses internal/ingest/card.go, and the same drop happens for a plain path added after the last ingest. Keep every declared plain path, and add card expansions only for glob and directory patterns."
+```
+
+#### [TSK-07.2.6] internal/line/brief_slots.go:44 cardStale compares only task ids and titles [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/brief_slots.go
+done_when:
+  - test -f internal/line/brief_slots.go
+type: fix
+context:
+  - "Edit a task's files or context after ingest and the old card is still trusted. ownContext (line 103) can then only drop a reference the task declares; on an old card it silently removes new context from the brief. Mark the card stale when any task's files or context differ from what the card holds, and drop ownContext in favour of the task's own list on a stale card."
+```
+
+#### [TSK-07.2.7] internal/ingest/card.go:319 resolveBase disagrees with line's own groupBase [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ingest/card.go
+done_when:
+  - test -f internal/ingest/card.go
+type: fix
+context:
+  - "resolveBase sets the base to the depends_on group's branch, but komodo next never does: next's groupBase (internal/line/next.go:397) uses only an explicit base field and falls back to the default branch once the parent merged. A group with depends_on: [TG-01.1] and no base: gets card base feat/parent-group while next cuts from main, and the card keeps naming the deleted branch after the parent merges. Export and call line's groupBase instead of a second resolver."
+```
+
+#### [TSK-07.2.8] internal/ingest/checks.go:71 extractGoPackages skips Go files at the repo root [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ingest/checks.go
+done_when:
+  - test -f internal/ingest/checks.go
+type: fix
+context:
+  - 'A group touching only main.go gets no derived build, vet, or test check, though the root package is a touched package. countPackages in card.go counts that same file, so Size.Packages and the derived Checks disagree. Emit go build ., go vet . and go test . for root-level Go files instead of skipping dir ".".'
+```
+
+#### [TSK-07.2.9] internal/ingest/card.go:185 expandFiles has no containment check against root [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ingest/card.go
+done_when:
+  - test -f internal/ingest/card.go
+type: fix
+context:
+  - "expandFiles joins a backlog-declared pattern onto root without cleaning or checking containment. files: [../] walks the parent folder; from a worktree under .komodo/wt/, that is every sibling worktree. readItem and specItems in pack.go then read those ../ paths into the context pack. Clean each pattern and reject any that resolves outside root before stat or walk."
+```
+
+#### [TSK-07.2.10] internal/line/brief_test.go:508 The determinism test never exercises a card [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/brief_test.go
+done_when:
+  - test -f internal/line/brief_test.go
+type: test
+context:
+  - "TestBuildBriefIsDeterministic builds from a repo with no queue card, so it never proves TSK-07.2.4's done_when that the same card and tree give the same brief bytes. A card-driven ordering bug would still pass this test. Write a queue card with a glob-expanded file list before the two builds compared for determinism."
+```
+
+#### [TSK-07.2.11] internal/line/brief_slots.go:44 No test covers a card whose task list diverges from the backlog [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/brief_slots.go
+done_when:
+  - test -f internal/line/brief_slots.go
+type: test
+context:
+  - "If cardStale always returned false, go test ./internal/line/... would still pass; no test builds a brief from a card whose task files or titles differ from the current backlog. Add a brief test with a card whose task title or files differ from the backlog, asserting the task's own declared files are used."
+```
+
+#### [TSK-07.2.12] internal/ingest/card.go:137 One dedupe loop is written three times, then deduped again [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ingest/card.go
+done_when:
+  - test -f internal/ingest/card.go
+type: refactor
+context:
+  - "taskFiles, handWrittenChecks and taskContext each repeat the same first-seen dedupe loop, allChecks (checks.go:13) dedupes the already-deduped hand-written list a second time, and countPackages repeats extractGoPackages's own counting. Use one generic first-seen dedupe helper over a task field accessor, and let len(extractGoPackages(files)) stand in for countPackages."
+```
+
+#### [TSK-07.2.13] internal/ingest/checks.go:20 Several comments restate the code below them [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ingest/checks.go
+done_when:
+  - test -f internal/ingest/checks.go
+type: docs
+context:
+  - 'The comments at checks.go:20 ("Add hand-written checks first."), :28 ("Add derived checks that aren''t already present."), :47 ("Go: build, vet, and test for each touched package.") and :71 ("skip root-level Go files") restate the statement that follows; card.go:2 and :342 additionally cite (REQ-7), which the comments standard bans. Delete the four restating comments and drop the (REQ-7) citations.'
+```
+
+
+
+
+
+
+
+
+
 
 ### [TG-07.3] Coordinate schedules groups and paces to the plan
 ```yaml
