@@ -266,3 +266,92 @@ func TestAggregateMeasuresThroughput(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteMetricsCreatesFile(t *testing.T) {
+	book := New(t.TempDir())
+	entries := []Entry{
+		{At: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Run: "r1", Group: "TG-1", Station: "build", Seconds: 10, Turns: 3, TokensIn: 100, TokensOut: 50, TokensCached: 5, Outcome: "done"},
+		{At: time.Date(2026, 1, 1, 0, 0, 10, 0, time.UTC), Run: "r1", Group: "TG-1", Station: "build", Seconds: 20, Turns: 2, TokensIn: 200, TokensOut: 100, TokensCached: 10, Outcome: "done"},
+	}
+	if err := book.WriteMetrics(entries); err != nil {
+		t.Fatal(err)
+	}
+	metrics, err := book.ReadMetrics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metrics) == 0 {
+		t.Fatal("metrics.jsonl was not written")
+	}
+	if metrics[0].Run != "r1" || metrics[0].Group != "TG-1" || metrics[0].Stage != "build" {
+		t.Fatalf("metric = %+v", metrics[0])
+	}
+}
+
+// TestMetricsHasOneLinePerStageAndSession proves two brief sessions of the same run and group
+// each keep their own metric line, instead of summing into one line for the stage.
+func TestMetricsHasOneLinePerStageAndSession(t *testing.T) {
+	book := New(t.TempDir())
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	entries := []Entry{
+		{At: start, Run: "r1", Group: "TG-1", Station: "brief", TokensIn: 100, Outcome: "done"},
+		{At: start.Add(5 * time.Second), Run: "r1", Group: "TG-1", Station: "brief", TokensIn: 50, Outcome: "done"},
+		{At: start, Run: "r1", Group: "TG-2", Station: "build", TokensIn: 200, Outcome: "done"},
+	}
+	if err := book.WriteMetrics(entries); err != nil {
+		t.Fatal(err)
+	}
+	metrics, _ := book.ReadMetrics()
+	if len(metrics) != 3 {
+		t.Fatalf("expected 3 metric lines, one per session, got %d", len(metrics))
+	}
+	var briefCount, buildCount int
+	for _, m := range metrics {
+		if m.Stage == "brief" {
+			briefCount++
+		}
+		if m.Stage == "build" {
+			buildCount++
+		}
+	}
+	if briefCount != 2 || buildCount != 1 {
+		t.Fatalf("brief count = %d, build count = %d", briefCount, buildCount)
+	}
+}
+
+func TestMetricsFieldsArePopulated(t *testing.T) {
+	book := New(t.TempDir())
+	at := time.Date(2026, 1, 1, 12, 30, 45, 0, time.UTC)
+	entries := []Entry{
+		{At: at, Run: "r1", Group: "TG-1", Station: "build", Seconds: 15, Turns: 4, TokensIn: 300, TokensOut: 150, TokensCached: 20, Outcome: "done"},
+	}
+	if err := book.WriteMetrics(entries); err != nil {
+		t.Fatal(err)
+	}
+	metrics, _ := book.ReadMetrics()
+	if len(metrics) != 1 {
+		t.Fatalf("expected 1 metric, got %d", len(metrics))
+	}
+	m := metrics[0]
+	if m.Start.IsZero() || m.Duration != 15 || m.Turns != 4 || m.Input != 300 || m.Output != 150 || m.CachedTokens != 20 || m.Outcome != "done" {
+		t.Fatalf("metric = %+v", m)
+	}
+}
+
+func TestWriteEventsCreatesFile(t *testing.T) {
+	book := New(t.TempDir())
+	entries := []Entry{
+		{At: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Run: "r1", Group: "TG-1", Station: "close", Outcome: "escalated"},
+		{At: time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC), Run: "r1", Group: "TG-1", Station: "close", Outcome: "done"},
+	}
+	if err := book.WriteEvents(entries); err != nil {
+		t.Fatal(err)
+	}
+	events, err := book.ReadEvents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) == 0 {
+		t.Fatal("events.jsonl was not written")
+	}
+}
