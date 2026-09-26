@@ -44,7 +44,7 @@ func Step(root, needle string) (*Action, error) {
 		return &next, nil
 	}
 	if next.Role == "reviewer" {
-		if _, err := reviewBrief(root, snap.Plan); err != nil {
+		if _, err := ReviewBrief(root, snap.Plan); err != nil {
 			return nil, err
 		}
 	}
@@ -373,9 +373,9 @@ func repairResultReady(root, taskID string) bool {
 	return result.ModTime().After(brief.ModTime())
 }
 
-// reviewBrief fills the reviewer role from the group's diff, tasks, and standards, writes it to
+// ReviewBrief fills the reviewer role from the group's diff, tasks, and standards, writes it to
 // .komodo/briefs/<group>-review.md in the root and the group worktree, and returns that path.
-func reviewBrief(root string, plan *Plan) (string, error) {
+func ReviewBrief(root string, plan *Plan) (string, error) {
 	definition, err := LoadRole(root, "reviewer")
 	if err != nil {
 		return "", err
