@@ -174,6 +174,33 @@ func TestLintRejectsAGroupWhoseVersionDiffersFromItsEpic(t *testing.T) {
 	}
 }
 
+func TestLintAcceptsAGroupWhoseBaseIsItsOwnEpicBranch(t *testing.T) {
+	text := "### [TG-53.1] Base on own epic branch\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/v1.0.0\n```\n\n" +
+		"#### [TSK-53.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
+	problems := Lint(Parse(text))
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-53.1") && strings.Contains(problem, "neither main") {
+			t.Fatalf("base naming the group's own epic branch should not produce an error; got %q", problem)
+		}
+	}
+}
+
+func TestLintRejectsAGroupWhoseBaseNamesAnotherEpicsBranch(t *testing.T) {
+	text := "### [TG-54.1] Base on a different epic's branch\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/v2.0.0\n```\n\n" +
+		"#### [TSK-54.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
+	problems := Lint(Parse(text))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-54.1") && strings.Contains(problem, "neither main") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("base naming a different epic's branch should produce an error; got %v", problems)
+	}
+}
+
 func TestLintRejectsAGroupInAnEpicWithNoVersion(t *testing.T) {
 	text := "## [EPIC-52] Phase with no version\n\n" +
 		"### [TG-52.1] Group in unversioned epic\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +

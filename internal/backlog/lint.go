@@ -70,9 +70,10 @@ func Lint(parsed Backlog) []string {
 				depBranches = append(depBranches, depGroup.Branch())
 			}
 		}
-		if base := group.Base(); base != "" && base != "main" && !contains(depBranches, base) {
+		epicBranch := group.EpicBranch()
+		if base := group.Base(); base != "" && base != "main" && base != epicBranch && !contains(depBranches, base) {
 			problems = append(problems, fmt.Sprintf(
-				"%s: base %q is neither main nor the branch of a group named in depends_on", group.ID, base))
+				"%s: base %q is neither main nor its epic branch %q nor the branch of a group named in depends_on", group.ID, base, epicBranch))
 		}
 	}
 	for _, task := range parsed.Tasks() {
