@@ -56,7 +56,8 @@ func AddWorktree(root, branch, base, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	start := StartRef(root, base)
+	// Use base only, not origin/base, to avoid inheriting stale commits from a previous push.
+	start := base
 	if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
 		if _, err := git.Run(root, "worktree", "add", path, branch); err != nil {
 			return err
