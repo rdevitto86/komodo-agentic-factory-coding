@@ -38,10 +38,12 @@ var dropped = []string{
 
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
-	Root       string
-	Target     string
-	Budget     time.Duration
-	DryRun     bool
+	Root   string
+	Target string
+	Budget time.Duration
+	DryRun bool
+	// NoShip stops each group at shipped-ready, skipping the push and the draft pull request.
+	NoShip     bool
 	Env        []string
 	Stdout     io.Writer
 	Stderr     io.Writer
@@ -126,7 +128,7 @@ func launchTarget(options Options) (int, string, error) {
 	}
 	code, err := launch(options, name, args)
 	url := ""
-	if !options.DryRun {
+	if !options.DryRun && !options.NoShip {
 		created, shipErr := finishShip(options)
 		url = created
 		if shipErr != nil && err == nil {
@@ -150,20 +152,16 @@ func drain(options Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	// Sync once before the run starts, and never again until it ends, so no group's binary moves under it.
+	executable, err := Sync(SyncOptions{Root: options.Root, Stdout: stdout})
+	if err != nil {
+		return 1, err
+	}
 	started := time.Now()
 	ran := map[string]bool{}
 	var shippedGroups, parked []string
-	executable := ""
+	code := 0
 	for {
-		// Sync fetches origin, rebuilds a stale binary, and re-renders drifted config.
-		built, err := Sync(SyncOptions{Root: options.Root, Stdout: options.Stdout})
-		if err != nil {
-			return 1, err
-		}
-		if built != "" {
-			executable = built
-		}
-
 		// Every open group drains first, oldest start first, then each ready group in file order.
 		order, err := drainOrder(options.Root)
 		if err != nil {
@@ -181,30 +179,32 @@ func drain(options Options) (int, error) {
 			fmt.Fprintf(stdout, "drain done: nothing is ready; %d shipped, %d parked", len(shippedGroups), len(parked))
 			if len(parked) > 0 {
 				fmt.Fprintf(stdout, " (%s)\n", strings.Join(parked, ", "))
-				return 1, nil
+				code = 1
+			} else {
+				fmt.Fprintln(stdout)
 			}
-			fmt.Fprintln(stdout)
-			return 0, nil
+			break
 		}
 		ran[next] = true
 		remaining := total - time.Since(started)
 		if remaining <= 0 {
 			fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", next, total)
-			return 124, nil
+			code = 124
+			break
 		}
 		group := options
 		group.Target = next
 		group.Budget = min(GroupBudget, remaining)
 		group.Executable = executable
 		launched := time.Now()
-		code, url, err := launchTarget(group)
+		runCode, url, err := launchTarget(group)
 		if err != nil {
 			fmt.Fprintf(stdout, "%s parked: %v\n", next, err)
 			parked = append(parked, next)
 			continue
 		}
 		if !shipped(options.Root, next, launched) {
-			fmt.Fprintf(stdout, "%s parked: it ended without shipping (exit %d)\n", next, code)
+			fmt.Fprintf(stdout, "%s parked: it ended without shipping (exit %d)\n", next, runCode)
 			parked = append(parked, next)
 			continue
 		}
@@ -214,6 +214,11 @@ func drain(options Options) (int, error) {
 		fmt.Fprintf(stdout, "%s shipped: %s\n", next, url)
 		shippedGroups = append(shippedGroups, next)
 	}
+	// Sync once more after the run ends, so a binary gone stale mid-run rebuilds only once every group is done.
+	if _, err := Sync(SyncOptions{Root: options.Root, Stdout: stdout}); err != nil {
+		return 1, err
+	}
+	return code, nil
 }
 
 // listDrain prints the groups a drain would run, in order, the open run first, and launches nothing.

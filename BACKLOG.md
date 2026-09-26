@@ -378,7 +378,7 @@ context:
 ### [TG-04.6] The relay line stops cleanly when a group does not ship
 ```yaml
 type: fix
-version: 1.0.0-alpha.6
+version: 1.0.0-alpha.5
 ```
 * **Why:** running phase 1 in two lanes on 2026-09-26 found three relay-line defects; each cost a stopped lane or a hand repair.
 
@@ -963,6 +963,112 @@ context:
 type: docs
 ```
 
+### [TG-05.7] Every epic has a draft branch, and group PRs stack on it
+```yaml
+type: feat
+version: 1.0.0-alpha.6
+```
+* **Why:** every group opened its own PR against `main`, and the owner approved each by hand; on 2026-09-26 that was 14 PRs in one afternoon. An epic branch collects its groups' PRs, and a person merges once per epic.
+
+#### [TSK-05.7.1] Decision 0028 and REQ-13 say where every branch cuts from and where every PR lands [P: C] [READY]
+```yaml
+files: [docs/decisions.md, docs/prd.md, docs/system-design.md]
+done_when:
+  - grep -q '^## 0028' docs/decisions.md
+  - grep -q 'epic branch' docs/prd.md
+context:
+  - "the owner's words, 2026-09-26: each epic has a branch named feat/v<its version>, cut from main and opened as a draft PR to main; every group PR targets its epic's branch, or stacks on the group it depends on; people review and merge at the final state, the epic's PR"
+  - "the conductor merges a reviewed, checked group PR into its epic branch; only a person merges an epic PR into main"
+  - "a group PR holds at most 20 files and 2,000 changed lines, and 1,000 is preferred; an epic PR has no cap, since it gathers many group PRs"
+  - "an epic's version names its branch, so every group's version must equal its epic's exactly"
+  - "naming: only an epic branch is named by version, strictly feat/v<version>; a group branch and PR keep their own unique names, each naming its group, so every change traces to its task group"
+  - "REQ-13 becomes: a group branch cuts from its epic's branch, or stacks on the branch of a group it depends on; update system-design's git and shipping sections to match"
+type: docs
+```
+
+#### [TSK-05.7.2] Lint pins every group's version to its epic's [P: C] [READY]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+  - go run ./cmd/komodo lint
+context:
+  - "the epic branch is named from the version, so a wrong version sends a builder's work to the wrong branch; an epic's goal line names its version as Ships as `x.y.z`"
+  - "a group whose version differs from its epic's is a problem naming both; an epic with no version is a problem"
+```
+
+#### [TSK-05.7.3] A group with no declared base cuts from its epic's branch [P: C] [READY]
+```yaml
+files: [internal/backlog/backlog.go, internal/line/next.go, internal/line/next_test.go, komodo/rules/backlog.md]
+done_when:
+  - go test ./internal/backlog/... ./internal/line/...
+depends_on: [TSK-05.7.2]
+context:
+  - "EpicBranch is feat/v plus the group's version; groupBase is the declared base, else the epic branch, else the remote's default when the epic branch is missing and cannot be opened"
+  - "lint's base rule accepts the group's epic branch; the grammar in komodo/rules/backlog.md says a group cuts from its epic's branch and states that its version picks the branch"
+  - "a PR's branch is <type>/<id>-<slug>, the id kept as written: feat/TG-05.2-the-host-contract for a group, fix/TSK-04.6.1-stop-verbose-outputs for a single task; its PR title ends with the same id, such as (TG-05.2), so each traces to its group or task"
+  - "only feat/v<version> is an epic branch: lint refuses a group whose declared base looks like one but names another epic's version"
+  - "test (REQ-13): a group with no base plans onto feat/v<version>; one with depends_on stacks on its parent's branch; a group branch carries its group id"
+```
+
+#### [TSK-05.7.4] The line opens an epic's branch and draft PR on its first cut [P: C] [READY]
+```yaml
+files: [internal/line/epic.go, internal/line/epic_test.go, internal/line/cut.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-05.7.3]
+context:
+  - "when a group cuts and its epic branch is not on origin, the conductor cuts it from main, pushes it with its own credential, and opens a draft PR to main titled feat: <epic title> (<version>), with the epic's goal as the summary"
+  - "where drafts are unavailable, the PR is labelled status: wip, as TSK-07.8.3 does for group PRs; a draft base never stops a group PR from targeting or stacking on it"
+```
+
+#### [TSK-05.7.5] The conductor merges a reviewed group into its epic branch [P: C] [READY]
+```yaml
+files: [internal/line/merge.go, internal/line/merge_test.go, internal/pr/pr.go, internal/pr/pr_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/pr/...
+depends_on: [TSK-05.7.4]
+context:
+  - "after ship, when the review left nothing at or above the floor and every check passed, the conductor merges the group PR into its epic branch with a merge commit, never a squash, so a stacked child keeps its base"
+  - "it never merges into main or a critical ref from komodo/policy.json, and a model session never merges; a refused merge leaves the PR open and names why"
+```
+
+#### [TSK-05.7.6] A group PR holds at most 20 files and 2,000 changed lines [P: H] [READY]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/profile/...
+depends_on: [TSK-05.7.5]
+context:
+  - "the profile carries pr_files 20, pr_lines_preferred 1000 and pr_lines_max 2000; ship refuses a group PR over either ceiling and names a split, and a PR over the preferred size says so in its body"
+  - "an epic PR has no cap"
+  - "lint refusing a group whose tasks list more than 20 files lands with TG-07.1's group files"
+```
+
+#### [TSK-05.7.7] The rules and skills send every PR to its epic branch [P: H] [READY]
+```yaml
+files: [komodo/AGENTS.md, komodo/skills/standards-sdlc/SKILL.md, komodo/skills/respond/SKILL.md, komodo/roles/responder.md]
+done_when:
+  - grep -q 'epic branch' komodo/AGENTS.md
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-05.7.1]
+context:
+  - "AGENTS.md's Git section: a group PR targets its epic branch, and landing into main is a person's merge of the epic PR; keep the file's size unchanged, since the always-on context sits at its cap"
+  - "the SDLC standard and the responder: branches, PR targets, stacking, drafts and the size limits, as decision 0028 states them"
+type: docs
+```
+
+#### [TSK-05.7.8] Doctor reports an epic missing its branch or draft PR, and a group PR aimed at main [P: M] [READY]
+```yaml
+files: [internal/doctor/epics.go, internal/doctor/epics_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-05.7.4]
+context:
+  - "with --remote: an epic holding ready groups whose branch or draft PR is missing on origin, and an open group PR whose base is main while its epic branch exists"
+  - "the guard is frozen until TG-06.2, so the rule that a model session may not push to or merge an epic branch lands there (TSK-06.2.1)"
+```
+
 ### [TG-05.5] Metrics and the clock
 ```yaml
 type: feat
@@ -972,7 +1078,7 @@ depends_on: [TG-05.4]
 ```
 * **Why:** one build took 122 turns with no cap but a 90-minute group budget (evidence 9). Proves REQ-28, REQ-29 and REQ-31.
 
-#### [TSK-05.5.1] Each run writes metrics.jsonl and events.jsonl from the host's own totals [P: H] [READY]
+#### [TSK-05.5.1] Each run writes metrics.jsonl and events.jsonl from the host's own totals [P: H] [DONE]
 ```yaml
 files: [internal/ledger/ledger.go, internal/ledger/ledger_test.go]
 done_when:
@@ -982,7 +1088,7 @@ context:
   - "one line per stage and session: run, group, stage, start, duration, turns, input, output and cached tokens, cost, outcome; each run starts fresh, and only the last 10 run folders stay"
 ```
 
-#### [TSK-05.5.2] `komodo report` sums a run, and its sums match the host's [P: H] [READY]
+#### [TSK-05.5.2] `komodo report` sums a run, and its sums match the host's [P: H] [DONE]
 ```yaml
 files: [internal/line/report.go, internal/line/report_test.go, cmd/komodo/line.go]
 done_when:
@@ -993,7 +1099,7 @@ context:
   - "the headline figure is tokens per accepted group"
 ```
 
-#### [TSK-05.5.3] A group has 60 minutes, and each session its own limit [P: C] [READY]
+#### [TSK-05.5.3] A group has 60 minutes, and each session its own limit [P: C] [DONE]
 ```yaml
 files: [internal/conductor/clock.go, internal/conductor/clock_test.go]
 done_when:
@@ -1013,6 +1119,162 @@ context:
 owner: human
 type: test
 ```
+
+#### [TSK-05.5.5] internal/ledger/ledger.go:203 WriteMetrics/WriteEvents have no caller and no retention [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: fix
+context:
+  - "Nothing outside the tests calls WriteMetrics or WriteEvents, so no real run ever writes metrics.jsonl or events.jsonl; both also append forever to one flat file under .komodo, breaking the spec's requirement that each run starts fresh and only the last 10 run folders stay. Write both files into a per-run folder truncated when the run starts, prune to the newest 10, and call this from the run's close path."
+```
+
+#### [TSK-05.5.6] internal/conductor/clock.go:21 Session limits map uses "review" instead of the profile's "lens" name [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock.go
+done_when:
+  - test -f internal/conductor/clock.go
+type: fix
+context:
+  - 'The sessionLimits map key is "review", but the spec and profile name this role "lens"; a session started with type "lens" has no entry in sessionLimits, so SessionPastLimit always returns false for it and that session type is never limited. The limits are also hardcoded rather than read from the profile. Load per-type limits from the profile under its actual role names, and treat an unknown type as an error or a default limit instead of silently no limit.'
+```
+
+#### [TSK-05.5.7] internal/conductor/clock.go:5 Clock has no synchronization for concurrent access [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock.go
+done_when:
+  - test -f internal/conductor/clock.go
+type: fix
+context:
+  - "Clock keeps three maps (sessionUsed, sessionStarted, sessionType) with no mutex; a conductor polling GroupUsed while another goroutine calls StartSession or EndSession triggers Go's fatal concurrent map read/write error, not just a logic bug. Guard every Clock method with a sync.Mutex."
+```
+
+#### [TSK-05.5.8] internal/ledger/ledger.go:77 isEvent still misses stop outcomes despite Event's own doc [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: fix
+context:
+  - "Event's doc comment says it records stops, but isEvent only accepts escalated, paused, and resumed, so a clock-driven stop is never written to events.jsonl. Add the stop outcome to the outcome-to-type mapping and cover it in a test."
+```
+
+#### [TSK-05.5.9] internal/line/report.go:60 groupTokens comment understates what it sums [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report.go
+done_when:
+  - test -f internal/line/report.go
+type: docs
+context:
+  - "The comment says groupTokens sums build and repair sessions, but the code sums every non-brief station in the run file, including review, fix, machine, close, qc, and ship. Reword the comment to state it sums every run-file entry for the group except brief stamps."
+```
+
+#### [TSK-05.5.10] internal/line/report_test.go:31 REQ-28 test never exercises a real recorded stream [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report_test.go
+done_when:
+  - test -f internal/line/report_test.go
+type: test
+context:
+  - 'The test for "a recorded stream''s totals equal the report''s line" stamps a hand-built ledger entry directly; no recorded host stream goes through the mount''s usage-parsing path, so a stream-parsing regression would still pass this test. Feed a recorded host result stream through the mount''s usage path, then compare its totals to report.Tokens.'
+```
+
+#### [TSK-05.5.11] internal/ledger/ledger_test.go:341 WriteEvents test only checks a nonzero count [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger_test.go
+done_when:
+  - test -f internal/ledger/ledger_test.go
+type: test
+context:
+  - 'TestWriteEventsCreatesFile asserts only len(events) > 0, so it would still pass if the done entry leaked in as an event, if Type were wrong, or if paused/resumed handling broke. Assert exactly one event with Type == "escalation", and add table cases for paused and resumed.'
+```
+
+#### [TSK-05.5.12] internal/ledger/ledger.go:73 Metric.Cost is always empty [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "Metric.Cost is never set because Entry has no cost field, so every metrics line omits the spec's cost column. Carry cost on Entry from the host totals and copy it in aggregateMetrics, or drop the field."
+```
+
+#### [TSK-05.5.13] internal/ledger/ledger.go:253 WriteEvents/ReadEvents duplicate WriteMetrics/ReadMetrics [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "WriteEvents and ReadEvents duplicate the same append/scan logic as WriteMetrics/ReadMetrics, which in turn duplicate Read; each write reopens the file per line and ignores the Close error. Use one generic append-lines helper that opens once and checks Close, plus one generic JSONL reader."
+```
+
+#### [TSK-05.5.14] internal/ledger/ledger.go:584 extractEvents repeats isEvent's outcome checks [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "extractEvents calls isEvent and then repeats the same three outcome comparisons in an if/else chain to set Type. Use one map[outcome]type lookup for both the filter and the type."
+```
+
+#### [TSK-05.5.15] internal/line/report.go:69 Redundant Run != "" check [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report.go
+done_when:
+  - test -f internal/line/report.go
+type: refactor
+context:
+  - 'entry.Run != "" can never be false when reading the run file, since Stamp routes Run-less entries to adhoc.jsonl instead. Drop the redundant condition.'
+```
+
+#### [TSK-05.5.16] internal/conductor/clock_test.go:13 Tests sleep and poke private fields instead of injecting time [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock_test.go
+done_when:
+  - test -f internal/conductor/clock_test.go
+type: refactor
+context:
+  - "Tests sleep 100ms and write private maps (sessionStarted, groupUsed) directly because Clock calls time.Now itself with no seam to control it. Inject a now func() time.Time and drive the tests through the exported surface."
+```
+
+#### [TSK-05.5.17] internal/conductor/clock_test.go:149 Comment and test name cite a requirement number and overstate behavior [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock_test.go
+done_when:
+  - test -f internal/conductor/clock_test.go
+type: docs
+context:
+  - 'The comment and test name cite REQ-29 and say "IsKilled", but nothing is actually killed; the same requirement-citation style appears at internal/line/report_test.go:29 (REQ-28). Remove the requirement IDs and name the test for what it actually asserts.'
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ---
 
@@ -1065,6 +1327,7 @@ context:
   - docs/system-design.md#security
   - "delete the bash interpreter and expansion code; keep a tokenizer that finds a git or gh subcommand and a write target; the matcher covers Bash, PowerShell and Monitor"
   - "the table keeps one row per rule, including a model session's push refused (REQ-26), and drops the rows for hidden intent"
+  - "a model session may not push to or merge an epic branch; only the conductor does (decision 0028, TSK-05.7.8)"
 tier: heavy
 type: refactor
 ```
@@ -1964,7 +2227,7 @@ type: test
 ---
 
 ## [EPIC-08] Phase 4: install, platforms and eval
-*Goal: the success criteria hold on macOS, Linux and Windows, and the owner cuts 1.0.0. Ships as `1.0.0-beta.2`; TG-08.8 is `1.0.0`.*
+*Goal: the success criteria hold on macOS, Linux and Windows. Ships as `1.0.0-beta.2`.*
 
 ### [TG-08.1] Spike S6: Windows
 ```yaml
@@ -2226,6 +2489,9 @@ context:
 owner: human
 type: test
 ```
+
+## [EPIC-09] 1.0.0 LTS
+*Goal: the owner cuts 1.0.0 once all five success criteria hold. Ships as `1.0.0`.*
 
 ### [TG-08.8] 1.0.0 LTS
 ```yaml
