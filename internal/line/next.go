@@ -232,7 +232,7 @@ func buildPlan(root string, parsed backlog.Backlog, group backlog.Group, include
 	plan := &Plan{
 		Group: group.ID, Title: group.Title, Type: group.Type(),
 		Version: group.Version(), Mode: group.Mode(), Skipped: done,
-		Base: groupBase(root, group), Branch: BranchName(group.Type(), group.Slug()),
+		Base: groupBase(root, parsed, group), Branch: BranchName(group.Type(), group.Slug()),
 	}
 	plan.Worktree = filepath.Join(StateDir, "wt", group.ID)
 	for _, task := range tasks {
@@ -367,7 +367,7 @@ func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Gr
 		if !group.HasReadyTask() {
 			continue
 		}
-		base := groupBase(root, group)
+		base := groupBase(root, parsed, group)
 		if checkOrigin && base != defaultBase && !ahead[base] && !onOrigin(root, base) {
 			continue
 		}
@@ -392,12 +392,33 @@ func onOrigin(root, branch string) bool {
 	return err == nil
 }
 
-// groupBase is the branch a group declares, or the remote's default when it declares none.
-func groupBase(root string, group backlog.Group) string {
-	if base := group.Base(); base != "" {
-		return base
+// groupBase is the branch a group declares, or the remote's default when it declares none, or when
+// the group it stacks on is all DONE and its branch is gone from origin, since that group merged.
+func groupBase(root string, parsed backlog.Backlog, group backlog.Group) string {
+	base := group.Base()
+	if base == "" {
+		return DefaultBase(root)
 	}
-	return DefaultBase(root)
+	if hasOrigin(root) && !onOrigin(root, base) && mergedParent(parsed, base) {
+		return DefaultBase(root)
+	}
+	return base
+}
+
+// mergedParent reports whether branch is a group's in parsed whose every task is DONE.
+func mergedParent(parsed backlog.Backlog, branch string) bool {
+	for _, parent := range parsed.Groups {
+		if parent.Branch() != branch || len(parent.Tasks) == 0 {
+			continue
+		}
+		for _, task := range parent.Tasks {
+			if task.Status != "DONE" {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // contains reports whether the slice holds the value.
