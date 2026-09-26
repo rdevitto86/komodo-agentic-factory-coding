@@ -1,32 +1,12 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"testing"
 
 	"komodo/internal/conductor"
 	"komodo/internal/line"
 )
-
-// captureStdout swaps os.Stdout for a temp file for the call, returning what it printed.
-func captureStdout(t *testing.T, call func()) string {
-	t.Helper()
-	file, err := os.CreateTemp(t.TempDir(), "stdout")
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := os.Stdout
-	os.Stdout = file
-	call()
-	os.Stdout = old
-	file.Close()
-	data, err := os.ReadFile(file.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data)
-}
 
 // TestRunResumePrintsTheSavedStateForKomodoRunToContinue reads a group's saved state.json and
 // reports it, without starting anything itself.

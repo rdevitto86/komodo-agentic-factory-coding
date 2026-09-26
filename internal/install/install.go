@@ -22,7 +22,9 @@ type Change struct {
 	Seed    bool
 	Remove  bool
 	Project bool
-	Why     string
+	// Scoped marks a project file one role's session loads alone, never the primary session.
+	Scoped bool
+	Why    string
 }
 
 // Plan is every change one host's install would make.
@@ -41,6 +43,11 @@ func (p *Plan) Add(path string, body []byte, why string) {
 // skills, the standards skills, and the rules file, which the project render writes on their own.
 func (p *Plan) AddProject(path string, body []byte, why string) {
 	p.Changes = append(p.Changes, Change{Path: path, Body: body, Mode: 0o644, Project: true, Why: why})
+}
+
+// AddScoped adds a project file that only one role's session loads, such as that role's plugin.
+func (p *Plan) AddScoped(path string, body []byte, why string) {
+	p.Changes = append(p.Changes, Change{Path: path, Body: body, Mode: 0o644, Project: true, Scoped: true, Why: why})
 }
 
 // Project narrows the plan to the project render's changes, gitignored copies rebuilt every time.

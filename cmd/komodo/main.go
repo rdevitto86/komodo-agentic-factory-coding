@@ -19,11 +19,13 @@ import (
 const usage = `komodo: the code assembly line.
 
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
-  komodo lint                 Check BACKLOG.md against the grammar
+  komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
-  komodo add <group> <title>  Append a task to a group
+  komodo backlog               List the open groups under docs/backlog
+  komodo add <group> <title>  Add a group, or append a task to one
   komodo next [--json]        The next ready group: tasks, waves, machines
   komodo brief <task>         Fill the role template and write the brief
+  komodo ingest [group]       Compile each READY group into a card under .komodo/queue
   komodo close <task>         Validate the result, rerun the checks, flip the status
   komodo close --wave N [g]   QC: merge the group's wave, compile, verify
   komodo close --group [g]    Ship: commit, push, the pull request, the changelog
@@ -81,12 +83,20 @@ func main() {
 		runLint(root)
 	case "list":
 		runList(root, os.Args[2:])
+	case "backlog":
+		runBacklog(root)
 	case "add":
-		runAdd(root, os.Args[2:])
+		if _, err := backlog.Find(root); err == nil {
+			runAdd(root, os.Args[2:])
+		} else {
+			runBacklogAdd(root, os.Args[2:])
+		}
 	case "next":
 		runNext(root, os.Args[2:])
 	case "brief":
 		runBrief(root, os.Args[2:])
+	case "ingest":
+		runIngest(root, os.Args[2:])
 	case "close":
 		runClose(root, os.Args[2:])
 	case "comments":

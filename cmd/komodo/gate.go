@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"komodo/internal/backlog"
 	"komodo/internal/comments"
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
@@ -48,8 +47,10 @@ func runGate(root string, args []string) {
 	}
 	checks := append(buildChecks(root), []gate.Check{
 		{Name: "komodo lint", Run: func(_ io.Writer) error {
-			_, parsed := load(root)
-			problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
+			problems, err := lintProblems(root)
+			if err != nil {
+				return err
+			}
 			for _, problem := range problems {
 				fmt.Println(problem)
 			}

@@ -89,3 +89,52 @@ func groupEnd(lines []string, heading int) int {
 	}
 	return len(lines)
 }
+
+// RenderGroupFile renders a fresh <group-id>-<slug>.md file: its heading and yaml block, with no tasks yet.
+func RenderGroupFile(id, title, priority, status string, fields Fields) string {
+	heading := fmt.Sprintf("## [%s] %s [P: %s] [%s]", id, strings.TrimSpace(title), priority, status)
+	return heading + "\n\n```yaml\n" + DumpFields(fields) + "```\n"
+}
+
+// NextGroupFileTaskID is the next free task id in a group file, counting from the highest existing suffix.
+func NextGroupFileTaskID(file GroupFile) string {
+	base := strings.TrimPrefix(file.ID, "TG-")
+	highest := 0
+	for _, task := range file.Tasks {
+		parts := strings.Split(task.ID, ".")
+		suffix, err := strconv.Atoi(parts[len(parts)-1])
+		if err == nil && suffix > highest {
+			highest = suffix
+		}
+	}
+	return fmt.Sprintf("TSK-%s.%d", base, highest+1)
+}
+
+// AppendGroupFileTask adds a checkbox task at the end of a group file's text, returning the text and its id.
+func AppendGroupFileTask(text, title string, files, accept []string) (string, string, error) {
+	file := ParseGroupFile(text)
+	if file.ID == "" {
+		return "", "", fmt.Errorf("no group heading found")
+	}
+	if len(files) == 0 {
+		return "", "", fmt.Errorf("task declares no files")
+	}
+	taskID := NextGroupFileTaskID(file)
+	var block strings.Builder
+	fmt.Fprintf(&block, "- [ ] **%s** %s\n", taskID, strings.TrimSpace(title))
+	fmt.Fprintf(&block, "  - files: %s\n", strings.Join(backtickEach(files), ", "))
+	for _, line := range accept {
+		fmt.Fprintf(&block, "  - accept: %s\n", line)
+	}
+	out := strings.TrimRight(text, "\n") + "\n" + block.String()
+	return out, taskID, nil
+}
+
+// backtickEach wraps each path in backticks, as a group file's files line quotes them.
+func backtickEach(paths []string) []string {
+	out := make([]string, len(paths))
+	for index, path := range paths {
+		out[index] = "`" + path + "`"
+	}
+	return out
+}
