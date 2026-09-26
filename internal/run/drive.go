@@ -1,0 +1,161 @@
+package run
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"komodo/internal/conductor"
+	"komodo/internal/line"
+	"komodo/internal/mount"
+	"komodo/internal/pr"
+	"komodo/internal/profile"
+)
+
+// Drive cuts one group's worktree when no run is open for it, then drives it through the
+// conductor to Shipped, resuming a saved state.json instead of starting fresh; it exits non-zero unless it reached Shipped.
+func Drive(options Options) (int, error) {
+	root := options.Root
+	plan, err := line.PlanForStation(root, options.Target)
+	if err != nil {
+		return 1, err
+	}
+	if plan == nil {
+		return 1, errors.New("nothing is ready")
+	}
+	runState, err := cutIfNeeded(root, plan)
+	if err != nil {
+		return 1, err
+	}
+	worktree := line.WorktreePath(root, plan.Worktree)
+	contract, err := driverContract(root, worktree)
+	if err != nil {
+		return 1, err
+	}
+	driver, err := newDriver(root, plan, runState.Run, contract, options.PR)
+	if err != nil {
+		return 1, err
+	}
+	budget := options.Budget
+	if budget <= 0 {
+		budget = GroupBudget
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	statePath := conductor.StatePath(root, plan.Group)
+	final, err := driveState(ctx, driver, statePath, plan, worktree)
+	if saveErr := conductor.SaveState(statePath, final); saveErr != nil && err == nil {
+		err = saveErr
+	}
+	if err != nil {
+		return 1, err
+	}
+	if final.Current != conductor.Shipped {
+		return 1, fmt.Errorf("%s stopped at %s, not Shipped", plan.Group, final.Current)
+	}
+	return 0, nil
+}
+
+// driveState resumes a group from its saved state.json, or starts it fresh at Ready with its
+// slot already taken, since a targeted run never waits on another group's slot.
+func driveState(
+	ctx context.Context, driver *conductor.Driver, statePath string, plan *line.Plan, worktree string,
+) (conductor.State, error) {
+	if saved, err := conductor.LoadState(statePath); err == nil {
+		return driver.Resume(ctx, saved)
+	}
+	fresh := conductor.State{
+		Group: plan.Group, Worktree: worktree, Branch: plan.Branch, Current: conductor.Ready, SlotFree: true,
+	}
+	return driver.Drive(ctx, fresh)
+}
+
+// cutIfNeeded returns the group's own run, cutting its branch and worktree when none is open
+// yet, and fills the plan's base, branch and worktree from whichever run it finds.
+func cutIfNeeded(root string, plan *line.Plan) (line.RunState, error) {
+	if state, err := line.LoadRunFor(root, plan.Group); err == nil && state.Group == plan.Group {
+		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
+		return state, nil
+	}
+	return line.Start(root, plan, "", false)
+}
+
+// driverContract resolves the profile's host and builds its session driver over worktree.
+func driverContract(root, worktree string) (mount.Contract, error) {
+	selected := profile.Select(root)
+	host, ok := mount.Get(selected.Host)
+	if !ok || host.Contract == nil {
+		return nil, errors.New("no mount is installed here; run komodo install")
+	}
+	return host.Contract(root, worktree), nil
+}
+
+// newDriver builds the conductor's driver for one group: its host, its requests, its wrapped
+// stations, and the shared ledger, saving every move to the group's own state.json.
+func newDriver(root string, plan *line.Plan, run string, contract mount.Contract, client *pr.Client) (*conductor.Driver, error) {
+	builder, err := BuilderRequest(root, plan)
+	if err != nil {
+		return nil, err
+	}
+	reviewer, err := ReviewerRequest(root, plan)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		client = pr.New(line.WorktreePath(root, plan.Worktree))
+	}
+	return &conductor.Driver{
+		Host:          contract,
+		Stations:      &stations{Line: &conductor.Line{Root: root, Plan: plan, Client: client}, root: root, group: plan.Group},
+		Ledger:        line.Book(root),
+		Run:           run,
+		Builder:       builder,
+		Reviewer:      reviewer,
+		SeverityFloor: plan.Profile.SeverityFloor,
+		Repairs:       plan.Profile.ReviewRepairs,
+		Save: func(s conductor.State) error {
+			return conductor.SaveState(conductor.StatePath(root, plan.Group), s)
+		},
+	}, nil
+}
+
+// stations wraps the line's own stations, leaving the group's review where ShipGroup reads it.
+type stations struct {
+	*conductor.Line
+	root, group string
+}
+
+// Ship writes the group's review result from its saved state, then ships it.
+func (s *stations) Ship() error {
+	if err := s.writeReview(); err != nil {
+		return err
+	}
+	return s.Line.Ship()
+}
+
+// writeReview rebuilds the group's review result from its saved state.json, so ShipGroup's own
+// findings gate reads the same severities the conductor already cleared.
+func (s *stations) writeReview() error {
+	state, err := conductor.LoadState(conductor.StatePath(s.root, s.group))
+	if err != nil {
+		return err
+	}
+	findings := make([]line.Finding, len(state.Findings))
+	for i, finding := range state.Findings {
+		findings[i] = line.Finding{Severity: finding.Severity}
+	}
+	data, err := json.Marshal(struct {
+		Findings []line.Finding `json:"findings"`
+	}{findings})
+	if err != nil {
+		return err
+	}
+	path := line.ResultPath(s.root, s.group+"-review")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}

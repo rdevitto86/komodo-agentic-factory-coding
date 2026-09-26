@@ -1,0 +1,165 @@
+package run
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"komodo/internal/conductor"
+	"komodo/internal/line"
+	"komodo/internal/mount/claude"
+	"komodo/internal/pr"
+)
+
+const driveBacklog = "### [TG-40.1] A fake group\n```yaml\ntype: feat\nversion: 1.0.0\nmode: single\n```\n\n" +
+	"#### [TSK-40.1.1] Do the work [P: C] [READY]\n```yaml\nfiles: [change.txt]\ndone_when:\n  - true\n```\n"
+
+// driveFakeClaude commits a fake change and replays the builder result, then the reviewer result.
+const driveFakeClaude = `#!/bin/sh
+n=0
+if [ -f "$FAKE_COUNTER" ]; then n=$(cat "$FAKE_COUNTER"); fi
+n=$((n+1))
+echo "$n" > "$FAKE_COUNTER"
+if [ "$n" = "1" ]; then
+  echo "built" > change.txt
+  git add -A
+  git commit -m build --quiet
+  cat "$FAKE_BUILD_FIXTURE"
+else
+  cat "$FAKE_REVIEW_FIXTURE"
+fi
+`
+
+const buildFixture = `{"type":"result","subtype":"success","is_error":false,"num_turns":1,` +
+	`"session_id":"build-1","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1},` +
+	`"structured_output":{"result":"DONE"}}` + "\n"
+
+const reviewFixture = `{"type":"result","subtype":"success","is_error":false,"num_turns":1,` +
+	`"session_id":"review-1","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1},` +
+	`"structured_output":{"findings":[]}}` + "\n"
+
+// driveRepo builds a root remoted at a bare origin, with main pushed so a fresh cut can fetch it,
+// and installs the claude mount at root so the profile resolves to a host with a session contract.
+func driveRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(driveBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "seed")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "push", "origin", "main")
+	if err := os.MkdirAll(filepath.Join(root, claude.Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, claude.Dir, "settings.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// setupDriveFakeClaude drops the fake claude script on a fresh PATH entry, with its fixtures at
+// absolute paths and a fresh counter file, so it replays the builder then the reviewer in order.
+func setupDriveFakeClaude(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "claude")
+	if err := os.WriteFile(script, []byte(driveFakeClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := t.TempDir()
+	build := filepath.Join(fixtures, "build.jsonl")
+	review := filepath.Join(fixtures, "review.jsonl")
+	if err := os.WriteFile(build, []byte(buildFixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(review, []byte(reviewFixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_COUNTER", filepath.Join(fixtures, "counter"))
+	t.Setenv("FAKE_BUILD_FIXTURE", build)
+	t.Setenv("FAKE_REVIEW_FIXTURE", review)
+}
+
+// TestRunDrivesAGroupEndToEnd checks a group reaches Shipped, pushes its branch, and stamps one
+// build and one review session, driven by a fake claude on PATH and a fake forge client.
+func TestRunDrivesAGroupEndToEnd(t *testing.T) {
+	root := driveRepo(t)
+	setupDriveFakeClaude(t)
+	var created []string
+	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			created = append(created, "opened")
+			return "https://example.invalid/pr/1", nil
+		}
+		if len(args) > 0 && args[0] == "label" {
+			return "[]", nil
+		}
+		return "", nil
+	}}
+
+	code, err := Drive(Options{Root: root, Target: "TG-40.1", PR: client})
+	if err != nil {
+		t.Fatalf("Drive = %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+
+	state, err := conductor.LoadState(conductor.StatePath(root, "TG-40.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Current != conductor.Shipped {
+		t.Fatalf("state.Current = %s, want Shipped", state.Current)
+	}
+	if len(created) != 1 {
+		t.Fatalf("pull requests opened = %d, want 1", len(created))
+	}
+
+	out, err := exec.Command("git", "-C", bareRemote(t, root), "branch", "--list", "feat/a-fake-group").CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "feat/a-fake-group") {
+		t.Fatalf("branch = %s; the group's branch must be pushed", out)
+	}
+
+	entries, err := line.Book(root).All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builds, reviews := 0, 0
+	for _, entry := range entries {
+		switch entry.Station {
+		case "build":
+			builds++
+		case "review":
+			reviews++
+		}
+	}
+	if builds != 1 || reviews != 1 {
+		t.Fatalf("builds = %d, reviews = %d; want exactly one each", builds, reviews)
+	}
+}
+
+// bareRemote reads root's own push URL for origin, which is the bare repo the group's branch lands on.
+func bareRemote(t *testing.T, root string) string {
+	t.Helper()
+	cmd := exec.Command("git", "remote", "get-url", "--push", "origin")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
