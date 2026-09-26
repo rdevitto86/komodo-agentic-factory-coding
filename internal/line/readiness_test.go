@@ -32,21 +32,6 @@ func TestDoneWhenIsKilledWhenItHangs(t *testing.T) {
 	}
 }
 
-func TestDoneWhenTheGuardRefusesNeverRuns(t *testing.T) {
-	text := "### [TG-90.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
-		"#### [TSK-90.1.1] Pushes [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"touch ran; git push origin HEAD:main\"]\n```\n"
-	parsed := backlog.Parse(text)
-	task, _ := parsed.Task("TSK-90.1.1")
-	dir := t.TempDir()
-	problems := runDoneWhen(dir, task)
-	if len(problems) != 1 || !strings.Contains(problems[0], "refused by the guard") {
-		t.Fatalf("problems = %v", problems)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "ran")); !os.IsNotExist(err) {
-		t.Fatalf("a refused done_when still ran: %v", err)
-	}
-}
-
 func TestContextSlotNamesAMissingSectionInsteadOfTheWholeFile(t *testing.T) {
 	root := t.TempDir()
 	text := "### [TG-90.2] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +

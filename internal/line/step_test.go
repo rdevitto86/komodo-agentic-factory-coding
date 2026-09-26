@@ -504,7 +504,7 @@ func TestTheReviewerSpawnCarriesTheBeforeReviewCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitWorktreeWithReview(t, root, "TG-12.1")
-	commandsDir := filepath.Join(root, StateDir, "wt", "TG-12.1", StateDir)
+	commandsDir := filepath.Join(root, StateDir)
 	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -617,8 +617,9 @@ func TestEveryTierLocalKeepsAWritingRoleAsASpawnOnTheHost(t *testing.T) {
 }
 
 func TestBeforeReviewLooksUpTheAbsoluteWorktree(t *testing.T) {
+	root := t.TempDir()
 	worktree := t.TempDir()
-	commandsDir := filepath.Join(worktree, StateDir)
+	commandsDir := filepath.Join(root, StateDir)
 	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +628,7 @@ func TestBeforeReviewLooksUpTheAbsoluteWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := &Plan{Roles: []Role{{Name: "reviewer", Tier: "heavy"}}, Worktree: worktree}
-	got := actionForTier(t.TempDir(), plan, Action{Action: "spawn", Role: "reviewer", Task: "x"}, "")
+	got := actionForTier(root, plan, Action{Action: "spawn", Role: "reviewer", Task: "x"}, "")
 	found := false
 	for _, command := range got.Commands {
 		if command == "make lint" {
