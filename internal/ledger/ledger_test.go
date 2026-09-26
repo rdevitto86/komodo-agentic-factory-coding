@@ -288,7 +288,9 @@ func TestWriteMetricsCreatesFile(t *testing.T) {
 	}
 }
 
-func TestMetricsAggregatesByRunGroupStage(t *testing.T) {
+// TestMetricsHasOneLinePerStageAndSession proves two brief sessions of the same run and group
+// each keep their own metric line, instead of summing into one line for the stage.
+func TestMetricsHasOneLinePerStageAndSession(t *testing.T) {
 	book := New(t.TempDir())
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	entries := []Entry{
@@ -300,8 +302,8 @@ func TestMetricsAggregatesByRunGroupStage(t *testing.T) {
 		t.Fatal(err)
 	}
 	metrics, _ := book.ReadMetrics()
-	if len(metrics) != 2 {
-		t.Fatalf("expected 2 metric lines, got %d", len(metrics))
+	if len(metrics) != 3 {
+		t.Fatalf("expected 3 metric lines, one per session, got %d", len(metrics))
 	}
 	var briefCount, buildCount int
 	for _, m := range metrics {
@@ -312,7 +314,7 @@ func TestMetricsAggregatesByRunGroupStage(t *testing.T) {
 			buildCount++
 		}
 	}
-	if briefCount != 1 || buildCount != 1 {
+	if briefCount != 2 || buildCount != 1 {
 		t.Fatalf("brief count = %d, build count = %d", briefCount, buildCount)
 	}
 }

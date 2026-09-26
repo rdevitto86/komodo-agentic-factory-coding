@@ -127,6 +127,25 @@ func TestClockGroupUsedReturnsAccumulatedTime(t *testing.T) {
 	}
 }
 
+// TestClockGroupUsedCountsAStillRunningSession proves a session that never called EndSession
+// still adds its elapsed time to the group total, so the group limit cannot be silently overrun.
+func TestClockGroupUsedCountsAStillRunningSession(t *testing.T) {
+	c := NewClock()
+
+	c.sessionUsed["s1"] = 50 * time.Minute
+	c.groupUsed = 50 * time.Minute
+
+	c.StartSession("s2", "build")
+	c.sessionStarted["s2"] = time.Now().Add(-24 * time.Minute)
+
+	if c.GroupUsed() < 74*time.Minute {
+		t.Fatalf("group used = %v, want at least 74m (50m ended plus 24m still running)", c.GroupUsed())
+	}
+	if !c.GroupPastLimit() {
+		t.Fatal("group at 74m with a session still running should be past its 60-minute limit")
+	}
+}
+
 // TestClockREQ29FakeSessionPastLimitIsKilledAndGroupStopsBy60Minutes proves REQ-29: a fake
 // session past its limit is detected while still running, and the group stops by 60 minutes.
 func TestClockREQ29FakeSessionPastLimitIsKilledAndGroupStopsBy60Minutes(t *testing.T) {

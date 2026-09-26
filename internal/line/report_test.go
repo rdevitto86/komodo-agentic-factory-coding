@@ -75,6 +75,31 @@ func TestReportOmitsTheHeadlineWhenNothingIsAccepted(t *testing.T) {
 	}
 }
 
+// TestReportExcludesBriefAndAdhocTokens proves a brief stamp's estimate and a group-tagged ad hoc
+// entry never inflate the headline, since only a run's own session entries count.
+func TestReportExcludesBriefAndAdhocTokens(t *testing.T) {
+	root := reportRepo(t)
+	session := ledger.Entry{Run: "run-1", Group: "TG-09.1", Station: "build", TokensIn: 420, TokensOut: 180}
+	if err := Book(root).Stamp(session); err != nil {
+		t.Fatal(err)
+	}
+	if err := Book(root).Stamp(ledger.Entry{Run: "run-1", Group: "TG-09.1", Station: "brief", TokensIn: 999}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Book(root).Stamp(ledger.Entry{Group: "TG-09.1", Station: "build", TokensIn: 999}); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{Group: "TG-09.1", Title: "A group", Tasks: []PlanTask{{ID: "TSK-09.1.1"}}}
+	report, err := BuildReport(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := session.TokensIn + session.TokensOut
+	if report.Tokens != want {
+		t.Fatalf("tokens = %d, want %d (a brief stamp and an ad hoc entry must not count)", report.Tokens, want)
+	}
+}
+
 const twoTaskBacklog = "### [TG-09.2] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-09.2.1] Do it [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - test -f a/one.go\n```\n\n" +
 	"#### [TSK-09.2.2] Do it too [P: C] [READY]\n```yaml\nfiles: [a/two.go]\ndone_when:\n  - test -f a/two.go\n```\n"

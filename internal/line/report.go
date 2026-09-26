@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"komodo/internal/ledger"
 )
 
 // Report is what one run did, in the accessibility contract.
@@ -55,16 +57,16 @@ func BuildReport(root string, plan *Plan) (*Report, error) {
 	return report, nil
 }
 
-// groupTokens sums a group's input and output tokens across every stage and session the ledger
-// holds for it, which is the host's own totals REQ-28 requires each session to record.
+// groupTokens sums a group's input and output tokens across the run's own build and repair
+// sessions, excluding brief stamps and ad hoc entries from off-run attempts.
 func groupTokens(root, group string) (int, error) {
-	entries, err := Book(root).All()
+	entries, err := Book(root).Read(ledger.RunFile)
 	if err != nil {
 		return 0, err
 	}
 	total := 0
 	for _, entry := range entries {
-		if entry.Group == group {
+		if entry.Group == group && entry.Run != "" && entry.Station != "brief" {
 			total += entry.TokensIn + entry.TokensOut
 		}
 	}

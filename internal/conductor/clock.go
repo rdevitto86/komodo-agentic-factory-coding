@@ -59,14 +59,19 @@ func (c *Clock) SessionPastLimit(id string) bool {
 	return c.elapsed(id) > limit
 }
 
-// GroupPastLimit reports whether the group has exceeded its 60-minute limit.
+// GroupPastLimit reports whether the group, counting every session still running, is past its
+// 60-minute limit.
 func (c *Clock) GroupPastLimit() bool {
-	return c.groupUsed > c.groupLimit
+	return c.GroupUsed() > c.groupLimit
 }
 
-// GroupUsed returns the total time used by the group.
+// GroupUsed returns the group's total time, its ended sessions plus every session still running.
 func (c *Clock) GroupUsed() time.Duration {
-	return c.groupUsed
+	total := c.groupUsed
+	for _, start := range c.sessionStarted {
+		total += time.Since(start)
+	}
+	return total
 }
 
 // SessionUsed returns a session's own elapsed time, counting time still running.

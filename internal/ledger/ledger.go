@@ -199,7 +199,7 @@ func (l *Ledger) All() ([]Entry, error) {
 	return append(run, adhoc...), nil
 }
 
-// WriteMetrics aggregates entries by run/group/stage and writes each to metrics.jsonl.
+// WriteMetrics writes one metrics.jsonl line per stage and session, from qualifying entries.
 func (l *Ledger) WriteMetrics(entries []Entry) error {
 	if err := os.MkdirAll(l.Dir, 0o755); err != nil {
 		return err
@@ -557,38 +557,25 @@ func Render(metrics Metrics) string {
 	return strings.Join(out, "\n") + "\n"
 }
 
-// aggregateMetrics groups entries by run/group/stage and returns aggregated metrics for each.
+// aggregateMetrics converts each qualifying entry to its own metric, one line per stage and session.
 func aggregateMetrics(entries []Entry) []Metric {
-	type key struct{ run, group, stage string }
-	groups := make(map[key][]Entry)
-	for _, entry := range entries {
-		if entry.Run == "" || entry.Group == "" || entry.Station == "" {
+	var metrics []Metric
+	for _, e := range entries {
+		if e.Run == "" || e.Group == "" || e.Station == "" {
 			continue
 		}
-		k := key{entry.Run, entry.Group, entry.Station}
-		groups[k] = append(groups[k], entry)
-	}
-	var metrics []Metric
-	for k, group := range groups {
-		m := Metric{
-			Run:   k.run,
-			Group: k.group,
-			Stage: k.stage,
-		}
-		for i, e := range group {
-			if i == 0 || e.At.Before(group[0].At) {
-				m.Start = e.At
-			}
-			m.Duration += e.Seconds
-			m.Turns += e.Turns
-			m.Input += e.TokensIn
-			m.Output += e.TokensOut
-			m.CachedTokens += e.TokensCached
-			if e.Outcome != "" {
-				m.Outcome = e.Outcome
-			}
-		}
-		metrics = append(metrics, m)
+		metrics = append(metrics, Metric{
+			Run:          e.Run,
+			Group:        e.Group,
+			Stage:        e.Station,
+			Start:        e.At,
+			Duration:     e.Seconds,
+			Turns:        e.Turns,
+			Input:        e.TokensIn,
+			Output:       e.TokensOut,
+			CachedTokens: e.TokensCached,
+			Outcome:      e.Outcome,
+		})
 	}
 	return metrics
 }
