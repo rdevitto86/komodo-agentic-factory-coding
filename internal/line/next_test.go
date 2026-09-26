@@ -397,6 +397,44 @@ func TestNextPicksAStackedGroupOnceItsBaseReachesOrigin(t *testing.T) {
 	}
 }
 
+func TestNextCutsFromTheDefaultOnceTheParentMergedAndItsBranchIsGone(t *testing.T) {
+	root, _ := remotedRepo(t)
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/main")
+	text := "### [TG-05.2] The parent\n```yaml\ntype: fix\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-05.2.1] Done [P: C] [DONE]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
+		"### [TG-05.3] The child\n```yaml\ntype: feat\nversion: 2.0.0\nbase: fix/the-parent\ndepends_on: [TG-05.2]\n```\n\n" +
+		"#### [TSK-05.3.1] Next [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go test ./b/...\"]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.Group != "TG-05.3" || plan.Base != "main" {
+		t.Fatalf("plan = %+v; a group whose parent merged and lost its branch must cut from main", plan)
+	}
+}
+
+func TestNextStillWaitsWhenTheParentIsOpen(t *testing.T) {
+	root, _ := remotedRepo(t)
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/main")
+	text := "### [TG-05.2] The parent\n```yaml\ntype: fix\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-05.2.1] Open [P: C] [REFINEMENT]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
+		"### [TG-05.3] The child\n```yaml\ntype: feat\nversion: 2.0.0\nbase: fix/the-parent\ndepends_on: [TG-05.2]\n```\n\n" +
+		"#### [TSK-05.3.1] Next [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go test ./b/...\"]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := next(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan != nil {
+		t.Fatalf("plan = %+v; a group stacked on an open parent with no branch must wait", plan)
+	}
+}
+
 func TestReadyGroupsCountsAnEarlierGroupsBranchAsABase(t *testing.T) {
 	groups, err := ReadyGroups(stackedRepo(t))
 	if err != nil {

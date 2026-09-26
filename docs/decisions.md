@@ -480,7 +480,7 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 ## 0026. The conductor fetches Go modules, and a builder runs Go offline in the sandbox
 
-**Status:** Proposed, 2026-09-26. Amends 0012 and 0025. The owner decides between the decision and its first alternative.
+**Status:** Accepted, 2026-09-26. Amends 0012 and 0025. The owner chose the decision over weaker isolation.
 
 **Context.** Decision 0012 turns the sandbox on by default, which holds only if Go's cache, module downloads and race tests work inside it. Spike S1 ran on 2026-09-26 on macOS with CLI 2.1.283 and a Sonnet builder under `dontAsk`.
 
