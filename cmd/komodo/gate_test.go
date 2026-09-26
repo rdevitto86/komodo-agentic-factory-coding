@@ -22,6 +22,28 @@ func TestGateFailsWhenNoCompileOrVerifyCommandFound(t *testing.T) {
 	}
 }
 
+// TestGateInALineWorktreeReadsTheMainCheckoutsCommands verifies a worktree finds the root's gitignored build check.
+func TestGateInALineWorktreeReadsTheMainCheckoutsCommands(t *testing.T) {
+	root := emptyRepo(t)
+	runGit(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	if err := os.MkdirAll(filepath.Join(root, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commands := []byte(`{"compile": "echo root-compile-ran"}`)
+	if err := os.WriteFile(filepath.Join(root, ".komodo", "commands.json"), commands, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	worktree := filepath.Join(t.TempDir(), "TG-01.1")
+	runGit(t, root, "worktree", "add", "-q", "-b", "feat/a-group", worktree)
+	got := runCLI(t, worktree, "", "gate")
+	if strings.Contains(got.stderr, "no build checks found") {
+		t.Fatalf("the worktree's gate missed the main checkout's commands.json: %s", got.stderr)
+	}
+	if !strings.Contains(got.stdout, "root-compile-ran") {
+		t.Fatalf("stdout %q, want the root's compile command to run", got.stdout)
+	}
+}
+
 // TestGateStillRunsToolkitChecksWhenNoCommandsJsonExists verifies the gate runs go vet and go test for the toolkit.
 func TestGateStillRunsToolkitChecksWhenNoCommandsJsonExists(t *testing.T) {
 	root := emptyRepo(t)

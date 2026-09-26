@@ -13,6 +13,7 @@ import (
 	"komodo/internal/gate"
 	"komodo/internal/guard"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 )
 
 // runGate runs the local precheck, or builds the local binary and installs it as a git hook.
@@ -100,7 +101,9 @@ func buildChecks(root string) []gate.Check {
 	}
 	var checks []gate.Check
 	seen := map[string]bool{}
-	for _, command := range append(line.CompileCommands(root, root), line.VerifyCommand(root, root)) {
+	// A line worktree reads the main checkout's gitignored commands.json, as QC does.
+	config := mount.MainCheckout(root)
+	for _, command := range append(line.CompileCommands(config, root), line.VerifyCommand(config, root)) {
 		if command == "" || seen[command] {
 			continue
 		}

@@ -50,7 +50,7 @@ context:
 type: fix
 ```
 
-#### [TSK-04.1.3] cmd/komodo/gate.go:117 Gate in a line worktree ignores the root commands.json and refuses every commit [P: L] [REFINEMENT]
+#### [TSK-04.1.3] cmd/komodo/gate.go:117 Gate in a line worktree ignores the root commands.json and refuses every commit [P: L] [DONE]
 ```yaml
 files:
   - cmd/komodo/gate.go
