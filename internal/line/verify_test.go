@@ -34,7 +34,7 @@ func TestBeforeReviewAndAfterPublishCommandsAreEmptyByDefault(t *testing.T) {
 	}
 }
 
-func TestBeforeReviewAndAfterPublishCommandsFallbackAndWorktreeWins(t *testing.T) {
+func TestBeforeReviewAndAfterPublishCommandsFallbackAndIgnoreTheWorktree(t *testing.T) {
 	tests := []struct {
 		name                   string
 		createWorktreeCommands bool
@@ -48,10 +48,10 @@ func TestBeforeReviewAndAfterPublishCommandsFallbackAndWorktreeWins(t *testing.T
 			expectedAfterPublish:   "make notify",
 		},
 		{
-			name:                   "worktree wins",
+			name:                   "the root wins over the worktree",
 			createWorktreeCommands: true,
-			expectedBeforeReview:   "make test",
-			expectedAfterPublish:   "make release",
+			expectedBeforeReview:   "make lint",
+			expectedAfterPublish:   "make notify",
 		},
 	}
 

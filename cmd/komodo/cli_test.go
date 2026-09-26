@@ -87,6 +87,12 @@ func fixtureRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte("# Backlog\n\n"+shippedGroup+"\n"+cliPendingGroup), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module fixture\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "backlog")
 	return root
