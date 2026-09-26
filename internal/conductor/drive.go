@@ -66,7 +66,8 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 	if d.Host == nil || d.Stations == nil || d.Ledger == nil || d.Save == nil {
 		return s, errNotWired
 	}
-	var r round
+	// The round lives in state.json, so a resumed run keeps its fix list, builder and repair count.
+	r := round{fixes: s.Fixes, builder: mount.Handle(s.Builder), repairs: s.Repairs}
 	var failure error
 	for {
 		if err := ctx.Err(); err != nil {
@@ -82,6 +83,7 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 		}
 		started := time.Now()
 		err := d.work(ctx, &s, &r)
+		s.Fixes, s.Builder, s.Repairs = r.fixes, string(r.builder), r.repairs
 		s.TimeUsed += time.Since(started)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return s, ctxErr

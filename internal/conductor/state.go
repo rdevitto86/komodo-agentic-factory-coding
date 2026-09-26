@@ -35,6 +35,12 @@ type State struct {
 	Sessions []string      `json:"sessions"`
 	Findings []Finding     `json:"findings"`
 	TimeUsed time.Duration `json:"time_used"`
+	// Fixes is the open fix list the next repair round works.
+	Fixes []string `json:"fixes,omitempty"`
+	// Builder is the builder session a repair round resumes.
+	Builder string `json:"builder,omitempty"`
+	// Repairs counts the repair rounds the group has spent, across every run that drove it.
+	Repairs int `json:"repairs,omitempty"`
 
 	// SlotFree is read at Ready: a build slot is free for the group to take.
 	SlotFree bool `json:"slot_free"`

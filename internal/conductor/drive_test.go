@@ -365,6 +365,28 @@ func TestDriveEscalatesOnceItsRepairRoundsAreSpent(t *testing.T) {
 	}
 }
 
+func TestDriveKeepsItsRoundInTheStateAcrossCalls(t *testing.T) {
+	r := newRig(t)
+	r.stations.checks = [][]string{{"fail"}, {"fail"}, {"fail"}}
+	first, err := r.drive(t)
+	if err != nil || first.Current != Escalated {
+		t.Fatalf("first drive = %s, %v; want Escalated", first.Current, err)
+	}
+	if first.Repairs == 0 || first.Builder == "" || len(first.Fixes) != 1 || first.Fixes[0] != "fail" {
+		t.Fatalf("state = %+v; the repair count, builder and fix list must be saved", first)
+	}
+	sessions := len(r.sessions(t))
+	resumed := first
+	resumed.Answered = true
+	second, err := r.driver.Drive(context.Background(), resumed)
+	if err != nil || second.Current != Escalated || second.Repairs < first.Repairs {
+		t.Fatalf("second drive = %s with %d repairs, %v; the spent rounds must carry over", second.Current, second.Repairs, err)
+	}
+	if got := len(r.sessions(t)); got != sessions {
+		t.Fatalf("sessions went from %d to %d; a spent repair budget must not start another", sessions, got)
+	}
+}
+
 func TestDriveEscalatesAStationFailureAndReturnsIt(t *testing.T) {
 	r := newRig(t)
 	r.stations.shipErr = errors.New("no forge credential")
