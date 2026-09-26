@@ -6,11 +6,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
 )
+
+// sampleGroupFile is the one group file init writes into docs/backlog/.
+const sampleGroupFile = "docs/backlog/TG-01.1-example-group.md"
 
 // starterFiles are the paths init writes into an empty repo.
 var starterFiles = []string{
-	"AGENTS.md", "BACKLOG.md", "CHANGELOG.md",
+	"AGENTS.md", "CHANGELOG.md", sampleGroupFile,
 	"docs/prd.md", "docs/architecture.md", "docs/system-design.md", "docs/decisions.md",
 	".github/PULL_REQUEST_TEMPLATE.md", ".komodo/context/example.md", ".gitattributes",
 }
@@ -26,8 +31,8 @@ func emptyRepo(t *testing.T) string {
 	return root
 }
 
-// TestInitWritesEveryStarterAndTheBacklogLintsClean proves a fresh repo is ready for the line.
-func TestInitWritesEveryStarterAndTheBacklogLintsClean(t *testing.T) {
+// TestInitWritesEveryStarterAndTheSampleGroupFileParsesClean proves a fresh repo is ready for the line.
+func TestInitWritesEveryStarterAndTheSampleGroupFileParsesClean(t *testing.T) {
 	root := emptyRepo(t)
 	got := runCLI(t, root, "", "init", "--name", "Auth API")
 	if got.code != 0 {
@@ -52,9 +57,13 @@ func TestInitWritesEveryStarterAndTheBacklogLintsClean(t *testing.T) {
 	if !strings.Contains(got.stdout, "komodo install --host ") || !strings.Contains(got.stdout, "komodo lint") {
 		t.Fatalf("init printed no next commands:\n%s", got.stdout)
 	}
-	lint := runCLI(t, root, "", "lint")
-	if lint.code != 0 || !strings.Contains(lint.stdout, " 0 problem(s)") {
-		t.Fatalf("lint on the written backlog exited %d: %s", lint.code, lint.stdout)
+	data, err := os.ReadFile(filepath.Join(root, sampleGroupFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := backlog.ParseGroupFile(string(data))
+	if len(group.Problems) != 0 {
+		t.Fatalf("the sample group file does not parse clean: %v", group.Problems)
 	}
 }
 
@@ -90,7 +99,7 @@ func TestInitNeverWritesThroughASymlinkOrADirectory(t *testing.T) {
 	if err := os.Symlink(filepath.Join(outside, "missing.md"), filepath.Join(root, "AGENTS.md")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(root, "BACKLOG.md"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "CHANGELOG.md"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(outside, filepath.Join(root, "docs")); err != nil {
@@ -101,18 +110,19 @@ func TestInitNeverWritesThroughASymlinkOrADirectory(t *testing.T) {
 		t.Fatalf("init exited %d: %s%s", got.code, got.stdout, got.stderr)
 	}
 	want := []string{
-		"keep AGENTS.md\n", "keep BACKLOG.md\n", "create CHANGELOG.md\n",
+		"keep AGENTS.md\n", "keep CHANGELOG.md\n",
 		"skip docs/prd.md: outside the repo\n",
 		"skip docs/architecture.md: outside the repo\n",
 		"skip docs/system-design.md: outside the repo\n",
 		"skip docs/decisions.md: outside the repo\n",
+		"skip " + sampleGroupFile + ": outside the repo\n",
 	}
 	for _, line := range want {
 		if !strings.Contains(got.stdout, line) {
 			t.Fatalf("init printed no %q:\n%s", strings.TrimSpace(line), got.stdout)
 		}
 	}
-	for _, dir := range []string{outside, filepath.Join(root, "BACKLOG.md")} {
+	for _, dir := range []string{outside, filepath.Join(root, "CHANGELOG.md")} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatal(err)
