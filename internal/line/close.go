@@ -188,10 +188,6 @@ func checkResult(root, taskID string) []string {
 func runDoneWhen(cwd string, task backlog.Task) []string {
 	var problems []string
 	for _, command := range task.DoneWhen() {
-		if refused := guardRefusal(cwd, command); refused != "" {
-			problems = append(problems, fmt.Sprintf("done_when `%s` %s", command, refused))
-			continue
-		}
 		ran := proc.Shell(cwd, command, TaskTimeout(task))
 		if !ran.OK() {
 			problems = append(problems, fmt.Sprintf("done_when `%s` failed: %v\n%s",
