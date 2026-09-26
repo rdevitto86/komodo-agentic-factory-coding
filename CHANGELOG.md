@@ -2,6 +2,10 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
+## 1.0.0-alpha.5 — 2026-09-26
+
+- **TG-04.1** The line stops judging its own commands, and the gate fails loudly (2 task(s))
+
 ## The first 1.0.0 line — 2026-09-24
 
 Drafted as `1.0.0-beta.1` and never tagged; V1 replaced it (decision 0024). It carries the proofs recorded below, among them real groups run with no change to the line. Everything below it is the prototype, kept as history: the 0.x experiments and the Python orchestrator, whose four releases are renumbered `1.0.0-alpha.1` through `1.0.0-alpha.4`. None was ever released for use.

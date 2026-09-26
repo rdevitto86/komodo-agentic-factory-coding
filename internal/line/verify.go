@@ -17,9 +17,9 @@ const CommandTimeout = proc.DefaultTimeout
 // GateTimeout is the wall clock the toolkit's own gate gets, since it runs the whole test suite.
 const GateTimeout = 20 * time.Minute
 
-// VerifyCommand is QC's verify command: the worktree's commands file, the root's, then detection on the worktree.
+// VerifyCommand is QC's verify command: the root's commands file, then detection on the worktree.
 func VerifyCommand(root, worktree string) string {
-	if override := overrideCommands(root, worktree).Verify; override != "" {
+	if override := repopkg.LoadCommands(root).Verify; override != "" {
 		return override
 	}
 	if found, _ := detect.Detect(worktree); found.Verify != "" {
@@ -31,19 +31,16 @@ func VerifyCommand(root, worktree string) string {
 	return ""
 }
 
-// overrideCommands reads the worktree's commands file, filling each empty field from the root's, since state is gitignored.
+// overrideCommands reads the worktree's commands file, filling before_review and after_publish from the root's,
+// since state is gitignored; compile and verify come from the root only, so a worktree write can't run unguarded.
 func overrideCommands(root, worktree string) repopkg.Commands {
 	own := repopkg.LoadCommands(worktree)
 	if root == worktree {
 		return own
 	}
 	shared := repopkg.LoadCommands(root)
-	if own.Verify == "" {
-		own.Verify = shared.Verify
-	}
-	if own.Compile == "" {
-		own.Compile = shared.Compile
-	}
+	own.Verify = shared.Verify
+	own.Compile = shared.Compile
 	if own.BeforeReview == "" {
 		own.BeforeReview = shared.BeforeReview
 	}
