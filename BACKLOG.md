@@ -1087,6 +1087,7 @@ done_when:
 context:
   - "lint refuses any other prerelease, such as -dev.1 or -beta without a number, naming the four phases"
   - "the phases order alpha, beta, rc, then stable; a test proves 1.0.0-beta.9 < 1.0.0-rc.1 < 1.0.0 in changelog.Compare"
+  - "rc is optional: nothing refuses a stable version whose epic had no rc, and a test proves 1.0.0-beta.2 followed by 1.0.0 lints and orders cleanly"
 ```
 
 #### [TSK-05.8.2] An epic branch is feat/<version>, with no v [P: C] [READY]
@@ -1109,8 +1110,9 @@ done_when:
   - go run ./cmd/komodo doctor
 depends_on: [TSK-05.8.2]
 context:
-  - "decision 0029 amends 0023 and 0028: the phases are alpha, beta, rc and stable; an epic branch is feat/<version>; V1 passes through 1.0.0-rc.n before 1.0.0"
-  - "README's Versions section gains an rc bullet and renames Release to Stable; AGENTS.md says Versions go alpha, beta, rc, stable, with the always-on context still under its cap"
+  - "decision 0029 amends 0023 and 0028: the phases are alpha, beta, rc and stable; an epic branch is feat/<version>"
+  - "rc is optional and reserved: a release may go straight from beta to stable, such as 1.0.0-beta.2 to 1.0.0, and nothing requires, gates or checks for an rc; V1 takes that path"
+  - "README's Versions section gains an rc bullet marked optional and renames Release to Stable; AGENTS.md says Versions go alpha, beta, optional rc, stable, with the always-on context still under its cap"
   - "the backlog rule, the backlog skill and the SDLC standard give the four phases and the branch examples; the template's example group carries a phase version"
 type: docs
 ```
