@@ -920,3 +920,24 @@ func TestSettingsTurnAttributionOff(t *testing.T) {
 		t.Fatalf("attribution = %s; commit and pr must be empty and sessionUrl false, since true appends the session link", raw)
 	}
 }
+
+// TestTheClaudeMountHandsOutItsContract checks the registered mount builds a *Mount over the given
+// worktree, capped at the profile's turn cap, satisfying the conductor's host contract.
+func TestTheClaudeMountHandsOutItsContract(t *testing.T) {
+	host, ok := mount.Get("claude")
+	if !ok {
+		t.Fatal("the claude mount did not register")
+	}
+	if host.Contract == nil {
+		t.Fatal("the claude mount left its contract nil")
+	}
+	root, worktree := t.TempDir(), t.TempDir()
+	contract := host.Contract(root, worktree)
+	built, ok := contract.(*Mount)
+	if !ok {
+		t.Fatalf("contract = %T, want *Mount", contract)
+	}
+	if built.root != root || built.worktree != worktree || built.maxTurns != profileTurnCap {
+		t.Fatalf("mount = %+v", built)
+	}
+}

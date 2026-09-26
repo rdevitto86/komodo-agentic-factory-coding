@@ -38,6 +38,8 @@ type Host struct {
 	ReviewerWhy func(plan string) string
 	// Deferred, when set, says why the mount is kept but unusable: nothing installs, selects, or renders it.
 	Deferred string
+	// Contract builds this mount's session driver for one worktree; nil when the mount cannot drive the conductor.
+	Contract func(root, worktree string) Contract
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.
