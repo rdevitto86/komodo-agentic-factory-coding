@@ -35,7 +35,7 @@ Go only, standard library only. The toolchain is pinned in `go.mod`; `GOTOOLCHAI
 | `internal/guard/` | The one hook: lexer, parser, path and git rules, the table |
 | `internal/mount/` | Everything that names a host |
 | `komodo/` | The markdown a model reads: rules, roles, skills, policy, facets |
-| `docs/decisions/` | Why the line is shaped the way it is |
+| `docs/` | The specs: PRD, architecture, system design, and decisions |
 
 ## Fuzzing by hand
 

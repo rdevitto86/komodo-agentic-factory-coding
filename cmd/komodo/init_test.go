@@ -11,7 +11,7 @@ import (
 // starterFiles are the paths init writes into an empty repo.
 var starterFiles = []string{
 	"AGENTS.md", "BACKLOG.md", "CHANGELOG.md",
-	"docs/spec/prd.md", "docs/spec/architecture.md", "docs/spec/system-design.md",
+	"docs/prd.md", "docs/architecture.md", "docs/system-design.md", "docs/decisions.md",
 	".github/PULL_REQUEST_TEMPLATE.md", ".komodo/context/example.md",
 }
 
@@ -102,9 +102,10 @@ func TestInitNeverWritesThroughASymlinkOrADirectory(t *testing.T) {
 	}
 	want := []string{
 		"keep AGENTS.md\n", "keep BACKLOG.md\n", "create CHANGELOG.md\n",
-		"skip docs/spec/prd.md: outside the repo\n",
-		"skip docs/spec/architecture.md: outside the repo\n",
-		"skip docs/spec/system-design.md: outside the repo\n",
+		"skip docs/prd.md: outside the repo\n",
+		"skip docs/architecture.md: outside the repo\n",
+		"skip docs/system-design.md: outside the repo\n",
+		"skip docs/decisions.md: outside the repo\n",
 	}
 	for _, line := range want {
 		if !strings.Contains(got.stdout, line) {

@@ -1,28 +1,48 @@
 ---
 name: standards-specs
-description: The three spec files, which section each one owns, and how a task cites them.
-globs: ["**/architecture.md", "**/system-design.md", "**/prd.md"]
+description: The four spec files in docs/, the sections each one owns, and how a task cites them.
+globs: ["**/prd.md", "**/architecture.md", "**/system-design.md", "**/decisions.md"]
 roles: [planner]
 ---
 
-# Specs: architecture, system design, and an optional PRD
+# Specs: four files, one home per fact
 
-A repo keeps its design in `docs/spec/`, or in its `README.md` when that is where it lives; a task cites whichever holds the section. Nothing here is required, and a missing file is not a gap to fill. Plain headings, no numbers, so `docs/spec/system-design.md#interfaces` survives a reorder.
+A repo keeps its specs in `docs/`: `prd.md`, `architecture.md`, `system-design.md`, and `decisions.md`. Files split by who reads them and how often they change, never by topic; a topic is a section. Nothing here is required, and a missing file is not a gap to fill. Plain headings, no numbers, so `docs/system-design.md#interfaces` survives a reorder.
 
-## `architecture.md`, the stable shape
+## `prd.md`, why and what must be true
 
-Small enough to read whole. Owns: Purpose, Components, Boundaries, Data flow, Decisions. A decision is appended in place with a date and the alternative rejected; design rationale lives there, not in code comments.
+Changes per release, and only the owner edits it; the planner reads it whole. It opens with a metadata table: product, version, milestone, owner, status, design links, change control. Owns: Executive summary and vision, Problem statement and objectives, User personas and environments, Product scope, Lifecycle workflow, Success criteria, Requirements, Constraints, Risks and mitigations, Open questions. The lifecycle is the stages and their limits as the product sees them; the component flow stays in `architecture.md#data-flow`. Requirement IDs (`REQ-n`) are minted only under Requirements, grouped by area, each with a priority and the command that proves it.
 
-## `system-design.md`, the detail
+## `architecture.md`, the parts and how they connect
 
-Read one section at a time through a task's `context`. Owns: Data model, Interfaces, Non-functional requirements, Operations, Recovery, Testing, Open items.
+Changes rarely; the planner and the reviewer read it whole. Owns: Purpose, Context, Components, Boundaries, Data flow, Glossary. Names and reasons only: no flags, fields, versions, or numbers.
 
-## `prd.md`, optional
+## `system-design.md`, how each part works
 
-Planner-facing. Owns: Problem and outcome, Users and scenarios, Scope, Success metrics, Constraints and assumptions, Open questions, Requirements. Requirement IDs (`REQ-n`) are minted only under Requirements, nowhere else.
+Changes with the code; a builder reads one section through a task's `context`. Owns: Data model, Interfaces, User interface, Integrations, Cross-cutting concerns, Operations, Recovery, Testing.
+
+## `decisions.md`, why this way and not another
+
+Append-only. Each entry is `## NNNN. <the decision as a sentence>`, numbered in order, with a status (Proposed, Accepted, or Superseded by NNNN) and a date, then Context, Decision, Alternatives, and Consequences as bold labels. An open technical question is a Proposed entry. A superseded entry keeps its text and gains one status line.
+
+## Where a topic goes
+
+| Topic | Section | Linked, never restated |
+|---|---|---|
+| UI design | `system-design.md#user-interface` | design files, tokens |
+| API design | `system-design.md#interfaces` | OpenAPI, AsyncAPI, proto, JSON Schema files |
+| Integrations | names in `architecture.md#context`; the rest in `system-design.md#integrations` | contract files |
+| Dependencies | policy in `prd.md#constraints` | manifests and lockfiles |
+| Security | trust in `architecture.md#boundaries`; threats in `system-design.md#cross-cutting-concerns` | |
+| Testing | `system-design.md#testing` | test commands, CI config |
+| Operations | `system-design.md#operations` and `#recovery` | deploy and alert config |
 
 ## Rules
 
-- **Every heading lives in exactly one file.** A task cites one place, and the files never drift.
+- **Every heading lives in exactly one file, and every fact in one place.** Another file cites it by anchor, never restates it.
+- **A number a requirement sets lives only in the PRD.** Other files cite its `REQ-n`.
+- **Machine-readable files are the source.** A contract, manifest, schema, or migration is linked from prose, never copied into it.
+- **Company standards are never restated.** They live in the `standards-*` skills; a repo records a deviation as a decision.
+- **A section that does not apply says "Not applicable."** It is never deleted, so the set stays the same in every repo.
 - **A task's `context` names the section it traces to.** `komodo lint` fails an anchor that names no heading.
 - **The spec is frozen during a run.** A change it needs is a finding filed to the backlog, never an edit a worker makes.
