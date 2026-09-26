@@ -2120,7 +2120,7 @@ type: test
 ---
 
 ## [EPIC-08] Phase 4: install, platforms and eval
-*Goal: the success criteria hold on macOS, Linux and Windows, and the owner cuts 1.0.0. Ships as `1.0.0-beta.2`; TG-08.8 is `1.0.0`.*
+*Goal: the success criteria hold on macOS, Linux and Windows, and the owner cuts 1.0.0. Ships as `1.0.0-beta.2`.*
 
 ### [TG-08.1] Spike S6: Windows
 ```yaml
@@ -2383,10 +2383,13 @@ owner: human
 type: test
 ```
 
+## [EPIC-09] 1.0.0 LTS
+*Goal: all five success criteria hold and the owner cuts 1.0.0 LTS. Ships as `1.0.0`.*
+
 ### [TG-08.8] 1.0.0 LTS
 ```yaml
 type: chore
-version: 1.0.0-beta.2
+version: 1.0.0
 depends_on: [TG-08.7]
 ```
 * **Why:** 1.0.0 ships when all five success criteria hold (`docs/prd.md#success-criteria`).
