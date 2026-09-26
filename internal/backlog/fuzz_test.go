@@ -24,6 +24,17 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
+// FuzzParseGroupFile proves the group file grammar parser never panics on any input.
+func FuzzParseGroupFile(f *testing.F) {
+	f.Add(groupFileSample)
+	f.Add("## [TG-01.1] A group [P: H] [READY]\n\n```yaml\nkey: [unterminated\n")
+	f.Add("- [ ] **TSK-01.1.1** No group heading\n  - files: `a.go`\n")
+	f.Add(`the "guard" can't see it`)
+	f.Fuzz(func(t *testing.T, text string) {
+		_ = ParseGroupFile(text)
+	})
+}
+
 // roundTrip checks a value dumped as a scalar and a list item parses back unchanged, newlines collapsed.
 func roundTrip(t *testing.T, text string) {
 	t.Helper()
