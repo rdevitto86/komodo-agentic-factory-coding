@@ -28,7 +28,7 @@ func Session(
 	}
 
 	argv = []string{"-p"}
-	argv = append(argv, "--setting-sources", "project,local")
+	argv = append(argv, "--setting-sources", "local")
 
 	pluginDir := filepath.Join(root, Dir, "plugins", req.Role)
 	argv = append(argv, "--plugin-dir", pluginDir)

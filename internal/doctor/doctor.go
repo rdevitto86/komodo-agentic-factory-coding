@@ -51,6 +51,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkProfileDrift(root)...)
 	problems = append(problems, checkPromises(root)...)
 	problems = append(problems, checkGitattributes(root)...)
+	problems = append(problems, checkPins(root)...)
 	if !options.NoGit {
 		found, err := checkGit(root)
 		if err != nil {

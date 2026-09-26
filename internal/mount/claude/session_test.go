@@ -25,7 +25,7 @@ func TestSessionArgvForBuilder(t *testing.T) {
 
 	checks := []string{
 		"-p",
-		"--setting-sources project,local",
+		"--setting-sources local",
 		"--plugin-dir /repo/.claude/plugins/builder",
 		"--settings /repo/.claude/settings.json",
 		"--tools Read, Edit, Write, Bash, Grep, Glob",

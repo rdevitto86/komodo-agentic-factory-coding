@@ -112,7 +112,7 @@ func TestOnlySessionRolesBecomeAgents(t *testing.T) {
 func TestAnAgentCarriesHostToolNamesAndAModel(t *testing.T) {
 	root := toolkitRepo(t)
 	agent := body(t, root, filepath.Join(Dir, "agents", "builder.md"))
-	for _, want := range []string{"name: builder", "tools: Read, Edit, Write, Bash, Grep, Glob", "model: sonnet"} {
+	for _, want := range []string{"name: builder", "tools: Read, Edit, Write, Bash, Grep, Glob", "model: claude-sonnet-5"} {
 		if !strings.Contains(agent, want) {
 			t.Errorf("the agent is missing %q:\n%s", want, agent)
 		}
@@ -384,7 +384,7 @@ func TestOnlyTheDetectedProfilesStandardsRender(t *testing.T) {
 	}
 	var names []string
 	for _, change := range plan.Changes {
-		if strings.Contains(change.Path, filepath.Join(Dir, "skills", "standards-")) {
+		if strings.Contains(change.Path, filepath.Join("skills", "standards-")) {
 			names = append(names, filepath.Base(filepath.Dir(change.Path)))
 		}
 	}
