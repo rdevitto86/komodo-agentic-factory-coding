@@ -914,7 +914,7 @@ depends_on: [TG-05.4]
 ```
 * **Why:** one build took 122 turns with no cap but a 90-minute group budget (evidence 9). Proves REQ-28, REQ-29 and REQ-31.
 
-#### [TSK-05.5.1] Each run writes metrics.jsonl and events.jsonl from the host's own totals [P: H] [READY]
+#### [TSK-05.5.1] Each run writes metrics.jsonl and events.jsonl from the host's own totals [P: H] [DONE]
 ```yaml
 files: [internal/ledger/ledger.go, internal/ledger/ledger_test.go]
 done_when:
@@ -924,7 +924,7 @@ context:
   - "one line per stage and session: run, group, stage, start, duration, turns, input, output and cached tokens, cost, outcome; each run starts fresh, and only the last 10 run folders stay"
 ```
 
-#### [TSK-05.5.2] `komodo report` sums a run, and its sums match the host's [P: H] [READY]
+#### [TSK-05.5.2] `komodo report` sums a run, and its sums match the host's [P: H] [DONE]
 ```yaml
 files: [internal/line/report.go, internal/line/report_test.go, cmd/komodo/line.go]
 done_when:
@@ -935,7 +935,7 @@ context:
   - "the headline figure is tokens per accepted group"
 ```
 
-#### [TSK-05.5.3] A group has 60 minutes, and each session its own limit [P: C] [READY]
+#### [TSK-05.5.3] A group has 60 minutes, and each session its own limit [P: C] [DONE]
 ```yaml
 files: [internal/conductor/clock.go, internal/conductor/clock_test.go]
 done_when:
@@ -955,6 +955,162 @@ context:
 owner: human
 type: test
 ```
+
+#### [TSK-05.5.5] internal/ledger/ledger.go:203 WriteMetrics/WriteEvents have no caller and no retention [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: fix
+context:
+  - "Nothing outside the tests calls WriteMetrics or WriteEvents, so no real run ever writes metrics.jsonl or events.jsonl; both also append forever to one flat file under .komodo, breaking the spec's requirement that each run starts fresh and only the last 10 run folders stay. Write both files into a per-run folder truncated when the run starts, prune to the newest 10, and call this from the run's close path."
+```
+
+#### [TSK-05.5.6] internal/conductor/clock.go:21 Session limits map uses "review" instead of the profile's "lens" name [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock.go
+done_when:
+  - test -f internal/conductor/clock.go
+type: fix
+context:
+  - 'The sessionLimits map key is "review", but the spec and profile name this role "lens"; a session started with type "lens" has no entry in sessionLimits, so SessionPastLimit always returns false for it and that session type is never limited. The limits are also hardcoded rather than read from the profile. Load per-type limits from the profile under its actual role names, and treat an unknown type as an error or a default limit instead of silently no limit.'
+```
+
+#### [TSK-05.5.7] internal/conductor/clock.go:5 Clock has no synchronization for concurrent access [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock.go
+done_when:
+  - test -f internal/conductor/clock.go
+type: fix
+context:
+  - "Clock keeps three maps (sessionUsed, sessionStarted, sessionType) with no mutex; a conductor polling GroupUsed while another goroutine calls StartSession or EndSession triggers Go's fatal concurrent map read/write error, not just a logic bug. Guard every Clock method with a sync.Mutex."
+```
+
+#### [TSK-05.5.8] internal/ledger/ledger.go:77 isEvent still misses stop outcomes despite Event's own doc [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: fix
+context:
+  - "Event's doc comment says it records stops, but isEvent only accepts escalated, paused, and resumed, so a clock-driven stop is never written to events.jsonl. Add the stop outcome to the outcome-to-type mapping and cover it in a test."
+```
+
+#### [TSK-05.5.9] internal/line/report.go:60 groupTokens comment understates what it sums [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report.go
+done_when:
+  - test -f internal/line/report.go
+type: docs
+context:
+  - "The comment says groupTokens sums build and repair sessions, but the code sums every non-brief station in the run file, including review, fix, machine, close, qc, and ship. Reword the comment to state it sums every run-file entry for the group except brief stamps."
+```
+
+#### [TSK-05.5.10] internal/line/report_test.go:31 REQ-28 test never exercises a real recorded stream [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report_test.go
+done_when:
+  - test -f internal/line/report_test.go
+type: test
+context:
+  - 'The test for "a recorded stream''s totals equal the report''s line" stamps a hand-built ledger entry directly; no recorded host stream goes through the mount''s usage-parsing path, so a stream-parsing regression would still pass this test. Feed a recorded host result stream through the mount''s usage path, then compare its totals to report.Tokens.'
+```
+
+#### [TSK-05.5.11] internal/ledger/ledger_test.go:341 WriteEvents test only checks a nonzero count [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger_test.go
+done_when:
+  - test -f internal/ledger/ledger_test.go
+type: test
+context:
+  - 'TestWriteEventsCreatesFile asserts only len(events) > 0, so it would still pass if the done entry leaked in as an event, if Type were wrong, or if paused/resumed handling broke. Assert exactly one event with Type == "escalation", and add table cases for paused and resumed.'
+```
+
+#### [TSK-05.5.12] internal/ledger/ledger.go:73 Metric.Cost is always empty [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "Metric.Cost is never set because Entry has no cost field, so every metrics line omits the spec's cost column. Carry cost on Entry from the host totals and copy it in aggregateMetrics, or drop the field."
+```
+
+#### [TSK-05.5.13] internal/ledger/ledger.go:253 WriteEvents/ReadEvents duplicate WriteMetrics/ReadMetrics [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "WriteEvents and ReadEvents duplicate the same append/scan logic as WriteMetrics/ReadMetrics, which in turn duplicate Read; each write reopens the file per line and ignores the Close error. Use one generic append-lines helper that opens once and checks Close, plus one generic JSONL reader."
+```
+
+#### [TSK-05.5.14] internal/ledger/ledger.go:584 extractEvents repeats isEvent's outcome checks [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "extractEvents calls isEvent and then repeats the same three outcome comparisons in an if/else chain to set Type. Use one map[outcome]type lookup for both the filter and the type."
+```
+
+#### [TSK-05.5.15] internal/line/report.go:69 Redundant Run != "" check [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report.go
+done_when:
+  - test -f internal/line/report.go
+type: refactor
+context:
+  - 'entry.Run != "" can never be false when reading the run file, since Stamp routes Run-less entries to adhoc.jsonl instead. Drop the redundant condition.'
+```
+
+#### [TSK-05.5.16] internal/conductor/clock_test.go:13 Tests sleep and poke private fields instead of injecting time [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock_test.go
+done_when:
+  - test -f internal/conductor/clock_test.go
+type: refactor
+context:
+  - "Tests sleep 100ms and write private maps (sessionStarted, groupUsed) directly because Clock calls time.Now itself with no seam to control it. Inject a now func() time.Time and drive the tests through the exported surface."
+```
+
+#### [TSK-05.5.17] internal/conductor/clock_test.go:149 Comment and test name cite a requirement number and overstate behavior [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock_test.go
+done_when:
+  - test -f internal/conductor/clock_test.go
+type: docs
+context:
+  - 'The comment and test name cite REQ-29 and say "IsKilled", but nothing is actually killed; the same requirement-citation style appears at internal/line/report_test.go:29 (REQ-28). Remove the requirement IDs and name the test for what it actually asserts.'
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ---
 
