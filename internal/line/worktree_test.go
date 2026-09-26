@@ -516,3 +516,118 @@ func TestALegacyStatusIsMergedIntoItsGroupsAndRemoved(t *testing.T) {
 		t.Fatalf("status = %+v; the legacy entry must join and the group's own must win", merged)
 	}
 }
+
+func TestAddWorktreeCutsFromBaseNotFromStaleOrigin(t *testing.T) {
+	root, _ := remotedRepo(t)
+	// Push main to remote, creating origin/main
+	if _, err := git.Run(root, "push", "origin", "main"); err != nil {
+		t.Fatal(err)
+	}
+	// Create a second worktree and push to feat/a
+	worktree1 := filepath.Join(root, StateDir, "wt", "TSK-20.1.1")
+	if err := AddWorktree(root, "feat/a", "main", worktree1); err != nil {
+		t.Fatal(err)
+	}
+	// Create a file and commit in the first worktree
+	if err := os.WriteFile(filepath.Join(worktree1, "file.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(worktree1, "add", "file.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(worktree1, "commit", "-m", "add file"); err != nil {
+		t.Fatal(err)
+	}
+	// Push feat/a, so now origin/feat/a exists with the old commit
+	if _, err := git.Run(root, "push", "origin", "feat/a"); err != nil {
+		t.Fatal(err)
+	}
+	// Clean up the first worktree and branch so they don't interfere
+	if _, err := git.Run(root, "worktree", "remove", worktree1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(root, "branch", "-D", "feat/a"); err != nil {
+		t.Fatal(err)
+	}
+	// Confirms feat/a is absent locally while origin/feat/a remains
+	if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/feat/a"); err == nil {
+		t.Fatal("feat/a should not exist locally")
+	}
+	if _, err := git.Run(root, "rev-parse", "--verify", "origin/feat/a"); err != nil {
+		t.Fatalf("origin/feat/a must exist: %v", err)
+	}
+	// Cuts a new worktree for feat/a from base, not from stale origin/feat/a
+	worktree2 := filepath.Join(root, StateDir, "wt", "TSK-20.1.2")
+	if err := AddWorktree(root, "feat/a", "main", worktree2); err != nil {
+		t.Fatal(err)
+	}
+	// The new worktree should be based on main, not contain the old file from origin/feat/a
+	if _, err := os.Stat(filepath.Join(worktree2, "file.txt")); err == nil {
+		t.Fatal("new worktree must not inherit stale commits from origin/feat/a")
+	}
+	// Verify the base commit is present (from main)
+	if _, err := os.Stat(filepath.Join(worktree2, "a.txt")); err != nil {
+		t.Fatalf("new worktree must have base commit from main: %v", err)
+	}
+}
+
+// TestStartCutsAGroupFromTheFetchedOriginMain proves Start's own fetch of the base is not wasted:
+// a group cut after a GitHub merge carries origin/main forward, not a stale local main.
+func TestStartCutsAGroupFromTheFetchedOriginMain(t *testing.T) {
+	root, bare := remotedRepo(t)
+	runGit(t, root, "push", "origin", "main")
+	staged := repo(t, twoGroupBacklog)
+	for _, name := range []string{"BACKLOG.md", filepath.Join(RolesDir, "builder.md")} {
+		data, err := os.ReadFile(filepath.Join(staged, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A GitHub merge lands on origin/main; local main never moves.
+	clone := t.TempDir()
+	runGit(t, "", "clone", bare, clone)
+	if err := os.WriteFile(filepath.Join(clone, "merged.txt"), []byte("merged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, clone, "add", "-A")
+	runGit(t, clone, "commit", "-m", "merged upstream")
+	runGit(t, clone, "push", "origin", "main")
+
+	state, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(state.Worktree, "merged.txt")); err != nil {
+		t.Fatalf("stat = %v; a group cut must carry the fetched origin/main forward", err)
+	}
+}
+
+// TestWriteBriefCutsATaskFromTheLocalGroupBranchNotStaleOrigin proves a task worktree is cut from
+// its group branch's local tip: an earlier push must not leave a task behind a fresher local commit.
+func TestWriteBriefCutsATaskFromTheLocalGroupBranchNotStaleOrigin(t *testing.T) {
+	root, _ := remotedRepo(t)
+	groupBranch := "feat/g"
+	runGit(t, root, "checkout", "-b", groupBranch)
+	runGit(t, root, "push", "origin", groupBranch)
+	// The group branch gains a local commit after the push, which origin/<groupBranch> never sees.
+	if err := os.WriteFile(filepath.Join(root, "local.txt"), []byte("local\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "local only")
+
+	worktree := filepath.Join(root, StateDir, "wt", "TSK-20.2.1")
+	brief := &Brief{Task: "TSK-20.2.1", Worktree: filepath.Join(StateDir, "wt", "TSK-20.2.1"), Path: "brief.md", Text: "brief"}
+	if err := WriteBrief(root, brief, groupBranch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(worktree, "local.txt")); err != nil {
+		t.Fatalf("stat = %v; a task must be cut from the group branch's local tip", err)
+	}
+}
