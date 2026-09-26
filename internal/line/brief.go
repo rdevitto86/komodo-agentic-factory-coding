@@ -135,7 +135,7 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 		return nil, fmt.Errorf("no task %s in %s", taskID, path)
 	}
 	group, _ := parsed.Group(task.GroupID)
-	task = cardTask(root, task, group.ID)
+	task = cardTask(root, task, group)
 	definition, err := LoadRole(root, role)
 	if err != nil {
 		return nil, err
@@ -209,7 +209,8 @@ func FixBrief(root string, plan *Plan) (*Brief, error) {
 		return nil, fmt.Errorf("%s has no review finding at or above %s to fix", plan.Group, plan.Profile.SeverityFloor)
 	}
 	task, blocks := fixTask(parsed, plan)
-	task = cardTask(root, task, plan.Group)
+	group, _ := parsed.Group(plan.Group)
+	task = cardTask(root, task, group)
 	cwd := WorktreePath(root, plan.Worktree)
 	caps := resolveCaps(root)
 	result := filepath.Join(StateDir, "results", task.ID+".json")
