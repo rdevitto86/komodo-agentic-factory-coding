@@ -82,11 +82,11 @@ func commitDated(t *testing.T, root, name, body, message string, when time.Time)
 
 func TestShipGroupRunsTheAfterPublishCommand(t *testing.T) {
 	root, group := shipRepo(t)
-	if err := os.MkdirAll(filepath.Join(group, StateDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, StateDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	commands := `{"after_publish":"touch published.txt"}`
-	if err := os.WriteFile(filepath.Join(group, StateDir, "commands.json"), []byte(commands), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, StateDir, "commands.json"), []byte(commands), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	plan := &Plan{
@@ -146,12 +146,12 @@ func TestShipGroupWithNoAfterPublishLeavesPublishedUnset(t *testing.T) {
 }
 
 func TestAfterPublishFailureFailsTheShip(t *testing.T) {
-	root, group := shipRepo(t)
-	if err := os.MkdirAll(filepath.Join(group, StateDir), 0o755); err != nil {
+	root, _ := shipRepo(t)
+	if err := os.MkdirAll(filepath.Join(root, StateDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	commands := `{"after_publish":"exit 3"}`
-	if err := os.WriteFile(filepath.Join(group, StateDir, "commands.json"), []byte(commands), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, StateDir, "commands.json"), []byte(commands), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	plan := &Plan{
