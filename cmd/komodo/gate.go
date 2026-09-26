@@ -20,7 +20,16 @@ func runGate(root string, args []string) {
 	set := flag.NewFlagSet("gate", flag.ExitOnError)
 	install := set.Bool("install", false, "build the local binary and write the pre-commit and pre-push hooks")
 	fuzz := set.String("fuzz", "", "also fuzz each parser for this long, such as 10s")
+	rebuild := set.Bool("rebuild", false, "rebuild the local binary when a Go file, go.mod or go.sum changed between --from and --to")
+	from := set.String("from", "", "the commit before the change, for --rebuild")
+	to := set.String("to", "", "the commit after the change, for --rebuild")
 	_ = set.Parse(args)
+	if *rebuild {
+		if err := gate.Rebuild(root, *from, *to, os.Stdout); err != nil {
+			fail(err)
+		}
+		return
+	}
 	if *install {
 		path, err := gate.BuildLocal(root, os.Stdout)
 		if err != nil {
