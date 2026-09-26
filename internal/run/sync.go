@@ -144,7 +144,7 @@ func syncBinary(root, head string, dryRun bool, out io.Writer, suffix string) (s
 	return built, nil
 }
 
-// syncConfig re-renders every installed host's project config at the root when the doctor reports drift.
+// syncConfig re-renders every installed host's whole config at the root when the doctor reports drift.
 func syncConfig(root string, dryRun bool, out io.Writer, suffix string) error {
 	problems, err := doctor.Run(root, doctor.Options{NoGit: true})
 	if err != nil {
@@ -159,7 +159,7 @@ func syncConfig(root string, dryRun bool, out io.Writer, suffix string) error {
 		return nil
 	}
 	if !dryRun {
-		if err := line.RenderProject(root, root); err != nil {
+		if err := line.RenderRoot(root); err != nil {
 			return err
 		}
 	}

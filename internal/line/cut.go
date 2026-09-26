@@ -179,6 +179,16 @@ func keepGroupStatus(root, groupID string) error {
 // RenderProject rebuilds the worktree's gitignored project config for every host installed on
 // root, from the profile and the repo layer, so a run always has the right tools.
 func RenderProject(root, worktree string) error {
+	return render(root, worktree, true)
+}
+
+// RenderRoot rewrites every installed host's whole config at root, agents included, as the install does.
+func RenderRoot(root string) error {
+	return render(root, root, false)
+}
+
+// render applies each installed host's plan at worktree, narrowed to the project copies when projectOnly is set.
+func render(root, worktree string, projectOnly bool) error {
 	binary := mount.BinaryPath()
 	for _, host := range mount.Active() {
 		if host.Installed == nil || host.Render == nil || !host.Installed(root) {
@@ -188,7 +198,10 @@ func RenderProject(root, worktree string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := plan.Project().Apply(); err != nil {
+		if projectOnly {
+			plan = plan.Project()
+		}
+		if _, err := plan.Apply(); err != nil {
 			return err
 		}
 	}

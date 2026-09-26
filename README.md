@@ -267,9 +267,10 @@ the host config when doctor reports drift, and opens one pull request per group.
 Merging is the only step a person does across a clean drain; `komodo sync`
 follows it automatically, fast-forwarding the root and rebuilding what drifted.
 
-A drain stops for a person at one of three points: a review still blocking after
-its repair rounds, a merge conflict QC cannot resolve, or a plan the profile has
-paused.
+A drain never stops at one group. A group that ends unshipped, such as a merge
+conflict QC cannot resolve or a plan the profile has paused, is parked with its
+reason, and the drain runs the next. It ends when nothing is ready or the budget
+is spent, listing what it shipped and what it parked.
 
 ## Layout
 
