@@ -127,6 +127,13 @@ func (c *Client) Comment(number, body string) error {
 	return err
 }
 
+// Merge merges a pull request into its base with a merge commit, never a squash or a rebase,
+// so a branch stacked on it keeps the commits its own history was cut from.
+func (c *Client) Merge(number string) error {
+	_, err := c.run("pr", "merge", number, "--merge")
+	return err
+}
+
 // threadsQuery fetches a pull request's inline review threads by URL.
 const threadsQuery = `query($url: URI!) {
   resource(url: $url) {
