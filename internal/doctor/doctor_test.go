@@ -229,6 +229,21 @@ func TestTheAlwaysOnBudgetTracksTheRenderedSkillsNotTheShippedOnes(t *testing.T)
 	}
 }
 
+func TestARolesScopedSkillIsNoPartOfTheAlwaysOnBudget(t *testing.T) {
+	root := clean(t)
+	huge := "---\nname: standards-huge\ndescription: " + strings.Repeat("word ", 1600) + "\n---\n\n# Huge\n"
+	registerHost(t, mount.Host{Name: "testhost", Installed: func(string) bool { return true },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "testhost", Root: root}
+			plan.AddScoped(filepath.Join(root, ".testhost", "plugins", "builder", "skills", "standards-huge", "SKILL.md"),
+				[]byte(huge), "the builder's standard")
+			return plan, nil
+		}})
+	if got := problemsFrom(t, root)["budgets"]; alwaysOnFired(got) {
+		t.Fatalf("budgets = %+v; a skill only the builder's session loads must not count as always-on", got)
+	}
+}
+
 func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	root := clean(t)
 	rendered := filepath.Join(root, "existing.txt")
