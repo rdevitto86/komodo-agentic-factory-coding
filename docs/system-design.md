@@ -165,10 +165,11 @@ A host without resume gets a fresh session with the fix list and the saved diff.
 ### How the conductor runs a Claude Code session
 
 - **Where:** the process starts in the group's worktree.
-- **What it loads:** `CLAUDE_CONFIG_DIR` points at a directory the line owns. `--plugin-dir` adds the role's own plugin (its skills, hooks and agents). `--settings` adds the role's permissions. `--strict-mcp-config` keeps MCP servers out.
+- **What it loads:** the host's default config directory, which holds the login (decision 0025). `--setting-sources project,local` shuts out personal settings and instructions. `--plugin-dir` adds the role's own plugin (its skills, hooks and agents). `--settings` adds the role's permissions and turns auto-memory off. `--strict-mcp-config` keeps MCP servers out.
 - **What it may use:** `--tools` lists the role's tools. `--permission-mode dontAsk` refuses anything outside the allow list without a prompt (spike S2).
 - **Which model:** `--model` and `--effort` come from the profile.
-- **Limits:** `--max-budget-usd` on API billing, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=3`, and the conductor's clock, which kills the process tree at the limit. `CLAUDE_CODE_MAX_TURNS` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` exist in the CLI; spike S8 confirms what they do before the line relies on them.
+- **Limits:** `--max-budget-usd` on API billing, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=3`, `CLAUDE_CODE_MAX_TURNS` per role, and the conductor's clock, which kills the process tree at the limit. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is never set: it keeps `GH_TOKEN` and overrides `dontAsk` (spike S8).
+- **Environment:** the conductor removes forge credentials, sets `DISABLE_AUTOUPDATER=1`, and points `GOCACHE` and `GOTMPDIR` inside the worktree so a sandboxed build can write them (spike S2).
 
 ### Briefs
 
@@ -291,9 +292,9 @@ GitHub Free offers draft PRs and rulesets only on public repositories; `komodo d
 
 | Variable | Pinned by |
 |---|---|
-| Host CLI version | The profile. Doctor fails on a mismatch. `DISABLE_AUTOUPDATER` is set in the line's config directory. |
+| Host CLI version | The profile. Doctor fails on a mismatch. `DISABLE_AUTOUPDATER` is set in each session's environment. |
 | Model | Full IDs in the profile, such as `claude-sonnet-5` and `claude-opus-5-5` |
-| Personal layer | A line-owned `CLAUDE_CONFIG_DIR`; no personal settings, plugins or MCP (REQ-3) |
+| Personal layer | `--setting-sources project,local` and `--strict-mcp-config`; no personal settings, instructions, plugins or MCP (REQ-3, decision 0025) |
 | Rules and skills | The role's own plugin, plus the repo's `AGENTS.md` |
 | `komodo` binary | A published release in product repos; rebuilt on pull in this repo (REQ-5) |
 | Shell | POSIX `sh`: native on macOS, Linux and WSL2; Git Bash's on native Windows |
