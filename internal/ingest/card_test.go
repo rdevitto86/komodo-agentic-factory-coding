@@ -106,7 +106,8 @@ func TestBuildCollectsHandWrittenChecksAndContextDeduped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := card.Checks; len(got) != 2 || got[0] != "go test ./a/..." || got[1] != "go vet ./a/..." {
+	// Hand-written checks plus derived: go test, go vet (hand-written), then go build (derived).
+	if got := card.Checks; len(got) != 3 || got[0] != "go test ./a/..." || got[1] != "go vet ./a/..." || got[2] != "go build ./a/..." {
 		t.Fatalf("checks = %v", got)
 	}
 	if got := card.Context; len(got) != 1 || got[0] != "docs/spec.md#a" {

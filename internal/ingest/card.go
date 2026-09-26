@@ -91,7 +91,7 @@ func Build(root string, parsed backlog.Backlog, group backlog.Group) (Card, erro
 		Tier:    tier,
 		Tasks:   cardTasks(group),
 		Files:   files,
-		Checks:  handWrittenChecks(group),
+		Checks:  allChecks(group, files),
 		Context: taskContext(group),
 	}
 	card.Size = Size{
