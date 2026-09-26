@@ -354,9 +354,9 @@ context:
   - "komodo tag folds a version's fragments into CHANGELOG.md and deletes them before it tags; test: two groups' fragments for alpha.6 and one for alpha.8 fold in order, and a heading written before the fold keeps its lines"
 ```
 
-#### [TSK-04.5.2] A filed finding lands inside its group, never under the next epic's heading [P: H] [READY]
+#### [TSK-04.5.2] A filed finding lands inside its group, never under the next epic's heading [P: H] [DONE]
 ```yaml
-files: [internal/backlog/edit.go, internal/backlog/edit_test.go]
+files: [internal/backlog/edit.go, internal/backlog/backlog_test.go]
 done_when:
   - go test ./internal/backlog/...
 context:
@@ -364,9 +364,9 @@ context:
   - "test: appending to the last group of an epic puts the task before the --- and ## lines that follow it"
 ```
 
-#### [TSK-04.5.3] Ship refuses a group with no review result [P: H] [READY]
+#### [TSK-04.5.3] Ship refuses a group with no review result [P: H] [DONE]
 ```yaml
-files: [internal/line/ship.go, internal/line/ship_test.go]
+files: [internal/line/ship.go, internal/line/ship_test.go, cmd/komodo/cli_test.go]
 done_when:
   - go test ./internal/line/...
 context:

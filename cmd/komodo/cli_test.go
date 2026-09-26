@@ -203,6 +203,13 @@ func TestListAfterShipShowsWhatStepSees(t *testing.T) {
 		Base: "main", Branch: "feat/a-pending-group", Worktree: worktree,
 		Tasks: []line.PlanTask{{ID: "TSK-90.2.1", Title: "Not done", Status: "READY"}},
 	}
+	review := line.ResultPath(root, "TG-90.2-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(review, []byte(`{"findings":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	_, _ = line.ShipGroup(root, plan, nil, nil)
 	if len(line.LoadStatus(root)) != 0 {
 		t.Fatal("ship left the group's live status behind")

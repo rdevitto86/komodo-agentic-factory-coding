@@ -144,6 +144,26 @@ func TestAppendTaskLandsInsideItsGroup(t *testing.T) {
 	}
 }
 
+func TestAppendTaskToAnEpicsLastGroupStaysAboveTheNextEpic(t *testing.T) {
+	text := "# Project Backlog\n\n## [EPIC-01] One\n\n### [TG-01.1] Last group\n```yaml\ntype: feat\n```\n\n" +
+		"#### [TSK-01.1.1] First [P: H] [DONE]\n```yaml\nfiles: [a.go]\ndone_when:\n  - go test ./...\n```\n\n" +
+		"---\n\n## [EPIC-02] Two\n*Goal: the next phase.*\n\n### [TG-02.1] Next group\n```yaml\ntype: feat\n```\n"
+	var fields Fields
+	fields.Set("files", []any{"b.go"})
+	fields.Set("done_when", []any{"go test ./..."})
+	out, id, err := AppendTask(text, "TG-01.1", "Filed finding", fields, "L", "REFINEMENT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := strings.Index(out, "#### ["+id+"]")
+	if task < 0 || task > strings.Index(out, "---\n") || task > strings.Index(out, "## [EPIC-02]") {
+		t.Fatalf("the task landed outside TG-01.1:\n%s", out)
+	}
+	if group, _ := Parse(out).Group("TG-01.1"); len(group.Tasks) != 2 {
+		t.Fatalf("TG-01.1 has %d tasks", len(group.Tasks))
+	}
+}
+
 func TestSlugIsKebabAndCapped(t *testing.T) {
 	group := Group{ID: "TG-01.1", Title: "The conveyor and the devices!"}
 	if got := group.Slug(); got != "the-conveyor-and-the-devices" {

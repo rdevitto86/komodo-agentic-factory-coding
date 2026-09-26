@@ -62,13 +62,7 @@ func AppendTask(text, groupID, title string, fields Fields, priority, status str
 	}
 	taskID := NextTaskID(group)
 	lines := strings.SplitAfter(text, "\n")
-	position := len(lines)
-	for _, candidate := range parsed.Groups {
-		if candidate.Heading > group.Heading {
-			position = candidate.Heading
-			break
-		}
-	}
+	position := groupEnd(lines, group.Heading)
 	for position > group.Heading+1 && strings.TrimSpace(lines[position-1]) == "" {
 		position--
 	}
@@ -83,4 +77,15 @@ func AppendTask(text, groupID, title string, fields Fields, priority, status str
 	out = append(out, block)
 	out = append(out, lines[position:]...)
 	return strings.Join(out, ""), taskID, nil
+}
+
+// groupEnd is the first line after heading that opens the next group or epic, or a rule between them.
+func groupEnd(lines []string, heading int) int {
+	for index := heading + 1; index < len(lines); index++ {
+		line := strings.TrimRight(lines[index], "\r\n")
+		if strings.TrimSpace(line) == "---" || epicHeading.MatchString(line) || groupHeading.MatchString(line) {
+			return index
+		}
+	}
+	return len(lines)
 }

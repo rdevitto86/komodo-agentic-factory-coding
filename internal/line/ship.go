@@ -97,6 +97,13 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return nil, fmt.Errorf("the root's BACKLOG.md differs from this group's at %s; rebase or edit before ship",
 			strings.Join(refined, ", "))
 	}
+	// A missing review reads as no findings, so ship refuses rather than ship an unreviewed group.
+	if !HasResult(root, plan.Group+"-review") {
+		return nil, fmt.Errorf("%s has no review result; run the review, then ship", plan.Group)
+	}
+	if staleReview(root, plan) {
+		return nil, fmt.Errorf("%s changed after its review; run the review again, then ship", plan.Group)
+	}
 	live := LoadStatus(root)
 	blocking, minor := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	if len(blocking) > 0 {
