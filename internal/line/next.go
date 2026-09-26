@@ -392,17 +392,29 @@ func onOrigin(root, branch string) bool {
 	return err == nil
 }
 
-// groupBase is the branch a group declares, or the remote's default when it declares none, or when
-// the group it stacks on is all DONE and its branch is gone from origin, since that group merged.
+// groupBase is the branch a group declares, else its epic's branch when that can be opened, else
+// the remote's default; a stacked base whose parent merged and vanished from origin also falls back.
 func groupBase(root string, parsed backlog.Backlog, group backlog.Group) string {
 	base := group.Base()
 	if base == "" {
+		if epic := group.EpicBranch(); epic != "" && canOpen(root, epic) {
+			return epic
+		}
 		return DefaultBase(root)
 	}
 	if hasOrigin(root) && !onOrigin(root, base) && mergedParent(parsed, base) {
 		return DefaultBase(root)
 	}
 	return base
+}
+
+// canOpen reports whether branch already exists, locally or on origin, so a base can be cut or
+// diffed from it; a group's epic branch with neither is not yet cut, so planning skips it.
+func canOpen(root, branch string) bool {
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		return true
+	}
+	return onOrigin(root, branch)
 }
 
 // mergedParent reports whether branch is a group's in parsed whose every task is DONE.
