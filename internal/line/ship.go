@@ -192,6 +192,10 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return nil, err
 	}
 	lines = ChangedLines(group, StartRef(group, plan.Base), plan.Branch)
+	files := ChangedFiles(group, StartRef(group, plan.Base), plan.Branch)
+	if err := checkPRSize(plan.Group, files, lines, plan.Profile.PRFiles, plan.Profile.PRLinesMax); err != nil {
+		return nil, err
+	}
 	if isToolkit(root) {
 		if err := gateCommand(group); err != nil {
 			return nil, fmt.Errorf("gate: %w", err)
@@ -203,6 +207,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		context.Why = groupWhy(string(data), plan.Group)
 	}
 	context.BlastRadius, context.BlastRadiusWhy = reviewBlast(root, plan.Group)
+	context.SizeNote = sizeNote(lines, plan.Profile.PRLinesPreferred)
 	body := ReportBody(plan, result, waves, context)
 	wanted := []string{"@agent", scopeLabel(declared)}
 	if scrubbed() {
@@ -343,6 +348,32 @@ func ChangedLines(dir, base, branch string) int {
 		total += count
 	}
 	return total
+}
+
+// ChangedFiles is the file count between base and branch, or zero when git cannot say.
+func ChangedFiles(dir, base, branch string) int {
+	out, err := git.Run(dir, "diff", "--name-only", base+"..."+branch)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return 0
+	}
+	return len(strings.Split(strings.TrimSpace(out), "\n"))
+}
+
+// checkPRSize refuses a diff over either the file or the line ceiling, naming a split as the fix.
+// A zero ceiling is unset and never refuses.
+func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
+	var over []string
+	if filesCap > 0 && files > filesCap {
+		over = append(over, fmt.Sprintf("%d file(s) (cap %d)", files, filesCap))
+	}
+	if linesMax > 0 && lines > linesMax {
+		over = append(over, fmt.Sprintf("%d changed line(s) (cap %d)", lines, linesMax))
+	}
+	if len(over) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s's diff has %s; split it into smaller groups before shipping a pull request",
+		group, strings.Join(over, " and "))
 }
 
 // ChangelogLine is the one line a group adds under its version.

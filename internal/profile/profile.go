@@ -27,28 +27,31 @@ type Caps struct {
 
 // Profile is one host's whole configuration: its machines, its caps, and its pacing.
 type Profile struct {
-	Name            string                 `json:"name"`
-	Host            string                 `json:"host"`
-	Plan            string                 `json:"plan"`
-	Tiers           mount.Tiers            `json:"tiers"`
-	Caps            Caps                   `json:"caps"`
-	SeverityFloor   string                 `json:"severity_floor"`
-	MaxParallel     int                    `json:"max_parallel"`
-	Repairs         int                    `json:"repairs"`
-	ReviewRepairs   int                    `json:"review_repairs"`
-	ReviewSkipLines int                    `json:"review_skip_lines"`
-	PauseAt         float64                `json:"pause_at"`
-	WarnAt          float64                `json:"warn_at"`
-	Labels          []string               `json:"labels"`
-	Changelog       string                 `json:"changelog"`
-	Base            string                 `json:"base"`
-	CriticalRefs    []string               `json:"critical_refs,omitempty"`
-	Utilization     float64                `json:"utilization"`
-	ResetsAt        time.Time              `json:"resets_at,omitempty"`
-	Why             string                 `json:"why"`
-	Mode            string                 `json:"mode"`
-	HostVersion     string                 `json:"host_version"`
-	Roles           map[string]RoleProfile `json:"roles"`
+	Name             string                 `json:"name"`
+	Host             string                 `json:"host"`
+	Plan             string                 `json:"plan"`
+	Tiers            mount.Tiers            `json:"tiers"`
+	Caps             Caps                   `json:"caps"`
+	SeverityFloor    string                 `json:"severity_floor"`
+	MaxParallel      int                    `json:"max_parallel"`
+	Repairs          int                    `json:"repairs"`
+	ReviewRepairs    int                    `json:"review_repairs"`
+	ReviewSkipLines  int                    `json:"review_skip_lines"`
+	PauseAt          float64                `json:"pause_at"`
+	WarnAt           float64                `json:"warn_at"`
+	Labels           []string               `json:"labels"`
+	Changelog        string                 `json:"changelog"`
+	Base             string                 `json:"base"`
+	CriticalRefs     []string               `json:"critical_refs,omitempty"`
+	Utilization      float64                `json:"utilization"`
+	ResetsAt         time.Time              `json:"resets_at,omitempty"`
+	Why              string                 `json:"why"`
+	Mode             string                 `json:"mode"`
+	HostVersion      string                 `json:"host_version"`
+	Roles            map[string]RoleProfile `json:"roles"`
+	PRFiles          int                    `json:"pr_files"`
+	PRLinesPreferred int                    `json:"pr_lines_preferred"`
+	PRLinesMax       int                    `json:"pr_lines_max"`
 }
 
 // RoleProfile names one role's tier and effort; the host's mount pins the tier's full model ID (decision 0006).
@@ -88,14 +91,17 @@ func base() Profile {
 	return Profile{
 		Caps: Caps{RepoRules: 8000, RepoContext: 8000, PerFile: 10000,
 			FilesTotal: 24000, Standard: 6000, Failure: 80000},
-		SeverityFloor: "high",
-		MaxParallel:   4,
-		Repairs:       1,
-		ReviewRepairs: 2,
-		PauseAt:       0.9,
-		WarnAt:        0.75,
-		Labels:        []string{"agent"},
-		Changelog:     "CHANGELOG.md",
+		SeverityFloor:    "high",
+		MaxParallel:      4,
+		Repairs:          1,
+		ReviewRepairs:    2,
+		PauseAt:          0.9,
+		WarnAt:           0.75,
+		Labels:           []string{"agent"},
+		Changelog:        "CHANGELOG.md",
+		PRFiles:          20,
+		PRLinesPreferred: 1000,
+		PRLinesMax:       2000,
 	}
 }
 

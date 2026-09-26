@@ -15,6 +15,15 @@ type BodyContext struct {
 	DefaultBase    string
 	BlastRadius    string
 	BlastRadiusWhy string
+	SizeNote       string
+}
+
+// sizeNote is the pull request body's note when the diff exceeds the preferred line count, or empty below it.
+func sizeNote(lines, preferred int) string {
+	if preferred > 0 && lines > preferred {
+		return fmt.Sprintf("This diff is %d changed line(s), over the preferred %d; consider a split.", lines, preferred)
+	}
+	return ""
 }
 
 // defaultSections are the pull request body's sections when the repo has no template.
@@ -128,6 +137,9 @@ func summaryLines(plan *Plan, result *ShipResult, context BodyContext) []string 
 	lines := []string{summary}
 	if result.StaleBase != "" {
 		lines = append(lines, "", fmt.Sprintf("Base %s is gone from origin, so this targets %s.", result.StaleBase, result.Base))
+	}
+	if context.SizeNote != "" {
+		lines = append(lines, "", context.SizeNote)
 	}
 	return lines
 }
