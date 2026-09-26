@@ -136,8 +136,8 @@ func launchTarget(options Options) (int, string, error) {
 	return code, url, err
 }
 
-// drain launches the next ready group, one at a time, until nothing is ready, a group ends
-// unshipped, or the whole budget is spent, printing one line per group.
+// drain launches each ready group once, parking any that ends unshipped, until nothing is ready
+// or the whole budget is spent, printing one line per group.
 func drain(options Options) (int, error) {
 	stdout := options.Stdout
 	if stdout == nil {
@@ -152,6 +152,7 @@ func drain(options Options) (int, error) {
 	}
 	started := time.Now()
 	ran := map[string]bool{}
+	var shippedGroups, parked []string
 	executable := ""
 	for {
 		// Sync fetches origin, rebuilds a stale binary, and re-renders drifted config.
@@ -168,15 +169,24 @@ func drain(options Options) (int, error) {
 		if err != nil {
 			return 1, err
 		}
-		if len(order) == 0 {
-			fmt.Fprintln(stdout, "drain done: nothing is ready")
+		// A group this drain already shipped or parked is skipped, so one stuck group never holds the rest.
+		next := ""
+		for _, group := range order {
+			if !ran[group] {
+				next = group
+				break
+			}
+		}
+		if next == "" {
+			fmt.Fprintf(stdout, "drain done: nothing is ready; %d shipped, %d parked", len(shippedGroups), len(parked))
+			if len(parked) > 0 {
+				fmt.Fprintf(stdout, " (%s)\n", strings.Join(parked, ", "))
+				return 1, nil
+			}
+			fmt.Fprintln(stdout)
 			return 0, nil
 		}
-		next := order[0]
-		if ran[next] {
-			fmt.Fprintf(stdout, "%s stopped: it came up again after it shipped\n", next)
-			return 1, nil
-		}
+		ran[next] = true
 		remaining := total - time.Since(started)
 		if remaining <= 0 {
 			fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", next, total)
@@ -189,18 +199,20 @@ func drain(options Options) (int, error) {
 		launched := time.Now()
 		code, url, err := launchTarget(group)
 		if err != nil {
-			fmt.Fprintf(stdout, "%s stopped: %v\n", next, err)
-			return max(code, 1), err
+			fmt.Fprintf(stdout, "%s parked: %v\n", next, err)
+			parked = append(parked, next)
+			continue
 		}
 		if !shipped(options.Root, next, launched) {
-			fmt.Fprintf(stdout, "%s stopped: it ended without shipping (exit %d)\n", next, code)
-			return max(code, 1), nil
+			fmt.Fprintf(stdout, "%s parked: it ended without shipping (exit %d)\n", next, code)
+			parked = append(parked, next)
+			continue
 		}
 		if url == "" {
 			url = "no pull request was handed off"
 		}
 		fmt.Fprintf(stdout, "%s shipped: %s\n", next, url)
-		ran[next] = true
+		shippedGroups = append(shippedGroups, next)
 	}
 }
 

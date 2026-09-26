@@ -608,8 +608,9 @@ func TestDrainLaunchesAndShipsTwoReadyGroupsInOrder(t *testing.T) {
 	}
 }
 
-func TestDrainStopsAtAGroupThatEndsUnshipped(t *testing.T) {
+func TestDrainParksAGroupThatEndsUnshippedAndRunsTheNext(t *testing.T) {
 	root := drainRepo(t)
+	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(drainText, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
 	var out bytes.Buffer
 	code, err := Launch(Options{
 		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
@@ -619,13 +620,19 @@ func TestDrainStopsAtAGroupThatEndsUnshipped(t *testing.T) {
 		t.Fatal(err)
 	}
 	if code == 0 {
-		t.Fatalf("code = 0; a group that ends unshipped must stop the drain with a failure")
+		t.Fatalf("code = 0; a drain that parked a group must end with a failure")
 	}
-	if got := launched(t, root); got != "TG-07.1" {
-		t.Fatalf("launched = %q; the drain must stop before the next group", got)
+	if got := launched(t, root); got != "TG-07.1\nTG-07.2" {
+		t.Fatalf("launched = %q; the drain must run the next group past a parked one, each once", got)
 	}
-	if !strings.Contains(out.String(), "TG-07.1 stopped: it ended without shipping") {
-		t.Fatalf("output = %s", out.String())
+	for _, want := range []string{
+		"TG-07.1 parked: it ended without shipping",
+		"TG-07.2 shipped: https://example.invalid/pr/1",
+		"drain done: nothing is ready; 1 shipped, 1 parked (TG-07.1)",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output lacks %q:\n%s", want, out.String())
+		}
 	}
 }
 
@@ -683,22 +690,23 @@ func TestDrainStopsWhenTheWholeBudgetIsSpent(t *testing.T) {
 	}
 }
 
-func TestDrainStopsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
+func TestDrainSkipsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
 	root := drainRepo(t)
 	stageShip(t, root, "TG-07.1", "feat/first", drainText)
+	stageShip(t, root, "TG-07.2", "feat/second", drainText)
 	var out bytes.Buffer
 	code, err := Launch(Options{
 		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
 		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
 	}
-	if code != 1 || !strings.Contains(out.String(), "TG-07.1 stopped: it came up again after it shipped") {
-		t.Fatalf("code = %d, out = %s; a shipped group that is still ready must stop the drain", code, out.String())
+	if got := launched(t, root); got != "TG-07.1\nTG-07.2" {
+		t.Fatalf("launched = %q; a shipped group still ready on the root must not launch twice", got)
 	}
-	if got := launched(t, root); got != "TG-07.1" {
-		t.Fatalf("launched = %q; the repeated group must not launch twice", got)
+	if !strings.Contains(out.String(), "drain done: nothing is ready; 2 shipped, 0 parked") {
+		t.Fatalf("output = %s", out.String())
 	}
 }
 
