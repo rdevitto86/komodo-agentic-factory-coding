@@ -45,6 +45,9 @@ func Lint(parsed Backlog) []string {
 			problems = append(problems, fmt.Sprintf("%s: duplicate group id (lines %d and %d)", group.ID, line+1, group.Heading+1))
 		}
 		seen[group.ID] = group.Heading
+		if len(group.Tasks) > 12 {
+			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", group.ID, len(group.Tasks)))
+		}
 		var depBranches []string
 		for _, dep := range group.DependsOn() {
 			if !groupIDs[dep] {
@@ -85,6 +88,9 @@ func Lint(parsed Backlog) []string {
 		}
 		if tier := task.Tier(); tier != "" && !contains(Tiers, tier) {
 			problems = append(problems, fmt.Sprintf("%s: tier must be one of %s", where, strings.Join(Tiers, "|")))
+		}
+		if task.Type() == "build" && task.Tier() == "light" {
+			problems = append(problems, fmt.Sprintf("%s: build task cannot have tier light (REQ-30)", where))
 		}
 		for _, dep := range task.DependsOn() {
 			if !ids[dep] {
