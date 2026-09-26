@@ -21,8 +21,12 @@ func Lint(parsed Backlog) []string {
 	problems := append([]string(nil), parsed.Problems...)
 	seen := map[string]int{}
 	ids := map[string]bool{}
+	groupIDs := map[string]bool{}
 	for _, task := range parsed.Tasks() {
 		ids[task.ID] = true
+	}
+	for _, group := range parsed.Groups {
+		groupIDs[group.ID] = true
 	}
 	for _, group := range parsed.Groups {
 		if !contains(Modes, group.Mode()) {
@@ -41,6 +45,20 @@ func Lint(parsed Backlog) []string {
 			problems = append(problems, fmt.Sprintf("%s: duplicate group id (lines %d and %d)", group.ID, line+1, group.Heading+1))
 		}
 		seen[group.ID] = group.Heading
+		var depBranches []string
+		for _, dep := range group.DependsOn() {
+			if !groupIDs[dep] {
+				problems = append(problems, fmt.Sprintf("%s: depends_on names unknown group %s", group.ID, dep))
+				continue
+			}
+			if depGroup, ok := parsed.Group(dep); ok {
+				depBranches = append(depBranches, depGroup.Branch())
+			}
+		}
+		if base := group.Base(); base != "" && base != "main" && !contains(depBranches, base) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: base %q is neither main nor the branch of a group named in depends_on", group.ID, base))
+		}
 	}
 	for _, task := range parsed.Tasks() {
 		where := fmt.Sprintf("%s (line %d)", task.ID, task.Heading+1)

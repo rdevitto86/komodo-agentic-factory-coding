@@ -197,6 +197,58 @@ func TestGroupBaseIsWhatTheGroupDeclares(t *testing.T) {
 	}
 }
 
+func TestGroupBranchIsTypeSlashSlug(t *testing.T) {
+	parsed := Parse("### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n")
+	group, _ := parsed.Group("TG-01.1")
+	if got := group.Branch(); got != "feat/a-group" {
+		t.Fatalf("branch = %q", got)
+	}
+}
+
+func TestLintAcceptsABaseNamingADependencysBranch(t *testing.T) {
+	text := "### [TG-01.0] First group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"### [TG-01.1] Second group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/first-group\ndepends_on: [TG-01.0]\n```\n"
+	if problems := Lint(Parse(text)); len(problems) != 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+}
+
+func TestLintAcceptsAnOmittedOrMainBase(t *testing.T) {
+	text := "### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: main\n```\n"
+	if problems := Lint(Parse(text)); len(problems) != 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+}
+
+func TestLintRejectsABaseThatIsNeitherMainNorADependencysBranch(t *testing.T) {
+	text := "### [TG-01.0] First group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"### [TG-01.1] Second group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: release/2.0\n```\n"
+	problems := Lint(Parse(text))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-01.1") && strings.Contains(problem, "neither main nor") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no problem names the bad base; got %v", problems)
+	}
+}
+
+func TestLintRejectsAGroupDependsOnNamingAnUnknownGroup(t *testing.T) {
+	text := "### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\ndepends_on: [TG-09.9]\n```\n"
+	problems := Lint(Parse(text))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "depends_on names unknown group TG-09.9") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no problem names the unknown group; got %v", problems)
+	}
+}
+
 func TestTaskTierAndFacets(t *testing.T) {
 	parsed := Parse("### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-01.1.1] Heavy task [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - go test ./...\n" +
