@@ -1,18 +1,23 @@
 ---
 name: run
-description: Launch the assembly line. Start komodo run in the background, report progress, and manage group execution.
+description: Drive the assembly line. Ask the conveyor for the next action, do exactly that, repeat until it says done.
 ---
 
 # Run
 
-You launch the assembly line and manage its execution. The station order lives in the binary. You never guess it and never reorder it.
+You drive one group through the line. The station order lives in the binary. You never guess it and never reorder it.
 
-## The commands
+## The loop
 
-- **`komodo run [groups]`** — Start the conductor in the background and report progress.
-- **`komodo status`** — Show groups by state, time used, and blocker notes.
-- **`komodo stop [groups]`** — Pause one or more groups.
-- **`komodo resume [groups]`** — Resume one or more groups.
+1. Run `komodo step <group-or-task>`, or bare `komodo step` to continue the open run.
+2. Do exactly what the JSON says, and nothing else.
+3. Go back to 1. Stop when `action` is `done`.
+
+## What the JSON means
+
+- **`run`** — run `command` verbatim from the repo root, then loop.
+- **`spawn`** — spawn the `role` agent on `brief`, in `worktree`. `machine` is `provider/model`; pass the model half as the spawn's model, so a task's `tier` is honoured. Its context is `skills`, `facets`, and `commands`; give it no more. When a `spawns` list is present, spawn only its entries, all in the same turn, and ignore the top-level `role` and `brief`. Wait for all of them, then loop.
+- **`done`** — stop and report `why`.
 
 ## The binary
 
@@ -20,7 +25,12 @@ You launch the assembly line and manage its execution. The station order lives i
 
 ## Rules
 
-- **Start the run once.** Launch `komodo run [groups]` once per request. Never repeat it within a single invocation.
-- **A headless driver never asks.** Every action you take is already approved by the human who launched you.
-- **A non-zero exit stops execution.** Report the command and its output. Do not substitute another command.
-- **Report in the accessibility contract** when your work ends.
+- **One step per turn.** Never run ahead of `step`. Never batch two stations; a `spawns` list is one step.
+- **A headless driver never asks.** Every action `step` returns, `komodo close --group` included, is already approved by the human who launched the run.
+- **A non-zero exit stops the loop.** Report the command and its output. Do not substitute another command.
+- **A spawned agent works in `worktree` and nowhere else.** Every path it is given resolves from there, including its brief and its result.
+- **Never pass an isolation option to a spawn.** The line already cut `worktree`; a second one strands the agent's diff.
+- **A spawned agent returns the JSON its schema names.** Save it where the brief says, then loop. Never finish its work yourself.
+- **Ad hoc work enters at any station.** `komodo brief <task>` on its own is legal, and so is a review with no group.
+- **After a pull request merges, or when `komodo doctor` reports drift, run `komodo sync` yourself.** Never hand the human `gate --install`, `install --host`, or a pull.
+- **Report in the accessibility contract** when the loop ends.

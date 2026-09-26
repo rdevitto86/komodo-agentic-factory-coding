@@ -91,10 +91,15 @@ func checkHostLogin(root string) error {
 	}
 	selected := profile.Select(root)
 	host, ok := mount.Get(selected.Host)
-	if !ok || host.Probe == nil {
+	if !ok || host.LoggedIn == nil {
 		return nil
 	}
-	if _, loggedIn := host.Probe(); !loggedIn {
+	// The plan probe fails for key billing and hosts with no plan, so the login has its own check.
+	loggedIn, err := host.LoggedIn()
+	if err != nil {
+		return fmt.Errorf("could not ask %s for its login: %w", selected.Host, err)
+	}
+	if !loggedIn {
 		return fmt.Errorf("not logged in to %s; log in and run again", selected.Host)
 	}
 	return nil

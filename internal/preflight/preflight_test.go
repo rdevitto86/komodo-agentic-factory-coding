@@ -162,31 +162,46 @@ func TestDoctorFailureIsReported(t *testing.T) {
 	}
 }
 
-// TestHostLoginFailsWhenTheMountCannotProbe checks that a logged-out host fails in production,
-// with no test contract injected.
-func TestHostLoginFailsWhenTheMountCannotProbe(t *testing.T) {
+// hostLoginFailed runs preflight with one registered host and reports whether the login check failed.
+func hostLoginFailed(t *testing.T, host mount.Host) bool {
+	t.Helper()
 	root := clean(t)
-
 	snapshot := mount.Snapshot()
 	t.Cleanup(func() { mount.Restore(snapshot) })
-	mount.Register(mount.Host{
-		Name:      "probeless",
-		Installed: func(string) bool { return true },
-		Probe:     func() (mount.Usage, bool) { return mount.Usage{}, false },
-	})
-
+	mount.Register(host)
 	failures, err := Run(root, Options{NoShip: true})
 	if err != nil {
 		t.Fatalf("Run = %v", err)
 	}
-	var found bool
 	for _, failure := range failures {
 		if failure.Name == "host login" {
-			found = true
+			return true
 		}
 	}
-	if !found {
-		t.Fatalf("expected a host login failure, got %v", failures)
+	return false
+}
+
+func TestHostLoginFailsWhenTheHostReportsNoLogin(t *testing.T) {
+	failed := hostLoginFailed(t, mount.Host{
+		Name:      "loggedout",
+		Installed: func(string) bool { return true },
+		Probe:     func() (mount.Usage, bool) { return mount.Usage{Plan: "max_5x"}, true },
+		LoggedIn:  func() (bool, error) { return false, nil },
+	})
+	if !failed {
+		t.Fatal("a host that reports no login must fail the login check")
+	}
+}
+
+func TestHostLoginPassesKeyBillingWhoseProbeFails(t *testing.T) {
+	failed := hostLoginFailed(t, mount.Host{
+		Name:      "keybilled",
+		Installed: func(string) bool { return true },
+		Probe:     func() (mount.Usage, bool) { return mount.Usage{}, false },
+		LoggedIn:  func() (bool, error) { return true, nil },
+	})
+	if failed {
+		t.Fatal("key billing has no plan to probe, but its login holds; the login check must pass")
 	}
 }
 

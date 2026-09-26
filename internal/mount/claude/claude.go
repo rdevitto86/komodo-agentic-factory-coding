@@ -267,6 +267,7 @@ func init() {
 		Installed:   Installed,
 		Tiers:       Tiers,
 		Probe:       Probe,
+		LoggedIn:    LoggedIn,
 		Usage:       Usage,
 		Headless:    Headless,
 		Leftovers:   Leftovers,
