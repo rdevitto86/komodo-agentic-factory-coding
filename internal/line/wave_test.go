@@ -336,3 +336,18 @@ func TestACollisionIsASharedFileNotASharedDirectory(t *testing.T) {
 		t.Fatalf("err = %v; the same file on an unmerged branch must refuse", err)
 	}
 }
+
+func TestAppendChangelogPutsANewVersionAboveATitledSection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "CHANGELOG.md")
+	body := "# Changelog\n\nIntro.\n\n## The first line — 2026-09-24\n\nHistory.\n\n## [1.0.0-alpha.4] — 2026-09-21\n\n- old\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendChangelog(path, "1.0.0-alpha.5", "- **TG-04.1** New"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if text := string(data); strings.Index(text, "## 1.0.0-alpha.5") > strings.Index(text, "## The first line") {
+		t.Fatalf("the new version landed below the titled section:\n%s", text)
+	}
+}

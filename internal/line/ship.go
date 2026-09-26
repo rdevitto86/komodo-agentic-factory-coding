@@ -108,6 +108,9 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if result.Base != plan.Base {
 		result.StaleBase = plan.Base
 	}
+	if err := catchUp(group, result.Base); err != nil {
+		return nil, err
+	}
 	outcome := ""
 	lines := 0
 	defer func() {
@@ -294,6 +297,29 @@ func liveBase(root, base string) string {
 	return DefaultBase(root)
 }
 
+// catchUp rebases the group branch onto the latest base, keeping uncommitted edits, so its pull request never
+// starts behind; a conflict aborts the rebase and names the files.
+func catchUp(group, base string) error {
+	if hasOrigin(group) {
+		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
+		_ = Fetch(group, base)
+	}
+	target := StartRef(group, base)
+	if _, err := git.Run(group, "rev-parse", "--verify", "--quiet", target); err != nil {
+		return nil
+	}
+	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err == nil {
+		return nil
+	}
+	if _, err := git.Run(group, "rebase", "--autostash", target); err != nil {
+		conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
+		_, _ = git.Run(group, "rebase", "--abort")
+		return fmt.Errorf("%s moved and the group no longer rebases onto it; resolve %s on the group branch, then ship",
+			target, strings.Join(strings.Fields(conflicts), ", "))
+	}
+	return nil
+}
+
 var shortstatCount = regexp.MustCompile(`(\d+) (?:insertion|deletion)`)
 
 // ChangedLines is the added plus deleted line count between base and branch, or zero when git cannot say.
@@ -323,7 +349,8 @@ func ChangelogLine(plan *Plan, result *ShipResult) string {
 	return line
 }
 
-var versionHeading = regexp.MustCompile(`(?m)^## \[?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)`)
+// sectionHeading is any second-level heading: a version, or a titled history section.
+var sectionHeading = regexp.MustCompile(`(?m)^## `)
 
 // AppendChangelog puts a line under the version's heading, creating the heading when it is new.
 // The heading is matched with or without its date suffix, so a ship never duplicates its own.
@@ -341,7 +368,7 @@ func AppendChangelog(path, version, line string) error {
 		return os.WriteFile(path, []byte(intoSection(text, match[1], line)), 0o644)
 	}
 	entry := fmt.Sprintf("## %s — %s\n\n%s\n", version, time.Now().UTC().Format("2006-01-02"), line)
-	if match := versionHeading.FindStringIndex(text); match != nil {
+	if match := sectionHeading.FindStringIndex(text); match != nil {
 		return os.WriteFile(path, []byte(text[:match[0]]+entry+"\n"+text[match[0]:]), 0o644)
 	}
 	if text != "" && !strings.HasSuffix(text, "\n") {
@@ -359,7 +386,7 @@ var groupBullet = regexp.MustCompile(`(?m)^- \*\*(TG-[^*]+)\*\*.*$`)
 // bullet when one exists, else above the first group bullet, else right under the heading.
 func intoSection(text string, start int, line string) string {
 	end := len(text)
-	if next := versionHeading.FindStringIndex(text[start:]); next != nil {
+	if next := sectionHeading.FindStringIndex(text[start:]); next != nil {
 		end = start + next[0]
 	}
 	section := text[start:end]
