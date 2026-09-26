@@ -216,3 +216,16 @@ func TestActiveLeavesOutADeferredHostButTheRegistryKeepsIt(t *testing.T) {
 		t.Fatal("a deferred host's vendor names are no longer checked for leaks")
 	}
 }
+
+func TestAHostWithNoContractLeavesItNil(t *testing.T) {
+	saved := Snapshot()
+	defer Restore(saved)
+	Register(Host{Name: "zz-no-contract"})
+	host, ok := Get("zz-no-contract")
+	if !ok {
+		t.Fatal("the host did not register")
+	}
+	if host.Contract != nil {
+		t.Fatal("a host with no contract func reported one")
+	}
+}

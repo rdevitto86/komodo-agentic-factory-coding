@@ -255,6 +255,9 @@ func namesLocalServer(path string) bool {
 	return strings.Contains(string(data), "127.0.0.1:8000")
 }
 
+// profileTurnCap bounds a headless role's turns until the profile carries its own cap.
+const profileTurnCap = 40
+
 // init registers this mount so the binary never names the host itself.
 func init() {
 	mount.Register(mount.Host{
@@ -272,6 +275,9 @@ func init() {
 		Headless:    Headless,
 		Leftovers:   Leftovers,
 		ReviewerWhy: reviewerWhy,
+		Contract: func(root, worktree string) mount.Contract {
+			return NewMount(root, worktree, profileTurnCap, 0)
+		},
 	})
 }
 
