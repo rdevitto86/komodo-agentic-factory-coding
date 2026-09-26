@@ -24,7 +24,7 @@ version: 1.0.0-alpha.5
 ```
 * **Why:** the two regressions #201 merged: the guard refused about 12 legitimate `done_when` commands, and the gate passed in a repo where it ran no build check (decision 0001, evidence 15).
 
-#### [TSK-04.1.1] Commands the line runs skip the guard [P: C] [READY]
+#### [TSK-04.1.1] Commands the line runs skip the guard [P: C] [DONE]
 ```yaml
 files: [internal/line/verify.go, internal/line/verify_test.go]
 done_when:
@@ -37,7 +37,7 @@ context:
 type: fix
 ```
 
-#### [TSK-04.1.2] The gate fails when it finds no build check [P: C] [READY]
+#### [TSK-04.1.2] The gate fails when it finds no build check [P: C] [DONE]
 ```yaml
 files: [cmd/komodo/gate.go, cmd/komodo/gate_test.go]
 done_when:
@@ -49,6 +49,42 @@ context:
   - "test: a temp repo with no detected language fails with that message; the toolkit's own checkout still runs go vet and go test"
 type: fix
 ```
+
+#### [TSK-04.1.3] cmd/komodo/gate.go:117 Gate in a line worktree ignores the root commands.json and refuses every commit [P: L] [DONE]
+```yaml
+files:
+  - cmd/komodo/gate.go
+done_when:
+  - test -f cmd/komodo/gate.go
+type: fix
+context:
+  - "Hooks run the gate with root = worktree (repoRoot stops at the .git file); .komodo/ is gitignored so commands.json and the detect cache are absent; a repo detection misses now fails every worktree commit although the main checkout configures verify, while QC reads the root's file. Have buildChecks also read the main checkout's .komodo/commands.json when running inside a linked worktree."
+```
+
+#### [TSK-04.1.4] cmd/komodo/gate_test.go:26 Toolkit gate test passes without the toolkit branch [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/gate_test.go
+done_when:
+  - test -f cmd/komodo/gate_test.go
+type: test
+context:
+  - "The test writes go.mod, so generic detection yields 'go build ./... && go vet ./...' and a go test verify; both Contains checks pass even if the toolkitCheckout branch is removed. Assert on output only the toolkit branch produces, or drop go.mod and assert the exact go vet and go test check names."
+```
+
+#### [TSK-04.1.5] internal/line/verify.go:36 overrideCommands is a pass-through with an unused parameter [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/verify.go
+done_when:
+  - test -f internal/line/verify.go
+type: refactor
+context:
+  - "It only returns repopkg.LoadCommands(root) and ignores its second argument, while VerifyCommand calls LoadCommands directly. Delete overrideCommands and call repopkg.LoadCommands(root) at its three call sites."
+```
+
+
+
 
 ### [TG-04.2] Line endings are LF everywhere, and a pull rebuilds the binary
 ```yaml
