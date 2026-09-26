@@ -84,3 +84,14 @@ func TestParseGroupFileReportsAnUnterminatedBlock(t *testing.T) {
 		t.Fatal("want a problem for the unterminated yaml block")
 	}
 }
+
+func TestParseGroupFileReportsAMalformedHeading(t *testing.T) {
+	text := "## [tg-08.1] Lowercase id [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n"
+	file := ParseGroupFile(text)
+	if file.ID != "" {
+		t.Fatalf("id = %q, want empty for a malformed heading", file.ID)
+	}
+	if len(file.Problems) == 0 {
+		t.Fatal("want a problem for the malformed heading")
+	}
+}

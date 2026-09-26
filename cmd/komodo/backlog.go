@@ -36,18 +36,42 @@ func runLint(root string) {
 	}
 }
 
+// lintProblems returns every grammar problem for this repo: BACKLOG.md's when it exists, else docs/backlog's group files.
+func lintProblems(root string) ([]string, error) {
+	if _, err := backlog.Find(root); err != nil {
+		problems, _, _, err := groupFileLintProblems(root)
+		return problems, err
+	}
+	_, parsed := load(root)
+	return append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...), nil
+}
+
 // runLintGroupFiles reports every docs/backlog group file's own problems, plus a group over 12 tasks (REQ-8).
 func runLintGroupFiles(root string) {
-	names, err := groupFileNames(root)
+	problems, taskCount, groupCount, err := groupFileLintProblems(root)
 	if err != nil {
 		fail(err)
 	}
-	var problems []string
-	taskCount := 0
+	for _, problem := range problems {
+		fmt.Println(problem)
+	}
+	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n", taskCount, groupCount, len(problems))
+	if len(problems) > 0 {
+		exit(1)
+	}
+}
+
+// groupFileLintProblems collects every problem across every docs/backlog group file, with the task and group counts.
+// A file whose heading fails to parse still counts as a group, so a malformed one is never silently dropped.
+func groupFileLintProblems(root string) (problems []string, taskCount, groupCount int, err error) {
+	names, err := groupFileNames(root)
+	if err != nil {
+		return nil, 0, 0, err
+	}
 	for _, name := range names {
 		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
 		if err != nil {
-			fail(err)
+			return nil, 0, 0, err
 		}
 		group := backlog.ParseGroupFile(string(data))
 		problems = append(problems, group.Problems...)
@@ -56,13 +80,7 @@ func runLintGroupFiles(root string) {
 		}
 		taskCount += len(group.Tasks)
 	}
-	for _, problem := range problems {
-		fmt.Println(problem)
-	}
-	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n", taskCount, len(names), len(problems))
-	if len(problems) > 0 {
-		exit(1)
-	}
+	return problems, taskCount, len(names), nil
 }
 
 // runList prints the tasks of one group, or of every group.

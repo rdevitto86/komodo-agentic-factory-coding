@@ -62,6 +62,35 @@ func TestRunBacklogListsEveryOpenGroup(t *testing.T) {
 	}
 }
 
+// TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd proves the gate's lint check never needs BACKLOG.md.
+func TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	if len(problems) != 0 {
+		t.Fatalf("problems = %v, want none", problems)
+	}
+}
+
+// TestLintProblemsReportsAGroupFileWithAMalformedHeading proves a bad heading never vanishes silently.
+func TestLintProblemsReportsAGroupFileWithAMalformedHeading(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-broken.md",
+		"## [tg-01.1] Lowercase id [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	if len(problems) == 0 {
+		t.Fatal("want a problem for the malformed heading")
+	}
+}
+
 // TestRunBacklogOnAnEmptyRepoPrintsNoGroups proves backlog tolerates a repo with no docs/backlog yet.
 func TestRunBacklogOnAnEmptyRepoPrintsNoGroups(t *testing.T) {
 	root := t.TempDir()

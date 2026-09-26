@@ -94,6 +94,10 @@ func ParseGroupFile(text string) GroupFile {
 		}
 		index++
 	}
+	if file.ID == "" {
+		file.Problems = append(file.Problems,
+			"no heading matches `## [<group-id>] <title> [P: <letter>] [<STATUS>]`")
+	}
 	return file
 }
 
