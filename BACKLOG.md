@@ -374,6 +374,41 @@ context:
   - "the refusal names the fix: run the review, then ship"
 ```
 
+
+### [TG-04.6] The relay line stops cleanly when a group does not ship
+```yaml
+type: fix
+version: 1.0.0-alpha.6
+```
+* **Why:** running phase 1 in two lanes on 2026-09-26 found three relay-line defects; each cost a stopped lane or a hand repair.
+
+#### [TSK-04.6.1] A targeted run exits non-zero when its group ends unshipped [P: M] [REFINEMENT]
+```yaml
+files: [internal/run/run.go, internal/run/run_test.go]
+done_when:
+  - go test ./internal/run/...
+context:
+  - "launchTarget returns the host's exit code, which is 0 when the session stops blocked, so a lane moved on to TG-05.4 with no base to cut from; exit non-zero unless the ledger records the group's ship, as drain already checks"
+```
+
+#### [TSK-04.6.2] A failed ship leaves nothing staged [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "TG-07.2's ship staged BACKLOG.md and its changelog fragment, then its gate failed; the next merge into the branch refused until they were cleared by hand; unstage ship's own outputs when a step after staging fails"
+```
+
+#### [TSK-04.6.3] A line session writes only inside its worktree [P: H] [REFINEMENT]
+```yaml
+files: [internal/guard]
+done_when:
+  - go test ./internal/guard/...
+context:
+  - "a TG-05.3 builder left draft plugin.go and plugin_test.go in the root checkout, which failed the next pre-push gate; phase 2's sandbox (TG-06.6) may settle this, so confirm there before adding a guard rule, since the guard is frozen until TG-06.2"
+```
+
 ---
 
 ## [EPIC-05] Phase 1: the conductor drives
@@ -736,37 +771,12 @@ context:
 tier: heavy
 ```
 
-#### [TSK-05.4.4] `komodo run` runs the conductor, not a model relaying stages [P: C] [READY]
-```yaml
-files: [internal/run/run.go, internal/run/run_test.go, cmd/komodo/line.go, internal/mount/claude/claude.go]
-done_when:
-  - go test ./internal/run/... ./cmd/komodo/...
-  - "! grep -q bypassPermissions internal/mount/claude/claude.go"
-depends_on: [TSK-05.4.1, TSK-05.4.3]
-context:
-  - docs/system-design.md#the-komodo-command
-  - "Launch runs preflight, then the conductor; Headless and its /run prompt go, and so does komodo step once nothing calls it; spike S7 decides how a run started inside a session launches its own"
-```
-
-#### [TSK-05.4.5] The run skill launches and watches, and never relays a stage [P: H] [READY]
-```yaml
-files: [komodo/skills/run/SKILL.md]
-done_when:
-  - "! grep -q 'komodo step' komodo/skills/run/SKILL.md"
-  - go run ./cmd/komodo doctor
-depends_on: [TSK-05.4.4]
-context:
-  - docs/system-design.md#orchestrator-commands
-  - "the skill starts komodo run in the background, reports komodo status, and stops or resumes groups; it never calls brief, close or step"
-type: docs
-```
-
 #### [TSK-05.4.6] A killed run resumes without repeating a session or losing an edit [P: C] [READY]
 ```yaml
 files: [internal/conductor/resume.go, internal/conductor/resume_test.go, cmd/komodo/line.go]
 done_when:
   - go test ./internal/conductor/... ./cmd/komodo/...
-depends_on: [TSK-05.4.4]
+depends_on: [TSK-05.4.3]
 context:
   - docs/system-design.md#stopped-and-blocked-work
   - "komodo stop saves a local WIP commit on the group branch and records it in state.json; komodo resume continues from the last state, resuming the session or starting fresh from the WIP commit"
@@ -778,11 +788,59 @@ context:
 files: [internal/run/run.go, internal/run/sync.go, internal/run/run_test.go, internal/run/sync_test.go]
 done_when:
   - go test ./internal/run/...
-depends_on: [TSK-05.4.4]
 context:
   - docs/system-design.md#sessions-pinned-and-hermetic
   - "sync runs before a run starts and after it ends, never between groups; the rebuild hook skips while a run holds the lock; a sync failure names its step (from TSK-03.32.5)"
   - "test (REQ-15): a stale build marker during a run changes nothing until the run ends"
+```
+
+### [TG-05.6] Claude implements the host contract, and `komodo run` drives the conductor
+```yaml
+type: feat
+version: 1.0.0-alpha.6
+base: feat/the-conductor-drives-the-stages
+depends_on: [TG-05.4]
+```
+* **Why:** TG-05.4 built the conductor, but no mount implements the host contract, so nothing can start a real session through it; TSK-05.4.4 and TSK-05.4.5 move here and wait on the adapter.
+
+#### [TSK-05.6.1] The Claude mount implements the host contract [P: C] [READY]
+```yaml
+files: [internal/mount/claude/contract.go, internal/mount/claude/contract_test.go, internal/mount/claude/testdata]
+done_when:
+  - go test ./internal/mount/claude/...
+context:
+  - docs/system-design.md#the-host-contract
+  - docs/system-design.md#how-the-conductor-runs-a-claude-code-session
+  - "Start runs claude with Session's argv and environment in the worktree, in its own process group; Stream parses stdout with Parse; Result is the result event's structured_output; Stop kills the process group; Resume passes --resume with the session ID; Preflight checks HostVersion and LoggedIn; Capabilities declares resume, sandbox, hooks and structured output"
+  - "tests run a fake claude script on PATH that replays recorded start and resume streams (decision 0025), with local paths and account fields replaced"
+```
+
+#### [TSK-05.6.2] `komodo run` runs the conductor, not a model relaying stages [P: C] [READY]
+```yaml
+files: [internal/run/run.go, internal/run/run_test.go, cmd/komodo/line.go, internal/mount/claude/claude.go]
+done_when:
+  - go test ./internal/run/... ./cmd/komodo/...
+  - "! grep -q bypassPermissions internal/mount/claude/claude.go"
+depends_on: [TSK-05.6.1]
+context:
+  - docs/system-design.md#the-komodo-command
+  - "was TSK-05.4.4: Launch runs preflight, then the conductor with the Claude contract and internal/line's stations; Headless and its /run prompt go, and so does komodo step once nothing calls it"
+  - "the builder's brief comes from the group's card and its slots (TSK-07.2.4); Prepare integrates the group branch the one builder worked, with no task branches to merge"
+  - "tests clear KOMODO_RUN_PID, so a suite run inside a line session never trips the nested-run guard"
+```
+
+#### [TSK-05.6.3] The run skill launches and watches, and never relays a stage [P: H] [READY]
+```yaml
+files: [komodo/skills/run/SKILL.md]
+done_when:
+  - "! grep -q 'komodo step' komodo/skills/run/SKILL.md"
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-05.6.2]
+context:
+  - docs/system-design.md#orchestrator-commands
+  - "was TSK-05.4.5: the skill starts komodo run in the background, reports komodo status, and stops or resumes groups; it never calls brief, close or step"
+  - "it ships only with TSK-05.6.2, since a line session may not call komodo run while the relay still drives it"
+type: docs
 ```
 
 ### [TG-05.5] Metrics and the clock
