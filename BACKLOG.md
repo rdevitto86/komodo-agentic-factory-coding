@@ -1069,6 +1069,52 @@ context:
   - "the guard is frozen until TG-06.2, so the rule that a model session may not push to or merge an epic branch lands there (TSK-06.2.1)"
 ```
 
+### [TG-05.8] Versions go alpha, beta, rc, stable, and an epic branch is feat/<version>
+```yaml
+type: feat
+version: 1.0.0-alpha.6
+base: feat/every-epic-has-a-draft-branch-and-group
+depends_on: [TG-05.7]
+```
+* **Why:** the owner set the release phases and branch names on 2026-09-26: alpha, then beta, then rc, then stable, and an epic branch is the version itself behind feat/, such as feat/1.0.0-alpha.1, feat/2.3.45-beta.12, feat/1.1.0-rc.1 and feat/5.31.0. TG-05.7 was already building feat/v<version>.
+
+#### [TSK-05.8.1] A version is x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n [P: C] [READY]
+```yaml
+files: [internal/backlog/backlog.go, internal/backlog/lint.go, internal/backlog/lint_test.go, internal/changelog/changelog_test.go]
+done_when:
+  - go test ./internal/backlog/... ./internal/changelog/...
+  - go run ./cmd/komodo lint
+context:
+  - "lint refuses any other prerelease, such as -dev.1 or -beta without a number, naming the four phases"
+  - "the phases order alpha, beta, rc, then stable; a test proves 1.0.0-beta.9 < 1.0.0-rc.1 < 1.0.0 in changelog.Compare"
+```
+
+#### [TSK-05.8.2] An epic branch is feat/<version>, with no v [P: C] [READY]
+```yaml
+files: [internal/backlog/backlog.go, internal/line/next.go, internal/line/next_test.go, internal/line/epic.go, internal/line/epic_test.go]
+done_when:
+  - go test ./internal/backlog/... ./internal/line/...
+depends_on: [TSK-05.8.1]
+context:
+  - "EpicBranch is feat/ plus the version exactly, such as feat/1.0.0-alpha.6; release tags keep their v, such as v1.0.0-alpha.6"
+  - "tests: each of feat/1.0.0-alpha.1, feat/2.3.45-beta.12, feat/1.1.0-rc.1 and feat/5.31.0 is the epic branch of a group at that version"
+```
+
+#### [TSK-05.8.3] Decision 0029, the README, the rules, the skills and the template name the four phases and the branch form [P: H] [READY]
+```yaml
+files: [docs/decisions.md, README.md, AGENTS.md, komodo/rules/backlog.md, komodo/skills/backlog/SKILL.md, komodo/skills/standards-sdlc/SKILL.md, templates/project/docs/backlog/TG-01.1-example-group.md]
+done_when:
+  - grep -q '^## 0029' docs/decisions.md
+  - grep -q 'rc' komodo/rules/backlog.md
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-05.8.2]
+context:
+  - "decision 0029 amends 0023 and 0028: the phases are alpha, beta, rc and stable; an epic branch is feat/<version>; V1 passes through 1.0.0-rc.n before 1.0.0"
+  - "README's Versions section gains an rc bullet and renames Release to Stable; AGENTS.md says Versions go alpha, beta, rc, stable, with the always-on context still under its cap"
+  - "the backlog rule, the backlog skill and the SDLC standard give the four phases and the branch examples; the template's example group carries a phase version"
+type: docs
+```
+
 ### [TG-05.5] Metrics and the clock
 ```yaml
 type: feat
