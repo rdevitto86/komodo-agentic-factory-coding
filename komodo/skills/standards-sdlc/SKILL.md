@@ -1,6 +1,6 @@
 ---
 name: standards-sdlc
-description: Test tiers: what unit, integration, and end-to-end each prove and cost.
+description: Test tiers, and the branch, PR target, and size rules the lifecycle follows.
 globs: ["**/__tests__/**", "**/e2e/**", "**/test/**", "**/tests/**"]
 ---
 
@@ -43,3 +43,9 @@ The language standard owns tooling and folder mechanics. The CI/CD standard owns
 - Nothing that needs a deployed service gates a merge. Depth lives at the gate; every STG tier is narrow.
 - A lower tier never depends on a higher one. Unit tests pass with no infrastructure present.
 - A test that did not run never reports as passed.
+
+## Branches
+- An epic has one branch, `feat/v<version>`, cut from `main` and opened as a draft PR to `main`.
+- A group branch cuts from its epic branch, or stacks on the branch of a group it depends on; its PR targets that same base.
+- A group PR holds at most 20 files and 2,000 changed lines, 1,000 preferred; an epic PR has no cap.
+- The conductor merges a reviewed, checked group PR into its epic branch; only a person merges an epic PR into `main`.
