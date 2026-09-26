@@ -1311,7 +1311,7 @@ depends_on: [TG-04.5]
 ```
 * **Why:** a 159 KB `BACKLOG.md` was the database, and ship rewrote it and lost a task's body (evidence 12). Proves REQ-8 and REQ-9's grammar.
 
-#### [TSK-07.1.1] The parser reads group files in docs/backlog/ [P: C] [READY]
+#### [TSK-07.1.1] The parser reads group files in docs/backlog/ [P: C] [DONE]
 ```yaml
 files: [internal/backlog/groupfile.go, internal/backlog/groupfile_test.go, internal/backlog/fuzz_test.go]
 done_when:
@@ -1322,7 +1322,7 @@ context:
   - "a file is <group-id>-<slug>.md: a heading with priority and status, yaml with type, version, epic and depends_on, then checkbox tasks with files and optional accept and checks; a task needs only a title and files (REQ-9); fuzz the parser"
 ```
 
-#### [TSK-07.1.2] Lint refuses a group over 12 tasks, and a light-tier builder [P: H] [READY]
+#### [TSK-07.1.2] Lint refuses a group over 12 tasks, and a light-tier builder [P: H] [DONE]
 ```yaml
 files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
 done_when:
@@ -1332,7 +1332,7 @@ context:
   - "over 12 tasks is a problem that suggests a split (REQ-8); tier: light on a build task is a problem (REQ-30); the base rule and the context-anchor check still hold"
 ```
 
-#### [TSK-07.1.3] `komodo backlog` lists open groups, and `komodo add` writes a group or task [P: H] [READY]
+#### [TSK-07.1.3] `komodo backlog` lists open groups, and `komodo add` writes a group or task [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, internal/backlog/edit.go]
 done_when:
@@ -1342,7 +1342,7 @@ context:
   - docs/system-design.md#the-komodo-command
 ```
 
-#### [TSK-07.1.4] The grammar, the planner and `komodo init` describe group files [P: H] [READY]
+#### [TSK-07.1.4] The grammar, the planner and `komodo init` describe group files [P: H] [DONE]
 ```yaml
 files: [komodo/rules/backlog.md, komodo/roles/planner.md, templates/project/BACKLOG.md.tmpl, templates/project/docs/backlog, cmd/komodo/init.go, cmd/komodo/init_test.go]
 done_when:
@@ -1354,6 +1354,90 @@ context:
   - "init writes docs/backlog/ with one sample group file instead of BACKLOG.md; the planner writes group files"
 type: docs
 ```
+
+#### [TSK-07.1.5] docs/backlog/TG-01.1-example-group.md:1 Sample group file committed to the repo itself, not only the template [P: L] [REFINEMENT]
+```yaml
+files:
+  - docs/backlog/TG-01.1-example-group.md
+done_when:
+  - test -f docs/backlog/TG-01.1-example-group.md
+type: fix
+context:
+  - "Task TSK-07.1.4 names templates/project/docs/backlog, but the diff also adds docs/backlog/TG-01.1-example-group.md at the repo root. init embeds templates/project, so nothing needs this copy. Running `komodo backlog` in this repo prints the fake 'TG-01.1 Example group [REFINEMENT]' as an open group. Delete docs/backlog/TG-01.1-example-group.md from the repo root and keep only the template copy."
+```
+
+#### [TSK-07.1.6] cmd/komodo/backlog.go:282 komodo add writes group files from unvalidated id, priority and status [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/backlog.go
+done_when:
+  - test -f cmd/komodo/backlog.go
+type: fix
+context:
+  - '`komodo add TG-08.1 Auth --priority high` (or --status in_progress, or a groupID like tg-08.1) writes a heading that groupFileHeading rejects. runBacklog skips that file silently (line 198). The next `komodo add TG-08.1 "task" --files a.go` fails to find it in findGroupFile and writes a second group file named after the task title instead of appending. A groupID of ''../x'' makes line 283 write outside docs/backlog. Check groupID against the TG- id pattern, priority against C/H/M/L, and status against REFINEMENT/READY/BLOCKED before rendering the file.'
+```
+
+#### [TSK-07.1.7] cmd/komodo/backlog.go:77 Group-file lint enforces none of the grammar's required fields [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/backlog.go
+done_when:
+  - test -f cmd/komodo/backlog.go
+type: fix
+context:
+  - "groupFileLintProblems adds only ParseGroupFile's parse problems and the 12-task cap. It passes a READY group whose task has no files line, a group with no version or no yaml block (readBlock returns end=-1 and no error), and two files declaring the same TG id; findGroupFile then appends to whichever sorts first. komodo/rules/backlog.md says version is required and that lint demands files outside REFINEMENT, so the gate passes group files the grammar forbids. Add a group-file lint in internal/backlog that requires version and type, requires task files outside REFINEMENT, and rejects duplicate group and task ids across files; call it from groupFileLintProblems."
+```
+
+#### [TSK-07.1.8] cmd/komodo/backlog.go:78 No test covers the 12-task cap on group files [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/backlog.go
+done_when:
+  - test -f cmd/komodo/backlog.go
+type: test
+context:
+  - "lint_test.go tests the cap only for BACKLOG.md through backlog.Lint. No test gives lintProblems or runLintGroupFiles a group file with 13 tasks, so deleting lines 78-80 still passes every done_when command. Add a backlog_test.go case where a 13-task group file makes lintProblems return an 'exceeds limit of 12' problem."
+```
+
+#### [TSK-07.1.9] cmd/komodo/backlog.go:258 Usage error names a command that does not exist [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/backlog.go
+done_when:
+  - test -f cmd/komodo/backlog.go
+type: fix
+context:
+  - "The error reads 'usage: komodo backlog add <group> <title>', but main dispatches `add`, and `komodo backlog` ignores its args. Following the hint lists groups and adds nothing. Change the usage string to 'usage: komodo add <group> <title> [--files a,b]'."
+```
+
+#### [TSK-07.1.10] cmd/komodo/backlog.go:40 Lint dispatch and the 12-task limit are duplicated [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/backlog.go
+done_when:
+  - test -f cmd/komodo/backlog.go
+type: refactor
+context:
+  - "lintProblems repeats runLint's Find branch and its Lint+LintContext call (lines 20-25). The literal 12 and its message appear in both internal/backlog/lint.go:48 and cmd/komodo/backlog.go:78. Make runLint call lintProblems, and put the cap in one named const in internal/backlog shared by both checks."
+```
+
+#### [TSK-07.1.11] cmd/komodo/backlog.go:49 Doc comment cites a spec id [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/backlog.go
+done_when:
+  - test -f cmd/komodo/backlog.go
+type: docs
+context:
+  - "The comment on runLintGroupFiles ends with '(REQ-8)'. The comments standard bans spec and ticket citations. Remove '(REQ-8)' from the comment."
+```
+
+
+
+
+
+
+
 
 ### [TG-07.2] Ingest compiles each group into a card
 ```yaml
