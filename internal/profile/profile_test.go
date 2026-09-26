@@ -253,3 +253,49 @@ func TestWhyNamesWhereReviewLandsWhenTheOverlayOptsTheReviewerIn(t *testing.T) {
 		t.Fatalf("why = %q; the mount's reviewer reason must reach the profile", with.Why)
 	}
 }
+
+func TestFullModePinsTheHostVersionAndEachRolesMachine(t *testing.T) {
+	host := fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)
+	host.Version = "9.9.9"
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
+	if got.Mode != "full" || got.HostVersion != "9.9.9" {
+		t.Fatalf("mode = %q, host_version = %q", got.Mode, got.HostVersion)
+	}
+	builder, ok := got.Machine("builder")
+	if !ok || builder.Model != "mid" || builder.Effort != "medium" {
+		t.Fatalf("builder = %+v; the builder runs the standard tier at medium effort", builder)
+	}
+	correctness, ok := got.Machine("correctness")
+	if !ok || correctness.Model != "big" || correctness.Effort != "high" {
+		t.Fatalf("correctness = %+v; a lens runs the heavy tier at high effort", correctness)
+	}
+}
+
+func TestAProPlanPicksTheEconomyModeAndCombinesTheLenses(t *testing.T) {
+	host := fakeHost("h", true, mount.Usage{Plan: "pro"}, true)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
+	if got.Mode != "economy" {
+		t.Fatalf("mode = %q", got.Mode)
+	}
+	if _, ok := got.Machine("correctness"); ok {
+		t.Fatal("economy mode kept a separate correctness lens")
+	}
+	lens, ok := got.Machine("review-economy")
+	if !ok || lens.Model != "mid" || lens.Effort != "high" {
+		t.Fatalf("combined lens = %+v", lens)
+	}
+}
+
+func TestNoMountInstalledStillLoadsTheFullModeRoles(t *testing.T) {
+	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", false, mount.Usage{}, false)}, false, false)
+	if got.Mode != "full" || got.Roles["scout"].Tier != "light" {
+		t.Fatalf("profile = %+v", got)
+	}
+}
+
+func TestAnUnknownRoleHasNoMachine(t *testing.T) {
+	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	if _, ok := got.Machine("nobody"); ok {
+		t.Fatal("a role the profile does not name must have no machine")
+	}
+}
