@@ -142,7 +142,7 @@ version: 1.0.0-alpha.5
 ```
 * **Why:** the README and the four specs describe the same parts twice, and the README's copy is the first line's design.
 
-#### [TSK-04.4.1] README keeps setup, usage and names, and links the specs for design [P: M] [READY]
+#### [TSK-04.4.1] README keeps setup, usage and names, and links the specs for design [P: M] [DONE]
 ```yaml
 files: [README.md, docs/architecture.md, docs/system-design.md]
 done_when:
@@ -161,6 +161,42 @@ type: docs
 
 ## [EPIC-05] Phase 1: the conductor drives
 *Goal: one group runs through the conductor within 60 minutes, with zero conductor tokens. Ships as `1.0.0-alpha.6`.*
+
+#### [TSK-04.4.2] docs/system-design.md:201 Repo-layer paragraph names prototype skills as the founding orchestrator skills [P: L] [REFINEMENT]
+```yaml
+files:
+  - docs/system-design.md
+done_when:
+  - test -f docs/system-design.md
+type: fix
+context:
+  - "The sentence names run, review, backlog and respond as the four founding orchestrator skills that a repo cannot append to. The founding-skills table at #skills-and-scoping, which prd.md#product-scope cites, has no review or backlog skill, and respond belongs to the Responder. A builder given #the-repo-layer as context would lock down skills V1 does not have and leave komodo, plan, adhoc and escalate open to appends. Name the orchestrator skills from the #skills-and-scoping table, or cite that anchor instead of listing names."
+```
+
+#### [TSK-04.4.3] README.md:5 README says it describes the running line while its Design bullets describe the V1 target [P: L] [REFINEMENT]
+```yaml
+files:
+  - README.md
+done_when:
+  - test -f README.md
+type: fix
+context:
+  - "Line 5 was edited but still says the README describes the line as it runs today. Line 12 lists the V1 stages Ingest to Ship and line 17 says the guard holds five rules. The kept Usage, Names and Layout sections still describe komodo next, /review and today's eight-denial guard, so the README contradicts itself. Reword line 5 or line 9 to say the Design bullets link the V1 target rather than the running line."
+```
+
+#### [TSK-04.4.4] README.md:23 Hot swap bullet links a section that covers only model swaps [P: L] [REFINEMENT]
+```yaml
+files:
+  - README.md
+done_when:
+  - test -f README.md
+type: fix
+context:
+  - "The bullet says a skill or external dependency swaps without touching the line and links #profiles-and-economy-mode. That section covers only role-to-model mapping, and no spec section owns skill or dependency swapping. Cut the claim to model swaps, or link the section that owns skill and dependency swapping."
+```
+
+
+
 
 ### [TG-05.1] Spikes for the conductor and its sessions
 ```yaml
