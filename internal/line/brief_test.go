@@ -415,6 +415,23 @@ func TestABriefWithoutASchemaStillNamesTheResultPath(t *testing.T) {
 	}
 }
 
+// TestBuildBriefIsDeterministic proves the same card and tree give the same brief bytes on every
+// machine: building twice from the same root must never depend on map iteration or a clock.
+func TestBuildBriefIsDeterministic(t *testing.T) {
+	root := briefRepo(t)
+	first, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Text != second.Text {
+		t.Fatalf("brief bytes differ between two builds of the same card and tree:\n%s\n---\n%s", first.Text, second.Text)
+	}
+}
+
 func TestAFixBriefCarriesTheGroupsTasksAndBlockingFindings(t *testing.T) {
 	root := briefRepo(t)
 	review := ResultPath(root, "TG-07.1-review")
