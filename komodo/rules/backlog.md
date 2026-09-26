@@ -18,7 +18,7 @@ files: [internal/refund/handler.go, internal/refund/handler_test.go]
 done_when:
   - go test ./internal/refund/...
 depends_on: [TSK-01.1.0]
-context: [docs/spec/system-design.md#interfaces]
+context: [docs/system-design.md#interfaces]
 owner: agent        # or human
 type: feat
 tier: heavy         # light, standard, or heavy; overrides the role's tier for this task

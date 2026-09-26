@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `BACKLOG.md` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README is the reference and the requirements. This line is `1.0.0-beta.1`: feature-complete, with its proofs recorded in the changelog. It becomes `1.0.0` when the human cuts the release, and the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `BACKLOG.md`.
+This README describes the line as it runs today. The V1 target is `docs/prd.md`, the requirements, with `docs/architecture.md`, `docs/system-design.md` and `docs/decisions.md`. This line is `1.0.0-beta.1`: feature-complete, with its proofs recorded in the changelog. It becomes `1.0.0` when the human cuts the release, and the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `BACKLOG.md`.
 
 ## The line
 
@@ -240,7 +240,7 @@ The install is a copy. After editing anything under `komodo/`, run it again. `ko
 From the root of the new repo, a git repository:
 
 ```bash
-komodo init --name "Auth API"      # AGENTS.md, BACKLOG.md, CHANGELOG.md, docs/spec/, the PR template; keeps any file that exists
+komodo init --name "Auth API"      # AGENTS.md, BACKLOG.md, CHANGELOG.md, docs/ specs, the PR template; keeps any file that exists
 komodo install --host claude       # mount the repo on a host
 $EDITOR BACKLOG.md                 # replace the example group with the first real one; komodo lint checks it
 komodo run                         # drive the line on the next ready group

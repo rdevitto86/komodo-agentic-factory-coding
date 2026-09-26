@@ -61,7 +61,7 @@ func starterFill(root, name string, now time.Time) *strings.Replacer {
 		"{{BUILD}}", or(found.Compile, "<build command>"),
 		"{{RUN}}", "<run command>",
 		"{{LINT}}", "<lint command>",
-		"{{NON_OBVIOUS_PATHS}}", "- `docs/spec/`: the PRD, architecture, and system design a task's `context` cites.",
+		"{{NON_OBVIOUS_PATHS}}", "- `docs/`: the PRD, architecture, system design, and decisions a task's `context` cites.",
 		"{{GOTCHAS}}", "None yet.",
 		"{{DEVIATIONS}}", "None yet.",
 	)
