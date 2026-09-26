@@ -88,7 +88,7 @@ The conductor writes each state to `state.json` before starting its work, so a r
 | Context pack | File bodies, signatures of imported packages, callers of changed symbols, neighbouring tests, the spec sections the group cites, and the repo's rules; each capped |
 | Tier | The role's tier; `heavy` only when the group asks for it |
 | Size | Tasks, files, packages and brief bytes |
-| Base | `main`, or the branch of a group named in `depends_on` |
+| Base | The group's epic branch, `feat/v<epic's version>`, or the branch of a group named in `depends_on` (REQ-13, decision 0028) |
 
 ### Run state and metrics
 
@@ -259,15 +259,16 @@ Prepare runs locally with no model (REQ-24):
 2. Run the pre-commit and pre-push checks.
 3. Rebase on the base. On a conflict, the conductor leaves the conflict markers in the worktree and runs one repair round with the conflicts as the fix list; the builder edits files and never runs git. If the conflict remains, the group stops with a blocker note.
 4. Run the integration build and tests. The conductor also test-merges every group that is ready in the same run, to catch breakage between groups; a failure is a repair round for the group that caused it.
-5. Plan the stack: a group that depends on another group's unmerged work targets that group's branch.
+5. Plan the stack: a group targets its epic's branch, or the branch of a group it depends on, whichever it hasn't merged into yet (REQ-13, decision 0028).
 
 Ship is the only stage that reads the forge credential (REQ-26):
 
-1. Push the group branch, never a protected one.
-2. Open a draft PR. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status: wip` (REQ-25).
-3. Add the labels. Once every check and review has passed, mark the PR ready and remove `status: wip`.
-4. When a stacked parent merges, rebase the child and point its PR at the new base.
-5. Remove the group's worktree, local branch and sessions.
+1. If the group's epic has no branch yet, cut `feat/v<epic's version>` from `main` and open it as a draft PR to `main`.
+2. Push the group branch, never a protected one.
+3. Open the group's PR against its base from step 5 above. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status: wip` (REQ-25).
+4. Add the labels. Once every check and review has passed, mark the PR ready and remove `status: wip`, then the conductor merges it into its epic branch. Only a person merges an epic branch's own PR into `main` (decision 0028).
+5. When a stacked parent merges, rebase the child and point its PR at the new base.
+6. Remove the group's worktree, local branch and sessions.
 
 Ship also publishes a blocked group: it pushes the group's branch with its blocker note and opens a draft PR labelled `status: blocked`.
 
