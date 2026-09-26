@@ -8,7 +8,8 @@ import (
 	"komodo/internal/mount"
 )
 
-// Session builds the argv and environment for starting or resuming a Claude Code session headless.
+// Session builds the argv, environment and stdin prompt for starting or resuming a Claude Code
+// session headless. The prompt goes on stdin, never argv, past its size and leading-dash limits.
 func Session(
 	root, worktree string,
 	req mount.StartRequest,
@@ -17,8 +18,8 @@ func Session(
 	model, effort string,
 	maxTurns int,
 	maxBudgetUSD float64,
-) (argv []string, env []string) {
-	prompt := req.Brief
+) (argv []string, env []string, prompt string) {
+	prompt = req.Brief
 	if resumed != "" {
 		prompt = resumeInput
 	}
@@ -26,7 +27,7 @@ func Session(
 		prompt = "/"
 	}
 
-	argv = []string{"-p", prompt}
+	argv = []string{"-p"}
 	argv = append(argv, "--setting-sources", "project,local")
 
 	pluginDir := filepath.Join(root, Dir, "plugins", req.Role)
@@ -67,7 +68,7 @@ func Session(
 	env = setEnv(env, "GOPROXY", "off")
 	env = setEnv(env, "GOFLAGS", "-modcacherw")
 
-	return argv, env
+	return argv, env, prompt
 }
 
 // toolNames maps Komodo verbs to this host's tool names for the --tools flag.

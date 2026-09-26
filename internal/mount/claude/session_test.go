@@ -16,11 +16,15 @@ func TestSessionArgvForBuilder(t *testing.T) {
 		Tools:  []string{"read", "edit", "write", "shell", "search"},
 		Schema: []byte(`{"type":"object"}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, prompt := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 	joined := strings.Join(argv, " ")
 
+	if prompt != "test brief" {
+		t.Errorf("prompt = %q, want %q", prompt, "test brief")
+	}
+
 	checks := []string{
-		"-p test brief",
+		"-p",
 		"--setting-sources project,local",
 		"--plugin-dir /repo/.claude/plugins/builder",
 		"--settings /repo/.claude/settings.json",
@@ -53,7 +57,7 @@ func TestSessionArgvForLens(t *testing.T) {
 		Tools:  []string{"read", "search"},
 		Schema: []byte(`{"type":"object"}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "haiku", "standard", 10, 0)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "haiku", "standard", 10, 0)
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--tools Read, Grep, Glob") {
@@ -71,11 +75,33 @@ func TestSessionStartSendsTheBriefAsThePrompt(t *testing.T) {
 		Tools:  []string{"read"},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, prompt := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 	joined := strings.Join(argv, " ")
 
-	if !strings.Contains(joined, "-p fix the parser bug") {
-		t.Errorf("argv missing the brief as prompt:\n%s", joined)
+	if prompt != "fix the parser bug" {
+		t.Errorf("prompt = %q, want the brief", prompt)
+	}
+	if strings.Contains(joined, "fix the parser bug") {
+		t.Errorf("argv should not carry the prompt text:\n%s", joined)
+	}
+}
+
+func TestSessionPromptStartingWithDashStaysOffArgv(t *testing.T) {
+	req := mount.StartRequest{
+		Role:   "builder",
+		Brief:  "- fix X",
+		Tools:  []string{"read"},
+		Schema: []byte(`{}`),
+	}
+	argv, _, prompt := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+
+	if prompt != "- fix X" {
+		t.Errorf("prompt = %q, want the brief unchanged", prompt)
+	}
+	for _, arg := range argv {
+		if arg != "-p" && strings.HasPrefix(arg, "-") && arg == "- fix X" {
+			t.Fatalf("prompt leaked into argv where it could be parsed as a flag: %v", argv)
+		}
 	}
 }
 
@@ -86,17 +112,17 @@ func TestSessionResume(t *testing.T) {
 		Tools:  []string{"read"},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "session-123", "fix the failing test", "sonnet", "extended", 10, 0)
+	argv, _, prompt := Session("/repo", "/worktree", req, "session-123", "fix the failing test", "sonnet", "extended", 10, 0)
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--resume session-123") {
 		t.Errorf("argv missing --resume flag:\n%s", joined)
 	}
-	if !strings.Contains(joined, "-p fix the failing test") {
-		t.Errorf("argv missing the resume input as prompt:\n%s", joined)
+	if prompt != "fix the failing test" {
+		t.Errorf("prompt = %q, want the resume input", prompt)
 	}
-	if strings.Contains(joined, "test brief") {
-		t.Errorf("argv sent the original brief instead of the resume input:\n%s", joined)
+	if strings.Contains(joined, "test brief") || strings.Contains(joined, "fix the failing test") {
+		t.Errorf("argv should not carry either prompt text:\n%s", joined)
 	}
 }
 
@@ -107,7 +133,7 @@ func TestSessionMaxBudgetUSD(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 5.25)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 5.25)
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--max-budget-usd 5.25") {
@@ -122,7 +148,7 @@ func TestSessionEnvRemovesCLAUDEConfigDir(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CONFIG_DIR=") {
@@ -137,7 +163,7 @@ func TestSessionEnvSetsGoCache(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOCACHE=") {
@@ -156,7 +182,7 @@ func TestSessionEnvSetsGOTMPDIR(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOTMPDIR=") {
@@ -175,7 +201,7 @@ func TestSessionEnvSetsGopath(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOPATH=") {
@@ -194,7 +220,7 @@ func TestSessionEnvSetsGomodcache(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOMODCACHE=") {
@@ -213,7 +239,7 @@ func TestSessionEnvSetsGoproxy(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOPROXY=") {
@@ -232,7 +258,7 @@ func TestSessionEnvSetsGoflags(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOFLAGS=") {
@@ -251,7 +277,7 @@ func TestSessionEnvSetsClaudeCodeStopHookBlockCap(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=") {
@@ -270,7 +296,7 @@ func TestSessionEnvSetsMaxTurnsForBuilder(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 40, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 40, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CODE_MAX_TURNS=") {
@@ -289,7 +315,7 @@ func TestSessionEnvSetsMaxTurnsForLens(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "haiku", "standard", 8, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "haiku", "standard", 8, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CODE_MAX_TURNS=") {
@@ -308,7 +334,7 @@ func TestSessionEnvSetsDisableAutoupdater(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "DISABLE_AUTOUPDATER=") {
@@ -328,7 +354,7 @@ func TestSessionSchemaInArgv(t *testing.T) {
 		Tools:  []string{},
 		Schema: schema,
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	found := false
 	for i, arg := range argv {
@@ -349,7 +375,7 @@ func TestSessionNoToolsGivesEmptyToolsList(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 	joined := strings.Join(argv, " ")
 
 	if strings.Contains(joined, "--tools") {
@@ -364,7 +390,7 @@ func TestSessionPreservesOtherEnvVars(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	found := false
 	for _, entry := range env {
@@ -384,10 +410,13 @@ func TestSessionArgvOrder(t *testing.T) {
 		Tools:  []string{"read"},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, prompt := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
-	if len(argv) < 2 || argv[0] != "-p" || argv[1] != "/" {
-		t.Fatalf("argv doesn't start with -p /: %v", argv)
+	if len(argv) < 1 || argv[0] != "-p" {
+		t.Fatalf("argv doesn't start with -p: %v", argv)
+	}
+	if prompt != "/" {
+		t.Fatalf("prompt = %q, want the default /", prompt)
 	}
 
 	settingsIdx := -1
@@ -408,7 +437,7 @@ func TestSessionPluginDirPath(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo/root", "/worktree", req, "", "", "opus", "extended", 10, 0)
+	argv, _, _ := Session("/repo/root", "/worktree", req, "", "", "opus", "extended", 10, 0)
 	joined := strings.Join(argv, " ")
 
 	expected := "--plugin-dir /repo/root/.claude/plugins/architect"
@@ -423,7 +452,7 @@ func TestSessionSettingsPath(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/my/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _ := Session("/my/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 	joined := strings.Join(argv, " ")
 
 	expected := "--settings /my/repo/.claude/settings.json"
@@ -438,7 +467,7 @@ func TestSessionMultipleTools(t *testing.T) {
 		Tools:  []string{"read", "shell", "search"},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	var toolsStr string
 	for i, arg := range argv {
@@ -468,7 +497,7 @@ func TestSessionEffortValue(t *testing.T) {
 			Tools:  []string{},
 			Schema: []byte(`{}`),
 		}
-		argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", effort, 10, 0)
+		argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", effort, 10, 0)
 		joined := strings.Join(argv, " ")
 
 		expected := "--effort " + effort
@@ -486,7 +515,7 @@ func TestSessionModelValue(t *testing.T) {
 			Tools:  []string{},
 			Schema: []byte(`{}`),
 		}
-		argv, _ := Session("/repo", "/worktree", req, "", "", model, "extended", 10, 0)
+		argv, _, _ := Session("/repo", "/worktree", req, "", "", model, "extended", 10, 0)
 		joined := strings.Join(argv, " ")
 
 		expected := "--model " + model
@@ -502,7 +531,7 @@ func TestSessionEnvWithWorktreeSlashes(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env := Session("/repo", "/work/tree/path", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _ := Session("/repo", "/work/tree/path", req, "", "", "sonnet", "extended", 10, 0)
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOCACHE=") {
@@ -532,7 +561,7 @@ func TestSessionSchemaValidJSON(t *testing.T) {
 		Tools:  []string{},
 		Schema: schemaBytes,
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	var foundSchema bool
 	for i, arg := range argv {
@@ -554,7 +583,7 @@ func TestSessionMaxBudgetPrecision(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 10.99)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 10.99)
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--max-budget-usd 10.99") {
@@ -568,7 +597,7 @@ func TestSessionEmptyResume(t *testing.T) {
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 	joined := strings.Join(argv, " ")
 
 	if strings.Contains(joined, "--resume") {
@@ -582,7 +611,7 @@ func TestSessionBuilderVerbsMapToHostTools(t *testing.T) {
 		Tools:  []string{"read", "edit", "write", "shell", "search"},
 		Schema: []byte(`{}`),
 	}
-	argv, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
 
 	var toolsStr string
 	for i, arg := range argv {
