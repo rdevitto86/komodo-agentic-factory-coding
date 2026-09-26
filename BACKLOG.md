@@ -488,7 +488,7 @@ depends_on: [TG-04.5]
 ```
 * **Why:** the conductor starts, resumes, streams and stops sessions through one contract, so a host is one package (decision 0004). Proves the meter behind REQ-28.
 
-#### [TSK-05.2.1] The host contract is one Go interface every mount implements [P: C] [READY]
+#### [TSK-05.2.1] The host contract is one Go interface every mount implements [P: C] [DONE]
 ```yaml
 files: [internal/mount/mount.go, internal/mount/host.go, internal/mount/host_test.go, internal/mount/registry.go]
 done_when:
@@ -500,7 +500,7 @@ context:
   - "the Codex and Ollama mounts keep compiling and declare no capabilities (decision 0022)"
 ```
 
-#### [TSK-05.2.2] Claude starts and resumes a role's session headless [P: C] [READY]
+#### [TSK-05.2.2] Claude starts and resumes a role's session headless [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/session.go, internal/mount/claude/session_test.go]
 done_when:
@@ -514,7 +514,7 @@ context:
   - "decision 0026: GOPATH and GOMODCACHE inside the worktree too, GOPROXY=off and GOFLAGS=-modcacherw, after the conductor runs go mod download outside the sandbox"
 ```
 
-#### [TSK-05.2.3] The stream reports turns, usage, cost, rate limits and the session ID [P: C] [READY]
+#### [TSK-05.2.3] The stream reports turns, usage, cost, rate limits and the session ID [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/stream.go, internal/mount/claude/stream_test.go, internal/mount/claude/usage.go, internal/mount/claude/usage_test.go, internal/mount/claude/testdata]
 done_when:
@@ -525,6 +525,150 @@ context:
   - "parse stream-json into the contract's stream, including rate_limit_event with five_hour, seven_day and resetsAt; the result event's totals are the meter, since summing transcripts logged 45,520,132 input tokens in 63 turns (evidence 8)"
   - "record fixtures as spike S4 did (decision 0025): one start and one resume stream, with local paths, session IDs and account fields replaced"
 ```
+
+#### [TSK-05.2.4] internal/mount/host.go:49 Contract has no real implementer; only the test fake satisfies it [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/host.go
+done_when:
+  - test -f internal/mount/host.go
+type: test
+context:
+  - "Claude, Codex and Ollama define no Start, Stop or Capabilities method. The Claude mount ships free functions Session and Parse instead. Nothing starts a process group or kills a process tree, and Codex and Ollama do not declare zero capabilities. `go test ./internal/mount/...` still passes, because only fakeHost is asserted against Contract. Add a `var _ mount.Contract` assertion for each mount, with Capabilities on Codex and Ollama and Start/Stop on Claude that run in their own process group."
+```
+
+#### [TSK-05.2.5] internal/mount/host.go:53 Contract methods that do I/O take no context.Context [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/host.go
+done_when:
+  - test -f internal/mount/host.go
+type: fix
+context:
+  - "Preflight, Start, Resume, Stream and Stop spawn or signal processes, but none takes a ctx. The conductor cannot set a deadline on a hung CLI start or login check, or cancel it. Adding ctx later is a breaking change for every mount. Make `ctx context.Context` the first parameter of every Contract method that does I/O."
+```
+
+#### [TSK-05.2.6] internal/mount/claude/stream.go:75 Parse leaks its goroutine when the consumer stops reading [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/stream.go
+done_when:
+  - test -f internal/mount/claude/stream.go
+type: fix
+context:
+  - "The out channel is unbuffered and Parse takes no ctx. Suppose a caller stops ranging after the first rate-limit event, or after a pause decision. The goroutine then blocks forever on `out <-` and keeps the process's stdout reader alive. Take a ctx and select on `ctx.Done()` around every send."
+```
+
+#### [TSK-05.2.7] internal/mount/claude/stream.go:62 Scanner errors are dropped, so a long line silently loses the result [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/stream.go
+done_when:
+  - test -f internal/mount/claude/stream.go
+type: fix
+context:
+  - "Say a stream-json line exceeds streamLineCap (8 MiB), for example a large tool_result. Scan returns false, `scanner.Err()` is never checked, and the channel just closes. The result event after that line is never reported. The caller cannot tell this apart from a session that produced no result. Check `scanner.Err()` after the loop and report it, for example as an Err field on the final Event."
+```
+
+#### [TSK-05.2.8] internal/mount/claude/stream.go:45 Any resetsAt that is not an RFC3339 string drops the whole rate-limit event [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/stream.go
+done_when:
+  - test -f internal/mount/claude/stream.go
+type: fix
+context:
+  - 'ResetsAt is decoded straight into time.Time. An input like "resetsAt":1758909600 (epoch seconds) makes Unmarshal fail for the whole line. Both utilisation values are then dropped without a trace. limits.go reads its reset field as a string. The field''s real type is not proven, since the test fixtures carry only RFC3339 strings. Decode resetsAt as json.RawMessage, parse it separately, and keep the utilisation values when the time fails to parse.'
+```
+
+#### [TSK-05.2.9] internal/mount/claude/session.go:26 An empty brief or resume input silently becomes the prompt "/" [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/session.go
+done_when:
+  - test -f internal/mount/claude/session.go
+type: fix
+context:
+  - 'On a start with Brief "", or a resume with resumeInput "", Session sends "/" on stdin instead of refusing. This launches a paid, turn-consuming session with a meaningless prompt and hides the conductor''s bug. The substitution also carries no comment. Return an error from Session when the prompt it would send is empty.'
+```
+
+#### [TSK-05.2.10] internal/mount/claude/session.go:97 removeEnv keeps an entry whose value is empty [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/session.go
+done_when:
+  - test -f internal/mount/claude/session.go
+type: fix
+context:
+  - "The check len(entry) <= len(prefix) keeps an entry exactly equal to the prefix. With CLAUDE_CONFIG_DIR= in the parent env, the variable survives, which violates decision 0025. With GOFLAGS= in the parent env, setEnv leaves a duplicate key. Replace the length-and-slice test with strings.HasPrefix(entry, prefix)."
+```
+
+#### [TSK-05.2.11] internal/mount/claude/session.go:85 toolNames hand-rolls strings.Join [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/session.go
+done_when:
+  - test -f internal/mount/claude/session.go
+type: refactor
+context:
+  - 'The empty-check and += loop rebuild what strings.Join(names, ", ") already does. agentFile in claude.go already uses strings.Join for this same mapping. Return strings.Join(names, ", ") and drop the manual loop.'
+```
+
+#### [TSK-05.2.12] internal/mount/claude/stream.go:16 claude.Event duplicates mount.Event, plus one field [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/stream.go
+done_when:
+  - test -f internal/mount/claude/stream.go
+type: refactor
+context:
+  - "claude.Event repeats mount.Event field for field and adds SessionID. Parse therefore does not produce the contract's stream type, so a converter will be needed. The contract's Event cannot carry the session ID that a resume needs. Add SessionID to mount.Event and have Parse emit <-chan mount.Event."
+```
+
+#### [TSK-05.2.13] internal/mount/claude/stream.go:103 Comments reason about other code and cite a decision [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/stream.go
+done_when:
+  - test -f internal/mount/claude/stream.go
+type: docs
+context:
+  - 'Line 12 justifies the cap by pointing at sumTranscript. Line 29 cites "decision 0025". Lines 103-104 justify behaviour by what limits.go does. The comments standard bans citing a spec and reasoning about other code. Cut each comment to what its own code does, dropping the decision number and the references to other functions.'
+```
+
+#### [TSK-05.2.14] internal/mount/host.go:40 Doc comments cite "decision 0004" [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/host.go
+done_when:
+  - test -f internal/mount/host.go
+type: docs
+context:
+  - "The Capabilities comment (line 40) and the Contract comment (line 49) cite a decision number, which the comments standard bans. Remove the decision citations from both doc comments."
+```
+
+#### [TSK-05.2.15] internal/mount/host_test.go:86 Comment names an identifier that does not exist, above an unused field [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/host_test.go
+done_when:
+  - test -f internal/mount/host_test.go
+type: docs
+context:
+  - "The comment names asContract, but the line below is a blank var _ Contract assertion. Separately, fakeHost.next (line 21) is incremented in Start but never read. Reword the comment to describe the compile-time assertion, and delete the unused next field."
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### [TG-05.3] Pinned, hermetic, role-scoped sessions
 ```yaml
