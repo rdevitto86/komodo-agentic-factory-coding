@@ -9,7 +9,7 @@ Komodo's code assembly line: one static binary is the conveyor and devices, mark
 - **Each hook has one job,** one stage and a refusal limit.
 - **The gate is local.** `komodo gate` runs pre-commit and pre-push, no model; nothing runs on GitHub.
 - **No MCP in 1.0.** MCPs land in a later hot-swap pass.
-- **No repo config is required;** nothing refuses to run for a missing file.
+- **No repo config is required;** only the gate refuses, when it detects no build check (decision 0021).
 - **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
 - **Versions go alpha, beta, release,** as README defines.
 - **A pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`.**
