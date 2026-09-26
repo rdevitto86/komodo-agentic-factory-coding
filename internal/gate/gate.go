@@ -265,7 +265,13 @@ case "$name" in
     exec $cmd gate --fuzz 10s
     ;;
   post-merge)
-    exec $cmd gate --rebuild --from "$(git rev-parse --quiet --verify ORIG_HEAD 2>/dev/null || true)" --to "$(git rev-parse HEAD)"
+    # Only the main working tree rebuilds; the line merges task branches in a worktree it cut.
+    gitdir=$(git rev-parse --path-format=absolute --git-dir)
+    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
+    if [ "$gitdir" = "$gitcommon" ]; then
+      exec $cmd gate --rebuild --from "$(git rev-parse --quiet --verify ORIG_HEAD 2>/dev/null || true)" --to "$(git rev-parse HEAD)"
+    fi
+    exit 0
     ;;
   post-checkout)
     # Only a branch checkout ($3 = 1) in the main working tree rebuilds; a worktree the line cut never does.
@@ -284,7 +290,13 @@ case "$name" in
       if [ -z "$old" ]; then old=$pairOld; fi
       new=$pairNew
     done
-    exec $cmd gate --rebuild --from "$old" --to "$new"
+    # Only the main working tree rebuilds; the line rebases a task's branch in a worktree it cut.
+    gitdir=$(git rev-parse --path-format=absolute --git-dir)
+    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
+    if [ "$gitdir" = "$gitcommon" ]; then
+      exec $cmd gate --rebuild --from "$old" --to "$new"
+    fi
+    exit 0
     ;;
   *)
     exec $cmd gate

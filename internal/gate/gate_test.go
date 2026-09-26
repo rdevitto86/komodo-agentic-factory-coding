@@ -706,3 +706,84 @@ func TestPostCheckoutOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
 		t.Fatalf("the main working tree must rebuild: out = %q", out)
 	}
 }
+
+// TestPostMergeOnlyRebuildsInTheMainWorkingTree proves a merge inside a worktree the line cut never
+// rebuilds, so a Go-touching group merge cannot rewrite the shared hooks from unreviewed source.
+func TestPostMergeOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
+	main := t.TempDir()
+	gitCommand(t, main, "init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(main, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(main, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, main, "add", "cmd/komodo/main.go")
+	gitCommand(t, main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	worktree := filepath.Join(t.TempDir(), "wt")
+	gitCommand(t, main, "worktree", "add", "-q", "-b", "feat/x", worktree)
+
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho ran \"$@\"\n")
+	script := filepath.Join(fakes, "post-merge")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(dir string) string {
+		cmd := exec.Command("sh", script)
+		cmd.Dir = dir
+		cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("post-merge in %s: %v: %s", dir, err, out)
+		}
+		return string(out)
+	}
+	if out := run(worktree); strings.Contains(out, "ran") {
+		t.Fatalf("a worktree the line cut must not rebuild: out = %q", out)
+	}
+	if out := run(main); !strings.Contains(out, "ran run ./cmd/komodo gate --rebuild") {
+		t.Fatalf("the main working tree must rebuild: out = %q", out)
+	}
+}
+
+// TestPostRewriteOnlyRebuildsInTheMainWorkingTree proves a rebase inside a worktree the line cut
+// never rebuilds, so ship's catch-up rebase cannot rewrite the shared hooks from unreviewed source.
+func TestPostRewriteOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
+	main := t.TempDir()
+	gitCommand(t, main, "init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(main, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(main, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, main, "add", "cmd/komodo/main.go")
+	gitCommand(t, main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	worktree := filepath.Join(t.TempDir(), "wt")
+	gitCommand(t, main, "worktree", "add", "-q", "-b", "feat/x", worktree)
+
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho ran \"$@\"\n")
+	script := filepath.Join(fakes, "post-rewrite")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(dir string) string {
+		cmd := exec.Command("sh", script, "rebase")
+		cmd.Dir = dir
+		cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+		cmd.Stdin = strings.NewReader("old1 new1 extra\nold2 new2\n")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("post-rewrite in %s: %v: %s", dir, err, out)
+		}
+		return string(out)
+	}
+	if out := run(worktree); strings.Contains(out, "ran") {
+		t.Fatalf("a worktree the line cut must not rebuild: out = %q", out)
+	}
+	if out := run(main); !strings.Contains(out, "ran run ./cmd/komodo gate --rebuild --from old1 --to new2") {
+		t.Fatalf("the main working tree must rebuild: out = %q", out)
+	}
+}
