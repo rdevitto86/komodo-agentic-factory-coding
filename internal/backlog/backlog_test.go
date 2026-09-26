@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const sample = "## [EPIC-01] Epic\n\n### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+const sample = "## [EPIC-01] Epic Ships as `1.0.0`\n\n### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 	"#### [TSK-01.1.1] First task [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - go test ./...\n```\n\n" +
 	"#### [TSK-01.1.2] Second task [P: M] [DONE]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go build ./...\"]\ndepends_on: [TSK-01.1.1]\n```\n"
 

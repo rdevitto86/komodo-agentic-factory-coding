@@ -40,6 +40,17 @@ func Lint(parsed Backlog) []string {
 			problems = append(problems, fmt.Sprintf("%s: no version; a group declares the version it ships as `version: x.y.z`", group.ID))
 		case !versionRe.MatchString(version):
 			problems = append(problems, fmt.Sprintf("%s: version %q is not x.y.z", group.ID, version))
+		default:
+			if group.EpicID != "" {
+				if epic, ok := parsed.Epic(group.EpicID); ok {
+					epicVersion := epic.Version()
+					if epicVersion == "" {
+						problems = append(problems, fmt.Sprintf("%s: epic %s has no version; an epic names the version it ships as Ships as `x.y.z`", group.ID, group.EpicID))
+					} else if epicVersion != version {
+						problems = append(problems, fmt.Sprintf("%s: version %q differs from epic %s version %q", group.ID, version, group.EpicID, epicVersion))
+					}
+				}
+			}
 		}
 		if line, dup := seen[group.ID]; dup {
 			problems = append(problems, fmt.Sprintf("%s: duplicate group id (lines %d and %d)", group.ID, line+1, group.Heading+1))

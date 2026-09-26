@@ -378,7 +378,7 @@ context:
 ### [TG-04.6] The relay line stops cleanly when a group does not ship
 ```yaml
 type: fix
-version: 1.0.0-alpha.6
+version: 1.0.0-alpha.5
 ```
 * **Why:** running phase 1 in two lanes on 2026-09-26 found three relay-line defects; each cost a stopped lane or a hand repair.
 
@@ -2386,7 +2386,7 @@ type: test
 ### [TG-08.8] 1.0.0 LTS
 ```yaml
 type: chore
-version: 1.0.0
+version: 1.0.0-beta.2
 depends_on: [TG-08.7]
 ```
 * **Why:** 1.0.0 ships when all five success criteria hold (`docs/prd.md#success-criteria`).
