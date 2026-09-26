@@ -6,12 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/changelog"
 )
 
-const changelog = "# Changelog\n\n## 2.0.0 — 2026-09-21\n\n- the line\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
+const twoVersions = "# Changelog\n\n## 2.0.0 — 2026-09-21\n\n- the line\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
 
 func TestVersionsReadsEveryHeading(t *testing.T) {
-	got := Versions(changelog)
+	got := Versions(twoVersions)
 	if len(got) != 2 || got[0].Number != "2.0.0" || got[1].Number != "1.3.0" {
 		t.Fatalf("versions = %+v", got)
 	}
@@ -21,7 +23,7 @@ func TestVersionsReadsEveryHeading(t *testing.T) {
 }
 
 func TestLatestTakesTheHighest(t *testing.T) {
-	if got := Latest(changelog); got != "2.0.0" {
+	if got := Latest(twoVersions); got != "2.0.0" {
 		t.Fatalf("latest = %s", got)
 	}
 	if Latest("# Changelog\n") != "" {
@@ -42,11 +44,11 @@ func TestCompareOrdersSemanticVersions(t *testing.T) {
 }
 
 func TestTaggableSkipsWhatIsTagged(t *testing.T) {
-	got := Taggable(changelog, []string{"v1.3.0"})
+	got := Taggable(twoVersions, []string{"v1.3.0"})
 	if len(got) != 1 || got[0] != "2.0.0" {
 		t.Fatalf("taggable = %v", got)
 	}
-	if len(Taggable(changelog, []string{"v1.3.0", "v2.0.0"})) != 0 {
+	if len(Taggable(twoVersions, []string{"v1.3.0", "v2.0.0"})) != 0 {
 		t.Fatal("a fully tagged changelog has nothing to tag")
 	}
 }
@@ -63,14 +65,14 @@ func TestUnreleasedSkipsHistoryOlderThanTheNewestTag(t *testing.T) {
 }
 
 func TestTaggableOrdersOldestFirst(t *testing.T) {
-	got := Taggable(changelog, nil)
+	got := Taggable(twoVersions, nil)
 	if len(got) != 2 || got[0] != "1.3.0" {
 		t.Fatalf("taggable = %v", got)
 	}
 }
 
 func TestCheckNamesEveryDrift(t *testing.T) {
-	drift := Check(changelog, []string{"v0.9.0"}, []string{"3.0.0", "2.0.0"})
+	drift := Check(twoVersions, []string{"v0.9.0"}, []string{"3.0.0", "2.0.0"})
 	var subjects []string
 	for _, item := range drift {
 		subjects = append(subjects, item.Subject)
@@ -111,7 +113,7 @@ func TestCheckFlagsAHeadingOutOfOrder(t *testing.T) {
 }
 
 func TestCheckIsQuietWhenEverythingAgrees(t *testing.T) {
-	if drift := Check(changelog, []string{"v2.0.0", "v1.3.0"}, []string{"2.0.0"}); len(drift) != 0 {
+	if drift := Check(twoVersions, []string{"v2.0.0", "v1.3.0"}, []string{"2.0.0"}); len(drift) != 0 {
 		t.Fatalf("drift = %+v", drift)
 	}
 }
@@ -160,5 +162,26 @@ func TestAPrereleaseSortsBeforeItsReleaseAndByItsNumber(t *testing.T) {
 	}
 	if got := Latest(text); got != "1.0.0" {
 		t.Fatalf("latest = %s", got)
+	}
+}
+
+func TestReadChangelogFoldsTheFragmentsBesideIt(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "CHANGELOG.md")
+	if err := os.WriteFile(path, []byte(twoVersions), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := changelog.WriteFragment(root, "2.1.0", "TG-05.2", "- **TG-05.2** The host contract (3 task(s))"); err != nil {
+		t.Fatal(err)
+	}
+	text, err := ReadChangelog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Latest(text); got != "2.1.0" {
+		t.Fatalf("latest = %s; a fragment's version must count", got)
+	}
+	if drift := Check(text, nil, []string{"2.1.0"}); len(drift) != 0 {
+		t.Fatalf("drift = %v; a version only a fragment names is still named", drift)
 	}
 }

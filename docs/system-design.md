@@ -31,7 +31,7 @@ A task needs a title and its files (REQ-9). `accept` lines are optional; they fe
 
 ### The backlog
 
-The backlog is a committed plan that keeps agents in sync across workloads (decision 0009). It is one file per group in `docs/backlog/`, named `<group-id>-<slug>.md`, and each file carries its epic's ID. People and the orchestrator write groups through `/plan` or `komodo add`, and plan changes land through pull requests like any other change. The conductor reads groups from the base branch, ticks boxes on each group's own branch, and keeps live progress in run state. A group's PR therefore shows the code and the completed task list together, and adds the group's line to `CHANGELOG.md`, the shared history. There is no index and no archive: `komodo backlog` lists the open groups.
+The backlog is a committed plan that keeps agents in sync across workloads (decision 0009). It is one file per group in `docs/backlog/`, named `<group-id>-<slug>.md`, and each file carries its epic's ID. People and the orchestrator write groups through `/plan` or `komodo add`, and plan changes land through pull requests like any other change. The conductor reads groups from the base branch, ticks boxes on each group's own branch, and keeps live progress in run state. A group's PR therefore shows the code and the completed task list together, and adds the group's line as a fragment in `changelog.d/<version>/<group>.md`, so two open PRs never edit the same file. Every reader folds the fragments into `CHANGELOG.md`, the shared history, and `komodo release fold` writes them in on a branch before a release. There is no index and no archive: `komodo backlog` lists the open groups.
 
 Cleanup is mechanical (REQ-46):
 
@@ -255,7 +255,7 @@ A headless run exits non-zero when it ends with any group blocked.
 
 Prepare runs locally with no model (REQ-24):
 
-1. Commit the group's work with its ticked task list and its `CHANGELOG.md` line. When it is the last open group of its epic, also delete the epic's group files. The message is conventional, with no trailers.
+1. Commit the group's work with its ticked task list and its changelog fragment. When it is the last open group of its epic, also delete the epic's group files. The message is conventional, with no trailers.
 2. Run the pre-commit and pre-push checks.
 3. Rebase on the base. On a conflict, the conductor leaves the conflict markers in the worktree and runs one repair round with the conflicts as the fix list; the builder edits files and never runs git. If the conflict remains, the group stops with a blocker note.
 4. Run the integration build and tests. The conductor also test-merges every group that is ready in the same run, to catch breakage between groups; a failure is a repair round for the group that caused it.

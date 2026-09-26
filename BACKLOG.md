@@ -342,21 +342,21 @@ version: 1.0.0-alpha.5
 ```
 * **Why:** phase 0's four pull requests conflicted on `CHANGELOG.md` after every merge, #211's ship filed 3 findings under the next epic's heading, and TG-04.1 shipped with its review result missing. Parallel groups need all three fixed first.
 
-#### [TSK-04.5.1] Ship writes a changelog fragment, and every reader folds the fragments in [P: C] [READY]
+#### [TSK-04.5.1] Ship writes a changelog fragment, and every reader folds the fragments in [P: C] [DONE]
 ```yaml
-files: [internal/line/ship.go, internal/line/ship_test.go, internal/release/release.go, internal/release/release_test.go, internal/gate/gate.go, internal/gate/gate_test.go, cmd/komodo/release.go, internal/doctor/doctor.go]
+files: [internal/changelog, internal/line/ship.go, internal/line/ship_test.go, internal/line/wave_test.go, internal/release/release.go, internal/release/release_test.go, internal/gate/gate.go, cmd/komodo/release.go, cmd/komodo/main_test.go, docs/system-design.md, komodo/rules/backlog.md]
 done_when:
-  - go test ./internal/line/... ./internal/release/... ./internal/gate/... ./internal/doctor/... ./cmd/komodo/...
+  - go test ./internal/changelog/... ./internal/line/... ./internal/release/... ./internal/gate/... ./cmd/komodo/...
   - go run ./cmd/komodo doctor
 context:
   - "ship writes changelog.d/<version>/<group-id>.md holding its one line, instead of editing CHANGELOG.md, so two open pull requests never touch the same file"
-  - "release.ReadChangelog folds the fragments under their version headings in SemVer order, creating a heading a fragment names; doctor, the gate's build name, release and tag all read through it"
-  - "komodo tag folds a version's fragments into CHANGELOG.md and deletes them before it tags; test: two groups' fragments for alpha.6 and one for alpha.8 fold in order, and a heading written before the fold keeps its lines"
+  - "internal/changelog folds the fragments under their version headings in SemVer order, creating a heading a fragment names; doctor, the gate's build version, release and tag all read through it"
+  - "komodo release fold writes the fragments into CHANGELOG.md and deletes them, on any branch but the default, since nothing commits to main"
 ```
 
-#### [TSK-04.5.2] A filed finding lands inside its group, never under the next epic's heading [P: H] [READY]
+#### [TSK-04.5.2] A filed finding lands inside its group, never under the next epic's heading [P: H] [DONE]
 ```yaml
-files: [internal/backlog/edit.go, internal/backlog/edit_test.go]
+files: [internal/backlog/edit.go, internal/backlog/backlog_test.go]
 done_when:
   - go test ./internal/backlog/...
 context:
@@ -364,9 +364,9 @@ context:
   - "test: appending to the last group of an epic puts the task before the --- and ## lines that follow it"
 ```
 
-#### [TSK-04.5.3] Ship refuses a group with no review result [P: H] [READY]
+#### [TSK-04.5.3] Ship refuses a group with no review result [P: H] [DONE]
 ```yaml
-files: [internal/line/ship.go, internal/line/ship_test.go]
+files: [internal/line/ship.go, internal/line/ship_test.go, cmd/komodo/cli_test.go]
 done_when:
   - go test ./internal/line/...
 context:

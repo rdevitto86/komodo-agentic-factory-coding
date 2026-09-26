@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/pr"
 )
@@ -47,7 +48,20 @@ func shipRepo(t *testing.T) (root, group string) {
 	}
 	runGit(t, group, "add", "-A")
 	runGit(t, group, "commit", "-m", "seed")
+	saveReview(t, root, "TG-09.1", `{"findings":[]}`)
 	return root, group
+}
+
+// saveReview saves a review result for the group, as the reviewer would after the last commit.
+func saveReview(t *testing.T, root, groupID, result string) {
+	t.Helper()
+	review := ResultPath(root, groupID+"-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(review, []byte(result), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // runGit runs one git command in dir, failing the test on error.
@@ -234,6 +248,7 @@ func TestShipFlipsTheStatusOnTheBranchItPushes(t *testing.T) {
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
 	unreachableOrigin(t, root)
+	saveReview(t, root, "TG-11.1", `{"findings":[]}`)
 	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "git push to origin feat/a-group") {
 		t.Fatalf("err = %v; the origin is unreachable, so ship must fail at the push itself and not before", err)
 	}
@@ -272,6 +287,40 @@ func TestShipNeverMarksATaskItSkippedAsDone(t *testing.T) {
 	}
 	if strings.Contains(string(shipped), "[DONE]") {
 		t.Fatalf("a task close never marked DONE shipped as DONE:\n%s", shipped)
+	}
+}
+
+func TestShipRefusesAGroupWithNoReviewResult(t *testing.T) {
+	root, _ := shipRepo(t)
+	if err := os.Remove(ResultPath(root, "TG-09.1-review")); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "no review result") {
+		t.Fatalf("err = %v; a group with no review result must not ship", err)
+	}
+}
+
+func TestShipRefusesAReviewOlderThanTheBranch(t *testing.T) {
+	root, group := shipRepo(t)
+	past := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(ResultPath(root, "TG-09.1-review"), past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "a repair after the review")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "changed after its review") {
+		t.Fatalf("err = %v; a branch that moved after its review must not ship", err)
 	}
 }
 
@@ -415,6 +464,7 @@ func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
 			Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 		}
 		unreachableOrigin(t, root)
+		saveReview(t, root, "TG-11.1", `{"findings":[]}`)
 		_, _ = ShipGroup(root, plan, nil, nil)
 		committed, err := git.Run(worktree, "show", "HEAD:BACKLOG.md")
 		if err != nil {
@@ -452,6 +502,7 @@ func TestShipLeavesAnotherGroupsLiveStatusAlone(t *testing.T) {
 		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
 	}
 	unreachableOrigin(t, root)
+	saveReview(t, root, "TG-11.1", `{"findings":[]}`)
 	_, _ = ShipGroup(root, plan, nil, nil)
 	committed, err := git.Run(worktree, "show", "HEAD:BACKLOG.md")
 	if err != nil {
@@ -490,6 +541,7 @@ func TestShipReadsStatusFromTheRootCloseWrites(t *testing.T) {
 		Base: "main", Branch: "main", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
 	}
+	saveReview(t, root, "TG-12.1", `{"findings":[]}`)
 	result, err := ShipGroup(root, plan, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -523,6 +575,7 @@ func TestShipRendersTheBodyAfterBlockedIsKnown(t *testing.T) {
 		calls = append(calls, strings.Join(args, " "))
 		return "https://example.com/pull/1", nil
 	}}
+	saveReview(t, root, "TG-12.1", `{"findings":[]}`)
 	if _, err := ShipGroup(root, plan, nil, client); err != nil {
 		t.Fatal(err)
 	}
@@ -589,6 +642,7 @@ func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
 		Worktree: filepath.Join(StateDir, "wt", "TG-09.1"),
 		Tasks:    []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
 	}
+	saveReview(t, root, "TG-09.1", `{"findings":[]}`)
 	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -869,6 +923,42 @@ func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
 	}
 	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "TSK-09.1.1") {
 		t.Fatalf("err = %v; ship must refuse when a task differs between root and worktree, naming the task", err)
+	}
+}
+
+func TestShipWritesAChangelogFragmentAndLeavesTheChangelogAlone(t *testing.T) {
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", staleWorktreeBacklog, "the backlog")
+	commit(t, worktree, "CHANGELOG.md", "# Changelog\n", "the changelog")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(closedRootBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init")
+	runGit(t, root, "remote", "add", "origin", bare)
+	plan := &Plan{
+		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "main", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
+	}
+	client := &pr.Client{Dir: worktree, Run: func(string, ...string) (string, error) {
+		return "https://example.com/pull/1", nil
+	}}
+	saveReview(t, root, "TG-12.1", `{"findings":[]}`)
+	if _, err := ShipGroup(root, plan, nil, client); err != nil {
+		t.Fatal(err)
+	}
+	fragment, err := os.ReadFile(changelog.FragmentPath(worktree, "2.0.0", "TG-12.1"))
+	if err != nil || !strings.HasPrefix(string(fragment), "- **TG-12.1** A group") {
+		t.Fatalf("fragment = %q, %v", fragment, err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(worktree, "CHANGELOG.md")); string(data) != "# Changelog\n" {
+		t.Fatalf("ship edited CHANGELOG.md:\n%s", data)
+	}
+	if tracked, _ := git.Run(worktree, "ls-files", changelog.Dir); tracked == "" {
+		t.Fatal("the fragment is not in the ship commit")
 	}
 }
 
