@@ -36,6 +36,7 @@ func clean(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	write(t, root, "AGENTS.md", "# Rules\n\nSee `komodo/AGENTS.md`.\n")
+	write(t, root, ".gitattributes", "* text=auto eol=lf\n")
 	write(t, root, "komodo/AGENTS.md", "# Agent Rules\n\n{{accessibility}}\n")
 	write(t, root, "komodo/rules/accessibility.md", "## Writing for a human\n- **Answer first.**\n")
 	write(t, root, "komodo/roles/builder.md", "---\nname: builder\ndescription: Writes code.\ntier: standard\n"+
@@ -306,6 +307,33 @@ func TestAGrammarKeyWithNoAccessorIsNotFound(t *testing.T) {
 		"- **`unwritten_key`** describes a key no accessor exists for yet.\n")
 	if got := problemsFrom(t, root)["promises"]; len(got) != 0 {
 		t.Fatalf("promises = %+v, want none: no accessor exists to call", got)
+	}
+}
+
+func TestAMissingGitattributesIsFound(t *testing.T) {
+	root := clean(t)
+	os.Remove(filepath.Join(root, ".gitattributes"))
+	got := problemsFrom(t, root)["gitattributes"]
+	if len(got) != 1 || !strings.Contains(got[0].Detail, "eol=lf") {
+		t.Fatalf("gitattributes = %+v", got)
+	}
+}
+
+func TestAGitattributesWithoutEollfIsFound(t *testing.T) {
+	root := clean(t)
+	write(t, root, ".gitattributes", "* text=auto\n")
+	got := problemsFrom(t, root)["gitattributes"]
+	if len(got) != 1 || !strings.Contains(got[0].Detail, "eol=lf") {
+		t.Fatalf("gitattributes = %+v", got)
+	}
+}
+
+func TestAGitattributesWithProperEollfPasses(t *testing.T) {
+	root := clean(t)
+	write(t, root, ".gitattributes", "* text=auto eol=lf\n")
+	got := problemsFrom(t, root)["gitattributes"]
+	if len(got) != 0 {
+		t.Fatalf("gitattributes = %+v, want none", got)
 	}
 }
 

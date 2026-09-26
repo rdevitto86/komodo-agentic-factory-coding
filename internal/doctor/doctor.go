@@ -50,6 +50,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkHookBinary(root, rendered)...)
 	problems = append(problems, checkProfileDrift(root)...)
 	problems = append(problems, checkPromises(root)...)
+	problems = append(problems, checkGitattributes(root)...)
 	if !options.NoGit {
 		found, err := checkGit(root)
 		if err != nil {
@@ -284,6 +285,27 @@ func checkLeaks(root string) []Problem {
 func isMountImport(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return strings.HasPrefix(trimmed, "_ \"komodo/internal/mount/") || strings.Contains(trimmed, "\"komodo/internal/mount")
+}
+
+// checkGitattributes reports if .gitattributes is missing or lacks eol=lf for all files.
+func checkGitattributes(root string) []Problem {
+	path := filepath.Join(root, ".gitattributes")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []Problem{{"gitattributes", ".gitattributes", "add: * text=auto eol=lf"}}
+	}
+
+	// Check if the file has a line with * pattern that sets eol=lf.
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "* ") && strings.Contains(trimmed, "eol=lf") {
+			return nil
+		}
+	}
+	return []Problem{{"gitattributes", ".gitattributes", "add: * text=auto eol=lf"}}
 }
 
 // checkGit reports conflict markers and the leftovers a run can strand.

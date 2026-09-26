@@ -217,6 +217,9 @@ func tagRepo(t *testing.T, branch, changelog string) (root, bare string) {
 	runGit(t, root, "config", "user.name", "a")
 	runGit(t, root, "remote", "add", "origin", bare)
 	runGit(t, root, "checkout", "-b", branch)
+	if err := os.WriteFile(filepath.Join(root, ".gitattributes"), []byte("* text=auto eol=lf\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "CHANGELOG.md"), []byte(changelog), 0o644); err != nil {
 		t.Fatal(err)
 	}
