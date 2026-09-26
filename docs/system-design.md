@@ -186,6 +186,20 @@ Every brief is built from slots in a fixed order: the stable slots first, so ses
 
 The same card and tree give the same brief bytes on every machine.
 
+### The repo layer
+
+A repo may commit `.komodo/`. Nothing in it is required, a malformed file is skipped with one line in the report, and nothing in it widens what the guard denies.
+
+| Path | Adds |
+|---|---|
+| `context/*.md`, with a `paths:` glob list | Injected into any task whose files match |
+| `standards/<name>.md` | Appends to a shipped standard of that name, or adds a new one |
+| `skills/<name>/SKILL.md` | A new skill, or a "Repo overrides" section appended to a shipped one; rendered into the host's project directory as a gitignored copy |
+| `commands.json` | Verify, compile, before-review and after-publish commands, each judged by the guard first; verify otherwise resolves by discovery |
+| `policy.json` | Adds critical refs |
+
+Precedence is defaults, then detection, then the machine overlay, then the repo, then the task; each layer can only add. The four founding orchestrator skills, `run`, `review`, `backlog` and `respond`, cannot be appended to by a repo.
+
 ### Build
 
 The builder works the tasks in order and runs `komodo check task` as it goes. It ends with a result per task. When it can't continue, it finishes as blocked with a question, and the conductor escalates (REQ-18).
@@ -436,7 +450,8 @@ Inside WSL2, the installer also checks that the repo is on the Linux filesystem.
 ### Binaries and releases
 
 - **This repo rebuilds itself.** The gate installs post-merge, post-checkout and post-rewrite hooks alongside pre-commit and pre-push. When Go sources changed, they rebuild `bin/`, so nobody runs a command to get the latest binary (REQ-5, decision 0018).
-- **`komodo release` publishes.** On the owner's machine it cross-compiles every platform, runs the tests, writes checksums and publishes a GitHub Release. Builds are byte-identical per commit (decision 0002). No forge CI runs.
+- **A build is reproducible.** `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false` and `-ldflags "-s -w"` plus the changelog version and commit make a rebuild of one commit byte-identical (decision 0002); `GOTOOLCHAIN` is pinned to `go.mod`'s `toolchain` line, and `komodo version` prints what a binary was built from.
+- **`komodo release` publishes.** On the owner's machine it cross-compiles every platform into `dist/`, runs the tests, writes checksums and publishes a GitHub Release. No forge CI runs.
 - **The `release` skill** drives it from the orchestrator, including the version bump and changelog.
 
 ### Health checks
