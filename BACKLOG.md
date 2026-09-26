@@ -4,7 +4,8 @@ Priority `[P: C|H|M|L]`. Status `[REFINEMENT|READY|IN_PROGRESS|BLOCKED|DONE]`. I
 
 Recreated on 2026-09-25 to deliver `docs/prd.md`. Each epic is one phase of `docs/system-design.md#rollout`, and every requirement is proven by at least one group. Earlier groups are history in `CHANGELOG.md` and git.
 
-* **Phases run in order.** Phase 0 is READY. A later phase stays REFINEMENT until the phase before it has merged and its spikes have passed; then the orchestrator promotes its tasks to READY.
+* **Phases run in order.** A later phase stays REFINEMENT until the phase before it has merged and its spikes have passed; then the orchestrator promotes its tasks to READY.
+* **A group that shares no file with an open phase may run beside it,** as a targeted run in its own worktree. TG-07.1 and TG-07.2 run beside phase 1.
 * **Spikes and proofs are human tasks.** The orchestrator runs them with the owner and records each spike as a `**Spike Sn result:**` line in a new entry in `docs/decisions.md`. The line never picks a human task.
 * **Every group cuts from `main`** unless it names a group in `depends_on` (REQ-13).
 * **This file moves.** TG-07.10 splits the open groups into `docs/backlog/` and deletes it.
@@ -301,11 +302,6 @@ context:
 type: docs
 ```
 
----
-
-## [EPIC-05] Phase 1: the conductor drives
-*Goal: one group runs through the conductor within 60 minutes, with zero conductor tokens. Ships as `1.0.0-alpha.6`.*
-
 #### [TSK-04.4.2] docs/system-design.md:201 Repo-layer paragraph names prototype skills as the founding orchestrator skills [P: L] [REFINEMENT]
 ```yaml
 files:
@@ -339,8 +335,49 @@ context:
   - "The bullet says a skill or external dependency swaps without touching the line and links #profiles-and-economy-mode. That section covers only role-to-model mapping, and no spec section owns skill or dependency swapping. Cut the claim to model swaps, or link the section that owns skill and dependency swapping."
 ```
 
+### [TG-04.5] Ship never conflicts, never files a finding out of place, and never ships unreviewed
+```yaml
+type: fix
+version: 1.0.0-alpha.5
+```
+* **Why:** phase 0's four pull requests conflicted on `CHANGELOG.md` after every merge, #211's ship filed 3 findings under the next epic's heading, and TG-04.1 shipped with its review result missing. Parallel groups need all three fixed first.
 
+#### [TSK-04.5.1] Ship writes a changelog fragment, and every reader folds the fragments in [P: C] [READY]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go, internal/release/release.go, internal/release/release_test.go, internal/gate/gate.go, internal/gate/gate_test.go, cmd/komodo/release.go, internal/doctor/doctor.go]
+done_when:
+  - go test ./internal/line/... ./internal/release/... ./internal/gate/... ./internal/doctor/... ./cmd/komodo/...
+  - go run ./cmd/komodo doctor
+context:
+  - "ship writes changelog.d/<version>/<group-id>.md holding its one line, instead of editing CHANGELOG.md, so two open pull requests never touch the same file"
+  - "release.ReadChangelog folds the fragments under their version headings in SemVer order, creating a heading a fragment names; doctor, the gate's build name, release and tag all read through it"
+  - "komodo tag folds a version's fragments into CHANGELOG.md and deletes them before it tags; test: two groups' fragments for alpha.6 and one for alpha.8 fold in order, and a heading written before the fold keeps its lines"
+```
 
+#### [TSK-04.5.2] A filed finding lands inside its group, never under the next epic's heading [P: H] [READY]
+```yaml
+files: [internal/backlog/edit.go, internal/backlog/edit_test.go]
+done_when:
+  - go test ./internal/backlog/...
+context:
+  - "AppendTask inserts before the next group heading, so for an epic's last group the task lands after the next epic's heading and goal; insert before the first ---, ## or ### line after the group heading instead"
+  - "test: appending to the last group of an epic puts the task before the --- and ## lines that follow it"
+```
+
+#### [TSK-04.5.3] Ship refuses a group with no review result [P: H] [READY]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "ReviewFindings reads a missing review result as no findings, so a group whose review file was moved or never written ships unreviewed; ship refuses unless HasResult(root, group+\"-review\") holds and the review is not stale"
+  - "the refusal names the fix: run the review, then ship"
+```
+
+---
+
+## [EPIC-05] Phase 1: the conductor drives
+*Goal: one group runs through the conductor within 60 minutes, with zero conductor tokens. Ships as `1.0.0-alpha.6`.*
 
 ### [TG-05.1] Spikes for the conductor and its sessions
 ```yaml
@@ -349,7 +386,7 @@ version: 1.0.0-alpha.6
 ```
 * **Why:** decisions 0005 and 0006 hold only if these pass. A failed spike gets a new decision entry that supersedes the one it breaks, and the orchestrator rewrites the groups it changes before promoting them.
 
-#### [TSK-05.1.1] S2: dontAsk, an allow list and the sandbox run a builder with no prompt and no refusal [P: C] [READY]
+#### [TSK-05.1.1] S2: dontAsk, an allow list and the sandbox run a builder with no prompt and no refusal [P: C] [DONE]
 ```yaml
 files: [docs/decisions.md]
 done_when:
@@ -358,7 +395,7 @@ owner: human
 type: docs
 ```
 
-#### [TSK-05.1.2] S3: a line-owned config directory shuts out the personal layer and keeps the login [P: C] [READY]
+#### [TSK-05.1.2] S3: a line-owned config directory shuts out the personal layer and keeps the login [P: C] [DONE]
 ```yaml
 files: [docs/decisions.md]
 done_when:
@@ -367,7 +404,7 @@ owner: human
 type: docs
 ```
 
-#### [TSK-05.1.3] S4: the final stream event carries turns, usage, cost and a session ID resume accepts [P: C] [READY]
+#### [TSK-05.1.3] S4: the final stream event carries turns, usage, cost and a session ID resume accepts [P: C] [DONE]
 ```yaml
 files: [docs/decisions.md]
 done_when:
@@ -378,7 +415,7 @@ owner: human
 type: docs
 ```
 
-#### [TSK-05.1.4] S5: schema output holds over a long builder session [P: H] [READY]
+#### [TSK-05.1.4] S5: schema output holds over a long builder session [P: H] [DONE]
 ```yaml
 files: [docs/decisions.md]
 done_when:
@@ -387,7 +424,7 @@ owner: human
 type: docs
 ```
 
-#### [TSK-05.1.5] S7: `komodo run`, started inside an interactive session, launches its own sessions [P: C] [READY]
+#### [TSK-05.1.5] S7: `komodo run`, started inside an interactive session, launches its own sessions [P: C] [DONE]
 ```yaml
 files: [docs/decisions.md]
 done_when:
@@ -396,7 +433,7 @@ owner: human
 type: docs
 ```
 
-#### [TSK-05.1.6] S8: what the max-turns and subprocess-scrub variables do in a headless session [P: H] [READY]
+#### [TSK-05.1.6] S8: what the max-turns and subprocess-scrub variables do in a headless session [P: H] [DONE]
 ```yaml
 files: [docs/decisions.md]
 done_when:
@@ -411,10 +448,12 @@ type: docs
 ```yaml
 type: feat
 version: 1.0.0-alpha.6
+base: fix/ship-never-conflicts-never-files-a-findi
+depends_on: [TG-04.5]
 ```
 * **Why:** the conductor starts, resumes, streams and stops sessions through one contract, so a host is one package (decision 0004). Proves the meter behind REQ-28.
 
-#### [TSK-05.2.1] The host contract is one Go interface every mount implements [P: C] [REFINEMENT]
+#### [TSK-05.2.1] The host contract is one Go interface every mount implements [P: C] [READY]
 ```yaml
 files: [internal/mount/mount.go, internal/mount/host.go, internal/mount/host_test.go, internal/mount/registry.go]
 done_when:
@@ -426,7 +465,7 @@ context:
   - "the Codex and Ollama mounts keep compiling and declare no capabilities (decision 0022)"
 ```
 
-#### [TSK-05.2.2] Claude starts and resumes a role's session headless [P: C] [REFINEMENT]
+#### [TSK-05.2.2] Claude starts and resumes a role's session headless [P: C] [READY]
 ```yaml
 files: [internal/mount/claude/session.go, internal/mount/claude/session_test.go]
 done_when:
@@ -434,12 +473,12 @@ done_when:
 depends_on: [TSK-05.2.1]
 context:
   - docs/system-design.md#how-the-conductor-runs-a-claude-code-session
-  - "argv: -p, --plugin-dir, --settings, --tools, --permission-mode dontAsk, --model, --effort, --strict-mcp-config, --output-format stream-json, --json-schema, and --resume to resume; env CLAUDE_CONFIG_DIR and CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=3; --max-budget-usd on API billing"
+  - "argv: -p, --setting-sources project,local, --plugin-dir, --settings, --tools, --permission-mode dontAsk, --model, --effort, --strict-mcp-config, --output-format stream-json, --verbose, --json-schema, and --resume to resume; env CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=3, CLAUDE_CODE_MAX_TURNS per role, DISABLE_AUTOUPDATER=1, and GOCACHE and GOTMPDIR inside the worktree; no CLAUDE_CONFIG_DIR (decision 0025); --max-budget-usd on API billing"
   - "the process starts in the group's worktree in its own process group, and stop kills the tree; spikes S2 and S5 set the permission and schema flags"
   - "tests assert the argv and environment for the builder and for a lens"
 ```
 
-#### [TSK-05.2.3] The stream reports turns, usage, cost, rate limits and the session ID [P: C] [REFINEMENT]
+#### [TSK-05.2.3] The stream reports turns, usage, cost, rate limits and the session ID [P: C] [READY]
 ```yaml
 files: [internal/mount/claude/stream.go, internal/mount/claude/stream_test.go, internal/mount/claude/usage.go, internal/mount/claude/usage_test.go, internal/mount/claude/testdata]
 done_when:
@@ -448,18 +487,19 @@ depends_on: [TSK-05.2.1]
 context:
   - docs/system-design.md#run-state-and-metrics
   - "parse stream-json into the contract's stream, including rate_limit_event with five_hour, seven_day and resetsAt; the result event's totals are the meter, since summing transcripts logged 45,520,132 input tokens in 63 turns (evidence 8)"
-  - "fixtures come from the stream spike S4 recorded"
+  - "record fixtures as spike S4 did (decision 0025): one start and one resume stream, with local paths, session IDs and account fields replaced"
 ```
 
 ### [TG-05.3] Pinned, hermetic, role-scoped sessions
 ```yaml
 type: feat
 version: 1.0.0-alpha.6
+base: feat/the-host-contract
 depends_on: [TG-05.2]
 ```
 * **Why:** three machines ran three different agents (evidence 10). Proves REQ-2, REQ-3 and REQ-16.
 
-#### [TSK-05.3.1] Profiles pin the host version, full model IDs and effort per role [P: H] [REFINEMENT]
+#### [TSK-05.3.1] Profiles pin the host version, full model IDs and effort per role [P: H] [READY]
 ```yaml
 files: [internal/profile/profile.go, internal/profile/profile_test.go, komodo/profiles]
 done_when:
@@ -470,18 +510,19 @@ context:
   - "full and economy profiles as JSON under komodo/profiles, which the komodo embed carries; models are full IDs such as claude-sonnet-5 and claude-opus-5-5, never an alias"
 ```
 
-#### [TSK-05.3.2] Line sessions load a line-owned config directory and no personal layer [P: C] [REFINEMENT]
+#### [TSK-05.3.2] Line sessions load no personal layer and keep the login [P: C] [READY]
 ```yaml
 files: [internal/mount/claude/config.go, internal/mount/claude/config_test.go]
 done_when:
   - go test ./internal/mount/claude/...
 context:
   - docs/system-design.md#sessions-pinned-and-hermetic
-  - "CLAUDE_CONFIG_DIR points at a directory under ~/.komodo that the line renders: DISABLE_AUTOUPDATER, and no personal CLAUDE.md, settings, plugins or MCP; spike S3 decides how the login carries over"
+  - "decision 0025: the default config directory keeps the login; --setting-sources project,local and --strict-mcp-config shut out personal CLAUDE.md, settings, plugins, agents and MCP; the role settings turn auto-memory off"
+  - "doctor reads a session's init event and fails on any plugin, agent or MCP server that is neither built in nor the role's"
   - "test (REQ-3): a canary line in a fake personal config never appears in the rendered directory or a session's argv"
 ```
 
-#### [TSK-05.3.3] Each role runs with its own plugin: its skills, hooks and agents only [P: H] [REFINEMENT]
+#### [TSK-05.3.3] Each role runs with its own plugin: its skills, hooks and agents only [P: H] [READY]
 ```yaml
 files: [internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go]
 done_when:
@@ -492,7 +533,7 @@ context:
   - "test (REQ-16): the rendered builder plugin lists exactly those skills"
 ```
 
-#### [TSK-05.3.4] Doctor fails when any pin differs [P: H] [REFINEMENT]
+#### [TSK-05.3.4] Doctor fails when any pin differs [P: H] [READY]
 ```yaml
 files: [internal/doctor/pins.go, internal/doctor/pins_test.go, internal/doctor/doctor.go]
 done_when:
@@ -508,11 +549,12 @@ context:
 ```yaml
 type: feat
 version: 1.0.0-alpha.6
+base: feat/pinned-hermetic-role-scoped-sessions
 depends_on: [TG-05.3]
 ```
 * **Why:** a model relayed `komodo step` and its tokens were never metered (evidence 1). Proves REQ-6, REQ-11, REQ-14, REQ-15 and REQ-31.
 
-#### [TSK-05.4.1] Preflight checks the login, the forge credential, the sandbox and the budget [P: H] [REFINEMENT]
+#### [TSK-05.4.1] Preflight checks the login, the forge credential, the sandbox and the budget [P: H] [READY]
 ```yaml
 files: [internal/preflight/preflight.go, internal/preflight/preflight_test.go]
 done_when:
@@ -524,7 +566,7 @@ context:
   - "each failure stops the run and names its fix; --no-ship skips the forge check; one test per failed check (REQ-6)"
 ```
 
-#### [TSK-05.4.2] Group states live in state.json, written before each state's work [P: C] [REFINEMENT]
+#### [TSK-05.4.2] Group states live in state.json, written before each state's work [P: C] [READY]
 ```yaml
 files: [internal/conductor/state.go, internal/conductor/state_test.go, internal/conductor/fuzz_test.go]
 done_when:
@@ -535,7 +577,7 @@ context:
   - "a pure function from disk state to the next action, ported from Next in internal/line/snapshot.go with its fuzz test (decision 0001)"
 ```
 
-#### [TSK-05.4.3] The conductor runs every stage itself, and models only build, review and repair [P: C] [REFINEMENT]
+#### [TSK-05.4.3] The conductor runs every stage itself, and models only build, review and repair [P: C] [READY]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
@@ -549,7 +591,7 @@ context:
 tier: heavy
 ```
 
-#### [TSK-05.4.4] `komodo run` runs the conductor, not a model relaying stages [P: C] [REFINEMENT]
+#### [TSK-05.4.4] `komodo run` runs the conductor, not a model relaying stages [P: C] [READY]
 ```yaml
 files: [internal/run/run.go, internal/run/run_test.go, cmd/komodo/line.go, internal/mount/claude/claude.go]
 done_when:
@@ -561,7 +603,7 @@ context:
   - "Launch runs preflight, then the conductor; Headless and its /run prompt go, and so does komodo step once nothing calls it; spike S7 decides how a run started inside a session launches its own"
 ```
 
-#### [TSK-05.4.5] The run skill launches and watches, and never relays a stage [P: H] [REFINEMENT]
+#### [TSK-05.4.5] The run skill launches and watches, and never relays a stage [P: H] [READY]
 ```yaml
 files: [komodo/skills/run/SKILL.md]
 done_when:
@@ -574,7 +616,7 @@ context:
 type: docs
 ```
 
-#### [TSK-05.4.6] A killed run resumes without repeating a session or losing an edit [P: C] [REFINEMENT]
+#### [TSK-05.4.6] A killed run resumes without repeating a session or losing an edit [P: C] [READY]
 ```yaml
 files: [internal/conductor/resume.go, internal/conductor/resume_test.go, cmd/komodo/line.go]
 done_when:
@@ -586,7 +628,7 @@ context:
   - "test (REQ-14): kill a run mid-build, resume it, and find every edit and no repeated session"
 ```
 
-#### [TSK-05.4.7] A run never rebuilds the binary it is running [P: H] [REFINEMENT]
+#### [TSK-05.4.7] A run never rebuilds the binary it is running [P: H] [READY]
 ```yaml
 files: [internal/run/run.go, internal/run/sync.go, internal/run/run_test.go, internal/run/sync_test.go]
 done_when:
@@ -602,11 +644,12 @@ context:
 ```yaml
 type: feat
 version: 1.0.0-alpha.6
+base: feat/the-conductor-drives-the-stages
 depends_on: [TG-05.4]
 ```
 * **Why:** one build took 122 turns with no cap but a 90-minute group budget (evidence 9). Proves REQ-28, REQ-29 and REQ-31.
 
-#### [TSK-05.5.1] Each run writes metrics.jsonl and events.jsonl from the host's own totals [P: H] [REFINEMENT]
+#### [TSK-05.5.1] Each run writes metrics.jsonl and events.jsonl from the host's own totals [P: H] [READY]
 ```yaml
 files: [internal/ledger/ledger.go, internal/ledger/ledger_test.go]
 done_when:
@@ -616,7 +659,7 @@ context:
   - "one line per stage and session: run, group, stage, start, duration, turns, input, output and cached tokens, cost, outcome; each run starts fresh, and only the last 10 run folders stay"
 ```
 
-#### [TSK-05.5.2] `komodo report` sums a run, and its sums match the host's [P: H] [REFINEMENT]
+#### [TSK-05.5.2] `komodo report` sums a run, and its sums match the host's [P: H] [READY]
 ```yaml
 files: [internal/line/report.go, internal/line/report_test.go, cmd/komodo/line.go]
 done_when:
@@ -627,7 +670,7 @@ context:
   - "the headline figure is tokens per accepted group"
 ```
 
-#### [TSK-05.5.3] A group has 60 minutes, and each session its own limit [P: C] [REFINEMENT]
+#### [TSK-05.5.3] A group has 60 minutes, and each session its own limit [P: C] [READY]
 ```yaml
 files: [internal/conductor/clock.go, internal/conductor/clock_test.go]
 done_when:
@@ -638,7 +681,7 @@ context:
   - "test (REQ-29): a fake session past its limit is killed, and the group stops by 60 minutes"
 ```
 
-#### [TSK-05.5.4] Proof: one group runs through the conductor [P: H] [REFINEMENT]
+#### [TSK-05.5.4] Proof: one group runs through the conductor [P: H] [READY]
 ```yaml
 done_when:
   - go run ./cmd/komodo report
@@ -940,10 +983,12 @@ context:
 ```yaml
 type: feat
 version: 1.0.0-alpha.8
+base: fix/ship-never-conflicts-never-files-a-findi
+depends_on: [TG-04.5]
 ```
 * **Why:** a 159 KB `BACKLOG.md` was the database, and ship rewrote it and lost a task's body (evidence 12). Proves REQ-8 and REQ-9's grammar.
 
-#### [TSK-07.1.1] The parser reads group files in docs/backlog/ [P: C] [REFINEMENT]
+#### [TSK-07.1.1] The parser reads group files in docs/backlog/ [P: C] [READY]
 ```yaml
 files: [internal/backlog/groupfile.go, internal/backlog/groupfile_test.go, internal/backlog/fuzz_test.go]
 done_when:
@@ -954,7 +999,7 @@ context:
   - "a file is <group-id>-<slug>.md: a heading with priority and status, yaml with type, version, epic and depends_on, then checkbox tasks with files and optional accept and checks; a task needs only a title and files (REQ-9); fuzz the parser"
 ```
 
-#### [TSK-07.1.2] Lint refuses a group over 12 tasks, and a light-tier builder [P: H] [REFINEMENT]
+#### [TSK-07.1.2] Lint refuses a group over 12 tasks, and a light-tier builder [P: H] [READY]
 ```yaml
 files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
 done_when:
@@ -964,7 +1009,7 @@ context:
   - "over 12 tasks is a problem that suggests a split (REQ-8); tier: light on a build task is a problem (REQ-30); the base rule and the context-anchor check still hold"
 ```
 
-#### [TSK-07.1.3] `komodo backlog` lists open groups, and `komodo add` writes a group or task [P: H] [REFINEMENT]
+#### [TSK-07.1.3] `komodo backlog` lists open groups, and `komodo add` writes a group or task [P: H] [READY]
 ```yaml
 files: [cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, internal/backlog/edit.go]
 done_when:
@@ -974,7 +1019,7 @@ context:
   - docs/system-design.md#the-komodo-command
 ```
 
-#### [TSK-07.1.4] The grammar, the planner and `komodo init` describe group files [P: H] [REFINEMENT]
+#### [TSK-07.1.4] The grammar, the planner and `komodo init` describe group files [P: H] [READY]
 ```yaml
 files: [komodo/rules/backlog.md, komodo/roles/planner.md, templates/project/BACKLOG.md.tmpl, templates/project/docs/backlog, cmd/komodo/init.go, cmd/komodo/init_test.go]
 done_when:
@@ -991,11 +1036,12 @@ type: docs
 ```yaml
 type: feat
 version: 1.0.0-alpha.8
+base: feat/the-backlog-is-one-file-per-group
 depends_on: [TG-07.1]
 ```
 * **Why:** builders spent 987 `grep` and 356 `sed` calls finding context the binary could pack (evidence 6). Proves REQ-7 and REQ-9's derived checks.
 
-#### [TSK-07.2.1] `komodo ingest` compiles each READY group into a card with a stable hash [P: C] [REFINEMENT]
+#### [TSK-07.2.1] `komodo ingest` compiles each READY group into a card with a stable hash [P: C] [READY]
 ```yaml
 files: [internal/ingest/card.go, internal/ingest/card_test.go, cmd/komodo/ingest.go]
 done_when:
@@ -1005,7 +1051,7 @@ context:
   - "cards land in .komodo/queue/<group>.json; files expand globs and directories, and a new file is allowed where its parent exists; no session starts (REQ-7)"
 ```
 
-#### [TSK-07.2.2] Checks are derived per language the group touches [P: C] [REFINEMENT]
+#### [TSK-07.2.2] Checks are derived per language the group touches [P: C] [READY]
 ```yaml
 files: [internal/ingest/checks.go, internal/ingest/checks_test.go]
 done_when:
@@ -1014,7 +1060,7 @@ context:
   - "Go: build, vet and test of each touched package; TypeScript: the type check and the repo's test script; hand-written checks add, never replace (REQ-9); detection comes from internal/detect"
 ```
 
-#### [TSK-07.2.3] Context packs replace exploration [P: H] [REFINEMENT]
+#### [TSK-07.2.3] Context packs replace exploration [P: H] [READY]
 ```yaml
 files: [internal/ingest/pack.go, internal/ingest/pack_test.go]
 done_when:
@@ -1025,7 +1071,7 @@ context:
 tier: heavy
 ```
 
-#### [TSK-07.2.4] Briefs fill their slots from the card, stable slots first [P: H] [REFINEMENT]
+#### [TSK-07.2.4] Briefs fill their slots from the card, stable slots first [P: H] [READY]
 ```yaml
 files: [internal/line/brief.go, internal/line/brief_slots.go, internal/line/brief_test.go]
 done_when:
