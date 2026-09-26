@@ -104,7 +104,7 @@ func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
 	}
 	path := WorktreePath(root, plan.Worktree)
 	if _, err := os.Stat(path); err != nil {
-		if err := AddWorktree(root, plan.Branch, plan.Base, path); err != nil {
+		if err := AddWorktree(root, plan.Branch, StartRef(root, plan.Base), path); err != nil {
 			return RunState{}, err
 		}
 	}

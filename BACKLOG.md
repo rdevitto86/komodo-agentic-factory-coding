@@ -194,7 +194,7 @@ version: 1.0.0-alpha.5
 ```
 * **Why:** TG-03.31 and TG-03.32 cut from a branch 39 commits ahead of `main`, and hand commits rode along unreviewed (evidence 13). Proves REQ-13.
 
-#### [TSK-04.3.1] Lint rejects a base that is neither the default branch nor a dependency's branch [P: H] [READY]
+#### [TSK-04.3.1] Lint rejects a base that is neither the default branch nor a dependency's branch [P: H] [DONE]
 ```yaml
 files: [internal/backlog/backlog.go, internal/backlog/lint.go, internal/backlog/backlog_test.go, komodo/rules/backlog.md]
 done_when:
@@ -209,7 +209,7 @@ context:
 type: fix
 ```
 
-#### [TSK-04.3.2] A re-run cuts from its base, not from the group's stale remote branch [P: M] [READY]
+#### [TSK-04.3.2] A re-run cuts from its base, not from the group's stale remote branch [P: M] [DONE]
 ```yaml
 files: [internal/line/worktree.go, internal/line/worktree_test.go]
 done_when:
@@ -218,6 +218,66 @@ context:
   - "StartRef cuts from origin/<group branch> whenever that branch exists, so a group run again after an earlier push inherits old commits; cut from the base unless the run resumes that same group (from TSK-03.31.1)"
 type: fix
 ```
+
+#### [TSK-04.3.3] internal/line/worktree_test.go:526 Misleading and restating test comments [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/worktree_test.go
+done_when:
+  - test -f internal/line/worktree_test.go
+type: docs
+context:
+  - "The comment says 'Create a second worktree and push to feat/a', but the next line cuts the first worktree and pushes nothing; lines 522-568 also restate each git call, and line 564 hedges with 'should'. Delete the step-by-step comments and keep at most one line describing the scenario."
+```
+
+#### [TSK-04.3.4] internal/line/worktree_test.go:520 Test passes on the pre-change code [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/worktree_test.go
+done_when:
+  - test -f internal/line/worktree_test.go
+type: refactor
+context:
+  - 'Old AddWorktree resolved StartRef(root, "main") and never consulted origin/feat/a, so this test also passes on main; the WriteBrief test at line 613 is the real regression guard. Delete TestAddWorktreeCutsFromBaseNotFromStaleOrigin.'
+```
+
+#### [TSK-04.3.5] internal/backlog/backlog.go:157 BranchName still exists twice [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/backlog.go
+done_when:
+  - test -f internal/backlog/backlog.go
+type: refactor
+context:
+  - "line.BranchName at internal/line/worktree.go:49 remains and is used at next.go:235 and :378, so line and lint do not share one function as the task asked. Delete line.BranchName and call group.Branch() at both next.go sites."
+```
+
+#### [TSK-04.3.6] internal/line/worktree.go:55 Doc comment talks about callers [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/worktree.go
+done_when:
+  - test -f internal/line/worktree.go
+type: docs
+context:
+  - "'the caller resolves startRef, preferring origin only where that freshness matters' talks about callers, which the comment rules ban. Cut the AddWorktree doc to one line saying what it does."
+```
+
+#### [TSK-04.3.7] internal/line/worktree.go:60 Pointless alias [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/worktree.go
+done_when:
+  - test -f internal/line/worktree.go
+type: refactor
+context:
+  - "'start := startRef' only renames the parameter. Use startRef directly in the worktree add -b call."
+```
+
+
+
+
+
 
 ### [TG-04.4] The README hands the design to the specs
 ```yaml

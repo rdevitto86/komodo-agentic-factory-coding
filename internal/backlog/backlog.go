@@ -147,8 +147,17 @@ func (g Group) Type() string {
 // Base is the branch this group's work is cut from, empty when the remote's default branch is right.
 func (g Group) Base() string { return g.Fields.String("base") }
 
+// DependsOn are the group ids whose branch this group may cut its base from.
+func (g Group) DependsOn() []string { return g.Fields.List("depends_on") }
+
 // Version is the version this group ships, written into the changelog heading and the tag.
 func (g Group) Version() string { return g.Fields.String("version") }
+
+// BranchName is the branch a group's work lands on: its type and its slug.
+func BranchName(groupType, slug string) string { return groupType + "/" + slug }
+
+// Branch is the branch this group's own work lands on.
+func (g Group) Branch() string { return BranchName(g.Type(), g.Slug()) }
 
 // Slug is a kebab-case branch fragment derived from the group title.
 func (g Group) Slug() string {

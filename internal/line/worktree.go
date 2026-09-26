@@ -51,12 +51,13 @@ func BranchName(groupType, slug string) string { return groupType + "/" + slug }
 // RefusedPushURL is the pushurl that makes git push origin fail inside a line worktree.
 const RefusedPushURL = "refused://the-line-pushes"
 
-// AddWorktree cuts branch from base into its own worktree, whose scoped pushurl refuses git push origin.
-func AddWorktree(root, branch, base, path string) error {
+// AddWorktree cuts branch from startRef into its own worktree, whose scoped pushurl refuses git
+// push origin; the caller resolves startRef, preferring origin only where that freshness matters.
+func AddWorktree(root, branch, startRef, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	start := StartRef(root, base)
+	start := startRef
 	if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
 		if _, err := git.Run(root, "worktree", "add", path, branch); err != nil {
 			return err
