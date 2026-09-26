@@ -415,6 +415,49 @@ func TestABriefWithoutASchemaStillNamesTheResultPath(t *testing.T) {
 	}
 }
 
+// TestBuildBriefFillsFilesAndContextFromTheQueueCard proves a brief reads the group's compiled
+// ingest card from .komodo/queue, not just the one task's own declared files and context.
+func TestBuildBriefFillsFilesAndContextFromTheQueueCard(t *testing.T) {
+	root := briefRepo(t)
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A file the task itself never lists, present only because the compiled card expanded a glob.
+	write("a/two.go", "package a\n\nfunc Two() {}\n")
+	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
+		`{"group":"TG-07.1","files":["a/one.go","a/two.go"],"context":["docs/spec/SDD.md#Other"]}`)
+
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "func Two()") {
+		t.Fatalf("the brief did not read the queue card's expanded file list:\n%s", brief.Text)
+	}
+	if !strings.Contains(brief.Text, "### docs/spec/SDD.md#Other") || strings.Contains(brief.Text, "Build it.") {
+		t.Fatalf("the brief did not swap in the queue card's own context references:\n%s", brief.Text)
+	}
+}
+
+// TestBuildBriefFallsBackToTheTaskWithoutAQueueCard proves a brief still works before komodo
+// ingest has ever run for the group.
+func TestBuildBriefFallsBackToTheTaskWithoutAQueueCard(t *testing.T) {
+	root := briefRepo(t)
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "Build it.") {
+		t.Fatalf("the task's own context must still fill the brief with no queue card:\n%s", brief.Text)
+	}
+}
+
 // TestBuildBriefIsDeterministic proves the same card and tree give the same brief bytes on every
 // machine: building twice from the same root must never depend on map iteration or a clock.
 func TestBuildBriefIsDeterministic(t *testing.T) {

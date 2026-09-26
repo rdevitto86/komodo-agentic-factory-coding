@@ -1,6 +1,7 @@
 package line
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,50 @@ import (
 	"komodo/internal/facet"
 	repopkg "komodo/internal/repo"
 )
+
+// queueCard is the subset of a compiled ingest card a brief reads from disk, never importing ingest.
+type queueCard struct {
+	Files   []string `json:"files"`
+	Context []string `json:"context"`
+}
+
+// loadCard reads a group's compiled card from .komodo/queue, or reports it missing.
+func loadCard(root, groupID string) (queueCard, bool) {
+	data, err := os.ReadFile(filepath.Join(root, StateDir, "queue", groupID+".json"))
+	if err != nil {
+		return queueCard{}, false
+	}
+	var card queueCard
+	if json.Unmarshal(data, &card) != nil {
+		return queueCard{}, false
+	}
+	return card, true
+}
+
+// cardTask overrides a task's files and context with its group's compiled card, when one has
+// already been written, so a brief consumes ingest's expanded list instead of re-deriving it.
+func cardTask(root string, task backlog.Task, groupID string) backlog.Task {
+	card, ok := loadCard(root, groupID)
+	if !ok {
+		return task
+	}
+	if len(card.Files) > 0 {
+		task.Fields.Set("files", toAnyList(card.Files))
+	}
+	if len(card.Context) > 0 {
+		task.Fields.Set("context", toAnyList(card.Context))
+	}
+	return task
+}
+
+// toAnyList wraps a string slice for Fields.Set, which stores list values as []any.
+func toAnyList(items []string) []any {
+	out := make([]any, len(items))
+	for i, item := range items {
+		out[i] = item
+	}
+	return out
+}
 
 // repoRules is the repo's own AGENTS.md, clipped, or a one-line default.
 func repoRules(cwd string, limit int) string {
