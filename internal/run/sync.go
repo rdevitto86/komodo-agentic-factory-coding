@@ -130,6 +130,14 @@ func syncBinary(root, head string, dryRun bool, out io.Writer, suffix string) (s
 	if err != nil {
 		return "", err
 	}
+	dirty, err := git.Run(root, "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return "", err
+	}
+	if dirty != "" {
+		fmt.Fprintf(out, "binary: skipped stamp, the working tree has uncommitted changes%s\n", suffix)
+		return "", nil
+	}
 	if err := os.WriteFile(marker, []byte(head+"\n"), 0o644); err != nil {
 		return "", err
 	}

@@ -199,3 +199,30 @@ func TestSyncBinary(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncBinaryDoesNotStampDirtyTree(t *testing.T) {
+	root, ahead := syncRepo(t)
+	builds, installs := fakeBuild(t)
+	toolkitCheckout(t, root, ahead)
+	runGit(t, root, "fetch", "origin")
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if *builds != 1 {
+		t.Fatalf("builds = %d, want 1; out = %s", *builds, out.String())
+	}
+	if *installs != 0 {
+		t.Fatalf("installs = %d, want 0; out = %s", *installs, out.String())
+	}
+	recorded, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(recorded)) != ahead {
+		t.Fatalf("marker = %q, want %q (unchanged)", recorded, ahead)
+	}
+}
