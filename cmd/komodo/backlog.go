@@ -15,7 +15,12 @@ import (
 )
 
 // runLint prints every grammar problem, then each advisory note, and exits non-zero only on a problem.
+// A repo with no BACKLOG.md but a docs/backlog/ directory lints its group files instead.
 func runLint(root string) {
+	if _, err := backlog.Find(root); err != nil {
+		runLintGroupFiles(root)
+		return
+	}
 	_, parsed := load(root)
 	problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
 	for _, problem := range problems {
@@ -26,6 +31,35 @@ func runLint(root string) {
 	}
 	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n",
 		len(parsed.Tasks()), len(parsed.Groups), len(problems))
+	if len(problems) > 0 {
+		exit(1)
+	}
+}
+
+// runLintGroupFiles reports every docs/backlog group file's own problems, plus a group over 12 tasks (REQ-8).
+func runLintGroupFiles(root string) {
+	names, err := groupFileNames(root)
+	if err != nil {
+		fail(err)
+	}
+	var problems []string
+	taskCount := 0
+	for _, name := range names {
+		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
+		if err != nil {
+			fail(err)
+		}
+		group := backlog.ParseGroupFile(string(data))
+		problems = append(problems, group.Problems...)
+		if len(group.Tasks) > 12 {
+			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", group.ID, len(group.Tasks)))
+		}
+		taskCount += len(group.Tasks)
+	}
+	for _, problem := range problems {
+		fmt.Println(problem)
+	}
+	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n", taskCount, len(names), len(problems))
 	if len(problems) > 0 {
 		exit(1)
 	}
@@ -82,7 +116,7 @@ func runList(root string, args []string) {
 	fmt.Printf("%d task(s)\n", len(rows))
 }
 
-// runAdd appends one task to a group and prints its new id.
+// runAdd appends one task to a group in BACKLOG.md and prints its new id.
 func runAdd(root string, args []string) {
 	set := flag.NewFlagSet("add", flag.ExitOnError)
 	files := set.String("files", "", "comma-separated paths the task touches")
@@ -114,6 +148,17 @@ func runAdd(root string, args []string) {
 	}
 	fmt.Println(id)
 	line.Stamp(root, ledger.Entry{Station: "add", Task: id, Outcome: "added"})
+}
+
+// split turns a comma-separated flag into the list a task block holds.
+func split(value string) []any {
+	items := []any{}
+	for _, part := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
 }
 
 // groupFilesDir is where one file per group lives, named <group-id>-<slug>.md.
@@ -231,17 +276,6 @@ func runBacklogAdd(root string, args []string) {
 // splitStrings turns a comma-separated flag into a plain string slice, dropping empty parts.
 func splitStrings(value string) []string {
 	var items []string
-	for _, part := range strings.Split(value, ",") {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			items = append(items, trimmed)
-		}
-	}
-	return items
-}
-
-// split turns a comma-separated flag into the list a task block holds.
-func split(value string) []any {
-	items := []any{}
 	for _, part := range strings.Split(value, ",") {
 		if trimmed := strings.TrimSpace(part); trimmed != "" {
 			items = append(items, trimmed)

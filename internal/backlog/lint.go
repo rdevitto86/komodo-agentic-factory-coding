@@ -89,8 +89,8 @@ func Lint(parsed Backlog) []string {
 		if tier := task.Tier(); tier != "" && !contains(Tiers, tier) {
 			problems = append(problems, fmt.Sprintf("%s: tier must be one of %s", where, strings.Join(Tiers, "|")))
 		}
-		if task.Type() == "build" && task.Tier() == "light" {
-			problems = append(problems, fmt.Sprintf("%s: build task cannot have tier light (REQ-30)", where))
+		if task.Owner() == "agent" && task.Tier() == "light" {
+			problems = append(problems, fmt.Sprintf("%s: agent task cannot have tier light (REQ-30)", where))
 		}
 		for _, dep := range task.DependsOn() {
 			if !ids[dep] {

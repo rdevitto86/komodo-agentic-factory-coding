@@ -65,6 +65,10 @@ func TestInitWritesEveryStarterAndTheSampleGroupFileParsesClean(t *testing.T) {
 	if len(group.Problems) != 0 {
 		t.Fatalf("the sample group file does not parse clean: %v", group.Problems)
 	}
+	lint := runCLI(t, root, "", "lint")
+	if lint.code != 0 || !strings.Contains(lint.stdout, " 0 problem(s)") {
+		t.Fatalf("lint on the written backlog exited %d: %s", lint.code, lint.stdout)
+	}
 }
 
 // TestInitTwiceCreatesNothingAndKeepsAnExistingFile proves init never overwrites.

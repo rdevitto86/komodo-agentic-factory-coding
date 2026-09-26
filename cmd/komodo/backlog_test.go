@@ -115,6 +115,30 @@ func TestRunBacklogAddWritesAGroupThenATask(t *testing.T) {
 	}
 }
 
+// TestMainDispatchesBacklogAndAdd proves `komodo backlog` and `komodo add` reach the group-file commands.
+func TestMainDispatchesBacklogAndAdd(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-q")
+	add := runCLI(t, root, "", "add", "TG-09.1", "A", "dispatched", "group")
+	if add.code != 0 {
+		t.Fatalf("add exited %d: %s%s", add.code, add.stdout, add.stderr)
+	}
+	if !strings.Contains(add.stdout, "TG-09.1") {
+		t.Fatalf("add printed no group id: %s", add.stdout)
+	}
+	path := filepath.Join(root, groupFilesDir, "TG-09.1-a-dispatched-group.md")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("add wrote no group file: %v", err)
+	}
+	backlog := runCLI(t, root, "", "backlog")
+	if backlog.code != 0 {
+		t.Fatalf("backlog exited %d: %s%s", backlog.code, backlog.stdout, backlog.stderr)
+	}
+	if !strings.Contains(backlog.stdout, "TG-09.1") || !strings.Contains(backlog.stdout, "1 group(s)") {
+		t.Fatalf("backlog through main = %s", backlog.stdout)
+	}
+}
+
 // TestRunBacklogAddRejectsAMissingTitle proves add fails clearly when it gets fewer than a group and a title.
 func TestRunBacklogAddRejectsAMissingTitle(t *testing.T) {
 	root := t.TempDir()

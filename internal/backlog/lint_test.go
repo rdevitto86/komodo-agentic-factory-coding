@@ -50,7 +50,7 @@ func TestLintRejectsABuildTaskWithLightTier(t *testing.T) {
 	problems := Lint(Parse(text))
 	found := false
 	for _, problem := range problems {
-		if strings.Contains(problem, "TSK-42.1.1") && strings.Contains(problem, "build task cannot have tier light") {
+		if strings.Contains(problem, "TSK-42.1.1") && strings.Contains(problem, "cannot have tier light") {
 			found = true
 			break
 		}
@@ -94,20 +94,20 @@ func TestLintAcceptsBuildTaskWithHeavyTier(t *testing.T) {
 	}
 }
 
-func TestLintAcceptsFeatTaskWithLightTier(t *testing.T) {
+func TestLintRejectsAFeatTaskWithLightTier(t *testing.T) {
 	text := "### [TG-45.1] Feat test\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-45.1.1] Feat with light [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n" +
 		"tier: light\n```\n"
 	problems := Lint(Parse(text))
 	found := false
 	for _, problem := range problems {
-		if strings.Contains(problem, "cannot have tier light") {
+		if strings.Contains(problem, "TSK-45.1.1") && strings.Contains(problem, "cannot have tier light") {
 			found = true
 			break
 		}
 	}
-	if found {
-		t.Fatalf("feat task with light tier should be allowed; got %v", problems)
+	if !found {
+		t.Fatalf("no problem mentions feat task with light tier; got %v", problems)
 	}
 }
 
