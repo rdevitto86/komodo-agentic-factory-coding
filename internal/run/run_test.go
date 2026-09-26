@@ -292,6 +292,39 @@ func writeHandoff(t *testing.T, root string, handoff line.ShipHandoff) {
 	}
 }
 
+func TestLaunchTargetSkipsFinishShipWithNoShip(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("no /bin/sh on this machine")
+	}
+	saved := mount.Snapshot()
+	defer mount.Restore(saved)
+	mount.Register(mount.Host{
+		Name:      "codex",
+		Installed: func(string) bool { return true },
+		Headless: func(skill, target string) (string, []string) {
+			return "/bin/sh", []string{"-c", "exit 0"}
+		},
+	})
+	root := t.TempDir()
+	writeHandoff(t, root, line.ShipHandoff{Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b"})
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		t.Fatalf("gh must not run with --no-ship: %v", args)
+		return "", nil
+	}}
+	code, url, err := launchTarget(Options{
+		Root: root, Target: "TG-01.1", NoShip: true, PR: client, Env: []string{"PATH=/usr/bin:/bin"},
+	})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v", code, err)
+	}
+	if url != "" {
+		t.Fatalf("url = %q, want none with --no-ship", url)
+	}
+	if _, err := os.Stat(line.HandoffPath(root, "TG-01.1")); err != nil {
+		t.Fatalf("ship.json was consumed with --no-ship: %v", err)
+	}
+}
+
 func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *testing.T) {
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)

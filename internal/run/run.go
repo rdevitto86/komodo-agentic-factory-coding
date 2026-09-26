@@ -38,10 +38,12 @@ var dropped = []string{
 
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
-	Root       string
-	Target     string
-	Budget     time.Duration
-	DryRun     bool
+	Root   string
+	Target string
+	Budget time.Duration
+	DryRun bool
+	// NoShip stops each group at shipped-ready, skipping the push and the draft pull request.
+	NoShip     bool
 	Env        []string
 	Stdout     io.Writer
 	Stderr     io.Writer
@@ -126,7 +128,7 @@ func launchTarget(options Options) (int, string, error) {
 	}
 	code, err := launch(options, name, args)
 	url := ""
-	if !options.DryRun {
+	if !options.DryRun && !options.NoShip {
 		created, shipErr := finishShip(options)
 		url = created
 		if shipErr != nil && err == nil {

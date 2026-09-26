@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"komodo/internal/mount"
 )
 
 // fakeHostContract is a mock host contract for testing.
@@ -157,6 +159,66 @@ func TestDoctorFailureIsReported(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected doctor failure, got %v", failures)
+	}
+}
+
+// TestHostLoginFailsWhenTheMountCannotProbe checks that a logged-out host fails in production,
+// with no test contract injected.
+func TestHostLoginFailsWhenTheMountCannotProbe(t *testing.T) {
+	root := clean(t)
+
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Register(mount.Host{
+		Name:      "probeless",
+		Installed: func(string) bool { return true },
+		Probe:     func() (mount.Usage, bool) { return mount.Usage{}, false },
+	})
+
+	failures, err := Run(root, Options{NoShip: true})
+	if err != nil {
+		t.Fatalf("Run = %v", err)
+	}
+	var found bool
+	for _, failure := range failures {
+		if failure.Name == "host login" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a host login failure, got %v", failures)
+	}
+}
+
+// TestSandboxFailsWhenTheOverlayAsksAndNoSandboxToolIsOnPath checks the sandbox check fails,
+// rather than passing silently, when the platform's sandbox tool cannot be found.
+func TestSandboxFailsWhenTheOverlayAsksAndNoSandboxToolIsOnPath(t *testing.T) {
+	root := clean(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	overlay := filepath.Join(home, ".komodo", "config.json")
+	if err := os.WriteFile(overlay, []byte(`{"sandbox":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	contract := &fakeHostContract{}
+	registerHostContract(t, contract)
+
+	failures, err := Run(root, Options{NoShip: true})
+	if err != nil {
+		t.Fatalf("Run = %v", err)
+	}
+	var found bool
+	for _, failure := range failures {
+		if failure.Name == "sandbox" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a sandbox failure, got %v", failures)
 	}
 }
 

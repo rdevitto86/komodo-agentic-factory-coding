@@ -281,7 +281,10 @@ func Headless(skill, target string) (string, []string) {
 	if target != "" {
 		prompt += " " + target
 	}
-	args := []string{"-p", prompt, "--permission-mode", "dontAsk", "--model", modelFor("standard")}
+	args := []string{
+		"-p", prompt, "--permission-mode", "dontAsk",
+		"--tools", toolNames(mount.Verbs), "--model", modelFor("standard"),
+	}
 	if settings := sandboxSettings(mount.LoadOverlay()); settings != "" {
 		args = append(args, "--settings", settings)
 	}

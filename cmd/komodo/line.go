@@ -374,11 +374,16 @@ func runStep(root string, args []string) {
 func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
-	noShip := flags.Bool("no-ship", false, "stop each group at shipped-ready, skipping the forge credential check")
+	noShip := flags.Bool("no-ship", false,
+		"stop each group at shipped-ready, skipping the forge credential check and the push")
 	budget := flags.Duration("budget", 0, "how long the run may take before it is killed (default: "+
 		run.GroupBudget.String()+" per group)")
 	target, rest := splitPositional(args, "budget")
 	_ = flags.Parse(rest)
+	// A headless session the run itself started must never call komodo run again.
+	if os.Getenv(line.LockEnv) != "" {
+		fail(fmt.Errorf("komodo run is already driving this run; a session it started must not call it again"))
+	}
 	if !*dry {
 		if err := runPreflight(root, *noShip); err != nil {
 			fail(err)
@@ -396,7 +401,7 @@ func runRun(root string, args []string) {
 		}
 		_ = os.Setenv(line.LockEnv, strconv.Itoa(os.Getpid()))
 	}
-	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry})
+	code, err := run.Launch(run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry, NoShip: *noShip})
 	line.ReleaseLock(root, group)
 	if err != nil {
 		fail(err)

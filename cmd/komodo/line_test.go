@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"komodo/internal/conductor"
+	"komodo/internal/line"
 )
 
 // captureStdout swaps os.Stdout for a temp file for the call, returning what it printed.
@@ -73,4 +74,20 @@ func TestRunResumeUsage(t *testing.T) {
 		}
 	}()
 	runResume(root, nil)
+}
+
+// TestRunRefusesToNestInsideASessionItStarted stops a headless session the run itself started
+// from calling komodo run again, rather than let it contend for the lock and do nothing.
+func TestRunRefusesToNestInsideASessionItStarted(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(line.LockEnv, "123")
+	oldExit, code := exit, 0
+	defer func() { exit = oldExit }()
+	exit = func(c int) { code = c; panic("exit") }
+	defer func() {
+		if recover() == nil || code != 1 {
+			t.Fatalf("exit code = %d, want 1", code)
+		}
+	}()
+	runRun(root, []string{"--dry-run"})
 }

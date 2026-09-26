@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
 
 	"komodo/internal/doctor"
 	"komodo/internal/mount"
+	"komodo/internal/profile"
 )
 
 // Check holds one failed preflight check and the fix the run should name.
@@ -38,7 +40,7 @@ func Run(root string, options Options) ([]Check, error) {
 	}
 
 	// Host login through the contract's preflight.
-	if err := checkHostLogin(); err != nil {
+	if err := checkHostLogin(root); err != nil {
 		failures = append(failures, Check{
 			Name: "host login",
 			Fix:  err.Error(),
@@ -81,12 +83,20 @@ func SetHostFallible(h HostContract) {
 	hostFallible = h
 }
 
-// checkHostLogin checks the host's login through the contract's preflight.
-func checkHostLogin() error {
+// checkHostLogin checks the host's login through the contract's preflight, or the profile's
+// mount when no contract is under test.
+func checkHostLogin(root string) error {
 	if hostFallible != nil {
 		return hostFallible.Preflight()
 	}
-	// If no contract is available, the check passes; the actual preflight will happen at runtime.
+	selected := profile.Select(root)
+	host, ok := mount.Get(selected.Host)
+	if !ok || host.Probe == nil {
+		return nil
+	}
+	if _, loggedIn := host.Probe(); !loggedIn {
+		return fmt.Errorf("not logged in to %s; log in and run again", selected.Host)
+	}
 	return nil
 }
 
@@ -100,14 +110,23 @@ func checkForgeCredential() error {
 	return nil
 }
 
-// checkSandbox reports an error if the platform has a sandbox and it cannot start.
+// checkSandbox reports an error if the overlay asks for a sandbox and this platform has none.
 func checkSandbox() error {
-	// Only check sandbox if the host's overlay declares it's needed.
 	overlay := mount.LoadOverlay()
 	if !overlay.Sandbox {
 		return nil
 	}
-
-	// TODO: detect sandbox availability per platform (Seatbelt on macOS, bubblewrap on Linux).
+	switch runtime.GOOS {
+	case "darwin":
+		if _, err := exec.LookPath("sandbox-exec"); err != nil {
+			return errors.New("the overlay asks for a sandbox, but sandbox-exec is not on PATH")
+		}
+	case "linux":
+		if _, err := exec.LookPath("bwrap"); err != nil {
+			return errors.New("the overlay asks for a sandbox, but bubblewrap (bwrap) is not on PATH")
+		}
+	default:
+		return fmt.Errorf("the overlay asks for a sandbox, but %s has none", runtime.GOOS)
+	}
 	return nil
 }
