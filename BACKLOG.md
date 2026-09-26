@@ -1006,7 +1006,7 @@ depends_on: [TSK-05.7.2]
 context:
   - "EpicBranch is feat/v plus the group's version; groupBase is the declared base, else the epic branch, else the remote's default when the epic branch is missing and cannot be opened"
   - "lint's base rule accepts the group's epic branch; the grammar in komodo/rules/backlog.md says a group cuts from its epic's branch and states that its version picks the branch"
-  - "a group's branch is <type>/<group id>-<slug>, such as feat/tg-05.2-the-host-contract, and its PR title ends with the group id, such as (TG-05.2), so each traces to its group"
+  - "a PR's branch is <type>/<id>-<slug>, the id kept as written: feat/TG-05.2-the-host-contract for a group, fix/TSK-04.6.1-stop-verbose-outputs for a single task; its PR title ends with the same id, such as (TG-05.2), so each traces to its group or task"
   - "only feat/v<version> is an epic branch: lint refuses a group whose declared base looks like one but names another epic's version"
   - "test (REQ-13): a group with no base plans onto feat/v<version>; one with depends_on stacks on its parent's branch; a group branch carries its group id"
 ```
