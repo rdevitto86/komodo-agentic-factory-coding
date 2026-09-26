@@ -857,7 +857,7 @@ func TestHeadlessBypassesPromptsAndDrivesOnTheStandardTier(t *testing.T) {
 	if name != "claude" || !strings.Contains(joined, "-p /run TG-01.1") {
 		t.Fatalf("command = %s %s", name, joined)
 	}
-	if !strings.Contains(joined, "--permission-mode bypassPermissions") {
+	if !strings.Contains(joined, "--permission-mode dontAsk") {
 		t.Fatalf("a headless run cannot answer a prompt: %s", joined)
 	}
 	if !strings.Contains(joined, "--model "+models["standard"]) {

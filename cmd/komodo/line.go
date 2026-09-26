@@ -13,6 +13,7 @@ import (
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/pr"
+	"komodo/internal/preflight"
 	"komodo/internal/run"
 )
 
@@ -341,14 +342,21 @@ func runStep(root string, args []string) {
 	printCompactJSON(os.Stdout, next)
 }
 
-// runRun drives the line headless on the profile's host and exits with the host's code.
+// runRun runs preflight, then drives the line headless on the profile's host and exits with the
+// host's code; a dry run skips both the preflight and the lock, since nothing runs for real.
 func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
+	noShip := flags.Bool("no-ship", false, "stop each group at shipped-ready, skipping the forge credential check")
 	budget := flags.Duration("budget", 0, "how long the run may take before it is killed (default: "+
 		run.GroupBudget.String()+" per group)")
 	target, rest := splitPositional(args, "budget")
 	_ = flags.Parse(rest)
+	if !*dry {
+		if err := runPreflight(root, *noShip); err != nil {
+			fail(err)
+		}
+	}
 	// A targeted run locks its own group, so another group on disjoint files may run beside it.
 	group := line.GroupFor(root, target)
 	if !*dry {
@@ -367,6 +375,22 @@ func runRun(root string, args []string) {
 		fail(err)
 	}
 	exit(code)
+}
+
+// runPreflight runs every preflight check and joins each failure with the fix it names.
+func runPreflight(root string, noShip bool) error {
+	failures, err := preflight.Run(root, preflight.Options{NoShip: noShip})
+	if err != nil {
+		return err
+	}
+	if len(failures) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		lines = append(lines, fmt.Sprintf("%s: %s", failure.Name, failure.Fix))
+	}
+	return fmt.Errorf("preflight failed:\n%s", strings.Join(lines, "\n"))
 }
 
 // runSync brings the root up to origin, rebuilds a stale binary, and re-renders drifted config.
