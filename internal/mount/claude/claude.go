@@ -275,16 +275,20 @@ func init() {
 	})
 }
 
+// relayTools are the only tools a relay session may use; dontAsk refuses the rest without a prompt.
+var relayTools = []string{"Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent", "Skill"}
+
 // Headless returns this host's non-interactive command for one skill and one target: no prompt is
-// answered, the guard hook is the wall that judges every tool call, and the standard tier drives.
+// answered, only relayTools are allowed, the guard hook judges every call, and the standard tier drives.
 func Headless(skill, target string) (string, []string) {
 	prompt := "/" + skill
 	if target != "" {
 		prompt += " " + target
 	}
+	allowed := strings.Join(relayTools, ",")
 	args := []string{
 		"-p", prompt, "--permission-mode", "dontAsk",
-		"--tools", toolNames(mount.Verbs), "--model", modelFor("standard"),
+		"--tools", allowed, "--allowedTools", allowed, "--model", modelFor("standard"),
 	}
 	if settings := sandboxSettings(mount.LoadOverlay()); settings != "" {
 		args = append(args, "--settings", settings)

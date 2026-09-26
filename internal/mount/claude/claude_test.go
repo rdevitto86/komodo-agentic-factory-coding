@@ -860,6 +860,18 @@ func TestHeadlessBypassesPromptsAndDrivesOnTheStandardTier(t *testing.T) {
 	if !strings.Contains(joined, "--permission-mode dontAsk") {
 		t.Fatalf("a headless run cannot answer a prompt: %s", joined)
 	}
+	// With dontAsk, a tool outside the allow list is refused, so the relay's own tools must be listed.
+	allowed := ""
+	for index, arg := range args[:len(args)-1] {
+		if arg == "--allowedTools" {
+			allowed = "," + args[index+1] + ","
+		}
+	}
+	for _, tool := range []string{"Bash", "Edit", "Write", "Agent", "Skill"} {
+		if !strings.Contains(allowed, ","+tool+",") {
+			t.Fatalf("the relay session cannot use %s: %s", tool, joined)
+		}
+	}
 	if !strings.Contains(joined, "--model "+models["standard"]) {
 		t.Fatalf("the driver did not take the standard tier: %s", joined)
 	}
