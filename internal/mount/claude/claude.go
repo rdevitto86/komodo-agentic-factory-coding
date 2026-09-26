@@ -75,11 +75,8 @@ func Render(root string, binary string) (install.Plan, error) {
 	}
 	skills = mount.SelectStandards(root, skills)
 	skills = repoSkills(root, skills)
-	builderOwned := RenderBuilderPlugin(&plan, root, detected, skills)
+	RenderBuilderPlugin(&plan, root, detected, skills)
 	for _, skill := range skills {
-		if builderOwned[skill.Name] {
-			continue
-		}
 		plan.AddProject(filepath.Join(root, Dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
 	}
 
