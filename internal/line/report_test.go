@@ -74,3 +74,36 @@ func TestReportOmitsTheHeadlineWhenNothingIsAccepted(t *testing.T) {
 		t.Fatalf("report text = %q, must not carry the headline with nothing accepted", report.Text)
 	}
 }
+
+const twoTaskBacklog = "### [TG-09.2] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+	"#### [TSK-09.2.1] Do it [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - test -f a/one.go\n```\n\n" +
+	"#### [TSK-09.2.2] Do it too [P: C] [READY]\n```yaml\nfiles: [a/two.go]\ndone_when:\n  - test -f a/two.go\n```\n"
+
+// TestReportRequiresEveryTaskDoneToAccept proves a group with one Done and one still-READY
+// task is never accepted, since accepting requires every plan task to be done.
+func TestReportRequiresEveryTaskDoneToAccept(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(twoTaskBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStatus(root, "TSK-09.2.1", "DONE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Book(root).Stamp(ledger.Entry{Run: "run-1", Group: "TG-09.2", Station: "build", TokensIn: 100}); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.2", Title: "A group",
+		Tasks: []PlanTask{{ID: "TSK-09.2.1"}, {ID: "TSK-09.2.2"}},
+	}
+	report, err := BuildReport(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Accepted {
+		t.Fatal("one done task and one still-READY task must never mark the group accepted")
+	}
+	if strings.Contains(report.Text, "token(s) per accepted group") {
+		t.Fatalf("report text = %q, must not carry the headline with an incomplete group", report.Text)
+	}
+}

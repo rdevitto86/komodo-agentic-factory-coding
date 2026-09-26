@@ -45,7 +45,7 @@ func BuildReport(root string, plan *Plan) (*Report, error) {
 	}
 	sort.Strings(report.Done)
 	sort.Strings(report.Blocked)
-	report.Accepted = len(report.Blocked) == 0 && len(report.Done) > 0
+	report.Accepted = len(report.Blocked) == 0 && len(report.Done) == len(plan.Tasks)
 	tokens, err := groupTokens(root, plan.Group)
 	if err != nil {
 		return nil, err
