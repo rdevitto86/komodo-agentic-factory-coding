@@ -9,8 +9,24 @@ import (
 )
 
 // Session builds the argv and environment for starting or resuming a Claude Code session headless.
-func Session(root, worktree string, req mount.StartRequest, resumed mount.Handle, model string, effort string, maxBudgetUSD float64) (argv []string, env []string) {
-	argv = []string{"-p", "/"}
+func Session(
+	root, worktree string,
+	req mount.StartRequest,
+	resumed mount.Handle,
+	resumeInput string,
+	model, effort string,
+	maxTurns int,
+	maxBudgetUSD float64,
+) (argv []string, env []string) {
+	prompt := req.Brief
+	if resumed != "" {
+		prompt = resumeInput
+	}
+	if prompt == "" {
+		prompt = "/"
+	}
+
+	argv = []string{"-p", prompt}
 	argv = append(argv, "--setting-sources", "project,local")
 
 	pluginDir := filepath.Join(root, Dir, "plugins", req.Role)
@@ -42,6 +58,7 @@ func Session(root, worktree string, req mount.StartRequest, resumed mount.Handle
 	env = os.Environ()
 	env = removeEnv(env, "CLAUDE_CONFIG_DIR")
 	env = setEnv(env, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP", "3")
+	env = setEnv(env, "CLAUDE_CODE_MAX_TURNS", strconv.Itoa(maxTurns))
 	env = setEnv(env, "DISABLE_AUTOUPDATER", "1")
 	env = setEnv(env, "GOCACHE", filepath.Join(worktree, ".gocache"))
 	env = setEnv(env, "GOTMPDIR", filepath.Join(worktree, ".gotmpdir"))
