@@ -93,7 +93,7 @@ version: 1.0.0-alpha.5
 ```
 * **Why:** no `.gitattributes` existed (evidence 14), and `bin/` went stale after every pull until someone rebuilt it by hand. Proves REQ-4 and REQ-5 for this repo.
 
-#### [TSK-04.2.1] `.gitattributes` sets LF in the toolkit and in init's template [P: H] [READY]
+#### [TSK-04.2.1] `.gitattributes` sets LF in the toolkit and in init's template [P: H] [DONE]
 ```yaml
 files: [.gitattributes, templates/project/.gitattributes, cmd/komodo/init_test.go]
 done_when:
@@ -105,7 +105,7 @@ context:
   - "both files hold * text=auto eol=lf; init_test's starterFiles gains .gitattributes, which the all:templates/project embed already carries"
 ```
 
-#### [TSK-04.2.2] Doctor fails a repo whose `.gitattributes` does not set LF [P: H] [READY]
+#### [TSK-04.2.2] Doctor fails a repo whose `.gitattributes` does not set LF [P: H] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
@@ -116,7 +116,7 @@ context:
   - "a missing file, or one whose * line lacks eol=lf, is a problem naming the line to add (REQ-4)"
 ```
 
-#### [TSK-04.2.3] A pull, checkout or rebase rebuilds the binary when Go sources changed [P: C] [READY]
+#### [TSK-04.2.3] A pull, checkout or rebase rebuilds the binary when Go sources changed [P: C] [DONE]
 ```yaml
 files: [internal/gate/gate.go, internal/gate/gate_test.go, cmd/komodo/gate.go]
 done_when:
@@ -128,7 +128,7 @@ context:
   - "test (REQ-5): after a pull that changes a Go file in a temp repo, bin/.built-from equals the new HEAD"
 ```
 
-#### [TSK-04.2.4] A build from a dirty tree is never stamped as built from HEAD [P: M] [READY]
+#### [TSK-04.2.4] A build from a dirty tree is never stamped as built from HEAD [P: M] [DONE]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go]
 done_when:
@@ -138,6 +138,54 @@ context:
   - "syncBinary and gate --rebuild share one stamp function; it skips the stamp when git status --porcelain reports tracked changes, and writes it only after the hooks install (from TSK-03.32.4)"
 type: fix
 ```
+
+#### [TSK-04.2.5] internal/run/sync.go:133 Post-merge hook stamps first, so syncBinary returns no built path and the drain launches a stale binary [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/sync.go
+done_when:
+  - test -f internal/run/sync.go
+type: fix
+context:
+  - 'With the hooks from gate --install, syncRoot''s `git merge --ff-only upstream` fires post-merge in the main working tree. The hook runs `gate --rebuild`, which builds bin/komodo-<platform>, installs hooks and writes .built-from = upstream. syncBinary then reads a marker equal to head, prints ''binary: already current'' and returns "". drain (run.go:163) never sets executable. A drain started with `go run ./cmd/komodo run` then launches every group with its pre-pull temp binary. Before this diff syncBinary rebuilt and returned the bin path. The rebuild also goes unreported in sync output. Make syncBinary return the bin path when the marker is fresh because this sync''s own fast-forward stamped it, or skip the hook rebuild during sync.'
+```
+
+#### [TSK-04.2.6] internal/doctor/doctor.go:304 A tab-separated * line is reported as lacking eol=lf [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/doctor.go
+done_when:
+  - test -f internal/doctor/doctor.go
+type: fix
+context:
+  - 'gitattributes accepts any whitespace between pattern and attributes, but the check requires the literal prefix "* ". A file holding `*\ttext=auto eol=lf` gets the ''add: * text=auto eol=lf'' problem, and the gate refuses a correctly configured repo. Split the trimmed line with strings.Fields and match a first field of "*" with any later field equal to eol=lf.'
+```
+
+#### [TSK-04.2.7] internal/doctor/doctor.go:298 Comment restates the loop and hedges [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/doctor.go
+done_when:
+  - test -f internal/doctor/doctor.go
+type: docs
+context:
+  - `// Check if the file has a line with * pattern that sets eol=lf.` repeats what the loop below plainly does. The comments standard bans restating the code. Delete the comment.
+```
+
+#### [TSK-04.2.8] internal/gate/gate_test.go:486 Test doc comment cites a spec ID [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/gate/gate_test.go
+done_when:
+  - test -f internal/gate/gate_test.go
+type: docs
+context:
+  - '`proves REQ-5:` names a requirement ID. The comments standard bans citing a version, ticket, spec or PRD. Remove "REQ-5:" and keep only the behaviour sentence.'
+```
+
+
+
+
 
 ### [TG-04.3] Every group cuts from `main`, or from a group it depends on
 ```yaml
