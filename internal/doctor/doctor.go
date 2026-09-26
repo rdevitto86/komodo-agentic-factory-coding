@@ -60,7 +60,9 @@ func Run(root string, options Options) ([]Problem, error) {
 		problems = append(problems, found...)
 	}
 	if options.Remote {
-		problems = append(problems, CheckRulesets(root, base(root), pr.Run)...)
+		defaultBranch := base(root)
+		problems = append(problems, CheckRulesets(root, defaultBranch, pr.Run)...)
+		problems = append(problems, CheckEpics(root, defaultBranch, pr.Run)...)
 	}
 	return problems, nil
 }
