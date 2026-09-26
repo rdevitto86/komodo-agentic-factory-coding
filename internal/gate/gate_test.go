@@ -515,6 +515,70 @@ func TestRebuildStampsTheNewHeadWhenAGoFileChanged(t *testing.T) {
 	}
 }
 
+// TestRebuildInstallsHooksBeforeStamping proves a pull that changes a Go file rewrites the git hooks,
+// not just the marker, so a hook script change is never hidden behind a stale-looking stamp.
+func TestRebuildInstallsHooksBeforeStamping(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	from := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "add a go file")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+
+	if err := Rebuild(root, from, to, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git", "hooks", "pre-commit")); err != nil {
+		t.Fatalf("want the pre-commit hook installed, err = %v", err)
+	}
+}
+
+// TestRebuildDoesNotStampADirtyTree proves an uncommitted tracked edit is built but never stamped,
+// so a later clean build from the same commit is not skipped as already current.
+func TestRebuildDoesNotStampADirtyTree(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	from := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "edit")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+	// A tracked edit left uncommitted after the commit that produced to.
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nfunc main() { println() }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+
+	if err := Rebuild(root, from, to, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("want no marker written for a dirty tree, err = %v", err)
+	}
+}
+
 // TestRebuildDoesNothingWithoutABuildInputChange proves an unrelated file never triggers a build.
 func TestRebuildDoesNothingWithoutABuildInputChange(t *testing.T) {
 	root := t.TempDir()

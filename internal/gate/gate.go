@@ -171,10 +171,40 @@ func Rebuild(root, from, to string, out io.Writer) error {
 	if !changed {
 		return nil
 	}
-	if _, err := BuildLocal(root, out); err != nil {
+	gitDir, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(root, "bin", BuiltFrom), []byte(to+"\n"), 0o644)
+	_, _, err = Stamp(root, gitDir, to, BuildLocal, Install, out)
+	return err
+}
+
+// Stamp builds this host's binary, then on a clean tree installs the git hooks and records to as the
+// built commit; a dirty tracked tree still builds, but installs and stamps nothing.
+func Stamp(
+	root, gitDir, to string,
+	build func(string, io.Writer) (string, error),
+	install func(string) ([]string, error),
+	out io.Writer,
+) (path string, stamped bool, err error) {
+	path, err = build(root, out)
+	if err != nil {
+		return "", false, err
+	}
+	dirty, err := git.Run(root, "status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return "", false, err
+	}
+	if dirty != "" {
+		return path, false, nil
+	}
+	if _, err := install(gitDir); err != nil {
+		return "", false, err
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", BuiltFrom), []byte(to+"\n"), 0o644); err != nil {
+		return "", false, err
+	}
+	return path, true, nil
 }
 
 // Sum returns the hex sha256 of one file.

@@ -126,27 +126,17 @@ func syncBinary(root, head string, dryRun bool, out io.Writer, suffix string) (s
 		fmt.Fprintf(out, "binary: rebuilt %s from %s%s\n", target.Name, short(head), suffix)
 		return "", nil
 	}
-	built, err := buildLocal(root, io.Discard)
-	if err != nil {
-		return "", err
-	}
-	dirty, err := git.Run(root, "status", "--porcelain", "--untracked-files=no")
-	if err != nil {
-		return "", err
-	}
-	if dirty != "" {
-		fmt.Fprintf(out, "binary: skipped stamp, the working tree has uncommitted changes%s\n", suffix)
-		return "", nil
-	}
-	if err := os.WriteFile(marker, []byte(head+"\n"), 0o644); err != nil {
-		return "", err
-	}
 	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return "", err
 	}
-	if _, err := installHooks(common); err != nil {
+	built, stamped, err := gate.Stamp(root, common, head, buildLocal, installHooks, io.Discard)
+	if err != nil {
 		return "", err
+	}
+	if !stamped {
+		fmt.Fprintf(out, "binary: skipped stamp, the working tree has uncommitted changes%s\n", suffix)
+		return "", nil
 	}
 	fmt.Fprintf(out, "binary: rebuilt %s from %s%s\n", target.Name, short(head), suffix)
 	return built, nil
