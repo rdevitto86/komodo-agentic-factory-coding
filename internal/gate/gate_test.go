@@ -57,13 +57,13 @@ func TestSumIsStable(t *testing.T) {
 	}
 }
 
-func TestInstallWritesBothHooks(t *testing.T) {
+func TestInstallWritesEveryHook(t *testing.T) {
 	dir := t.TempDir()
 	written, err := Install(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(written) != 2 {
+	if len(written) != 5 {
 		t.Fatalf("written = %v", written)
 	}
 	for _, path := range written {
@@ -211,7 +211,7 @@ func TestHookFromAWorktreeUsesTheMainCheckoutBinary(t *testing.T) {
 // TestHookInTheToolkitGatesFromTheCheckoutItCommits proves a checkout holding cmd/komodo runs its
 // own source, not the main checkout's binary, and a push still fuzzes.
 func TestHookInTheToolkitGatesFromTheCheckoutItCommits(t *testing.T) {
-	if !strings.Contains(hookScript, "git rev-parse --show-toplevel") || !strings.Contains(hookScript, "exec go run ./cmd/komodo gate") {
+	if !strings.Contains(hookScript, "git rev-parse --show-toplevel") || !strings.Contains(hookScript, `cmd="go run ./cmd/komodo"`) {
 		t.Fatal("the hook script never gates from the committing checkout")
 	}
 	main := t.TempDir()
@@ -295,7 +295,7 @@ func TestTestArgsAlwaysRunsEveryPackage(t *testing.T) {
 
 // TestPrePushHookFuzzes proves only the pre-push hook adds the fuzz lane.
 func TestPrePushHookFuzzes(t *testing.T) {
-	if !strings.Contains(hookScript, `"pre-push" ]; then`) || !strings.Contains(hookScript, "gate --fuzz") {
+	if !strings.Contains(hookScript, "pre-push)") || !strings.Contains(hookScript, "gate --fuzz") {
 		t.Fatal("the hook script never fuzzes on push")
 	}
 }
@@ -468,5 +468,177 @@ func TestTestArgsDropsTheRaceFlagWithoutCgo(t *testing.T) {
 	args := TestArgs()
 	if strings.Join(args, " ") != "go test ./..." {
 		t.Fatalf("args = %q", args)
+	}
+}
+
+// gitCommand runs one git command in dir and fails the test on error, returning trimmed stdout.
+func gitCommand(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// TestRebuildStampsTheNewHeadWhenAGoFileChanged proves REQ-5: after a pull that changes a Go file,
+// bin/.built-from equals the new HEAD.
+func TestRebuildStampsTheNewHeadWhenAGoFileChanged(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	from := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "add a go file")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+
+	if err := Rebuild(root, from, to, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(marker)) != to {
+		t.Fatalf("marker = %q, want %q", marker, to)
+	}
+}
+
+// TestRebuildDoesNothingWithoutABuildInputChange proves an unrelated file never triggers a build.
+func TestRebuildDoesNothingWithoutABuildInputChange(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "README.md")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	from := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "README.md")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "edit")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+
+	if err := Rebuild(root, from, to, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("want no marker written, err = %v", err)
+	}
+}
+
+// TestRebuildSkipsAZeroFromCommit proves the null object id a fresh checkout passes never rebuilds.
+func TestRebuildSkipsAZeroFromCommit(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := Rebuild(root, zeroOID, to, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("want no marker written, err = %v", err)
+	}
+}
+
+// TestHookScriptRebuildsOnPostMergeAndPostRewrite proves each hook passes its old and new commit to --rebuild.
+func TestHookScriptRebuildsOnPostMergeAndPostRewrite(t *testing.T) {
+	main := t.TempDir()
+	gitCommand(t, main, "init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(main, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(main, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, main, "add", "cmd/komodo/main.go")
+	gitCommand(t, main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	head := gitCommand(t, main, "rev-parse", "HEAD")
+
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho ran \"$@\"\n")
+
+	script := filepath.Join(fakes, "post-merge")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = main
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("post-merge: %v: %s", err, out)
+	}
+	if want := "ran run ./cmd/komodo gate --rebuild --from  --to " + head; strings.TrimSpace(string(out)) != want {
+		t.Fatalf("post-merge: out = %q, want %q", out, want)
+	}
+
+	script = filepath.Join(fakes, "post-rewrite")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("sh", script, "amend")
+	cmd.Dir = main
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	cmd.Stdin = strings.NewReader("old1 new1 extra\nold2 new2\n")
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("post-rewrite: %v: %s", err, out)
+	}
+	if want := "ran run ./cmd/komodo gate --rebuild --from old1 --to new2"; strings.TrimSpace(string(out)) != want {
+		t.Fatalf("post-rewrite: out = %q, want %q", out, want)
+	}
+}
+
+// TestPostCheckoutOnlyRebuildsInTheMainWorkingTree proves a worktree the line cut never rebuilds,
+// and a branch checkout in the main working tree does.
+func TestPostCheckoutOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
+	main := t.TempDir()
+	gitCommand(t, main, "init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(main, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(main, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, main, "add", "cmd/komodo/main.go")
+	gitCommand(t, main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	worktree := filepath.Join(t.TempDir(), "wt")
+	gitCommand(t, main, "worktree", "add", "-q", "-b", "feat/x", worktree)
+
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho ran \"$@\"\n")
+	script := filepath.Join(fakes, "post-checkout")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(dir string) string {
+		cmd := exec.Command("sh", script, "old", "new", "1")
+		cmd.Dir = dir
+		cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("post-checkout in %s: %v: %s", dir, err, out)
+		}
+		return string(out)
+	}
+	if out := run(worktree); strings.Contains(out, "ran") {
+		t.Fatalf("a worktree the line cut must not rebuild: out = %q", out)
+	}
+	if out := run(main); !strings.Contains(out, "ran run ./cmd/komodo gate --rebuild --from old --to new") {
+		t.Fatalf("the main working tree must rebuild: out = %q", out)
 	}
 }
