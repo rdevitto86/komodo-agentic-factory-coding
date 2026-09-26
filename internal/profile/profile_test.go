@@ -293,6 +293,13 @@ func TestNoMountInstalledStillLoadsTheFullModeRoles(t *testing.T) {
 	}
 }
 
+func TestBaseCarriesThePullRequestSizeCeilings(t *testing.T) {
+	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	if got.PRFiles != 20 || got.PRLinesPreferred != 1000 || got.PRLinesMax != 2000 {
+		t.Fatalf("pr size = %+v", got)
+	}
+}
+
 func TestAnUnknownRoleHasNoMachine(t *testing.T) {
 	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
 	if _, ok := got.Machine("nobody"); ok {

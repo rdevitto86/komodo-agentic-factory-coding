@@ -942,7 +942,7 @@ version: 1.0.0-alpha.6
 ```
 * **Why:** every group opened its own PR against `main`, and the owner approved each by hand; on 2026-09-26 that was 14 PRs in one afternoon. An epic branch collects its groups' PRs, and a person merges once per epic.
 
-#### [TSK-05.7.1] Decision 0028 and REQ-13 say where every branch cuts from and where every PR lands [P: C] [READY]
+#### [TSK-05.7.1] Decision 0028 and REQ-13 say where every branch cuts from and where every PR lands [P: C] [DONE]
 ```yaml
 files: [docs/decisions.md, docs/prd.md, docs/system-design.md]
 done_when:
@@ -958,7 +958,7 @@ context:
 type: docs
 ```
 
-#### [TSK-05.7.2] Lint pins every group's version to its epic's [P: C] [READY]
+#### [TSK-05.7.2] Lint pins every group's version to its epic's [P: C] [DONE]
 ```yaml
 files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
 done_when:
@@ -969,7 +969,7 @@ context:
   - "a group whose version differs from its epic's is a problem naming both; an epic with no version is a problem"
 ```
 
-#### [TSK-05.7.3] A group with no declared base cuts from its epic's branch [P: C] [READY]
+#### [TSK-05.7.3] A group with no declared base cuts from its epic's branch [P: C] [DONE]
 ```yaml
 files: [internal/backlog/backlog.go, internal/line/next.go, internal/line/next_test.go, komodo/rules/backlog.md]
 done_when:
@@ -983,7 +983,7 @@ context:
   - "test (REQ-13): a group with no base plans onto feat/v<version>; one with depends_on stacks on its parent's branch; a group branch carries its group id"
 ```
 
-#### [TSK-05.7.4] The line opens an epic's branch and draft PR on its first cut [P: C] [READY]
+#### [TSK-05.7.4] The line opens an epic's branch and draft PR on its first cut [P: C] [DONE]
 ```yaml
 files: [internal/line/epic.go, internal/line/epic_test.go, internal/line/cut.go]
 done_when:
@@ -994,7 +994,7 @@ context:
   - "where drafts are unavailable, the PR is labelled status: wip, as TSK-07.8.3 does for group PRs; a draft base never stops a group PR from targeting or stacking on it"
 ```
 
-#### [TSK-05.7.5] The conductor merges a reviewed group into its epic branch [P: C] [READY]
+#### [TSK-05.7.5] The conductor merges a reviewed group into its epic branch [P: C] [DONE]
 ```yaml
 files: [internal/line/merge.go, internal/line/merge_test.go, internal/pr/pr.go, internal/pr/pr_test.go]
 done_when:
@@ -1005,7 +1005,7 @@ context:
   - "it never merges into main or a critical ref from komodo/policy.json, and a model session never merges; a refused merge leaves the PR open and names why"
 ```
 
-#### [TSK-05.7.6] A group PR holds at most 20 files and 2,000 changed lines [P: H] [READY]
+#### [TSK-05.7.6] A group PR holds at most 20 files and 2,000 changed lines [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
 done_when:
@@ -1017,7 +1017,7 @@ context:
   - "lint refusing a group whose tasks list more than 20 files lands with TG-07.1's group files"
 ```
 
-#### [TSK-05.7.7] The rules and skills send every PR to its epic branch [P: H] [READY]
+#### [TSK-05.7.7] The rules and skills send every PR to its epic branch [P: H] [DONE]
 ```yaml
 files: [komodo/AGENTS.md, komodo/skills/standards-sdlc/SKILL.md, komodo/skills/respond/SKILL.md, komodo/roles/responder.md]
 done_when:
@@ -1030,7 +1030,7 @@ context:
 type: docs
 ```
 
-#### [TSK-05.7.8] Doctor reports an epic missing its branch or draft PR, and a group PR aimed at main [P: M] [READY]
+#### [TSK-05.7.8] Doctor reports an epic missing its branch or draft PR, and a group PR aimed at main [P: M] [DONE]
 ```yaml
 files: [internal/doctor/epics.go, internal/doctor/epics_test.go]
 done_when:
@@ -1097,7 +1097,7 @@ depends_on: [TG-05.6]
 ```
 * **Why:** TSK-05.6.2 closed with no change, since its checks already held, so `komodo run` still relays stages through a model; TSK-05.6.3's skill then pointed at a conductor nothing starts. This group wires it, and its last check is a group driven to Shipped against a fake host.
 
-#### [TSK-05.9.1] A mount hands the conductor its host contract [P: C] [READY]
+#### [TSK-05.9.1] A mount hands the conductor its host contract [P: C] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/mount_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
 done_when:
@@ -1107,7 +1107,7 @@ context:
   - "mount.Host gains Contract func(root, worktree string) Contract; the Claude mount registers NewMount with the profile's turn cap; a mount without one, such as Codex or Ollama, leaves it nil and komodo run says it cannot drive that host"
 ```
 
-#### [TSK-05.9.2] The builder's and reviewer's start requests come from the role, the group and the profile [P: C] [READY]
+#### [TSK-05.9.2] The builder's and reviewer's start requests come from the role, the group and the profile [P: C] [DONE]
 ```yaml
 files: [internal/run/requests.go, internal/run/requests_test.go, internal/line/step.go]
 done_when:
@@ -1118,7 +1118,7 @@ context:
   - "tests: the builder request names every task of a two-task group and the builder schema; the reviewer request carries the group's diff"
 ```
 
-#### [TSK-05.9.3] The stations fit one group builder, and the review lands where ship reads it [P: C] [READY]
+#### [TSK-05.9.3] The stations fit one group builder, and the review lands where ship reads it [P: C] [DONE]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
@@ -1128,7 +1128,7 @@ context:
   - "the conductor writes the reviewer's result to the group's review result path, so ShipGroup's missing-review refusal passes only when a review really ran"
 ```
 
-#### [TSK-05.9.4] `komodo run <group>` drives the group to Shipped through the conductor [P: C] [READY]
+#### [TSK-05.9.4] `komodo run <group>` drives the group to Shipped through the conductor [P: C] [DONE]
 ```yaml
 files: [internal/run/run.go, internal/run/drive.go, internal/run/drive_test.go, cmd/komodo/line.go]
 done_when:
@@ -1141,7 +1141,7 @@ context:
   - "TestRunDrivesAGroupEndToEnd puts a fake claude script on PATH that replays a builder result and then a reviewer result, with a bare origin and a fake forge client; the group reaches Shipped, its branch is pushed, and the ledger holds one build and one review session"
 ```
 
-#### [TSK-05.9.5] The run skill launches and watches, and never relays a stage [P: H] [READY]
+#### [TSK-05.9.5] The run skill launches and watches, and never relays a stage [P: H] [REFINEMENT]
 ```yaml
 files: [komodo/skills/run/SKILL.md]
 done_when:
@@ -1151,6 +1151,7 @@ done_when:
 depends_on: [TSK-05.9.4]
 context:
   - "was TSK-05.6.3: the skill starts komodo run <group> in the background and reports komodo resume <group>; it never calls brief, close or step, and names no command that does not exist yet; komodo status lands with TSK-08.4.4"
+  - "waits until TSK-05.5.4's proof retires the relay: drains, --relay and --no-ship still run a headless /run session on this skill, and a relay session may not call komodo run"
 type: docs
 ```
 

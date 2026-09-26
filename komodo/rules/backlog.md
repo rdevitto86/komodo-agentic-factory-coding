@@ -8,9 +8,10 @@
 
 ```yaml
 type: feat          # feat fix chore docs test refactor perf build ci (branch and commit type)
-version: 1.4.0      # the version this group ships; ship files the group's changelog line under it
+version: 1.4.0      # the version this group ships, and picks the epic branch it cuts from
 epic: EPIC-01        # the epic this group's file is removed alongside
-depends_on: []       # groups whose unmerged branch this one's PR stacks on; empty for the default branch
+base: ""             # the branch this group cuts from; empty defaults to its epic's branch
+depends_on: []       # groups whose unmerged branch this one's PR stacks on instead
 ```
 
 - [ ] **TSK-01.1.1** Task title
@@ -22,9 +23,10 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on; emp
 ### Fields
 - **Priority** is `C`, `H`, `M`, or `L`. **Status** is `REFINEMENT`, `READY`, or `BLOCKED`, both on the group's own heading. A task's checkbox is its only status: the harness ticks it only once that task's checks pass.
 - **`REFINEMENT`** is a group still being planned: the harness never runs it, and lint does not demand a task's `files`. Promote it to `READY` once every task names its files.
-- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n` or `x.y.z-beta.n` for a prerelease. It is the changelog version ship writes a fragment for and the tag `komodo tag` cuts, so the two can never drift. Groups shipping together share one version.
+- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n` or `x.y.z-beta.n` for a prerelease. It is the changelog version ship writes a fragment for and the tag `komodo tag` cuts, so the two can never drift. Groups shipping together share one version, and a group's version picks the branch it cuts from: `feat/v<version>`.
 - **`epic`** is the `EPIC-` id the group's file carries. The PR of an epic's last open group deletes every group file that shares its epic; a group with no epic deletes its own file.
-- **`depends_on`** on a group is the groups whose unmerged branch this one's PR stacks on; empty targets the remote's default branch. When a stacked parent merges, the child rebases onto the new base.
+- **`base`** is the branch a group cuts from. Empty by default: a group then cuts from its epic's branch, `feat/v<version>`, falling back to the remote's default branch while that epic branch is not yet cut.
+- **`depends_on`** on a group is the groups whose unmerged branch this one's PR stacks on instead of its epic's. When a stacked parent merges, the child rebases onto the new base.
 - **`files`** lists every path a task will create or edit. A task needs only a title and its `files`. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
 - **`accept`** is an optional line the correctness lens checks alongside the PRD, never a shell command.
 - **`checks`** are optional shell commands that add to the ones derived per detected language. Never prose.

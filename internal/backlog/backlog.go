@@ -118,6 +118,26 @@ func (t Task) Open() bool { return t.Status != "DONE" && t.Status != "BLOCKED" }
 // Ready reports whether the task is planned enough for the line to run it.
 func (t Task) Ready() bool { return t.Status == "READY" || t.Status == "IN_PROGRESS" }
 
+// Epic is an epic heading and its title line.
+type Epic struct {
+	ID    string
+	Title string
+}
+
+// Version extracts the version from the epic's title, parsing "Ships as x.y.z" format.
+func (e Epic) Version() string {
+	idx := strings.Index(e.Title, "Ships as `")
+	if idx < 0 {
+		return ""
+	}
+	rest := e.Title[idx+len("Ships as `"):]
+	idx = strings.Index(rest, "`")
+	if idx < 0 {
+		return ""
+	}
+	return rest[:idx]
+}
+
 // Group is a task group heading, its optional block, and its tasks in file order.
 type Group struct {
 	ID      string
@@ -159,6 +179,15 @@ func BranchName(groupType, slug string) string { return groupType + "/" + slug }
 // Branch is the branch this group's own work lands on.
 func (g Group) Branch() string { return BranchName(g.Type(), g.Slug()) }
 
+// EpicBranch is the branch this group's epic ships on, feat/v plus the group's version, empty
+// with no version since only an epic's version names its branch.
+func (g Group) EpicBranch() string {
+	if version := g.Version(); version != "" {
+		return "feat/v" + version
+	}
+	return ""
+}
+
 // Slug is a kebab-case branch fragment derived from the group title.
 func (g Group) Slug() string {
 	text := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(g.Title), "-"), "-")
@@ -172,8 +201,9 @@ func (g Group) Slug() string {
 	return text
 }
 
-// Backlog is the whole parsed file: groups in order, plus every problem the parser saw.
+// Backlog is the whole parsed file: epics and groups in order, plus every problem the parser saw.
 type Backlog struct {
+	Epics    []Epic
 	Groups   []Group
 	Problems []string
 	Lines    []string
@@ -212,6 +242,16 @@ func (b Backlog) Group(needle string) (Group, bool) {
 		}
 	}
 	return Group{}, false
+}
+
+// Epic returns the epic with the given id, if it exists.
+func (b Backlog) Epic(id string) (Epic, bool) {
+	for _, epic := range b.Epics {
+		if epic.ID == id {
+			return epic, true
+		}
+	}
+	return Epic{}, false
 }
 
 // NextGroup is the first group in file order holding at least one ready agent task.
@@ -282,6 +322,23 @@ func Parse(text string) Backlog {
 		line := lines[index]
 		if match := epicHeading.FindStringSubmatch(line); match != nil {
 			epicID = match[1]
+			epicTitle := match[2]
+			// Look ahead for the goal line containing "Ships as" information
+			for i := index + 1; i < len(lines) && i < index+5; i++ {
+				nextLine := strings.TrimSpace(lines[i])
+				if nextLine == "" {
+					continue
+				}
+				if strings.HasPrefix(nextLine, "#") || strings.HasPrefix(nextLine, "###") {
+					break // Stop at next heading
+				}
+				if idx := strings.Index(nextLine, "Ships as `"); idx >= 0 {
+					epicTitle = epicTitle + " " + nextLine
+					break
+				}
+			}
+			epic := Epic{ID: epicID, Title: epicTitle}
+			parsed.Epics = append(parsed.Epics, epic)
 			index++
 			continue
 		}
