@@ -644,7 +644,7 @@ depends_on: [TG-05.2]
 ```
 * **Why:** three machines ran three different agents (evidence 10). Proves REQ-2, REQ-3 and REQ-16.
 
-#### [TSK-05.3.1] Profiles pin the host version, full model IDs and effort per role [P: H] [READY]
+#### [TSK-05.3.1] Profiles pin the host version, full model IDs and effort per role [P: H] [DONE]
 ```yaml
 files: [internal/profile/profile.go, internal/profile/profile_test.go, komodo/profiles]
 done_when:
@@ -655,7 +655,7 @@ context:
   - "full and economy profiles as JSON under komodo/profiles, which the komodo embed carries; models are full IDs such as claude-sonnet-5 and claude-opus-5-5, never an alias"
 ```
 
-#### [TSK-05.3.2] Line sessions load no personal layer and keep the login [P: C] [READY]
+#### [TSK-05.3.2] Line sessions load no personal layer and keep the login [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/config.go, internal/mount/claude/config_test.go]
 done_when:
@@ -667,7 +667,7 @@ context:
   - "test (REQ-3): a canary line in a fake personal config never appears in the rendered directory or a session's argv"
 ```
 
-#### [TSK-05.3.3] Each role runs with its own plugin: its skills, hooks and agents only [P: H] [READY]
+#### [TSK-05.3.3] Each role runs with its own plugin: its skills, hooks and agents only [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go]
 done_when:
@@ -678,7 +678,7 @@ context:
   - "test (REQ-16): the rendered builder plugin lists exactly those skills"
 ```
 
-#### [TSK-05.3.4] Doctor fails when any pin differs [P: H] [READY]
+#### [TSK-05.3.4] Doctor fails when any pin differs [P: H] [DONE]
 ```yaml
 files: [internal/doctor/pins.go, internal/doctor/pins_test.go, internal/doctor/doctor.go]
 done_when:
@@ -689,6 +689,126 @@ context:
   - docs/system-design.md#health-checks
   - "the host CLI version, the profile's model IDs, the komodo release and the go.mod toolchain; exit 0 when every pin matches, non-zero naming each one that differs (REQ-2)"
 ```
+
+#### [TSK-05.3.5] internal/mount/claude/session.go:31 Line sessions lose the universal rules [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/session.go
+done_when:
+  - test -f internal/mount/claude/session.go
+type: fix
+context:
+  - "--setting-sources local stops CLAUDE.md loading, which drops its @.claude/komodo/AGENTS.md import; the brief carries only the repo's root AGENTS.md (brief_slots.go:17), so Git, scope and comment rules vanish from every line session. Carry the rendered universal rules in a brief slot or the role plugin."
+```
+
+#### [TSK-05.3.6] internal/mount/claude/plugin.go:20 No build skill ships, so the builder plugin never holds one [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/plugin.go
+done_when:
+  - test -f internal/mount/claude/plugin.go
+type: fix
+context:
+  - "komodo/skills has no build skill; RenderBuilderPlugin skips it silently, and the tests pass only because their fixtures invent one. Ship komodo/skills/build/SKILL.md and test against the real LoadSkills set."
+```
+
+#### [TSK-05.3.7] internal/mount/claude/plugin.go:29 Hard-coded language map misses real standards [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/plugin.go
+done_when:
+  - test -f internal/mount/claude/plugin.go
+type: fix
+context:
+  - "detect never emits C or C++; standards-javascript, -ruby and -php do not exist; Zig, Swift, Kotlin, shell and cross-cutting standards never reach the builder; this repeats mount.SelectStandards glob logic. Build the plugin's standards from the list mount.SelectStandards already returns."
+```
+
+#### [TSK-05.3.8] internal/mount/claude/plugin.go:66 isForcedStandard always returns false [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/plugin.go
+done_when:
+  - test -f internal/mount/claude/plugin.go
+type: fix
+context:
+  - "Repo standards overrides never reach the builder plugin; the comment hedges and wrongly says no override source exists, though mount.forcedStandards and repopkg.LoadStandards do. Delete isForcedStandard and include the standards mount.forcedStandards names."
+```
+
+#### [TSK-05.3.9] internal/mount/claude/plugin.go:72 Doc claims the caller omits returned skills from the shared directory [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/plugin.go
+done_when:
+  - test -f internal/mount/claude/plugin.go
+type: docs
+context:
+  - "claude.go:78 throws the return away and still renders every skill into .claude/skills. Drop the return value and that sentence, or make Render use it."
+```
+
+#### [TSK-05.3.10] internal/doctor/pins.go:80 Model-ID pin misses the reviewer tier [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/pins.go
+done_when:
+  - test -f internal/doctor/pins.go
+type: fix
+context:
+  - "The check walks profile role names (correctness, security...) that do not match komodo/roles, and Tiers.Machine has no reviewer case; an overlay models.reviewer of opus passes doctor while reviews run that alias via Tiers.Reviewer (next.go:288). Check every tier's model directly, including Tiers.Reviewer."
+```
+
+#### [TSK-05.3.11] internal/profile/profile.go:189 withMode swallows the profile load error [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/profile/profile.go
+done_when:
+  - test -f internal/profile/profile.go
+type: fix
+context:
+  - "A malformed komodo/profiles JSON, or a disk komodo/ without profiles/, leaves Roles nil and silently turns off the doctor model-ID check. Return the load error or report it as a doctor problem."
+```
+
+#### [TSK-05.3.12] internal/doctor/pins_test.go:149 Stale-binary test passes only through a git error [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/pins_test.go
+done_when:
+  - test -f internal/doctor/pins_test.go
+type: test
+context:
+  - The zero OID makes git diff fail; no test covers a real .go change being flagged or a docs-only commit passing. Add .go and docs-only commits and assert each checkRelease outcome.
+```
+
+#### [TSK-05.3.13] internal/mount/claude/config_test.go:14 Canary tests pass whatever Session does [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/config_test.go
+done_when:
+  - test -f internal/mount/claude/config_test.go
+type: test
+context:
+  - "Session never reads HOME, so the canaries cannot leak; REQ-3's rendered-directory half is untested. Run Render with a canary personal config under a temp HOME and assert no planned file contains it."
+```
+
+#### [TSK-05.3.14] internal/mount/claude/config.go:6 Unused constants with a stale value [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/config.go
+done_when:
+  - test -f internal/mount/claude/config.go
+type: refactor
+context:
+  - "All three constants are unused, and settingSourcesFlag says project,local while session.go:31 passes local. Delete config.go or make Session use the constants with the correct value."
+```
+
+
+
+
+
+
+
+
+
+
 
 ### [TG-05.4] The conductor drives the stages
 ```yaml
