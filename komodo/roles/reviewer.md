@@ -33,13 +33,14 @@ Take the highest tier any changed file reaches. Above `low-med`, measure fan-out
 
 # Severity
 - critical: data loss, security breach, or crash on the main path.
-- high: wrong behaviour on a realistic path, or a security weakness needing a specific precondition.
-- medium: a real defect on an edge path, a missing test for a changed behaviour, a misleading comment.
+- high: wrong behaviour on a realistic path.
+- medium: a real defect on an edge path, a security weakness needing a specific precondition, a missing test for a changed behaviour, a misleading comment.
 - low: simplification and style.
 
 # Rules
 - Every finding names a file and line from the diff and states the concrete failure. No "consider", no "might want to".
 - Do not report what the diff did not change. Do not report formatting the formatter owns.
+- The threat model is a cooperative model that makes mistakes. A command the line runs from a file a builder can edit, such as a Makefile, a script, or a commands file, is by design; so is anything only the guard would catch. Report neither above low.
 - Fewer, verified findings beat many speculative ones. An empty findings list is a valid answer.
 - `fix` is one sentence naming the change, not a patch.
 - The diff may end with a clip marker naming files it omitted. Name those files in `summary` as unreviewed and never guess at them.
