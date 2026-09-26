@@ -274,14 +274,14 @@ func init() {
 	})
 }
 
-// Headless returns this host's non-interactive command for one skill and one target, with prompts
-// bypassed since none can be answered, the guard hook as the wall, and the standard tier driving.
+// Headless returns this host's non-interactive command for one skill and one target: no prompt is
+// answered, the guard hook is the wall that judges every tool call, and the standard tier drives.
 func Headless(skill, target string) (string, []string) {
 	prompt := "/" + skill
 	if target != "" {
 		prompt += " " + target
 	}
-	args := []string{"-p", prompt, "--permission-mode", "bypassPermissions", "--model", modelFor("standard")}
+	args := []string{"-p", prompt, "--permission-mode", "dontAsk", "--model", modelFor("standard")}
 	if settings := sandboxSettings(mount.LoadOverlay()); settings != "" {
 		args = append(args, "--settings", settings)
 	}
