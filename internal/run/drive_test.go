@@ -20,7 +20,7 @@ const driveBacklog = "### [TG-40.1] A fake group\n```yaml\ntype: feat\nversion: 
 const driveFakeClaude = `#!/bin/sh
 if [ -n "$FAKE_HANG_MARKER" ]; then
   touch "$FAKE_HANG_MARKER"
-  sleep 61.25
+  sleep "$FAKE_HANG_SLEEP"
 fi
 n=0
 if [ -f "$FAKE_COUNTER" ]; then n=$(cat "$FAKE_COUNTER"); fi
