@@ -118,6 +118,7 @@ type fakeStations struct {
 	checks   [][]string
 	prepares [][]string
 	shipErr  error
+	headErr  error
 	calledAt []string
 }
 
@@ -157,6 +158,9 @@ func (f *fakeStations) Ship() error {
 }
 
 func (f *fakeStations) Head() (string, error) {
+	if f.headErr != nil {
+		return "", f.headErr
+	}
 	return fmt.Sprintf("commit-%d", len(*f.saved)), nil
 }
 
@@ -423,6 +427,70 @@ func TestDriveStartsAColdReviewerOnAHostWithoutResume(t *testing.T) {
 	}
 	if got := r.sessions(t); !equal(got, []string{StationBuild, StationReview, StationRepair, StationReview}) {
 		t.Fatalf("ledger sessions = %v, want two cold reviews and no cold pass", got)
+	}
+}
+
+func TestDriveBuildsEachReviewFromItsWiredRequests(t *testing.T) {
+	r := newRig(t)
+	r.host.reviews = []map[string]any{
+		{"findings": []any{map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map"}}},
+	}
+	r.driver.Review = func() (mount.StartRequest, error) {
+		return mount.StartRequest{Role: "reviewer", Brief: "the group's diff"}, nil
+	}
+	r.driver.ReReview = func(s State) (string, error) {
+		return "since " + s.Reviewed, nil
+	}
+	if _, err := r.drive(t); err != nil {
+		t.Fatalf("drive = %v", err)
+	}
+	if r.host.starts[1].Brief != "the group's diff" {
+		t.Fatalf("cold brief = %q, want the one Review built", r.host.starts[1].Brief)
+	}
+	if len(r.host.reReviews) != 1 || !strings.HasPrefix(r.host.reReviews[0], "since commit-") {
+		t.Fatalf("re-review inputs = %q, want the one ReReview built from the reviewed commit", r.host.reReviews)
+	}
+}
+
+func TestDriveEscalatesAReviewThatCannotStart(t *testing.T) {
+	failed := errors.New("no diff")
+	high := map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map"}
+	cases := []struct {
+		name string
+		wire func(r *rig)
+	}{
+		{"the review request fails", func(r *rig) {
+			r.driver.Review = func() (mount.StartRequest, error) { return mount.StartRequest{}, failed }
+		}},
+		{"the re-review input fails", func(r *rig) {
+			r.host.reviews = []map[string]any{{"findings": []any{high}}}
+			r.driver.ReReview = func(State) (string, error) { return "", failed }
+		}},
+		{"the reviewed HEAD cannot be read", func(r *rig) {
+			r.stations.headErr = failed
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			tc.wire(r)
+			final, err := r.drive(t)
+			if !errors.Is(err, failed) {
+				t.Fatalf("drive error = %v, want %v", err, failed)
+			}
+			if final.Current != Escalated || final.Left != Reviewing {
+				t.Fatalf("final = %s left %s, want Escalated from Reviewing", final.Current, final.Left)
+			}
+		})
+	}
+}
+
+func TestLineHeadReadsTheWorktreesHead(t *testing.T) {
+	root := checkRepo(t)
+	stations := &Line{Root: root, Plan: &line.Plan{Group: "TG-1", Worktree: root}}
+	head, err := stations.Head()
+	if err != nil || len(head) != 40 {
+		t.Fatalf("head = %q, %v; want the commit's full hash", head, err)
 	}
 }
 

@@ -195,3 +195,33 @@ func bareRemote(t *testing.T, root string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+func TestNewDriverWiresTheReReviewToCommitTheRepairAndDiffSinceTheReviewedCommit(t *testing.T) {
+	root := requestsRepo(t)
+	plan := requestsPlan()
+	driver, err := newDriver(root, plan, "run-1", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if driver.ReReview == nil {
+		t.Fatal("newDriver left ReReview nil; a production run would resume the reviewer with the findings alone")
+	}
+	reviewed := strings.TrimSpace(gitOut(t, root, "rev-parse", "HEAD"))
+	path := filepath.Join(root, "b", "two.go")
+	if err := os.WriteFile(path, []byte("package b\n\n// Two does nothing.\nfunc Two() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := conductor.State{Reviewed: reviewed, Findings: []conductor.Finding{
+		{Severity: "high", Verified: true, File: "b/two.go", Line: 3, Title: "Two has no comment"},
+	}}
+	input, err := driver.ReReview(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(input, "Two does nothing") || strings.Contains(input, "One returns one") {
+		t.Fatalf("re-review input = %q, want the uncommitted repair's diff alone", input)
+	}
+	if !strings.Contains(input, "`b/two.go:3` high: Two has no comment") {
+		t.Fatalf("re-review input = %q, want the open finding by file and line", input)
+	}
+}

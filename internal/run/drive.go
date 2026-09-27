@@ -122,6 +122,13 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 			}
 			return ReviewerRequest(root, plan)
 		},
+		// A re-review diffs from the last reviewed HEAD, so the repair is committed first.
+		ReReview: func(s conductor.State) (string, error) {
+			if err := line.CommitBuild(root, plan); err != nil {
+				return "", fmt.Errorf("committing the repair for re-review: %w", err)
+			}
+			return ReReviewInput(root, plan, s)
+		},
 		SeverityFloor: plan.Profile.SeverityFloor,
 		Repairs:       plan.Profile.ReviewRepairs,
 		Save: func(s conductor.State) error {
