@@ -62,6 +62,11 @@ func saveReview(t *testing.T, root, groupID, result string) {
 	if err := os.WriteFile(review, []byte(result), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Commit stamps are whole seconds, so a test's later commit must never outdate its review by the clock alone.
+	ahead := time.Now().Add(time.Minute)
+	if err := os.Chtimes(review, ahead, ahead); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // runGit runs one git command in dir, failing the test on error.
