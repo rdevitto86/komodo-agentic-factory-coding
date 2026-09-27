@@ -3217,6 +3217,24 @@ owner: human
 type: test
 ```
 
+### [TG-08.9] The Codex mount is ready to switch on
+```yaml
+type: feat
+version: 1.0.0-beta.2
+```
+* **Why:** the owner has no Codex account yet and defers every Codex decision, but wants the mount easy to integrate once there is one. Claude line sessions get their deny rules per role; Codex sessions still take theirs from config_paths alone.
+
+#### [TSK-08.9.1] Codex line sessions deny the policy, the PRD and the golden suite through their own role rules [P: H] [REFINEMENT]
+```yaml
+files: [internal/mount/codex/codex.go, internal/mount/codex/codex_test.go]
+done_when:
+  - go test ./internal/mount/codex/...
+context:
+  - "TSK-06.4.3 took komodo/policy.json out of config_paths so the orchestrator can edit policy on a branch; Claude line sessions keep the deny through --disallowedTools, and Codex sessions must get the same deny before the mount goes live"
+  - "deferred by the owner until a Codex account exists; nothing runs Codex today"
+type: fix
+```
+
 ## [EPIC-09] 1.0.0 LTS
 *Goal: the owner cuts 1.0.0 once all five success criteria hold. Ships as `1.0.0`.*
 
