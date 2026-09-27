@@ -45,6 +45,8 @@ type Driver struct {
 	Run      string
 	Builder  mount.StartRequest
 	Reviewer mount.StartRequest
+	// Review builds the reviewer's request from the group's diff as it stands at review; nil uses Reviewer.
+	Review func() (mount.StartRequest, error)
 	// SeverityFloor is the lowest review severity that blocks; empty blocks every finding.
 	SeverityFloor string
 	// Repairs is how many repair rounds a group gets before it escalates; zero means line.MaxRepairs.
@@ -165,11 +167,19 @@ func (d *Driver) build(
 
 // review runs the one reviewer session and turns its findings at or above the floor into the fix list.
 func (d *Driver) review(ctx context.Context, s *State, r *round) error {
-	handle, err := d.Host.Start(d.Reviewer)
+	request := d.Reviewer
+	if d.Review != nil {
+		built, err := d.Review()
+		if err != nil {
+			return err
+		}
+		request = built
+	}
+	handle, err := d.Host.Start(request)
 	if err != nil {
 		return err
 	}
-	result, err := d.session(ctx, s, StationReview, d.Reviewer, handle)
+	result, err := d.session(ctx, s, StationReview, request, handle)
 	if err != nil {
 		return err
 	}
