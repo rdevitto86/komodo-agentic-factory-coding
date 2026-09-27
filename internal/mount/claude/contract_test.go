@@ -118,6 +118,11 @@ func TestContractStartRunsClaudeAndStreamsTheStartFixture(t *testing.T) {
 	if !ok || len(changed) != 1 {
 		t.Fatalf("changed = %+v", value.Value["changed"])
 	}
+	// The stream stays on disk, so a failed session can be read afterwards.
+	saved, err := os.ReadFile(filepath.Join(worktree, ".komodo", "sessions", string(handle)+".jsonl"))
+	if err != nil || !strings.Contains(string(saved), `"type":"result"`) {
+		t.Fatalf("saved stream = %q, %v; the session's stream must be kept", saved, err)
+	}
 }
 
 func TestContractResumePassesResumeWithTheFirstSessionsID(t *testing.T) {

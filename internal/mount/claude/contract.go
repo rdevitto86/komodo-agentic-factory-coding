@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -128,16 +130,29 @@ func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest)
 	if err != nil {
 		return "", fmt.Errorf("piping claude's stdout: %w", err)
 	}
+	m.mu.Lock()
+	m.counter++
+	handle := mount.Handle(fmt.Sprintf("claude-%d", m.counter))
+	m.mu.Unlock()
+	// Each session's stream and errors stay on disk, so a failed session can be diagnosed afterwards.
+	logs := filepath.Join(m.worktree, ".komodo", "sessions")
+	var record io.Writer = io.Discard
+	if err := os.MkdirAll(logs, 0o755); err == nil {
+		if out, err := os.Create(filepath.Join(logs, string(handle)+".jsonl")); err == nil {
+			record = out
+		}
+		if errs, err := os.Create(filepath.Join(logs, string(handle)+".err")); err == nil {
+			cmd.Stderr = errs
+		}
+	}
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("starting claude: %w", err)
 	}
 
 	buf := &bytes.Buffer{}
-	sess := &session{cmd: cmd, buf: buf, reader: io.TeeReader(stdout, buf), req: req, done: make(chan struct{})}
+	sess := &session{cmd: cmd, buf: buf, reader: io.TeeReader(stdout, io.MultiWriter(buf, record)), req: req, done: make(chan struct{})}
 
 	m.mu.Lock()
-	m.counter++
-	handle := mount.Handle(fmt.Sprintf("claude-%d", m.counter))
 	m.sessions[handle] = sess
 	m.mu.Unlock()
 	return handle, nil
