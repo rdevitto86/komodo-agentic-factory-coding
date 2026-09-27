@@ -196,7 +196,7 @@ func TestEachRolePluginCarriesOnlyItsOwnHooks(t *testing.T) {
 		want map[string][]string
 	}{
 		{"builder", map[string][]string{"PostToolUse": {"format", "timewarn"}, "Stop": {"taskchecks"}}},
-		{"reviewer", map[string][]string{"PostToolUse": {"timewarn"}}},
+		{"reviewer", map[string][]string{"PostToolUse": {"timewarn"}, "Stop": {"evidence"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.role, func(t *testing.T) {
