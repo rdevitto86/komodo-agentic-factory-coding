@@ -2,6 +2,7 @@ package release
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,6 +122,52 @@ func TestCheckIsQuietWhenEverythingAgrees(t *testing.T) {
 func TestTagNameAndMessage(t *testing.T) {
 	if TagName("2.0.0") != "v2.0.0" || TagMessage("2.0.0") != "release 2.0.0" {
 		t.Fatal("tag name or message is wrong")
+	}
+}
+
+func TestTargetsCoverEveryPlatformTheHookRuns(t *testing.T) {
+	want := []string{"darwin/arm64", "darwin/amd64", "linux/amd64", "linux/arm64", "windows/amd64"}
+	var got []string
+	for _, target := range Targets {
+		got = append(got, target.GOOS+"/"+target.Arch)
+		name := "komodo-" + target.GOOS + "-" + target.Arch
+		if target.GOOS == "windows" {
+			name += ".exe"
+		}
+		if target.Name != name {
+			t.Errorf("%s/%s is named %q, want %q, the name the hook and install look for",
+				target.GOOS, target.Arch, target.Name, name)
+		}
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("targets = %v, want %v", got, want)
+	}
+}
+
+func TestBuildAssetsIsByteIdenticalPerCommit(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sums [2]string
+	for index := range sums {
+		dir := t.TempDir()
+		paths, err := BuildAssets(root, dir, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest, err := WriteSums(dir, paths)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sums[index] = string(data)
+	}
+	if sums[0] != sums[1] {
+		t.Fatalf("two builds of one commit differ:\n%s\n%s", sums[0], sums[1])
 	}
 }
 

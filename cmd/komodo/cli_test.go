@@ -139,6 +139,7 @@ func TestDispatchReachesEveryReadOnlyCommand(t *testing.T) {
 		{[]string{"close", "TSK-90.2.1"}, 0, "TSK-90.2.1"},
 		{[]string{"comments", "check"}, 0, ""},
 		{[]string{"release"}, 1, "usage"},
+		{[]string{"release", "publish"}, 1, "publish"},
 		{[]string{"gate"}, 0, "gate: komodo guard check"},
 		{[]string{"tag"}, 0, "v2.0.0"},
 	}
