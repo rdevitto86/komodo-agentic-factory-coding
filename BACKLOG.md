@@ -3616,7 +3616,7 @@ depends_on: [TG-08.7]
 ```
 * **Why:** preflight, resume, a lost credential, pacing, the canary and the policy edit only show in a whole run. Proves the cases half of REQ-44.
 
-#### [TSK-08.10.1] Eval cases for the requirements a unit test can't prove [P: H] [READY]
+#### [TSK-08.10.1] Eval cases for the requirements a unit test can't prove [P: H] [DONE]
 ```yaml
 files: [internal/eval/cases.go, internal/eval/cases_test.go, cmd/komodo/eval.go]
 done_when:
@@ -3626,6 +3626,54 @@ context:
   - "komodo eval runs the cases, not only the tests; a case for a preflight check preflight does not make is left out; every cleanup step's error fails its case (TSK-08.7.5 to TSK-08.7.7)"
   - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
 ```
+
+#### [TSK-08.10.2] internal/eval/cases.go:217 The real forge token stays on disk when the credential case ends before removing it [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - "Live.Credential copies the host's real `gh auth token` into <work>/case-N-scratch-*/hosts.yml (line 817). Only the watchRun act callback deletes it (line 209). If the run exits before Reviewing (line 217), or the case budget expires, credentialRemoved returns without ever calling remove. The token then sits in a temp work directory that nothing cleans up. Right after env.Credential succeeds, defer remove() and ignore os.ErrNotExist, so every path deletes the scratch config."
+```
+
+#### [TSK-08.10.3] cmd/komodo/eval.go:25 --instructions defaults to empty, so the canary case always fails [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/eval.go
+done_when:
+  - test -f cmd/komodo/eval.go
+type: fix
+context:
+  - "`komodo eval --cases` without --instructions hands Live an empty instructions path. Plant then returns 'no personal host instructions file' (cases.go:876), the canary case fails, and LiveCases exits non-zero. The new flag's default fails a case instead of pointing at the host's real instructions file. Default --instructions to the mounted host's personal instructions path, or refuse --cases without it and print usage."
+```
+
+#### [TSK-08.10.4] cmd/komodo/eval.go:51 The new --cases branch in the eval command has no test [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/eval.go
+done_when:
+  - test -f cmd/komodo/eval.go
+type: test
+context:
+  - "cmd/komodo/eval_test.go only exercises --list, --runs and the usage path. The done_when is `go test ./internal/eval/...`, so it would still pass if --cases stopped reaching LiveCases or the `!*cases && *runs < 1` guard regressed. Add an eval_test case that runs `eval --cases --suite <offline> --work <tmp>` and checks it reaches LiveCases (for example, a clone failure on stderr)."
+```
+
+#### [TSK-08.10.5] internal/eval/cases.go:755 AddGroup does git I/O without a ctx and ignores the case budget [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: chore
+context:
+  - "Env.AddGroup(id, body) commits and pushes, but it takes no context and passes context.Background() to commit. A hung push is bounded only by the 10-minute cloneTimeout, not by the case's context. The Go standard puts ctx first on anything that does I/O. Credential (line 807) has the same pattern. Give AddGroup and Credential ctx as their first parameter and pass the case's ctx through."
+```
+
+
+
+
 
 ### [TG-08.9] The Codex mount is ready to switch on
 ```yaml
