@@ -3502,7 +3502,7 @@ depends_on: [TG-08.4]
 ```
 * **Why:** a number decides readiness, never a model's score (decision 0021). Proves REQ-44, and the eval cases behind REQ-3, REQ-6, REQ-12, REQ-14, REQ-27, REQ-32, REQ-34 and REQ-40.
 
-#### [TSK-08.7.1] The suite format and `komodo eval --list` [P: C] [READY]
+#### [TSK-08.7.1] The suite format and `komodo eval --list` [P: C] [DONE]
 ```yaml
 files: [internal/eval/suite.go, internal/eval/suite_test.go, internal/eval/testdata, cmd/komodo/eval.go, cmd/komodo/main.go]
 done_when:
@@ -3512,7 +3512,7 @@ context:
   - "each golden group names its repo, pinned commit, group file and hidden tests; the real suite in eval/ is locked to line sessions, so tests use testdata"
 ```
 
-#### [TSK-08.7.2] `komodo eval --runs N` runs each group in a fresh clone and reports per platform [P: C] [READY]
+#### [TSK-08.7.2] `komodo eval --runs N` runs each group in a fresh clone and reports per platform [P: C] [DONE]
 ```yaml
 files: [internal/eval/run.go, internal/eval/run_test.go, internal/eval/report.go, internal/eval/report_test.go]
 done_when:
@@ -3524,7 +3524,7 @@ context:
 tier: heavy
 ```
 
-#### [TSK-08.7.3] Eval cases for the requirements a unit test can't prove [P: H] [READY]
+#### [TSK-08.7.3] Eval cases for the requirements a unit test can't prove [P: H] [DONE]
 ```yaml
 files: [internal/eval/cases.go, internal/eval/cases_test.go]
 done_when:
@@ -3545,6 +3545,78 @@ context:
 owner: human
 type: test
 ```
+
+#### [TSK-08.7.5] internal/eval/cases.go:95 No code outside the tests can run the eval cases [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - "Cases() and the Env interface are exported, but the only Env implementation is fakeEnv in cases_test.go. No command or live test calls Cases(), and `komodo eval` only drives golden groups. So none of the one-per-requirement cases (REQ-3, 6, 12, 14, 27, 32, 34, 40) can ever run against a real line. go test passes on the fakes while the requirements stay unproven. Add a live Env (scratch repo, mount, PATH/HOME/overlay helpers) and a KOMODO_LIVE-gated test or `komodo eval --cases` that runs every Case against it."
+```
+
+#### [TSK-08.7.6] internal/eval/cases.go:89 The budget preflight case tests a check preflight never makes [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - 'preflight.Run has only `// TODO: check budget when API billing is implemented`, so no preflight failure is ever named "budget". The case sends `--budget 1ns` and passes whenever the run''s own timeout text contains "budget" and no ledger session was stamped. That counts REQ-6''s budget check as proven when it does not exist. Make the budget case require the literal `preflight failed:` header with a `budget:` line, or leave it out of Cases() until preflight checks the budget.'
+```
+
+#### [TSK-08.7.7] internal/eval/cases.go:437 policyEdit ignores a failed checkout back to the base branch [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - 'The deferred `env.Git(ctx, "checkout", "-q", base)` result is dropped. If the checkout fails, the case still passes and the env stays on owner/policy-edit, so every later case runs on the edited policy branch. Check the deferred checkout''s Code in a named-return defer and return its output as the case''s error.'
+```
+
+#### [TSK-08.7.8] internal/eval/run.go:255 Repo URL goes to git fetch without a guard against option-like values [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/run.go
+done_when:
+  - test -f internal/eval/run.go
+type: fix
+context:
+  - "Load checks only that url is non-empty. A suite.json url such as `--upload-pack=...` reaches `git fetch -q <url> <commit>` as an option. suite.json is repo-controlled, so this matters only if a cooperative model edits it by mistake. Insert `--` before url in the fetch args, or reject a url starting with '-' in Load."
+```
+
+#### [TSK-08.7.9] internal/eval/run.go:25 Timeouts and limits are split across const declarations or left as bare literals [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/run.go
+done_when:
+  - test -f internal/eval/run.go
+type: chore
+context:
+  - "HiddenTestTimeout and cloneTimeout are added together but declared as two separate consts. The Go standard puts constants introduced together in one const block. `cmd.WaitDelay = 5 * time.Second` and the clip size 4000 are also unnamed literals for a duration and a size. Group HiddenTestTimeout, cloneTimeout, a waitDelay and an outputClip in one const block and use the named constants."
+```
+
+#### [TSK-08.7.10] internal/eval/cases.go:23 Comment reasons about callers [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: docs
+context:
+  - "`a test swaps it` describes who changes the variable rather than what it is, which the comment standard bans. It also exposes a mutable package-level global that exists only for tests. Drop `; a test swaps it`, or pass the interval through watchRun's arguments instead of a package var."
+```
+
+
+
+
+
+
 
 ### [TG-08.9] The Codex mount is ready to switch on
 ```yaml
