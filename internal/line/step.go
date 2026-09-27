@@ -295,7 +295,7 @@ func stampReview(root string, plan *Plan) {
 	Stamp(root, entry)
 }
 
-// staleReview reports whether the branch moved after the review, which a repair always does;
+// staleReview reports whether a group commit past the base, by the author date a rebase keeps, postdates the review;
 // ship's own status-and-changelog commit is excluded, since it never invalidates a review already past it.
 func staleReview(root string, plan *Plan) bool {
 	_, path, err := ReadResultFile(root, plan.Group+"-review")
@@ -306,7 +306,15 @@ func staleReview(root string, plan *Plan) bool {
 	if err != nil {
 		return false
 	}
-	log, err := git.Run(WorktreePath(root, plan.Worktree), "log", "--format=%cI%x09%s")
+	dir := WorktreePath(root, plan.Worktree)
+	args := []string{"log", "--format=%aI%x09%s"}
+	if plan.Base != "" {
+		base := StartRef(dir, plan.Base)
+		if _, err := git.Run(dir, "rev-parse", "--verify", "--quiet", base); err == nil {
+			args = append(args, base+"..HEAD")
+		}
+	}
+	log, err := git.Run(dir, args...)
 	if err != nil {
 		return false
 	}
