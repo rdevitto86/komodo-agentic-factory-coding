@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"komodo/internal/git"
 	"komodo/internal/mount"
 	"komodo/internal/toolkit"
 )
@@ -66,7 +67,7 @@ func loosenMode(current, proposed Mode) Mode {
 // DefaultPolicy is what the guard denies when no policy file can be read.
 func DefaultPolicy() Policy {
 	paths := append([]string{
-		".komodo/policy.json", "komodo/policy.json",
+		".komodo/policy.json",
 		"~/.komodo/**", "**/.git/config", "**/.git/hooks/**", "bin/**",
 	}, mount.ConfigPaths()...)
 	paths = append(paths, mount.GuardConfigPaths()...)
@@ -232,15 +233,18 @@ func foldsCase() bool {
 const RoleEnv = "KOMODO_ROLE"
 
 // LineRefusedPaths are refused to every line role, but not the orchestrator (REQ-41).
-var LineRefusedPaths = []string{"docs/prd.md", "eval/**"}
+var LineRefusedPaths = []string{"docs/prd.md", "eval/**", "komodo/policy.json"}
+
+// BranchOnlyPaths are the guard's own policy, which the orchestrator edits only off a critical ref.
+var BranchOnlyPaths = []string{"komodo/policy.json"}
 
 // IsLineSession reports whether this process runs as a line role, not the orchestrator.
 func IsLineSession() bool {
 	return os.Getenv(RoleEnv) != ""
 }
 
-// IsConfigPath reports whether a path is one the hosts or the toolkit own, or, for a line role,
-// one of LineRefusedPaths; case folds on a platform whose disk does, so Bin/x matches bin/**.
+// IsConfigPath reports whether a path is one the hosts or the toolkit own, one of LineRefusedPaths for a line
+// role, or one of BranchOnlyPaths on a critical ref; case folds as the disk does, so Bin/x matches bin/**.
 func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	normal := strings.ReplaceAll(path, "\\", "/")
 	home, _ := os.UserHomeDir()
@@ -257,7 +261,20 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	if matchesAnyPattern(p.ConfigPaths, home, compareNormal, compareRelative) {
 		return true
 	}
-	return IsLineSession() && matchesAnyPattern(LineRefusedPaths, home, compareNormal, compareRelative)
+	if IsLineSession() && matchesAnyPattern(LineRefusedPaths, home, compareNormal, compareRelative) {
+		return true
+	}
+	return matchesAnyPattern(BranchOnlyPaths, home, compareNormal, compareRelative) && !p.onFeatureBranch(repoRoot)
+}
+
+// onFeatureBranch reports whether repoRoot has a branch checked out that is not a critical ref;
+// symbolic-ref names a branch with no commit yet, and a detached HEAD names none.
+func (p Policy) onFeatureBranch(repoRoot string) bool {
+	if repoRoot == "" {
+		return false
+	}
+	branch := git.Or(repoRoot, "symbolic-ref", "--short", "HEAD")
+	return branch != "" && !p.IsCritical(branch)
 }
 
 // matchesAnyPattern reports whether normal or relative matches any pattern, expanding a leading

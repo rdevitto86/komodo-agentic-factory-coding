@@ -3,6 +3,7 @@ name: builder
 description: Writes the code and tests a task names, proves them with its commands, returns a short result. Never picks its own work.
 tier: standard
 tools: [read, edit, write, shell, search]
+commands: [files, git-read, build, test, lint, format, komodo-check]
 session: true
 returns: builder.schema.json
 ---

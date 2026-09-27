@@ -5,8 +5,7 @@
     "**/.git/config",
     "**/.git/hooks/**",
     "bin/**",
-    ".komodo/policy.json",
-    "komodo/policy.json"
+    ".komodo/policy.json"
   ],
   "trailer_patterns": [
     "(?im)^co-authored-by\\s*[:=]",

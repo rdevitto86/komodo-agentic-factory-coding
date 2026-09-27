@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"komodo/internal/guard"
 	"komodo/internal/mount"
 )
 
@@ -44,10 +45,12 @@ func Session(
 	}
 	argv = append(argv, "--settings", settings)
 
-	if len(req.Tools) > 0 {
-		// With dontAsk, only allowed tools run, so the role's own tools are its allow list.
-		argv = append(argv, "--tools", toolNames(req.Tools), "--allowedTools", toolNames(req.Tools))
+	// With dontAsk, only allowed calls run and a denied one never does, so these rules bound the role.
+	allow, deny := rolePermissions(root, worktree, req)
+	if verbs := roleTools(root, req); len(verbs) > 0 {
+		argv = append(argv, "--tools", toolNames(verbs), "--allowedTools", strings.Join(allow, ", "))
 	}
+	argv = append(argv, "--disallowedTools", strings.Join(deny, ", "))
 
 	argv = append(argv, "--permission-mode", "dontAsk")
 	argv = append(argv, "--model", model)
@@ -74,6 +77,8 @@ func Session(
 	env = setEnv(env, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP", "3")
 	env = setEnv(env, "CLAUDE_CODE_MAX_TURNS", strconv.Itoa(maxTurns))
 	env = setEnv(env, "DISABLE_AUTOUPDATER", "1")
+	// The guard hook inherits this, and refuses a line role what it leaves the orchestrator.
+	env = setEnv(env, guard.RoleEnv, req.Role)
 	// Go's caches live under the worktree's .komodo, which the sandbox allows and a ship never stages.
 	goDir := filepath.Join(worktree, ".komodo", "go")
 	env = setEnv(env, "GOCACHE", filepath.Join(goDir, "cache"))
