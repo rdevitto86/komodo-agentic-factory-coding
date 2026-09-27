@@ -62,10 +62,12 @@ func Session(
 	env = setEnv(env, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP", "3")
 	env = setEnv(env, "CLAUDE_CODE_MAX_TURNS", strconv.Itoa(maxTurns))
 	env = setEnv(env, "DISABLE_AUTOUPDATER", "1")
-	env = setEnv(env, "GOCACHE", filepath.Join(worktree, ".gocache"))
-	env = setEnv(env, "GOTMPDIR", filepath.Join(worktree, ".gotmpdir"))
-	env = setEnv(env, "GOPATH", filepath.Join(worktree, ".gopath"))
-	env = setEnv(env, "GOMODCACHE", filepath.Join(worktree, ".gopath", "pkg", "mod"))
+	// Go's caches live under the worktree's .komodo, which the sandbox allows and a ship never stages.
+	goDir := filepath.Join(worktree, ".komodo", "go")
+	env = setEnv(env, "GOCACHE", filepath.Join(goDir, "cache"))
+	env = setEnv(env, "GOTMPDIR", filepath.Join(goDir, "tmp"))
+	env = setEnv(env, "GOPATH", filepath.Join(goDir, "path"))
+	env = setEnv(env, "GOMODCACHE", filepath.Join(goDir, "path", "pkg", "mod"))
 	env = setEnv(env, "GOPROXY", "off")
 	env = setEnv(env, "GOFLAGS", "-modcacherw")
 

@@ -168,7 +168,7 @@ func TestSessionEnvSetsGoCache(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOCACHE=") {
-			if !strings.HasSuffix(entry, "GOCACHE=/worktree/.gocache") {
+			if !strings.HasSuffix(entry, "GOCACHE=/worktree/.komodo/go/cache") {
 				t.Errorf("GOCACHE not in worktree: %s", entry)
 			}
 			return
@@ -187,7 +187,7 @@ func TestSessionEnvSetsGOTMPDIR(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOTMPDIR=") {
-			if !strings.HasSuffix(entry, "GOTMPDIR=/worktree/.gotmpdir") {
+			if !strings.HasSuffix(entry, "GOTMPDIR=/worktree/.komodo/go/tmp") {
 				t.Errorf("GOTMPDIR not in worktree: %s", entry)
 			}
 			return
@@ -206,7 +206,7 @@ func TestSessionEnvSetsGopath(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOPATH=") {
-			if !strings.HasSuffix(entry, "GOPATH=/worktree/.gopath") {
+			if !strings.HasSuffix(entry, "GOPATH=/worktree/.komodo/go/path") {
 				t.Errorf("GOPATH not in worktree: %s", entry)
 			}
 			return
@@ -225,7 +225,7 @@ func TestSessionEnvSetsGomodcache(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOMODCACHE=") {
-			if !strings.HasSuffix(entry, "GOMODCACHE=/worktree/.gopath/pkg/mod") {
+			if !strings.HasSuffix(entry, "GOMODCACHE=/worktree/.komodo/go/path/pkg/mod") {
 				t.Errorf("GOMODCACHE not in worktree: %s", entry)
 			}
 			return
@@ -536,12 +536,12 @@ func TestSessionEnvWithWorktreeSlashes(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOCACHE=") {
-			if !strings.Contains(entry, "/work/tree/path/.gocache") {
+			if !strings.Contains(entry, "/work/tree/path/.komodo/go/cache") {
 				t.Errorf("GOCACHE has incorrect worktree path: %s", entry)
 			}
 		}
 		if strings.HasPrefix(entry, "GOPATH=") {
-			if !strings.Contains(entry, "/work/tree/path/.gopath") {
+			if !strings.Contains(entry, "/work/tree/path/.komodo/go/path") {
 				t.Errorf("GOPATH has incorrect worktree path: %s", entry)
 			}
 		}
