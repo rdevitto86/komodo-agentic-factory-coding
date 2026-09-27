@@ -178,7 +178,7 @@ func TestCheckGroupPRFlagsWrongBaseWhenEpicBranchExists(t *testing.T) {
 	// Mock pr.Runner that returns a PR with base=main
 	mockPRRun := func(_ string, args ...string) (string, error) {
 		if len(args) >= 2 && args[0] == "pr" && args[1] == "list" {
-			return `[{"number":1,"headRefName":"feat/first-group","baseRefName":"main","title":"First group"}]`, nil
+			return `[{"number":1,"headRefName":"feat/TG-01.1-first-group","baseRefName":"main","title":"First group"}]`, nil
 		}
 		return "", nil
 	}
@@ -218,7 +218,7 @@ func TestCheckGroupPRIgnoresCorrectBase(t *testing.T) {
 	// Mock pr.Runner that returns a PR with correct base (epic branch)
 	mockPRRun := func(_ string, args ...string) (string, error) {
 		if len(args) >= 2 && args[0] == "pr" && args[1] == "list" {
-			return `[{"number":1,"headRefName":"feat/first-group","baseRefName":"feat/1.0.0-alpha.1","title":"First group"}]`, nil
+			return `[{"number":1,"headRefName":"feat/TG-01.1-first-group","baseRefName":"feat/1.0.0-alpha.1","title":"First group"}]`, nil
 		}
 		return "", nil
 	}

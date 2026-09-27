@@ -57,6 +57,8 @@ type Stations interface {
 	Prepare() ([]string, error)
 	// Ship pushes the group and opens its draft PR.
 	Ship() error
+	// Merge merges a shipped PR into its epic branch, reporting whether it did; other bases wait for a person.
+	Merge() (bool, error)
 }
 
 // Driver moves one group through its states, starting model sessions only to build, review and repair.
@@ -167,6 +169,12 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 			return err
 		}
 		s.ShipDone = true
+	case Shipped:
+		merged, err := d.Stations.Merge()
+		if err != nil {
+			return err
+		}
+		s.Merged = merged
 	}
 	return nil
 }
@@ -309,20 +317,28 @@ type Line struct {
 	Root   string
 	Plan   *line.Plan
 	Client *pr.Client
+	// checked is the last Check's gates and verify, which Ship reports in the PR body.
+	checked *line.WaveResult
+	// shipped is what Ship did, whose base Merge reads.
+	shipped *line.ShipResult
 }
 
 // Check reruns the compile gates, then the verify command, in the group's worktree.
 func (l *Line) Check() ([]string, error) {
 	worktree := line.WorktreePath(l.Root, l.Plan.Worktree)
 	results := line.RunGate(worktree, line.CompileCommands(l.Root, worktree))
+	l.checked = &line.WaveResult{Gates: results}
 	if failure, failed := line.FirstFailure(results); failed {
 		return []string{line.FailureText(failure)}, nil
 	}
 	if command := line.VerifyCommand(l.Root, worktree); command != "" {
-		if verify := line.RunCommand(worktree, command); !verify.OK() {
+		verify := line.RunCommand(worktree, command)
+		l.checked.Verify = &verify
+		if !verify.OK() {
 			return []string{line.FailureText(verify)}, nil
 		}
 	}
+	l.checked.OK = true
 	// Committing runs the repo's own pre-commit hooks; a refusal is a fix for the builder, not an escalation.
 	if err := line.CommitBuild(l.Root, l.Plan); err != nil {
 		return []string{"the build does not commit: " + err.Error()}, nil
@@ -345,8 +361,35 @@ func (l *Line) Prepare() ([]string, error) {
 	return nil, nil
 }
 
-// Ship commits, pushes and opens the group's draft PR.
+// Ship commits, pushes and opens the group's draft PR, whose body reports the checks this process ran;
+// a run resumed at Ship reruns them first.
 func (l *Line) Ship() error {
-	_, err := line.ShipGroup(l.Root, l.Plan, nil, l.Client)
+	if l.checked == nil || !l.checked.OK {
+		fixes, err := l.Check()
+		if err != nil {
+			return err
+		}
+		if len(fixes) > 0 {
+			return fmt.Errorf("the checks fail at ship: %s", strings.Join(fixes, "; "))
+		}
+	}
+	shipped, err := line.ShipGroup(l.Root, l.Plan, []*line.WaveResult{l.checked}, l.Client)
+	l.shipped = shipped
 	return err
+}
+
+// Merge merges the group's PR into its epic branch by a merge commit, when it shipped on that base.
+func (l *Line) Merge() (bool, error) {
+	base := l.Plan.Base
+	if l.shipped != nil {
+		base = l.shipped.Base
+	}
+	epic := line.EpicBranchName(l.Plan.Version)
+	if epic == "" || base != epic {
+		return false, nil
+	}
+	if _, err := line.MergeGroup(l.Root, l.Plan, l.Client); err != nil {
+		return false, err
+	}
+	return true, nil
 }

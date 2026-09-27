@@ -189,17 +189,29 @@ func (g Group) EpicBranch() string {
 	return ""
 }
 
-// Slug is a kebab-case branch fragment derived from the group title.
+// Slug is the branch fragment naming a group: its ID, then its title in kebab case, capped at 40 characters.
 func (g Group) Slug() string {
+	if text := g.titleSlug(); text != "" {
+		return g.ID + "-" + text
+	}
+	return g.ID
+}
+
+// TitleBranch is the group's branch without its ID: its type, then its title in kebab case.
+func (g Group) TitleBranch() string {
+	if text := g.titleSlug(); text != "" {
+		return BranchName(g.Type(), text)
+	}
+	return BranchName(g.Type(), strings.ToLower(g.ID))
+}
+
+// titleSlug is the group's title in kebab case, capped at 40 characters, or empty with no words.
+func (g Group) titleSlug() string {
 	text := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(g.Title), "-"), "-")
 	if len(text) > 40 {
 		text = text[:40]
 	}
-	text = strings.TrimRight(text, "-")
-	if text == "" {
-		return strings.ToLower(g.ID)
-	}
-	return text
+	return strings.TrimRight(text, "-")
 }
 
 // Backlog is the whole parsed file: epics and groups in order, plus every problem the parser saw.

@@ -125,6 +125,63 @@ func TestShipGroupRunsTheAfterPublishCommand(t *testing.T) {
 	}
 }
 
+// installPrePush writes a pre-push hook into group that records its environment and stdin, then exits with code.
+func installPrePush(t *testing.T, group string, code int) (envLog string) {
+	t.Helper()
+	envLog = filepath.Join(t.TempDir(), "hook.env")
+	hook := fmt.Sprintf("#!/bin/sh\nenv > %q\ncat >> %q\nexit %d\n", envLog, envLog, code)
+	path := filepath.Join(group, ".git", "hooks", "pre-push")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return envLog
+}
+
+func TestPushRunsThePrePushHookWithoutTheForgeCredential(t *testing.T) {
+	root, group := shipRepo(t)
+	envLog := installPrePush(t, group, 0)
+	t.Setenv("GH_TOKEN", "secret-token")
+	t.Setenv("GITHUB_TOKEN", "secret-token")
+	if err := PushFromWorktree(root, group, "feat/a-group"); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := os.ReadFile(envLog)
+	if err != nil {
+		t.Fatalf("the pre-push hook never ran: %v", err)
+	}
+	if strings.Contains(string(seen), "secret-token") {
+		t.Fatalf("the pre-push hook saw the forge credential:\n%s", seen)
+	}
+	if !strings.Contains(string(seen), "refs/heads/feat/a-group ") {
+		t.Fatalf("the pre-push hook did not read the pushed ref on stdin:\n%s", seen)
+	}
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(bare, "rev-parse", "--verify", "refs/heads/feat/a-group"); err != nil {
+		t.Fatal("the branch did not land after the hook passed")
+	}
+}
+
+func TestAFailingPrePushHookStopsThePush(t *testing.T) {
+	root, group := shipRepo(t)
+	installPrePush(t, group, 1)
+	if err := PushFromWorktree(root, group, "feat/a-group"); err == nil || !strings.Contains(err.Error(), "pre-push") {
+		t.Fatalf("err = %v; a refusing pre-push hook must stop the push", err)
+	}
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(bare, "rev-parse", "--verify", "refs/heads/feat/a-group"); err == nil {
+		t.Fatal("the branch landed although its pre-push hook refused")
+	}
+}
+
 func TestShipGroupPushesThroughTheRootsExplicitURL(t *testing.T) {
 	root, group := shipRepo(t)
 	plan := &Plan{

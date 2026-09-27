@@ -671,7 +671,7 @@ func TestDrainParksAGroupThatEndsUnshippedAndRunsTheNext(t *testing.T) {
 
 func TestDrainDryRunListsTheGroupsInOrderAndLaunchesNothing(t *testing.T) {
 	root := drainRepo(t)
-	stacked := drainText + "\n### [TG-07.3] Third\n```yaml\ntype: feat\nversion: 1.2.0\nbase: feat/second\n```\n\n" +
+	stacked := drainText + "\n### [TG-07.3] Third\n```yaml\ntype: feat\nversion: 1.2.0\nbase: feat/TG-07.2-second\n```\n\n" +
 		"#### [TSK-07.3.1] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\ndone_when: [\"true\"]\n```\n\n" +
 		"### [TG-07.4] Fourth\n```yaml\ntype: feat\nversion: 1.3.0\nbase: feat/missing\n```\n\n" +
 		"#### [TSK-07.4.1] Four [P: C] [READY]\n```yaml\nfiles: [d/four.go]\ndone_when: [\"true\"]\n```\n"

@@ -175,10 +175,72 @@ func TestContractResumePassesResumeWithTheFirstSessionsID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "--resume ffffffff-ffff-ffff-ffff-ffffffffffff"
-	if !strings.Contains(string(log), want) {
-		t.Fatalf("argv log missing %q:\n%s", want, log)
+	wants := []string{
+		"--session-id " + string(first), "--resume " + string(first), "--fork-session", "--session-id " + string(resumed),
 	}
+	for _, want := range wants {
+		if !strings.Contains(string(log), want) {
+			t.Fatalf("argv log missing %q:\n%s", want, log)
+		}
+	}
+}
+
+func TestContractResumesAHandleFromAnEarlierProcess(t *testing.T) {
+	logPath := setupFakeClaude(t)
+	root, worktree := t.TempDir(), t.TempDir()
+	earlier := NewMount(root, worktree, 10, 0)
+	first, err := earlier.Start(newFakeRequest())
+	if err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	events, err := earlier.Stream(first)
+	if err != nil {
+		t.Fatalf("Stream = %v", err)
+	}
+	drainMountEvents(t, events)
+
+	restarted := NewMount(root, worktree, 10, 0)
+	resumed, err := restarted.Resume(first, "fix the failing test")
+	if err != nil {
+		t.Fatalf("Resume after a restart = %v; the handle is the host's session ID", err)
+	}
+	drainMountEvents(t, mustStream(t, restarted, resumed))
+	if value, err := restarted.Result(resumed); err != nil || value.Value["result"] != "DONE" {
+		t.Fatalf("Result = %+v, %v", value, err)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv := string(log)
+	if !strings.Contains(argv, "--resume "+string(first)) || !strings.Contains(argv, "--model claude-sonnet-5") {
+		t.Fatalf("argv log lacks the earlier session and its request:\n%s", log)
+	}
+	// Each session keeps its own stream; a new process never overwrites an earlier one's log.
+	for _, handle := range []mount.Handle{first, resumed} {
+		saved, err := os.ReadFile(filepath.Join(worktree, ".komodo", "sessions", string(handle)+".jsonl"))
+		if err != nil || !strings.Contains(string(saved), `"type":"result"`) {
+			t.Fatalf("%s's stream = %q, %v", handle, saved, err)
+		}
+	}
+}
+
+func TestContractResumeOfAHandleNoProcessStartedFails(t *testing.T) {
+	setupFakeClaude(t)
+	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
+	if _, err := m.Resume(mount.Handle("no-such-session"), "input"); err == nil {
+		t.Fatal("Resume should fail on a handle with no saved request")
+	}
+}
+
+// mustStream opens handle's stream on m, failing the test on error.
+func mustStream(t *testing.T, m *Mount, handle mount.Handle) <-chan mount.Event {
+	t.Helper()
+	events, err := m.Stream(handle)
+	if err != nil {
+		t.Fatalf("Stream = %v", err)
+	}
+	return events
 }
 
 func TestContractResumeWithoutADrainedStreamFails(t *testing.T) {
