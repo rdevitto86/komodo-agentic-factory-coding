@@ -1868,7 +1868,7 @@ depends_on: [TG-06.1]
 ```
 * **Why:** a model session with forge push rights is the critical risk in the PRD. Proves REQ-26, REQ-33, REQ-34 and REQ-35.
 
-#### [TSK-06.6.1] Every session starts from a scrubbed environment with no forge credential [P: C] [REFINEMENT]
+#### [TSK-06.6.1] Every session starts from a scrubbed environment with no forge credential [P: C] [READY]
 ```yaml
 files: [internal/mount/claude/env.go, internal/mount/claude/env_test.go]
 done_when:
@@ -1879,7 +1879,7 @@ context:
   - "test (REQ-34): a session's environment and readable paths hold no forge token"
 ```
 
-#### [TSK-06.6.2] Only Ship reads the forge credential, and it pushes only unprotected branches [P: C] [REFINEMENT]
+#### [TSK-06.6.2] Only Ship reads the forge credential, and it pushes only unprotected branches [P: C] [READY]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go, internal/run/run.go]
 done_when:
@@ -1889,7 +1889,7 @@ context:
   - "the credential is read inside the push and handed to no other process; pushable refuses a critical ref; labels follow the push (REQ-26)"
 ```
 
-#### [TSK-06.6.3] Line sessions run in the sandbox, and `komodo run` refuses without it [P: C] [REFINEMENT]
+#### [TSK-06.6.3] Line sessions run in the sandbox, and `komodo run` refuses without it [P: C] [READY]
 ```yaml
 files: [internal/mount/claude/sandbox.go, internal/mount/claude/sandbox_test.go, internal/preflight/preflight.go, internal/preflight/preflight_test.go]
 done_when:
@@ -1900,7 +1900,7 @@ context:
   - "test (REQ-35): a write outside the worktree fails; komodo run exits non-zero with the sandbox off"
 ```
 
-#### [TSK-06.6.4] Doctor checks the forge ruleset and head-branch deletion [P: H] [REFINEMENT]
+#### [TSK-06.6.4] Doctor checks the forge ruleset and head-branch deletion [P: H] [READY]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
