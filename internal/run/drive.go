@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"komodo/internal/conductor"
 	"komodo/internal/line"
@@ -46,6 +48,9 @@ func Drive(options Options) (int, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
+	// An interrupt cancels the drive, which stops the running session, so no session outlives its conductor.
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	statePath := conductor.StatePath(root, plan.Group)
 	final, err := driveState(ctx, driver, statePath, plan, worktree)
 	if saveErr := conductor.SaveState(statePath, final); saveErr != nil && err == nil {

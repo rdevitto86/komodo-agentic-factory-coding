@@ -18,6 +18,10 @@ const driveBacklog = "### [TG-40.1] A fake group\n```yaml\ntype: feat\nversion: 
 
 // driveFakeClaude leaves a fake change uncommitted, as a real builder does, and replays the builder result, then the reviewer result.
 const driveFakeClaude = `#!/bin/sh
+if [ -n "$FAKE_HANG_MARKER" ]; then
+  touch "$FAKE_HANG_MARKER"
+  sleep 61.25
+fi
 n=0
 if [ -f "$FAKE_COUNTER" ]; then n=$(cat "$FAKE_COUNTER"); fi
 n=$((n+1))
