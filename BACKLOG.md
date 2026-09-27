@@ -1726,7 +1726,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** most loops in the first line came from hooks: 187 builder refusals and review rounds chasing guard bypasses. Proves REQ-37.
 
-#### [TSK-06.3.1] Every hook has one job, one stage and a limit, and fails open [P: C] [REFINEMENT]
+#### [TSK-06.3.1] Every hook has one job, one stage and a limit, and fails open [P: C] [READY]
 ```yaml
 files: [internal/hooks/hooks.go, internal/hooks/hooks_test.go, cmd/komodo/hook.go]
 done_when:
@@ -1736,7 +1736,7 @@ context:
   - "komodo hook <name> is each hook's entry point; the table of hooks, sessions, limits and failure behaviour is data in this package; a hook that errors returns allow"
 ```
 
-#### [TSK-06.3.2] Format formats and lints the edited file, and never refuses [P: H] [REFINEMENT]
+#### [TSK-06.3.2] Format formats and lints the edited file, and never refuses [P: H] [READY]
 ```yaml
 files: [internal/hooks/format.go, internal/hooks/format_test.go]
 done_when:
@@ -1746,7 +1746,7 @@ context:
   - "PostToolUse on a builder's edit: gofmt for Go, the repo's formatter for TypeScript, on that one file; lint output returns as context"
 ```
 
-#### [TSK-06.3.3] Task checks refuse a builder's stop while a check fails, three times at most [P: H] [REFINEMENT]
+#### [TSK-06.3.3] Task checks refuse a builder's stop while a check fails, three times at most [P: H] [READY]
 ```yaml
 files: [internal/hooks/taskchecks.go, internal/hooks/taskchecks_test.go]
 done_when:
@@ -1756,7 +1756,7 @@ context:
   - "Stop runs the group's checks and refuses with the failing output; the limit is the host's stop-hook cap of 3; if the hook fails it allows, since Check reruns everything"
 ```
 
-#### [TSK-06.3.4] Time warning at 80 percent of a session's time or turns [P: M] [REFINEMENT]
+#### [TSK-06.3.4] Time warning at 80 percent of a session's time or turns [P: M] [READY]
 ```yaml
 files: [internal/hooks/timewarn.go, internal/hooks/timewarn_test.go]
 done_when:
@@ -1766,7 +1766,7 @@ context:
   - "PostToolUse in builders and lenses; it never refuses, and skips when it can't read the clock"
 ```
 
-#### [TSK-06.3.5] Each role's plugin carries only its own hooks [P: H] [REFINEMENT]
+#### [TSK-06.3.5] Each role's plugin carries only its own hooks [P: H] [READY]
 ```yaml
 files: [internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go]
 done_when:
