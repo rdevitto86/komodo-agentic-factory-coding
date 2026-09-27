@@ -262,8 +262,8 @@ func TestFullModePinsTheHostVersionAndEachRolesMachine(t *testing.T) {
 		t.Fatalf("mode = %q, host_version = %q", got.Mode, got.HostVersion)
 	}
 	builder, ok := got.Machine("builder")
-	if !ok || builder.Model != "mid" || builder.Effort != "medium" {
-		t.Fatalf("builder = %+v; the builder runs the standard tier at medium effort", builder)
+	if !ok || builder.Model != "big" || builder.Effort != "medium" {
+		t.Fatalf("builder = %+v; in full mode the builder runs the heavy tier at medium effort", builder)
 	}
 	correctness, ok := got.Machine("correctness")
 	if !ok || correctness.Model != "big" || correctness.Effort != "high" {
