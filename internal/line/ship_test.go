@@ -634,6 +634,13 @@ func TestABaseThatMovesDoesNotRestaleTheReview(t *testing.T) {
 	if !reviewed(root, plan) {
 		t.Fatal("a base that moved, and the catch-up rebase onto it, must not restale the group's review")
 	}
+	runGit(t, worktree, "checkout", "-q", "epic")
+	commitDated(t, worktree, "b/five.go", "package b\n", "the epic moved again", now)
+	runGit(t, worktree, "checkout", "-q", "-")
+	runGit(t, worktree, "merge", "-q", "--no-edit", "epic")
+	if !reviewed(root, plan) {
+		t.Fatal("a catch-up merge brings in no group work, so it must not restale the review")
+	}
 	commitDated(t, worktree, "a/four.go", "package a\n", "a repair", now)
 	if reviewed(root, plan) {
 		t.Fatal("the group's own commit after the review must restale it")
@@ -1180,6 +1187,30 @@ func TestCatchUpRebasesOntoAMovedBaseKeepingEdits(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(group, "CHANGELOG.md")); err != nil {
 		t.Fatal("the uncommitted ship edit was lost")
+	}
+}
+
+func TestCatchUpMergesAPushedBranchInsteadOfRewritingIt(t *testing.T) {
+	_, group := shipRepo(t)
+	runGit(t, group, "branch", "main", "HEAD~0")
+	runGit(t, group, "checkout", "-q", "main")
+	commitDated(t, group, "two.go", "package a\n", "base moved", time.Now())
+	runGit(t, group, "checkout", "-q", "feat/a-group")
+	commitDated(t, group, "three.go", "package a\n", "group work", time.Now())
+	runGit(t, group, "push", "-q", "origin", "feat/a-group")
+	runGit(t, group, "fetch", "-q", "origin", "feat/a-group:refs/remotes/origin/feat/a-group")
+	pushed, err := git.Run(group, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catchUp(group, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(group, "merge-base", "--is-ancestor", pushed, "HEAD"); err != nil {
+		t.Fatal("catch-up rewrote a pushed branch; its pushed commit is no longer an ancestor")
+	}
+	if _, err := os.Stat(filepath.Join(group, "two.go")); err != nil {
+		t.Fatal("the base's commit is not under the group branch")
 	}
 }
 

@@ -21,6 +21,10 @@ const (
 	StationRepair = "repair"
 )
 
+// repairLead opens a fresh repair's brief, so the builder fixes the list instead of re-verifying a finished build.
+const repairLead = "# Repair\n\nThe group is already built. Apply every item on the fix list below, then rerun its checks.\n" +
+	"Report DONE only once each item is fixed.\n\n"
+
 // resultBlocked is the builder result that stops a group for the orchestrator.
 const resultBlocked = "BLOCKED"
 
@@ -232,7 +236,7 @@ func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 	}
 	// A builder from an earlier process is gone after a restart; a fresh one gets the brief and fixes.
 	if handle == "" {
-		req.Brief += "\n\n" + input
+		req.Brief = repairLead + input + "\n\n## The group's brief, for reference\n\n" + req.Brief
 		handle, err = d.Host.Start(req)
 	}
 	if err != nil {

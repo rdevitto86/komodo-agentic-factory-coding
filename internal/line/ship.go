@@ -333,6 +333,16 @@ func catchUp(group, base string) error {
 	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err == nil {
 		return nil
 	}
+	// A pushed branch is never rewritten, so it takes the base in a merge commit instead.
+	if branch, err := git.Run(group, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && onOrigin(group, strings.TrimSpace(branch)) {
+		if _, err := git.Run(group, "merge", "--autostash", "--no-edit", target); err != nil {
+			conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
+			_, _ = git.Run(group, "merge", "--abort")
+			return fmt.Errorf("%s moved and the group no longer merges it; resolve %s on the group branch, then ship",
+				target, strings.Join(strings.Fields(conflicts), ", "))
+		}
+		return nil
+	}
 	if _, err := git.Run(group, "rebase", "--autostash", target); err != nil {
 		conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
 		_, _ = git.Run(group, "rebase", "--abort")
