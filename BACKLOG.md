@@ -2813,12 +2813,12 @@ tier: heavy
 
 #### [TSK-07.5.4] The evidence hook refuses a lens's stop twice at most [P: H] [READY]
 ```yaml
-files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go, internal/hooks/hooks.go]
+files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go, internal/hooks/hooks.go, internal/mount/claude/plugin_test.go]
 done_when:
   - go test ./internal/hooks/...
 depends_on: [TSK-07.5.3]
 context:
-  - "registered in hooks.Table under SessionLens; Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
+  - "registered in hooks.Table under SessionLens, so the reviewer plugin's hook test changes; Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
 ```
 
 ### [TG-07.11] The conductor runs Review through parallel lenses

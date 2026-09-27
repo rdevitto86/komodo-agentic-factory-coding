@@ -121,6 +121,16 @@ func TestScopeAllowsADeclaredFilesOwnTest(t *testing.T) {
 	}
 }
 
+func TestScopeAllowsAFileInsideADeclaredDirectory(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{
+		"skills/review/SKILL.md": "x\n", "skills/reviewer.md": "x\n",
+	})
+	problems := Scope(worktree, base, []string{"skills/review"})
+	if len(problems) != 1 || !strings.Contains(problems[0], "skills/reviewer.md") {
+		t.Fatalf("problems = %v; a declared directory covers its files, never a sibling sharing its prefix", problems)
+	}
+}
+
 func TestScopePassesWhenEveryEditIsDeclared(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n"})
 	if problems := Scope(worktree, base, []string{"a.go"}); len(problems) != 0 {

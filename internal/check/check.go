@@ -63,12 +63,22 @@ func Scope(worktree, base string, files []string) []string {
 	var problems []string
 	for _, name := range changed {
 		// A declared file's own test is in scope too, as the builder's rules allow.
-		if allowed[name] || allowed[testedBy(name)] {
+		if allowed[name] || allowed[testedBy(name)] || underDeclared(name, files) {
 			continue
 		}
 		problems = append(problems, fmt.Sprintf("scope: %s is edited outside the group's declared files", name))
 	}
 	return problems
+}
+
+// underDeclared reports whether name sits inside a declared directory, such as a skill folder a task removes.
+func underDeclared(name string, files []string) bool {
+	for _, file := range files {
+		if dir := strings.TrimSuffix(file, "/"); dir != "" && strings.HasPrefix(name, dir+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // testSuffixes map a test file's ending to the ending of the source file it tests.
