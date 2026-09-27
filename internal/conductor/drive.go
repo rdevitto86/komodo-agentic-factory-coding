@@ -506,6 +506,32 @@ func (l *Line) rerun() ([]string, error) {
 	return append(fixes, coverage...), nil
 }
 
+// coveredPackages lists each Go package the diff adds lines to, skipping any directory go test ./... skips:
+// testdata, and names starting with a dot or an underscore.
+func coveredPackages(diff string) []string {
+	seen := map[string]bool{}
+	var packages []string
+	for _, added := range check.ParseAddedLines(diff) {
+		dir := filepath.ToSlash(filepath.Dir(added.File))
+		if !strings.HasSuffix(added.File, ".go") || seen[dir] || ignoredByGo(dir) {
+			continue
+		}
+		seen[dir] = true
+		packages = append(packages, "./"+dir)
+	}
+	return packages
+}
+
+// ignoredByGo reports whether a slash path holds a directory the go tool leaves out of ./... patterns.
+func ignoredByGo(dir string) bool {
+	for _, part := range strings.Split(dir, "/") {
+		if part == "testdata" || strings.HasPrefix(part, ".") && part != "." || strings.HasPrefix(part, "_") {
+			return true
+		}
+	}
+	return false
+}
+
 // coverage runs the touched Go packages' tests under a cover profile and evaluates the diff's
 // changed-line coverage against the calibrated bar; a worktree with no go.mod is skipped.
 func (l *Line) coverage(worktree, diff string) ([]string, error) {
@@ -516,15 +542,7 @@ func (l *Line) coverage(worktree, diff string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	seen := map[string]bool{}
-	var packages []string
-	for _, added := range check.ParseAddedLines(diff) {
-		dir := "./" + filepath.ToSlash(filepath.Dir(added.File))
-		if strings.HasSuffix(added.File, ".go") && !seen[dir] {
-			seen[dir] = true
-			packages = append(packages, dir)
-		}
-	}
+	packages := coveredPackages(diff)
 	if len(packages) == 0 {
 		return nil, nil
 	}
