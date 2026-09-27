@@ -331,6 +331,9 @@ func TestDriveStartsAFreshBuilderWhenTheHostCannotResume(t *testing.T) {
 		!strings.Contains(repair.Brief, "- [ ] `go test` exited 1") {
 		t.Fatalf("fresh repair request = %+v, want the builder's brief with the fix list", repair)
 	}
+	if strings.Index(repair.Brief, "- [ ] `go test` exited 1") > strings.Index(repair.Brief, "build TG-1") {
+		t.Fatalf("brief = %q; a fresh repair must lead with its fix list, not bury it after the build brief", repair.Brief)
+	}
 }
 
 func TestDriveStartsAFreshBuilderWhenItsBuilderIsGone(t *testing.T) {
