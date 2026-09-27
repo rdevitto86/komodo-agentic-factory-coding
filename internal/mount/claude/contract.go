@@ -10,8 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"komodo/internal/mount"
 	"komodo/internal/proc"
@@ -35,6 +37,8 @@ type Mount struct {
 	mu       sync.Mutex
 	sessions map[mount.Handle]*session
 	counter  int64
+	// prefix is unique per mount, so a restarted process never reuses, or overwrites the log of, an earlier handle.
+	prefix string
 }
 
 // session is one running or finished claude process, and what Result and Resume read once it ends.
@@ -65,7 +69,10 @@ func (s *session) wait() error {
 // NewMount builds a Claude Code mount that starts every session in worktree, with root naming the
 // repo its plugins and settings render into, capped at maxTurns and, when positive, maxBudgetUSD.
 func NewMount(root, worktree string, maxTurns int, maxBudgetUSD float64) *Mount {
-	return &Mount{root: root, worktree: worktree, maxTurns: maxTurns, maxBudgetUSD: maxBudgetUSD, sessions: map[mount.Handle]*session{}}
+	return &Mount{
+		root: root, worktree: worktree, maxTurns: maxTurns, maxBudgetUSD: maxBudgetUSD, sessions: map[mount.Handle]*session{},
+		prefix: strconv.FormatInt(time.Now().UnixNano(), 36),
+	}
 }
 
 // Preflight checks the installed CLI's pinned version and its login, or names which one fails.
@@ -132,7 +139,7 @@ func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest)
 	}
 	m.mu.Lock()
 	m.counter++
-	handle := mount.Handle(fmt.Sprintf("claude-%d", m.counter))
+	handle := mount.Handle(fmt.Sprintf("claude-%s-%d", m.prefix, m.counter))
 	m.mu.Unlock()
 	// Each session's stream and errors stay on disk, so a failed session can be diagnosed afterwards.
 	logs := filepath.Join(m.worktree, ".komodo", "sessions")
