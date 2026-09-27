@@ -2665,7 +2665,7 @@ depends_on: [TG-07.2]
 ```
 * **Why:** a Haiku build averaged 75 turns (evidence 7), and a plan's usage window was a person's job to watch. Proves REQ-12, REQ-30 and REQ-32.
 
-#### [TSK-07.3.1] Groups that share no file run in parallel, up to the plan's concurrency [P: C] [READY]
+#### [TSK-07.3.1] Groups that share no file run in parallel, up to the plan's concurrency [P: C] [DONE]
 ```yaml
 files: [internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/run/run.go, internal/run/run_test.go]
 done_when:
@@ -2678,7 +2678,7 @@ context:
   - "test (REQ-12): groups sharing a file run one after another; groups sharing none overlap"
 ```
 
-#### [TSK-07.3.2] The conductor pauses at a usage limit and resumes at the reset [P: H] [READY]
+#### [TSK-07.3.2] The conductor pauses at a usage limit and resumes at the reset [P: H] [DONE]
 ```yaml
 files: [internal/run/pace.go, internal/run/pace_test.go, internal/run/run.go, internal/profile/profile.go]
 done_when:
@@ -2691,7 +2691,7 @@ context:
   - "test (REQ-32): a simulated rate-limit event pauses the run and resumes it with no person"
 ```
 
-#### [TSK-07.3.3] A Pro plan runs the economy profile, and no builder runs on the light tier [P: H] [READY]
+#### [TSK-07.3.3] A Pro plan runs the economy profile, and no builder runs on the light tier [P: H] [DONE]
 ```yaml
 files: [internal/profile/profile.go, internal/profile/profile_test.go, internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/mount/registry.go, internal/doctor/doctor.go, internal/doctor/doctor_test.go, docs/system-design.md]
 done_when:
@@ -2703,6 +2703,42 @@ context:
   - "Pro's MaxParallel is 2 in profile.go; economy mode runs one group at a time and one combined lens (REQ-30)"
   - "system-design.md's tier table still says the builder runs Sonnet; decision 0031 moved it to heavy, medium effort"
 ```
+
+#### [TSK-07.3.4] internal/conductor/schedule.go:36 A child waiting on its parent claims files that block the parent, so neither starts [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/schedule.go
+done_when:
+  - test -f internal/conductor/schedule.go
+type: fix
+context:
+  - "Startable adds every pending group to claimed, even one held only by waitsOnParent. drainOrder lists open runs first, so a resumed child can come before its ready parent. Take pending [child{files: a.go, depends_on: P}, P{files: a.go}] with nothing running. The child waits and claims a.go. P then shares a.go and is not free. Startable returns nothing, running is empty, and drain prints 'drain done: nothing is ready' without ever running P. Skip the file claim for a group held by an unfinished parent, or never let a waiting group's claim block a group it depends on."
+```
+
+#### [TSK-07.3.5] internal/run/run.go:130 A drainGroups error mid-drain returns while lanes are still running [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/run.go
+done_when:
+  - test -f internal/run/run.go
+type: fix
+context:
+  - "The loop calls drainGroups after every finished lane. If BACKLOG.md fails to parse at that point (a running lane can be rewriting it), drain returns 1 right away. The other lanes' host processes keep running in their own process groups with nothing waiting on them. Their results never reach shipped/parked, and the final Sync is skipped. On a drainGroups error, set stopping and keep draining the finished channel until running is empty, then return the error."
+```
+
+#### [TSK-07.3.6] internal/line/step.go:66 taskTier returns its Action argument unchanged [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/step.go
+done_when:
+  - test -f internal/line/step.go
+type: refactor
+context:
+  - "With the light fallback gone, taskTier just echoes next back and its only real output is snap.Tasks[next.Task].Tier. Both callers reassign an Action that never changes. Have taskTier return only the tier string, or inline snap.Tasks[id].Tier at its two call sites."
+```
+
+
+
 
 ### [TG-07.4] The builder works the task list, and the conductor ticks it
 ```yaml
