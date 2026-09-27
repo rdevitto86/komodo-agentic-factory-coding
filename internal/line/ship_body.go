@@ -21,7 +21,7 @@ type BodyContext struct {
 // sizeNote is the pull request body's note when the diff exceeds the preferred line count, or empty below it.
 func sizeNote(lines, preferred int) string {
 	if preferred > 0 && lines > preferred {
-		return fmt.Sprintf("This diff is %d changed line(s), over the preferred %d; consider a split.", lines, preferred)
+		return fmt.Sprintf("This diff adds %d line(s), over the preferred %d; consider a split.", lines, preferred)
 	}
 	return ""
 }

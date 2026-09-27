@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -192,8 +193,8 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return nil, err
 	}
 	lines = ChangedLines(group, StartRef(group, plan.Base), plan.Branch)
-	files := ChangedFiles(group, StartRef(group, plan.Base), plan.Branch)
-	if err := checkPRSize(plan.Group, files, lines, plan.Profile.PRFiles, plan.Profile.PRLinesMax); err != nil {
+	files, added := ReviewSize(group, StartRef(group, plan.Base), plan.Branch)
+	if err := checkPRSize(plan.Group, files, added, plan.Profile.PRFiles, plan.Profile.PRLinesMax); err != nil {
 		return nil, err
 	}
 	if isToolkit(root) {
@@ -207,7 +208,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		context.Why = groupWhy(string(data), plan.Group)
 	}
 	context.BlastRadius, context.BlastRadiusWhy = reviewBlast(root, plan.Group)
-	context.SizeNote = sizeNote(lines, plan.Profile.PRLinesPreferred)
+	context.SizeNote = sizeNote(added, plan.Profile.PRLinesPreferred)
 	body := ReportBody(plan, result, waves, context)
 	wanted := []string{"@agent", scopeLabel(declared)}
 	if scrubbed() {
@@ -350,16 +351,26 @@ func ChangedLines(dir, base, branch string) int {
 	return total
 }
 
-// ChangedFiles is the file count between base and branch, or zero when git cannot say.
-func ChangedFiles(dir, base, branch string) int {
-	out, err := git.Run(dir, "diff", "--name-only", base+"..."+branch)
-	if err != nil || strings.TrimSpace(out) == "" {
-		return 0
+// ReviewSize counts the files a diff keeps and the lines it adds; a deletion costs a reviewer nothing to read.
+func ReviewSize(dir, base, branch string) (files, added int) {
+	out, err := git.Run(dir, "diff", "--numstat", "--diff-filter=d", base+"..."+branch)
+	if err != nil {
+		return 0, 0
 	}
-	return len(strings.Split(strings.TrimSpace(out), "\n"))
+	for _, row := range strings.Split(strings.TrimSpace(out), "\n") {
+		fields := strings.Fields(row)
+		if len(fields) < 3 {
+			continue
+		}
+		files++
+		if count, err := strconv.Atoi(fields[0]); err == nil {
+			added += count
+		}
+	}
+	return files, added
 }
 
-// checkPRSize refuses a diff over either the file or the line ceiling, naming a split as the fix.
+// checkPRSize refuses a diff over either the kept-file or the added-line ceiling, naming a split as the fix.
 // A zero ceiling is unset and never refuses.
 func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
 	var over []string
@@ -367,7 +378,7 @@ func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
 		over = append(over, fmt.Sprintf("%d file(s) (cap %d)", files, filesCap))
 	}
 	if linesMax > 0 && lines > linesMax {
-		over = append(over, fmt.Sprintf("%d changed line(s) (cap %d)", lines, linesMax))
+		over = append(over, fmt.Sprintf("%d added line(s) (cap %d)", lines, linesMax))
 	}
 	if len(over) == 0 {
 		return nil
