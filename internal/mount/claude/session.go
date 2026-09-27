@@ -37,7 +37,8 @@ func Session(
 	argv = append(argv, "--settings", settingsPath)
 
 	if len(req.Tools) > 0 {
-		argv = append(argv, "--tools", toolNames(req.Tools))
+		// With dontAsk, only allowed tools run, so the role's own tools are its allow list.
+		argv = append(argv, "--tools", toolNames(req.Tools), "--allowedTools", toolNames(req.Tools))
 	}
 
 	argv = append(argv, "--permission-mode", "dontAsk")

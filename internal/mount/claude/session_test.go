@@ -29,6 +29,7 @@ func TestSessionArgvForBuilder(t *testing.T) {
 		"--plugin-dir /repo/.claude/plugins/builder",
 		"--settings /repo/.claude/settings.json",
 		"--tools Read, Edit, Write, Bash, Grep, Glob",
+		"--allowedTools Read, Edit, Write, Bash, Grep, Glob",
 		"--permission-mode dontAsk",
 		"--model sonnet",
 		"--effort extended",
