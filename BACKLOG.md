@@ -2640,7 +2640,7 @@ depends_on: [TG-07.2]
 ```
 * **Why:** one builder per group, briefed with the whole task list, is one story's worth of work (decision 0007). Proves REQ-10.
 
-#### [TSK-07.4.1] The builder role and build skill work a task list in order [P: C] [READY]
+#### [TSK-07.4.1] The builder role and build skill work a task list in order [P: C] [DONE]
 ```yaml
 files: [komodo/roles/builder.md, komodo/roles/builder.schema.json, komodo/skills/build/SKILL.md]
 done_when:
@@ -2653,7 +2653,7 @@ context:
   - "the result per task: done or blocked, the checks run, and a question when blocked"
 ```
 
-#### [TSK-07.4.2] `komodo check task|findings|scope` is one entry point for hooks and agents [P: H] [READY]
+#### [TSK-07.4.2] `komodo check task|findings|scope` is one entry point for hooks and agents [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/check.go, cmd/komodo/check_test.go, cmd/komodo/main.go]
 done_when:
@@ -2663,7 +2663,7 @@ context:
   - "each subcommand calls internal/check; findings is what the evidence hook runs"
 ```
 
-#### [TSK-07.4.3] A person's edit to a task body survives a run, and only checkboxes and blocker notes change [P: C] [READY]
+#### [TSK-07.4.3] A person's edit to a task body survives a run, and only checkboxes and blocker notes change [P: C] [DONE]
 ```yaml
 files: [internal/line/status.go, internal/line/status_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -2672,6 +2672,30 @@ context:
   - "Line.Prepare in internal/conductor/drive.go already ticks a task only after its checks rerun clean; ship writes the ticks into the backlog"
   - "test (REQ-10): a person's edit to a task body survives a run unchanged, and the only other write is a blocker note"
 ```
+
+#### [TSK-07.4.4] cmd/komodo/check.go:106 check findings rejects every finding that has no line number [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/check.go
+done_when:
+  - test -f cmd/komodo/check.go
+type: fix
+context:
+  - '`line` is optional in reviewer.schema.json, and a missing line decodes to 0 in line.Finding. `added[finding.File][0]` is never true, so a valid review with a whole-file test-gap or undocumented-nonobvious finding (for example, only `"file":"a/one.go"`) is reported as ''not on a changed line'' and exits 1. The evidence hook then blocks a review that matches its own schema. When Line is 0, accept the finding if its file has any added line in the diff (or if the file appears in the diff at all).'
+```
+
+#### [TSK-07.4.5] internal/line/ship.go:211 No test covers a live BLOCKED status reaching the ship commit [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: test
+context:
+  - "The new ship test only records DONE and IN_PROGRESS as live statuses. If backlogStatus stopped accepting BLOCKED, or if ship skipped BLOCKED, REQ-10's blocker write would disappear from the ship commit and no ship test would fail. Only the writeStatus unit test checks BLOCKED. Add a TSK-11.1.2 case with a live BLOCKED status to TestShipKeepsAPersonsEditToATaskBodyAndChangesOnlyTheTick and assert that its token changes in the commit."
+```
+
+
 
 ### [TG-07.5] Review lenses and the evidence they must carry
 ```yaml

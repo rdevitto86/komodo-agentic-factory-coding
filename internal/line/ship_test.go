@@ -489,6 +489,43 @@ func TestShipWritesTheRunsStatusIntoItsCommitAndClearsIt(t *testing.T) {
 	}
 }
 
+func TestShipKeepsAPersonsEditToATaskBodyAndChangesOnlyTheTick(t *testing.T) {
+	edited := flipBacklog + "\nA person's note under the task, kept byte for byte.\n\n" +
+		"#### [TSK-11.1.2] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\n" +
+		"done_when: [\"go test ./b/...\"]\ncontext: [\"a person's added note\"]\n```\n"
+	worktree := gitRepo(t)
+	commit(t, worktree, "BACKLOG.md", edited, "a person edits the plan")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStatus(root, "TSK-11.1.1", "DONE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStatus(root, "TSK-11.1.2", "IN_PROGRESS"); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}, {ID: "TSK-11.1.2", Title: "Two", Status: "READY"}},
+	}
+	unreachableOrigin(t, root)
+	saveReview(t, root, "TG-11.1", `{"findings":[]}`)
+	_, _ = ShipGroup(root, plan, nil, nil)
+	committed, err := git.Run(worktree, "show", "HEAD:BACKLOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(edited, "[TSK-11.1.1] One [P: C] [READY]", "[TSK-11.1.1] One [P: C] [DONE]", 1)
+	if strings.TrimSpace(committed) != strings.TrimSpace(want) {
+		t.Fatalf("the ship commit changed more than the tick:\n%s\nwant\n%s", committed, want)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != edited {
+		t.Fatal("ship rewrote the root's BACKLOG.md")
+	}
+}
+
 func TestShipLeavesAnotherGroupsLiveStatusAlone(t *testing.T) {
 	text := flipBacklog + "\n### [TG-11.2] Another group\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
 		"#### [TSK-11.2.1] Other [P: C] [READY]\n```yaml\nfiles: [b/other.go]\ndone_when: [\"go test ./b/...\"]\n```\n"
