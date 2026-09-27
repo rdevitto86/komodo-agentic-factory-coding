@@ -1227,6 +1227,54 @@ context:
 type: docs
 ```
 
+### [TG-05.10] The conductor closes the gaps TG-06.2's proof run found
+```yaml
+type: fix
+version: 1.0.0-alpha.6
+depends_on: [TG-05.9]
+```
+* **Why:** TG-06.2's proof reached Shipped only after five hand repairs: a handle lost across a restart, an escalation answered by editing state.json, a PR the conductor never merged into its epic, a branch without its group, and a body calling a checked group unproven.
+
+#### [TSK-05.10.1] A session handle is the host's session ID, so resume crosses a restart [P: H] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/contract.go, internal/mount/claude/contract_test.go]
+done_when:
+  - go test ./internal/mount/claude/...
+context:
+  - "handles are process-local, claude-1 then claude-2, so a restarted komodo run cannot resume its builder, and a new process's claude-1 overwrote the old builder's .komodo/sessions/claude-1.jsonl"
+type: fix
+```
+
+#### [TSK-05.10.2] The conductor merges a shipped group PR into its epic branch [P: C] [REFINEMENT]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/run/drive.go, internal/run/drive_test.go]
+done_when:
+  - go test ./internal/conductor/... ./internal/run/...
+context:
+  - "decision 0028: only a person merges an epic PR; line.MergeGroup exists in internal/line/merge.go, but no conductor state calls it, and state.json's merged flag is never set"
+type: fix
+```
+
+#### [TSK-05.10.3] A group branch names its group, such as `refactor/TG-06.2-the-guard-keeps-five-rules` [P: M] [REFINEMENT]
+```yaml
+files: [internal/backlog/backlog.go, internal/backlog/backlog_test.go]
+done_when:
+  - go test ./internal/backlog/... ./internal/line/...
+context:
+  - "Group.Branch is type/slug today, so a PR's branch never names the group it came from"
+type: fix
+```
+
+#### [TSK-05.10.4] A conductor-shipped PR body reports the checks the conductor ran [P: M] [REFINEMENT]
+```yaml
+files: [internal/conductor/drive.go, internal/line/ship_body.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/conductor/... ./internal/line/...
+context:
+  - "Ship passes nil waves, so #231's body said no QC gate or verify command ran after Check and Prepare had both passed"
+type: fix
+```
+
 ### [TG-05.5] Metrics and the clock
 ```yaml
 type: feat
