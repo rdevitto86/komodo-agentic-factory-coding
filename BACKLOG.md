@@ -3304,12 +3304,13 @@ done_when:
 
 #### [TSK-08.4.2] The plan and adhoc skills join run and escalate [P: H] [READY]
 ```yaml
-files: [komodo/skills/backlog, komodo/skills/plan/SKILL.md, komodo/skills/adhoc/SKILL.md]
+files: [komodo/skills/backlog, komodo/skills/plan/SKILL.md, komodo/skills/adhoc/SKILL.md, internal/mount/claude/claude.go]
 done_when:
   - test ! -d komodo/skills/backlog
   - go run ./cmd/komodo doctor
 context:
   - docs/system-design.md#orchestrator-commands
+  - "the global render's orchestratorSkills in claude.go names the new skills, since backlog no longer ships"
   - "backlog becomes plan: /plan drafts groups through the planner, and they must pass lint; adhoc runs /build, /review and /ship through komodo stage"
 type: docs
 ```
