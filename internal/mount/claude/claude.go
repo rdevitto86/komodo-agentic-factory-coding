@@ -121,6 +121,113 @@ func Render(root string, binary string) (install.Plan, error) {
 	return plan, nil
 }
 
+// orchestratorSkills are the only skills the user-level config carries, so no other role's skill loads there.
+var orchestratorSkills = []string{"backlog", "respond", "run"}
+
+// statusHook is the hook that adds the run's status and any blocked groups to a primary session as it starts.
+const statusHook = "status"
+
+// RenderGlobal builds the plan that adds the orchestrator layer to the user's config under home:
+// the guard and status hooks and the orchestrator's skills, keeping every setting and skill the user has.
+func RenderGlobal(root, home, binary string) (install.Plan, error) {
+	plan := install.Plan{Host: "claude", Root: home}
+	skills, err := mount.LoadSkills(root)
+	if err != nil {
+		return plan, err
+	}
+	byName := map[string]mount.Skill{}
+	for _, skill := range skills {
+		byName[skill.Name] = skill
+	}
+	dir := filepath.Join(home, Dir, "skills")
+	for _, name := range orchestratorSkills {
+		skill, ok := byName[name]
+		if !ok {
+			return plan, fmt.Errorf("the toolkit ships no %s skill, which the orchestrator layer needs", name)
+		}
+		plan.Add(filepath.Join(dir, name, "SKILL.md"), []byte(skill.Body), "the orchestrator's "+name+" skill")
+	}
+	// No prune: the user's own skills share this directory, and only a project render may remove skills.
+
+	if !filepath.IsAbs(binary) {
+		binary = filepath.Join(mount.MainCheckout(root), binary)
+	}
+	path := filepath.Join(home, Dir, "settings.json")
+	settings, err := globalSettings(path, binary)
+	if err != nil {
+		return plan, err
+	}
+	plan.Add(path, settings, "the guard on PreToolUse and the run's status on SessionStart")
+	return plan, nil
+}
+
+// globalSettings reads the user's settings and swaps any komodo hook for the guard and status hooks, keeping the rest.
+func globalSettings(path, binary string) ([]byte, error) {
+	settings := map[string]any{}
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err == nil {
+		decoder := json.NewDecoder(strings.NewReader(string(data)))
+		decoder.UseNumber()
+		if err := decoder.Decode(&settings); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	events, _ := settings["hooks"].(map[string]any)
+	if events == nil {
+		events = map[string]any{}
+	}
+	command := func(line string) []any { return []any{map[string]any{"type": "command", "command": line}} }
+	own := map[string]map[string]any{
+		"PreToolUse":   {"matcher": hookMatcher(), "hooks": command(binary + " guard")},
+		"SessionStart": {"hooks": command(fmt.Sprintf("%s hook %s --host claude", binary, statusHook))},
+	}
+	for event, entry := range own {
+		groups, _ := events[event].([]any)
+		kept := []any{}
+		for _, group := range groups {
+			if group, ok := withoutKomodoHooks(group); ok {
+				kept = append(kept, group)
+			}
+		}
+		events[event] = append(kept, entry)
+	}
+	settings["hooks"] = events
+	body, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(body, '\n'), nil
+}
+
+// withoutKomodoHooks drops every komodo hook from one matcher group, reporting false when none of its hooks remain.
+func withoutKomodoHooks(group any) (any, bool) {
+	entry, ok := group.(map[string]any)
+	if !ok {
+		return group, true
+	}
+	hooks, ok := entry["hooks"].([]any)
+	if !ok {
+		return group, true
+	}
+	kept := []any{}
+	for _, hook := range hooks {
+		if fields, ok := hook.(map[string]any); ok {
+			if line, ok := fields["command"].(string); ok && install.KomodoHook(line) {
+				continue
+			}
+		}
+		kept = append(kept, hook)
+	}
+	if len(kept) == 0 {
+		return nil, false
+	}
+	entry["hooks"] = kept
+	return entry, true
+}
+
 // repoSkills merges the repo's standards and skills overrides into the shipped set.
 func repoSkills(root string, skills []mount.Skill) []mount.Skill {
 	byName := map[string]int{}
@@ -287,6 +394,7 @@ func init() {
 			return NewMount(root, worktree, profileTurnCap, 0)
 		},
 	})
+	install.RegisterGlobal("claude", RenderGlobal)
 }
 
 // relayTools are the only tools a relay session may use; dontAsk refuses the rest without a prompt.

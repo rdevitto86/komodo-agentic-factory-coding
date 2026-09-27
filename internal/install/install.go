@@ -1,4 +1,4 @@
-// Package install renders a host's project configuration as a plan of file changes.
+// Package install renders a host's project or user-level configuration as a plan of file changes.
 package install
 
 import (
@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Change is one file the install writes, seeds, or removes.
@@ -124,12 +125,62 @@ func normaliseHooks(body []byte) []byte {
 		if err != nil {
 			return match
 		}
-		base := path[strings.LastIndexAny(path, `/\`)+1:]
-		if !strings.HasPrefix(base, "komodo") {
+		if !komodoBinary(path) {
 			return match
 		}
 		return []byte(`"command": "komodo ` + string(parts[2]) + `"`)
 	})
+}
+
+// komodoBinary reports whether a path's file name is some komodo binary.
+func komodoBinary(path string) bool {
+	return strings.HasPrefix(path[strings.LastIndexAny(path, `/\`)+1:], "komodo")
+}
+
+// KomodoHook reports whether a hook command runs some komodo binary's guard or hook subcommand.
+func KomodoHook(command string) bool {
+	parts := komodoCommand.FindStringSubmatch(`"command": ` + strconv.Quote(command))
+	if parts == nil {
+		return false
+	}
+	path, err := strconv.Unquote(`"` + parts[1] + `"`)
+	return err == nil && komodoBinary(path)
+}
+
+// GlobalRender builds one host's user-level plan under home from the toolkit root serves, running binary as its hooks.
+type GlobalRender func(root, home, binary string) (Plan, error)
+
+var (
+	globalLock sync.Mutex
+	globals    = map[string]GlobalRender{}
+)
+
+// RegisterGlobal records how one host renders its user-level config, keyed by host name.
+func RegisterGlobal(host string, render GlobalRender) {
+	globalLock.Lock()
+	defer globalLock.Unlock()
+	globals[host] = render
+}
+
+// Global returns the user-level render one host registered.
+func Global(host string) (GlobalRender, bool) {
+	globalLock.Lock()
+	defer globalLock.Unlock()
+	render, ok := globals[host]
+	return render, ok
+}
+
+// GlobalPlan renders one host's user-level plan into the current user's home directory.
+func GlobalPlan(host, root, binary string) (Plan, error) {
+	render, ok := Global(host)
+	if !ok {
+		return Plan{}, fmt.Errorf("host %q has no user-level config to install", host)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Plan{}, err
+	}
+	return render(root, home, binary)
 }
 
 // AddRemoval appends a path the install deletes when it is present.
