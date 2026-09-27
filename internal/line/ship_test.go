@@ -875,10 +875,29 @@ func TestChangedLinesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
 	}
 }
 
-func TestChangedFilesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
+func TestReviewSizeIsZeroWhenTheBaseIsUnknown(t *testing.T) {
 	_, group := shipRepo(t)
-	if got := ChangedFiles(group, "no-such-base", "feat/a-group"); got != 0 {
-		t.Fatalf("files = %d; an unknown base is no count, never a guess", got)
+	if files, added := ReviewSize(group, "no-such-base", "feat/a-group"); files != 0 || added != 0 {
+		t.Fatalf("size = %d file(s), %d line(s); an unknown base is no count, never a guess", files, added)
+	}
+}
+
+func TestReviewSizeCountsNoDeletion(t *testing.T) {
+	_, group := shipRepo(t)
+	if err := os.WriteFile(filepath.Join(group, "gone.go"), []byte("package a\n\nvar a = 1\nvar b = 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "grow")
+	runGit(t, group, "branch", "main")
+	runGit(t, group, "rm", "-q", "gone.go")
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "shrink")
+	if files, added := ReviewSize(group, "main", "feat/a-group"); files != 1 || added != 1 {
+		t.Fatalf("size = %d file(s), %d line(s); a deleted file and deleted lines must count nothing", files, added)
 	}
 }
 
@@ -929,7 +948,7 @@ func TestShipRefusesAGroupOverThePullRequestLineCeiling(t *testing.T) {
 		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
 		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
 	}
-	plan.Profile.PRLinesMax = 4
+	plan.Profile.PRLinesMax = 3
 	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
 		t.Fatalf("err = %v; a diff over the line ceiling must refuse and name a split", err)
 	}
@@ -950,7 +969,7 @@ func TestShipNotesTheBodyWhenOverThePreferredLines(t *testing.T) {
 		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
 		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
 	}
-	plan.Profile.PRLinesPreferred = 4
+	plan.Profile.PRLinesPreferred = 3
 	var calls []string
 	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
 		calls = append(calls, strings.Join(args, "\x00"))
@@ -961,7 +980,7 @@ func TestShipNotesTheBodyWhenOverThePreferredLines(t *testing.T) {
 	}
 	found := false
 	for _, call := range calls {
-		if strings.Contains(call, "over the preferred 4") {
+		if strings.Contains(call, "over the preferred 3") {
 			found = true
 		}
 	}

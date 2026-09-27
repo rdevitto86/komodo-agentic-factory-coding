@@ -48,5 +48,5 @@ The language standard owns tooling and folder mechanics. The CI/CD standard owns
 - A version moves through alpha, beta, optional rc, then stable, such as `1.0.0-alpha.5`, `1.0.0-beta.2`, `1.0.0-rc.1`, `1.0.0`; rc is skippable, and nothing requires, gates, or checks it.
 - An epic has one branch, `feat/<version>`, cut from `main` and opened as a draft PR to `main`.
 - A group branch cuts from its epic branch, or stacks on the branch of a group it depends on; its PR targets that same base.
-- A group PR holds at most 20 files and 2,000 changed lines, 1,000 preferred; an epic PR has no cap.
+- A group PR holds at most 20 kept files and 2,000 added lines, 1,000 preferred; deletions are free, and an epic PR has no cap.
 - The conductor merges a reviewed, checked group PR into its epic branch; only a person merges an epic PR into `main`.
