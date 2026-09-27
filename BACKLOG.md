@@ -1879,7 +1879,7 @@ depends_on: [TG-06.2]
 ```
 * **Why:** headless runs used `bypassPermissions`, so the guard was the only wall. Proves REQ-38, REQ-40 and REQ-41's deny entries.
 
-#### [TSK-06.4.1] Each role's settings allow what its stage needs, and dontAsk refuses the rest [P: C] [READY]
+#### [TSK-06.4.1] Each role's settings allow what its stage needs, and dontAsk refuses the rest [P: C] [DONE]
 ```yaml
 files: [komodo/roles/builder.md, komodo/roles/reviewer.md, internal/mount/claude/permissions.go, internal/mount/claude/permissions_test.go, internal/mount/claude/session.go, internal/mount/claude/session_test.go]
 done_when:
@@ -1892,7 +1892,7 @@ context:
   - "wire it: Session passes each role's allow and deny rules to the host"
 ```
 
-#### [TSK-06.4.2] Proof table: no allow-listed command is refused in any role [P: H] [READY]
+#### [TSK-06.4.2] Proof table: no allow-listed command is refused in any role [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/allow_test.go]
 done_when:
@@ -1903,7 +1903,7 @@ context:
 type: test
 ```
 
-#### [TSK-06.4.3] The orchestrator may edit this repo's policy, rules and guard on a branch [P: H] [READY]
+#### [TSK-06.4.3] The orchestrator may edit this repo's policy, rules and guard on a branch [P: H] [DONE]
 ```yaml
 files: [komodo/policy.json, internal/guard/policy.go, internal/guard/policy_test.go]
 done_when:
@@ -1913,6 +1913,54 @@ context:
   - "config_paths keep bin/**, .git/config and .git/hooks from every session, and komodo/policy.json only from line sessions; a change applies after merge and rebuild (decision 0015)"
   - "test (REQ-40): an orchestrator edit to komodo/policy.json on feat/x is allowed; the same edit from a builder, or on main, is refused"
 ```
+
+#### [TSK-06.4.4] internal/guard/policy.go:277 The orchestrator can edit komodo/policy.json on an epic branch [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/policy.go
+done_when:
+  - test -f internal/guard/policy.go
+type: fix
+context:
+  - "onFeatureBranch only checks IsCritical, and IsCritical leaves out epic branches (decision 0028). So an orchestrator on feat/1.0.0-alpha.7 is allowed to Edit komodo/policy.json directly. That skips group review, even though the guard treats epic branches as off-limits to model sessions elsewhere. The REQ-40 test only covers feat/x and main, so this case goes untested. Make onFeatureBranch also return false when IsEpicBranch(branch) is true, and add an epic-branch row to TestOnlyTheOrchestratorOnABranchEditsTheShippedPolicy."
+```
+
+#### [TSK-06.4.5] internal/mount/claude/permissions.go:69 A detection error is thrown away, so the builder loses its repo commands without a trace [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/permissions.go
+done_when:
+  - test -f internal/mount/claude/permissions.go
+type: fix
+context:
+  - "profile, _ := detect.Detect(worktree) throws the error away. If detection fails, the profile comes back empty and no build, test, lint or format rules are rendered. Under dontAsk the builder's go test or npm test calls are then refused, and nothing points at the cause. Return the detection error from rolePermissions, or log it, instead of assigning it to _."
+```
+
+#### [TSK-06.4.6] internal/mount/claude/permissions.go:21 Bash(find:*) lets find -exec run any command [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/permissions.go
+done_when:
+  - test -f internal/mount/claude/permissions.go
+type: fix
+context:
+  - "The files class renders Bash(find:*), so a builder's `find . -exec curl example.com \;` or `find . -exec sh -c '...' \;` matches the allow list. That turns the fixed command classes into a general shell, and only the guard stands behind it. Drop find from the files class, or add deny rules for find -exec, -execdir and -delete."
+```
+
+#### [TSK-06.4.7] internal/mount/claude/permissions.go:22 git-read allows git diff --output, a file write for the reviewer [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/permissions.go
+done_when:
+  - test -f internal/mount/claude/permissions.go
+type: fix
+context:
+  - "Bash(git diff:*) and Bash(git log:*) match `git diff --output=notes.txt`, which writes a file. The reviewer is meant never to write and now gets a shell with only git-read, so this gives it a write path the allow list was meant to rule out. Add a deny rule for --output on git diff, log and show, or narrow the allowed git-read prefixes."
+```
+
+
+
+
 
 ### [TG-06.5] Check reruns everything after every session
 ```yaml
