@@ -48,7 +48,8 @@ func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 			input.Files = append(input.Files, unquotePath(trimmed))
 		}
 	}
-	body, err := git.Run(worktree, "diff", ref+"...HEAD", "--", ":(exclude)bin")
+	// A deleted file is named, never replayed, so a mass deletion never clips the code a reviewer must read.
+	body, err := git.Run(worktree, "diff", "--irreversible-delete", ref+"...HEAD", "--", ":(exclude)bin")
 	if err != nil {
 		return nil, err
 	}

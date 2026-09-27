@@ -253,6 +253,25 @@ func TestDiffForUsesTheBaseTheRunWasCutFrom(t *testing.T) {
 	}
 }
 
+func TestDiffForNamesADeletedFileWithoutItsContents(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "old/gone.go", "package old\n\nvar replayed = true\n", "seed")
+	gitCmd(t, root, "branch", "base")
+	gitCmd(t, root, "rm", "-q", "old/gone.go")
+	commit(t, root, "a/one.go", "package a\n", "delete and add")
+
+	input, err := DiffFor(root, &Plan{Group: "TG-10.1", Base: "base", Worktree: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(input.Files, "old/gone.go") || !strings.Contains(input.Diff, "deleted file") {
+		t.Fatalf("diff = %q; a deleted file must still be named", input.Diff)
+	}
+	if strings.Contains(input.Diff, "replayed") {
+		t.Fatalf("diff = %q; a deleted file's contents must not fill the reviewer's diff", input.Diff)
+	}
+}
+
 func TestDiffForCarriesRepoStandardsAndTheFacetReviewerAppendix(t *testing.T) {
 	root := gitRepo(t)
 	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
