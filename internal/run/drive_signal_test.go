@@ -3,6 +3,7 @@
 package run
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -18,6 +19,8 @@ func TestAnInterruptStopsTheRunningSessionBeforeTheConductorExits(t *testing.T) 
 	setupDriveFakeClaude(t)
 	marker := filepath.Join(t.TempDir(), "session-started")
 	t.Setenv("FAKE_HANG_MARKER", marker)
+	sleep := fmt.Sprintf("61.%d", os.Getpid())
+	t.Setenv("FAKE_HANG_SLEEP", sleep)
 	client := &pr.Client{Run: func(string, ...string) (string, error) { return "[]", nil }}
 
 	done := make(chan error, 1)
@@ -45,7 +48,7 @@ func TestAnInterruptStopsTheRunningSessionBeforeTheConductorExits(t *testing.T) 
 	}
 	for end := time.Now().Add(3 * time.Second); ; time.Sleep(100 * time.Millisecond) {
 		// pgrep exits zero only while a process still matches.
-		if out := proc.Exec("", 5*time.Second, "pgrep", "-f", "^sleep 61.25"); !out.OK() {
+		if out := proc.Exec("", 5*time.Second, "pgrep", "-f", "^sleep "+sleep+"$"); !out.OK() {
 			return
 		}
 		if time.Now().After(end) {
