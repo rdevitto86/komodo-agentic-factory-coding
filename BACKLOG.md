@@ -3327,10 +3327,11 @@ depends_on: [TSK-08.4.1]
 
 #### [TSK-08.4.4] `komodo status` and the status hook show groups, time and blockers [P: H] [READY]
 ```yaml
-files: [internal/hooks/status.go, internal/hooks/status_test.go, cmd/komodo/line.go]
+files: [internal/hooks/status.go, internal/hooks/status_test.go, internal/hooks/hooks.go, cmd/komodo/line.go]
 done_when:
   - go test ./internal/hooks/... ./cmd/komodo/...
 context:
+  - "the status hook is registered in hooks.Table, the caller that wires it in"
   - "status --watch refreshes in place; the SessionStart hook adds the run's status and any blocked groups to the orchestrator's context"
 ```
 
