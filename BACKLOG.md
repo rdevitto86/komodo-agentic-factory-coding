@@ -3403,7 +3403,7 @@ version: 1.0.0-beta.2
 ```
 * **Why:** product repos run a published release, never a local build (decision 0018). Proves REQ-5's second half and REQ-2's release pin.
 
-#### [TSK-08.6.1] `komodo release` builds, tests, checksums and publishes a GitHub Release [P: H] [READY]
+#### [TSK-08.6.1] `komodo release` builds, tests, checksums and publishes a GitHub Release [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/release.go, internal/release/publish.go, internal/release/publish_test.go]
 done_when:
@@ -3413,7 +3413,7 @@ context:
   - "runs from the owner's machine only; the forge credential is read by the release step alone, as at Ship"
 ```
 
-#### [TSK-08.6.2] The release skill drives it from the orchestrator [P: M] [READY]
+#### [TSK-08.6.2] The release skill drives it from the orchestrator [P: M] [DONE]
 ```yaml
 files: [komodo/skills/release/SKILL.md]
 done_when:
@@ -3424,7 +3424,7 @@ context:
 type: docs
 ```
 
-#### [TSK-08.6.3] Product repos run the pinned published release [P: H] [READY]
+#### [TSK-08.6.3] Product repos run the pinned published release [P: H] [DONE]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go, internal/doctor/pins.go]
 done_when:
@@ -3433,7 +3433,7 @@ context:
   - "outside this repo, sync and install fetch the profile's pinned release and verify its checksum; doctor fails on any other"
 ```
 
-#### [TSK-08.6.4] Releases build every platform's binary [P: H] [READY]
+#### [TSK-08.6.4] Releases build every platform's binary [P: H] [DONE]
 ```yaml
 files: [internal/release/release.go, internal/release/release_test.go, internal/gate/gate.go, internal/gate/gate_test.go]
 done_when:
@@ -3442,6 +3442,30 @@ context:
   - "Targets lists darwin/arm64, windows/amd64 and linux/amd64 today, and gate's rebuild wrapper has no linux/arm64 case"
   - "darwin/arm64, darwin/amd64, linux/amd64, linux/arm64 and windows/amd64, byte-identical per commit (decision 0002)"
 ```
+
+#### [TSK-08.6.5] internal/run/sync.go:29 SHA256SUMS manifest name duplicated beside release.SumsFile [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/sync.go
+done_when:
+  - test -f internal/run/sync.go
+type: refactor
+context:
+  - 'The diff adds exported release.SumsFile = "SHA256SUMS" (internal/release/publish.go:19) and a private run.releaseSums with the same value. run already depends on release through doctor (internal/doctor/doctor.go imports komodo/internal/release), so the two constants can drift apart. If publish renames the manifest, sync keeps fetching the old name and every product repo''s sync fails with a 404. Delete releaseSums and use release.SumsFile in syncRelease.'
+```
+
+#### [TSK-08.6.6] internal/doctor/pins.go:157 ReleaseVersion execs the installed binary with no context or deadline [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/pins.go
+done_when:
+  - test -f internal/doctor/pins.go
+type: chore
+context:
+  - "The Go standard says every blocking call has a deadline and takes ctx first. ReleaseVersion runs ~/.komodo/bin/komodo-<os>-<arch> version through exec.Command with no timeout. doctor's checkPinnedRelease and sync's syncRelease both call it. If a corrupt or stale binary hangs, doctor and sync hang in every product repo. Take ctx first and run exec.CommandContext under a short context.WithTimeout."
+```
+
+
 
 ### [TG-08.7] The golden suite and `komodo eval`
 ```yaml
