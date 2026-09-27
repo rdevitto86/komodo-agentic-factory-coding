@@ -187,18 +187,22 @@ func union(base, extra []string) []string {
 // epicBranchRe matches an epic branch, feat/ plus a version exactly (decision 0028).
 var epicBranchRe = regexp.MustCompile(`^feat/\d+\.\d+\.\d+`)
 
-// IsCritical reports whether a ref is one the guard protects.
+// IsCritical reports whether a ref is one the guard protects from every session, model or conductor.
 func (p Policy) IsCritical(ref string) bool {
 	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "origin/")
-	if epicBranchRe.MatchString(ref) {
-		return true
-	}
 	for _, pattern := range p.CriticalRefs {
 		if matchRef(pattern, ref) {
 			return true
 		}
 	}
 	return false
+}
+
+// IsEpicBranch reports whether a ref is an epic branch (decision 0028), which only a model
+// session is refused; the conductor still pushes to and merges it, so IsCritical excludes it.
+func IsEpicBranch(ref string) bool {
+	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "origin/")
+	return epicBranchRe.MatchString(ref)
 }
 
 // matchRef compares a ref to one pattern, honouring a single trailing star.

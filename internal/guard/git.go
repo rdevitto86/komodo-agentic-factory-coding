@@ -31,7 +31,7 @@ func gitFindings(words []string, branch string, policy Policy) []string {
 		}
 		findings = append(findings, trailerFindings(commitMessage(rest), policy)...)
 	case "merge":
-		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
+		if (policy.IsCritical(branch) || IsEpicBranch(branch)) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git merge on %s: landing is the human's merge button", branch))
 		}
 		findings = append(findings, trailerFindings(commitMessage(rest), policy)...)
@@ -106,7 +106,7 @@ func pushFindings(rest []string, branch string, policy Policy) []string {
 		if target == "HEAD" {
 			target = branch
 		}
-		if policy.IsCritical(target) {
+		if policy.IsCritical(target) || IsEpicBranch(target) {
 			verb := "push to"
 			if deletes {
 				verb = "delete"
