@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/mount"
 )
 
 // lookup reads one key back out of an environment list.
@@ -38,6 +40,25 @@ func TestAScrubbedSessionEnvironmentHoldsNoForgeToken(t *testing.T) {
 	}
 	if path, _ := lookup(scrubbed, "PATH"); path != "/usr/bin" {
 		t.Fatalf("PATH = %q, want the inherited value", path)
+	}
+}
+
+func TestALaunchedSessionStartsFromAScrubbedEnvironment(t *testing.T) {
+	const token = "ghp_forgetoken"
+	t.Setenv("GH_TOKEN", token)
+	t.Setenv("GITLAB_TOKEN", token)
+	t.Setenv(subprocessScrubEnv, "1")
+	_, env, _ := Session("/repo", "/worktree", mount.StartRequest{Role: "builder"}, "", "", "sonnet", "", 10, 0)
+	for _, entry := range env {
+		if strings.Contains(entry, token) {
+			t.Fatalf("%s reached the session", entry)
+		}
+	}
+	if _, found := lookup(env, subprocessScrubEnv); found {
+		t.Fatalf("%s reached the session", subprocessScrubEnv)
+	}
+	if prompt, _ := lookup(env, "GIT_TERMINAL_PROMPT"); prompt != "0" {
+		t.Fatalf("GIT_TERMINAL_PROMPT = %q; the session's git may prompt for a credential", prompt)
 	}
 }
 

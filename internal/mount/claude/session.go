@@ -60,7 +60,8 @@ func Session(
 		argv = append(argv, "--max-budget-usd", strconv.FormatFloat(maxBudgetUSD, 'f', 2, 64))
 	}
 
-	env = os.Environ()
+	// The session starts from a scrubbed environment, so no forge credential reaches it.
+	env = scrubEnv(os.Environ())
 	env = removeEnv(env, "CLAUDE_CONFIG_DIR")
 	env = setEnv(env, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP", "3")
 	env = setEnv(env, "CLAUDE_CODE_MAX_TURNS", strconv.Itoa(maxTurns))
