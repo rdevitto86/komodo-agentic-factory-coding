@@ -978,3 +978,33 @@ func TestPruneRemovesBothRunsWorktreesWhenOnlyTheLatestIsRecorded(t *testing.T) 
 		}
 	}
 }
+
+func TestAMalformedPluginManifestIsFound(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := clean(t)
+	write(t, root, "komodo/plugins/chat/plugin.json", `{"name":"chat","type":"webhook"}`)
+	got := problemsFrom(t, root)["plugins"]
+	if len(got) != 1 || got[0].Where != "komodo/plugins/chat/plugin.json" {
+		t.Fatalf("plugins = %+v", got)
+	}
+}
+
+func TestDoctorListsEveryPluginTypeDisabled(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := clean(t)
+	write(t, root, "komodo/plugins/cloud/plugin.json",
+		`{"name":"cloud","type":"tool-pack","roles":["builder"],"tools":["aws s3 ls"]}`)
+	want := []string{
+		"plugin notifier: disabled, none installed",
+		"plugin tool-pack cloud: disabled",
+		"plugin stage-hook: disabled, none installed",
+	}
+	if got := PluginStates(root); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("states = %q", got)
+	}
+	write(t, home, ".komodo/plugins.json", `{"enabled":["cloud"]}`)
+	if got := PluginStates(root); got[1] != "plugin tool-pack cloud: enabled" {
+		t.Fatalf("states = %q", got)
+	}
+}
