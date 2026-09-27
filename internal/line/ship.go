@@ -238,7 +238,15 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	}
 	url, err := client.Create(result.Base, plan.Branch, title, body, result.Draft)
 	if err != nil {
-		return result, err
+		// A re-ship after an escalation finds its pull request still open, and refreshes it instead.
+		open, viewErr := client.View(plan.Branch)
+		if viewErr != nil || open.State != "OPEN" {
+			return result, err
+		}
+		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
+			return result, err
+		}
+		url = open.URL
 	}
 	result.URL = url
 	result.Labels, result.Warnings = ApplyLabels(client, url, wanted)

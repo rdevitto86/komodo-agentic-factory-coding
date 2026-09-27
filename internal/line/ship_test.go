@@ -2,6 +2,7 @@ package line
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1017,6 +1018,39 @@ func TestShipNotesTheBodyWhenOverThePreferredLines(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("calls = %v; a diff over the preferred lines must note it in the body", calls)
+	}
+}
+
+func TestAReshipRefreshesTheOpenPullRequest(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	var edited []string
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		switch {
+		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
+			return "", errors.New("a pull request for branch \"feat/a-group\" into branch \"main\" already exists")
+		case len(args) > 1 && args[0] == "pr" && args[1] == "view":
+			return `{"number":7,"url":"https://example.com/pull/7","state":"OPEN"}`, nil
+		case len(args) > 2 && args[0] == "pr" && args[1] == "edit" && args[3] == "--title":
+			edited = append(edited, args[2])
+		}
+		return "[]", nil
+	}}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatalf("ShipGroup = %v; a re-ship must refresh its open pull request", err)
+	}
+	if result.URL != "https://example.com/pull/7" || len(edited) != 1 {
+		t.Fatalf("url = %q, edits = %v; the open pull request's title and body must be refreshed", result.URL, edited)
 	}
 }
 
