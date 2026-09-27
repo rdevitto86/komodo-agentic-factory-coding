@@ -179,11 +179,11 @@ func BranchName(groupType, slug string) string { return groupType + "/" + slug }
 // Branch is the branch this group's own work lands on.
 func (g Group) Branch() string { return BranchName(g.Type(), g.Slug()) }
 
-// EpicBranch is the branch this group's epic ships on, feat/v plus the group's version, empty
-// with no version since only an epic's version names its branch.
+// EpicBranch is the branch this group's epic ships on, feat/ plus the group's version exactly,
+// empty with no version since only an epic's version names its branch.
 func (g Group) EpicBranch() string {
 	if version := g.Version(); version != "" {
-		return "feat/v" + version
+		return "feat/" + version
 	}
 	return ""
 }
