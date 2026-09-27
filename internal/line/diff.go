@@ -55,7 +55,7 @@ func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 	}
 	pieces := diffPieces(input.Files, fileDiffs(body))
 	input.Lines = strings.Count(strings.Join(pieces, "\n"), "\n")
-	input.Diff = clipDiff(pieces, CapDiff)
+	input.Diff = clipDiff(input.Files, pieces, CapDiff)
 	input.Tasks = taskBlocks(root, plan)
 	standards, err := LoadStandards(root)
 	if err != nil {
@@ -185,8 +185,9 @@ func unescape(letter byte) byte {
 	}
 }
 
-// clipDiff joins per-file diff chunks up to limit, dropping whole files rather than cutting a hunk.
-func clipDiff(pieces []string, limit int) string {
+// clipDiff joins per-file diff chunks up to limit, dropping whole files rather than cutting a hunk,
+// and names each dropped file so a reviewer can read it directly.
+func clipDiff(files, pieces []string, limit int) string {
 	var kept []string
 	size := 0
 	for index, piece := range pieces {
@@ -194,6 +195,9 @@ func clipDiff(pieces []string, limit int) string {
 		if size > limit && len(kept) > 0 {
 			omitted := len(pieces) - index
 			marker := fmt.Sprintf("\n[... diff clipped at a file boundary: %d of %d files shown, %d files omitted ...]", index, len(pieces), omitted)
+			if index < len(files) {
+				marker += "\n[read each omitted file directly: " + strings.Join(files[index:], ", ") + "]"
+			}
 			return strings.Join(kept, "\n") + marker
 		}
 		if size > limit {
