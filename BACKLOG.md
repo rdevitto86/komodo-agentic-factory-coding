@@ -1750,12 +1750,13 @@ version: 1.0.0-alpha.7
 
 #### [TSK-06.3.1] Every hook has one job, one stage and a limit, and fails open [P: C] [READY]
 ```yaml
-files: [internal/hooks/hooks.go, internal/hooks/hooks_test.go, cmd/komodo/hook.go]
+files: [internal/hooks/hooks.go, internal/hooks/hooks_test.go, cmd/komodo/hook.go, cmd/komodo/hook_test.go, cmd/komodo/main.go]
 done_when:
   - go test ./internal/hooks/... ./cmd/komodo/...
 context:
   - docs/system-design.md#hooks
   - "komodo hook <name> is each hook's entry point; the table of hooks, sessions, limits and failure behaviour is data in this package; a hook that errors returns allow"
+  - "wire it: main.go dispatches the hook command to runHook"
 ```
 
 #### [TSK-06.3.2] Format formats and lints the edited file, and never refuses [P: H] [READY]
@@ -1790,12 +1791,13 @@ context:
 
 #### [TSK-06.3.5] Each role's plugin carries only its own hooks [P: H] [READY]
 ```yaml
-files: [internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go]
+files: [internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go, internal/mount/claude/claude.go]
 done_when:
   - go test ./internal/mount/claude/...
 depends_on: [TSK-06.3.1]
 context:
   - "the guard in every session; format, task checks and time warning in the builder; time warning in lenses; the evidence and status hooks join in TG-07.5 and TG-08.4"
+  - "wire it: Render in claude.go calls RenderPluginHooks, so an install writes each role plugin's hooks file"
 ```
 
 ### [TG-06.4] Allow lists cover each stage, and the owner edits this repo on a branch
@@ -1808,7 +1810,7 @@ depends_on: [TG-06.2]
 
 #### [TSK-06.4.1] Each role's settings allow what its stage needs, and dontAsk refuses the rest [P: C] [REFINEMENT]
 ```yaml
-files: [komodo/roles/builder.md, komodo/roles/reviewer.md, internal/mount/claude/permissions.go, internal/mount/claude/permissions_test.go]
+files: [komodo/roles/builder.md, komodo/roles/reviewer.md, internal/mount/claude/permissions.go, internal/mount/claude/permissions_test.go, internal/mount/claude/session.go, internal/mount/claude/session_test.go]
 done_when:
   - go test ./internal/mount/claude/...
   - go run ./cmd/komodo doctor
@@ -1816,6 +1818,7 @@ context:
   - docs/system-design.md#permissions
   - "roles name Komodo verbs and command classes; the mount turns them into allow and deny rules; the builder's list adds the repo's build, test, lint and format commands from detection"
   - "deny entries for docs/prd.md and eval/** in every line role (REQ-41)"
+  - "wire it: Session passes each role's allow and deny rules to the host"
 ```
 
 #### [TSK-06.4.2] Proof table: no allow-listed command is refused in any role [P: H] [REFINEMENT]
