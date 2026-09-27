@@ -3616,7 +3616,7 @@ depends_on: [TG-08.7]
 ```
 * **Why:** preflight, resume, a lost credential, pacing, the canary and the policy edit only show in a whole run. Proves the cases half of REQ-44.
 
-#### [TSK-08.10.1] Eval cases for the requirements a unit test can't prove [P: H] [READY]
+#### [TSK-08.10.1] Eval cases for the requirements a unit test can't prove [P: H] [DONE]
 ```yaml
 files: [internal/eval/cases.go, internal/eval/cases_test.go]
 done_when:
@@ -3627,6 +3627,78 @@ context:
   - "the live env that runs the cases against real clones, and komodo eval --cases, are TG-08.11"
   - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
 ```
+
+#### [TSK-08.10.2] internal/eval/cases.go:483 entries drops the ledger read error, so a case passes when the ledger can't be read [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - "ledger.All returns an error when a line is malformed or the file can't be read. entries turns that error into nil. Then sessions() returns zero, so a preflight case passes its 'no session started' check. killAndResume finds no repeated build, and credentialRemoved finds no ship stamp. A corrupt runs.jsonl turns these cases into passes that checked nothing. Return ([]ledger.Entry, error) from entries and sessions, and fail the case on the error."
+```
+
+#### [TSK-08.10.3] internal/eval/cases.go:542 The canary and token scans skip .git, so a leak into a commit message or the branch is not seen [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - "The canary case's stated proof is that the word appears in 'no file a run leaves', and noForgeToken fails when the token reaches any file. findInTree skips every .git directory, and the fake env's COMMIT_EDITMSG decoy is written there, so it is never scanned. A canary in a commit message, in .git/COMMIT_EDITMSG, or in a committed file whose worktree was cleaned up would still pass the case. Also scan `git log --all -p` output (or the committed trees of the run's branches) for the needle."
+```
+
+#### [TSK-08.10.4] internal/eval/cases.go:59 Env methods that do I/O take no context [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: chore
+context:
+  - "The Go standard says ctx is the first parameter of anything that does I/O or blocks. AddGroup commits and pushes, and Scratch, Credential, Overlay and Plant touch the filesystem, but none takes ctx. A hung push in the live env can outlive the case budget that RunCases sets. The backlog already defers this to TG-08.11, but the interface is defined in this diff. Add ctx context.Context as the first parameter of AddGroup (and the other I/O methods), and pass the case context through."
+```
+
+#### [TSK-08.10.5] internal/eval/cases.go:25 Comment talks about callers ('a test swaps it') [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: docs
+context:
+  - "The comment standard bans reasoning about callers. The const block comment on line 28 also names only two of its four consts, leaving out policyBranch and policyRef. Drop 'a test swaps it', and make the const block comment cover the policy branch and ref."
+```
+
+#### [TSK-08.10.6] internal/eval/cases.go:96 The count 7 is a bare literal [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: chore
+context:
+  - len(preflightChecks)+7 hard-codes how many non-preflight cases follow. The Go standard says a literal that stands for a count gets a named const. It silently goes stale when a case is added. Build the requirement cases into a slice first and pre-size with len(preflightChecks)+len(rest).
+```
+
+#### [TSK-08.10.7] internal/eval/cases.go:632 RunCases' default budget and per-case timeout are untested [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: test
+context:
+  - "No test checks that a zero Budget falls back to run.GroupBudget, or that a case's context is cancelled when its budget ends. If either broke, go test ./internal/eval/... would still pass. Add a RunCases test whose case asserts ctx.Deadline() and runs past a tiny Budget."
+```
+
+
+
+
+
+
 
 ### [TG-08.11] `komodo eval --cases` runs the cases against live clones
 ```yaml
@@ -3645,6 +3717,7 @@ context:
   - "Live implements Env: a fresh clone with hooks off, PATH without named commands, a HOME overlay, a credential it can take away, and a planted canary it restores; LiveCases fails when any case fails (TSK-08.7.5)"
   - "--instructions names the personal host instructions file for the canary; empty skips the canary case with a note, never fails it"
   - "a test drives the --cases branch of runEval; real sessions stay behind KOMODO_LIVE, so go test spends no tokens"
+  - "Live.AddGroup commits and pushes with no context, so a hung push outlives the case budget; it takes the case's context (from TSK-08.10.5)"
 ```
 
 ### [TG-08.9] The Codex mount is ready to switch on
