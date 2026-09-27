@@ -43,7 +43,9 @@ const usage = `komodo: the code assembly line.
   komodo hook <name>          Every other agent hook's entry point; a hook that fails allows
   komodo run [group|task]     Drive the line headless on this host, under a budget
   komodo resume <group>       The state a killed run left: continue its session or start from its WIP
+  komodo status [--watch]     The current run: groups by state, time used and blockers
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
+  komodo stage <s> [group]    Run one stage ad hoc, build, review or ship, on a group or the current branch
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
   komodo threads --resolve id Mark one review thread resolved
@@ -52,6 +54,7 @@ const usage = `komodo: the code assembly line.
   komodo recall [--model m]   Score the local reviewer against the seeded-bug corpus
   komodo version              The changelog version and commit this binary was built from
   komodo gate [--install]     The local precheck: vet, race tests, doctor, guard, comments; --fuzz 10s adds fuzzing
+  komodo help [--skill]       This list, or the komodo skill generated from it
 `
 
 // version and commit name this build; gate and release builds stamp them through -ldflags.
@@ -72,6 +75,9 @@ func main() {
 	switch os.Args[1] {
 	case "-v", "--version", "version":
 		fmt.Printf("komodo %s (%s)\n", version, commit)
+		return
+	case "-h", "--help", "help":
+		runHelp(os.Args[2:])
 		return
 	}
 	root, err := repoRoot()
@@ -129,6 +135,10 @@ func main() {
 		runResume(root, os.Args[2:])
 	case "sync":
 		runSync(root, os.Args[2:])
+	case "stage":
+		runStage(root, os.Args[2:])
+	case "status":
+		runStatus(root, os.Args[2:])
 	case "step":
 		runStep(root, os.Args[2:])
 	case "threads":
@@ -141,8 +151,6 @@ func main() {
 		runRecall(root, os.Args[2:])
 	case "gate":
 		runGate(root, os.Args[2:])
-	case "-h", "--help", "help":
-		fmt.Print(usage)
 	default:
 		fmt.Fprintf(os.Stderr, "komodo: unknown command %q\n\n%s", os.Args[1], usage)
 		exit(2)

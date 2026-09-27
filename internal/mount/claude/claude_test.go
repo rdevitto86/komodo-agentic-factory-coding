@@ -967,7 +967,7 @@ func addSkills(t *testing.T, root string, names ...string) {
 func orchestratorRepo(t *testing.T) string {
 	t.Helper()
 	root := toolkitRepo(t)
-	addSkills(t, root, "backlog", "respond")
+	addSkills(t, root, "adhoc", "komodo", "plan", "respond")
 	return root
 }
 
@@ -1011,7 +1011,7 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	if strings.Join(names, ",") != "backlog,build,mine,respond,run,standards-go" {
+	if strings.Join(names, ",") != "adhoc,build,komodo,mine,plan,respond,run,standards-go" {
 		t.Fatalf("global skills = %v, want the user's own kept and the orchestrator's added", names)
 	}
 	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
@@ -1170,7 +1170,7 @@ func TestTheGlobalRenderFailsWhenTheToolkitSkillsCannotBeRead(t *testing.T) {
 
 func TestTheGlobalRenderFailsWhenAnOrchestratorSkillIsMissing(t *testing.T) {
 	root := toolkitRepo(t)
-	addSkills(t, root, "backlog")
+	addSkills(t, root, "adhoc", "komodo", "plan")
 	_, err := RenderGlobal(root, t.TempDir(), "/opt/komodo")
 	if err == nil || !strings.Contains(err.Error(), "respond") {
 		t.Fatalf("err = %v, want the missing respond skill named", err)

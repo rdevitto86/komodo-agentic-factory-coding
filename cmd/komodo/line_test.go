@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/conductor"
 	"komodo/internal/line"
@@ -25,6 +27,45 @@ func TestRunResumePrintsTheSavedState(t *testing.T) {
 	got = captureStdout(t, func() { runResume(root, []string{"TG-1", "--json"}) })
 	if !strings.Contains(got, `"group":"TG-1"`) || !strings.Contains(got, `"state":"Building"`) {
 		t.Fatalf("resume --json output = %q, want the state as JSON", got)
+	}
+}
+
+// TestRunStatusPrintsTheRunOrSaysNoneIsRecorded prints each recorded group's state, as text and as JSON.
+func TestRunStatusPrintsTheRunOrSaysNoneIsRecorded(t *testing.T) {
+	root := t.TempDir()
+	if got := captureStdout(t, func() { runStatus(root, nil) }); got != "no run is recorded\n" {
+		t.Fatalf("status with no run = %q", got)
+	}
+	if err := line.SaveRun(root, line.RunState{Run: "run-1", Group: "TG-1"}); err != nil {
+		t.Fatal(err)
+	}
+	state := conductor.State{Group: "TG-1", Current: conductor.Blocked}
+	if err := conductor.SaveState(conductor.StatePath(root, "TG-1"), state); err != nil {
+		t.Fatal(err)
+	}
+	if got := captureStdout(t, func() { runStatus(root, nil) }); !strings.Contains(got, "- TG-1: Blocked") ||
+		!strings.Contains(got, "Blocked, waiting on you:") {
+		t.Fatalf("status = %q, want the blocked group and its blocker", got)
+	}
+	if got := captureStdout(t, func() { runStatus(root, []string{"--json"}) }); !strings.Contains(got, `"state":"Blocked"`) {
+		t.Fatalf("status --json = %q, want the group as JSON", got)
+	}
+}
+
+// TestWatchStatusRedrawsInPlaceUntilCancelled draws once per tick after clearing the screen, and stops when cancelled.
+func TestWatchStatusRedrawsInPlaceUntilCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	draws := 0
+	got := captureStdout(t, func() {
+		watchStatus(ctx, time.Millisecond, func() {
+			draws++
+			if draws == 2 {
+				cancel()
+			}
+		})
+	})
+	if draws != 2 || strings.Count(got, clearScreen) != 2 {
+		t.Fatalf("drew %d times with %d clears, want 2 of each", draws, strings.Count(got, clearScreen))
 	}
 }
 
