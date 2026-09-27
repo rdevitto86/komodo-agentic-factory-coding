@@ -967,20 +967,23 @@ func addSkills(t *testing.T, root string, names ...string) {
 func orchestratorRepo(t *testing.T) string {
 	t.Helper()
 	root := toolkitRepo(t)
-	addSkills(t, root, "backlog", "respond", "review")
+	addSkills(t, root, "backlog", "respond")
 	return root
 }
 
-// TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer is REQ-39's check on the global render: the guard
-// and status hooks and the orchestrator's skills land under HOME, and no builder or standards skill does.
+// TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer checks the global render: the guard and status hooks and
+// the orchestrator's skills land under HOME, no builder or standards skill does, and every skill already there stays.
 func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 	root := orchestratorRepo(t)
 	addSkills(t, root, "build", "standards-go")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	stale := filepath.Join(home, Dir, "skills", "build", "SKILL.md")
-	own := filepath.Join(home, Dir, "skills", "mine", "SKILL.md")
-	for _, path := range []string{stale, own} {
+	// A real home holds its own skills, some named like the toolkit's; the install never removes one.
+	var existing []string
+	for _, name := range []string{"build", "mine", "standards-go"} {
+		existing = append(existing, filepath.Join(home, Dir, "skills", name, "SKILL.md"))
+	}
+	for _, path := range existing {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -1008,8 +1011,8 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	if strings.Join(names, ",") != "backlog,mine,respond,review,run" {
-		t.Fatalf("global skills = %v, want the user's own and the orchestrator's only", names)
+	if strings.Join(names, ",") != "backlog,build,mine,respond,run,standards-go" {
+		t.Fatalf("global skills = %v, want the user's own kept and the orchestrator's added", names)
 	}
 	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
 	if err != nil {
@@ -1167,7 +1170,7 @@ func TestTheGlobalRenderFailsWhenTheToolkitSkillsCannotBeRead(t *testing.T) {
 
 func TestTheGlobalRenderFailsWhenAnOrchestratorSkillIsMissing(t *testing.T) {
 	root := toolkitRepo(t)
-	addSkills(t, root, "backlog", "review")
+	addSkills(t, root, "backlog")
 	_, err := RenderGlobal(root, t.TempDir(), "/opt/komodo")
 	if err == nil || !strings.Contains(err.Error(), "respond") {
 		t.Fatalf("err = %v, want the missing respond skill named", err)

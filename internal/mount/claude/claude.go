@@ -122,13 +122,13 @@ func Render(root string, binary string) (install.Plan, error) {
 }
 
 // orchestratorSkills are the only skills the user-level config carries, so no other role's skill loads there.
-var orchestratorSkills = []string{"backlog", "respond", "review", "run"}
+var orchestratorSkills = []string{"backlog", "respond", "run"}
 
 // statusHook is the hook that adds the run's status and any blocked groups to a primary session as it starts.
 const statusHook = "status"
 
 // RenderGlobal builds the plan that adds the orchestrator layer to the user's config under home:
-// the guard and status hooks and the orchestrator's skills, keeping every setting the user has.
+// the guard and status hooks and the orchestrator's skills, keeping every setting and skill the user has.
 func RenderGlobal(root, home, binary string) (install.Plan, error) {
 	plan := install.Plan{Host: "claude", Root: home}
 	skills, err := mount.LoadSkills(root)
@@ -147,7 +147,7 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 		}
 		plan.Add(filepath.Join(dir, name, "SKILL.md"), []byte(skill.Body), "the orchestrator's "+name+" skill")
 	}
-	mount.PruneSkills(&plan, root, dir)
+	// No prune: the user's own skills share this directory, and only a project render may remove skills.
 
 	if !filepath.IsAbs(binary) {
 		binary = filepath.Join(mount.MainCheckout(root), binary)
