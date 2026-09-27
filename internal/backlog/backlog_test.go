@@ -217,6 +217,18 @@ func TestGroupBaseIsWhatTheGroupDeclares(t *testing.T) {
 	}
 }
 
+func TestGroupEpicBranchIsFeatPlusTheVersionExactly(t *testing.T) {
+	for _, version := range []string{"1.0.0-alpha.1", "2.3.45-beta.12", "1.1.0-rc.1", "5.31.0"} {
+		text := "### [TG-01.1] A group\n```yaml\ntype: feat\nversion: " + version + "\n```\n"
+		parsed := Parse(text)
+		group, _ := parsed.Group("TG-01.1")
+		want := "feat/" + version
+		if got := group.EpicBranch(); got != want {
+			t.Fatalf("EpicBranch() = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestGroupBranchIsTypeSlashSlug(t *testing.T) {
 	parsed := Parse("### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n")
 	group, _ := parsed.Group("TG-01.1")

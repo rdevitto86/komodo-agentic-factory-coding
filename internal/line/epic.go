@@ -18,12 +18,12 @@ type EpicResult struct {
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-// EpicBranchName is feat/v plus a version, the branch its epic ships on.
+// EpicBranchName is feat/ plus a version exactly, the branch its epic ships on.
 func EpicBranchName(version string) string {
 	if version == "" {
 		return ""
 	}
-	return "feat/v" + version
+	return "feat/" + version
 }
 
 // OpenEpic cuts the plan's epic branch from main, pushes it, and opens its draft pull request

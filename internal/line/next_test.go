@@ -438,7 +438,7 @@ func TestNextStillWaitsWhenTheParentIsOpen(t *testing.T) {
 func TestNextPlansOntoTheEpicBranchWhenNoBaseIsDeclared(t *testing.T) {
 	root, _ := remotedRepo(t)
 	runGit(t, root, "push", "origin", "HEAD:refs/heads/main")
-	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/v2.0.0")
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
 	text := "### [TG-05.6] No base\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 		"#### [TSK-05.6.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
@@ -448,7 +448,7 @@ func TestNextPlansOntoTheEpicBranchWhenNoBaseIsDeclared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan == nil || plan.Base != "feat/v2.0.0" {
+	if plan == nil || plan.Base != "feat/2.0.0" {
 		t.Fatalf("plan = %+v; a group with no base must plan onto its epic branch", plan)
 	}
 }

@@ -32,7 +32,7 @@ func TestEpicBranchNameIsEmptyWithNoVersion(t *testing.T) {
 	if got := EpicBranchName(""); got != "" {
 		t.Fatalf("EpicBranchName(\"\") = %q, want empty", got)
 	}
-	if got := EpicBranchName("2.0.0"); got != "feat/v2.0.0" {
+	if got := EpicBranchName("2.0.0"); got != "feat/2.0.0" {
 		t.Fatalf("EpicBranchName(\"2.0.0\") = %q", got)
 	}
 }
@@ -49,17 +49,17 @@ func TestOpenEpicCutsPushesAndOpensADraftPull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result == nil || result.Branch != "feat/v2.0.0" || result.URL != "https://example.com/pull/9" || !result.Draft {
+	if result == nil || result.Branch != "feat/2.0.0" || result.URL != "https://example.com/pull/9" || !result.Draft {
 		t.Fatalf("result = %+v", result)
 	}
-	if _, err := git.Run(root, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/feat/v2.0.0"); err != nil {
+	if _, err := git.Run(root, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/feat/2.0.0"); err != nil {
 		t.Fatalf("the epic branch never reached origin: %v", err)
 	}
 	if len(calls) != 1 {
 		t.Fatalf("calls = %v, want exactly one pull request created", calls)
 	}
 	for _, want := range []string{
-		"--draft", "--base main", "--head feat/v2.0.0",
+		"--draft", "--base main", "--head feat/2.0.0",
 		"feat: Phase 1: the conductor drives (2.0.0)",
 		"one group runs through the conductor within 60 minutes.",
 	} {
@@ -104,7 +104,7 @@ func TestOpenEpicLabelsStatusWipWhenDraftsAreUnavailable(t *testing.T) {
 
 func TestOpenEpicLeavesABranchAlreadyOnOriginAlone(t *testing.T) {
 	root := epicRepo(t, epicBacklog)
-	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/v2.0.0")
+	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		t.Fatalf("gh must not run once the epic branch already lives on origin: %v", args)
 		return "", nil
@@ -135,7 +135,7 @@ func TestOpenEpicSkipsAGroupThatNamesNoEpic(t *testing.T) {
 	if result != nil {
 		t.Fatalf("result = %+v, want nil for a group with no epic", result)
 	}
-	if _, err := git.Run(root, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/feat/v2.0.0"); err == nil {
+	if _, err := git.Run(root, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/feat/2.0.0"); err == nil {
 		t.Fatal("no branch should have been cut for a group with no epic")
 	}
 }

@@ -175,7 +175,7 @@ func TestLintRejectsAGroupWhoseVersionDiffersFromItsEpic(t *testing.T) {
 }
 
 func TestLintAcceptsAGroupWhoseBaseIsItsOwnEpicBranch(t *testing.T) {
-	text := "### [TG-53.1] Base on own epic branch\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/v1.0.0\n```\n\n" +
+	text := "### [TG-53.1] Base on own epic branch\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/1.0.0\n```\n\n" +
 		"#### [TSK-53.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
 	problems := Lint(Parse(text))
 	for _, problem := range problems {
