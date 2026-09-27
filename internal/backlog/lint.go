@@ -71,7 +71,8 @@ func Lint(parsed Backlog) []string {
 				continue
 			}
 			if depGroup, ok := parsed.Group(dep); ok {
-				depBranches = append(depBranches, depGroup.Branch())
+				// A dependency's branch already on origin may carry the title-only form, which still counts.
+				depBranches = append(depBranches, depGroup.Branch(), depGroup.TitleBranch())
 			}
 		}
 		epicBranch := group.EpicBranch()

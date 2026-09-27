@@ -166,7 +166,7 @@ func TestAppendTaskToAnEpicsLastGroupStaysAboveTheNextEpic(t *testing.T) {
 
 func TestSlugIsKebabAndCapped(t *testing.T) {
 	group := Group{ID: "TG-01.1", Title: "The conveyor and the devices!"}
-	if got := group.Slug(); got != "the-conveyor-and-the-devices" {
+	if got := group.Slug(); got != "TG-01.1-the-conveyor-and-the-devices" {
 		t.Fatalf("slug = %s", got)
 	}
 }
@@ -229,17 +229,28 @@ func TestGroupEpicBranchIsFeatPlusTheVersionExactly(t *testing.T) {
 	}
 }
 
-func TestGroupBranchIsTypeSlashSlug(t *testing.T) {
-	parsed := Parse("### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n")
-	group, _ := parsed.Group("TG-01.1")
-	if got := group.Branch(); got != "feat/a-group" {
-		t.Fatalf("branch = %q", got)
+func TestGroupBranchNamesItsTypeGroupAndSlug(t *testing.T) {
+	parsed := Parse("### [TG-06.2] The guard keeps five rules\n```yaml\ntype: refactor\nversion: 1.0.0\n```\n")
+	group, _ := parsed.Group("TG-06.2")
+	if got := group.Branch(); got != "refactor/TG-06.2-the-guard-keeps-five-rules" {
+		t.Fatalf("branch = %q; a group's branch names the group it came from", got)
+	}
+	if got := (Group{ID: "TG-06.3", Title: "!!"}).Slug(); got != "TG-06.3" {
+		t.Fatalf("slug = %q; a title with no words leaves the ID alone", got)
+	}
+}
+
+func TestLintAcceptsABaseNamingADependencysTitleOnlyBranch(t *testing.T) {
+	text := "### [TG-01.0] First group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"### [TG-01.1] Second group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/first-group\ndepends_on: [TG-01.0]\n```\n"
+	if problems := Lint(Parse(text)); len(problems) != 0 {
+		t.Fatalf("problems = %v; a dependency's branch already cut in the title-only form is still its branch", problems)
 	}
 }
 
 func TestLintAcceptsABaseNamingADependencysBranch(t *testing.T) {
 	text := "### [TG-01.0] First group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
-		"### [TG-01.1] Second group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/first-group\ndepends_on: [TG-01.0]\n```\n"
+		"### [TG-01.1] Second group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/TG-01.0-first-group\ndepends_on: [TG-01.0]\n```\n"
 	if problems := Lint(Parse(text)); len(problems) != 0 {
 		t.Fatalf("problems = %v", problems)
 	}
