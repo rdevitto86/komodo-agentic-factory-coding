@@ -196,7 +196,7 @@ func TestEachRolePluginCarriesOnlyItsOwnHooks(t *testing.T) {
 		want map[string][]string
 	}{
 		{"builder", map[string][]string{"PostToolUse": {"format", "timewarn"}, "Stop": {"taskchecks"}}},
-		{"reviewer", map[string][]string{"PostToolUse": {"timewarn"}}},
+		{"reviewer", map[string][]string{"PostToolUse": {"timewarn"}, "Stop": {"evidence"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.role, func(t *testing.T) {
@@ -338,5 +338,30 @@ func TestTheBuildSkillLoadsOnlyInTheBuildersPlugin(t *testing.T) {
 	}
 	if planned[filepath.Join(root, Dir, "skills", "build", "SKILL.md")] {
 		t.Fatal("the build skill must stay out of the primary session's skills")
+	}
+}
+
+func TestLensSkillsLoadOnlyInTheReviewersPlugin(t *testing.T) {
+	root := toolkitRepo(t)
+	skill := filepath.Join(root, "komodo", "skills", "review-security", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("---\nname: review-security\ndescription: The security lens.\n---\n\n# Security\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := map[string]bool{}
+	for _, change := range plan.Changes {
+		planned[change.Path] = true
+	}
+	if !planned[filepath.Join(root, Dir, "plugins", "reviewer", "skills", "review-security", "SKILL.md")] {
+		t.Fatal("the reviewer's plugin must carry each lens skill")
+	}
+	if planned[filepath.Join(root, Dir, "skills", "review-security", "SKILL.md")] {
+		t.Fatal("a lens skill must stay out of the primary session's skills")
 	}
 }

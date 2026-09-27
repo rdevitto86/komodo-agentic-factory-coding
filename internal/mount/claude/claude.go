@@ -77,10 +77,11 @@ func Render(root string, binary string) (install.Plan, error) {
 	skills = mount.SelectStandards(root, skills)
 	skills = repoSkills(root, skills)
 	builderOwned := RenderBuilderPlugin(&plan, root, detected, skills)
+	reviewerOwned := RenderReviewerPlugin(&plan, root, skills)
 	RenderPluginHooks(&plan, root, binary)
 	for _, skill := range skills {
-		// Standards serve every session; any other builder skill loads only in the builder's plugin.
-		if builderOwned[skill.Name] && !strings.HasPrefix(skill.Name, "standards-") {
+		// Standards serve every session; any other role skill loads only in its role's plugin.
+		if (builderOwned[skill.Name] && !strings.HasPrefix(skill.Name, "standards-")) || reviewerOwned[skill.Name] {
 			continue
 		}
 		plan.AddProject(filepath.Join(root, Dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
@@ -100,6 +101,7 @@ func Render(root string, binary string) (install.Plan, error) {
 
 	mount.PruneSkills(&plan, root, filepath.Join(root, Dir, "skills"))
 	mount.PruneSkills(&plan, root, filepath.Join(root, Dir, "plugins", "builder", "skills"))
+	mount.PruneSkills(&plan, root, filepath.Join(root, Dir, "plugins", "reviewer", "skills"))
 
 	settings, err := settingsFile(root, binary)
 	if err != nil {

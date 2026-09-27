@@ -113,7 +113,7 @@ func TestDiffCoversCommittedUncommittedAndUntrackedEdits(t *testing.T) {
 
 func TestScopeAllowsADeclaredFilesOwnTest(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{
-		"a.go": "package a\n", "a_test.go": "package a\n", "b_test.go": "package b\n", "ui/c.test.ts": "x\n",
+		"a.go": "package a\n", "a_test.go": "package a\n", "b/b_test.go": "package b\n", "ui/c.test.ts": "x\n",
 	})
 	problems := Scope(worktree, base, []string{"a.go", "ui/c.ts"})
 	if len(problems) != 1 || !strings.Contains(problems[0], "b_test.go") {
@@ -123,9 +123,9 @@ func TestScopeAllowsADeclaredFilesOwnTest(t *testing.T) {
 
 func TestScopeAllowsADeclaredFilesPlatformTest(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{
-		"a_unix_test.go": "package a\n", "b_linux_amd64_test.go": "package b\n", "c_windows_test.go": "package c\n",
+		"a/a_unix_test.go": "package a\n", "b/b_linux_amd64_test.go": "package b\n", "c/c_windows_test.go": "package c\n",
 	})
-	problems := Scope(worktree, base, []string{"a.go", "b.go"})
+	problems := Scope(worktree, base, []string{"a/a.go", "b/b.go"})
 	if len(problems) != 1 || !strings.Contains(problems[0], "c_windows_test.go") {
 		t.Fatalf("problems = %v; a declared file's platform test is in scope, an undeclared file's is not", problems)
 	}
@@ -139,6 +139,16 @@ func TestUntaggedKeepsANameWithNoPlatformSuffix(t *testing.T) {
 		if got := untagged(name); got != want {
 			t.Errorf("untagged(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+func TestScopeAllowsAnyTestOfADeclaredGoPackage(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{
+		"cmd/cli_test.go": "package main\n", "cmd/main_test.go": "package main\n", "lib/x_test.go": "package lib\n",
+	})
+	problems := Scope(worktree, base, []string{"cmd/host.go"})
+	if len(problems) != 1 || !strings.Contains(problems[0], "lib/x_test.go") {
+		t.Fatalf("problems = %v; a declared package's tests are in scope, another package's are not", problems)
 	}
 }
 

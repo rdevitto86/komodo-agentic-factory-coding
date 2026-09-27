@@ -2813,7 +2813,7 @@ depends_on: [TG-07.4]
 ```
 * **Why:** TG-03.22 ran 11 review rounds because each re-reviewed the whole diff from scratch (evidence 3). Proves REQ-20.
 
-#### [TSK-07.5.1] Four checklist skills replace the one review skill [P: C] [READY]
+#### [TSK-07.5.1] Four checklist skills replace the one review skill [P: C] [DONE]
 ```yaml
 files: [komodo/skills/review, komodo/skills/review-correctness/SKILL.md, komodo/skills/review-security/SKILL.md, komodo/skills/review-quality/SKILL.md, komodo/skills/review-economy/SKILL.md, komodo/roles/reviewer.md, komodo/roles/reviewer.schema.json]
 done_when:
@@ -2827,7 +2827,7 @@ context:
   - "one reviewer role, started once per lens with that lens's skill"
 ```
 
-#### [TSK-07.5.2] Validators measure before any lens runs [P: H] [READY]
+#### [TSK-07.5.2] Validators measure before any lens runs [P: H] [DONE]
 ```yaml
 files: [internal/review/validators.go, internal/review/validators_test.go]
 done_when:
@@ -2836,7 +2836,7 @@ context:
   - "tests and reproducers, the secret scan, a dependency audit and security linters when the repo has them, and caller counts of changed exported symbols; the report is settled fact in every lens's brief"
 ```
 
-#### [TSK-07.5.3] A finding blocks only when the binary verifies its evidence [P: C] [READY]
+#### [TSK-07.5.3] A finding blocks only when the binary verifies its evidence [P: C] [DONE]
 ```yaml
 files: [internal/review/evidence.go, internal/review/evidence_test.go]
 done_when:
@@ -2847,7 +2847,7 @@ context:
 tier: heavy
 ```
 
-#### [TSK-07.5.4] The evidence hook refuses a lens's stop twice at most [P: H] [READY]
+#### [TSK-07.5.4] The evidence hook refuses a lens's stop twice at most [P: H] [DONE]
 ```yaml
 files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go, internal/hooks/hooks.go, internal/mount/claude/plugin_test.go]
 done_when:
@@ -2856,6 +2856,30 @@ depends_on: [TSK-07.5.3]
 context:
   - "registered in hooks.Table under SessionLens, so the reviewer plugin's hook test changes; Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
 ```
+
+#### [TSK-07.5.5] internal/review/evidence.go:141 Scratch copy keeps the worktree's .git file, so reproducer git commands act on the real worktree [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/review/evidence.go
+done_when:
+  - test -f internal/review/evidence.go
+type: fix
+context:
+  - "copyTree skips `.git` only when it is a directory (line 141). A line worktree such as .komodo/wt/TG-07.5 has `.git` as a regular file holding `gitdir: <repo>/.git/worktrees/TG-07.5`. The case at line 150 copies that file into the scratch directory. So a reproducer's `git status`, `git stash`, `git checkout` or `git commit` runs against the real worktree's index, HEAD and branch, with the scratch copy as its work tree. A reproducer can then rewrite the group's index or move its branch, which breaks the isolation that TestAReproducerNeverTouchesTheRealTree claims. That test only builds a `.git` directory, so it cannot catch this. Skip any entry named `.git` whatever its type, and add a test with a `.git` file."
+```
+
+#### [TSK-07.5.6] internal/review/evidence.go:183 citesMeasurement accepts any line of any measurement, not a relevant one [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/review/evidence.go
+done_when:
+  - test -f internal/review/evidence.go
+type: fix
+context:
+  - "The check passes when the evidence contains any non-empty trimmed line from any measurement's Detail, whatever the measurement's kind. Those lines include test-output tails and the `exit status 1` line that runCommand prepends on failure. For example, a blast-radius finding whose evidence quotes `ok  komodo/internal/hooks 1.2s`, or `PASS` from the tests measurement, is marked as blocking with 'the tests validator measured it', even though no caller count or cost supports it. Match only measurements of the kinds that back the finding's class (callers for blast-radius), or require the evidence to quote a whole measurement line and not a short fragment."
+```
+
+
 
 ### [TG-07.11] The conductor runs Review through parallel lenses
 ```yaml
