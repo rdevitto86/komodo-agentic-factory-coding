@@ -69,6 +69,16 @@ func TestSessionArgvForLens(t *testing.T) {
 	}
 }
 
+func TestSessionOmitsAnUnsetEffort(t *testing.T) {
+	req := mount.StartRequest{Role: "reviewer", Brief: "review", Tools: []string{"read"}, Schema: []byte(`{"type":"object"}`)}
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "opus", "", 10, 0)
+	for _, arg := range argv {
+		if arg == "--effort" {
+			t.Fatalf("argv = %v; an unset effort must leave the flag out", argv)
+		}
+	}
+}
+
 func TestSessionStartSendsTheBriefAsThePrompt(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",

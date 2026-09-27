@@ -332,6 +332,23 @@ func TestDriveStartsAFreshBuilderWhenTheHostCannotResume(t *testing.T) {
 	}
 }
 
+func TestDriveStartsAFreshBuilderWhenItsBuilderIsGone(t *testing.T) {
+	r := newRig(t)
+	r.stations.checks = [][]string{{"`go test` exited 1"}}
+	saved := State{Group: "TG-1", Current: Checking, Builder: "builder-from-an-earlier-process"}
+	*r.saved = append(*r.saved, saved)
+	if _, err := r.driver.Resume(context.Background(), saved); err != nil {
+		t.Fatalf("resume = %v", err)
+	}
+	if len(r.host.starts) == 0 {
+		t.Fatal("no session started; the repair needs a fresh builder")
+	}
+	repair := r.host.starts[0]
+	if repair.Role != "builder" || !strings.Contains(repair.Brief, "- [ ] `go test` exited 1") {
+		t.Fatalf("repair request = %+v, want the builder's role with the fix list, never another session's", repair)
+	}
+}
+
 func TestDriveEscalatesABlockedBuilderAndWaits(t *testing.T) {
 	r := newRig(t)
 	r.host.builds = []map[string]any{{"result": "BLOCKED"}}

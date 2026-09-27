@@ -43,7 +43,10 @@ func Session(
 
 	argv = append(argv, "--permission-mode", "dontAsk")
 	argv = append(argv, "--model", model)
-	argv = append(argv, "--effort", effort)
+	// An unset tier effort leaves the host's default, rather than passing an empty value it warns on.
+	if effort != "" {
+		argv = append(argv, "--effort", effort)
+	}
 	argv = append(argv, "--strict-mcp-config")
 	argv = append(argv, "--output-format", "stream-json")
 	argv = append(argv, "--verbose")

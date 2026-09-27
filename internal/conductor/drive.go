@@ -229,7 +229,9 @@ func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 	var err error
 	if r.builder != "" && d.Host.Capabilities().Resume {
 		handle, err = d.Host.Resume(r.builder, input)
-	} else {
+	}
+	// A builder from an earlier process is gone after a restart; a fresh one gets the brief and fixes.
+	if handle == "" {
 		req.Brief += "\n\n" + input
 		handle, err = d.Host.Start(req)
 	}
