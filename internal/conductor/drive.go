@@ -14,6 +14,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/changelog"
 	"komodo/internal/check"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -21,12 +22,16 @@ import (
 	"komodo/internal/proc"
 )
 
-// Ledger stations for the only three kinds of model session the conductor starts.
+// Ledger stations for the conductor's model sessions; a cold review is review, a warm one re-review.
 const (
-	StationBuild  = "build"
-	StationReview = "review"
-	StationRepair = "repair"
+	StationBuild    = "build"
+	StationReview   = "review"
+	StationReReview = "re-review"
+	StationRepair   = "repair"
 )
+
+// warmRounds is how many rounds a warm reviewer runs before the group earns its one cold pass.
+const warmRounds = 2
 
 // repairLead opens a fresh repair's brief, so the builder fixes the list instead of re-verifying a finished build.
 const repairLead = "# Repair\n\nThe group is already built. Apply every item on the fix list below, then rerun its checks.\n" +
@@ -66,6 +71,8 @@ type Stations interface {
 	Prepare() ([]string, error)
 	// Ship pushes the group and opens its draft PR.
 	Ship() error
+	// Head returns the worktree's HEAD commit, which a review records as the commit it saw.
+	Head() (string, error)
 }
 
 // Driver moves one group through its states, starting model sessions only to build, review and repair.
@@ -78,6 +85,8 @@ type Driver struct {
 	Reviewer mount.StartRequest
 	// Review builds the reviewer's request from the group's diff as it stands at review; nil uses Reviewer.
 	Review func() (mount.StartRequest, error)
+	// ReReview builds the input a resumed reviewer reads from the group's state; nil sends the open findings alone.
+	ReReview func(State) (string, error)
 	// SeverityFloor is the lowest review severity that blocks; empty blocks every finding.
 	SeverityFloor string
 	// Repairs is how many repair rounds a group gets before it escalates; zero means line.MaxRepairs.
@@ -199,21 +208,57 @@ func (d *Driver) build(
 	return nil
 }
 
-// review runs the one reviewer session and turns its findings at or above the floor into the fix list.
+// review runs one review round, then, once a warm reviewer has passed a later round, the group's one
+// cold pass over the whole diff, so a reviewer anchored on its own earlier view never ships a group alone.
 func (d *Driver) review(ctx context.Context, s *State, r *round) error {
-	request := d.Reviewer
-	if d.Review != nil {
-		built, err := d.Review()
-		if err != nil {
-			return err
-		}
-		request = built
+	if err := d.reviewRound(ctx, s, r); err != nil {
+		return err
 	}
-	handle, err := d.Host.Start(request)
+	if s.ColdPass || s.ReviewRounds < warmRounds || len(r.fixes) > 0 {
+		return nil
+	}
+	s.ColdPass, s.Reviewer = true, ""
+	return d.reviewRound(ctx, s, r)
+}
+
+// reviewRound resumes the group's reviewer, or starts a cold one when there is none or the resume fails,
+// then turns its findings at or above the floor into the fix list.
+func (d *Driver) reviewRound(ctx context.Context, s *State, r *round) error {
+	station, request := StationReReview, d.Reviewer
+	var handle mount.Handle
+	var err error
+	if s.Reviewer != "" && d.Host.Capabilities().Resume {
+		input := line.OpenFindings(s.Open())
+		if d.ReReview != nil {
+			if input, err = d.ReReview(*s); err != nil {
+				return err
+			}
+		}
+		handle, err = d.Host.Resume(mount.Handle(s.Reviewer), input)
+	}
+	// A reviewer from an earlier process is gone after a restart; a cold one gets the open findings.
+	if handle == "" {
+		station, s.ReviewRounds = StationReview, 0
+		if d.Review != nil {
+			if request, err = d.Review(); err != nil {
+				return err
+			}
+		}
+		if open := s.Open(); len(open) > 0 {
+			request.Brief += "\n\n" + line.OpenFindings(open)
+		}
+		handle, err = d.Host.Start(request)
+	}
 	if err != nil {
 		return err
 	}
-	result, err := d.session(ctx, s, StationReview, request, handle)
+	head, err := d.Stations.Head()
+	if err != nil {
+		return err
+	}
+	s.Reviewer, s.Reviewed = string(handle), head
+	s.ReviewRounds++
+	result, err := d.session(ctx, s, station, request, handle)
 	if err != nil {
 		return err
 	}
@@ -233,7 +278,9 @@ func (d *Driver) review(ctx context.Context, s *State, r *round) error {
 	s.Findings, r.fixes = nil, nil
 	for _, finding := range findings {
 		verified := line.AtOrAbove(finding.Severity, d.SeverityFloor)
-		s.Findings = append(s.Findings, Finding{Severity: finding.Severity, Verified: verified})
+		s.Findings = append(s.Findings, Finding{
+			Severity: finding.Severity, Verified: verified, File: finding.File, Line: finding.Line, Title: finding.Title,
+		})
 		if verified {
 			r.fixes = append(r.fixes, fmt.Sprintf("%s:%d %s: %s", finding.File, finding.Line, finding.Title, finding.Fix))
 		}
@@ -497,6 +544,11 @@ func (l *Line) Prepare() ([]string, error) {
 		}
 	}
 	return nil, nil
+}
+
+// Head returns the group's worktree HEAD commit.
+func (l *Line) Head() (string, error) {
+	return git.Run(line.WorktreePath(l.Root, l.Plan.Worktree), "rev-parse", "HEAD")
 }
 
 // Ship commits, pushes and opens the group's draft PR.

@@ -75,6 +75,50 @@ func TestDiffForCarriesTasksStandardsAndTheDiff(t *testing.T) {
 	}
 }
 
+func TestReReviewForCarriesOnlyTheRepairAndTheOpenFindings(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commit(t, root, "a/one.go", "package a\n\nfunc One() int { return 1 }\n", "the build")
+	reviewed, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(t, root, "a/two.go", "package a\n\nfunc Two() int { return 2 }\n", "the repair")
+
+	plan := &Plan{Group: "TG-10.1", Title: "G", Base: "main~2", Worktree: "."}
+	open := []Finding{{Severity: "high", File: "a/one.go", Line: 3, Title: "One is untested"}}
+	input, err := ReReviewFor(root, plan, reviewed, open)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Files) != 1 || input.Files[0] != "a/two.go" {
+		t.Fatalf("files = %v, want only the repair's", input.Files)
+	}
+	if strings.Contains(input.Diff, "func One") || !strings.Contains(input.Diff, "func Two") {
+		t.Fatalf("diff = %q, want only the lines since the reviewed commit", input.Diff)
+	}
+	for _, want := range []string{"`a/one.go:3` high: One is untested", "Close or keep each finding", "evidence"} {
+		if !strings.Contains(input.Text, want) {
+			t.Errorf("re-review input is missing %q:\n%s", want, input.Text)
+		}
+	}
+}
+
+func TestReReviewForWithNoReviewedCommitReadsTheWholeDiff(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commit(t, root, "a/one.go", "package a\n", "one")
+	commit(t, root, "a/two.go", "package a\n", "two")
+
+	input, err := ReReviewFor(root, &Plan{Group: "TG-10.1", Base: "main~2", Worktree: "."}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Files) != 2 || !strings.Contains(input.Text, "No finding is open") {
+		t.Fatalf("files = %v, text = %q; want the whole diff and no open finding", input.Files, input.Text)
+	}
+}
+
 func TestDiffNamesABinaryWithoutItsBytes(t *testing.T) {
 	root := gitRepo(t)
 	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")

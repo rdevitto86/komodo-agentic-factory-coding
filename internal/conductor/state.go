@@ -1,7 +1,11 @@
 // Package conductor decides each task group's next move from its state.json record alone.
 package conductor
 
-import "time"
+import (
+	"time"
+
+	"komodo/internal/line"
+)
 
 // GroupState is one of the states a task group's state.json can hold (system-design.md#group-states).
 type GroupState string
@@ -23,6 +27,9 @@ const (
 type Finding struct {
 	Severity string `json:"severity"`
 	Verified bool   `json:"verified"`
+	File     string `json:"file,omitempty"`
+	Line     int    `json:"line,omitempty"`
+	Title    string `json:"title,omitempty"`
 }
 
 // State is what state.json holds for one group when Next reads it, before the state's work starts.
@@ -41,6 +48,14 @@ type State struct {
 	Builder string `json:"builder,omitempty"`
 	// Repairs counts the repair rounds the group has spent, across every run that drove it.
 	Repairs int `json:"repairs,omitempty"`
+	// Reviewer is the reviewer session a re-review resumes.
+	Reviewer string `json:"reviewer,omitempty"`
+	// Reviewed is the HEAD the last review saw, where the next re-review's diff starts.
+	Reviewed string `json:"reviewed,omitempty"`
+	// ReviewRounds counts the rounds Reviewer has run; a cold reviewer starts it again at one.
+	ReviewRounds int `json:"review_rounds,omitempty"`
+	// ColdPass records that the group's one cold review before ship has run.
+	ColdPass bool `json:"cold_pass,omitempty"`
 
 	// SlotFree is read at Ready: a build slot is free for the group to take.
 	SlotFree bool `json:"slot_free"`
@@ -64,6 +79,19 @@ type State struct {
 	Left GroupState `json:"left"`
 	// Edited is read at Blocked: a person edited the group since it stopped.
 	Edited bool `json:"edited"`
+}
+
+// Open returns the group's verified findings, the ones a re-review closes or keeps.
+func (s State) Open() []line.Finding {
+	var open []line.Finding
+	for _, finding := range s.Findings {
+		if finding.Verified {
+			open = append(open, line.Finding{
+				Severity: finding.Severity, File: finding.File, Line: finding.Line, Title: finding.Title,
+			})
+		}
+	}
+	return open
 }
 
 // Action is the one next move Next decides for a group.
