@@ -59,15 +59,21 @@ func registerFakeHost() {
 	})
 }
 
-// fakeDenyPayload mirrors the JSON shape a real host's PreToolUse hook reads.
-func fakeDenyPayload(reason string) []byte {
-	out, err := json.Marshal(map[string]any{
+// fakeDenyPayload mirrors the JSON shape a real host's PreToolUse hook reads, including the
+// continue/stopReason fields that host reads as ending the session.
+func fakeDenyPayload(reason string, blocked bool) []byte {
+	payload := map[string]any{
 		"hookSpecificOutput": map[string]any{
 			"hookEventName":            "PreToolUse",
 			"permissionDecision":       "deny",
 			"permissionDecisionReason": reason,
 		},
-	})
+	}
+	if blocked {
+		payload["continue"] = false
+		payload["stopReason"] = reason
+	}
+	out, err := json.Marshal(payload)
 	if err != nil {
 		return nil
 	}

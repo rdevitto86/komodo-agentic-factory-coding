@@ -57,7 +57,7 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 		reason = blockedReason(decision.Findings)
 	}
 	if tools, ok := hostGuard(request.ToolName); ok && tools.Deny != nil {
-		if out := tools.Deny(reason); out != nil {
+		if out := tools.Deny(reason, blocked); out != nil {
 			if _, err := stdout.Write(out); err == nil {
 				return 0
 			}

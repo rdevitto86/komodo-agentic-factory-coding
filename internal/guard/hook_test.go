@@ -14,9 +14,15 @@ func pushPayload(root, sessionID string) string {
 		`","cwd":"` + root + `","tool_input":{"command":"git push origin main"}}`
 }
 
-// hookDenialReason runs one hook call through a host that accepts a JSON denial and returns
-// the reason it carried.
-func hookDenialReason(t *testing.T, root, payload string) string {
+// hookDenial is one hook call's decoded JSON denial: its reason and any stop signal.
+type hookDenial struct {
+	Reason     string
+	Continue   *bool
+	StopReason string
+}
+
+// runHook runs one hook call through a host that accepts a JSON denial and decodes it.
+func runHook(t *testing.T, root, payload string) hookDenial {
 	t.Helper()
 	var out, errOut strings.Builder
 	if code := Hook(root, strings.NewReader(payload), &out, &errOut); code != 0 {
@@ -26,11 +32,20 @@ func hookDenialReason(t *testing.T, root, payload string) string {
 		Hook struct {
 			Reason string `json:"permissionDecisionReason"`
 		} `json:"hookSpecificOutput"`
+		Continue   *bool  `json:"continue"`
+		StopReason string `json:"stopReason"`
 	}
 	if err := json.Unmarshal([]byte(out.String()), &decoded); err != nil {
 		t.Fatalf("output is not JSON: %q", out.String())
 	}
-	return decoded.Hook.Reason
+	return hookDenial{Reason: decoded.Hook.Reason, Continue: decoded.Continue, StopReason: decoded.StopReason}
+}
+
+// hookDenialReason runs one hook call through a host that accepts a JSON denial and returns
+// the reason it carried.
+func hookDenialReason(t *testing.T, root, payload string) string {
+	t.Helper()
+	return runHook(t, root, payload).Reason
 }
 
 // TestHookEndsTheSessionOnTheThirdIdenticalRefusal proves the guard's own refusal limit (REQ-37):
@@ -40,13 +55,19 @@ func TestHookEndsTheSessionOnTheThirdIdenticalRefusal(t *testing.T) {
 	root := worktree(t)
 	payload := pushPayload(root, "session-a")
 	for attempt := 1; attempt <= 2; attempt++ {
-		if reason := hookDenialReason(t, root, payload); strings.Contains(reason, "blocked") {
-			t.Fatalf("attempt %d ended the session early: %q", attempt, reason)
+		if denial := runHook(t, root, payload); denial.Continue != nil && !*denial.Continue {
+			t.Fatalf("attempt %d ended the session early: %+v", attempt, denial)
 		}
 	}
-	reason := hookDenialReason(t, root, payload)
-	if !strings.Contains(reason, "blocked") {
-		t.Fatalf("the third identical refusal did not end the session: %q", reason)
+	denial := runHook(t, root, payload)
+	if denial.Continue == nil || *denial.Continue {
+		t.Fatalf("the third identical refusal did not set continue false: %+v", denial)
+	}
+	if denial.StopReason == "" {
+		t.Fatalf("the third identical refusal carried no stopReason: %+v", denial)
+	}
+	if !strings.Contains(denial.Reason, "blocked") {
+		t.Fatalf("the third identical refusal did not name itself blocked: %q", denial.Reason)
 	}
 }
 
