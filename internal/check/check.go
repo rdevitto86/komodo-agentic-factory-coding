@@ -4,6 +4,7 @@ package check
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -63,7 +64,8 @@ func Scope(worktree, base string, files []string) []string {
 	var problems []string
 	for _, name := range changed {
 		// A declared file's own test is in scope too, as the builder's rules allow.
-		if allowed[name] || allowed[testedBy(name)] || allowed[untagged(testedBy(name))] || underDeclared(name, files) {
+		if allowed[name] || allowed[testedBy(name)] || allowed[untagged(testedBy(name))] ||
+			underDeclared(name, files) || testsDeclaredPackage(name, files) {
 			continue
 		}
 		problems = append(problems, fmt.Sprintf("scope: %s is edited outside the group's declared files", name))
@@ -94,6 +96,21 @@ func testedBy(name string) string {
 		}
 	}
 	return ""
+}
+
+// testsDeclaredPackage reports whether name is a Go test in a directory holding a declared Go file,
+// since a package's change can move any of that package's tests.
+func testsDeclaredPackage(name string, files []string) bool {
+	if !strings.HasSuffix(name, "_test.go") {
+		return false
+	}
+	dir := path.Dir(name)
+	for _, file := range files {
+		if strings.HasSuffix(file, ".go") && path.Dir(file) == dir {
+			return true
+		}
+	}
+	return false
 }
 
 // platformTags are the Go file-name suffixes that restrict a file to one system or architecture.

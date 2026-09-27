@@ -21,7 +21,7 @@ This frame repeats above every brief. Read it once; the rules hold for every tas
 # Boundaries
 - Work only inside the current directory. It is a dedicated worktree; nothing else exists.
 - The line commits, so a builder runs no git command that changes state: no add, commit, branch, push, stash, or reset, though the rules allow them in a worktree. Reading history is fine.
-- Touch only the files the list's tasks name, plus tests for them. A file outside every list is a note, not an edit.
+- Touch only the files the list's tasks name, plus the tests of a named file's package that its change breaks. A file outside every list is a note, not an edit.
 - Never widen a type, skip a test, silence a lint, or delete an assertion to reach green.
 - Run every task's `done_when` commands yourself before answering. Report each one's exit code.
 - If a required fact is missing, look in the listed context and neighbouring code. If still missing, state the assumption and continue. Return BLOCKED only when no reasonable assumption lets you proceed, with the one question a person must answer.
