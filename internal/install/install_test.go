@@ -85,6 +85,25 @@ func TestDriftIgnoresWhichKomodoBinaryTheHookRuns(t *testing.T) {
 	}
 }
 
+func TestDriftIgnoresWhichKomodoBinaryAPluginHookRuns(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "hooks.json")
+	installed := `{"hooks": [{"command": "/tmp/scratch/komodo-safe hook taskchecks --host claude"}]}`
+	if err := os.WriteFile(path, []byte(installed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := Plan{Host: "h", Root: root}
+	plan.Add(path, []byte(`{"hooks": [{"command": "/repo/bin/komodo-darwin-arm64 hook taskchecks --host claude"}]}`), "hooks")
+	if got := plan.Drift(); len(got) != 1 || got[0].Verb != "same" {
+		t.Fatalf("drift = %+v; another komodo binary running the same hook is no drift", got)
+	}
+	changed := Plan{Host: "h", Root: root}
+	changed.Add(path, []byte(`{"hooks": [{"command": "/repo/bin/komodo-darwin-arm64 hook timewarn --host claude"}]}`), "hooks")
+	if got := changed.Drift(); got[0].Verb != "update" {
+		t.Fatalf("drift = %+v; a different hook or argument still counts", got)
+	}
+}
+
 func TestActionsNameWhatWouldChange(t *testing.T) {
 	root := t.TempDir()
 	same := filepath.Join(root, "same.txt")

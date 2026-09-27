@@ -492,7 +492,7 @@ depends_on: [TG-04.5]
 ```yaml
 files: [internal/mount/mount.go, internal/mount/host.go, internal/mount/host_test.go, internal/mount/registry.go]
 done_when:
-  - go test ./internal/mount/...
+  - go test ./internal/install/...
   - go vet ./...
 context:
   - docs/system-design.md#the-host-contract
@@ -1173,7 +1173,7 @@ depends_on: [TG-05.6]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/mount_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
 done_when:
-  - go test ./internal/mount/...
+  - go test ./internal/install/...
   - go test ./internal/mount/claude/ -run TestTheClaudeMountHandsOutItsContract
 context:
   - "mount.Host gains Contract func(root, worktree string) Contract; the Claude mount registers NewMount with the profile's turn cap; a mount without one, such as Codex or Ollama, leaves it nil and komodo run says it cannot drive that host"
@@ -1307,6 +1307,17 @@ done_when:
   - go test ./internal/line/...
 context:
   - "git push runs the pre-push komodo gate, which inherits the conductor's environment, credential included; TG-06.6 kept the credential with the push but left the hook's environment as is"
+type: fix
+```
+
+#### [TSK-05.10.8] Drift ignores which komodo binary a rendered hook names [P: M] [DONE]
+```yaml
+files: [internal/install/install.go, internal/install/install_test.go]
+done_when:
+  - go test ./internal/install/...
+context:
+  - "TG-06.3's RenderPluginHooks writes the installing binary's own path into hooks.json, so an install by one binary and a doctor by another report drift and fail the conductor's preflight; the guard's settings.json already names bin/komodo-<os>-<arch> in the main checkout"
+  - "resolved in the drift check, not the render: the bin/ binary is built from main and exits 2 on komodo hook, which would block a Stop hook, so hooks keep naming the installing binary"
 type: fix
 ```
 
