@@ -129,8 +129,8 @@ func TestClipDiffDropsWholeFilesAndNamesTheCount(t *testing.T) {
 		strings.Repeat("c", 30000),
 		strings.Repeat("d", 30000),
 	}
-	out := clipDiff(pieces, CapDiff)
-	if !strings.Contains(out, "2 of 4 files shown, 2 files omitted") {
+	out := clipDiff([]string{"a.go", "b.go", "c.go", "d.go"}, pieces, CapDiff)
+	if !strings.Contains(out, "2 of 4 files shown, 2 files omitted") || !strings.Contains(out, "read each omitted file directly: c.go, d.go") {
 		t.Fatalf("marker missing or wrong count:\n%s", out[len(out)-200:])
 	}
 	before, _, found := strings.Cut(out, "\n[... diff clipped")
@@ -189,7 +189,7 @@ func TestReportOpensWithTheVerdict(t *testing.T) {
 
 func TestASingleOversizedPieceIsStillClipped(t *testing.T) {
 	piece := strings.Repeat("a", CapDiff+1)
-	got := clipDiff([]string{piece}, CapDiff)
+	got := clipDiff([]string{"a.go"}, []string{piece}, CapDiff)
 	if len(got) > CapDiff+200 {
 		t.Fatalf("kept %d chars against a cap of %d; one huge file must not escape the cap", len(got), CapDiff)
 	}
