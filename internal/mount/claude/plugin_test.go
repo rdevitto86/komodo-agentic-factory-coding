@@ -296,3 +296,21 @@ func TestPluginHooksRunARelativeBinaryFromTheMainCheckout(t *testing.T) {
 		t.Fatalf("hook command %q does not run an absolute binary", command)
 	}
 }
+
+func TestRenderWritesEachRolePluginsHooksFile(t *testing.T) {
+	root := toolkitRepo(t)
+	plan, err := Render(root, "/opt/komodo/bin/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"builder", "reviewer"} {
+		var rendered pluginHooksFile
+		path := filepath.Join(root, Dir, "plugins", role, "hooks", "hooks.json")
+		if err := json.Unmarshal(planBody(t, plan, path), &rendered); err != nil {
+			t.Fatalf("%s hooks: %v", role, err)
+		}
+		if len(rendered.Hooks) == 0 {
+			t.Fatalf("the %s plugin's hooks file mounts no hook", role)
+		}
+	}
+}

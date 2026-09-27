@@ -63,6 +63,18 @@ func TestRunHookAllowsWithNoHookNamed(t *testing.T) {
 	}
 }
 
+func TestMainDispatchesTheHookCommand(t *testing.T) {
+	root := t.TempDir()
+	// Its own .git stops the repo walk here; a sandbox's temp dir sits inside the real worktree.
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "{}", "hook", "nosuch")
+	if got.code != 0 || got.stdout != "" || !strings.Contains(got.stderr, "allowing") {
+		t.Fatalf("komodo hook nosuch = %+v, want a logged allow", got)
+	}
+}
+
 func TestRunHookDispatchesThroughTheTable(t *testing.T) {
 	cases := []struct {
 		name  string
