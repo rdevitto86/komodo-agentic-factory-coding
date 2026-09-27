@@ -3524,16 +3524,6 @@ context:
 tier: heavy
 ```
 
-#### [TSK-08.7.3] Eval cases for the requirements a unit test can't prove [P: H] [DONE]
-```yaml
-files: [internal/eval/cases.go, internal/eval/cases_test.go]
-done_when:
-  - go test ./internal/eval/...
-depends_on: [TSK-08.7.2]
-context:
-  - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
-```
-
 #### [TSK-08.7.4] The golden suite: a Go repo and a TypeScript repo, 10 pinned groups each [P: C] [READY]
 ```yaml
 files: [eval/suite.json, eval/groups]
@@ -3617,6 +3607,24 @@ context:
 
 
 
+
+### [TG-08.10] Eval cases prove what a unit test cannot
+```yaml
+type: feat
+version: 1.0.0-beta.2
+depends_on: [TG-08.7]
+```
+* **Why:** preflight, resume, a lost credential, pacing, the canary and the policy edit only show in a whole run. Proves the cases half of REQ-44.
+
+#### [TSK-08.10.1] Eval cases for the requirements a unit test can't prove [P: H] [READY]
+```yaml
+files: [internal/eval/cases.go, internal/eval/cases_test.go]
+done_when:
+  - go test ./internal/eval/...
+context:
+  - "split from TG-08.7, whose PR passed the 2,000 added-line cap with it; the first build's cases.go and cases_test.go are the starting point"
+  - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
+```
 
 ### [TG-08.9] The Codex mount is ready to switch on
 ```yaml
