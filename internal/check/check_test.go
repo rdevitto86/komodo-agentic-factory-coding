@@ -121,6 +121,27 @@ func TestScopeAllowsADeclaredFilesOwnTest(t *testing.T) {
 	}
 }
 
+func TestScopeAllowsADeclaredFilesPlatformTest(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{
+		"a_unix_test.go": "package a\n", "b_linux_amd64_test.go": "package b\n", "c_windows_test.go": "package c\n",
+	})
+	problems := Scope(worktree, base, []string{"a.go", "b.go"})
+	if len(problems) != 1 || !strings.Contains(problems[0], "c_windows_test.go") {
+		t.Fatalf("problems = %v; a declared file's platform test is in scope, an undeclared file's is not", problems)
+	}
+}
+
+func TestUntaggedKeepsANameWithNoPlatformSuffix(t *testing.T) {
+	for name, want := range map[string]string{
+		"x/evidence_unix.go": "x/evidence.go", "watch_windows.go": "watch.go", "a_linux_amd64.go": "a.go",
+		"_unix.go": "_unix.go", "user_input.go": "user_input.go", "README.md": "README.md",
+	} {
+		if got := untagged(name); got != want {
+			t.Errorf("untagged(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
 func TestScopeAllowsAFileInsideADeclaredDirectory(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{
 		"skills/review/SKILL.md": "x\n", "skills/reviewer.md": "x\n",
