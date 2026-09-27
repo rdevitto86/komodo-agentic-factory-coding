@@ -154,6 +154,11 @@ func Table() []Hook {
 			Limit: 3, Timeout: 15 * time.Minute, OnFailure: AllowAndLog, run: runTaskChecks,
 		},
 		{
+			Name: "evidence", Job: "every blocking finding carries evidence the binary verifies",
+			Event: Stop, Sessions: []Session{SessionLens},
+			Limit: 2, Timeout: 15 * time.Minute, OnFailure: AllowAndLog, run: checkEvidence,
+		},
+		{
 			Name: "timewarn", Job: "time and turns used",
 			Event: PostToolUse, Tools: AnyTool, Sessions: []Session{SessionBuilder, SessionLens},
 			Timeout: 10 * time.Second, OnFailure: Skip, run: warnTime,
