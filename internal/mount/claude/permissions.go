@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -74,7 +75,7 @@ func rolePermissions(root, worktree string, req mount.StartRequest) (allow, deny
 		allow = append(allow, tools[verb]...)
 	}
 	for _, refused := range guard.LineRefusedPaths {
-		deny = append(deny, fmt.Sprintf("Edit(%s)", refused))
+		deny = append(deny, fmt.Sprintf("Edit(%s)", anchored(worktree, refused)))
 	}
 	if shell {
 		for _, sub := range gitWrites {
@@ -82,6 +83,12 @@ func rolePermissions(root, worktree string, req mount.StartRequest) (allow, deny
 		}
 	}
 	return unique(allow), deny
+}
+
+// anchored pins a repo-relative pattern to the worktree as this host's absolute path form, so eval/**
+// refuses the root's eval/ and never internal/eval/.
+func anchored(worktree, pattern string) string {
+	return "//" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(worktree, pattern)), "/")
 }
 
 // shellRules renders each class's command prefixes, fixed and detected, as this host's shell rules.
