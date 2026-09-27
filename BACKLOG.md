@@ -1748,7 +1748,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** most loops in the first line came from hooks: 187 builder refusals and review rounds chasing guard bypasses. Proves REQ-37.
 
-#### [TSK-06.3.1] Every hook has one job, one stage and a limit, and fails open [P: C] [READY]
+#### [TSK-06.3.1] Every hook has one job, one stage and a limit, and fails open [P: C] [DONE]
 ```yaml
 files: [internal/hooks/hooks.go, internal/hooks/hooks_test.go, cmd/komodo/hook.go, cmd/komodo/hook_test.go, cmd/komodo/main.go]
 done_when:
@@ -1759,7 +1759,7 @@ context:
   - "wire it: main.go dispatches the hook command to runHook"
 ```
 
-#### [TSK-06.3.2] Format formats and lints the edited file, and never refuses [P: H] [READY]
+#### [TSK-06.3.2] Format formats and lints the edited file, and never refuses [P: H] [DONE]
 ```yaml
 files: [internal/hooks/format.go, internal/hooks/format_test.go]
 done_when:
@@ -1769,7 +1769,7 @@ context:
   - "PostToolUse on a builder's edit: gofmt for Go, the repo's formatter for TypeScript, on that one file; lint output returns as context"
 ```
 
-#### [TSK-06.3.3] Task checks refuse a builder's stop while a check fails, three times at most [P: H] [READY]
+#### [TSK-06.3.3] Task checks refuse a builder's stop while a check fails, three times at most [P: H] [DONE]
 ```yaml
 files: [internal/hooks/taskchecks.go, internal/hooks/taskchecks_test.go]
 done_when:
@@ -1779,7 +1779,7 @@ context:
   - "Stop runs the group's checks and refuses with the failing output; the limit is the host's stop-hook cap of 3; if the hook fails it allows, since Check reruns everything"
 ```
 
-#### [TSK-06.3.4] Time warning at 80 percent of a session's time or turns [P: M] [READY]
+#### [TSK-06.3.4] Time warning at 80 percent of a session's time or turns [P: M] [DONE]
 ```yaml
 files: [internal/hooks/timewarn.go, internal/hooks/timewarn_test.go]
 done_when:
@@ -1789,7 +1789,7 @@ context:
   - "PostToolUse in builders and lenses; it never refuses, and skips when it can't read the clock"
 ```
 
-#### [TSK-06.3.5] Each role's plugin carries only its own hooks [P: H] [READY]
+#### [TSK-06.3.5] Each role's plugin carries only its own hooks [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go, internal/mount/claude/claude.go]
 done_when:
@@ -1799,6 +1799,66 @@ context:
   - "the guard in every session; format, task checks and time warning in the builder; time warning in lenses; the evidence and status hooks join in TG-07.5 and TG-08.4"
   - "wire it: Render in claude.go calls RenderPluginHooks, so an install writes each role plugin's hooks file"
 ```
+
+#### [TSK-06.3.6] internal/mount/claude/plugin.go:133 Rendered timewarn never gets --minutes, so the time warning never fires [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/plugin.go
+done_when:
+  - test -f internal/mount/claude/plugin.go
+type: fix
+context:
+  - "pluginHooks passes only --turns to timewarn. In warnTime, Budget.Minutes is always 0, so `late` is always false and the 80%-of-time warning (the contract's 'time or turns') can't fire in any installed session. The only test for it, TestTimeWarnWarnsAt80PercentOfTime, passes --minutes by hand. Render the session's wall-clock minutes into the timewarn command alongside --turns, and assert it in TestEachRolePluginCarriesOnlyItsOwnHooks."
+```
+
+#### [TSK-06.3.7] internal/hooks/timewarn.go:50 Warning prints '0 of 0 minutes' when no minutes budget is set [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/hooks/timewarn.go
+done_when:
+  - test -f internal/hooks/timewarn.go
+type: fix
+context:
+  - "With only --turns set, which is how every rendered plugin calls it, the warning reads 'This session has used 0 of 0 minutes and 120 of 150 turns', which is wrong information for the model. Build the message only from the budgets that are set (minutes when Minutes>0, turns when Turns>0)."
+```
+
+#### [TSK-06.3.8] internal/hooks/timewarn.go:42 Turns counts tool calls, not turns, and loses counts under parallel calls [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/hooks/timewarn.go
+done_when:
+  - test -f internal/hooks/timewarn.go
+type: fix
+context:
+  - "Every PostToolUse call adds one to clock.Turns, but profileTurnCap (150) is a turn cap. An assistant turn with 4 parallel tool calls adds 4, so the warning fires well before 80% of the turn cap. Those parallel hooks also each read, bump and rewrite the same file with no lock, so increments get lost, and a read that lands mid-os.WriteFile fails to unmarshal and skips. Either count distinct turns (or label the budget as tool calls), and write the clock file atomically (temp file + rename) under a file lock."
+```
+
+#### [TSK-06.3.9] cmd/komodo/hook.go:16 The runHook guard branch is untested [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/hook.go
+done_when:
+  - test -f cmd/komodo/hook.go
+type: test
+context:
+  - 'No test runs `komodo hook guard`. If that branch regressed into the table path, it would fail open through errNoRunner and quietly disable the guard, and done_when would still pass. Add a runHookWith case for "guard" and assert it reaches runGuard (e.g. a guard refusal on a denied payload).'
+```
+
+#### [TSK-06.3.10] internal/mount/claude/plugin.go:132 Hook name is special-cased in the renderer [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/plugin.go
+done_when:
+  - test -f internal/mount/claude/plugin.go
+type: refactor
+context:
+  - 'pluginHooks checks hook.Name == "timewarn" to decide which flags to add. That puts per-hook data in the renderer, even though the package says the table holds all of it, and a renamed row would silently lose its turn cap. Add a field to the hooks.Hook row saying whether it takes the session budget, and branch on that field instead.'
+```
+
+
+
+
+
 
 ### [TG-06.4] Allow lists cover each stage, and the owner edits this repo on a branch
 ```yaml

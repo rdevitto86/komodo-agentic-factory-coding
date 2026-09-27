@@ -1,12 +1,14 @@
 package claude
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"komodo/internal/detect"
+	"komodo/internal/hooks"
 	"komodo/internal/install"
 	"komodo/internal/mount"
 )
@@ -95,4 +97,92 @@ func RenderBuilderPlugin(plan *install.Plan, root string, detected detect.Profil
 // pluginManifest is the minimal manifest a plugin directory needs to name itself.
 func pluginManifest(name string) []byte {
 	return []byte(fmt.Sprintf("{\n  \"name\": %q\n}\n", name))
+}
+
+// sessionPlugins maps each session kind to the role plugin its sessions load.
+var sessionPlugins = []struct {
+	session hooks.Session
+	role    string
+}{
+	{hooks.SessionBuilder, "builder"},
+	{hooks.SessionLens, "reviewer"},
+}
+
+// RenderPluginHooks adds each role plugin's hooks file, carrying only the hooks its session kind mounts.
+func RenderPluginHooks(plan *install.Plan, root, binary string) {
+	if !filepath.IsAbs(binary) {
+		binary = filepath.Join(mount.MainCheckout(root), binary)
+	}
+	for _, each := range sessionPlugins {
+		dir := filepath.Join(root, Dir, "plugins", each.role)
+		if each.role != "builder" {
+			plan.AddScoped(filepath.Join(dir, ".claude-plugin", "plugin.json"), pluginManifest(each.role),
+				"the "+each.role+" plugin's manifest")
+		}
+		plan.AddScoped(filepath.Join(dir, "hooks", "hooks.json"), pluginHooks(binary, hooks.ForSession(each.session)),
+			"the "+each.role+" session's own hooks")
+	}
+}
+
+// pluginHooks renders hooks as this host's plugin hooks file, grouped by stage in table order.
+func pluginHooks(binary string, mounted []hooks.Hook) []byte {
+	byEvent := map[string][]any{}
+	for _, hook := range mounted {
+		command := fmt.Sprintf("%s hook %s --host claude", binary, hook.Name)
+		if hook.Name == "timewarn" {
+			command += fmt.Sprintf(" --turns %d", profileTurnCap)
+		}
+		entry := map[string]any{
+			"hooks": []any{map[string]any{
+				"type": "command", "command": command, "timeout": int(hook.Timeout.Seconds()),
+			}},
+		}
+		switch hook.Tools {
+		case hooks.EditTools:
+			entry["matcher"] = editMatcher()
+		case hooks.AnyTool:
+			entry["matcher"] = "*"
+		}
+		byEvent[string(hook.Event)] = append(byEvent[string(hook.Event)], entry)
+	}
+	body, err := json.MarshalIndent(map[string]any{"hooks": byEvent}, "", "  ")
+	if err != nil {
+		return nil
+	}
+	return append(body, '\n')
+}
+
+// editMatcher joins the guard's registered write tools, so the format hook keeps no second list.
+func editMatcher() string {
+	names := make([]string, 0, len(guardWriteTools))
+	for name := range guardWriteTools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, "|")
+}
+
+// hookOutcome renders a hook's outcome as the JSON this host reads: context after a tool, a block at a stop.
+func hookOutcome(event hooks.Event, out hooks.Outcome) []byte {
+	var payload map[string]any
+	switch {
+	case event == hooks.Stop && out.Verdict == hooks.Refuse:
+		payload = map[string]any{"decision": "block", "reason": out.Message}
+	case event == hooks.PostToolUse && out.Verdict == hooks.Inform:
+		payload = map[string]any{
+			"hookSpecificOutput": map[string]any{"hookEventName": string(event), "additionalContext": out.Message},
+		}
+	default:
+		return nil
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// init registers how this host reads a hook's outcome, so the hooks never name it.
+func init() {
+	hooks.RegisterEncoder("claude", hookOutcome)
 }
