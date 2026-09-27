@@ -3,6 +3,8 @@ package claude
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -28,7 +30,7 @@ func TestSessionArgvForBuilder(t *testing.T) {
 		"-p",
 		"--setting-sources local",
 		"--plugin-dir /repo/.claude/plugins/builder",
-		"--settings /repo/.claude/settings.json",
+		"--settings ",
 		"--tools Read, Edit, Write, Bash, Grep, Glob",
 		"--allowedTools Read, Edit, Write, Bash, Grep, Glob",
 		"--permission-mode dontAsk",
@@ -468,8 +470,37 @@ func TestSessionSettingsPath(t *testing.T) {
 	joined := strings.Join(argv, " ")
 
 	expected := "--settings /my/repo/.claude/settings.json"
+	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
+		expected = "--settings " + withSandbox("/my/repo/.claude/settings.json", sandbox)
+	}
 	if !strings.Contains(joined, expected) {
 		t.Errorf("argv missing correct settings path: %s\nfull: %s", expected, joined)
+	}
+}
+
+func TestTheSandboxMergesIntoTheRolesRenderedSettings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	sandbox := lineSandbox(mount.Overlay{}, "linux")
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rendered := `{"hooks":{"PreToolUse":[{"matcher":"Bash"}]},"permissions":{"deny":["Edit(~/.claude/**)"]}}`
+	if err := os.WriteFile(filepath.Join(root, Dir, "settings.json"), []byte(rendered), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	merged := withSandbox(filepath.Join(root, Dir, "settings.json"), sandbox)
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(merged), &settings); err != nil {
+		t.Fatalf("settings %q: %v", merged, err)
+	}
+	for _, key := range []string{"hooks", "permissions", "sandbox"} {
+		if _, found := settings[key]; !found {
+			t.Fatalf("settings = %s, missing %s", merged, key)
+		}
+	}
+	if !parseSandbox(t, merged).FailIfUnavailable {
+		t.Fatalf("settings = %s; the merged sandbox must still fail if unavailable", merged)
 	}
 }
 
@@ -647,13 +678,13 @@ func TestARoleSessionCarriesTheLineSandbox(t *testing.T) {
 	want := lineSandbox(mount.LoadOverlay(), runtime.GOOS)
 	carried := false
 	for i, arg := range argv[:len(argv)-1] {
-		carried = carried || (arg == "--settings" && argv[i+1] == want)
+		carried = carried || (arg == "--settings" && argv[i+1] == withSandbox("/repo/.claude/settings.json", want))
 	}
 	if want != "" && !carried {
 		t.Fatalf("argv = %v; a role session must carry the line sandbox as inline settings", argv)
 	}
-	if want == "" && strings.Count(strings.Join(argv, " "), "--settings") != 1 {
-		t.Fatalf("argv = %v; %s has no sandbox, so only the settings file is passed", argv, runtime.GOOS)
+	if strings.Count(strings.Join(argv, " "), "--settings") != 1 {
+		t.Fatalf("argv = %v; exactly one --settings is passed, since the host keeps only the last", argv)
 	}
 	if want != "" && !strings.Contains(want, ".git-credentials") {
 		t.Fatalf("sandbox = %s; the credential store must be unreadable", want)
