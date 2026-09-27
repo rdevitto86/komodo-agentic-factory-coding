@@ -95,22 +95,24 @@ func pushFindings(rest []string, branch string, policy Policy) []string {
 	if normalizeMode(policy.Mode) == ModeUnsafe {
 		return findings
 	}
-	target := branch
+	targets := []string{branch}
 	if len(positional) > 1 {
-		target = positional[len(positional)-1]
+		targets = positional[1:]
 	}
-	if _, after, found := strings.Cut(target, ":"); found {
-		target = after
-	}
-	if target == "HEAD" {
-		target = branch
-	}
-	if policy.IsCritical(target) {
-		verb := "push to"
-		if deletes {
-			verb = "delete"
+	for _, target := range targets {
+		if _, after, found := strings.Cut(target, ":"); found {
+			target = after
 		}
-		findings = append(findings, fmt.Sprintf("git %s %s: open a pull request instead", verb, target))
+		if target == "HEAD" {
+			target = branch
+		}
+		if policy.IsCritical(target) {
+			verb := "push to"
+			if deletes {
+				verb = "delete"
+			}
+			findings = append(findings, fmt.Sprintf("git %s %s: open a pull request instead", verb, target))
+		}
 	}
 	return findings
 }

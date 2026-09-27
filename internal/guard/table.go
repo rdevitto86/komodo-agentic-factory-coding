@@ -74,6 +74,7 @@ func Table(policy Policy) []Case {
 		bash("a model session's push to an epic branch is refused (decision 0028)", "git push origin feat/1.0.0-alpha.7", "feat/x", true, "open a pull request"),
 		bash("a model session's merge onto an epic branch is refused (decision 0028)", "git merge feat/x", "feat/1.0.0-alpha.7", true, "merge button"),
 		bash("push to a slugged feat branch is not an epic branch", "git push origin feat/versions-go-alpha", "feat/x", false, ""),
+		bash("a push with several refspecs is judged on every one, not only the last", "git push origin main feat/x", "feat/x", true, "open a pull request"),
 
 		// Rule 2: pushed history is never rewritten, on any branch.
 		bash("force push to own branch", "git push --force origin feat/x", "feat/x", true, "never rewritten"),
