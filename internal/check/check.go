@@ -62,12 +62,28 @@ func Scope(worktree, base string, files []string) []string {
 	}
 	var problems []string
 	for _, name := range changed {
-		if allowed[name] {
+		// A declared file's own test is in scope too, as the builder's rules allow.
+		if allowed[name] || allowed[testedBy(name)] {
 			continue
 		}
 		problems = append(problems, fmt.Sprintf("scope: %s is edited outside the group's declared files", name))
 	}
 	return problems
+}
+
+// testSuffixes map a test file's ending to the ending of the source file it tests.
+var testSuffixes = [][2]string{
+	{"_test.go", ".go"}, {".test.ts", ".ts"}, {".spec.ts", ".ts"}, {".test.tsx", ".tsx"}, {".spec.tsx", ".tsx"},
+}
+
+// testedBy is the source file a test file tests, or empty when name is not a test file.
+func testedBy(name string) string {
+	for _, pair := range testSuffixes {
+		if strings.HasSuffix(name, pair[0]) {
+			return strings.TrimSuffix(name, pair[0]) + pair[1]
+		}
+	}
+	return ""
 }
 
 // changedFiles lists every file the working tree changes since it forked from base, then every untracked file.

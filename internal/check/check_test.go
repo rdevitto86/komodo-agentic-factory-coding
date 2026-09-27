@@ -111,6 +111,16 @@ func TestDiffCoversCommittedUncommittedAndUntrackedEdits(t *testing.T) {
 	}
 }
 
+func TestScopeAllowsADeclaredFilesOwnTest(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{
+		"a.go": "package a\n", "a_test.go": "package a\n", "b_test.go": "package b\n", "ui/c.test.ts": "x\n",
+	})
+	problems := Scope(worktree, base, []string{"a.go", "ui/c.ts"})
+	if len(problems) != 1 || !strings.Contains(problems[0], "b_test.go") {
+		t.Fatalf("problems = %v; a declared file's test is in scope, an undeclared file's test is not", problems)
+	}
+}
+
 func TestScopePassesWhenEveryEditIsDeclared(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n"})
 	if problems := Scope(worktree, base, []string{"a.go"}); len(problems) != 0 {
