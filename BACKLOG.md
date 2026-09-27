@@ -1923,6 +1923,56 @@ context:
   - "--remote: a ruleset with no bypass actors on the default branch where the forge offers one, else a warning; delete head branches on merge; drafts available (REQ-33)"
 ```
 
+### [TG-06.7] One reviewer stays warm across a group's review rounds
+```yaml
+type: feat
+version: 1.0.0-alpha.7
+depends_on: [TG-06.5]
+```
+* **Why:** every review round started a cold reviewer that re-read the whole diff and raised new findings on lines no repair touched; TG-06.2 and TG-06.5 each spent three repair rounds that way. A warm reviewer keeps its context and the host's prompt cache, and one cold pass before ship guards against it anchoring on its own earlier view.
+
+#### [TSK-06.7.1] The conductor keeps the group's reviewer and resumes it each round [P: C] [READY]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/conductor/state.go]
+done_when:
+  - go test ./internal/conductor/...
+context:
+  - "State.Reviewer holds the reviewer's handle beside Builder; round two onward resumes it with the re-review brief; a resume that fails, after a restart or on a host without resume, starts a cold reviewer with the open findings"
+  - "tests: the second review resumes the first reviewer's session; a lost reviewer starts fresh; the ledger stamps each review warm or cold"
+```
+
+#### [TSK-06.7.2] A re-review brief carries the diff since the last reviewed commit and the open findings [P: C] [READY]
+```yaml
+files: [internal/line/diff.go, internal/line/diff_test.go, internal/run/requests.go, internal/run/requests_test.go, internal/conductor/state.go]
+done_when:
+  - go test ./internal/line/... ./internal/run/...
+depends_on: [TSK-06.7.1]
+context:
+  - "State keeps the HEAD each review saw; the re-review diff runs from it to HEAD, so a repair's lines are all the reviewer reads again"
+  - "the brief lists each open finding with its file and line, and asks the reviewer to close or keep each one with evidence"
+```
+
+#### [TSK-06.7.3] The reviewer role states the re-review rules [P: H] [READY]
+```yaml
+files: [komodo/roles/reviewer.md]
+done_when:
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-06.7.2]
+context:
+  - "a re-review closes or keeps each open finding, and raises a new one only on a line the repair changed (REQ-21); TSK-07.5.6 later enforces the rule in the binary for each lens"
+```
+
+#### [TSK-06.7.4] A cold reviewer checks the final state once before ship when the warm one ran more than one round [P: H] [READY]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/conductor/...
+depends_on: [TSK-06.7.1]
+context:
+  - "the anchoring guard: a fresh reviewer reads the whole diff once; only its findings at or above the severity floor block, and a group gets one cold pass, never a loop of them"
+  - "test: a group with two warm rounds gets exactly one cold review before Preparing; a group that passed its first review gets none"
+```
+
 ---
 
 ## [EPIC-07] Phase 3: groups, review and repair
@@ -2372,6 +2422,7 @@ done_when:
 depends_on: [TSK-07.5.3]
 context:
   - "test (REQ-21): a new finding on an unchanged line is dropped"
+  - "extends TG-06.7's warm reviewer to each lens"
 ```
 
 #### [TSK-07.5.7] The conductor runs Review through the lenses [P: H] [REFINEMENT]
