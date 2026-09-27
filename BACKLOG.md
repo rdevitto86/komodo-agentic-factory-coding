@@ -2961,6 +2961,7 @@ depends_on: [TSK-07.6.2]
 context:
   - "a resumed repair gets only the fix list, so a file added to a task's spec mid-run never reaches the builder; TG-07.5's builder blocked twice asking to edit a file its spec had just gained"
   - "the fix list closes with each task's files from the plan the conductor loaded on resume"
+  - "a stopped repair resumes its session with only a continue prompt, so a fix list rewritten while it was stopped never reaches the builder; TG-08.4's builder twice undid a file its spec had just gained"
 ```
 
 ### [TG-07.7] Escalations go to the orchestrator, and what it can't settle is written down
