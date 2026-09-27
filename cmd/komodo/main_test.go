@@ -16,6 +16,17 @@ import (
 	"komodo/internal/profile"
 )
 
+// TestMain turns off the background gc and maintenance git may fork after a command, which could still be
+// writing a test's repo while its temp dir is removed.
+func TestMain(m *testing.M) {
+	os.Setenv("GIT_CONFIG_COUNT", "2")
+	os.Setenv("GIT_CONFIG_KEY_0", "gc.auto")
+	os.Setenv("GIT_CONFIG_VALUE_0", "0")
+	os.Setenv("GIT_CONFIG_KEY_1", "maintenance.auto")
+	os.Setenv("GIT_CONFIG_VALUE_1", "false")
+	os.Exit(m.Run())
+}
+
 func TestSplitTaskArgFindsTheTaskAfterTheRoleFlag(t *testing.T) {
 	task, rest := splitTaskArg([]string{"--role", "reviewer", "TSK-12.1.1"})
 	if task != "TSK-12.1.1" {
