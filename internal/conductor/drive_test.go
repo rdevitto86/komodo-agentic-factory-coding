@@ -30,6 +30,9 @@ type fakeHost struct {
 	next     int
 	hang     bool
 	cancel   context.CancelFunc
+	// resumed and reReviews are the reviewer sessions resumed and the input each got.
+	resumed   []mount.Handle
+	reReviews []string
 }
 
 // newFakeHost returns a fake host that resumes sessions and reads the states saved so far from saved.
@@ -73,6 +76,11 @@ func (f *fakeHost) Resume(handle mount.Handle, input string) (mount.Handle, erro
 	if _, ok := f.results[handle]; !ok {
 		return "", errors.New("no such session")
 	}
+	if strings.HasPrefix(string(handle), "reviewer") {
+		f.resumed = append(f.resumed, handle)
+		f.reReviews = append(f.reReviews, input)
+		return f.handle("reviewer", pop(&f.reviews, map[string]any{"findings": []any{}})), nil
+	}
 	f.inputs = append(f.inputs, input)
 	return f.handle("builder", pop(&f.repairs, map[string]any{"result": "DONE"})), nil
 }
@@ -110,6 +118,7 @@ type fakeStations struct {
 	checks   [][]string
 	prepares [][]string
 	shipErr  error
+	headErr  error
 	calledAt []string
 }
 
@@ -146,6 +155,13 @@ func (f *fakeStations) Prepare() ([]string, error) {
 func (f *fakeStations) Ship() error {
 	f.record("ship")
 	return f.shipErr
+}
+
+func (f *fakeStations) Head() (string, error) {
+	if f.headErr != nil {
+		return "", f.headErr
+	}
+	return fmt.Sprintf("commit-%d", len(*f.saved)), nil
 }
 
 // rig is one test's driver with its fake host, fake stations, ledger and every saved state.
@@ -200,7 +216,7 @@ func (r *rig) sessions(t *testing.T) []string {
 	var stations []string
 	for _, entry := range entries {
 		switch entry.Station {
-		case StationBuild, StationReview, StationRepair:
+		case StationBuild, StationReview, StationReReview, StationRepair:
 		default:
 			t.Fatalf("the ledger holds a %q row; only build, review and repair sessions belong there", entry.Station)
 		}
@@ -343,12 +359,183 @@ func TestDriveRepairsAVerifiedFindingAndReviewsAgain(t *testing.T) {
 	if got := r.transitions(); !equal(got, want) {
 		t.Fatalf("transitions = %v, want %v", got, want)
 	}
-	if got := r.sessions(t); !equal(got, []string{StationBuild, StationReview, StationRepair, StationReview}) {
-		t.Fatalf("ledger sessions = %v", got)
+	sessions := []string{StationBuild, StationReview, StationRepair, StationReReview, StationReview}
+	if got := r.sessions(t); !equal(got, sessions) {
+		t.Fatalf("ledger sessions = %v, want %v", got, sessions)
 	}
 	input := r.host.inputs[0]
 	if !strings.Contains(input, "a.go:3 nil map: make it") || strings.Contains(input, "b.go") {
 		t.Fatalf("fix list = %q, want only the finding at or above the floor", input)
+	}
+}
+
+func TestDriveResumesTheFirstReviewerForTheSecondReview(t *testing.T) {
+	r := newRig(t)
+	r.host.reviews = []map[string]any{
+		{"findings": []any{map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map"}}},
+	}
+	if _, err := r.drive(t); err != nil {
+		t.Fatalf("drive = %v", err)
+	}
+	var first mount.Handle
+	for _, s := range *r.saved {
+		if first == "" && s.Reviewer != "" {
+			first = mount.Handle(s.Reviewer)
+		}
+	}
+	if len(r.host.resumed) != 1 || r.host.resumed[0] != first {
+		t.Fatalf("resumed reviewers = %v, want the first reviewer %s once", r.host.resumed, first)
+	}
+	if input := r.host.reReviews[0]; !strings.Contains(input, "`a.go:3` high: nil map") {
+		t.Fatalf("re-review input = %q, want the open finding by file and line", input)
+	}
+}
+
+func TestDriveStartsAColdReviewerWhenItsReviewerIsGone(t *testing.T) {
+	r := newRig(t)
+	saved := State{
+		Group: "TG-1", Current: Checking, Reviewer: "reviewer-from-an-earlier-process", ReviewRounds: 1,
+		Findings: []Finding{{Severity: "high", Verified: true, File: "a.go", Line: 3, Title: "nil map"}},
+	}
+	*r.saved = append(*r.saved, saved)
+	final, err := r.driver.Resume(context.Background(), saved)
+	if err != nil || final.Current != Shipped {
+		t.Fatalf("resume = %s, %v; want Shipped", final.Current, err)
+	}
+	if len(r.host.starts) != 1 || r.host.starts[0].Role != "reviewer" {
+		t.Fatalf("starts = %+v, want one fresh reviewer", r.host.starts)
+	}
+	if brief := r.host.starts[0].Brief; !strings.HasPrefix(brief, "review TG-1") || !strings.Contains(brief, "`a.go:3`") {
+		t.Fatalf("cold brief = %q, want the review brief with the open findings", brief)
+	}
+	if got := r.sessions(t); !equal(got, []string{StationReview}) {
+		t.Fatalf("ledger sessions = %v, want one cold review and no cold pass after it", got)
+	}
+}
+
+func TestDriveStartsAColdReviewerOnAHostWithoutResume(t *testing.T) {
+	r := newRig(t)
+	r.host.resume = false
+	r.host.reviews = []map[string]any{
+		{"findings": []any{map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map"}}},
+	}
+	if _, err := r.drive(t); err != nil {
+		t.Fatalf("drive = %v", err)
+	}
+	if len(r.host.resumed) != 0 {
+		t.Fatalf("resumed %v on a host without resume", r.host.resumed)
+	}
+	if got := r.sessions(t); !equal(got, []string{StationBuild, StationReview, StationRepair, StationReview}) {
+		t.Fatalf("ledger sessions = %v, want two cold reviews and no cold pass", got)
+	}
+}
+
+func TestDriveBuildsEachReviewFromItsWiredRequests(t *testing.T) {
+	r := newRig(t)
+	r.host.reviews = []map[string]any{
+		{"findings": []any{map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map"}}},
+	}
+	r.driver.Review = func() (mount.StartRequest, error) {
+		return mount.StartRequest{Role: "reviewer", Brief: "the group's diff"}, nil
+	}
+	r.driver.ReReview = func(s State) (string, error) {
+		return "since " + s.Reviewed, nil
+	}
+	if _, err := r.drive(t); err != nil {
+		t.Fatalf("drive = %v", err)
+	}
+	if r.host.starts[1].Brief != "the group's diff" {
+		t.Fatalf("cold brief = %q, want the one Review built", r.host.starts[1].Brief)
+	}
+	if len(r.host.reReviews) != 1 || !strings.HasPrefix(r.host.reReviews[0], "since commit-") {
+		t.Fatalf("re-review inputs = %q, want the one ReReview built from the reviewed commit", r.host.reReviews)
+	}
+}
+
+func TestDriveEscalatesAReviewThatCannotStart(t *testing.T) {
+	failed := errors.New("no diff")
+	high := map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map"}
+	cases := []struct {
+		name string
+		wire func(r *rig)
+	}{
+		{"the review request fails", func(r *rig) {
+			r.driver.Review = func() (mount.StartRequest, error) { return mount.StartRequest{}, failed }
+		}},
+		{"the re-review input fails", func(r *rig) {
+			r.host.reviews = []map[string]any{{"findings": []any{high}}}
+			r.driver.ReReview = func(State) (string, error) { return "", failed }
+		}},
+		{"the reviewed HEAD cannot be read", func(r *rig) {
+			r.stations.headErr = failed
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			tc.wire(r)
+			final, err := r.drive(t)
+			if !errors.Is(err, failed) {
+				t.Fatalf("drive error = %v, want %v", err, failed)
+			}
+			if final.Current != Escalated || final.Left != Reviewing {
+				t.Fatalf("final = %s left %s, want Escalated from Reviewing", final.Current, final.Left)
+			}
+		})
+	}
+}
+
+func TestLineHeadReadsTheWorktreesHead(t *testing.T) {
+	root := checkRepo(t)
+	stations := &Line{Root: root, Plan: &line.Plan{Group: "TG-1", Worktree: root}}
+	head, err := stations.Head()
+	if err != nil || len(head) != 40 {
+		t.Fatalf("head = %q, %v; want the commit's full hash", head, err)
+	}
+}
+
+func TestDriveRunsOneColdPassBeforePreparingAfterTwoWarmRounds(t *testing.T) {
+	high := map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map"}
+	cases := []struct {
+		name     string
+		reviews  []map[string]any
+		sessions []string
+	}{
+		{
+			name:     "passed its first review",
+			sessions: []string{StationBuild, StationReview},
+		},
+		{
+			name:     "two warm rounds",
+			reviews:  []map[string]any{{"findings": []any{high}}},
+			sessions: []string{StationBuild, StationReview, StationRepair, StationReReview, StationReview},
+		},
+		{
+			name:    "a cold pass that blocks",
+			reviews: []map[string]any{{"findings": []any{high}}, {"findings": []any{}}, {"findings": []any{high}}},
+			sessions: []string{
+				StationBuild, StationReview, StationRepair, StationReReview, StationReview, StationRepair, StationReReview,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.driver.Repairs = 3
+			r.host.reviews = tc.reviews
+			final, err := r.drive(t)
+			if err != nil || final.Current != Shipped {
+				t.Fatalf("drive = %s, %v; want Shipped", final.Current, err)
+			}
+			if got := r.sessions(t); !equal(got, tc.sessions) {
+				t.Fatalf("ledger sessions = %v, want %v", got, tc.sessions)
+			}
+			for i, state := range r.host.startsAt {
+				if state == Preparing || state == Shipping {
+					t.Fatalf("session %d began at %s, want every review before Preparing", i, state)
+				}
+			}
+		})
 	}
 }
 

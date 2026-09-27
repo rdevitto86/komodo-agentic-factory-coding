@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/conductor"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/profile"
@@ -98,6 +99,30 @@ func TestStartRequestsNameEveryTaskAndTheBuilderSchema(t *testing.T) {
 	}
 	if req.Model != "claude-sonnet-4" || req.Effort != "high" {
 		t.Fatalf("model = %q, effort = %q", req.Model, req.Effort)
+	}
+}
+
+func TestReReviewInputCarriesTheDiffSinceTheReviewedCommitAndTheOpenFindings(t *testing.T) {
+	root := requestsRepo(t)
+	reviewed := strings.TrimSpace(gitOut(t, root, "rev-parse", "HEAD"))
+	path := filepath.Join(root, "b", "two.go")
+	if err := os.WriteFile(path, []byte("package b\n\n// Two does nothing.\nfunc Two() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "commit", "-q", "-am", "the repair")
+	s := conductor.State{Reviewed: reviewed, Findings: []conductor.Finding{
+		{Severity: "high", Verified: true, File: "b/two.go", Line: 3, Title: "Two has no comment"},
+		{Severity: "low", File: "a/one.go", Line: 1, Title: "below the floor"},
+	}}
+	input, err := ReReviewInput(root, requestsPlan(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(input, "Two does nothing") || strings.Contains(input, "One returns one") {
+		t.Fatalf("re-review input = %q, want only the repair's diff", input)
+	}
+	if !strings.Contains(input, "`b/two.go:3` high: Two has no comment") || strings.Contains(input, "below the floor") {
+		t.Fatalf("re-review input = %q, want only the open finding by file and line", input)
 	}
 }
 

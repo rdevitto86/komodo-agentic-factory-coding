@@ -2171,7 +2171,7 @@ depends_on: [TG-06.5]
 ```
 * **Why:** every review round started a cold reviewer that re-read the whole diff and raised new findings on lines no repair touched; TG-06.2 and TG-06.5 each spent three repair rounds that way. A warm reviewer keeps its context and the host's prompt cache, and one cold pass before ship guards against it anchoring on its own earlier view.
 
-#### [TSK-06.7.1] The conductor keeps the group's reviewer and resumes it each round [P: C] [READY]
+#### [TSK-06.7.1] The conductor keeps the group's reviewer and resumes it each round [P: C] [DONE]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/conductor/state.go]
 done_when:
@@ -2181,7 +2181,7 @@ context:
   - "tests: the second review resumes the first reviewer's session; a lost reviewer starts fresh; the ledger stamps each review warm or cold"
 ```
 
-#### [TSK-06.7.2] A re-review brief carries the diff since the last reviewed commit and the open findings [P: C] [READY]
+#### [TSK-06.7.2] A re-review brief carries the diff since the last reviewed commit and the open findings [P: C] [DONE]
 ```yaml
 files: [internal/line/diff.go, internal/line/diff_test.go, internal/run/requests.go, internal/run/requests_test.go, internal/conductor/state.go, internal/run/drive.go, internal/run/drive_test.go]
 done_when:
@@ -2193,7 +2193,7 @@ context:
   - "wire it: newDriver in internal/run/drive.go builds the re-review request, so a production run resumes the warm reviewer"
 ```
 
-#### [TSK-06.7.3] The reviewer role states the re-review rules [P: H] [READY]
+#### [TSK-06.7.3] The reviewer role states the re-review rules [P: H] [DONE]
 ```yaml
 files: [komodo/roles/reviewer.md]
 done_when:
@@ -2203,7 +2203,7 @@ context:
   - "a re-review closes or keeps each open finding, and raises a new one only on a line the repair changed (REQ-21); TSK-07.5.6 later enforces the rule in the binary for each lens"
 ```
 
-#### [TSK-06.7.4] A cold reviewer checks the final state once before ship when the warm one ran more than one round [P: H] [READY]
+#### [TSK-06.7.4] A cold reviewer checks the final state once before ship when the warm one ran more than one round [P: H] [DONE]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
@@ -2213,6 +2213,30 @@ context:
   - "the anchoring guard: a fresh reviewer reads the whole diff once; only its findings at or above the severity floor block, and a group gets one cold pass, never a loop of them"
   - "test: a group with two warm rounds gets exactly one cold review before Preparing; a group that passed its first review gets none"
 ```
+
+#### [TSK-06.7.5] internal/conductor/drive.go:209 Warm re-review ledger rows record an empty role and model in production [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - 'reviewRound starts the warm path from request = d.Reviewer and passes it to d.session, which stamps ledger.Entry{Role: req.Role, Model: req.Model}. newDriver in internal/run/drive.go wires only Review and ReReview and never sets Driver.Reviewer, so d.Reviewer is the zero StartRequest. Every StationReReview row a production run writes therefore has Role "" and Model "", even though the claude mount resumes on prior.req''s model. Per-model cost and usage reporting loses every warm round. The conductor tests set d.Reviewer on the rig, so they never see this. Keep the StartRequest the group''s reviewer was started with (built by Review or taken from d.Reviewer) and pass it to d.session on the warm path, so the resumed round is stamped with that role and model.'
+```
+
+#### [TSK-06.7.6] internal/conductor/drive_test.go:372 No test checks the role and model on a re-review ledger row [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive_test.go
+done_when:
+  - test -f internal/conductor/drive_test.go
+type: test
+context:
+  - "The new tests check only the order of ledger stations (review versus re-review). None checks that a StationReReview entry carries the reviewer's role and model when Review is wired and Reviewer is left empty, which is how production is wired. The done_when for TSK-06.7.1 passes with the empty-role rows described above. Add a case with Driver.Reviewer empty and Review returning a request with Role and Model set, then assert that the re-review ledger entry carries both."
+```
+
+
 
 ---
 

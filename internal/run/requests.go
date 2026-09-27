@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"komodo/internal/conductor"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 )
@@ -36,6 +37,16 @@ func BuilderRequest(root string, plan *line.Plan) (mount.StartRequest, error) {
 		Effort: machine.Effort,
 		Schema: []byte(line.SchemaText(root, "builder")),
 	}, nil
+}
+
+// ReReviewInput is what a resumed reviewer reads each round after its first: the group's open
+// findings and the diff since the HEAD its last review saw.
+func ReReviewInput(root string, plan *line.Plan, s conductor.State) (string, error) {
+	input, err := line.ReReviewFor(root, plan, s.Reviewed, s.Open())
+	if err != nil {
+		return "", err
+	}
+	return input.Text, nil
 }
 
 // ReviewerRequest fills the reviewer's start request: the group's review brief, which carries the
