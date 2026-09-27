@@ -1,6 +1,8 @@
 package proc
 
 import (
+	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -117,7 +119,8 @@ func TestShellStopsARunawayTreeAndLeavesNothingBehind(t *testing.T) {
 	saved, savedInterval := DefaultLimits, WatchInterval
 	DefaultLimits, WatchInterval = Limits{Procs: 10}, 50*time.Millisecond
 	t.Cleanup(func() { DefaultLimits, WatchInterval = saved, savedInterval })
-	result := Shell(t.TempDir(), "for i in $(seq 1 30); do sleep 37.25 & done; wait", time.Minute)
+	sleep := uniqueSleep(37)
+	result := Shell(t.TempDir(), "for i in $(seq 1 30); do sleep "+sleep+" & done; wait", time.Minute)
 	if result.ExitCode != ExitRunaway || !strings.Contains(result.Output, "runaway") {
 		t.Fatalf("result = %+v; thirty sleeps over a cap of ten must be stopped as a runaway", result)
 	}
@@ -128,7 +131,7 @@ func TestShellStopsARunawayTreeAndLeavesNothingBehind(t *testing.T) {
 	}
 	for pid, p := range procs {
 		if strings.Contains(p.comm, "sleep") && p.ppid == 1 {
-			if out := Exec("", time.Second, "ps", "-o", "args=", "-p", strconv.Itoa(pid)); strings.Contains(out.Output, "37.25") {
+			if out := Exec("", time.Second, "ps", "-o", "args=", "-p", strconv.Itoa(pid)); strings.TrimSpace(out.Output) == "sleep "+sleep {
 				t.Fatalf("pid %d outlived the runaway: %s", pid, out.Output)
 			}
 		}
@@ -136,14 +139,15 @@ func TestShellStopsARunawayTreeAndLeavesNothingBehind(t *testing.T) {
 }
 
 func TestShellReapsABackgroundChildLeftInTheGroup(t *testing.T) {
-	result := Shell(t.TempDir(), "sleep 41.75 & echo started", time.Minute)
+	sleep := uniqueSleep(41)
+	result := Shell(t.TempDir(), "sleep "+sleep+" & echo started", time.Minute)
 	if !result.OK() {
 		t.Fatalf("result = %+v", result)
 	}
 	// pgrep exits zero only when a process still matches; a killed child takes a moment to be reaped.
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		out := Exec("", 5*time.Second, "pgrep", "-f", "^sleep 41.75")
+		out := Exec("", 5*time.Second, "pgrep", "-f", "^sleep "+sleep+"$")
 		if !out.OK() {
 			return
 		}
@@ -152,4 +156,9 @@ func TestShellReapsABackgroundChildLeftInTheGroup(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// uniqueSleep is a sleep duration no other test process uses, so a process search finds only this test's children.
+func uniqueSleep(seconds int) string {
+	return fmt.Sprintf("%d.%d", seconds, os.Getpid())
 }

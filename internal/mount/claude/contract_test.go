@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,7 @@ if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
   exit 0
 fi
 if [ "$FAKE_CLAUDE_FORK" = "1" ]; then
-  for i in $(seq 1 30); do sleep 53.5 & done
+  for i in $(seq 1 30); do sleep "$FAKE_CLAUDE_FORK_SLEEP" & done
   sleep 20
 fi
 if [ "$FAKE_CLAUDE_HANG" = "1" ]; then
@@ -321,6 +322,8 @@ func TestContractStartRunsInTheWorktree(t *testing.T) {
 func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
 	setupFakeClaude(t)
 	t.Setenv("FAKE_CLAUDE_FORK", "1")
+	sleep := uniqueSleep(53)
+	t.Setenv("FAKE_CLAUDE_FORK_SLEEP", sleep)
 	saved, savedInterval := proc.DefaultLimits, proc.WatchInterval
 	proc.DefaultLimits, proc.WatchInterval = proc.Limits{Procs: 10}, 50*time.Millisecond
 	t.Cleanup(func() { proc.DefaultLimits, proc.WatchInterval = saved, savedInterval })
@@ -341,7 +344,7 @@ func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		// pgrep exits zero only while a process still matches.
-		out := proc.Exec("", 5*time.Second, "pgrep", "-lf", "^sleep 53.5")
+		out := proc.Exec("", 5*time.Second, "pgrep", "-lf", "^sleep "+sleep+"$")
 		if !out.OK() {
 			return
 		}
@@ -350,4 +353,9 @@ func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// uniqueSleep is a sleep duration no other test process uses, so pgrep finds only this test's children.
+func uniqueSleep(seconds int) string {
+	return fmt.Sprintf("%d.%d", seconds, os.Getpid())
 }
