@@ -1825,7 +1825,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** police the output, not the input (architecture principle 2). Proves REQ-17 and REQ-36.
 
-#### [TSK-06.5.1] Check reruns format, lint, the group's checks and scope [P: C] [READY]
+#### [TSK-06.5.1] Check reruns format, lint, the group's checks and scope [P: C] [DONE]
 ```yaml
 files: [internal/check/check.go, internal/check/check_test.go]
 done_when:
@@ -1835,7 +1835,7 @@ context:
   - "port the close station's reruns from internal/line/close.go and verify.go; scope fails an edit outside the group's files"
 ```
 
-#### [TSK-06.5.2] Output checks catch model commits, changed refs, hooks and git config [P: C] [READY]
+#### [TSK-06.5.2] Output checks catch model commits, changed refs, hooks and git config [P: C] [DONE]
 ```yaml
 files: [internal/check/output.go, internal/check/output_test.go]
 done_when:
@@ -1845,7 +1845,7 @@ context:
   - "snapshot HEAD, every ref, .git/hooks and .git/config before a session and compare after; one test per case (REQ-36)"
 ```
 
-#### [TSK-06.5.3] Changed lines are covered by tests [P: H] [READY]
+#### [TSK-06.5.3] Changed lines are covered by tests [P: H] [DONE]
 ```yaml
 files: [internal/check/coverage.go, internal/check/coverage_test.go]
 done_when:
@@ -1854,7 +1854,7 @@ context:
   - "Go: a cover profile of the touched packages, intersected with the diff's added lines; TypeScript: the repo's coverage command when it has one; the bar is a profile starting value the first eval calibrates"
 ```
 
-#### [TSK-06.5.4] A secret scan runs over the added lines [P: H] [READY]
+#### [TSK-06.5.4] A secret scan runs over the added lines [P: H] [DONE]
 ```yaml
 files: [internal/check/secrets.go, internal/check/secrets_test.go]
 done_when:
@@ -1863,7 +1863,7 @@ context:
   - "standard-library patterns for common keys and tokens, over added lines only; a test fixture per pattern"
 ```
 
-#### [TSK-06.5.5] The conductor runs Check after every build and repair, and never reviews first [P: C] [READY]
+#### [TSK-06.5.5] The conductor runs Check after every build and repair, and never reviews first [P: C] [DONE]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
@@ -1872,6 +1872,90 @@ depends_on: [TSK-06.5.1, TSK-06.5.2, TSK-06.5.3, TSK-06.5.4]
 context:
   - "test (REQ-17): the ledger records no review before Check passes"
 ```
+
+#### [TSK-06.5.6] internal/conductor/drive.go:369 After-snapshot is taken after the rerun commands, so their git side effects are charged to the model [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "Check calls l.rerun(), which runs the compile, verify and `go test` commands, and only then calls TakeSnapshot. Some verify scripts write git state. For example, `npm ci` runs husky's prepare step, which sets core.hooksPath or writes .git/hooks, and `pre-commit install` or `lefthook install` do the same. When a verify command does this, Compare reports 'the git config key core.hooksPath changed' or 'git hook X changed' as a model fault. That forces a needless repair round. Take the after-snapshot right after loadSnapshot, before rerun runs any command."
+```
+
+#### [TSK-06.5.7] internal/check/output.go:74 refs/stash and the base branch are handled the wrong way round in the ref filter [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/output.go
+done_when:
+  - test -f internal/check/output.go
+type: fix
+context:
+  - "snapshotRefs keeps every ref outside refs/heads/ and refs/remotes/, and that includes refs/stash. The stash lives in the common git dir, which all worktrees share. So when another lane or the operator runs `git stash` during a session, this lane reports 'ref refs/stash changed' and repairs for nothing. In the other direction, every refs/heads/* except the lane's own branch is dropped. A model running `git branch -f main HEAD` or `git push . HEAD:main` therefore moves the base branch with no output-check failure. Drop refs/stash from the snapshot and keep the group's base branch ref in it."
+```
+
+#### [TSK-06.5.8] internal/check/secrets_test.go:20 The secret scan flags the repo's own test fixtures [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/secrets_test.go
+done_when:
+  - test -f internal/check/secrets_test.go
+type: fix
+context:
+  - "The scan runs over every added line, test files included, and has no allowlist. Several of its own test fixtures match its patterns, in secrets_test.go and internal/conductor/drive_test.go. Any later group whose diff adds or rewrites these lines fails Check with 'secret: ... looks like a AWS access key'. A builder writing a fixture for this scanner hits the same wall. Build the fixtures from concatenated parts (as the GitHub case already does with strings.Repeat), or add an explicit allowlist marker the scanner honours."
+```
+
+#### [TSK-06.5.9] internal/check/check.go:121 git diff output is parsed without pinning prefix, colour, or quoting [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/check.go
+done_when:
+  - test -f internal/check/check.go
+type: fix
+context:
+  - "Diff and changedFiles call plain `git diff`, and git.Run passes no config overrides, so the user's git config shapes the output. With diff.noprefix or diff.mnemonicPrefix set, headers read '+++ w/pkg/x.go' or '+++ pkg/x.go'. ParseAddedLines only strips 'b/', so file keys never match the cover profile and coverage is silently skipped as unknown. With color.ui=always, ANSI codes break every prefix match. With core.quotePath on (the default), a non-ASCII path comes back quoted and Scope reports it as outside the declared files. Pass `-c core.quotePath=false diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/` to both git diff calls."
+```
+
+#### [TSK-06.5.10] internal/check/coverage.go:36 Line numbering goes wrong inside a hunk [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/coverage.go
+done_when:
+  - test -f internal/check/coverage.go
+type: fix
+context:
+  - "ParseAddedLines checks for '+++'/'---' headers on every line, even inside a hunk. That goes wrong in three ways. (1) Deleting a markdown or YAML '---' line gives the diff line '----'. It skips the removed-line case and falls into the context case, so next++ shifts every later added line down by one. (2) A '\ No newline at end of file' marker also increments next. (3) Adding a line that starts with '++' gives '+++…', which is read as a file header and changes the file name. The results are wrong file:line locations in secret reports and misattributed coverage. Track each hunk's remaining old/new line counts from its header, treat lines as headers only when no counts remain, and skip lines that start with a backslash."
+```
+
+#### [TSK-06.5.11] internal/check/check.go:26 Run's format and lint parameters are unused in production [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/check.go
+done_when:
+  - test -f internal/check/check.go
+type: refactor
+context:
+  - 'The only production caller, Line.rerun, passes "" for both format and lint and sends every command through checks. The two parameters only add a code path that the tests alone exercise. Remove the format and lint parameters and pass every command through checks.'
+```
+
+#### [TSK-06.5.12] internal/conductor/drive_test.go:310 Dead loop in TestDriveNeverReviewsBeforeCheckPasses [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive_test.go
+done_when:
+  - test -f internal/conductor/drive_test.go
+type: refactor
+context:
+  - "reviewIndex is the index of the first StationReview, so scanning sessions[:reviewIndex] for StationReview can never fail. The real ordering check is the equal() assertion at the end of the test. Delete the reviewIndex search and the loop after it, and keep the final equal() assertion."
+```
+
+
+
+
+
+
+
 
 ### [TG-06.6] The forge credential stays with the conductor, and the sandbox holds
 ```yaml
