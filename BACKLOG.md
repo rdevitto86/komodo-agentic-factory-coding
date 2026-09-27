@@ -3280,7 +3280,7 @@ version: 1.0.0-beta.2
 ```
 * **Why:** Slack, Google Chat and cloud commands come later as plugins, not conductor changes (decision 0020). Proves REQ-42.
 
-#### [TSK-08.5.1] A plugin is a manifest; all three types load disabled, and doctor lists them [P: H] [READY]
+#### [TSK-08.5.1] A plugin is a manifest; all three types load disabled, and doctor lists them [P: H] [DONE]
 ```yaml
 files: [internal/plugin/plugin.go, internal/plugin/plugin_test.go, internal/doctor/doctor.go]
 done_when:
@@ -3290,7 +3290,7 @@ context:
   - "a manifest names its type, roles, stages and settings; enabling is per machine under ~/.komodo; a malformed manifest is a doctor problem"
 ```
 
-#### [TSK-08.5.2] The conductor calls notifiers, tool packs and stage hooks once enabled [P: M] [READY]
+#### [TSK-08.5.2] The conductor calls notifiers, tool packs and stage hooks once enabled [P: M] [DONE]
 ```yaml
 files: [internal/conductor/plugins.go, internal/conductor/plugins_test.go]
 done_when:
@@ -3299,6 +3299,42 @@ depends_on: [TSK-08.5.1]
 context:
   - "a notifier gets blocker notes and run summaries and decides nothing; a tool pack adds commands to a role's allow list behind the guard; a stage hook runs before or after a stage and can stop the group with a reason"
 ```
+
+#### [TSK-08.5.3] internal/doctor/doctor.go:107 PluginStates is never called, so doctor does not list plugins [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/doctor.go
+done_when:
+  - test -f internal/doctor/doctor.go
+type: fix
+context:
+  - "cmd/komodo/host.go:195-198 prints only HostLeftovers and StrayWorktrees. Nothing outside doctor_test.go calls PluginStates, so running `komodo doctor` never prints the three plugin types or their enabled or disabled state. TSK-08.5.1 requires that doctor lists them. The unit test passes only because it calls the function directly. Print doctor.PluginStates(root) next to the StrayWorktrees notes in cmd/komodo/host.go."
+```
+
+#### [TSK-08.5.4] internal/conductor/plugins.go:34 The conductor never loads or calls plugins [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/plugins.go
+done_when:
+  - test -f internal/conductor/plugins.go
+type: fix
+context:
+  - "Only plugins_test.go calls LoadPlugins, Notify, Tools and Hook. No conductor or run path loads the enabled plugins. In a real run, an enabled notifier gets no blocker note, a tool pack adds nothing to any role's allow list, and a before-ship stage hook never runs and so can never stop the group. TSK-08.5.2 requires that the conductor calls them once enabled. Call LoadPlugins when the conductor starts a group, call Hook around each stage, call Notify on blockers and summaries, and merge Tools(role) into the role's allow list before the guard reads it."
+```
+
+#### [TSK-08.5.5] internal/conductor/plugins.go:106 A setting name that is not a shell identifier produces an env var sh cannot read [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/plugins.go
+done_when:
+  - test -f internal/conductor/plugins.go
+type: fix
+context:
+  - 'A setting such as {"api-key":"x"} becomes KOMODO_SETTING_API-KEY=x. That is not a valid sh identifier, so $KOMODO_SETTING_API-KEY expands to an empty $KOMODO_SETTING_API followed by the literal text ''-KEY''. The notifier or hook silently gets the wrong value. malformed() accepts any setting name. Reject setting names outside [A-Za-z0-9_] in plugin.malformed, or map every other character to ''_'' in pluginEnv.'
+```
+
+
+
 
 ### [TG-08.6] Releases publish, and product repos pin one
 ```yaml
