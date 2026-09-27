@@ -122,7 +122,7 @@ func Render(root string, binary string) (install.Plan, error) {
 }
 
 // orchestratorSkills are the only skills the user-level config carries, so no other role's skill loads there.
-var orchestratorSkills = []string{"adhoc", "escalate", "komodo", "plan", "run"}
+var orchestratorSkills = []string{"backlog", "respond", "review", "run"}
 
 // statusHook is the hook that adds the run's status and any blocked groups to a primary session as it starts.
 const statusHook = "status"
@@ -141,9 +141,11 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 	}
 	dir := filepath.Join(home, Dir, "skills")
 	for _, name := range orchestratorSkills {
-		if skill, ok := byName[name]; ok {
-			plan.Add(filepath.Join(dir, name, "SKILL.md"), []byte(skill.Body), "the orchestrator's "+name+" skill")
+		skill, ok := byName[name]
+		if !ok {
+			return plan, fmt.Errorf("the toolkit ships no %s skill, which the orchestrator layer needs", name)
 		}
+		plan.Add(filepath.Join(dir, name, "SKILL.md"), []byte(skill.Body), "the orchestrator's "+name+" skill")
 	}
 	mount.PruneSkills(&plan, root, dir)
 

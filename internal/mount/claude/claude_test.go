@@ -949,11 +949,10 @@ func TestTheClaudeMountHandsOutItsContract(t *testing.T) {
 	}
 }
 
-// TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer is REQ-39's check on the global render: the guard
-// and status hooks and the orchestrator's skills land under HOME, and no builder, lens or standards skill does.
-func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
-	root := toolkitRepo(t)
-	for _, name := range []string{"build", "review", "standards-go"} {
+// addSkills writes a stub skill under root's toolkit for each name.
+func addSkills(t *testing.T, root string, names ...string) {
+	t.Helper()
+	for _, name := range names {
 		path := filepath.Join(root, "komodo", "skills", name, "SKILL.md")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -962,6 +961,21 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// orchestratorRepo is toolkitRepo plus every orchestrator skill the global render needs.
+func orchestratorRepo(t *testing.T) string {
+	t.Helper()
+	root := toolkitRepo(t)
+	addSkills(t, root, "backlog", "respond", "review")
+	return root
+}
+
+// TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer is REQ-39's check on the global render: the guard
+// and status hooks and the orchestrator's skills land under HOME, and no builder or standards skill does.
+func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
+	root := orchestratorRepo(t)
+	addSkills(t, root, "build", "standards-go")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	stale := filepath.Join(home, Dir, "skills", "build", "SKILL.md")
@@ -994,8 +1008,8 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	if strings.Join(names, ",") != "mine,run" {
-		t.Fatalf("global skills = %v, want the user's own and the orchestrator's run only", names)
+	if strings.Join(names, ",") != "backlog,mine,respond,review,run" {
+		t.Fatalf("global skills = %v, want the user's own and the orchestrator's only", names)
 	}
 	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
 	if err != nil {
@@ -1031,7 +1045,7 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 }
 
 func TestTheGlobalRenderKeepsTheUsersSettingsAndReplacesAnOldKomodoHook(t *testing.T) {
-	root := toolkitRepo(t)
+	root := orchestratorRepo(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	path := filepath.Join(home, Dir, "settings.json")
@@ -1083,7 +1097,7 @@ func TestTheGlobalRenderKeepsTheUsersSettingsAndReplacesAnOldKomodoHook(t *testi
 }
 
 func TestTheGlobalRenderDropsAnAllKomodoGroupAndKeepsShapesItDoesNotKnow(t *testing.T) {
-	root := toolkitRepo(t)
+	root := orchestratorRepo(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	path := filepath.Join(home, Dir, "settings.json")
@@ -1148,6 +1162,21 @@ func TestTheGlobalRenderFailsWhenTheToolkitSkillsCannotBeRead(t *testing.T) {
 	}
 	if _, err := RenderGlobal(root, t.TempDir(), "/opt/komodo"); err == nil {
 		t.Fatal("an unreadable skills directory rendered anyway")
+	}
+}
+
+func TestTheGlobalRenderFailsWhenAnOrchestratorSkillIsMissing(t *testing.T) {
+	root := toolkitRepo(t)
+	addSkills(t, root, "backlog", "review")
+	_, err := RenderGlobal(root, t.TempDir(), "/opt/komodo")
+	if err == nil || !strings.Contains(err.Error(), "respond") {
+		t.Fatalf("err = %v, want the missing respond skill named", err)
+	}
+}
+
+func TestTheShippedToolkitCarriesEveryOrchestratorSkill(t *testing.T) {
+	if _, err := RenderGlobal(t.TempDir(), t.TempDir(), "/opt/komodo"); err != nil {
+		t.Fatalf("the embedded toolkit cannot render the global layer: %v", err)
 	}
 }
 
