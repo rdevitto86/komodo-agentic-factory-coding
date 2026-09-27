@@ -2172,13 +2172,14 @@ context:
 
 #### [TSK-06.7.2] A re-review brief carries the diff since the last reviewed commit and the open findings [P: C] [READY]
 ```yaml
-files: [internal/line/diff.go, internal/line/diff_test.go, internal/run/requests.go, internal/run/requests_test.go, internal/conductor/state.go]
+files: [internal/line/diff.go, internal/line/diff_test.go, internal/run/requests.go, internal/run/requests_test.go, internal/conductor/state.go, internal/run/drive.go, internal/run/drive_test.go]
 done_when:
   - go test ./internal/line/... ./internal/run/...
 depends_on: [TSK-06.7.1]
 context:
   - "State keeps the HEAD each review saw; the re-review diff runs from it to HEAD, so a repair's lines are all the reviewer reads again"
   - "the brief lists each open finding with its file and line, and asks the reviewer to close or keep each one with evidence"
+  - "wire it: newDriver in internal/run/drive.go builds the re-review request, so a production run resumes the warm reviewer"
 ```
 
 #### [TSK-06.7.3] The reviewer role states the re-review rules [P: H] [READY]
