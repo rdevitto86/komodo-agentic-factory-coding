@@ -1296,6 +1296,7 @@ done_when:
 context:
   - "TG-06.6's builder saw TestCloseRecordsDoneInTheRunWhenEverythingPasses and TestClosingClearsTheFailureRecord fail with KOMODO_RUN_PID set, and TestStepNamesTheBaseTheGroupDeclares fail with GOTMPDIR under .komodo/wt; neither reproduces outside the sandbox"
   - "a builder reads these as its own failures, so TG-06.6 escalated BLOCKED with all four tasks built"
+  - "likely cause: in the sandbox, a test's temp dir sits inside the real worktree, so any walk up for .git, BACKLOG.md or a group name finds the real one; TG-06.3's hook tests did this and ran the real group's checks recursively, a fork bomb that took 24 GB; every such test fixture needs its own .git"
 type: test
 ```
 
