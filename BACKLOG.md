@@ -1668,7 +1668,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** police the output, not the input (architecture principle 2). Proves REQ-17 and REQ-36.
 
-#### [TSK-06.5.1] Check reruns format, lint, the group's checks and scope [P: C] [REFINEMENT]
+#### [TSK-06.5.1] Check reruns format, lint, the group's checks and scope [P: C] [READY]
 ```yaml
 files: [internal/check/check.go, internal/check/check_test.go]
 done_when:
@@ -1678,7 +1678,7 @@ context:
   - "port the close station's reruns from internal/line/close.go and verify.go; scope fails an edit outside the group's files"
 ```
 
-#### [TSK-06.5.2] Output checks catch model commits, changed refs, hooks and git config [P: C] [REFINEMENT]
+#### [TSK-06.5.2] Output checks catch model commits, changed refs, hooks and git config [P: C] [READY]
 ```yaml
 files: [internal/check/output.go, internal/check/output_test.go]
 done_when:
@@ -1688,7 +1688,7 @@ context:
   - "snapshot HEAD, every ref, .git/hooks and .git/config before a session and compare after; one test per case (REQ-36)"
 ```
 
-#### [TSK-06.5.3] Changed lines are covered by tests [P: H] [REFINEMENT]
+#### [TSK-06.5.3] Changed lines are covered by tests [P: H] [READY]
 ```yaml
 files: [internal/check/coverage.go, internal/check/coverage_test.go]
 done_when:
@@ -1697,7 +1697,7 @@ context:
   - "Go: a cover profile of the touched packages, intersected with the diff's added lines; TypeScript: the repo's coverage command when it has one; the bar is a profile starting value the first eval calibrates"
 ```
 
-#### [TSK-06.5.4] A secret scan runs over the added lines [P: H] [REFINEMENT]
+#### [TSK-06.5.4] A secret scan runs over the added lines [P: H] [READY]
 ```yaml
 files: [internal/check/secrets.go, internal/check/secrets_test.go]
 done_when:
@@ -1706,7 +1706,7 @@ context:
   - "standard-library patterns for common keys and tokens, over added lines only; a test fixture per pattern"
 ```
 
-#### [TSK-06.5.5] The conductor runs Check after every build and repair, and never reviews first [P: C] [REFINEMENT]
+#### [TSK-06.5.5] The conductor runs Check after every build and repair, and never reviews first [P: C] [READY]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
