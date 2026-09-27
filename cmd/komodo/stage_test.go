@@ -131,6 +131,12 @@ func TestStageRunsOneStageAndReportsItsOutcome(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(root, ".komodo", "adhoc.jsonl")); err != nil {
 				t.Fatalf("the ad hoc ledger holds no row for the stage: %v", err)
 			}
+			if each.args[1] == "review" {
+				saved, err := os.ReadFile(line.ResultPath(root, "TG-90.2-review"))
+				if err != nil || !strings.Contains(string(saved), "Nil map") {
+					t.Fatalf("review result = %q, %v; want the reviewer's findings where ship reads them", saved, err)
+				}
+			}
 		})
 	}
 }

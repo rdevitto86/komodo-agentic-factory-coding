@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"komodo/internal/conductor"
 	"komodo/internal/line"
@@ -103,6 +105,9 @@ func stageDriver(root, worktree string, plan *line.Plan, stage conductor.Stage) 
 		Ledger:        line.Book(root),
 		SeverityFloor: plan.Profile.SeverityFloor,
 		Save:          func(conductor.State) error { return nil },
+		WriteReview: func(group string, result mount.Result) error {
+			return writeStageReview(root, group, result)
+		},
 	}
 	switch stage {
 	case conductor.StageBuild:
@@ -111,4 +116,17 @@ func stageDriver(root, worktree string, plan *line.Plan, stage conductor.Stage) 
 		driver.Reviewer, err = stageReviewer(root, plan)
 	}
 	return driver, err
+}
+
+// writeStageReview saves the reviewer's whole result where a later ship's findings gate reads it.
+func writeStageReview(root, group string, result mount.Result) error {
+	data, err := json.Marshal(result.Value)
+	if err != nil {
+		return err
+	}
+	path := line.ResultPath(root, group+"-review")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
