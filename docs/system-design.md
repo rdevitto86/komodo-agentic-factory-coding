@@ -308,14 +308,14 @@ A profile maps each role to a model and an effort. The conductor picks full or e
 
 | Role | Full mode: Max plans and API billing | Economy mode: Pro plan |
 |---|---|---|
-| Builder | Sonnet, medium effort | Sonnet, medium effort |
+| Builder, and every repair | Opus, medium effort (decision 0031) | Sonnet, medium effort |
 | Correctness, and security and readiness lenses | Opus, high effort | One combined lens: Sonnet, high effort |
 | Quality lens | Sonnet, medium effort | Part of the combined lens |
 | Planner | Opus | Sonnet |
 | Scout | Haiku | Haiku |
 | Orchestrator on an escalation | Sonnet | Sonnet |
 
-Economy mode also runs one group at a time, and uses its own combined review prompt rather than three.
+Economy mode also runs one group at a time, and uses its own combined review prompt rather than three. No builder runs on the light tier in either mode; doctor rejects a profile that puts it there.
 
 ### Skills and scoping
 
@@ -339,7 +339,7 @@ Each role runs with its own plugin directory and nothing else. The global layer 
 | Role | Profile tier | Tools |
 |---|---|---|
 | Orchestrator | The session's own model | Everything its allow list permits |
-| Builder | standard | Read, Edit, Write, Bash, Grep, Glob |
+| Builder | heavy in full mode, standard in economy mode; never light | Read, Edit, Write, Bash, Grep, Glob |
 | Review lens | reviewer, or standard for Quality | Read, Grep, Glob |
 | Planner | heavy | Read, Grep, Glob |
 | Scout | light | Read, Grep, Glob; answers the orchestrator's lookups |

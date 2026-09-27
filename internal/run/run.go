@@ -12,8 +12,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
+	"komodo/internal/backlog"
+	"komodo/internal/conductor"
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
@@ -85,8 +88,8 @@ func launchTarget(options Options) (int, string, error) {
 	return code, url, err
 }
 
-// drain launches each ready group once, parking any that ends unshipped, until nothing is ready
-// or the whole budget is spent, printing one line per group.
+// drain launches each ready group once, as many at once as the plan and their files allow, parking any
+// that ends unshipped, until nothing is ready or the whole budget is spent, printing one line per group.
 func drain(options Options) (int, error) {
 	stdout := options.Stdout
 	if stdout == nil {
@@ -104,68 +107,153 @@ func drain(options Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	// Every lane writes to the same output, so each write holds the one lock.
+	var outputLock sync.Mutex
+	stdout = lockedWriter{lock: &outputLock, out: stdout}
+	options.Stdout = stdout
+	if options.Stderr != nil {
+		options.Stderr = lockedWriter{lock: &outputLock, out: options.Stderr}
+	}
+	capacity := conductor.Concurrency(profile.Select(options.Root).Plan)
 	started := time.Now()
 	ran := map[string]bool{}
+	running := map[string]backlog.Group{}
+	finished := make(chan laneResult, capacity)
 	var shippedGroups, parked []string
 	code := 0
+	stopping := false
 	for {
-		// Every open group drains first, oldest start first, then each ready group in file order.
-		order, err := drainOrder(options.Root)
-		if err != nil {
-			return 1, err
-		}
-		// A group this drain already shipped or parked is skipped, so one stuck group never holds the rest.
-		next := ""
-		for _, group := range order {
-			if !ran[group] {
-				next = group
+		if !stopping {
+			// Every open group drains first, oldest start first, then each ready group in file order.
+			groups, err := drainGroups(options.Root)
+			if err != nil {
+				return 1, err
+			}
+			// A group this drain already shipped or parked is skipped, so one stuck group never holds the rest.
+			var pending, busy []backlog.Group
+			for _, group := range groups {
+				if !ran[group.ID] {
+					pending = append(pending, group)
+				}
+			}
+			for _, group := range running {
+				busy = append(busy, group)
+			}
+			startable := conductor.Startable(pending, busy, capacity)
+			if len(startable) > 0 && !awaitWindow(options.Root, stdout, started.Add(total)) {
+				code = 124
+				stopping = true
+				startable = nil
+			}
+			for _, group := range startable {
+				ran[group.ID] = true
+				remaining := total - time.Since(started)
+				if remaining <= 0 {
+					fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", group.ID, total)
+					code = 124
+					stopping = true
+					break
+				}
+				lane := options
+				lane.Target = group.ID
+				lane.Budget = min(GroupBudget, remaining)
+				lane.Executable = executable
+				running[group.ID] = group
+				go runLane(lane, finished)
+			}
+			if len(running) == 0 && !stopping {
+				fmt.Fprintf(stdout, "drain done: nothing is ready; %d shipped, %d parked", len(shippedGroups), len(parked))
+				if len(parked) > 0 {
+					fmt.Fprintf(stdout, " (%s)\n", strings.Join(parked, ", "))
+					code = 1
+				} else {
+					fmt.Fprintln(stdout)
+				}
 				break
 			}
 		}
-		if next == "" {
-			fmt.Fprintf(stdout, "drain done: nothing is ready; %d shipped, %d parked", len(shippedGroups), len(parked))
-			if len(parked) > 0 {
-				fmt.Fprintf(stdout, " (%s)\n", strings.Join(parked, ", "))
-				code = 1
-			} else {
-				fmt.Fprintln(stdout)
-			}
+		if len(running) == 0 {
 			break
 		}
-		ran[next] = true
-		remaining := total - time.Since(started)
-		if remaining <= 0 {
-			fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", next, total)
-			code = 124
-			break
-		}
-		group := options
-		group.Target = next
-		group.Budget = min(GroupBudget, remaining)
-		group.Executable = executable
-		launched := time.Now()
-		runCode, url, err := launchTarget(group)
-		if err != nil {
-			fmt.Fprintf(stdout, "%s parked: %v\n", next, err)
-			parked = append(parked, next)
+		result := <-finished
+		delete(running, result.group)
+		if result.err != nil {
+			fmt.Fprintf(stdout, "%s parked: %v\n", result.group, result.err)
+			parked = append(parked, result.group)
 			continue
 		}
-		if !shipped(options.Root, next, launched) {
-			fmt.Fprintf(stdout, "%s parked: it ended without shipping (exit %d)\n", next, runCode)
-			parked = append(parked, next)
+		if !shipped(options.Root, result.group, result.launched) {
+			fmt.Fprintf(stdout, "%s parked: it ended without shipping (exit %d)\n", result.group, result.code)
+			parked = append(parked, result.group)
 			continue
 		}
+		url := result.url
 		if url == "" {
 			url = "no pull request was handed off"
 		}
-		fmt.Fprintf(stdout, "%s shipped: %s\n", next, url)
-		shippedGroups = append(shippedGroups, next)
+		fmt.Fprintf(stdout, "%s shipped: %s\n", result.group, url)
+		shippedGroups = append(shippedGroups, result.group)
 	}
 	// Sync once more after the run ends, so a binary gone stale mid-run rebuilds only once every group is done.
 	if _, err := Sync(SyncOptions{Root: options.Root, Stdout: stdout}); err != nil {
 		return 1, err
 	}
 	return code, nil
+}
+
+// laneResult is how one group's lane ended: its exit code, the pull request it opened, and when it launched.
+type laneResult struct {
+	group    string
+	code     int
+	url      string
+	err      error
+	launched time.Time
+}
+
+// runLane launches one group under its own budget and process group, so a runaway kills only its tree.
+func runLane(options Options, finished chan<- laneResult) {
+	launched := time.Now()
+	code, url, err := launchTarget(options)
+	finished <- laneResult{group: options.Target, code: code, url: url, err: err, launched: launched}
+}
+
+// lockedWriter serialises writes from every lane onto one writer.
+type lockedWriter struct {
+	lock *sync.Mutex
+	out  io.Writer
+}
+
+// Write writes p while holding the shared lock.
+func (w lockedWriter) Write(p []byte) (int, error) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	return w.out.Write(p)
+}
+
+// drainGroups is the groups a drain plans, in order, with their tasks; a group without parsed tasks claims no file.
+func drainGroups(root string) ([]backlog.Group, error) {
+	order, err := drainOrder(root)
+	if err != nil {
+		return nil, err
+	}
+	var parsed backlog.Backlog
+	if path, err := backlog.Find(root); err == nil {
+		if parsed, err = backlog.Load(path); err != nil {
+			return nil, err
+		}
+	}
+	groups := make([]backlog.Group, 0, len(order))
+	for _, id := range order {
+		group := backlog.Group{ID: id}
+		for _, candidate := range parsed.Groups {
+			if candidate.ID == id {
+				group = candidate
+				break
+			}
+		}
+		groups = append(groups, group)
+	}
+	return groups, nil
 }
 
 // listDrain prints the groups a drain would run, in order, the open run first, and launches nothing.
@@ -261,7 +349,9 @@ func launch(options Options, name string, args []string) (int, error) {
 			return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
 		}
 	}
+	binPathLock.Lock()
 	env, err := withBinPath(line.Scrub(base), options.Root, executable)
+	binPathLock.Unlock()
 	if err != nil {
 		return 1, err
 	}
@@ -294,6 +384,9 @@ func launch(options Options, name string, args []string) (int, error) {
 
 // symlink links a path to a target; a test swaps it to act like Windows without Developer Mode.
 var symlink = os.Symlink
+
+// binPathLock keeps two lanes from replacing the shared komodo link at once.
+var binPathLock sync.Mutex
 
 // withBinPath puts komodo on the run's PATH as root/.komodo/bin, then the inherited PATH, then the repo's own root/bin.
 func withBinPath(env []string, root, executable string) ([]string, error) {

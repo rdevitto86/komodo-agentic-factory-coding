@@ -2665,7 +2665,7 @@ depends_on: [TG-07.2]
 ```
 * **Why:** a Haiku build averaged 75 turns (evidence 7), and a plan's usage window was a person's job to watch. Proves REQ-12, REQ-30 and REQ-32.
 
-#### [TSK-07.3.1] Groups that share no file run in parallel, up to the plan's concurrency [P: C] [READY]
+#### [TSK-07.3.1] Groups that share no file run in parallel, up to the plan's concurrency [P: C] [DONE]
 ```yaml
 files: [internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/run/run.go, internal/run/run_test.go]
 done_when:
@@ -2678,7 +2678,7 @@ context:
   - "test (REQ-12): groups sharing a file run one after another; groups sharing none overlap"
 ```
 
-#### [TSK-07.3.2] The conductor pauses at a usage limit and resumes at the reset [P: H] [READY]
+#### [TSK-07.3.2] The conductor pauses at a usage limit and resumes at the reset [P: H] [DONE]
 ```yaml
 files: [internal/run/pace.go, internal/run/pace_test.go, internal/run/run.go, internal/profile/profile.go]
 done_when:
@@ -2691,7 +2691,7 @@ context:
   - "test (REQ-32): a simulated rate-limit event pauses the run and resumes it with no person"
 ```
 
-#### [TSK-07.3.3] A Pro plan runs the economy profile, and no builder runs on the light tier [P: H] [READY]
+#### [TSK-07.3.3] A Pro plan runs the economy profile, and no builder runs on the light tier [P: H] [DONE]
 ```yaml
 files: [internal/profile/profile.go, internal/profile/profile_test.go, internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/mount/registry.go, internal/doctor/doctor.go, internal/doctor/doctor_test.go, docs/system-design.md]
 done_when:
@@ -2703,6 +2703,42 @@ context:
   - "Pro's MaxParallel is 2 in profile.go; economy mode runs one group at a time and one combined lens (REQ-30)"
   - "system-design.md's tier table still says the builder runs Sonnet; decision 0031 moved it to heavy, medium effort"
 ```
+
+#### [TSK-07.3.4] internal/conductor/schedule.go:36 A child waiting on its parent claims files that block the parent, so neither starts [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/schedule.go
+done_when:
+  - test -f internal/conductor/schedule.go
+type: fix
+context:
+  - "Startable adds every pending group to claimed, even one held only by waitsOnParent. drainOrder lists open runs first, so a resumed child can come before its ready parent. Take pending [child{files: a.go, depends_on: P}, P{files: a.go}] with nothing running. The child waits and claims a.go. P then shares a.go and is not free. Startable returns nothing, running is empty, and drain prints 'drain done: nothing is ready' without ever running P. Skip the file claim for a group held by an unfinished parent, or never let a waiting group's claim block a group it depends on."
+```
+
+#### [TSK-07.3.5] internal/run/run.go:130 A drainGroups error mid-drain returns while lanes are still running [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/run.go
+done_when:
+  - test -f internal/run/run.go
+type: fix
+context:
+  - "The loop calls drainGroups after every finished lane. If BACKLOG.md fails to parse at that point (a running lane can be rewriting it), drain returns 1 right away. The other lanes' host processes keep running in their own process groups with nothing waiting on them. Their results never reach shipped/parked, and the final Sync is skipped. On a drainGroups error, set stopping and keep draining the finished channel until running is empty, then return the error."
+```
+
+#### [TSK-07.3.6] internal/line/step.go:66 taskTier returns its Action argument unchanged [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/step.go
+done_when:
+  - test -f internal/line/step.go
+type: refactor
+context:
+  - "With the light fallback gone, taskTier just echoes next back and its only real output is snap.Tasks[next.Task].Tier. Both callers reassign an Action that never changes. Have taskTier return only the tier string, or inline snap.Tasks[id].Tier at its two call sites."
+```
+
+
+
 
 ### [TG-07.4] The builder works the task list, and the conductor ticks it
 ```yaml
@@ -2813,12 +2849,12 @@ tier: heavy
 
 #### [TSK-07.5.4] The evidence hook refuses a lens's stop twice at most [P: H] [READY]
 ```yaml
-files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go, internal/hooks/hooks.go]
+files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go, internal/hooks/hooks.go, internal/mount/claude/plugin_test.go]
 done_when:
   - go test ./internal/hooks/...
 depends_on: [TSK-07.5.3]
 context:
-  - "registered in hooks.Table under SessionLens; Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
+  - "registered in hooks.Table under SessionLens, so the reviewer plugin's hook test changes; Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
 ```
 
 ### [TG-07.11] The conductor runs Review through parallel lenses
@@ -2890,6 +2926,17 @@ context:
   - "also stop on a repair that changed no file, a check failing identically after a repair, or a refusal limit"
   - "newDriver sets Driver.Repairs from ReviewRepairs; the conductor stops reading both counts, which stay in the profile until the relay retires"
   - "test (REQ-23): no two rounds hold the same open findings"
+```
+
+#### [TSK-07.6.3] A repair names every task's files as the plan holds them now [P: M] [READY]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/conductor/...
+depends_on: [TSK-07.6.2]
+context:
+  - "a resumed repair gets only the fix list, so a file added to a task's spec mid-run never reaches the builder; TG-07.5's builder blocked twice asking to edit a file its spec had just gained"
+  - "the fix list closes with each task's files from the plan the conductor loaded on resume"
 ```
 
 ### [TG-07.7] Escalations go to the orchestrator, and what it can't settle is written down
@@ -3115,10 +3162,10 @@ depends_on: [TG-08.1]
 files: [internal/proc/process_windows.go, internal/proc/process_windows_test.go]
 done_when:
   - GOOS=windows go vet ./internal/proc/...
-  - go test ./internal/proc/...
 context:
   - docs/system-design.md#cross-platform-macos-linux-windows
   - "standard library only: kernel32 through syscall.NewLazyDLL; the test runs on Windows and kills a child that outlives its parent (REQ-43)"
+  - "process_windows.go is a stub today: Group does nothing and KillGroup kills only the parent; vet proves it compiles, a Windows host proves it works"
 ```
 
 #### [TSK-08.2.2] Every command runs through POSIX sh, Git Bash's on native Windows [P: H] [REFINEMENT]
@@ -3131,31 +3178,21 @@ done_when:
 
 #### [TSK-08.2.3] Preflight knows the platform: no sandbox on native Windows, and WSL2 repos off /mnt/c [P: H] [REFINEMENT]
 ```yaml
-files: [internal/preflight/platform.go, internal/preflight/platform_test.go]
+files: [internal/preflight/preflight.go, internal/preflight/preflight_test.go]
 done_when:
   - go test ./internal/preflight/...
 context:
-  - "native Windows runs without a sandbox and says so; inside WSL2 a repo under /mnt/ is refused, naming the Linux home as the fix"
-```
-
-#### [TSK-08.2.4] Releases build every platform's binary [P: H] [REFINEMENT]
-```yaml
-files: [internal/release/release.go, internal/release/release_test.go, internal/gate/gate.go]
-done_when:
-  - go test ./internal/release/... ./internal/gate/...
-context:
-  - "darwin/arm64, darwin/amd64, linux/amd64, linux/arm64 and windows/amd64, byte-identical per commit (decision 0002)"
+  - "checkSandbox handles darwin and linux and refuses anything else; native Windows runs without a sandbox and says so; inside WSL2 a repo under /mnt/ is refused, naming the Linux home as the fix"
 ```
 
 ### [TG-08.3] One command installs the line
 ```yaml
 type: feat
 version: 1.0.0-beta.2
-depends_on: [TG-08.2]
 ```
 * **Why:** `komodo` is no one's command until it is installed, and manual steps drift (decision 0019). Proves REQ-1 and REQ-39's global render.
 
-#### [TSK-08.3.1] install.sh installs on macOS, Linux and WSL2, and running it again updates [P: C] [REFINEMENT]
+#### [TSK-08.3.1] install.sh installs on macOS, Linux and WSL2, and running it again updates [P: C] [READY]
 ```yaml
 files: [install.sh, internal/install/script_test.go]
 done_when:
@@ -3166,7 +3203,7 @@ context:
   - "name any missing prerequisite and how to get it; build with Go, or download the pinned release and verify its checksum; symlink onto PATH; komodo install; komodo init inside a repo; komodo doctor; the test runs it under a temp HOME"
 ```
 
-#### [TSK-08.3.2] install.ps1 does the same on native Windows [P: C] [REFINEMENT]
+#### [TSK-08.3.2] install.ps1 does the same on native Windows [P: C] [READY]
 ```yaml
 files: [install.ps1]
 done_when:
@@ -3176,14 +3213,17 @@ context:
   - "a small wrapper on PATH instead of a symlink, since symlinks need admin rights"
 ```
 
-#### [TSK-08.3.3] `komodo install` adds only the orchestrator layer to the global host config [P: H] [REFINEMENT]
+#### [TSK-08.3.3] `komodo install` adds only the orchestrator layer to the global host config [P: H] [READY]
 ```yaml
-files: [internal/install/install.go, internal/install/install_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
+files: [internal/install/install.go, internal/install/install_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, cmd/komodo/host.go]
 done_when:
   - go test ./internal/install/... ./internal/mount/claude/...
 context:
   - docs/system-design.md#skills-and-scoping
+  - docs/system-design.md#install
+  - "no global render path exists today; this adds one, wired through cmd/komodo/host.go's --host dispatch"
   - "the guard hook, the orchestrator skills and the status hook; no builder, lens or standards skill; test (REQ-39) on the global render"
+  - "every test renders under a temp HOME; nothing a test runs writes the real home directory"
 ```
 
 ### [TG-08.4] The orchestrator drives the line from the primary session
@@ -3194,7 +3234,7 @@ depends_on: [TG-08.3]
 ```
 * **Why:** the primary session is the one place a person talks to the line (decision 0005). Proves REQ-39.
 
-#### [TSK-08.4.1] The komodo skill is generated from `komodo help`, and the gate fails when it drifts [P: H] [REFINEMENT]
+#### [TSK-08.4.1] The komodo skill is generated from `komodo help`, and the gate fails when it drifts [P: H] [READY]
 ```yaml
 files: [cmd/komodo/main.go, cmd/komodo/help.go, cmd/komodo/help_test.go, komodo/skills/komodo/SKILL.md]
 done_when:
@@ -3202,7 +3242,7 @@ done_when:
   - go run ./cmd/komodo doctor
 ```
 
-#### [TSK-08.4.2] The plan and adhoc skills join run and escalate [P: H] [REFINEMENT]
+#### [TSK-08.4.2] The plan and adhoc skills join run and escalate [P: H] [READY]
 ```yaml
 files: [komodo/skills/backlog, komodo/skills/plan/SKILL.md, komodo/skills/adhoc/SKILL.md]
 done_when:
@@ -3214,16 +3254,17 @@ context:
 type: docs
 ```
 
-#### [TSK-08.4.3] `komodo stage` runs one stage ad hoc on a group or the current branch [P: H] [REFINEMENT]
+#### [TSK-08.4.3] `komodo stage` runs one stage ad hoc on a group or the current branch [P: H] [READY]
 ```yaml
-files: [cmd/komodo/stage.go, cmd/komodo/stage_test.go, internal/conductor/stage.go, internal/conductor/stage_test.go]
+files: [cmd/komodo/main.go, cmd/komodo/stage.go, cmd/komodo/stage_test.go, internal/conductor/stage.go, internal/conductor/stage_test.go]
 done_when:
   - go test ./cmd/komodo/... ./internal/conductor/...
 context:
   - "the ledger records the ad hoc stage (REQ-39)"
+depends_on: [TSK-08.4.1]
 ```
 
-#### [TSK-08.4.4] `komodo status` and the status hook show groups, time and blockers [P: H] [REFINEMENT]
+#### [TSK-08.4.4] `komodo status` and the status hook show groups, time and blockers [P: H] [READY]
 ```yaml
 files: [internal/hooks/status.go, internal/hooks/status_test.go, cmd/komodo/line.go]
 done_when:
@@ -3239,7 +3280,7 @@ version: 1.0.0-beta.2
 ```
 * **Why:** Slack, Google Chat and cloud commands come later as plugins, not conductor changes (decision 0020). Proves REQ-42.
 
-#### [TSK-08.5.1] A plugin is a manifest; all three types load disabled, and doctor lists them [P: H] [REFINEMENT]
+#### [TSK-08.5.1] A plugin is a manifest; all three types load disabled, and doctor lists them [P: H] [READY]
 ```yaml
 files: [internal/plugin/plugin.go, internal/plugin/plugin_test.go, internal/doctor/doctor.go]
 done_when:
@@ -3249,7 +3290,7 @@ context:
   - "a manifest names its type, roles, stages and settings; enabling is per machine under ~/.komodo; a malformed manifest is a doctor problem"
 ```
 
-#### [TSK-08.5.2] The conductor calls notifiers, tool packs and stage hooks once enabled [P: M] [REFINEMENT]
+#### [TSK-08.5.2] The conductor calls notifiers, tool packs and stage hooks once enabled [P: M] [READY]
 ```yaml
 files: [internal/conductor/plugins.go, internal/conductor/plugins_test.go]
 done_when:
@@ -3263,11 +3304,10 @@ context:
 ```yaml
 type: feat
 version: 1.0.0-beta.2
-depends_on: [TG-08.2]
 ```
 * **Why:** product repos run a published release, never a local build (decision 0018). Proves REQ-5's second half and REQ-2's release pin.
 
-#### [TSK-08.6.1] `komodo release` builds, tests, checksums and publishes a GitHub Release [P: H] [REFINEMENT]
+#### [TSK-08.6.1] `komodo release` builds, tests, checksums and publishes a GitHub Release [P: H] [READY]
 ```yaml
 files: [cmd/komodo/release.go, internal/release/publish.go, internal/release/publish_test.go]
 done_when:
@@ -3277,7 +3317,7 @@ context:
   - "runs from the owner's machine only; the forge credential is read by the release step alone, as at Ship"
 ```
 
-#### [TSK-08.6.2] The release skill drives it from the orchestrator [P: M] [REFINEMENT]
+#### [TSK-08.6.2] The release skill drives it from the orchestrator [P: M] [READY]
 ```yaml
 files: [komodo/skills/release/SKILL.md]
 done_when:
@@ -3288,13 +3328,23 @@ context:
 type: docs
 ```
 
-#### [TSK-08.6.3] Product repos run the pinned published release [P: H] [REFINEMENT]
+#### [TSK-08.6.3] Product repos run the pinned published release [P: H] [READY]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go, internal/doctor/pins.go]
 done_when:
   - go test ./internal/run/... ./internal/doctor/...
 context:
   - "outside this repo, sync and install fetch the profile's pinned release and verify its checksum; doctor fails on any other"
+```
+
+#### [TSK-08.6.4] Releases build every platform's binary [P: H] [READY]
+```yaml
+files: [internal/release/release.go, internal/release/release_test.go, internal/gate/gate.go, internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/release/... ./internal/gate/...
+context:
+  - "Targets lists darwin/arm64, windows/amd64 and linux/amd64 today, and gate's rebuild wrapper has no linux/arm64 case"
+  - "darwin/arm64, darwin/amd64, linux/amd64, linux/arm64 and windows/amd64, byte-identical per commit (decision 0002)"
 ```
 
 ### [TG-08.7] The golden suite and `komodo eval`
@@ -3305,9 +3355,9 @@ depends_on: [TG-08.4]
 ```
 * **Why:** a number decides readiness, never a model's score (decision 0021). Proves REQ-44, and the eval cases behind REQ-3, REQ-6, REQ-12, REQ-14, REQ-27, REQ-32, REQ-34 and REQ-40.
 
-#### [TSK-08.7.1] The suite format and `komodo eval --list` [P: C] [REFINEMENT]
+#### [TSK-08.7.1] The suite format and `komodo eval --list` [P: C] [READY]
 ```yaml
-files: [internal/eval/suite.go, internal/eval/suite_test.go, internal/eval/testdata, cmd/komodo/eval.go]
+files: [internal/eval/suite.go, internal/eval/suite_test.go, internal/eval/testdata, cmd/komodo/eval.go, cmd/komodo/main.go]
 done_when:
   - go test ./internal/eval/... ./cmd/komodo/...
 context:
@@ -3315,18 +3365,19 @@ context:
   - "each golden group names its repo, pinned commit, group file and hidden tests; the real suite in eval/ is locked to line sessions, so tests use testdata"
 ```
 
-#### [TSK-08.7.2] `komodo eval --runs N` runs each group in a fresh clone and reports per platform [P: C] [REFINEMENT]
+#### [TSK-08.7.2] `komodo eval --runs N` runs each group in a fresh clone and reports per platform [P: C] [READY]
 ```yaml
 files: [internal/eval/run.go, internal/eval/run_test.go, internal/eval/report.go, internal/eval/report_test.go]
 done_when:
   - go test ./internal/eval/...
 depends_on: [TSK-08.7.1]
 context:
+  - "a run drives real sessions, so it is gated behind KOMODO_LIVE as internal/run/live_test.go is; go test ./internal/eval/... alone spends no tokens"
   - "Ship becomes a local no-push, then the hidden tests run; the report holds pass rate, consistency, sessions, turns, tokens, minutes, review rounds and tokens per accepted group"
 tier: heavy
 ```
 
-#### [TSK-08.7.3] Eval cases for the requirements a unit test can't prove [P: H] [REFINEMENT]
+#### [TSK-08.7.3] Eval cases for the requirements a unit test can't prove [P: H] [READY]
 ```yaml
 files: [internal/eval/cases.go, internal/eval/cases_test.go]
 done_when:
@@ -3336,11 +3387,12 @@ context:
   - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
 ```
 
-#### [TSK-08.7.4] The golden suite: a Go repo and a TypeScript repo, 10 pinned groups each [P: C] [REFINEMENT]
+#### [TSK-08.7.4] The golden suite: a Go repo and a TypeScript repo, 10 pinned groups each [P: C] [READY]
 ```yaml
 files: [eval/suite.json, eval/groups]
 done_when:
   - go run ./cmd/komodo eval --list
+depends_on: [TSK-08.7.1]
 context:
   - "the owner picks the repos; each group is a merged change rewound to its parent, its task list written from its intent, and its own tests hidden (REQ-44)"
 owner: human

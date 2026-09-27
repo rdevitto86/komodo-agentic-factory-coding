@@ -63,12 +63,22 @@ func Scope(worktree, base string, files []string) []string {
 	var problems []string
 	for _, name := range changed {
 		// A declared file's own test is in scope too, as the builder's rules allow.
-		if allowed[name] || allowed[testedBy(name)] {
+		if allowed[name] || allowed[testedBy(name)] || allowed[untagged(testedBy(name))] || underDeclared(name, files) {
 			continue
 		}
 		problems = append(problems, fmt.Sprintf("scope: %s is edited outside the group's declared files", name))
 	}
 	return problems
+}
+
+// underDeclared reports whether name sits inside a declared directory, such as a skill folder a task removes.
+func underDeclared(name string, files []string) bool {
+	for _, file := range files {
+		if dir := strings.TrimSuffix(file, "/"); dir != "" && strings.HasPrefix(name, dir+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // testSuffixes map a test file's ending to the ending of the source file it tests.
@@ -84,6 +94,30 @@ func testedBy(name string) string {
 		}
 	}
 	return ""
+}
+
+// platformTags are the Go file-name suffixes that restrict a file to one system or architecture.
+var platformTags = map[string]bool{
+	"unix": true, "windows": true, "darwin": true, "linux": true, "freebsd": true, "openbsd": true,
+	"netbsd": true, "dragonfly": true, "solaris": true, "illumos": true, "aix": true, "plan9": true,
+	"android": true, "ios": true, "js": true, "wasip1": true, "amd64": true, "arm64": true, "386": true,
+	"arm": true, "wasm": true, "riscv64": true, "ppc64le": true, "s390x": true, "mips64": true,
+}
+
+// untagged strips a Go source name's platform suffixes, so evidence_unix.go names evidence.go.
+func untagged(name string) string {
+	if !strings.HasSuffix(name, ".go") {
+		return name
+	}
+	stem := strings.TrimSuffix(name, ".go")
+	for range 2 {
+		cut := strings.LastIndex(stem, "_")
+		if cut <= strings.LastIndex(stem, "/")+1 || !platformTags[stem[cut+1:]] {
+			break
+		}
+		stem = stem[:cut]
+	}
+	return stem + ".go"
 }
 
 // changedFiles lists every file the working tree changes since it forked from base, then every untracked file.

@@ -1427,27 +1427,21 @@ func builderMachine(t *testing.T, root string) (string, string) {
 	return next.Machine, next.Why
 }
 
-func TestAOneFileTaskBuildsOnLightAndRepairsOnStandard(t *testing.T) {
-	root := tieredRepo(t, "files: [a/one.go]\n", "")
-	machine, why := builderMachine(t, root)
-	if machine != "vendora/haiku" || !strings.Contains(why, "TSK-12.1.1 is one file, so it builds on light") {
-		t.Fatalf("machine = %q, why = %q; a one-file task must build on light", machine, why)
-	}
-	writeStepResult(t, root, "TSK-12.1.1")
-	fail(t, root, "TSK-12.1.1", 1)
-	if err := os.WriteFile(filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md"), []byte("repair brief"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	machine, why = builderMachine(t, root)
-	if machine != "vendora/sonnet" || !strings.Contains(why, "TSK-12.1.1 failed once on light, so its repair builds on standard") {
-		t.Fatalf("machine = %q, why = %q; a repair must build on standard", machine, why)
-	}
-}
-
-func TestASourceAndItsTestFileStillBuildOnLight(t *testing.T) {
-	root := tieredRepo(t, "files: [a/one.go, a/one_test.go]\n", "")
-	if machine, _ := builderMachine(t, root); machine != "vendora/haiku" {
-		t.Fatalf("machine = %q; a source file and its own test file are one small task", machine)
+func TestAOneFileTaskNeverBuildsOnLight(t *testing.T) {
+	for _, files := range []string{"files: [a/one.go]\n", "files: [a/one.go, a/one_test.go]\n"} {
+		root := tieredRepo(t, files, `{"light_builder": true}`)
+		machine, why := builderMachine(t, root)
+		if machine != "vendora/sonnet" || strings.Contains(why, "light") {
+			t.Fatalf("machine = %q, why = %q; a small task builds on the builder's own tier, never light", machine, why)
+		}
+		writeStepResult(t, root, "TSK-12.1.1")
+		fail(t, root, "TSK-12.1.1", 1)
+		if err := os.WriteFile(filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md"), []byte("repair brief"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if machine, _ := builderMachine(t, root); machine != "vendora/sonnet" {
+			t.Fatalf("machine = %q; a repair builds on the builder's own tier", machine)
+		}
 	}
 }
 
@@ -1473,34 +1467,9 @@ func TestATaskClaimingADirectoryBuildsOnStandard(t *testing.T) {
 	}
 }
 
-func TestLightBuilderFalseKeepsEveryBuilderOnStandard(t *testing.T) {
-	root := tieredRepo(t, "files: [a/one.go]\n", `{"light_builder": false}`)
-	if machine, _ := builderMachine(t, root); machine != "vendora/sonnet" {
-		t.Fatalf("machine = %q; light_builder false must keep the builder on standard", machine)
-	}
-}
-
 func TestATaskTierHeavyStaysOnHeavy(t *testing.T) {
 	root := tieredRepo(t, "files: [a/one.go]\ntier: heavy\n", "")
 	if machine, _ := builderMachine(t, root); machine != "vendora/opus" {
-		t.Fatalf("machine = %q; a task tier key must win over the light choice", machine)
-	}
-}
-
-func TestSmallTaskCountsOneSourceFilePlusItsOwnTest(t *testing.T) {
-	cases := map[string]bool{
-		"a/one.go":                 true,
-		"a/one.go a/one_test.go":   true,
-		"a/one_test.go a/one.go":   true,
-		"a/one.go a/two_test.go":   false,
-		"a/one.go a/two.go":        false,
-		"a/one.go a/one_test.go b": false,
-		"":                         false,
-		"internal/line":            false,
-	}
-	for files, want := range cases {
-		if got := smallTask(strings.Fields(files)); got != want {
-			t.Errorf("smallTask(%s) = %v, want %v", files, got, want)
-		}
+		t.Fatalf("machine = %q; a task tier key picks the builder's machine", machine)
 	}
 }

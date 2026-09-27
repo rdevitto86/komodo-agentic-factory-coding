@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"komodo/internal/backlog"
-	"komodo/internal/mount"
 	"komodo/internal/plan"
 )
 
@@ -20,34 +19,6 @@ type TaskState struct {
 	Open              bool
 	Tier              string
 	Files             []string
-}
-
-// BuilderTier is the tier a task's builder spawn resolves on, with the reason when the line chose it.
-func (t TaskState) BuilderTier(lightBuilder bool, taskID string) (string, string) {
-	if t.Tier != "" || !lightBuilder || !smallTask(t.Files) {
-		return t.Tier, ""
-	}
-	if t.Attempts > 0 {
-		return "standard", taskID + " failed once on light, so its repair builds on standard"
-	}
-	return "light", taskID + " is one file, so it builds on light"
-}
-
-// smallTask reports whether files are exactly one file with an extension, optionally plus its own _test file.
-func smallTask(files []string) bool {
-	switch len(files) {
-	case 1:
-		return filepath.Ext(files[0]) != ""
-	case 2:
-		return testPair(files[0], files[1]) || testPair(files[1], files[0])
-	}
-	return false
-}
-
-// testPair reports whether test is source's own _test file, such as a.go and a_test.go.
-func testPair(source, test string) bool {
-	ext := filepath.Ext(source)
-	return ext != "" && test == strings.TrimSuffix(source, ext)+"_test"+ext
 }
 
 // Closeable reports whether the task's result is ready to close rather than a failure awaiting repair.
@@ -73,7 +44,6 @@ type Snapshot struct {
 	Blocking        []Finding
 	Handoff         bool
 	Shipped         bool
-	LightBuilder    bool
 	Open            []string
 }
 
@@ -118,7 +88,6 @@ func LoadSnapshot(root, needle string) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	snap.Group, _ = parsed.Group(plan.Group)
-	snap.LightBuilder = mount.LightBuilder()
 	snap.Tasks = map[string]TaskState{}
 	for _, wave := range plan.Waves {
 		for _, taskID := range wave {

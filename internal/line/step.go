@@ -62,19 +62,9 @@ func Step(root, needle string) (*Action, error) {
 	return actionForTier(root, snap.Plan, next, tier), nil
 }
 
-// taskTier is the tier a task's action resolves on: its own key, or light for a small first build.
+// taskTier is the tier a task's action resolves on: its own tier key, else the role's.
 func taskTier(snap Snapshot, next Action) (Action, string) {
-	task := snap.Tasks[next.Task]
-	if next.Role != "builder" {
-		return next, task.Tier
-	}
-	// The line picks light only onto a mounted host machine; an explicit tier key may still go local.
-	light := snap.Plan.Profile.Tiers.Light
-	tier, why := task.BuilderTier(snap.LightBuilder && light.Provider != "" && !light.Local(), next.Task)
-	if why != "" {
-		next.Why += "; " + why
-	}
-	return next, tier
+	return next, snap.Tasks[next.Task].Tier
 }
 
 // waveSpawn resolves each spawn in a wave like a single one; a spawn that resolves to a local
