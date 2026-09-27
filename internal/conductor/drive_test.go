@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -939,5 +940,15 @@ func TestResumeFailsCheckWithNoSnapshotForTheSessionItFollows(t *testing.T) {
 	}
 	if final.Current == Reviewing || final.Current == Shipped {
 		t.Fatalf("final state = %s, want the group stopped before review", final.Current)
+	}
+}
+
+func TestCoverageSkipsPackagesGoTestNeverBuilds(t *testing.T) {
+	diff := "diff --git a/internal/eval/suite.go b/internal/eval/suite.go\n--- a/internal/eval/suite.go\n+++ b/internal/eval/suite.go\n@@ -0,0 +1 @@\n+package eval\n" +
+		"diff --git a/internal/eval/testdata/g/g_test.go b/internal/eval/testdata/g/g_test.go\n--- a/internal/eval/testdata/g/g_test.go\n+++ b/internal/eval/testdata/g/g_test.go\n@@ -0,0 +1 @@\n+package g\n" +
+		"diff --git a/_scratch/x.go b/_scratch/x.go\n--- a/_scratch/x.go\n+++ b/_scratch/x.go\n@@ -0,0 +1 @@\n+package x\n" +
+		"diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -0,0 +1 @@\n+package main\n"
+	if got := coveredPackages(diff); !slices.Equal(got, []string{"./internal/eval", "./."}) {
+		t.Fatalf("packages = %v; want internal/eval and the root, never testdata or _scratch", got)
 	}
 }
