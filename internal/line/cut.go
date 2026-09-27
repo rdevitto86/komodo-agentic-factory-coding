@@ -131,6 +131,12 @@ func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
 			others[open.Group] = true
 		}
 	}
+	// A group a live process still drives stays open, even when the ledger shows it shipped once.
+	for _, old := range LoadRuns(root) {
+		if old.Group != plan.Group && checkLockFile(LockPath(root, old.Group)) != nil {
+			others[old.Group] = true
+		}
+	}
 	for _, old := range LoadRuns(root) {
 		// A shipped group's record goes, so only open groups keep a run directory.
 		if old.Group != plan.Group && !others[old.Group] {
