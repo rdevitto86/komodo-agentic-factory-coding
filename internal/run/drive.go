@@ -19,7 +19,8 @@ import (
 // conductor to Shipped, resuming a saved state.json instead of starting fresh; it exits non-zero unless it reached Shipped.
 func Drive(options Options) (int, error) {
 	root := options.Root
-	plan, err := line.PlanForStation(root, options.Target)
+	// A group resumed past Prepare has its tasks DONE already, so its open run's plan keeps closed tasks.
+	plan, err := line.PlanForGroup(root, options.Target)
 	if err != nil {
 		return 1, err
 	}
