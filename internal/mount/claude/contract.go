@@ -47,6 +47,8 @@ type session struct {
 	buf    *bytes.Buffer
 	reader io.Reader
 	req    mount.StartRequest
+	// watcher stops the session's process tree past proc.DefaultLimits and reaps what it leaves behind.
+	watcher *proc.Watcher
 
 	waitOnce sync.Once
 	waitErr  error
@@ -132,6 +134,10 @@ func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest)
 	cmd.Env = env
 	cmd.Stdin = strings.NewReader(prompt)
 	proc.Group(cmd)
+	// The session's temp root must exist and be private before the host puts its TMPDIR there.
+	if err := os.MkdirAll(SessionTmp(m.worktree), 0o700); err != nil {
+		return "", fmt.Errorf("making the session's temp root: %w", err)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -157,7 +163,8 @@ func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest)
 	}
 
 	buf := &bytes.Buffer{}
-	sess := &session{cmd: cmd, buf: buf, reader: io.TeeReader(stdout, io.MultiWriter(buf, record)), req: req, done: make(chan struct{})}
+	sess := &session{cmd: cmd, buf: buf, reader: io.TeeReader(stdout, io.MultiWriter(buf, record)), req: req, done: make(chan struct{}),
+		watcher: proc.Watch(cmd.Process.Pid, proc.DefaultLimits)}
 
 	m.mu.Lock()
 	m.sessions[handle] = sess
@@ -182,6 +189,12 @@ func (m *Mount) Stream(handle mount.Handle) (<-chan mount.Event, error) {
 			out <- mount.Event{Turns: event.Turns, Usage: event.Usage, CostUSD: event.CostUSD, RateLimit: event.RateLimit}
 		}
 		waitErr := sess.wait()
+		// Nothing the session started may outlive it; a tree that ran away is the session's error.
+		proc.KillGroup(sess.cmd)
+		sess.watcher.Stop()
+		if breach := sess.watcher.Breach(); breach != "" {
+			waitErr = fmt.Errorf("the session's process tree ran away (%s) and was killed", breach)
+		}
 		output, sessionID := structuredResult(sess.buf.Bytes())
 		sess.mu.Lock()
 		sess.sessionID = sessionID

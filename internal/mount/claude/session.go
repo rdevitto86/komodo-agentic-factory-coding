@@ -1,11 +1,14 @@
 package claude
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"komodo/internal/mount"
 )
@@ -79,6 +82,7 @@ func Session(
 	env = setEnv(env, "GOMODCACHE", filepath.Join(goDir, "path", "pkg", "mod"))
 	env = setEnv(env, "GOPROXY", "off")
 	env = setEnv(env, "GOFLAGS", "-modcacherw")
+	env = setEnv(env, "CLAUDE_CODE_TMPDIR", SessionTmp(worktree))
 
 	return argv, env, prompt
 }
@@ -102,6 +106,17 @@ func withSandbox(path, sandbox string) string {
 		return sandbox
 	}
 	return string(data)
+}
+
+// SessionTmp is the private temp root a worktree's sessions get, outside any repo, so a test walking up
+// from a temp dir for .git or a backlog never finds the real worktree.
+func SessionTmp(worktree string) string {
+	sum := sha256.Sum256([]byte(worktree))
+	base := os.TempDir()
+	if rel, err := filepath.Rel(worktree, base); err == nil && !strings.HasPrefix(rel, "..") {
+		base = "/tmp"
+	}
+	return filepath.Join(base, "komodo-"+hex.EncodeToString(sum[:6]))
 }
 
 // toolNames maps Komodo verbs to this host's tool names for the --tools flag.

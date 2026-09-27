@@ -2,6 +2,7 @@
 package proc
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,9 @@ const DefaultTimeout = 10 * time.Minute
 
 // ExitTimeout is the exit code a timed-out command reports, the same one timeout(1) uses.
 const ExitTimeout = 124
+
+// ExitRunaway is the exit code a command reports when its process tree broke DefaultLimits and was killed.
+const ExitRunaway = 125
 
 // Result is one command's outcome: its combined output, exit code, and whether the clock cut it.
 type Result struct {
@@ -34,6 +38,9 @@ func (r Result) Err() error {
 	}
 	if r.TimedOut {
 		return fmt.Errorf("timed out after %.0fs", r.Seconds)
+	}
+	if r.ExitCode == ExitRunaway {
+		return errors.New("stopped as a runaway process tree")
 	}
 	return fmt.Errorf("exit status %d", r.ExitCode)
 }
@@ -69,9 +76,28 @@ func run(dir string, timeout time.Duration, env []string, name string, args ...s
 		return nil
 	}
 	cmd.WaitDelay = 5 * time.Second
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
 	started := time.Now()
-	output, err := cmd.CombinedOutput()
-	result := Result{Output: strings.TrimSpace(string(output)), Seconds: time.Since(started).Seconds()}
+	err := cmd.Start()
+	var breach string
+	if err == nil {
+		watcher := Watch(cmd.Process.Pid, DefaultLimits)
+		err = cmd.Wait()
+		// A background child left in the group outlives the command; nothing a station ran may keep running.
+		KillGroup(cmd)
+		if errors.Is(err, exec.ErrWaitDelay) {
+			err = nil
+		}
+		watcher.Stop()
+		breach = watcher.Breach()
+	}
+	result := Result{Output: strings.TrimSpace(output.String()), Seconds: time.Since(started).Seconds()}
+	if breach != "" {
+		result.ExitCode = ExitRunaway
+		result.Output = strings.TrimSpace(result.Output + "\n[runaway: " + breach + "; the process tree was killed]")
+		return result
+	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		result.ExitCode, result.TimedOut = ExitTimeout, true
 		result.Output = strings.TrimSpace(result.Output + fmt.Sprintf("\n[timed out after %s; the process group was killed]", timeout))

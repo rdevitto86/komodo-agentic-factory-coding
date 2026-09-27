@@ -1288,6 +1288,28 @@ context:
 type: test
 ```
 
+#### [TSK-05.10.6] The line's tests pass inside a line session [P: M] [REFINEMENT]
+```yaml
+files: [internal/line/main_test.go, internal/line/close_test.go, internal/line/step_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "TG-06.6's builder saw TestCloseRecordsDoneInTheRunWhenEverythingPasses and TestClosingClearsTheFailureRecord fail with KOMODO_RUN_PID set, and TestStepNamesTheBaseTheGroupDeclares fail with GOTMPDIR under .komodo/wt; neither reproduces outside the sandbox"
+  - "a builder reads these as its own failures, so TG-06.6 escalated BLOCKED with all four tasks built"
+  - "likely cause: in the sandbox, a test's temp dir sits inside the real worktree, so any walk up for .git, BACKLOG.md or a group name finds the real one; TG-06.3's hook tests did this and ran the real group's checks recursively, a fork bomb that took 24 GB; every such test fixture needs its own .git"
+type: test
+```
+
+#### [TSK-05.10.7] The pre-push hook runs without the forge credential [P: H] [REFINEMENT]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "git push runs the pre-push komodo gate, which inherits the conductor's environment, credential included; TG-06.6 kept the credential with the push but left the hook's environment as is"
+type: fix
+```
+
 ### [TG-05.5] Metrics and the clock
 ```yaml
 type: feat
