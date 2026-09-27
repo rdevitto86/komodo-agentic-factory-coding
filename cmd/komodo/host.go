@@ -27,11 +27,12 @@ func runGuard(root string, args []string) {
 	exit(guard.Hook(root, os.Stdin, os.Stdout, os.Stderr))
 }
 
-// runInstall renders this repo's host configuration, or prints what it would change.
+// runInstall renders this repo's host configuration, or with --global the user's, or prints what it would change.
 func runInstall(root string, args []string) {
 	set := flag.NewFlagSet("install", flag.ExitOnError)
 	host := set.String("host", mount.Names()[0], "a mount name, several separated by commas, or both")
 	dryRun := set.Bool("dry-run", false, "print what would change and write nothing")
+	global := set.Bool("global", false, "add the orchestrator layer to the user's host config instead of this repo")
 	_ = set.Parse(args)
 	binary := mount.BinaryPath()
 	var chosen []mount.Host
@@ -58,14 +59,18 @@ func runInstall(root string, args []string) {
 		}
 		chosen = append(chosen, found)
 	}
+	hook := binary
+	if !filepath.IsAbs(hook) {
+		hook = filepath.Join(mount.MainCheckout(root), hook)
+	}
 	if !*dryRun {
-		hook := binary
-		if !filepath.IsAbs(hook) {
-			hook = filepath.Join(mount.MainCheckout(root), hook)
-		}
 		if _, err := os.Stat(hook); err != nil {
 			fail(fmt.Errorf("the guard hook would run %s, which does not exist; build it with komodo gate --install", hook))
 		}
+	}
+	if *global {
+		installGlobal(root, hook, chosen, *dryRun)
+		return
 	}
 	var plans []install.Plan
 	for _, host := range chosen {
@@ -80,6 +85,17 @@ func runInstall(root string, args []string) {
 	}
 	for _, plan := range plans {
 		applyPlan(plan, *dryRun)
+	}
+}
+
+// installGlobal renders each chosen host's orchestrator layer into the user's home, or prints what it would change.
+func installGlobal(root, binary string, chosen []mount.Host, dryRun bool) {
+	for _, host := range chosen {
+		plan, err := install.GlobalPlan(host.Name, root, binary)
+		if err != nil {
+			fail(err)
+		}
+		applyPlan(plan, dryRun)
 	}
 }
 
