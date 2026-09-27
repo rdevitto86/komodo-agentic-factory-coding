@@ -307,7 +307,8 @@ func staleReview(root string, plan *Plan) bool {
 		return false
 	}
 	dir := WorktreePath(root, plan.Worktree)
-	args := []string{"log", "--format=%aI%x09%s"}
+	// A merge only brings in the base or the pushed branch, never new group work.
+	args := []string{"log", "--no-merges", "--format=%aI%x09%s"}
 	if plan.Base != "" {
 		base := StartRef(dir, plan.Base)
 		if _, err := git.Run(dir, "rev-parse", "--verify", "--quiet", base); err == nil {
