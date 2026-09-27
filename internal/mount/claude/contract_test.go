@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"komodo/internal/mount"
+	"komodo/internal/proc"
 )
 
 // fakeClaudeScript replays the start or resume fixture, reports --version and auth status, or hangs.
@@ -21,6 +22,10 @@ fi
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
   echo "$FAKE_CLAUDE_AUTH"
   exit 0
+fi
+if [ "$FAKE_CLAUDE_FORK" = "1" ]; then
+  for i in $(seq 1 30); do sleep 53.5 & done
+  sleep 20
 fi
 if [ "$FAKE_CLAUDE_HANG" = "1" ]; then
   sleep 30 &
@@ -61,6 +66,7 @@ func setupFakeClaude(t *testing.T) (logPath string) {
 	t.Setenv("FAKE_CLAUDE_START_FIXTURE", start)
 	t.Setenv("FAKE_CLAUDE_RESUME_FIXTURE", resume)
 	t.Setenv("FAKE_CLAUDE_HANG", "0")
+	t.Setenv("FAKE_CLAUDE_FORK", "0")
 	return logPath
 }
 
@@ -309,5 +315,39 @@ func TestContractStartRunsInTheWorktree(t *testing.T) {
 	}
 	if !strings.Contains(string(log), realWorktree) {
 		t.Fatalf("claude did not run in the worktree %q:\n%s", realWorktree, log)
+	}
+}
+
+func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
+	setupFakeClaude(t)
+	t.Setenv("FAKE_CLAUDE_FORK", "1")
+	saved, savedInterval := proc.DefaultLimits, proc.WatchInterval
+	proc.DefaultLimits, proc.WatchInterval = proc.Limits{Procs: 10}, 50*time.Millisecond
+	t.Cleanup(func() { proc.DefaultLimits, proc.WatchInterval = saved, savedInterval })
+	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
+
+	handle, err := m.Start(newFakeRequest())
+	if err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	events, err := m.Stream(handle)
+	if err != nil {
+		t.Fatalf("Stream = %v", err)
+	}
+	drainMountEvents(t, events)
+	if _, err := m.Result(handle); err == nil || !strings.Contains(err.Error(), "ran away") {
+		t.Fatalf("Result = %v; a session over the process cap must be killed and say so", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		// pgrep exits zero only while a process still matches.
+		out := proc.Exec("", 5*time.Second, "pgrep", "-lf", "^sleep 53.5")
+		if !out.OK() {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a runaway session's children outlived it: %s", out.Output)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }

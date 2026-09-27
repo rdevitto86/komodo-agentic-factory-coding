@@ -3,6 +3,7 @@ package claude
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -637,5 +638,25 @@ func TestSessionBuilderVerbsMapToHostTools(t *testing.T) {
 		if !strings.Contains(toolsStr, tool) {
 			t.Errorf("tools missing host name %q: %s", tool, toolsStr)
 		}
+	}
+}
+
+func TestSessionTempRootSitsOutsideTheWorktree(t *testing.T) {
+	worktree := t.TempDir()
+	_, env, _ := Session("/repo", worktree, mount.StartRequest{Role: "builder", Brief: "b"}, "", "", "m", "", 10, 0)
+	var tmp string
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, "CLAUDE_CODE_TMPDIR="); ok {
+			tmp = value
+		}
+	}
+	if tmp == "" || tmp != SessionTmp(worktree) {
+		t.Fatalf("CLAUDE_CODE_TMPDIR = %q, want the worktree's own temp root", tmp)
+	}
+	if rel, err := filepath.Rel(worktree, tmp); err == nil && !strings.HasPrefix(rel, "..") {
+		t.Fatalf("temp root %q sits inside the worktree, where a walk up for .git finds the real repo", tmp)
+	}
+	if SessionTmp(worktree) == SessionTmp(worktree+"-other") {
+		t.Fatal("two worktrees share one temp root")
 	}
 }
