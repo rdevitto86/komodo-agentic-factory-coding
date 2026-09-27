@@ -17,8 +17,10 @@ import (
 // Targets are the platforms a release ships a binary for.
 var Targets = []gate.Target{
 	{Name: "komodo-darwin-arm64", GOOS: "darwin", Arch: "arm64"},
-	{Name: "komodo-windows-amd64.exe", GOOS: "windows", Arch: "amd64"},
+	{Name: "komodo-darwin-amd64", GOOS: "darwin", Arch: "amd64"},
 	{Name: "komodo-linux-amd64", GOOS: "linux", Arch: "amd64"},
+	{Name: "komodo-linux-arm64", GOOS: "linux", Arch: "arm64"},
+	{Name: "komodo-windows-amd64.exe", GOOS: "windows", Arch: "amd64"},
 }
 
 // BuildAssets builds every release target into dir and returns the paths it wrote.

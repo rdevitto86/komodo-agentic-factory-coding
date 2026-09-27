@@ -88,10 +88,18 @@ func remoteTags(root string) []string {
 	return tags
 }
 
-// runRelease audits the drift between the changelog, the tags, and the groups, or builds release assets.
+// runRelease audits the drift between the changelog, tags and groups, builds release assets, or publishes them.
 func runRelease(root string, args []string) {
-	if len(args) == 0 || (args[0] != "check" && args[0] != "build" && args[0] != "fold") {
-		fail(fmt.Errorf("usage: komodo release check | komodo release build | komodo release fold"))
+	if len(args) == 0 || (args[0] != "check" && args[0] != "build" && args[0] != "fold" && args[0] != "publish") {
+		fail(fmt.Errorf("usage: komodo release check | komodo release build | komodo release fold | komodo release publish"))
+	}
+	if args[0] == "publish" {
+		url, err := release.Publish(root, filepath.Join(root, "dist"), os.Stdout)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Println(url)
+		return
 	}
 	if args[0] == "fold" {
 		if err := fold(root, os.Stdout); err != nil {

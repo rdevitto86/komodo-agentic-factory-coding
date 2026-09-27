@@ -1,7 +1,9 @@
 package doctor
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/profile"
+	"komodo/internal/toolkit"
 )
 
 // modelHasVersion matches a digit, which every full model ID carries and a bare alias never does.
@@ -46,6 +49,7 @@ func checkPins(root string) []Problem {
 	problems = append(problems, checkModelIDs(current)...)
 	problems = append(problems, checkToolchain(root)...)
 	problems = append(problems, checkRelease(root)...)
+	problems = append(problems, checkPinnedRelease(root, current.Mode)...)
 	return problems
 }
 
@@ -122,4 +126,65 @@ func checkRelease(root string) []Problem {
 	}
 	return []Problem{{"pins", filepath.Join("bin", gate.BuiltFrom),
 		fmt.Sprintf("the komodo binary was built from %s, not HEAD (%s); run komodo gate --rebuild", built, head)}}
+}
+
+// PinnedRelease is the published komodo release the mode's profile pins, with no v, or "" when it pins none.
+func PinnedRelease(root, mode string) string {
+	data, err := fs.ReadFile(toolkit.FS(root), "profiles/"+mode+".json")
+	if err != nil {
+		return ""
+	}
+	var pinned struct {
+		Release string `json:"release"`
+	}
+	if err := json.Unmarshal(data, &pinned); err != nil {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimSpace(pinned.Release), "v")
+}
+
+// ReleaseBinary is where a published release's binary for this platform installs, under ~/.komodo/bin.
+func ReleaseBinary() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".komodo", "bin", gate.LocalTarget().Name), nil
+}
+
+// ReleaseVersion runs one komodo binary's version command and returns the version it names, with no v.
+func ReleaseVersion(path string) (string, error) {
+	out, err := exec.Command(path, "version").Output()
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return "", fmt.Errorf("%s printed no version", path)
+	}
+	return strings.TrimPrefix(fields[1], "v"), nil
+}
+
+// checkPinnedRelease reports, outside the toolkit's own checkout, an installed komodo other than the profile's pin.
+func checkPinnedRelease(root, mode string) []Problem {
+	if _, err := os.Stat(filepath.Join(root, "cmd", "komodo", "main.go")); err == nil {
+		return nil
+	}
+	pin := PinnedRelease(root, mode)
+	if pin == "" {
+		return nil
+	}
+	path, err := ReleaseBinary()
+	if err != nil {
+		return []Problem{{"pins", "komodo", "could not find the release binary: " + err.Error()}}
+	}
+	installed, err := ReleaseVersion(path)
+	if err != nil {
+		return []Problem{{"pins", path, fmt.Sprintf("could not read its version: %v; run komodo sync", err)}}
+	}
+	if installed != pin {
+		return []Problem{{"pins", path,
+			fmt.Sprintf("runs komodo %s; the profile pins release %s; run komodo sync", installed, pin)}}
+	}
+	return nil
 }

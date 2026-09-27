@@ -2,10 +2,17 @@ package run
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -81,6 +88,165 @@ func toolkitCheckout(t *testing.T, root, builtFrom string) {
 	}
 	if err := os.WriteFile(filepath.Join(root, "bin", BuiltFrom), []byte(builtFrom+"\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// pinRelease makes root a product repo whose profiles pin version, sends HOME to a temp dir, and swaps the
+// download for one serving body and a SHA256SUMS with sum; it returns the release binary's path and the URLs fetched.
+func pinRelease(t *testing.T, root, version string, body []byte, sum string) (string, *[]string) {
+	t.Helper()
+	profile := []byte(`{"release": "` + version + `", "roles": {}}`)
+	if err := os.MkdirAll(filepath.Join(root, "komodo", "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "AGENTS.md"), []byte("# Agent Rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"full", "economy"} {
+		if err := os.WriteFile(filepath.Join(root, "komodo", "profiles", mode+".json"), profile, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("KOMODO_RELEASE_URL", "https://example.test/download")
+	name := gate.LocalTarget().Name
+	base := "https://example.test/download/v" + strings.TrimPrefix(version, "v") + "/"
+	served := map[string][]byte{
+		base + name:         body,
+		base + "SHA256SUMS": []byte(sum + "  " + name + "\n" + strings.Repeat("0", 64) + "  komodo-other\n"),
+	}
+	fetched := &[]string{}
+	old := fetch
+	t.Cleanup(func() { fetch = old })
+	fetch = func(_ context.Context, url string) ([]byte, error) {
+		*fetched = append(*fetched, url)
+		data, ok := served[url]
+		if !ok {
+			return nil, fmt.Errorf("could not download %s: 404", url)
+		}
+		return data, nil
+	}
+	return filepath.Join(home, ".komodo", "bin", name), fetched
+}
+
+func TestSyncFetchesThePinnedReleaseOutsideTheToolkit(t *testing.T) {
+	body := []byte("the released binary")
+	digest := sha256.Sum256(body)
+	good := hex.EncodeToString(digest[:])
+	cases := []struct {
+		name      string
+		pin       string
+		sum       string
+		installed string
+		wantErr   string
+		wantLine  string
+		wantBody  bool
+		dryRun    bool
+		drop      string
+		noHome    bool
+	}{
+		{name: "a release with no manifest installs nothing", pin: "1.0.0-beta.2", sum: good, drop: "SHA256SUMS",
+			wantErr: "404"},
+		{name: "a release with no binary installs nothing", pin: "1.0.0-beta.2", sum: good,
+			drop: gate.LocalTarget().Name, wantErr: "404"},
+		{name: "no home installs nothing", pin: "1.0.0-beta.2", sum: good, noHome: true, wantErr: "HOME"},
+		{name: "a pinned release installs once its checksum matches", pin: "1.0.0-beta.2", sum: good,
+			wantLine: "binary: fetched release 1.0.0-beta.2, checksum verified", wantBody: true},
+		{name: "a checksum mismatch installs nothing", pin: "1.0.0-beta.2", sum: strings.Repeat("f", 64),
+			wantErr: "checksum mismatch"},
+		{name: "the pinned release already installed fetches nothing", pin: "1.0.0-beta.2", sum: good,
+			installed: "#!/bin/sh\necho 'komodo 1.0.0-beta.2 (abc)'\n", wantLine: "binary: already release 1.0.0-beta.2"},
+		{name: "an older release installed is replaced", pin: "v1.0.0-beta.2", sum: good,
+			installed: "#!/bin/sh\necho 'komodo 1.0.0-alpha.8 (abc)'\n", wantLine: "binary: fetched release", wantBody: true},
+		{name: "no pin fetches nothing", wantLine: "binary: skipped, the profile pins no release"},
+		{name: "a manifest without this platform installs nothing", pin: "1.0.0-beta.2", wantErr: "lists no"},
+		{name: "a dry run fetches nothing", pin: "1.0.0-beta.2", sum: good, dryRun: true,
+			wantLine: "binary: fetched release 1.0.0-beta.2 (dry run)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if (tc.installed != "" || tc.noHome) && runtime.GOOS == "windows" {
+				t.Skip("the installed stand-in is a shell script, and the home comes from more than HOME")
+			}
+			root, _ := syncRepo(t)
+			path, fetched := pinRelease(t, root, tc.pin, body, tc.sum)
+			if tc.drop != "" {
+				served := fetch
+				fetch = func(ctx context.Context, url string) ([]byte, error) {
+					if strings.HasSuffix(url, "/"+tc.drop) {
+						return nil, fmt.Errorf("could not download %s: 404", url)
+					}
+					return served(ctx, url)
+				}
+			}
+			if tc.noHome {
+				t.Setenv("HOME", "")
+			}
+			if tc.installed != "" {
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(tc.installed), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var out bytes.Buffer
+			got, err := Sync(SyncOptions{Root: root, DryRun: tc.dryRun, Stdout: &out})
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want %q", err, tc.wantErr)
+				}
+				if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+					t.Fatalf("a failed checksum left %s behind: %v", path, statErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), tc.wantLine) {
+				t.Fatalf("out = %q, want %q", out.String(), tc.wantLine)
+			}
+			if !tc.wantBody {
+				if got != "" || len(*fetched) != 0 {
+					t.Fatalf("path = %q, fetched = %v; nothing is due", got, *fetched)
+				}
+				return
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != path || !bytes.Equal(data, body) {
+				t.Fatalf("path = %q, want %q; installed = %q", got, path, data)
+			}
+		})
+	}
+}
+
+func TestHTTPGetReturnsTheBodyOrTheStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/asset" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, "asset body")
+	}))
+	body, err := httpGet(context.Background(), server.URL+"/asset")
+	if err != nil || string(body) != "asset body" {
+		t.Fatalf("body = %q, err = %v", body, err)
+	}
+	if _, err := httpGet(context.Background(), server.URL+"/missing"); err == nil || !strings.Contains(err.Error(), "404") {
+		t.Fatalf("err = %v, want the 404 named", err)
+	}
+	if _, err := httpGet(context.Background(), "://no-scheme"); err == nil {
+		t.Fatal("a malformed URL must fail")
+	}
+	server.Close()
+	if _, err := httpGet(context.Background(), server.URL+"/asset"); err == nil {
+		t.Fatal("a server that is gone must fail")
 	}
 }
 
