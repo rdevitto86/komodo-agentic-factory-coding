@@ -613,6 +613,32 @@ func TestShipsOwnCommitDoesNotRestaleTheReview(t *testing.T) {
 	}
 }
 
+func TestABaseThatMovesDoesNotRestaleTheReview(t *testing.T) {
+	worktree := gitRepo(t)
+	now := time.Now()
+	commitDated(t, worktree, "a/one.go", "package a\n", "seed", now.Add(-3*time.Hour))
+	runGit(t, worktree, "branch", "epic")
+	commitDated(t, worktree, "a/two.go", "package a\n", "the group's work", now.Add(-2*time.Hour))
+	root := t.TempDir()
+	plan := &Plan{Group: "TG-13.1", Title: "A group", Type: "feat", Base: "epic", Worktree: worktree}
+	saveReview(t, root, plan.Group, `{"findings":[]}`)
+	reviewTime := now.Add(-time.Hour)
+	if err := os.Chtimes(ResultPath(root, "TG-13.1-review"), reviewTime, reviewTime); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "checkout", "-q", "epic")
+	commitDated(t, worktree, "b/three.go", "package b\n", "the epic moved", now)
+	runGit(t, worktree, "checkout", "-q", "-")
+	runGit(t, worktree, "rebase", "-q", "epic")
+	if !reviewed(root, plan) {
+		t.Fatal("a base that moved, and the catch-up rebase onto it, must not restale the group's review")
+	}
+	commitDated(t, worktree, "a/four.go", "package a\n", "a repair", now)
+	if reviewed(root, plan) {
+		t.Fatal("the group's own commit after the review must restale it")
+	}
+}
+
 // TestShipGroupPushesFromAWorktreeThatRefusesPush cuts the group the way the line does, with its
 // refused pushurl, and proves ship still lands the branch on origin.
 func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {

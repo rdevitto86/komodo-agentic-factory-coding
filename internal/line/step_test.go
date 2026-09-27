@@ -1046,6 +1046,8 @@ func TestStepMovesOnOnceTheRunHasShipped(t *testing.T) {
 func TestARepairMakesItsReviewStale(t *testing.T) {
 	worktree := gitRepo(t)
 	commit(t, worktree, "a/one.go", "package a\n", "seed")
+	runGit(t, worktree, "checkout", "-q", "-b", "feat/a-group")
+	commit(t, worktree, "a/two.go", "package a\n", "the group's work")
 	root := repo(t, stepBacklog)
 	state := RunState{
 		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
