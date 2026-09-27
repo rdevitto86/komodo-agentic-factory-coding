@@ -122,7 +122,7 @@ func Render(root string, binary string) (install.Plan, error) {
 }
 
 // orchestratorSkills are the only skills the user-level config carries, so no other role's skill loads there.
-var orchestratorSkills = []string{"backlog", "respond", "run"}
+var orchestratorSkills = []string{"adhoc", "komodo", "plan", "respond", "run"}
 
 // statusHook is the hook that adds the run's status and any blocked groups to a primary session as it starts.
 const statusHook = "status"

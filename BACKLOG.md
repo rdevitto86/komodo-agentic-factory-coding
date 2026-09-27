@@ -3294,7 +3294,7 @@ depends_on: [TG-08.3]
 ```
 * **Why:** the primary session is the one place a person talks to the line (decision 0005). Proves REQ-39.
 
-#### [TSK-08.4.1] The komodo skill is generated from `komodo help`, and the gate fails when it drifts [P: H] [READY]
+#### [TSK-08.4.1] The komodo skill is generated from `komodo help`, and the gate fails when it drifts [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/main.go, cmd/komodo/help.go, cmd/komodo/help_test.go, komodo/skills/komodo/SKILL.md]
 done_when:
@@ -3302,7 +3302,7 @@ done_when:
   - go run ./cmd/komodo doctor
 ```
 
-#### [TSK-08.4.2] The plan and adhoc skills join run and escalate [P: H] [READY]
+#### [TSK-08.4.2] The plan and adhoc skills join run and escalate [P: H] [DONE]
 ```yaml
 files: [komodo/skills/backlog, komodo/skills/plan/SKILL.md, komodo/skills/adhoc/SKILL.md, internal/mount/claude/claude.go]
 done_when:
@@ -3315,7 +3315,7 @@ context:
 type: docs
 ```
 
-#### [TSK-08.4.3] `komodo stage` runs one stage ad hoc on a group or the current branch [P: H] [READY]
+#### [TSK-08.4.3] `komodo stage` runs one stage ad hoc on a group or the current branch [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/main.go, cmd/komodo/stage.go, cmd/komodo/stage_test.go, internal/conductor/stage.go, internal/conductor/stage_test.go]
 done_when:
@@ -3325,7 +3325,7 @@ context:
 depends_on: [TSK-08.4.1]
 ```
 
-#### [TSK-08.4.4] `komodo status` and the status hook show groups, time and blockers [P: H] [READY]
+#### [TSK-08.4.4] `komodo status` and the status hook show groups, time and blockers [P: H] [DONE]
 ```yaml
 files: [internal/hooks/status.go, internal/hooks/status_test.go, internal/hooks/hooks.go, cmd/komodo/line.go]
 done_when:
@@ -3334,6 +3334,30 @@ context:
   - "the status hook is registered in hooks.Table, the caller that wires it in"
   - "status --watch refreshes in place; the SessionStart hook adds the run's status and any blocked groups to the orchestrator's context"
 ```
+
+#### [TSK-08.4.5] cmd/komodo/line.go:131 status --watch panics on a zero or negative --interval [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/line.go
+done_when:
+  - test -f cmd/komodo/line.go
+type: fix
+context:
+  - "runStatus passes the user's --interval to watchStatus without checking it. watchStatus calls time.NewTicker(interval), and Go's time.NewTicker panics when the interval is zero or negative. So `komodo status --watch --interval 0` (or `-1s`) crashes with a stack trace instead of an error. Not reproduced here: this session could not run commands. In runStatus, fail with a usage error when *interval <= 0, before calling watchStatus."
+```
+
+#### [TSK-08.4.6] internal/hooks/status.go:20 time_used serialises as nanoseconds with no unit in its name [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/hooks/status.go
+done_when:
+  - test -f internal/hooks/status.go
+type: chore
+context:
+  - "GroupStatus.TimeUsed is a time.Duration, so `status --json` prints nanoseconds (for example 90000000000 for 1m30s) under the key `time_used`, which names no unit. A consumer reading it as seconds is off by a factor of 1e9. Serialise seconds under a `time_used_seconds` key, or add a unit to the field's name."
+```
+
+
 
 ### [TG-08.5] Plugin points ship disabled
 ```yaml

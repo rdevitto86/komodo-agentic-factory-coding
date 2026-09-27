@@ -1,16 +1,21 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"komodo/internal/conductor"
 	"komodo/internal/git"
+	"komodo/internal/hooks"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/pr"
@@ -86,6 +91,53 @@ func runResume(root string, args []string) {
 	}
 	fmt.Printf("%s is at %s with %d session(s) and %d repair round(s) recorded\n",
 		state.Group, state.Current, len(state.Sessions), state.Repairs)
+}
+
+// clearScreen moves the cursor home and clears the terminal, so status --watch redraws in place.
+const clearScreen = "\033[H\033[2J"
+
+// runStatus prints the current run: every group's state, the time it used, and what blocks it;
+// --watch redraws it in place every interval until interrupted.
+func runStatus(root string, args []string) {
+	set := flag.NewFlagSet("status", flag.ExitOnError)
+	asJSON := set.Bool("json", false, "print JSON")
+	watch := set.Bool("watch", false, "redraw the status in place until interrupted")
+	interval := set.Duration("interval", 2*time.Second, "how often --watch redraws")
+	_ = set.Parse(args)
+	show := func() {
+		groups := hooks.RunStatus(root)
+		if *asJSON {
+			printCompactJSON(os.Stdout, groups)
+			return
+		}
+		if text := hooks.StatusText(groups); text != "" {
+			fmt.Print(text)
+			return
+		}
+		fmt.Println("no run is recorded")
+	}
+	if !*watch {
+		show()
+		return
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	watchStatus(ctx, *interval, show)
+}
+
+// watchStatus clears the screen and calls show every interval until ctx ends.
+func watchStatus(ctx context.Context, interval time.Duration, show func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		fmt.Print(clearScreen)
+		show()
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.
