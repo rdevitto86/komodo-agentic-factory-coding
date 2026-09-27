@@ -1,8 +1,10 @@
 package claude
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	"komodo/internal/mount"
@@ -33,8 +35,11 @@ func Session(
 	pluginDir := filepath.Join(root, Dir, "plugins", req.Role)
 	argv = append(argv, "--plugin-dir", pluginDir)
 
-	settingsPath := filepath.Join(root, Dir, "settings.json")
-	argv = append(argv, "--settings", settingsPath)
+	settings := filepath.Join(root, Dir, "settings.json")
+	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
+		settings = withSandbox(settings, sandbox)
+	}
+	argv = append(argv, "--settings", settings)
 
 	if len(req.Tools) > 0 {
 		// With dontAsk, only allowed tools run, so the role's own tools are its allow list.
@@ -60,7 +65,8 @@ func Session(
 		argv = append(argv, "--max-budget-usd", strconv.FormatFloat(maxBudgetUSD, 'f', 2, 64))
 	}
 
-	env = os.Environ()
+	// The session starts from a scrubbed environment, so no forge credential reaches it.
+	env = scrubEnv(os.Environ())
 	env = removeEnv(env, "CLAUDE_CONFIG_DIR")
 	env = setEnv(env, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP", "3")
 	env = setEnv(env, "CLAUDE_CODE_MAX_TURNS", strconv.Itoa(maxTurns))
@@ -75,6 +81,27 @@ func Session(
 	env = setEnv(env, "GOFLAGS", "-modcacherw")
 
 	return argv, env, prompt
+}
+
+// withSandbox returns the settings file at path merged with the inline sandbox settings as one inline object,
+// since the host keeps only the last --settings it is given; an unreadable file leaves the sandbox alone.
+func withSandbox(path, sandbox string) string {
+	merged := map[string]json.RawMessage{}
+	if data, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(data, &merged)
+	}
+	var overrides map[string]json.RawMessage
+	if json.Unmarshal([]byte(sandbox), &overrides) != nil {
+		return sandbox
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+	data, err := json.Marshal(merged)
+	if err != nil {
+		return sandbox
+	}
+	return string(data)
 }
 
 // toolNames maps Komodo verbs to this host's tool names for the --tools flag.

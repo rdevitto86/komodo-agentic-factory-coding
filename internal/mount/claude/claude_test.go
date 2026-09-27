@@ -219,23 +219,29 @@ func TestSettingsDenyEditsToTheHostsOwnConfig(t *testing.T) {
 	}
 }
 
-func TestHeadlessSandboxesOnlyWhenTheOverlayOptsIn(t *testing.T) {
+func TestHeadlessIsSandboxedByDefaultWhereThePlatformHasOne(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	_, args := Headless("run", "TG-01.1")
-	if strings.Contains(strings.Join(args, " "), "--settings") {
-		t.Fatalf("args = %v; with no overlay the run is not sandboxed", args)
+	if !platformSandbox(runtime.GOOS) {
+		if strings.Contains(strings.Join(args, " "), "--settings") {
+			t.Fatalf("args = %v; %s has no sandbox to start", args, runtime.GOOS)
+		}
+		return
+	}
+	if len(args) < 2 || args[len(args)-2] != "--settings" {
+		t.Fatalf("args = %v; with no overlay the run is still sandboxed", args)
 	}
 	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	overlay := `{"sandbox":true,"sandbox_write":["~/go/pkg/mod"],"sandbox_domains":["proxy.golang.org"]}`
+	overlay := `{"sandbox_write":["~/go/pkg/mod"],"sandbox_domains":["proxy.golang.org"]}`
 	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, args = Headless("run", "TG-01.1")
 	if len(args) < 2 || args[len(args)-2] != "--settings" {
-		t.Fatalf("args = %v; an opted-in run passes the sandbox as inline settings", args)
+		t.Fatalf("args = %v; the run passes the sandbox as inline settings", args)
 	}
 	var settings struct {
 		Sandbox struct {

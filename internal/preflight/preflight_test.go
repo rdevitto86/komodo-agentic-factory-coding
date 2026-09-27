@@ -42,6 +42,16 @@ func clean(t *testing.T) string {
 	// Set up the profile to use the fake host.
 	write(t, root, ".komodo/profile.json", `{"host":"fake"}`)
 
+	// Each platform's sandbox tool is on PATH, so only a test that clears PATH fails the sandbox check.
+	tools := t.TempDir()
+	for _, name := range []string{"sandbox-exec", "bwrap"} {
+		write(t, tools, name, "#!/bin/sh\n")
+		if err := os.Chmod(filepath.Join(tools, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	return root
 }
 
@@ -205,35 +215,70 @@ func TestHostLoginPassesKeyBillingWhoseProbeFails(t *testing.T) {
 	}
 }
 
-// TestSandboxFailsWhenTheOverlayAsksAndNoSandboxToolIsOnPath checks the sandbox check fails,
-// rather than passing silently, when the platform's sandbox tool cannot be found.
-func TestSandboxFailsWhenTheOverlayAsksAndNoSandboxToolIsOnPath(t *testing.T) {
-	root := clean(t)
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	overlay := filepath.Join(home, ".komodo", "config.json")
-	if err := os.WriteFile(overlay, []byte(`{"sandbox":true}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", t.TempDir())
-	contract := &fakeHostContract{}
-	registerHostContract(t, contract)
-
+// sandboxFailed runs preflight and reports whether the sandbox check failed.
+func sandboxFailed(t *testing.T, root string) bool {
+	t.Helper()
+	registerHostContract(t, &fakeHostContract{})
 	failures, err := Run(root, Options{NoShip: true})
 	if err != nil {
 		t.Fatalf("Run = %v", err)
 	}
-	var found bool
 	for _, failure := range failures {
 		if failure.Name == "sandbox" {
-			found = true
+			return true
 		}
 	}
-	if !found {
-		t.Fatalf("expected a sandbox failure, got %v", failures)
+	return false
+}
+
+// withPlatform runs the sandbox check as if on goos for one test.
+func withPlatform(t *testing.T, platform string) {
+	t.Helper()
+	old := goos
+	t.Cleanup(func() { goos = old })
+	goos = platform
+}
+
+func TestSandboxPassesWhereThePlatformsToolIsOnPath(t *testing.T) {
+	for _, platform := range []string{"darwin", "linux"} {
+		t.Run(platform, func(t *testing.T) {
+			withPlatform(t, platform)
+			if sandboxFailed(t, clean(t)) {
+				t.Fatalf("%s with its sandbox tool on PATH must pass", platform)
+			}
+		})
+	}
+}
+
+func TestSandboxFailsWhenNoSandboxToolIsOnPath(t *testing.T) {
+	for _, platform := range []string{"darwin", "linux"} {
+		t.Run(platform, func(t *testing.T) {
+			withPlatform(t, platform)
+			root := clean(t)
+			t.Setenv("PATH", t.TempDir())
+			if !sandboxFailed(t, root) {
+				t.Fatalf("%s with no sandbox tool must refuse the run", platform)
+			}
+		})
+	}
+}
+
+func TestSandboxFailsOnNativeWindows(t *testing.T) {
+	withPlatform(t, "windows")
+	if !sandboxFailed(t, clean(t)) {
+		t.Fatal("native Windows has no sandbox, so the run must be refused")
+	}
+}
+
+func TestAnOverlayCannotTurnTheSandboxOff(t *testing.T) {
+	withPlatform(t, "linux")
+	root := clean(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	write(t, home, ".komodo/config.json", `{"sandbox":false}`)
+	t.Setenv("PATH", t.TempDir())
+	if !sandboxFailed(t, root) {
+		t.Fatal("an overlay with the sandbox off skipped the check; the run must still be refused")
 	}
 }
 

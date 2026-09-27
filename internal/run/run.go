@@ -30,12 +30,6 @@ const GroupBudget = 90 * time.Minute
 // Skill is the skill a headless run always enters through.
 const Skill = "run"
 
-// dropped are the environment variables that would hand a headless run a push credential.
-var dropped = []string{
-	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK",
-	"GIT_CONFIG_PARAMETERS",
-}
-
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
 	Root   string
@@ -49,53 +43,6 @@ type Options struct {
 	Stderr     io.Writer
 	PR         *pr.Client
 	Executable string
-}
-
-// Scrub returns the environment with every push credential removed and git left unable to prompt.
-func Scrub(base []string) []string {
-	out := make([]string, 0, len(base)+6)
-	for _, entry := range base {
-		key, _, found := strings.Cut(entry, "=")
-		if !found || contains(dropped, key) || credentialShaped(key) || isOverride(key) {
-			continue
-		}
-		out = append(out, entry)
-	}
-	return append(out,
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_COUNT=1",
-		"GIT_CONFIG_KEY_0=credential.helper",
-		"GIT_CONFIG_VALUE_0=",
-		"GIT_SSH_COMMAND=ssh -F "+os.DevNull+" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile="+os.DevNull,
-		"GH_CONFIG_DIR="+filepath.Join(os.TempDir(), "komodo-gh-noauth"),
-	)
-}
-
-// credentialShaped reports whether a key names a forge's secret, such as GITHUB_PAT or GITLAB_TOKEN,
-// so a push credential is dropped while the model host keeps its own login.
-func credentialShaped(key string) bool {
-	forge, secret := false, false
-	for _, part := range strings.Split(key, "_") {
-		forge = forge || forgeWords[part]
-		secret = secret || secretWords[part]
-	}
-	return forge && secret
-}
-
-// forgeWords and secretWords are the name parts that together mark a push credential.
-var (
-	forgeWords  = map[string]bool{"GIT": true, "GITHUB": true, "GH": true, "GITLAB": true, "GL": true, "BITBUCKET": true}
-	secretWords = map[string]bool{"TOKEN": true, "PAT": true, "SECRET": true, "PASSWORD": true, "KEY": true}
-)
-
-// isOverride reports whether Scrub sets this key itself, so an inherited value never survives.
-func isOverride(key string) bool {
-	switch key {
-	case "GIT_TERMINAL_PROMPT", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0",
-		"GIT_CONFIG_VALUE_0", "GIT_SSH_COMMAND", "GH_CONFIG_DIR":
-		return true
-	}
-	return false
 }
 
 // Command resolves the host from the profile and returns what a headless run would invoke.
@@ -314,7 +261,7 @@ func launch(options Options, name string, args []string) (int, error) {
 			return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
 		}
 	}
-	env, err := withBinPath(Scrub(base), options.Root, executable)
+	env, err := withBinPath(line.Scrub(base), options.Root, executable)
 	if err != nil {
 		return 1, err
 	}
@@ -463,7 +410,7 @@ func finishShip(options Options) (string, error) {
 	}
 	// An agent can write after_publish into ship.json, so it runs scrubbed, never with the push credentials.
 	if handoff.AfterPublish != "" {
-		if published := line.RunCommandEnv(worktree, handoff.AfterPublish, Scrub(os.Environ())); !published.OK() {
+		if published := line.RunCommandEnv(worktree, handoff.AfterPublish, line.Scrub(os.Environ())); !published.OK() {
 			return url, fmt.Errorf("after_publish: %s", line.FailureText(published))
 		}
 	}

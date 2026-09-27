@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -296,27 +297,10 @@ func Headless(skill, target string) (string, []string) {
 		"-p", prompt, "--permission-mode", "dontAsk",
 		"--tools", allowed, "--allowedTools", allowed, "--model", modelFor("standard"),
 	}
-	if settings := sandboxSettings(mount.LoadOverlay()); settings != "" {
+	if settings := lineSandbox(mount.LoadOverlay(), runtime.GOOS); settings != "" {
 		args = append(args, "--settings", settings)
 	}
 	return "claude", args
-}
-
-// sandboxSettings is the inline settings that sandbox every headless shell command when the overlay
-// opts in: no unsandboxed retry, and a refusal to start when the sandbox cannot.
-func sandboxSettings(overlay mount.Overlay) string {
-	if !overlay.Sandbox {
-		return ""
-	}
-	sandbox := map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false}
-	if len(overlay.SandboxWrite) > 0 {
-		sandbox["filesystem"] = map[string]any{"allowWrite": overlay.SandboxWrite}
-	}
-	if len(overlay.SandboxDomains) > 0 {
-		sandbox["network"] = map[string]any{"allowedDomains": overlay.SandboxDomains}
-	}
-	data, _ := json.Marshal(map[string]any{"sandbox": sandbox})
-	return string(data)
 }
 
 // retiredCommands are the commands no hook or allow rule in this host's user settings may run.

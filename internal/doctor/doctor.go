@@ -36,6 +36,8 @@ type Options struct {
 	NoGit  bool
 	Prune  bool
 	Remote bool
+	// Warn receives each note that never fails a check, such as what the forge's plan does not offer.
+	Warn func(note string)
 }
 
 // Run walks every check and returns what it found.
@@ -62,7 +64,13 @@ func Run(root string, options Options) ([]Problem, error) {
 	if options.Remote {
 		defaultBranch := base(root)
 		problems = append(problems, CheckRulesets(root, defaultBranch, pr.Run)...)
+		problems = append(problems, CheckHeadBranches(root, pr.Run)...)
 		problems = append(problems, CheckEpics(root, defaultBranch, pr.Run)...)
+		if options.Warn != nil {
+			for _, note := range ForgeNotes(root, pr.Run) {
+				options.Warn(note)
+			}
+		}
 	}
 	return problems, nil
 }
@@ -85,8 +93,13 @@ func StrayWorktrees(root string) []string {
 		return nil
 	}
 	var notes []string
+	var parked string
 	for index, current := range worktrees {
-		if index == 0 || strings.Contains(current.Path, filepath.Join(".komodo", "wt")) {
+		if index == 0 {
+			parked = filepath.Join(current.Path, ".komodo", "wt") + string(filepath.Separator)
+			continue
+		}
+		if strings.HasPrefix(filepath.Clean(current.Path), parked) {
 			continue
 		}
 		notes = append(notes, current.Path+" on branch "+current.Branch)
@@ -114,13 +127,22 @@ type ruleset struct {
 			Include []string `json:"include"`
 		} `json:"ref_name"`
 	} `json:"conditions"`
+	BypassActors []struct {
+		ActorType string `json:"actor_type"`
+	} `json:"bypass_actors"`
 }
 
-// CheckRulesets reads the forge's branch rulesets through gh and reports a default branch nothing
-// protects, or any active ruleset that reaches past it, which would block the push of every group branch.
+// rulesetsUnoffered matches the forge's refusal where its plan offers no rulesets, such as a private repo on a free plan.
+var rulesetsUnoffered = regexp.MustCompile(`Upgrade to GitHub Pro|HTTP 403`)
+
+// CheckRulesets reports a default branch no bypass-free ruleset protects, or an active ruleset reaching past it,
+// which blocks every group branch's push. A forge offering no rulesets is left to ForgeNotes.
 func CheckRulesets(root, defaultBranch string, run pr.Runner) []Problem {
 	out, err := run(root, "api", "repos/{owner}/{repo}/rulesets")
 	if err != nil {
+		if rulesetsUnoffered.MatchString(err.Error()) {
+			return nil
+		}
 		return []Problem{{"ruleset", "gh", "could not list rulesets: " + err.Error()}}
 	}
 	var listed []ruleset
@@ -138,27 +160,62 @@ func CheckRulesets(root, defaultBranch string, run pr.Runner) []Problem {
 			problems = append(problems, Problem{"ruleset", item.Name, "could not be read"})
 			continue
 		}
+		reaches := false
 		for _, ref := range item.Conditions.RefName.Include {
-			covered = covered || ref == "~ALL"
+			reaches = reaches || ref == "~ALL"
 			if ref == "~DEFAULT_BRANCH" || ref == "refs/heads/"+defaultBranch {
-				covered = true
+				reaches = true
 				continue
 			}
 			problems = append(problems, Problem{"ruleset", item.Name,
 				fmt.Sprintf("includes %s; scope it to refs/heads/%s so a group branch can be pushed", ref, defaultBranch)})
 		}
+		if reaches && len(item.BypassActors) > 0 {
+			problems = append(problems, Problem{"ruleset", item.Name,
+				fmt.Sprintf("has %d bypass actor(s); remove them so only a human merge of a pull request changes %s",
+					len(item.BypassActors), defaultBranch)})
+			continue
+		}
+		covered = covered || reaches
 	}
-	if !covered && !branchProtected(root, defaultBranch, run) {
+	if !covered {
 		problems = append(problems, Problem{"ruleset", defaultBranch,
-			fmt.Sprintf("no active ruleset or branch protection covers refs/heads/%s; the forge is the boundary the guard cannot be", defaultBranch)})
+			fmt.Sprintf("no active ruleset without bypass actors covers refs/heads/%s; the forge is the boundary the guard cannot be",
+				defaultBranch)})
 	}
 	return problems
 }
 
-// branchProtected reports whether the forge's classic branch protection covers the branch.
-func branchProtected(root, branch string, run pr.Runner) bool {
-	_, err := run(root, "api", fmt.Sprintf("repos/{owner}/{repo}/branches/%s/protection", branch))
-	return err == nil
+// CheckHeadBranches reports a forge that keeps a pull request's head branch after it merges.
+// A caller the forge shows no setting to reads as unknown, not as a problem.
+func CheckHeadBranches(root string, run pr.Runner) []Problem {
+	out, err := run(root, "api", "repos/{owner}/{repo}")
+	if err != nil {
+		return []Problem{{"forge", "gh", "could not read the repo: " + err.Error()}}
+	}
+	var repo struct {
+		DeleteBranchOnMerge *bool `json:"delete_branch_on_merge"`
+	}
+	if json.Unmarshal([]byte(out), &repo) != nil {
+		return []Problem{{"forge", "gh", "the repo did not parse"}}
+	}
+	if repo.DeleteBranchOnMerge == nil || *repo.DeleteBranchOnMerge {
+		return nil
+	}
+	return []Problem{{"forge", "delete_branch_on_merge",
+		"head branches are kept after a merge; turn on automatic deletion of head branches in the repo's settings"}}
+}
+
+// ForgeNotes names what the forge's plan does not offer, rulesets and draft pull requests; it never fails a check.
+func ForgeNotes(root string, run pr.Runner) []string {
+	_, err := run(root, "api", "repos/{owner}/{repo}/rulesets")
+	if err == nil || !rulesetsUnoffered.MatchString(err.Error()) {
+		return nil
+	}
+	return []string{
+		"the forge offers no rulesets here, so only the human merge keeps the default branch behind a pull request",
+		"the forge offers no draft pull requests here, so each opens labelled status: wip",
+	}
 }
 
 var reference = regexp.MustCompile("`([A-Za-z0-9_./-]+\\.(?:md|json|go|yaml|yml|toml|sh|sha256))`")

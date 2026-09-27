@@ -178,7 +178,11 @@ func runDoctor(root string, args []string) {
 			fmt.Println(item)
 		}
 	}
-	problems, err := doctor.Run(root, doctor.Options{NoGit: *noGit, Remote: *remote})
+	options := doctor.Options{NoGit: *noGit, Remote: *remote}
+	if !*asJSON {
+		options.Warn = func(note string) { fmt.Println("warning " + note) }
+	}
+	problems, err := doctor.Run(root, options)
 	if err != nil {
 		fail(err)
 	}

@@ -57,7 +57,7 @@ func Run(root string, options Options) ([]Check, error) {
 		}
 	}
 
-	// Sandbox where the platform has one.
+	// The sandbox is required; a platform without one refuses the run.
 	if err := checkSandbox(); err != nil {
 		failures = append(failures, Check{
 			Name: "sandbox",
@@ -115,23 +115,23 @@ func checkForgeCredential() error {
 	return nil
 }
 
-// checkSandbox reports an error if the overlay asks for a sandbox and this platform has none.
+// goos is the platform the sandbox check judges; a test swaps it.
+var goos = runtime.GOOS
+
+// checkSandbox reports an error when this platform has no OS sandbox or its tool is not on PATH,
+// since every line session runs sandboxed and the line refuses to run without it.
 func checkSandbox() error {
-	overlay := mount.LoadOverlay()
-	if !overlay.Sandbox {
-		return nil
-	}
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		if _, err := exec.LookPath("sandbox-exec"); err != nil {
-			return errors.New("the overlay asks for a sandbox, but sandbox-exec is not on PATH")
+			return errors.New("line sessions run sandboxed, but sandbox-exec is not on PATH")
 		}
 	case "linux":
 		if _, err := exec.LookPath("bwrap"); err != nil {
-			return errors.New("the overlay asks for a sandbox, but bubblewrap (bwrap) is not on PATH")
+			return errors.New("line sessions run sandboxed, but bubblewrap (bwrap) is not on PATH; install it")
 		}
 	default:
-		return fmt.Errorf("the overlay asks for a sandbox, but %s has none", runtime.GOOS)
+		return fmt.Errorf("line sessions run sandboxed, but %s has none; run the line on macOS, Linux or WSL2", goos)
 	}
 	return nil
 }
