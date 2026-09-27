@@ -1275,6 +1275,19 @@ context:
 type: fix
 ```
 
+#### [TSK-05.10.5] A live smoke test drives a two-task example group through real sessions [P: H] [REFINEMENT]
+```yaml
+files: [internal/run/live_test.go, internal/run/testdata/live/BACKLOG.md]
+done_when:
+  - go test ./internal/run/...
+  - KOMODO_LIVE=1 go test ./internal/run/ -run Live
+context:
+  - "skipped unless KOMODO_LIVE=1, since it spends plan tokens; a scratch repo with a bare origin, a fake forge client, the light tier, and one seeded review finding so repair runs"
+  - "asserts Shipped, one build, a review that saw the whole diff, a repair by the builder role, and a pushed branch that fast-forwards; TG-06.2's proof found thirteen defects the fake host never could"
+  - "TG-08.7's golden suite measures quality on pinned real repos; this one only proves the conductor's wiring"
+type: test
+```
+
 ### [TG-05.5] Metrics and the clock
 ```yaml
 type: feat
