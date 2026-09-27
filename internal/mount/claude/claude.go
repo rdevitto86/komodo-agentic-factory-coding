@@ -255,8 +255,8 @@ func namesLocalServer(path string) bool {
 	return strings.Contains(string(data), "127.0.0.1:8000")
 }
 
-// profileTurnCap bounds a headless role's turns until the profile carries its own cap.
-const profileTurnCap = 40
+// profileTurnCap bounds a session's turns; a group builder works up to 12 tasks, so the clock binds first.
+const profileTurnCap = 150
 
 // init registers this mount so the binary never names the host itself.
 func init() {
