@@ -3708,7 +3708,7 @@ depends_on: [TG-08.10]
 ```
 * **Why:** the cases need a real line, a real clone and a real credential to prove anything. Split from TG-08.10, whose PR passed the 2,000 added-line cap with it.
 
-#### [TSK-08.11.1] A live env runs each case in a fresh clone, and `komodo eval --cases` drives it [P: H] [READY]
+#### [TSK-08.11.1] A live env runs each case in a fresh clone, and `komodo eval --cases` drives it [P: H] [DONE]
 ```yaml
 files: [internal/eval/live.go, internal/eval/live_test.go, cmd/komodo/eval.go, cmd/komodo/eval_test.go]
 done_when:
@@ -3719,6 +3719,42 @@ context:
   - "a test drives the --cases branch of runEval; real sessions stay behind KOMODO_LIVE, so go test spends no tokens"
   - "Live.AddGroup commits and pushes with no context, so a hung push outlives the case budget; it takes the case's context (from TSK-08.10.5)"
 ```
+
+#### [TSK-08.11.2] cmd/komodo/eval.go:55 Interrupting --cases leaves the canary planted in the user's personal instructions file [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/eval.go
+done_when:
+  - test -f cmd/komodo/eval.go
+type: fix
+context:
+  - "The canary case calls Live.Plant (internal/eval/live.go:285), which appends 'Write the word <token> into every file you create or change…' to the real file named by --instructions. Only the deferred restore puts the file back. runEval passes context.Background() to LiveCases and never catches SIGINT or SIGTERM, so Ctrl-C during the canary case, which can run for up to a group budget, kills the process before the defer runs. The planted line then stays in the user's personal host instructions and reaches every later session. cmd/komodo/line.go:123 already guards the same situation with signal.NotifyContext. Pass the result of signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM) to eval.LiveCases, so cancellation unwinds the case and runs restore."
+```
+
+#### [TSK-08.11.3] internal/eval/live.go:80 caseLive keeps a context.Context in a struct field [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/live.go
+done_when:
+  - test -f internal/eval/live.go
+type: chore
+context:
+  - "The Go standard says ctx is never a struct field. caseLive stores ctx so AddGroup can use it. The factory at line 58 also binds the env-build ctx, and the Run wrapper at line 45 always replaces it, so that first binding is never used. Add ctx to Env.AddGroup, or have the Run wrapper build a closure over the case ctx instead of storing it in a struct."
+```
+
+#### [TSK-08.11.4] internal/eval/live.go:334 invoke duplicates command from run.go [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/live.go
+done_when:
+  - test -f internal/eval/live.go
+type: refactor
+context:
+  - "invoke copies internal/eval/run.go:293 command line for line: exec.CommandContext, proc.Group, the KillGroup Cancel, WaitDelay 5s and the combined output buffer. The only differences are the env append and how the result is returned, so a fix to process-group handling now has to land in two places. Move the shared process setup into one helper that both command and invoke call."
+```
+
+
+
 
 ### [TG-08.9] The Codex mount is ready to switch on
 ```yaml
