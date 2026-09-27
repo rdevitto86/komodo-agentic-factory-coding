@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"komodo/internal/mount"
@@ -117,5 +118,34 @@ func TestStateRoundTripsThroughLoadAndSaveState(t *testing.T) {
 func TestLoadStateFailsOnAMissingFile(t *testing.T) {
 	if _, err := LoadState(StatePath(t.TempDir(), "TG-1")); err == nil {
 		t.Fatal("LoadState = nil, want an error for a missing state.json")
+	}
+}
+
+func TestResumeStartsAFreshBuilderWhenTheLostSessionCannotBeResumed(t *testing.T) {
+	r := newRig(t)
+	start := State{Group: "TG-1", Current: Building, Sessions: []string{"builder-of-a-dead-process"}}
+	*r.saved = append(*r.saved, start)
+
+	final, err := r.driver.Resume(context.Background(), start)
+	if err != nil || final.Current != Shipped {
+		t.Fatalf("resume = %s, %v; a lost session must restart fresh, not fail the group", final.Current, err)
+	}
+	if len(r.host.starts) == 0 || r.host.starts[0].Role != "builder" ||
+		!strings.HasPrefix(r.host.starts[0].Brief, continueLead) || !strings.Contains(r.host.starts[0].Brief, "build TG-1") {
+		t.Fatalf("starts = %+v; want a fresh builder told to continue the worktree's work", r.host.starts)
+	}
+}
+
+func TestResumeRestartsALostRepairWithItsFixList(t *testing.T) {
+	r := newRig(t)
+	start := State{Group: "TG-1", Current: Repairing, Sessions: []string{"builder-of-a-dead-process"},
+		Fixes: []string{"a.go:3 the loop never ends"}}
+	*r.saved = append(*r.saved, start)
+
+	if _, err := r.driver.Resume(context.Background(), start); err != nil {
+		t.Fatalf("resume = %v", err)
+	}
+	if len(r.host.starts) == 0 || !strings.Contains(r.host.starts[0].Brief, "- [ ] a.go:3 the loop never ends") {
+		t.Fatalf("starts = %+v; a restarted repair must still carry its fix list", r.host.starts)
 	}
 }
