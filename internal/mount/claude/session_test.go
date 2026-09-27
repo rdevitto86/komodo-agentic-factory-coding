@@ -3,6 +3,7 @@ package claude
 import (
 	"bytes"
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -637,5 +638,24 @@ func TestSessionBuilderVerbsMapToHostTools(t *testing.T) {
 		if !strings.Contains(toolsStr, tool) {
 			t.Errorf("tools missing host name %q: %s", tool, toolsStr)
 		}
+	}
+}
+
+func TestARoleSessionCarriesTheLineSandbox(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	argv, _, _ := Session("/repo", "/worktree", mount.StartRequest{Role: "builder"}, "", "", "sonnet", "", 10, 0)
+	want := lineSandbox(mount.LoadOverlay(), runtime.GOOS)
+	carried := false
+	for i, arg := range argv[:len(argv)-1] {
+		carried = carried || (arg == "--settings" && argv[i+1] == want)
+	}
+	if want != "" && !carried {
+		t.Fatalf("argv = %v; a role session must carry the line sandbox as inline settings", argv)
+	}
+	if want == "" && strings.Count(strings.Join(argv, " "), "--settings") != 1 {
+		t.Fatalf("argv = %v; %s has no sandbox, so only the settings file is passed", argv, runtime.GOOS)
+	}
+	if want != "" && !strings.Contains(want, ".git-credentials") {
+		t.Fatalf("sandbox = %s; the credential store must be unreadable", want)
 	}
 }

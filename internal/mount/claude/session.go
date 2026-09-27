@@ -3,6 +3,7 @@ package claude
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	"komodo/internal/mount"
@@ -35,6 +36,9 @@ func Session(
 
 	settingsPath := filepath.Join(root, Dir, "settings.json")
 	argv = append(argv, "--settings", settingsPath)
+	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
+		argv = append(argv, "--settings", sandbox)
+	}
 
 	if len(req.Tools) > 0 {
 		// With dontAsk, only allowed tools run, so the role's own tools are its allow list.
