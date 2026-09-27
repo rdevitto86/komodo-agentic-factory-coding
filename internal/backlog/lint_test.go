@@ -217,3 +217,51 @@ func TestLintRejectsAGroupInAnEpicWithNoVersion(t *testing.T) {
 		t.Fatalf("group in unversioned epic should produce an error; got %v", problems)
 	}
 }
+
+func TestLintRejectsAVersionWithAPrereleaseNotOneOfTheFourPhases(t *testing.T) {
+	text := "### [TG-55.1] Unknown phase\n```yaml\ntype: feat\nversion: 1.0.0-dev.1\n```\n\n" +
+		"#### [TSK-55.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
+	problems := Lint(Parse(text))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-55.1") && strings.Contains(problem, "alpha") &&
+			strings.Contains(problem, "beta") && strings.Contains(problem, "rc") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("prerelease dev.1 should be refused and name the four phases; got %v", problems)
+	}
+}
+
+func TestLintRejectsABetaVersionWithNoNumber(t *testing.T) {
+	text := "### [TG-56.1] Beta without a number\n```yaml\ntype: feat\nversion: 1.0.0-beta\n```\n\n" +
+		"#### [TSK-56.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
+	problems := Lint(Parse(text))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-56.1") && strings.Contains(problem, "alpha") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("beta with no number should be refused; got %v", problems)
+	}
+}
+
+func TestLintAcceptsAStableVersionWhoseEpicHadNoRc(t *testing.T) {
+	text := "## [EPIC-57] Beta phase Ships as `1.0.0-beta.2`\n\n" +
+		"### [TG-57.1] Beta group\n```yaml\ntype: feat\nversion: 1.0.0-beta.2\n```\n\n" +
+		"#### [TSK-57.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n\n" +
+		"## [EPIC-58] Stable phase Ships as `1.0.0`\n\n" +
+		"### [TG-58.1] Stable group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-58.1.1] Task [P: C] [READY]\n```yaml\nfiles: [b.go]\ndone_when: [\"go test ./...\"]\n```\n"
+	problems := Lint(Parse(text))
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-57.1") || strings.Contains(problem, "TG-58.1") {
+			t.Fatalf("a beta group followed by a stable group with no rc should lint cleanly; got %v", problems)
+		}
+	}
+}

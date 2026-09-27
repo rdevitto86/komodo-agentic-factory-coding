@@ -40,6 +40,10 @@ func Lint(parsed Backlog) []string {
 			problems = append(problems, fmt.Sprintf("%s: no version; a group declares the version it ships as `version: x.y.z`", group.ID))
 		case !versionRe.MatchString(version):
 			problems = append(problems, fmt.Sprintf("%s: version %q is not x.y.z", group.ID, version))
+		case !versionPhaseRe.MatchString(version):
+			problems = append(problems, fmt.Sprintf(
+				"%s: version %q must be x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n, the four phases alpha, beta, rc, stable",
+				group.ID, version))
 		default:
 			if group.EpicID != "" {
 				if epic, ok := parsed.Epic(group.EpicID); ok {

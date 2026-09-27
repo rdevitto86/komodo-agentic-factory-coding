@@ -28,15 +28,16 @@ var Tiers = []string{"light", "standard", "heavy"}
 var Modes = []string{"parallel", "single"}
 
 var (
-	epicHeading  = regexp.MustCompile(`^##\s+\[(EPIC-[\w.]+)\]\s*(.*?)\s*$`)
-	groupHeading = regexp.MustCompile(`^###\s+\[(TG-[\w.]+)\]\s*(.*?)\s*$`)
-	taskHeading  = regexp.MustCompile(`^####\s+\[(TSK-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
-	taskLike     = regexp.MustCompile(`^####\s+\[TSK-`)
-	fenceOpen    = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
-	fenceClose   = regexp.MustCompile("^```\\s*$")
-	versionRe    = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
-	slugRe       = regexp.MustCompile(`[^a-z0-9]+`)
-	commandHint  = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*` +
+	epicHeading    = regexp.MustCompile(`^##\s+\[(EPIC-[\w.]+)\]\s*(.*?)\s*$`)
+	groupHeading   = regexp.MustCompile(`^###\s+\[(TG-[\w.]+)\]\s*(.*?)\s*$`)
+	taskHeading    = regexp.MustCompile(`^####\s+\[(TSK-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
+	taskLike       = regexp.MustCompile(`^####\s+\[TSK-`)
+	fenceOpen      = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
+	fenceClose     = regexp.MustCompile("^```\\s*$")
+	versionRe      = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
+	versionPhaseRe = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$`)
+	slugRe         = regexp.MustCompile(`[^a-z0-9]+`)
+	commandHint    = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*` +
 		`(!|go|npm|pnpm|bun|npx|python3?|py\b|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|zig|swift` +
 		`|bash|sh|grep|rg|sed|awk|find|test\b|git\b|komodo\b|\./|/|"|'|[A-Za-z]:[\\/])`)
 )
