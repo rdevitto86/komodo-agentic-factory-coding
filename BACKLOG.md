@@ -1235,7 +1235,7 @@ depends_on: [TG-05.9]
 ```
 * **Why:** TG-06.2's proof reached Shipped only after five hand repairs: a handle lost across a restart, an escalation answered by editing state.json, a PR the conductor never merged into its epic, a branch without its group, and a body calling a checked group unproven.
 
-#### [TSK-05.10.1] A session handle is the host's session ID, so resume crosses a restart [P: H] [REFINEMENT]
+#### [TSK-05.10.1] A session handle is the host's session ID, so resume crosses a restart [P: H] [READY]
 ```yaml
 files: [internal/mount/claude/contract.go, internal/mount/claude/contract_test.go]
 done_when:
@@ -1245,7 +1245,7 @@ context:
 type: fix
 ```
 
-#### [TSK-05.10.2] The conductor merges a shipped group PR into its epic branch [P: C] [REFINEMENT]
+#### [TSK-05.10.2] The conductor merges a shipped group PR into its epic branch [P: C] [READY]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/run/drive.go, internal/run/drive_test.go]
 done_when:
@@ -1255,7 +1255,7 @@ context:
 type: fix
 ```
 
-#### [TSK-05.10.3] A group branch names its group, such as `refactor/TG-06.2-the-guard-keeps-five-rules` [P: M] [REFINEMENT]
+#### [TSK-05.10.3] A group branch names its group, such as `refactor/TG-06.2-the-guard-keeps-five-rules` [P: M] [READY]
 ```yaml
 files: [internal/backlog/backlog.go, internal/backlog/backlog_test.go]
 done_when:
@@ -1265,7 +1265,7 @@ context:
 type: fix
 ```
 
-#### [TSK-05.10.4] A conductor-shipped PR body reports the checks the conductor ran [P: M] [REFINEMENT]
+#### [TSK-05.10.4] A conductor-shipped PR body reports the checks the conductor ran [P: M] [READY]
 ```yaml
 files: [internal/conductor/drive.go, internal/line/ship_body.go, internal/line/ship_test.go]
 done_when:
@@ -1275,20 +1275,19 @@ context:
 type: fix
 ```
 
-#### [TSK-05.10.5] A live smoke test drives a two-task example group through real sessions [P: H] [REFINEMENT]
+#### [TSK-05.10.5] A live smoke test drives a two-task example group through real sessions [P: H] [READY]
 ```yaml
 files: [internal/run/live_test.go, internal/run/testdata/live/BACKLOG.md]
 done_when:
   - go test ./internal/run/...
-  - KOMODO_LIVE=1 go test ./internal/run/ -run Live
 context:
-  - "skipped unless KOMODO_LIVE=1, since it spends plan tokens; a scratch repo with a bare origin, a fake forge client, the light tier, and one seeded review finding so repair runs"
+  - "skipped unless KOMODO_LIVE=1, since it spends plan tokens, so Check never runs it and the owner runs it by hand; a scratch repo with a bare origin, a fake forge client, the light tier, and one seeded review finding so repair runs"
   - "asserts Shipped, one build, a review that saw the whole diff, a repair by the builder role, and a pushed branch that fast-forwards; TG-06.2's proof found thirteen defects the fake host never could"
   - "TG-08.7's golden suite measures quality on pinned real repos; this one only proves the conductor's wiring"
 type: test
 ```
 
-#### [TSK-05.10.6] The line's tests pass inside a line session [P: M] [REFINEMENT]
+#### [TSK-05.10.6] The line's tests pass inside a line session [P: M] [READY]
 ```yaml
 files: [internal/line/main_test.go, internal/line/close_test.go, internal/line/step_test.go]
 done_when:
@@ -1300,7 +1299,7 @@ context:
 type: test
 ```
 
-#### [TSK-05.10.7] The pre-push hook runs without the forge credential [P: H] [REFINEMENT]
+#### [TSK-05.10.7] The pre-push hook runs without the forge credential [P: H] [READY]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
