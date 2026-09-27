@@ -25,6 +25,24 @@ const (
 const repairLead = "# Repair\n\nThe group is already built. Apply every item on the fix list below, then rerun its checks.\n" +
 	"Report DONE only once each item is fixed.\n\n"
 
+// continueLead opens the brief of a fresh session replacing one lost mid-build, so it picks up the worktree's work.
+const continueLead = "# Continue\n\nA session building this group was cut off, and its work is in this worktree.\n" +
+	"Read `git status` and the changed files first; finish what is left, and redo nothing already done.\n\n"
+
+// fixList renders fixes as the checklist a repair works through.
+func fixList(fixes []string) string {
+	lines := make([]string, 0, len(fixes))
+	for _, fix := range fixes {
+		lines = append(lines, "- [ ] "+fix)
+	}
+	return "## Fix list\n\n" + strings.Join(lines, "\n")
+}
+
+// repairBrief is a fresh repair's brief: the fix list first, then the group's brief for reference.
+func repairBrief(fixList, brief string) string {
+	return repairLead + fixList + "\n\n## The group's brief, for reference\n\n" + brief
+}
+
 // resultBlocked is the builder result that stops a group for the orchestrator.
 const resultBlocked = "BLOCKED"
 
@@ -223,11 +241,7 @@ func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 		s.Escalate = true
 		return nil
 	}
-	lines := make([]string, 0, len(r.fixes))
-	for _, fix := range r.fixes {
-		lines = append(lines, "- [ ] "+fix)
-	}
-	input := "## Fix list\n\n" + strings.Join(lines, "\n")
+	input := fixList(r.fixes)
 	req := d.Builder
 	var handle mount.Handle
 	var err error
@@ -236,7 +250,7 @@ func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 	}
 	// A builder from an earlier process is gone after a restart; a fresh one gets the brief and fixes.
 	if handle == "" {
-		req.Brief = repairLead + input + "\n\n## The group's brief, for reference\n\n" + req.Brief
+		req.Brief = repairBrief(input, req.Brief)
 		handle, err = d.Host.Start(req)
 	}
 	if err != nil {

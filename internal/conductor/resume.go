@@ -97,7 +97,11 @@ func pendingSession(d *Driver, s State) (station string, req mount.StartRequest,
 	case Building:
 		return StationBuild, d.Builder, true
 	case Repairing:
-		return StationRepair, d.Builder, true
+		req = d.Builder
+		if len(s.Fixes) > 0 {
+			req.Brief = repairBrief(fixList(s.Fixes), req.Brief)
+		}
+		return StationRepair, req, true
 	default:
 		return "", mount.StartRequest{}, false
 	}
@@ -107,7 +111,11 @@ func pendingSession(d *Driver, s State) (station string, req mount.StartRequest,
 // starts a fresh one from the same request, so a killed run never repeats a finished session.
 func (d *Driver) startOrResume(s State, req mount.StartRequest) (mount.Handle, error) {
 	if last := lastSession(s); last != "" && d.Host.Capabilities().Resume {
-		return d.Host.Resume(last, "")
+		if handle, err := d.Host.Resume(last, ""); err == nil {
+			return handle, nil
+		}
+		// The session died with its process; a fresh one continues from the worktree instead of failing the group.
+		req.Brief = continueLead + req.Brief
 	}
 	return d.Host.Start(req)
 }
