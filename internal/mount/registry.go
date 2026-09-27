@@ -339,7 +339,8 @@ type GuardTools struct {
 	ConfigPaths    []string
 	// PrivatePatterns are regular expressions for text the host considers private, such as a session link.
 	PrivatePatterns []string
-	Deny            func(reason string) []byte
+	// Deny renders the host's denial payload; blocked marks a refusal that must also stop the session.
+	Deny func(reason string, blocked bool) []byte
 }
 
 var (

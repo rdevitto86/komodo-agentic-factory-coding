@@ -1521,7 +1521,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** 4,597 lines re-implemented bash, and every guard diff invited new bypass findings (evidence 2). Proves REQ-26's guard row, REQ-37 and REQ-41.
 
-#### [TSK-06.2.1] The guard is cut to five rules and the builder's file scope [P: C] [READY]
+#### [TSK-06.2.1] The guard is cut to five rules and the builder's file scope [P: C] [DONE]
 ```yaml
 files: [internal/guard]
 done_when:
@@ -1538,7 +1538,7 @@ tier: heavy
 type: refactor
 ```
 
-#### [TSK-06.2.2] A refusal names the way forward, and three of one rule end the session as blocked [P: C] [READY]
+#### [TSK-06.2.2] A refusal names the way forward, and three of one rule end the session as blocked [P: C] [DONE]
 ```yaml
 files: [internal/guard/hook.go, internal/guard/hook_test.go]
 done_when:
@@ -1550,7 +1550,7 @@ context:
   - "tests (REQ-37): the limit, the named alternative, and failing open"
 ```
 
-#### [TSK-06.2.3] Line sessions can't edit the PRD or the golden suite [P: H] [READY]
+#### [TSK-06.2.3] Line sessions can't edit the PRD or the golden suite [P: H] [DONE]
 ```yaml
 files: [komodo/policy.json, internal/guard/policy.go, internal/guard/table.go]
 done_when:
@@ -1561,6 +1561,150 @@ context:
   - "docs/prd.md and eval/** are refused to every line role, with one guard table row each (REQ-41); the orchestrator is not a line session"
   - "line sessions carry their role in the environment the conductor sets; a session with none is the orchestrator"
 ```
+
+#### [TSK-06.2.4] internal/guard/hook.go:51 The refusal limit keys on all rendered findings joined together, not on the rule [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/hook.go
+done_when:
+  - test -f internal/guard/hook.go
+type: fix
+context:
+  - 'The key is strings.Join(decision.Findings, "|"). `git push origin main` then `git push -f origin main` produce different keys because the force finding is added. A path finding also embeds the path, so the same rule hit with a different target never reaches refusalLimit. That is the variant-after-variant case blockedReason says it prevents. Count each finding under a stable rule ID, so one rule hit through different commands adds to the same counter.'
+```
+
+#### [TSK-06.2.5] internal/guard/git.go:95 Unsafe mode now allows deleting a critical ref and pushing to an epic branch [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/git.go
+done_when:
+  - test -f internal/guard/git.go
+type: fix
+context:
+  - "pushFindings returns before judging targets when the mode is unsafe. `git push --delete origin main` passes, though the old code refused a critical-ref delete in every mode. `git push origin feat/1.0.0-alpha.7` from a model session also passes, though decision 0028 lets only the conductor push an epic branch. Judge deletes and epic-branch targets before the unsafe-mode early return, and skip only the plain critical-ref push."
+```
+
+#### [TSK-06.2.6] internal/guard/git.go:75 A short force cluster slips past the history-rewrite rule [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/git.go
+done_when:
+  - test -f internal/guard/git.go
+type: fix
+context:
+  - "isForceFlag matches only -f, --force, --force-if-includes and --force-with-lease*. `git push -fu origin feat/x` force-pushes and gets no finding, breaking Rule 2 on a common spelling. Treat any single-dash cluster that contains 'f' as force, as the removed code did."
+```
+
+#### [TSK-06.2.7] internal/guard/git.go:144 branch -f refuses a critical start point as if the ref were being moved [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/git.go
+done_when:
+  - test -f internal/guard/git.go
+type: fix
+context:
+  - "branchFindings flags every positional that names a critical ref. `git branch -f feat/y main` resets feat/y onto main but is denied with 'git branch main: a critical ref is never moved by hand'. `git branch -c main feat/copy` is denied the same way. When only forcing (no -m or -c), judge only the first positional; for copy, judge only the destination."
+```
+
+#### [TSK-06.2.8] internal/guard/guard.go:75 The commandFindings comment claims wrappers and substitutions hide nothing [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/guard.go
+done_when:
+  - test -f internal/guard/guard.go
+type: docs
+context:
+  - "commandName(item.words[0]) is 'env', 'sudo', 'timeout' or 'FOO=1' for `env git push origin main` or `FOO=1 git push origin main`. The git check never runs, so the comment states a guarantee the code does not give. Rewrite the comment to say only a call whose first word runs git or gh is checked."
+```
+
+#### [TSK-06.2.9] internal/guard/table.go:67 The narrowed flag parsing has no rows, and one row is a duplicate [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/table.go
+done_when:
+  - test -f internal/guard/table.go
+type: test
+context:
+  - "No test covers `git push -fu`, `git commit -nm`, a critical-ref delete in unsafe mode, or `git branch -f feat/y main`. Every regression above passes go test and guard check. Row 67 repeats row 66's command and branch exactly. Add table rows for each of these forms and drop the duplicate push-to-main row."
+```
+
+#### [TSK-06.2.10] internal/guard/hook.go:93 session_id builds a file path unchecked [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/hook.go
+done_when:
+  - test -f internal/guard/hook.go
+type: fix
+context:
+  - "The host payload's session_id goes straight into filepath.Join. A value such as '../../x' writes the counts file outside .komodo/runs/guard-refusals. Reject a session ID containing a path separator or '..' before building the path."
+```
+
+#### [TSK-06.2.11] internal/guard/hook.go:89 Concurrent hook calls lose refusal counts [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/hook.go
+done_when:
+  - test -f internal/guard/hook.go
+type: fix
+context:
+  - "recordRefusal reads, adds one and writes with no lock. Two parallel denied calls in one session both read the same count and one increment is lost, which delays the block. Write to a temp file and rename it, or hold a lock on the file across the read and write."
+```
+
+#### [TSK-06.2.12] internal/guard/git.go:62 hasNoVerify misses -nm and --no-verify abbreviations [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/git.go
+done_when:
+  - test -f internal/guard/git.go
+type: fix
+context:
+  - "Only the exact '--no-verify' and a bare '-n' match. `git commit -nm x` and `git commit --no-verif` skip the hook without a finding. Scan commit's short clusters for 'n' before a flag that takes a value, and accept unambiguous --no-verify prefixes."
+```
+
+#### [TSK-06.2.13] internal/guard/tokenize.go:31 Only > and >> count as writes, so a line role can still edit eval/** or docs/prd.md [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/tokenize.go
+done_when:
+  - test -f internal/guard/tokenize.go
+type: fix
+context:
+  - "`sed -i s/a/b/ eval/golden.json`, `tee docs/prd.md` and `cp x eval/case.json` produce no write target. REQ-41's refusal holds only for the Write tool and redirects. Add tee, cp and mv destinations and sed -i targets as write targets."
+```
+
+#### [TSK-06.2.14] internal/guard/hook.go:47 The payload is decoded a second time just for session_id [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/hook.go
+done_when:
+  - test -f internal/guard/hook.go
+type: refactor
+context:
+  - "A local anonymous struct re-unmarshals raw and discards the error, though Request was already decoded from the same bytes. Add a SessionID field with the json tag session_id to Request and read request.SessionID."
+```
+
+#### [TSK-06.2.15] internal/guard/policy.go:187 Comments cite decision and REQ numbers, and 'exactly' is wrong [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/policy.go
+done_when:
+  - test -f internal/guard/policy.go
+type: docs
+context:
+  - "Comments at policy.go:187 and 201, hook.go:18 and table.go:101 cite decision 0028, REQ-37 and REQ-41. epicBranchRe has no end anchor, so it matches feat/1.2.3anything, not 'exactly' a version. Drop the citations and either anchor the regex or remove 'exactly'."
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### [TG-06.3] Hooks follow one contract
 ```yaml
