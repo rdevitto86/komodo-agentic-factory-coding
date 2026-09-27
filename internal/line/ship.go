@@ -425,7 +425,7 @@ func ChangedLines(dir, base, branch string) int {
 	return total
 }
 
-// ReviewSize counts the files a diff keeps and the lines it adds; a deletion costs a reviewer nothing to read.
+// ReviewSize counts the files a diff keeps and the lines it adds; deletions and the line's bookkeeping count nothing.
 func ReviewSize(dir, base, branch string) (files, added int) {
 	out, err := git.Run(dir, "diff", "--numstat", "--diff-filter=d", base+"..."+branch)
 	if err != nil {
@@ -433,7 +433,7 @@ func ReviewSize(dir, base, branch string) (files, added int) {
 	}
 	for _, row := range strings.Split(strings.TrimSpace(out), "\n") {
 		fields := strings.Fields(row)
-		if len(fields) < 3 {
+		if len(fields) < 3 || bookkeeping(fields[len(fields)-1]) {
 			continue
 		}
 		files++
@@ -442,6 +442,11 @@ func ReviewSize(dir, base, branch string) (files, added int) {
 		}
 	}
 	return files, added
+}
+
+// bookkeeping reports a path Ship writes itself: task status, a group file, or a changelog fragment.
+func bookkeeping(path string) bool {
+	return path == "BACKLOG.md" || strings.HasPrefix(path, "docs/backlog/") || strings.HasPrefix(path, "changelog.d/")
 }
 
 // checkPRSize refuses a diff over either the kept-file or the added-line ceiling, naming a split as the fix.
