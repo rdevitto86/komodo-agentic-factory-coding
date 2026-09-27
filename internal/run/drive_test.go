@@ -46,6 +46,11 @@ func driveRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(driveBacklog), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The install ignores the state dir and the mount's rendered copies, so Check's scope never sees them.
+	ignore := "/" + line.StateDir + "/\n/" + claude.Dir + "/\n"
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(ignore), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runGit(t, root, "init", "-b", "main")
 	runGit(t, root, "config", "user.email", "a@example.com")
 	runGit(t, root, "config", "user.name", "a")

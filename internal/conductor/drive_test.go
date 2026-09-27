@@ -118,6 +118,11 @@ func (f *fakeStations) record(name string) {
 	f.calledAt = append(f.calledAt, name+"@"+string((*f.saved)[len(*f.saved)-1].Current))
 }
 
+func (f *fakeStations) Snapshot() error {
+	f.record("snapshot")
+	return nil
+}
+
 func (f *fakeStations) Check() ([]string, error) {
 	f.record("check")
 	if len(f.checks) == 0 {
@@ -246,7 +251,7 @@ func TestDriveRunsAGroupFromReadyToShipped(t *testing.T) {
 	if !equal(r.host.startsAt, []GroupState{Building, Reviewing}) {
 		t.Fatalf("sessions started at %v, want each after its state was saved", r.host.startsAt)
 	}
-	stations := []string{"check@Checking", "prepare@Preparing", "ship@Shipping"}
+	stations := []string{"snapshot@Building", "check@Checking", "prepare@Preparing", "ship@Shipping"}
 	if !equal(r.stations.calledAt, stations) {
 		t.Fatalf("stations ran at %v, want %v", r.stations.calledAt, stations)
 	}
@@ -271,6 +276,52 @@ func TestDriveRepairsAFailedCheckByResumingTheBuilder(t *testing.T) {
 	}
 	if len(r.host.inputs) != 1 || !strings.Contains(r.host.inputs[0], "- [ ] `go vet` exited 1") {
 		t.Fatalf("resume inputs = %q, want the failed check as a fix list", r.host.inputs)
+	}
+	stations := []string{
+		"snapshot@Building", "check@Checking", "snapshot@Repairing", "check@Checking",
+		"prepare@Preparing", "ship@Shipping",
+	}
+	if !equal(r.stations.calledAt, stations) {
+		t.Fatalf("stations ran at %v, want a snapshot before each session and a check after it", r.stations.calledAt)
+	}
+}
+
+// TestDriveNeverReviewsBeforeCheckPasses is REQ-17: the ledger records no review session until
+// Check has passed, even across repeated failed checks and their repair rounds.
+func TestDriveNeverReviewsBeforeCheckPasses(t *testing.T) {
+	r := newRig(t)
+	r.stations.checks = [][]string{{"fail 1"}, {"fail 2"}}
+	final, err := r.drive(t)
+	if err != nil || final.Current != Shipped {
+		t.Fatalf("drive = %s, %v; want Shipped", final.Current, err)
+	}
+	sessions := r.sessions(t)
+	reviewIndex := -1
+	for i, station := range sessions {
+		if station == StationReview {
+			reviewIndex = i
+			break
+		}
+	}
+	if reviewIndex == -1 {
+		t.Fatalf("ledger sessions = %v, want a review session", sessions)
+	}
+	for _, station := range sessions[:reviewIndex] {
+		if station == StationReview {
+			t.Fatalf("ledger sessions = %v, want no review before %d", sessions, reviewIndex)
+		}
+	}
+	checkCalls := 0
+	for _, call := range r.stations.calledAt {
+		if strings.HasPrefix(call, "check@") {
+			checkCalls++
+		}
+	}
+	if checkCalls != 3 {
+		t.Fatalf("check calls = %d, want 3: two failures and the pass that unblocks review", checkCalls)
+	}
+	if !equal(sessions, []string{StationBuild, StationRepair, StationRepair, StationReview}) {
+		t.Fatalf("ledger sessions = %v, want build, two repairs, then review", sessions)
 	}
 }
 
@@ -363,8 +414,8 @@ func TestDriveEscalatesABlockedBuilderAndWaits(t *testing.T) {
 	if final.Current != Escalated || final.Left != Building {
 		t.Fatalf("final = %s left %s, want Escalated from Building", final.Current, final.Left)
 	}
-	if len(r.stations.calledAt) != 0 {
-		t.Fatalf("stations ran %v after the builder blocked", r.stations.calledAt)
+	if !equal(r.stations.calledAt, []string{"snapshot@Building"}) {
+		t.Fatalf("stations ran %v after the builder blocked, want only the snapshot before it", r.stations.calledAt)
 	}
 	if got := r.sessions(t); !equal(got, []string{StationBuild}) {
 		t.Fatalf("ledger sessions = %v, want the one build", got)
@@ -465,23 +516,56 @@ func TestDriveRefusesAnUnwiredDriver(t *testing.T) {
 	}
 }
 
-func TestLineCheckTurnsARefusedCommitIntoAFix(t *testing.T) {
-	root := t.TempDir()
-	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"}, {"config", "user.email", "a@example.com"}, {"config", "user.name", "a"},
-	} {
-		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
+// gitIn runs one git command in dir, failing the test when it fails.
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
+}
+
+// writeIn writes content to name under dir, creating its parent directories.
+func writeIn(t *testing.T, dir, name, content string) {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// checkRepo creates a Go module committed on main, its state directory ignored, as a group's root and worktree.
+func checkRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	gitIn(t, root, "init", "-q", "-b", "main")
+	gitIn(t, root, "config", "user.email", "builder@example.com")
+	gitIn(t, root, "config", "user.name", "builder")
+	writeIn(t, root, "go.mod", "module example.com/tmp\n\ngo 1.22\n")
+	writeIn(t, root, ".gitignore", "/.komodo/\n")
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-q", "-m", "base")
+	return root
+}
+
+func TestLineCheckTurnsARefusedCommitIntoAFix(t *testing.T) {
+	root := checkRepo(t)
 	hook := filepath.Join(root, ".git", "hooks", "pre-commit")
 	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho 'comment runs 21 words' >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "built.go"), []byte("package built\n"), 0o644); err != nil {
+	stations := &Line{Root: root, Plan: &line.Plan{
+		Group: "TG-1", Title: "A group", Type: "feat", Base: "main", Worktree: root,
+		Tasks: []line.PlanTask{{ID: "TSK-1.1", Files: []string{"built.go"}}},
+	}}
+	if err := stations.Snapshot(); err != nil {
 		t.Fatal(err)
 	}
-	stations := &Line{Root: root, Plan: &line.Plan{Group: "TG-1", Title: "A group", Type: "feat"}}
+	writeIn(t, root, "built.go", "package built\n")
 	fixes, err := stations.Check()
 	if err != nil {
 		t.Fatalf("check = %v; a refused commit is a fix, never an error that escalates", err)
@@ -491,28 +575,61 @@ func TestLineCheckTurnsARefusedCommitIntoAFix(t *testing.T) {
 	}
 }
 
-func TestLineCheckReturnsTheFirstFailedCommand(t *testing.T) {
+func TestLineCheckFailsWhenAnyCheckFails(t *testing.T) {
+	const uncovered = "package pkg\n\nfunc Add(a, b int) int {\n\treturn a + b\n}\n"
 	cases := []struct {
 		name    string
 		compile string
 		verify  string
+		bar     string
+		files   []string
+		session func(t *testing.T, root string)
 		want    string
 	}{
-		{"every command passes", "true", "true", ""},
-		{"a compile gate fails", "exit 3", "true", "`exit 3` exited 3"},
-		{"verify fails", "true", "exit 4", "`exit 4` exited 4"},
+		{"every check passes", "true", "true", "", []string{"a.txt"}, func(t *testing.T, root string) {
+			writeIn(t, root, "a.txt", "a\n")
+		}, ""},
+		{"a compile gate fails", "exit 3", "true", "", []string{"a.txt"}, func(t *testing.T, root string) {
+			writeIn(t, root, "a.txt", "a\n")
+		}, "check: `exit 3`"},
+		{"verify fails", "true", "exit 4", "", []string{"a.txt"}, func(t *testing.T, root string) {
+			writeIn(t, root, "a.txt", "a\n")
+		}, "check: `exit 4`"},
+		{"ship's backlog and changelog edits stay in scope", "true", "true", "", []string{"a.txt"},
+			func(t *testing.T, root string) {
+				writeIn(t, root, "BACKLOG.md", "# Backlog\n")
+				writeIn(t, root, "changelog.d/1.0.0/TG-1.md", "- a line\n")
+			}, ""},
+		{"an edit lands outside scope", "true", "true", "", []string{"a.txt"}, func(t *testing.T, root string) {
+			writeIn(t, root, "b.txt", "b\n")
+		}, "scope: b.txt"},
+		{"the session commits", "true", "true", "", []string{"a.txt"}, func(t *testing.T, root string) {
+			writeIn(t, root, "a.txt", "a\n")
+			gitIn(t, root, "add", "-A")
+			gitIn(t, root, "commit", "-q", "-m", "a model commit")
+		}, "moved HEAD"},
+		{"an added line holds a secret", "true", "true", "", []string{"a.txt"}, func(t *testing.T, root string) {
+			writeIn(t, root, "a.txt", "key = AKIA"+"ABCDEFGHIJKLMNOP\n")
+		}, "secret: a.txt:1"},
+		{"changed-line coverage falls below its bar", "true", "true", `{"value":1}`, []string{"pkg/thing.go"},
+			func(t *testing.T, root string) {
+				writeIn(t, root, "pkg/thing.go", uncovered)
+			}, "coverage:"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			commands := fmt.Sprintf(`{"compile": %q, "verify": %q}`, tc.compile, tc.verify)
-			if err := os.MkdirAll(filepath.Join(root, ".komodo"), 0o755); err != nil {
-				t.Fatal(err)
+			root := checkRepo(t)
+			writeIn(t, root, ".komodo/commands.json", fmt.Sprintf(`{"compile": %q, "verify": %q}`, tc.compile, tc.verify))
+			if tc.bar != "" {
+				writeIn(t, root, ".komodo/"+coverageBarFile, tc.bar)
 			}
-			if err := os.WriteFile(filepath.Join(root, ".komodo", "commands.json"), []byte(commands), 0o644); err != nil {
-				t.Fatal(err)
+			stations := &Line{Root: root, Plan: &line.Plan{
+				Group: "TG-1", Version: "1.0.0", Base: "main", Tasks: []line.PlanTask{{ID: "TSK-1", Files: tc.files}},
+			}}
+			if err := stations.Snapshot(); err != nil {
+				t.Fatalf("snapshot = %v", err)
 			}
-			stations := &Line{Root: root, Plan: &line.Plan{Group: "TG-1"}}
+			tc.session(t, root)
 			fixes, err := stations.Check()
 			if err != nil {
 				t.Fatalf("check = %v", err)
@@ -520,9 +637,72 @@ func TestLineCheckReturnsTheFirstFailedCommand(t *testing.T) {
 			if tc.want == "" && len(fixes) != 0 {
 				t.Fatalf("fixes = %q, want none", fixes)
 			}
-			if tc.want != "" && (len(fixes) != 1 || !strings.HasPrefix(fixes[0], tc.want)) {
-				t.Fatalf("fixes = %q, want one starting %q", fixes, tc.want)
+			if tc.want != "" && !strings.Contains(strings.Join(fixes, "\n"), tc.want) {
+				t.Fatalf("fixes = %q, want one naming %q", fixes, tc.want)
 			}
 		})
+	}
+}
+
+// shipless runs a real Line's Snapshot and Check, with Prepare rerunning Check and Ship doing nothing.
+type shipless struct{ *Line }
+
+func (s shipless) Prepare() ([]string, error) { return s.Check() }
+
+func (s shipless) Ship() error { return nil }
+
+// lineRig wires a rig's driver to a real Line over a fresh repo whose group declares sneaky.txt.
+func lineRig(t *testing.T) (*rig, *Line) {
+	t.Helper()
+	r := newRig(t)
+	root := checkRepo(t)
+	writeIn(t, root, ".komodo/commands.json", `{"compile": "true", "verify": "true"}`)
+	stations := &Line{Root: root, Plan: &line.Plan{
+		Group: "TG-1", Version: "1.0.0", Base: "main", Tasks: []line.PlanTask{{ID: "TSK-1", Files: []string{"sneaky.txt"}}},
+	}}
+	r.driver.Stations = shipless{stations}
+	return r, stations
+}
+
+func TestResumeChecksAKilledSessionAgainstTheSnapshotTakenBeforeIt(t *testing.T) {
+	r, killed := lineRig(t)
+	if err := killed.Snapshot(); err != nil {
+		t.Fatalf("snapshot = %v", err)
+	}
+	root := killed.Root
+	writeIn(t, root, "sneaky.txt", "x\n")
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-q", "-m", "a model commit")
+	r.driver.Stations = shipless{&Line{Root: root, Plan: killed.Plan}}
+	last := mount.Handle("builder-1")
+	r.host.results[last] = mount.Result{Value: map[string]any{"result": "DONE"}}
+	start := State{Group: "TG-1", Current: Building, Sessions: []string{string(last)}}
+	*r.saved = append(*r.saved, start)
+
+	if _, err := r.driver.Resume(context.Background(), start); err != nil {
+		t.Fatalf("resume = %v", err)
+	}
+	var repair string
+	for _, req := range r.host.starts {
+		if req.Role == "builder" {
+			repair = req.Brief
+		}
+	}
+	if !strings.Contains(repair, "moved HEAD") {
+		t.Fatalf("repair brief = %q, want a fix naming the model commit", repair)
+	}
+}
+
+func TestResumeFailsCheckWithNoSnapshotForTheSessionItFollows(t *testing.T) {
+	r, _ := lineRig(t)
+	start := State{Group: "TG-1", Current: Checking}
+	*r.saved = append(*r.saved, start)
+
+	final, err := r.driver.Resume(context.Background(), start)
+	if !errors.Is(err, errNoSnapshot) {
+		t.Fatalf("resume error = %v, want errNoSnapshot", err)
+	}
+	if final.Current == Reviewing || final.Current == Shipped {
+		t.Fatalf("final state = %s, want the group stopped before review", final.Current)
 	}
 }

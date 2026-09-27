@@ -5,13 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"komodo/internal/backlog"
+	"komodo/internal/changelog"
+	"komodo/internal/check"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 )
 
 // Ledger stations for the only three kinds of model session the conductor starts.
@@ -33,6 +40,8 @@ var errNotWired = errors.New("the conductor needs a host, stations, a ledger and
 
 // Stations are the stages the conductor runs itself, with no model: Check, Prepare and Ship.
 type Stations interface {
+	// Snapshot records the worktree's git state before a build or repair session, for Check to compare.
+	Snapshot() error
 	// Check reruns every check and returns one fix per failure, none when all passed.
 	Check() ([]string, error)
 	// Prepare verifies the group's integrated worktree and returns one fix per failure.
@@ -119,6 +128,9 @@ func enter(s State, move GroupState) State {
 func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 	switch s.Current {
 	case Building:
+		if err := d.Stations.Snapshot(); err != nil {
+			return err
+		}
 		handle, err := d.Host.Start(d.Builder)
 		if err != nil {
 			return err
@@ -228,6 +240,9 @@ func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 		lines = append(lines, "- [ ] "+fix)
 	}
 	input := "## Fix list\n\n" + strings.Join(lines, "\n")
+	if err := d.Stations.Snapshot(); err != nil {
+		return err
+	}
 	req := d.Builder
 	var handle mount.Handle
 	var err error
@@ -297,17 +312,71 @@ type Line struct {
 	Client *pr.Client
 }
 
-// Check reruns the compile gates, then the verify command, in the group's worktree.
-func (l *Line) Check() ([]string, error) {
-	worktree := line.WorktreePath(l.Root, l.Plan.Worktree)
-	results := line.RunGate(worktree, line.CompileCommands(l.Root, worktree))
-	if failure, failed := line.FirstFailure(results); failed {
-		return []string{line.FailureText(failure)}, nil
+// coverageBarFile holds the calibrated changed-line coverage bar, under the root's state directory.
+const coverageBarFile = "coverage.json"
+
+// snapshotFile holds the git state Snapshot took ahead of the last session, under the group's run directory.
+const snapshotFile = "snapshot.json"
+
+// errNoSnapshot refuses a Check with no snapshot to compare the session it follows against.
+var errNoSnapshot = errors.New("no snapshot was taken before the session, so its output cannot be checked")
+
+// snapshotPath is where the group's last snapshot lives, beside its state.json.
+func (l *Line) snapshotPath() string {
+	return filepath.Join(line.RunDir(l.Root, l.Plan.Group), snapshotFile)
+}
+
+// Snapshot records the worktree's HEAD, refs, hooks and git config ahead of a model session.
+func (l *Line) Snapshot() error {
+	snapshot, err := check.TakeSnapshot(line.WorktreePath(l.Root, l.Plan.Worktree))
+	if err != nil {
+		return err
 	}
-	if command := line.VerifyCommand(l.Root, worktree); command != "" {
-		if verify := line.RunCommand(worktree, command); !verify.OK() {
-			return []string{line.FailureText(verify)}, nil
-		}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return err
+	}
+	path := l.snapshotPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// loadSnapshot reads the group's last snapshot, failing with errNoSnapshot when none was taken.
+func (l *Line) loadSnapshot() (check.Snapshot, error) {
+	var snapshot check.Snapshot
+	data, err := os.ReadFile(l.snapshotPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return snapshot, fmt.Errorf("%s: %w", l.Plan.Group, errNoSnapshot)
+	}
+	if err != nil {
+		return snapshot, err
+	}
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return snapshot, fmt.Errorf("reading %s: %w", l.snapshotPath(), err)
+	}
+	return snapshot, nil
+}
+
+// Check reruns every check, then compares the git state against the Snapshot taken before the session it
+// follows, failing with errNoSnapshot when there is none.
+func (l *Line) Check() ([]string, error) {
+	before, err := l.loadSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	fixes, err := l.rerun()
+	if err != nil {
+		return nil, err
+	}
+	after, err := check.TakeSnapshot(line.WorktreePath(l.Root, l.Plan.Worktree))
+	if err != nil {
+		return nil, err
+	}
+	fixes = append(fixes, check.Compare(before, after)...)
+	if len(fixes) > 0 {
+		return fixes, nil
 	}
 	// Committing runs the repo's own pre-commit hooks; a refusal is a fix for the builder, not an escalation.
 	if err := line.CommitBuild(l.Root, l.Plan); err != nil {
@@ -316,10 +385,95 @@ func (l *Line) Check() ([]string, error) {
 	return nil, nil
 }
 
+// rerun reruns the compile gates, the verify command and scope, then scans the worktree's diff for
+// secrets and changed-line coverage.
+func (l *Line) rerun() ([]string, error) {
+	worktree := line.WorktreePath(l.Root, l.Plan.Worktree)
+	base := line.StartRef(worktree, l.Plan.Base)
+	// Ship also stages BACKLOG.md and the group's release note, so both count as in scope.
+	files := []string{filepath.ToSlash(changelog.FragmentPath("", l.Plan.Version, l.Plan.Group))}
+	if found, err := backlog.Find(worktree); err == nil {
+		if rel, err := filepath.Rel(worktree, found); err == nil {
+			files = append(files, filepath.ToSlash(rel))
+		}
+	}
+	for _, task := range l.Plan.Tasks {
+		files = append(files, task.Files...)
+	}
+	checks := append(line.CompileCommands(l.Root, worktree), line.VerifyCommand(l.Root, worktree))
+	fixes := check.Run(check.Group{Worktree: worktree, Base: base, Files: files}, "", "", checks)
+	if base == "" {
+		return fixes, nil
+	}
+	diff, err := check.Diff(worktree, base)
+	if err != nil {
+		return nil, err
+	}
+	fixes = append(fixes, check.Secrets(diff)...)
+	coverage, err := l.coverage(worktree, diff)
+	if err != nil {
+		return nil, err
+	}
+	return append(fixes, coverage...), nil
+}
+
+// coverage runs the touched Go packages' tests under a cover profile and evaluates the diff's
+// changed-line coverage against the calibrated bar; a worktree with no go.mod is skipped.
+func (l *Line) coverage(worktree, diff string) ([]string, error) {
+	module, err := check.ModulePath(worktree)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var packages []string
+	for _, added := range check.ParseAddedLines(diff) {
+		dir := "./" + filepath.ToSlash(filepath.Dir(added.File))
+		if strings.HasSuffix(added.File, ".go") && !seen[dir] {
+			seen[dir] = true
+			packages = append(packages, dir)
+		}
+	}
+	if len(packages) == 0 {
+		return nil, nil
+	}
+	out, err := os.CreateTemp("", "komodo-cover-*.out")
+	if err != nil {
+		return nil, err
+	}
+	if err := out.Close(); err != nil {
+		return nil, err
+	}
+	defer os.Remove(out.Name())
+	args := append([]string{"test", "-count=1", "-coverprofile=" + out.Name()}, packages...)
+	if ran := proc.Exec(worktree, check.CommandTimeout, "go", args...); !ran.OK() {
+		return []string{fmt.Sprintf("coverage: `go %s` %v\n%s", strings.Join(args, " "), ran.Err(), ran.Output)}, nil
+	}
+	text, err := os.ReadFile(out.Name())
+	if err != nil {
+		return nil, err
+	}
+	profile, err := check.ParseCoverProfile(string(text), module)
+	if err != nil {
+		return nil, err
+	}
+	percent, known := check.ChangedLineCoverage(diff, profile)
+	if !known {
+		return nil, nil
+	}
+	dir := filepath.Join(l.Root, line.StateDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	return check.Evaluate(filepath.Join(dir, coverageBarFile), percent)
+}
+
 // Prepare reruns every check in the worktree the one group builder worked, since there are no task
 // branches to merge, then marks each task DONE so Ship commits and reports them.
 func (l *Line) Prepare() ([]string, error) {
-	fixes, err := l.Check()
+	fixes, err := l.rerun()
 	if err != nil || len(fixes) > 0 {
 		return fixes, err
 	}
