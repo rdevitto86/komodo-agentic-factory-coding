@@ -1050,7 +1050,7 @@ depends_on: [TG-05.7]
 ```
 * **Why:** the owner set the release phases and branch names on 2026-09-26: alpha, then beta, then rc, then stable, and an epic branch is the version itself behind feat/, such as feat/1.0.0-alpha.1, feat/2.3.45-beta.12, feat/1.1.0-rc.1 and feat/5.31.0. TG-05.7 was already building feat/v<version>.
 
-#### [TSK-05.8.1] A version is x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n [P: C] [READY]
+#### [TSK-05.8.1] A version is x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n [P: C] [DONE]
 ```yaml
 files: [internal/backlog/backlog.go, internal/backlog/lint.go, internal/backlog/lint_test.go, internal/changelog/changelog_test.go]
 done_when:
@@ -1062,7 +1062,7 @@ context:
   - "rc is optional: nothing refuses a stable version whose epic had no rc, and a test proves 1.0.0-beta.2 followed by 1.0.0 lints and orders cleanly"
 ```
 
-#### [TSK-05.8.2] An epic branch is feat/<version>, with no v [P: C] [READY]
+#### [TSK-05.8.2] An epic branch is feat/<version>, with no v [P: C] [DONE]
 ```yaml
 files: [internal/backlog/backlog.go, internal/line/next.go, internal/line/next_test.go, internal/line/epic.go, internal/line/epic_test.go]
 done_when:
@@ -1073,7 +1073,7 @@ context:
   - "tests: each of feat/1.0.0-alpha.1, feat/2.3.45-beta.12, feat/1.1.0-rc.1 and feat/5.31.0 is the epic branch of a group at that version"
 ```
 
-#### [TSK-05.8.3] Decision 0029, the README, the rules, the skills and the template name the four phases and the branch form [P: H] [READY]
+#### [TSK-05.8.3] Decision 0029, the README, the rules, the skills and the template name the four phases and the branch form [P: H] [DONE]
 ```yaml
 files: [docs/decisions.md, README.md, AGENTS.md, komodo/rules/backlog.md, komodo/skills/backlog/SKILL.md, komodo/skills/standards-sdlc/SKILL.md, templates/project/docs/backlog/TG-01.1-example-group.md]
 done_when:
@@ -1088,6 +1088,78 @@ context:
   - "the backlog rule, the backlog skill and the SDLC standard give the four phases and the branch examples; the template's example group carries a phase version"
 type: docs
 ```
+
+#### [TSK-05.8.4] internal/backlog/lint.go:78 Lint still accepts base: main, against REQ-13 [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/lint.go
+done_when:
+  - test -f internal/backlog/lint.go
+type: fix
+context:
+  - 'REQ-13 says a group cuts from its epic branch or a dependency''s branch, and lint should reject any other base. The base check still special-cases base != "main", so a group at 1.0.0-alpha.6 with base: main lints clean and bypasses feat/1.0.0-alpha.6. No group in BACKLOG.md declares base: main, so nothing needs the exception. This line predates TG-05.8''s diff. Remove base != "main" from the accepted bases and from the error message.'
+```
+
+#### [TSK-05.8.5] internal/backlog/lint_test.go:189 Other-epic base test uses the old feat/v form [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/lint_test.go
+done_when:
+  - test -f internal/backlog/lint_test.go
+type: test
+context:
+  - "TestLintRejectsAGroupWhoseBaseNamesAnotherEpicsBranch uses base feat/v2.0.0. After TSK-05.8.2 an epic branch is feat/2.0.0. If lint regressed to accept any feat/<version>, this test would still pass because feat/v2.0.0 is not in that form. Use base: feat/2.0.0 in the test."
+```
+
+#### [TSK-05.8.6] docs/system-design.md:91 system-design still names epic branches feat/v<version> [P: L] [REFINEMENT]
+```yaml
+files:
+  - docs/system-design.md
+done_when:
+  - test -f docs/system-design.md
+type: docs
+context:
+  - "The Base row at line 91 and ship step 1 at line 266 say feat/v<epic's version>. Decision 0029 and Group.EpicBranch now produce feat/<version>, so a builder given this section as context names the wrong branch. Change both lines to feat/<epic's version> and cite decision 0029."
+```
+
+#### [TSK-05.8.7] internal/backlog/backlog.go:337 Parse appends the goal line to Epic.Title [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/backlog.go
+done_when:
+  - test -f internal/backlog/backlog.go
+type: refactor
+context:
+  - 'Parse concatenates the goal line into Title only when it contains "Ships as `". Epic.Version then rescans Title, and internal/line/epic.go splits it again on " *Goal:". A goal line without "Ships as" is dropped, so the epic''s draft PR loses its summary. Add Goal and Version fields to Epic and set them once in Parse.'
+```
+
+#### [TSK-05.8.8] internal/backlog/backlog.go:333 Redundant prefix check and unused index [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/backlog.go
+done_when:
+  - test -f internal/backlog/backlog.go
+type: refactor
+context:
+  - 'strings.HasPrefix(nextLine, "###") can never matter after strings.HasPrefix(nextLine, "#"). At line 336, idx is only compared >= 0. Drop the "###" check and use strings.Contains at line 336.'
+```
+
+#### [TSK-05.8.9] internal/backlog/backlog.go:327 Comments restate the code [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/backlog.go
+done_when:
+  - test -f internal/backlog/backlog.go
+type: docs
+context:
+  - The comments at line 327 (look ahead for the goal line) and line 334 (stop at next heading) only restate the loop and the break below them. Delete both comments.
+```
+
+
+
+
+
+
 
 ### [TG-05.9] `komodo run` drives a group through the conductor, end to end
 ```yaml
