@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -458,6 +459,32 @@ func TestDriveRefusesAnUnwiredDriver(t *testing.T) {
 	var driver Driver
 	if _, err := driver.Drive(context.Background(), State{Group: "TG-1"}); !errors.Is(err, errNotWired) {
 		t.Fatalf("drive error = %v, want errNotWired", err)
+	}
+}
+
+func TestLineCheckTurnsARefusedCommitIntoAFix(t *testing.T) {
+	root := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"}, {"config", "user.email", "a@example.com"}, {"config", "user.name", "a"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	hook := filepath.Join(root, ".git", "hooks", "pre-commit")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho 'comment runs 21 words' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "built.go"), []byte("package built\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stations := &Line{Root: root, Plan: &line.Plan{Group: "TG-1", Title: "A group", Type: "feat"}}
+	fixes, err := stations.Check()
+	if err != nil {
+		t.Fatalf("check = %v; a refused commit is a fix, never an error that escalates", err)
+	}
+	if len(fixes) != 1 || !strings.Contains(fixes[0], "comment runs 21 words") {
+		t.Fatalf("fixes = %q, want the hook's refusal", fixes)
 	}
 }
 
