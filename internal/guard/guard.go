@@ -3,67 +3,9 @@ package guard
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"komodo/internal/mount"
-)
-
-var (
-	assignRe   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
-	durationRe = regexp.MustCompile(`^[0-9]+[a-zA-Z]*$`)
-	// unresolvedVarRe matches a shell variable, positional, or special parameter a target still holds unexpanded.
-	unresolvedVarRe = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*|[0-9@*#!])\}?`)
-	// otherHomeRe matches ~name, another user's home, as opposed to ~/ or a bare ~.
-	otherHomeRe = regexp.MustCompile(`^~[^/\s]`)
-	pathWriters = map[string]bool{
-		"rm": true, "mv": true, "cp": true, "tee": true, "dd": true,
-		"truncate": true, "install": true, "ln": true, "mkdir": true, "touch": true, "chmod": true,
-	}
-	// destOnlyWriters read every argument but the last; only the last is where they write.
-	destOnlyWriters = map[string]bool{"cp": true, "mv": true, "ln": true, "install": true}
-	// wrapperCommands run something else; the guard inspects what they run, not their own name.
-	wrapperCommands = map[string]bool{
-		"env": true, "sudo": true, "nice": true, "timeout": true, "xargs": true,
-		"command": true, "exec": true, "nohup": true, "time": true, "stdbuf": true, "builtin": true,
-	}
-	// wrapperValueFlags names, per wrapper, the flags that consume a separate following token.
-	wrapperValueFlags = map[string]map[string]bool{
-		"sudo":    {"-u": true, "-g": true, "-C": true, "-D": true, "-h": true, "-p": true, "-r": true, "-t": true, "-U": true},
-		"env":     {"-u": true, "-C": true, "--unset": true},
-		"timeout": {"-s": true, "-k": true},
-		"nice":    {"-n": true},
-		"xargs": {
-			"-I": true, "-L": true, "-n": true, "-P": true, "-d": true, "-E": true, "-s": true, "-a": true,
-			"-J": true, "-R": true, "-S": true,
-			"--max-args": true, "--max-procs": true, "--delimiter": true, "--arg-file": true,
-			"--max-chars": true,
-		},
-		"stdbuf": {"-i": true, "-o": true, "-e": true},
-	}
-	// scrubbedVars are the environment variables a headless run's credential scrub sets.
-	scrubbedVars = map[string]bool{
-		"GIT_CONFIG_COUNT": true, "GIT_CONFIG_PARAMETERS": true, "GIT_SSH_COMMAND": true, "GIT_ASKPASS": true,
-		"GIT_TERMINAL_PROMPT": true, "GH_CONFIG_DIR": true, "SSH_AUTH_SOCK": true, "GIT_DIR": true, "GIT_WORK_TREE": true,
-	}
-	// scrubbedConfigRe matches the numbered git config pairs the scrub sets, GIT_CONFIG_KEY_0 and on.
-	scrubbedConfigRe = regexp.MustCompile(`^GIT_CONFIG_(KEY|VALUE)_[0-9]+$`)
-	// credentialConfigRe matches a -c or --config-env key that hands git a credential or a transport.
-	credentialConfigRe = regexp.MustCompile(`(?i)^(credential(\..*)?|core\.sshcommand|core\.askpass|include\.path|includeif\..*\.path)$`)
-	// reservedWords open a compound command; the command they guard is the next word.
-	reservedWords = map[string]bool{"if": true, "then": true, "else": true, "elif": true, "do": true, "while": true, "until": true, "!": true, "{": true}
-	// remotePushConfigRe matches a -c key that redirects where a bare push lands.
-	remotePushConfigRe = regexp.MustCompile(`^remote\.[^.]+\.(push|pushurl)$`)
-	// globalValueFlags are git's global options that take a value, other than -c and -C.
-	globalValueFlags = map[string]bool{
-		"--git-dir": true, "--work-tree": true, "--namespace": true,
-		"--super-prefix": true, "--exec-path": true, "--config-env": true,
-	}
-	// configReadFlags mark a git config call as read-only rather than a write.
-	configReadFlags = map[string]bool{
-		"--get": true, "--get-all": true, "--get-regexp": true, "--get-urlmatch": true,
-		"--list": true, "-l": true, "--name-only": true,
-	}
 )
 
 // Request is the hook payload a host sends on stdin before a tool runs.
@@ -125,8 +67,33 @@ func Check(request Request, policy Policy, branch string) Decision {
 // CheckCommand judges a shell command the line runs for a model, as the hook judges one an agent runs.
 func CheckCommand(command, cwd string, policy Policy) Decision {
 	root := WorktreeRoot(cwd)
-	findings := unique(commandFindings(command, root, cwd, CurrentBranch(cwd), policy))
+	findings := unique(commandFindings(command, cwd, root, CurrentBranch(cwd), policy))
 	return Decision{Deny: len(findings) > 0, Findings: findings}
+}
+
+// commandFindings tokenizes one shell command and checks every git or gh subcommand and write
+// target it finds; a wrapper, a substitution, or an interpreter's own code hides nothing from it.
+func commandFindings(command, cwd, root, branch string, policy Policy) []string {
+	var findings []string
+	for _, item := range tokenize(command) {
+		if len(item.words) > 0 {
+			switch commandName(item.words[0]) {
+			case "git":
+				findings = append(findings, gitFindings(item.words, branch, policy)...)
+			case "gh":
+				findings = append(findings, ghFindings(item.words)...)
+			}
+		}
+		for _, target := range item.writes {
+			findings = append(findings, pathFindings(target, cwd, root, policy)...)
+		}
+	}
+	return findings
+}
+
+// commandName is the base name a word runs as.
+func commandName(word string) string {
+	return filepath.Base(word)
 }
 
 // stringField reads one string out of a tool input.

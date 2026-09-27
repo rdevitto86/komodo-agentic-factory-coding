@@ -1,4 +1,4 @@
-// Package guard is the one agent hook: four denials and unlimited freedom inside a worktree.
+// Package guard is the one agent hook: five denials and unlimited freedom inside a worktree.
 package guard
 
 import (
@@ -184,9 +184,15 @@ func union(base, extra []string) []string {
 	return base
 }
 
+// epicBranchRe matches an epic branch, feat/ plus a version exactly (decision 0028).
+var epicBranchRe = regexp.MustCompile(`^feat/\d+\.\d+\.\d+`)
+
 // IsCritical reports whether a ref is one the guard protects.
 func (p Policy) IsCritical(ref string) bool {
 	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "origin/")
+	if epicBranchRe.MatchString(ref) {
+		return true
+	}
 	for _, pattern := range p.CriticalRefs {
 		if matchRef(pattern, ref) {
 			return true
@@ -218,8 +224,19 @@ func foldsCase() bool {
 	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 }
 
-// IsConfigPath reports whether a path is one the hosts or the toolkit own, folding case on a
-// platform whose disk does, so Bin/komodo-darwin-arm64 matches bin/**.
+// RoleEnv is the environment variable a line session's role arrives in; the orchestrator sets none.
+const RoleEnv = "KOMODO_ROLE"
+
+// LineRefusedPaths are refused to every line role, but not the orchestrator (REQ-41).
+var LineRefusedPaths = []string{"docs/prd.md", "eval/**"}
+
+// IsLineSession reports whether this process runs as a line role, not the orchestrator.
+func IsLineSession() bool {
+	return os.Getenv(RoleEnv) != ""
+}
+
+// IsConfigPath reports whether a path is one the hosts or the toolkit own, or, for a line role,
+// one of LineRefusedPaths; case folds on a platform whose disk does, so Bin/x matches bin/**.
 func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	normal := strings.ReplaceAll(path, "\\", "/")
 	home, _ := os.UserHomeDir()
@@ -233,7 +250,16 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	if foldsCase() {
 		compareNormal, compareRelative = strings.ToLower(normal), strings.ToLower(relative)
 	}
-	for _, pattern := range p.ConfigPaths {
+	if matchesAnyPattern(p.ConfigPaths, home, compareNormal, compareRelative) {
+		return true
+	}
+	return IsLineSession() && matchesAnyPattern(LineRefusedPaths, home, compareNormal, compareRelative)
+}
+
+// matchesAnyPattern reports whether normal or relative matches any pattern, expanding a leading
+// ~/ against home and folding case the way IsConfigPath compares its own two forms.
+func matchesAnyPattern(patterns []string, home, normal, relative string) bool {
+	for _, pattern := range patterns {
 		expanded := pattern
 		if strings.HasPrefix(pattern, "~/") && home != "" {
 			expanded = filepath.ToSlash(filepath.Join(home, pattern[2:]))
@@ -241,7 +267,7 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 		if foldsCase() {
 			expanded = strings.ToLower(expanded)
 		}
-		if matchPath(expanded, compareNormal) || matchPath(expanded, compareRelative) {
+		if matchPath(expanded, normal) || matchPath(expanded, relative) {
 			return true
 		}
 	}

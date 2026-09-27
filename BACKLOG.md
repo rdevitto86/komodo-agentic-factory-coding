@@ -1473,7 +1473,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** 4,597 lines re-implemented bash, and every guard diff invited new bypass findings (evidence 2). Proves REQ-26's guard row, REQ-37 and REQ-41.
 
-#### [TSK-06.2.1] The guard is cut to five rules and the builder's file scope [P: C] [READY]
+#### [TSK-06.2.1] The guard is cut to five rules and the builder's file scope [P: C] [DONE]
 ```yaml
 files: [internal/guard]
 done_when:
@@ -1490,7 +1490,7 @@ tier: heavy
 type: refactor
 ```
 
-#### [TSK-06.2.2] A refusal names the way forward, and three of one rule end the session as blocked [P: C] [READY]
+#### [TSK-06.2.2] A refusal names the way forward, and three of one rule end the session as blocked [P: C] [DONE]
 ```yaml
 files: [internal/guard/hook.go, internal/guard/hook_test.go]
 done_when:
@@ -1502,7 +1502,7 @@ context:
   - "tests (REQ-37): the limit, the named alternative, and failing open"
 ```
 
-#### [TSK-06.2.3] Line sessions can't edit the PRD or the golden suite [P: H] [READY]
+#### [TSK-06.2.3] Line sessions can't edit the PRD or the golden suite [P: H] [DONE]
 ```yaml
 files: [komodo/policy.json, internal/guard/policy.go, internal/guard/table.go]
 done_when:
