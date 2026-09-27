@@ -416,7 +416,7 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 ## 0023. V1 restarts at alpha and moves through beta to an LTS release
 
-**Status:** Accepted, 2026-09-25. Amended by 0024.
+**Status:** Accepted, 2026-09-25. Amended by 0024 and 0029.
 
 **Context.** The owner wants a fresh start: V1 alpha, beta, then LTS. Tags `v1.0.0-alpha.1` to `.4` exist from the prototype. `1.0.0-beta.1` is a changelog heading but was never tagged.
 
@@ -528,7 +528,7 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 ## 0028. An epic branch gathers its groups, and only a person merges it into `main`
 
-**Status:** Accepted, 2026-09-26.
+**Status:** Accepted, 2026-09-26. Amended by 0029.
 
 **Context.** REQ-13 based every group's PR on `main` or a dependency's branch, so `main` saw one PR per group, each reviewed at the size of a single task group. Evidence 13 already showed a stacked side branch drifting 39 commits from `main`. The owner wants review to converge once, at the epic, with a bound on how much a person reads before merging to `main`.
 
@@ -550,3 +550,25 @@ The Python prototype died the same way: "every open backlog item was about keepi
 - **`main` gains one PR per epic instead of one per group;** a person reviews and merges at the epic's final state.
 - **`komodo lint` rejects a group whose version differs from its epic's.**
 - **REQ-13, and system-design's group-cards and shipping sections, change to match.**
+
+## 0029. The phases are alpha, beta, rc and stable; an epic branch is `feat/<version>`
+
+**Status:** Accepted, 2026-09-26. Amends 0023 and 0028.
+
+**Context.** TSK-05.8.2 dropped the leading `v` from an epic branch's version, so `feat/v<version>` in decision 0028 no longer matches the code. Decision 0023 named only alpha, beta and an LTS release, with no place for a release candidate a team may want between them.
+
+**Decision.**
+
+- **The phases are alpha, beta, rc and stable.** Rc is optional and reserved: a release may go straight from beta to stable, such as `1.0.0-beta.2` to `1.0.0`. Nothing requires, gates, or checks for an rc; V1 takes the beta-to-stable path.
+- **An epic branch is named `feat/<its version>`,** with no `v`, matching the version string a group's `version:` field carries.
+
+**Alternatives.**
+
+- **Require an rc before every stable release.** Adds a gate no V1 release needs.
+- **Keep `feat/v<version>`.** Leaves the branch name out of step with TSK-05.8.2's code.
+
+**Consequences.**
+
+- **README's Versions section gains an rc bullet, marked optional, and renames Release to Stable.**
+- **`komodo/rules/backlog.md`, the backlog skill, and the SDLC standard give the four phases and branch examples with no `v`.**
+- **The template's example group carries a phase version.**

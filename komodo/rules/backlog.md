@@ -23,9 +23,9 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
 ### Fields
 - **Priority** is `C`, `H`, `M`, or `L`. **Status** is `REFINEMENT`, `READY`, or `BLOCKED`, both on the group's own heading. A task's checkbox is its only status: the harness ticks it only once that task's checks pass.
 - **`REFINEMENT`** is a group still being planned: the harness never runs it, and lint does not demand a task's `files`. Promote it to `READY` once every task names its files.
-- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n` or `x.y.z-beta.n` for a prerelease. It is the changelog version ship writes a fragment for and the tag `komodo tag` cuts, so the two can never drift. Groups shipping together share one version, and a group's version picks the branch it cuts from: `feat/v<version>`.
+- **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n`, `x.y.z-beta.n` or `x.y.z-rc.n` for a prerelease; rc is optional, and a release may go straight from beta to stable. It is the changelog version ship writes a fragment for and the tag `komodo tag` cuts, so the two can never drift. Groups shipping together share one version, and a group's version picks the branch it cuts from: `feat/<version>`.
 - **`epic`** is the `EPIC-` id the group's file carries. The PR of an epic's last open group deletes every group file that shares its epic; a group with no epic deletes its own file.
-- **`base`** is the branch a group cuts from. Empty by default: a group then cuts from its epic's branch, `feat/v<version>`, falling back to the remote's default branch while that epic branch is not yet cut.
+- **`base`** is the branch a group cuts from. Empty by default: a group then cuts from its epic's branch, `feat/<version>`, falling back to the remote's default branch while that epic branch is not yet cut.
 - **`depends_on`** on a group is the groups whose unmerged branch this one's PR stacks on instead of its epic's. When a stacked parent merges, the child rebases onto the new base.
 - **`files`** lists every path a task will create or edit. A task needs only a title and its `files`. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
 - **`accept`** is an optional line the correctness lens checks alongside the PRD, never a shell command.
