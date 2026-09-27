@@ -94,6 +94,22 @@ func RenderBuilderPlugin(plan *install.Plan, root string, detected detect.Profil
 	return owned
 }
 
+// RenderReviewerPlugin adds each lens skill to the reviewer's plugin and returns their names,
+// which the caller omits from the shared directory.
+func RenderReviewerPlugin(plan *install.Plan, root string, skills []mount.Skill) map[string]bool {
+	dir := filepath.Join(root, Dir, "plugins", "reviewer", "skills")
+	owned := map[string]bool{}
+	for _, skill := range skills {
+		if !strings.HasPrefix(skill.Name, "review-") {
+			continue
+		}
+		plan.AddScoped(filepath.Join(dir, skill.Name, "SKILL.md"), []byte(skill.Body),
+			"the "+skill.Name+" skill, scoped to the reviewer plugin")
+		owned[skill.Name] = true
+	}
+	return owned
+}
+
 // pluginManifest is the minimal manifest a plugin directory needs to name itself.
 func pluginManifest(name string) []byte {
 	return []byte(fmt.Sprintf("{\n  \"name\": %q\n}\n", name))
