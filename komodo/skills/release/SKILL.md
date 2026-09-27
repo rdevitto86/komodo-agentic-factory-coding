@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a komodo release. Pick the next version, fold the changelog, tag it, then publish the binaries and checksums as a release.
+description: Cut a komodo release: version, changelog, tag, then the published binaries and checksums.
 ---
 
 # Release
