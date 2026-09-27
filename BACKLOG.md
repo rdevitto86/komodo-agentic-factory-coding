@@ -3618,13 +3618,33 @@ depends_on: [TG-08.7]
 
 #### [TSK-08.10.1] Eval cases for the requirements a unit test can't prove [P: H] [READY]
 ```yaml
-files: [internal/eval/cases.go, internal/eval/cases_test.go, cmd/komodo/eval.go]
+files: [internal/eval/cases.go, internal/eval/cases_test.go]
 done_when:
   - go test ./internal/eval/...
 context:
   - "split from TG-08.7, whose PR passed the 2,000 added-line cap with it"
-  - "komodo eval runs the cases, not only the tests; a case for a preflight check preflight does not make is left out; every cleanup step's error fails its case (TSK-08.7.5 to TSK-08.7.7)"
+  - "a case for a preflight check preflight does not make is left out; every cleanup step's error fails its case, and the credential case removes the token on every path (TSK-08.7.6, TSK-08.7.7)"
+  - "the live env that runs the cases against real clones, and komodo eval --cases, are TG-08.11"
   - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
+```
+
+### [TG-08.11] `komodo eval --cases` runs the cases against live clones
+```yaml
+type: feat
+version: 1.0.0-beta.2
+depends_on: [TG-08.10]
+```
+* **Why:** the cases need a real line, a real clone and a real credential to prove anything. Split from TG-08.10, whose PR passed the 2,000 added-line cap with it.
+
+#### [TSK-08.11.1] A live env runs each case in a fresh clone, and `komodo eval --cases` drives it [P: H] [READY]
+```yaml
+files: [internal/eval/live.go, internal/eval/live_test.go, cmd/komodo/eval.go, cmd/komodo/eval_test.go]
+done_when:
+  - go test ./internal/eval/... ./cmd/komodo/...
+context:
+  - "Live implements Env: a fresh clone with hooks off, PATH without named commands, a HOME overlay, a credential it can take away, and a planted canary it restores; LiveCases fails when any case fails (TSK-08.7.5)"
+  - "--instructions names the personal host instructions file for the canary; empty skips the canary case with a note, never fails it"
+  - "a test drives the --cases branch of runEval; real sessions stay behind KOMODO_LIVE, so go test spends no tokens"
 ```
 
 ### [TG-08.9] The Codex mount is ready to switch on
