@@ -112,13 +112,15 @@ func (f *fakeHost) Capabilities() mount.Capabilities {
 	return mount.Capabilities{Resume: f.resume, Sandbox: true, Hooks: true, Structured: true}
 }
 
-// fakeStations scripts Check and Prepare fix lists and a Ship error, and records the state each began in.
+// fakeStations scripts Check and Prepare fixes, Ship and Merge outcomes, and records the state each began in.
 type fakeStations struct {
 	saved    *[]State
 	checks   [][]string
 	prepares [][]string
 	shipErr  error
 	headErr  error
+	merged   bool
+	mergeErr error
 	calledAt []string
 }
 
@@ -162,6 +164,11 @@ func (f *fakeStations) Head() (string, error) {
 		return "", f.headErr
 	}
 	return fmt.Sprintf("commit-%d", len(*f.saved)), nil
+}
+
+func (f *fakeStations) Merge() (bool, error) {
+	f.record("merge")
+	return f.merged, f.mergeErr
 }
 
 // rig is one test's driver with its fake host, fake stations, ledger and every saved state.
@@ -267,7 +274,7 @@ func TestDriveRunsAGroupFromReadyToShipped(t *testing.T) {
 	if !equal(r.host.startsAt, []GroupState{Building, Reviewing}) {
 		t.Fatalf("sessions started at %v, want each after its state was saved", r.host.startsAt)
 	}
-	stations := []string{"snapshot@Building", "check@Checking", "prepare@Preparing", "ship@Shipping"}
+	stations := []string{"snapshot@Building", "check@Checking", "prepare@Preparing", "ship@Shipping", "merge@Shipped"}
 	if !equal(r.stations.calledAt, stations) {
 		t.Fatalf("stations ran at %v, want %v", r.stations.calledAt, stations)
 	}
@@ -295,7 +302,7 @@ func TestDriveRepairsAFailedCheckByResumingTheBuilder(t *testing.T) {
 	}
 	stations := []string{
 		"snapshot@Building", "check@Checking", "snapshot@Repairing", "check@Checking",
-		"prepare@Preparing", "ship@Shipping",
+		"prepare@Preparing", "ship@Shipping", "merge@Shipped",
 	}
 	if !equal(r.stations.calledAt, stations) {
 		t.Fatalf("stations ran at %v, want a snapshot before each session and a check after it", r.stations.calledAt)
@@ -658,6 +665,38 @@ func TestDriveEscalatesAStationFailureAndReturnsIt(t *testing.T) {
 	}
 }
 
+func TestDriveMergesAShippedGroupIntoItsEpicAndRemovesIt(t *testing.T) {
+	r := newRig(t)
+	r.stations.merged = true
+	final, err := r.drive(t)
+	if err != nil || final.Current != Shipped || !final.Merged {
+		t.Fatalf("drive = %+v, %v; a merged group ends Shipped with merged set", final, err)
+	}
+	if action := Next(final); !action.Remove {
+		t.Fatalf("next = %+v; a merged group is removed from state.json", action)
+	}
+}
+
+func TestDriveLeavesAGroupOffItsEpicForAPersonToMerge(t *testing.T) {
+	r := newRig(t)
+	final, err := r.drive(t)
+	if err != nil || final.Current != Shipped || final.Merged {
+		t.Fatalf("drive = %+v, %v; a PR the conductor may not merge waits at Shipped", final, err)
+	}
+}
+
+func TestDriveEscalatesAFailedMerge(t *testing.T) {
+	r := newRig(t)
+	r.stations.mergeErr = errors.New("a failed check")
+	final, err := r.drive(t)
+	if err == nil || !strings.Contains(err.Error(), "a failed check") {
+		t.Fatalf("drive error = %v, want the merge failure", err)
+	}
+	if final.Current != Escalated || final.Left != Shipped {
+		t.Fatalf("final = %s left %s, want Escalated from Shipped", final.Current, final.Left)
+	}
+}
+
 func TestDriveResumesAnAnsweredEscalationInTheStateItLeft(t *testing.T) {
 	r := newRig(t)
 	start := State{Group: "TG-1", Current: Escalated, Answered: true, Left: Shipping, Escalate: true}
@@ -826,6 +865,15 @@ func TestLineCheckFailsWhenAnyCheckFails(t *testing.T) {
 			}
 			if tc.want != "" && !strings.Contains(strings.Join(fixes, "\n"), tc.want) {
 				t.Fatalf("fixes = %q, want one naming %q", fixes, tc.want)
+			}
+			if tc.want != "" {
+				return
+			}
+			// What Check ran is what Ship's PR body reports, never "no QC gate or verify command ran".
+			plan := &line.Plan{Group: "TG-1", Title: "A group"}
+			body := line.ReportBody(plan, &line.ShipResult{}, []*line.WaveResult{stations.checked}, line.BodyContext{})
+			if !strings.Contains(body, "- `true` passed") || strings.Contains(body, "Unproven") {
+				t.Fatalf("body = %q; a passed Check's gates and verify must be reported", body)
 			}
 		})
 	}

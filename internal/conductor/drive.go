@@ -73,6 +73,8 @@ type Stations interface {
 	Ship() error
 	// Head returns the worktree's HEAD commit, which a review records as the commit it saw.
 	Head() (string, error)
+	// Merge merges a shipped PR into its epic branch, reporting whether it did; other bases wait for a person.
+	Merge() (bool, error)
 }
 
 // Driver moves one group through its states, starting model sessions only to build, review and repair.
@@ -188,6 +190,12 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 			return err
 		}
 		s.ShipDone = true
+	case Shipped:
+		merged, err := d.Stations.Merge()
+		if err != nil {
+			return err
+		}
+		s.Merged = merged
 	}
 	return nil
 }
@@ -371,6 +379,23 @@ type Line struct {
 	Root   string
 	Plan   *line.Plan
 	Client *pr.Client
+	// checked is the last Check's gates and verify, which Ship reports in the PR body.
+	checked *line.WaveResult
+	// shipped is what Ship did, whose base Merge reads.
+	shipped *line.ShipResult
+	// ran is the check commands the last rerun ran.
+	ran []string
+}
+
+// passed records every check command that ran as passed, for the PR body's validation lines.
+func passed(commands []string) *line.WaveResult {
+	result := &line.WaveResult{OK: true}
+	for _, command := range commands {
+		if command != "" {
+			result.Gates = append(result.Gates, line.CommandResult{Command: command})
+		}
+	}
+	return result
 }
 
 // coverageBarFile holds the calibrated changed-line coverage bar, under the root's state directory.
@@ -437,8 +462,10 @@ func (l *Line) Check() ([]string, error) {
 	}
 	fixes = append(fixes, check.Compare(before, after)...)
 	if len(fixes) > 0 {
+		l.checked = nil
 		return fixes, nil
 	}
+	l.checked = passed(l.ran)
 	// Committing runs the repo's own pre-commit hooks; a refusal is a fix for the builder, not an escalation.
 	if err := line.CommitBuild(l.Root, l.Plan); err != nil {
 		return []string{"the build does not commit: " + err.Error()}, nil
@@ -462,6 +489,7 @@ func (l *Line) rerun() ([]string, error) {
 		files = append(files, task.Files...)
 	}
 	checks := append(line.CompileCommands(l.Root, worktree), line.VerifyCommand(l.Root, worktree))
+	l.ran = checks
 	fixes := check.Run(check.Group{Worktree: worktree, Base: base, Files: files}, "", "", checks)
 	if base == "" {
 		return fixes, nil
@@ -551,8 +579,37 @@ func (l *Line) Head() (string, error) {
 	return git.Run(line.WorktreePath(l.Root, l.Plan.Worktree), "rev-parse", "HEAD")
 }
 
-// Ship commits, pushes and opens the group's draft PR.
+// Ship commits, pushes and opens the group's draft PR, whose body reports the checks this process ran;
+// a run resumed at Ship reruns them first.
 func (l *Line) Ship() error {
-	_, err := line.ShipGroup(l.Root, l.Plan, nil, l.Client)
+	if l.checked == nil || !l.checked.OK {
+		// Only the checks rerun: the build has committed since the last session, so no snapshot applies.
+		fixes, err := l.rerun()
+		if err != nil {
+			return err
+		}
+		if len(fixes) > 0 {
+			return fmt.Errorf("the checks fail at ship: %s", strings.Join(fixes, "; "))
+		}
+		l.checked = passed(l.ran)
+	}
+	shipped, err := line.ShipGroup(l.Root, l.Plan, []*line.WaveResult{l.checked}, l.Client)
+	l.shipped = shipped
 	return err
+}
+
+// Merge merges the group's PR into its epic branch by a merge commit, when it shipped on that base.
+func (l *Line) Merge() (bool, error) {
+	base := l.Plan.Base
+	if l.shipped != nil {
+		base = l.shipped.Base
+	}
+	epic := line.EpicBranchName(l.Plan.Version)
+	if epic == "" || base != epic {
+		return false, nil
+	}
+	if _, err := line.MergeGroup(l.Root, l.Plan, l.Client); err != nil {
+		return false, err
+	}
+	return true, nil
 }

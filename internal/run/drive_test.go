@@ -133,11 +133,11 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 		t.Fatalf("pull requests opened = %d, want 1", len(created))
 	}
 
-	out, err := exec.Command("git", "-C", bareRemote(t, root), "branch", "--list", "feat/a-fake-group").CombinedOutput()
+	out, err := exec.Command("git", "-C", bareRemote(t, root), "branch", "--list", "feat/TG-40.1-a-fake-group").CombinedOutput()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "feat/a-fake-group") {
+	if !strings.Contains(string(out), "feat/TG-40.1-a-fake-group") {
 		t.Fatalf("branch = %s; the group's branch must be pushed", out)
 	}
 
@@ -169,7 +169,7 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	if err != nil || !strings.Contains(string(review), `"findings"`) {
 		t.Fatalf("review result = %q, %v; the reviewer's result must be saved for ship", review, err)
 	}
-	shipped, err := exec.Command("git", "-C", bareRemote(t, root), "show", "feat/a-fake-group:BACKLOG.md").CombinedOutput()
+	shipped, err := exec.Command("git", "-C", bareRemote(t, root), "show", "feat/TG-40.1-a-fake-group:BACKLOG.md").CombinedOutput()
 	if err != nil || strings.Contains(string(shipped), "[READY]") || !strings.Contains(string(shipped), "[DONE]") {
 		t.Fatalf("shipped BACKLOG.md = %s, %v; Prepare must mark every task DONE", shipped, err)
 	}
@@ -181,6 +181,47 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	}
 	if code, err := Drive(Options{Root: root, Target: "TG-40.1", PR: client}); err != nil || code != 0 {
 		t.Fatalf("Drive after a rewind = %d, %v; a resumed group must find its closed tasks' plan", code, err)
+	}
+}
+
+// TestRunMergesAShippedGroupIntoItsEpicBranch checks a group cut from its epic's branch ends with its
+// PR merged there by a merge commit, and state.json's merged flag set.
+func TestRunMergesAShippedGroupIntoItsEpicBranch(t *testing.T) {
+	root := driveRepo(t)
+	setupDriveFakeClaude(t)
+	epicBacklog := "## [EPIC-40] The fake epic. Ships as `1.0.0`\n\n" + driveBacklog
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(epicBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "commit", "-am", "an epic")
+	runGit(t, root, "push", "origin", "main", "main:refs/heads/feat/1.0.0")
+	var merged []string
+	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
+		switch {
+		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
+			return "https://example.invalid/pr/7", nil
+		case len(args) > 1 && args[0] == "pr" && args[1] == "view":
+			return `{"number":7,"url":"https://example.invalid/pr/7","state":"OPEN"}`, nil
+		case len(args) > 1 && args[0] == "pr" && args[1] == "merge":
+			merged = append(merged, strings.Join(args[2:], " "))
+		case len(args) > 0 && args[0] == "label":
+			return "[]", nil
+		}
+		return "", nil
+	}}
+
+	if code, err := Drive(Options{Root: root, Target: "TG-40.1", PR: client}); err != nil || code != 0 {
+		t.Fatalf("Drive = %d, %v", code, err)
+	}
+	state, err := conductor.LoadState(conductor.StatePath(root, "TG-40.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Current != conductor.Shipped || !state.Merged {
+		t.Fatalf("state = %s, merged %v; a shipped group on its epic branch is merged there", state.Current, state.Merged)
+	}
+	if len(merged) != 1 || merged[0] != "7 --merge" {
+		t.Fatalf("merges = %q; want the group's PR merged once with a merge commit", merged)
 	}
 }
 

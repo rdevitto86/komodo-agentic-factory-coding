@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -489,7 +490,11 @@ func PushFromWorktree(root, worktree, branch string) error {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
 	}
 	ref := "refs/heads/" + branch
-	if _, err := git.Run(worktree, "push", pushURL, ref+":"+ref); err != nil {
+	// The hook runs here without the credential, so the push that holds it skips the hook.
+	if err := runPrePush(worktree, pushURL, ref); err != nil {
+		return fmt.Errorf("pre-push hook for %s: %s", branch, redactURL(err.Error(), pushURL))
+	}
+	if _, err := git.Run(worktree, "push", "--no-verify", pushURL, ref+":"+ref); err != nil {
 		return fmt.Errorf("git push to origin %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
 	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
@@ -497,6 +502,65 @@ func PushFromWorktree(root, worktree, branch string) error {
 		_, _ = git.Run(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
 	}
 	return nil
+}
+
+// zeroSHA is the object name a pre-push hook reads for a remote ref it cannot see.
+const zeroSHA = "0000000000000000000000000000000000000000"
+
+// runPrePush runs worktree's pre-push hook, if any, on ref as a push to url would, in hookEnv's environment.
+func runPrePush(worktree, url, ref string) error {
+	// A ref that does not resolve has nothing to gate; the push itself reports it.
+	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", ref)
+	if err != nil {
+		return nil
+	}
+	refs, err := os.CreateTemp("", "komodo-pre-push-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(refs.Name()) }()
+	_, err = fmt.Fprintf(refs, "%s %s %s %s\n", ref, local, ref, zeroSHA)
+	if closeErr := refs.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", url, url)
+	cmd.Dir = worktree
+	cmd.Env = hookEnv(os.Environ())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%v: %s", err, Clip(string(out), 4000, "pre-push"))
+	}
+	return nil
+}
+
+// forgeSecrets are the variables that carry a forge credential by name.
+var forgeSecrets = []string{
+	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK", "GIT_CONFIG_PARAMETERS",
+}
+
+// hookEnv is env with every forge credential dropped, and git's credential helper and prompt switched off.
+func hookEnv(env []string) []string {
+	overrides := map[string]string{
+		"GIT_TERMINAL_PROMPT": "0",
+		"GIT_CONFIG_COUNT":    "1",
+		"GIT_CONFIG_KEY_0":    "credential.helper",
+		"GIT_CONFIG_VALUE_0":  "",
+		"GH_CONFIG_DIR":       filepath.Join(os.TempDir(), "komodo-gh-noauth"),
+	}
+	out := make([]string, 0, len(env)+len(overrides))
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, set := overrides[key]; set || contains(forgeSecrets, key) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	for key, value := range overrides {
+		out = append(out, key+"="+value)
+	}
+	return out
 }
 
 // credentialRe matches the user and secret a URL can carry before its host.

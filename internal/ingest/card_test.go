@@ -167,7 +167,7 @@ func TestBuildBaseFollowsDependsOnToItsGroupsBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if card.Base != "feat/parent-group" {
+	if card.Base != "feat/TG-01.1-parent-group" {
 		t.Fatalf("base = %q, want the parent group's branch", card.Base)
 	}
 }
