@@ -259,6 +259,23 @@ func commitTask(cwd string, task backlog.Task, branch string) error {
 	return err
 }
 
+// CommitBuild commits a group builder's uncommitted work onto the group branch, so review reads it in the branch's diff.
+func CommitBuild(root string, plan *Plan) error {
+	worktree := WorktreePath(root, plan.Worktree)
+	var declared []string
+	for _, task := range plan.Tasks {
+		declared = append(declared, task.Files...)
+	}
+	if err := stageWork(worktree, declared); err != nil {
+		return err
+	}
+	if staged, err := git.Run(worktree, "diff", "--cached", "--name-only"); err != nil || strings.TrimSpace(staged) == "" {
+		return err
+	}
+	_, err := git.Run(worktree, "commit", "-m", fmt.Sprintf("%s: %s, as built (%s)", plan.Type, plan.Title, plan.Group))
+	return err
+}
+
 // stageWork stages every change in cwd except the state dir and each mount's rendered project copies, unless declared.
 func stageWork(cwd string, declared []string) error {
 	args := []string{"add", "-A", "--", "."}

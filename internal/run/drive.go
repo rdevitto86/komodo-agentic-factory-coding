@@ -100,20 +100,22 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 	if err != nil {
 		return nil, err
 	}
-	reviewer, err := ReviewerRequest(root, plan)
-	if err != nil {
-		return nil, err
-	}
 	if client == nil {
 		client = pr.New(line.WorktreePath(root, plan.Worktree))
 	}
 	return &conductor.Driver{
-		Host:          contract,
-		Stations:      &conductor.Line{Root: root, Plan: plan, Client: client},
-		Ledger:        line.Book(root),
-		Run:           run,
-		Builder:       builder,
-		Reviewer:      reviewer,
+		Host:     contract,
+		Stations: &conductor.Line{Root: root, Plan: plan, Client: client},
+		Ledger:   line.Book(root),
+		Run:      run,
+		Builder:  builder,
+		// The reviewer's brief carries the diff, so it is built at review, after the build is committed.
+		Review: func() (mount.StartRequest, error) {
+			if err := line.CommitBuild(root, plan); err != nil {
+				return mount.StartRequest{}, fmt.Errorf("committing the build for review: %w", err)
+			}
+			return ReviewerRequest(root, plan)
+		},
 		SeverityFloor: plan.Profile.SeverityFloor,
 		Repairs:       plan.Profile.ReviewRepairs,
 		Save: func(s conductor.State) error {

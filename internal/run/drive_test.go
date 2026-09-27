@@ -16,7 +16,7 @@ import (
 const driveBacklog = "### [TG-40.1] A fake group\n```yaml\ntype: feat\nversion: 1.0.0\nmode: single\n```\n\n" +
 	"#### [TSK-40.1.1] Do the work [P: C] [READY]\n```yaml\nfiles: [change.txt]\ndone_when:\n  - true\n```\n"
 
-// driveFakeClaude commits a fake change and replays the builder result, then the reviewer result.
+// driveFakeClaude leaves a fake change uncommitted, as a real builder does, and replays the builder result, then the reviewer result.
 const driveFakeClaude = `#!/bin/sh
 n=0
 if [ -f "$FAKE_COUNTER" ]; then n=$(cat "$FAKE_COUNTER"); fi
@@ -24,8 +24,6 @@ n=$((n+1))
 echo "$n" > "$FAKE_COUNTER"
 if [ "$n" = "1" ]; then
   echo "built" > change.txt
-  git add -A
-  git commit -m build --quiet
   cat "$FAKE_BUILD_FIXTURE"
 else
   cat "$FAKE_REVIEW_FIXTURE"
@@ -149,6 +147,12 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	}
 	if builds != 1 || reviews != 1 {
 		t.Fatalf("builds = %d, reviews = %d; want exactly one each", builds, reviews)
+	}
+
+	// The reviewer read the build's diff, committed before review, never the empty branch the run was cut with.
+	brief, err := os.ReadFile(filepath.Join(root, line.StateDir, "briefs", "TG-40.1-review.md"))
+	if err != nil || !strings.Contains(string(brief), "+built") {
+		t.Fatalf("review brief = %q, %v; the reviewer must see the builder's change", brief, err)
 	}
 
 	// The reviewer's own result is what ship read, not a copy rebuilt from state.
