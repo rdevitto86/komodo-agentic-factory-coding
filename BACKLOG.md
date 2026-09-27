@@ -2594,37 +2594,43 @@ depends_on: [TG-07.2]
 ```
 * **Why:** a Haiku build averaged 75 turns (evidence 7), and a plan's usage window was a person's job to watch. Proves REQ-12, REQ-30 and REQ-32.
 
-#### [TSK-07.3.1] Groups that share no file run in parallel, up to the plan's concurrency [P: C] [REFINEMENT]
+#### [TSK-07.3.1] Groups that share no file run in parallel, up to the plan's concurrency [P: C] [READY]
 ```yaml
-files: [internal/conductor/schedule.go, internal/conductor/schedule_test.go]
+files: [internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/run/run.go, internal/run/run_test.go]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/run/...
 context:
   - docs/system-design.md#parallelism
+  - "drain in internal/run/run.go drives one group at a time today; it asks the schedule which ready groups may start"
   - "overlap from the cards' files through internal/plan; starting values Pro 1, Max 5x 2, Max 20x 4, API 4; a group with depends_on waits for its parent's branch"
+  - "each group keeps its own process watcher, so a runaway in one lane kills only that lane's tree"
   - "test (REQ-12): groups sharing a file run one after another; groups sharing none overlap"
 ```
 
-#### [TSK-07.3.2] The conductor pauses at a usage limit and resumes at the reset [P: H] [REFINEMENT]
+#### [TSK-07.3.2] The conductor pauses at a usage limit and resumes at the reset [P: H] [READY]
 ```yaml
-files: [internal/conductor/pace.go, internal/conductor/pace_test.go, internal/profile/profile.go]
+files: [internal/run/pace.go, internal/run/pace_test.go, internal/run/run.go, internal/profile/profile.go]
 done_when:
-  - go test ./internal/conductor/... ./internal/profile/...
+  - go test ./internal/run/... ./internal/profile/...
+depends_on: [TSK-07.3.1]
 context:
   - docs/system-design.md#pacing-limits-and-loop-detection
+  - "profile.Paused and WaitUntil exist, and the Claude mount reads rate_limit_event, but only plan building checks Paused; the drain never waits"
   - "bound from the plan probe and rate_limit_event; unbound on API billing, with a spend budget; pauses and resumes go to events.jsonl"
   - "test (REQ-32): a simulated rate-limit event pauses the run and resumes it with no person"
 ```
 
-#### [TSK-07.3.3] A Pro plan runs the economy profile, and no builder runs on the light tier [P: H] [REFINEMENT]
+#### [TSK-07.3.3] A Pro plan runs the economy profile, and no builder runs on the light tier [P: H] [READY]
 ```yaml
-files: [internal/profile/profile.go, internal/profile/profile_test.go, internal/line/snapshot.go, internal/line/snapshot_test.go, internal/doctor/doctor.go]
+files: [internal/profile/profile.go, internal/profile/profile_test.go, internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/mount/registry.go, internal/doctor/doctor.go, internal/doctor/doctor_test.go, docs/system-design.md]
 done_when:
-  - go test ./internal/profile/... ./internal/line/... ./internal/doctor/...
+  - go test ./internal/profile/... ./internal/line/... ./internal/mount/... ./internal/doctor/...
 depends_on: [TSK-07.3.2]
 context:
   - docs/system-design.md#profiles-and-economy-mode
-  - "BuilderTier and its file-count rule go; doctor rejects a profile whose builder is light; economy mode runs one group at a time and one combined lens (REQ-30)"
+  - "TaskState.BuilderTier's one-file light fallback and mount.LightBuilder go; doctor rejects a profile whose builder is light"
+  - "Pro's MaxParallel is 2 in profile.go; economy mode runs one group at a time and one combined lens (REQ-30)"
+  - "system-design.md's tier table still says the builder runs Sonnet; decision 0031 moved it to heavy, medium effort"
 ```
 
 ### [TG-07.4] The builder works the task list, and the conductor ticks it
@@ -2635,7 +2641,7 @@ depends_on: [TG-07.2]
 ```
 * **Why:** one builder per group, briefed with the whole task list, is one story's worth of work (decision 0007). Proves REQ-10.
 
-#### [TSK-07.4.1] The builder role and build skill work a task list in order [P: C] [REFINEMENT]
+#### [TSK-07.4.1] The builder role and build skill work a task list in order [P: C] [READY]
 ```yaml
 files: [komodo/roles/builder.md, komodo/roles/builder.schema.json, komodo/skills/build/SKILL.md]
 done_when:
@@ -2644,12 +2650,13 @@ done_when:
 context:
   - docs/system-design.md#build
   - docs/system-design.md#results
+  - "internal/run/requests.go already joins every task's brief in wave order; builder.md still frames one task, so it reads a stack of single-task frames"
   - "the result per task: done or blocked, the checks run, and a question when blocked"
 ```
 
-#### [TSK-07.4.2] `komodo check task|findings|scope` is one entry point for hooks and agents [P: H] [REFINEMENT]
+#### [TSK-07.4.2] `komodo check task|findings|scope` is one entry point for hooks and agents [P: H] [READY]
 ```yaml
-files: [cmd/komodo/check.go, cmd/komodo/check_test.go]
+files: [cmd/komodo/check.go, cmd/komodo/check_test.go, cmd/komodo/main.go]
 done_when:
   - go test ./cmd/komodo/...
 context:
@@ -2657,37 +2664,39 @@ context:
   - "each subcommand calls internal/check; findings is what the evidence hook runs"
 ```
 
-#### [TSK-07.4.3] The conductor ticks a task only after its checks pass, and edits nothing else [P: C] [REFINEMENT]
+#### [TSK-07.4.3] A person's edit to a task body survives a run, and only checkboxes and blocker notes change [P: C] [READY]
 ```yaml
-files: [internal/backlog/tick.go, internal/backlog/tick_test.go]
+files: [internal/line/status.go, internal/line/status_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
-  - go test ./internal/backlog/...
+  - go test ./internal/line/... ./internal/conductor/...
 context:
-  - "ticks land on the group's branch; the only other write is adding or removing a blocker note"
-  - "test (REQ-10): a person's edit to a task body survives a run unchanged"
+  - "Line.Prepare in internal/conductor/drive.go already ticks a task only after its checks rerun clean; ship writes the ticks into the backlog"
+  - "test (REQ-10): a person's edit to a task body survives a run unchanged, and the only other write is a blocker note"
 ```
 
-### [TG-07.5] Review runs parallel lenses and blocks only on evidence
+### [TG-07.5] Review lenses and the evidence they must carry
 ```yaml
 type: feat
 version: 1.0.0-alpha.8
 depends_on: [TG-07.4]
 ```
-* **Why:** TG-03.22 ran 11 review rounds because each re-reviewed the whole diff from scratch (evidence 3). Proves REQ-19, REQ-20 and REQ-21.
+* **Why:** TG-03.22 ran 11 review rounds because each re-reviewed the whole diff from scratch (evidence 3). Proves REQ-20.
 
-#### [TSK-07.5.1] Four checklist skills replace the one review skill [P: C] [REFINEMENT]
+#### [TSK-07.5.1] Four checklist skills replace the one review skill [P: C] [READY]
 ```yaml
 files: [komodo/skills/review, komodo/skills/review-correctness/SKILL.md, komodo/skills/review-security/SKILL.md, komodo/skills/review-quality/SKILL.md, komodo/skills/review-economy/SKILL.md, komodo/roles/reviewer.md, komodo/roles/reviewer.schema.json]
 done_when:
   - test ! -d komodo/skills/review
   - grep -q 'COR-5' komodo/skills/review-correctness/SKILL.md
+  - grep -q 'rule_id' komodo/roles/reviewer.schema.json
   - go run ./cmd/komodo doctor
 context:
   - docs/system-design.md#review
   - "each skill lists its lens's rule IDs; a finding carries lens, rule ID, severity, file, line, evidence and a one-line fix"
+  - "one reviewer role, started once per lens with that lens's skill"
 ```
 
-#### [TSK-07.5.2] Validators measure before any lens runs [P: H] [REFINEMENT]
+#### [TSK-07.5.2] Validators measure before any lens runs [P: H] [READY]
 ```yaml
 files: [internal/review/validators.go, internal/review/validators_test.go]
 done_when:
@@ -2696,17 +2705,7 @@ context:
   - "tests and reproducers, the secret scan, a dependency audit and security linters when the repo has them, and caller counts of changed exported symbols; the report is settled fact in every lens's brief"
 ```
 
-#### [TSK-07.5.3] Lenses run in parallel, or one combined lens in economy mode [P: C] [REFINEMENT]
-```yaml
-files: [internal/review/lenses.go, internal/review/lenses_test.go]
-done_when:
-  - go test ./internal/review/...
-context:
-  - "read-only sessions that see only the diff, the task list and the card, never the builder's transcript"
-  - "test (REQ-19): the ledger shows three lens sessions in full mode and one in economy mode"
-```
-
-#### [TSK-07.5.4] A finding blocks only when the binary verifies its evidence [P: C] [REFINEMENT]
+#### [TSK-07.5.3] A finding blocks only when the binary verifies its evidence [P: C] [READY]
 ```yaml
 files: [internal/review/evidence.go, internal/review/evidence_test.go]
 done_when:
@@ -2717,62 +2716,84 @@ context:
 tier: heavy
 ```
 
-#### [TSK-07.5.5] The evidence hook refuses a lens's stop twice at most [P: H] [REFINEMENT]
+#### [TSK-07.5.4] The evidence hook refuses a lens's stop twice at most [P: H] [READY]
 ```yaml
-files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go]
+files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go, internal/hooks/hooks.go]
 done_when:
   - go test ./internal/hooks/...
-depends_on: [TSK-07.5.4]
+depends_on: [TSK-07.5.3]
 context:
-  - "Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
+  - "registered in hooks.Table under SessionLens; Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
 ```
 
-#### [TSK-07.5.6] A re-review resumes its lens, and can only close findings or flag repaired lines [P: C] [REFINEMENT]
+### [TG-07.11] The conductor runs Review through parallel lenses
+```yaml
+type: feat
+version: 1.0.0-alpha.8
+depends_on: [TG-07.5]
+```
+* **Why:** TG-06.7 keeps one warm reviewer per group; each lens needs that same warm session, and its own findings. Proves REQ-19 and REQ-21.
+
+#### [TSK-07.11.1] Each lens keeps its own warm session, round count and findings [P: C] [READY]
+```yaml
+files: [internal/review/lenses.go, internal/review/lenses_test.go, internal/conductor/state.go, internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/review/... ./internal/conductor/...
+context:
+  - "State.Reviewer, ReviewRounds, ColdPass and Findings become maps keyed by lens, and Finding gains Lens; economy mode is the same map with one key"
+  - "read-only sessions that see only the diff, the task list and the card, never the builder's transcript; lenses run in parallel"
+  - "a resumed state.json written before the change still loads, as a single lens"
+```
+
+#### [TSK-07.11.2] A re-review resumes its lens, and can only close findings or flag repaired lines [P: C] [READY]
 ```yaml
 files: [internal/review/rereview.go, internal/review/rereview_test.go]
 done_when:
   - go test ./internal/review/...
-depends_on: [TSK-07.5.3]
+depends_on: [TSK-07.11.1]
 context:
+  - "extends TG-06.7's warm reviewer and its bias mitigation to each lens"
   - "test (REQ-21): a new finding on an unchanged line is dropped"
-  - "extends TG-06.7's warm reviewer to each lens"
 ```
 
-#### [TSK-07.5.7] The conductor runs Review through the lenses [P: H] [REFINEMENT]
+#### [TSK-07.11.3] `komodo run` starts one reviewer session per lens [P: H] [READY]
 ```yaml
-files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
+files: [internal/run/drive.go, internal/run/drive_test.go, internal/run/requests.go, internal/run/requests_test.go]
 done_when:
-  - go test ./internal/conductor/...
-depends_on: [TSK-07.5.2, TSK-07.5.4, TSK-07.5.6]
+  - go test ./internal/run/...
+depends_on: [TSK-07.11.1, TSK-07.11.2]
+context:
+  - "ReviewerRequest takes a lens and binds its skill; every lens runs on the profile's reviewer tier"
+  - "test (REQ-19): the ledger shows three lens sessions in full mode and one in economy mode"
 ```
 
 ### [TG-07.6] Repair resumes the builder, and a loop stops when it stops progressing
 ```yaml
 type: feat
 version: 1.0.0-alpha.8
-depends_on: [TG-07.5]
+depends_on: [TG-07.11]
 ```
 * **Why:** TG-03.31's findings rose from 1 to 7 across fixes with no rule to stop them. Proves REQ-22 and REQ-23.
 
-#### [TSK-07.6.1] Repair resumes the builder with a fix list of verified findings or failed checks [P: C] [REFINEMENT]
+#### [TSK-07.6.1] Repair resumes the builder with a fix list of verified findings or failed checks [P: C] [DONE]
 ```yaml
-files: [internal/conductor/repair.go, internal/conductor/repair_test.go]
+files: [internal/conductor/drive.go, internal/conductor/resume.go]
 done_when:
   - go test ./internal/conductor/...
 context:
-  - docs/system-design.md#repair
-  - "one checkbox per verified finding or failed check; a host without resume gets a fresh session with the fix list and the saved diff"
-  - "test (REQ-22) on the repair brief"
+  - "shipped with TG-05.10's predecessors: drive.go's fixList, repairBrief and repair, and resume.go's pending repair"
+  - "proved by TestDriveRepairsAFailedCheckByResumingTheBuilder, TestDriveStartsAFreshBuilderWhenTheHostCannotResume and TestResumeRestartsALostRepairWithItsFixList"
 ```
 
-#### [TSK-07.6.2] A round that closes nothing ends the loop, and the group ships as a draft with its findings [P: C] [REFINEMENT]
+#### [TSK-07.6.2] A round that closes nothing ends the loop, and the group ships as a draft with its findings [P: C] [READY]
 ```yaml
-files: [internal/conductor/progress.go, internal/conductor/progress_test.go, internal/profile/profile.go]
+files: [internal/conductor/progress.go, internal/conductor/progress_test.go, internal/conductor/drive.go, internal/run/drive.go]
 done_when:
-  - go test ./internal/conductor/... ./internal/profile/...
+  - go test ./internal/conductor/... ./internal/run/...
 context:
   - docs/system-design.md#convergence-rules
-  - "also stop on a repair that changed no file, a check failing identically after a repair, or a refusal limit; the fixed Repairs and ReviewRepairs counts leave the profile"
+  - "also stop on a repair that changed no file, a check failing identically after a repair, or a refusal limit"
+  - "newDriver sets Driver.Repairs from ReviewRepairs; the conductor stops reading both counts, which stay in the profile until the relay retires"
   - "test (REQ-23): no two rounds hold the same open findings"
 ```
 
@@ -2784,43 +2805,47 @@ depends_on: [TG-07.6]
 ```
 * **Why:** a stuck group needs a decision, and an unattended run needs one without a person (decision 0011). Proves REQ-18 and REQ-45.
 
-#### [TSK-07.7.1] An escalation reaches the orchestrator, which returns one allowed action [P: C] [REFINEMENT]
+#### [TSK-07.7.1] An escalation reaches a headless orchestrator, which returns one allowed action [P: C] [READY]
 ```yaml
-files: [internal/conductor/escalate.go, internal/conductor/escalate_test.go, komodo/roles/orchestrator.md, komodo/roles/orchestrator.schema.json]
+files: [internal/conductor/escalate.go, internal/conductor/escalate_test.go, internal/conductor/drive.go, internal/run/drive.go, komodo/roles/orchestrator.md, komodo/roles/orchestrator.schema.json]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/run/...
   - go run ./cmd/komodo doctor
 context:
   - docs/system-design.md#escalations
-  - "with a person present, the primary session gets it through komodo status and the status hook; unattended, one headless orchestrator session per escalation; the action is answer, split or clarify (which must pass lint), retry once on heavy, or stop"
+  - "Drive has no Escalated case today, so Answered, Stop and Left are set only by hand in state.json"
+  - "one headless orchestrator session per escalation; the action is answer, split or clarify (which must pass lint), retry once on heavy, or stop"
+  - "the person-present path, komodo status and its hook, lands with TSK-08.4.4"
 ```
 
-#### [TSK-07.7.2] The escalate skill settles one escalation within its limits [P: H] [REFINEMENT]
+#### [TSK-07.7.2] The escalate skill settles one escalation within its limits [P: H] [READY]
 ```yaml
 files: [komodo/skills/escalate/SKILL.md]
 done_when:
   - test -f komodo/skills/escalate/SKILL.md
   - go run ./cmd/komodo doctor
+depends_on: [TSK-07.7.1]
 context:
   - "an answer comes only from the task list, the specs and the code; anything that changes scope is a stop"
 type: docs
 ```
 
-#### [TSK-07.7.3] A blocked builder pauses its dependants and escalates [P: H] [REFINEMENT]
+#### [TSK-07.7.3] A blocked builder pauses its dependants and escalates [P: H] [READY]
 ```yaml
-files: [internal/conductor/blocked.go, internal/conductor/blocked_test.go]
+files: [internal/conductor/blocked.go, internal/conductor/blocked_test.go, internal/run/run.go]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/run/...
 depends_on: [TSK-07.7.1]
 context:
+  - "dependants are other groups, so the drain in internal/run/run.go holds them"
   - "test (REQ-18) on the conductor's decision; a group that stops twice without progress gets a blocker note, whatever the orchestrator says"
 ```
 
-#### [TSK-07.7.4] What the orchestrator can't settle becomes a blocker note and a blocked draft PR [P: C] [REFINEMENT]
+#### [TSK-07.7.4] What the orchestrator can't settle becomes a blocker note and a blocked draft PR [P: C] [READY]
 ```yaml
-files: [internal/backlog/note.go, internal/backlog/note_test.go, internal/conductor/stop.go, internal/conductor/stop_test.go]
+files: [internal/backlog/note.go, internal/backlog/note_test.go, internal/conductor/stop.go, internal/conductor/stop_test.go, internal/line/ship.go, cmd/komodo/line.go]
 done_when:
-  - go test ./internal/backlog/... ./internal/conductor/...
+  - go test ./internal/backlog/... ./internal/conductor/... ./internal/line/... ./cmd/komodo/...
 depends_on: [TSK-07.7.1]
 context:
   - docs/system-design.md#blocker-notes
@@ -2828,11 +2853,12 @@ context:
   - "one test per path (REQ-45)"
 ```
 
-#### [TSK-07.7.5] `komodo abandon` removes a group on purpose [P: M] [REFINEMENT]
+#### [TSK-07.7.5] `komodo abandon` removes a group on purpose [P: M] [READY]
 ```yaml
-files: [internal/conductor/abandon.go, internal/conductor/abandon_test.go, cmd/komodo/line.go]
+files: [internal/conductor/abandon.go, internal/conductor/abandon_test.go, cmd/komodo/main.go, cmd/komodo/line.go]
 done_when:
   - go test ./internal/conductor/... ./cmd/komodo/...
+depends_on: [TSK-07.7.4]
 context:
   - "removes the group's worktree and branch, and marks its file BLOCKED with a note saying it was abandoned"
 ```
@@ -2845,44 +2871,49 @@ depends_on: [TG-07.7]
 ```
 * **Why:** unverified work looked ready, and a missing credential lost work at the last step. Proves REQ-24, REQ-25 and REQ-27.
 
-#### [TSK-07.8.1] Prepare commits, runs the hooks and rebases, with conflicts as a repair round [P: C] [REFINEMENT]
+#### [TSK-07.8.1] Prepare commits, runs the hooks and catches up, with conflicts as a repair round [P: C] [READY]
 ```yaml
-files: [internal/conductor/prepare.go, internal/conductor/prepare_test.go]
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/line/...
 context:
   - docs/system-design.md#prepare-and-ship
+  - "Line.Prepare and Line.Ship live in drive.go and wrap internal/line; catchUp in ship.go returns an error on a conflict instead of a repair round"
   - "the commit carries the ticked list and the CHANGELOG line, deletes the epic's files when it is the epic's last open group, and has no trailers"
   - "test (REQ-24): the ledger shows no push before these checks pass"
 ```
 
-#### [TSK-07.8.2] Integration test-merges every ready group, and plans the stack [P: H] [REFINEMENT]
+#### [TSK-07.8.2] Integration test-merges every ready group, and plans the stack [P: H] [READY]
 ```yaml
-files: [internal/conductor/integrate.go, internal/conductor/integrate_test.go]
+files: [internal/conductor/integrate.go, internal/conductor/integrate_test.go, internal/run/run.go, internal/run/run_test.go]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/run/...
 depends_on: [TSK-07.8.1]
 context:
   - "a failure is a repair round for the group that caused it; a child of an unmerged parent targets the parent's branch, and is rebased and retargeted when the parent merges"
 ```
 
-#### [TSK-07.8.3] Every PR opens as a draft, or labelled status: wip where drafts are unavailable [P: C] [REFINEMENT]
+#### [TSK-07.8.3] Every PR opens as a draft, or labelled status: wip where drafts are unavailable [P: C] [READY]
 ```yaml
-files: [internal/pr/pr.go, internal/pr/pr_test.go, internal/line/ship.go, internal/line/ship_test.go]
+files: [internal/pr/pr.go, internal/pr/pr_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/epic.go]
 done_when:
   - go test ./internal/pr/... ./internal/line/...
+depends_on: [TSK-07.8.1]
 context:
+  - "the epic PR already falls back through createEpicPull and labelWip in epic.go; ShipGroup reuses that path"
   - "it turns ready for review only once every check and review passed; a test for each path (REQ-25)"
   - "internal/profile/profile.go maps to scope/agents, and a failed label call is a tested warning (from TSK-03.31.10 and TSK-03.31.12)"
 ```
 
-#### [TSK-07.8.4] A missing or expired credential stops a group before Ship, and `komodo ship` finishes it [P: C] [REFINEMENT]
+#### [TSK-07.8.4] A missing or expired credential stops a group before Ship, and `komodo ship` finishes it [P: C] [READY]
 ```yaml
-files: [internal/conductor/ship.go, internal/conductor/ship_test.go, cmd/komodo/line.go]
+files: [internal/line/ship.go, internal/line/ship_test.go, cmd/komodo/line.go, cmd/komodo/main.go]
 done_when:
-  - go test ./internal/conductor/... ./cmd/komodo/...
+  - go test ./internal/line/... ./cmd/komodo/...
+depends_on: [TSK-07.8.3]
 context:
   - docs/system-design.md#run-failures
+  - "ShipGroup already writes a handoff when the environment is scrubbed; komodo ship reads it back and finishes the push and PR"
   - "the group keeps its commits and gets a blocker note; other groups continue; --no-ship stops each group before Ship (REQ-27)"
 ```
 
@@ -2894,30 +2925,34 @@ depends_on: [TG-07.8]
 ```
 * **Why:** stale runs and worktrees were cleared by hand after squash merges. Proves REQ-46.
 
-#### [TSK-07.9.1] Ship and the next run remove merged and abandoned groups' leftovers [P: H] [REFINEMENT]
+#### [TSK-07.9.1] Ship and the next run remove merged and abandoned groups' leftovers [P: H] [READY]
 ```yaml
-files: [internal/conductor/cleanup.go, internal/conductor/cleanup_test.go, internal/doctor/prune.go]
+files: [internal/doctor/prune.go, internal/doctor/prune_test.go, internal/run/drive.go, internal/run/drive_test.go]
 done_when:
-  - go test ./internal/conductor/... ./internal/doctor/...
+  - go test ./internal/doctor/... ./internal/run/...
 context:
   - docs/system-design.md#the-backlog
+  - "doctor.Prune exists, but only komodo doctor calls it; the run calls it after Ship and before it cuts a group"
   - "worktrees, local branches and sessions go; a squash-merged group whose branch is gone settles too (from TSK-03.32.8); only the last 10 run folders stay"
 ```
 
-#### [TSK-07.9.2] `komodo sync` opens a cleanup PR for an epic whose files outlived it [P: M] [REFINEMENT]
+#### [TSK-07.9.2] `komodo sync` opens a cleanup PR for an epic whose files outlived it [P: M] [READY]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go]
 done_when:
   - go test ./internal/run/...
+context:
+  - "only when every group of the epic has shipped; the PR deletes the epic's group files"
 ```
 
-#### [TSK-07.9.3] Doctor names each kind of leftover [P: H] [REFINEMENT]
+#### [TSK-07.9.3] Doctor names each kind of leftover [P: H] [READY]
 ```yaml
-files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go]
+files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go, internal/doctor/doctor.go]
 done_when:
   - go test ./internal/doctor/...
 context:
   - "an ended epic's files, and a worktree or branch with no group; one test per kind (REQ-46)"
+  - "wired into doctor's Run, beside HostLeftovers and StrayWorktrees"
 ```
 
 ### [TG-07.10] This repo moves to group files
