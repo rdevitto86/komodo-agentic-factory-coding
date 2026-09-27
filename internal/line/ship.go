@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/changelog"
 	"komodo/internal/git"
+	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/pr"
 )
@@ -47,7 +49,60 @@ type ShipHandoff struct {
 	AfterPublish string   `json:"after_publish,omitempty"`
 }
 
-// scrubbed reports whether the headless launcher stripped this process of every push credential.
+// dropped are the environment variables that would hand a process a push credential.
+var dropped = []string{
+	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK",
+	"GIT_CONFIG_PARAMETERS",
+}
+
+// forgeWords and secretWords are the name parts that together mark a push credential.
+var (
+	forgeWords  = map[string]bool{"GIT": true, "GITHUB": true, "GH": true, "GITLAB": true, "GL": true, "BITBUCKET": true}
+	secretWords = map[string]bool{"TOKEN": true, "PAT": true, "SECRET": true, "PASSWORD": true, "KEY": true}
+)
+
+// Scrub returns the environment with every push credential removed and git left unable to prompt.
+func Scrub(base []string) []string {
+	out := make([]string, 0, len(base)+6)
+	for _, entry := range base {
+		key, _, found := strings.Cut(entry, "=")
+		if !found || slices.Contains(dropped, key) || credentialShaped(key) || isOverride(key) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return append(out,
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=credential.helper",
+		"GIT_CONFIG_VALUE_0=",
+		"GIT_SSH_COMMAND=ssh -F "+os.DevNull+" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile="+os.DevNull,
+		"GH_CONFIG_DIR="+filepath.Join(os.TempDir(), "komodo-gh-noauth"),
+	)
+}
+
+// credentialShaped reports whether a key names a forge's secret, such as GITHUB_PAT or GITLAB_TOKEN,
+// so a push credential is dropped while the model host keeps its own login.
+func credentialShaped(key string) bool {
+	forge, secret := false, false
+	for _, part := range strings.Split(key, "_") {
+		forge = forge || forgeWords[part]
+		secret = secret || secretWords[part]
+	}
+	return forge && secret
+}
+
+// isOverride reports whether Scrub sets this key itself, so an inherited value never survives.
+func isOverride(key string) bool {
+	switch key {
+	case "GIT_TERMINAL_PROMPT", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0",
+		"GIT_CONFIG_VALUE_0", "GIT_SSH_COMMAND", "GH_CONFIG_DIR":
+		return true
+	}
+	return false
+}
+
+// scrubbed reports whether Scrub stripped this process of every push credential.
 func scrubbed() bool {
 	return os.Getenv("GIT_TERMINAL_PROMPT") == "0" &&
 		os.Getenv("GIT_CONFIG_KEY_0") == "credential.helper" &&
@@ -226,8 +281,9 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := PushFromWorktree(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
+	// The credential stays with the push; after_publish is repo-written, so it runs scrubbed.
 	if command := AfterPublishCommand(root, group); command != "" {
-		published := RunCommand(group, command)
+		published := RunCommandEnv(group, command, Scrub(os.Environ()))
 		result.Published = &published
 		if !published.OK() {
 			return result, fmt.Errorf("after_publish: %s", FailureText(published))
@@ -418,7 +474,11 @@ func ChangelogLine(plan *Plan, result *ShipResult) string {
 }
 
 // PushFromWorktree pushes branch from worktree to the root's origin URL, past its refused pushurl, and sets its upstream.
+// It refuses a critical ref, since the push carries the forge credential and landing is the human's merge.
 func PushFromWorktree(root, worktree, branch string) error {
+	if guard.Load(root, root).IsCritical(branch) {
+		return fmt.Errorf("git push to origin %s: a critical ref; landing is the human's merge button", branch)
+	}
 	pushURL, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)

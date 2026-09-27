@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -542,9 +543,10 @@ func TestShipReadsStatusFromTheRootCloseWrites(t *testing.T) {
 	runGit(t, "", "init", "--bare", bare)
 	runGit(t, root, "init")
 	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, worktree, "checkout", "-q", "-b", "feat/a-group")
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
-		Base: "main", Branch: "main", Worktree: worktree,
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
 	}
 	saveReview(t, root, "TG-12.1", `{"findings":[]}`)
@@ -571,9 +573,10 @@ func TestShipRendersTheBodyAfterBlockedIsKnown(t *testing.T) {
 	runGit(t, "", "init", "--bare", bare)
 	runGit(t, root, "init")
 	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, worktree, "checkout", "-q", "-b", "feat/a-group")
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
-		Base: "main", Branch: "main", Worktree: worktree,
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
 	}
 	var calls []string
@@ -1144,9 +1147,10 @@ func TestShipWritesAChangelogFragmentAndLeavesTheChangelogAlone(t *testing.T) {
 	runGit(t, "", "init", "--bare", bare)
 	runGit(t, root, "init")
 	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, worktree, "checkout", "-q", "-b", "feat/a-group")
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
-		Base: "main", Branch: "main", Worktree: worktree,
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
 	}
 	client := &pr.Client{Dir: worktree, Run: func(string, ...string) (string, error) {
@@ -1227,5 +1231,180 @@ func TestCatchUpStopsOnAConflictNamingTheFile(t *testing.T) {
 	}
 	if status, _ := exec.Command("git", "-C", group, "status", "--porcelain").Output(); strings.Contains(string(status), "UU") {
 		t.Fatal("the rebase was left half done")
+	}
+}
+
+// envValue reads one key back out of a scrubbed environment.
+func envValue(list []string, key string) (string, bool) {
+	for _, entry := range list {
+		if name, value, found := strings.Cut(entry, "="); found && name == key {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func TestScrubDropsEveryPushCredential(t *testing.T) {
+	base := []string{
+		"GH_TOKEN=secret", "GITHUB_TOKEN=secret", "GH_ENTERPRISE_TOKEN=secret",
+		"GIT_ASKPASS=/bin/askpass", "SSH_AUTH_SOCK=/tmp/agent.sock", "PATH=/usr/bin",
+	}
+	scrubbed := Scrub(base)
+	for _, key := range dropped {
+		if _, found := envValue(scrubbed, key); found {
+			t.Fatalf("%s survived the scrub", key)
+		}
+	}
+	if path, _ := envValue(scrubbed, "PATH"); path != "/usr/bin" {
+		t.Fatalf("PATH = %q, want the inherited value", path)
+	}
+}
+
+func TestScrubLeavesGitUnableToPromptOrAuthenticate(t *testing.T) {
+	scrubbed := Scrub([]string{"PATH=/usr/bin"})
+	want := map[string]string{
+		"GIT_TERMINAL_PROMPT": "0",
+		"GIT_CONFIG_COUNT":    "1",
+		"GIT_CONFIG_KEY_0":    "credential.helper",
+		"GIT_CONFIG_VALUE_0":  "",
+	}
+	for key, value := range want {
+		if got, found := envValue(scrubbed, key); !found || got != value {
+			t.Fatalf("%s = %q, %v; want %q", key, got, found, value)
+		}
+	}
+	if ssh, _ := envValue(scrubbed, "GIT_SSH_COMMAND"); !strings.Contains(ssh, "IdentitiesOnly=yes") {
+		t.Fatalf("GIT_SSH_COMMAND = %q", ssh)
+	}
+}
+
+func TestScrubIgnoresAnIdentityFileConfiguredOutsideTheEnvironment(t *testing.T) {
+	scrubbed := Scrub([]string{"PATH=/usr/bin"})
+	ssh, _ := envValue(scrubbed, "GIT_SSH_COMMAND")
+	if !strings.Contains(ssh, "-F "+os.DevNull) {
+		t.Fatalf("GIT_SSH_COMMAND = %q, want -F %s so ~/.ssh/config never applies", ssh, os.DevNull)
+	}
+}
+
+func TestScrubDropsATokenByItsNameShapeNotJustAnExactSpelling(t *testing.T) {
+	base := []string{
+		"GITHUB_PAT=secret", "HOMEBREW_GITHUB_API_TOKEN=secret", "GIT_CONFIG_PARAMETERS=secret",
+		"PATH=/usr/bin",
+	}
+	scrubbed := Scrub(base)
+	for _, key := range []string{"GITHUB_PAT", "HOMEBREW_GITHUB_API_TOKEN", "GIT_CONFIG_PARAMETERS"} {
+		if _, found := envValue(scrubbed, key); found {
+			t.Fatalf("%s survived the scrub", key)
+		}
+	}
+}
+
+func TestScrubKeepsTheModelHostsOwnLoginAndDropsEveryForgeSecret(t *testing.T) {
+	base := []string{"MODELHOST_OAUTH_TOKEN=login", "PATH=/usr/bin", "GITLAB_TOKEN=secret", "BITBUCKET_PASSWORD=secret"}
+	scrubbed := Scrub(base)
+	for _, key := range []string{"MODELHOST_OAUTH_TOKEN", "PATH"} {
+		if _, found := envValue(scrubbed, key); !found {
+			t.Fatalf("%s was scrubbed; only a forge's push credential may be", key)
+		}
+	}
+	for _, key := range []string{"GITLAB_TOKEN", "BITBUCKET_PASSWORD"} {
+		if _, found := envValue(scrubbed, key); found {
+			t.Fatalf("%s survived the scrub", key)
+		}
+	}
+}
+
+func TestScrubDoesNotLetAnInheritedOverrideSurvive(t *testing.T) {
+	scrubbed := Scrub([]string{"GIT_TERMINAL_PROMPT=1", "GIT_SSH_COMMAND=ssh -i /home/me/.ssh/id_ed25519"})
+	if got, _ := envValue(scrubbed, "GIT_TERMINAL_PROMPT"); got != "0" {
+		t.Fatalf("GIT_TERMINAL_PROMPT = %q, want the launcher's own value", got)
+	}
+	if ssh, _ := envValue(scrubbed, "GIT_SSH_COMMAND"); strings.Contains(ssh, "id_ed25519") {
+		t.Fatalf("an inherited SSH identity survived: %q", ssh)
+	}
+	count := 0
+	for _, entry := range scrubbed {
+		if strings.HasPrefix(entry, "GIT_SSH_COMMAND=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("GIT_SSH_COMMAND appears %d times", count)
+	}
+}
+
+func TestPushFromWorktreeRefusesACriticalRef(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	err := PushFromWorktree(root, group, "main")
+	if err == nil || !strings.Contains(err.Error(), "critical ref") {
+		t.Fatalf("err = %v, want a refusal naming the critical ref", err)
+	}
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := exec.Command("git", "-C", bare, "branch", "--list", "main").Output(); strings.TrimSpace(string(out)) != "" {
+		t.Fatal("main reached origin; a critical ref is never pushed")
+	}
+}
+
+func TestShipGroupHandsTheCredentialToNoAfterPublishCommand(t *testing.T) {
+	root, group := shipRepo(t)
+	t.Setenv("GH_TOKEN", "ghp_forgetoken")
+	t.Setenv("GITHUB_TOKEN", "ghp_forgetoken")
+	if err := os.MkdirAll(filepath.Join(root, StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commands := `{"after_publish":"env > published.env"}`
+	if err := os.WriteFile(filepath.Join(root, StateDir, "commands.json"), []byte(commands), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := os.ReadFile(filepath.Join(group, "published.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(seen), "ghp_forgetoken") {
+		t.Fatal("after_publish saw the forge credential; only the push may hold it")
+	}
+}
+
+func TestShipLabelsThePullRequestOnlyAfterThePush(t *testing.T) {
+	root, group := shipRepo(t)
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	labelled := false
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "label" {
+			return `[{"name":"@agent"},{"name":"scope/harness"}]`, nil
+		}
+		if len(args) > 1 && args[0] == "pr" && args[1] == "edit" && slices.Contains(args, "--add-label") {
+			out, _ := exec.Command("git", "-C", bare, "branch", "--list", "feat/a-group").Output()
+			if strings.TrimSpace(string(out)) == "" {
+				return "", errors.New("labelled before the push")
+			}
+			labelled = true
+		}
+		return "https://example.com/pull/1", nil
+	}}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !labelled || len(result.Labels) != 2 {
+		t.Fatalf("labels = %v, warnings = %v; the labels must follow the push", result.Labels, result.Warnings)
 	}
 }
