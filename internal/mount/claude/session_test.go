@@ -35,7 +35,7 @@ func TestSessionArgvForBuilder(t *testing.T) {
 		"--tools Read, Edit, Write, Bash, Grep, Glob",
 		"--allowedTools Read, Edit, Write, Bash(ls:*), ",
 		"Bash(git diff:*)",
-		"--disallowedTools Edit(docs/prd.md), Edit(eval/**), Edit(komodo/policy.json), Bash(git add:*)",
+		"--disallowedTools Edit(//worktree/docs/prd.md), Edit(//worktree/eval/**), Edit(//worktree/komodo/policy.json), Bash(git add:*)",
 		"--permission-mode dontAsk",
 		"--model sonnet",
 		"--effort extended",
@@ -730,7 +730,7 @@ func TestSessionDeniesTheLinePathsEvenWithNoTools(t *testing.T) {
 	req := mount.StartRequest{Role: "builder", Schema: []byte(`{}`)}
 	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "", 10, 0)
 	joined := strings.Join(argv, " ")
-	for _, want := range []string{"Edit(docs/prd.md)", "Edit(eval/**)", "Edit(komodo/policy.json)"} {
+	for _, want := range []string{"Edit(//worktree/docs/prd.md)", "Edit(//worktree/eval/**)", "Edit(//worktree/komodo/policy.json)"} {
 		if !strings.Contains(joined, "--disallowedTools ") || !strings.Contains(joined, want) {
 			t.Errorf("argv missing deny %q:\n%s", want, joined)
 		}
