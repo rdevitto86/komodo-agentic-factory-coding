@@ -46,6 +46,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	rendered := renderInstalled(root, pinLocalDown)
 	problems = append(problems, checkReferences(root)...)
 	problems = append(problems, checkRoles(root)...)
+	problems = append(problems, checkBuilderTier(root)...)
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root, rendered)...)
 	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinLocalUp))...)
@@ -301,6 +302,29 @@ func checkRoles(root string) []Problem {
 		var parsed map[string]any
 		if json.Unmarshal(data, &parsed) != nil {
 			problems = append(problems, Problem{"roles", schema, "is not JSON"})
+		}
+	}
+	return problems
+}
+
+// checkBuilderTier reports a mode profile under komodo/profiles that puts the builder on the light tier.
+func checkBuilderTier(root string) []Problem {
+	tree := toolkit.FS(root)
+	names, _ := fs.Glob(tree, "profiles/*.json")
+	var problems []Problem
+	for _, name := range names {
+		data, err := fs.ReadFile(tree, name)
+		if err != nil {
+			continue
+		}
+		var parsed struct {
+			Roles map[string]struct {
+				Tier string `json:"tier"`
+			} `json:"roles"`
+		}
+		if json.Unmarshal(data, &parsed) == nil && parsed.Roles["builder"].Tier == "light" {
+			problems = append(problems, Problem{"profiles", path.Join("komodo", name),
+				"the builder runs the light tier; a builder runs standard or heavy"})
 		}
 	}
 	return problems

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -501,8 +502,11 @@ func stageShip(t *testing.T, root, group, branch, backlogAfter string) {
 
 // fakeForge answers pr create with a numbered pull request and label with none.
 func fakeForge(t *testing.T, root string) *pr.Client {
+	var lock sync.Mutex
 	created := 0
 	return &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		lock.Lock()
+		defer lock.Unlock()
 		switch {
 		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
 			created++
@@ -651,6 +655,62 @@ func TestDrainSkipsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "drain done: nothing is ready; 2 shipped, 0 parked") {
 		t.Fatalf("output = %s", out.String())
+	}
+}
+
+// laneScript plays one group, recording itself when the group named second runs at the same time.
+const laneScript = `touch ".komodo/fake/$1.started"
+i=0
+while [ ! -f ".komodo/fake/$2.started" ] && [ $i -lt 10 ]; do sleep 0.1; i=$((i+1)); done
+if [ -f ".komodo/fake/$2.started" ] && [ ! -f ".komodo/fake/$2.ended" ]; then echo "$1" >> .komodo/fake/overlapped; fi
+mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json"
+touch ".komodo/fake/$1.ended"
+exit 0`
+
+func TestDrainOverlapsGroupsSharingNoFileAndRunsGroupsSharingOneInTurn(t *testing.T) {
+	shared := strings.Replace(drainText, "files: [b/two.go]", "files: [a/one.go]", 1)
+	cases := []struct {
+		name    string
+		backlog string
+		overlap bool
+	}{
+		{"groups sharing no file overlap", drainText, true},
+		{"groups sharing a file run one after another", shared, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := drainRepo(t)
+			if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(tc.backlog), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			other := map[string]string{"TG-07.1": "TG-07.2", "TG-07.2": "TG-07.1"}
+			host, _ := mount.Get("fakehost-drain")
+			host.Probe = func() (mount.Usage, bool) { return mount.Usage{Plan: "max_20x"}, true }
+			host.Headless = func(_, target string) (string, []string) {
+				return "/bin/sh", []string{"-c", laneScript, "sh", target, other[target]}
+			}
+			mount.Register(host)
+			stageShip(t, root, "TG-07.1", "feat/first", tc.backlog)
+			stageShip(t, root, "TG-07.2", "feat/second", tc.backlog)
+			var out bytes.Buffer
+			code, err := Launch(Options{
+				Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+				Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+			})
+			if err != nil || code != 0 {
+				t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
+			}
+			if !strings.Contains(out.String(), "drain done: nothing is ready; 2 shipped, 0 parked") {
+				t.Fatalf("output = %s", out.String())
+			}
+			data, err := os.ReadFile(filepath.Join(root, line.StateDir, "fake", "overlapped"))
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			if overlapped := len(data) > 0; overlapped != tc.overlap {
+				t.Fatalf("overlapped = %v (%q), want %v", overlapped, data, tc.overlap)
+			}
+		})
 	}
 }
 

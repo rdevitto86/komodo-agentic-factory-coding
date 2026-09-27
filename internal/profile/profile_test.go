@@ -110,8 +110,14 @@ func TestNoOllamaEnvIsSilentAboutTheLocalMachine(t *testing.T) {
 func TestProPlanLowersTheCeilingAndThePace(t *testing.T) {
 	host := fakeHost("h", true, mount.Usage{Plan: "pro"}, true)
 	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
-	if got.MaxParallel != 2 || got.PauseAt != 0.75 || got.ReviewSkipLines != 40 {
-		t.Fatalf("pro overlay = %+v", got)
+	if got.MaxParallel != 1 || got.PauseAt != 0.75 || got.ReviewSkipLines != 40 {
+		t.Fatalf("pro overlay = %+v; economy mode runs one at a time", got)
+	}
+	if got.Mode != "economy" {
+		t.Fatalf("mode = %q; a Pro plan runs the economy profile", got.Mode)
+	}
+	if builder := got.Roles["builder"]; builder.Tier == "" || builder.Tier == "light" {
+		t.Fatalf("economy builder = %+v; no builder runs on the light tier", builder)
 	}
 	if got.Tiers.Heavy.Model != "mid" {
 		t.Fatalf("the heavy ceiling did not drop: %+v", got.Tiers)
@@ -228,6 +234,21 @@ func TestPausedFollowsTheWindow(t *testing.T) {
 	quiet := fakeHost("h", true, mount.Usage{Plan: "max_5x", FiveHour: 0.1}, true)
 	if SelectWith(t.TempDir(), []mount.Host{quiet}, false, false).Paused() {
 		t.Fatal("a quiet window paused the run")
+	}
+}
+
+func TestAPIBillingRunsUnboundPastASpentWindow(t *testing.T) {
+	host := fakeHost("h", true, mount.Usage{Plan: "api", FiveHour: 1, ResetsAt: time.Now().Add(time.Hour)}, true)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
+	if got.Plan != "api" || got.Bound() || got.Mode != "full" {
+		t.Fatalf("api profile = %+v", got)
+	}
+	if got.Paused() {
+		t.Fatal("a spent window paused an unbound plan")
+	}
+	subscription := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	if !subscription.Bound() {
+		t.Fatal("a subscription plan must be bound to its window")
 	}
 }
 

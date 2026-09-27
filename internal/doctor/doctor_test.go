@@ -459,6 +459,16 @@ func TestALeakInATrackedMarkdownFileIsFound(t *testing.T) {
 	}
 }
 
+func TestAProfileWhoseBuilderIsLightIsRejected(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/profiles/full.json", `{"roles":{"builder":{"tier":"heavy","effort":"medium"}}}`)
+	write(t, root, "komodo/profiles/economy.json", `{"roles":{"builder":{"tier":"light","effort":"medium"}}}`)
+	got := problemsFrom(t, root)["profiles"]
+	if len(got) != 1 || got[0].Where != "komodo/profiles/economy.json" || !strings.Contains(got[0].Detail, "light tier") {
+		t.Fatalf("profiles = %+v, want only the economy profile's light builder", got)
+	}
+}
+
 func TestARoleFileThatFailsToLoadIsFound(t *testing.T) {
 	root := clean(t)
 	write(t, root, "komodo/roles/broken2.md",

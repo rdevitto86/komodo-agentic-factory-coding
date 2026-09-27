@@ -398,19 +398,12 @@ type Overlay struct {
 	LocalReviewer       bool              `json:"local_reviewer"`
 	LocalReviewerRecall float64           `json:"local_reviewer_recall"`
 	Models              map[string]string `json:"models"`
-	LightBuilder        *bool             `json:"light_builder"`
 	// Sandbox runs every headless shell command in the host's OS sandbox, confined to the worktree and temp.
 	Sandbox bool `json:"sandbox"`
 	// SandboxWrite adds paths a sandboxed command may write, such as a build cache outside the worktree.
 	SandboxWrite []string `json:"sandbox_write"`
 	// SandboxDomains pre-allows network hosts, since a headless run cannot answer the sandbox's prompt.
 	SandboxDomains []string `json:"sandbox_domains"`
-}
-
-// LightBuilder reports whether a small task's first build may run on the light tier; unset means true.
-func LightBuilder() bool {
-	overlay := LoadOverlay()
-	return overlay.LightBuilder == nil || *overlay.LightBuilder
 }
 
 // OverlayPath is where a developer's own overlay lives, or empty when there is no home.

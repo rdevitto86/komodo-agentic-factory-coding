@@ -15,6 +15,9 @@ import (
 // economyPlan is the plan decision 0016 drops into economy mode; every other plan runs full mode.
 const economyPlan = "pro"
 
+// apiPlan is the plan that bills by the token, keeping the base profile's values.
+const apiPlan = "api"
+
 // Caps are the brief slot caps, in characters, that a profile may lower and never raise.
 type Caps struct {
 	RepoRules   int `json:"repo_rules"`
@@ -109,8 +112,8 @@ func base() Profile {
 func planOverlay(profile Profile, plan string) Profile {
 	profile.Plan = plan
 	switch plan {
-	case "pro":
-		profile.MaxParallel = 2
+	case economyPlan:
+		profile.MaxParallel = 1
 		profile.SeverityFloor = "medium"
 		profile.ReviewSkipLines = 40
 		profile.Repairs = 1
@@ -124,6 +127,7 @@ func planOverlay(profile Profile, plan string) Profile {
 		profile.MaxParallel = 6
 		profile.PauseAt = 0.9
 		profile.WarnAt = 0.8
+	case apiPlan:
 	default:
 		profile.Plan = "unknown"
 		profile.MaxParallel = 2
@@ -261,8 +265,11 @@ func lower(current, proposed int) int {
 	return current
 }
 
-// Paused reports whether the window is too far spent to start another wave.
-func (p Profile) Paused() bool { return p.Utilization >= p.PauseAt }
+// Bound reports whether a usage window paces the plan; API billing runs unbound, to a spend budget instead.
+func (p Profile) Bound() bool { return p.Plan != apiPlan }
+
+// Paused reports whether a bound plan's window is too far spent to start another wave.
+func (p Profile) Paused() bool { return p.Bound() && p.Utilization >= p.PauseAt }
 
 // WaitUntil is when the window resets, which is what intake prints instead of a wave.
 func (p Profile) WaitUntil() time.Time { return p.ResetsAt }
