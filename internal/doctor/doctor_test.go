@@ -721,6 +721,29 @@ func TestAForgeThatOffersNoRulesetsIsANoteNotAProblem(t *testing.T) {
 	}
 }
 
+func TestARemoteAuditWarnsOfAForgeWithNoRulesets(t *testing.T) {
+	tools := t.TempDir()
+	gh := "#!/bin/sh\n" +
+		"case \"$2\" in\n" +
+		"  */rulesets) echo 'HTTP 403: Upgrade to GitHub Pro' >&2; exit 1 ;;\n" +
+		"  'repos/{owner}/{repo}') echo '{\"delete_branch_on_merge\":true}' ;;\n" +
+		"  *) echo '[]' ;;\n" +
+		"esac\n"
+	write(t, tools, "gh", gh)
+	if err := os.Chmod(filepath.Join(tools, "gh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var notes []string
+	options := Options{NoGit: true, Remote: true, Warn: func(note string) { notes = append(notes, note) }}
+	if _, err := Run(clean(t), options); err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status: wip") {
+		t.Fatalf("notes = %v; a remote audit must warn of a forge with no rulesets or drafts", notes)
+	}
+}
+
 func TestCheckHeadBranchesFlagsAForgeThatKeepsThemAfterAMerge(t *testing.T) {
 	tests := []struct {
 		name string

@@ -36,6 +36,8 @@ type Options struct {
 	NoGit  bool
 	Prune  bool
 	Remote bool
+	// Warn receives each note that never fails a check, such as what the forge's plan does not offer.
+	Warn func(note string)
 }
 
 // Run walks every check and returns what it found.
@@ -64,6 +66,11 @@ func Run(root string, options Options) ([]Problem, error) {
 		problems = append(problems, CheckRulesets(root, defaultBranch, pr.Run)...)
 		problems = append(problems, CheckHeadBranches(root, pr.Run)...)
 		problems = append(problems, CheckEpics(root, defaultBranch, pr.Run)...)
+		if options.Warn != nil {
+			for _, note := range ForgeNotes(root, pr.Run) {
+				options.Warn(note)
+			}
+		}
 	}
 	return problems, nil
 }
