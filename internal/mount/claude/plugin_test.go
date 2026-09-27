@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -312,5 +313,30 @@ func TestRenderWritesEachRolePluginsHooksFile(t *testing.T) {
 		if len(rendered.Hooks) == 0 {
 			t.Fatalf("the %s plugin's hooks file mounts no hook", role)
 		}
+	}
+}
+
+func TestTheBuildSkillLoadsOnlyInTheBuildersPlugin(t *testing.T) {
+	root := toolkitRepo(t)
+	skill := filepath.Join(root, "komodo", "skills", "build", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("---\nname: build\ndescription: Work a task list.\n---\n\n# Build\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := map[string]bool{}
+	for _, change := range plan.Changes {
+		planned[change.Path] = true
+	}
+	if !planned[filepath.Join(root, Dir, "plugins", "builder", "skills", "build", "SKILL.md")] {
+		t.Fatal("the builder's plugin must carry the build skill")
+	}
+	if planned[filepath.Join(root, Dir, "skills", "build", "SKILL.md")] {
+		t.Fatal("the build skill must stay out of the primary session's skills")
 	}
 }
