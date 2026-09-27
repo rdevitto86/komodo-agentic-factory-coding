@@ -262,6 +262,9 @@ func commitTask(cwd string, task backlog.Task, branch string) error {
 // CommitBuild commits a group builder's uncommitted work onto the group branch, so review reads it in the branch's diff.
 func CommitBuild(root string, plan *Plan) error {
 	worktree := WorktreePath(root, plan.Worktree)
+	if _, err := git.Run(worktree, "rev-parse", "--git-dir"); err != nil {
+		return nil
+	}
 	var declared []string
 	for _, task := range plan.Tasks {
 		declared = append(declared, task.Files...)

@@ -305,6 +305,10 @@ func (l *Line) Check() ([]string, error) {
 			return []string{line.FailureText(verify)}, nil
 		}
 	}
+	// Committing runs the repo's own pre-commit hooks; a refusal is a fix for the builder, not an escalation.
+	if err := line.CommitBuild(l.Root, l.Plan); err != nil {
+		return []string{"the build does not commit: " + err.Error()}, nil
+	}
 	return nil, nil
 }
 
