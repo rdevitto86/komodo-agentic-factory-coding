@@ -1,6 +1,6 @@
 ---
 name: respond
-description: Answer unresolved review threads on the branch's pull request, changing code when the reviewer is right.
+description: Answer a pull request's open review threads, changing code when the reviewer is right.
 ---
 
 # Respond

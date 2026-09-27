@@ -1,6 +1,6 @@
 ---
 name: plan
-description: /plan: draft task groups from the PRD and specs through the planner; each must pass lint.
+description: /plan: draft task groups from the specs through the planner; each passes lint.
 ---
 
 # Plan

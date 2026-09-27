@@ -1,6 +1,6 @@
 ---
 name: adhoc
-description: /build, /review, /ship: run one stage on a group or the current branch through komodo stage.
+description: /build, /review, /ship: run one stage ad hoc through komodo stage.
 ---
 
 # Ad hoc

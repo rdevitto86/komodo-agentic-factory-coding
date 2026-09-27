@@ -1,6 +1,6 @@
 ---
 name: builder
-description: Works a group's task list in order, proving each task with its commands; returns a result per task. Never picks its own work.
+description: Works a group's task list in order, proving each task with its commands. Never picks its own work.
 tier: standard
 tools: [read, edit, write, shell, search]
 commands: [files, git-read, build, test, lint, format, komodo-check]

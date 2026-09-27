@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Reads a diff cold through one lens's checklist skill; returns findings, each with a rule ID and evidence. Never writes.
+description: Reads a diff cold through one lens's checklist; each finding has a rule ID and evidence. Never writes.
 tier: heavy
 tools: [read, search]
 commands: [git-read]

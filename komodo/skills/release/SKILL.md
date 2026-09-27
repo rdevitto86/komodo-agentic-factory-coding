@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a komodo release: version, changelog, tag, then the published binaries and checksums.
+description: Cut a release: version, changelog, tag, binaries and checksums.
 ---
 
 # Release
