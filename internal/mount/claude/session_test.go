@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/guard"
 	"komodo/internal/mount"
 )
 
@@ -32,7 +33,9 @@ func TestSessionArgvForBuilder(t *testing.T) {
 		"--plugin-dir /repo/.claude/plugins/builder",
 		"--settings ",
 		"--tools Read, Edit, Write, Bash, Grep, Glob",
-		"--allowedTools Read, Edit, Write, Bash, Grep, Glob",
+		"--allowedTools Read, Edit, Write, Bash(ls:*), ",
+		"Bash(git diff:*)",
+		"--disallowedTools Edit(docs/prd.md), Edit(eval/**), Edit(komodo/policy.json), Bash(git add:*)",
 		"--permission-mode dontAsk",
 		"--model sonnet",
 		"--effort extended",
@@ -708,5 +711,28 @@ func TestSessionTempRootSitsOutsideTheWorktree(t *testing.T) {
 	}
 	if SessionTmp(worktree) == SessionTmp(worktree+"-other") {
 		t.Fatal("two worktrees share one temp root")
+	}
+}
+
+func TestSessionEnvNamesTheLineRoleForTheGuard(t *testing.T) {
+	req := mount.StartRequest{Role: "reviewer", Tools: []string{"read"}, Schema: []byte(`{}`)}
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "opus", "", 10, 0)
+	found := false
+	for _, entry := range env {
+		found = found || entry == guard.RoleEnv+"=reviewer"
+	}
+	if !found {
+		t.Fatalf("env = %v; the guard must see the session's line role", env)
+	}
+}
+
+func TestSessionDeniesTheLinePathsEvenWithNoTools(t *testing.T) {
+	req := mount.StartRequest{Role: "builder", Schema: []byte(`{}`)}
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "", 10, 0)
+	joined := strings.Join(argv, " ")
+	for _, want := range []string{"Edit(docs/prd.md)", "Edit(eval/**)", "Edit(komodo/policy.json)"} {
+		if !strings.Contains(joined, "--disallowedTools ") || !strings.Contains(joined, want) {
+			t.Errorf("argv missing deny %q:\n%s", want, joined)
+		}
 	}
 }

@@ -3,6 +3,7 @@ name: reviewer
 description: Reads a diff cold; returns verified findings with severity: bugs, security, test gaps, simplification, narrative comments. Never writes.
 tier: heavy
 tools: [read, search]
+commands: [git-read]
 session: true
 returns: reviewer.schema.json
 ---
