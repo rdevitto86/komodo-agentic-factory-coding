@@ -58,6 +58,7 @@ var skipDir = map[string]bool{
 	"dist":         true,
 	"build":        true,
 	"__pycache__":  true,
+	"testdata":     true,
 }
 
 // samTransform matches a SAM transform declaration in a CloudFormation template.

@@ -282,7 +282,7 @@ const maxRepoFiles = 20000
 
 var skippedDirs = map[string]bool{
 	"node_modules": true, "vendor": true, "bin": true, "venv": true, "env": true,
-	"target": true, "dist": true, "build": true, "__pycache__": true,
+	"target": true, "dist": true, "build": true, "__pycache__": true, "testdata": true,
 }
 
 // standardGlobs reads the globs frontmatter field from a standards skill's raw body.

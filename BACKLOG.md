@@ -3618,11 +3618,12 @@ depends_on: [TG-08.7]
 
 #### [TSK-08.10.1] Eval cases for the requirements a unit test can't prove [P: H] [READY]
 ```yaml
-files: [internal/eval/cases.go, internal/eval/cases_test.go]
+files: [internal/eval/cases.go, internal/eval/cases_test.go, cmd/komodo/eval.go]
 done_when:
   - go test ./internal/eval/...
 context:
-  - "split from TG-08.7, whose PR passed the 2,000 added-line cap with it; the first build's cases.go and cases_test.go are the starting point"
+  - "split from TG-08.7, whose PR passed the 2,000 added-line cap with it"
+  - "komodo eval runs the cases, not only the tests; a case for a preflight check preflight does not make is left out; every cleanup step's error fails its case (TSK-08.7.5 to TSK-08.7.7)"
   - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
 ```
 
