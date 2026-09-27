@@ -151,6 +151,8 @@ func main() {
 		runRecall(root, os.Args[2:])
 	case "gate":
 		runGate(root, os.Args[2:])
+	case "eval":
+		runEval(root, os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "komodo: unknown command %q\n\n%s", os.Args[1], usage)
 		exit(2)
