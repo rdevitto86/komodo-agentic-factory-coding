@@ -3216,7 +3216,7 @@ version: 1.0.0-beta.2
 ```
 * **Why:** `komodo` is no one's command until it is installed, and manual steps drift (decision 0019). Proves REQ-1 and REQ-39's global render.
 
-#### [TSK-08.3.1] install.sh installs on macOS, Linux and WSL2, and running it again updates [P: C] [READY]
+#### [TSK-08.3.1] install.sh installs on macOS, Linux and WSL2, and running it again updates [P: C] [DONE]
 ```yaml
 files: [install.sh, internal/install/script_test.go]
 done_when:
@@ -3227,7 +3227,7 @@ context:
   - "name any missing prerequisite and how to get it; build with Go, or download the pinned release and verify its checksum; symlink onto PATH; komodo install; komodo init inside a repo; komodo doctor; the test runs it under a temp HOME"
 ```
 
-#### [TSK-08.3.2] install.ps1 does the same on native Windows [P: C] [READY]
+#### [TSK-08.3.2] install.ps1 does the same on native Windows [P: C] [DONE]
 ```yaml
 files: [install.ps1]
 done_when:
@@ -3237,7 +3237,7 @@ context:
   - "a small wrapper on PATH instead of a symlink, since symlinks need admin rights"
 ```
 
-#### [TSK-08.3.3] `komodo install` adds only the orchestrator layer to the global host config [P: H] [READY]
+#### [TSK-08.3.3] `komodo install` adds only the orchestrator layer to the global host config [P: H] [DONE]
 ```yaml
 files: [internal/install/install.go, internal/install/install_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, cmd/komodo/host.go]
 done_when:
@@ -3249,6 +3249,42 @@ context:
   - "the guard hook, the orchestrator skills and the status hook; no builder, lens or standards skill; test (REQ-39) on the global render"
   - "every test renders under a temp HOME; nothing a test runs writes the real home directory"
 ```
+
+#### [TSK-08.3.4] internal/mount/claude/claude.go:182 Global guard and status hooks exit 1 in every Claude session outside a git repo [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/claude.go
+done_when:
+  - test -f internal/mount/claude/claude.go
+type: fix
+context:
+  - "RenderGlobal registers `<binary> guard` on PreToolUse and `<binary> hook status --host claude` on SessionStart in the user-level settings, so they run in every Claude Code session on the machine. main() calls repoRoot() before dispatch and fail()s with exit 1 ('no git repository above ...') when the working directory is outside a repo. So a session started in ~ or /tmp gets a hook error on start and on every tool call, and the guard enforces nothing there. Make the guard and hook subcommands exit 0 silently when no git repository is found, or only run them when the cwd is in a repo."
+```
+
+#### [TSK-08.3.5] cmd/komodo/host.go:71 The --global dispatch in runInstall has no test [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/host.go
+done_when:
+  - test -f cmd/komodo/host.go
+type: test
+context:
+  - "The global render and GlobalPlan are unit-tested, but no test runs `komodo install --global`. So a regression that ignores the flag, passes the unresolved binary instead of hook, or skips dry-run would still pass the done_when `go test ./internal/install/... ./internal/mount/claude/...`. Add a cmd/komodo test that runs install --global --dry-run and install --global under a temp HOME and asserts on the planned and written ~/.claude files."
+```
+
+#### [TSK-08.3.6] install.ps1:95 install.ps1's checksum check, wrapper and PATH edit are untested [P: L] [REFINEMENT]
+```yaml
+files:
+  - install.ps1
+done_when:
+  - test -f install.ps1
+type: test
+context:
+  - "The done_when for TSK-08.3.2 is only `test -f` and a grep. A regression in the SHA256SUMS parsing or comparison, the komodo.cmd wrapper body, or the user PATH update would still pass it. install.sh has an equivalent Go subprocess test; install.ps1 has none. Add a Windows-only (or pwsh) subprocess test like script_test.go that runs install.ps1 under a temp USERPROFILE and LOCALAPPDATA and asserts the wrapper, the checksum refusal and the komodo calls."
+```
+
+
+
 
 ### [TG-08.4] The orchestrator drives the line from the primary session
 ```yaml
