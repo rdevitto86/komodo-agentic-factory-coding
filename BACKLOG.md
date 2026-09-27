@@ -1879,7 +1879,7 @@ depends_on: [TG-06.2]
 ```
 * **Why:** headless runs used `bypassPermissions`, so the guard was the only wall. Proves REQ-38, REQ-40 and REQ-41's deny entries.
 
-#### [TSK-06.4.1] Each role's settings allow what its stage needs, and dontAsk refuses the rest [P: C] [REFINEMENT]
+#### [TSK-06.4.1] Each role's settings allow what its stage needs, and dontAsk refuses the rest [P: C] [READY]
 ```yaml
 files: [komodo/roles/builder.md, komodo/roles/reviewer.md, internal/mount/claude/permissions.go, internal/mount/claude/permissions_test.go, internal/mount/claude/session.go, internal/mount/claude/session_test.go]
 done_when:
@@ -1892,7 +1892,7 @@ context:
   - "wire it: Session passes each role's allow and deny rules to the host"
 ```
 
-#### [TSK-06.4.2] Proof table: no allow-listed command is refused in any role [P: H] [REFINEMENT]
+#### [TSK-06.4.2] Proof table: no allow-listed command is refused in any role [P: H] [READY]
 ```yaml
 files: [internal/mount/claude/allow_test.go]
 done_when:
@@ -1903,7 +1903,7 @@ context:
 type: test
 ```
 
-#### [TSK-06.4.3] The orchestrator may edit this repo's policy, rules and guard on a branch [P: H] [REFINEMENT]
+#### [TSK-06.4.3] The orchestrator may edit this repo's policy, rules and guard on a branch [P: H] [READY]
 ```yaml
 files: [komodo/policy.json, internal/guard/policy.go, internal/guard/policy_test.go]
 done_when:
