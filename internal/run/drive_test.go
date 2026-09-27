@@ -164,6 +164,15 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	if err != nil || strings.Contains(string(shipped), "[READY]") || !strings.Contains(string(shipped), "[DONE]") {
 		t.Fatalf("shipped BACKLOG.md = %s, %v; Prepare must mark every task DONE", shipped, err)
 	}
+
+	// A group sent back to review after Prepare closed its tasks still finds its plan, and ships again.
+	state.Current = conductor.Reviewing
+	if err := conductor.SaveState(conductor.StatePath(root, "TG-40.1"), state); err != nil {
+		t.Fatal(err)
+	}
+	if code, err := Drive(Options{Root: root, Target: "TG-40.1", PR: client}); err != nil || code != 0 {
+		t.Fatalf("Drive after a rewind = %d, %v; a resumed group must find its closed tasks' plan", code, err)
+	}
 }
 
 // bareRemote reads root's own push URL for origin, which is the bare repo the group's branch lands on.
