@@ -91,10 +91,21 @@ func TestTheReviewerIsAllowedOnlyReadsAndReadOnlyGit(t *testing.T) {
 	}
 }
 
+func TestTheGoldenSuiteDenyNeverReachesANestedEvalPackage(t *testing.T) {
+	_, deny := rolePermissions(t.TempDir(), "/repo", mount.StartRequest{Role: "builder", Tools: []string{"read"}})
+	for _, rule := range deny {
+		if strings.Contains(rule, "eval/**") && rule != "Edit(//repo/eval/**)" {
+			t.Fatalf("deny %q is not pinned to the root's eval/, so it also refuses internal/eval/", rule)
+		}
+	}
+}
+
 func TestEveryLineRoleIsDeniedThePRDTheGoldenSuiteAndThePolicy(t *testing.T) {
+	worktree := t.TempDir()
+	root := "//" + strings.TrimPrefix(filepath.ToSlash(worktree), "/")
 	for _, role := range []string{"builder", "reviewer", "lens"} {
-		_, deny := rolePermissions(t.TempDir(), t.TempDir(), mount.StartRequest{Role: role, Tools: []string{"read"}})
-		for _, rule := range []string{"Edit(docs/prd.md)", "Edit(eval/**)", "Edit(komodo/policy.json)"} {
+		_, deny := rolePermissions(t.TempDir(), worktree, mount.StartRequest{Role: role, Tools: []string{"read"}})
+		for _, rule := range []string{"Edit(" + root + "/docs/prd.md)", "Edit(" + root + "/eval/**)", "Edit(" + root + "/komodo/policy.json)"} {
 			if !slices.Contains(deny, rule) {
 				t.Errorf("%s deny = %v, missing %q", role, deny, rule)
 			}
