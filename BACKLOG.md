@@ -1310,6 +1310,17 @@ context:
 type: fix
 ```
 
+#### [TSK-05.10.8] Rendered plugin hooks name one stable binary, whoever runs the install [P: M] [REFINEMENT]
+```yaml
+files: [internal/mount/registry.go, internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go]
+done_when:
+  - go test ./internal/mount/...
+context:
+  - "TG-06.3's RenderPluginHooks writes the installing binary's own path into hooks.json, so an install by one binary and a doctor by another report drift and fail the conductor's preflight; the guard's settings.json already names bin/komodo-<os>-<arch> in the main checkout"
+  - "that bin/ binary is built from main, which lacks komodo hook until the epic lands, so the hooks fail open until then"
+type: fix
+```
+
 ### [TG-05.5] Metrics and the clock
 ```yaml
 type: feat
