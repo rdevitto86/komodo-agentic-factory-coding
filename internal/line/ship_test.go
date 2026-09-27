@@ -943,6 +943,24 @@ func TestReviewSizeCountsNoDeletion(t *testing.T) {
 	}
 }
 
+func TestReviewSizeSkipsTheLinesBookkeeping(t *testing.T) {
+	_, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	for _, path := range []string{"BACKLOG.md", "docs/backlog/TG-1.md", "changelog.d/1.0.0/TG-1.md", "code.go"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(group, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(group, path), []byte("one\ntwo\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "ship")
+	if files, added := ReviewSize(group, "main", "feat/a-group"); files != 1 || added != 2 {
+		t.Fatalf("size = %d file(s), %d line(s); only code.go is the reviewer's to read", files, added)
+	}
+}
+
 func TestCheckPRSizeRefusesOverEitherCeiling(t *testing.T) {
 	if err := checkPRSize("TG-1", 5, 100, 0, 0); err != nil {
 		t.Fatalf("a zero ceiling must never refuse: %v", err)
