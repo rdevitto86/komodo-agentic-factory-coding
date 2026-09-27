@@ -3,6 +3,7 @@ package claude
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,10 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"komodo/internal/mount"
 	"komodo/internal/proc"
@@ -36,9 +35,6 @@ type Mount struct {
 
 	mu       sync.Mutex
 	sessions map[mount.Handle]*session
-	counter  int64
-	// prefix is unique per mount, so a restarted process never reuses, or overwrites the log of, an earlier handle.
-	prefix string
 }
 
 // session is one running or finished claude process, and what Result and Resume read once it ends.
@@ -73,7 +69,6 @@ func (s *session) wait() error {
 func NewMount(root, worktree string, maxTurns int, maxBudgetUSD float64) *Mount {
 	return &Mount{
 		root: root, worktree: worktree, maxTurns: maxTurns, maxBudgetUSD: maxBudgetUSD, sessions: map[mount.Handle]*session{},
-		prefix: strconv.FormatInt(time.Now().UnixNano(), 36),
 	}
 }
 
@@ -97,39 +92,77 @@ func (m *Mount) Preflight() error {
 }
 
 // Start runs a role headless with Session's argv and environment, in the worktree, in its own
-// process group, and returns the handle its session runs under.
+// process group, and returns the handle its session runs under: the host's own session ID.
 func (m *Mount) Start(req mount.StartRequest) (mount.Handle, error) {
 	argv, env, prompt := Session(m.root, m.worktree, req, "", "", req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
 	return m.spawn(argv, env, prompt, req)
 }
 
-// Resume continues a finished session with new input, passing --resume with its session ID.
+// Resume forks a finished session with new input under a fresh session ID; a handle from an earlier
+// process resumes from the request its spawn saved.
 func (m *Mount) Resume(handle mount.Handle, input string) (mount.Handle, error) {
+	req, err := m.priorRequest(handle)
+	if err != nil {
+		return "", err
+	}
+	argv, env, prompt := Session(m.root, m.worktree, req, handle, input, req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
+	return m.spawn(append(argv, "--fork-session"), env, prompt, req)
+}
+
+// priorRequest returns the request handle's session ran under, once that session has ended with a result.
+func (m *Mount) priorRequest(handle mount.Handle) (mount.StartRequest, error) {
 	prior, ok := m.get(handle)
 	if !ok {
-		return "", fmt.Errorf("resume: unknown session %q", handle)
+		data, err := os.ReadFile(m.requestPath(handle))
+		if err != nil {
+			return mount.StartRequest{}, fmt.Errorf("resume: unknown session %q: %w", handle, err)
+		}
+		var req mount.StartRequest
+		if err := json.Unmarshal(data, &req); err != nil {
+			return mount.StartRequest{}, fmt.Errorf("resume: reading %q's request: %w", handle, err)
+		}
+		return req, nil
 	}
 	prior.mu.Lock()
 	streamed := prior.streamed
 	prior.mu.Unlock()
 	if !streamed {
-		return "", fmt.Errorf("resume: %q has not been streamed to completion", handle)
+		return mount.StartRequest{}, fmt.Errorf("resume: %q has not been streamed to completion", handle)
 	}
 	<-prior.done
 	prior.mu.Lock()
 	sessionID := prior.sessionID
 	prior.mu.Unlock()
 	if sessionID == "" {
-		return "", fmt.Errorf("resume: %q ended with no session id to resume", handle)
+		return mount.StartRequest{}, fmt.Errorf("resume: %q ended with no session id to resume", handle)
 	}
-	req := prior.req
-	argv, env, prompt := Session(m.root, m.worktree, req, mount.Handle(sessionID), input, req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
-	return m.spawn(argv, env, prompt, req)
+	return prior.req, nil
 }
 
-// spawn starts claude with argv and env, its prompt on stdin, and records the session under a fresh handle.
+// requestPath is where a session's request is kept, so a later process can resume it.
+func (m *Mount) requestPath(handle mount.Handle) string {
+	return filepath.Join(m.worktree, ".komodo", "sessions", string(handle)+".request.json")
+}
+
+// newSessionID returns a random version 4 UUID, the form the host's --session-id accepts.
+func newSessionID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+// spawn starts claude with argv and env, its prompt on stdin, under a fresh session ID that is its handle.
 func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest) (mount.Handle, error) {
-	cmd := exec.Command("claude", argv...)
+	sessionID, err := newSessionID()
+	if err != nil {
+		return "", fmt.Errorf("making a session id: %w", err)
+	}
+	handle := mount.Handle(sessionID)
+	cmd := exec.Command("claude", append(argv, "--session-id", sessionID)...)
 	cmd.Dir = m.worktree
 	cmd.Env = env
 	cmd.Stdin = strings.NewReader(prompt)
@@ -143,10 +176,6 @@ func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest)
 	if err != nil {
 		return "", fmt.Errorf("piping claude's stdout: %w", err)
 	}
-	m.mu.Lock()
-	m.counter++
-	handle := mount.Handle(fmt.Sprintf("claude-%s-%d", m.prefix, m.counter))
-	m.mu.Unlock()
 	// Each session's stream and errors stay on disk, so a failed session can be diagnosed afterwards.
 	logs := filepath.Join(m.worktree, ".komodo", "sessions")
 	var record io.Writer = io.Discard
@@ -157,6 +186,13 @@ func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest)
 		if errs, err := os.Create(filepath.Join(logs, string(handle)+".err")); err == nil {
 			cmd.Stderr = errs
 		}
+	}
+	saved, err := json.Marshal(req)
+	if err != nil {
+		return "", fmt.Errorf("saving the session's request: %w", err)
+	}
+	if err := os.WriteFile(m.requestPath(handle), saved, 0o600); err != nil {
+		return "", fmt.Errorf("saving the session's request: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("starting claude: %w", err)

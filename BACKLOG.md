@@ -1235,7 +1235,7 @@ depends_on: [TG-05.9]
 ```
 * **Why:** TG-06.2's proof reached Shipped only after five hand repairs: a handle lost across a restart, an escalation answered by editing state.json, a PR the conductor never merged into its epic, a branch without its group, and a body calling a checked group unproven.
 
-#### [TSK-05.10.1] A session handle is the host's session ID, so resume crosses a restart [P: H] [READY]
+#### [TSK-05.10.1] A session handle is the host's session ID, so resume crosses a restart [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/contract.go, internal/mount/claude/contract_test.go]
 done_when:
@@ -1245,7 +1245,7 @@ context:
 type: fix
 ```
 
-#### [TSK-05.10.2] The conductor merges a shipped group PR into its epic branch [P: C] [READY]
+#### [TSK-05.10.2] The conductor merges a shipped group PR into its epic branch [P: C] [DONE]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/run/drive.go, internal/run/drive_test.go]
 done_when:
@@ -1255,7 +1255,7 @@ context:
 type: fix
 ```
 
-#### [TSK-05.10.3] A group branch names its group, such as `refactor/TG-06.2-the-guard-keeps-five-rules` [P: M] [READY]
+#### [TSK-05.10.3] A group branch names its group, such as `refactor/TG-06.2-the-guard-keeps-five-rules` [P: M] [DONE]
 ```yaml
 files: [internal/backlog/backlog.go, internal/backlog/backlog_test.go]
 done_when:
@@ -1265,7 +1265,7 @@ context:
 type: fix
 ```
 
-#### [TSK-05.10.4] A conductor-shipped PR body reports the checks the conductor ran [P: M] [READY]
+#### [TSK-05.10.4] A conductor-shipped PR body reports the checks the conductor ran [P: M] [DONE]
 ```yaml
 files: [internal/conductor/drive.go, internal/line/ship_body.go, internal/line/ship_test.go]
 done_when:
@@ -1275,7 +1275,7 @@ context:
 type: fix
 ```
 
-#### [TSK-05.10.5] A live smoke test drives a two-task example group through real sessions [P: H] [READY]
+#### [TSK-05.10.5] A live smoke test drives a two-task example group through real sessions [P: H] [DONE]
 ```yaml
 files: [internal/run/live_test.go, internal/run/testdata/live/BACKLOG.md]
 done_when:
@@ -1287,7 +1287,7 @@ context:
 type: test
 ```
 
-#### [TSK-05.10.6] The line's tests pass inside a line session [P: M] [READY]
+#### [TSK-05.10.6] The line's tests pass inside a line session [P: M] [DONE]
 ```yaml
 files: [internal/line/main_test.go, internal/line/close_test.go, internal/line/step_test.go]
 done_when:
@@ -1299,7 +1299,7 @@ context:
 type: test
 ```
 
-#### [TSK-05.10.7] The pre-push hook runs without the forge credential [P: H] [READY]
+#### [TSK-05.10.7] The pre-push hook runs without the forge credential [P: H] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -1319,6 +1319,78 @@ context:
   - "resolved in the drift check, not the render: the bin/ binary is built from main and exits 2 on komodo hook, which would block a Stop hook, so hooks keep naming the installing binary"
 type: fix
 ```
+
+#### [TSK-05.10.9] internal/line/ship.go:464 The pre-push hook receives the credential-bearing push URL as its arguments [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - 'runPrePush passes pushURL as both hook arguments. That URL comes from `git remote get-url --push origin`, and redactURL exists precisely because it can carry `https://user:token@host`. So when origin embeds a token, the hook sees it in $1/$2 and in its process list. That defeats hookEnv''s purpose of running the hook without the forge credential. The new test only exercises GH_TOKEN/GITHUB_TOKEN in the environment, never a credential in the URL. Pass the remote name `origin` (or redactURL(pushURL, "")) as the hook arguments instead of the raw push URL.'
+```
+
+#### [TSK-05.10.10] internal/backlog/lint.go:75 Lint accepts a title-only base for a dependency that has not been cut and never will be [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/lint.go
+done_when:
+  - test -f internal/backlog/lint.go
+type: fix
+context:
+  - "Lint now accepts depGroup.TitleBranch() without checking origin. But Branch() now always cuts the ID form, so the title-only branch will never exist for a dependency that has not been cut yet. Example: a child declares `base: feat/first-group` and depends on an unshipped TG-01.0. Lint passes. The parent is cut as `feat/TG-01.0-first-group`. readyGroups (next.go:371-378) only registers the new form in `ahead`, and onOrigin never finds the old name, so the child is skipped forever with no problem reported. Accept TitleBranch only when origin already holds that ref, or have lint flag it so the base is rewritten to the ID form."
+```
+
+#### [TSK-05.10.11] internal/line/main_test.go:25 The git ceiling uses GOTMPDIR, but t.TempDir creates directories under os.TempDir() [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/main_test.go
+done_when:
+  - test -f internal/line/main_test.go
+type: fix
+context:
+  - "tempRoots takes GOTMPDIR first. t.TempDir ignores GOTMPDIR and uses os.TempDir() ($TMPDIR). In a line session, session.go:74 sets GOTMPDIR to <worktree>/.komodo/go/tmp, while TMPDIR is the separate SessionTmp root. So GIT_CEILING_DIRECTORIES names a directory inside the real worktree that no fixture lives under, and fixtures under $TMPDIR get no ceiling. The fixture isolation TSK-05.10.6 relies on does not hold in exactly the environment it targets. Build the ceiling from os.TempDir() (plus GOTMPDIR if you want both), not from GOTMPDIR alone."
+```
+
+#### [TSK-05.10.12] internal/conductor/drive.go:172 A run resumed at Shipped never retries the merge [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "Merge runs only on entry to Shipped. The state is saved as Shipped before work runs, so if the process is interrupted or killed during Merge, state.json holds Current=Shipped, Merged=false. On resume, shippedNext returns Move=Shipped, which equals Current, so Drive returns immediately. A PR on its epic branch is then left for a person, contrary to decision 0028's auto-merge. Have shippedNext (or Drive's resume path) call Merge again when an epic-based group sits at Shipped with Merged false."
+```
+
+#### [TSK-05.10.13] internal/conductor/drive.go:367 Ship's path that reruns Check on resume is untested [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: test
+context:
+  - "When a run resumes at Shipping, l.checked is nil, so Ship reruns Check and refuses to ship with 'the checks fail at ship' if it fails. No test drives Line.Ship with checked unset, either passing or failing. If this branch were removed, a resumed Ship would again report 'no QC gate ran' and every done_when would still pass. Add a Line.Ship test that starts with checked unset and asserts that both a failing Check and a passing Check are reported in the body."
+```
+
+#### [TSK-05.10.14] internal/mount/claude/contract.go:194 Open log files leak when saving the request fails [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/contract.go
+done_when:
+  - test -f internal/mount/claude/contract.go
+type: fix
+context:
+  - "The .jsonl and .err files are created, then the new WriteFile of the request can fail and spawn returns. Those two os.File handles are never closed, and the log files are left behind for a session that never started. Write the request file before creating the log files, or close record and cmd.Stderr on the error return."
+```
+
+
+
+
+
+
 
 ### [TG-05.5] Metrics and the clock
 ```yaml
