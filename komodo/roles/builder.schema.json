@@ -11,6 +11,9 @@
     "summary": {
       "type": "string"
     },
+    "question": {
+      "type": "string"
+    },
     "changed": {
       "type": "array",
       "items": {
@@ -44,6 +47,50 @@
         "required": [
           "command",
           "exit_code"
+        ]
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "DONE",
+              "BLOCKED"
+            ]
+          },
+          "verified": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "exit_code": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "command",
+                "exit_code"
+              ]
+            }
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "result",
+          "verified"
         ]
       }
     },

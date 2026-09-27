@@ -46,6 +46,32 @@ func TestRecordStatusKeepsEveryTaskAndLeavesNoTempFile(t *testing.T) {
 	}
 }
 
+func TestWriteStatusChangesOnlyTheTickOrTheBlocker(t *testing.T) {
+	edited := stepBacklog + "\nA person's note under the task, kept byte for byte.\n"
+	for _, tc := range []struct {
+		status string
+		ok     bool
+	}{{"DONE", true}, {"BLOCKED", true}, {"IN_PROGRESS", false}, {"READY", false}} {
+		t.Run(tc.status, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "BACKLOG.md")
+			if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := writeStatus(path, "TSK-12.1.1", tc.status)
+			if (err == nil) != tc.ok {
+				t.Fatalf("err = %v; only DONE and BLOCKED may reach the backlog", err)
+			}
+			want := edited
+			if tc.ok {
+				want = strings.Replace(edited, "[READY]", "["+tc.status+"]", 1)
+			}
+			if data, _ := os.ReadFile(path); string(data) != want {
+				t.Fatalf("backlog =\n%s\nwant\n%s", data, want)
+			}
+		})
+	}
+}
+
 func TestANewRunKeepsOnlyItsOwnGroupsLiveStatus(t *testing.T) {
 	root := stepRepo(t)
 	for _, taskID := range []string{"TSK-12.1.1", "TSK-99.1.1"} {

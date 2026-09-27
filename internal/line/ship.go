@@ -204,11 +204,11 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 			return nil, err
 		}
 	}
-	// This group's live status lands in BACKLOG.md once, in the ship commit.
+	// This group's ticks and blockers land in BACKLOG.md once, in the ship commit; a status in flight never does.
 	var shippedIDs []string
 	for _, task := range plan.Tasks {
 		shippedIDs = append(shippedIDs, task.ID)
-		if status, ok := live[task.ID]; ok && status.Status != "" {
+		if status, ok := live[task.ID]; ok && backlogStatus(status.Status) {
 			if err := writeStatus(path, task.ID, status.Status); err != nil {
 				return nil, err
 			}
