@@ -3181,14 +3181,42 @@ context:
   - "one test per path (REQ-45)"
 ```
 
-#### [TSK-07.7.5] `komodo abandon` removes a group on purpose [P: M] [READY]
+### [TG-07.13] Escalations survive a restart, and a group can be abandoned
+```yaml
+type: feat
+version: 1.0.0-alpha.8
+depends_on: [TG-07.7]
+```
+* **Why:** TG-07.7's builder ran out of turns before `komodo abandon`, and noted that an escalation's working data lives only in memory.
+
+#### [TSK-07.13.1] `komodo abandon` removes a group on purpose [P: M] [READY]
 ```yaml
 files: [internal/conductor/abandon.go, internal/conductor/abandon_test.go, cmd/komodo/main.go, cmd/komodo/line.go]
 done_when:
   - go test ./internal/conductor/... ./cmd/komodo/...
-depends_on: [TSK-07.7.4]
 context:
+  - "was TSK-07.7.5; builds on backlog.AddNote and the blocker note TG-07.7 added"
   - "removes the group's worktree and branch, and marks its file BLOCKED with a note saying it was abandoned"
+```
+
+#### [TSK-07.13.2] An escalation's reason, answer, stall count and heavy retry survive a restart [P: H] [READY]
+```yaml
+files: [internal/conductor/state.go, internal/conductor/state_test.go, internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/conductor/...
+context:
+  - "TG-07.7 keeps them in the in-memory round, so a killed run resumes an escalation with none of them"
+  - "test: a run killed while escalated resumes with the same reason, answer, stall count and retry flag"
+```
+
+#### [TSK-07.13.3] Publishing a blocked group is tested over a real repository [P: M] [READY]
+```yaml
+files: [internal/line/ship_test.go, internal/line/epic.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "ShipBlocked has no test over a real repo; the WIP push runs the pre-push hook, so a gate that refuses unverified work fails the publish and the note stays local"
+  - "labelBlocked mirrors labelWip in epic.go; one shared helper labels both"
 ```
 
 ### [TG-07.8] Prepare, then ship draft-first
