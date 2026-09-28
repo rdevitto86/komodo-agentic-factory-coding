@@ -500,7 +500,7 @@ func TestParallelAndSerialReadsEachGroupsSpanFromTheLedger(t *testing.T) {
 			"overlapped neither"},
 		{"a group never ran", map[string]span{"TG-99.2": {0, 10}, "TG-99.3": {10, 20}}, "TG-99.4 never ran"},
 	}
-	started := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	started := time.Now().UTC().Add(-time.Hour)
 	for _, each := range cases {
 		t.Run(each.name, func(t *testing.T) {
 			env := newFakeEnv(t)
