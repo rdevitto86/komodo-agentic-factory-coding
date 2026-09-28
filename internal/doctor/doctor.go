@@ -52,6 +52,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkPromises(root)...)
 	problems = append(problems, checkGitattributes(root)...)
 	problems = append(problems, checkPins(root)...)
+	problems = append(problems, checkOverlay(mount.OverlayPath())...)
 	if !options.NoGit {
 		found, err := checkGit(root)
 		if err != nil {
@@ -309,6 +310,15 @@ func checkGitattributes(root string) []Problem {
 		}
 	}
 	return []Problem{{"gitattributes", ".gitattributes", "add: * text=auto eol=lf"}}
+}
+
+// checkOverlay reports a machine overlay that exists but is not valid JSON, since every reader skips it.
+func checkOverlay(path string) []Problem {
+	data, err := os.ReadFile(path)
+	if err != nil || json.Valid(data) {
+		return nil
+	}
+	return []Problem{{"overlay", path, "not valid JSON, so its critical_refs and caps are ignored; fix it"}}
 }
 
 // checkGit reports conflict markers and the leftovers a run can strand.

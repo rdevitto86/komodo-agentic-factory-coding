@@ -75,6 +75,20 @@ func TestACleanRepoHasNoProblems(t *testing.T) {
 	}
 }
 
+func TestAMalformedOverlayIsFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if got := checkOverlay(path); len(got) != 0 {
+		t.Fatalf("an absent overlay = %+v, want nothing", got)
+	}
+	if err := os.WriteFile(path, []byte(`{"critical_refs": ["prod"],}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkOverlay(path); len(got) != 1 || got[0].Check != "overlay" {
+		t.Fatalf("a malformed overlay = %+v, want one overlay problem", got)
+	}
+}
+
 func TestAReferenceThatResolvesToNothingIsFound(t *testing.T) {
 	root := clean(t)
 	write(t, root, "AGENTS.md", "# Rules\n\nSee `komodo/missing.md`.\n")

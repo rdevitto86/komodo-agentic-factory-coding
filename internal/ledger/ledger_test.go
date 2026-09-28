@@ -51,6 +51,23 @@ func TestTruncateRunEmptiesOnlyTheRunFile(t *testing.T) {
 	}
 }
 
+func TestTruncateRunAppendsToAnExistingArchive(t *testing.T) {
+	book := New(t.TempDir())
+	for _, station := range []string{"intake", "build"} {
+		_ = book.Stamp(Entry{Run: "r1", Station: station})
+		if err := book.TruncateRun(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	archived, err := book.Read("line.r1.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archived) != 2 || archived[0].Station != "intake" || archived[1].Station != "build" {
+		t.Fatalf("archive = %+v, want both stations", archived)
+	}
+}
+
 func TestAdhocRotatesWhenItsFirstLineIsStale(t *testing.T) {
 	dir := t.TempDir()
 	book := New(dir)
