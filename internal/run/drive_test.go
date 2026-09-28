@@ -190,6 +190,69 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	}
 }
 
+// TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts checks a run removes an earlier group's worktree and
+// branch once origin deleted that branch, and leaves its own shipped group's worktree for the merge.
+func TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts(t *testing.T) {
+	root := driveRepo(t)
+	setupDriveFakeClaude(t)
+	stale := filepath.Join(root, line.StateDir, "wt", "TG-39.1")
+	runGit(t, root, "worktree", "add", "-b", "feat/old", stale, "main")
+	if err := os.WriteFile(filepath.Join(stale, "old.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, stale, "add", "old.txt")
+	runGit(t, stale, "commit", "-m", "old")
+	runGit(t, stale, "push", "origin", "feat/old")
+	runGit(t, stale, "branch", "--set-upstream-to=origin/feat/old", "feat/old")
+	runGit(t, root, "push", "origin", "--delete", "feat/old")
+	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			return "https://example.invalid/pr/1", nil
+		}
+		if len(args) > 0 && args[0] == "label" {
+			return "[]", nil
+		}
+		return "", nil
+	}}
+
+	var out strings.Builder
+	if code, err := Drive(Options{Root: root, Target: "TG-40.1", PR: client, Stdout: &out}); err != nil || code != 0 {
+		t.Fatalf("Drive = %d, %v", code, err)
+	}
+	if _, err := os.Stat(stale); err == nil {
+		t.Fatalf("the squash-merged group's worktree survived the run; out = %s", out.String())
+	}
+	if branches := gitOut(t, root, "branch", "--list", "feat/old"); branches != "" {
+		t.Fatalf("feat/old survived the run; out = %s", out.String())
+	}
+	if !strings.Contains(out.String(), "removed worktree") {
+		t.Fatalf("out = %q; the run must print what it removed", out.String())
+	}
+	state, err := line.LoadRunFor(root, "TG-40.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(line.WorktreePath(root, state.Worktree)); err != nil {
+		t.Fatalf("the shipped group's own worktree was removed before its PR merged: %v", err)
+	}
+}
+
+// TestRunRefusesToCutWhereLeftoversCannotBeListed checks a cut stops when the root is no git repo to prune.
+func TestRunRefusesToCutWhereLeftoversCannotBeListed(t *testing.T) {
+	root := t.TempDir()
+	// A .git naming no repo stops git's walk up to any repo holding the temp dir.
+	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: "+filepath.Join(root, "missing")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if _, err := cutIfNeeded(root, &line.Plan{Group: "TG-40.1"}, &out); err == nil {
+		t.Fatalf("cutIfNeeded cut a group where no worktree can be listed; out = %s", out.String())
+	}
+	if out.Len() != 0 {
+		t.Fatalf("out = %q; nothing was removed", out.String())
+	}
+}
+
 // TestRunMergesAShippedGroupIntoItsEpicBranch checks a group cut from its epic's branch ends with its
 // PR merged there by a merge commit, and state.json's merged flag set.
 func TestRunMergesAShippedGroupIntoItsEpicBranch(t *testing.T) {

@@ -5,12 +5,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"komodo/internal/backlog"
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/line"
+	"komodo/internal/pr"
 )
 
 // BuiltFrom is the file beside the built binary that records the commit it was built from.
@@ -22,11 +25,12 @@ var (
 	installHooks = gate.Install
 )
 
-// SyncOptions are what one sync needs: the root, whether to write, and where to print.
+// SyncOptions are what one sync needs: the root, whether to write, where to print, and the forge.
 type SyncOptions struct {
 	Root   string
 	DryRun bool
 	Stdout io.Writer
+	PR     *pr.Client
 }
 
 // Sync brings the root up to origin, rebuilds a stale toolkit binary, and re-renders drifted config,
@@ -51,7 +55,121 @@ func Sync(options SyncOptions) (string, error) {
 	if err := syncConfig(options.Root, options.DryRun, out, suffix); err != nil {
 		return "", err
 	}
+	client := options.PR
+	if client == nil {
+		client = pr.New(options.Root)
+	}
+	if err := syncCleanup(options.Root, client, options.DryRun, out, suffix); err != nil {
+		return "", err
+	}
 	return built, nil
+}
+
+// syncCleanup opens one PR per epic whose every group file on origin's default branch has every task
+// ticked, deleting those files; an epic whose cleanup branch origin already holds is left alone.
+func syncCleanup(root string, client *pr.Client, dryRun bool, out io.Writer, suffix string) error {
+	base := line.DefaultBase(root)
+	ref := "refs/remotes/origin/" + base
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", ref); err != nil {
+		fmt.Fprintf(out, "cleanup: skipped, origin has no branch %q%s\n", base, suffix)
+		return nil
+	}
+	ended, err := endedEpics(root, ref)
+	if err != nil {
+		return err
+	}
+	if len(ended) == 0 {
+		fmt.Fprintf(out, "cleanup: no epic's files outlived it%s\n", suffix)
+		return nil
+	}
+	epics := make([]string, 0, len(ended))
+	for epic := range ended {
+		epics = append(epics, epic)
+	}
+	sort.Strings(epics)
+	for _, epic := range epics {
+		branch := "chore/cleanup-" + strings.ToLower(epic)
+		heads, err := git.Run(root, "ls-remote", "--heads", "origin", "refs/heads/"+branch)
+		if err != nil {
+			fmt.Fprintf(out, "cleanup: skipped, cannot reach origin: %v%s\n", err, suffix)
+			return nil
+		}
+		if heads != "" {
+			fmt.Fprintf(out, "cleanup: %s already has %s on origin%s\n", epic, branch, suffix)
+			continue
+		}
+		if !dryRun {
+			if err := openCleanup(root, client, base, branch, epic, ended[epic]); err != nil {
+				return err
+			}
+		}
+		fmt.Fprintf(out, "cleanup: opened %s deleting %s's %d group file(s)%s\n", branch, epic, len(ended[epic]), suffix)
+	}
+	return nil
+}
+
+// endedEpics maps each epic to its group files at ref when every one of them has every task ticked.
+func endedEpics(root, ref string) (map[string][]string, error) {
+	listed, err := git.Run(root, "ls-tree", "--name-only", ref, "docs/backlog/")
+	if err != nil {
+		return nil, err
+	}
+	files := map[string][]string{}
+	open := map[string]bool{}
+	for _, path := range strings.Split(listed, "\n") {
+		if !strings.HasSuffix(path, ".md") {
+			continue
+		}
+		text, err := git.Run(root, "show", ref+":"+path)
+		if err != nil {
+			return nil, err
+		}
+		group := backlog.ParseGroupFile(text)
+		if group.EpicID == "" {
+			continue
+		}
+		files[group.EpicID] = append(files[group.EpicID], path)
+		for _, task := range group.Tasks {
+			open[group.EpicID] = open[group.EpicID] || !task.Done
+		}
+	}
+	for epic := range open {
+		if open[epic] {
+			delete(files, epic)
+		}
+	}
+	return files, nil
+}
+
+// openCleanup cuts branch from origin's base in its own worktree, deletes the epic's group files there,
+// pushes it, and opens its PR; the worktree and local branch go once the PR is open.
+func openCleanup(root string, client *pr.Client, base, branch, epic string, paths []string) error {
+	worktree := filepath.Join(root, line.StateDir, "wt", "cleanup-"+strings.ToLower(epic))
+	if err := line.AddWorktree(root, branch, "origin/"+base, worktree); err != nil {
+		return err
+	}
+	if _, err := git.Run(worktree, append([]string{"rm", "--quiet", "--"}, paths...)...); err != nil {
+		return err
+	}
+	title := fmt.Sprintf("chore: Remove %s's group files, every group shipped", epic)
+	if _, err := git.Run(worktree, "commit", "-m", title); err != nil {
+		return err
+	}
+	if err := line.PushFromWorktree(root, worktree, branch); err != nil {
+		return err
+	}
+	body := fmt.Sprintf("## Summary\n\nEvery group of %s has shipped, so its group files outlived it.\n\n"+
+		"## Changes\n\n- **backlog** — deletes %s\n\n## Validation\n\n"+
+		"`komodo sync` found every task in these files ticked on `%s`.\n",
+		epic, "`"+strings.Join(paths, "`, `")+"`", base)
+	if _, err := client.Create(base, branch, title, body, false); err != nil {
+		return err
+	}
+	if _, err := git.Run(root, "worktree", "remove", "--force", worktree); err != nil {
+		return err
+	}
+	_, err := git.Run(root, "branch", "-D", branch)
+	return err
 }
 
 // syncRoot fetches origin and fast-forwards a clean default branch to it, returning the commit HEAD ends on;
