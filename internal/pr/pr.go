@@ -102,6 +102,25 @@ func (c *Client) Label(number string, labels []string) error {
 	return err
 }
 
+// Ready marks a draft pull request ready for review.
+func (c *Client) Ready(number string) error {
+	_, err := c.run("pr", "ready", number)
+	return err
+}
+
+// Unlabel removes labels from a pull request.
+func (c *Client) Unlabel(number string, labels []string) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	args := []string{"pr", "edit", number}
+	for _, label := range labels {
+		args = append(args, "--remove-label", label)
+	}
+	_, err := c.run(args...)
+	return err
+}
+
 // Labels lists the labels the repository already defines.
 func (c *Client) Labels() ([]string, error) {
 	out, err := c.run("label", "list", "--json", "name")

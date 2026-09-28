@@ -201,12 +201,29 @@ func drain(options Options) (int, error) {
 		}
 		fmt.Fprintf(stdout, "%s shipped: %s\n", result.group, url)
 		shippedGroups = append(shippedGroups, result.group)
+		restack(options, stdout)
 	}
 	// Sync once more after the run ends, so a binary gone stale mid-run rebuilds only once every group is done.
 	if _, err := Sync(SyncOptions{Root: options.Root, Stdout: stdout}); err != nil {
 		return 1, err
 	}
 	return code, nil
+}
+
+// restack moves each group stacked on a parent that has since merged onto its new base, printing each move;
+// a failure is printed and leaves the drain running.
+func restack(options Options, stdout io.Writer) {
+	client := options.PR
+	if client == nil {
+		client = pr.New(options.Root)
+	}
+	moved, err := conductor.Restack(options.Root, client)
+	for _, each := range moved {
+		fmt.Fprintf(stdout, "restacked %s\n", each)
+	}
+	if err != nil {
+		fmt.Fprintf(stdout, "restack: %v\n", err)
+	}
 }
 
 // laneResult is how one group's lane ended: its exit code, the pull request it opened, and when it launched.
