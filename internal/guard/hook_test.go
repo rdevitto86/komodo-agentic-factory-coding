@@ -86,6 +86,18 @@ func TestHookRefusalNamesTheWayForward(t *testing.T) {
 
 // TestHookFailsOpenWhenItCannotRecordARefusal proves a guard error on its own bookkeeping
 // allows the call and logs it, rather than denying a call the counting step could not track.
+func TestASessionIDThatClimbsOutIsNeverAPath(t *testing.T) {
+	root := worktree(t)
+	for _, id := range []string{"../../escaped", "a/b", ".."} {
+		if last, err := recordRefusal(root, id, "push"); last || err != nil {
+			t.Fatalf("recordRefusal(%q) = %v, %v, want nothing recorded", id, last, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(root), "escaped.json")); !os.IsNotExist(err) {
+		t.Fatalf("a refusal count landed outside the run folder: %v", err)
+	}
+}
+
 func TestHookFailsOpenWhenItCannotRecordARefusal(t *testing.T) {
 	registerFakeHost()
 	root := worktree(t)

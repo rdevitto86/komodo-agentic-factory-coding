@@ -71,11 +71,10 @@ func CheckCommand(command, cwd string, policy Policy) Decision {
 	return Decision{Deny: len(findings) > 0, Findings: findings}
 }
 
-// commandFindings tokenizes one shell command and checks every git or gh subcommand and write
-// target it finds; a wrapper, a substitution, or an interpreter's own code hides nothing from it.
+// commandFindings checks each git, gh, and write target in one shell command, looking through wrappers, sh -c, and eval.
 func commandFindings(command, cwd, root, branch string, policy Policy) []string {
 	var findings []string
-	for _, item := range tokenize(command) {
+	for _, item := range nested(command, 0) {
 		if len(item.words) > 0 {
 			switch commandName(item.words[0]) {
 			case "git":
@@ -89,6 +88,73 @@ func commandFindings(command, cwd, root, branch string, policy Policy) []string 
 		}
 	}
 	return findings
+}
+
+// maxNesting caps how many wrappers, shells, or evals deep a command is unwrapped.
+const maxNesting = 4
+
+// wrappers run the rest of their words as a command of its own.
+var wrappers = map[string]bool{
+	"sudo": true, "doas": true, "env": true, "command": true, "exec": true, "nohup": true,
+	"nice": true, "time": true, "timeout": true, "xargs": true, "stdbuf": true,
+}
+
+// shells run the word after their -c flag as a command line of its own.
+var shells = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true}
+
+// nested splits a command line into calls, each followed by the calls it hands on.
+func nested(command string, depth int) []call {
+	var out []call
+	for _, item := range tokenize(command) {
+		out = append(out, unwrap(item, depth)...)
+	}
+	return out
+}
+
+// unwrap returns a call without its VAR=value prefix, then what a wrapper, shell -c, or eval inside it runs.
+func unwrap(item call, depth int) []call {
+	words := item.words
+	for len(words) > 0 && isAssignment(words[0]) {
+		words = words[1:]
+	}
+	out := []call{{words: words, writes: item.writes}}
+	if len(words) == 0 || depth >= maxNesting {
+		return out
+	}
+	name := commandName(words[0])
+	switch {
+	case wrappers[name]:
+		for index := 1; index < len(words); index++ {
+			if inner := commandName(words[index]); inner == "git" || inner == "gh" || inner == "eval" ||
+				wrappers[inner] || shells[inner] {
+				return append(out, unwrap(call{words: words[index:]}, depth+1)...)
+			}
+		}
+	case shells[name]:
+		for index := 1; index+1 < len(words); index++ {
+			if flag := words[index]; strings.HasPrefix(flag, "-") && !strings.HasPrefix(flag, "--") &&
+				strings.Contains(flag, "c") {
+				return append(out, nested(words[index+1], depth+1)...)
+			}
+		}
+	case name == "eval":
+		return append(out, nested(strings.Join(words[1:], " "), depth+1)...)
+	}
+	return out
+}
+
+// isAssignment reports whether a word is a NAME=value environment prefix.
+func isAssignment(word string) bool {
+	name, _, ok := strings.Cut(word, "=")
+	if !ok || name == "" {
+		return false
+	}
+	for _, char := range name {
+		if char != '_' && (char < 'A' || char > 'Z') && (char < 'a' || char > 'z') && (char < '0' || char > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // commandName is the base name a word runs as.

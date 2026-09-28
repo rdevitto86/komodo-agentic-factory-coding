@@ -56,8 +56,7 @@ func configCases(policy Policy) []Case {
 	return out
 }
 
-// Table is every call the gate checks, half of them allowed: one row per rule the guard keeps,
-// and its opposite proving the rule does not overreach.
+// Table is every call the gate checks: denied rows for each rule, and allowed opposites proving no overreach.
 func Table(policy Policy) []Case {
 	table := append(configCases(policy), []Case{
 		// Rule 1: no commit, push, merge, delete, or force on a critical ref.
@@ -75,6 +74,11 @@ func Table(policy Policy) []Case {
 		bash("a model session's merge onto an epic branch is refused (decision 0028)", "git merge feat/x", "feat/1.0.0-alpha.7", true, "merge button"),
 		bash("push to a slugged feat branch is not an epic branch", "git push origin feat/versions-go-alpha", "feat/x", false, ""),
 		bash("a push with several refspecs is judged on every one, not only the last", "git push origin main feat/x", "feat/x", true, "open a pull request"),
+		bash("sudo push to main", "sudo git push origin main", "feat/x", true, "open a pull request"),
+		bash("a shell -c push to main", "bash -c 'git push origin main'", "feat/x", true, "open a pull request"),
+		bash("an env-prefixed push to main", "FOO=1 env -i git push origin main", "feat/x", true, "open a pull request"),
+		bash("an eval of a push to main", `eval "git push origin main"`, "feat/x", true, "open a pull request"),
+		bash("sudo push of its own branch", "sudo git push origin feat/x", "feat/x", false, ""),
 
 		// Rule 2: pushed history is never rewritten, on any branch.
 		bash("force push to own branch", "git push --force origin feat/x", "feat/x", true, "never rewritten"),
@@ -93,6 +97,7 @@ func Table(policy Policy) []Case {
 		write("a new source file", "internal/line/new.go", false, ""),
 		bash("redirect above the root", "echo x > ../outside.txt", "feat/x", true, "outside the worktree"),
 		bash("redirect into the worktree", "echo x > out.txt", "feat/x", false, ""),
+		bash("a shell -c redirect above the root", "sh -c 'echo x > ../outside.txt'", "feat/x", true, "outside the worktree"),
 
 		// A spawn never cuts its own worktree; the line already cut it.
 		spawn("a spawn with isolation set is denied", "worktree", true, "a spawn never cuts its own worktree"),
