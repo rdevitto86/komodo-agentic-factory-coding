@@ -80,3 +80,23 @@ func TestParseStageRefusesAnythingButBuildReviewAndShip(t *testing.T) {
 		t.Fatalf("err = %v, want an unwired driver refused", err)
 	}
 }
+
+// TestAnAdhocReviewStampsItsFindingsNotItsLenses proves the ledger row counts findings across every lens.
+func TestAnAdhocReviewStampsItsFindingsNotItsLenses(t *testing.T) {
+	r := newRig(t)
+	finding := func(line int) map[string]any {
+		return map[string]any{"severity": "low", "file": "a.go", "line": line, "title": "name", "fix": "rename"}
+	}
+	r.host.reviews = []map[string]any{{"findings": []any{finding(1), finding(2), finding(3)}}}
+	final, err := r.driver.RunStage(context.Background(), StageReview, State{Group: "TG-1", Current: Ready})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adhoc, err := r.driver.Ledger.Read(ledger.AdhocFile)
+	if err != nil || len(adhoc) == 0 {
+		t.Fatalf("ad hoc ledger = %v, %v", adhoc, err)
+	}
+	if got := adhoc[len(adhoc)-1].Findings; got != 3 {
+		t.Fatalf("stamped findings = %d over %d lenses, want the 3 findings", got, len(final.Findings))
+	}
+}

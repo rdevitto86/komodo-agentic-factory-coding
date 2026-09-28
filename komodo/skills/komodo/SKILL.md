@@ -11,7 +11,7 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
-  komodo backlog               List the open groups under docs/backlog
+  komodo backlog             List the open groups under docs/backlog
   komodo add <group> <title>  Add a group, or append a task to one
   komodo next [--json]        The next ready group: tasks, waves, machines
   komodo brief <task>         Fill the role template and write the brief
@@ -26,6 +26,8 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo tag                  Tag every changelog version no tag points at
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo release build        Build the per-platform binaries as release assets
+  komodo release fold         Fold every changelog fragment into CHANGELOG.md
+  komodo release publish      Build, test, checksum and publish the newest version as a release
   komodo install --host X     Mount this repo on a host, or on both
   komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
   komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
@@ -44,6 +46,7 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo machine <task>       Post a brief to the local machine, write the result, stamp the ledger
   komodo metrics              What the two ledger files hold
   komodo recall [--model m]   Score the local reviewer against the seeded-bug corpus
+  komodo eval [--list|--cases|--runs N]  The golden suite: list it, run the eval cases, or drive each group N times
   komodo version              The changelog version and commit this binary was built from
   komodo gate [--install]     The local precheck: vet, race tests, doctor, guard, comments; --fuzz 10s adds fuzzing
   komodo help [--skill]       This list, or the komodo skill generated from it

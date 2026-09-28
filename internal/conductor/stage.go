@@ -80,9 +80,13 @@ func (d *Driver) RunStage(ctx context.Context, stage Stage, s State) (State, err
 	case s.Escalate:
 		outcome = "blocked"
 	}
+	findings := 0
+	for _, each := range s.Findings {
+		findings += len(each)
+	}
 	entry := ledger.Entry{
 		Group: s.Group, Station: stationPrefix + string(stage), Seconds: time.Since(started).Seconds(),
-		Outcome: outcome, Findings: len(s.Findings),
+		Outcome: outcome, Findings: findings,
 	}
 	if stampErr := d.Ledger.Stamp(entry); stampErr != nil {
 		return s, errors.Join(err, stampErr)
