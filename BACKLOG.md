@@ -3311,7 +3311,7 @@ depends_on: [TG-07.7]
 ```
 * **Why:** unverified work looked ready, and a missing credential lost work at the last step. Proves REQ-24, REQ-25 and REQ-27.
 
-#### [TSK-07.8.1] Prepare commits, runs the hooks and catches up, with conflicts as a repair round [P: C] [READY]
+#### [TSK-07.8.1] Prepare commits, runs the hooks and catches up, with conflicts as a repair round [P: C] [DONE]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
@@ -3323,7 +3323,7 @@ context:
   - "test (REQ-24): the ledger shows no push before these checks pass"
 ```
 
-#### [TSK-07.8.2] Integration test-merges every ready group, and plans the stack [P: H] [READY]
+#### [TSK-07.8.2] Integration test-merges every ready group, and plans the stack [P: H] [DONE]
 ```yaml
 files: [internal/conductor/integrate.go, internal/conductor/integrate_test.go, internal/run/run.go, internal/run/run_test.go]
 done_when:
@@ -3333,7 +3333,7 @@ context:
   - "a failure is a repair round for the group that caused it; a child of an unmerged parent targets the parent's branch, and is rebased and retargeted when the parent merges"
 ```
 
-#### [TSK-07.8.3] Every PR opens as a draft, or labelled status: wip where drafts are unavailable [P: C] [READY]
+#### [TSK-07.8.3] Every PR opens as a draft, or labelled status: wip where drafts are unavailable [P: C] [DONE]
 ```yaml
 files: [internal/pr/pr.go, internal/pr/pr_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/epic.go]
 done_when:
@@ -3345,7 +3345,7 @@ context:
   - "internal/profile/profile.go maps to scope/agents, and a failed label call is a tested warning (from TSK-03.31.10 and TSK-03.31.12)"
 ```
 
-#### [TSK-07.8.4] A missing or expired credential stops a group before Ship, and `komodo ship` finishes it [P: C] [READY]
+#### [TSK-07.8.4] A missing or expired credential stops a group before Ship, and `komodo ship` finishes it [P: C] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go, cmd/komodo/line.go, cmd/komodo/main.go]
 done_when:
@@ -3356,6 +3356,114 @@ context:
   - "ShipGroup already writes a handoff when the environment is scrubbed; komodo ship reads it back and finishes the push and PR"
   - "the group keeps its commits and gets a blocker note; other groups continue; --no-ship stops each group before Ship (REQ-27)"
 ```
+
+#### [TSK-07.8.5] internal/run/run.go:204 Restack rebases the worktree of a group another lane is still building [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/run.go
+done_when:
+  - test -f internal/run/run.go
+type: fix
+context:
+  - "drain calls restack after each shipped group while other lanes are still running. Restack goes through every RunState, including a child whose lane is still running, and runs rebase or merge with --autostash in that child's worktree (integrate.go:137). This happens once the child's parent has merged, so git runs underneath a builder session that is still working. Pass the running group IDs into Restack and skip them, or restack a group only when its own lane starts."
+```
+
+#### [TSK-07.8.6] internal/line/ship.go:723 FinishShip commits the blocker note's removal before a push that can still be refused [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "dropCredentialNote removes and commits the credential note before PushFromWorktree runs. If the credential is still missing or expired, FinishShip returns ErrNoCredential and the handoff stays, but the branch no longer has its blocker note. That breaks REQ-27, which requires a stopped group to keep its note. Push first and drop the note only after the push succeeds, or write the note again on ErrNoCredential."
+```
+
+#### [TSK-07.8.7] internal/line/ship.go:248 In a headless run the credential stop and the draft/wip fallback never apply [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "komodo run launches scrubbed, so ShipGroup always takes the scrubbed handoff branch. The push and the PR then happen in run.go finishShip. That code returns a credential refusal as a plain lane error with no blocker note. It also calls client.Create(..., handoff.Draft) directly instead of createEpicPull, so a forge that refuses drafts fails the ship when it should open the PR labelled status: wip. The TSK-07.8.3 and 07.8.4 behaviour only holds when ship runs unscrubbed. Have run.go finishShip call line.FinishShip, or share its credential stop and its createEpicPull path."
+```
+
+#### [TSK-07.8.8] internal/line/ship.go:261 The credential-note commit makes staleReview reject any later ShipGroup retry [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "writeCredentialNote commits 'docs: ... waits on a forge credential' after the review result is written. staleReview (step.go:312-321) ignores only commits whose subject is the ship subject, so it counts this commit as new work. Any later ShipGroup retry then fails with 'changed after its review' and asks for a new review over a docs-only commit. That covers an escalation retrying Ship and `komodo line ship` once the credential is back. Make staleReview skip the credential-note commits, or fold the note into the ship commit."
+```
+
+#### [TSK-07.8.9] internal/line/ship.go:719 FinishShip checks the handoff's group and branch but trusts its worktree path [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "The comment says ship.json is agent-writable, and FinishShip checks Group and Branch. It then uses handoff.Worktree unchecked. dropCredentialNote writes and commits BACKLOG.md in that directory, and PushFromWorktree pushes that directory's branch to the root's origin with the forge credential. A stale or wrong worktree in ship.json therefore publishes another checkout's tree under the group's branch. No reproducer; this is a note. Derive the worktree from the group's saved RunState (WorktreePath(root, state.Worktree)) and refuse a handoff whose Worktree differs."
+```
+
+#### [TSK-07.8.10] internal/conductor/integrate.go:60 TestMerge passes a run-state branch to git merge with no end-of-options marker [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/integrate.go
+done_when:
+  - test -f internal/conductor/integrate.go
+type: fix
+context:
+  - 'other.Branch comes from a run-state file and goes to `git merge --no-edit` as a bare argument. A value that starts with ''-'' is read as an option, for example --strategy=<name>, which runs git-merge-<name> from PATH. Restack''s client.Edit(state.Branch, ...) has the same shape. No reproducer; this is a note. Insert "--end-of-options" before other.Branch, or skip any ready branch that fails git check-ref-format --branch.'
+```
+
+#### [TSK-07.8.11] internal/line/ship.go:495 rebaseForRepair copies catchUp's preamble line for line [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: refactor
+context:
+  - "rebaseForRepair repeats catchUp (ship.go:870) almost word for word: the fetch guarded by hasOrigin, the StartRef target, the rev-parse and is-ancestor early returns, and the choice between rebase and merge for a pushed branch, comments included. The only real difference is how each handles a conflict, so a fix to one copy can be missed in the other. Extract the shared target/up-to-date/rebase-or-merge selection into one helper that both catchUp and rebaseForRepair call."
+```
+
+#### [TSK-07.8.12] internal/conductor/integrate.go:157 restackOnto copies the rebase-or-merge choice a third time [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/integrate.go
+done_when:
+  - test -f internal/conductor/integrate.go
+type: refactor
+context:
+  - "restackOnto makes the same decision again: rebase a local branch, merge into a pushed one, abort if it fails. It repeats the same comment word for word. This is the third copy of the logic in catchUp and rebaseForRepair, and it detects a pushed branch in its own way (rev-parse refs/remotes/origin) instead of calling onOrigin. Export one line helper for the rebase-or-merge step and call it from restackOnto."
+```
+
+#### [TSK-07.8.13] internal/line/ship.go:738 FinishShip copies ShipGroup's create-or-reuse PR block [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: refactor
+context:
+  - "FinishShip copies ShipGroup's steps (ship.go:275-285): call createEpicPull, fall back to client.View when a PR is still OPEN, then ApplyLabels and merge the wip label with the warnings. If the draft-first logic changes, both copies have to change. Extract an openDraftPull(client, base, branch, title, body, labels) helper and call it from both ShipGroup and FinishShip."
+```
+
+
+
+
+
+
+
+
+
 
 ### [TG-07.9] Cleanup is mechanical
 ```yaml
