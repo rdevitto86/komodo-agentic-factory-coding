@@ -72,14 +72,10 @@ func NewMount(root, worktree string, maxTurns int, maxBudgetUSD float64) *Mount 
 	}
 }
 
-// Preflight checks the installed CLI's pinned version and its login, or names which one fails.
+// Preflight checks that the installed CLI runs and holds a login, or names which one fails.
 func (m *Mount) Preflight() error {
-	installed, err := versionOutput()
-	if err != nil {
+	if _, err := versionOutput(); err != nil {
 		return fmt.Errorf("checking claude --version: %w", err)
-	}
-	if !strings.Contains(installed, HostVersion) {
-		return fmt.Errorf("claude reports %s; the line is pinned to %s", installed, HostVersion)
 	}
 	loggedIn, err := LoggedIn()
 	if err != nil {

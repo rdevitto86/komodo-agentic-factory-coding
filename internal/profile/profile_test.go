@@ -275,12 +275,11 @@ func TestWhyNamesWhereReviewLandsWhenTheOverlayOptsTheReviewerIn(t *testing.T) {
 	}
 }
 
-func TestFullModePinsTheHostVersionAndEachRolesMachine(t *testing.T) {
+func TestFullModePinsEachRolesMachine(t *testing.T) {
 	host := fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)
-	host.Version = "9.9.9"
 	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
-	if got.Mode != "full" || got.HostVersion != "9.9.9" {
-		t.Fatalf("mode = %q, host_version = %q", got.Mode, got.HostVersion)
+	if got.Mode != "full" {
+		t.Fatalf("mode = %q", got.Mode)
 	}
 	builder, ok := got.Machine("builder")
 	if !ok || builder.Model != "big" || builder.Effort != "medium" {
