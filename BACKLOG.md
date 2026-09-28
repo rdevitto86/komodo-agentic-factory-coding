@@ -3521,7 +3521,7 @@ depends_on: [TG-07.8]
 ```
 * **Why:** stale runs and worktrees were cleared by hand after squash merges. Proves REQ-46.
 
-#### [TSK-07.9.1] Ship and the next run remove merged and abandoned groups' leftovers [P: H] [READY]
+#### [TSK-07.9.1] Ship and the next run remove merged and abandoned groups' leftovers [P: H] [DONE]
 ```yaml
 files: [internal/doctor/prune.go, internal/doctor/prune_test.go, internal/run/drive.go, internal/run/drive_test.go]
 done_when:
@@ -3532,7 +3532,7 @@ context:
   - "worktrees, local branches and sessions go; a squash-merged group whose branch is gone settles too (from TSK-03.32.8); only the last 10 run folders stay"
 ```
 
-#### [TSK-07.9.2] `komodo sync` opens a cleanup PR for an epic whose files outlived it [P: M] [READY]
+#### [TSK-07.9.2] `komodo sync` opens a cleanup PR for an epic whose files outlived it [P: M] [DONE]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go]
 done_when:
@@ -3541,7 +3541,7 @@ context:
   - "only when every group of the epic has shipped; the PR deletes the epic's group files"
 ```
 
-#### [TSK-07.9.3] Doctor names each kind of leftover [P: H] [READY]
+#### [TSK-07.9.3] Doctor names each kind of leftover [P: H] [DONE]
 ```yaml
 files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go, internal/doctor/doctor.go]
 done_when:
