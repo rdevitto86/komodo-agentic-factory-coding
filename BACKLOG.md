@@ -592,7 +592,7 @@ context:
   - 'On a start with Brief "", or a resume with resumeInput "", Session sends "/" on stdin instead of refusing. This launches a paid, turn-consuming session with a meaningless prompt and hides the conductor''s bug. The substitution also carries no comment. Return an error from Session when the prompt it would send is empty.'
 ```
 
-#### [TSK-05.2.10] internal/mount/claude/session.go:97 removeEnv keeps an entry whose value is empty [P: L] [REFINEMENT]
+#### [TSK-05.2.10] internal/mount/claude/session.go:97 removeEnv keeps an entry whose value is empty [P: L] [DONE]
 ```yaml
 files:
   - internal/mount/claude/session.go

@@ -174,6 +174,13 @@ func TestSessionEnvRemovesCLAUDEConfigDir(t *testing.T) {
 	}
 }
 
+func TestSetEnvReplacesAnEmptyValue(t *testing.T) {
+	env := setEnv([]string{"GOCACHE=", "HOME=/h"}, "GOCACHE", "/cache")
+	if strings.Join(env, " ") != "HOME=/h GOCACHE=/cache" {
+		t.Fatalf("env = %q, want one GOCACHE entry", env)
+	}
+}
+
 func TestSessionEnvSetsGoCache(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
