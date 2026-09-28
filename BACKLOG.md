@@ -3133,7 +3133,7 @@ depends_on: [TG-07.6]
 ```
 * **Why:** a stuck group needs a decision, and an unattended run needs one without a person (decision 0011). Proves REQ-18 and REQ-45.
 
-#### [TSK-07.7.1] An escalation reaches a headless orchestrator, which returns one allowed action [P: C] [READY]
+#### [TSK-07.7.1] An escalation reaches a headless orchestrator, which returns one allowed action [P: C] [DONE]
 ```yaml
 files: [internal/conductor/escalate.go, internal/conductor/escalate_test.go, internal/conductor/drive.go, internal/run/drive.go, komodo/roles/orchestrator.md, komodo/roles/orchestrator.schema.json]
 done_when:
@@ -3146,7 +3146,7 @@ context:
   - "the person-present path, komodo status and its hook, lands with TSK-08.4.4"
 ```
 
-#### [TSK-07.7.2] The escalate skill settles one escalation within its limits [P: H] [READY]
+#### [TSK-07.7.2] The escalate skill settles one escalation within its limits [P: H] [DONE]
 ```yaml
 files: [komodo/skills/escalate/SKILL.md]
 done_when:
@@ -3158,7 +3158,7 @@ context:
 type: docs
 ```
 
-#### [TSK-07.7.3] A blocked builder pauses its dependants and escalates [P: H] [READY]
+#### [TSK-07.7.3] A blocked builder pauses its dependants and escalates [P: H] [DONE]
 ```yaml
 files: [internal/conductor/blocked.go, internal/conductor/blocked_test.go, internal/run/run.go]
 done_when:
@@ -3169,7 +3169,7 @@ context:
   - "test (REQ-18) on the conductor's decision; a group that stops twice without progress gets a blocker note, whatever the orchestrator says"
 ```
 
-#### [TSK-07.7.4] What the orchestrator can't settle becomes a blocker note and a blocked draft PR [P: C] [READY]
+#### [TSK-07.7.4] What the orchestrator can't settle becomes a blocker note and a blocked draft PR [P: C] [DONE]
 ```yaml
 files: [internal/backlog/note.go, internal/backlog/note_test.go, internal/conductor/stop.go, internal/conductor/stop_test.go, internal/line/ship.go, cmd/komodo/line.go]
 done_when:
@@ -3180,6 +3180,90 @@ context:
   - "save a WIP commit, set BLOCKED, write the note under the group heading on its branch, and publish a draft PR labelled status: blocked; a headless run exits non-zero; komodo resume feeds the edited group to the resumed builder and removes the note"
   - "one test per path (REQ-45)"
 ```
+
+#### [TSK-07.7.5] internal/conductor/escalate.go:98 A resumed escalation tells the orchestrator the wrong reason [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/escalate.go
+done_when:
+  - test -f internal/conductor/escalate.go
+type: fix
+context:
+  - "r.reason is only in memory. Suppose a saved group is at Escalated with no answer, because the orchestrator returned an action outside the enum, failed to start, or was cut off by the budget. On resume, Drive calls escalate with an empty r.reason, and reason() reads Host.Result(lastSession(s)). The last session is now the orchestrator's own session, since session() appended it to s.Sessions. So the second orchestrator, and the blocker note's Items, get 'the builder returned BLOCKED with no question' instead of the builder's question. For a group that escalated on a station error, they get the last builder's summary instead of the failure. Save the escalation reason in State (like Fixes and Repairs), and read it before falling back to the last builder session's result."
+```
+
+#### [TSK-07.7.6] internal/conductor/drive.go:143 The one-heavy-retry and two-stall limits reset on every resumed run [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "round.heavy and round.stalls are not saved to state.json. Drive rebuilds round from s.Fixes, s.Builder and s.Repairs alone. After a budget timeout or interrupt and a resume, the builder falls back from the heavy machine to the standard one, the orchestrator can be granted a second retry, and a group that already stalled once needs two more stalls before it is blocked. That breaks the rules 'retry once on heavy' and 'a group that stops twice without progress gets a blocker note'. Save heavy and stalls in State next to Repairs, and restore them when Drive and Resume build the round."
+```
+
+#### [TSK-07.7.7] internal/conductor/stop.go:35 Block drops ShipBlocked's warnings, so an unpublished or unlabelled blocker goes unreported [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/stop.go
+done_when:
+  - test -f internal/conductor/stop.go
+type: chore
+context:
+  - "Line.Block discards the ShipResult (`_, err := line.ShipBlocked(...)`). ShipBlocked returns nil error with only a warning in two cases: a scrubbed environment, where the note is committed locally and never pushed, and a repo with no `status: blocked` label. In both cases a headless stop looks published when no draft PR exists, or it exists without its label. Nothing logs or surfaces the failure. Return or print result.Warnings from Line.Block, and make a scrubbed, unpublished blocker count as a failure the headless run reports."
+```
+
+#### [TSK-07.7.8] komodo/roles/orchestrator.md:5 Orchestrator gets edit and write on the whole worktree, and only its prompt keeps it to the backlog file [P: L] [REFINEMENT]
+```yaml
+files:
+  - komodo/roles/orchestrator.md
+done_when:
+  - test -f komodo/roles/orchestrator.md
+type: fix
+context:
+  - "The role grants [read, edit, write, search], and 'never touch a file outside the group's backlog file' is prose only. After a split or clarify, the conductor only lints the backlog (internal/conductor/escalate.go). An edit to any other file stays in the worktree and ends up in the WIP commit or the shipped branch unchecked. Under the cooperative-model threat model only the guard would catch this, so it is a note. After a split or clarify, refuse the action when git diff shows changes outside the group's backlog file."
+```
+
+#### [TSK-07.7.9] internal/line/ship.go:372 ShipBlocked copies ShipGroup's create-or-refresh pull request fallback [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: refactor
+context:
+  - "The Create → View → OPEN check → Edit(--title, --body) → url = open.URL block is a line-for-line copy of the one at the end of ShipGroup. The declared-files loop at line 322 is a copy of ShipGroup's too. A fix to one copy will not reach the other. Move the create-or-refresh block into one helper, e.g. openOrRefresh(client, base, branch, title, body, draft), and call it from both ShipGroup and ShipBlocked."
+```
+
+#### [TSK-07.7.10] internal/run/drive.go:125 newDriver's heavy machine and builder-effort override have no test [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/drive.go
+done_when:
+  - test -f internal/run/drive.go
+type: test
+context:
+  - "newDriver sets the heavy machine from plan.Profile.Tiers.Heavy and replaces its Effort with the builder machine's Effort. TestNewDriverWiresTheOrchestratorLintAndBlock checks Block, Orchestrator and Lint but never Heavy. The conductor tests inject Heavy themselves. If Heavy were left empty, every retry would turn into a stop and all done_when tests would still pass. Extend TestNewDriverWiresTheOrchestratorLintAndBlock to assert driver.Heavy.Model equals the profile's heavy tier and driver.Heavy.Effort equals the builder machine's effort."
+```
+
+#### [TSK-07.7.11] internal/conductor/escalate.go:145 startBuilder's fallback when a resume fails has no test [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/escalate.go
+done_when:
+  - test -f internal/conductor/escalate.go
+type: test
+context:
+  - "When the host can resume but Host.Resume returns an error, startBuilder starts a fresh builder with the answer added to its brief. The only fresh-builder test turns resume capability off, so it never reaches this branch after a failed Resume. Add a case where the fake host's Resume returns an error, and assert that a fresh builder starts whose brief ends with answerLead plus the answer."
+```
+
+
+
+
+
+
+
 
 ### [TG-07.13] Escalations survive a restart, and a group can be abandoned
 ```yaml
