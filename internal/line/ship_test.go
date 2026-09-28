@@ -2327,3 +2327,69 @@ func TestKomodoShipFailsOnAHandoffItCannotRead(t *testing.T) {
 		t.Fatalf("finish = %v, want the read's own failure", err)
 	}
 }
+
+func TestLabelWipWarnsOnEachFailure(t *testing.T) {
+	cases := []struct {
+		name   string
+		labels string
+		list   error
+		add    error
+		want   string
+	}{
+		{"the labels cannot be listed", "", errors.New("offline"), nil, "could not list labels"},
+		{"the repo has no such label", `[{"name":"status: blocked"}]`, nil, nil, "the repo has no status: wip label"},
+		{"the label cannot be added", `[{"name":"status: wip 🚧"}]`, nil, errors.New("forbidden"), "could not add label(s)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
+				if args[0] == "label" {
+					return tc.labels, tc.list
+				}
+				return "", tc.add
+			}}
+			labels, warnings := labelWip(client, "https://example.com/pull/7")
+			if len(labels) != 0 || len(warnings) != 1 || !strings.Contains(warnings[0], tc.want) {
+				t.Fatalf("labels %v, warnings %v; want no label and a warning naming %q", labels, warnings, tc.want)
+			}
+		})
+	}
+}
+
+func TestShipBlockedKeepsTheNoteLocalWhenThePrePushGateRefuses(t *testing.T) {
+	root, group := shipRepo(t)
+	stopGroup(t, group)
+	envLog := installPrePush(t, group, 1)
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		t.Fatalf("gh must not run once the push is refused: %v", args)
+		return "", nil
+	}}
+	result, err := ShipBlocked(root, blockedPlan(), blockedNote, client)
+	if err == nil || !strings.Contains(err.Error(), "pre-push hook") {
+		t.Fatalf("ship blocked = %v, want the pre-push gate's refusal", err)
+	}
+	if result == nil || result.URL != "" || !slices.Equal(result.Blocked, []string{"TSK-09.1.1"}) {
+		t.Fatalf("result = %+v, want the open task blocked and no pull request", result)
+	}
+	if _, err := os.Stat(envLog); err != nil {
+		t.Fatalf("the pre-push hook never ran: %v", err)
+	}
+	subjects, err := git.Run(group, "log", "--format=%s", "-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Split(subjects, "\n"); len(lines) != 2 ||
+		!strings.HasPrefix(lines[0], "docs: A group is blocked") || !strings.HasPrefix(lines[1], "wip: A group") {
+		t.Fatalf("commits = %q, want the WIP commit then the note, both local", lines)
+	}
+	data, err := os.ReadFile(filepath.Join(group, "BACKLOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "> - Needs: a decision on the clock") {
+		t.Fatalf("backlog =\n%s\nwant the blocker note kept on the branch", data)
+	}
+	if heads, err := git.Run(group, "ls-remote", "origin", "refs/heads/feat/a-group"); err != nil || heads != "" {
+		t.Fatalf("ls-remote = %q, %v; want nothing on origin after the refusal", heads, err)
+	}
+}

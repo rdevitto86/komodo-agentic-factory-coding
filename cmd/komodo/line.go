@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"komodo/internal/backlog"
 	"komodo/internal/conductor"
@@ -96,6 +97,22 @@ func runResume(root string, args []string) {
 	}
 	fmt.Printf("%s is at %s with %d session(s) and %d repair round(s) recorded\n",
 		state.Group, state.Current, len(state.Sessions), state.Repairs)
+}
+
+// runAbandon removes a group's worktree and branch, and marks its open tasks BLOCKED under a note saying why.
+func runAbandon(root string, args []string) {
+	target, _ := splitPositional(args)
+	group := line.GroupFor(root, target)
+	if group == "" {
+		group = target
+	}
+	if group == "" {
+		fail(fmt.Errorf("usage: komodo abandon <group>"))
+	}
+	if err := conductor.Abandon(root, group, time.Now()); err != nil {
+		fail(err)
+	}
+	fmt.Printf("%s is abandoned: its worktree and branch are removed, and its open tasks are BLOCKED\n", group)
 }
 
 // clearBlocker removes a blocked group's note from its branch's backlog once a person set every task back

@@ -101,16 +101,21 @@ func createEpicPull(client *pr.Client, base, head, title, body string) (url stri
 	return url, false, labels, warnings, nil
 }
 
-// labelWip adds the status: wip label the repo already defines, since KeepKnown's rule of a
-// label's name before its first space cannot match one whose own name holds a space.
+// labelWip adds the status: wip label the repo already defines.
 func labelWip(client *pr.Client, url string) (labels, warnings []string) {
+	return labelNamed(client, url, wipName)
+}
+
+// labelNamed adds the repo's label called name, since KeepKnown's rule of a label's name before
+// its first space cannot match one whose own name holds a space.
+func labelNamed(client *pr.Client, url, name string) (labels, warnings []string) {
 	known, err := client.Labels()
 	if err != nil {
 		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
 	}
-	label := wipLabel(known)
+	label := knownLabel(known, name)
 	if label == "" {
-		return nil, []string{"the repo has no " + wipName + " label"}
+		return nil, []string{"the repo has no " + name + " label"}
 	}
 	if err := client.Label(url, []string{label}); err != nil {
 		return nil, []string{fmt.Sprintf("could not add label(s): %v", err)}
@@ -123,8 +128,13 @@ const wipName = "status: wip"
 
 // wipLabel is the repo's status: wip label, matched by its whole name before any emoji, else empty.
 func wipLabel(known []string) string {
+	return knownLabel(known, wipName)
+}
+
+// knownLabel is the repo's label called name, matched by its whole name before any emoji, else empty.
+func knownLabel(known []string, name string) string {
 	for _, label := range known {
-		if label == wipName || strings.HasPrefix(label, wipName+" ") {
+		if label == name || strings.HasPrefix(label, name+" ") {
 			return label
 		}
 	}

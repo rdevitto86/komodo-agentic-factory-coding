@@ -61,6 +61,14 @@ type State struct {
 	ReviewRounds map[review.Lens]int `json:"review_rounds,omitempty"`
 	// ColdPass records each lens whose one cold review before ship has run.
 	ColdPass map[review.Lens]bool `json:"cold_pass,omitempty"`
+	// Reason is why the group last escalated, which the orchestrator reads and its blocker note names.
+	Reason string `json:"reason,omitempty"`
+	// Answer is the orchestrator's answer the next builder session reads.
+	Answer string `json:"answer,omitempty"`
+	// Stalls counts the group's stops without progress, across every run that drove it.
+	Stalls int `json:"stalls,omitempty"`
+	// Heavy records that the orchestrator's one retry on the heavy tier is taken.
+	Heavy bool `json:"heavy,omitempty"`
 
 	// SlotFree is read at Ready: a build slot is free for the group to take.
 	SlotFree bool `json:"slot_free"`

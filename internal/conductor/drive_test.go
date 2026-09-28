@@ -898,11 +898,123 @@ func TestDriveKeepsItsRoundInTheStateAcrossCalls(t *testing.T) {
 	resumed.Answered = true
 	r.stations.checks = [][]string{{"fail"}}
 	second, err := r.driver.Drive(context.Background(), resumed)
-	if !errors.Is(err, errNoProgress) || second.Current != Escalated || second.Repairs < first.Repairs {
-		t.Fatalf("second drive = %s with %d repairs, %v; the spent rounds must carry over", second.Current, second.Repairs, err)
+	if !errors.Is(err, errNoProgress) || second.Current != Blocked || second.Repairs < first.Repairs ||
+		second.Stalls != 2 {
+		t.Fatalf("second drive = %s with %d repairs and %d stalls, %v; the spent rounds and the first stall must carry over",
+			second.Current, second.Repairs, second.Stalls, err)
 	}
 	if got := len(r.sessions(t)); got != sessions {
 		t.Fatalf("sessions went from %d to %d; the saved fix list must stop a check failing on it again", sessions, got)
+	}
+}
+
+func TestARunKilledWhileEscalatedResumesWithItsReasonAnswerStallsAndRetry(t *testing.T) {
+	r := newRig(t)
+	r.stations.checks = [][]string{{"fail"}, {"fail"}}
+	r.host.builds = []map[string]any{{"result": "DONE"}, {"result": "BLOCKED", "question": "which clock?"}}
+	escalating(r, nil,
+		map[string]any{"action": ActionRetry},
+		map[string]any{"action": ActionAnswer, "answer": "inject a clock parameter"},
+	)
+	ctx, kill := context.WithCancel(context.Background())
+	defer kill()
+	r.driver.Save = func(s State) error {
+		*r.saved = append(*r.saved, s)
+		if s.Current == Escalated && s.Answer != "" {
+			kill()
+		}
+		return nil
+	}
+	if _, err := r.driver.Drive(ctx, State{Group: "TG-1", Current: Ready, SlotFree: true}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("drive = %v, want the run killed", err)
+	}
+	killed := (*r.saved)[len(*r.saved)-1]
+	if killed.Current != Escalated || !killed.Answered || killed.Reason != "which clock?" ||
+		killed.Answer != "inject a clock parameter" || killed.Stalls != 1 || !killed.Heavy {
+		t.Fatalf("saved = %+v, want the escalation's reason, answer, one stall and the retry taken", killed)
+	}
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := SaveState(path, killed); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadState(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	next := newRig(t)
+	next.host.resume = false
+	next.stations.checks = [][]string{{"fail"}, {"fail"}}
+	host := escalating(next, nil)
+	final, _ := next.driver.Drive(context.Background(), loaded)
+	builder := next.host.starts[0]
+	if builder.Model != "opus" || !strings.Contains(builder.Brief, "inject a clock parameter") {
+		t.Fatalf("resumed builder = %+v, want the heavy machine reading the saved answer", builder)
+	}
+	if final.Current != Blocked || final.Stalls != 2 || len(host.asked) != 0 {
+		t.Fatalf("final = %s with %d stalls after %d orchestrator session(s); want the second stall blocked unasked",
+			final.Current, final.Stalls, len(host.asked))
+	}
+}
+
+func TestARunKilledBeforeTheOrchestratorAnsweredAsksWithTheSavedReason(t *testing.T) {
+	r := newRig(t)
+	r.stations.checks = [][]string{{"fail"}, {"fail"}}
+	ctx, kill := context.WithCancel(context.Background())
+	defer kill()
+	r.driver.Save = func(s State) error {
+		*r.saved = append(*r.saved, s)
+		if s.Current == Escalated {
+			kill()
+		}
+		return nil
+	}
+	if _, err := r.driver.Drive(ctx, State{Group: "TG-1", Current: Ready, SlotFree: true}); err == nil {
+		t.Fatal("drive = nil, want the run killed")
+	}
+	killed := (*r.saved)[len(*r.saved)-1]
+	if killed.Current != Escalated || killed.Answered || killed.Stalls != 1 ||
+		!strings.Contains(killed.Reason, "the checks fail identically") {
+		t.Fatalf("saved = %+v, want the unanswered escalation with its reason and one stall", killed)
+	}
+
+	next := newRig(t)
+	host := escalating(next, nil, map[string]any{"action": ActionAnswer, "answer": "ship it"})
+	*next.saved = append(*next.saved, killed)
+	if _, err := next.driver.Drive(context.Background(), killed); err != nil {
+		t.Fatalf("resumed drive = %v", err)
+	}
+	if len(host.asked) != 1 || !strings.Contains(host.asked[0].Brief, "the checks fail identically") {
+		t.Fatalf("orchestrator briefs = %+v, want the saved reason, not the lost session's", host.asked)
+	}
+}
+
+func TestDriveReturnsAFailedSaveOfAnAnsweredEscalation(t *testing.T) {
+	refused := errors.New("disk full")
+	cases := []struct {
+		name  string
+		start State
+	}{
+		{"an escalation answered mid-drive", State{Group: "TG-1", Current: Ready, SlotFree: true}},
+		{"a saved escalation answered on resume", State{Group: "TG-1", Current: Escalated, Escalate: true, Left: Shipping}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.host.builds = []map[string]any{{"result": "BLOCKED", "question": "which clock?"}}
+			escalating(r, nil, map[string]any{"action": ActionAnswer, "answer": "inject a clock parameter"})
+			*r.saved = append(*r.saved, tc.start)
+			r.driver.Save = func(s State) error {
+				if s.Current == Escalated && s.Answered {
+					return refused
+				}
+				*r.saved = append(*r.saved, s)
+				return nil
+			}
+			if _, err := r.driver.Drive(context.Background(), tc.start); !errors.Is(err, refused) {
+				t.Fatalf("drive = %v, want the failed save", err)
+			}
+		})
 	}
 }
 
