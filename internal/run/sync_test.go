@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"testing"
 
 	"komodo/internal/gate"
+	"komodo/internal/pr"
 )
 
 // syncRepo builds a root on main whose origin holds one commit the root lacks, and returns that commit.
@@ -363,6 +365,164 @@ func TestSyncBinary(t *testing.T) {
 				t.Fatalf("marker = %q, want %q", recorded, want)
 			}
 		})
+	}
+}
+
+// groupFile renders one docs/backlog group file of epic whose one task is ticked when done.
+func groupFile(id, epic string, done bool) string {
+	box := " "
+	if done {
+		box = "x"
+	}
+	return "## [" + id + "] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 0.1.0\nepic: " + epic + "\n```\n\n" +
+		"- [" + box + "] **TSK-" + strings.TrimPrefix(id, "TG-") + ".1** Do it\n  - files: `a.go`\n"
+}
+
+// cleanupRepo builds a root on main, current with its bare origin, holding files under docs/backlog.
+func cleanupRepo(t *testing.T, files map[string]string) (root, bare string) {
+	t.Helper()
+	bare = filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", "-b", "main", bare)
+	root = t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("/.komodo/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range files {
+		if err := os.WriteFile(filepath.Join(root, "docs", "backlog", name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "seed")
+	runGit(t, root, "push", "origin", "main")
+	runGit(t, root, "fetch", "origin")
+	return root, bare
+}
+
+func TestSyncOpensACleanupPRForAnEpicWhoseFilesOutlivedIt(t *testing.T) {
+	cases := []struct {
+		name     string
+		lastDone bool
+		dryRun   bool
+		wantPRs  int
+		wantLine string
+	}{
+		{name: "every group shipped", lastDone: true, wantPRs: 1, wantLine: "cleanup: opened chore/cleanup-epic-01"},
+		{name: "a group still open", lastDone: false, wantPRs: 0, wantLine: "cleanup: no epic's files outlived it"},
+		{name: "a dry run opens nothing", lastDone: true, dryRun: true, wantPRs: 0, wantLine: "(dry run)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, bare := cleanupRepo(t, map[string]string{
+				"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true),
+				"TG-01.2-b.md": groupFile("TG-01.2", "EPIC-01", tc.lastDone),
+				"TG-02.1-c.md": groupFile("TG-02.1", "EPIC-02", false),
+			})
+			var created [][]string
+			client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
+				created = append(created, args)
+				return "https://example.invalid/pr/9", nil
+			}}
+			var out bytes.Buffer
+			if _, err := Sync(SyncOptions{Root: root, DryRun: tc.dryRun, Stdout: &out, PR: client}); err != nil {
+				t.Fatal(err)
+			}
+			if len(created) != tc.wantPRs {
+				t.Fatalf("PRs opened = %v, want %d; out = %s", created, tc.wantPRs, out.String())
+			}
+			if !strings.Contains(out.String(), tc.wantLine) {
+				t.Fatalf("out = %q, want %q", out.String(), tc.wantLine)
+			}
+			heads := gitOut(t, bare, "branch", "--list", "chore/cleanup-epic-01")
+			if tc.wantPRs == 0 {
+				if heads != "" {
+					t.Fatalf("origin holds %s though no cleanup PR was due", heads)
+				}
+				return
+			}
+			args := strings.Join(created[0], " ")
+			if !strings.Contains(args, "--base main") || !strings.Contains(args, "--head chore/cleanup-epic-01") {
+				t.Fatalf("pr create = %q, want the cleanup branch against main", args)
+			}
+			left := gitOut(t, bare, "ls-tree", "--name-only", "chore/cleanup-epic-01", "docs/backlog/")
+			if left != "docs/backlog/TG-02.1-c.md" {
+				t.Fatalf("cleanup branch keeps %q, want only the open epic's file", left)
+			}
+			if _, err := os.Stat(filepath.Join(root, ".komodo", "wt", "cleanup-epic-01")); err == nil {
+				t.Fatal("the cleanup worktree outlived its PR")
+			}
+		})
+	}
+}
+
+func TestSyncCleanupSkipsWhatItCannotOrNeedNotOpen(t *testing.T) {
+	ended := map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)}
+	cases := []struct {
+		name     string
+		arrange  func(t *testing.T, root, bare string)
+		wantLine string
+	}{
+		{
+			name: "origin already holds the cleanup branch",
+			arrange: func(t *testing.T, root, _ string) {
+				runGit(t, root, "push", "origin", "main:refs/heads/chore/cleanup-epic-01")
+			},
+			wantLine: "cleanup: EPIC-01 already has chore/cleanup-epic-01 on origin",
+		},
+		{
+			name: "origin cannot be reached",
+			arrange: func(t *testing.T, root, _ string) {
+				runGit(t, root, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing.git"))
+			},
+			wantLine: "cleanup: skipped, cannot reach origin",
+		},
+		{
+			name: "origin has no default branch",
+			arrange: func(t *testing.T, root, _ string) {
+				runGit(t, root, "update-ref", "-d", "refs/remotes/origin/main")
+				runGit(t, root, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing.git"))
+			},
+			wantLine: "cleanup: skipped, origin has no branch",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, bare := cleanupRepo(t, ended)
+			tc.arrange(t, root, bare)
+			var created int
+			client := &pr.Client{Run: func(string, ...string) (string, error) {
+				created++
+				return "", nil
+			}}
+			var out bytes.Buffer
+			if _, err := Sync(SyncOptions{Root: root, Stdout: &out, PR: client}); err != nil {
+				t.Fatal(err)
+			}
+			if created != 0 {
+				t.Fatalf("PRs opened = %d, want none; out = %s", created, out.String())
+			}
+			if !strings.Contains(out.String(), tc.wantLine) {
+				t.Fatalf("out = %q, want %q", out.String(), tc.wantLine)
+			}
+		})
+	}
+}
+
+func TestSyncCleanupReturnsAForgeThatRefusesThePR(t *testing.T) {
+	root, _ := cleanupRepo(t, map[string]string{"TG-01.1-a.md": groupFile("TG-01.1", "EPIC-01", true)})
+	client := &pr.Client{Run: func(string, ...string) (string, error) {
+		return "", errors.New("HTTP 422")
+	}}
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out, PR: client}); err == nil || !strings.Contains(err.Error(), "HTTP 422") {
+		t.Fatalf("Sync = %v; a refused cleanup PR must be returned; out = %s", err, out.String())
 	}
 }
 

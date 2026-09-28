@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"komodo/internal/conductor"
 	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/review"
 )
 
 // stageRepo is a repo with one READY group and no mount; its own .git stops the root walk there.
@@ -81,19 +83,20 @@ type stageFakeStations struct {
 	shipErr error
 }
 
-func (f *stageFakeStations) Snapshot() error            { return nil }
-func (f *stageFakeStations) Check() ([]string, error)   { return nil, nil }
-func (f *stageFakeStations) Prepare() ([]string, error) { return nil, nil }
-func (f *stageFakeStations) Ship() error                { return f.shipErr }
-func (f *stageFakeStations) Head() (string, error)      { return "head", nil }
-func (f *stageFakeStations) Merge() (bool, error)       { return false, nil }
+func (f *stageFakeStations) Snapshot() error                           { return nil }
+func (f *stageFakeStations) Check(context.Context) ([]string, error)   { return nil, nil }
+func (f *stageFakeStations) Prepare(context.Context) ([]string, error) { return nil, nil }
+func (f *stageFakeStations) Ship(context.Context) error                { return f.shipErr }
+func (f *stageFakeStations) Diff(string) (string, error)               { return "", nil }
+func (f *stageFakeStations) Head() (string, error)                     { return "head", nil }
+func (f *stageFakeStations) Merge() (bool, error)                      { return false, nil }
 
 // fakeStage swaps the stage's host, stations and reviewer request for fakes until the test ends.
 func fakeStage(t *testing.T, value map[string]any, shipErr error) {
 	t.Helper()
 	oldHost, oldStations, oldReviewer := stageHost, stageStations, stageReviewer
 	t.Cleanup(func() { stageHost, stageStations, stageReviewer = oldHost, oldStations, oldReviewer })
-	stageReviewer = func(string, *line.Plan) (mount.StartRequest, error) {
+	stageReviewer = func(string, *line.Plan, review.Lens) (mount.StartRequest, error) {
 		return mount.StartRequest{Role: "reviewer", Brief: "review TG-90.2"}, nil
 	}
 	stageHost = func(string, string) (mount.Contract, error) { return &stageFakeHost{value: value}, nil }

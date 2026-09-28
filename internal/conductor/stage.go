@@ -8,6 +8,7 @@ import (
 
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
+	"komodo/internal/review"
 )
 
 // Stage is one stage a person runs ad hoc, outside the pipeline.
@@ -59,7 +60,14 @@ func (d *Driver) RunStage(ctx context.Context, stage Stage, s State) (State, err
 	r := round{fixes: s.Fixes, builder: mount.Handle(s.Builder), repairs: s.Repairs}
 	var err error
 	if stage == StageReview {
-		err = adhoc.reviewRound(ctx, &s, &r)
+		// One round through every lens, with no cold pass: an ad hoc review never loops.
+		lenses := adhoc.lenses()
+		results, fixes := map[review.Lens]mount.Result{}, map[review.Lens][]string{}
+		err = adhoc.reviewRound(ctx, &s, lenses, results, fixes)
+		r.fixes = joinFixes(lenses, fixes)
+		if err == nil && adhoc.WriteReview != nil {
+			err = adhoc.WriteReview(s.Group, mergedReview(lenses, results))
+		}
 	} else {
 		err = adhoc.work(ctx, &s, &r)
 	}

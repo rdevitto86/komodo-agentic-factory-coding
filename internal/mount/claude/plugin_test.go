@@ -365,3 +365,29 @@ func TestLensSkillsLoadOnlyInTheReviewersPlugin(t *testing.T) {
 		t.Fatal("a lens skill must stay out of the primary session's skills")
 	}
 }
+
+func TestTheEscalateSkillLoadsOnlyInTheOrchestratorsPlugin(t *testing.T) {
+	root := toolkitRepo(t)
+	skill := filepath.Join(root, "komodo", "skills", "escalate", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("---\nname: escalate\ndescription: Settle one escalation.\n---\n\n# Escalate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := map[string]bool{}
+	for _, change := range plan.Changes {
+		planned[change.Path] = true
+	}
+	dir := filepath.Join(root, Dir, "plugins", "orchestrator")
+	if !planned[filepath.Join(dir, "skills", "escalate", "SKILL.md")] || !planned[filepath.Join(dir, ".claude-plugin", "plugin.json")] {
+		t.Fatal("the orchestrator's plugin must carry its manifest and the escalate skill")
+	}
+	if planned[filepath.Join(root, Dir, "skills", "escalate", "SKILL.md")] {
+		t.Fatal("the escalate skill must stay out of the primary session's skills")
+	}
+}

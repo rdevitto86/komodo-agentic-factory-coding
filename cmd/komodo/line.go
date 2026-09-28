@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/conductor"
 	"komodo/internal/git"
 	"komodo/internal/hooks"
@@ -85,6 +86,15 @@ func runResume(root string, args []string) {
 	if err != nil {
 		fail(fmt.Errorf("%s has no saved state to resume: %w", group, err))
 	}
+	if state.Current == conductor.Blocked && !state.Edited {
+		if err := clearBlocker(state); err != nil {
+			fail(err)
+		}
+		state.Edited = true
+		if err := conductor.SaveState(conductor.StatePath(root, group), state); err != nil {
+			fail(err)
+		}
+	}
 	if *asJSON {
 		printCompactJSON(os.Stdout, state)
 		return
@@ -138,6 +148,46 @@ func watchStatus(ctx context.Context, interval time.Duration, show func()) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// runAbandon removes a group's worktree and branch, and marks its open tasks BLOCKED under a note saying why.
+func runAbandon(root string, args []string) {
+	target, _ := splitPositional(args)
+	group := line.GroupFor(root, target)
+	if group == "" {
+		group = target
+	}
+	if group == "" {
+		fail(fmt.Errorf("usage: komodo abandon <group>"))
+	}
+	if err := conductor.Abandon(root, group, time.Now()); err != nil {
+		fail(err)
+	}
+	fmt.Printf("%s is abandoned: its worktree and branch are removed, and its open tasks are BLOCKED\n", group)
+}
+
+// clearBlocker removes a blocked group's note from its branch's backlog once a person set every task back
+// from BLOCKED, so komodo run feeds the edited group to its resumed builder.
+func clearBlocker(state conductor.State) error {
+	path, err := backlog.Find(state.Worktree)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	group, ok := backlog.Parse(string(data)).Group(state.Group)
+	if !ok {
+		return fmt.Errorf("%s is not in %s", state.Group, path)
+	}
+	for _, task := range group.Tasks {
+		if task.Status == "BLOCKED" {
+			return fmt.Errorf("%s is still BLOCKED in %s; edit the group and set it READY, then resume", task.ID, path)
+		}
+	}
+	text, _ := backlog.RemoveNote(string(data), state.Group)
+	return os.WriteFile(path, []byte(text), 0o644)
 }
 
 // planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.
@@ -353,6 +403,22 @@ func runShip(root, base, group string) {
 		plan.Base = base
 	}
 	result, err := line.ShipGroup(root, plan, nil, pr.New(root))
+	if err != nil {
+		fail(err)
+	}
+	printJSON(result)
+}
+
+// runFinishShip publishes a group a missing or expired credential stopped before Ship: push, draft PR, labels.
+func runFinishShip(root string, args []string) {
+	group, _ := splitPositional(args)
+	if group == "" {
+		fail(fmt.Errorf("usage: komodo ship <group>"))
+	}
+	if owner := line.GroupFor(root, group); owner != "" {
+		group = owner
+	}
+	result, err := line.FinishShip(root, group, pr.New(root))
 	if err != nil {
 		fail(err)
 	}

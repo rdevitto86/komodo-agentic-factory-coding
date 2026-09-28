@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -106,6 +107,29 @@ func RenderReviewerPlugin(plan *install.Plan, root string, skills []mount.Skill)
 		plan.AddScoped(filepath.Join(dir, skill.Name, "SKILL.md"), []byte(skill.Body),
 			"the "+skill.Name+" skill, scoped to the reviewer plugin")
 		owned[skill.Name] = true
+	}
+	return owned
+}
+
+// orchestratorOnly are the skills only the headless orchestrator's session loads.
+var orchestratorOnly = []string{"escalate"}
+
+// RenderOrchestratorPlugin adds the headless orchestrator's plugin, its manifest and the skills only it
+// loads, and returns their names, which the caller omits from the shared directory.
+func RenderOrchestratorPlugin(plan *install.Plan, root string, skills []mount.Skill) map[string]bool {
+	dir := filepath.Join(root, Dir, "plugins", "orchestrator")
+	owned := map[string]bool{}
+	for _, skill := range skills {
+		if !slices.Contains(orchestratorOnly, skill.Name) {
+			continue
+		}
+		plan.AddScoped(filepath.Join(dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body),
+			"the "+skill.Name+" skill, scoped to the orchestrator plugin")
+		owned[skill.Name] = true
+	}
+	if len(owned) > 0 {
+		plan.AddScoped(filepath.Join(dir, ".claude-plugin", "plugin.json"), pluginManifest("orchestrator"),
+			"the orchestrator plugin's manifest")
 	}
 	return owned
 }

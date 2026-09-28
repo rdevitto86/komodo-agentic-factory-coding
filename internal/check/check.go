@@ -2,11 +2,16 @@
 package check
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"komodo/internal/git"
 	"komodo/internal/proc"
@@ -22,29 +27,87 @@ type Group struct {
 	Files    []string
 }
 
+// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
+
 // Run reruns format, lint, the group's own checks, and scope, and returns one problem per failure.
 // Scope is checked last, since a passing build with a scope violation still needs every problem named.
 func Run(g Group, format, lint string, checks []string) []string {
+	return RunContext(context.Background(), g, format, lint, checks)
+}
+
+// RunContext is Run whose commands are killed once ctx is done.
+func RunContext(ctx context.Context, g Group, format, lint string, checks []string) []string {
 	var problems []string
-	problems = append(problems, runNamed(g.Worktree, "format", format)...)
-	problems = append(problems, runNamed(g.Worktree, "lint", lint)...)
+	problems = append(problems, runNamed(ctx, g.Worktree, "format", format)...)
+	problems = append(problems, runNamed(ctx, g.Worktree, "lint", lint)...)
 	for _, command := range checks {
-		problems = append(problems, runNamed(g.Worktree, "check", command)...)
+		problems = append(problems, runNamed(ctx, g.Worktree, "check", command)...)
 	}
 	problems = append(problems, Scope(g.Worktree, g.Base, g.Files)...)
 	return problems
 }
 
 // runNamed runs one command under name and reports its failure, skipping an empty command.
-func runNamed(worktree, name, command string) []string {
+func runNamed(ctx context.Context, worktree, name, command string) []string {
 	if command == "" {
 		return nil
 	}
-	ran := proc.Shell(worktree, command, CommandTimeout)
+	ran := Exec(ctx, worktree, CommandTimeout, "sh", "-c", command)
 	if ran.OK() {
 		return nil
 	}
 	return []string{fmt.Sprintf("%s: `%s` %v\n%s", name, command, ran.Err(), ran.Output)}
+}
+
+// Exec runs one program in dir under timeout, killing its process group once the timeout passes or ctx is done.
+func Exec(ctx context.Context, dir string, timeout time.Duration, name string, args ...string) proc.Result {
+	clock, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(clock, name, args...)
+	cmd.Dir = dir
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	started := time.Now()
+	err := cmd.Start()
+	var breach string
+	if err == nil {
+		watcher := proc.Watch(cmd.Process.Pid, proc.DefaultLimits)
+		err = cmd.Wait()
+		proc.KillGroup(cmd)
+		if errors.Is(err, exec.ErrWaitDelay) {
+			err = nil
+		}
+		watcher.Stop()
+		breach = watcher.Breach()
+	}
+	result := proc.Result{Output: strings.TrimSpace(output.String()), Seconds: time.Since(started).Seconds()}
+	switch {
+	case breach != "":
+		result.ExitCode = proc.ExitRunaway
+		result.Output = strings.TrimSpace(result.Output + "\n[runaway: " + breach + "; the process tree was killed]")
+	case ctx.Err() == nil && errors.Is(clock.Err(), context.DeadlineExceeded):
+		result.ExitCode, result.TimedOut = proc.ExitTimeout, true
+		result.Output = strings.TrimSpace(
+			result.Output + fmt.Sprintf("\n[timed out after %s; the process group was killed]", timeout),
+		)
+	case err != nil:
+		result.ExitCode = 1
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() > 0 {
+			result.ExitCode = exit.ExitCode()
+		}
+		if result.Output == "" {
+			result.Output = err.Error()
+		}
+	}
+	return result
 }
 
 // Scope names every file the working tree changes against base, untracked ones included,

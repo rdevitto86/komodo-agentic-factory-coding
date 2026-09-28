@@ -14,6 +14,7 @@ import (
 	"komodo/internal/mount"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
+	"komodo/internal/review"
 	"komodo/internal/run"
 )
 
@@ -89,7 +90,7 @@ var stageStations = func(root, worktree string, plan *line.Plan) conductor.Stati
 	return &conductor.Line{Root: root, Plan: plan, Client: pr.New(worktree)}
 }
 
-// stageReviewer builds the reviewer's request from the group's git diff; tests swap it for a fixed one.
+// stageReviewer builds one lens's request from the group's git diff; tests swap it for a fixed one.
 var stageReviewer = run.ReviewerRequest
 
 // stageDriver wires the conductor for one ad hoc stage: the profile's host over worktree, the request the stage
@@ -113,7 +114,8 @@ func stageDriver(root, worktree string, plan *line.Plan, stage conductor.Stage) 
 	case conductor.StageBuild:
 		driver.Builder, err = run.BuilderRequest(root, plan)
 	case conductor.StageReview:
-		driver.Reviewer, err = stageReviewer(root, plan)
+		driver.Lenses = review.ForMode(plan.Profile.Mode)
+		driver.Review = func(lens review.Lens) (mount.StartRequest, error) { return stageReviewer(root, plan, lens) }
 	}
 	return driver, err
 }

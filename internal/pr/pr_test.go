@@ -113,6 +113,39 @@ func TestLabelsListsWhatTheRepoDefines(t *testing.T) {
 	}
 }
 
+func TestReadyMarksThePullRequestReadyForReview(t *testing.T) {
+	client, calls := fake(t, "")
+	if err := client.Ready("https://example.com/pull/1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := (*calls)[0]; got != "pr ready https://example.com/pull/1" {
+		t.Fatalf("call = %q, want pr ready on the pull request", got)
+	}
+}
+
+func TestUnlabelRemovesEachLabelAndSkipsAnEmptyList(t *testing.T) {
+	client, calls := fake(t, "")
+	if err := client.Unlabel("7", nil); err != nil || len(*calls) != 0 {
+		t.Fatalf("unlabel = %v with calls %q; no label means no call", err, *calls)
+	}
+	if err := client.Unlabel("7", []string{"status: wip"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := (*calls)[0]; got != "pr edit 7 --remove-label status: wip" {
+		t.Fatalf("call = %q, want the label removed", got)
+	}
+}
+
+func TestReadyAndUnlabelReturnAnAPIError(t *testing.T) {
+	client, _ := fakeErr(errors.New("forbidden"))
+	if err := client.Ready("7"); err == nil {
+		t.Fatal("ready: want an error")
+	}
+	if err := client.Unlabel("7", []string{"status: wip"}); err == nil {
+		t.Fatal("unlabel: want an error")
+	}
+}
+
 func TestKeepKnownDropsLabelsTheRepoLacks(t *testing.T) {
 	got := KeepKnown([]string{"feat", "unknown"}, []string{"feat", "agent"})
 	if len(got) != 1 || got[0] != "feat" {

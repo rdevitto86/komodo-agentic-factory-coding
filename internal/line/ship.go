@@ -2,7 +2,9 @@ package line
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +30,7 @@ type ShipResult struct {
 	StaleBase string         `json:"stale_base,omitempty"`
 	URL       string         `json:"url,omitempty"`
 	Draft     bool           `json:"draft"`
+	Ready     bool           `json:"ready,omitempty"`
 	Labels    []string       `json:"labels,omitempty"`
 	Changelog string         `json:"changelog,omitempty"`
 	Done      []string       `json:"done,omitempty"`
@@ -187,45 +190,15 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome, Lines: lines})
 	}()
-	for _, task := range plan.Tasks {
-		current, ok := rootParsed.Task(task.ID)
-		if !ok {
-			continue
-		}
-		// Only a task close marked DONE shipped; a blocked one, or a dependent step skipped, did not.
-		if current.Status == "DONE" {
-			result.Done = append(result.Done, task.ID)
-		} else {
-			result.Blocked = append(result.Blocked, task.ID)
-		}
+	if err := tickTasks(plan, group, path, rootParsed, live, result); err != nil {
+		return nil, err
 	}
 	result.Draft = len(result.Blocked) > 0
-	for _, taskID := range result.Done {
-		if err := writeStatus(path, taskID, "DONE"); err != nil {
-			return nil, err
-		}
-	}
-	// This group's ticks and blockers land in BACKLOG.md once, in the ship commit; a status in flight never does.
 	var shippedIDs []string
 	for _, task := range plan.Tasks {
 		shippedIDs = append(shippedIDs, task.ID)
-		if status, ok := live[task.ID]; ok && backlogStatus(status.Status) {
-			if err := writeStatus(path, task.ID, status.Status); err != nil {
-				return nil, err
-			}
-		}
 	}
-	// A fragment per group, never an edit to CHANGELOG.md, so two open pull requests never conflict there.
-	if line := ChangelogLine(plan, result); line != "" {
-		if err := changelog.WriteFragment(group, plan.Version, plan.Group, line); err != nil {
-			return nil, err
-		}
-		result.Changelog = line
-	}
-	var declared []string
-	for _, task := range plan.Tasks {
-		declared = append(declared, task.Files...)
-	}
+	declared := declaredFiles(plan)
 	if err := stageWork(group, declared); err != nil {
 		return nil, err
 	}
@@ -267,20 +240,25 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	context.SizeNote = sizeNote(added, plan.Profile.PRLinesPreferred)
 	body := ReportBody(plan, result, waves, context)
 	wanted := []string{"@agent", scopeLabel(declared)}
+	handoff := ShipHandoff{
+		Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
+		Labels: wanted, Draft: true,
+		AfterPublish: AfterPublishCommand(root, group),
+	}
 	if scrubbed() {
 		outcome = "handoff"
-		handoff := ShipHandoff{
-			Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
-			Labels: wanted, Draft: result.Draft,
-			AfterPublish: AfterPublishCommand(root, group),
-		}
 		if err := writeShipHandoff(root, handoff); err != nil {
 			return nil, err
 		}
 		return result, nil
 	}
 	if err := PushFromWorktree(root, group, plan.Branch); err != nil {
-		return nil, err
+		if !errors.Is(err, ErrNoCredential) {
+			return nil, err
+		}
+		// The group keeps its commits and stops before Ship; komodo ship finishes it once a credential is back.
+		outcome = "handoff"
+		return result, errors.Join(err, writeShipHandoff(root, handoff), writeCredentialNote(root, plan, group, err))
 	}
 	// The credential stays with the push; after_publish is repo-written, so it runs scrubbed.
 	if command := AfterPublishCommand(root, group); command != "" {
@@ -293,9 +271,385 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if client == nil {
 		return result, nil
 	}
-	url, err := client.Create(result.Base, plan.Branch, title, body, result.Draft)
+	// Every PR opens as a draft, or labelled status: wip where the forge refuses one.
+	url, draft, wip, warnings, err := createEpicPull(client, result.Base, plan.Branch, title, body)
 	if err != nil {
 		// A re-ship after an escalation finds its pull request still open, and refreshes it instead.
+		open, viewErr := client.View(plan.Branch)
+		if viewErr != nil || open.State != "OPEN" {
+			return result, err
+		}
+		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
+			return result, err
+		}
+		url, draft = open.URL, open.Draft
+	}
+	result.URL, result.Draft = url, draft
+	kept, labelWarnings := ApplyLabels(client, url, wanted)
+	result.Warnings = append(warnings, labelWarnings...)
+	if len(result.Blocked) > 0 || !checksPassed(waves) {
+		result.Labels = append(wip, kept...)
+		return result, nil
+	}
+	if err := markReady(client, url, draft); err != nil {
+		result.Labels = append(wip, kept...)
+		result.Warnings = append(result.Warnings, fmt.Sprintf("could not mark the PR ready for review: %v", err))
+		return result, nil
+	}
+	result.Labels, result.Draft, result.Ready = kept, false, true
+	return result, nil
+}
+
+// checksPassed reports whether the group ran its checks and every one passed.
+func checksPassed(waves []*WaveResult) bool {
+	if len(waves) == 0 {
+		return false
+	}
+	for _, wave := range waves {
+		if wave == nil || !wave.OK {
+			return false
+		}
+	}
+	return true
+}
+
+// markReady turns a PR ready for review: a draft leaves draft, and a normal PR drops the status: wip label.
+func markReady(client *pr.Client, url string, draft bool) error {
+	if draft {
+		return client.Ready(url)
+	}
+	known, err := client.Labels()
+	if err != nil {
+		return err
+	}
+	if label := wipLabel(known); label != "" {
+		return client.Unlabel(url, []string{label})
+	}
+	return nil
+}
+
+// tickTasks sorts the plan's tasks into done and blocked, writes each tick and blocker into the group's
+// backlog at path, and writes its changelog fragment, so the group's commit carries both.
+func tickTasks(
+	plan *Plan, group, path string, rootParsed backlog.Backlog, live map[string]TaskStatus, result *ShipResult,
+) error {
+	for _, task := range plan.Tasks {
+		current, ok := rootParsed.Task(task.ID)
+		if !ok {
+			continue
+		}
+		// Only a task close marked DONE shipped; a blocked one, or a dependent step skipped, did not.
+		if current.Status == "DONE" {
+			result.Done = append(result.Done, task.ID)
+		} else {
+			result.Blocked = append(result.Blocked, task.ID)
+		}
+	}
+	for _, taskID := range result.Done {
+		if err := writeStatus(path, taskID, "DONE"); err != nil {
+			return err
+		}
+	}
+	// This group's ticks and blockers land in BACKLOG.md once, in its commit; a status in flight never does.
+	for _, task := range plan.Tasks {
+		if status, ok := live[task.ID]; ok && backlogStatus(status.Status) {
+			if err := writeStatus(path, task.ID, status.Status); err != nil {
+				return err
+			}
+		}
+	}
+	// A fragment per group, never an edit to CHANGELOG.md, so two open pull requests never conflict there.
+	if line := ChangelogLine(plan, result); line != "" {
+		if err := changelog.WriteFragment(group, plan.Version, plan.Group, line); err != nil {
+			return err
+		}
+		result.Changelog = line
+	}
+	return nil
+}
+
+// declaredFiles is every file the plan's tasks declare.
+func declaredFiles(plan *Plan) []string {
+	var declared []string
+	for _, task := range plan.Tasks {
+		declared = append(declared, task.Files...)
+	}
+	return declared
+}
+
+// StationPrepare is the ledger station Prepare stamps, always before any push.
+const StationPrepare = "prepare"
+
+// PrepareGroup commits the group's work with its ticked tasks and changelog fragment, runs its pre-commit and
+// pre-push hooks, and rebases it on its base; a hook's refusal and each conflicted file come back as fixes.
+func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
+	started := time.Now()
+	defer func() {
+		outcome := "done"
+		if err != nil {
+			outcome = "failed"
+		} else if len(fixes) > 0 {
+			outcome = "fixes"
+		}
+		Stamp(root, ledger.Entry{Group: plan.Group, Station: StationPrepare, Seconds: Since(started), Outcome: outcome})
+	}()
+	group := WorktreePath(root, plan.Worktree)
+	base := liveBase(root, plan.Base)
+	declared := declaredFiles(plan)
+	if fixes, err := finishCatchUp(group, base, declared); err != nil || len(fixes) > 0 {
+		return fixes, err
+	}
+	if path, err := backlog.Find(group); err == nil {
+		rootParsed, _, err := LoadBacklog(root)
+		if err != nil {
+			return nil, err
+		}
+		if err := tickTasks(plan, group, path, rootParsed, LoadStatus(root), &ShipResult{}); err != nil {
+			return nil, err
+		}
+	}
+	ended, err := endedEpicFiles(group, plan.Group)
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range ended {
+		if err := os.Remove(file); err != nil {
+			return nil, err
+		}
+	}
+	if err := stageWork(group, append(declared, "BACKLOG.md")); err != nil {
+		return nil, err
+	}
+	staged, err := git.Run(group, "diff", "--cached", "--name-only")
+	if err != nil {
+		return nil, err
+	}
+	// Committing runs the pre-commit hook; with nothing to commit, the hook runs on its own.
+	hook := []string{"hook", "run", "--ignore-missing", "pre-commit"}
+	if staged != "" {
+		hook = []string{"commit", "-m", fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)}
+	}
+	if _, err := git.Run(group, hook...); err != nil {
+		return []string{"the group does not commit: " + err.Error()}, nil
+	}
+	pushURL, _ := git.Run(root, "remote", "get-url", "--push", "origin")
+	clean, _, _ := splitCredential(pushURL)
+	if err := runPrePush(group, clean, "refs/heads/"+plan.Branch); err != nil {
+		return []string{"the pre-push hook refuses the group: " + redactURL(err.Error(), pushURL)}, nil
+	}
+	return rebaseForRepair(group, base)
+}
+
+// endedEpicFiles lists the docs/backlog group files a group's commit deletes: its epic's every file once no
+// other group of that epic is open, or its own file when it names no epic.
+func endedEpicFiles(worktree, groupID string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(worktree, "docs", "backlog", "*.md"))
+	if err != nil {
+		return nil, err
+	}
+	files := make(map[string]backlog.GroupFile, len(paths))
+	own := ""
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		files[path] = backlog.ParseGroupFile(string(data))
+		if files[path].ID == groupID {
+			own = path
+		}
+	}
+	if own == "" {
+		return nil, nil
+	}
+	epic := files[own].EpicID
+	if epic == "" {
+		return []string{own}, nil
+	}
+	var ended []string
+	for _, path := range paths {
+		file := files[path]
+		if file.EpicID != epic {
+			continue
+		}
+		if file.ID != groupID && slices.ContainsFunc(file.Tasks, func(task backlog.GroupTask) bool { return !task.Done }) {
+			return nil, nil
+		}
+		ended = append(ended, path)
+	}
+	return ended, nil
+}
+
+// conflictFixes turns each conflicted file into a fix naming the base it conflicts with.
+func conflictFixes(files []string, target string) []string {
+	fixes := make([]string, 0, len(files))
+	for _, file := range files {
+		fixes = append(fixes, fmt.Sprintf(
+			"%s: resolve the conflict with %s; edit out every conflict marker, keeping both sides' intent", file, target))
+	}
+	return fixes
+}
+
+// rebaseForRepair rebases the group onto the latest base, or merges it into a pushed branch; a conflict
+// leaves its markers in the worktree and returns one fix per conflicted file.
+func rebaseForRepair(group, base string) ([]string, error) {
+	if hasOrigin(group) {
+		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
+		_ = Fetch(group, base)
+	}
+	target := StartRef(group, base)
+	if _, err := git.Run(group, "rev-parse", "--verify", "--quiet", target); err != nil {
+		return nil, nil
+	}
+	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err == nil {
+		return nil, nil
+	}
+	args, abort := []string{"rebase", "--autostash", target}, []string{"rebase", "--abort"}
+	// A pushed branch is never rewritten, so it takes the base in a merge commit instead.
+	if branch, err := git.Run(group, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && onOrigin(group, strings.TrimSpace(branch)) {
+		args, abort = []string{"merge", "--autostash", "--no-edit", target}, []string{"merge", "--abort"}
+	}
+	return settleCatchUp(group, target, abort, args...)
+}
+
+// settleCatchUp runs one rebase or merge step, returning its conflicted files as fixes; a failure with
+// no conflict aborts the step and is returned.
+func settleCatchUp(group, target string, abort []string, args ...string) ([]string, error) {
+	_, err := git.Run(group, args...)
+	if err == nil {
+		return nil, nil
+	}
+	conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
+	if files := strings.Fields(conflicts); len(files) > 0 {
+		return conflictFixes(files, target), nil
+	}
+	_, _ = git.Run(group, abort...)
+	return nil, err
+}
+
+// errConflictRemains stops a group whose repair round left conflict markers in its files.
+var errConflictRemains = errors.New("the conflict remains after its repair round")
+
+// finishCatchUp completes a rebase or merge a conflict left open, once its repair round resolved every
+// marker; a marker left behind stops the group, and a later conflict returns as fixes.
+func finishCatchUp(group, base string, declared []string) ([]string, error) {
+	rebasing := false
+	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
+		path, err := git.Run(group, "rev-parse", "--git-path", dir)
+		if err != nil {
+			return nil, err
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(group, path)
+		}
+		if _, err := os.Stat(path); err == nil {
+			rebasing = true
+		}
+	}
+	_, mergeErr := git.Run(group, "rev-parse", "--verify", "--quiet", "MERGE_HEAD")
+	merging := mergeErr == nil
+	if !rebasing && !merging {
+		return nil, nil
+	}
+	target := StartRef(group, base)
+	marked, err := markedFiles(group, target)
+	if err != nil {
+		return nil, err
+	}
+	if len(marked) > 0 {
+		return nil, fmt.Errorf("%w: %s", errConflictRemains, strings.Join(marked, ", "))
+	}
+	if err := stageWork(group, declared); err != nil {
+		return nil, err
+	}
+	if merging {
+		return settleCatchUp(group, target, []string{"merge", "--abort"}, "commit", "--no-edit")
+	}
+	return settleCatchUp(group, target, []string{"rebase", "--abort"}, "-c", "core.editor=true", "rebase", "--continue")
+}
+
+// markedFiles lists each file differing from target that still holds a conflict marker line.
+func markedFiles(group, target string) ([]string, error) {
+	changed, err := git.Run(group, "diff", "--name-only", target)
+	if err != nil {
+		return nil, err
+	}
+	var marked []string
+	for _, file := range strings.Fields(changed) {
+		data, err := os.ReadFile(filepath.Join(group, file))
+		if err != nil {
+			continue
+		}
+		for _, text := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(text, "<<<<<<< ") || strings.HasPrefix(text, ">>>>>>> ") {
+				marked = append(marked, file)
+				break
+			}
+		}
+	}
+	return marked, nil
+}
+
+// blockedLabel is the label a stopped group's draft pull request carries.
+const blockedLabel = "status: blocked"
+
+// ShipBlocked commits a stopped group's work as WIP, then its blocker note with open tasks BLOCKED, and publishes
+// the branch as a draft PR labelled status: blocked; a scrubbed environment keeps both commits local.
+func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.Client) (*ShipResult, error) {
+	worktree := WorktreePath(root, plan.Worktree)
+	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Draft: true}
+	var declared []string
+	for _, task := range plan.Tasks {
+		declared = append(declared, task.Files...)
+	}
+	wip := fmt.Sprintf("wip: %s, blocked at %s (%s)", plan.Title, note.State, plan.Group)
+	if err := commitStaged(worktree, declared, wip); err != nil {
+		return nil, err
+	}
+	head, err := git.Run(worktree, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	note.Saved = fmt.Sprintf("WIP commit `%s` on `%s`", head, plan.Branch)
+	path, err := backlog.Find(worktree)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	noted, err := backlog.AddNote(string(data), plan.Group, note)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
+		return nil, err
+	}
+	group, _ := backlog.Parse(noted).Group(plan.Group)
+	for _, task := range group.Tasks {
+		if task.Status == "BLOCKED" {
+			result.Blocked = append(result.Blocked, task.ID)
+		}
+	}
+	if err := commitStaged(worktree, nil, fmt.Sprintf("docs: %s is blocked (%s)", plan.Title, plan.Group)); err != nil {
+		return nil, err
+	}
+	if scrubbed() {
+		result.Warnings = append(result.Warnings, "no credential to publish; the blocker note is committed on "+plan.Branch)
+		return result, nil
+	}
+	result.Base = liveBase(root, plan.Base)
+	if err := PushFromWorktree(root, worktree, plan.Branch); err != nil {
+		return result, err
+	}
+	if client == nil {
+		return result, nil
+	}
+	title := fmt.Sprintf("%s: %s (%s), blocked", plan.Type, plan.Title, plan.Group)
+	body := note.Render()
+	url, err := client.Create(result.Base, plan.Branch, title, body, true)
+	if err != nil {
 		open, viewErr := client.View(plan.Branch)
 		if viewErr != nil || open.State != "OPEN" {
 			return result, err
@@ -306,8 +660,146 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		url = open.URL
 	}
 	result.URL = url
-	result.Labels, result.Warnings = ApplyLabels(client, url, wanted)
+	result.Labels, result.Warnings = labelBlocked(client, url)
 	return result, nil
+}
+
+// writeCredentialNote commits a blocker note on the group's branch naming the refused push and komodo ship as the fix.
+func writeCredentialNote(root string, plan *Plan, worktree string, cause error) error {
+	path, err := backlog.Find(worktree)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	head, err := git.Run(worktree, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return err
+	}
+	state, _ := RunFor(root, plan.Group)
+	noted, err := backlog.AddNote(string(data), plan.Group, backlog.BlockerNote{
+		At: time.Now().UTC(), Run: state.Run, State: "Shipping", Items: []string{cause.Error()},
+		Needs: "a valid forge credential, then `komodo ship " + plan.Group + "`",
+		Saved: fmt.Sprintf("commit `%s` on `%s`", head, plan.Branch),
+	})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
+		return err
+	}
+	return commitStaged(worktree, nil, fmt.Sprintf("docs: %s waits on a forge credential (%s)", plan.Title, plan.Group))
+}
+
+// FinishShip publishes a group whose ship handed off for want of a credential: it drops the blocker note, pushes,
+// opens the PR draft-first and labels it, runs after_publish scrubbed, stamps ship done and removes the handoff.
+func FinishShip(root, groupID string, client *pr.Client) (*ShipResult, error) {
+	path := HandoffPath(root, groupID)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("%s has no ship waiting on a credential", groupID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var handoff ShipHandoff
+	if err := json.Unmarshal(data, &handoff); err != nil {
+		return nil, err
+	}
+	// An agent can write ship.json, so the push it names must be this group's plain branch.
+	if handoff.Group != groupID || handoff.Branch == "" || strings.HasPrefix(handoff.Branch, "-") {
+		return nil, fmt.Errorf("the handoff under %s names group %q and branch %q; nothing was pushed",
+			groupID, handoff.Group, handoff.Branch)
+	}
+	if _, err := git.Run(root, "check-ref-format", "--branch", handoff.Branch); err != nil {
+		return nil, fmt.Errorf("the handoff names %q, which is not a valid branch; nothing was pushed", handoff.Branch)
+	}
+	worktree := handoff.Worktree
+	if worktree == "" {
+		worktree = root
+	}
+	if err := dropCredentialNote(worktree, handoff); err != nil {
+		return nil, err
+	}
+	if err := PushFromWorktree(root, worktree, handoff.Branch); err != nil {
+		return nil, err
+	}
+	result := &ShipResult{Group: groupID, Branch: handoff.Branch, Base: handoff.Base, Draft: true}
+	if handoff.AfterPublish != "" {
+		published := RunCommandEnv(worktree, handoff.AfterPublish, Scrub(os.Environ()))
+		result.Published = &published
+		if !published.OK() {
+			return result, fmt.Errorf("after_publish: %s", FailureText(published))
+		}
+	}
+	if client != nil {
+		url, draft, wip, warnings, err := createEpicPull(client, handoff.Base, handoff.Branch, handoff.Title, handoff.Body)
+		if err != nil {
+			open, viewErr := client.View(handoff.Branch)
+			if viewErr != nil || open.State != "OPEN" {
+				return result, err
+			}
+			url, draft = open.URL, open.Draft
+		}
+		kept, labelWarnings := ApplyLabels(client, url, handoff.Labels)
+		result.URL, result.Draft = url, draft
+		result.Labels, result.Warnings = append(wip, kept...), append(warnings, labelWarnings...)
+	}
+	Stamp(root, ledger.Entry{Group: groupID, Station: "ship", Outcome: "done"})
+	return result, os.Remove(path)
+}
+
+// dropCredentialNote removes the group's blocker note from its branch and commits that, when it holds one.
+func dropCredentialNote(worktree string, handoff ShipHandoff) error {
+	path, err := backlog.Find(worktree)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	text, removed := backlog.RemoveNote(string(data), handoff.Group)
+	if !removed {
+		return nil
+	}
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		return err
+	}
+	return commitStaged(worktree, nil, fmt.Sprintf("docs: %s's forge credential is back", handoff.Group))
+}
+
+// commitStaged stages every change in worktree, declared files included, and commits them when any is staged.
+func commitStaged(worktree string, declared []string, message string) error {
+	if err := stageWork(worktree, declared); err != nil {
+		return err
+	}
+	if staged, err := git.Run(worktree, "diff", "--cached", "--name-only"); err != nil || staged == "" {
+		return err
+	}
+	_, err := git.Run(worktree, "commit", "-m", message)
+	return err
+}
+
+// labelBlocked adds the status: blocked label the repo defines; a label whose name holds a space never
+// matches KeepKnown's rule, so it is matched here by its whole name.
+func labelBlocked(client *pr.Client, url string) (labels, warnings []string) {
+	known, err := client.Labels()
+	if err != nil {
+		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
+	}
+	for _, label := range known {
+		if label != blockedLabel && !strings.HasPrefix(label, blockedLabel+" ") {
+			continue
+		}
+		if err := client.Label(url, []string{label}); err != nil {
+			return nil, []string{fmt.Sprintf("could not add label(s): %v", err)}
+		}
+		return []string{label}, nil
+	}
+	return nil, []string{"the repo has no " + blockedLabel + " label"}
 }
 
 // ApplyLabels adds the repo labels matching wanted to the pull request, warning on each miss or failure.
@@ -347,10 +839,7 @@ func scopeLabel(files []string) string {
 	}
 	for _, f := range files {
 		if strings.HasPrefix(f, "internal/profile/") {
-			base := strings.ToLower(filepath.Base(f))
-			if strings.Contains(base, "tier") || strings.Contains(base, "machine") {
-				return "scope/agents"
-			}
+			return "scope/agents"
 		}
 	}
 	return "scope/harness"
@@ -490,12 +979,26 @@ func PushFromWorktree(root, worktree, branch string) error {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
 	}
 	ref := "refs/heads/" + branch
+	clean, username, password := splitCredential(pushURL)
 	// The hook runs here without the credential, so the push that holds it skips the hook.
-	if err := runPrePush(worktree, pushURL, ref); err != nil {
+	if err := runPrePush(worktree, clean, ref); err != nil {
 		return fmt.Errorf("pre-push hook for %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
-	if _, err := git.Run(worktree, "push", "--no-verify", pushURL, ref+":"+ref); err != nil {
-		return fmt.Errorf("git push to origin %s: %s", branch, redactURL(err.Error(), pushURL))
+	args := []string{"push", "--no-verify", clean, ref + ":" + ref}
+	env := os.Environ()
+	if username != "" || password != "" {
+		args = append([]string{"-c", "credential.helper=", "-c", "credential.helper=" + pushCredentialHelper}, args...)
+		env = append(env, pushUsernameEnv+"="+username, pushPasswordEnv+"="+password)
+	}
+	push := exec.Command("git", args...)
+	push.Dir = worktree
+	push.Env = env
+	if out, err := push.CombinedOutput(); err != nil {
+		failure := redactURL(fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out))), pushURL)
+		if credentialRefused(string(out)) {
+			return fmt.Errorf("git push to origin %s: %w: %s", branch, ErrNoCredential, failure)
+		}
+		return fmt.Errorf("git push to origin %s: %s", branch, failure)
 	}
 	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
 	if _, err := git.Run(worktree, "fetch", "origin", branch); err == nil {
@@ -504,10 +1007,48 @@ func PushFromWorktree(root, worktree, branch string) error {
 	return nil
 }
 
+// ErrNoCredential marks a push the forge refused for a missing or expired credential.
+var ErrNoCredential = errors.New("the forge credential is missing or expired")
+
+// credentialRefusals are what git prints, lowercased, when a push holds no credential the forge accepts.
+var credentialRefusals = []string{
+	"authentication failed", "could not read username", "could not read password", "terminal prompts disabled",
+	"permission denied (publickey)", "invalid username or password", "bad credentials",
+	"returned error: 401", "returned error: 403",
+}
+
+// credentialRefused reports whether a push's output reads as a missing or expired credential.
+func credentialRefused(output string) bool {
+	lower := strings.ToLower(output)
+	return slices.ContainsFunc(credentialRefusals, func(refusal string) bool { return strings.Contains(lower, refusal) })
+}
+
+// The variables that hand a push its credential, read only by pushCredentialHelper inside that one push.
+const (
+	pushUsernameEnv = "KOMODO_PUSH_USERNAME"
+	pushPasswordEnv = "KOMODO_PUSH_PASSWORD"
+)
+
+// pushCredentialHelper answers git's credential get from the push's own environment, so no URL or argument holds it.
+const pushCredentialHelper = `!f() { test "$1" = get || exit 0; echo "username=$` + pushUsernameEnv +
+	`"; echo "password=$` + pushPasswordEnv + `"; }; f`
+
+// splitCredential returns an http(s) URL without its user and secret, and those two apart; other URLs pass unchanged.
+func splitCredential(raw string) (clean, username, password string) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User == nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return raw, "", ""
+	}
+	username = parsed.User.Username()
+	password, _ = parsed.User.Password()
+	parsed.User = nil
+	return parsed.String(), username, password
+}
+
 // zeroSHA is the object name a pre-push hook reads for a remote ref it cannot see.
 const zeroSHA = "0000000000000000000000000000000000000000"
 
-// runPrePush runs worktree's pre-push hook, if any, on ref as a push to url would, in hookEnv's environment.
+// runPrePush runs worktree's pre-push hook, if any, on ref as a push to origin at url would, in hookEnv's environment.
 func runPrePush(worktree, url, ref string) error {
 	// A ref that does not resolve has nothing to gate; the push itself reports it.
 	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", ref)
@@ -526,7 +1067,7 @@ func runPrePush(worktree, url, ref string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", url, url)
+	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
 	cmd.Dir = worktree
 	cmd.Env = hookEnv(os.Environ())
 	if out, err := cmd.CombinedOutput(); err != nil {

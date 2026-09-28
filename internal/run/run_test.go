@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -828,4 +829,96 @@ func TestAStaleBuildMarkerDuringARunChangesNothingUntilTheRunEnds(t *testing.T) 
 	if strings.TrimSpace(string(recorded)) != head {
 		t.Fatalf("marker = %q, want %q; the run's own end-of-run sync must fix it", recorded, head)
 	}
+}
+
+func TestADrainRestacksNothingInARepoWithNoBacklog(t *testing.T) {
+	var out bytes.Buffer
+	restack(Options{Root: t.TempDir()}, &out)
+	if out.Len() != 0 {
+		t.Fatalf("out = %q, want nothing restacked", out.String())
+	}
+}
+
+// restackText is an epic whose child group depends on its parent.
+const restackText = "### [TG-01.1] Parent\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+	"#### [TSK-01.1.1] One [P: C] [DONE]\n```yaml\nfiles: [a.txt]\n```\n\n" +
+	"### [TG-01.2] Child\n```yaml\ntype: feat\nversion: 1.0.0\ndepends_on: [TG-01.1]\n```\n\n" +
+	"#### [TSK-01.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b.txt]\n```\n"
+
+func TestADrainRestacksAChildOntoTheEpicOnceItsParentMerged(t *testing.T) {
+	cases := []struct {
+		name string
+		// clash is whether the epic also adds the child's file, so the child's rebase onto it conflicts.
+		clash bool
+		want  string
+	}{
+		{"the child rebases onto the epic", false, "restacked TG-01.2 onto feat/1.0.0\n"},
+		{"a child that conflicts is printed and left", true, "restack: restacking TG-01.2 onto feat/1.0.0: "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, root := restackDrain(t, tc.clash)
+			if !strings.HasPrefix(out, tc.want) {
+				t.Fatalf("out = %q, want it to start %q", out, tc.want)
+			}
+			moved := !tc.clash
+			if saved, _ := line.LoadRunFor(root, "TG-01.2"); (saved.Base == "feat/1.0.0") != moved {
+				t.Fatalf("base = %q; the epic's branch recorded must be %v", saved.Base, moved)
+			}
+		})
+	}
+}
+
+// restackDrain builds an epic whose parent merged and whose child is stacked on the parent, the epic adding the
+// child's file too when clash is set, then runs the drain's restack and returns what it printed and the root.
+func restackDrain(t *testing.T, clash bool) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	runGit(t, root, "init", "-q", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	for name, text := range map[string]string{"BACKLOG.md": restackText, ".gitignore": "/.komodo/\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-q", "-m", "backlog")
+	runGit(t, root, "branch", "feat/1.0.0")
+	parsed := backlog.Parse(restackText)
+	parent, _ := parsed.Group("TG-01.1")
+	child, _ := parsed.Group("TG-01.2")
+	runGit(t, root, "checkout", "-q", "-b", parent.Branch())
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-q", "-m", "parent")
+	runGit(t, root, "checkout", "-q", "feat/1.0.0")
+	runGit(t, root, "merge", "-q", "--no-ff", "--no-edit", parent.Branch())
+	if clash {
+		if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("the epic's own b\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, root, "add", "-A")
+		runGit(t, root, "commit", "-q", "-m", "epic edits b")
+	}
+	runGit(t, root, "checkout", "-q", "main")
+	worktree := filepath.Join(t.TempDir(), "child")
+	runGit(t, root, "worktree", "add", "-q", "-b", child.Branch(), worktree, parent.Branch())
+	if err := os.WriteFile(filepath.Join(worktree, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "add", "-A")
+	runGit(t, worktree, "commit", "-q", "-m", "child")
+	state := line.RunState{Run: "r1", Group: "TG-01.2", Base: parent.Branch(), Branch: child.Branch(), Worktree: worktree}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	restack(Options{Root: root, PR: &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		t.Errorf("gh must not run for a branch never pushed: %v", args)
+		return "", nil
+	}}}, &out)
+	return out.String(), root
 }

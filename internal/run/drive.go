@@ -5,16 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
+	"komodo/internal/backlog"
 	"komodo/internal/conductor"
+	"komodo/internal/doctor"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
+	"komodo/internal/review"
 )
 
 // Drive cuts one group's worktree when no run is open for it, then drives it through the conductor to Shipped,
@@ -29,7 +34,11 @@ func Drive(options Options) (int, error) {
 	if plan == nil {
 		return 1, errors.New("nothing is ready")
 	}
-	runState, err := cutIfNeeded(root, plan)
+	stdout := options.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	runState, err := cutIfNeeded(root, plan, stdout)
 	if err != nil {
 		return 1, err
 	}
@@ -62,6 +71,9 @@ func Drive(options Options) (int, error) {
 	if final.Current != conductor.Shipped {
 		return 1, fmt.Errorf("%s stopped at %s, not Shipped", plan.Group, final.Current)
 	}
+	if err := pruneLeftovers(root, plan.Base, stdout); err != nil {
+		return 1, err
+	}
 	return 0, nil
 }
 
@@ -70,7 +82,16 @@ func Drive(options Options) (int, error) {
 func driveState(
 	ctx context.Context, driver *conductor.Driver, statePath string, plan *line.Plan, worktree string,
 ) (conductor.State, error) {
-	if saved, err := conductor.LoadState(statePath); err == nil {
+	saved, err := conductor.LoadState(statePath)
+	// A blocked group a person edited restarts with its slot taken, its builder reading the edited group first.
+	if err == nil && saved.Current == conductor.Blocked && saved.Edited {
+		if text, ok := editedGroup(worktree, plan.Group); ok {
+			driver.Builder.Brief = "# The group, as a person edited it\n\n" + text + "\n\n" + driver.Builder.Brief
+		}
+		saved.Current, saved.SlotFree, saved.Edited = conductor.Ready, true, false
+		return driver.Drive(ctx, saved)
+	}
+	if err == nil {
 		return driver.Resume(ctx, saved)
 	}
 	fresh := conductor.State{
@@ -79,14 +100,33 @@ func driveState(
 	return driver.Drive(ctx, fresh)
 }
 
-// cutIfNeeded returns the group's own run, cutting its branch and worktree when none is open
-// yet, and fills the plan's base, branch and worktree from whichever run it finds.
-func cutIfNeeded(root string, plan *line.Plan) (line.RunState, error) {
+// cutIfNeeded returns the group's own run, clearing leftovers then cutting its branch and worktree when
+// none is open yet, and fills the plan's base, branch and worktree from whichever run it finds.
+func cutIfNeeded(root string, plan *line.Plan, out io.Writer) (line.RunState, error) {
 	if state, err := line.LoadRunFor(root, plan.Group); err == nil && state.Group == plan.Group {
 		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
 		return state, nil
 	}
+	if err := pruneLeftovers(root, plan.Base, out); err != nil {
+		return line.RunState{}, err
+	}
 	return line.Start(root, plan, "", false)
+}
+
+// pruneLeftovers removes merged and abandoned groups' worktrees and branches and the oldest run folders,
+// printing each removal to out.
+func pruneLeftovers(root, base string, out io.Writer) error {
+	if base == "" {
+		base = line.DefaultBase(root)
+	}
+	done, err := doctor.Prune(root, base)
+	if err != nil {
+		return err
+	}
+	for _, item := range done {
+		fmt.Fprintln(out, item)
+	}
+	return nil
 }
 
 // driverContract resolves the profile's host and builds its session driver over worktree.
@@ -106,38 +146,117 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 	if err != nil {
 		return nil, err
 	}
+	worktree := line.WorktreePath(root, plan.Worktree)
 	if client == nil {
-		client = pr.New(line.WorktreePath(root, plan.Worktree))
+		client = pr.New(worktree)
 	}
+	heavy := plan.Profile.Tiers.Heavy
+	if machine, ok := plan.Profile.Machine("builder"); ok {
+		heavy.Effort = machine.Effort
+	}
+	stations := &conductor.Line{Root: root, Plan: plan, Client: client}
 	return &conductor.Driver{
 		Host:     contract,
-		Stations: &conductor.Line{Root: root, Plan: plan, Client: client},
+		Stations: stations,
+		Block:    stations.Block,
 		Ledger:   line.Book(root),
 		Run:      run,
 		Builder:  builder,
-		// The reviewer's brief carries the diff, so it is built at review, after the build is committed.
-		Review: func() (mount.StartRequest, error) {
+		Lenses:   review.ForMode(plan.Profile.Mode),
+		// A lens's brief carries the diff, so it is built at review, after the build is committed.
+		Review: func(lens review.Lens) (mount.StartRequest, error) {
 			if err := line.CommitBuild(root, plan); err != nil {
 				return mount.StartRequest{}, fmt.Errorf("committing the build for review: %w", err)
 			}
-			return ReviewerRequest(root, plan)
+			return ReviewerRequest(root, plan, lens)
 		},
 		// A re-review diffs from the last reviewed HEAD, so the repair is committed first.
-		ReReview: func(s conductor.State) (string, error) {
+		ReReview: func(lens review.Lens, s conductor.State) (string, error) {
 			if err := line.CommitBuild(root, plan); err != nil {
 				return "", fmt.Errorf("committing the repair for re-review: %w", err)
 			}
-			return ReReviewInput(root, plan, s)
+			return ReReviewInput(root, plan, s, lens)
 		},
 		SeverityFloor: plan.Profile.SeverityFloor,
-		Repairs:       plan.Profile.ReviewRepairs,
+		Tasks:         plan.Tasks,
 		Save: func(s conductor.State) error {
 			return conductor.SaveState(conductor.StatePath(root, plan.Group), s)
 		},
 		WriteReview: func(group string, result mount.Result) error {
 			return writeReview(root, group, result)
 		},
+		Orchestrator: func(e conductor.Escalation) (mount.StartRequest, error) {
+			return orchestratorRequest(root, plan, e)
+		},
+		Heavy: heavy,
+		Lint: func() ([]string, error) {
+			return lintBacklog(worktree)
+		},
 	}, nil
+}
+
+// orchestratorRequest fills the headless orchestrator's start request for one escalation: its role's
+// template with the group, the state it left, why, and each task's files, on the orchestrator's machine.
+func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (mount.StartRequest, error) {
+	definition, err := line.LoadRole(root, "orchestrator")
+	if err != nil {
+		return mount.StartRequest{}, err
+	}
+	tasks := make([]string, 0, len(plan.Tasks))
+	for _, task := range plan.Tasks {
+		tasks = append(tasks, fmt.Sprintf("- %s %s: `%s`", task.ID, task.Title, strings.Join(task.Files, "`, `")))
+	}
+	brief := strings.NewReplacer(
+		"{{group}}", e.Group, "{{branch}}", plan.Branch, "{{left}}", string(e.Left),
+		"{{reason}}", e.Reason, "{{tasks}}", strings.Join(tasks, "\n"),
+	).Replace(definition.Body)
+	machine, _ := plan.Profile.Machine("orchestrator")
+	return mount.StartRequest{
+		Role:   "orchestrator",
+		Brief:  brief,
+		Tools:  definition.Tools,
+		Model:  machine.Model,
+		Effort: machine.Effort,
+		Schema: []byte(line.SchemaText(root, "orchestrator")),
+	}, nil
+}
+
+// editedGroup is the group's section of the worktree's backlog, as a person edited it on the group's branch.
+func editedGroup(worktree, group string) (string, bool) {
+	path, err := backlog.Find(worktree)
+	if err != nil {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	return backlog.GroupText(string(data), group)
+}
+
+// lintBacklog returns the worktree backlog's lint problems, as komodo lint reports them: BACKLOG.md's when it
+// exists, else each docs/backlog group file's own.
+func lintBacklog(worktree string) ([]string, error) {
+	if path, err := backlog.Find(worktree); err == nil {
+		parsed, err := backlog.Load(path)
+		if err != nil {
+			return nil, err
+		}
+		return append(backlog.Lint(parsed), backlog.LintContext(worktree, parsed)...), nil
+	}
+	files, err := filepath.Glob(filepath.Join(worktree, "docs", "backlog", "*.md"))
+	if err != nil {
+		return nil, err
+	}
+	var problems []string
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return nil, err
+		}
+		problems = append(problems, backlog.ParseGroupFile(string(data)).Problems...)
+	}
+	return problems, nil
 }
 
 // writeReview saves the reviewer's whole result, findings with their files and titles, where

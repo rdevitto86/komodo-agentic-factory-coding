@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -111,4 +113,35 @@ func TestRunRefusesToNestInsideASessionItStarted(t *testing.T) {
 		}
 	}()
 	runRun(root, []string{"--dry-run"})
+}
+
+func TestAbandonBlocksAGroupFromTheCommandLine(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init")
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(blockedGroup), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := line.RunState{Run: "run-1", Group: "TG-1", Worktree: filepath.Join(root, "gone")}
+	if err := line.SaveRun(root, run); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		args []string
+		code int
+		want string
+	}{
+		{[]string{"abandon"}, 1, "usage: komodo abandon"},
+		{[]string{"abandon", "TG-9"}, 1, "TG-9 has no run to abandon"},
+		{[]string{"abandon", "TSK-1.1"}, 0, "TG-1 is abandoned"},
+	}
+	for _, tc := range cases {
+		got := runCLI(t, root, "", tc.args...)
+		if got.code != tc.code || !strings.Contains(got.stdout+got.stderr, tc.want) {
+			t.Fatalf("%v = exit %d, %q %q; want exit %d naming %q", tc.args, got.code, got.stdout, got.stderr, tc.code, tc.want)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
+	if err != nil || !strings.Contains(string(data), "[P: C] [BLOCKED]") {
+		t.Fatalf("backlog = %s, %v; want the task BLOCKED", data, err)
+	}
 }
