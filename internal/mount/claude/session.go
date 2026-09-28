@@ -147,7 +147,7 @@ func removeEnv(env []string, name string) []string {
 	var out []string
 	prefix := name + "="
 	for _, entry := range env {
-		if len(entry) <= len(prefix) || entry[:len(prefix)] != prefix {
+		if !strings.HasPrefix(entry, prefix) {
 			out = append(out, entry)
 		}
 	}

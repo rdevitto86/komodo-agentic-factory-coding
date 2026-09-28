@@ -34,6 +34,7 @@ func write(t *testing.T, root, rel, body string) {
 // clean builds a fixture repo that every check passes.
 func clean(t *testing.T) string {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	write(t, root, "AGENTS.md", "# Rules\n\nSee `komodo/AGENTS.md`.\n")
 	write(t, root, ".gitattributes", "* text=auto eol=lf\n")
@@ -72,6 +73,36 @@ func problemsFrom(t *testing.T, root string) map[string][]Problem {
 func TestACleanRepoHasNoProblems(t *testing.T) {
 	if got := problemsFrom(t, clean(t)); len(got) != 0 {
 		t.Fatalf("problems = %+v", got)
+	}
+}
+
+func TestAMalformedOverlayIsFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if got := checkOverlay(path); len(got) != 0 {
+		t.Fatalf("an absent overlay = %+v, want nothing", got)
+	}
+	for _, body := range []string{"", " \n"} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := checkOverlay(path); len(got) != 0 {
+			t.Fatalf("an empty overlay %q = %+v, want nothing", body, got)
+		}
+	}
+	for _, body := range []string{`{"critical_refs": ["prod"],}`, `{"critical_refs": "prod"}`, `[]`, `{"max_parallel": "2"}`} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := checkOverlay(path); len(got) != 1 || got[0].Check != "overlay" {
+			t.Fatalf("overlay %s = %+v, want one overlay problem", body, got)
+		}
+	}
+	if err := os.WriteFile(path, []byte(`{"critical_refs": ["prod"], "sandbox": true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkOverlay(path); len(got) != 0 {
+		t.Fatalf("a well-formed overlay = %+v, want nothing", got)
 	}
 }
 
@@ -990,9 +1021,9 @@ func TestAMalformedPluginManifestIsFound(t *testing.T) {
 }
 
 func TestDoctorListsEveryPluginTypeDisabled(t *testing.T) {
+	root := clean(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	root := clean(t)
 	write(t, root, "komodo/plugins/cloud/plugin.json",
 		`{"name":"cloud","type":"tool-pack","roles":["builder"],"tools":["aws s3 ls"]}`)
 	want := []string{
