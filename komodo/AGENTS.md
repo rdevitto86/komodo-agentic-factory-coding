@@ -6,7 +6,7 @@ Universal rules for every model and tool on Komodo software, hosted or local, pl
 - **Recommend before rewriting.** A patch, not a rewrite.
 - **Read freely, write on a directive.** Read, search anytime; edit only on implement, fix, add, remove, or update; review, assess, consider stay analysis.
 - **Assume and state it.** Ask only on a user-only decision, or before an irreversible or shared step.
-- **Never widen scope.** Out-of-task work is a `BACKLOG.md` line, not a change.
+- **Never widen scope.** Out-of-task work is a task in a `docs/backlog/` group file, not a change.
 - **Report honestly.** State any failure, skip, or gap plainly, with evidence.
 - **Verify the real source.** Read the file, manifest, or docs; never rely on memory for a limit.
 - **Suggested languages; existing code keeps its own.** Zig embedded, C++ robotics and modules, Rust routers and nodes, Go web and cloud, Python AI/ML, TypeScript with Vue or Svelte for UIs; C only when a vendor SDK or a hot path forces it.

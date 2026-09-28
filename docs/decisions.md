@@ -643,3 +643,21 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 - **A host update no longer stops the gate or the line.**
 - **A host change that breaks the line shows up as a failed session,** not a doctor finding; the host's own `--version` names the release when it matters.
+
+## 0034. V1 cuts a release candidate, and the backlog is one file per group
+
+**Status:** Accepted, 2026-09-28. Amends 0023 and 0029.
+
+**Context.** Decision 0029 kept rc optional and sent V1 from beta straight to 1.0.0. The first beta setup, in `komodo-cicd-runner-cli`, found the line could not run group files, pacing read no usage, and 201 open tasks sat in shipped epics. No golden suite exists, so no success criterion has been measured.
+
+**Decision.**
+
+- **V1 ships `1.0.0-beta.3` to `1.0.0-beta.5`, then `1.0.0-rc.1`, then `1.0.0`.** The success criteria are proven on the candidate, and the owner cuts 1.0.0 from it.
+- **`docs/backlog/` is the whole backlog.** `BACKLOG.md` is deleted; each open task moved to a group file in its phase's epic, with its context as accept lines.
+- **A shipped epic keeps no open task.** A review follow-up lands in an open epic's follow-up group, never in the group it reviewed.
+
+**Consequences.**
+
+- **The line can't pick a group until TG-10.2 lands,** so the owner's primary session builds that group by hand.
+- **Human-owned groups stay REFINEMENT,** and the owner ticks their boxes.
+
