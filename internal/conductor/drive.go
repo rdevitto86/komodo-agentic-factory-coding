@@ -21,7 +21,6 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
-	"komodo/internal/proc"
 	"komodo/internal/review"
 )
 
@@ -87,12 +86,12 @@ var errNotWired = errors.New("the conductor needs a host, stations, a ledger and
 type Stations interface {
 	// Snapshot records the worktree's git state before a build or repair session, for Check to compare.
 	Snapshot() error
-	// Check reruns every check and returns one fix per failure, none when all passed.
-	Check() ([]string, error)
+	// Check reruns every check and returns one fix per failure, none when all passed; its commands die with ctx.
+	Check(ctx context.Context) ([]string, error)
 	// Prepare verifies the group's integrated worktree and returns one fix per failure.
-	Prepare() ([]string, error)
+	Prepare(ctx context.Context) ([]string, error)
 	// Ship pushes the group and opens its draft PR.
-	Ship() error
+	Ship(ctx context.Context) error
 	// Head returns the worktree's HEAD commit, which a review records as the commit it saw.
 	Head() (string, error)
 	// Diff returns the worktree's diff since a reviewed commit: the lines a repair changed after that review.
@@ -193,7 +192,7 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 		r.builder, r.fixes = handle, nil
 		return d.build(ctx, s, StationBuild, d.Builder, handle)
 	case Checking:
-		fixes, err := d.Stations.Check()
+		fixes, err := d.Stations.Check(ctx)
 		if err != nil {
 			return err
 		}
@@ -208,7 +207,7 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 	case Repairing:
 		return d.repair(ctx, s, r)
 	case Preparing:
-		fixes, err := d.Stations.Prepare()
+		fixes, err := d.Stations.Prepare(ctx)
 		if err != nil {
 			return err
 		}
@@ -216,7 +215,7 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 		s.Conflict = len(fixes) > 0
 		s.SessionDone = !s.Conflict
 	case Shipping:
-		if err := d.Stations.Ship(); err != nil {
+		if err := d.Stations.Ship(ctx); err != nil {
 			return err
 		}
 		s.ShipDone = true
@@ -692,13 +691,13 @@ func (l *Line) loadSnapshot() (check.Snapshot, error) {
 }
 
 // Check reruns every check, then compares the git state against the Snapshot taken before the session it
-// follows, failing with errNoSnapshot when there is none.
-func (l *Line) Check() ([]string, error) {
+// follows, failing with errNoSnapshot when there is none; once ctx is done it never commits.
+func (l *Line) Check(ctx context.Context) ([]string, error) {
 	before, err := l.loadSnapshot()
 	if err != nil {
 		return nil, err
 	}
-	fixes, err := l.rerun()
+	fixes, err := l.rerun(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -707,6 +706,9 @@ func (l *Line) Check() ([]string, error) {
 		return nil, err
 	}
 	fixes = append(fixes, check.Compare(before, after)...)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(fixes) > 0 {
 		l.checked = nil
 		return fixes, nil
@@ -720,8 +722,8 @@ func (l *Line) Check() ([]string, error) {
 }
 
 // rerun reruns the compile gates, the verify command and scope, then scans the worktree's diff for
-// secrets and changed-line coverage.
-func (l *Line) rerun() ([]string, error) {
+// secrets and changed-line coverage, killing its commands once ctx is done.
+func (l *Line) rerun(ctx context.Context) ([]string, error) {
 	worktree := line.WorktreePath(l.Root, l.Plan.Worktree)
 	base := line.StartRef(worktree, l.Plan.Base)
 	// Ship also stages BACKLOG.md and the group's release note, so both count as in scope.
@@ -736,7 +738,7 @@ func (l *Line) rerun() ([]string, error) {
 	}
 	checks := append(line.CompileCommands(l.Root, worktree), line.VerifyCommand(l.Root, worktree))
 	l.ran = checks
-	fixes := check.Run(check.Group{Worktree: worktree, Base: base, Files: files}, "", "", checks)
+	fixes := check.RunContext(ctx, check.Group{Worktree: worktree, Base: base, Files: files}, "", "", checks)
 	if base == "" {
 		return fixes, nil
 	}
@@ -745,7 +747,7 @@ func (l *Line) rerun() ([]string, error) {
 		return nil, err
 	}
 	fixes = append(fixes, check.Secrets(diff)...)
-	coverage, err := l.coverage(worktree, diff)
+	coverage, err := l.coverage(ctx, worktree, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -780,7 +782,7 @@ func ignoredByGo(dir string) bool {
 
 // coverage runs the touched Go packages' tests under a cover profile and evaluates the diff's
 // changed-line coverage against the calibrated bar; a worktree with no go.mod is skipped.
-func (l *Line) coverage(worktree, diff string) ([]string, error) {
+func (l *Line) coverage(ctx context.Context, worktree, diff string) ([]string, error) {
 	module, err := check.ModulePath(worktree)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -801,7 +803,7 @@ func (l *Line) coverage(worktree, diff string) ([]string, error) {
 	}
 	defer os.Remove(out.Name())
 	args := append([]string{"test", "-count=1", "-coverprofile=" + out.Name()}, packages...)
-	if ran := proc.Exec(worktree, check.CommandTimeout, "go", args...); !ran.OK() {
+	if ran := check.Exec(ctx, worktree, check.CommandTimeout, "go", args...); !ran.OK() {
 		return []string{fmt.Sprintf("coverage: `go %s` %v\n%s", strings.Join(args, " "), ran.Err(), ran.Output)}, nil
 	}
 	text, err := os.ReadFile(out.Name())
@@ -825,8 +827,8 @@ func (l *Line) coverage(worktree, diff string) ([]string, error) {
 
 // Prepare reruns every check in the worktree the one group builder worked, since there are no task
 // branches to merge, then marks each task DONE so Ship commits and reports them.
-func (l *Line) Prepare() ([]string, error) {
-	fixes, err := l.rerun()
+func (l *Line) Prepare(ctx context.Context) ([]string, error) {
+	fixes, err := l.rerun(ctx)
 	if err != nil || len(fixes) > 0 {
 		return fixes, err
 	}
@@ -849,11 +851,11 @@ func (l *Line) Diff(since string) (string, error) {
 }
 
 // Ship commits, pushes and opens the group's draft PR, whose body reports the checks this process ran;
-// a run resumed at Ship reruns them first.
-func (l *Line) Ship() error {
+// a run resumed at Ship reruns them first. Once ctx is done it ships nothing.
+func (l *Line) Ship(ctx context.Context) error {
 	if l.checked == nil || !l.checked.OK {
 		// Only the checks rerun: the build has committed since the last session, so no snapshot applies.
-		fixes, err := l.rerun()
+		fixes, err := l.rerun(ctx)
 		if err != nil {
 			return err
 		}
@@ -861,6 +863,9 @@ func (l *Line) Ship() error {
 			return fmt.Errorf("the checks fail at ship: %s", strings.Join(fixes, "; "))
 		}
 		l.checked = passed(l.ran)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	shipped, err := line.ShipGroup(l.Root, l.Plan, []*line.WaveResult{l.checked}, l.Client)
 	l.shipped = shipped

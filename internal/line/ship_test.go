@@ -168,6 +168,76 @@ func TestPushRunsThePrePushHookWithoutTheForgeCredential(t *testing.T) {
 	}
 }
 
+func TestThePrePushHookNeverSeesTheCredentialInThePushURL(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, root, "remote", "set-url", "--push", "origin", "https://x-access-token:secret-token@example.invalid/o/r.git")
+	seen := filepath.Join(t.TempDir(), "hook.log")
+	hook := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %q\nenv >> %q\nexit 1\n", seen, seen)
+	path := filepath.Join(group, ".git", "hooks", "pre-push")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := PushFromWorktree(root, group, "feat/a-group")
+	if err == nil || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("err = %v; want the hook's refusal, with no token in it", err)
+	}
+	log, readErr := os.ReadFile(seen)
+	if readErr != nil {
+		t.Fatalf("the pre-push hook never ran: %v", readErr)
+	}
+	if strings.Contains(string(log), "secret-token") {
+		t.Fatalf("the pre-push hook saw the token:\n%s", log)
+	}
+	if args, _, _ := strings.Cut(string(log), "\n"); args != "origin https://example.invalid/o/r.git" {
+		t.Fatalf("the pre-push hook read %q, want origin and the URL without its credential", args)
+	}
+}
+
+func TestAFailedCredentialedPushNamesNoToken(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, root, "remote", "set-url", "--push", "origin", "https://x-access-token:secret-token@127.0.0.1:1/o/r.git")
+	err := PushFromWorktree(root, group, "feat/a-group")
+	if err == nil || !strings.Contains(err.Error(), "git push to origin") || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("err = %v; want the push's failure, with no token in it", err)
+	}
+}
+
+func TestThePushCredentialHelperAnswersFromThePushEnvironment(t *testing.T) {
+	cmd := exec.Command("git", "-c", "credential.helper=", "-c", "credential.helper="+pushCredentialHelper, "credential", "fill")
+	cmd.Stdin = strings.NewReader("protocol=https\nhost=example.invalid\n\n")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", pushUsernameEnv+"=x-access-token", pushPasswordEnv+"=tok")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git credential fill: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "username=x-access-token\n") || !strings.Contains(string(out), "password=tok\n") {
+		t.Fatalf("credential = %q, want the push environment's user and secret", out)
+	}
+}
+
+func TestSplitCredentialKeepsTheSecretOutOfThePushURL(t *testing.T) {
+	cases := []struct {
+		name, raw, clean, username, password string
+	}{
+		{"a token in the URL", "https://x-access-token:tok@github.com/o/r.git",
+			"https://github.com/o/r.git", "x-access-token", "tok"},
+		{"no credential", "https://github.com/o/r.git", "https://github.com/o/r.git", "", ""},
+		{"a local path", "/tmp/origin.git", "/tmp/origin.git", "", ""},
+		{"an ssh remote", "git@github.com:o/r.git", "git@github.com:o/r.git", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clean, username, password := splitCredential(tc.raw)
+			if clean != tc.clean || username != tc.username || password != tc.password {
+				t.Fatalf("split = %q %q %q, want %q %q %q", clean, username, password, tc.clean, tc.username, tc.password)
+			}
+		})
+	}
+}
+
 func TestAFailingPrePushHookStopsThePush(t *testing.T) {
 	root, group := shipRepo(t)
 	installPrePush(t, group, 1)

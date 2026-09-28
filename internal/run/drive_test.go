@@ -316,13 +316,13 @@ func (h *lensHost) Capabilities() mount.Capabilities { return mount.Capabilities
 // passingStations is every model-free station passing at once, so a drive reaches Shipped from review.
 type passingStations struct{}
 
-func (passingStations) Snapshot() error             { return nil }
-func (passingStations) Check() ([]string, error)    { return nil, nil }
-func (passingStations) Prepare() ([]string, error)  { return nil, nil }
-func (passingStations) Ship() error                 { return nil }
-func (passingStations) Head() (string, error)       { return "reviewed", nil }
-func (passingStations) Diff(string) (string, error) { return "", nil }
-func (passingStations) Merge() (bool, error)        { return false, nil }
+func (passingStations) Snapshot() error                           { return nil }
+func (passingStations) Check(context.Context) ([]string, error)   { return nil, nil }
+func (passingStations) Prepare(context.Context) ([]string, error) { return nil, nil }
+func (passingStations) Ship(context.Context) error                { return nil }
+func (passingStations) Head() (string, error)                     { return "reviewed", nil }
+func (passingStations) Diff(string) (string, error)               { return "", nil }
+func (passingStations) Merge() (bool, error)                      { return false, nil }
 
 // TestRunStartsOneReviewerSessionPerLens is REQ-19: the ledger shows three lens sessions in full mode
 // and one in economy mode, each bound to its lens's skill on the reviewer tier.

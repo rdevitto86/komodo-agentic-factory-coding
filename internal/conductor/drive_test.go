@@ -180,7 +180,7 @@ func (f *fakeStations) Snapshot() error {
 	return nil
 }
 
-func (f *fakeStations) Check() ([]string, error) {
+func (f *fakeStations) Check(context.Context) ([]string, error) {
 	f.record("check")
 	if len(f.checks) == 0 {
 		return nil, nil
@@ -190,7 +190,7 @@ func (f *fakeStations) Check() ([]string, error) {
 	return fixes, nil
 }
 
-func (f *fakeStations) Prepare() ([]string, error) {
+func (f *fakeStations) Prepare(context.Context) ([]string, error) {
 	f.record("prepare")
 	if len(f.prepares) == 0 {
 		return nil, nil
@@ -200,7 +200,7 @@ func (f *fakeStations) Prepare() ([]string, error) {
 	return fixes, nil
 }
 
-func (f *fakeStations) Ship() error {
+func (f *fakeStations) Ship(context.Context) error {
 	f.record("ship")
 	return f.shipErr
 }
@@ -1045,7 +1045,7 @@ func TestLineCheckTurnsARefusedCommitIntoAFix(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeIn(t, root, "built.go", "package built\n")
-	fixes, err := stations.Check()
+	fixes, err := stations.Check(context.Background())
 	if err != nil {
 		t.Fatalf("check = %v; a refused commit is a fix, never an error that escalates", err)
 	}
@@ -1109,7 +1109,7 @@ func TestLineCheckFailsWhenAnyCheckFails(t *testing.T) {
 				t.Fatalf("snapshot = %v", err)
 			}
 			tc.session(t, root)
-			fixes, err := stations.Check()
+			fixes, err := stations.Check(context.Background())
 			if err != nil {
 				t.Fatalf("check = %v", err)
 			}
@@ -1135,9 +1135,9 @@ func TestLineCheckFailsWhenAnyCheckFails(t *testing.T) {
 // shipless runs a real Line's Snapshot and Check, with Prepare rerunning Check and Ship doing nothing.
 type shipless struct{ *Line }
 
-func (s shipless) Prepare() ([]string, error) { return s.Check() }
+func (s shipless) Prepare(ctx context.Context) ([]string, error) { return s.Check(ctx) }
 
-func (s shipless) Ship() error { return nil }
+func (s shipless) Ship(context.Context) error { return nil }
 
 // lineRig wires a rig's driver to a real Line over a fresh repo whose group declares sneaky.txt.
 func lineRig(t *testing.T) (*rig, *Line) {
@@ -1193,6 +1193,110 @@ func TestResumeFailsCheckWithNoSnapshotForTheSessionItFollows(t *testing.T) {
 	}
 	if final.Current == Reviewing || final.Current == Shipped {
 		t.Fatalf("final state = %s, want the group stopped before review", final.Current)
+	}
+}
+
+func TestAStopDuringCheckKillsItsCommandsAndNeverCommits(t *testing.T) {
+	const (
+		stopAfter = 200 * time.Millisecond
+		bound     = 10 * time.Second
+	)
+	r, stations := lineRig(t)
+	writeIn(t, stations.Root, ".komodo/commands.json", `{"compile": "true", "verify": "sleep 60"}`)
+	if err := stations.Snapshot(); err != nil {
+		t.Fatalf("snapshot = %v", err)
+	}
+	writeIn(t, stations.Root, "sneaky.txt", "x\n")
+	before, err := stations.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	save := r.driver.Save
+	r.driver.Save = func(s State) error {
+		if s.Current == Checking {
+			time.AfterFunc(stopAfter, cancel)
+		}
+		return save(s)
+	}
+	start := State{Group: "TG-1", Current: Building, SessionDone: true}
+	*r.saved = append(*r.saved, start)
+
+	began := time.Now()
+	final, err := r.driver.Drive(ctx, start)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("drive = %v, want the stop's cancellation", err)
+	}
+	if took := time.Since(began); took > bound {
+		t.Fatalf("drive took %s after the stop, want under %s", took, bound)
+	}
+	if final.Current != Checking {
+		t.Fatalf("final state = %s, want Checking", final.Current)
+	}
+	after, err := stations.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("HEAD moved from %s to %s; a stopped Check must never commit", before, after)
+	}
+}
+
+func TestALineStationStoppedBeforeItRunsNeverCommitsOrShips(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func(context.Context, *Line) error
+		// cancelled is whether the station returns the stop itself rather than the checks it killed.
+		cancelled bool
+	}{
+		{"check", func(ctx context.Context, l *Line) error {
+			_, err := l.Check(ctx)
+			return err
+		}, true},
+		{"ship after a passed check", func(ctx context.Context, l *Line) error {
+			l.checked = passed(nil)
+			return l.Ship(ctx)
+		}, true},
+		{"ship rerunning its checks", func(ctx context.Context, l *Line) error {
+			return l.Ship(ctx)
+		}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, stations := lineRig(t)
+			if err := stations.Snapshot(); err != nil {
+				t.Fatalf("snapshot = %v", err)
+			}
+			writeIn(t, stations.Root, "sneaky.txt", "x\n")
+			before, err := stations.Head()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			err = tc.run(ctx, stations)
+			if err == nil || tc.cancelled != errors.Is(err, context.Canceled) {
+				t.Fatalf("%s = %v, want it stopped (by the cancellation itself: %v)", tc.name, err, tc.cancelled)
+			}
+			if after, err := stations.Head(); err != nil || after != before {
+				t.Fatalf("HEAD = %s (%v), want %s; a stopped station must never commit", after, err, before)
+			}
+		})
+	}
+}
+
+func TestAStoppedPrepareMarksNoTaskDone(t *testing.T) {
+	_, stations := lineRig(t)
+	writeIn(t, stations.Root, "sneaky.txt", "x\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	fixes, err := stations.Prepare(ctx)
+	if err != nil || len(fixes) == 0 {
+		t.Fatalf("prepare = %q, %v; want its killed checks as fixes", fixes, err)
+	}
+	if status := line.LoadStatus(stations.Root); status["TSK-1"].Status == "DONE" {
+		t.Fatal("a stopped Prepare marked its task DONE")
 	}
 }
 
