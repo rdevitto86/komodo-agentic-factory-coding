@@ -43,6 +43,7 @@ const usage = `komodo: the code assembly line.
   komodo hook <name>          Every other agent hook's entry point; a hook that fails allows
   komodo run [group|task]     Drive the line headless on this host, under a budget
   komodo resume <group>       The state a killed run left: continue its session or start from its WIP
+  komodo abandon <group>      Remove a group's worktree and branch on purpose, and mark its tasks BLOCKED
   komodo ship <group>         Publish a group a missing credential stopped: push, draft PR, labels
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
   komodo step [group|task]    The one next action, as JSON
@@ -128,6 +129,8 @@ func main() {
 		runRun(root, os.Args[2:])
 	case "resume":
 		runResume(root, os.Args[2:])
+	case "abandon":
+		runAbandon(root, os.Args[2:])
 	case "ship":
 		runFinishShip(root, os.Args[2:])
 	case "sync":

@@ -3273,7 +3273,7 @@ depends_on: [TG-07.7]
 ```
 * **Why:** TG-07.7's builder ran out of turns before `komodo abandon`, and noted that an escalation's working data lives only in memory.
 
-#### [TSK-07.13.1] `komodo abandon` removes a group on purpose [P: M] [READY]
+#### [TSK-07.13.1] `komodo abandon` removes a group on purpose [P: M] [DONE]
 ```yaml
 files: [internal/conductor/abandon.go, internal/conductor/abandon_test.go, cmd/komodo/main.go, cmd/komodo/line.go]
 done_when:
@@ -3283,7 +3283,7 @@ context:
   - "removes the group's worktree and branch, and marks its file BLOCKED with a note saying it was abandoned"
 ```
 
-#### [TSK-07.13.2] An escalation's reason, answer, stall count and heavy retry survive a restart [P: H] [READY]
+#### [TSK-07.13.2] An escalation's reason, answer, stall count and heavy retry survive a restart [P: H] [DONE]
 ```yaml
 files: [internal/conductor/state.go, internal/conductor/state_test.go, internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
@@ -3293,7 +3293,7 @@ context:
   - "test: a run killed while escalated resumes with the same reason, answer, stall count and retry flag"
 ```
 
-#### [TSK-07.13.3] Publishing a blocked group is tested over a real repository [P: M] [READY]
+#### [TSK-07.13.3] Publishing a blocked group is tested over a real repository [P: M] [DONE]
 ```yaml
 files: [internal/line/ship_test.go, internal/line/epic.go]
 done_when:
@@ -3302,6 +3302,54 @@ context:
   - "ShipBlocked has no test over a real repo; the WIP push runs the pre-push hook, so a gate that refuses unverified work fails the publish and the note stays local"
   - "labelBlocked mirrors labelWip in epic.go; one shared helper labels both"
 ```
+
+#### [TSK-07.13.4] internal/conductor/drive.go:158 A stop's `needs` is lost when a run is killed after the stop is answered [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "keep persists reason, answer, stalls and heavy but not r.needs. escalate (ActionStop, lint failure or spent retry) and stalled set s.Stop, s.Answered and r.needs, and the new save at drive.go:202 records Answered+Stop. If the run is killed before Blocked runs, the resumed Drive skips escalate because Answered is set. It enters Blocked, and stop() writes needsDefault instead of the orchestrator's `needs` or the 'stopped N times' text. The blocker note then names the wrong need. Add a Needs field to State and carry it in newRound and keep alongside Reason."
+```
+
+#### [TSK-07.13.5] internal/line/epic.go:111 labelBlocked still duplicates labelNamed instead of using it [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/epic.go
+done_when:
+  - test -f internal/line/epic.go
+type: refactor
+context:
+  - 'TSK-07.13.3 says one shared helper labels both status: wip and status: blocked. labelNamed now exists, but labelBlocked in ship.go:788 still lists and matches labels by itself. The two copies can drift apart. Make labelBlocked return labelNamed(client, url, "status: blocked").'
+```
+
+#### [TSK-07.13.6] internal/conductor/abandon.go:72 The blocker note is written only after the worktree and branch are already gone [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/abandon.go
+done_when:
+  - test -f internal/conductor/abandon.go
+type: fix
+context:
+  - "Abandon force-removes the worktree and deletes the branch first, and only then writes the backlog. It does the same when branch -D fails, for example because the branch is checked out in the root. If the backlog write or branch -D fails, the group's work is gone, no note records it, and the run record remains. Write the noted backlog before the destructive git steps, or restore it if a later step fails."
+```
+
+#### [TSK-07.13.7] internal/line/epic.go:111 labelNamed has one caller, and labelBlocked still duplicates its body [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/epic.go
+done_when:
+  - test -f internal/line/epic.go
+type: refactor
+context:
+  - 'The diff pulls out labelNamed(client, url, name) so both labels can use it, but only labelWip calls it. labelBlocked (internal/line/ship.go:788) still does the same work on its own: it lists labels, matches by whole name or name+" ", adds the label, and returns the same three warnings. That leaves a helper with one caller plus the duplicate it was meant to remove. TSK-07.13.3 asked for ''one shared helper labels both''. Make labelBlocked return labelNamed(client, url, blockedLabel) and delete its loop.'
+```
+
+
+
+
 
 ### [TG-07.8] Prepare, then ship draft-first
 ```yaml

@@ -144,22 +144,41 @@ type round struct {
 	stalls  int
 }
 
+// newRound is the round state.json saved for s, so a resumed run keeps its fixes, builder, repairs and escalation.
+func newRound(s State) round {
+	return round{
+		fixes: s.Fixes, builder: mount.Handle(s.Builder), repairs: s.Repairs,
+		reason: s.Reason, answer: s.Answer, stalls: s.Stalls, heavy: s.Heavy,
+	}
+}
+
+// keep writes the round into s, so the next save of s carries it.
+func (r *round) keep(s *State) {
+	s.Fixes, s.Builder, s.Repairs = r.fixes, string(r.builder), r.repairs
+	s.Reason, s.Answer, s.Stalls, s.Heavy = r.reason, r.answer, r.stalls, r.heavy
+}
+
 // Drive moves a group from s until it waits on something outside the conductor, and returns that state.
 // A host or station failure escalates the group and is returned alongside it, unless the orchestrator settles it.
 func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 	if d.Host == nil || d.Stations == nil || d.Ledger == nil || d.Save == nil {
 		return s, errNotWired
 	}
-	// The round lives in state.json, so a resumed run keeps its fix list, builder and repair count.
-	r := round{fixes: s.Fixes, builder: mount.Handle(s.Builder), repairs: s.Repairs}
+	r := newRound(s)
 	var failure error
 	// A group saved at Escalated with no answer yet asks the orchestrator before Next reads it.
 	if s.Current == Escalated && !s.Answered {
-		if err := d.escalate(ctx, &s, &r); err != nil {
+		err := d.escalate(ctx, &s, &r)
+		r.keep(&s)
+		if err != nil {
 			return s, fmt.Errorf("%s escalated at %s: %w", s.Group, s.Current, err)
+		}
+		if err := d.Save(s); err != nil {
+			return s, fmt.Errorf("saving %s at %s: %w", s.Group, s.Current, err)
 		}
 	}
 	for {
+		r.keep(&s)
 		if err := ctx.Err(); err != nil {
 			return s, err
 		}
@@ -169,7 +188,7 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 		}
 		// A settled escalation clears the failure that raised it; a stop keeps it for the caller.
 		if s.Current == Escalated && next.Move != Blocked {
-			failure, r.reason = nil, ""
+			failure, r.reason, s.Reason = nil, "", ""
 		}
 		s = enter(s, next.Move)
 		if err := d.Save(s); err != nil {
@@ -177,8 +196,14 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 		}
 		started := time.Now()
 		err := d.work(ctx, &s, &r)
-		s.Fixes, s.Builder, s.Repairs = r.fixes, string(r.builder), r.repairs
+		r.keep(&s)
 		s.TimeUsed += time.Since(started)
+		// The orchestrator's action is saved as it lands, so a run killed before acting on it resumes with it.
+		if s.Current == Escalated && s.Answered {
+			if err := d.Save(s); err != nil {
+				return s, fmt.Errorf("saving %s at %s: %w", s.Group, s.Current, err)
+			}
+		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return s, ctxErr
 		}
