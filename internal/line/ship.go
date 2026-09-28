@@ -3,6 +3,7 @@ package line
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -490,12 +491,23 @@ func PushFromWorktree(root, worktree, branch string) error {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
 	}
 	ref := "refs/heads/" + branch
+	clean, username, password := splitCredential(pushURL)
 	// The hook runs here without the credential, so the push that holds it skips the hook.
-	if err := runPrePush(worktree, pushURL, ref); err != nil {
+	if err := runPrePush(worktree, clean, ref); err != nil {
 		return fmt.Errorf("pre-push hook for %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
-	if _, err := git.Run(worktree, "push", "--no-verify", pushURL, ref+":"+ref); err != nil {
-		return fmt.Errorf("git push to origin %s: %s", branch, redactURL(err.Error(), pushURL))
+	args := []string{"push", "--no-verify", clean, ref + ":" + ref}
+	env := os.Environ()
+	if username != "" || password != "" {
+		args = append([]string{"-c", "credential.helper=", "-c", "credential.helper=" + pushCredentialHelper}, args...)
+		env = append(env, pushUsernameEnv+"="+username, pushPasswordEnv+"="+password)
+	}
+	push := exec.Command("git", args...)
+	push.Dir = worktree
+	push.Env = env
+	if out, err := push.CombinedOutput(); err != nil {
+		failure := fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("git push to origin %s: %s", branch, redactURL(failure, pushURL))
 	}
 	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
 	if _, err := git.Run(worktree, "fetch", "origin", branch); err == nil {
@@ -504,10 +516,32 @@ func PushFromWorktree(root, worktree, branch string) error {
 	return nil
 }
 
+// The variables that hand a push its credential, read only by pushCredentialHelper inside that one push.
+const (
+	pushUsernameEnv = "KOMODO_PUSH_USERNAME"
+	pushPasswordEnv = "KOMODO_PUSH_PASSWORD"
+)
+
+// pushCredentialHelper answers git's credential get from the push's own environment, so no URL or argument holds it.
+const pushCredentialHelper = `!f() { test "$1" = get || exit 0; echo "username=$` + pushUsernameEnv +
+	`"; echo "password=$` + pushPasswordEnv + `"; }; f`
+
+// splitCredential returns an http(s) URL without its user and secret, and those two apart; other URLs pass unchanged.
+func splitCredential(raw string) (clean, username, password string) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User == nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return raw, "", ""
+	}
+	username = parsed.User.Username()
+	password, _ = parsed.User.Password()
+	parsed.User = nil
+	return parsed.String(), username, password
+}
+
 // zeroSHA is the object name a pre-push hook reads for a remote ref it cannot see.
 const zeroSHA = "0000000000000000000000000000000000000000"
 
-// runPrePush runs worktree's pre-push hook, if any, on ref as a push to url would, in hookEnv's environment.
+// runPrePush runs worktree's pre-push hook, if any, on ref as a push to origin at url would, in hookEnv's environment.
 func runPrePush(worktree, url, ref string) error {
 	// A ref that does not resolve has nothing to gate; the push itself reports it.
 	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", ref)
@@ -526,7 +560,7 @@ func runPrePush(worktree, url, ref string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", url, url)
+	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
 	cmd.Dir = worktree
 	cmd.Env = hookEnv(os.Environ())
 	if out, err := cmd.CombinedOutput(); err != nil {

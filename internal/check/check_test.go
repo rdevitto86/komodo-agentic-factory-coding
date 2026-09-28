@@ -1,12 +1,14 @@
 package check
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // initRepo creates a git repo at base HEAD with one committed file, then commits again with edits
@@ -199,6 +201,47 @@ func TestRunReportsEachFailure(t *testing.T) {
 			}
 			if tc.want != "" && !strings.HasPrefix(problems[0], tc.want) {
 				t.Fatalf("problems[0] = %q, want prefix %q", problems[0], tc.want)
+			}
+		})
+	}
+}
+
+func TestRunContextKillsItsCommandsOnceTheContextIsDone(t *testing.T) {
+	const (
+		stopAfter = 200 * time.Millisecond
+		bound     = 10 * time.Second
+	)
+	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n"})
+	ctx, cancel := context.WithTimeout(context.Background(), stopAfter)
+	defer cancel()
+	began := time.Now()
+	problems := RunContext(ctx, Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, "", "", []string{"sleep 60"})
+	if took := time.Since(began); took > bound {
+		t.Fatalf("run took %s after its context ended, want under %s", took, bound)
+	}
+	if len(problems) != 1 || !strings.HasPrefix(problems[0], "check: `sleep 60`") {
+		t.Fatalf("problems = %v, want the killed command named", problems)
+	}
+}
+
+func TestExecReportsHowACommandEnded(t *testing.T) {
+	const timeout = 200 * time.Millisecond
+	cases := []struct {
+		name     string
+		command  string
+		exit     int
+		timedOut bool
+		output   string
+	}{
+		{"it passes", "echo fine", 0, false, "fine"},
+		{"it fails", "echo broken; exit 3", 3, false, "broken"},
+		{"its clock runs out", "sleep 60", 124, true, "timed out after 200ms"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ran := Exec(context.Background(), t.TempDir(), timeout, "sh", "-c", tc.command)
+			if ran.ExitCode != tc.exit || ran.TimedOut != tc.timedOut || !strings.Contains(ran.Output, tc.output) {
+				t.Fatalf("result = %+v, want exit %d, timed out %v, output naming %q", ran, tc.exit, tc.timedOut, tc.output)
 			}
 		})
 	}

@@ -2,6 +2,7 @@ package review
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -62,6 +63,59 @@ func TestAReproducerNeverTouchesTheRealTree(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "app.txt")); err != nil {
 		t.Fatalf("app.txt left the real tree: %v", err)
+	}
+}
+
+// gitIn runs one git command in dir and returns its trimmed output, failing the test on error.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func TestAReproducerNeverTouchesTheRealWorktreesRepository(t *testing.T) {
+	repo := t.TempDir()
+	gitIn(t, repo, "init", "-q", "-b", "main")
+	gitIn(t, repo, "config", "user.email", "builder@example.com")
+	gitIn(t, repo, "config", "user.name", "builder")
+	writeFile(t, repo, "app.txt", "fine\n")
+	gitIn(t, repo, "add", "-A")
+	gitIn(t, repo, "commit", "-q", "-m", "base")
+	worktree := filepath.Join(t.TempDir(), "group")
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "group", worktree)
+	writeFile(t, worktree, "staged.txt", "staged\n")
+	gitIn(t, worktree, "add", "staged.txt")
+	head, index := gitIn(t, worktree, "rev-parse", "HEAD"), gitIn(t, worktree, "ls-files", "--stage")
+	gitDir := gitIn(t, worktree, "rev-parse", "--absolute-git-dir")
+	evidence := "git add -A; git -c user.name=r -c user.email=r@example.com commit -q --allow-empty -m scratch; " +
+		"git reset -q --hard HEAD; git rm -q --cached app.txt; exit 1"
+
+	t.Run("the reproducer runs", func(t *testing.T) {
+		t.Setenv("GIT_DIR", gitDir)
+		t.Setenv("GIT_WORK_TREE", worktree)
+		if got := verifyOne(t, Tree{Worktree: worktree}, Finding{Class: "bug", Evidence: evidence}); !got.Blocks {
+			t.Fatalf("verdict = %+v, want the reproducer to fail in its scratch copy", got)
+		}
+	})
+	if got := gitIn(t, worktree, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("HEAD = %s, want %s; the reproducer committed or reset the real branch", got, head)
+	}
+	if got := gitIn(t, worktree, "ls-files", "--stage"); got != index {
+		t.Fatalf("index = %q, want %q; the reproducer changed the real index", got, index)
+	}
+}
+
+func TestVerifyReportsAScratchCopyItCannotMakeARepository(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "app.txt", "fine\n")
+	t.Setenv("PATH", t.TempDir())
+	if _, err := Verify(Tree{Worktree: root}, []Finding{{Class: "bug", Evidence: "exit 1"}}); err == nil {
+		t.Fatal("Verify ran a reproducer in a scratch copy with no repository of its own")
 	}
 }
 
