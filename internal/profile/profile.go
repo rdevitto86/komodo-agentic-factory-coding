@@ -50,7 +50,6 @@ type Profile struct {
 	ResetsAt         time.Time              `json:"resets_at,omitempty"`
 	Why              string                 `json:"why"`
 	Mode             string                 `json:"mode"`
-	HostVersion      string                 `json:"host_version"`
 	Roles            map[string]RoleProfile `json:"roles"`
 	PRFiles          int                    `json:"pr_files"`
 	PRLinesPreferred int                    `json:"pr_lines_preferred"`
@@ -156,7 +155,6 @@ func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profil
 		return withMode(root, planOverlay(profile, ""))
 	}
 	profile.Host = host.Name
-	profile.HostVersion = host.Version
 	plan := ""
 	if host.Probe != nil {
 		if usage, ok := host.Probe(); ok {

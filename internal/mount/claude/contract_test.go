@@ -62,7 +62,7 @@ func setupFakeClaude(t *testing.T) (logPath string) {
 	}
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("FAKE_CLAUDE_LOG", logPath)
-	t.Setenv("FAKE_CLAUDE_VERSION", HostVersion+" (Claude Code)")
+	t.Setenv("FAKE_CLAUDE_VERSION", "2.1.283 (Claude Code)")
 	t.Setenv("FAKE_CLAUDE_AUTH", `{"loggedIn":true}`)
 	t.Setenv("FAKE_CLAUDE_START_FIXTURE", start)
 	t.Setenv("FAKE_CLAUDE_RESUME_FIXTURE", resume)
@@ -292,20 +292,14 @@ func TestContractStopKillsTheProcessGroup(t *testing.T) {
 	}
 }
 
-func TestContractPreflightPassesWithThePinnedVersionAndALogin(t *testing.T) {
+func TestContractPreflightPassesOnAnyVersionWithALogin(t *testing.T) {
 	setupFakeClaude(t)
-	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
-	if err := m.Preflight(); err != nil {
-		t.Fatalf("Preflight = %v", err)
-	}
-}
-
-func TestContractPreflightFailsOnAWrongVersion(t *testing.T) {
-	setupFakeClaude(t)
-	t.Setenv("FAKE_CLAUDE_VERSION", "9.9.9 (Claude Code)")
-	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
-	if err := m.Preflight(); err == nil || !strings.Contains(err.Error(), "9.9.9") {
-		t.Fatalf("Preflight = %v, want an error naming the wrong version", err)
+	for _, version := range []string{"2.1.283 (Claude Code)", "9.9.9 (Claude Code)"} {
+		t.Setenv("FAKE_CLAUDE_VERSION", version)
+		m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
+		if err := m.Preflight(); err != nil {
+			t.Fatalf("Preflight on %s = %v", version, err)
+		}
 	}
 }
 

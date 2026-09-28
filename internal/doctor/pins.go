@@ -34,39 +34,16 @@ var goToolchain = func(root string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// cliVersion runs a host's own CLI with --version and returns what it printed, trimmed; a test swaps it.
-var cliVersion = func(name string) (string, error) {
-	out, err := exec.Command(name, "--version").Output()
-	return strings.TrimSpace(string(out)), err
-}
-
-// checkPins reports the host CLI version, the profile's model IDs, the go.mod toolchain and the
-// built komodo binary that differ from the pin every machine must run (REQ-2, decision 0006).
+// checkPins reports the profile's model IDs, the go.mod toolchain and the built komodo binary
+// that differ from the pin every machine must run (REQ-2, decision 0006).
 func checkPins(root string) []Problem {
 	current := profile.Select(root)
 	var problems []Problem
-	problems = append(problems, checkHostVersion(current)...)
 	problems = append(problems, checkModelIDs(current)...)
 	problems = append(problems, checkToolchain(root)...)
 	problems = append(problems, checkRelease(root)...)
 	problems = append(problems, checkPinnedRelease(root, current.Mode)...)
 	return problems
-}
-
-// checkHostVersion reports when the installed host's own CLI reports a version other than its pin.
-func checkHostVersion(current profile.Profile) []Problem {
-	if current.Host == "" {
-		return nil
-	}
-	installed, err := cliVersion(current.Host)
-	if err != nil {
-		return []Problem{{"pins", current.Host, "could not read its version: " + err.Error()}}
-	}
-	if !strings.Contains(installed, current.HostVersion) {
-		return []Problem{{"pins", current.Host,
-			fmt.Sprintf("reports %s; the line is pinned to %s", installed, current.HostVersion)}}
-	}
-	return nil
 }
 
 // checkModelIDs reports a role whose resolved machine names a bare alias instead of a full model ID.

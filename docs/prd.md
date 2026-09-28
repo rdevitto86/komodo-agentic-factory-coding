@@ -126,7 +126,7 @@ Each requirement is met only when its proof exits zero. A review can file a bug 
 | Requirement ID | Requirement description | Priority | Verification proof |
 |---|---|---|---|
 | REQ-1 | One command installs the line on macOS, Linux and Windows, natively or in WSL2: the binary on PATH, the orchestrator layer in the global host config, and the current repo initialised. | Must | The install run and recorded on each platform; `komodo doctor` exits 0 afterwards. |
-| REQ-2 | Every machine runs the pinned host CLI version, model IDs, `komodo` release and toolchains. | Must | `komodo doctor` exits 0 when every pin matches, and non-zero when any pin differs. |
+| REQ-2 | Every machine runs the pinned model IDs, `komodo` release and toolchains. | Must | `komodo doctor` exits 0 when every pin matches, and non-zero when any pin differs. |
 | REQ-3 | Line sessions load no personal instructions, user settings, plugins or MCP servers. | Must | A canary instruction in a machine's personal host config never appears in eval output. |
 | REQ-4 | Every text file uses LF line endings on every platform. | Must | `.gitattributes` exists in the toolkit and in `komodo init`'s template; `komodo doctor` checks it. |
 | REQ-5 | In this repo, a pull that changes the binary's source rebuilds the binary with no manual command. Other repos use a published release. | Must | A test: after a pull that changes Go sources, the binary's build stamp matches the new commit. |

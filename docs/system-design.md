@@ -293,7 +293,7 @@ GitHub Free offers draft PRs and rulesets only on public repositories; `komodo d
 
 | Variable | Pinned by |
 |---|---|
-| Host CLI version | The profile. Doctor fails on a mismatch. `DISABLE_AUTOUPDATER` is set in each session's environment. |
+| Host CLI version | Not pinned (decision 0033). `DISABLE_AUTOUPDATER` is set in each session's environment, so it never changes mid-run. |
 | Model | Full IDs in the profile, such as `claude-sonnet-5` and `claude-opus-5-5` |
 | Personal layer | `--setting-sources local` and `--strict-mcp-config`; no personal settings, instructions, plugins or MCP, and no shared project skills (REQ-3, decisions 0025 and 0027) |
 | Rules and skills | The role's own plugin, plus the repo's `AGENTS.md` |
@@ -462,7 +462,7 @@ Inside WSL2, the installer also checks that the repo is on the Linux filesystem.
 
 | Check | Fails when |
 |---|---|
-| Pins | The host CLI, models, `komodo` release or a toolchain differs from the profile |
+| Pins | A model ID, the `komodo` release or a toolchain differs from the profile |
 | Hermetic config | The line's config directory is missing, or holds personal settings, plugins or MCP |
 | Sandbox | The platform has one and it can't start |
 | Budgets | A role's always-on context is over its budget |

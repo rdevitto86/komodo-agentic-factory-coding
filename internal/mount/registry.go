@@ -17,9 +17,7 @@ import (
 
 // Host is one mount: its name, the paths it owns, the names only it may use, and its render.
 type Host struct {
-	Name string
-	// Version is the host CLI release the line is pinned to; doctor fails when the installed one differs.
-	Version     string
+	Name        string
 	ConfigPaths []string
 	Vendors     []string
 	HybridName  string

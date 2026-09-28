@@ -11,35 +11,6 @@ import (
 	"komodo/internal/mount"
 )
 
-// pinnedHost registers a fake, installed host with full model IDs on every tier and restores the
-// registry and the version probe after the test.
-func pinnedHost(t *testing.T, name, version, reportedVersion string) {
-	t.Helper()
-	registerHost(t, mount.Host{
-		Name:      name,
-		Version:   version,
-		Installed: func(string) bool { return true },
-		Tiers: func(string, bool) mount.Tiers {
-			machine := mount.Machine{Provider: name, Model: "claude-sonnet-5"}
-			return mount.Tiers{Light: machine, Standard: machine, Heavy: machine, Reviewer: machine}
-		},
-	})
-	swapCLIVersion(t, func(got string) (string, error) {
-		if got != name {
-			t.Fatalf("cliVersion probed %q, not %q", got, name)
-		}
-		return reportedVersion, nil
-	})
-}
-
-// swapCLIVersion overrides the CLI version probe for one test and restores it after.
-func swapCLIVersion(t *testing.T, fn func(string) (string, error)) {
-	t.Helper()
-	previous := cliVersion
-	cliVersion = fn
-	t.Cleanup(func() { cliVersion = previous })
-}
-
 // swapGoToolchain overrides the running Go toolchain for one test and restores it after.
 func swapGoToolchain(t *testing.T, version string) {
 	t.Helper()
@@ -54,53 +25,17 @@ func TestACleanRepoHasNoPins(t *testing.T) {
 	}
 }
 
-func TestAHostVersionThatDiffersIsFound(t *testing.T) {
-	root := clean(t)
-	pinnedHost(t, "testhost", "9.9.9", "1.0.0")
-	got := problemsFrom(t, root)["pins"]
-	found := false
-	for _, problem := range got {
-		if problem.Where == "testhost" && strings.Contains(problem.Detail, "reports 1.0.0") &&
-			strings.Contains(problem.Detail, "pinned to 9.9.9") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("pins = %+v", got)
-	}
-}
-
-func TestAHostVersionProbeFailureIsFound(t *testing.T) {
-	root := clean(t)
-	registerHost(t, mount.Host{
-		Name:      "testhost",
-		Version:   "9.9.9",
-		Installed: func(string) bool { return true },
-		Tiers: func(string, bool) mount.Tiers {
-			machine := mount.Machine{Provider: "testhost", Model: "claude-sonnet-5"}
-			return mount.Tiers{Light: machine, Standard: machine, Heavy: machine, Reviewer: machine}
-		},
-	})
-	swapCLIVersion(t, func(string) (string, error) { return "", os.ErrNotExist })
-	got := problemsFrom(t, root)["pins"]
-	if len(got) != 1 || !strings.Contains(got[0].Detail, "could not read its version") {
-		t.Fatalf("pins = %+v", got)
-	}
-}
-
 func TestABareModelAliasIsFound(t *testing.T) {
 	root := clean(t)
 	write(t, root, "komodo/profiles/full.json", `{"roles":{"builder":{"tier":"standard","effort":"medium"}}}`)
 	registerHost(t, mount.Host{
 		Name:      "testhost",
-		Version:   "1.0.0",
 		Installed: func(string) bool { return true },
 		Tiers: func(string, bool) mount.Tiers {
 			machine := mount.Machine{Provider: "testhost", Model: "latest"}
 			return mount.Tiers{Light: machine, Standard: machine, Heavy: machine, Reviewer: machine}
 		},
 	})
-	swapCLIVersion(t, func(string) (string, error) { return "1.0.0", nil })
 	got := problemsFrom(t, root)["pins"]
 	found := false
 	for _, problem := range got {
