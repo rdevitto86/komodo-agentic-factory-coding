@@ -2958,6 +2958,47 @@ context:
 
 
 
+### [TG-07.12] The line is safe to leave unattended
+```yaml
+type: fix
+version: 1.0.0-alpha.8
+depends_on: [TG-07.11]
+```
+* **Why:** three gaps surfaced while phases 3 and 4 ran: a stopped conductor kept checking and committed, a reproducer can act on the real worktree, and the pre-push hook sees the credential.
+
+#### [TSK-07.12.1] A stopped run stops the station it is in, and never commits after the stop [P: H] [READY]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/check/check.go, internal/check/check_test.go]
+done_when:
+  - go test ./internal/conductor/... ./internal/check/...
+context:
+  - "Drive checks its context only between states, and Stations.Check, Prepare and Ship take none; a SIGTERM during Check let the gate finish and commit the build four minutes later"
+  - "each station takes the run's context, its commands die with it, and CommitBuild never runs once the context is done"
+  - "test: a context cancelled during Check returns within seconds, with no commit and the state left at Checking"
+```
+
+#### [TSK-07.12.2] An evidence reproducer runs in a scratch copy that cannot reach the real worktree [P: H] [READY]
+```yaml
+files: [internal/review/evidence.go, internal/review/evidence_test.go]
+done_when:
+  - go test ./internal/review/...
+context:
+  - "supersedes TSK-07.5.5: the scratch copy keeps the worktree's .git file, so a reproducer's git commands act on the real branch"
+  - "the copy gets its own repository, or no .git at all, and GIT_DIR and GIT_WORK_TREE are unset for the reproducer"
+  - "test: a reproducer that commits or resets leaves the real worktree's HEAD and index unchanged"
+```
+
+#### [TSK-07.12.3] The pre-push hook never sees the credential-bearing push URL [P: H] [READY]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "supersedes TSK-05.10.9: git passes the push URL to pre-push as an argument, and PushFromWorktree's URL carries the forge token"
+  - "push to a named remote whose URL holds no credential, with the token in a credential helper scoped to the push"
+  - "test: a pre-push hook that records its arguments and environment sees no token"
+```
+
 ### [TG-07.6] Repair resumes the builder, and a loop stops when it stops progressing
 ```yaml
 type: feat
