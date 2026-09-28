@@ -219,6 +219,12 @@ type overlayFile struct {
 	CriticalRefs  []string `json:"critical_refs"`
 }
 
+// DecodeOverlay reports why the machine overlay's bytes would not decode into the fields a profile reads.
+func DecodeOverlay(data []byte) error {
+	var overlay overlayFile
+	return json.Unmarshal(data, &overlay)
+}
+
 // Overlay applies ~/.komodo/config.json, which can only tighten what the profile allows.
 func Overlay(profile Profile, path string) Profile {
 	data, err := os.ReadFile(path)
