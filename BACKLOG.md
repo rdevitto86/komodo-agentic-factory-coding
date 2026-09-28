@@ -3273,7 +3273,7 @@ depends_on: [TG-07.7]
 ```
 * **Why:** TG-07.7's builder ran out of turns before `komodo abandon`, and noted that an escalation's working data lives only in memory.
 
-#### [TSK-07.13.1] `komodo abandon` removes a group on purpose [P: M] [READY]
+#### [TSK-07.13.1] `komodo abandon` removes a group on purpose [P: M] [DONE]
 ```yaml
 files: [internal/conductor/abandon.go, internal/conductor/abandon_test.go, cmd/komodo/main.go, cmd/komodo/line.go]
 done_when:
@@ -3283,7 +3283,7 @@ context:
   - "removes the group's worktree and branch, and marks its file BLOCKED with a note saying it was abandoned"
 ```
 
-#### [TSK-07.13.2] An escalation's reason, answer, stall count and heavy retry survive a restart [P: H] [READY]
+#### [TSK-07.13.2] An escalation's reason, answer, stall count and heavy retry survive a restart [P: H] [DONE]
 ```yaml
 files: [internal/conductor/state.go, internal/conductor/state_test.go, internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
@@ -3293,7 +3293,7 @@ context:
   - "test: a run killed while escalated resumes with the same reason, answer, stall count and retry flag"
 ```
 
-#### [TSK-07.13.3] Publishing a blocked group is tested over a real repository [P: M] [READY]
+#### [TSK-07.13.3] Publishing a blocked group is tested over a real repository [P: M] [DONE]
 ```yaml
 files: [internal/line/ship_test.go, internal/line/epic.go]
 done_when:
