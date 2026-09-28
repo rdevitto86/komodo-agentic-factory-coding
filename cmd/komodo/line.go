@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"komodo/internal/backlog"
 	"komodo/internal/conductor"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
@@ -80,12 +81,45 @@ func runResume(root string, args []string) {
 	if err != nil {
 		fail(fmt.Errorf("%s has no saved state to resume: %w", group, err))
 	}
+	if state.Current == conductor.Blocked && !state.Edited {
+		if err := clearBlocker(state); err != nil {
+			fail(err)
+		}
+		state.Edited = true
+		if err := conductor.SaveState(conductor.StatePath(root, group), state); err != nil {
+			fail(err)
+		}
+	}
 	if *asJSON {
 		printCompactJSON(os.Stdout, state)
 		return
 	}
 	fmt.Printf("%s is at %s with %d session(s) and %d repair round(s) recorded\n",
 		state.Group, state.Current, len(state.Sessions), state.Repairs)
+}
+
+// clearBlocker removes a blocked group's note from its branch's backlog once a person set every task back
+// from BLOCKED, so komodo run feeds the edited group to its resumed builder.
+func clearBlocker(state conductor.State) error {
+	path, err := backlog.Find(state.Worktree)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	group, ok := backlog.Parse(string(data)).Group(state.Group)
+	if !ok {
+		return fmt.Errorf("%s is not in %s", state.Group, path)
+	}
+	for _, task := range group.Tasks {
+		if task.Status == "BLOCKED" {
+			return fmt.Errorf("%s is still BLOCKED in %s; edit the group and set it READY, then resume", task.ID, path)
+		}
+	}
+	text, _ := backlog.RemoveNote(string(data), state.Group)
+	return os.WriteFile(path, []byte(text), 0o644)
 }
 
 // planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.

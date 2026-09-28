@@ -122,17 +122,30 @@ type Driver struct {
 	Save func(State) error
 	// WriteReview keeps the reviewer's whole result where Ship's findings gate reads it; nil skips it.
 	WriteReview func(group string, result mount.Result) error
+	// Orchestrator builds the request of the headless session that settles an escalation; nil waits for a person.
+	Orchestrator func(Escalation) (mount.StartRequest, error)
+	// Heavy is the machine the orchestrator's one retry runs the builder on; empty refuses the retry.
+	Heavy mount.Machine
+	// Lint returns the task list's lint problems, which a split or clarify must leave empty.
+	Lint func() ([]string, error)
+	// Block commits a stopped group's note on its branch and publishes it as a blocked draft PR; nil skips it.
+	Block func(context.Context, backlog.BlockerNote) error
 }
 
-// round is what one Drive call carries between states: the open fix list, the builder session, repairs spent.
+// round is what one Drive call carries between states: the fix list, builder, repairs, and open escalation.
 type round struct {
 	fixes   []string
 	builder mount.Handle
 	repairs int
+	reason  string
+	answer  string
+	needs   string
+	heavy   bool
+	stalls  int
 }
 
 // Drive moves a group from s until it waits on something outside the conductor, and returns that state.
-// A host or station failure escalates the group and is returned alongside it.
+// A host or station failure escalates the group and is returned alongside it, unless the orchestrator settles it.
 func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 	if d.Host == nil || d.Stations == nil || d.Ledger == nil || d.Save == nil {
 		return s, errNotWired
@@ -140,6 +153,12 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 	// The round lives in state.json, so a resumed run keeps its fix list, builder and repair count.
 	r := round{fixes: s.Fixes, builder: mount.Handle(s.Builder), repairs: s.Repairs}
 	var failure error
+	// A group saved at Escalated with no answer yet asks the orchestrator before Next reads it.
+	if s.Current == Escalated && !s.Answered {
+		if err := d.escalate(ctx, &s, &r); err != nil {
+			return s, fmt.Errorf("%s escalated at %s: %w", s.Group, s.Current, err)
+		}
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return s, err
@@ -147,6 +166,10 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 		next := Next(s)
 		if next.Remove || next.Move == s.Current {
 			return s, failure
+		}
+		// A settled escalation clears the failure that raised it; a stop keeps it for the caller.
+		if s.Current == Escalated && next.Move != Blocked {
+			failure, r.reason = nil, ""
 		}
 		s = enter(s, next.Move)
 		if err := d.Save(s); err != nil {
@@ -161,6 +184,10 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 		}
 		if err != nil {
 			s.Escalate = true
+			r.reason = err.Error()
+			if errors.Is(err, errNoProgress) {
+				r.stalls++
+			}
 			failure = fmt.Errorf("%s escalated at %s: %w", s.Group, s.Current, err)
 		}
 	}
@@ -185,12 +212,12 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 		if err := d.Stations.Snapshot(); err != nil {
 			return err
 		}
-		handle, err := d.Host.Start(d.Builder)
+		req, handle, err := d.startBuilder(d.builderRequest(r), r)
 		if err != nil {
 			return err
 		}
 		r.builder, r.fixes = handle, nil
-		return d.build(ctx, s, StationBuild, d.Builder, handle)
+		return d.build(ctx, s, StationBuild, req, handle)
 	case Checking:
 		fixes, err := d.Stations.Check(ctx)
 		if err != nil {
@@ -225,6 +252,10 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 			return err
 		}
 		s.Merged = merged
+	case Escalated:
+		return d.escalate(ctx, s, r)
+	case Blocked:
+		return d.stop(ctx, s, r)
 	}
 	return nil
 }
@@ -530,6 +561,9 @@ func mergedReview(lenses []review.Lens, results map[review.Lens]mount.Result) mo
 func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 	r.repairs++
 	input := fixList(r.fixes) + taskFiles(d.Tasks)
+	if r.answer != "" {
+		input, r.answer = answerLead+r.answer+"\n\n"+input, ""
+	}
 	if err := d.Stations.Snapshot(); err != nil {
 		return err
 	}
@@ -541,7 +575,7 @@ func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 	if err != nil {
 		return err
 	}
-	req := d.Builder
+	req := d.builderRequest(r)
 	var handle mount.Handle
 	if r.builder != "" && d.Host.Capabilities().Resume {
 		handle, err = d.Host.Resume(r.builder, input)
