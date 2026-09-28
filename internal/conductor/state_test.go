@@ -1,6 +1,13 @@
 package conductor
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"komodo/internal/review"
+)
 
 func TestNextDecidesFromTheStateAlone(t *testing.T) {
 	cases := []struct {
@@ -15,10 +22,18 @@ func TestNextDecidesFromTheStateAlone(t *testing.T) {
 		{"a check failed", State{Group: "TG-1", Current: Checking}, Repairing},
 		{"every check passed", State{Group: "TG-1", Current: Checking, ChecksPassed: true}, Reviewing},
 		{"a finding is verified", State{
-			Group: "TG-1", Current: Reviewing, Findings: []Finding{{Severity: "high", Verified: true}},
+			Group: "TG-1", Current: Reviewing,
+			Findings: map[review.Lens][]Finding{review.Economy: {{Severity: "high", Verified: true}}},
+		}, Repairing},
+		{"one lens of three has a verified finding", State{
+			Group: "TG-1", Current: Reviewing, Findings: map[review.Lens][]Finding{
+				review.Correctness: {{Severity: "high"}}, review.Security: nil,
+				review.Quality: {{Severity: "high", Verified: true}},
+			},
 		}, Repairing},
 		{"no finding is verified", State{
-			Group: "TG-1", Current: Reviewing, Findings: []Finding{{Severity: "high"}},
+			Group: "TG-1", Current: Reviewing,
+			Findings: map[review.Lens][]Finding{review.Economy: {{Severity: "high"}}},
 		}, Preparing},
 		{"repair session still running", State{Group: "TG-1", Current: Repairing}, Repairing},
 		{"repair session ended", State{Group: "TG-1", Current: Repairing, SessionDone: true}, Checking},
@@ -56,6 +71,72 @@ func TestNextRemovesAMergedShippedGroup(t *testing.T) {
 	next := Next(State{Group: "TG-1", Current: Shipped, Merged: true})
 	if !next.Remove || next.Move != "" {
 		t.Fatalf("Next = %+v, want a removed record with no next move", next)
+	}
+}
+
+func TestAStateWrittenWithOneReviewerLoadsAsTheSingleEconomyLens(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	legacy := `{"group":"TG-1","state":"Reviewing","sessions":["builder-1","reviewer-2"],` +
+		`"findings":[{"severity":"high","verified":true,"file":"a.go","line":3,"title":"nil map"}],` +
+		`"reviewer":"reviewer-2","reviewed":"abc","review_rounds":2,"cold_pass":true,"repairs":1}`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadState(path)
+	if err != nil {
+		t.Fatalf("load = %v; a state.json from before lenses must still load", err)
+	}
+	if s.Group != "TG-1" || s.Current != Reviewing || s.Reviewed != "abc" || s.Repairs != 1 || len(s.Sessions) != 2 {
+		t.Fatalf("state = %+v, want every field beside the lens maps read as written", s)
+	}
+	if len(s.Reviewer) != 1 || s.Reviewer[review.Economy] != "reviewer-2" {
+		t.Fatalf("reviewer = %v, want the one reviewer as the economy lens", s.Reviewer)
+	}
+	if s.ReviewRounds[review.Economy] != 2 || !s.ColdPass[review.Economy] {
+		t.Fatalf("rounds = %v, cold pass = %v, want both under the economy lens", s.ReviewRounds, s.ColdPass)
+	}
+	open := s.Open(review.Economy)
+	if len(open) != 1 || open[0].File != "a.go" || open[0].Line != 3 {
+		t.Fatalf("open = %+v, want the one verified finding under the economy lens", open)
+	}
+	if next := Next(s); next.Move != Repairing {
+		t.Fatalf("Next = %+v, want the legacy verified finding to still send the group to repair", next)
+	}
+}
+
+func TestAStateKeyedByLensSurvivesARoundTrip(t *testing.T) {
+	want := State{
+		Group: "TG-1", Current: Repairing,
+		Findings: map[review.Lens][]Finding{
+			review.Correctness: {{Lens: review.Correctness, Severity: "high", Verified: true, File: "a.go", Line: 1}},
+			review.Quality:     {{Lens: review.Quality, Severity: "low", File: "b.go", Line: 2}},
+		},
+		Reviewer:     map[review.Lens]string{review.Correctness: "reviewer-2", review.Quality: "reviewer-3"},
+		ReviewRounds: map[review.Lens]int{review.Correctness: 2, review.Quality: 1},
+		ColdPass:     map[review.Lens]bool{review.Quality: true},
+	}
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := SaveState(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadState(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON, _ := json.Marshal(want)
+	gotJSON, _ := json.Marshal(got)
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("round trip = %s, want %s", gotJSON, wantJSON)
+	}
+}
+
+func TestAStateWithAMalformedLensMapFailsToLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{"group":"TG-1","review_rounds":{"quality":"two"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadState(path); err == nil {
+		t.Fatal("load = nil, want an error for a round count that is not a number")
 	}
 }
 

@@ -224,6 +224,9 @@ func tagRepo(t *testing.T, branch, changelog string) (root, bare string) {
 	root = t.TempDir()
 	bare = filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
+	// A push starts detached maintenance in the origin, which would write into it during TempDir cleanup.
+	runGit(t, bare, "config", "receive.autogc", "false")
+	runGit(t, bare, "config", "maintenance.auto", "false")
 	runGit(t, root, "init")
 	runGit(t, root, "config", "user.email", "a@example.com")
 	runGit(t, root, "config", "user.name", "a")

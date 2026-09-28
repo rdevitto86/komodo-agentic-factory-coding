@@ -1,12 +1,14 @@
 package check
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // initRepo creates a git repo at base HEAD with one committed file, then commits again with edits
@@ -113,11 +115,52 @@ func TestDiffCoversCommittedUncommittedAndUntrackedEdits(t *testing.T) {
 
 func TestScopeAllowsADeclaredFilesOwnTest(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{
-		"a.go": "package a\n", "a_test.go": "package a\n", "b_test.go": "package b\n", "ui/c.test.ts": "x\n",
+		"a.go": "package a\n", "a_test.go": "package a\n", "b/b_test.go": "package b\n", "ui/c.test.ts": "x\n",
 	})
 	problems := Scope(worktree, base, []string{"a.go", "ui/c.ts"})
 	if len(problems) != 1 || !strings.Contains(problems[0], "b_test.go") {
 		t.Fatalf("problems = %v; a declared file's test is in scope, an undeclared file's test is not", problems)
+	}
+}
+
+func TestScopeAllowsADeclaredFilesPlatformTest(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{
+		"a/a_unix_test.go": "package a\n", "b/b_linux_amd64_test.go": "package b\n", "c/c_windows_test.go": "package c\n",
+	})
+	problems := Scope(worktree, base, []string{"a/a.go", "b/b.go"})
+	if len(problems) != 1 || !strings.Contains(problems[0], "c_windows_test.go") {
+		t.Fatalf("problems = %v; a declared file's platform test is in scope, an undeclared file's is not", problems)
+	}
+}
+
+func TestUntaggedKeepsANameWithNoPlatformSuffix(t *testing.T) {
+	for name, want := range map[string]string{
+		"x/evidence_unix.go": "x/evidence.go", "watch_windows.go": "watch.go", "a_linux_amd64.go": "a.go",
+		"_unix.go": "_unix.go", "user_input.go": "user_input.go", "README.md": "README.md",
+	} {
+		if got := untagged(name); got != want {
+			t.Errorf("untagged(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestScopeAllowsAnyTestOfADeclaredGoPackage(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{
+		"cmd/cli_test.go": "package main\n", "cmd/main_test.go": "package main\n", "lib/x_test.go": "package lib\n",
+	})
+	problems := Scope(worktree, base, []string{"cmd/host.go"})
+	if len(problems) != 1 || !strings.Contains(problems[0], "lib/x_test.go") {
+		t.Fatalf("problems = %v; a declared package's tests are in scope, another package's are not", problems)
+	}
+}
+
+func TestScopeAllowsAFileInsideADeclaredDirectory(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{
+		"skills/review/SKILL.md": "x\n", "skills/reviewer.md": "x\n",
+	})
+	problems := Scope(worktree, base, []string{"skills/review"})
+	if len(problems) != 1 || !strings.Contains(problems[0], "skills/reviewer.md") {
+		t.Fatalf("problems = %v; a declared directory covers its files, never a sibling sharing its prefix", problems)
 	}
 }
 
@@ -158,6 +201,47 @@ func TestRunReportsEachFailure(t *testing.T) {
 			}
 			if tc.want != "" && !strings.HasPrefix(problems[0], tc.want) {
 				t.Fatalf("problems[0] = %q, want prefix %q", problems[0], tc.want)
+			}
+		})
+	}
+}
+
+func TestRunContextKillsItsCommandsOnceTheContextIsDone(t *testing.T) {
+	const (
+		stopAfter = 200 * time.Millisecond
+		bound     = 10 * time.Second
+	)
+	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n"})
+	ctx, cancel := context.WithTimeout(context.Background(), stopAfter)
+	defer cancel()
+	began := time.Now()
+	problems := RunContext(ctx, Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, "", "", []string{"sleep 60"})
+	if took := time.Since(began); took > bound {
+		t.Fatalf("run took %s after its context ended, want under %s", took, bound)
+	}
+	if len(problems) != 1 || !strings.HasPrefix(problems[0], "check: `sleep 60`") {
+		t.Fatalf("problems = %v, want the killed command named", problems)
+	}
+}
+
+func TestExecReportsHowACommandEnded(t *testing.T) {
+	const timeout = 200 * time.Millisecond
+	cases := []struct {
+		name     string
+		command  string
+		exit     int
+		timedOut bool
+		output   string
+	}{
+		{"it passes", "echo fine", 0, false, "fine"},
+		{"it fails", "echo broken; exit 3", 3, false, "broken"},
+		{"its clock runs out", "sleep 60", 124, true, "timed out after 200ms"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ran := Exec(context.Background(), t.TempDir(), timeout, "sh", "-c", tc.command)
+			if ran.ExitCode != tc.exit || ran.TimedOut != tc.timedOut || !strings.Contains(ran.Output, tc.output) {
+				t.Fatalf("result = %+v, want exit %d, timed out %v, output naming %q", ran, tc.exit, tc.timedOut, tc.output)
 			}
 		})
 	}

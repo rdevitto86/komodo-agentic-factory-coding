@@ -123,6 +123,7 @@ func TestDetectSkipsVenvEnvTargetDistBuildAndPycache(t *testing.T) {
 	write(t, root, "dist/foo.js", "console.log('hi')\n")
 	write(t, root, "build/foo.java", "class Foo {}\n")
 	write(t, root, "__pycache__/foo.php", "<?php ?>\n")
+	write(t, root, "internal/x/testdata/hello.test.ts", "export {}\n")
 
 	profile, _ := Detect(root)
 

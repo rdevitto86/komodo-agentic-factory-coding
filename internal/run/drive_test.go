@@ -1,16 +1,22 @@
 package run
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"komodo/internal/conductor"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 	"komodo/internal/mount/claude"
 	"komodo/internal/pr"
+	"komodo/internal/review"
 )
 
 const driveBacklog = "### [TG-40.1] A fake group\n```yaml\ntype: feat\nversion: 1.0.0\nmode: single\n```\n\n" +
@@ -154,8 +160,8 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 			reviews++
 		}
 	}
-	if builds != 1 || reviews != 1 {
-		t.Fatalf("builds = %d, reviews = %d; want exactly one each", builds, reviews)
+	if lenses := len(review.ForMode("full")); builds != 1 || reviews != lenses {
+		t.Fatalf("builds = %d, reviews = %d; want one build and one review per full-mode lens", builds, reviews)
 	}
 
 	// The reviewer read the build's diff, committed before review, never the empty branch the run was cut with.
@@ -181,6 +187,69 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	}
 	if code, err := Drive(Options{Root: root, Target: "TG-40.1", PR: client}); err != nil || code != 0 {
 		t.Fatalf("Drive after a rewind = %d, %v; a resumed group must find its closed tasks' plan", code, err)
+	}
+}
+
+// TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts checks a run removes an earlier group's worktree and
+// branch once origin deleted that branch, and leaves its own shipped group's worktree for the merge.
+func TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts(t *testing.T) {
+	root := driveRepo(t)
+	setupDriveFakeClaude(t)
+	stale := filepath.Join(root, line.StateDir, "wt", "TG-39.1")
+	runGit(t, root, "worktree", "add", "-b", "feat/old", stale, "main")
+	if err := os.WriteFile(filepath.Join(stale, "old.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, stale, "add", "old.txt")
+	runGit(t, stale, "commit", "-m", "old")
+	runGit(t, stale, "push", "origin", "feat/old")
+	runGit(t, stale, "branch", "--set-upstream-to=origin/feat/old", "feat/old")
+	runGit(t, root, "push", "origin", "--delete", "feat/old")
+	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
+			return "https://example.invalid/pr/1", nil
+		}
+		if len(args) > 0 && args[0] == "label" {
+			return "[]", nil
+		}
+		return "", nil
+	}}
+
+	var out strings.Builder
+	if code, err := Drive(Options{Root: root, Target: "TG-40.1", PR: client, Stdout: &out}); err != nil || code != 0 {
+		t.Fatalf("Drive = %d, %v", code, err)
+	}
+	if _, err := os.Stat(stale); err == nil {
+		t.Fatalf("the squash-merged group's worktree survived the run; out = %s", out.String())
+	}
+	if branches := gitOut(t, root, "branch", "--list", "feat/old"); branches != "" {
+		t.Fatalf("feat/old survived the run; out = %s", out.String())
+	}
+	if !strings.Contains(out.String(), "removed worktree") {
+		t.Fatalf("out = %q; the run must print what it removed", out.String())
+	}
+	state, err := line.LoadRunFor(root, "TG-40.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(line.WorktreePath(root, state.Worktree)); err != nil {
+		t.Fatalf("the shipped group's own worktree was removed before its PR merged: %v", err)
+	}
+}
+
+// TestRunRefusesToCutWhereLeftoversCannotBeListed checks a cut stops when the root is no git repo to prune.
+func TestRunRefusesToCutWhereLeftoversCannotBeListed(t *testing.T) {
+	root := t.TempDir()
+	// A .git naming no repo stops git's walk up to any repo holding the temp dir.
+	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: "+filepath.Join(root, "missing")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if _, err := cutIfNeeded(root, &line.Plan{Group: "TG-40.1"}, &out); err == nil {
+		t.Fatalf("cutIfNeeded cut a group where no worktree can be listed; out = %s", out.String())
+	}
+	if out.Len() != 0 {
+		t.Fatalf("out = %q; nothing was removed", out.String())
 	}
 }
 
@@ -252,10 +321,10 @@ func TestNewDriverWiresTheReReviewToCommitTheRepairAndDiffSinceTheReviewedCommit
 	if err := os.WriteFile(path, []byte("package b\n\n// Two does nothing.\nfunc Two() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := conductor.State{Reviewed: reviewed, Findings: []conductor.Finding{
-		{Severity: "high", Verified: true, File: "b/two.go", Line: 3, Title: "Two has no comment"},
+	s := conductor.State{Reviewed: reviewed, Findings: map[review.Lens][]conductor.Finding{
+		review.Quality: {{Severity: "high", Verified: true, File: "b/two.go", Line: 3, Title: "Two has no comment"}},
 	}}
-	input, err := driver.ReReview(s)
+	input, err := driver.ReReview(review.Quality, s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,6 +332,106 @@ func TestNewDriverWiresTheReReviewToCommitTheRepairAndDiffSinceTheReviewedCommit
 		t.Fatalf("re-review input = %q, want the uncommitted repair's diff alone", input)
 	}
 	if !strings.Contains(input, "`b/two.go:3` high: Two has no comment") {
-		t.Fatalf("re-review input = %q, want the open finding by file and line", input)
+		t.Fatalf("re-review input = %q, want the lens's open finding by file and line", input)
+	}
+	other, err := driver.ReReview(review.Security, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(other, "Two has no comment") {
+		t.Fatalf("security re-review input = %q, want no other lens's finding", other)
+	}
+}
+
+// lensHost is a canned host whose every session returns no findings; it is safe for parallel lenses.
+type lensHost struct {
+	mu     sync.Mutex
+	starts []mount.StartRequest
+}
+
+func (h *lensHost) Preflight() error { return nil }
+
+func (h *lensHost) Start(req mount.StartRequest) (mount.Handle, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.starts = append(h.starts, req)
+	return mount.Handle(fmt.Sprintf("session-%d", len(h.starts))), nil
+}
+
+func (h *lensHost) Resume(mount.Handle, string) (mount.Handle, error) {
+	return "", errors.New("no session resumes here")
+}
+
+func (h *lensHost) Stream(mount.Handle) (<-chan mount.Event, error) {
+	out := make(chan mount.Event)
+	close(out)
+	return out, nil
+}
+
+func (h *lensHost) Result(mount.Handle) (mount.Result, error) {
+	return mount.Result{Value: map[string]any{"findings": []any{}}}, nil
+}
+
+func (h *lensHost) Stop(mount.Handle) error { return nil }
+
+func (h *lensHost) Capabilities() mount.Capabilities { return mount.Capabilities{Structured: true} }
+
+// passingStations is every model-free station passing at once, so a drive reaches Shipped from review.
+type passingStations struct{}
+
+func (passingStations) Snapshot() error                           { return nil }
+func (passingStations) Check(context.Context) ([]string, error)   { return nil, nil }
+func (passingStations) Prepare(context.Context) ([]string, error) { return nil, nil }
+func (passingStations) Ship(context.Context) error                { return nil }
+func (passingStations) Head() (string, error)                     { return "reviewed", nil }
+func (passingStations) Diff(string) (string, error)               { return "", nil }
+func (passingStations) Merge() (bool, error)                      { return false, nil }
+
+// TestRunStartsOneReviewerSessionPerLens is REQ-19: the ledger shows three lens sessions in full mode
+// and one in economy mode, each bound to its lens's skill on the reviewer tier.
+func TestRunStartsOneReviewerSessionPerLens(t *testing.T) {
+	cases := []struct {
+		mode   string
+		lenses []review.Lens
+	}{
+		{"full", []review.Lens{review.Correctness, review.Security, review.Quality}},
+		{"economy", []review.Lens{review.Economy}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode, func(t *testing.T) {
+			root := requestsRepo(t)
+			plan := requestsPlan()
+			plan.Profile.Mode = tc.mode
+			host := &lensHost{}
+			driver, err := newDriver(root, plan, "run-1", host, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			driver.Stations = passingStations{}
+			start := conductor.State{Group: plan.Group, Current: conductor.Reviewing}
+			final, err := driver.Resume(context.Background(), start)
+			if err != nil || final.Current != conductor.Shipped {
+				t.Fatalf("drive = %s, %v; want Shipped", final.Current, err)
+			}
+			entries, err := line.Book(root).All()
+			if err != nil {
+				t.Fatal(err)
+			}
+			reviews := 0
+			for _, entry := range entries {
+				if entry.Station == conductor.StationReview {
+					reviews++
+				}
+			}
+			if reviews != len(tc.lenses) {
+				t.Fatalf("ledger review sessions = %d, want %d in %s mode", reviews, len(tc.lenses), tc.mode)
+			}
+			for i, lens := range tc.lenses {
+				req := host.starts[i]
+				if !strings.Contains(req.Brief, "`"+lens.Skill()+"`") || req.Model != "claude-opus-4" {
+					t.Fatalf("%s request = %q on %q, want its skill bound on the reviewer tier", lens, req.Brief, req.Model)
+				}
+			}
+		})
 	}
 }

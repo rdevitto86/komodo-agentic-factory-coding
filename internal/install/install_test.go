@@ -222,3 +222,62 @@ func TestApplyIsACopyNotASymlink(t *testing.T) {
 		t.Fatal("the install wrote a symlink")
 	}
 }
+
+func TestKomodoHookMatchesOnlyAKomodoBinarysGuardOrHook(t *testing.T) {
+	cases := []struct {
+		command string
+		want    bool
+	}{
+		{"/opt/bin/komodo guard", true},
+		{`C:\tools\komodo.exe guard`, true},
+		{"/repo/bin/komodo-linux-amd64 hook status --host claude", true},
+		{"/usr/bin/other guard", false},
+		{"/usr/local/bin/my-audit", false},
+		{"komodo run", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.command, func(t *testing.T) {
+			if got := KomodoHook(tc.command); got != tc.want {
+				t.Fatalf("KomodoHook(%q) = %v, want %v", tc.command, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGlobalReturnsTheRegisteredRender(t *testing.T) {
+	RegisterGlobal("test-global", func(root, home, binary string) (Plan, error) {
+		return Plan{Host: "test-global", Root: home}, nil
+	})
+	render, ok := Global("test-global")
+	if !ok {
+		t.Fatal("a registered global render was not found")
+	}
+	if plan, err := render("", t.TempDir(), "komodo"); err != nil || plan.Host != "test-global" {
+		t.Fatalf("plan = %+v, err = %v", plan, err)
+	}
+	if _, ok := Global("nope"); ok {
+		t.Fatal("an unregistered host has a global render")
+	}
+}
+
+func TestGlobalPlanRendersIntoHomeAndRefusesAHostWithoutOne(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	RegisterGlobal("test-home", func(root, home, binary string) (Plan, error) {
+		return Plan{Host: "test-home", Root: home}, nil
+	})
+	plan, err := GlobalPlan("test-home", "", "komodo")
+	if err != nil || plan.Root != home {
+		t.Fatalf("plan = %+v, err = %v, want it rooted at HOME %s", plan, err, home)
+	}
+	if _, err := GlobalPlan("nope", "", "komodo"); err == nil || !strings.Contains(err.Error(), "no user-level config") {
+		t.Fatalf("err = %v, want a host without a global render refused", err)
+	}
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("home", "")
+	if _, err := GlobalPlan("test-home", "", "komodo"); err == nil {
+		t.Fatal("a user with no home directory got a plan")
+	}
+}

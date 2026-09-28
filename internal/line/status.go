@@ -2,6 +2,7 @@ package line
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -194,8 +195,17 @@ func shippedStatus(root string, parsed backlog.Backlog) map[string]TaskStatus {
 	return statuses
 }
 
-// writeStatus rewrites one task's status token in BACKLOG.md.
+// backlogStatus reports whether a status is one a run writes into BACKLOG.md: the tick, or the blocker.
+func backlogStatus(status string) bool {
+	return status == "DONE" || status == "BLOCKED"
+}
+
+// writeStatus rewrites one task's status token in BACKLOG.md, refusing any status but the tick or the blocker,
+// so every other byte a person wrote survives the run.
 func writeStatus(path, taskID, status string) error {
+	if !backlogStatus(status) {
+		return fmt.Errorf("a run writes only DONE or BLOCKED into the backlog, not %s", status)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err

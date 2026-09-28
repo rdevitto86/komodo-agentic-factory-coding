@@ -490,6 +490,16 @@ func TestALeakInATrackedMarkdownFileIsFound(t *testing.T) {
 	}
 }
 
+func TestAProfileWhoseBuilderIsLightIsRejected(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/profiles/full.json", `{"roles":{"builder":{"tier":"heavy","effort":"medium"}}}`)
+	write(t, root, "komodo/profiles/economy.json", `{"roles":{"builder":{"tier":"light","effort":"medium"}}}`)
+	got := problemsFrom(t, root)["profiles"]
+	if len(got) != 1 || got[0].Where != "komodo/profiles/economy.json" || !strings.Contains(got[0].Detail, "light tier") {
+		t.Fatalf("profiles = %+v, want only the economy profile's light builder", got)
+	}
+}
+
 func TestARoleFileThatFailsToLoadIsFound(t *testing.T) {
 	root := clean(t)
 	write(t, root, "komodo/roles/broken2.md",
@@ -997,5 +1007,35 @@ func TestPruneRemovesBothRunsWorktreesWhenOnlyTheLatestIsRecorded(t *testing.T) 
 		if out, _ := exec.Command("git", "-C", root, "branch", "--list", branch).Output(); strings.TrimSpace(string(out)) != "" {
 			t.Fatalf("%s survived; done = %v", branch, got)
 		}
+	}
+}
+
+func TestAMalformedPluginManifestIsFound(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := clean(t)
+	write(t, root, "komodo/plugins/chat/plugin.json", `{"name":"chat","type":"webhook"}`)
+	got := problemsFrom(t, root)["plugins"]
+	if len(got) != 1 || got[0].Where != "komodo/plugins/chat/plugin.json" {
+		t.Fatalf("plugins = %+v", got)
+	}
+}
+
+func TestDoctorListsEveryPluginTypeDisabled(t *testing.T) {
+	root := clean(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	write(t, root, "komodo/plugins/cloud/plugin.json",
+		`{"name":"cloud","type":"tool-pack","roles":["builder"],"tools":["aws s3 ls"]}`)
+	want := []string{
+		"plugin notifier: disabled, none installed",
+		"plugin tool-pack cloud: disabled",
+		"plugin stage-hook: disabled, none installed",
+	}
+	if got := PluginStates(root); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("states = %q", got)
+	}
+	write(t, home, ".komodo/plugins.json", `{"enabled":["cloud"]}`)
+	if got := PluginStates(root); got[1] != "plugin tool-pack cloud: enabled" {
+		t.Fatalf("states = %q", got)
 	}
 }

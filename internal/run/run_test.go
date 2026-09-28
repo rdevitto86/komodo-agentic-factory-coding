@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -501,8 +503,11 @@ func stageShip(t *testing.T, root, group, branch, backlogAfter string) {
 
 // fakeForge answers pr create with a numbered pull request and label with none.
 func fakeForge(t *testing.T, root string) *pr.Client {
+	var lock sync.Mutex
 	created := 0
 	return &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		lock.Lock()
+		defer lock.Unlock()
 		switch {
 		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
 			created++
@@ -654,6 +659,62 @@ func TestDrainSkipsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
 	}
 }
 
+// laneScript plays one group, recording itself when the group named second runs at the same time.
+const laneScript = `touch ".komodo/fake/$1.started"
+i=0
+while [ ! -f ".komodo/fake/$2.started" ] && [ $i -lt 10 ]; do sleep 0.1; i=$((i+1)); done
+if [ -f ".komodo/fake/$2.started" ] && [ ! -f ".komodo/fake/$2.ended" ]; then echo "$1" >> .komodo/fake/overlapped; fi
+mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json"
+touch ".komodo/fake/$1.ended"
+exit 0`
+
+func TestDrainOverlapsGroupsSharingNoFileAndRunsGroupsSharingOneInTurn(t *testing.T) {
+	shared := strings.Replace(drainText, "files: [b/two.go]", "files: [a/one.go]", 1)
+	cases := []struct {
+		name    string
+		backlog string
+		overlap bool
+	}{
+		{"groups sharing no file overlap", drainText, true},
+		{"groups sharing a file run one after another", shared, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := drainRepo(t)
+			if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(tc.backlog), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			other := map[string]string{"TG-07.1": "TG-07.2", "TG-07.2": "TG-07.1"}
+			host, _ := mount.Get("fakehost-drain")
+			host.Probe = func() (mount.Usage, bool) { return mount.Usage{Plan: "max_20x"}, true }
+			host.Headless = func(_, target string) (string, []string) {
+				return "/bin/sh", []string{"-c", laneScript, "sh", target, other[target]}
+			}
+			mount.Register(host)
+			stageShip(t, root, "TG-07.1", "feat/first", tc.backlog)
+			stageShip(t, root, "TG-07.2", "feat/second", tc.backlog)
+			var out bytes.Buffer
+			code, err := Launch(Options{
+				Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+				Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+			})
+			if err != nil || code != 0 {
+				t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
+			}
+			if !strings.Contains(out.String(), "drain done: nothing is ready; 2 shipped, 0 parked") {
+				t.Fatalf("output = %s", out.String())
+			}
+			data, err := os.ReadFile(filepath.Join(root, line.StateDir, "fake", "overlapped"))
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			if overlapped := len(data) > 0; overlapped != tc.overlap {
+				t.Fatalf("overlapped = %v (%q), want %v", overlapped, data, tc.overlap)
+			}
+		})
+	}
+}
+
 func TestDrainReRendersTheRootWhenTheDoctorReportsDrift(t *testing.T) {
 	root := drainRepo(t)
 	rendered := filepath.Join(root, "rendered.md")
@@ -768,4 +829,96 @@ func TestAStaleBuildMarkerDuringARunChangesNothingUntilTheRunEnds(t *testing.T) 
 	if strings.TrimSpace(string(recorded)) != head {
 		t.Fatalf("marker = %q, want %q; the run's own end-of-run sync must fix it", recorded, head)
 	}
+}
+
+func TestADrainRestacksNothingInARepoWithNoBacklog(t *testing.T) {
+	var out bytes.Buffer
+	restack(Options{Root: t.TempDir()}, &out)
+	if out.Len() != 0 {
+		t.Fatalf("out = %q, want nothing restacked", out.String())
+	}
+}
+
+// restackText is an epic whose child group depends on its parent.
+const restackText = "### [TG-01.1] Parent\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+	"#### [TSK-01.1.1] One [P: C] [DONE]\n```yaml\nfiles: [a.txt]\n```\n\n" +
+	"### [TG-01.2] Child\n```yaml\ntype: feat\nversion: 1.0.0\ndepends_on: [TG-01.1]\n```\n\n" +
+	"#### [TSK-01.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b.txt]\n```\n"
+
+func TestADrainRestacksAChildOntoTheEpicOnceItsParentMerged(t *testing.T) {
+	cases := []struct {
+		name string
+		// clash is whether the epic also adds the child's file, so the child's rebase onto it conflicts.
+		clash bool
+		want  string
+	}{
+		{"the child rebases onto the epic", false, "restacked TG-01.2 onto feat/1.0.0\n"},
+		{"a child that conflicts is printed and left", true, "restack: restacking TG-01.2 onto feat/1.0.0: "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, root := restackDrain(t, tc.clash)
+			if !strings.HasPrefix(out, tc.want) {
+				t.Fatalf("out = %q, want it to start %q", out, tc.want)
+			}
+			moved := !tc.clash
+			if saved, _ := line.LoadRunFor(root, "TG-01.2"); (saved.Base == "feat/1.0.0") != moved {
+				t.Fatalf("base = %q; the epic's branch recorded must be %v", saved.Base, moved)
+			}
+		})
+	}
+}
+
+// restackDrain builds an epic whose parent merged and whose child is stacked on the parent, the epic adding the
+// child's file too when clash is set, then runs the drain's restack and returns what it printed and the root.
+func restackDrain(t *testing.T, clash bool) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	runGit(t, root, "init", "-q", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	for name, text := range map[string]string{"BACKLOG.md": restackText, ".gitignore": "/.komodo/\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-q", "-m", "backlog")
+	runGit(t, root, "branch", "feat/1.0.0")
+	parsed := backlog.Parse(restackText)
+	parent, _ := parsed.Group("TG-01.1")
+	child, _ := parsed.Group("TG-01.2")
+	runGit(t, root, "checkout", "-q", "-b", parent.Branch())
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-q", "-m", "parent")
+	runGit(t, root, "checkout", "-q", "feat/1.0.0")
+	runGit(t, root, "merge", "-q", "--no-ff", "--no-edit", parent.Branch())
+	if clash {
+		if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("the epic's own b\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, root, "add", "-A")
+		runGit(t, root, "commit", "-q", "-m", "epic edits b")
+	}
+	runGit(t, root, "checkout", "-q", "main")
+	worktree := filepath.Join(t.TempDir(), "child")
+	runGit(t, root, "worktree", "add", "-q", "-b", child.Branch(), worktree, parent.Branch())
+	if err := os.WriteFile(filepath.Join(worktree, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "add", "-A")
+	runGit(t, worktree, "commit", "-q", "-m", "child")
+	state := line.RunState{Run: "r1", Group: "TG-01.2", Base: parent.Branch(), Branch: child.Branch(), Worktree: worktree}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	restack(Options{Root: root, PR: &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		t.Errorf("gh must not run for a branch never pushed: %v", args)
+		return "", nil
+	}}}, &out)
+	return out.String(), root
 }

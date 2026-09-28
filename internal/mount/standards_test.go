@@ -23,6 +23,7 @@ func TestSelectStandardsKeepsOnlyWhatTheRepoCanUse(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "cmd/a.go", "package main\n")
 	writeFile(t, root, "node_modules/x/b.ts", "x\n")
+	writeFile(t, root, "internal/eval/testdata/c.ts", "x\n")
 	writeFile(t, root, ".komodo/standards/python.md", "Prefer pathlib.\n")
 	skills := []Skill{
 		{Name: "run", Body: "# Run\n"},

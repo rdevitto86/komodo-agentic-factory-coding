@@ -36,6 +36,8 @@ const (
 	SessionEvery   Session = "every"
 	SessionBuilder Session = "builder"
 	SessionLens    Session = "lens"
+	// SessionPrimary is the person's own session, where the orchestrator runs; only the global render mounts it.
+	SessionPrimary Session = "primary"
 )
 
 // Tools is which tool calls a tool-stage hook runs after.
@@ -152,6 +154,16 @@ func Table() []Hook {
 			Name: "taskchecks", Job: "the group's checks pass",
 			Event: Stop, Sessions: []Session{SessionBuilder},
 			Limit: 3, Timeout: 15 * time.Minute, OnFailure: AllowAndLog, run: runTaskChecks,
+		},
+		{
+			Name: "evidence", Job: "every blocking finding carries evidence the binary verifies",
+			Event: Stop, Sessions: []Session{SessionLens},
+			Limit: 2, Timeout: 15 * time.Minute, OnFailure: AllowAndLog, run: checkEvidence,
+		},
+		{
+			Name: "status", Job: "the run's status and blocked groups",
+			Event: SessionStart, Sessions: []Session{SessionPrimary},
+			Timeout: 10 * time.Second, OnFailure: Skip, run: addStatus,
 		},
 		{
 			Name: "timewarn", Job: "time and turns used",

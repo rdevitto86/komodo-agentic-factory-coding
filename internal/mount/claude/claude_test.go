@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/install"
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
 )
@@ -945,5 +946,245 @@ func TestTheClaudeMountHandsOutItsContract(t *testing.T) {
 	}
 	if built.root != root || built.worktree != worktree || built.maxTurns != profileTurnCap {
 		t.Fatalf("mount = %+v", built)
+	}
+}
+
+// addSkills writes a stub skill under root's toolkit for each name.
+func addSkills(t *testing.T, root string, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		path := filepath.Join(root, "komodo", "skills", name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("---\nname: "+name+"\n---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// orchestratorRepo is toolkitRepo plus every orchestrator skill the global render needs.
+func orchestratorRepo(t *testing.T) string {
+	t.Helper()
+	root := toolkitRepo(t)
+	addSkills(t, root, "adhoc", "komodo", "plan", "respond")
+	return root
+}
+
+// TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer checks the global render: the guard and status hooks and
+// the orchestrator's skills land under HOME, no builder or standards skill does, and every skill already there stays.
+func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
+	root := orchestratorRepo(t)
+	addSkills(t, root, "build", "standards-go")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// A real home holds its own skills, some named like the toolkit's; the install never removes one.
+	var existing []string
+	for _, name := range []string{"build", "mine", "standards-go"} {
+		existing = append(existing, filepath.Join(home, Dir, "skills", name, "SKILL.md"))
+	}
+	for _, path := range existing {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := RenderGlobal(root, home, "/opt/komodo/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range plan.Changes {
+		if !strings.HasPrefix(change.Path, home+string(filepath.Separator)) {
+			t.Fatalf("the global render reaches outside HOME: %s", change.Path)
+		}
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(home, Dir, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if strings.Join(names, ",") != "adhoc,build,komodo,mine,plan,respond,run,standards-go" {
+		t.Fatalf("global skills = %v, want the user's own kept and the orchestrator's added", names)
+	}
+	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatal(err)
+	}
+	pre, start := settings.Hooks["PreToolUse"], settings.Hooks["SessionStart"]
+	if len(pre) != 1 || pre[0].Matcher != hookMatcher() || pre[0].Hooks[0].Command != "/opt/komodo/komodo guard" {
+		t.Fatalf("PreToolUse = %+v", pre)
+	}
+	if len(start) != 1 || start[0].Hooks[0].Command != "/opt/komodo/komodo hook status --host claude" {
+		t.Fatalf("SessionStart = %+v", start)
+	}
+	again, err := RenderGlobal(root, home, "/opt/komodo/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range again.Actions() {
+		if action.Verb != "same" {
+			t.Fatalf("a second global render would %s %s", action.Verb, action.Path)
+		}
+	}
+}
+
+func TestTheGlobalRenderKeepsTheUsersSettingsAndReplacesAnOldKomodoHook(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, Dir, "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := `{
+  "model": "custom",
+  "cleanupPeriodDays": 1000000,
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [
+        {"type": "command", "command": "/old/bin/komodo-darwin-arm64 guard"},
+        {"type": "command", "command": "/usr/local/bin/my-audit"}
+      ]}
+    ],
+    "Stop": [{"hooks": [{"type": "command", "command": "say done"}]}]
+  }
+}`
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := RenderGlobal(root, home, "/new/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := []string{`"model": "custom"`, `1000000`, `/usr/local/bin/my-audit`, `say done`, `/new/komodo guard`}
+	for _, want := range kept {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("settings lost %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(string(got), "/old/bin/") {
+		t.Fatalf("the old komodo guard is still registered:\n%s", got)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RenderGlobal(root, home, "/new/komodo"); err == nil {
+		t.Fatal("a malformed settings file was overwritten instead of refused")
+	}
+}
+
+func TestTheGlobalRenderDropsAnAllKomodoGroupAndKeepsShapesItDoesNotKnow(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, Dir, "settings.json")
+	existing := `{"hooks": {
+  "PreToolUse": ["odd", {"matcher": "Edit"}, {"hooks": ["bare", {"command": "/old/komodo guard"}]}],
+  "SessionStart": [{"hooks": [{"type": "command", "command": "/old/komodo hook status --host claude"}]}]
+}}`
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := RenderGlobal(root, home, filepath.Join("bin", "komodo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Hooks map[string][]any `json:"hooks"`
+	}
+	for _, change := range plan.Changes {
+		if change.Path == path {
+			if err := json.Unmarshal(change.Body, &settings); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	pre, start := settings.Hooks["PreToolUse"], settings.Hooks["SessionStart"]
+	if len(pre) != 4 || pre[0] != "odd" {
+		t.Fatalf("PreToolUse = %v, want the odd entries kept and the guard appended", pre)
+	}
+	if kept, _ := json.Marshal(pre[2]); strings.Contains(string(kept), "/old/komodo") || !strings.Contains(string(kept), "bare") {
+		t.Fatalf("the mixed group = %s, want only its komodo hook removed", kept)
+	}
+	if len(start) != 1 || strings.Contains(fmt.Sprint(start), "/old/komodo") {
+		t.Fatalf("SessionStart = %v, want the old status group replaced", start)
+	}
+	want := filepath.Join(mount.MainCheckout(root), "bin", "komodo") + " guard"
+	if !strings.Contains(fmt.Sprint(pre[3]), want) {
+		t.Fatalf("the guard = %v, want %q, a relative binary resolved against the checkout", pre[3], want)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RenderGlobal(root, home, "/opt/komodo"); err == nil {
+		t.Fatal("an unreadable settings file rendered anyway")
+	}
+}
+
+func TestTheGlobalRenderFailsWhenTheToolkitSkillsCannotBeRead(t *testing.T) {
+	root := toolkitRepo(t)
+	skills := filepath.Join(root, "komodo", "skills")
+	if err := os.RemoveAll(skills); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skills, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RenderGlobal(root, t.TempDir(), "/opt/komodo"); err == nil {
+		t.Fatal("an unreadable skills directory rendered anyway")
+	}
+}
+
+func TestTheGlobalRenderFailsWhenAnOrchestratorSkillIsMissing(t *testing.T) {
+	root := toolkitRepo(t)
+	addSkills(t, root, "adhoc", "komodo", "plan")
+	_, err := RenderGlobal(root, t.TempDir(), "/opt/komodo")
+	if err == nil || !strings.Contains(err.Error(), "respond") {
+		t.Fatalf("err = %v, want the missing respond skill named", err)
+	}
+}
+
+func TestTheShippedToolkitCarriesEveryOrchestratorSkill(t *testing.T) {
+	if _, err := RenderGlobal(t.TempDir(), t.TempDir(), "/opt/komodo"); err != nil {
+		t.Fatalf("the embedded toolkit cannot render the global layer: %v", err)
+	}
+}
+
+func TestClaudeRegistersItsGlobalRender(t *testing.T) {
+	if _, ok := install.Global("claude"); !ok {
+		t.Fatal("the claude mount did not register a global render")
 	}
 }

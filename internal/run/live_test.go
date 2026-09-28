@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -145,7 +146,7 @@ func TestLiveDrivesATwoTaskGroupThroughRealSessions(t *testing.T) {
 	if err != nil || plan == nil {
 		t.Fatalf("plan = %v, %v", plan, err)
 	}
-	runState, err := cutIfNeeded(root, plan)
+	runState, err := cutIfNeeded(root, plan, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

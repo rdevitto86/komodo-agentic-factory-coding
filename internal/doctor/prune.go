@@ -10,7 +10,11 @@ import (
 	"komodo/internal/line"
 )
 
-// Prune removes stale worktrees, deletes merged branches, and settles a shipped run origin has merged.
+// keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
+const keptRuns = 10
+
+// Prune removes stale worktrees, deletes merged branches, settles each group origin has merged or dropped,
+// and keeps only the newest run folders; an open run's worktree and folder stay.
 func Prune(root, base string) ([]string, error) {
 	var done []string
 	worktrees, err := git.Worktrees(root)
@@ -32,7 +36,8 @@ func Prune(root, base string) ([]string, error) {
 	if _, err := git.Run(root, "worktree", "prune"); err == nil {
 		done = append(done, "pruned the worktree list")
 	}
-	done = append(done, settleShippedRun(root, base)...)
+	open := line.OpenRuns(root)
+	done = append(done, settleShippedRun(root, base, open)...)
 	policy := guard.Load(root, root)
 	merged := lines(git.Run(root, "branch", "--merged", base, "--format=%(refname:short)"))
 	for _, branch := range merged {
@@ -43,24 +48,31 @@ func Prune(root, base string) ([]string, error) {
 			done = append(done, "deleted merged branch "+branch)
 		}
 	}
+	done = append(done, pruneRuns(root, open)...)
 	return done, nil
 }
 
-// settleShippedRun sweeps worktrees origin has merged, skipping while a run is open.
-func settleShippedRun(root, base string) []string {
+// settleShippedRun sweeps each clean worktree origin has merged or whose pushed branch origin dropped,
+// skipping an open run's own worktree.
+func settleShippedRun(root, base string, open []line.RunState) []string {
 	if _, err := git.Run(root, "fetch", "--quiet", "origin", base); err != nil {
 		return nil
 	}
 	remote := "origin/" + base
-	if line.RunIsOpen(root) {
-		return nil
+	running := map[string]bool{}
+	for _, state := range open {
+		running[state.Branch] = true
+		running[filepath.Clean(line.WorktreePath(root, state.Worktree))] = true
 	}
 	var done []string
 	for _, worktree := range stateWorktrees(root) {
+		if running[worktree.Branch] || running[filepath.Clean(worktree.Path)] {
+			continue
+		}
 		if status, err := git.Run(worktree.Path, "status", "--porcelain"); err != nil || status != "" {
 			continue
 		}
-		if _, err := git.Run(root, "merge-base", "--is-ancestor", worktree.Branch, remote); err != nil {
+		if !landed(root, worktree.Branch, remote) {
 			continue
 		}
 		if _, err := git.Run(root, "worktree", "remove", "--force", worktree.Path); err != nil {
@@ -69,6 +81,43 @@ func settleShippedRun(root, base string) []string {
 		done = append(done, "removed worktree "+rel(root, worktree.Path))
 		if _, err := git.Run(root, "branch", "-D", worktree.Branch); err == nil {
 			done = append(done, "deleted merged branch "+worktree.Branch)
+		}
+	}
+	return done
+}
+
+// landed reports whether branch is in remote, or was pushed with an upstream origin has since deleted,
+// as a squash merge or an abandoned pull request leaves it.
+func landed(root, branch, remote string) bool {
+	if _, err := git.Run(root, "merge-base", "--is-ancestor", branch, remote); err == nil {
+		return true
+	}
+	upstream, err := git.Run(root, "config", "--get", "branch."+branch+".merge")
+	if err != nil || upstream == "" {
+		return false
+	}
+	heads, err := git.Run(root, "ls-remote", "--heads", "origin", upstream)
+	return err == nil && heads == ""
+}
+
+// pruneRuns removes every run folder older than the newest keptRuns, never an open run's.
+func pruneRuns(root string, open []line.RunState) []string {
+	runs := line.LoadRuns(root)
+	if len(runs) <= keptRuns {
+		return nil
+	}
+	running := map[string]bool{}
+	for _, state := range open {
+		running[state.Group] = true
+	}
+	var done []string
+	for _, state := range runs[:len(runs)-keptRuns] {
+		if running[state.Group] {
+			continue
+		}
+		dir := line.RunDir(root, state.Group)
+		if err := os.RemoveAll(dir); err == nil {
+			done = append(done, "removed run folder "+rel(root, dir))
 		}
 	}
 	return done

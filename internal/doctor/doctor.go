@@ -15,6 +15,7 @@ import (
 
 	"komodo/internal/git"
 	"komodo/internal/mount"
+	"komodo/internal/plugin"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
 	"komodo/internal/release"
@@ -49,6 +50,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	rendered := renderInstalled(root, pinLocalDown)
 	problems = append(problems, checkReferences(root)...)
 	problems = append(problems, checkRoles(root)...)
+	problems = append(problems, checkBuilderTier(root)...)
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root, rendered)...)
 	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinLocalUp))...)
@@ -57,8 +59,14 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkPromises(root)...)
 	problems = append(problems, checkGitattributes(root)...)
 	problems = append(problems, checkPins(root)...)
+	problems = append(problems, checkPlugins(root)...)
 	problems = append(problems, checkOverlay(mount.OverlayPath())...)
 	if !options.NoGit {
+		if options.Warn != nil {
+			for _, note := range Leftovers(root) {
+				options.Warn(note)
+			}
+		}
 		found, err := checkGit(root)
 		if err != nil {
 			return problems, err
@@ -85,6 +93,45 @@ func HostLeftovers(root string) []string {
 	for _, host := range mount.Active() {
 		if host.Leftovers != nil && host.Installed != nil && host.Installed(root) {
 			notes = append(notes, host.Leftovers()...)
+		}
+	}
+	return notes
+}
+
+// checkPlugins reports each plugin manifest that did not load and a machine enable file that did not parse.
+func checkPlugins(root string) []Problem {
+	var problems []Problem
+	enabled, err := plugin.Enabled()
+	if err != nil {
+		problems = append(problems, Problem{"plugins", plugin.EnabledPath(), err.Error()})
+	}
+	_, malformed := plugin.Load(root, enabled)
+	for _, found := range malformed {
+		problems = append(problems, Problem{"plugins", found.Where, found.Detail})
+	}
+	return problems
+}
+
+// PluginStates lists each plugin type with each of its plugins enabled or disabled; it never fails a check.
+func PluginStates(root string) []string {
+	enabled, _ := plugin.Enabled()
+	plugins, _ := plugin.Load(root, enabled)
+	var notes []string
+	for _, kind := range plugin.Types {
+		listed := false
+		for _, loaded := range plugins {
+			if loaded.Type != kind {
+				continue
+			}
+			state := "disabled"
+			if loaded.Enabled {
+				state = "enabled"
+			}
+			notes = append(notes, fmt.Sprintf("plugin %s %s: %s", kind, loaded.Name, state))
+			listed = true
+		}
+		if !listed {
+			notes = append(notes, fmt.Sprintf("plugin %s: disabled, none installed", kind))
 		}
 	}
 	return notes
@@ -305,6 +352,29 @@ func checkRoles(root string) []Problem {
 		var parsed map[string]any
 		if json.Unmarshal(data, &parsed) != nil {
 			problems = append(problems, Problem{"roles", schema, "is not JSON"})
+		}
+	}
+	return problems
+}
+
+// checkBuilderTier reports a mode profile under komodo/profiles that puts the builder on the light tier.
+func checkBuilderTier(root string) []Problem {
+	tree := toolkit.FS(root)
+	names, _ := fs.Glob(tree, "profiles/*.json")
+	var problems []Problem
+	for _, name := range names {
+		data, err := fs.ReadFile(tree, name)
+		if err != nil {
+			continue
+		}
+		var parsed struct {
+			Roles map[string]struct {
+				Tier string `json:"tier"`
+			} `json:"roles"`
+		}
+		if json.Unmarshal(data, &parsed) == nil && parsed.Roles["builder"].Tier == "light" {
+			problems = append(problems, Problem{"profiles", path.Join("komodo", name),
+				"the builder runs the light tier; a builder runs standard or heavy"})
 		}
 	}
 	return problems

@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -195,7 +196,7 @@ func TestEachRolePluginCarriesOnlyItsOwnHooks(t *testing.T) {
 		want map[string][]string
 	}{
 		{"builder", map[string][]string{"PostToolUse": {"format", "timewarn"}, "Stop": {"taskchecks"}}},
-		{"reviewer", map[string][]string{"PostToolUse": {"timewarn"}}},
+		{"reviewer", map[string][]string{"PostToolUse": {"timewarn"}, "Stop": {"evidence"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.role, func(t *testing.T) {
@@ -312,5 +313,81 @@ func TestRenderWritesEachRolePluginsHooksFile(t *testing.T) {
 		if len(rendered.Hooks) == 0 {
 			t.Fatalf("the %s plugin's hooks file mounts no hook", role)
 		}
+	}
+}
+
+func TestTheBuildSkillLoadsOnlyInTheBuildersPlugin(t *testing.T) {
+	root := toolkitRepo(t)
+	skill := filepath.Join(root, "komodo", "skills", "build", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("---\nname: build\ndescription: Work a task list.\n---\n\n# Build\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := map[string]bool{}
+	for _, change := range plan.Changes {
+		planned[change.Path] = true
+	}
+	if !planned[filepath.Join(root, Dir, "plugins", "builder", "skills", "build", "SKILL.md")] {
+		t.Fatal("the builder's plugin must carry the build skill")
+	}
+	if planned[filepath.Join(root, Dir, "skills", "build", "SKILL.md")] {
+		t.Fatal("the build skill must stay out of the primary session's skills")
+	}
+}
+
+func TestLensSkillsLoadOnlyInTheReviewersPlugin(t *testing.T) {
+	root := toolkitRepo(t)
+	skill := filepath.Join(root, "komodo", "skills", "review-security", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("---\nname: review-security\ndescription: The security lens.\n---\n\n# Security\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := map[string]bool{}
+	for _, change := range plan.Changes {
+		planned[change.Path] = true
+	}
+	if !planned[filepath.Join(root, Dir, "plugins", "reviewer", "skills", "review-security", "SKILL.md")] {
+		t.Fatal("the reviewer's plugin must carry each lens skill")
+	}
+	if planned[filepath.Join(root, Dir, "skills", "review-security", "SKILL.md")] {
+		t.Fatal("a lens skill must stay out of the primary session's skills")
+	}
+}
+
+func TestTheEscalateSkillLoadsOnlyInTheOrchestratorsPlugin(t *testing.T) {
+	root := toolkitRepo(t)
+	skill := filepath.Join(root, "komodo", "skills", "escalate", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("---\nname: escalate\ndescription: Settle one escalation.\n---\n\n# Escalate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := map[string]bool{}
+	for _, change := range plan.Changes {
+		planned[change.Path] = true
+	}
+	dir := filepath.Join(root, Dir, "plugins", "orchestrator")
+	if !planned[filepath.Join(dir, "skills", "escalate", "SKILL.md")] || !planned[filepath.Join(dir, ".claude-plugin", "plugin.json")] {
+		t.Fatal("the orchestrator's plugin must carry its manifest and the escalate skill")
+	}
+	if planned[filepath.Join(root, Dir, "skills", "escalate", "SKILL.md")] {
+		t.Fatal("the escalate skill must stay out of the primary session's skills")
 	}
 }

@@ -1,6 +1,6 @@
 ---
 name: run
-description: Drive the assembly line. Ask the conveyor for the next action, do exactly that, repeat until it says done.
+description: Drive the line: ask for the next action, do exactly that, repeat until done.
 ---
 
 # Run

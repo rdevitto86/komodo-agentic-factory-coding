@@ -2665,38 +2665,80 @@ depends_on: [TG-07.2]
 ```
 * **Why:** a Haiku build averaged 75 turns (evidence 7), and a plan's usage window was a person's job to watch. Proves REQ-12, REQ-30 and REQ-32.
 
-#### [TSK-07.3.1] Groups that share no file run in parallel, up to the plan's concurrency [P: C] [REFINEMENT]
+#### [TSK-07.3.1] Groups that share no file run in parallel, up to the plan's concurrency [P: C] [DONE]
 ```yaml
-files: [internal/conductor/schedule.go, internal/conductor/schedule_test.go]
+files: [internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/run/run.go, internal/run/run_test.go]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/run/...
 context:
   - docs/system-design.md#parallelism
+  - "drain in internal/run/run.go drives one group at a time today; it asks the schedule which ready groups may start"
   - "overlap from the cards' files through internal/plan; starting values Pro 1, Max 5x 2, Max 20x 4, API 4; a group with depends_on waits for its parent's branch"
+  - "each group keeps its own process watcher, so a runaway in one lane kills only that lane's tree"
   - "test (REQ-12): groups sharing a file run one after another; groups sharing none overlap"
 ```
 
-#### [TSK-07.3.2] The conductor pauses at a usage limit and resumes at the reset [P: H] [REFINEMENT]
+#### [TSK-07.3.2] The conductor pauses at a usage limit and resumes at the reset [P: H] [DONE]
 ```yaml
-files: [internal/conductor/pace.go, internal/conductor/pace_test.go, internal/profile/profile.go]
+files: [internal/run/pace.go, internal/run/pace_test.go, internal/run/run.go, internal/profile/profile.go]
 done_when:
-  - go test ./internal/conductor/... ./internal/profile/...
+  - go test ./internal/run/... ./internal/profile/...
+depends_on: [TSK-07.3.1]
 context:
   - docs/system-design.md#pacing-limits-and-loop-detection
+  - "profile.Paused and WaitUntil exist, and the Claude mount reads rate_limit_event, but only plan building checks Paused; the drain never waits"
   - "bound from the plan probe and rate_limit_event; unbound on API billing, with a spend budget; pauses and resumes go to events.jsonl"
   - "test (REQ-32): a simulated rate-limit event pauses the run and resumes it with no person"
 ```
 
-#### [TSK-07.3.3] A Pro plan runs the economy profile, and no builder runs on the light tier [P: H] [REFINEMENT]
+#### [TSK-07.3.3] A Pro plan runs the economy profile, and no builder runs on the light tier [P: H] [DONE]
 ```yaml
-files: [internal/profile/profile.go, internal/profile/profile_test.go, internal/line/snapshot.go, internal/line/snapshot_test.go, internal/doctor/doctor.go]
+files: [internal/profile/profile.go, internal/profile/profile_test.go, internal/line/snapshot.go, internal/line/step.go, internal/line/step_test.go, internal/mount/registry.go, internal/doctor/doctor.go, internal/doctor/doctor_test.go, docs/system-design.md]
 done_when:
-  - go test ./internal/profile/... ./internal/line/... ./internal/doctor/...
+  - go test ./internal/profile/... ./internal/line/... ./internal/mount/... ./internal/doctor/...
 depends_on: [TSK-07.3.2]
 context:
   - docs/system-design.md#profiles-and-economy-mode
-  - "BuilderTier and its file-count rule go; doctor rejects a profile whose builder is light; economy mode runs one group at a time and one combined lens (REQ-30)"
+  - "TaskState.BuilderTier's one-file light fallback and mount.LightBuilder go; doctor rejects a profile whose builder is light"
+  - "Pro's MaxParallel is 2 in profile.go; economy mode runs one group at a time and one combined lens (REQ-30)"
+  - "system-design.md's tier table still says the builder runs Sonnet; decision 0031 moved it to heavy, medium effort"
 ```
+
+#### [TSK-07.3.4] internal/conductor/schedule.go:36 A child waiting on its parent claims files that block the parent, so neither starts [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/schedule.go
+done_when:
+  - test -f internal/conductor/schedule.go
+type: fix
+context:
+  - "Startable adds every pending group to claimed, even one held only by waitsOnParent. drainOrder lists open runs first, so a resumed child can come before its ready parent. Take pending [child{files: a.go, depends_on: P}, P{files: a.go}] with nothing running. The child waits and claims a.go. P then shares a.go and is not free. Startable returns nothing, running is empty, and drain prints 'drain done: nothing is ready' without ever running P. Skip the file claim for a group held by an unfinished parent, or never let a waiting group's claim block a group it depends on."
+```
+
+#### [TSK-07.3.5] internal/run/run.go:130 A drainGroups error mid-drain returns while lanes are still running [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/run.go
+done_when:
+  - test -f internal/run/run.go
+type: fix
+context:
+  - "The loop calls drainGroups after every finished lane. If BACKLOG.md fails to parse at that point (a running lane can be rewriting it), drain returns 1 right away. The other lanes' host processes keep running in their own process groups with nothing waiting on them. Their results never reach shipped/parked, and the final Sync is skipped. On a drainGroups error, set stopping and keep draining the finished channel until running is empty, then return the error."
+```
+
+#### [TSK-07.3.6] internal/line/step.go:66 taskTier returns its Action argument unchanged [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/step.go
+done_when:
+  - test -f internal/line/step.go
+type: refactor
+context:
+  - "With the light fallback gone, taskTier just echoes next back and its only real output is snap.Tasks[next.Task].Tier. Both callers reassign an Action that never changes. Have taskTier return only the tier string, or inline snap.Tasks[id].Tier at its two call sites."
+```
+
+
+
 
 ### [TG-07.4] The builder works the task list, and the conductor ticks it
 ```yaml
@@ -2706,7 +2748,7 @@ depends_on: [TG-07.2]
 ```
 * **Why:** one builder per group, briefed with the whole task list, is one story's worth of work (decision 0007). Proves REQ-10.
 
-#### [TSK-07.4.1] The builder role and build skill work a task list in order [P: C] [REFINEMENT]
+#### [TSK-07.4.1] The builder role and build skill work a task list in order [P: C] [DONE]
 ```yaml
 files: [komodo/roles/builder.md, komodo/roles/builder.schema.json, komodo/skills/build/SKILL.md]
 done_when:
@@ -2715,12 +2757,13 @@ done_when:
 context:
   - docs/system-design.md#build
   - docs/system-design.md#results
+  - "internal/run/requests.go already joins every task's brief in wave order; builder.md still frames one task, so it reads a stack of single-task frames"
   - "the result per task: done or blocked, the checks run, and a question when blocked"
 ```
 
-#### [TSK-07.4.2] `komodo check task|findings|scope` is one entry point for hooks and agents [P: H] [REFINEMENT]
+#### [TSK-07.4.2] `komodo check task|findings|scope` is one entry point for hooks and agents [P: H] [DONE]
 ```yaml
-files: [cmd/komodo/check.go, cmd/komodo/check_test.go]
+files: [cmd/komodo/check.go, cmd/komodo/check_test.go, cmd/komodo/main.go]
 done_when:
   - go test ./cmd/komodo/...
 context:
@@ -2728,37 +2771,63 @@ context:
   - "each subcommand calls internal/check; findings is what the evidence hook runs"
 ```
 
-#### [TSK-07.4.3] The conductor ticks a task only after its checks pass, and edits nothing else [P: C] [REFINEMENT]
+#### [TSK-07.4.3] A person's edit to a task body survives a run, and only checkboxes and blocker notes change [P: C] [DONE]
 ```yaml
-files: [internal/backlog/tick.go, internal/backlog/tick_test.go]
+files: [internal/line/status.go, internal/line/status_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
-  - go test ./internal/backlog/...
+  - go test ./internal/line/... ./internal/conductor/...
 context:
-  - "ticks land on the group's branch; the only other write is adding or removing a blocker note"
-  - "test (REQ-10): a person's edit to a task body survives a run unchanged"
+  - "Line.Prepare in internal/conductor/drive.go already ticks a task only after its checks rerun clean; ship writes the ticks into the backlog"
+  - "test (REQ-10): a person's edit to a task body survives a run unchanged, and the only other write is a blocker note"
 ```
 
-### [TG-07.5] Review runs parallel lenses and blocks only on evidence
+#### [TSK-07.4.4] cmd/komodo/check.go:106 check findings rejects every finding that has no line number [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/check.go
+done_when:
+  - test -f cmd/komodo/check.go
+type: fix
+context:
+  - '`line` is optional in reviewer.schema.json, and a missing line decodes to 0 in line.Finding. `added[finding.File][0]` is never true, so a valid review with a whole-file test-gap or undocumented-nonobvious finding (for example, only `"file":"a/one.go"`) is reported as ''not on a changed line'' and exits 1. The evidence hook then blocks a review that matches its own schema. When Line is 0, accept the finding if its file has any added line in the diff (or if the file appears in the diff at all).'
+```
+
+#### [TSK-07.4.5] internal/line/ship.go:211 No test covers a live BLOCKED status reaching the ship commit [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: test
+context:
+  - "The new ship test only records DONE and IN_PROGRESS as live statuses. If backlogStatus stopped accepting BLOCKED, or if ship skipped BLOCKED, REQ-10's blocker write would disappear from the ship commit and no ship test would fail. Only the writeStatus unit test checks BLOCKED. Add a TSK-11.1.2 case with a live BLOCKED status to TestShipKeepsAPersonsEditToATaskBodyAndChangesOnlyTheTick and assert that its token changes in the commit."
+```
+
+
+
+### [TG-07.5] Review lenses and the evidence they must carry
 ```yaml
 type: feat
 version: 1.0.0-alpha.8
 depends_on: [TG-07.4]
 ```
-* **Why:** TG-03.22 ran 11 review rounds because each re-reviewed the whole diff from scratch (evidence 3). Proves REQ-19, REQ-20 and REQ-21.
+* **Why:** TG-03.22 ran 11 review rounds because each re-reviewed the whole diff from scratch (evidence 3). Proves REQ-20.
 
-#### [TSK-07.5.1] Four checklist skills replace the one review skill [P: C] [REFINEMENT]
+#### [TSK-07.5.1] Four checklist skills replace the one review skill [P: C] [DONE]
 ```yaml
 files: [komodo/skills/review, komodo/skills/review-correctness/SKILL.md, komodo/skills/review-security/SKILL.md, komodo/skills/review-quality/SKILL.md, komodo/skills/review-economy/SKILL.md, komodo/roles/reviewer.md, komodo/roles/reviewer.schema.json]
 done_when:
   - test ! -d komodo/skills/review
   - grep -q 'COR-5' komodo/skills/review-correctness/SKILL.md
+  - grep -q 'rule_id' komodo/roles/reviewer.schema.json
   - go run ./cmd/komodo doctor
 context:
   - docs/system-design.md#review
   - "each skill lists its lens's rule IDs; a finding carries lens, rule ID, severity, file, line, evidence and a one-line fix"
+  - "one reviewer role, started once per lens with that lens's skill"
 ```
 
-#### [TSK-07.5.2] Validators measure before any lens runs [P: H] [REFINEMENT]
+#### [TSK-07.5.2] Validators measure before any lens runs [P: H] [DONE]
 ```yaml
 files: [internal/review/validators.go, internal/review/validators_test.go]
 done_when:
@@ -2767,17 +2836,7 @@ context:
   - "tests and reproducers, the secret scan, a dependency audit and security linters when the repo has them, and caller counts of changed exported symbols; the report is settled fact in every lens's brief"
 ```
 
-#### [TSK-07.5.3] Lenses run in parallel, or one combined lens in economy mode [P: C] [REFINEMENT]
-```yaml
-files: [internal/review/lenses.go, internal/review/lenses_test.go]
-done_when:
-  - go test ./internal/review/...
-context:
-  - "read-only sessions that see only the diff, the task list and the card, never the builder's transcript"
-  - "test (REQ-19): the ledger shows three lens sessions in full mode and one in economy mode"
-```
-
-#### [TSK-07.5.4] A finding blocks only when the binary verifies its evidence [P: C] [REFINEMENT]
+#### [TSK-07.5.3] A finding blocks only when the binary verifies its evidence [P: C] [DONE]
 ```yaml
 files: [internal/review/evidence.go, internal/review/evidence_test.go]
 done_when:
@@ -2788,64 +2847,283 @@ context:
 tier: heavy
 ```
 
-#### [TSK-07.5.5] The evidence hook refuses a lens's stop twice at most [P: H] [REFINEMENT]
+#### [TSK-07.5.4] The evidence hook refuses a lens's stop twice at most [P: H] [DONE]
 ```yaml
-files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go]
+files: [internal/hooks/evidence.go, internal/hooks/evidence_test.go, internal/hooks/hooks.go, internal/mount/claude/plugin_test.go]
 done_when:
   - go test ./internal/hooks/...
-depends_on: [TSK-07.5.4]
-context:
-  - "Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
-```
-
-#### [TSK-07.5.6] A re-review resumes its lens, and can only close findings or flag repaired lines [P: C] [REFINEMENT]
-```yaml
-files: [internal/review/rereview.go, internal/review/rereview_test.go]
-done_when:
-  - go test ./internal/review/...
 depends_on: [TSK-07.5.3]
 context:
-  - "test (REQ-21): a new finding on an unchanged line is dropped"
-  - "extends TG-06.7's warm reviewer to each lens"
+  - "registered in hooks.Table under SessionLens, so the reviewer plugin's hook test changes; Stop runs komodo check findings and lists findings without evidence; after 2 refusals those findings become notes"
 ```
 
-#### [TSK-07.5.7] The conductor runs Review through the lenses [P: H] [REFINEMENT]
+#### [TSK-07.5.5] internal/review/evidence.go:141 Scratch copy keeps the worktree's .git file, so reproducer git commands act on the real worktree [P: L] [REFINEMENT]
 ```yaml
-files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
+files:
+  - internal/review/evidence.go
 done_when:
-  - go test ./internal/conductor/...
-depends_on: [TSK-07.5.2, TSK-07.5.4, TSK-07.5.6]
+  - test -f internal/review/evidence.go
+type: fix
+context:
+  - "copyTree skips `.git` only when it is a directory (line 141). A line worktree such as .komodo/wt/TG-07.5 has `.git` as a regular file holding `gitdir: <repo>/.git/worktrees/TG-07.5`. The case at line 150 copies that file into the scratch directory. So a reproducer's `git status`, `git stash`, `git checkout` or `git commit` runs against the real worktree's index, HEAD and branch, with the scratch copy as its work tree. A reproducer can then rewrite the group's index or move its branch, which breaks the isolation that TestAReproducerNeverTouchesTheRealTree claims. That test only builds a `.git` directory, so it cannot catch this. Skip any entry named `.git` whatever its type, and add a test with a `.git` file."
 ```
 
-### [TG-07.6] Repair resumes the builder, and a loop stops when it stops progressing
+#### [TSK-07.5.6] internal/review/evidence.go:183 citesMeasurement accepts any line of any measurement, not a relevant one [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/review/evidence.go
+done_when:
+  - test -f internal/review/evidence.go
+type: fix
+context:
+  - "The check passes when the evidence contains any non-empty trimmed line from any measurement's Detail, whatever the measurement's kind. Those lines include test-output tails and the `exit status 1` line that runCommand prepends on failure. For example, a blast-radius finding whose evidence quotes `ok  komodo/internal/hooks 1.2s`, or `PASS` from the tests measurement, is marked as blocking with 'the tests validator measured it', even though no caller count or cost supports it. Match only measurements of the kinds that back the finding's class (callers for blast-radius), or require the evidence to quote a whole measurement line and not a short fragment."
+```
+
+
+
+### [TG-07.11] The conductor runs Review through parallel lenses
 ```yaml
 type: feat
 version: 1.0.0-alpha.8
 depends_on: [TG-07.5]
 ```
+* **Why:** TG-06.7 keeps one warm reviewer per group; each lens needs that same warm session, and its own findings. Proves REQ-19 and REQ-21.
+
+#### [TSK-07.11.1] Each lens keeps its own warm session, round count and findings [P: C] [DONE]
+```yaml
+files: [internal/review/lenses.go, internal/review/lenses_test.go, internal/conductor/state.go, internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/review/... ./internal/conductor/...
+context:
+  - "State.Reviewer, ReviewRounds, ColdPass and Findings become maps keyed by lens, and Finding gains Lens; economy mode is the same map with one key"
+  - "read-only sessions that see only the diff, the task list and the card, never the builder's transcript; lenses run in parallel"
+  - "a resumed state.json written before the change still loads, as a single lens"
+```
+
+#### [TSK-07.11.2] A re-review resumes its lens, and can only close findings or flag repaired lines [P: C] [DONE]
+```yaml
+files: [internal/review/rereview.go, internal/review/rereview_test.go]
+done_when:
+  - go test ./internal/review/...
+depends_on: [TSK-07.11.1]
+context:
+  - "extends TG-06.7's warm reviewer and its bias mitigation to each lens"
+  - "test (REQ-21): a new finding on an unchanged line is dropped"
+```
+
+#### [TSK-07.11.3] `komodo run` starts one reviewer session per lens [P: H] [DONE]
+```yaml
+files: [internal/run/drive.go, internal/run/drive_test.go, internal/run/requests.go, internal/run/requests_test.go]
+done_when:
+  - go test ./internal/run/...
+depends_on: [TSK-07.11.1, TSK-07.11.2]
+context:
+  - "ReviewerRequest takes a lens and binds its skill; every lens runs on the profile's reviewer tier"
+  - "test (REQ-19): the ledger shows three lens sessions in full mode and one in economy mode"
+```
+
+#### [TSK-07.11.4] internal/conductor/drive.go:274 A pre-lens state.json resumed in full mode loses its open findings [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "A legacy record loads its verified findings under review.Economy. In full mode, openLens asks s.Open(lens) for correctness, security and quality, and each returns nothing. So no cold lens brief carries the open finding (a.go:3 'nil map' in the test fixture). The loop at drive.go:274 then deletes the Economy entry. The old contract, where a cold reviewer gets the open findings, breaks for exactly the upgrade path TSK-07.11.1 says must still load. When the driver's lenses lack review.Economy, append s.Open(review.Economy) to every cold lens brief before the Economy entry is dropped."
+```
+
+#### [TSK-07.11.5] internal/review/rereview_test.go:9 Test comment cites a requirement ID [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/review/rereview_test.go
+done_when:
+  - test -f internal/review/rereview_test.go
+type: docs
+context:
+  - "The comment names 'REQ-21'. The comment standard bans citing a ticket or spec. Drop 'is REQ-21' and keep only the behaviour the test asserts."
+```
+
+#### [TSK-07.11.6] internal/run/drive_test.go:325 Test comment cites a requirement ID [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/drive_test.go
+done_when:
+  - test -f internal/run/drive_test.go
+type: docs
+context:
+  - "The comment names 'REQ-19'. The comment standard bans citing a ticket or spec. Drop 'is REQ-19' and keep only the behaviour the test asserts."
+```
+
+
+
+
+### [TG-07.12] The line is safe to leave unattended
+```yaml
+type: fix
+version: 1.0.0-alpha.8
+depends_on: [TG-07.11]
+```
+* **Why:** three gaps surfaced while phases 3 and 4 ran: a stopped conductor kept checking and committed, a reproducer can act on the real worktree, and the pre-push hook sees the credential.
+
+#### [TSK-07.12.1] A stopped run stops the station it is in, and never commits after the stop [P: H] [DONE]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/check/check.go, internal/check/check_test.go, internal/run/drive_test.go]
+done_when:
+  - go test ./internal/conductor/... ./internal/check/...
+context:
+  - "Drive checks its context only between states, and Stations.Check, Prepare and Ship take none; a SIGTERM during Check let the gate finish and commit the build four minutes later"
+  - "each station takes the run's context, its commands die with it, and CommitBuild never runs once the context is done"
+  - "test: a context cancelled during Check returns within seconds, with no commit and the state left at Checking"
+```
+
+#### [TSK-07.12.2] An evidence reproducer runs in a scratch copy that cannot reach the real worktree [P: H] [DONE]
+```yaml
+files: [internal/review/evidence.go, internal/review/evidence_test.go]
+done_when:
+  - go test ./internal/review/...
+context:
+  - "supersedes TSK-07.5.5: the scratch copy keeps the worktree's .git file, so a reproducer's git commands act on the real branch"
+  - "the copy gets its own repository, or no .git at all, and GIT_DIR and GIT_WORK_TREE are unset for the reproducer"
+  - "test: a reproducer that commits or resets leaves the real worktree's HEAD and index unchanged"
+```
+
+#### [TSK-07.12.3] The pre-push hook never sees the credential-bearing push URL [P: H] [DONE]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "supersedes TSK-05.10.9: git passes the push URL to pre-push as an argument, and PushFromWorktree's URL carries the forge token"
+  - "push to a named remote whose URL holds no credential, with the token in a credential helper scoped to the push"
+  - "test: a pre-push hook that records its arguments and environment sees no token"
+```
+
+#### [TSK-07.12.4] internal/conductor/drive.go:709 A stop during CommitBuild's pre-commit hooks still commits [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "Line.Check tests ctx.Err() only before it calls line.CommitBuild. CommitBuild runs the repo's pre-commit hooks through exec with no context. A SIGTERM that arrives while a slow hook (lint or tests) is running lets the hook finish and the commit land, which is the same late-commit TSK-07.12.1 set out to prevent. Line.Ship has the same gap: its ctx check comes before line.ShipGroup, whose push and PR calls take no ctx. The task's context says each station's commands die with the run's context. Pass ctx into line.CommitBuild and line.ShipGroup so their hook and push commands run under exec.CommandContext."
+```
+
+#### [TSK-07.12.5] internal/line/ship.go:526 The push credential helper gives the forge token to any host that asks [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "The helper answers every `get` without reading the `host=` line git sends it. It is registered under the plain `credential.helper` key, which applies to every URL, not just the push host. If the forge redirects the push to another host (http.followRedirects=initial) or an HTTP proxy returns 407, git asks for a credential for that host and the helper returns the forge token. Before this change the token lived in the URL, and git dropped it on a cross-host redirect instead of sending it. Tie the helper to the push URL with `-c credential.<clean-url>.helper=…`, or have it answer only when the host it is asked about matches the push URL's host."
+```
+
+#### [TSK-07.12.6] internal/check/check.go:64 check.Exec duplicates proc.run line for line [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/check.go
+done_when:
+  - test -f internal/check/check.go
+type: refactor
+context:
+  - "Exec repeats proc.run's body: CommandContext, Group, Cancel→KillGroup, a 5s WaitDelay, the watcher, the post-Wait KillGroup, ErrWaitDelay swallowing, and the runaway/timeout/exit-code result mapping. Only the parent ctx and the ctx.Err()==nil guard differ. It also redeclares proc's 5s wait delay as waitDelay, and it drops proc.run's timeout<=0 default. A fix to either copy (process group kill, runaway reporting) now has to land twice. And a process primitive sits in the check package, beside proc.Exec, which does the same job. Give proc.run a ctx parameter and expose proc.ExecContext, then call it from runNamed and coverage and delete check.Exec and waitDelay."
+```
+
+
+
+
+### [TG-07.6] Repair resumes the builder, and a loop stops when it stops progressing
+```yaml
+type: feat
+version: 1.0.0-alpha.8
+depends_on: [TG-07.11]
+```
 * **Why:** TG-03.31's findings rose from 1 to 7 across fixes with no rule to stop them. Proves REQ-22 and REQ-23.
 
-#### [TSK-07.6.1] Repair resumes the builder with a fix list of verified findings or failed checks [P: C] [REFINEMENT]
+#### [TSK-07.6.1] Repair resumes the builder with a fix list of verified findings or failed checks [P: C] [DONE]
 ```yaml
-files: [internal/conductor/repair.go, internal/conductor/repair_test.go]
+files: [internal/conductor/drive.go, internal/conductor/resume.go]
 done_when:
   - go test ./internal/conductor/...
 context:
-  - docs/system-design.md#repair
-  - "one checkbox per verified finding or failed check; a host without resume gets a fresh session with the fix list and the saved diff"
-  - "test (REQ-22) on the repair brief"
+  - "shipped with TG-05.10's predecessors: drive.go's fixList, repairBrief and repair, and resume.go's pending repair"
+  - "proved by TestDriveRepairsAFailedCheckByResumingTheBuilder, TestDriveStartsAFreshBuilderWhenTheHostCannotResume and TestResumeRestartsALostRepairWithItsFixList"
 ```
 
-#### [TSK-07.6.2] A round that closes nothing ends the loop, and the group ships as a draft with its findings [P: C] [REFINEMENT]
+#### [TSK-07.6.2] A round that closes nothing ends the loop, and the group ships as a draft with its findings [P: C] [DONE]
 ```yaml
-files: [internal/conductor/progress.go, internal/conductor/progress_test.go, internal/profile/profile.go]
+files: [internal/conductor/progress.go, internal/conductor/progress_test.go, internal/conductor/drive.go, internal/run/drive.go]
 done_when:
-  - go test ./internal/conductor/... ./internal/profile/...
+  - go test ./internal/conductor/... ./internal/run/...
 context:
   - docs/system-design.md#convergence-rules
-  - "also stop on a repair that changed no file, a check failing identically after a repair, or a refusal limit; the fixed Repairs and ReviewRepairs counts leave the profile"
+  - "also stop on a repair that changed no file, a check failing identically after a repair, or a refusal limit"
+  - "newDriver sets Driver.Repairs from ReviewRepairs; the conductor stops reading both counts, which stay in the profile until the relay retires"
   - "test (REQ-23): no two rounds hold the same open findings"
 ```
+
+#### [TSK-07.6.3] A repair names every task's files as the plan holds them now [P: M] [DONE]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/conductor/...
+depends_on: [TSK-07.6.2]
+context:
+  - "a resumed repair gets only the fix list, so a file added to a task's spec mid-run never reaches the builder; TG-07.5's builder blocked twice asking to edit a file its spec had just gained"
+  - "the fix list closes with each task's files from the plan the conductor loaded on resume"
+  - "a stopped repair resumes its session with only a continue prompt, so a fix list rewritten while it was stopped never reaches the builder; TG-08.4's builder twice undid a file its spec had just gained"
+```
+
+#### [TSK-07.6.4] internal/conductor/drive.go:533 Task files close the fix list only in repair(); a stopped repair resumed through Resume never gets them [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - 'TSK-07.6.3''s context says a stopped repair resumes its session with only a continue prompt, so a rewritten fix list never reaches the builder. It names the TG-08.4 builder that twice undid a file. taskFiles(d.Tasks) is appended only at drive.go:533. Resume -> pendingSession (resume.go:100-104) still builds repairBrief(fixList(s.Fixes), ...) with no task files. startOrResume (resume.go:114) still calls Host.Resume(last, ""). Input: state.json at Repairing with SessionDone=false, after a plan edit that gave a task c.go. Outcome: the resumed builder gets an empty prompt, or a fresh one gets a brief without c.go, and the failure the task set out to fix happens again. Have pendingSession/startOrResume send fixList(s.Fixes)+taskFiles(d.Tasks) both as the Host.Resume input and in the fresh repair brief.'
+```
+
+#### [TSK-07.6.5] internal/conductor/progress_test.go:12 Test godoc cites a requirement ID [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/progress_test.go
+done_when:
+  - test -f internal/conductor/progress_test.go
+type: docs
+context:
+  - "The comment above TestDriveNeverHoldsTheSameOpenFindingsForTwoRounds reads 'is REQ-23:'. The comment standard bans citing a version, ticket, spec or PRD. Drop 'is REQ-23' and keep only what the test asserts."
+```
+
+#### [TSK-07.6.6] internal/conductor/drive_test.go:837 No test for a stopped repair resumed from Repairing [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive_test.go
+done_when:
+  - test -f internal/conductor/drive_test.go
+type: test
+context:
+  - "The new test resumes from Checking, so it only reaches Driver.repair. A group stopped mid-repair resumes through pendingSession and startOrResume in resume.go. There, a fresh start builds repairBrief(fixList(s.Fixes)) with no taskFiles(d.Tasks), and a resumed session gets only the empty continue prompt. That is the path TSK-07.6.3's third context item names. Nothing tests it, so a fix list rewritten while the repair was stopped can still miss the builder and done_when still passes. Add a case that resumes a Repairing state with SessionDone false and asserts the builder's input holds the fix list closed by every task's files."
+```
+
+#### [TSK-07.6.7] internal/conductor/progress_test.go:92 The refusal-limit test only exercises the old BLOCKED path [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/progress_test.go
+done_when:
+  - test -f internal/conductor/progress_test.go
+type: test
+context:
+  - "TestDriveStopsARepairEndedByARefusalLimit feeds a repair that returns BLOCKED. That is the escalation TestDriveEscalatesABlockedBuilderAndWaits already covers, and it passes without this diff. No refusal limit is exercised, so the test's name claims a behaviour it does not cover. Either drive the host's refusal-limit outcome in this test, or rename it to the blocked repair it actually covers."
+```
+
+
+
+
 
 ### [TG-07.7] Escalations go to the orchestrator, and what it can't settle is written down
 ```yaml
@@ -2855,43 +3133,47 @@ depends_on: [TG-07.6]
 ```
 * **Why:** a stuck group needs a decision, and an unattended run needs one without a person (decision 0011). Proves REQ-18 and REQ-45.
 
-#### [TSK-07.7.1] An escalation reaches the orchestrator, which returns one allowed action [P: C] [REFINEMENT]
+#### [TSK-07.7.1] An escalation reaches a headless orchestrator, which returns one allowed action [P: C] [DONE]
 ```yaml
-files: [internal/conductor/escalate.go, internal/conductor/escalate_test.go, komodo/roles/orchestrator.md, komodo/roles/orchestrator.schema.json]
+files: [internal/conductor/escalate.go, internal/conductor/escalate_test.go, internal/conductor/drive.go, internal/run/drive.go, komodo/roles/orchestrator.md, komodo/roles/orchestrator.schema.json]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/run/...
   - go run ./cmd/komodo doctor
 context:
   - docs/system-design.md#escalations
-  - "with a person present, the primary session gets it through komodo status and the status hook; unattended, one headless orchestrator session per escalation; the action is answer, split or clarify (which must pass lint), retry once on heavy, or stop"
+  - "Drive has no Escalated case today, so Answered, Stop and Left are set only by hand in state.json"
+  - "one headless orchestrator session per escalation; the action is answer, split or clarify (which must pass lint), retry once on heavy, or stop"
+  - "the person-present path, komodo status and its hook, lands with TSK-08.4.4"
 ```
 
-#### [TSK-07.7.2] The escalate skill settles one escalation within its limits [P: H] [REFINEMENT]
+#### [TSK-07.7.2] The escalate skill settles one escalation within its limits [P: H] [DONE]
 ```yaml
 files: [komodo/skills/escalate/SKILL.md]
 done_when:
   - test -f komodo/skills/escalate/SKILL.md
   - go run ./cmd/komodo doctor
+depends_on: [TSK-07.7.1]
 context:
   - "an answer comes only from the task list, the specs and the code; anything that changes scope is a stop"
 type: docs
 ```
 
-#### [TSK-07.7.3] A blocked builder pauses its dependants and escalates [P: H] [REFINEMENT]
+#### [TSK-07.7.3] A blocked builder pauses its dependants and escalates [P: H] [DONE]
 ```yaml
-files: [internal/conductor/blocked.go, internal/conductor/blocked_test.go]
+files: [internal/conductor/blocked.go, internal/conductor/blocked_test.go, internal/run/run.go]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/run/...
 depends_on: [TSK-07.7.1]
 context:
+  - "dependants are other groups, so the drain in internal/run/run.go holds them"
   - "test (REQ-18) on the conductor's decision; a group that stops twice without progress gets a blocker note, whatever the orchestrator says"
 ```
 
-#### [TSK-07.7.4] What the orchestrator can't settle becomes a blocker note and a blocked draft PR [P: C] [REFINEMENT]
+#### [TSK-07.7.4] What the orchestrator can't settle becomes a blocker note and a blocked draft PR [P: C] [DONE]
 ```yaml
-files: [internal/backlog/note.go, internal/backlog/note_test.go, internal/conductor/stop.go, internal/conductor/stop_test.go]
+files: [internal/backlog/note.go, internal/backlog/note_test.go, internal/conductor/stop.go, internal/conductor/stop_test.go, internal/line/ship.go, cmd/komodo/line.go]
 done_when:
-  - go test ./internal/backlog/... ./internal/conductor/...
+  - go test ./internal/backlog/... ./internal/conductor/... ./internal/line/... ./cmd/komodo/...
 depends_on: [TSK-07.7.1]
 context:
   - docs/system-design.md#blocker-notes
@@ -2899,14 +3181,175 @@ context:
   - "one test per path (REQ-45)"
 ```
 
-#### [TSK-07.7.5] `komodo abandon` removes a group on purpose [P: M] [REFINEMENT]
+#### [TSK-07.7.5] internal/conductor/escalate.go:98 A resumed escalation tells the orchestrator the wrong reason [P: L] [REFINEMENT]
 ```yaml
-files: [internal/conductor/abandon.go, internal/conductor/abandon_test.go, cmd/komodo/line.go]
+files:
+  - internal/conductor/escalate.go
+done_when:
+  - test -f internal/conductor/escalate.go
+type: fix
+context:
+  - "r.reason is only in memory. Suppose a saved group is at Escalated with no answer, because the orchestrator returned an action outside the enum, failed to start, or was cut off by the budget. On resume, Drive calls escalate with an empty r.reason, and reason() reads Host.Result(lastSession(s)). The last session is now the orchestrator's own session, since session() appended it to s.Sessions. So the second orchestrator, and the blocker note's Items, get 'the builder returned BLOCKED with no question' instead of the builder's question. For a group that escalated on a station error, they get the last builder's summary instead of the failure. Save the escalation reason in State (like Fixes and Repairs), and read it before falling back to the last builder session's result."
+```
+
+#### [TSK-07.7.6] internal/conductor/drive.go:143 The one-heavy-retry and two-stall limits reset on every resumed run [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "round.heavy and round.stalls are not saved to state.json. Drive rebuilds round from s.Fixes, s.Builder and s.Repairs alone. After a budget timeout or interrupt and a resume, the builder falls back from the heavy machine to the standard one, the orchestrator can be granted a second retry, and a group that already stalled once needs two more stalls before it is blocked. That breaks the rules 'retry once on heavy' and 'a group that stops twice without progress gets a blocker note'. Save heavy and stalls in State next to Repairs, and restore them when Drive and Resume build the round."
+```
+
+#### [TSK-07.7.7] internal/conductor/stop.go:35 Block drops ShipBlocked's warnings, so an unpublished or unlabelled blocker goes unreported [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/stop.go
+done_when:
+  - test -f internal/conductor/stop.go
+type: chore
+context:
+  - "Line.Block discards the ShipResult (`_, err := line.ShipBlocked(...)`). ShipBlocked returns nil error with only a warning in two cases: a scrubbed environment, where the note is committed locally and never pushed, and a repo with no `status: blocked` label. In both cases a headless stop looks published when no draft PR exists, or it exists without its label. Nothing logs or surfaces the failure. Return or print result.Warnings from Line.Block, and make a scrubbed, unpublished blocker count as a failure the headless run reports."
+```
+
+#### [TSK-07.7.8] komodo/roles/orchestrator.md:5 Orchestrator gets edit and write on the whole worktree, and only its prompt keeps it to the backlog file [P: L] [REFINEMENT]
+```yaml
+files:
+  - komodo/roles/orchestrator.md
+done_when:
+  - test -f komodo/roles/orchestrator.md
+type: fix
+context:
+  - "The role grants [read, edit, write, search], and 'never touch a file outside the group's backlog file' is prose only. After a split or clarify, the conductor only lints the backlog (internal/conductor/escalate.go). An edit to any other file stays in the worktree and ends up in the WIP commit or the shipped branch unchecked. Under the cooperative-model threat model only the guard would catch this, so it is a note. After a split or clarify, refuse the action when git diff shows changes outside the group's backlog file."
+```
+
+#### [TSK-07.7.9] internal/line/ship.go:372 ShipBlocked copies ShipGroup's create-or-refresh pull request fallback [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: refactor
+context:
+  - "The Create → View → OPEN check → Edit(--title, --body) → url = open.URL block is a line-for-line copy of the one at the end of ShipGroup. The declared-files loop at line 322 is a copy of ShipGroup's too. A fix to one copy will not reach the other. Move the create-or-refresh block into one helper, e.g. openOrRefresh(client, base, branch, title, body, draft), and call it from both ShipGroup and ShipBlocked."
+```
+
+#### [TSK-07.7.10] internal/run/drive.go:125 newDriver's heavy machine and builder-effort override have no test [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/drive.go
+done_when:
+  - test -f internal/run/drive.go
+type: test
+context:
+  - "newDriver sets the heavy machine from plan.Profile.Tiers.Heavy and replaces its Effort with the builder machine's Effort. TestNewDriverWiresTheOrchestratorLintAndBlock checks Block, Orchestrator and Lint but never Heavy. The conductor tests inject Heavy themselves. If Heavy were left empty, every retry would turn into a stop and all done_when tests would still pass. Extend TestNewDriverWiresTheOrchestratorLintAndBlock to assert driver.Heavy.Model equals the profile's heavy tier and driver.Heavy.Effort equals the builder machine's effort."
+```
+
+#### [TSK-07.7.11] internal/conductor/escalate.go:145 startBuilder's fallback when a resume fails has no test [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/escalate.go
+done_when:
+  - test -f internal/conductor/escalate.go
+type: test
+context:
+  - "When the host can resume but Host.Resume returns an error, startBuilder starts a fresh builder with the answer added to its brief. The only fresh-builder test turns resume capability off, so it never reaches this branch after a failed Resume. Add a case where the fake host's Resume returns an error, and assert that a fresh builder starts whose brief ends with answerLead plus the answer."
+```
+
+
+
+
+
+
+
+
+### [TG-07.13] Escalations survive a restart, and a group can be abandoned
+```yaml
+type: feat
+version: 1.0.0-alpha.8
+depends_on: [TG-07.7]
+```
+* **Why:** TG-07.7's builder ran out of turns before `komodo abandon`, and noted that an escalation's working data lives only in memory.
+
+#### [TSK-07.13.1] `komodo abandon` removes a group on purpose [P: M] [DONE]
+```yaml
+files: [internal/conductor/abandon.go, internal/conductor/abandon_test.go, cmd/komodo/main.go, cmd/komodo/line.go]
 done_when:
   - go test ./internal/conductor/... ./cmd/komodo/...
 context:
+  - "was TSK-07.7.5; builds on backlog.AddNote and the blocker note TG-07.7 added"
   - "removes the group's worktree and branch, and marks its file BLOCKED with a note saying it was abandoned"
 ```
+
+#### [TSK-07.13.2] An escalation's reason, answer, stall count and heavy retry survive a restart [P: H] [DONE]
+```yaml
+files: [internal/conductor/state.go, internal/conductor/state_test.go, internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/conductor/...
+context:
+  - "TG-07.7 keeps them in the in-memory round, so a killed run resumes an escalation with none of them"
+  - "test: a run killed while escalated resumes with the same reason, answer, stall count and retry flag"
+```
+
+#### [TSK-07.13.3] Publishing a blocked group is tested over a real repository [P: M] [DONE]
+```yaml
+files: [internal/line/ship_test.go, internal/line/epic.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "ShipBlocked has no test over a real repo; the WIP push runs the pre-push hook, so a gate that refuses unverified work fails the publish and the note stays local"
+  - "labelBlocked mirrors labelWip in epic.go; one shared helper labels both"
+```
+
+#### [TSK-07.13.4] internal/conductor/drive.go:158 A stop's `needs` is lost when a run is killed after the stop is answered [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "keep persists reason, answer, stalls and heavy but not r.needs. escalate (ActionStop, lint failure or spent retry) and stalled set s.Stop, s.Answered and r.needs, and the new save at drive.go:202 records Answered+Stop. If the run is killed before Blocked runs, the resumed Drive skips escalate because Answered is set. It enters Blocked, and stop() writes needsDefault instead of the orchestrator's `needs` or the 'stopped N times' text. The blocker note then names the wrong need. Add a Needs field to State and carry it in newRound and keep alongside Reason."
+```
+
+#### [TSK-07.13.5] internal/line/epic.go:111 labelBlocked still duplicates labelNamed instead of using it [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/epic.go
+done_when:
+  - test -f internal/line/epic.go
+type: refactor
+context:
+  - 'TSK-07.13.3 says one shared helper labels both status: wip and status: blocked. labelNamed now exists, but labelBlocked in ship.go:788 still lists and matches labels by itself. The two copies can drift apart. Make labelBlocked return labelNamed(client, url, "status: blocked").'
+```
+
+#### [TSK-07.13.6] internal/conductor/abandon.go:72 The blocker note is written only after the worktree and branch are already gone [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/abandon.go
+done_when:
+  - test -f internal/conductor/abandon.go
+type: fix
+context:
+  - "Abandon force-removes the worktree and deletes the branch first, and only then writes the backlog. It does the same when branch -D fails, for example because the branch is checked out in the root. If the backlog write or branch -D fails, the group's work is gone, no note records it, and the run record remains. Write the noted backlog before the destructive git steps, or restore it if a later step fails."
+```
+
+#### [TSK-07.13.7] internal/line/epic.go:111 labelNamed has one caller, and labelBlocked still duplicates its body [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/epic.go
+done_when:
+  - test -f internal/line/epic.go
+type: refactor
+context:
+  - 'The diff pulls out labelNamed(client, url, name) so both labels can use it, but only labelWip calls it. labelBlocked (internal/line/ship.go:788) still does the same work on its own: it lists labels, matches by whole name or name+" ", adds the label, and returns the same three warnings. That leaves a helper with one caller plus the duplicate it was meant to remove. TSK-07.13.3 asked for ''one shared helper labels both''. Make labelBlocked return labelNamed(client, url, blockedLabel) and delete its loop.'
+```
+
+
+
+
 
 ### [TG-07.8] Prepare, then ship draft-first
 ```yaml
@@ -2916,46 +3359,159 @@ depends_on: [TG-07.7]
 ```
 * **Why:** unverified work looked ready, and a missing credential lost work at the last step. Proves REQ-24, REQ-25 and REQ-27.
 
-#### [TSK-07.8.1] Prepare commits, runs the hooks and rebases, with conflicts as a repair round [P: C] [REFINEMENT]
+#### [TSK-07.8.1] Prepare commits, runs the hooks and catches up, with conflicts as a repair round [P: C] [DONE]
 ```yaml
-files: [internal/conductor/prepare.go, internal/conductor/prepare_test.go]
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/line/ship.go, internal/line/ship_test.go]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/line/...
 context:
   - docs/system-design.md#prepare-and-ship
+  - "Line.Prepare and Line.Ship live in drive.go and wrap internal/line; catchUp in ship.go returns an error on a conflict instead of a repair round"
   - "the commit carries the ticked list and the CHANGELOG line, deletes the epic's files when it is the epic's last open group, and has no trailers"
   - "test (REQ-24): the ledger shows no push before these checks pass"
 ```
 
-#### [TSK-07.8.2] Integration test-merges every ready group, and plans the stack [P: H] [REFINEMENT]
+#### [TSK-07.8.2] Integration test-merges every ready group, and plans the stack [P: H] [DONE]
 ```yaml
-files: [internal/conductor/integrate.go, internal/conductor/integrate_test.go]
+files: [internal/conductor/integrate.go, internal/conductor/integrate_test.go, internal/run/run.go, internal/run/run_test.go]
 done_when:
-  - go test ./internal/conductor/...
+  - go test ./internal/conductor/... ./internal/run/...
 depends_on: [TSK-07.8.1]
 context:
   - "a failure is a repair round for the group that caused it; a child of an unmerged parent targets the parent's branch, and is rebased and retargeted when the parent merges"
 ```
 
-#### [TSK-07.8.3] Every PR opens as a draft, or labelled status: wip where drafts are unavailable [P: C] [REFINEMENT]
+#### [TSK-07.8.3] Every PR opens as a draft, or labelled status: wip where drafts are unavailable [P: C] [DONE]
 ```yaml
-files: [internal/pr/pr.go, internal/pr/pr_test.go, internal/line/ship.go, internal/line/ship_test.go]
+files: [internal/pr/pr.go, internal/pr/pr_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/epic.go]
 done_when:
   - go test ./internal/pr/... ./internal/line/...
+depends_on: [TSK-07.8.1]
 context:
+  - "the epic PR already falls back through createEpicPull and labelWip in epic.go; ShipGroup reuses that path"
   - "it turns ready for review only once every check and review passed; a test for each path (REQ-25)"
   - "internal/profile/profile.go maps to scope/agents, and a failed label call is a tested warning (from TSK-03.31.10 and TSK-03.31.12)"
 ```
 
-#### [TSK-07.8.4] A missing or expired credential stops a group before Ship, and `komodo ship` finishes it [P: C] [REFINEMENT]
+#### [TSK-07.8.4] A missing or expired credential stops a group before Ship, and `komodo ship` finishes it [P: C] [DONE]
 ```yaml
-files: [internal/conductor/ship.go, internal/conductor/ship_test.go, cmd/komodo/line.go]
+files: [internal/line/ship.go, internal/line/ship_test.go, cmd/komodo/line.go, cmd/komodo/main.go]
 done_when:
-  - go test ./internal/conductor/... ./cmd/komodo/...
+  - go test ./internal/line/... ./cmd/komodo/...
+depends_on: [TSK-07.8.3]
 context:
   - docs/system-design.md#run-failures
+  - "ShipGroup already writes a handoff when the environment is scrubbed; komodo ship reads it back and finishes the push and PR"
   - "the group keeps its commits and gets a blocker note; other groups continue; --no-ship stops each group before Ship (REQ-27)"
 ```
+
+#### [TSK-07.8.5] internal/run/run.go:204 Restack rebases the worktree of a group another lane is still building [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/run.go
+done_when:
+  - test -f internal/run/run.go
+type: fix
+context:
+  - "drain calls restack after each shipped group while other lanes are still running. Restack goes through every RunState, including a child whose lane is still running, and runs rebase or merge with --autostash in that child's worktree (integrate.go:137). This happens once the child's parent has merged, so git runs underneath a builder session that is still working. Pass the running group IDs into Restack and skip them, or restack a group only when its own lane starts."
+```
+
+#### [TSK-07.8.6] internal/line/ship.go:723 FinishShip commits the blocker note's removal before a push that can still be refused [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "dropCredentialNote removes and commits the credential note before PushFromWorktree runs. If the credential is still missing or expired, FinishShip returns ErrNoCredential and the handoff stays, but the branch no longer has its blocker note. That breaks REQ-27, which requires a stopped group to keep its note. Push first and drop the note only after the push succeeds, or write the note again on ErrNoCredential."
+```
+
+#### [TSK-07.8.7] internal/line/ship.go:248 In a headless run the credential stop and the draft/wip fallback never apply [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "komodo run launches scrubbed, so ShipGroup always takes the scrubbed handoff branch. The push and the PR then happen in run.go finishShip. That code returns a credential refusal as a plain lane error with no blocker note. It also calls client.Create(..., handoff.Draft) directly instead of createEpicPull, so a forge that refuses drafts fails the ship when it should open the PR labelled status: wip. The TSK-07.8.3 and 07.8.4 behaviour only holds when ship runs unscrubbed. Have run.go finishShip call line.FinishShip, or share its credential stop and its createEpicPull path."
+```
+
+#### [TSK-07.8.8] internal/line/ship.go:261 The credential-note commit makes staleReview reject any later ShipGroup retry [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "writeCredentialNote commits 'docs: ... waits on a forge credential' after the review result is written. staleReview (step.go:312-321) ignores only commits whose subject is the ship subject, so it counts this commit as new work. Any later ShipGroup retry then fails with 'changed after its review' and asks for a new review over a docs-only commit. That covers an escalation retrying Ship and `komodo line ship` once the credential is back. Make staleReview skip the credential-note commits, or fold the note into the ship commit."
+```
+
+#### [TSK-07.8.9] internal/line/ship.go:719 FinishShip checks the handoff's group and branch but trusts its worktree path [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - "The comment says ship.json is agent-writable, and FinishShip checks Group and Branch. It then uses handoff.Worktree unchecked. dropCredentialNote writes and commits BACKLOG.md in that directory, and PushFromWorktree pushes that directory's branch to the root's origin with the forge credential. A stale or wrong worktree in ship.json therefore publishes another checkout's tree under the group's branch. No reproducer; this is a note. Derive the worktree from the group's saved RunState (WorktreePath(root, state.Worktree)) and refuse a handoff whose Worktree differs."
+```
+
+#### [TSK-07.8.10] internal/conductor/integrate.go:60 TestMerge passes a run-state branch to git merge with no end-of-options marker [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/integrate.go
+done_when:
+  - test -f internal/conductor/integrate.go
+type: fix
+context:
+  - 'other.Branch comes from a run-state file and goes to `git merge --no-edit` as a bare argument. A value that starts with ''-'' is read as an option, for example --strategy=<name>, which runs git-merge-<name> from PATH. Restack''s client.Edit(state.Branch, ...) has the same shape. No reproducer; this is a note. Insert "--end-of-options" before other.Branch, or skip any ready branch that fails git check-ref-format --branch.'
+```
+
+#### [TSK-07.8.11] internal/line/ship.go:495 rebaseForRepair copies catchUp's preamble line for line [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: refactor
+context:
+  - "rebaseForRepair repeats catchUp (ship.go:870) almost word for word: the fetch guarded by hasOrigin, the StartRef target, the rev-parse and is-ancestor early returns, and the choice between rebase and merge for a pushed branch, comments included. The only real difference is how each handles a conflict, so a fix to one copy can be missed in the other. Extract the shared target/up-to-date/rebase-or-merge selection into one helper that both catchUp and rebaseForRepair call."
+```
+
+#### [TSK-07.8.12] internal/conductor/integrate.go:157 restackOnto copies the rebase-or-merge choice a third time [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/integrate.go
+done_when:
+  - test -f internal/conductor/integrate.go
+type: refactor
+context:
+  - "restackOnto makes the same decision again: rebase a local branch, merge into a pushed one, abort if it fails. It repeats the same comment word for word. This is the third copy of the logic in catchUp and rebaseForRepair, and it detects a pushed branch in its own way (rev-parse refs/remotes/origin) instead of calling onOrigin. Export one line helper for the rebase-or-merge step and call it from restackOnto."
+```
+
+#### [TSK-07.8.13] internal/line/ship.go:738 FinishShip copies ShipGroup's create-or-reuse PR block [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: refactor
+context:
+  - "FinishShip copies ShipGroup's steps (ship.go:275-285): call createEpicPull, fall back to client.View when a PR is still OPEN, then ApplyLabels and merge the wip label with the warnings. If the draft-first logic changes, both copies have to change. Extract an openDraftPull(client, base, branch, title, body, labels) helper and call it from both ShipGroup and FinishShip."
+```
+
+
+
+
+
+
+
+
+
 
 ### [TG-07.9] Cleanup is mechanical
 ```yaml
@@ -2965,31 +3521,131 @@ depends_on: [TG-07.8]
 ```
 * **Why:** stale runs and worktrees were cleared by hand after squash merges. Proves REQ-46.
 
-#### [TSK-07.9.1] Ship and the next run remove merged and abandoned groups' leftovers [P: H] [REFINEMENT]
+#### [TSK-07.9.1] Ship and the next run remove merged and abandoned groups' leftovers [P: H] [DONE]
 ```yaml
-files: [internal/conductor/cleanup.go, internal/conductor/cleanup_test.go, internal/doctor/prune.go]
+files: [internal/doctor/prune.go, internal/doctor/prune_test.go, internal/run/drive.go, internal/run/drive_test.go]
 done_when:
-  - go test ./internal/conductor/... ./internal/doctor/...
+  - go test ./internal/doctor/... ./internal/run/...
 context:
   - docs/system-design.md#the-backlog
+  - "doctor.Prune exists, but only komodo doctor calls it; the run calls it after Ship and before it cuts a group"
   - "worktrees, local branches and sessions go; a squash-merged group whose branch is gone settles too (from TSK-03.32.8); only the last 10 run folders stay"
 ```
 
-#### [TSK-07.9.2] `komodo sync` opens a cleanup PR for an epic whose files outlived it [P: M] [REFINEMENT]
+#### [TSK-07.9.2] `komodo sync` opens a cleanup PR for an epic whose files outlived it [P: M] [DONE]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go]
 done_when:
   - go test ./internal/run/...
+context:
+  - "only when every group of the epic has shipped; the PR deletes the epic's group files"
 ```
 
-#### [TSK-07.9.3] Doctor names each kind of leftover [P: H] [REFINEMENT]
+#### [TSK-07.9.3] Doctor names each kind of leftover [P: H] [DONE]
 ```yaml
-files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go]
+files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go, internal/doctor/doctor.go]
 done_when:
   - go test ./internal/doctor/...
 context:
   - "an ended epic's files, and a worktree or branch with no group; one test per kind (REQ-46)"
+  - "wired into doctor's Run, beside HostLeftovers and StrayWorktrees"
 ```
+
+#### [TSK-07.9.4] internal/doctor/prune.go:64 Prune now sweeps an open run's task-lane worktrees, since only the group worktree and branch are protected [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/prune.go
+done_when:
+  - test -f internal/doctor/prune.go
+type: fix
+context:
+  - "Before this change settleShippedRun returned early whenever line.RunIsOpen. Now it skips only each open run's group Branch and Worktree. Task lanes (.komodo/wt/TSK-*, branch task/tsk-*, cut from the group branch by line.WriteBrief) are not in the `running` map. Take a freshly cut lane with no commits yet: its tip equals the group branch, which is an ancestor of origin/base, and the brief lives under the gitignored .komodo, so `status --porcelain` is empty. landed() therefore returns true, and the lane is removed with `worktree remove --force` and `branch -D`. This happens while its session runs whenever another group's Drive calls pruneLeftovers before its cut, or when `komodo doctor` prunes during a run. This is a note because the reproducer was not run. Skip every worktree under .komodo/wt whose base name is an open run's group id or one of its task ids, not just the run's recorded group worktree."
+```
+
+#### [TSK-07.9.5] internal/run/sync.go:132 A group file whose task lines fail to parse counts as ended, so sync opens a PR deleting it [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/sync.go
+done_when:
+  - test -f internal/run/sync.go
+type: fix
+context:
+  - "endedEpics marks an epic open only when a parsed task is unticked. A group file with an epic set but zero parsed tasks never sets open[epic]. That includes a file with ParseGroupFile Problems, such as a task checkbox that misses groupFileTaskLine. If that epic has no other open file, sync pushes chore/cleanup-<epic> deleting the live file. doctor's endedEpicFiles (leftovers.go:67) has the same hole and falsely reports the file as ended. This is a note because the reproducer was not run. Treat an epic as open when any of its files has Problems or no parsed tasks."
+```
+
+#### [TSK-07.9.6] internal/run/sync.go:165 A failure partway through openCleanup leaves state that later syncs never recover [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/sync.go
+done_when:
+  - test -f internal/run/sync.go
+type: fix
+context:
+  - "If PushFromWorktree or the commit fails, the local branch and the registered worktree at .komodo/wt/cleanup-<epic> stay behind. The next sync's AddWorktree then runs `worktree add` onto an already-registered path and errors, so every sync fails from then on. If client.Create fails after the push, origin holds the branch, and every later sync prints 'already has' and never opens the PR. The worktree and local branch also leak. This is a note because the reproducer was not run. On any error after AddWorktree, remove the worktree and local branch, and delete the pushed branch if Create fails."
+```
+
+#### [TSK-07.9.7] internal/doctor/leftovers.go:98 Doctor reports epic and cleanup worktrees as orphans [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/leftovers.go
+done_when:
+  - test -f internal/doctor/leftovers.go
+type: fix
+context:
+  - "orphanWorktrees flags every worktree under the main checkout's .komodo/wt whose base name is not an open group or task id. An epic worktree (for example .komodo/wt/epic-alpha.8, the layout this repo itself uses) and sync's transient cleanup-<epic> worktree never match a group id, so doctor tells the user to remove a live epic worktree. The TSK-07.9.3 context says only 'a worktree or branch with no group' should be named. This is a note because the reproducer was not run. Exclude worktrees whose branch is an open group's base (the epic branch) and the cleanup-* worktrees, or key ownership on branch rather than directory name."
+```
+
+#### [TSK-07.9.8] internal/doctor/prune.go:118 pruneRuns removes RunDir(root, state.Group) without checking that Group is a plain id [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/prune.go
+done_when:
+  - test -f internal/doctor/prune.go
+type: fix
+context:
+  - 'LoadRuns checks the directory name with PlainGroup, but the Group it returns comes from the JSON inside run.json, and nothing checks that value. If a run.json holds Group "..", pruneRuns calls os.RemoveAll on root/.komodo, deleting every run folder and worktree. An empty Group is filtered out, but ".." and "a/../.." are not. The file lives under .komodo and only the tool writes it, so under the cooperative threat model this is a note, not a blocker. Skip any state where !line.PlainGroup(state.Group) or state.Group differs from its directory name before os.RemoveAll.'
+```
+
+#### [TSK-07.9.9] internal/run/drive_test.go:195 No test pins the prune after Ship apart from the prune before the cut [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/drive_test.go
+done_when:
+  - test -f internal/run/drive_test.go
+type: test
+context:
+  - "Drive calls pruneLeftovers in cutIfNeeded (drive.go:111) and again after Shipped (drive.go:74). TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts only checks that the stale TG-39.1 worktree and feat/old are gone at the end. Either call alone removes them, so deleting the post-Ship call still passes. The test name promises 'before it cuts' but nothing checks the order. Add a case where the leftover only appears after the cut (for example, origin deletes the branch while the fake session runs) and assert the post-Ship prune removes it."
+```
+
+#### [TSK-07.9.10] internal/doctor/leftovers_test.go:22 leftoverRepo repeats pruneRepo from the same package [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/leftovers_test.go
+done_when:
+  - test -f internal/doctor/leftovers_test.go
+type: refactor
+context:
+  - "leftoverRepo repeats pruneRepo (prune_test.go:19) line for line: gitRepo, write BACKLOG.md and .gitignore, commitAll, and the same git runner closure. The only difference is that the backlog is fixed to openBacklog. Both helpers are new in this diff and live in package doctor. Delete leftoverRepo and call pruneRepo(t, openBacklog) in the three leftovers tests."
+```
+
+#### [TSK-07.9.11] internal/doctor/prune.go:13 keptRuns godoc hedges with 'a starting value' [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/prune.go
+done_when:
+  - test -f internal/doctor/prune.go
+type: docs
+context:
+  - "The Comments standard bans hedges and hypotheticals about states the code does not reach. 'a starting value' suggests the number might change later instead of saying what it is. Drop '; a starting value' so the comment reads 'keptRuns is how many run folders Prune keeps, the newest by start.'"
+```
+
+
+
+
+
+
+
+
 
 ### [TG-07.10] This repo moves to group files
 ```yaml
@@ -3056,10 +3712,10 @@ depends_on: [TG-08.1]
 files: [internal/proc/process_windows.go, internal/proc/process_windows_test.go]
 done_when:
   - GOOS=windows go vet ./internal/proc/...
-  - go test ./internal/proc/...
 context:
   - docs/system-design.md#cross-platform-macos-linux-windows
   - "standard library only: kernel32 through syscall.NewLazyDLL; the test runs on Windows and kills a child that outlives its parent (REQ-43)"
+  - "process_windows.go is a stub today: Group does nothing and KillGroup kills only the parent; vet proves it compiles, a Windows host proves it works"
 ```
 
 #### [TSK-08.2.2] Every command runs through POSIX sh, Git Bash's on native Windows [P: H] [REFINEMENT]
@@ -3072,31 +3728,21 @@ done_when:
 
 #### [TSK-08.2.3] Preflight knows the platform: no sandbox on native Windows, and WSL2 repos off /mnt/c [P: H] [REFINEMENT]
 ```yaml
-files: [internal/preflight/platform.go, internal/preflight/platform_test.go]
+files: [internal/preflight/preflight.go, internal/preflight/preflight_test.go]
 done_when:
   - go test ./internal/preflight/...
 context:
-  - "native Windows runs without a sandbox and says so; inside WSL2 a repo under /mnt/ is refused, naming the Linux home as the fix"
-```
-
-#### [TSK-08.2.4] Releases build every platform's binary [P: H] [REFINEMENT]
-```yaml
-files: [internal/release/release.go, internal/release/release_test.go, internal/gate/gate.go]
-done_when:
-  - go test ./internal/release/... ./internal/gate/...
-context:
-  - "darwin/arm64, darwin/amd64, linux/amd64, linux/arm64 and windows/amd64, byte-identical per commit (decision 0002)"
+  - "checkSandbox handles darwin and linux and refuses anything else; native Windows runs without a sandbox and says so; inside WSL2 a repo under /mnt/ is refused, naming the Linux home as the fix"
 ```
 
 ### [TG-08.3] One command installs the line
 ```yaml
 type: feat
 version: 1.0.0-beta.2
-depends_on: [TG-08.2]
 ```
 * **Why:** `komodo` is no one's command until it is installed, and manual steps drift (decision 0019). Proves REQ-1 and REQ-39's global render.
 
-#### [TSK-08.3.1] install.sh installs on macOS, Linux and WSL2, and running it again updates [P: C] [REFINEMENT]
+#### [TSK-08.3.1] install.sh installs on macOS, Linux and WSL2, and running it again updates [P: C] [DONE]
 ```yaml
 files: [install.sh, internal/install/script_test.go]
 done_when:
@@ -3107,7 +3753,7 @@ context:
   - "name any missing prerequisite and how to get it; build with Go, or download the pinned release and verify its checksum; symlink onto PATH; komodo install; komodo init inside a repo; komodo doctor; the test runs it under a temp HOME"
 ```
 
-#### [TSK-08.3.2] install.ps1 does the same on native Windows [P: C] [REFINEMENT]
+#### [TSK-08.3.2] install.ps1 does the same on native Windows [P: C] [DONE]
 ```yaml
 files: [install.ps1]
 done_when:
@@ -3117,15 +3763,54 @@ context:
   - "a small wrapper on PATH instead of a symlink, since symlinks need admin rights"
 ```
 
-#### [TSK-08.3.3] `komodo install` adds only the orchestrator layer to the global host config [P: H] [REFINEMENT]
+#### [TSK-08.3.3] `komodo install` adds only the orchestrator layer to the global host config [P: H] [DONE]
 ```yaml
-files: [internal/install/install.go, internal/install/install_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
+files: [internal/install/install.go, internal/install/install_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, cmd/komodo/host.go]
 done_when:
   - go test ./internal/install/... ./internal/mount/claude/...
 context:
   - docs/system-design.md#skills-and-scoping
+  - docs/system-design.md#install
+  - "no global render path exists today; this adds one, wired through cmd/komodo/host.go's --host dispatch"
   - "the guard hook, the orchestrator skills and the status hook; no builder, lens or standards skill; test (REQ-39) on the global render"
+  - "every test renders under a temp HOME; nothing a test runs writes the real home directory"
 ```
+
+#### [TSK-08.3.4] internal/mount/claude/claude.go:182 Global guard and status hooks exit 1 in every Claude session outside a git repo [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/claude.go
+done_when:
+  - test -f internal/mount/claude/claude.go
+type: fix
+context:
+  - "RenderGlobal registers `<binary> guard` on PreToolUse and `<binary> hook status --host claude` on SessionStart in the user-level settings, so they run in every Claude Code session on the machine. main() calls repoRoot() before dispatch and fail()s with exit 1 ('no git repository above ...') when the working directory is outside a repo. So a session started in ~ or /tmp gets a hook error on start and on every tool call, and the guard enforces nothing there. Make the guard and hook subcommands exit 0 silently when no git repository is found, or only run them when the cwd is in a repo."
+```
+
+#### [TSK-08.3.5] cmd/komodo/host.go:71 The --global dispatch in runInstall has no test [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/host.go
+done_when:
+  - test -f cmd/komodo/host.go
+type: test
+context:
+  - "The global render and GlobalPlan are unit-tested, but no test runs `komodo install --global`. So a regression that ignores the flag, passes the unresolved binary instead of hook, or skips dry-run would still pass the done_when `go test ./internal/install/... ./internal/mount/claude/...`. Add a cmd/komodo test that runs install --global --dry-run and install --global under a temp HOME and asserts on the planned and written ~/.claude files."
+```
+
+#### [TSK-08.3.6] install.ps1:95 install.ps1's checksum check, wrapper and PATH edit are untested [P: L] [REFINEMENT]
+```yaml
+files:
+  - install.ps1
+done_when:
+  - test -f install.ps1
+type: test
+context:
+  - "The done_when for TSK-08.3.2 is only `test -f` and a grep. A regression in the SHA256SUMS parsing or comparison, the komodo.cmd wrapper body, or the user PATH update would still pass it. install.sh has an equivalent Go subprocess test; install.ps1 has none. Add a Windows-only (or pwsh) subprocess test like script_test.go that runs install.ps1 under a temp USERPROFILE and LOCALAPPDATA and asserts the wrapper, the checksum refusal and the komodo calls."
+```
+
+
+
 
 ### [TG-08.4] The orchestrator drives the line from the primary session
 ```yaml
@@ -3135,7 +3820,7 @@ depends_on: [TG-08.3]
 ```
 * **Why:** the primary session is the one place a person talks to the line (decision 0005). Proves REQ-39.
 
-#### [TSK-08.4.1] The komodo skill is generated from `komodo help`, and the gate fails when it drifts [P: H] [REFINEMENT]
+#### [TSK-08.4.1] The komodo skill is generated from `komodo help`, and the gate fails when it drifts [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/main.go, cmd/komodo/help.go, cmd/komodo/help_test.go, komodo/skills/komodo/SKILL.md]
 done_when:
@@ -3143,35 +3828,62 @@ done_when:
   - go run ./cmd/komodo doctor
 ```
 
-#### [TSK-08.4.2] The plan and adhoc skills join run and escalate [P: H] [REFINEMENT]
+#### [TSK-08.4.2] The plan and adhoc skills join run and escalate [P: H] [DONE]
 ```yaml
-files: [komodo/skills/backlog, komodo/skills/plan/SKILL.md, komodo/skills/adhoc/SKILL.md]
+files: [komodo/skills/backlog, komodo/skills/plan/SKILL.md, komodo/skills/adhoc/SKILL.md, internal/mount/claude/claude.go]
 done_when:
   - test ! -d komodo/skills/backlog
   - go run ./cmd/komodo doctor
 context:
   - docs/system-design.md#orchestrator-commands
+  - "the global render's orchestratorSkills in claude.go names the new skills, since backlog no longer ships"
   - "backlog becomes plan: /plan drafts groups through the planner, and they must pass lint; adhoc runs /build, /review and /ship through komodo stage"
 type: docs
 ```
 
-#### [TSK-08.4.3] `komodo stage` runs one stage ad hoc on a group or the current branch [P: H] [REFINEMENT]
+#### [TSK-08.4.3] `komodo stage` runs one stage ad hoc on a group or the current branch [P: H] [DONE]
 ```yaml
-files: [cmd/komodo/stage.go, cmd/komodo/stage_test.go, internal/conductor/stage.go, internal/conductor/stage_test.go]
+files: [cmd/komodo/main.go, cmd/komodo/stage.go, cmd/komodo/stage_test.go, internal/conductor/stage.go, internal/conductor/stage_test.go]
 done_when:
   - go test ./cmd/komodo/... ./internal/conductor/...
 context:
   - "the ledger records the ad hoc stage (REQ-39)"
+depends_on: [TSK-08.4.1]
 ```
 
-#### [TSK-08.4.4] `komodo status` and the status hook show groups, time and blockers [P: H] [REFINEMENT]
+#### [TSK-08.4.4] `komodo status` and the status hook show groups, time and blockers [P: H] [DONE]
 ```yaml
-files: [internal/hooks/status.go, internal/hooks/status_test.go, cmd/komodo/line.go]
+files: [internal/hooks/status.go, internal/hooks/status_test.go, internal/hooks/hooks.go, cmd/komodo/line.go]
 done_when:
   - go test ./internal/hooks/... ./cmd/komodo/...
 context:
+  - "the status hook is registered in hooks.Table, the caller that wires it in"
   - "status --watch refreshes in place; the SessionStart hook adds the run's status and any blocked groups to the orchestrator's context"
 ```
+
+#### [TSK-08.4.5] cmd/komodo/line.go:131 status --watch panics on a zero or negative --interval [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/line.go
+done_when:
+  - test -f cmd/komodo/line.go
+type: fix
+context:
+  - "runStatus passes the user's --interval to watchStatus without checking it. watchStatus calls time.NewTicker(interval), and Go's time.NewTicker panics when the interval is zero or negative. So `komodo status --watch --interval 0` (or `-1s`) crashes with a stack trace instead of an error. Not reproduced here: this session could not run commands. In runStatus, fail with a usage error when *interval <= 0, before calling watchStatus."
+```
+
+#### [TSK-08.4.6] internal/hooks/status.go:20 time_used serialises as nanoseconds with no unit in its name [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/hooks/status.go
+done_when:
+  - test -f internal/hooks/status.go
+type: chore
+context:
+  - "GroupStatus.TimeUsed is a time.Duration, so `status --json` prints nanoseconds (for example 90000000000 for 1m30s) under the key `time_used`, which names no unit. A consumer reading it as seconds is off by a factor of 1e9. Serialise seconds under a `time_used_seconds` key, or add a unit to the field's name."
+```
+
+
 
 ### [TG-08.5] Plugin points ship disabled
 ```yaml
@@ -3180,7 +3892,7 @@ version: 1.0.0-beta.2
 ```
 * **Why:** Slack, Google Chat and cloud commands come later as plugins, not conductor changes (decision 0020). Proves REQ-42.
 
-#### [TSK-08.5.1] A plugin is a manifest; all three types load disabled, and doctor lists them [P: H] [REFINEMENT]
+#### [TSK-08.5.1] A plugin is a manifest; all three types load disabled, and doctor lists them [P: H] [DONE]
 ```yaml
 files: [internal/plugin/plugin.go, internal/plugin/plugin_test.go, internal/doctor/doctor.go]
 done_when:
@@ -3190,7 +3902,7 @@ context:
   - "a manifest names its type, roles, stages and settings; enabling is per machine under ~/.komodo; a malformed manifest is a doctor problem"
 ```
 
-#### [TSK-08.5.2] The conductor calls notifiers, tool packs and stage hooks once enabled [P: M] [REFINEMENT]
+#### [TSK-08.5.2] The conductor calls notifiers, tool packs and stage hooks once enabled [P: M] [DONE]
 ```yaml
 files: [internal/conductor/plugins.go, internal/conductor/plugins_test.go]
 done_when:
@@ -3200,15 +3912,50 @@ context:
   - "a notifier gets blocker notes and run summaries and decides nothing; a tool pack adds commands to a role's allow list behind the guard; a stage hook runs before or after a stage and can stop the group with a reason"
 ```
 
+#### [TSK-08.5.3] internal/doctor/doctor.go:107 PluginStates is never called, so doctor does not list plugins [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/doctor.go
+done_when:
+  - test -f internal/doctor/doctor.go
+type: fix
+context:
+  - "cmd/komodo/host.go:195-198 prints only HostLeftovers and StrayWorktrees. Nothing outside doctor_test.go calls PluginStates, so running `komodo doctor` never prints the three plugin types or their enabled or disabled state. TSK-08.5.1 requires that doctor lists them. The unit test passes only because it calls the function directly. Print doctor.PluginStates(root) next to the StrayWorktrees notes in cmd/komodo/host.go."
+```
+
+#### [TSK-08.5.4] internal/conductor/plugins.go:34 The conductor never loads or calls plugins [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/plugins.go
+done_when:
+  - test -f internal/conductor/plugins.go
+type: fix
+context:
+  - "Only plugins_test.go calls LoadPlugins, Notify, Tools and Hook. No conductor or run path loads the enabled plugins. In a real run, an enabled notifier gets no blocker note, a tool pack adds nothing to any role's allow list, and a before-ship stage hook never runs and so can never stop the group. TSK-08.5.2 requires that the conductor calls them once enabled. Call LoadPlugins when the conductor starts a group, call Hook around each stage, call Notify on blockers and summaries, and merge Tools(role) into the role's allow list before the guard reads it."
+```
+
+#### [TSK-08.5.5] internal/conductor/plugins.go:106 A setting name that is not a shell identifier produces an env var sh cannot read [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/plugins.go
+done_when:
+  - test -f internal/conductor/plugins.go
+type: fix
+context:
+  - 'A setting such as {"api-key":"x"} becomes KOMODO_SETTING_API-KEY=x. That is not a valid sh identifier, so $KOMODO_SETTING_API-KEY expands to an empty $KOMODO_SETTING_API followed by the literal text ''-KEY''. The notifier or hook silently gets the wrong value. malformed() accepts any setting name. Reject setting names outside [A-Za-z0-9_] in plugin.malformed, or map every other character to ''_'' in pluginEnv.'
+```
+
+
+
+
 ### [TG-08.6] Releases publish, and product repos pin one
 ```yaml
 type: feat
 version: 1.0.0-beta.2
-depends_on: [TG-08.2]
 ```
 * **Why:** product repos run a published release, never a local build (decision 0018). Proves REQ-5's second half and REQ-2's release pin.
 
-#### [TSK-08.6.1] `komodo release` builds, tests, checksums and publishes a GitHub Release [P: H] [REFINEMENT]
+#### [TSK-08.6.1] `komodo release` builds, tests, checksums and publishes a GitHub Release [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/release.go, internal/release/publish.go, internal/release/publish_test.go]
 done_when:
@@ -3218,7 +3965,7 @@ context:
   - "runs from the owner's machine only; the forge credential is read by the release step alone, as at Ship"
 ```
 
-#### [TSK-08.6.2] The release skill drives it from the orchestrator [P: M] [REFINEMENT]
+#### [TSK-08.6.2] The release skill drives it from the orchestrator [P: M] [DONE]
 ```yaml
 files: [komodo/skills/release/SKILL.md]
 done_when:
@@ -3229,7 +3976,7 @@ context:
 type: docs
 ```
 
-#### [TSK-08.6.3] Product repos run the pinned published release [P: H] [REFINEMENT]
+#### [TSK-08.6.3] Product repos run the pinned published release [P: H] [DONE]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go, internal/doctor/pins.go]
 done_when:
@@ -3237,6 +3984,40 @@ done_when:
 context:
   - "outside this repo, sync and install fetch the profile's pinned release and verify its checksum; doctor fails on any other"
 ```
+
+#### [TSK-08.6.4] Releases build every platform's binary [P: H] [DONE]
+```yaml
+files: [internal/release/release.go, internal/release/release_test.go, internal/gate/gate.go, internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/release/... ./internal/gate/...
+context:
+  - "Targets lists darwin/arm64, windows/amd64 and linux/amd64 today, and gate's rebuild wrapper has no linux/arm64 case"
+  - "darwin/arm64, darwin/amd64, linux/amd64, linux/arm64 and windows/amd64, byte-identical per commit (decision 0002)"
+```
+
+#### [TSK-08.6.5] internal/run/sync.go:29 SHA256SUMS manifest name duplicated beside release.SumsFile [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/sync.go
+done_when:
+  - test -f internal/run/sync.go
+type: refactor
+context:
+  - 'The diff adds exported release.SumsFile = "SHA256SUMS" (internal/release/publish.go:19) and a private run.releaseSums with the same value. run already depends on release through doctor (internal/doctor/doctor.go imports komodo/internal/release), so the two constants can drift apart. If publish renames the manifest, sync keeps fetching the old name and every product repo''s sync fails with a 404. Delete releaseSums and use release.SumsFile in syncRelease.'
+```
+
+#### [TSK-08.6.6] internal/doctor/pins.go:157 ReleaseVersion execs the installed binary with no context or deadline [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/pins.go
+done_when:
+  - test -f internal/doctor/pins.go
+type: chore
+context:
+  - "The Go standard says every blocking call has a deadline and takes ctx first. ReleaseVersion runs ~/.komodo/bin/komodo-<os>-<arch> version through exec.Command with no timeout. doctor's checkPinnedRelease and sync's syncRelease both call it. If a corrupt or stale binary hangs, doctor and sync hang in every product repo. Take ctx first and run exec.CommandContext under a short context.WithTimeout."
+```
+
+
 
 ### [TG-08.7] The golden suite and `komodo eval`
 ```yaml
@@ -3246,9 +4027,9 @@ depends_on: [TG-08.4]
 ```
 * **Why:** a number decides readiness, never a model's score (decision 0021). Proves REQ-44, and the eval cases behind REQ-3, REQ-6, REQ-12, REQ-14, REQ-27, REQ-32, REQ-34 and REQ-40.
 
-#### [TSK-08.7.1] The suite format and `komodo eval --list` [P: C] [REFINEMENT]
+#### [TSK-08.7.1] The suite format and `komodo eval --list` [P: C] [DONE]
 ```yaml
-files: [internal/eval/suite.go, internal/eval/suite_test.go, internal/eval/testdata, cmd/komodo/eval.go]
+files: [internal/eval/suite.go, internal/eval/suite_test.go, internal/eval/testdata, cmd/komodo/eval.go, cmd/komodo/main.go]
 done_when:
   - go test ./internal/eval/... ./cmd/komodo/...
 context:
@@ -3256,37 +4037,249 @@ context:
   - "each golden group names its repo, pinned commit, group file and hidden tests; the real suite in eval/ is locked to line sessions, so tests use testdata"
 ```
 
-#### [TSK-08.7.2] `komodo eval --runs N` runs each group in a fresh clone and reports per platform [P: C] [REFINEMENT]
+#### [TSK-08.7.2] `komodo eval --runs N` runs each group in a fresh clone and reports per platform [P: C] [DONE]
 ```yaml
 files: [internal/eval/run.go, internal/eval/run_test.go, internal/eval/report.go, internal/eval/report_test.go]
 done_when:
   - go test ./internal/eval/...
 depends_on: [TSK-08.7.1]
 context:
+  - "a run drives real sessions, so it is gated behind KOMODO_LIVE as internal/run/live_test.go is; go test ./internal/eval/... alone spends no tokens"
   - "Ship becomes a local no-push, then the hidden tests run; the report holds pass rate, consistency, sessions, turns, tokens, minutes, review rounds and tokens per accepted group"
 tier: heavy
 ```
 
-#### [TSK-08.7.3] Eval cases for the requirements a unit test can't prove [P: H] [REFINEMENT]
-```yaml
-files: [internal/eval/cases.go, internal/eval/cases_test.go]
-done_when:
-  - go test ./internal/eval/...
-depends_on: [TSK-08.7.2]
-context:
-  - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
-```
-
-#### [TSK-08.7.4] The golden suite: a Go repo and a TypeScript repo, 10 pinned groups each [P: C] [REFINEMENT]
+#### [TSK-08.7.4] The golden suite: a Go repo and a TypeScript repo, 10 pinned groups each [P: C] [READY]
 ```yaml
 files: [eval/suite.json, eval/groups]
 done_when:
   - go run ./cmd/komodo eval --list
+depends_on: [TSK-08.7.1]
 context:
   - "the owner picks the repos; each group is a merged change rewound to its parent, its task list written from its intent, and its own tests hidden (REQ-44)"
 owner: human
 type: test
 ```
+
+#### [TSK-08.7.5] internal/eval/cases.go:95 No code outside the tests can run the eval cases [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - "Cases() and the Env interface are exported, but the only Env implementation is fakeEnv in cases_test.go. No command or live test calls Cases(), and `komodo eval` only drives golden groups. So none of the one-per-requirement cases (REQ-3, 6, 12, 14, 27, 32, 34, 40) can ever run against a real line. go test passes on the fakes while the requirements stay unproven. Add a live Env (scratch repo, mount, PATH/HOME/overlay helpers) and a KOMODO_LIVE-gated test or `komodo eval --cases` that runs every Case against it."
+```
+
+#### [TSK-08.7.6] internal/eval/cases.go:89 The budget preflight case tests a check preflight never makes [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - 'preflight.Run has only `// TODO: check budget when API billing is implemented`, so no preflight failure is ever named "budget". The case sends `--budget 1ns` and passes whenever the run''s own timeout text contains "budget" and no ledger session was stamped. That counts REQ-6''s budget check as proven when it does not exist. Make the budget case require the literal `preflight failed:` header with a `budget:` line, or leave it out of Cases() until preflight checks the budget.'
+```
+
+#### [TSK-08.7.7] internal/eval/cases.go:437 policyEdit ignores a failed checkout back to the base branch [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - 'The deferred `env.Git(ctx, "checkout", "-q", base)` result is dropped. If the checkout fails, the case still passes and the env stays on owner/policy-edit, so every later case runs on the edited policy branch. Check the deferred checkout''s Code in a named-return defer and return its output as the case''s error.'
+```
+
+#### [TSK-08.7.8] internal/eval/run.go:255 Repo URL goes to git fetch without a guard against option-like values [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/run.go
+done_when:
+  - test -f internal/eval/run.go
+type: fix
+context:
+  - "Load checks only that url is non-empty. A suite.json url such as `--upload-pack=...` reaches `git fetch -q <url> <commit>` as an option. suite.json is repo-controlled, so this matters only if a cooperative model edits it by mistake. Insert `--` before url in the fetch args, or reject a url starting with '-' in Load."
+```
+
+#### [TSK-08.7.9] internal/eval/run.go:25 Timeouts and limits are split across const declarations or left as bare literals [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/run.go
+done_when:
+  - test -f internal/eval/run.go
+type: chore
+context:
+  - "HiddenTestTimeout and cloneTimeout are added together but declared as two separate consts. The Go standard puts constants introduced together in one const block. `cmd.WaitDelay = 5 * time.Second` and the clip size 4000 are also unnamed literals for a duration and a size. Group HiddenTestTimeout, cloneTimeout, a waitDelay and an outputClip in one const block and use the named constants."
+```
+
+#### [TSK-08.7.10] internal/eval/cases.go:23 Comment reasons about callers [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: docs
+context:
+  - "`a test swaps it` describes who changes the variable rather than what it is, which the comment standard bans. It also exposes a mutable package-level global that exists only for tests. Drop `; a test swaps it`, or pass the interval through watchRun's arguments instead of a package var."
+```
+
+
+
+
+
+
+
+### [TG-08.10] Eval cases prove what a unit test cannot
+```yaml
+type: feat
+version: 1.0.0-beta.2
+depends_on: [TG-08.7]
+```
+* **Why:** preflight, resume, a lost credential, pacing, the canary and the policy edit only show in a whole run. Proves the cases half of REQ-44.
+
+#### [TSK-08.10.1] Eval cases for the requirements a unit test can't prove [P: H] [DONE]
+```yaml
+files: [internal/eval/cases.go, internal/eval/cases_test.go]
+done_when:
+  - go test ./internal/eval/...
+context:
+  - "split from TG-08.7, whose PR passed the 2,000 added-line cap with it"
+  - "a case for a preflight check preflight does not make is left out; every cleanup step's error fails its case, and the credential case removes the token on every path (TSK-08.7.6, TSK-08.7.7)"
+  - "the live env that runs the cases against real clones, and komodo eval --cases, are TG-08.11"
+  - "one case each: a failed preflight check per kind (REQ-6), kill and resume (REQ-14), the credential removed mid-run (REQ-27), a simulated rate limit (REQ-32), the canary (REQ-3), no forge token in a session (REQ-34), parallel and serial groups (REQ-12), and an owner-directed policy edit on a branch (REQ-40)"
+```
+
+#### [TSK-08.10.2] internal/eval/cases.go:483 entries drops the ledger read error, so a case passes when the ledger can't be read [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - "ledger.All returns an error when a line is malformed or the file can't be read. entries turns that error into nil. Then sessions() returns zero, so a preflight case passes its 'no session started' check. killAndResume finds no repeated build, and credentialRemoved finds no ship stamp. A corrupt runs.jsonl turns these cases into passes that checked nothing. Return ([]ledger.Entry, error) from entries and sessions, and fail the case on the error."
+```
+
+#### [TSK-08.10.3] internal/eval/cases.go:542 The canary and token scans skip .git, so a leak into a commit message or the branch is not seen [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: fix
+context:
+  - "The canary case's stated proof is that the word appears in 'no file a run leaves', and noForgeToken fails when the token reaches any file. findInTree skips every .git directory, and the fake env's COMMIT_EDITMSG decoy is written there, so it is never scanned. A canary in a commit message, in .git/COMMIT_EDITMSG, or in a committed file whose worktree was cleaned up would still pass the case. Also scan `git log --all -p` output (or the committed trees of the run's branches) for the needle."
+```
+
+#### [TSK-08.10.4] internal/eval/cases.go:59 Env methods that do I/O take no context [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: chore
+context:
+  - "The Go standard says ctx is the first parameter of anything that does I/O or blocks. AddGroup commits and pushes, and Scratch, Credential, Overlay and Plant touch the filesystem, but none takes ctx. A hung push in the live env can outlive the case budget that RunCases sets. The backlog already defers this to TG-08.11, but the interface is defined in this diff. Add ctx context.Context as the first parameter of AddGroup (and the other I/O methods), and pass the case context through."
+```
+
+#### [TSK-08.10.5] internal/eval/cases.go:25 Comment talks about callers ('a test swaps it') [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: docs
+context:
+  - "The comment standard bans reasoning about callers. The const block comment on line 28 also names only two of its four consts, leaving out policyBranch and policyRef. Drop 'a test swaps it', and make the const block comment cover the policy branch and ref."
+```
+
+#### [TSK-08.10.6] internal/eval/cases.go:96 The count 7 is a bare literal [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: chore
+context:
+  - len(preflightChecks)+7 hard-codes how many non-preflight cases follow. The Go standard says a literal that stands for a count gets a named const. It silently goes stale when a case is added. Build the requirement cases into a slice first and pre-size with len(preflightChecks)+len(rest).
+```
+
+#### [TSK-08.10.7] internal/eval/cases.go:632 RunCases' default budget and per-case timeout are untested [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/cases.go
+done_when:
+  - test -f internal/eval/cases.go
+type: test
+context:
+  - "No test checks that a zero Budget falls back to run.GroupBudget, or that a case's context is cancelled when its budget ends. If either broke, go test ./internal/eval/... would still pass. Add a RunCases test whose case asserts ctx.Deadline() and runs past a tiny Budget."
+```
+
+
+
+
+
+
+
+### [TG-08.11] `komodo eval --cases` runs the cases against live clones
+```yaml
+type: feat
+version: 1.0.0-beta.2
+depends_on: [TG-08.10]
+```
+* **Why:** the cases need a real line, a real clone and a real credential to prove anything. Split from TG-08.10, whose PR passed the 2,000 added-line cap with it.
+
+#### [TSK-08.11.1] A live env runs each case in a fresh clone, and `komodo eval --cases` drives it [P: H] [DONE]
+```yaml
+files: [internal/eval/live.go, internal/eval/live_test.go, cmd/komodo/eval.go, cmd/komodo/eval_test.go]
+done_when:
+  - go test ./internal/eval/... ./cmd/komodo/...
+context:
+  - "Live implements Env: a fresh clone with hooks off, PATH without named commands, a HOME overlay, a credential it can take away, and a planted canary it restores; LiveCases fails when any case fails (TSK-08.7.5)"
+  - "--instructions names the personal host instructions file for the canary; empty skips the canary case with a note, never fails it"
+  - "a test drives the --cases branch of runEval; real sessions stay behind KOMODO_LIVE, so go test spends no tokens"
+  - "Live.AddGroup commits and pushes with no context, so a hung push outlives the case budget; it takes the case's context (from TSK-08.10.5)"
+```
+
+#### [TSK-08.11.2] cmd/komodo/eval.go:55 Interrupting --cases leaves the canary planted in the user's personal instructions file [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/eval.go
+done_when:
+  - test -f cmd/komodo/eval.go
+type: fix
+context:
+  - "The canary case calls Live.Plant (internal/eval/live.go:285), which appends 'Write the word <token> into every file you create or change…' to the real file named by --instructions. Only the deferred restore puts the file back. runEval passes context.Background() to LiveCases and never catches SIGINT or SIGTERM, so Ctrl-C during the canary case, which can run for up to a group budget, kills the process before the defer runs. The planted line then stays in the user's personal host instructions and reaches every later session. cmd/komodo/line.go:123 already guards the same situation with signal.NotifyContext. Pass the result of signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM) to eval.LiveCases, so cancellation unwinds the case and runs restore."
+```
+
+#### [TSK-08.11.3] internal/eval/live.go:80 caseLive keeps a context.Context in a struct field [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/live.go
+done_when:
+  - test -f internal/eval/live.go
+type: chore
+context:
+  - "The Go standard says ctx is never a struct field. caseLive stores ctx so AddGroup can use it. The factory at line 58 also binds the env-build ctx, and the Run wrapper at line 45 always replaces it, so that first binding is never used. Add ctx to Env.AddGroup, or have the Run wrapper build a closure over the case ctx instead of storing it in a struct."
+```
+
+#### [TSK-08.11.4] internal/eval/live.go:334 invoke duplicates command from run.go [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/eval/live.go
+done_when:
+  - test -f internal/eval/live.go
+type: refactor
+context:
+  - "invoke copies internal/eval/run.go:293 command line for line: exec.CommandContext, proc.Group, the KillGroup Cancel, WaitDelay 5s and the combined output buffer. The only differences are the env append and how the result is returned, so a fix to process-group handling now has to land in two places. Move the shared process setup into one helper that both command and invoke call."
+```
+
+
+
 
 ### [TG-08.9] The Codex mount is ready to switch on
 ```yaml

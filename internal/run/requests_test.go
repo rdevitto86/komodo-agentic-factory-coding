@@ -10,6 +10,7 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/profile"
+	"komodo/internal/review"
 )
 
 const requestsBuilderRole = "---\nname: builder\ndescription: Writes code.\ntier: standard\n" +
@@ -110,11 +111,11 @@ func TestReReviewInputCarriesTheDiffSinceTheReviewedCommitAndTheOpenFindings(t *
 		t.Fatal(err)
 	}
 	runGit(t, root, "commit", "-q", "-am", "the repair")
-	s := conductor.State{Reviewed: reviewed, Findings: []conductor.Finding{
+	s := conductor.State{Reviewed: reviewed, Findings: map[review.Lens][]conductor.Finding{review.Correctness: {
 		{Severity: "high", Verified: true, File: "b/two.go", Line: 3, Title: "Two has no comment"},
 		{Severity: "low", File: "a/one.go", Line: 1, Title: "below the floor"},
-	}}
-	input, err := ReReviewInput(root, requestsPlan(), s)
+	}}}
+	input, err := ReReviewInput(root, requestsPlan(), s, review.Correctness)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,9 +129,12 @@ func TestReReviewInputCarriesTheDiffSinceTheReviewedCommitAndTheOpenFindings(t *
 
 func TestStartRequestsCarryTheGroupsDiffForTheReviewer(t *testing.T) {
 	root := requestsRepo(t)
-	req, err := ReviewerRequest(root, requestsPlan())
+	req, err := ReviewerRequest(root, requestsPlan(), review.Security)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasPrefix(req.Brief, "# Your lens: security") || !strings.Contains(req.Brief, "`review-security` skill") {
+		t.Fatalf("reviewer brief does not bind the security lens's skill:\n%s", req.Brief)
 	}
 	if !strings.Contains(req.Brief, "One returns one") {
 		t.Fatalf("reviewer brief is missing the group's diff:\n%s", req.Brief)

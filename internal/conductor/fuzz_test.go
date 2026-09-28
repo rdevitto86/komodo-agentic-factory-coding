@@ -1,6 +1,10 @@
 package conductor
 
-import "testing"
+import (
+	"testing"
+
+	"komodo/internal/review"
+)
 
 // states is every GroupState Next can be given, in table order.
 var states = []GroupState{
@@ -36,7 +40,7 @@ func FuzzNext(f *testing.F) {
 			Edited:       bit(11),
 		}
 		if bit(12) {
-			s.Findings = []Finding{{Severity: "high", Verified: bit(13)}}
+			s.Findings = map[review.Lens][]Finding{review.Economy: {{Severity: "high", Verified: bit(13)}}}
 		}
 		next := Next(s)
 		if next.Remove {

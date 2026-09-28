@@ -15,6 +15,8 @@ import (
 const testHost = "hooks-test"
 
 func TestMain(m *testing.M) {
+	// A task check that runs these tests carries the nesting marker, which makes every hook allow.
+	_ = os.Unsetenv(nestedEnv)
 	RegisterEncoder(testHost, func(event Event, out Outcome) []byte {
 		data, _ := json.Marshal(map[string]string{"event": string(event), "verdict": string(out.Verdict), "message": out.Message})
 		return data
@@ -88,6 +90,7 @@ func TestLimitsMatchTheContract(t *testing.T) {
 		{"guard", PreToolUse, 3},
 		{"format", PostToolUse, 0},
 		{"taskchecks", Stop, 3},
+		{"evidence", Stop, 2},
 		{"timewarn", PostToolUse, 0},
 	}
 	for _, tc := range cases {
@@ -111,7 +114,7 @@ func TestForSessionListsOnlyThatSessionsOwnHooks(t *testing.T) {
 		want    []string
 	}{
 		{SessionBuilder, []string{"format", "taskchecks", "timewarn"}},
-		{SessionLens, []string{"timewarn"}},
+		{SessionLens, []string{"evidence", "timewarn"}},
 		{SessionEvery, []string{"guard"}},
 	}
 	for _, tc := range cases {

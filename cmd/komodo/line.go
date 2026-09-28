@@ -1,16 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
+	"komodo/internal/backlog"
 	"komodo/internal/conductor"
 	"komodo/internal/git"
+	"komodo/internal/hooks"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/pr"
@@ -80,12 +86,108 @@ func runResume(root string, args []string) {
 	if err != nil {
 		fail(fmt.Errorf("%s has no saved state to resume: %w", group, err))
 	}
+	if state.Current == conductor.Blocked && !state.Edited {
+		if err := clearBlocker(state); err != nil {
+			fail(err)
+		}
+		state.Edited = true
+		if err := conductor.SaveState(conductor.StatePath(root, group), state); err != nil {
+			fail(err)
+		}
+	}
 	if *asJSON {
 		printCompactJSON(os.Stdout, state)
 		return
 	}
 	fmt.Printf("%s is at %s with %d session(s) and %d repair round(s) recorded\n",
 		state.Group, state.Current, len(state.Sessions), state.Repairs)
+}
+
+// clearScreen moves the cursor home and clears the terminal, so status --watch redraws in place.
+const clearScreen = "\033[H\033[2J"
+
+// runStatus prints the current run: every group's state, the time it used, and what blocks it;
+// --watch redraws it in place every interval until interrupted.
+func runStatus(root string, args []string) {
+	set := flag.NewFlagSet("status", flag.ExitOnError)
+	asJSON := set.Bool("json", false, "print JSON")
+	watch := set.Bool("watch", false, "redraw the status in place until interrupted")
+	interval := set.Duration("interval", 2*time.Second, "how often --watch redraws")
+	_ = set.Parse(args)
+	show := func() {
+		groups := hooks.RunStatus(root)
+		if *asJSON {
+			printCompactJSON(os.Stdout, groups)
+			return
+		}
+		if text := hooks.StatusText(groups); text != "" {
+			fmt.Print(text)
+			return
+		}
+		fmt.Println("no run is recorded")
+	}
+	if !*watch {
+		show()
+		return
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	watchStatus(ctx, *interval, show)
+}
+
+// watchStatus clears the screen and calls show every interval until ctx ends.
+func watchStatus(ctx context.Context, interval time.Duration, show func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		fmt.Print(clearScreen)
+		show()
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// runAbandon removes a group's worktree and branch, and marks its open tasks BLOCKED under a note saying why.
+func runAbandon(root string, args []string) {
+	target, _ := splitPositional(args)
+	group := line.GroupFor(root, target)
+	if group == "" {
+		group = target
+	}
+	if group == "" {
+		fail(fmt.Errorf("usage: komodo abandon <group>"))
+	}
+	if err := conductor.Abandon(root, group, time.Now()); err != nil {
+		fail(err)
+	}
+	fmt.Printf("%s is abandoned: its worktree and branch are removed, and its open tasks are BLOCKED\n", group)
+}
+
+// clearBlocker removes a blocked group's note from its branch's backlog once a person set every task back
+// from BLOCKED, so komodo run feeds the edited group to its resumed builder.
+func clearBlocker(state conductor.State) error {
+	path, err := backlog.Find(state.Worktree)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	group, ok := backlog.Parse(string(data)).Group(state.Group)
+	if !ok {
+		return fmt.Errorf("%s is not in %s", state.Group, path)
+	}
+	for _, task := range group.Tasks {
+		if task.Status == "BLOCKED" {
+			return fmt.Errorf("%s is still BLOCKED in %s; edit the group and set it READY, then resume", task.ID, path)
+		}
+	}
+	text, _ := backlog.RemoveNote(string(data), state.Group)
+	return os.WriteFile(path, []byte(text), 0o644)
 }
 
 // planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.
@@ -301,6 +403,22 @@ func runShip(root, base, group string) {
 		plan.Base = base
 	}
 	result, err := line.ShipGroup(root, plan, nil, pr.New(root))
+	if err != nil {
+		fail(err)
+	}
+	printJSON(result)
+}
+
+// runFinishShip publishes a group a missing or expired credential stopped before Ship: push, draft PR, labels.
+func runFinishShip(root string, args []string) {
+	group, _ := splitPositional(args)
+	if group == "" {
+		fail(fmt.Errorf("usage: komodo ship <group>"))
+	}
+	if owner := line.GroupFor(root, group); owner != "" {
+		group = owner
+	}
+	result, err := line.FinishShip(root, group, pr.New(root))
 	if err != nil {
 		fail(err)
 	}
