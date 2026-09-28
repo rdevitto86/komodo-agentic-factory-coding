@@ -592,7 +592,7 @@ context:
   - 'On a start with Brief "", or a resume with resumeInput "", Session sends "/" on stdin instead of refusing. This launches a paid, turn-consuming session with a meaningless prompt and hides the conductor''s bug. The substitution also carries no comment. Return an error from Session when the prompt it would send is empty.'
 ```
 
-#### [TSK-05.2.10] internal/mount/claude/session.go:97 removeEnv keeps an entry whose value is empty [P: L] [REFINEMENT]
+#### [TSK-05.2.10] internal/mount/claude/session.go:97 removeEnv keeps an entry whose value is empty [P: L] [DONE]
 ```yaml
 files:
   - internal/mount/claude/session.go
@@ -1723,7 +1723,7 @@ context:
   - "branchFindings flags every positional that names a critical ref. `git branch -f feat/y main` resets feat/y onto main but is denied with 'git branch main: a critical ref is never moved by hand'. `git branch -c main feat/copy` is denied the same way. When only forcing (no -m or -c), judge only the first positional; for copy, judge only the destination."
 ```
 
-#### [TSK-06.2.8] internal/guard/guard.go:75 The commandFindings comment claims wrappers and substitutions hide nothing [P: L] [REFINEMENT]
+#### [TSK-06.2.8] internal/guard/guard.go:75 The commandFindings comment claims wrappers and substitutions hide nothing [P: L] [DONE]
 ```yaml
 files:
   - internal/guard/guard.go
@@ -1745,7 +1745,7 @@ context:
   - "No test covers `git push -fu`, `git commit -nm`, a critical-ref delete in unsafe mode, or `git branch -f feat/y main`. Every regression above passes go test and guard check. Row 67 repeats row 66's command and branch exactly. Add table rows for each of these forms and drop the duplicate push-to-main row."
 ```
 
-#### [TSK-06.2.10] internal/guard/hook.go:93 session_id builds a file path unchecked [P: L] [REFINEMENT]
+#### [TSK-06.2.10] internal/guard/hook.go:93 session_id builds a file path unchecked [P: L] [DONE]
 ```yaml
 files:
   - internal/guard/hook.go
