@@ -290,6 +290,27 @@ func TestCommentPostsTheBody(t *testing.T) {
 	}
 }
 
+func TestMergeRequestsAMergeCommitNeverASquash(t *testing.T) {
+	client, calls := fake(t, "")
+	if err := client.Merge("7"); err != nil {
+		t.Fatal(err)
+	}
+	got := (*calls)[0]
+	if !strings.Contains(got, "pr merge 7") || !strings.Contains(got, "--merge") {
+		t.Fatalf("call %q is missing pr merge 7 --merge", got)
+	}
+	if strings.Contains(got, "--squash") || strings.Contains(got, "--rebase") {
+		t.Fatalf("call %q must never squash or rebase", got)
+	}
+}
+
+func TestMergeReturnsAnAPIError(t *testing.T) {
+	client, _ := fakeErr(errors.New("not mergeable"))
+	if err := client.Merge("7"); err == nil {
+		t.Fatal("want an error")
+	}
+}
+
 // scriptGh writes an executable gh stand-in to a temp dir and puts it on PATH.
 func scriptGh(t *testing.T, body string) {
 	t.Helper()

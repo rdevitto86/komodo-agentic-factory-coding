@@ -11,7 +11,7 @@ Komodo's code assembly line: one static binary is the conveyor and devices, mark
 - **No MCP in 1.0.** MCPs land in a later hot-swap pass.
 - **No repo config is required;** the gate refuses only on no build check (decision 0021).
 - **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
-- **Versions go alpha, beta, release,** as README defines.
+- **Versions go alpha, beta, optional rc, stable,** as README defines.
 - **A pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`.**
 - **The prototype is history,** at tag `prototype-final`; nothing returns without a task.
 

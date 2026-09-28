@@ -262,8 +262,8 @@ func TestFullModePinsTheHostVersionAndEachRolesMachine(t *testing.T) {
 		t.Fatalf("mode = %q, host_version = %q", got.Mode, got.HostVersion)
 	}
 	builder, ok := got.Machine("builder")
-	if !ok || builder.Model != "mid" || builder.Effort != "medium" {
-		t.Fatalf("builder = %+v; the builder runs the standard tier at medium effort", builder)
+	if !ok || builder.Model != "big" || builder.Effort != "medium" {
+		t.Fatalf("builder = %+v; in full mode the builder runs the heavy tier at medium effort", builder)
 	}
 	correctness, ok := got.Machine("correctness")
 	if !ok || correctness.Model != "big" || correctness.Effort != "high" {
@@ -290,6 +290,13 @@ func TestNoMountInstalledStillLoadsTheFullModeRoles(t *testing.T) {
 	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", false, mount.Usage{}, false)}, false, false)
 	if got.Mode != "full" || got.Roles["scout"].Tier != "light" {
 		t.Fatalf("profile = %+v", got)
+	}
+}
+
+func TestBaseCarriesThePullRequestSizeCeilings(t *testing.T) {
+	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	if got.PRFiles != 20 || got.PRLinesPreferred != 1000 || got.PRLinesMax != 2000 {
+		t.Fatalf("pr size = %+v", got)
 	}
 }
 

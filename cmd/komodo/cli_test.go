@@ -25,6 +25,8 @@ type cliResult struct {
 // runCLI runs main in dir with args and stdin, capturing both streams and the exit code.
 func runCLI(t *testing.T, dir, stdin string, args ...string) cliResult {
 	t.Helper()
+	// A suite run inside a line session inherits the launcher's pid, which the nested-run guard refuses.
+	t.Setenv(line.LockEnv, "")
 	oldArgs, oldOut, oldErr, oldIn, oldExit := os.Args, os.Stdout, os.Stderr, os.Stdin, exit
 	wd, err := os.Getwd()
 	if err != nil {
@@ -122,6 +124,7 @@ func TestDispatchReachesEveryReadOnlyCommand(t *testing.T) {
 		{[]string{"guard", "check"}, 0, "0 wrong"},
 		{[]string{"metrics"}, 0, ""},
 		{[]string{"step", "--json"}, 0, "{"},
+		{[]string{"resume", "TG-90.2"}, 1, "has no saved state to resume"},
 		{[]string{"release", "check"}, 0, ""},
 		{[]string{"install", "--host", "nope"}, 1, `unknown host "nope"`},
 		{[]string{"install", "--host", "ollama"}, 1, "nothing to install"},

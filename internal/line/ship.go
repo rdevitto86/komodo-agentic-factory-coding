@@ -4,14 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"komodo/internal/backlog"
 	"komodo/internal/changelog"
 	"komodo/internal/git"
+	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/pr"
 )
@@ -46,7 +50,60 @@ type ShipHandoff struct {
 	AfterPublish string   `json:"after_publish,omitempty"`
 }
 
-// scrubbed reports whether the headless launcher stripped this process of every push credential.
+// dropped are the environment variables that would hand a process a push credential.
+var dropped = []string{
+	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK",
+	"GIT_CONFIG_PARAMETERS",
+}
+
+// forgeWords and secretWords are the name parts that together mark a push credential.
+var (
+	forgeWords  = map[string]bool{"GIT": true, "GITHUB": true, "GH": true, "GITLAB": true, "GL": true, "BITBUCKET": true}
+	secretWords = map[string]bool{"TOKEN": true, "PAT": true, "SECRET": true, "PASSWORD": true, "KEY": true}
+)
+
+// Scrub returns the environment with every push credential removed and git left unable to prompt.
+func Scrub(base []string) []string {
+	out := make([]string, 0, len(base)+6)
+	for _, entry := range base {
+		key, _, found := strings.Cut(entry, "=")
+		if !found || slices.Contains(dropped, key) || credentialShaped(key) || isOverride(key) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return append(out,
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=credential.helper",
+		"GIT_CONFIG_VALUE_0=",
+		"GIT_SSH_COMMAND=ssh -F "+os.DevNull+" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile="+os.DevNull,
+		"GH_CONFIG_DIR="+filepath.Join(os.TempDir(), "komodo-gh-noauth"),
+	)
+}
+
+// credentialShaped reports whether a key names a forge's secret, such as GITHUB_PAT or GITLAB_TOKEN,
+// so a push credential is dropped while the model host keeps its own login.
+func credentialShaped(key string) bool {
+	forge, secret := false, false
+	for _, part := range strings.Split(key, "_") {
+		forge = forge || forgeWords[part]
+		secret = secret || secretWords[part]
+	}
+	return forge && secret
+}
+
+// isOverride reports whether Scrub sets this key itself, so an inherited value never survives.
+func isOverride(key string) bool {
+	switch key {
+	case "GIT_TERMINAL_PROMPT", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0",
+		"GIT_CONFIG_VALUE_0", "GIT_SSH_COMMAND", "GH_CONFIG_DIR":
+		return true
+	}
+	return false
+}
+
+// scrubbed reports whether Scrub stripped this process of every push credential.
 func scrubbed() bool {
 	return os.Getenv("GIT_TERMINAL_PROMPT") == "0" &&
 		os.Getenv("GIT_CONFIG_KEY_0") == "credential.helper" &&
@@ -192,6 +249,10 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return nil, err
 	}
 	lines = ChangedLines(group, StartRef(group, plan.Base), plan.Branch)
+	files, added := ReviewSize(group, StartRef(group, plan.Base), plan.Branch)
+	if err := checkPRSize(plan.Group, files, added, plan.Profile.PRFiles, plan.Profile.PRLinesMax); err != nil {
+		return nil, err
+	}
 	if isToolkit(root) {
 		if err := gateCommand(group); err != nil {
 			return nil, fmt.Errorf("gate: %w", err)
@@ -203,6 +264,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		context.Why = groupWhy(string(data), plan.Group)
 	}
 	context.BlastRadius, context.BlastRadiusWhy = reviewBlast(root, plan.Group)
+	context.SizeNote = sizeNote(added, plan.Profile.PRLinesPreferred)
 	body := ReportBody(plan, result, waves, context)
 	wanted := []string{"@agent", scopeLabel(declared)}
 	if scrubbed() {
@@ -220,8 +282,9 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := PushFromWorktree(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
+	// The credential stays with the push; after_publish is repo-written, so it runs scrubbed.
 	if command := AfterPublishCommand(root, group); command != "" {
-		published := RunCommand(group, command)
+		published := RunCommandEnv(group, command, Scrub(os.Environ()))
 		result.Published = &published
 		if !published.OK() {
 			return result, fmt.Errorf("after_publish: %s", FailureText(published))
@@ -232,7 +295,15 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	}
 	url, err := client.Create(result.Base, plan.Branch, title, body, result.Draft)
 	if err != nil {
-		return result, err
+		// A re-ship after an escalation finds its pull request still open, and refreshes it instead.
+		open, viewErr := client.View(plan.Branch)
+		if viewErr != nil || open.State != "OPEN" {
+			return result, err
+		}
+		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
+			return result, err
+		}
+		url = open.URL
 	}
 	result.URL = url
 	result.Labels, result.Warnings = ApplyLabels(client, url, wanted)
@@ -319,6 +390,16 @@ func catchUp(group, base string) error {
 	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err == nil {
 		return nil
 	}
+	// A pushed branch is never rewritten, so it takes the base in a merge commit instead.
+	if branch, err := git.Run(group, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && onOrigin(group, strings.TrimSpace(branch)) {
+		if _, err := git.Run(group, "merge", "--autostash", "--no-edit", target); err != nil {
+			conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
+			_, _ = git.Run(group, "merge", "--abort")
+			return fmt.Errorf("%s moved and the group no longer merges it; resolve %s on the group branch, then ship",
+				target, strings.Join(strings.Fields(conflicts), ", "))
+		}
+		return nil
+	}
 	if _, err := git.Run(group, "rebase", "--autostash", target); err != nil {
 		conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
 		_, _ = git.Run(group, "rebase", "--abort")
@@ -345,6 +426,47 @@ func ChangedLines(dir, base, branch string) int {
 	return total
 }
 
+// ReviewSize counts the files a diff keeps and the lines it adds; deletions and the line's bookkeeping count nothing.
+func ReviewSize(dir, base, branch string) (files, added int) {
+	out, err := git.Run(dir, "diff", "--numstat", "--diff-filter=d", base+"..."+branch)
+	if err != nil {
+		return 0, 0
+	}
+	for _, row := range strings.Split(strings.TrimSpace(out), "\n") {
+		fields := strings.Fields(row)
+		if len(fields) < 3 || bookkeeping(fields[len(fields)-1]) {
+			continue
+		}
+		files++
+		if count, err := strconv.Atoi(fields[0]); err == nil {
+			added += count
+		}
+	}
+	return files, added
+}
+
+// bookkeeping reports a path Ship writes itself: task status, a group file, or a changelog fragment.
+func bookkeeping(path string) bool {
+	return path == "BACKLOG.md" || strings.HasPrefix(path, "docs/backlog/") || strings.HasPrefix(path, "changelog.d/")
+}
+
+// checkPRSize refuses a diff over either the kept-file or the added-line ceiling, naming a split as the fix.
+// A zero ceiling is unset and never refuses.
+func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
+	var over []string
+	if filesCap > 0 && files > filesCap {
+		over = append(over, fmt.Sprintf("%d file(s) (cap %d)", files, filesCap))
+	}
+	if linesMax > 0 && lines > linesMax {
+		over = append(over, fmt.Sprintf("%d added line(s) (cap %d)", lines, linesMax))
+	}
+	if len(over) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s's diff has %s; split it into smaller groups before shipping a pull request",
+		group, strings.Join(over, " and "))
+}
+
 // ChangelogLine is the one line a group adds under its version.
 func ChangelogLine(plan *Plan, result *ShipResult) string {
 	if plan.Version == "" {
@@ -358,13 +480,21 @@ func ChangelogLine(plan *Plan, result *ShipResult) string {
 }
 
 // PushFromWorktree pushes branch from worktree to the root's origin URL, past its refused pushurl, and sets its upstream.
+// It refuses a critical ref, since the push carries the forge credential and landing is the human's merge.
 func PushFromWorktree(root, worktree, branch string) error {
+	if guard.Load(root, root).IsCritical(branch) {
+		return fmt.Errorf("git push to origin %s: a critical ref; landing is the human's merge button", branch)
+	}
 	pushURL, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
 	}
 	ref := "refs/heads/" + branch
-	if _, err := git.Run(worktree, "push", pushURL, ref+":"+ref); err != nil {
+	// The hook runs here without the credential, so the push that holds it skips the hook.
+	if err := runPrePush(worktree, pushURL, ref); err != nil {
+		return fmt.Errorf("pre-push hook for %s: %s", branch, redactURL(err.Error(), pushURL))
+	}
+	if _, err := git.Run(worktree, "push", "--no-verify", pushURL, ref+":"+ref); err != nil {
 		return fmt.Errorf("git push to origin %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
 	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
@@ -372,6 +502,65 @@ func PushFromWorktree(root, worktree, branch string) error {
 		_, _ = git.Run(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
 	}
 	return nil
+}
+
+// zeroSHA is the object name a pre-push hook reads for a remote ref it cannot see.
+const zeroSHA = "0000000000000000000000000000000000000000"
+
+// runPrePush runs worktree's pre-push hook, if any, on ref as a push to url would, in hookEnv's environment.
+func runPrePush(worktree, url, ref string) error {
+	// A ref that does not resolve has nothing to gate; the push itself reports it.
+	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", ref)
+	if err != nil {
+		return nil
+	}
+	refs, err := os.CreateTemp("", "komodo-pre-push-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(refs.Name()) }()
+	_, err = fmt.Fprintf(refs, "%s %s %s %s\n", ref, local, ref, zeroSHA)
+	if closeErr := refs.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", url, url)
+	cmd.Dir = worktree
+	cmd.Env = hookEnv(os.Environ())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%v: %s", err, Clip(string(out), 4000, "pre-push"))
+	}
+	return nil
+}
+
+// forgeSecrets are the variables that carry a forge credential by name.
+var forgeSecrets = []string{
+	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK", "GIT_CONFIG_PARAMETERS",
+}
+
+// hookEnv is env with every forge credential dropped, and git's credential helper and prompt switched off.
+func hookEnv(env []string) []string {
+	overrides := map[string]string{
+		"GIT_TERMINAL_PROMPT": "0",
+		"GIT_CONFIG_COUNT":    "1",
+		"GIT_CONFIG_KEY_0":    "credential.helper",
+		"GIT_CONFIG_VALUE_0":  "",
+		"GH_CONFIG_DIR":       filepath.Join(os.TempDir(), "komodo-gh-noauth"),
+	}
+	out := make([]string, 0, len(env)+len(overrides))
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, set := overrides[key]; set || contains(forgeSecrets, key) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	for key, value := range overrides {
+		out = append(out, key+"="+value)
+	}
+	return out
 }
 
 // credentialRe matches the user and secret a URL can carry before its host.

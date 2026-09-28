@@ -19,7 +19,7 @@ func init() {
 
 // denyPayload returns nil: this host reads a denial from the exit code and stderr, not a
 // JSON payload on stdout.
-func denyPayload(string) []byte {
+func denyPayload(string, bool) []byte {
 	return nil
 }
 

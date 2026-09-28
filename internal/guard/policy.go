@@ -1,4 +1,4 @@
-// Package guard is the one agent hook: four denials and unlimited freedom inside a worktree.
+// Package guard is the one agent hook: five denials and unlimited freedom inside a worktree.
 package guard
 
 import (
@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"komodo/internal/git"
 	"komodo/internal/mount"
 	"komodo/internal/toolkit"
 )
@@ -66,7 +67,7 @@ func loosenMode(current, proposed Mode) Mode {
 // DefaultPolicy is what the guard denies when no policy file can be read.
 func DefaultPolicy() Policy {
 	paths := append([]string{
-		".komodo/policy.json", "komodo/policy.json",
+		".komodo/policy.json",
 		"~/.komodo/**", "**/.git/config", "**/.git/hooks/**", "bin/**",
 	}, mount.ConfigPaths()...)
 	paths = append(paths, mount.GuardConfigPaths()...)
@@ -184,7 +185,10 @@ func union(base, extra []string) []string {
 	return base
 }
 
-// IsCritical reports whether a ref is one the guard protects.
+// epicBranchRe matches an epic branch, feat/ plus a version exactly (decision 0028).
+var epicBranchRe = regexp.MustCompile(`^feat/\d+\.\d+\.\d+`)
+
+// IsCritical reports whether a ref is one the guard protects from every session, model or conductor.
 func (p Policy) IsCritical(ref string) bool {
 	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "origin/")
 	for _, pattern := range p.CriticalRefs {
@@ -193,6 +197,13 @@ func (p Policy) IsCritical(ref string) bool {
 		}
 	}
 	return false
+}
+
+// IsEpicBranch reports whether a ref is an epic branch (decision 0028), which only a model
+// session is refused; the conductor still pushes to and merges it, so IsCritical excludes it.
+func IsEpicBranch(ref string) bool {
+	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "origin/")
+	return epicBranchRe.MatchString(ref)
 }
 
 // matchRef compares a ref to one pattern, honouring a single trailing star.
@@ -218,8 +229,22 @@ func foldsCase() bool {
 	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 }
 
-// IsConfigPath reports whether a path is one the hosts or the toolkit own, folding case on a
-// platform whose disk does, so Bin/komodo-darwin-arm64 matches bin/**.
+// RoleEnv is the environment variable a line session's role arrives in; the orchestrator sets none.
+const RoleEnv = "KOMODO_ROLE"
+
+// LineRefusedPaths are refused to every line role, but not the orchestrator (REQ-41).
+var LineRefusedPaths = []string{"docs/prd.md", "eval/**", "komodo/policy.json"}
+
+// BranchOnlyPaths are the guard's own policy, which the orchestrator edits only off a critical ref.
+var BranchOnlyPaths = []string{"komodo/policy.json"}
+
+// IsLineSession reports whether this process runs as a line role, not the orchestrator.
+func IsLineSession() bool {
+	return os.Getenv(RoleEnv) != ""
+}
+
+// IsConfigPath reports whether a path is one the hosts or the toolkit own, one of LineRefusedPaths for a line
+// role, or one of BranchOnlyPaths on a critical ref; case folds as the disk does, so Bin/x matches bin/**.
 func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	normal := strings.ReplaceAll(path, "\\", "/")
 	home, _ := os.UserHomeDir()
@@ -233,7 +258,29 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	if foldsCase() {
 		compareNormal, compareRelative = strings.ToLower(normal), strings.ToLower(relative)
 	}
-	for _, pattern := range p.ConfigPaths {
+	if matchesAnyPattern(p.ConfigPaths, home, compareNormal, compareRelative) {
+		return true
+	}
+	if IsLineSession() && matchesAnyPattern(LineRefusedPaths, home, compareNormal, compareRelative) {
+		return true
+	}
+	return matchesAnyPattern(BranchOnlyPaths, home, compareNormal, compareRelative) && !p.onFeatureBranch(repoRoot)
+}
+
+// onFeatureBranch reports whether repoRoot has a branch checked out that is not a critical ref;
+// symbolic-ref names a branch with no commit yet, and a detached HEAD names none.
+func (p Policy) onFeatureBranch(repoRoot string) bool {
+	if repoRoot == "" {
+		return false
+	}
+	branch := git.Or(repoRoot, "symbolic-ref", "--short", "HEAD")
+	return branch != "" && !p.IsCritical(branch)
+}
+
+// matchesAnyPattern reports whether normal or relative matches any pattern, expanding a leading
+// ~/ against home and folding case the way IsConfigPath compares its own two forms.
+func matchesAnyPattern(patterns []string, home, normal, relative string) bool {
+	for _, pattern := range patterns {
 		expanded := pattern
 		if strings.HasPrefix(pattern, "~/") && home != "" {
 			expanded = filepath.ToSlash(filepath.Join(home, pattern[2:]))
@@ -241,7 +288,7 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 		if foldsCase() {
 			expanded = strings.ToLower(expanded)
 		}
-		if matchPath(expanded, compareNormal) || matchPath(expanded, compareRelative) {
+		if matchPath(expanded, normal) || matchPath(expanded, relative) {
 			return true
 		}
 	}

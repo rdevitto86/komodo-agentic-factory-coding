@@ -27,95 +27,6 @@ func env(list []string, key string) (string, bool) {
 	return "", false
 }
 
-func TestScrubDropsEveryPushCredential(t *testing.T) {
-	base := []string{
-		"GH_TOKEN=secret", "GITHUB_TOKEN=secret", "GH_ENTERPRISE_TOKEN=secret",
-		"GIT_ASKPASS=/bin/askpass", "SSH_AUTH_SOCK=/tmp/agent.sock", "PATH=/usr/bin",
-	}
-	scrubbed := Scrub(base)
-	for _, key := range dropped {
-		if _, found := env(scrubbed, key); found {
-			t.Fatalf("%s survived the scrub", key)
-		}
-	}
-	if path, _ := env(scrubbed, "PATH"); path != "/usr/bin" {
-		t.Fatalf("PATH = %q, want the inherited value", path)
-	}
-}
-
-func TestScrubLeavesGitUnableToPromptOrAuthenticate(t *testing.T) {
-	scrubbed := Scrub([]string{"PATH=/usr/bin"})
-	want := map[string]string{
-		"GIT_TERMINAL_PROMPT": "0",
-		"GIT_CONFIG_COUNT":    "1",
-		"GIT_CONFIG_KEY_0":    "credential.helper",
-		"GIT_CONFIG_VALUE_0":  "",
-	}
-	for key, value := range want {
-		if got, found := env(scrubbed, key); !found || got != value {
-			t.Fatalf("%s = %q, %v; want %q", key, got, found, value)
-		}
-	}
-	if ssh, _ := env(scrubbed, "GIT_SSH_COMMAND"); !strings.Contains(ssh, "IdentitiesOnly=yes") {
-		t.Fatalf("GIT_SSH_COMMAND = %q", ssh)
-	}
-}
-
-func TestScrubIgnoresAnIdentityFileConfiguredOutsideTheEnvironment(t *testing.T) {
-	scrubbed := Scrub([]string{"PATH=/usr/bin"})
-	ssh, _ := env(scrubbed, "GIT_SSH_COMMAND")
-	if !strings.Contains(ssh, "-F "+os.DevNull) {
-		t.Fatalf("GIT_SSH_COMMAND = %q, want -F %s so ~/.ssh/config never applies", ssh, os.DevNull)
-	}
-}
-
-func TestScrubDropsATokenByItsNameShapeNotJustAnExactSpelling(t *testing.T) {
-	base := []string{
-		"GITHUB_PAT=secret", "HOMEBREW_GITHUB_API_TOKEN=secret", "GIT_CONFIG_PARAMETERS=secret",
-		"PATH=/usr/bin",
-	}
-	scrubbed := Scrub(base)
-	for _, key := range []string{"GITHUB_PAT", "HOMEBREW_GITHUB_API_TOKEN", "GIT_CONFIG_PARAMETERS"} {
-		if _, found := env(scrubbed, key); found {
-			t.Fatalf("%s survived the scrub", key)
-		}
-	}
-}
-
-func TestScrubKeepsTheModelHostsOwnLoginAndDropsEveryForgeSecret(t *testing.T) {
-	base := []string{"MODELHOST_OAUTH_TOKEN=login", "PATH=/usr/bin", "GITLAB_TOKEN=secret", "BITBUCKET_PASSWORD=secret"}
-	scrubbed := Scrub(base)
-	for _, key := range []string{"MODELHOST_OAUTH_TOKEN", "PATH"} {
-		if _, found := env(scrubbed, key); !found {
-			t.Fatalf("%s was scrubbed; only a forge's push credential may be", key)
-		}
-	}
-	for _, key := range []string{"GITLAB_TOKEN", "BITBUCKET_PASSWORD"} {
-		if _, found := env(scrubbed, key); found {
-			t.Fatalf("%s survived the scrub", key)
-		}
-	}
-}
-
-func TestScrubDoesNotLetAnInheritedOverrideSurvive(t *testing.T) {
-	scrubbed := Scrub([]string{"GIT_TERMINAL_PROMPT=1", "GIT_SSH_COMMAND=ssh -i /home/me/.ssh/id_ed25519"})
-	if got, _ := env(scrubbed, "GIT_TERMINAL_PROMPT"); got != "0" {
-		t.Fatalf("GIT_TERMINAL_PROMPT = %q, want the launcher's own value", got)
-	}
-	if ssh, _ := env(scrubbed, "GIT_SSH_COMMAND"); strings.Contains(ssh, "id_ed25519") {
-		t.Fatalf("an inherited SSH identity survived: %q", ssh)
-	}
-	count := 0
-	for _, entry := range scrubbed {
-		if strings.HasPrefix(entry, "GIT_SSH_COMMAND=") {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Fatalf("GIT_SSH_COMMAND appears %d times", count)
-	}
-}
-
 func TestTheRunsPathFindsKomodoAsTheRunningBinaryAndReplacesAStaleLink(t *testing.T) {
 	root := t.TempDir()
 	executable := filepath.Join(t.TempDir(), "komodo-built")
@@ -289,6 +200,39 @@ func writeHandoff(t *testing.T, root string, handoff line.ShipHandoff) {
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLaunchTargetSkipsFinishShipWithNoShip(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("no /bin/sh on this machine")
+	}
+	saved := mount.Snapshot()
+	defer mount.Restore(saved)
+	mount.Register(mount.Host{
+		Name:      "codex",
+		Installed: func(string) bool { return true },
+		Headless: func(skill, target string) (string, []string) {
+			return "/bin/sh", []string{"-c", "exit 0"}
+		},
+	})
+	root := t.TempDir()
+	writeHandoff(t, root, line.ShipHandoff{Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b"})
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		t.Fatalf("gh must not run with --no-ship: %v", args)
+		return "", nil
+	}}
+	code, url, err := launchTarget(Options{
+		Root: root, Target: "TG-01.1", NoShip: true, PR: client, Env: []string{"PATH=/usr/bin:/bin"},
+	})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v", code, err)
+	}
+	if url != "" {
+		t.Fatalf("url = %q, want none with --no-ship", url)
+	}
+	if _, err := os.Stat(line.HandoffPath(root, "TG-01.1")); err != nil {
+		t.Fatalf("ship.json was consumed with --no-ship: %v", err)
 	}
 }
 
@@ -638,7 +582,7 @@ func TestDrainParksAGroupThatEndsUnshippedAndRunsTheNext(t *testing.T) {
 
 func TestDrainDryRunListsTheGroupsInOrderAndLaunchesNothing(t *testing.T) {
 	root := drainRepo(t)
-	stacked := drainText + "\n### [TG-07.3] Third\n```yaml\ntype: feat\nversion: 1.2.0\nbase: feat/second\n```\n\n" +
+	stacked := drainText + "\n### [TG-07.3] Third\n```yaml\ntype: feat\nversion: 1.2.0\nbase: feat/TG-07.2-second\n```\n\n" +
 		"#### [TSK-07.3.1] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\ndone_when: [\"true\"]\n```\n\n" +
 		"### [TG-07.4] Fourth\n```yaml\ntype: feat\nversion: 1.3.0\nbase: feat/missing\n```\n\n" +
 		"#### [TSK-07.4.1] Four [P: C] [READY]\n```yaml\nfiles: [d/four.go]\ndone_when: [\"true\"]\n```\n"
@@ -764,7 +708,7 @@ func TestDrainPutsARebuiltBinaryOnThePathForTheNextGroup(t *testing.T) {
 	}
 }
 
-func TestDrainCallsSyncBeforeEachGroup(t *testing.T) {
+func TestDrainSyncsOnceBeforeAndOnceAfterTheWholeRunNeverBetweenGroups(t *testing.T) {
 	root := drainRepo(t)
 	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
 	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
@@ -778,10 +722,50 @@ func TestDrainCallsSyncBeforeEachGroup(t *testing.T) {
 		t.Fatalf("launch failed: code %d, err %v", code, err)
 	}
 	output := out.String()
-	if !strings.Contains(output, "root:") {
-		t.Fatalf("sync output missing root sync; output:\n%s", output)
+	if got := strings.Count(output, "root: already current"); got != 2 {
+		t.Fatalf("root sync ran %d times, want exactly 2: once before the run and once after; output:\n%s", got, output)
 	}
 	if !strings.Contains(output, "TG-07.1 shipped") || !strings.Contains(output, "TG-07.2 shipped") {
 		t.Fatalf("both groups should have shipped; output:\n%s", output)
+	}
+}
+
+// staleMarkerScript plays the first group like fakeScript, but also overwrites the build marker mid-run.
+const staleMarkerScript = `echo "$1" >> .komodo/fake/launched
+cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
+mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json" 2>/dev/null
+if [ "$1" = "TG-07.1" ]; then echo stale > bin/.built-from; fi
+exit 0`
+
+func TestAStaleBuildMarkerDuringARunChangesNothingUntilTheRunEnds(t *testing.T) {
+	root := drainRepo(t)
+	head := gitOut(t, root, "rev-parse", "HEAD")
+	toolkitCheckout(t, root, head)
+	builds, installs := fakeBuild(t)
+	host, _ := mount.Get("fakehost-drain")
+	host.Headless = func(_, target string) (string, []string) {
+		return "/bin/sh", []string{"-c", staleMarkerScript, "sh", target}
+	}
+	mount.Register(host)
+	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
+	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
+	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	var out bytes.Buffer
+	code, err := Launch(Options{
+		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
+		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
+	})
+	if code != 0 || err != nil {
+		t.Fatalf("launch failed: code %d, err %v, out %s", code, err, out.String())
+	}
+	if *builds != 1 || *installs != 1 {
+		t.Fatalf("builds = %d, installs = %d; a marker gone stale mid-run rebuilds once, only after the run ends", *builds, *installs)
+	}
+	recorded, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(recorded)) != head {
+		t.Fatalf("marker = %q, want %q; the run's own end-of-run sync must fix it", recorded, head)
 	}
 }

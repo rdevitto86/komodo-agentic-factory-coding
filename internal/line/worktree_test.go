@@ -446,6 +446,27 @@ func TestTwoConcurrentCutsOfOverlappingGroupsLetExactlyOneThrough(t *testing.T) 
 	}
 }
 
+func TestCuttingASecondGroupKeepsAShippedGroupALiveProcessStillDrives(t *testing.T) {
+	root := cutRepo(t, twoGroupBacklog)
+	if _, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	Stamp(root, ledger.Entry{Group: "TG-15.1", Station: "ship", Outcome: "done"})
+	held, err := json.Marshal(RunLock{PID: os.Getppid(), Run: "TG-15.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(LockPath(root, "TG-15.1"), held, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Start(root, freshPlan(t, root, "TG-15.2"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(RunDir(root, "TG-15.1"), "run.json")); err != nil {
+		t.Fatalf("TG-15.1 lost its run directory while a live process held its lock: %v", err)
+	}
+}
+
 func TestCuttingASecondGroupKeepsTheFirstGroupsRunAndLedger(t *testing.T) {
 	root := cutRepo(t, twoGroupBacklog)
 	if _, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false); err != nil {

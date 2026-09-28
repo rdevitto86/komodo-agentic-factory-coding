@@ -416,7 +416,7 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 ## 0023. V1 restarts at alpha and moves through beta to an LTS release
 
-**Status:** Accepted, 2026-09-25. Amended by 0024.
+**Status:** Accepted, 2026-09-25. Amended by 0024 and 0029.
 
 **Context.** The owner wants a fresh start: V1 alpha, beta, then LTS. Tags `v1.0.0-alpha.1` to `.4` exist from the prototype. `1.0.0-beta.1` is a changelog heading but was never tagged.
 
@@ -525,3 +525,104 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 - **A builder sees only its plugin's skills and the host's built-ins.**
 - **The worktree's `CLAUDE.md` no longer loads in a line session;** the brief is the only source of repo rules.
+
+## 0028. An epic branch gathers its groups, and only a person merges it into `main`
+
+**Status:** Accepted, 2026-09-26. Amended by 0029 and 0030.
+
+**Context.** REQ-13 based every group's PR on `main` or a dependency's branch, so `main` saw one PR per group, each reviewed at the size of a single task group. Evidence 13 already showed a stacked side branch drifting 39 commits from `main`. The owner wants review to converge once, at the epic, with a bound on how much a person reads before merging to `main`.
+
+**Decision.**
+
+- **Each epic has a branch named `feat/v<its version>`,** cut from `main` and opened as a draft PR to `main`.
+- **A group branch cuts from its epic's branch, or stacks on the branch of a group it depends on;** its PR targets that same base.
+- **The conductor merges a reviewed, checked group PR into its epic branch.** Only a person merges an epic PR into `main`.
+- **A group PR holds at most 20 files and 2,000 changed lines, 1,000 preferred; an epic PR has no cap,** since it gathers many group PRs.
+- **A group's version must equal its epic's exactly,** since the epic's version names the branch.
+- **Naming.** Only an epic branch is named by version, strictly `feat/v<version>`. A group branch and PR keep their own unique names, each naming its group, so every change traces to its task group.
+
+**Alternatives.**
+
+- **Every group PR targets `main` directly.** A person reviewed and merged one PR per group, at whatever size a group happened to reach, with no single point where an epic's whole change was visible.
+
+**Consequences.**
+
+- **`main` gains one PR per epic instead of one per group;** a person reviews and merges at the epic's final state.
+- **`komodo lint` rejects a group whose version differs from its epic's.**
+- **REQ-13, and system-design's group-cards and shipping sections, change to match.**
+
+## 0029. The phases are alpha, beta, rc and stable; an epic branch is `feat/<version>`
+
+**Status:** Accepted, 2026-09-26. Amends 0023 and 0028.
+
+**Context.** TSK-05.8.2 dropped the leading `v` from an epic branch's version, so `feat/v<version>` in decision 0028 no longer matches the code. Decision 0023 named only alpha, beta and an LTS release, with no place for a release candidate a team may want between them.
+
+**Decision.**
+
+- **The phases are alpha, beta, rc and stable.** Rc is optional and reserved: a release may go straight from beta to stable, such as `1.0.0-beta.2` to `1.0.0`. Nothing requires, gates, or checks for an rc; V1 takes the beta-to-stable path.
+- **An epic branch is named `feat/<its version>`,** with no `v`, matching the version string a group's `version:` field carries.
+
+**Alternatives.**
+
+- **Require an rc before every stable release.** Adds a gate no V1 release needs.
+- **Keep `feat/v<version>`.** Leaves the branch name out of step with TSK-05.8.2's code.
+
+**Consequences.**
+
+- **README's Versions section gains an rc bullet, marked optional, and renames Release to Stable.**
+- **`komodo/rules/backlog.md`, the backlog skill, and the SDLC standard give the four phases and branch examples with no `v`.**
+- **The template's example group carries a phase version.**
+
+## 0030. A group PR's cap counts kept files and added lines, never deletions
+
+**Status:** Accepted, 2026-09-26. Amends 0028.
+
+**Context.** TG-06.2 cuts the guard to five rules: 24 files, 531 lines added and 4,388 deleted. Decision 0028's cap summed both, so it refused a change that is mostly removal. A reviewer reads an added line; a deleted file or line costs almost nothing to read.
+
+**Decision.**
+
+- **The file cap counts files a diff keeps;** a deleted file is free.
+- **The line cap and the preferred note count added lines only.**
+- **The ledger row still stamps every changed line,** so the true size stays on record.
+
+**Alternatives.**
+
+- **Keep the cap on every changed line.** Forces a mass deletion to split into parts that each leave the code broken.
+- **Let a group declare its own cap.** A builder could raise the cap it is judged by.
+
+**Consequences.**
+
+- **A mass deletion ships as one PR,** so an unbounded removal passes the cap; review still reads its file list.
+- **The SDLC standard states the cap as kept files and added lines.**
+
+## 0031. In full mode the builder runs the heavy tier at medium effort
+
+**Status:** Accepted, 2026-09-26.
+
+**Context.** TG-06.5's standard-tier build drew four high review findings, and TG-06.2 took three repair rounds. The owner's plan has room for heavy-tier builders.
+
+**Decision.**
+
+- **Full mode's builder, and so every repair, runs the heavy tier at medium effort.**
+- **Economy mode keeps the standard tier,** since a Pro plan has no room for it.
+
+**Consequences.**
+
+- **A build spends more of the plan's window per session,** traded for fewer review and repair rounds.
+
+## 0032. A process tree past 256 processes or 8 GB is killed, and a session's temp root sits outside every repo
+
+**Status:** Accepted, 2026-09-27.
+
+**Context.** TG-06.3's hook tests made a temp group with no `.git`, so a walk up from it reached the real worktree and ran the group's own checks. Those checks reran the tests: a fork bomb of 900 processes that exhausted a 24 GB machine. Nothing bounded a tree, and processes outlived the session that started them.
+
+**Decision.**
+
+- **Every station command and model session runs under a watcher:** past 256 live processes or 8 GB resident, it kills the whole tree and names the breach.
+- **Nothing outlives what started it:** when a command or session ends, its group and every process it was seen to own are killed.
+- **A session's temp root is a private directory outside every repo,** set through the host's temp variable, so no test can walk up into the real worktree.
+
+**Consequences.**
+
+- **A runaway becomes a failed check or a failed session,** never a machine that stops answering.
+- **A station can no longer leave a daemon running.**

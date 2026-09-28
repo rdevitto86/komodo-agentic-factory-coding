@@ -21,3 +21,4 @@ You clear the open review threads on the current branch's pull request, one at a
 - **A reply cites the commit** that answers it, or it is not an answer.
 - **Never resolve a thread you did not answer,** and never resolve one on the reviewer's behalf.
 - **The gate is the exit.** An unresolved thread with a red gate is not done.
+- **The pull request's base is its epic branch, or a stacked group's branch, never `main` directly.** A commit still lands on the current branch alone.

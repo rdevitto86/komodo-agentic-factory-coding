@@ -1,10 +1,16 @@
 package claude
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 
+	"komodo/internal/guard"
 	"komodo/internal/mount"
 )
 
@@ -33,16 +39,25 @@ func Session(
 	pluginDir := filepath.Join(root, Dir, "plugins", req.Role)
 	argv = append(argv, "--plugin-dir", pluginDir)
 
-	settingsPath := filepath.Join(root, Dir, "settings.json")
-	argv = append(argv, "--settings", settingsPath)
-
-	if len(req.Tools) > 0 {
-		argv = append(argv, "--tools", toolNames(req.Tools))
+	settings := filepath.Join(root, Dir, "settings.json")
+	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
+		settings = withSandbox(settings, sandbox)
 	}
+	argv = append(argv, "--settings", settings)
+
+	// With dontAsk, only allowed calls run and a denied one never does, so these rules bound the role.
+	allow, deny := rolePermissions(root, worktree, req)
+	if verbs := roleTools(root, req); len(verbs) > 0 {
+		argv = append(argv, "--tools", toolNames(verbs), "--allowedTools", strings.Join(allow, ", "))
+	}
+	argv = append(argv, "--disallowedTools", strings.Join(deny, ", "))
 
 	argv = append(argv, "--permission-mode", "dontAsk")
 	argv = append(argv, "--model", model)
-	argv = append(argv, "--effort", effort)
+	// An unset tier effort leaves the host's default, rather than passing an empty value it warns on.
+	if effort != "" {
+		argv = append(argv, "--effort", effort)
+	}
 	argv = append(argv, "--strict-mcp-config")
 	argv = append(argv, "--output-format", "stream-json")
 	argv = append(argv, "--verbose")
@@ -56,19 +71,57 @@ func Session(
 		argv = append(argv, "--max-budget-usd", strconv.FormatFloat(maxBudgetUSD, 'f', 2, 64))
 	}
 
-	env = os.Environ()
+	// The session starts from a scrubbed environment, so no forge credential reaches it.
+	env = scrubEnv(os.Environ())
 	env = removeEnv(env, "CLAUDE_CONFIG_DIR")
 	env = setEnv(env, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP", "3")
 	env = setEnv(env, "CLAUDE_CODE_MAX_TURNS", strconv.Itoa(maxTurns))
 	env = setEnv(env, "DISABLE_AUTOUPDATER", "1")
-	env = setEnv(env, "GOCACHE", filepath.Join(worktree, ".gocache"))
-	env = setEnv(env, "GOTMPDIR", filepath.Join(worktree, ".gotmpdir"))
-	env = setEnv(env, "GOPATH", filepath.Join(worktree, ".gopath"))
-	env = setEnv(env, "GOMODCACHE", filepath.Join(worktree, ".gopath", "pkg", "mod"))
+	// The guard hook inherits this, and refuses a line role what it leaves the orchestrator.
+	env = setEnv(env, guard.RoleEnv, req.Role)
+	// Go's caches live under the worktree's .komodo, which the sandbox allows and a ship never stages.
+	goDir := filepath.Join(worktree, ".komodo", "go")
+	env = setEnv(env, "GOCACHE", filepath.Join(goDir, "cache"))
+	env = setEnv(env, "GOTMPDIR", filepath.Join(goDir, "tmp"))
+	env = setEnv(env, "GOPATH", filepath.Join(goDir, "path"))
+	env = setEnv(env, "GOMODCACHE", filepath.Join(goDir, "path", "pkg", "mod"))
 	env = setEnv(env, "GOPROXY", "off")
 	env = setEnv(env, "GOFLAGS", "-modcacherw")
+	env = setEnv(env, "CLAUDE_CODE_TMPDIR", SessionTmp(worktree))
 
 	return argv, env, prompt
+}
+
+// withSandbox returns the settings file at path merged with the inline sandbox settings as one inline object,
+// since the host keeps only the last --settings it is given; an unreadable file leaves the sandbox alone.
+func withSandbox(path, sandbox string) string {
+	merged := map[string]json.RawMessage{}
+	if data, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(data, &merged)
+	}
+	var overrides map[string]json.RawMessage
+	if json.Unmarshal([]byte(sandbox), &overrides) != nil {
+		return sandbox
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+	data, err := json.Marshal(merged)
+	if err != nil {
+		return sandbox
+	}
+	return string(data)
+}
+
+// SessionTmp is the private temp root a worktree's sessions get, outside any repo, so a test walking up
+// from a temp dir for .git or a backlog never finds the real worktree.
+func SessionTmp(worktree string) string {
+	sum := sha256.Sum256([]byte(worktree))
+	base := os.TempDir()
+	if rel, err := filepath.Rel(worktree, base); err == nil && !strings.HasPrefix(rel, "..") {
+		base = "/tmp"
+	}
+	return filepath.Join(base, "komodo-"+hex.EncodeToString(sum[:6]))
 }
 
 // toolNames maps Komodo verbs to this host's tool names for the --tools flag.
@@ -94,7 +147,7 @@ func removeEnv(env []string, name string) []string {
 	var out []string
 	prefix := name + "="
 	for _, entry := range env {
-		if len(entry) <= len(prefix) || entry[:len(prefix)] != prefix {
+		if !strings.HasPrefix(entry, prefix) {
 			out = append(out, entry)
 		}
 	}

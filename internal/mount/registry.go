@@ -27,15 +27,19 @@ type Host struct {
 	Installed   func(root string) bool
 	Tiers       func(plan string, ollama bool) Tiers
 	Probe       func() (Usage, bool)
-	Usage       func(root, task string, since, until time.Time) (TaskUsage, bool)
-	Headless    func(skill, target string) (string, []string)
-	EventsPath  func(root, task string) string
+	// LoggedIn reports whether the host CLI holds a login, by subscription or key; nil skips the check.
+	LoggedIn   func() (bool, error)
+	Usage      func(root, task string, since, until time.Time) (TaskUsage, bool)
+	Headless   func(skill, target string) (string, []string)
+	EventsPath func(root, task string) string
 	// Leftovers names what a retired setup left in the host's user settings, such as a second agent hook.
 	Leftovers func() []string
 	// ReviewerWhy says where review lands and why, when the overlay opts the reviewer onto the local machine.
 	ReviewerWhy func(plan string) string
 	// Deferred, when set, says why the mount is kept but unusable: nothing installs, selects, or renders it.
 	Deferred string
+	// Contract builds this mount's session driver for one worktree; nil when the mount cannot drive the conductor.
+	Contract func(root, worktree string) Contract
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.
@@ -335,7 +339,8 @@ type GuardTools struct {
 	ConfigPaths    []string
 	// PrivatePatterns are regular expressions for text the host considers private, such as a session link.
 	PrivatePatterns []string
-	Deny            func(reason string) []byte
+	// Deny renders the host's denial payload; blocked marks a refusal that must also stop the session.
+	Deny func(reason string, blocked bool) []byte
 }
 
 var (

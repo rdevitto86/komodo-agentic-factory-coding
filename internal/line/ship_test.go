@@ -2,10 +2,12 @@ package line
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +64,11 @@ func saveReview(t *testing.T, root, groupID, result string) {
 	if err := os.WriteFile(review, []byte(result), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Commit stamps are whole seconds, so a test's later commit must never outdate its review by the clock alone.
+	ahead := time.Now().Add(time.Minute)
+	if err := os.Chtimes(review, ahead, ahead); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // runGit runs one git command in dir, failing the test on error.
@@ -116,6 +123,63 @@ func TestShipGroupRunsTheAfterPublishCommand(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(group, "published.txt")); err != nil {
 		t.Fatalf("after_publish did not run: %v", err)
+	}
+}
+
+// installPrePush writes a pre-push hook into group that records its environment and stdin, then exits with code.
+func installPrePush(t *testing.T, group string, code int) (envLog string) {
+	t.Helper()
+	envLog = filepath.Join(t.TempDir(), "hook.env")
+	hook := fmt.Sprintf("#!/bin/sh\nenv > %q\ncat >> %q\nexit %d\n", envLog, envLog, code)
+	path := filepath.Join(group, ".git", "hooks", "pre-push")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return envLog
+}
+
+func TestPushRunsThePrePushHookWithoutTheForgeCredential(t *testing.T) {
+	root, group := shipRepo(t)
+	envLog := installPrePush(t, group, 0)
+	t.Setenv("GH_TOKEN", "secret-token")
+	t.Setenv("GITHUB_TOKEN", "secret-token")
+	if err := PushFromWorktree(root, group, "feat/a-group"); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := os.ReadFile(envLog)
+	if err != nil {
+		t.Fatalf("the pre-push hook never ran: %v", err)
+	}
+	if strings.Contains(string(seen), "secret-token") {
+		t.Fatalf("the pre-push hook saw the forge credential:\n%s", seen)
+	}
+	if !strings.Contains(string(seen), "refs/heads/feat/a-group ") {
+		t.Fatalf("the pre-push hook did not read the pushed ref on stdin:\n%s", seen)
+	}
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(bare, "rev-parse", "--verify", "refs/heads/feat/a-group"); err != nil {
+		t.Fatal("the branch did not land after the hook passed")
+	}
+}
+
+func TestAFailingPrePushHookStopsThePush(t *testing.T) {
+	root, group := shipRepo(t)
+	installPrePush(t, group, 1)
+	if err := PushFromWorktree(root, group, "feat/a-group"); err == nil || !strings.Contains(err.Error(), "pre-push") {
+		t.Fatalf("err = %v; a refusing pre-push hook must stop the push", err)
+	}
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(bare, "rev-parse", "--verify", "refs/heads/feat/a-group"); err == nil {
+		t.Fatal("the branch landed although its pre-push hook refused")
 	}
 }
 
@@ -536,9 +600,10 @@ func TestShipReadsStatusFromTheRootCloseWrites(t *testing.T) {
 	runGit(t, "", "init", "--bare", bare)
 	runGit(t, root, "init")
 	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, worktree, "checkout", "-q", "-b", "feat/a-group")
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
-		Base: "main", Branch: "main", Worktree: worktree,
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
 	}
 	saveReview(t, root, "TG-12.1", `{"findings":[]}`)
@@ -565,9 +630,10 @@ func TestShipRendersTheBodyAfterBlockedIsKnown(t *testing.T) {
 	runGit(t, "", "init", "--bare", bare)
 	runGit(t, root, "init")
 	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, worktree, "checkout", "-q", "-b", "feat/a-group")
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
-		Base: "main", Branch: "main", Worktree: worktree,
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
 	}
 	var calls []string
@@ -605,6 +671,39 @@ func TestShipsOwnCommitDoesNotRestaleTheReview(t *testing.T) {
 	commitDated(t, worktree, "CHANGELOG.md", "# Changelog\n", message, now)
 	if !reviewed(root, plan) {
 		t.Fatal("ship's own commit must not restale a review that already passed it")
+	}
+}
+
+func TestABaseThatMovesDoesNotRestaleTheReview(t *testing.T) {
+	worktree := gitRepo(t)
+	now := time.Now()
+	commitDated(t, worktree, "a/one.go", "package a\n", "seed", now.Add(-3*time.Hour))
+	runGit(t, worktree, "branch", "epic")
+	commitDated(t, worktree, "a/two.go", "package a\n", "the group's work", now.Add(-2*time.Hour))
+	root := t.TempDir()
+	plan := &Plan{Group: "TG-13.1", Title: "A group", Type: "feat", Base: "epic", Worktree: worktree}
+	saveReview(t, root, plan.Group, `{"findings":[]}`)
+	reviewTime := now.Add(-time.Hour)
+	if err := os.Chtimes(ResultPath(root, "TG-13.1-review"), reviewTime, reviewTime); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "checkout", "-q", "epic")
+	commitDated(t, worktree, "b/three.go", "package b\n", "the epic moved", now)
+	runGit(t, worktree, "checkout", "-q", "-")
+	runGit(t, worktree, "rebase", "-q", "epic")
+	if !reviewed(root, plan) {
+		t.Fatal("a base that moved, and the catch-up rebase onto it, must not restale the group's review")
+	}
+	runGit(t, worktree, "checkout", "-q", "epic")
+	commitDated(t, worktree, "b/five.go", "package b\n", "the epic moved again", now)
+	runGit(t, worktree, "checkout", "-q", "-")
+	runGit(t, worktree, "merge", "-q", "--no-edit", "epic")
+	if !reviewed(root, plan) {
+		t.Fatal("a catch-up merge brings in no group work, so it must not restale the review")
+	}
+	commitDated(t, worktree, "a/four.go", "package a\n", "a repair", now)
+	if reviewed(root, plan) {
+		t.Fatal("the group's own commit after the review must restale it")
 	}
 }
 
@@ -788,6 +887,26 @@ func TestReportBodyKeepsABlockedTaskUnderValidation(t *testing.T) {
 	}
 }
 
+func TestReportBodyNotesADiffOverThePreferredLines(t *testing.T) {
+	context := BodyContext{DefaultBase: "main", SizeNote: sizeNote(1500, 1000)}
+	body := ReportBody(twoTaskPlan(), &ShipResult{Base: "feat/stack"}, nil, context)
+	if !strings.Contains(body, "over the preferred 1000") {
+		t.Fatalf("body does not note the preferred size:\n%s", body)
+	}
+}
+
+func TestSizeNoteIsEmptyAtOrUnderThePreferred(t *testing.T) {
+	if sizeNote(1000, 1000) != "" {
+		t.Fatal("a diff at the preferred count must not get a note")
+	}
+	if sizeNote(500, 1000) != "" {
+		t.Fatal("a diff under the preferred count must not get a note")
+	}
+	if sizeNote(1500, 0) != "" {
+		t.Fatal("a zero preferred must never note")
+	}
+}
+
 func TestTemplateSectionsFollowTheRepoTemplate(t *testing.T) {
 	dir := t.TempDir()
 	if got := templateSections(dir); strings.Join(got, ",") != "Summary,Changes,Validation,Dependencies" {
@@ -852,6 +971,171 @@ func TestChangedLinesIsZeroWhenTheBaseIsUnknown(t *testing.T) {
 	_, group := shipRepo(t)
 	if got := ChangedLines(group, "no-such-base", "feat/a-group"); got != 0 {
 		t.Fatalf("lines = %d; an unknown base is no count, never a guess", got)
+	}
+}
+
+func TestReviewSizeIsZeroWhenTheBaseIsUnknown(t *testing.T) {
+	_, group := shipRepo(t)
+	if files, added := ReviewSize(group, "no-such-base", "feat/a-group"); files != 0 || added != 0 {
+		t.Fatalf("size = %d file(s), %d line(s); an unknown base is no count, never a guess", files, added)
+	}
+}
+
+func TestReviewSizeCountsNoDeletion(t *testing.T) {
+	_, group := shipRepo(t)
+	if err := os.WriteFile(filepath.Join(group, "gone.go"), []byte("package a\n\nvar a = 1\nvar b = 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "grow")
+	runGit(t, group, "branch", "main")
+	runGit(t, group, "rm", "-q", "gone.go")
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "shrink")
+	if files, added := ReviewSize(group, "main", "feat/a-group"); files != 1 || added != 1 {
+		t.Fatalf("size = %d file(s), %d line(s); a deleted file and deleted lines must count nothing", files, added)
+	}
+}
+
+func TestReviewSizeSkipsTheLinesBookkeeping(t *testing.T) {
+	_, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	for _, path := range []string{"BACKLOG.md", "docs/backlog/TG-1.md", "changelog.d/1.0.0/TG-1.md", "code.go"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(group, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(group, path), []byte("one\ntwo\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "ship")
+	if files, added := ReviewSize(group, "main", "feat/a-group"); files != 1 || added != 2 {
+		t.Fatalf("size = %d file(s), %d line(s); only code.go is the reviewer's to read", files, added)
+	}
+}
+
+func TestCheckPRSizeRefusesOverEitherCeiling(t *testing.T) {
+	if err := checkPRSize("TG-1", 5, 100, 0, 0); err != nil {
+		t.Fatalf("a zero ceiling must never refuse: %v", err)
+	}
+	if err := checkPRSize("TG-1", 21, 100, 20, 2000); err == nil || !strings.Contains(err.Error(), "split") {
+		t.Fatalf("err = %v; a file count over the cap must name a split", err)
+	}
+	if err := checkPRSize("TG-1", 5, 2001, 20, 2000); err == nil || !strings.Contains(err.Error(), "split") {
+		t.Fatalf("err = %v; a line count over the cap must name a split", err)
+	}
+}
+
+func TestShipRefusesAGroupOverThePullRequestFileCeiling(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	for _, name := range []string{"two.go", "three.go"} {
+		if err := os.WriteFile(filepath.Join(group, name), []byte("package a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	plan.Profile.PRFiles = 1
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
+		t.Fatalf("err = %v; a diff over the file ceiling must refuse and name a split", err)
+	}
+}
+
+func TestShipRefusesAGroupOverThePullRequestLineCeiling(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package b\n\nvar x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	plan.Profile.PRLinesMax = 3
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "split") {
+		t.Fatalf("err = %v; a diff over the line ceiling must refuse and name a split", err)
+	}
+}
+
+func TestShipNotesTheBodyWhenOverThePreferredLines(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package b\n\nvar x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	plan.Profile.PRLinesPreferred = 3
+	var calls []string
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, "\x00"))
+		return "https://example.com/pull/1", nil
+	}}
+	if _, err := ShipGroup(root, plan, nil, client); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, call := range calls {
+		if strings.Contains(call, "over the preferred 3") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("calls = %v; a diff over the preferred lines must note it in the body", calls)
+	}
+}
+
+func TestAReshipRefreshesTheOpenPullRequest(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	if err := os.WriteFile(filepath.Join(group, "two.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, group, "add", "-A")
+	runGit(t, group, "commit", "-m", "work")
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	var edited []string
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		switch {
+		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
+			return "", errors.New("a pull request for branch \"feat/a-group\" into branch \"main\" already exists")
+		case len(args) > 1 && args[0] == "pr" && args[1] == "view":
+			return `{"number":7,"url":"https://example.com/pull/7","state":"OPEN"}`, nil
+		case len(args) > 2 && args[0] == "pr" && args[1] == "edit" && args[3] == "--title":
+			edited = append(edited, args[2])
+		}
+		return "[]", nil
+	}}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatalf("ShipGroup = %v; a re-ship must refresh its open pull request", err)
+	}
+	if result.URL != "https://example.com/pull/7" || len(edited) != 1 {
+		t.Fatalf("url = %q, edits = %v; the open pull request's title and body must be refreshed", result.URL, edited)
 	}
 }
 
@@ -938,9 +1222,10 @@ func TestShipWritesAChangelogFragmentAndLeavesTheChangelogAlone(t *testing.T) {
 	runGit(t, "", "init", "--bare", bare)
 	runGit(t, root, "init")
 	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, worktree, "checkout", "-q", "-b", "feat/a-group")
 	plan := &Plan{
 		Group: "TG-12.1", Title: "A group", Type: "feat", Version: "2.0.0",
-		Base: "main", Branch: "main", Worktree: worktree,
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
 		Tasks: []PlanTask{{ID: "TSK-12.1.1", Title: "One", Status: "READY"}},
 	}
 	client := &pr.Client{Dir: worktree, Run: func(string, ...string) (string, error) {
@@ -984,6 +1269,30 @@ func TestCatchUpRebasesOntoAMovedBaseKeepingEdits(t *testing.T) {
 	}
 }
 
+func TestCatchUpMergesAPushedBranchInsteadOfRewritingIt(t *testing.T) {
+	_, group := shipRepo(t)
+	runGit(t, group, "branch", "main", "HEAD~0")
+	runGit(t, group, "checkout", "-q", "main")
+	commitDated(t, group, "two.go", "package a\n", "base moved", time.Now())
+	runGit(t, group, "checkout", "-q", "feat/a-group")
+	commitDated(t, group, "three.go", "package a\n", "group work", time.Now())
+	runGit(t, group, "push", "-q", "origin", "feat/a-group")
+	runGit(t, group, "fetch", "-q", "origin", "feat/a-group:refs/remotes/origin/feat/a-group")
+	pushed, err := git.Run(group, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catchUp(group, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(group, "merge-base", "--is-ancestor", pushed, "HEAD"); err != nil {
+		t.Fatal("catch-up rewrote a pushed branch; its pushed commit is no longer an ancestor")
+	}
+	if _, err := os.Stat(filepath.Join(group, "two.go")); err != nil {
+		t.Fatal("the base's commit is not under the group branch")
+	}
+}
+
 func TestCatchUpStopsOnAConflictNamingTheFile(t *testing.T) {
 	_, group := shipRepo(t)
 	runGit(t, group, "branch", "main", "HEAD~0")
@@ -997,5 +1306,180 @@ func TestCatchUpStopsOnAConflictNamingTheFile(t *testing.T) {
 	}
 	if status, _ := exec.Command("git", "-C", group, "status", "--porcelain").Output(); strings.Contains(string(status), "UU") {
 		t.Fatal("the rebase was left half done")
+	}
+}
+
+// envValue reads one key back out of a scrubbed environment.
+func envValue(list []string, key string) (string, bool) {
+	for _, entry := range list {
+		if name, value, found := strings.Cut(entry, "="); found && name == key {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func TestScrubDropsEveryPushCredential(t *testing.T) {
+	base := []string{
+		"GH_TOKEN=secret", "GITHUB_TOKEN=secret", "GH_ENTERPRISE_TOKEN=secret",
+		"GIT_ASKPASS=/bin/askpass", "SSH_AUTH_SOCK=/tmp/agent.sock", "PATH=/usr/bin",
+	}
+	scrubbed := Scrub(base)
+	for _, key := range dropped {
+		if _, found := envValue(scrubbed, key); found {
+			t.Fatalf("%s survived the scrub", key)
+		}
+	}
+	if path, _ := envValue(scrubbed, "PATH"); path != "/usr/bin" {
+		t.Fatalf("PATH = %q, want the inherited value", path)
+	}
+}
+
+func TestScrubLeavesGitUnableToPromptOrAuthenticate(t *testing.T) {
+	scrubbed := Scrub([]string{"PATH=/usr/bin"})
+	want := map[string]string{
+		"GIT_TERMINAL_PROMPT": "0",
+		"GIT_CONFIG_COUNT":    "1",
+		"GIT_CONFIG_KEY_0":    "credential.helper",
+		"GIT_CONFIG_VALUE_0":  "",
+	}
+	for key, value := range want {
+		if got, found := envValue(scrubbed, key); !found || got != value {
+			t.Fatalf("%s = %q, %v; want %q", key, got, found, value)
+		}
+	}
+	if ssh, _ := envValue(scrubbed, "GIT_SSH_COMMAND"); !strings.Contains(ssh, "IdentitiesOnly=yes") {
+		t.Fatalf("GIT_SSH_COMMAND = %q", ssh)
+	}
+}
+
+func TestScrubIgnoresAnIdentityFileConfiguredOutsideTheEnvironment(t *testing.T) {
+	scrubbed := Scrub([]string{"PATH=/usr/bin"})
+	ssh, _ := envValue(scrubbed, "GIT_SSH_COMMAND")
+	if !strings.Contains(ssh, "-F "+os.DevNull) {
+		t.Fatalf("GIT_SSH_COMMAND = %q, want -F %s so ~/.ssh/config never applies", ssh, os.DevNull)
+	}
+}
+
+func TestScrubDropsATokenByItsNameShapeNotJustAnExactSpelling(t *testing.T) {
+	base := []string{
+		"GITHUB_PAT=secret", "HOMEBREW_GITHUB_API_TOKEN=secret", "GIT_CONFIG_PARAMETERS=secret",
+		"PATH=/usr/bin",
+	}
+	scrubbed := Scrub(base)
+	for _, key := range []string{"GITHUB_PAT", "HOMEBREW_GITHUB_API_TOKEN", "GIT_CONFIG_PARAMETERS"} {
+		if _, found := envValue(scrubbed, key); found {
+			t.Fatalf("%s survived the scrub", key)
+		}
+	}
+}
+
+func TestScrubKeepsTheModelHostsOwnLoginAndDropsEveryForgeSecret(t *testing.T) {
+	base := []string{"MODELHOST_OAUTH_TOKEN=login", "PATH=/usr/bin", "GITLAB_TOKEN=secret", "BITBUCKET_PASSWORD=secret"}
+	scrubbed := Scrub(base)
+	for _, key := range []string{"MODELHOST_OAUTH_TOKEN", "PATH"} {
+		if _, found := envValue(scrubbed, key); !found {
+			t.Fatalf("%s was scrubbed; only a forge's push credential may be", key)
+		}
+	}
+	for _, key := range []string{"GITLAB_TOKEN", "BITBUCKET_PASSWORD"} {
+		if _, found := envValue(scrubbed, key); found {
+			t.Fatalf("%s survived the scrub", key)
+		}
+	}
+}
+
+func TestScrubDoesNotLetAnInheritedOverrideSurvive(t *testing.T) {
+	scrubbed := Scrub([]string{"GIT_TERMINAL_PROMPT=1", "GIT_SSH_COMMAND=ssh -i /home/me/.ssh/id_ed25519"})
+	if got, _ := envValue(scrubbed, "GIT_TERMINAL_PROMPT"); got != "0" {
+		t.Fatalf("GIT_TERMINAL_PROMPT = %q, want the launcher's own value", got)
+	}
+	if ssh, _ := envValue(scrubbed, "GIT_SSH_COMMAND"); strings.Contains(ssh, "id_ed25519") {
+		t.Fatalf("an inherited SSH identity survived: %q", ssh)
+	}
+	count := 0
+	for _, entry := range scrubbed {
+		if strings.HasPrefix(entry, "GIT_SSH_COMMAND=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("GIT_SSH_COMMAND appears %d times", count)
+	}
+}
+
+func TestPushFromWorktreeRefusesACriticalRef(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, group, "branch", "main")
+	err := PushFromWorktree(root, group, "main")
+	if err == nil || !strings.Contains(err.Error(), "critical ref") {
+		t.Fatalf("err = %v, want a refusal naming the critical ref", err)
+	}
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := exec.Command("git", "-C", bare, "branch", "--list", "main").Output(); strings.TrimSpace(string(out)) != "" {
+		t.Fatal("main reached origin; a critical ref is never pushed")
+	}
+}
+
+func TestShipGroupHandsTheCredentialToNoAfterPublishCommand(t *testing.T) {
+	root, group := shipRepo(t)
+	t.Setenv("GH_TOKEN", "ghp_forgetoken")
+	t.Setenv("GITHUB_TOKEN", "ghp_forgetoken")
+	if err := os.MkdirAll(filepath.Join(root, StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commands := `{"after_publish":"env > published.env"}`
+	if err := os.WriteFile(filepath.Join(root, StateDir, "commands.json"), []byte(commands), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := os.ReadFile(filepath.Join(group, "published.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(seen), "ghp_forgetoken") {
+		t.Fatal("after_publish saw the forge credential; only the push may hold it")
+	}
+}
+
+func TestShipLabelsThePullRequestOnlyAfterThePush(t *testing.T) {
+	root, group := shipRepo(t)
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	labelled := false
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "label" {
+			return `[{"name":"@agent"},{"name":"scope/harness"}]`, nil
+		}
+		if len(args) > 1 && args[0] == "pr" && args[1] == "edit" && slices.Contains(args, "--add-label") {
+			out, _ := exec.Command("git", "-C", bare, "branch", "--list", "feat/a-group").Output()
+			if strings.TrimSpace(string(out)) == "" {
+				return "", errors.New("labelled before the push")
+			}
+			labelled = true
+		}
+		return "https://example.com/pull/1", nil
+	}}
+	result, err := ShipGroup(root, plan, nil, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !labelled || len(result.Labels) != 2 {
+		t.Fatalf("labels = %v, warnings = %v; the labels must follow the push", result.Labels, result.Warnings)
 	}
 }

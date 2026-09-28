@@ -37,7 +37,7 @@ func stepRepo(t *testing.T) string {
 // startRun writes a run state for the group so step walks past intake.
 func startRun(t *testing.T, root string) {
 	t.Helper()
-	state := RunState{Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group", Worktree: root}
+	state := RunState{Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/TG-12.1-a-group", Worktree: root}
 	if err := SaveRun(root, state); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestStepReviewsThenShipsThenIsDone(t *testing.T) {
 	if next.Command != "komodo close --group TG-12.1" {
 		t.Fatalf("action = %+v", next)
 	}
-	if err := writeShipHandoff(root, ShipHandoff{Group: "TG-12.1", Branch: "feat/a-group"}); err != nil {
+	if err := writeShipHandoff(root, ShipHandoff{Group: "TG-12.1", Branch: "feat/TG-12.1-a-group"}); err != nil {
 		t.Fatal(err)
 	}
 	next, _ = Step(root, "")
@@ -220,7 +220,7 @@ func gitWorktreeFor(t *testing.T, root, groupID string) string {
 func gitWorktreeWithReview(t *testing.T, root, groupID string) string {
 	t.Helper()
 	worktree := gitWorktreeFor(t, root, groupID)
-	cmd := exec.Command("git", "checkout", "-q", "-b", "feat/a-group")
+	cmd := exec.Command("git", "checkout", "-q", "-b", "feat/TG-12.1-a-group")
 	cmd.Dir = worktree
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git checkout: %v: %s", err, out)
@@ -941,7 +941,7 @@ func TestABlockedTaskSkipsItsDependentsAndReachesADraftShip(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := RunState{
-		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/TG-12.1-a-group",
 		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}, {"TSK-12.1.2"}},
 	}
 	if err := SaveRun(root, state); err != nil {
@@ -1005,7 +1005,7 @@ func TestALaterReadyGroupCannotStealAnUnshippedRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := RunState{
-		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/TG-12.1-a-group",
 		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}},
 	}
 	if err := SaveRun(root, state); err != nil {
@@ -1026,7 +1026,7 @@ func TestALaterReadyGroupCannotStealAnUnshippedRun(t *testing.T) {
 func TestStepMovesOnOnceTheRunHasShipped(t *testing.T) {
 	root := repo(t, twoGroups)
 	state := RunState{
-		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/TG-12.1-a-group",
 		Worktree: root, Waves: [][]string{{"TSK-12.1.1"}},
 	}
 	if err := SaveRun(root, state); err != nil {
@@ -1046,9 +1046,11 @@ func TestStepMovesOnOnceTheRunHasShipped(t *testing.T) {
 func TestARepairMakesItsReviewStale(t *testing.T) {
 	worktree := gitRepo(t)
 	commit(t, worktree, "a/one.go", "package a\n", "seed")
+	runGit(t, worktree, "checkout", "-q", "-b", "feat/TG-12.1-a-group")
+	commit(t, worktree, "a/two.go", "package a\n", "the group's work")
 	root := repo(t, stepBacklog)
 	state := RunState{
-		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/a-group",
+		Run: "TG-12.1-1", Group: "TG-12.1", Base: "main", Branch: "feat/TG-12.1-a-group",
 		Worktree: worktree, Waves: [][]string{{"TSK-12.1.1"}},
 	}
 	if err := SaveRun(root, state); err != nil {

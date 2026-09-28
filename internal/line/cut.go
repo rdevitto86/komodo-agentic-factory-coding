@@ -10,6 +10,7 @@ import (
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
 	"komodo/internal/plan"
+	"komodo/internal/pr"
 )
 
 // RefuseOpenRun refuses to cut a group while another open, unshipped group claims a file it
@@ -99,6 +100,10 @@ func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
 	if base != "" {
 		plan.Base = base
 	}
+	// The epic's own branch and draft pull request open once, on its first group's cut.
+	if _, err := OpenEpic(root, plan, pr.New(root)); err != nil {
+		return RunState{}, err
+	}
 	if err := Fetch(root, plan.Base); err != nil {
 		return RunState{}, err
 	}
@@ -124,6 +129,12 @@ func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
 	for _, open := range OpenRuns(root) {
 		if open.Group != plan.Group {
 			others[open.Group] = true
+		}
+	}
+	// A group a live process still drives stays open, even when the ledger shows it shipped once.
+	for _, old := range LoadRuns(root) {
+		if old.Group != plan.Group && checkLockFile(LockPath(root, old.Group)) != nil {
+			others[old.Group] = true
 		}
 	}
 	for _, old := range LoadRuns(root) {

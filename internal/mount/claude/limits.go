@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -158,4 +159,22 @@ func modelFor(tier string) string {
 		return name
 	}
 	return models[tier]
+}
+
+// authStatus runs the CLI's own login report; a test swaps it.
+var authStatus = func() ([]byte, error) { return exec.Command("claude", "auth", "status").Output() }
+
+// LoggedIn reports whether the CLI holds a login, by subscription or by key, from its auth status report.
+func LoggedIn() (bool, error) {
+	out, err := authStatus()
+	if err != nil && len(out) == 0 {
+		return false, err
+	}
+	var status struct {
+		LoggedIn bool `json:"loggedIn"`
+	}
+	if err := json.Unmarshal(out, &status); err != nil {
+		return false, fmt.Errorf("reading claude auth status: %w", err)
+	}
+	return status.LoggedIn, nil
 }

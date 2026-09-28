@@ -28,15 +28,16 @@ var Tiers = []string{"light", "standard", "heavy"}
 var Modes = []string{"parallel", "single"}
 
 var (
-	epicHeading  = regexp.MustCompile(`^##\s+\[(EPIC-[\w.]+)\]\s*(.*?)\s*$`)
-	groupHeading = regexp.MustCompile(`^###\s+\[(TG-[\w.]+)\]\s*(.*?)\s*$`)
-	taskHeading  = regexp.MustCompile(`^####\s+\[(TSK-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
-	taskLike     = regexp.MustCompile(`^####\s+\[TSK-`)
-	fenceOpen    = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
-	fenceClose   = regexp.MustCompile("^```\\s*$")
-	versionRe    = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
-	slugRe       = regexp.MustCompile(`[^a-z0-9]+`)
-	commandHint  = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*` +
+	epicHeading    = regexp.MustCompile(`^##\s+\[(EPIC-[\w.]+)\]\s*(.*?)\s*$`)
+	groupHeading   = regexp.MustCompile(`^###\s+\[(TG-[\w.]+)\]\s*(.*?)\s*$`)
+	taskHeading    = regexp.MustCompile(`^####\s+\[(TSK-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
+	taskLike       = regexp.MustCompile(`^####\s+\[TSK-`)
+	fenceOpen      = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
+	fenceClose     = regexp.MustCompile("^```\\s*$")
+	versionRe      = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
+	versionPhaseRe = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$`)
+	slugRe         = regexp.MustCompile(`[^a-z0-9]+`)
+	commandHint    = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*` +
 		`(!|go|npm|pnpm|bun|npx|python3?|py\b|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|zig|swift` +
 		`|bash|sh|grep|rg|sed|awk|find|test\b|git\b|komodo\b|\./|/|"|'|[A-Za-z]:[\\/])`)
 )
@@ -118,6 +119,26 @@ func (t Task) Open() bool { return t.Status != "DONE" && t.Status != "BLOCKED" }
 // Ready reports whether the task is planned enough for the line to run it.
 func (t Task) Ready() bool { return t.Status == "READY" || t.Status == "IN_PROGRESS" }
 
+// Epic is an epic heading and its title line.
+type Epic struct {
+	ID    string
+	Title string
+}
+
+// Version extracts the version from the epic's title, parsing "Ships as x.y.z" format.
+func (e Epic) Version() string {
+	idx := strings.Index(e.Title, "Ships as `")
+	if idx < 0 {
+		return ""
+	}
+	rest := e.Title[idx+len("Ships as `"):]
+	idx = strings.Index(rest, "`")
+	if idx < 0 {
+		return ""
+	}
+	return rest[:idx]
+}
+
 // Group is a task group heading, its optional block, and its tasks in file order.
 type Group struct {
 	ID      string
@@ -159,21 +180,43 @@ func BranchName(groupType, slug string) string { return groupType + "/" + slug }
 // Branch is the branch this group's own work lands on.
 func (g Group) Branch() string { return BranchName(g.Type(), g.Slug()) }
 
-// Slug is a kebab-case branch fragment derived from the group title.
+// EpicBranch is the branch this group's epic ships on, feat/ plus the group's version exactly,
+// empty with no version since only an epic's version names its branch.
+func (g Group) EpicBranch() string {
+	if version := g.Version(); version != "" {
+		return "feat/" + version
+	}
+	return ""
+}
+
+// Slug is the branch fragment naming a group: its ID, then its title in kebab case, capped at 40 characters.
 func (g Group) Slug() string {
+	if text := g.titleSlug(); text != "" {
+		return g.ID + "-" + text
+	}
+	return g.ID
+}
+
+// TitleBranch is the group's branch without its ID: its type, then its title in kebab case.
+func (g Group) TitleBranch() string {
+	if text := g.titleSlug(); text != "" {
+		return BranchName(g.Type(), text)
+	}
+	return BranchName(g.Type(), strings.ToLower(g.ID))
+}
+
+// titleSlug is the group's title in kebab case, capped at 40 characters, or empty with no words.
+func (g Group) titleSlug() string {
 	text := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(g.Title), "-"), "-")
 	if len(text) > 40 {
 		text = text[:40]
 	}
-	text = strings.TrimRight(text, "-")
-	if text == "" {
-		return strings.ToLower(g.ID)
-	}
-	return text
+	return strings.TrimRight(text, "-")
 }
 
-// Backlog is the whole parsed file: groups in order, plus every problem the parser saw.
+// Backlog is the whole parsed file: epics and groups in order, plus every problem the parser saw.
 type Backlog struct {
+	Epics    []Epic
 	Groups   []Group
 	Problems []string
 	Lines    []string
@@ -212,6 +255,16 @@ func (b Backlog) Group(needle string) (Group, bool) {
 		}
 	}
 	return Group{}, false
+}
+
+// Epic returns the epic with the given id, if it exists.
+func (b Backlog) Epic(id string) (Epic, bool) {
+	for _, epic := range b.Epics {
+		if epic.ID == id {
+			return epic, true
+		}
+	}
+	return Epic{}, false
 }
 
 // NextGroup is the first group in file order holding at least one ready agent task.
@@ -282,6 +335,23 @@ func Parse(text string) Backlog {
 		line := lines[index]
 		if match := epicHeading.FindStringSubmatch(line); match != nil {
 			epicID = match[1]
+			epicTitle := match[2]
+			// Look ahead for the goal line containing "Ships as" information
+			for i := index + 1; i < len(lines) && i < index+5; i++ {
+				nextLine := strings.TrimSpace(lines[i])
+				if nextLine == "" {
+					continue
+				}
+				if strings.HasPrefix(nextLine, "#") || strings.HasPrefix(nextLine, "###") {
+					break // Stop at next heading
+				}
+				if idx := strings.Index(nextLine, "Ships as `"); idx >= 0 {
+					epicTitle = epicTitle + " " + nextLine
+					break
+				}
+			}
+			epic := Epic{ID: epicID, Title: epicTitle}
+			parsed.Epics = append(parsed.Epics, epic)
 			index++
 			continue
 		}

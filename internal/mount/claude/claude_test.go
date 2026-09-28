@@ -219,23 +219,29 @@ func TestSettingsDenyEditsToTheHostsOwnConfig(t *testing.T) {
 	}
 }
 
-func TestHeadlessSandboxesOnlyWhenTheOverlayOptsIn(t *testing.T) {
+func TestHeadlessIsSandboxedByDefaultWhereThePlatformHasOne(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	_, args := Headless("run", "TG-01.1")
-	if strings.Contains(strings.Join(args, " "), "--settings") {
-		t.Fatalf("args = %v; with no overlay the run is not sandboxed", args)
+	if !platformSandbox(runtime.GOOS) {
+		if strings.Contains(strings.Join(args, " "), "--settings") {
+			t.Fatalf("args = %v; %s has no sandbox to start", args, runtime.GOOS)
+		}
+		return
+	}
+	if len(args) < 2 || args[len(args)-2] != "--settings" {
+		t.Fatalf("args = %v; with no overlay the run is still sandboxed", args)
 	}
 	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	overlay := `{"sandbox":true,"sandbox_write":["~/go/pkg/mod"],"sandbox_domains":["proxy.golang.org"]}`
+	overlay := `{"sandbox_write":["~/go/pkg/mod"],"sandbox_domains":["proxy.golang.org"]}`
 	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, args = Headless("run", "TG-01.1")
 	if len(args) < 2 || args[len(args)-2] != "--settings" {
-		t.Fatalf("args = %v; an opted-in run passes the sandbox as inline settings", args)
+		t.Fatalf("args = %v; the run passes the sandbox as inline settings", args)
 	}
 	var settings struct {
 		Sandbox struct {
@@ -857,8 +863,20 @@ func TestHeadlessBypassesPromptsAndDrivesOnTheStandardTier(t *testing.T) {
 	if name != "claude" || !strings.Contains(joined, "-p /run TG-01.1") {
 		t.Fatalf("command = %s %s", name, joined)
 	}
-	if !strings.Contains(joined, "--permission-mode bypassPermissions") {
+	if !strings.Contains(joined, "--permission-mode dontAsk") {
 		t.Fatalf("a headless run cannot answer a prompt: %s", joined)
+	}
+	// With dontAsk, a tool outside the allow list is refused, so the relay's own tools must be listed.
+	allowed := ""
+	for index, arg := range args[:len(args)-1] {
+		if arg == "--allowedTools" {
+			allowed = "," + args[index+1] + ","
+		}
+	}
+	for _, tool := range []string{"Bash", "Edit", "Write", "Agent", "Skill"} {
+		if !strings.Contains(allowed, ","+tool+",") {
+			t.Fatalf("the relay session cannot use %s: %s", tool, joined)
+		}
 	}
 	if !strings.Contains(joined, "--model "+models["standard"]) {
 		t.Fatalf("the driver did not take the standard tier: %s", joined)
@@ -906,5 +924,26 @@ func TestSettingsTurnAttributionOff(t *testing.T) {
 	a := settings.Attribution
 	if a.Commit == nil || *a.Commit != "" || a.PR == nil || *a.PR != "" || a.SessionURL == nil || *a.SessionURL {
 		t.Fatalf("attribution = %s; commit and pr must be empty and sessionUrl false, since true appends the session link", raw)
+	}
+}
+
+// TestTheClaudeMountHandsOutItsContract checks the registered mount builds a *Mount over the given
+// worktree, capped at the profile's turn cap, satisfying the conductor's host contract.
+func TestTheClaudeMountHandsOutItsContract(t *testing.T) {
+	host, ok := mount.Get("claude")
+	if !ok {
+		t.Fatal("the claude mount did not register")
+	}
+	if host.Contract == nil {
+		t.Fatal("the claude mount left its contract nil")
+	}
+	root, worktree := t.TempDir(), t.TempDir()
+	contract := host.Contract(root, worktree)
+	built, ok := contract.(*Mount)
+	if !ok {
+		t.Fatalf("contract = %T, want *Mount", contract)
+	}
+	if built.root != root || built.worktree != worktree || built.maxTurns != profileTurnCap {
+		t.Fatalf("mount = %+v", built)
 	}
 }

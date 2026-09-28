@@ -1,6 +1,6 @@
 {
   "roles": {
-    "builder": { "tier": "standard", "effort": "medium" },
+    "builder": { "tier": "heavy", "effort": "medium" },
     "correctness": { "tier": "heavy", "effort": "high" },
     "security": { "tier": "heavy", "effort": "high" },
     "readiness": { "tier": "heavy", "effort": "high" },

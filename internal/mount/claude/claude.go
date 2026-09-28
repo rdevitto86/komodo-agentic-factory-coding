@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -76,6 +77,7 @@ func Render(root string, binary string) (install.Plan, error) {
 	skills = mount.SelectStandards(root, skills)
 	skills = repoSkills(root, skills)
 	RenderBuilderPlugin(&plan, root, detected, skills)
+	RenderPluginHooks(&plan, root, binary)
 	for _, skill := range skills {
 		plan.AddProject(filepath.Join(root, Dir, "skills", skill.Name, "SKILL.md"), []byte(skill.Body), "the "+skill.Name+" skill")
 	}
@@ -255,6 +257,9 @@ func namesLocalServer(path string) bool {
 	return strings.Contains(string(data), "127.0.0.1:8000")
 }
 
+// profileTurnCap bounds a session's turns; a group builder works up to 12 tasks, so the clock binds first.
+const profileTurnCap = 150
+
 // init registers this mount so the binary never names the host itself.
 func init() {
 	mount.Register(mount.Host{
@@ -267,42 +272,36 @@ func init() {
 		Installed:   Installed,
 		Tiers:       Tiers,
 		Probe:       Probe,
+		LoggedIn:    LoggedIn,
 		Usage:       Usage,
 		Headless:    Headless,
 		Leftovers:   Leftovers,
 		ReviewerWhy: reviewerWhy,
+		Contract: func(root, worktree string) mount.Contract {
+			return NewMount(root, worktree, profileTurnCap, 0)
+		},
 	})
 }
 
-// Headless returns this host's non-interactive command for one skill and one target, with prompts
-// bypassed since none can be answered, the guard hook as the wall, and the standard tier driving.
+// relayTools are the only tools a relay session may use; dontAsk refuses the rest without a prompt.
+var relayTools = []string{"Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent", "Skill"}
+
+// Headless returns this host's non-interactive command for one skill and one target: no prompt is
+// answered, only relayTools are allowed, the guard hook judges every call, and the standard tier drives.
 func Headless(skill, target string) (string, []string) {
 	prompt := "/" + skill
 	if target != "" {
 		prompt += " " + target
 	}
-	args := []string{"-p", prompt, "--permission-mode", "bypassPermissions", "--model", modelFor("standard")}
-	if settings := sandboxSettings(mount.LoadOverlay()); settings != "" {
+	allowed := strings.Join(relayTools, ",")
+	args := []string{
+		"-p", prompt, "--permission-mode", "dontAsk",
+		"--tools", allowed, "--allowedTools", allowed, "--model", modelFor("standard"),
+	}
+	if settings := lineSandbox(mount.LoadOverlay(), runtime.GOOS); settings != "" {
 		args = append(args, "--settings", settings)
 	}
 	return "claude", args
-}
-
-// sandboxSettings is the inline settings that sandbox every headless shell command when the overlay
-// opts in: no unsandboxed retry, and a refusal to start when the sandbox cannot.
-func sandboxSettings(overlay mount.Overlay) string {
-	if !overlay.Sandbox {
-		return ""
-	}
-	sandbox := map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false}
-	if len(overlay.SandboxWrite) > 0 {
-		sandbox["filesystem"] = map[string]any{"allowWrite": overlay.SandboxWrite}
-	}
-	if len(overlay.SandboxDomains) > 0 {
-		sandbox["network"] = map[string]any{"allowedDomains": overlay.SandboxDomains}
-	}
-	data, _ := json.Marshal(map[string]any{"sandbox": sandbox})
-	return string(data)
 }
 
 // retiredCommands are the commands no hook or allow rule in this host's user settings may run.

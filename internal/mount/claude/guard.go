@@ -55,14 +55,19 @@ func hookMatcher() string {
 	return strings.Join(names, "|")
 }
 
-// denyPayload renders the JSON on stdout this host reads as a PreToolUse denial.
-func denyPayload(reason string) []byte {
+// denyPayload renders the JSON on stdout this host reads as a PreToolUse denial. Blocked
+// also sets continue false and a stopReason, the fields this host reads as ending the session.
+func denyPayload(reason string, blocked bool) []byte {
 	payload := map[string]any{
 		"hookSpecificOutput": map[string]any{
 			"hookEventName":            "PreToolUse",
 			"permissionDecision":       "deny",
 			"permissionDecisionReason": reason,
 		},
+	}
+	if blocked {
+		payload["continue"] = false
+		payload["stopReason"] = reason
 	}
 	out, err := json.Marshal(payload)
 	if err != nil {

@@ -39,7 +39,9 @@ const usage = `komodo: the code assembly line.
   komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
   komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers
   komodo guard [check]        The one agent hook; check runs its table
+  komodo hook <name>          Every other agent hook's entry point; a hook that fails allows
   komodo run [group|task]     Drive the line headless on this host, under a budget
+  komodo resume <group>       The state a killed run left: continue its session or start from its WIP
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
@@ -116,8 +118,12 @@ func main() {
 		runInstall(root, os.Args[2:])
 	case "guard":
 		runGuard(root, os.Args[2:])
+	case "hook":
+		runHook(root, os.Args[2:])
 	case "run":
 		runRun(root, os.Args[2:])
+	case "resume":
+		runResume(root, os.Args[2:])
 	case "sync":
 		runSync(root, os.Args[2:])
 	case "step":

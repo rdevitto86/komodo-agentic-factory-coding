@@ -40,6 +40,21 @@ func Lint(parsed Backlog) []string {
 			problems = append(problems, fmt.Sprintf("%s: no version; a group declares the version it ships as `version: x.y.z`", group.ID))
 		case !versionRe.MatchString(version):
 			problems = append(problems, fmt.Sprintf("%s: version %q is not x.y.z", group.ID, version))
+		case !versionPhaseRe.MatchString(version):
+			problems = append(problems, fmt.Sprintf(
+				"%s: version %q must be x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n, the four phases alpha, beta, rc, stable",
+				group.ID, version))
+		default:
+			if group.EpicID != "" {
+				if epic, ok := parsed.Epic(group.EpicID); ok {
+					epicVersion := epic.Version()
+					if epicVersion == "" {
+						problems = append(problems, fmt.Sprintf("%s: epic %s has no version; an epic names the version it ships as Ships as `x.y.z`", group.ID, group.EpicID))
+					} else if epicVersion != version {
+						problems = append(problems, fmt.Sprintf("%s: version %q differs from epic %s version %q", group.ID, version, group.EpicID, epicVersion))
+					}
+				}
+			}
 		}
 		if line, dup := seen[group.ID]; dup {
 			problems = append(problems, fmt.Sprintf("%s: duplicate group id (lines %d and %d)", group.ID, line+1, group.Heading+1))
@@ -56,12 +71,14 @@ func Lint(parsed Backlog) []string {
 				continue
 			}
 			if depGroup, ok := parsed.Group(dep); ok {
-				depBranches = append(depBranches, depGroup.Branch())
+				// A dependency's branch already on origin may carry the title-only form, which still counts.
+				depBranches = append(depBranches, depGroup.Branch(), depGroup.TitleBranch())
 			}
 		}
-		if base := group.Base(); base != "" && base != "main" && !contains(depBranches, base) {
+		epicBranch := group.EpicBranch()
+		if base := group.Base(); base != "" && base != "main" && base != epicBranch && !contains(depBranches, base) {
 			problems = append(problems, fmt.Sprintf(
-				"%s: base %q is neither main nor the branch of a group named in depends_on", group.ID, base))
+				"%s: base %q is neither main nor its epic branch %q nor the branch of a group named in depends_on", group.ID, base, epicBranch))
 		}
 	}
 	for _, task := range parsed.Tasks() {

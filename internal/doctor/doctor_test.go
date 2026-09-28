@@ -34,6 +34,7 @@ func write(t *testing.T, root, rel, body string) {
 // clean builds a fixture repo that every check passes.
 func clean(t *testing.T) string {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	write(t, root, "AGENTS.md", "# Rules\n\nSee `komodo/AGENTS.md`.\n")
 	write(t, root, ".gitattributes", "* text=auto eol=lf\n")
@@ -72,6 +73,36 @@ func problemsFrom(t *testing.T, root string) map[string][]Problem {
 func TestACleanRepoHasNoProblems(t *testing.T) {
 	if got := problemsFrom(t, clean(t)); len(got) != 0 {
 		t.Fatalf("problems = %+v", got)
+	}
+}
+
+func TestAMalformedOverlayIsFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if got := checkOverlay(path); len(got) != 0 {
+		t.Fatalf("an absent overlay = %+v, want nothing", got)
+	}
+	for _, body := range []string{"", " \n"} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := checkOverlay(path); len(got) != 0 {
+			t.Fatalf("an empty overlay %q = %+v, want nothing", body, got)
+		}
+	}
+	for _, body := range []string{`{"critical_refs": ["prod"],}`, `{"critical_refs": "prod"}`, `[]`, `{"max_parallel": "2"}`} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := checkOverlay(path); len(got) != 1 || got[0].Check != "overlay" {
+			t.Fatalf("overlay %s = %+v, want one overlay problem", body, got)
+		}
+	}
+	if err := os.WriteFile(path, []byte(`{"critical_refs": ["prod"], "sandbox": true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkOverlay(path); len(got) != 0 {
+		t.Fatalf("a well-formed overlay = %+v, want nothing", got)
 	}
 }
 
@@ -671,7 +702,7 @@ func TestCheckRulesetsFlagsADefaultBranchNothingProtects(t *testing.T) {
 		return "", errors.New("HTTP 404: Branch not protected")
 	}
 	problems := CheckRulesets(t.TempDir(), "main", unprotected)
-	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "no active ruleset or branch protection") {
+	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "no active ruleset without bypass actors") {
 		t.Fatalf("problems = %+v", problems)
 	}
 	classic := func(_ string, args ...string) (string, error) {
@@ -680,8 +711,92 @@ func TestCheckRulesetsFlagsADefaultBranchNothingProtects(t *testing.T) {
 		}
 		return `{"url":"x"}`, nil
 	}
-	if problems := CheckRulesets(t.TempDir(), "main", classic); len(problems) != 0 {
-		t.Fatalf("a branch under classic protection was flagged: %+v", problems)
+	problems = CheckRulesets(t.TempDir(), "main", classic)
+	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "no active ruleset") {
+		t.Fatalf("classic protection alone passed where the forge offers rulesets: %+v", problems)
+	}
+}
+
+func TestCheckRulesetsFlagsARulesetOnTheDefaultBranchWithBypassActors(t *testing.T) {
+	run := func(_ string, args ...string) (string, error) {
+		if args[1] == "repos/{owner}/{repo}/rulesets" {
+			return `[{"id":1,"name":"Main","target":"branch","enforcement":"active"}]`, nil
+		}
+		return `{"id":1,"name":"Main","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}},` +
+			`"bypass_actors":[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}]}`, nil
+	}
+	problems := CheckRulesets(t.TempDir(), "main", run)
+	joined := ""
+	for _, problem := range problems {
+		joined += problem.Detail + "\n"
+	}
+	if len(problems) != 2 || !strings.Contains(joined, "1 bypass actor(s)") || !strings.Contains(joined, "no active ruleset") {
+		t.Fatalf("problems = %+v; a bypassable ruleset must be flagged and must not count as protection", problems)
+	}
+}
+
+func TestAForgeThatOffersNoRulesetsIsANoteNotAProblem(t *testing.T) {
+	unoffered := func(_ string, args ...string) (string, error) {
+		return "", errors.New("gh api: exit status 1: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)")
+	}
+	if problems := CheckRulesets(t.TempDir(), "main", unoffered); len(problems) != 0 {
+		t.Fatalf("problems = %+v; a forge with no rulesets to offer is a warning", problems)
+	}
+	notes := ForgeNotes(t.TempDir(), unoffered)
+	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status: wip") {
+		t.Fatalf("notes = %v, want a warning for rulesets and one for drafts", notes)
+	}
+	offered := func(_ string, args ...string) (string, error) { return `[]`, nil }
+	if notes := ForgeNotes(t.TempDir(), offered); len(notes) != 0 {
+		t.Fatalf("notes = %v; a forge that offers rulesets and drafts has nothing to warn of", notes)
+	}
+}
+
+func TestARemoteAuditWarnsOfAForgeWithNoRulesets(t *testing.T) {
+	tools := t.TempDir()
+	gh := "#!/bin/sh\n" +
+		"case \"$2\" in\n" +
+		"  */rulesets) echo 'HTTP 403: Upgrade to GitHub Pro' >&2; exit 1 ;;\n" +
+		"  'repos/{owner}/{repo}') echo '{\"delete_branch_on_merge\":true}' ;;\n" +
+		"  *) echo '[]' ;;\n" +
+		"esac\n"
+	write(t, tools, "gh", gh)
+	if err := os.Chmod(filepath.Join(tools, "gh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var notes []string
+	options := Options{NoGit: true, Remote: true, Warn: func(note string) { notes = append(notes, note) }}
+	if _, err := Run(clean(t), options); err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status: wip") {
+		t.Fatalf("notes = %v; a remote audit must warn of a forge with no rulesets or drafts", notes)
+	}
+}
+
+func TestCheckHeadBranchesFlagsAForgeThatKeepsThemAfterAMerge(t *testing.T) {
+	tests := []struct {
+		name string
+		repo string
+		want int
+	}{
+		{"kept", `{"delete_branch_on_merge":false}`, 1},
+		{"deleted", `{"delete_branch_on_merge":true}`, 0},
+		{"not shown to this caller", `{"name":"repo"}`, 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			run := func(_ string, args ...string) (string, error) { return test.repo, nil }
+			problems := CheckHeadBranches(t.TempDir(), run)
+			if len(problems) != test.want {
+				t.Fatalf("problems = %+v, want %d", problems, test.want)
+			}
+		})
+	}
+	failing := func(_ string, args ...string) (string, error) { return "", errors.New("HTTP 404") }
+	if problems := CheckHeadBranches(t.TempDir(), failing); len(problems) != 1 {
+		t.Fatalf("problems = %+v; an unreadable repo must be reported", problems)
 	}
 }
 

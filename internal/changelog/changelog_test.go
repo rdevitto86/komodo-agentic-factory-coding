@@ -122,3 +122,27 @@ func TestCompareOrdersPrereleasesNumerically(t *testing.T) {
 		}
 	}
 }
+
+func TestCompareOrdersAlphaBetaRcThenStable(t *testing.T) {
+	if Compare("1.0.0-beta.9", "1.0.0-rc.1") != -1 {
+		t.Fatalf("beta.9 should sort before rc.1")
+	}
+	if Compare("1.0.0-rc.1", "1.0.0") != -1 {
+		t.Fatalf("rc.1 should sort before the stable release")
+	}
+}
+
+func TestFoldOrdersAStableVersionAfterABetaWithNoRcBetween(t *testing.T) {
+	fragments := map[string][]string{
+		"1.0.0-beta.2": {"- **TG-08.1** Beta (1 task(s))"},
+		"1.0.0":        {"- **TG-09.1** Stable (1 task(s))"},
+	}
+	text := Fold("", fragments)
+	at := order(t, text, "## 1.0.0\n", "## 1.0.0-beta.2\n")
+	if at[0] > at[1] {
+		t.Fatalf("the stable version should fold above the beta with no rc between:\n%s", text)
+	}
+	if Latest(text) != "1.0.0" {
+		t.Fatalf("latest = %s", Latest(text))
+	}
+}

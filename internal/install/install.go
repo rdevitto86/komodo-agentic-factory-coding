@@ -112,11 +112,15 @@ func HookBinaries(body []byte) []string {
 	return out
 }
 
-// normaliseHooks rewrites a guard hook that runs any komodo binary to one fixed name, so drift ignores which copy runs.
+// komodoCommand matches a JSON "command" string that runs some binary's guard or hook subcommand, with its arguments.
+var komodoCommand = regexp.MustCompile(`"command"\s*:\s*"((?:[^"\\]|\\.)*?) ((?:guard|hook)(?: (?:[^"\\]|\\.)*)?)"`)
+
+// normaliseHooks rewrites a guard or hook command that runs any komodo binary to one fixed name, so drift ignores
+// which copy runs while its arguments still count.
 func normaliseHooks(body []byte) []byte {
-	return hookCommand.ReplaceAllFunc(body, func(match []byte) []byte {
-		raw := hookCommand.FindSubmatch(match)[1]
-		path, err := strconv.Unquote(`"` + string(raw) + `"`)
+	return komodoCommand.ReplaceAllFunc(body, func(match []byte) []byte {
+		parts := komodoCommand.FindSubmatch(match)
+		path, err := strconv.Unquote(`"` + string(parts[1]) + `"`)
 		if err != nil {
 			return match
 		}
@@ -124,7 +128,7 @@ func normaliseHooks(body []byte) []byte {
 		if !strings.HasPrefix(base, "komodo") {
 			return match
 		}
-		return []byte(`"command": "komodo guard"`)
+		return []byte(`"command": "komodo ` + string(parts[2]) + `"`)
 	})
 }
 

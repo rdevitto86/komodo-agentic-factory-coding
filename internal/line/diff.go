@@ -32,24 +32,10 @@ type ReviewInput struct {
 // DiffFor renders the group's diff against its base with the task blocks and the standards it touches.
 func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 	worktree := WorktreePath(root, plan.Worktree)
-	ref := StartRef(worktree, plan.Base)
-	names, err := git.Run(worktree, "diff", "--name-only", ref+"...HEAD")
-	if err != nil {
-		return nil, err
-	}
 	input := &ReviewInput{Group: plan.Group, Title: plan.Title, Base: plan.Base, Branch: plan.Branch}
-	for _, name := range strings.Split(names, "\n") {
-		if trimmed := strings.TrimSpace(name); trimmed != "" {
-			input.Files = append(input.Files, unquotePath(trimmed))
-		}
-	}
-	body, err := git.Run(worktree, "diff", ref+"...HEAD", "--", ":(exclude)bin")
-	if err != nil {
+	if err := input.diffSpan(worktree, reviewBase(root, plan, worktree)+"...HEAD"); err != nil {
 		return nil, err
 	}
-	pieces := diffPieces(input.Files, fileDiffs(body))
-	input.Lines = strings.Count(strings.Join(pieces, "\n"), "\n")
-	input.Diff = clipDiff(pieces, CapDiff)
 	input.Tasks = taskBlocks(root, plan)
 	standards, err := LoadStandards(root)
 	if err != nil {
@@ -64,6 +50,73 @@ func DiffFor(root string, plan *Plan) (*ReviewInput, error) {
 		fmt.Sprintf("\n# Diff against %s\n```diff\n%s\n```", plan.Base, input.Diff),
 	}, "\n")
 	return input, nil
+}
+
+// ReReviewFor renders a re-review: each open finding by file and line, then only the diff from since
+// to HEAD, the lines the repair changed; an empty since falls back to the group's whole diff.
+func ReReviewFor(root string, plan *Plan, since string, open []Finding) (*ReviewInput, error) {
+	worktree := WorktreePath(root, plan.Worktree)
+	input := &ReviewInput{Group: plan.Group, Title: plan.Title, Base: since, Branch: plan.Branch}
+	span := since + "..HEAD"
+	if since == "" {
+		input.Base = plan.Base
+		span = reviewBase(root, plan, worktree) + "...HEAD"
+	}
+	if err := input.diffSpan(worktree, span); err != nil {
+		return nil, err
+	}
+	input.Text = strings.Join([]string{
+		fmt.Sprintf("# Re-review of group %s: %s", plan.Group, plan.Title),
+		"\n" + OpenFindings(open),
+		fmt.Sprintf("\n# Diff since %s, the lines the repair changed\n```diff\n%s\n```", input.Base, input.Diff),
+	}, "\n")
+	return input, nil
+}
+
+// OpenFindings lists each open finding by file and line, and asks the reviewer to close or keep each with evidence.
+func OpenFindings(open []Finding) string {
+	if len(open) == 0 {
+		return "# Open findings\n\nNo finding is open. Review only the lines the diff below changed.\n"
+	}
+	var b strings.Builder
+	b.WriteString("# Open findings\n\nClose or keep each finding below, citing the diff or the file as evidence. " +
+		"Return every kept finding again; raise a new one only on a line the diff below changed.\n\n")
+	for _, finding := range open {
+		fmt.Fprintf(&b, "- `%s:%d` %s: %s\n", finding.File, finding.Line, finding.Severity, finding.Title)
+	}
+	return b.String()
+}
+
+// reviewBase is the ref a group's whole diff runs from: its run's base when it was cut from
+// another branch, such as its epic's, else the plan's.
+func reviewBase(root string, plan *Plan, worktree string) string {
+	base := plan.Base
+	if run, err := LoadRunFor(root, plan.Group); err == nil && run.Group == plan.Group && run.Base != "" {
+		base = run.Base
+	}
+	return StartRef(worktree, base)
+}
+
+// diffSpan fills the input's files, line count and clipped diff from one git revision range.
+func (input *ReviewInput) diffSpan(worktree, span string) error {
+	names, err := git.Run(worktree, "diff", "--name-only", span)
+	if err != nil {
+		return err
+	}
+	for _, name := range strings.Split(names, "\n") {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			input.Files = append(input.Files, unquotePath(trimmed))
+		}
+	}
+	// A deleted file is named, never replayed, so a mass deletion never clips the code a reviewer must read.
+	body, err := git.Run(worktree, "diff", "--irreversible-delete", span, "--", ":(exclude)bin")
+	if err != nil {
+		return err
+	}
+	pieces := diffPieces(input.Files, fileDiffs(body))
+	input.Lines = strings.Count(strings.Join(pieces, "\n"), "\n")
+	input.Diff = clipDiff(input.Files, pieces, CapDiff)
+	return nil
 }
 
 // diffPieces renders one diff chunk per changed file, naming a binary by size and any file
@@ -179,8 +232,9 @@ func unescape(letter byte) byte {
 	}
 }
 
-// clipDiff joins per-file diff chunks up to limit, dropping whole files rather than cutting a hunk.
-func clipDiff(pieces []string, limit int) string {
+// clipDiff joins per-file diff chunks up to limit, dropping whole files rather than cutting a hunk,
+// and names each dropped file so a reviewer can read it directly.
+func clipDiff(files, pieces []string, limit int) string {
 	var kept []string
 	size := 0
 	for index, piece := range pieces {
@@ -188,6 +242,9 @@ func clipDiff(pieces []string, limit int) string {
 		if size > limit && len(kept) > 0 {
 			omitted := len(pieces) - index
 			marker := fmt.Sprintf("\n[... diff clipped at a file boundary: %d of %d files shown, %d files omitted ...]", index, len(pieces), omitted)
+			if index < len(files) {
+				marker += "\n[read each omitted file directly: " + strings.Join(files[index:], ", ") + "]"
+			}
 			return strings.Join(kept, "\n") + marker
 		}
 		if size > limit {

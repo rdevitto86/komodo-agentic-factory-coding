@@ -147,7 +147,7 @@ Each requirement is met only when its proof exits zero. A review can file a bug 
 |---|---|---|---|
 | REQ-11 | The binary drives every stage transition; no model session routes stages. | Must | The ledger for an eval run holds only build, review, repair and escalation sessions. |
 | REQ-12 | Task groups that share no file run in parallel, up to the concurrency the plan allows. | Must | An eval case: groups that share a file run one after another; groups that share none overlap. |
-| REQ-13 | A group branch cuts from `main`, or stacks on the branch of a group it declares a dependency on. | Must | `komodo lint` rejects any other base. |
+| REQ-13 | A group branch cuts from its epic branch, or stacks on the branch of a group it declares a dependency on. Its version must equal its epic's exactly. | Must | `komodo lint` rejects any other base, and any group whose version differs from its epic's. |
 | REQ-14 | A stopped or killed run resumes without repeating finished work or losing uncommitted work. | Must | An eval case kills a run mid-build, resumes it, and finds every edit and no repeated session. |
 | REQ-15 | A run never rebuilds the binary it is running. | Must | A test: a stale build marker during a run changes nothing until the run ends. |
 

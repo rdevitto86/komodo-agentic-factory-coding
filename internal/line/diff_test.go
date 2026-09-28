@@ -75,6 +75,50 @@ func TestDiffForCarriesTasksStandardsAndTheDiff(t *testing.T) {
 	}
 }
 
+func TestReReviewForCarriesOnlyTheRepairAndTheOpenFindings(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commit(t, root, "a/one.go", "package a\n\nfunc One() int { return 1 }\n", "the build")
+	reviewed, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(t, root, "a/two.go", "package a\n\nfunc Two() int { return 2 }\n", "the repair")
+
+	plan := &Plan{Group: "TG-10.1", Title: "G", Base: "main~2", Worktree: "."}
+	open := []Finding{{Severity: "high", File: "a/one.go", Line: 3, Title: "One is untested"}}
+	input, err := ReReviewFor(root, plan, reviewed, open)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Files) != 1 || input.Files[0] != "a/two.go" {
+		t.Fatalf("files = %v, want only the repair's", input.Files)
+	}
+	if strings.Contains(input.Diff, "func One") || !strings.Contains(input.Diff, "func Two") {
+		t.Fatalf("diff = %q, want only the lines since the reviewed commit", input.Diff)
+	}
+	for _, want := range []string{"`a/one.go:3` high: One is untested", "Close or keep each finding", "evidence"} {
+		if !strings.Contains(input.Text, want) {
+			t.Errorf("re-review input is missing %q:\n%s", want, input.Text)
+		}
+	}
+}
+
+func TestReReviewForWithNoReviewedCommitReadsTheWholeDiff(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commit(t, root, "a/one.go", "package a\n", "one")
+	commit(t, root, "a/two.go", "package a\n", "two")
+
+	input, err := ReReviewFor(root, &Plan{Group: "TG-10.1", Base: "main~2", Worktree: "."}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Files) != 2 || !strings.Contains(input.Text, "No finding is open") {
+		t.Fatalf("files = %v, text = %q; want the whole diff and no open finding", input.Files, input.Text)
+	}
+}
+
 func TestDiffNamesABinaryWithoutItsBytes(t *testing.T) {
 	root := gitRepo(t)
 	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
@@ -129,8 +173,8 @@ func TestClipDiffDropsWholeFilesAndNamesTheCount(t *testing.T) {
 		strings.Repeat("c", 30000),
 		strings.Repeat("d", 30000),
 	}
-	out := clipDiff(pieces, CapDiff)
-	if !strings.Contains(out, "2 of 4 files shown, 2 files omitted") {
+	out := clipDiff([]string{"a.go", "b.go", "c.go", "d.go"}, pieces, CapDiff)
+	if !strings.Contains(out, "2 of 4 files shown, 2 files omitted") || !strings.Contains(out, "read each omitted file directly: c.go, d.go") {
 		t.Fatalf("marker missing or wrong count:\n%s", out[len(out)-200:])
 	}
 	before, _, found := strings.Cut(out, "\n[... diff clipped")
@@ -189,7 +233,7 @@ func TestReportOpensWithTheVerdict(t *testing.T) {
 
 func TestASingleOversizedPieceIsStillClipped(t *testing.T) {
 	piece := strings.Repeat("a", CapDiff+1)
-	got := clipDiff([]string{piece}, CapDiff)
+	got := clipDiff([]string{"a.go"}, []string{piece}, CapDiff)
 	if len(got) > CapDiff+200 {
 		t.Fatalf("kept %d chars against a cap of %d; one huge file must not escape the cap", len(got), CapDiff)
 	}
@@ -228,6 +272,47 @@ func TestDiffForUsesTheRefAddWorktreeResolvedNotAStaleLocalBase(t *testing.T) {
 	}
 	if contains(input.Files, "other/group.go") {
 		t.Fatalf("files = %v; a stale local base let another group's commit into the review", input.Files)
+	}
+}
+
+func TestDiffForUsesTheBaseTheRunWasCutFrom(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "shared.go", "package shared\n", "seed")
+	gitCmd(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	gitCmd(t, root, "checkout", "-q", "-b", "feat/1.0.0-alpha.6")
+	commit(t, root, "epic/earlier.go", "package epic\n", "an earlier group on the epic branch")
+	gitCmd(t, root, "update-ref", "refs/remotes/origin/feat/1.0.0-alpha.6", "HEAD")
+	gitCmd(t, root, "checkout", "-q", "-b", "feat/this-group")
+	commit(t, root, "a/one.go", "package a\n", "this group's commit")
+	if err := SaveRun(root, RunState{Run: "TG-10.1-1", Group: "TG-10.1", Base: "feat/1.0.0-alpha.6", Branch: "feat/this-group"}); err != nil {
+		t.Fatal(err)
+	}
+
+	input, err := DiffFor(root, &Plan{Group: "TG-10.1", Base: "main", Worktree: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(input.Files, "a/one.go") || contains(input.Files, "epic/earlier.go") {
+		t.Fatalf("files = %v; the review must diff against the epic branch the run was cut from", input.Files)
+	}
+}
+
+func TestDiffForNamesADeletedFileWithoutItsContents(t *testing.T) {
+	root := gitRepo(t)
+	commit(t, root, "old/gone.go", "package old\n\nvar replayed = true\n", "seed")
+	gitCmd(t, root, "branch", "base")
+	gitCmd(t, root, "rm", "-q", "old/gone.go")
+	commit(t, root, "a/one.go", "package a\n", "delete and add")
+
+	input, err := DiffFor(root, &Plan{Group: "TG-10.1", Base: "base", Worktree: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(input.Files, "old/gone.go") || !strings.Contains(input.Diff, "deleted file") {
+		t.Fatalf("diff = %q; a deleted file must still be named", input.Diff)
+	}
+	if strings.Contains(input.Diff, "replayed") {
+		t.Fatalf("diff = %q; a deleted file's contents must not fill the reviewer's diff", input.Diff)
 	}
 }
 

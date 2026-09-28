@@ -30,70 +30,19 @@ const GroupBudget = 90 * time.Minute
 // Skill is the skill a headless run always enters through.
 const Skill = "run"
 
-// dropped are the environment variables that would hand a headless run a push credential.
-var dropped = []string{
-	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK",
-	"GIT_CONFIG_PARAMETERS",
-}
-
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
-	Root       string
-	Target     string
-	Budget     time.Duration
-	DryRun     bool
+	Root   string
+	Target string
+	Budget time.Duration
+	DryRun bool
+	// NoShip stops each group at shipped-ready, skipping the push and the draft pull request.
+	NoShip     bool
 	Env        []string
 	Stdout     io.Writer
 	Stderr     io.Writer
 	PR         *pr.Client
 	Executable string
-}
-
-// Scrub returns the environment with every push credential removed and git left unable to prompt.
-func Scrub(base []string) []string {
-	out := make([]string, 0, len(base)+6)
-	for _, entry := range base {
-		key, _, found := strings.Cut(entry, "=")
-		if !found || contains(dropped, key) || credentialShaped(key) || isOverride(key) {
-			continue
-		}
-		out = append(out, entry)
-	}
-	return append(out,
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_COUNT=1",
-		"GIT_CONFIG_KEY_0=credential.helper",
-		"GIT_CONFIG_VALUE_0=",
-		"GIT_SSH_COMMAND=ssh -F "+os.DevNull+" -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile="+os.DevNull,
-		"GH_CONFIG_DIR="+filepath.Join(os.TempDir(), "komodo-gh-noauth"),
-	)
-}
-
-// credentialShaped reports whether a key names a forge's secret, such as GITHUB_PAT or GITLAB_TOKEN,
-// so a push credential is dropped while the model host keeps its own login.
-func credentialShaped(key string) bool {
-	forge, secret := false, false
-	for _, part := range strings.Split(key, "_") {
-		forge = forge || forgeWords[part]
-		secret = secret || secretWords[part]
-	}
-	return forge && secret
-}
-
-// forgeWords and secretWords are the name parts that together mark a push credential.
-var (
-	forgeWords  = map[string]bool{"GIT": true, "GITHUB": true, "GH": true, "GITLAB": true, "GL": true, "BITBUCKET": true}
-	secretWords = map[string]bool{"TOKEN": true, "PAT": true, "SECRET": true, "PASSWORD": true, "KEY": true}
-)
-
-// isOverride reports whether Scrub sets this key itself, so an inherited value never survives.
-func isOverride(key string) bool {
-	switch key {
-	case "GIT_TERMINAL_PROMPT", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0",
-		"GIT_CONFIG_VALUE_0", "GIT_SSH_COMMAND", "GH_CONFIG_DIR":
-		return true
-	}
-	return false
 }
 
 // Command resolves the host from the profile and returns what a headless run would invoke.
@@ -126,7 +75,7 @@ func launchTarget(options Options) (int, string, error) {
 	}
 	code, err := launch(options, name, args)
 	url := ""
-	if !options.DryRun {
+	if !options.DryRun && !options.NoShip {
 		created, shipErr := finishShip(options)
 		url = created
 		if shipErr != nil && err == nil {
@@ -150,20 +99,16 @@ func drain(options Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	// Sync once before the run starts, and never again until it ends, so no group's binary moves under it.
+	executable, err := Sync(SyncOptions{Root: options.Root, Stdout: stdout})
+	if err != nil {
+		return 1, err
+	}
 	started := time.Now()
 	ran := map[string]bool{}
 	var shippedGroups, parked []string
-	executable := ""
+	code := 0
 	for {
-		// Sync fetches origin, rebuilds a stale binary, and re-renders drifted config.
-		built, err := Sync(SyncOptions{Root: options.Root, Stdout: options.Stdout})
-		if err != nil {
-			return 1, err
-		}
-		if built != "" {
-			executable = built
-		}
-
 		// Every open group drains first, oldest start first, then each ready group in file order.
 		order, err := drainOrder(options.Root)
 		if err != nil {
@@ -181,30 +126,32 @@ func drain(options Options) (int, error) {
 			fmt.Fprintf(stdout, "drain done: nothing is ready; %d shipped, %d parked", len(shippedGroups), len(parked))
 			if len(parked) > 0 {
 				fmt.Fprintf(stdout, " (%s)\n", strings.Join(parked, ", "))
-				return 1, nil
+				code = 1
+			} else {
+				fmt.Fprintln(stdout)
 			}
-			fmt.Fprintln(stdout)
-			return 0, nil
+			break
 		}
 		ran[next] = true
 		remaining := total - time.Since(started)
 		if remaining <= 0 {
 			fmt.Fprintf(stdout, "%s stopped: the whole %s budget is spent\n", next, total)
-			return 124, nil
+			code = 124
+			break
 		}
 		group := options
 		group.Target = next
 		group.Budget = min(GroupBudget, remaining)
 		group.Executable = executable
 		launched := time.Now()
-		code, url, err := launchTarget(group)
+		runCode, url, err := launchTarget(group)
 		if err != nil {
 			fmt.Fprintf(stdout, "%s parked: %v\n", next, err)
 			parked = append(parked, next)
 			continue
 		}
 		if !shipped(options.Root, next, launched) {
-			fmt.Fprintf(stdout, "%s parked: it ended without shipping (exit %d)\n", next, code)
+			fmt.Fprintf(stdout, "%s parked: it ended without shipping (exit %d)\n", next, runCode)
 			parked = append(parked, next)
 			continue
 		}
@@ -214,6 +161,11 @@ func drain(options Options) (int, error) {
 		fmt.Fprintf(stdout, "%s shipped: %s\n", next, url)
 		shippedGroups = append(shippedGroups, next)
 	}
+	// Sync once more after the run ends, so a binary gone stale mid-run rebuilds only once every group is done.
+	if _, err := Sync(SyncOptions{Root: options.Root, Stdout: stdout}); err != nil {
+		return 1, err
+	}
+	return code, nil
 }
 
 // listDrain prints the groups a drain would run, in order, the open run first, and launches nothing.
@@ -309,7 +261,7 @@ func launch(options Options, name string, args []string) (int, error) {
 			return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
 		}
 	}
-	env, err := withBinPath(Scrub(base), options.Root, executable)
+	env, err := withBinPath(line.Scrub(base), options.Root, executable)
 	if err != nil {
 		return 1, err
 	}
@@ -458,7 +410,7 @@ func finishShip(options Options) (string, error) {
 	}
 	// An agent can write after_publish into ship.json, so it runs scrubbed, never with the push credentials.
 	if handoff.AfterPublish != "" {
-		if published := line.RunCommandEnv(worktree, handoff.AfterPublish, Scrub(os.Environ())); !published.OK() {
+		if published := line.RunCommandEnv(worktree, handoff.AfterPublish, line.Scrub(os.Environ())); !published.OK() {
 			return url, fmt.Errorf("after_publish: %s", line.FailureText(published))
 		}
 	}

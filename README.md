@@ -35,7 +35,8 @@ Every version here is SemVer with a prerelease stage, and a group's `version:` m
 
 - **Alpha, `x.y.z-alpha.n`.** The shape still moves. V1 restarts the rebuild at `1.0.0-alpha.5` while phases 0 to 3 land; the prototype's four releases are renumbered `1.0.0-alpha.1`–`.4` (decision 0023).
 - **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land while `komodo eval` runs on every platform. V1's beta starts at `1.0.0-beta.2`, since the untagged `1.0.0-beta.1` heading is retitled as history and never reused (decision 0024).
-- **Release, `x.y.z`.** The LTS release, cut by the owner once `docs/prd.md#success-criteria` holds. `komodo tag` never promotes a beta on its own.
+- **Rc, `x.y.z-rc.n`, optional.** Nothing requires, gates, or checks it; a release may go straight from beta to stable. V1 takes that path (decision 0029).
+- **Stable, `x.y.z`.** The LTS release, cut by the owner once `docs/prd.md#success-criteria` holds. `komodo tag` never promotes a beta on its own.
 
 ## Names
 

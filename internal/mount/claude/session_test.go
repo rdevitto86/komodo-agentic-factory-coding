@@ -3,9 +3,13 @@ package claude
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	"komodo/internal/guard"
 	"komodo/internal/mount"
 )
 
@@ -27,8 +31,11 @@ func TestSessionArgvForBuilder(t *testing.T) {
 		"-p",
 		"--setting-sources local",
 		"--plugin-dir /repo/.claude/plugins/builder",
-		"--settings /repo/.claude/settings.json",
+		"--settings ",
 		"--tools Read, Edit, Write, Bash, Grep, Glob",
+		"--allowedTools Read, Edit, Write, Bash(ls:*), ",
+		"Bash(git diff:*)",
+		"--disallowedTools Edit(//worktree/docs/prd.md), Edit(//worktree/eval/**), Edit(//worktree/komodo/policy.json), Bash(git add:*)",
 		"--permission-mode dontAsk",
 		"--model sonnet",
 		"--effort extended",
@@ -65,6 +72,16 @@ func TestSessionArgvForLens(t *testing.T) {
 	}
 	if !strings.Contains(joined, "--model haiku") {
 		t.Errorf("lens model not haiku:\n%s", joined)
+	}
+}
+
+func TestSessionOmitsAnUnsetEffort(t *testing.T) {
+	req := mount.StartRequest{Role: "reviewer", Brief: "review", Tools: []string{"read"}, Schema: []byte(`{"type":"object"}`)}
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "opus", "", 10, 0)
+	for _, arg := range argv {
+		if arg == "--effort" {
+			t.Fatalf("argv = %v; an unset effort must leave the flag out", argv)
+		}
 	}
 }
 
@@ -157,6 +174,13 @@ func TestSessionEnvRemovesCLAUDEConfigDir(t *testing.T) {
 	}
 }
 
+func TestSetEnvReplacesAnEmptyValue(t *testing.T) {
+	env := setEnv([]string{"GOCACHE=", "HOME=/h"}, "GOCACHE", "/cache")
+	if strings.Join(env, " ") != "HOME=/h GOCACHE=/cache" {
+		t.Fatalf("env = %q, want one GOCACHE entry", env)
+	}
+}
+
 func TestSessionEnvSetsGoCache(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
@@ -167,7 +191,7 @@ func TestSessionEnvSetsGoCache(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOCACHE=") {
-			if !strings.HasSuffix(entry, "GOCACHE=/worktree/.gocache") {
+			if !strings.HasSuffix(entry, "GOCACHE=/worktree/.komodo/go/cache") {
 				t.Errorf("GOCACHE not in worktree: %s", entry)
 			}
 			return
@@ -186,7 +210,7 @@ func TestSessionEnvSetsGOTMPDIR(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOTMPDIR=") {
-			if !strings.HasSuffix(entry, "GOTMPDIR=/worktree/.gotmpdir") {
+			if !strings.HasSuffix(entry, "GOTMPDIR=/worktree/.komodo/go/tmp") {
 				t.Errorf("GOTMPDIR not in worktree: %s", entry)
 			}
 			return
@@ -205,7 +229,7 @@ func TestSessionEnvSetsGopath(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOPATH=") {
-			if !strings.HasSuffix(entry, "GOPATH=/worktree/.gopath") {
+			if !strings.HasSuffix(entry, "GOPATH=/worktree/.komodo/go/path") {
 				t.Errorf("GOPATH not in worktree: %s", entry)
 			}
 			return
@@ -224,7 +248,7 @@ func TestSessionEnvSetsGomodcache(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOMODCACHE=") {
-			if !strings.HasSuffix(entry, "GOMODCACHE=/worktree/.gopath/pkg/mod") {
+			if !strings.HasSuffix(entry, "GOMODCACHE=/worktree/.komodo/go/path/pkg/mod") {
 				t.Errorf("GOMODCACHE not in worktree: %s", entry)
 			}
 			return
@@ -456,8 +480,37 @@ func TestSessionSettingsPath(t *testing.T) {
 	joined := strings.Join(argv, " ")
 
 	expected := "--settings /my/repo/.claude/settings.json"
+	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
+		expected = "--settings " + withSandbox("/my/repo/.claude/settings.json", sandbox)
+	}
 	if !strings.Contains(joined, expected) {
 		t.Errorf("argv missing correct settings path: %s\nfull: %s", expected, joined)
+	}
+}
+
+func TestTheSandboxMergesIntoTheRolesRenderedSettings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	sandbox := lineSandbox(mount.Overlay{}, "linux")
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rendered := `{"hooks":{"PreToolUse":[{"matcher":"Bash"}]},"permissions":{"deny":["Edit(~/.claude/**)"]}}`
+	if err := os.WriteFile(filepath.Join(root, Dir, "settings.json"), []byte(rendered), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	merged := withSandbox(filepath.Join(root, Dir, "settings.json"), sandbox)
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(merged), &settings); err != nil {
+		t.Fatalf("settings %q: %v", merged, err)
+	}
+	for _, key := range []string{"hooks", "permissions", "sandbox"} {
+		if _, found := settings[key]; !found {
+			t.Fatalf("settings = %s, missing %s", merged, key)
+		}
+	}
+	if !parseSandbox(t, merged).FailIfUnavailable {
+		t.Fatalf("settings = %s; the merged sandbox must still fail if unavailable", merged)
 	}
 }
 
@@ -535,12 +588,12 @@ func TestSessionEnvWithWorktreeSlashes(t *testing.T) {
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GOCACHE=") {
-			if !strings.Contains(entry, "/work/tree/path/.gocache") {
+			if !strings.Contains(entry, "/work/tree/path/.komodo/go/cache") {
 				t.Errorf("GOCACHE has incorrect worktree path: %s", entry)
 			}
 		}
 		if strings.HasPrefix(entry, "GOPATH=") {
-			if !strings.Contains(entry, "/work/tree/path/.gopath") {
+			if !strings.Contains(entry, "/work/tree/path/.komodo/go/path") {
 				t.Errorf("GOPATH has incorrect worktree path: %s", entry)
 			}
 		}
@@ -625,6 +678,68 @@ func TestSessionBuilderVerbsMapToHostTools(t *testing.T) {
 	for _, tool := range hostTools {
 		if !strings.Contains(toolsStr, tool) {
 			t.Errorf("tools missing host name %q: %s", tool, toolsStr)
+		}
+	}
+}
+
+func TestARoleSessionCarriesTheLineSandbox(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	argv, _, _ := Session("/repo", "/worktree", mount.StartRequest{Role: "builder"}, "", "", "sonnet", "", 10, 0)
+	want := lineSandbox(mount.LoadOverlay(), runtime.GOOS)
+	carried := false
+	for i, arg := range argv[:len(argv)-1] {
+		carried = carried || (arg == "--settings" && argv[i+1] == withSandbox("/repo/.claude/settings.json", want))
+	}
+	if want != "" && !carried {
+		t.Fatalf("argv = %v; a role session must carry the line sandbox as inline settings", argv)
+	}
+	if strings.Count(strings.Join(argv, " "), "--settings") != 1 {
+		t.Fatalf("argv = %v; exactly one --settings is passed, since the host keeps only the last", argv)
+	}
+	if want != "" && !strings.Contains(want, ".git-credentials") {
+		t.Fatalf("sandbox = %s; the credential store must be unreadable", want)
+	}
+}
+
+func TestSessionTempRootSitsOutsideTheWorktree(t *testing.T) {
+	worktree := t.TempDir()
+	_, env, _ := Session("/repo", worktree, mount.StartRequest{Role: "builder", Brief: "b"}, "", "", "m", "", 10, 0)
+	var tmp string
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, "CLAUDE_CODE_TMPDIR="); ok {
+			tmp = value
+		}
+	}
+	if tmp == "" || tmp != SessionTmp(worktree) {
+		t.Fatalf("CLAUDE_CODE_TMPDIR = %q, want the worktree's own temp root", tmp)
+	}
+	if rel, err := filepath.Rel(worktree, tmp); err == nil && !strings.HasPrefix(rel, "..") {
+		t.Fatalf("temp root %q sits inside the worktree, where a walk up for .git finds the real repo", tmp)
+	}
+	if SessionTmp(worktree) == SessionTmp(worktree+"-other") {
+		t.Fatal("two worktrees share one temp root")
+	}
+}
+
+func TestSessionEnvNamesTheLineRoleForTheGuard(t *testing.T) {
+	req := mount.StartRequest{Role: "reviewer", Tools: []string{"read"}, Schema: []byte(`{}`)}
+	_, env, _ := Session("/repo", "/worktree", req, "", "", "opus", "", 10, 0)
+	found := false
+	for _, entry := range env {
+		found = found || entry == guard.RoleEnv+"=reviewer"
+	}
+	if !found {
+		t.Fatalf("env = %v; the guard must see the session's line role", env)
+	}
+}
+
+func TestSessionDeniesTheLinePathsEvenWithNoTools(t *testing.T) {
+	req := mount.StartRequest{Role: "builder", Schema: []byte(`{}`)}
+	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "", 10, 0)
+	joined := strings.Join(argv, " ")
+	for _, want := range []string{"Edit(//worktree/docs/prd.md)", "Edit(//worktree/eval/**)", "Edit(//worktree/komodo/policy.json)"} {
+		if !strings.Contains(joined, "--disallowedTools ") || !strings.Contains(joined, want) {
+			t.Errorf("argv missing deny %q:\n%s", want, joined)
 		}
 	}
 }

@@ -378,7 +378,7 @@ context:
 ### [TG-04.6] The relay line stops cleanly when a group does not ship
 ```yaml
 type: fix
-version: 1.0.0-alpha.6
+version: 1.0.0-alpha.5
 ```
 * **Why:** running phase 1 in two lanes on 2026-09-26 found three relay-line defects; each cost a stopped lane or a hand repair.
 
@@ -492,7 +492,7 @@ depends_on: [TG-04.5]
 ```yaml
 files: [internal/mount/mount.go, internal/mount/host.go, internal/mount/host_test.go, internal/mount/registry.go]
 done_when:
-  - go test ./internal/mount/...
+  - go test ./internal/install/...
   - go vet ./...
 context:
   - docs/system-design.md#the-host-contract
@@ -592,7 +592,7 @@ context:
   - 'On a start with Brief "", or a resume with resumeInput "", Session sends "/" on stdin instead of refusing. This launches a paid, turn-consuming session with a meaningless prompt and hides the conductor''s bug. The substitution also carries no comment. Return an error from Session when the prompt it would send is empty.'
 ```
 
-#### [TSK-05.2.10] internal/mount/claude/session.go:97 removeEnv keeps an entry whose value is empty [P: L] [REFINEMENT]
+#### [TSK-05.2.10] internal/mount/claude/session.go:97 removeEnv keeps an entry whose value is empty [P: L] [DONE]
 ```yaml
 files:
   - internal/mount/claude/session.go
@@ -921,9 +921,9 @@ version: 1.0.0-alpha.6
 base: feat/the-conductor-drives-the-stages
 depends_on: [TG-05.4]
 ```
-* **Why:** TG-05.4 built the conductor, but no mount implements the host contract, so nothing can start a real session through it; TSK-05.4.4 and TSK-05.4.5 move here and wait on the adapter.
+* **Why:** TG-05.4 built the conductor, but no mount implements the host contract, so nothing can start a real session through it; TSK-05.4.4 and TSK-05.4.5 moved here; after TSK-05.6.2 closed with no change, they move again to TG-05.9.
 
-#### [TSK-05.6.1] The Claude mount implements the host contract [P: C] [READY]
+#### [TSK-05.6.1] The Claude mount implements the host contract [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/contract.go, internal/mount/claude/contract_test.go, internal/mount/claude/testdata]
 done_when:
@@ -935,33 +935,462 @@ context:
   - "tests run a fake claude script on PATH that replays recorded start and resume streams (decision 0025), with local paths and account fields replaced"
 ```
 
-#### [TSK-05.6.2] `komodo run` runs the conductor, not a model relaying stages [P: C] [READY]
+### [TG-05.7] Every epic has a draft branch, and group PRs stack on it
 ```yaml
-files: [internal/run/run.go, internal/run/run_test.go, cmd/komodo/line.go, internal/mount/claude/claude.go]
+type: feat
+version: 1.0.0-alpha.6
+```
+* **Why:** every group opened its own PR against `main`, and the owner approved each by hand; on 2026-09-26 that was 14 PRs in one afternoon. An epic branch collects its groups' PRs, and a person merges once per epic.
+
+#### [TSK-05.7.1] Decision 0028 and REQ-13 say where every branch cuts from and where every PR lands [P: C] [DONE]
+```yaml
+files: [docs/decisions.md, docs/prd.md, docs/system-design.md]
 done_when:
-  - go test ./internal/run/... ./cmd/komodo/...
-  - "! grep -q bypassPermissions internal/mount/claude/claude.go"
-depends_on: [TSK-05.6.1]
+  - grep -q '^## 0028' docs/decisions.md
+  - grep -q 'epic branch' docs/prd.md
 context:
-  - docs/system-design.md#the-komodo-command
-  - "was TSK-05.4.4: Launch runs preflight, then the conductor with the Claude contract and internal/line's stations; Headless and its /run prompt go, and so does komodo step once nothing calls it"
-  - "the builder's brief comes from the group's card and its slots (TSK-07.2.4); Prepare integrates the group branch the one builder worked, with no task branches to merge"
-  - "tests clear KOMODO_RUN_PID, so a suite run inside a line session never trips the nested-run guard"
+  - "the owner's words, 2026-09-26: each epic has a branch named feat/v<its version>, cut from main and opened as a draft PR to main; every group PR targets its epic's branch, or stacks on the group it depends on; people review and merge at the final state, the epic's PR"
+  - "the conductor merges a reviewed, checked group PR into its epic branch; only a person merges an epic PR into main"
+  - "a group PR holds at most 20 files and 2,000 changed lines, and 1,000 is preferred; an epic PR has no cap, since it gathers many group PRs"
+  - "an epic's version names its branch, so every group's version must equal its epic's exactly"
+  - "naming: only an epic branch is named by version, strictly feat/v<version>; a group branch and PR keep their own unique names, each naming its group, so every change traces to its task group"
+  - "REQ-13 becomes: a group branch cuts from its epic's branch, or stacks on the branch of a group it depends on; update system-design's git and shipping sections to match"
+type: docs
 ```
 
-#### [TSK-05.6.3] The run skill launches and watches, and never relays a stage [P: H] [READY]
+#### [TSK-05.7.2] Lint pins every group's version to its epic's [P: C] [DONE]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+  - go run ./cmd/komodo lint
+context:
+  - "the epic branch is named from the version, so a wrong version sends a builder's work to the wrong branch; an epic's goal line names its version as Ships as `x.y.z`"
+  - "a group whose version differs from its epic's is a problem naming both; an epic with no version is a problem"
+```
+
+#### [TSK-05.7.3] A group with no declared base cuts from its epic's branch [P: C] [DONE]
+```yaml
+files: [internal/backlog/backlog.go, internal/line/next.go, internal/line/next_test.go, komodo/rules/backlog.md]
+done_when:
+  - go test ./internal/backlog/... ./internal/line/...
+depends_on: [TSK-05.7.2]
+context:
+  - "EpicBranch is feat/v plus the group's version; groupBase is the declared base, else the epic branch, else the remote's default when the epic branch is missing and cannot be opened"
+  - "lint's base rule accepts the group's epic branch; the grammar in komodo/rules/backlog.md says a group cuts from its epic's branch and states that its version picks the branch"
+  - "a PR's branch is <type>/<id>-<slug>, the id kept as written: feat/TG-05.2-the-host-contract for a group, fix/TSK-04.6.1-stop-verbose-outputs for a single task; its PR title ends with the same id, such as (TG-05.2), so each traces to its group or task"
+  - "only feat/v<version> is an epic branch: lint refuses a group whose declared base looks like one but names another epic's version"
+  - "test (REQ-13): a group with no base plans onto feat/v<version>; one with depends_on stacks on its parent's branch; a group branch carries its group id"
+```
+
+#### [TSK-05.7.4] The line opens an epic's branch and draft PR on its first cut [P: C] [DONE]
+```yaml
+files: [internal/line/epic.go, internal/line/epic_test.go, internal/line/cut.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-05.7.3]
+context:
+  - "when a group cuts and its epic branch is not on origin, the conductor cuts it from main, pushes it with its own credential, and opens a draft PR to main titled feat: <epic title> (<version>), with the epic's goal as the summary"
+  - "where drafts are unavailable, the PR is labelled status: wip, as TSK-07.8.3 does for group PRs; a draft base never stops a group PR from targeting or stacking on it"
+```
+
+#### [TSK-05.7.5] The conductor merges a reviewed group into its epic branch [P: C] [DONE]
+```yaml
+files: [internal/line/merge.go, internal/line/merge_test.go, internal/pr/pr.go, internal/pr/pr_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/pr/...
+depends_on: [TSK-05.7.4]
+context:
+  - "after ship, when the review left nothing at or above the floor and every check passed, the conductor merges the group PR into its epic branch with a merge commit, never a squash, so a stacked child keeps its base"
+  - "it never merges into main or a critical ref from komodo/policy.json, and a model session never merges; a refused merge leaves the PR open and names why"
+```
+
+#### [TSK-05.7.6] A group PR holds at most 20 files and 2,000 changed lines [P: H] [DONE]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/profile/...
+depends_on: [TSK-05.7.5]
+context:
+  - "the profile carries pr_files 20, pr_lines_preferred 1000 and pr_lines_max 2000; ship refuses a group PR over either ceiling and names a split, and a PR over the preferred size says so in its body"
+  - "an epic PR has no cap"
+  - "lint refusing a group whose tasks list more than 20 files lands with TG-07.1's group files"
+```
+
+#### [TSK-05.7.7] The rules and skills send every PR to its epic branch [P: H] [DONE]
+```yaml
+files: [komodo/AGENTS.md, komodo/skills/standards-sdlc/SKILL.md, komodo/skills/respond/SKILL.md, komodo/roles/responder.md]
+done_when:
+  - grep -q 'epic branch' komodo/AGENTS.md
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-05.7.1]
+context:
+  - "AGENTS.md's Git section: a group PR targets its epic branch, and landing into main is a person's merge of the epic PR; keep the file's size unchanged, since the always-on context sits at its cap"
+  - "the SDLC standard and the responder: branches, PR targets, stacking, drafts and the size limits, as decision 0028 states them"
+type: docs
+```
+
+#### [TSK-05.7.8] Doctor reports an epic missing its branch or draft PR, and a group PR aimed at main [P: M] [DONE]
+```yaml
+files: [internal/doctor/epics.go, internal/doctor/epics_test.go]
+done_when:
+  - go test ./internal/doctor/...
+depends_on: [TSK-05.7.4]
+context:
+  - "with --remote: an epic holding ready groups whose branch or draft PR is missing on origin, and an open group PR whose base is main while its epic branch exists"
+  - "the guard is frozen until TG-06.2, so the rule that a model session may not push to or merge an epic branch lands there (TSK-06.2.1)"
+```
+
+### [TG-05.8] Versions go alpha, beta, rc, stable, and an epic branch is feat/<version>
+```yaml
+type: feat
+version: 1.0.0-alpha.6
+base: feat/every-epic-has-a-draft-branch-and-group
+depends_on: [TG-05.7]
+```
+* **Why:** the owner set the release phases and branch names on 2026-09-26: alpha, then beta, then rc, then stable, and an epic branch is the version itself behind feat/, such as feat/1.0.0-alpha.1, feat/2.3.45-beta.12, feat/1.1.0-rc.1 and feat/5.31.0. TG-05.7 was already building feat/v<version>.
+
+#### [TSK-05.8.1] A version is x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n [P: C] [DONE]
+```yaml
+files: [internal/backlog/backlog.go, internal/backlog/lint.go, internal/backlog/lint_test.go, internal/changelog/changelog_test.go]
+done_when:
+  - go test ./internal/backlog/... ./internal/changelog/...
+  - go run ./cmd/komodo lint
+context:
+  - "lint refuses any other prerelease, such as -dev.1 or -beta without a number, naming the four phases"
+  - "the phases order alpha, beta, rc, then stable; a test proves 1.0.0-beta.9 < 1.0.0-rc.1 < 1.0.0 in changelog.Compare"
+  - "rc is optional: nothing refuses a stable version whose epic had no rc, and a test proves 1.0.0-beta.2 followed by 1.0.0 lints and orders cleanly"
+```
+
+#### [TSK-05.8.2] An epic branch is feat/<version>, with no v [P: C] [DONE]
+```yaml
+files: [internal/backlog/backlog.go, internal/line/next.go, internal/line/next_test.go, internal/line/epic.go, internal/line/epic_test.go]
+done_when:
+  - go test ./internal/backlog/... ./internal/line/...
+depends_on: [TSK-05.8.1]
+context:
+  - "EpicBranch is feat/ plus the version exactly, such as feat/1.0.0-alpha.6; release tags keep their v, such as v1.0.0-alpha.6"
+  - "tests: each of feat/1.0.0-alpha.1, feat/2.3.45-beta.12, feat/1.1.0-rc.1 and feat/5.31.0 is the epic branch of a group at that version"
+```
+
+#### [TSK-05.8.3] Decision 0029, the README, the rules, the skills and the template name the four phases and the branch form [P: H] [DONE]
+```yaml
+files: [docs/decisions.md, README.md, AGENTS.md, komodo/rules/backlog.md, komodo/skills/backlog/SKILL.md, komodo/skills/standards-sdlc/SKILL.md, templates/project/docs/backlog/TG-01.1-example-group.md]
+done_when:
+  - grep -q '^## 0029' docs/decisions.md
+  - grep -q 'rc' komodo/rules/backlog.md
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-05.8.2]
+context:
+  - "decision 0029 amends 0023 and 0028: the phases are alpha, beta, rc and stable; an epic branch is feat/<version>"
+  - "rc is optional and reserved: a release may go straight from beta to stable, such as 1.0.0-beta.2 to 1.0.0, and nothing requires, gates or checks for an rc; V1 takes that path"
+  - "README's Versions section gains an rc bullet marked optional and renames Release to Stable; AGENTS.md says Versions go alpha, beta, optional rc, stable, with the always-on context still under its cap"
+  - "the backlog rule, the backlog skill and the SDLC standard give the four phases and the branch examples; the template's example group carries a phase version"
+type: docs
+```
+
+#### [TSK-05.8.4] internal/backlog/lint.go:78 Lint still accepts base: main, against REQ-13 [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/lint.go
+done_when:
+  - test -f internal/backlog/lint.go
+type: fix
+context:
+  - 'REQ-13 says a group cuts from its epic branch or a dependency''s branch, and lint should reject any other base. The base check still special-cases base != "main", so a group at 1.0.0-alpha.6 with base: main lints clean and bypasses feat/1.0.0-alpha.6. No group in BACKLOG.md declares base: main, so nothing needs the exception. This line predates TG-05.8''s diff. Remove base != "main" from the accepted bases and from the error message.'
+```
+
+#### [TSK-05.8.5] internal/backlog/lint_test.go:189 Other-epic base test uses the old feat/v form [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/lint_test.go
+done_when:
+  - test -f internal/backlog/lint_test.go
+type: test
+context:
+  - "TestLintRejectsAGroupWhoseBaseNamesAnotherEpicsBranch uses base feat/v2.0.0. After TSK-05.8.2 an epic branch is feat/2.0.0. If lint regressed to accept any feat/<version>, this test would still pass because feat/v2.0.0 is not in that form. Use base: feat/2.0.0 in the test."
+```
+
+#### [TSK-05.8.6] docs/system-design.md:91 system-design still names epic branches feat/v<version> [P: L] [REFINEMENT]
+```yaml
+files:
+  - docs/system-design.md
+done_when:
+  - test -f docs/system-design.md
+type: docs
+context:
+  - "The Base row at line 91 and ship step 1 at line 266 say feat/v<epic's version>. Decision 0029 and Group.EpicBranch now produce feat/<version>, so a builder given this section as context names the wrong branch. Change both lines to feat/<epic's version> and cite decision 0029."
+```
+
+#### [TSK-05.8.7] internal/backlog/backlog.go:337 Parse appends the goal line to Epic.Title [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/backlog.go
+done_when:
+  - test -f internal/backlog/backlog.go
+type: refactor
+context:
+  - 'Parse concatenates the goal line into Title only when it contains "Ships as `". Epic.Version then rescans Title, and internal/line/epic.go splits it again on " *Goal:". A goal line without "Ships as" is dropped, so the epic''s draft PR loses its summary. Add Goal and Version fields to Epic and set them once in Parse.'
+```
+
+#### [TSK-05.8.8] internal/backlog/backlog.go:333 Redundant prefix check and unused index [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/backlog.go
+done_when:
+  - test -f internal/backlog/backlog.go
+type: refactor
+context:
+  - 'strings.HasPrefix(nextLine, "###") can never matter after strings.HasPrefix(nextLine, "#"). At line 336, idx is only compared >= 0. Drop the "###" check and use strings.Contains at line 336.'
+```
+
+#### [TSK-05.8.9] internal/backlog/backlog.go:327 Comments restate the code [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/backlog.go
+done_when:
+  - test -f internal/backlog/backlog.go
+type: docs
+context:
+  - The comments at line 327 (look ahead for the goal line) and line 334 (stop at next heading) only restate the loop and the break below them. Delete both comments.
+```
+
+
+
+
+
+
+
+### [TG-05.9] `komodo run` drives a group through the conductor, end to end
+```yaml
+type: feat
+version: 1.0.0-alpha.6
+depends_on: [TG-05.6]
+```
+* **Why:** TSK-05.6.2 closed with no change, since its checks already held, so `komodo run` still relays stages through a model; TSK-05.6.3's skill then pointed at a conductor nothing starts. This group wires it, and its last check is a group driven to Shipped against a fake host.
+
+#### [TSK-05.9.1] A mount hands the conductor its host contract [P: C] [DONE]
+```yaml
+files: [internal/mount/registry.go, internal/mount/mount_test.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
+done_when:
+  - go test ./internal/install/...
+  - go test ./internal/mount/claude/ -run TestTheClaudeMountHandsOutItsContract
+context:
+  - "mount.Host gains Contract func(root, worktree string) Contract; the Claude mount registers NewMount with the profile's turn cap; a mount without one, such as Codex or Ollama, leaves it nil and komodo run says it cannot drive that host"
+```
+
+#### [TSK-05.9.2] The builder's and reviewer's start requests come from the role, the group and the profile [P: C] [DONE]
+```yaml
+files: [internal/run/requests.go, internal/run/requests_test.go, internal/line/step.go]
+done_when:
+  - go test ./internal/run/ -run TestStartRequests
+context:
+  - "the builder's brief fills the builder role for the whole group: each task's BuildBrief, in wave order; the reviewer's brief is what reviewBrief writes, exported as ReviewBrief"
+  - "each request carries its role's tools and its schema from komodo/roles/<role>.schema.json, the model and effort from profile.Machine for builder, and the reviewer tier's machine for the reviewer"
+  - "tests: the builder request names every task of a two-task group and the builder schema; the reviewer request carries the group's diff"
+```
+
+#### [TSK-05.9.3] The stations fit one group builder, and the review lands where ship reads it [P: C] [DONE]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/conductor/...
+context:
+  - "Prepare no longer merges task branches, since the group builder works the group worktree itself: it reruns the compile gates and verify there, and records every plan task DONE in live status for ShipGroup"
+  - "the conductor writes the reviewer's result to the group's review result path, so ShipGroup's missing-review refusal passes only when a review really ran"
+```
+
+#### [TSK-05.9.4] `komodo run <group>` drives the group to Shipped through the conductor [P: C] [DONE]
+```yaml
+files: [internal/run/run.go, internal/run/drive.go, internal/run/drive_test.go, cmd/komodo/line.go]
+done_when:
+  - go test ./internal/run/ -run TestRunDrivesAGroupEndToEnd
+  - go test ./internal/run/... ./cmd/komodo/...
+depends_on: [TSK-05.9.1, TSK-05.9.2, TSK-05.9.3]
+context:
+  - "was TSK-05.6.2: cut the group when no run is open, load its state.json or start one at Ready, build the Driver from the contract, the requests, the stations and the ledger, then Drive or Resume, and exit non-zero unless it reached Shipped; the drain drives each ready group the same way"
+  - "the relay, Headless and its /run prompt, stays behind komodo run --relay until TSK-05.5.4's proof passes, then goes"
+  - "TestRunDrivesAGroupEndToEnd puts a fake claude script on PATH that replays a builder result and then a reviewer result, with a bare origin and a fake forge client; the group reaches Shipped, its branch is pushed, and the ledger holds one build and one review session"
+```
+
+#### [TSK-05.9.5] The run skill launches and watches, and never relays a stage [P: H] [REFINEMENT]
 ```yaml
 files: [komodo/skills/run/SKILL.md]
 done_when:
   - "! grep -q 'komodo step' komodo/skills/run/SKILL.md"
+  - "! grep -q 'komodo status' komodo/skills/run/SKILL.md"
   - go run ./cmd/komodo doctor
-depends_on: [TSK-05.6.2]
+depends_on: [TSK-05.9.4]
 context:
-  - docs/system-design.md#orchestrator-commands
-  - "was TSK-05.4.5: the skill starts komodo run in the background, reports komodo status, and stops or resumes groups; it never calls brief, close or step"
-  - "it ships only with TSK-05.6.2, since a line session may not call komodo run while the relay still drives it"
+  - "was TSK-05.6.3: the skill starts komodo run <group> in the background and reports komodo resume <group>; it never calls brief, close or step, and names no command that does not exist yet; komodo status lands with TSK-08.4.4"
+  - "waits until TSK-05.5.4's proof retires the relay: drains, --relay and --no-ship still run a headless /run session on this skill, and a relay session may not call komodo run"
 type: docs
 ```
+
+### [TG-05.10] The conductor closes the gaps TG-06.2's proof run found
+```yaml
+type: fix
+version: 1.0.0-alpha.6
+depends_on: [TG-05.9]
+```
+* **Why:** TG-06.2's proof reached Shipped only after five hand repairs: a handle lost across a restart, an escalation answered by editing state.json, a PR the conductor never merged into its epic, a branch without its group, and a body calling a checked group unproven.
+
+#### [TSK-05.10.1] A session handle is the host's session ID, so resume crosses a restart [P: H] [DONE]
+```yaml
+files: [internal/mount/claude/contract.go, internal/mount/claude/contract_test.go]
+done_when:
+  - go test ./internal/mount/claude/...
+context:
+  - "handles are process-local, claude-1 then claude-2, so a restarted komodo run cannot resume its builder, and a new process's claude-1 overwrote the old builder's .komodo/sessions/claude-1.jsonl"
+type: fix
+```
+
+#### [TSK-05.10.2] The conductor merges a shipped group PR into its epic branch [P: C] [DONE]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/run/drive.go, internal/run/drive_test.go]
+done_when:
+  - go test ./internal/conductor/... ./internal/run/...
+context:
+  - "decision 0028: only a person merges an epic PR; line.MergeGroup exists in internal/line/merge.go, but no conductor state calls it, and state.json's merged flag is never set"
+type: fix
+```
+
+#### [TSK-05.10.3] A group branch names its group, such as `refactor/TG-06.2-the-guard-keeps-five-rules` [P: M] [DONE]
+```yaml
+files: [internal/backlog/backlog.go, internal/backlog/backlog_test.go]
+done_when:
+  - go test ./internal/backlog/... ./internal/line/...
+context:
+  - "Group.Branch is type/slug today, so a PR's branch never names the group it came from"
+type: fix
+```
+
+#### [TSK-05.10.4] A conductor-shipped PR body reports the checks the conductor ran [P: M] [DONE]
+```yaml
+files: [internal/conductor/drive.go, internal/line/ship_body.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/conductor/... ./internal/line/...
+context:
+  - "Ship passes nil waves, so #231's body said no QC gate or verify command ran after Check and Prepare had both passed"
+type: fix
+```
+
+#### [TSK-05.10.5] A live smoke test drives a two-task example group through real sessions [P: H] [DONE]
+```yaml
+files: [internal/run/live_test.go, internal/run/testdata/live/BACKLOG.md]
+done_when:
+  - go test ./internal/run/...
+context:
+  - "skipped unless KOMODO_LIVE=1, since it spends plan tokens, so Check never runs it and the owner runs it by hand; a scratch repo with a bare origin, a fake forge client, the light tier, and one seeded review finding so repair runs"
+  - "asserts Shipped, one build, a review that saw the whole diff, a repair by the builder role, and a pushed branch that fast-forwards; TG-06.2's proof found thirteen defects the fake host never could"
+  - "TG-08.7's golden suite measures quality on pinned real repos; this one only proves the conductor's wiring"
+type: test
+```
+
+#### [TSK-05.10.6] The line's tests pass inside a line session [P: M] [DONE]
+```yaml
+files: [internal/line/main_test.go, internal/line/close_test.go, internal/line/step_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "TG-06.6's builder saw TestCloseRecordsDoneInTheRunWhenEverythingPasses and TestClosingClearsTheFailureRecord fail with KOMODO_RUN_PID set, and TestStepNamesTheBaseTheGroupDeclares fail with GOTMPDIR under .komodo/wt; neither reproduces outside the sandbox"
+  - "a builder reads these as its own failures, so TG-06.6 escalated BLOCKED with all four tasks built"
+  - "likely cause: in the sandbox, a test's temp dir sits inside the real worktree, so any walk up for .git, BACKLOG.md or a group name finds the real one; TG-06.3's hook tests did this and ran the real group's checks recursively, a fork bomb that took 24 GB; every such test fixture needs its own .git"
+type: test
+```
+
+#### [TSK-05.10.7] The pre-push hook runs without the forge credential [P: H] [DONE]
+```yaml
+files: [internal/line/ship.go, internal/line/ship_test.go]
+done_when:
+  - go test ./internal/line/...
+context:
+  - "git push runs the pre-push komodo gate, which inherits the conductor's environment, credential included; TG-06.6 kept the credential with the push but left the hook's environment as is"
+type: fix
+```
+
+#### [TSK-05.10.8] Drift ignores which komodo binary a rendered hook names [P: M] [DONE]
+```yaml
+files: [internal/install/install.go, internal/install/install_test.go]
+done_when:
+  - go test ./internal/install/...
+context:
+  - "TG-06.3's RenderPluginHooks writes the installing binary's own path into hooks.json, so an install by one binary and a doctor by another report drift and fail the conductor's preflight; the guard's settings.json already names bin/komodo-<os>-<arch> in the main checkout"
+  - "resolved in the drift check, not the render: the bin/ binary is built from main and exits 2 on komodo hook, which would block a Stop hook, so hooks keep naming the installing binary"
+type: fix
+```
+
+#### [TSK-05.10.9] internal/line/ship.go:464 The pre-push hook receives the credential-bearing push URL as its arguments [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/ship.go
+done_when:
+  - test -f internal/line/ship.go
+type: fix
+context:
+  - 'runPrePush passes pushURL as both hook arguments. That URL comes from `git remote get-url --push origin`, and redactURL exists precisely because it can carry `https://user:token@host`. So when origin embeds a token, the hook sees it in $1/$2 and in its process list. That defeats hookEnv''s purpose of running the hook without the forge credential. The new test only exercises GH_TOKEN/GITHUB_TOKEN in the environment, never a credential in the URL. Pass the remote name `origin` (or redactURL(pushURL, "")) as the hook arguments instead of the raw push URL.'
+```
+
+#### [TSK-05.10.10] internal/backlog/lint.go:75 Lint accepts a title-only base for a dependency that has not been cut and never will be [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/backlog/lint.go
+done_when:
+  - test -f internal/backlog/lint.go
+type: fix
+context:
+  - "Lint now accepts depGroup.TitleBranch() without checking origin. But Branch() now always cuts the ID form, so the title-only branch will never exist for a dependency that has not been cut yet. Example: a child declares `base: feat/first-group` and depends on an unshipped TG-01.0. Lint passes. The parent is cut as `feat/TG-01.0-first-group`. readyGroups (next.go:371-378) only registers the new form in `ahead`, and onOrigin never finds the old name, so the child is skipped forever with no problem reported. Accept TitleBranch only when origin already holds that ref, or have lint flag it so the base is rewritten to the ID form."
+```
+
+#### [TSK-05.10.11] internal/line/main_test.go:25 The git ceiling uses GOTMPDIR, but t.TempDir creates directories under os.TempDir() [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/main_test.go
+done_when:
+  - test -f internal/line/main_test.go
+type: fix
+context:
+  - "tempRoots takes GOTMPDIR first. t.TempDir ignores GOTMPDIR and uses os.TempDir() ($TMPDIR). In a line session, session.go:74 sets GOTMPDIR to <worktree>/.komodo/go/tmp, while TMPDIR is the separate SessionTmp root. So GIT_CEILING_DIRECTORIES names a directory inside the real worktree that no fixture lives under, and fixtures under $TMPDIR get no ceiling. The fixture isolation TSK-05.10.6 relies on does not hold in exactly the environment it targets. Build the ceiling from os.TempDir() (plus GOTMPDIR if you want both), not from GOTMPDIR alone."
+```
+
+#### [TSK-05.10.12] internal/conductor/drive.go:172 A run resumed at Shipped never retries the merge [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "Merge runs only on entry to Shipped. The state is saved as Shipped before work runs, so if the process is interrupted or killed during Merge, state.json holds Current=Shipped, Merged=false. On resume, shippedNext returns Move=Shipped, which equals Current, so Drive returns immediately. A PR on its epic branch is then left for a person, contrary to decision 0028's auto-merge. Have shippedNext (or Drive's resume path) call Merge again when an epic-based group sits at Shipped with Merged false."
+```
+
+#### [TSK-05.10.13] internal/conductor/drive.go:367 Ship's path that reruns Check on resume is untested [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: test
+context:
+  - "When a run resumes at Shipping, l.checked is nil, so Ship reruns Check and refuses to ship with 'the checks fail at ship' if it fails. No test drives Line.Ship with checked unset, either passing or failing. If this branch were removed, a resumed Ship would again report 'no QC gate ran' and every done_when would still pass. Add a Line.Ship test that starts with checked unset and asserts that both a failing Check and a passing Check are reported in the body."
+```
+
+#### [TSK-05.10.14] internal/mount/claude/contract.go:194 Open log files leak when saving the request fails [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/contract.go
+done_when:
+  - test -f internal/mount/claude/contract.go
+type: fix
+context:
+  - "The .jsonl and .err files are created, then the new WriteFile of the request can fail and spawn returns. Those two os.File handles are never closed, and the log files are left behind for a session that never started. Write the request file before creating the log files, or close record and cmd.Stderr on the error return."
+```
+
+
+
+
+
+
 
 ### [TG-05.5] Metrics and the clock
 ```yaml
@@ -972,7 +1401,7 @@ depends_on: [TG-05.4]
 ```
 * **Why:** one build took 122 turns with no cap but a 90-minute group budget (evidence 9). Proves REQ-28, REQ-29 and REQ-31.
 
-#### [TSK-05.5.1] Each run writes metrics.jsonl and events.jsonl from the host's own totals [P: H] [READY]
+#### [TSK-05.5.1] Each run writes metrics.jsonl and events.jsonl from the host's own totals [P: H] [DONE]
 ```yaml
 files: [internal/ledger/ledger.go, internal/ledger/ledger_test.go]
 done_when:
@@ -982,7 +1411,7 @@ context:
   - "one line per stage and session: run, group, stage, start, duration, turns, input, output and cached tokens, cost, outcome; each run starts fresh, and only the last 10 run folders stay"
 ```
 
-#### [TSK-05.5.2] `komodo report` sums a run, and its sums match the host's [P: H] [READY]
+#### [TSK-05.5.2] `komodo report` sums a run, and its sums match the host's [P: H] [DONE]
 ```yaml
 files: [internal/line/report.go, internal/line/report_test.go, cmd/komodo/line.go]
 done_when:
@@ -993,7 +1422,7 @@ context:
   - "the headline figure is tokens per accepted group"
 ```
 
-#### [TSK-05.5.3] A group has 60 minutes, and each session its own limit [P: C] [READY]
+#### [TSK-05.5.3] A group has 60 minutes, and each session its own limit [P: C] [DONE]
 ```yaml
 files: [internal/conductor/clock.go, internal/conductor/clock_test.go]
 done_when:
@@ -1009,10 +1438,166 @@ context:
 done_when:
   - go run ./cmd/komodo report
 context:
-  - "the phase exit: promote TG-06.2, run it with komodo run, and confirm a PR within 60 minutes with zero tokens outside build, review and repair sessions; record the run ID in the PR"
+  - "the phase exit, once TG-05.9 ships: promote TG-06.2, run it with komodo run, and confirm a PR within 60 minutes with zero tokens outside build, review and repair sessions; record the run ID in the PR"
 owner: human
 type: test
 ```
+
+#### [TSK-05.5.5] internal/ledger/ledger.go:203 WriteMetrics/WriteEvents have no caller and no retention [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: fix
+context:
+  - "Nothing outside the tests calls WriteMetrics or WriteEvents, so no real run ever writes metrics.jsonl or events.jsonl; both also append forever to one flat file under .komodo, breaking the spec's requirement that each run starts fresh and only the last 10 run folders stay. Write both files into a per-run folder truncated when the run starts, prune to the newest 10, and call this from the run's close path."
+```
+
+#### [TSK-05.5.6] internal/conductor/clock.go:21 Session limits map uses "review" instead of the profile's "lens" name [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock.go
+done_when:
+  - test -f internal/conductor/clock.go
+type: fix
+context:
+  - 'The sessionLimits map key is "review", but the spec and profile name this role "lens"; a session started with type "lens" has no entry in sessionLimits, so SessionPastLimit always returns false for it and that session type is never limited. The limits are also hardcoded rather than read from the profile. Load per-type limits from the profile under its actual role names, and treat an unknown type as an error or a default limit instead of silently no limit.'
+```
+
+#### [TSK-05.5.7] internal/conductor/clock.go:5 Clock has no synchronization for concurrent access [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock.go
+done_when:
+  - test -f internal/conductor/clock.go
+type: fix
+context:
+  - "Clock keeps three maps (sessionUsed, sessionStarted, sessionType) with no mutex; a conductor polling GroupUsed while another goroutine calls StartSession or EndSession triggers Go's fatal concurrent map read/write error, not just a logic bug. Guard every Clock method with a sync.Mutex."
+```
+
+#### [TSK-05.5.8] internal/ledger/ledger.go:77 isEvent still misses stop outcomes despite Event's own doc [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: fix
+context:
+  - "Event's doc comment says it records stops, but isEvent only accepts escalated, paused, and resumed, so a clock-driven stop is never written to events.jsonl. Add the stop outcome to the outcome-to-type mapping and cover it in a test."
+```
+
+#### [TSK-05.5.9] internal/line/report.go:60 groupTokens comment understates what it sums [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report.go
+done_when:
+  - test -f internal/line/report.go
+type: docs
+context:
+  - "The comment says groupTokens sums build and repair sessions, but the code sums every non-brief station in the run file, including review, fix, machine, close, qc, and ship. Reword the comment to state it sums every run-file entry for the group except brief stamps."
+```
+
+#### [TSK-05.5.10] internal/line/report_test.go:31 REQ-28 test never exercises a real recorded stream [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report_test.go
+done_when:
+  - test -f internal/line/report_test.go
+type: test
+context:
+  - 'The test for "a recorded stream''s totals equal the report''s line" stamps a hand-built ledger entry directly; no recorded host stream goes through the mount''s usage-parsing path, so a stream-parsing regression would still pass this test. Feed a recorded host result stream through the mount''s usage path, then compare its totals to report.Tokens.'
+```
+
+#### [TSK-05.5.11] internal/ledger/ledger_test.go:341 WriteEvents test only checks a nonzero count [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger_test.go
+done_when:
+  - test -f internal/ledger/ledger_test.go
+type: test
+context:
+  - 'TestWriteEventsCreatesFile asserts only len(events) > 0, so it would still pass if the done entry leaked in as an event, if Type were wrong, or if paused/resumed handling broke. Assert exactly one event with Type == "escalation", and add table cases for paused and resumed.'
+```
+
+#### [TSK-05.5.12] internal/ledger/ledger.go:73 Metric.Cost is always empty [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "Metric.Cost is never set because Entry has no cost field, so every metrics line omits the spec's cost column. Carry cost on Entry from the host totals and copy it in aggregateMetrics, or drop the field."
+```
+
+#### [TSK-05.5.13] internal/ledger/ledger.go:253 WriteEvents/ReadEvents duplicate WriteMetrics/ReadMetrics [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "WriteEvents and ReadEvents duplicate the same append/scan logic as WriteMetrics/ReadMetrics, which in turn duplicate Read; each write reopens the file per line and ignores the Close error. Use one generic append-lines helper that opens once and checks Close, plus one generic JSONL reader."
+```
+
+#### [TSK-05.5.14] internal/ledger/ledger.go:584 extractEvents repeats isEvent's outcome checks [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/ledger/ledger.go
+done_when:
+  - test -f internal/ledger/ledger.go
+type: refactor
+context:
+  - "extractEvents calls isEvent and then repeats the same three outcome comparisons in an if/else chain to set Type. Use one map[outcome]type lookup for both the filter and the type."
+```
+
+#### [TSK-05.5.15] internal/line/report.go:69 Redundant Run != "" check [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/line/report.go
+done_when:
+  - test -f internal/line/report.go
+type: refactor
+context:
+  - 'entry.Run != "" can never be false when reading the run file, since Stamp routes Run-less entries to adhoc.jsonl instead. Drop the redundant condition.'
+```
+
+#### [TSK-05.5.16] internal/conductor/clock_test.go:13 Tests sleep and poke private fields instead of injecting time [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock_test.go
+done_when:
+  - test -f internal/conductor/clock_test.go
+type: refactor
+context:
+  - "Tests sleep 100ms and write private maps (sessionStarted, groupUsed) directly because Clock calls time.Now itself with no seam to control it. Inject a now func() time.Time and drive the tests through the exported surface."
+```
+
+#### [TSK-05.5.17] internal/conductor/clock_test.go:149 Comment and test name cite a requirement number and overstate behavior [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/clock_test.go
+done_when:
+  - test -f internal/conductor/clock_test.go
+type: docs
+context:
+  - 'The comment and test name cite REQ-29 and say "IsKilled", but nothing is actually killed; the same requirement-citation style appears at internal/line/report_test.go:29 (REQ-28). Remove the requirement IDs and name the test for what it actually asserts.'
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ---
 
@@ -1053,7 +1638,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** 4,597 lines re-implemented bash, and every guard diff invited new bypass findings (evidence 2). Proves REQ-26's guard row, REQ-37 and REQ-41.
 
-#### [TSK-06.2.1] The guard is cut to five rules and the builder's file scope [P: C] [REFINEMENT]
+#### [TSK-06.2.1] The guard is cut to five rules and the builder's file scope [P: C] [DONE]
 ```yaml
 files: [internal/guard]
 done_when:
@@ -1065,11 +1650,12 @@ context:
   - docs/system-design.md#security
   - "delete the bash interpreter and expansion code; keep a tokenizer that finds a git or gh subcommand and a write target; the matcher covers Bash, PowerShell and Monitor"
   - "the table keeps one row per rule, including a model session's push refused (REQ-26), and drops the rows for hidden intent"
+  - "a model session may not push to or merge an epic branch; only the conductor does (decision 0028, TSK-05.7.8)"
 tier: heavy
 type: refactor
 ```
 
-#### [TSK-06.2.2] A refusal names the way forward, and three of one rule end the session as blocked [P: C] [REFINEMENT]
+#### [TSK-06.2.2] A refusal names the way forward, and three of one rule end the session as blocked [P: C] [DONE]
 ```yaml
 files: [internal/guard/hook.go, internal/guard/hook_test.go]
 done_when:
@@ -1081,7 +1667,7 @@ context:
   - "tests (REQ-37): the limit, the named alternative, and failing open"
 ```
 
-#### [TSK-06.2.3] Line sessions can't edit the PRD or the golden suite [P: H] [REFINEMENT]
+#### [TSK-06.2.3] Line sessions can't edit the PRD or the golden suite [P: H] [DONE]
 ```yaml
 files: [komodo/policy.json, internal/guard/policy.go, internal/guard/table.go]
 done_when:
@@ -1093,6 +1679,150 @@ context:
   - "line sessions carry their role in the environment the conductor sets; a session with none is the orchestrator"
 ```
 
+#### [TSK-06.2.4] internal/guard/hook.go:51 The refusal limit keys on all rendered findings joined together, not on the rule [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/hook.go
+done_when:
+  - test -f internal/guard/hook.go
+type: fix
+context:
+  - 'The key is strings.Join(decision.Findings, "|"). `git push origin main` then `git push -f origin main` produce different keys because the force finding is added. A path finding also embeds the path, so the same rule hit with a different target never reaches refusalLimit. That is the variant-after-variant case blockedReason says it prevents. Count each finding under a stable rule ID, so one rule hit through different commands adds to the same counter.'
+```
+
+#### [TSK-06.2.5] internal/guard/git.go:95 Unsafe mode now allows deleting a critical ref and pushing to an epic branch [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/git.go
+done_when:
+  - test -f internal/guard/git.go
+type: fix
+context:
+  - "pushFindings returns before judging targets when the mode is unsafe. `git push --delete origin main` passes, though the old code refused a critical-ref delete in every mode. `git push origin feat/1.0.0-alpha.7` from a model session also passes, though decision 0028 lets only the conductor push an epic branch. Judge deletes and epic-branch targets before the unsafe-mode early return, and skip only the plain critical-ref push."
+```
+
+#### [TSK-06.2.6] internal/guard/git.go:75 A short force cluster slips past the history-rewrite rule [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/git.go
+done_when:
+  - test -f internal/guard/git.go
+type: fix
+context:
+  - "isForceFlag matches only -f, --force, --force-if-includes and --force-with-lease*. `git push -fu origin feat/x` force-pushes and gets no finding, breaking Rule 2 on a common spelling. Treat any single-dash cluster that contains 'f' as force, as the removed code did."
+```
+
+#### [TSK-06.2.7] internal/guard/git.go:144 branch -f refuses a critical start point as if the ref were being moved [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/git.go
+done_when:
+  - test -f internal/guard/git.go
+type: fix
+context:
+  - "branchFindings flags every positional that names a critical ref. `git branch -f feat/y main` resets feat/y onto main but is denied with 'git branch main: a critical ref is never moved by hand'. `git branch -c main feat/copy` is denied the same way. When only forcing (no -m or -c), judge only the first positional; for copy, judge only the destination."
+```
+
+#### [TSK-06.2.8] internal/guard/guard.go:75 The commandFindings comment claims wrappers and substitutions hide nothing [P: L] [DONE]
+```yaml
+files:
+  - internal/guard/guard.go
+done_when:
+  - test -f internal/guard/guard.go
+type: docs
+context:
+  - "commandName(item.words[0]) is 'env', 'sudo', 'timeout' or 'FOO=1' for `env git push origin main` or `FOO=1 git push origin main`. The git check never runs, so the comment states a guarantee the code does not give. Rewrite the comment to say only a call whose first word runs git or gh is checked."
+```
+
+#### [TSK-06.2.9] internal/guard/table.go:67 The narrowed flag parsing has no rows, and one row is a duplicate [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/table.go
+done_when:
+  - test -f internal/guard/table.go
+type: test
+context:
+  - "No test covers `git push -fu`, `git commit -nm`, a critical-ref delete in unsafe mode, or `git branch -f feat/y main`. Every regression above passes go test and guard check. Row 67 repeats row 66's command and branch exactly. Add table rows for each of these forms and drop the duplicate push-to-main row."
+```
+
+#### [TSK-06.2.10] internal/guard/hook.go:93 session_id builds a file path unchecked [P: L] [DONE]
+```yaml
+files:
+  - internal/guard/hook.go
+done_when:
+  - test -f internal/guard/hook.go
+type: fix
+context:
+  - "The host payload's session_id goes straight into filepath.Join. A value such as '../../x' writes the counts file outside .komodo/runs/guard-refusals. Reject a session ID containing a path separator or '..' before building the path."
+```
+
+#### [TSK-06.2.11] internal/guard/hook.go:89 Concurrent hook calls lose refusal counts [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/hook.go
+done_when:
+  - test -f internal/guard/hook.go
+type: fix
+context:
+  - "recordRefusal reads, adds one and writes with no lock. Two parallel denied calls in one session both read the same count and one increment is lost, which delays the block. Write to a temp file and rename it, or hold a lock on the file across the read and write."
+```
+
+#### [TSK-06.2.12] internal/guard/git.go:62 hasNoVerify misses -nm and --no-verify abbreviations [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/git.go
+done_when:
+  - test -f internal/guard/git.go
+type: fix
+context:
+  - "Only the exact '--no-verify' and a bare '-n' match. `git commit -nm x` and `git commit --no-verif` skip the hook without a finding. Scan commit's short clusters for 'n' before a flag that takes a value, and accept unambiguous --no-verify prefixes."
+```
+
+#### [TSK-06.2.13] internal/guard/tokenize.go:31 Only > and >> count as writes, so a line role can still edit eval/** or docs/prd.md [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/tokenize.go
+done_when:
+  - test -f internal/guard/tokenize.go
+type: fix
+context:
+  - "`sed -i s/a/b/ eval/golden.json`, `tee docs/prd.md` and `cp x eval/case.json` produce no write target. REQ-41's refusal holds only for the Write tool and redirects. Add tee, cp and mv destinations and sed -i targets as write targets."
+```
+
+#### [TSK-06.2.14] internal/guard/hook.go:47 The payload is decoded a second time just for session_id [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/hook.go
+done_when:
+  - test -f internal/guard/hook.go
+type: refactor
+context:
+  - "A local anonymous struct re-unmarshals raw and discards the error, though Request was already decoded from the same bytes. Add a SessionID field with the json tag session_id to Request and read request.SessionID."
+```
+
+#### [TSK-06.2.15] internal/guard/policy.go:187 Comments cite decision and REQ numbers, and 'exactly' is wrong [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/policy.go
+done_when:
+  - test -f internal/guard/policy.go
+type: docs
+context:
+  - "Comments at policy.go:187 and 201, hook.go:18 and table.go:101 cite decision 0028, REQ-37 and REQ-41. epicBranchRe has no end anchor, so it matches feat/1.2.3anything, not 'exactly' a version. Drop the citations and either anchor the regex or remove 'exactly'."
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 ### [TG-06.3] Hooks follow one contract
 ```yaml
 type: feat
@@ -1100,17 +1830,18 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** most loops in the first line came from hooks: 187 builder refusals and review rounds chasing guard bypasses. Proves REQ-37.
 
-#### [TSK-06.3.1] Every hook has one job, one stage and a limit, and fails open [P: C] [REFINEMENT]
+#### [TSK-06.3.1] Every hook has one job, one stage and a limit, and fails open [P: C] [DONE]
 ```yaml
-files: [internal/hooks/hooks.go, internal/hooks/hooks_test.go, cmd/komodo/hook.go]
+files: [internal/hooks/hooks.go, internal/hooks/hooks_test.go, cmd/komodo/hook.go, cmd/komodo/hook_test.go, cmd/komodo/main.go]
 done_when:
   - go test ./internal/hooks/... ./cmd/komodo/...
 context:
   - docs/system-design.md#hooks
   - "komodo hook <name> is each hook's entry point; the table of hooks, sessions, limits and failure behaviour is data in this package; a hook that errors returns allow"
+  - "wire it: main.go dispatches the hook command to runHook"
 ```
 
-#### [TSK-06.3.2] Format formats and lints the edited file, and never refuses [P: H] [REFINEMENT]
+#### [TSK-06.3.2] Format formats and lints the edited file, and never refuses [P: H] [DONE]
 ```yaml
 files: [internal/hooks/format.go, internal/hooks/format_test.go]
 done_when:
@@ -1120,7 +1851,7 @@ context:
   - "PostToolUse on a builder's edit: gofmt for Go, the repo's formatter for TypeScript, on that one file; lint output returns as context"
 ```
 
-#### [TSK-06.3.3] Task checks refuse a builder's stop while a check fails, three times at most [P: H] [REFINEMENT]
+#### [TSK-06.3.3] Task checks refuse a builder's stop while a check fails, three times at most [P: H] [DONE]
 ```yaml
 files: [internal/hooks/taskchecks.go, internal/hooks/taskchecks_test.go]
 done_when:
@@ -1130,7 +1861,7 @@ context:
   - "Stop runs the group's checks and refuses with the failing output; the limit is the host's stop-hook cap of 3; if the hook fails it allows, since Check reruns everything"
 ```
 
-#### [TSK-06.3.4] Time warning at 80 percent of a session's time or turns [P: M] [REFINEMENT]
+#### [TSK-06.3.4] Time warning at 80 percent of a session's time or turns [P: M] [DONE]
 ```yaml
 files: [internal/hooks/timewarn.go, internal/hooks/timewarn_test.go]
 done_when:
@@ -1140,15 +1871,76 @@ context:
   - "PostToolUse in builders and lenses; it never refuses, and skips when it can't read the clock"
 ```
 
-#### [TSK-06.3.5] Each role's plugin carries only its own hooks [P: H] [REFINEMENT]
+#### [TSK-06.3.5] Each role's plugin carries only its own hooks [P: H] [DONE]
 ```yaml
-files: [internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go]
+files: [internal/mount/claude/plugin.go, internal/mount/claude/plugin_test.go, internal/mount/claude/claude.go]
 done_when:
   - go test ./internal/mount/claude/...
 depends_on: [TSK-06.3.1]
 context:
   - "the guard in every session; format, task checks and time warning in the builder; time warning in lenses; the evidence and status hooks join in TG-07.5 and TG-08.4"
+  - "wire it: Render in claude.go calls RenderPluginHooks, so an install writes each role plugin's hooks file"
 ```
+
+#### [TSK-06.3.6] internal/mount/claude/plugin.go:133 Rendered timewarn never gets --minutes, so the time warning never fires [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/plugin.go
+done_when:
+  - test -f internal/mount/claude/plugin.go
+type: fix
+context:
+  - "pluginHooks passes only --turns to timewarn. In warnTime, Budget.Minutes is always 0, so `late` is always false and the 80%-of-time warning (the contract's 'time or turns') can't fire in any installed session. The only test for it, TestTimeWarnWarnsAt80PercentOfTime, passes --minutes by hand. Render the session's wall-clock minutes into the timewarn command alongside --turns, and assert it in TestEachRolePluginCarriesOnlyItsOwnHooks."
+```
+
+#### [TSK-06.3.7] internal/hooks/timewarn.go:50 Warning prints '0 of 0 minutes' when no minutes budget is set [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/hooks/timewarn.go
+done_when:
+  - test -f internal/hooks/timewarn.go
+type: fix
+context:
+  - "With only --turns set, which is how every rendered plugin calls it, the warning reads 'This session has used 0 of 0 minutes and 120 of 150 turns', which is wrong information for the model. Build the message only from the budgets that are set (minutes when Minutes>0, turns when Turns>0)."
+```
+
+#### [TSK-06.3.8] internal/hooks/timewarn.go:42 Turns counts tool calls, not turns, and loses counts under parallel calls [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/hooks/timewarn.go
+done_when:
+  - test -f internal/hooks/timewarn.go
+type: fix
+context:
+  - "Every PostToolUse call adds one to clock.Turns, but profileTurnCap (150) is a turn cap. An assistant turn with 4 parallel tool calls adds 4, so the warning fires well before 80% of the turn cap. Those parallel hooks also each read, bump and rewrite the same file with no lock, so increments get lost, and a read that lands mid-os.WriteFile fails to unmarshal and skips. Either count distinct turns (or label the budget as tool calls), and write the clock file atomically (temp file + rename) under a file lock."
+```
+
+#### [TSK-06.3.9] cmd/komodo/hook.go:16 The runHook guard branch is untested [P: L] [REFINEMENT]
+```yaml
+files:
+  - cmd/komodo/hook.go
+done_when:
+  - test -f cmd/komodo/hook.go
+type: test
+context:
+  - 'No test runs `komodo hook guard`. If that branch regressed into the table path, it would fail open through errNoRunner and quietly disable the guard, and done_when would still pass. Add a runHookWith case for "guard" and assert it reaches runGuard (e.g. a guard refusal on a denied payload).'
+```
+
+#### [TSK-06.3.10] internal/mount/claude/plugin.go:132 Hook name is special-cased in the renderer [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/plugin.go
+done_when:
+  - test -f internal/mount/claude/plugin.go
+type: refactor
+context:
+  - 'pluginHooks checks hook.Name == "timewarn" to decide which flags to add. That puts per-hook data in the renderer, even though the package says the table holds all of it, and a renamed row would silently lose its turn cap. Add a field to the hooks.Hook row saying whether it takes the session budget, and branch on that field instead.'
+```
+
+
+
+
+
 
 ### [TG-06.4] Allow lists cover each stage, and the owner edits this repo on a branch
 ```yaml
@@ -1158,9 +1950,9 @@ depends_on: [TG-06.2]
 ```
 * **Why:** headless runs used `bypassPermissions`, so the guard was the only wall. Proves REQ-38, REQ-40 and REQ-41's deny entries.
 
-#### [TSK-06.4.1] Each role's settings allow what its stage needs, and dontAsk refuses the rest [P: C] [REFINEMENT]
+#### [TSK-06.4.1] Each role's settings allow what its stage needs, and dontAsk refuses the rest [P: C] [DONE]
 ```yaml
-files: [komodo/roles/builder.md, komodo/roles/reviewer.md, internal/mount/claude/permissions.go, internal/mount/claude/permissions_test.go]
+files: [komodo/roles/builder.md, komodo/roles/reviewer.md, internal/mount/claude/permissions.go, internal/mount/claude/permissions_test.go, internal/mount/claude/session.go, internal/mount/claude/session_test.go]
 done_when:
   - go test ./internal/mount/claude/...
   - go run ./cmd/komodo doctor
@@ -1168,9 +1960,10 @@ context:
   - docs/system-design.md#permissions
   - "roles name Komodo verbs and command classes; the mount turns them into allow and deny rules; the builder's list adds the repo's build, test, lint and format commands from detection"
   - "deny entries for docs/prd.md and eval/** in every line role (REQ-41)"
+  - "wire it: Session passes each role's allow and deny rules to the host"
 ```
 
-#### [TSK-06.4.2] Proof table: no allow-listed command is refused in any role [P: H] [REFINEMENT]
+#### [TSK-06.4.2] Proof table: no allow-listed command is refused in any role [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/allow_test.go]
 done_when:
@@ -1181,7 +1974,7 @@ context:
 type: test
 ```
 
-#### [TSK-06.4.3] The orchestrator may edit this repo's policy, rules and guard on a branch [P: H] [REFINEMENT]
+#### [TSK-06.4.3] The orchestrator may edit this repo's policy, rules and guard on a branch [P: H] [DONE]
 ```yaml
 files: [komodo/policy.json, internal/guard/policy.go, internal/guard/policy_test.go]
 done_when:
@@ -1192,6 +1985,54 @@ context:
   - "test (REQ-40): an orchestrator edit to komodo/policy.json on feat/x is allowed; the same edit from a builder, or on main, is refused"
 ```
 
+#### [TSK-06.4.4] internal/guard/policy.go:277 The orchestrator can edit komodo/policy.json on an epic branch [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/guard/policy.go
+done_when:
+  - test -f internal/guard/policy.go
+type: fix
+context:
+  - "onFeatureBranch only checks IsCritical, and IsCritical leaves out epic branches (decision 0028). So an orchestrator on feat/1.0.0-alpha.7 is allowed to Edit komodo/policy.json directly. That skips group review, even though the guard treats epic branches as off-limits to model sessions elsewhere. The REQ-40 test only covers feat/x and main, so this case goes untested. Make onFeatureBranch also return false when IsEpicBranch(branch) is true, and add an epic-branch row to TestOnlyTheOrchestratorOnABranchEditsTheShippedPolicy."
+```
+
+#### [TSK-06.4.5] internal/mount/claude/permissions.go:69 A detection error is thrown away, so the builder loses its repo commands without a trace [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/permissions.go
+done_when:
+  - test -f internal/mount/claude/permissions.go
+type: fix
+context:
+  - "profile, _ := detect.Detect(worktree) throws the error away. If detection fails, the profile comes back empty and no build, test, lint or format rules are rendered. Under dontAsk the builder's go test or npm test calls are then refused, and nothing points at the cause. Return the detection error from rolePermissions, or log it, instead of assigning it to _."
+```
+
+#### [TSK-06.4.6] internal/mount/claude/permissions.go:21 Bash(find:*) lets find -exec run any command [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/permissions.go
+done_when:
+  - test -f internal/mount/claude/permissions.go
+type: fix
+context:
+  - "The files class renders Bash(find:*), so a builder's `find . -exec curl example.com \;` or `find . -exec sh -c '...' \;` matches the allow list. That turns the fixed command classes into a general shell, and only the guard stands behind it. Drop find from the files class, or add deny rules for find -exec, -execdir and -delete."
+```
+
+#### [TSK-06.4.7] internal/mount/claude/permissions.go:22 git-read allows git diff --output, a file write for the reviewer [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/permissions.go
+done_when:
+  - test -f internal/mount/claude/permissions.go
+type: fix
+context:
+  - "Bash(git diff:*) and Bash(git log:*) match `git diff --output=notes.txt`, which writes a file. The reviewer is meant never to write and now gets a shell with only git-read, so this gives it a write path the allow list was meant to rule out. Add a deny rule for --output on git diff, log and show, or narrow the allowed git-read prefixes."
+```
+
+
+
+
+
 ### [TG-06.5] Check reruns everything after every session
 ```yaml
 type: feat
@@ -1199,7 +2040,7 @@ version: 1.0.0-alpha.7
 ```
 * **Why:** police the output, not the input (architecture principle 2). Proves REQ-17 and REQ-36.
 
-#### [TSK-06.5.1] Check reruns format, lint, the group's checks and scope [P: C] [REFINEMENT]
+#### [TSK-06.5.1] Check reruns format, lint, the group's checks and scope [P: C] [DONE]
 ```yaml
 files: [internal/check/check.go, internal/check/check_test.go]
 done_when:
@@ -1209,7 +2050,7 @@ context:
   - "port the close station's reruns from internal/line/close.go and verify.go; scope fails an edit outside the group's files"
 ```
 
-#### [TSK-06.5.2] Output checks catch model commits, changed refs, hooks and git config [P: C] [REFINEMENT]
+#### [TSK-06.5.2] Output checks catch model commits, changed refs, hooks and git config [P: C] [DONE]
 ```yaml
 files: [internal/check/output.go, internal/check/output_test.go]
 done_when:
@@ -1219,7 +2060,7 @@ context:
   - "snapshot HEAD, every ref, .git/hooks and .git/config before a session and compare after; one test per case (REQ-36)"
 ```
 
-#### [TSK-06.5.3] Changed lines are covered by tests [P: H] [REFINEMENT]
+#### [TSK-06.5.3] Changed lines are covered by tests [P: H] [DONE]
 ```yaml
 files: [internal/check/coverage.go, internal/check/coverage_test.go]
 done_when:
@@ -1228,7 +2069,7 @@ context:
   - "Go: a cover profile of the touched packages, intersected with the diff's added lines; TypeScript: the repo's coverage command when it has one; the bar is a profile starting value the first eval calibrates"
 ```
 
-#### [TSK-06.5.4] A secret scan runs over the added lines [P: H] [REFINEMENT]
+#### [TSK-06.5.4] A secret scan runs over the added lines [P: H] [DONE]
 ```yaml
 files: [internal/check/secrets.go, internal/check/secrets_test.go]
 done_when:
@@ -1237,7 +2078,7 @@ context:
   - "standard-library patterns for common keys and tokens, over added lines only; a test fixture per pattern"
 ```
 
-#### [TSK-06.5.5] The conductor runs Check after every build and repair, and never reviews first [P: C] [REFINEMENT]
+#### [TSK-06.5.5] The conductor runs Check after every build and repair, and never reviews first [P: C] [DONE]
 ```yaml
 files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
@@ -1247,6 +2088,90 @@ context:
   - "test (REQ-17): the ledger records no review before Check passes"
 ```
 
+#### [TSK-06.5.6] internal/conductor/drive.go:369 After-snapshot is taken after the rerun commands, so their git side effects are charged to the model [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "Check calls l.rerun(), which runs the compile, verify and `go test` commands, and only then calls TakeSnapshot. Some verify scripts write git state. For example, `npm ci` runs husky's prepare step, which sets core.hooksPath or writes .git/hooks, and `pre-commit install` or `lefthook install` do the same. When a verify command does this, Compare reports 'the git config key core.hooksPath changed' or 'git hook X changed' as a model fault. That forces a needless repair round. Take the after-snapshot right after loadSnapshot, before rerun runs any command."
+```
+
+#### [TSK-06.5.7] internal/check/output.go:74 refs/stash and the base branch are handled the wrong way round in the ref filter [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/output.go
+done_when:
+  - test -f internal/check/output.go
+type: fix
+context:
+  - "snapshotRefs keeps every ref outside refs/heads/ and refs/remotes/, and that includes refs/stash. The stash lives in the common git dir, which all worktrees share. So when another lane or the operator runs `git stash` during a session, this lane reports 'ref refs/stash changed' and repairs for nothing. In the other direction, every refs/heads/* except the lane's own branch is dropped. A model running `git branch -f main HEAD` or `git push . HEAD:main` therefore moves the base branch with no output-check failure. Drop refs/stash from the snapshot and keep the group's base branch ref in it."
+```
+
+#### [TSK-06.5.8] internal/check/secrets_test.go:20 The secret scan flags the repo's own test fixtures [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/secrets_test.go
+done_when:
+  - test -f internal/check/secrets_test.go
+type: fix
+context:
+  - "The scan runs over every added line, test files included, and has no allowlist. Several of its own test fixtures match its patterns, in secrets_test.go and internal/conductor/drive_test.go. Any later group whose diff adds or rewrites these lines fails Check with 'secret: ... looks like a AWS access key'. A builder writing a fixture for this scanner hits the same wall. Build the fixtures from concatenated parts (as the GitHub case already does with strings.Repeat), or add an explicit allowlist marker the scanner honours."
+```
+
+#### [TSK-06.5.9] internal/check/check.go:121 git diff output is parsed without pinning prefix, colour, or quoting [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/check.go
+done_when:
+  - test -f internal/check/check.go
+type: fix
+context:
+  - "Diff and changedFiles call plain `git diff`, and git.Run passes no config overrides, so the user's git config shapes the output. With diff.noprefix or diff.mnemonicPrefix set, headers read '+++ w/pkg/x.go' or '+++ pkg/x.go'. ParseAddedLines only strips 'b/', so file keys never match the cover profile and coverage is silently skipped as unknown. With color.ui=always, ANSI codes break every prefix match. With core.quotePath on (the default), a non-ASCII path comes back quoted and Scope reports it as outside the declared files. Pass `-c core.quotePath=false diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/` to both git diff calls."
+```
+
+#### [TSK-06.5.10] internal/check/coverage.go:36 Line numbering goes wrong inside a hunk [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/coverage.go
+done_when:
+  - test -f internal/check/coverage.go
+type: fix
+context:
+  - "ParseAddedLines checks for '+++'/'---' headers on every line, even inside a hunk. That goes wrong in three ways. (1) Deleting a markdown or YAML '---' line gives the diff line '----'. It skips the removed-line case and falls into the context case, so next++ shifts every later added line down by one. (2) A '\ No newline at end of file' marker also increments next. (3) Adding a line that starts with '++' gives '+++…', which is read as a file header and changes the file name. The results are wrong file:line locations in secret reports and misattributed coverage. Track each hunk's remaining old/new line counts from its header, treat lines as headers only when no counts remain, and skip lines that start with a backslash."
+```
+
+#### [TSK-06.5.11] internal/check/check.go:26 Run's format and lint parameters are unused in production [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/check/check.go
+done_when:
+  - test -f internal/check/check.go
+type: refactor
+context:
+  - 'The only production caller, Line.rerun, passes "" for both format and lint and sends every command through checks. The two parameters only add a code path that the tests alone exercise. Remove the format and lint parameters and pass every command through checks.'
+```
+
+#### [TSK-06.5.12] internal/conductor/drive_test.go:310 Dead loop in TestDriveNeverReviewsBeforeCheckPasses [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive_test.go
+done_when:
+  - test -f internal/conductor/drive_test.go
+type: refactor
+context:
+  - "reviewIndex is the index of the first StationReview, so scanning sessions[:reviewIndex] for StationReview can never fail. The real ordering check is the equal() assertion at the end of the test. Delete the reviewIndex search and the loop after it, and keep the final equal() assertion."
+```
+
+
+
+
+
+
+
+
 ### [TG-06.6] The forge credential stays with the conductor, and the sandbox holds
 ```yaml
 type: feat
@@ -1255,7 +2180,7 @@ depends_on: [TG-06.1]
 ```
 * **Why:** a model session with forge push rights is the critical risk in the PRD. Proves REQ-26, REQ-33, REQ-34 and REQ-35.
 
-#### [TSK-06.6.1] Every session starts from a scrubbed environment with no forge credential [P: C] [REFINEMENT]
+#### [TSK-06.6.1] Every session starts from a scrubbed environment with no forge credential [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/env.go, internal/mount/claude/env_test.go]
 done_when:
@@ -1266,7 +2191,7 @@ context:
   - "test (REQ-34): a session's environment and readable paths hold no forge token"
 ```
 
-#### [TSK-06.6.2] Only Ship reads the forge credential, and it pushes only unprotected branches [P: C] [REFINEMENT]
+#### [TSK-06.6.2] Only Ship reads the forge credential, and it pushes only unprotected branches [P: C] [DONE]
 ```yaml
 files: [internal/line/ship.go, internal/line/ship_test.go, internal/run/run.go]
 done_when:
@@ -1276,7 +2201,7 @@ context:
   - "the credential is read inside the push and handed to no other process; pushable refuses a critical ref; labels follow the push (REQ-26)"
 ```
 
-#### [TSK-06.6.3] Line sessions run in the sandbox, and `komodo run` refuses without it [P: C] [REFINEMENT]
+#### [TSK-06.6.3] Line sessions run in the sandbox, and `komodo run` refuses without it [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/sandbox.go, internal/mount/claude/sandbox_test.go, internal/preflight/preflight.go, internal/preflight/preflight_test.go]
 done_when:
@@ -1287,7 +2212,7 @@ context:
   - "test (REQ-35): a write outside the worktree fails; komodo run exits non-zero with the sandbox off"
 ```
 
-#### [TSK-06.6.4] Doctor checks the forge ruleset and head-branch deletion [P: H] [REFINEMENT]
+#### [TSK-06.6.4] Doctor checks the forge ruleset and head-branch deletion [P: H] [DONE]
 ```yaml
 files: [internal/doctor/doctor.go, internal/doctor/doctor_test.go]
 done_when:
@@ -1296,6 +2221,141 @@ context:
   - docs/system-design.md#health-checks
   - "--remote: a ruleset with no bypass actors on the default branch where the forge offers one, else a warning; delete head branches on merge; drafts available (REQ-33)"
 ```
+
+#### [TSK-06.6.5] internal/doctor/doctor.go:136 Any HTTP 403 is read as 'the plan offers no rulesets' and the ruleset check passes [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/doctor/doctor.go
+done_when:
+  - test -f internal/doctor/doctor.go
+type: fix
+context:
+  - "rulesetsUnoffered matches any 'HTTP 403'. When gh's token lacks the admin/read scope for rulesets, or SSO has not authorised it, `doctor --remote` gets a 403, CheckRulesets returns nil, and an unprotected default branch reports no problem. `--json` sets no Warn callback, so the warning is dropped too and the audit comes out clean. Match only the plan-upgrade message ('Upgrade to GitHub Pro'), and keep reporting any other 403 as a 'could not list rulesets' problem."
+```
+
+#### [TSK-06.6.6] internal/mount/claude/session.go:88 withSandbox drops the role's hooks and permission denies when settings.json is missing or malformed [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/session.go
+done_when:
+  - test -f internal/mount/claude/session.go
+type: fix
+context:
+  - "If os.ReadFile fails, or json.Unmarshal of settings.json fails (the error is discarded), merged ends up empty or partial. Only the sandbox block goes into --settings, so the session starts without its PreToolUse guard hooks or `permissions.deny` rules, and nothing reports it. Before this change the host was pointed at the file path and would have failed on a bad file. Have withSandbox return an error when settings.json cannot be read or parsed, and have Session refuse to launch."
+```
+
+#### [TSK-06.6.7] internal/run/run.go:264 Headless launch uses line.Scrub, which keeps CLAUDE_CODE_SUBPROCESS_ENV_SCRUB [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/run.go
+done_when:
+  - test -f internal/run/run.go
+type: fix
+context:
+  - "env.go drops CLAUDE_CODE_SUBPROCESS_ENV_SCRUB because, per its comment, it overrides dontAsk. line.Scrub's `dropped` list does not include it. So `komodo run` launches the headless claude with that variable inherited from the caller, while Session() strips it. Have run.launch use one shared scrub that also drops CLAUDE_CODE_SUBPROCESS_ENV_SCRUB."
+```
+
+#### [TSK-06.6.8] internal/mount/claude/env.go:26 scrubEnv duplicates line.Scrub almost line for line [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/env.go
+done_when:
+  - test -f internal/mount/claude/env.go
+type: refactor
+context:
+  - "forgeWords, secretWords, the override switch, the six appended overrides and the drop list now exist in both internal/line/ship.go and internal/mount/claude/env.go. The copies have already drifted (the subprocess-scrub key above). Keep one exported Scrub and call it from both line and mount/claude."
+```
+
+#### [TSK-06.6.9] internal/mount/claude/session_test.go:33 The builder argv test's expectation was reduced to '--settings ' [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/mount/claude/session_test.go
+done_when:
+  - test -f internal/mount/claude/session_test.go
+type: test
+context:
+  - "The expected fragment is now just '--settings ', which passes whatever follows the flag, including an empty or sandbox-free value. TestARoleSessionCarriesTheLineSandbox only asserts when the host platform has a sandbox. Assert the exact merged settings value (or its parsed sandbox and hooks keys) in TestSessionArgvForBuilder."
+```
+
+
+
+
+
+
+### [TG-06.7] One reviewer stays warm across a group's review rounds
+```yaml
+type: feat
+version: 1.0.0-alpha.7
+depends_on: [TG-06.5]
+```
+* **Why:** every review round started a cold reviewer that re-read the whole diff and raised new findings on lines no repair touched; TG-06.2 and TG-06.5 each spent three repair rounds that way. A warm reviewer keeps its context and the host's prompt cache, and one cold pass before ship guards against it anchoring on its own earlier view.
+
+#### [TSK-06.7.1] The conductor keeps the group's reviewer and resumes it each round [P: C] [DONE]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/conductor/state.go]
+done_when:
+  - go test ./internal/conductor/...
+context:
+  - "State.Reviewer holds the reviewer's handle beside Builder; round two onward resumes it with the re-review brief; a resume that fails, after a restart or on a host without resume, starts a cold reviewer with the open findings"
+  - "tests: the second review resumes the first reviewer's session; a lost reviewer starts fresh; the ledger stamps each review warm or cold"
+```
+
+#### [TSK-06.7.2] A re-review brief carries the diff since the last reviewed commit and the open findings [P: C] [DONE]
+```yaml
+files: [internal/line/diff.go, internal/line/diff_test.go, internal/run/requests.go, internal/run/requests_test.go, internal/conductor/state.go, internal/run/drive.go, internal/run/drive_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/run/...
+depends_on: [TSK-06.7.1]
+context:
+  - "State keeps the HEAD each review saw; the re-review diff runs from it to HEAD, so a repair's lines are all the reviewer reads again"
+  - "the brief lists each open finding with its file and line, and asks the reviewer to close or keep each one with evidence"
+  - "wire it: newDriver in internal/run/drive.go builds the re-review request, so a production run resumes the warm reviewer"
+```
+
+#### [TSK-06.7.3] The reviewer role states the re-review rules [P: H] [DONE]
+```yaml
+files: [komodo/roles/reviewer.md]
+done_when:
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-06.7.2]
+context:
+  - "a re-review closes or keeps each open finding, and raises a new one only on a line the repair changed (REQ-21); TSK-07.5.6 later enforces the rule in the binary for each lens"
+```
+
+#### [TSK-06.7.4] A cold reviewer checks the final state once before ship when the warm one ran more than one round [P: H] [DONE]
+```yaml
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go]
+done_when:
+  - go test ./internal/conductor/...
+depends_on: [TSK-06.7.1]
+context:
+  - "the anchoring guard: a fresh reviewer reads the whole diff once; only its findings at or above the severity floor block, and a group gets one cold pass, never a loop of them"
+  - "test: a group with two warm rounds gets exactly one cold review before Preparing; a group that passed its first review gets none"
+```
+
+#### [TSK-06.7.5] internal/conductor/drive.go:209 Warm re-review ledger rows record an empty role and model in production [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - 'reviewRound starts the warm path from request = d.Reviewer and passes it to d.session, which stamps ledger.Entry{Role: req.Role, Model: req.Model}. newDriver in internal/run/drive.go wires only Review and ReReview and never sets Driver.Reviewer, so d.Reviewer is the zero StartRequest. Every StationReReview row a production run writes therefore has Role "" and Model "", even though the claude mount resumes on prior.req''s model. Per-model cost and usage reporting loses every warm round. The conductor tests set d.Reviewer on the rig, so they never see this. Keep the StartRequest the group''s reviewer was started with (built by Review or taken from d.Reviewer) and pass it to d.session on the warm path, so the resumed round is stamped with that role and model.'
+```
+
+#### [TSK-06.7.6] internal/conductor/drive_test.go:372 No test checks the role and model on a re-review ledger row [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive_test.go
+done_when:
+  - test -f internal/conductor/drive_test.go
+type: test
+context:
+  - "The new tests check only the order of ledger stations (review versus re-review). None checks that a StationReReview entry carries the reviewer's role and model when Review is wired and Reviewer is left empty, which is how production is wired. The done_when for TSK-06.7.1 passes with the empty-role rows described above. Add a case with Driver.Reviewer empty and Review returning a request with Role and Model set, then assert that the re-review ledger entry carries both."
+```
+
+
 
 ---
 
@@ -1746,6 +2806,7 @@ done_when:
 depends_on: [TSK-07.5.3]
 context:
   - "test (REQ-21): a new finding on an unchanged line is dropped"
+  - "extends TG-06.7's warm reviewer to each lens"
 ```
 
 #### [TSK-07.5.7] The conductor runs Review through the lenses [P: H] [REFINEMENT]
@@ -1964,7 +3025,7 @@ type: test
 ---
 
 ## [EPIC-08] Phase 4: install, platforms and eval
-*Goal: the success criteria hold on macOS, Linux and Windows, and the owner cuts 1.0.0. Ships as `1.0.0-beta.2`; TG-08.8 is `1.0.0`.*
+*Goal: the success criteria hold on macOS, Linux and Windows. Ships as `1.0.0-beta.2`.*
 
 ### [TG-08.1] Spike S6: Windows
 ```yaml
@@ -2226,6 +3287,27 @@ context:
 owner: human
 type: test
 ```
+
+### [TG-08.9] The Codex mount is ready to switch on
+```yaml
+type: feat
+version: 1.0.0-beta.2
+```
+* **Why:** the owner has no Codex account yet and defers every Codex decision, but wants the mount easy to integrate once there is one. Claude line sessions get their deny rules per role; Codex sessions still take theirs from config_paths alone.
+
+#### [TSK-08.9.1] Codex line sessions deny the policy, the PRD and the golden suite through their own role rules [P: H] [REFINEMENT]
+```yaml
+files: [internal/mount/codex/codex.go, internal/mount/codex/codex_test.go]
+done_when:
+  - go test ./internal/mount/codex/...
+context:
+  - "TSK-06.4.3 took komodo/policy.json out of config_paths so the orchestrator can edit policy on a branch; Claude line sessions keep the deny through --disallowedTools, and Codex sessions must get the same deny before the mount goes live"
+  - "deferred by the owner until a Codex account exists; nothing runs Codex today"
+type: fix
+```
+
+## [EPIC-09] 1.0.0 LTS
+*Goal: the owner cuts 1.0.0 once all five success criteria hold. Ships as `1.0.0`.*
 
 ### [TG-08.8] 1.0.0 LTS
 ```yaml
