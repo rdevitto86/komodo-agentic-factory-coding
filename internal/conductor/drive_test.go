@@ -9,11 +9,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/review"
 )
 
 // fakeHost is a canned host: each session streams one usage event and returns the next scripted result.
@@ -27,6 +30,7 @@ type fakeHost struct {
 	starts   []mount.StartRequest
 	inputs   []string
 	stopped  []mount.Handle
+	stopMu   sync.Mutex
 	startsAt []GroupState
 	next     int
 	hang     bool
@@ -34,6 +38,35 @@ type fakeHost struct {
 	// resumed and reReviews are the reviewer sessions resumed and the input each got.
 	resumed   []mount.Handle
 	reReviews []string
+	// together, when set, holds each reviewer stream until that many are open at once.
+	together int
+	waiting  int
+	release  chan struct{}
+	gatherMu sync.Mutex
+}
+
+// gatherTimeout bounds how long a reviewer stream waits for the rest of its round to open.
+const gatherTimeout = 10 * time.Second
+
+// gather holds a reviewer stream until together of them are open at once, which only parallel lenses reach.
+func (f *fakeHost) gather() error {
+	f.gatherMu.Lock()
+	if f.release == nil {
+		f.release = make(chan struct{})
+	}
+	f.waiting++
+	release := f.release
+	if f.waiting == f.together {
+		close(f.release)
+		f.release, f.waiting = nil, 0
+	}
+	f.gatherMu.Unlock()
+	select {
+	case <-release:
+		return nil
+	case <-time.After(gatherTimeout):
+		return errors.New("the lens sessions did not run in parallel")
+	}
 }
 
 // newFakeHost returns a fake host that resumes sessions and reads the states saved so far from saved.
@@ -90,6 +123,11 @@ func (f *fakeHost) Stream(handle mount.Handle) (<-chan mount.Event, error) {
 	if f.hang {
 		return make(chan mount.Event), nil
 	}
+	if f.together > 0 && strings.HasPrefix(string(handle), "reviewer") {
+		if err := f.gather(); err != nil {
+			return nil, err
+		}
+	}
 	out := make(chan mount.Event, 1)
 	out <- mount.Event{Turns: 2, Usage: mount.TaskUsage{TokensIn: 100, TokensOut: 20, Turns: 2}}
 	close(out)
@@ -105,6 +143,8 @@ func (f *fakeHost) Result(handle mount.Handle) (mount.Result, error) {
 }
 
 func (f *fakeHost) Stop(handle mount.Handle) error {
+	f.stopMu.Lock()
+	defer f.stopMu.Unlock()
 	f.stopped = append(f.stopped, handle)
 	return nil
 }
@@ -123,6 +163,9 @@ type fakeStations struct {
 	merged   bool
 	mergeErr error
 	calledAt []string
+	// repair is the diff Diff returns, and diffedSince each commit it was asked for.
+	repair      string
+	diffedSince []string
 }
 
 // record notes which station ran and the state saved before it.
@@ -165,6 +208,11 @@ func (f *fakeStations) Head() (string, error) {
 		return "", f.headErr
 	}
 	return fmt.Sprintf("commit-%d", len(*f.saved)), nil
+}
+
+func (f *fakeStations) Diff(since string) (string, error) {
+	f.diffedSince = append(f.diffedSince, since)
+	return f.repair, nil
 }
 
 func (f *fakeStations) Merge() (bool, error) {
@@ -387,8 +435,8 @@ func TestDriveResumesTheFirstReviewerForTheSecondReview(t *testing.T) {
 	}
 	var first mount.Handle
 	for _, s := range *r.saved {
-		if first == "" && s.Reviewer != "" {
-			first = mount.Handle(s.Reviewer)
+		if first == "" && s.Reviewer[review.Economy] != "" {
+			first = mount.Handle(s.Reviewer[review.Economy])
 		}
 	}
 	if len(r.host.resumed) != 1 || r.host.resumed[0] != first {
@@ -402,8 +450,12 @@ func TestDriveResumesTheFirstReviewerForTheSecondReview(t *testing.T) {
 func TestDriveStartsAColdReviewerWhenItsReviewerIsGone(t *testing.T) {
 	r := newRig(t)
 	saved := State{
-		Group: "TG-1", Current: Checking, Reviewer: "reviewer-from-an-earlier-process", ReviewRounds: 1,
-		Findings: []Finding{{Severity: "high", Verified: true, File: "a.go", Line: 3, Title: "nil map"}},
+		Group: "TG-1", Current: Checking,
+		Reviewer:     map[review.Lens]string{review.Economy: "reviewer-from-an-earlier-process"},
+		ReviewRounds: map[review.Lens]int{review.Economy: 1},
+		Findings: map[review.Lens][]Finding{
+			review.Economy: {{Severity: "high", Verified: true, File: "a.go", Line: 3, Title: "nil map"}},
+		},
 	}
 	*r.saved = append(*r.saved, saved)
 	final, err := r.driver.Resume(context.Background(), saved)
@@ -443,10 +495,10 @@ func TestDriveBuildsEachReviewFromItsWiredRequests(t *testing.T) {
 	r.host.reviews = []map[string]any{
 		{"findings": []any{map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map"}}},
 	}
-	r.driver.Review = func() (mount.StartRequest, error) {
+	r.driver.Review = func(review.Lens) (mount.StartRequest, error) {
 		return mount.StartRequest{Role: "reviewer", Brief: "the group's diff"}, nil
 	}
-	r.driver.ReReview = func(s State) (string, error) {
+	r.driver.ReReview = func(_ review.Lens, s State) (string, error) {
 		return "since " + s.Reviewed, nil
 	}
 	if _, err := r.drive(t); err != nil {
@@ -468,11 +520,11 @@ func TestDriveEscalatesAReviewThatCannotStart(t *testing.T) {
 		wire func(r *rig)
 	}{
 		{"the review request fails", func(r *rig) {
-			r.driver.Review = func() (mount.StartRequest, error) { return mount.StartRequest{}, failed }
+			r.driver.Review = func(review.Lens) (mount.StartRequest, error) { return mount.StartRequest{}, failed }
 		}},
 		{"the re-review input fails", func(r *rig) {
 			r.host.reviews = []map[string]any{{"findings": []any{high}}}
-			r.driver.ReReview = func(State) (string, error) { return "", failed }
+			r.driver.ReReview = func(review.Lens, State) (string, error) { return "", failed }
 		}},
 		{"the reviewed HEAD cannot be read", func(r *rig) {
 			r.stations.headErr = failed
@@ -542,6 +594,182 @@ func TestDriveRunsOneColdPassBeforePreparingAfterTwoWarmRounds(t *testing.T) {
 				if state == Preparing || state == Shipping {
 					t.Fatalf("session %d began at %s, want every review before Preparing", i, state)
 				}
+			}
+		})
+	}
+}
+
+func TestDriveRunsEveryLensInParallelWithItsOwnSessionRoundsAndFindings(t *testing.T) {
+	r := newRig(t)
+	lenses := review.ForMode("full")
+	r.driver.Lenses = lenses
+	r.driver.Review = func(lens review.Lens) (mount.StartRequest, error) {
+		return mount.StartRequest{Role: "reviewer", Brief: "the diff and the task list, through " + string(lens)}, nil
+	}
+	r.host.together = len(lenses)
+	high := map[string]any{
+		"lens": "security", "severity": "high", "file": "a.go", "line": 3, "title": "no escaping", "fix": "escape it",
+	}
+	low := map[string]any{"severity": "low", "file": "b.go", "line": 9, "title": "name"}
+	r.host.reviews = []map[string]any{
+		{"findings": []any{}, "blast_radius": "med"},
+		{"findings": []any{high}, "blast_radius": "high", "blast_radius_why": "crosses a trust boundary"},
+		{"findings": []any{low}, "blast_radius": "low"},
+	}
+	var written []mount.Result
+	r.driver.WriteReview = func(_ string, result mount.Result) error {
+		written = append(written, result)
+		return nil
+	}
+
+	final, err := r.drive(t)
+	if err != nil || final.Current != Shipped {
+		t.Fatalf("drive = %s, %v; want Shipped", final.Current, err)
+	}
+	sessions := []string{
+		StationBuild, StationReview, StationReview, StationReview, StationRepair,
+		StationReReview, StationReReview, StationReReview, StationReview, StationReview, StationReview,
+	}
+	if got := r.sessions(t); !equal(got, sessions) {
+		t.Fatalf("ledger sessions = %v, want three lenses, their three re-reviews, then three cold passes", got)
+	}
+	for i, lens := range lenses {
+		brief := r.host.starts[1+i].Brief
+		if !strings.HasSuffix(brief, string(lens)) || strings.Contains(brief, "build TG-1") {
+			t.Fatalf("%s lens brief = %q, want its own request and never the builder's", lens, brief)
+		}
+	}
+	var reviewed State
+	for _, s := range *r.saved {
+		if s.Current == Repairing {
+			reviewed = s
+			break
+		}
+	}
+	if len(reviewed.Reviewer) != len(lenses) {
+		t.Fatalf("reviewers = %v, want one session per lens", reviewed.Reviewer)
+	}
+	for i, lens := range lenses {
+		if r.host.resumed[i] != mount.Handle(reviewed.Reviewer[lens]) {
+			t.Fatalf("resumed = %v, want each lens's own reviewer %v", r.host.resumed, reviewed.Reviewer)
+		}
+	}
+	if security := reviewed.Findings[review.Security]; len(security) != 1 || !security[0].Verified ||
+		security[0].Lens != review.Security {
+		t.Fatalf("security findings = %+v, want its one verified finding", security)
+	}
+	if quality := reviewed.Findings[review.Quality]; len(quality) != 1 || quality[0].Verified ||
+		quality[0].Lens != review.Quality {
+		t.Fatalf("quality findings = %+v, want its unverified finding under its session's lens", quality)
+	}
+	if !strings.Contains(r.host.reReviews[1], "`a.go:3` high: no escaping") ||
+		strings.Contains(r.host.reReviews[0], "a.go") || strings.Contains(r.host.reReviews[2], "a.go") {
+		t.Fatalf("re-review inputs = %q, want each lens given only its own open findings", r.host.reReviews)
+	}
+	first := written[0].Value
+	if merged, _ := first["findings"].([]any); len(merged) != 2 || first["blast_radius"] != "high" ||
+		first["blast_radius_why"] != "crosses a trust boundary" {
+		t.Fatalf("review written for ship = %+v, want every lens's findings and the widest blast radius", first)
+	}
+	if fixes := r.host.inputs[0]; !strings.Contains(fixes, "a.go:3 no escaping: escape it") || strings.Contains(fixes, "b.go") {
+		t.Fatalf("fix list = %q, want only the verified finding", fixes)
+	}
+	for _, lens := range lenses {
+		if !final.ColdPass[lens] || final.ReviewRounds[lens] != 1 {
+			t.Fatalf("cold pass = %v, rounds = %v, want every lens's cold pass run", final.ColdPass, final.ReviewRounds)
+		}
+	}
+}
+
+func TestDriveDropsANewReReviewFindingOnALineTheRepairLeftAlone(t *testing.T) {
+	r := newRig(t)
+	finding := func(file string, line int) map[string]any {
+		return map[string]any{"severity": "high", "file": file, "line": line, "title": "wrong", "fix": "fix it"}
+	}
+	r.host.reviews = []map[string]any{
+		{"findings": []any{finding("a.go", 3)}},
+		{"findings": []any{finding("a.go", 3), finding("c.go", 1), finding("a.go", 4)}},
+	}
+	r.stations.repair = "--- a/a.go\n+++ b/a.go\n@@ -4,1 +4,1 @@\n-\told()\n+\tnew()\n"
+	var written []mount.Result
+	r.driver.WriteReview = func(_ string, result mount.Result) error {
+		written = append(written, result)
+		return nil
+	}
+	final, err := r.drive(t)
+	if err != nil || final.Current != Shipped {
+		t.Fatalf("drive = %s, %v; want Shipped", final.Current, err)
+	}
+	if len(r.stations.diffedSince) == 0 || !strings.HasPrefix(r.stations.diffedSince[0], "commit-") {
+		t.Fatalf("diffed since %v, want the commit the first review saw", r.stations.diffedSince)
+	}
+	fixes := r.host.inputs[1]
+	if !strings.Contains(fixes, "a.go:3") || !strings.Contains(fixes, "a.go:4") || strings.Contains(fixes, "c.go") {
+		t.Fatalf("second fix list = %q, want the kept and the repaired-line findings, never the unchanged line's", fixes)
+	}
+	if kept, ok := written[1].Value["findings"].([]any); !ok || len(kept) != 2 {
+		t.Fatalf("re-review written for ship = %+v, want only its two allowed findings", written[1].Value)
+	}
+}
+
+func TestDriveStopsTheOpenedLensesWhenAnotherCannotStart(t *testing.T) {
+	failed := errors.New("no brief")
+	r := newRig(t)
+	r.driver.Lenses = review.ForMode("full")
+	r.driver.Review = func(lens review.Lens) (mount.StartRequest, error) {
+		if lens == review.Quality {
+			return mount.StartRequest{}, failed
+		}
+		return mount.StartRequest{Role: "reviewer", Brief: string(lens)}, nil
+	}
+	final, err := r.drive(t)
+	if !errors.Is(err, failed) || final.Current != Escalated {
+		t.Fatalf("drive = %s, %v; want an escalation carrying %v", final.Current, err, failed)
+	}
+	if len(r.host.stopped) != 2 {
+		t.Fatalf("stopped = %v, want the two lens sessions opened before the failure", r.host.stopped)
+	}
+}
+
+func TestDriveResumesAReviewerSavedBeforeLensesAsTheEconomyLens(t *testing.T) {
+	legacy := `{"group":"TG-1","state":"Reviewing","reviewer":"reviewer-9","review_rounds":1,` +
+		`"findings":[{"severity":"high","verified":true,"file":"a.go","line":3,"title":"nil map"}]}`
+	cases := []struct {
+		name    string
+		lenses  []review.Lens
+		resumed int
+		starts  int
+	}{
+		{"economy mode resumes it", review.ForMode("economy"), 1, 1},
+		{"full mode starts every lens cold", review.ForMode("full"), 0, 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state.json")
+			if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			s, err := LoadState(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := newRig(t)
+			r.driver.Lenses = tc.lenses
+			r.host.results["reviewer-9"] = mount.Result{Value: map[string]any{"findings": []any{}}}
+			*r.saved = append(*r.saved, s)
+			final, err := r.driver.Resume(context.Background(), s)
+			if err != nil || final.Current != Shipped {
+				t.Fatalf("resume = %s, %v; want Shipped", final.Current, err)
+			}
+			if len(r.host.resumed) != tc.resumed || len(r.host.starts) != tc.starts {
+				t.Fatalf("resumed %v and started %d, want %d resumed and %d started",
+					r.host.resumed, len(r.host.starts), tc.resumed, tc.starts)
+			}
+			if tc.resumed == 1 && (r.host.resumed[0] != "reviewer-9" || !strings.Contains(r.host.reReviews[0], "`a.go:3`")) {
+				t.Fatalf("resumed %v with %q, want the saved reviewer given its open finding", r.host.resumed, r.host.reReviews)
+			}
+			if len(final.Findings) != len(tc.lenses) {
+				t.Fatalf("findings = %v, want one entry per lens the driver runs", final.Findings)
 			}
 		})
 	}

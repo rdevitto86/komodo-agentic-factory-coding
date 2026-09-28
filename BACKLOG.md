@@ -2889,7 +2889,7 @@ depends_on: [TG-07.5]
 ```
 * **Why:** TG-06.7 keeps one warm reviewer per group; each lens needs that same warm session, and its own findings. Proves REQ-19 and REQ-21.
 
-#### [TSK-07.11.1] Each lens keeps its own warm session, round count and findings [P: C] [READY]
+#### [TSK-07.11.1] Each lens keeps its own warm session, round count and findings [P: C] [DONE]
 ```yaml
 files: [internal/review/lenses.go, internal/review/lenses_test.go, internal/conductor/state.go, internal/conductor/drive.go, internal/conductor/drive_test.go]
 done_when:
@@ -2900,7 +2900,7 @@ context:
   - "a resumed state.json written before the change still loads, as a single lens"
 ```
 
-#### [TSK-07.11.2] A re-review resumes its lens, and can only close findings or flag repaired lines [P: C] [READY]
+#### [TSK-07.11.2] A re-review resumes its lens, and can only close findings or flag repaired lines [P: C] [DONE]
 ```yaml
 files: [internal/review/rereview.go, internal/review/rereview_test.go]
 done_when:
@@ -2911,7 +2911,7 @@ context:
   - "test (REQ-21): a new finding on an unchanged line is dropped"
 ```
 
-#### [TSK-07.11.3] `komodo run` starts one reviewer session per lens [P: H] [READY]
+#### [TSK-07.11.3] `komodo run` starts one reviewer session per lens [P: H] [DONE]
 ```yaml
 files: [internal/run/drive.go, internal/run/drive_test.go, internal/run/requests.go, internal/run/requests_test.go]
 done_when:
@@ -2921,6 +2921,42 @@ context:
   - "ReviewerRequest takes a lens and binds its skill; every lens runs on the profile's reviewer tier"
   - "test (REQ-19): the ledger shows three lens sessions in full mode and one in economy mode"
 ```
+
+#### [TSK-07.11.4] internal/conductor/drive.go:274 A pre-lens state.json resumed in full mode loses its open findings [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/conductor/drive.go
+done_when:
+  - test -f internal/conductor/drive.go
+type: fix
+context:
+  - "A legacy record loads its verified findings under review.Economy. In full mode, openLens asks s.Open(lens) for correctness, security and quality, and each returns nothing. So no cold lens brief carries the open finding (a.go:3 'nil map' in the test fixture). The loop at drive.go:274 then deletes the Economy entry. The old contract, where a cold reviewer gets the open findings, breaks for exactly the upgrade path TSK-07.11.1 says must still load. When the driver's lenses lack review.Economy, append s.Open(review.Economy) to every cold lens brief before the Economy entry is dropped."
+```
+
+#### [TSK-07.11.5] internal/review/rereview_test.go:9 Test comment cites a requirement ID [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/review/rereview_test.go
+done_when:
+  - test -f internal/review/rereview_test.go
+type: docs
+context:
+  - "The comment names 'REQ-21'. The comment standard bans citing a ticket or spec. Drop 'is REQ-21' and keep only the behaviour the test asserts."
+```
+
+#### [TSK-07.11.6] internal/run/drive_test.go:325 Test comment cites a requirement ID [P: L] [REFINEMENT]
+```yaml
+files:
+  - internal/run/drive_test.go
+done_when:
+  - test -f internal/run/drive_test.go
+type: docs
+context:
+  - "The comment names 'REQ-19'. The comment standard bans citing a ticket or spec. Drop 'is REQ-19' and keep only the behaviour the test asserts."
+```
+
+
+
 
 ### [TG-07.6] Repair resumes the builder, and a loop stops when it stops progressing
 ```yaml

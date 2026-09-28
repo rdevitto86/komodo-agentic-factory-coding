@@ -2,9 +2,11 @@
 package conductor
 
 import (
+	"encoding/json"
 	"time"
 
 	"komodo/internal/line"
+	"komodo/internal/review"
 )
 
 // GroupState is one of the states a task group's state.json can hold (system-design.md#group-states).
@@ -25,37 +27,40 @@ const (
 
 // Finding is one open review finding carried in a group's state.json.
 type Finding struct {
-	Severity string `json:"severity"`
-	Verified bool   `json:"verified"`
-	File     string `json:"file,omitempty"`
-	Line     int    `json:"line,omitempty"`
-	Title    string `json:"title,omitempty"`
+	// Lens is the lens the finding names as its own, or its session's lens when it names none.
+	Lens     review.Lens `json:"lens,omitempty"`
+	Severity string      `json:"severity"`
+	Verified bool        `json:"verified"`
+	File     string      `json:"file,omitempty"`
+	Line     int         `json:"line,omitempty"`
+	Title    string      `json:"title,omitempty"`
 }
 
 // State is what state.json holds for one group when Next reads it, before the state's work starts.
 type State struct {
-	Group    string        `json:"group"`
-	Current  GroupState    `json:"state"`
-	Worktree string        `json:"worktree"`
-	Branch   string        `json:"branch"`
-	LastWIP  string        `json:"last_wip"`
-	Sessions []string      `json:"sessions"`
-	Findings []Finding     `json:"findings"`
-	TimeUsed time.Duration `json:"time_used"`
+	Group    string     `json:"group"`
+	Current  GroupState `json:"state"`
+	Worktree string     `json:"worktree"`
+	Branch   string     `json:"branch"`
+	LastWIP  string     `json:"last_wip"`
+	Sessions []string   `json:"sessions"`
+	// Findings holds each lens's findings from its last round.
+	Findings map[review.Lens][]Finding `json:"findings"`
+	TimeUsed time.Duration             `json:"time_used"`
 	// Fixes is the open fix list the next repair round works.
 	Fixes []string `json:"fixes,omitempty"`
 	// Builder is the builder session a repair round resumes.
 	Builder string `json:"builder,omitempty"`
 	// Repairs counts the repair rounds the group has spent, across every run that drove it.
 	Repairs int `json:"repairs,omitempty"`
-	// Reviewer is the reviewer session a re-review resumes.
-	Reviewer string `json:"reviewer,omitempty"`
+	// Reviewer is each lens's reviewer session, which its re-review resumes.
+	Reviewer map[review.Lens]string `json:"reviewer,omitempty"`
 	// Reviewed is the HEAD the last review saw, where the next re-review's diff starts.
 	Reviewed string `json:"reviewed,omitempty"`
-	// ReviewRounds counts the rounds Reviewer has run; a cold reviewer starts it again at one.
-	ReviewRounds int `json:"review_rounds,omitempty"`
-	// ColdPass records that the group's one cold review before ship has run.
-	ColdPass bool `json:"cold_pass,omitempty"`
+	// ReviewRounds counts the rounds each lens's reviewer has run; a cold reviewer starts it again at one.
+	ReviewRounds map[review.Lens]int `json:"review_rounds,omitempty"`
+	// ColdPass records each lens whose one cold review before ship has run.
+	ColdPass map[review.Lens]bool `json:"cold_pass,omitempty"`
 
 	// SlotFree is read at Ready: a build slot is free for the group to take.
 	SlotFree bool `json:"slot_free"`
@@ -81,10 +86,54 @@ type State struct {
 	Edited bool `json:"edited"`
 }
 
-// Open returns the group's verified findings, the ones a re-review closes or keeps.
-func (s State) Open() []line.Finding {
+// UnmarshalJSON reads state.json, filing a record written with one reviewer under the economy lens.
+func (s *State) UnmarshalJSON(data []byte) error {
+	type record State
+	raw := struct {
+		*record
+		Findings     json.RawMessage `json:"findings"`
+		Reviewer     json.RawMessage `json:"reviewer"`
+		ReviewRounds json.RawMessage `json:"review_rounds"`
+		ColdPass     json.RawMessage `json:"cold_pass"`
+	}{record: (*record)(s)}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var err error
+	if s.Findings, err = byLens[[]Finding](raw.Findings); err != nil {
+		return err
+	}
+	if s.Reviewer, err = byLens[string](raw.Reviewer); err != nil {
+		return err
+	}
+	if s.ReviewRounds, err = byLens[int](raw.ReviewRounds); err != nil {
+		return err
+	}
+	s.ColdPass, err = byLens[bool](raw.ColdPass)
+	return err
+}
+
+// byLens decodes a map keyed by lens, or the one value a single-reviewer record holds, as the economy lens.
+func byLens[T any](data json.RawMessage) (map[review.Lens]T, error) {
+	if len(data) == 0 || string(data) == "null" {
+		return nil, nil
+	}
+	if data[0] == '{' {
+		var keyed map[review.Lens]T
+		err := json.Unmarshal(data, &keyed)
+		return keyed, err
+	}
+	var single T
+	if err := json.Unmarshal(data, &single); err != nil {
+		return nil, err
+	}
+	return map[review.Lens]T{review.Economy: single}, nil
+}
+
+// Open returns one lens's verified findings, the ones its re-review closes or keeps.
+func (s State) Open(lens review.Lens) []line.Finding {
 	var open []line.Finding
-	for _, finding := range s.Findings {
+	for _, finding := range s.Findings[lens] {
 		if finding.Verified {
 			open = append(open, line.Finding{
 				Severity: finding.Severity, File: finding.File, Line: finding.Line, Title: finding.Title,
@@ -158,11 +207,13 @@ func checkingNext(s State) Action {
 	return Action{Move: Reviewing, Why: s.Group + " passed every check; run the lenses"}
 }
 
-// reviewingNext moves to Repairing once a finding is verified, else to Preparing.
+// reviewingNext moves to Repairing once any lens's finding is verified, else to Preparing.
 func reviewingNext(s State) Action {
-	for _, finding := range s.Findings {
-		if finding.Verified {
-			return Action{Move: Repairing, Why: s.Group + " has a verified finding and needs a fix list"}
+	for _, findings := range s.Findings {
+		for _, finding := range findings {
+			if finding.Verified {
+				return Action{Move: Repairing, Why: s.Group + " has a verified finding and needs a fix list"}
+			}
 		}
 	}
 	return Action{Move: Preparing, Why: s.Group + " has no verified finding; commit and integrate"}

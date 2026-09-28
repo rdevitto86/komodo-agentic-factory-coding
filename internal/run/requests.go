@@ -1,6 +1,7 @@
 package run
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"komodo/internal/conductor"
 	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/review"
 )
 
 // BuilderRequest fills the builder's start request: every task's brief, in wave order, joined into
@@ -39,19 +41,25 @@ func BuilderRequest(root string, plan *line.Plan) (mount.StartRequest, error) {
 	}, nil
 }
 
-// ReReviewInput is what a resumed reviewer reads each round after its first: the group's open
+// ReReviewInput is what a lens's resumed reviewer reads each round after its first: the lens's open
 // findings and the diff since the HEAD its last review saw.
-func ReReviewInput(root string, plan *line.Plan, s conductor.State) (string, error) {
-	input, err := line.ReReviewFor(root, plan, s.Reviewed, s.Open())
+func ReReviewInput(root string, plan *line.Plan, s conductor.State, lens review.Lens) (string, error) {
+	input, err := line.ReReviewFor(root, plan, s.Reviewed, s.Open(lens))
 	if err != nil {
 		return "", err
 	}
 	return input.Text, nil
 }
 
-// ReviewerRequest fills the reviewer's start request: the group's review brief, which carries the
-// diff, the reviewer role's tools and schema, and the reviewer tier's machine, not profile.Machine.
-func ReviewerRequest(root string, plan *line.Plan) (mount.StartRequest, error) {
+// lensLead opens a lens's brief, binding its session to the one checklist skill it reviews through.
+func lensLead(lens review.Lens) string {
+	return fmt.Sprintf("# Your lens: %s\n\nReview through the `%s` skill alone, and report only the rules it lists.\n\n",
+		lens, lens.Skill())
+}
+
+// ReviewerRequest fills one lens's start request: the group's review brief, which carries the diff, bound
+// to the lens's skill, the reviewer role's tools and schema, and the reviewer tier's machine for every lens.
+func ReviewerRequest(root string, plan *line.Plan, lens review.Lens) (mount.StartRequest, error) {
 	definition, err := line.LoadRole(root, "reviewer")
 	if err != nil {
 		return mount.StartRequest{}, err
@@ -67,7 +75,7 @@ func ReviewerRequest(root string, plan *line.Plan) (mount.StartRequest, error) {
 	machine := plan.Profile.Tiers.Reviewer
 	return mount.StartRequest{
 		Role:   "reviewer",
-		Brief:  string(text),
+		Brief:  lensLead(lens) + string(text),
 		Tools:  definition.Tools,
 		Model:  machine.Model,
 		Effort: machine.Effort,

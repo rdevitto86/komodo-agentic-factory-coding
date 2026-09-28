@@ -15,6 +15,7 @@ import (
 	"komodo/internal/mount"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
+	"komodo/internal/review"
 )
 
 // Drive cuts one group's worktree when no run is open for it, then drives it through the conductor to Shipped,
@@ -115,19 +116,20 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 		Ledger:   line.Book(root),
 		Run:      run,
 		Builder:  builder,
-		// The reviewer's brief carries the diff, so it is built at review, after the build is committed.
-		Review: func() (mount.StartRequest, error) {
+		Lenses:   review.ForMode(plan.Profile.Mode),
+		// A lens's brief carries the diff, so it is built at review, after the build is committed.
+		Review: func(lens review.Lens) (mount.StartRequest, error) {
 			if err := line.CommitBuild(root, plan); err != nil {
 				return mount.StartRequest{}, fmt.Errorf("committing the build for review: %w", err)
 			}
-			return ReviewerRequest(root, plan)
+			return ReviewerRequest(root, plan, lens)
 		},
 		// A re-review diffs from the last reviewed HEAD, so the repair is committed first.
-		ReReview: func(s conductor.State) (string, error) {
+		ReReview: func(lens review.Lens, s conductor.State) (string, error) {
 			if err := line.CommitBuild(root, plan); err != nil {
 				return "", fmt.Errorf("committing the repair for re-review: %w", err)
 			}
-			return ReReviewInput(root, plan, s)
+			return ReReviewInput(root, plan, s, lens)
 		},
 		SeverityFloor: plan.Profile.SeverityFloor,
 		Repairs:       plan.Profile.ReviewRepairs,
