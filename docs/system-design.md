@@ -480,7 +480,7 @@ A plugin is a folder with a manifest naming its type, the roles and stages it at
 
 ### Rollout
 
-Each phase is a patch on the current code: `Next`, the stations and the ledger stay. Estimates are rough. Requirement IDs are defined in `docs/prd.md#requirements`. Phases 0 to 3 ship as `1.0.0-alpha` releases, phase 4 as betas, and `1.0.0` is the LTS release (decision 0023).
+Each phase is a patch on the current code: `Next`, the stations and the ledger stay. Estimates are rough. Requirement IDs are defined in `docs/prd.md#requirements`. Phases 0 to 3 shipped as `1.0.0-alpha` releases and phase 4 as `1.0.0-beta.2` (decision 0023). Phases 5 to 7 ship as betas, phase 8 as `1.0.0-rc.1`, and phase 9 is the `1.0.0` LTS release (decision 0034). Each phase from 5 on is one epic, and its groups are the files in `docs/backlog/` that carry its epic ID.
 
 | Phase | Requirements | Work | Exit |
 |---|---|---|---|
@@ -488,7 +488,12 @@ Each phase is a patch on the current code: `Next`, the stations and the ledger s
 | 1. Conductor and sessions, week 1 | REQ-2, REQ-3, REQ-6, REQ-11, REQ-14–REQ-16, REQ-28, REQ-29, REQ-31 | The conductor drives the stages. Per-role plugins, hermetic config, preflight, per-run metrics, time limits. The run skill becomes a launcher. | One group runs through the conductor within 60 minutes, with zero conductor tokens |
 | 2. Guardrails, week 2 | REQ-17, REQ-26, REQ-33–REQ-38, REQ-40, REQ-41 | The hook contract, allow lists, output checks, credential isolation, the sandbox where available, the guard cut to five rules | Every safety proof passes |
 | 3. Groups, review and repair, weeks 2–3 | REQ-7–REQ-10, REQ-12, REQ-18–REQ-25, REQ-27, REQ-30, REQ-32, REQ-45, REQ-46 | The backlog files, cleanup and blocker notes; group cards and checkboxes; parallel lenses and evidence checks; resumed repair and re-review; the progress rule; escalations; draft-first shipping; pacing. Open groups move from `BACKLOG.md` into `docs/backlog/`. | A 3-group plan runs unattended to draft PRs |
-| 4. Install, platforms and eval, weeks 3–4 | REQ-1, REQ-39, REQ-42–REQ-44 | Install scripts, native Windows and WSL2, the release command, plugin points, the golden suite and `komodo eval` | The success criteria hold on all three platforms, and the owner cuts 1.0.0 |
+| 4. Install, platforms and eval, weeks 3–4 | REQ-1, REQ-39, REQ-42–REQ-44 | Install scripts, native Windows and WSL2, the release command, plugin points, the golden suite and `komodo eval` | Shipped as `1.0.0-beta.2`; its open Windows, install and eval work moved to phases 6 and 8 |
+| 5. The line runs its own plan, `1.0.0-beta.3`, EPIC-10 | REQ-3, REQ-6–REQ-10, REQ-13, REQ-14, REQ-32, REQ-35, REQ-37, REQ-40, REQ-42 | No hosted CI. The line reads the group files, ticks checkboxes and files follow-ups as their own group. Pacing reads the usage the host writes today. The guard protects every protected branch. The proof gaps the 2026-09-28 audit found. | `komodo next` picks a group from `docs/backlog/`, and every beta.3 proof passes |
+| 6. Adoption and Windows, `1.0.0-beta.4`, EPIC-11 | REQ-1, REQ-43 | `init --check`, `komodo migrate backlog`, the adopting planner, the native Windows spike, job objects, POSIX sh, and the install on three platforms | A second repo adopts the line with no hand edit, and the install passes on macOS, Linux and Windows |
+| 7. Hardening, `1.0.0-beta.5`, EPIC-12 | None new | The review follow-ups, triaged per package; a finding the code no longer shows is dropped | No open follow-up remains |
+| 8. Release candidate, `1.0.0-rc.1`, EPIC-13 | REQ-11, REQ-12, REQ-34, REQ-38, REQ-44, and every NEEDS-RUN proof | The golden suite, the unattended proofs, and `komodo eval --runs 3` on three platforms | Success criteria 1 to 5 hold on the candidate |
+| 9. LTS, `1.0.0`, EPIC-14 | All | The owner settles the open questions and cuts the tag | The owner cuts 1.0.0 |
 
 A phase starts once the spikes its decisions name have passed. Work that decision 0022 parks lands nothing new.
 
