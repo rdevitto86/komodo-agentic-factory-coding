@@ -56,6 +56,11 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkGitattributes(root)...)
 	problems = append(problems, checkPins(root)...)
 	if !options.NoGit {
+		if options.Warn != nil {
+			for _, note := range Leftovers(root) {
+				options.Warn(note)
+			}
+		}
 		found, err := checkGit(root)
 		if err != nil {
 			return problems, err

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/conductor"
+	"komodo/internal/doctor"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
@@ -32,7 +34,11 @@ func Drive(options Options) (int, error) {
 	if plan == nil {
 		return 1, errors.New("nothing is ready")
 	}
-	runState, err := cutIfNeeded(root, plan)
+	stdout := options.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	runState, err := cutIfNeeded(root, plan, stdout)
 	if err != nil {
 		return 1, err
 	}
@@ -65,6 +71,9 @@ func Drive(options Options) (int, error) {
 	if final.Current != conductor.Shipped {
 		return 1, fmt.Errorf("%s stopped at %s, not Shipped", plan.Group, final.Current)
 	}
+	if err := pruneLeftovers(root, plan.Base, stdout); err != nil {
+		return 1, err
+	}
 	return 0, nil
 }
 
@@ -91,14 +100,33 @@ func driveState(
 	return driver.Drive(ctx, fresh)
 }
 
-// cutIfNeeded returns the group's own run, cutting its branch and worktree when none is open
-// yet, and fills the plan's base, branch and worktree from whichever run it finds.
-func cutIfNeeded(root string, plan *line.Plan) (line.RunState, error) {
+// cutIfNeeded returns the group's own run, clearing leftovers then cutting its branch and worktree when
+// none is open yet, and fills the plan's base, branch and worktree from whichever run it finds.
+func cutIfNeeded(root string, plan *line.Plan, out io.Writer) (line.RunState, error) {
 	if state, err := line.LoadRunFor(root, plan.Group); err == nil && state.Group == plan.Group {
 		plan.Base, plan.Branch, plan.Worktree = state.Base, state.Branch, state.Worktree
 		return state, nil
 	}
+	if err := pruneLeftovers(root, plan.Base, out); err != nil {
+		return line.RunState{}, err
+	}
 	return line.Start(root, plan, "", false)
+}
+
+// pruneLeftovers removes merged and abandoned groups' worktrees and branches and the oldest run folders,
+// printing each removal to out.
+func pruneLeftovers(root, base string, out io.Writer) error {
+	if base == "" {
+		base = line.DefaultBase(root)
+	}
+	done, err := doctor.Prune(root, base)
+	if err != nil {
+		return err
+	}
+	for _, item := range done {
+		fmt.Fprintln(out, item)
+	}
+	return nil
 }
 
 // driverContract resolves the profile's host and builds its session driver over worktree.
