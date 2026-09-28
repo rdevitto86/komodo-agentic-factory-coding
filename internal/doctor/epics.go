@@ -117,10 +117,10 @@ func checkGroupPRBasesWithRunners(root, defaultBranch string, parsed backlog.Bac
 		return nil
 	}
 	var prs []struct {
-		Number       int    `json:"number"`
-		HeadRefName  string `json:"headRefName"`
-		BaseRefName  string `json:"baseRefName"`
-		Title        string `json:"title"`
+		Number      int    `json:"number"`
+		HeadRefName string `json:"headRefName"`
+		BaseRefName string `json:"baseRefName"`
+		Title       string `json:"title"`
 	}
 	if json.Unmarshal([]byte(out), &prs) != nil {
 		return nil

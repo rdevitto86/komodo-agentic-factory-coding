@@ -2,7 +2,9 @@
 package doctor
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"komodo/internal/git"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
+	"komodo/internal/profile"
 	"komodo/internal/release"
 	"komodo/internal/toolkit"
 )
@@ -52,6 +55,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkPromises(root)...)
 	problems = append(problems, checkGitattributes(root)...)
 	problems = append(problems, checkPins(root)...)
+	problems = append(problems, checkOverlay(mount.OverlayPath())...)
 	if !options.NoGit {
 		found, err := checkGit(root)
 		if err != nil {
@@ -309,6 +313,24 @@ func checkGitattributes(root string) []Problem {
 		}
 	}
 	return []Problem{{"gitattributes", ".gitattributes", "add: * text=auto eol=lf"}}
+}
+
+// checkOverlay reports a machine overlay its readers would skip: bad JSON, or a field of the wrong type.
+func checkOverlay(path string) []Problem {
+	data, err := os.ReadFile(path)
+	if err != nil || len(bytes.TrimSpace(data)) == 0 {
+		return nil
+	}
+	var guardFields struct {
+		CriticalRefs []string `json:"critical_refs"`
+		Mode         string   `json:"mode"`
+	}
+	err = errors.Join(json.Unmarshal(data, &guardFields), json.Unmarshal(data, &mount.Overlay{}),
+		profile.DecodeOverlay(data))
+	if err == nil {
+		return nil
+	}
+	return []Problem{{"overlay", path, "every reader skips it, so its critical_refs and caps are ignored: " + err.Error()}}
 }
 
 // checkGit reports conflict markers and the leftovers a run can strand.

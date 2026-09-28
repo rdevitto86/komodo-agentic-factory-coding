@@ -4,6 +4,7 @@ package ledger
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,8 +15,8 @@ import (
 
 // File names, both under .komodo and both gitignored.
 const (
-	RunFile    = "line.jsonl"
-	AdhocFile  = "adhoc.jsonl"
+	RunFile     = "line.jsonl"
+	AdhocFile   = "adhoc.jsonl"
 	MetricsFile = "metrics.jsonl"
 	EventsFile  = "events.jsonl"
 )
@@ -124,21 +125,33 @@ func (l *Ledger) Stamp(entry Entry) error {
 	return err
 }
 
-// TruncateRun archives the previous run's file beside it as line.<run>.jsonl, then empties it,
-// which intake does when a new run begins, so no run's stations are ever lost.
+// TruncateRun appends the run file to its archive, line.<run>.jsonl, then empties it.
 func (l *Ledger) TruncateRun() error {
 	if err := os.MkdirAll(l.Dir, 0o755); err != nil {
 		return err
 	}
 	if entries, err := l.Read(RunFile); err == nil && len(entries) > 0 && entries[0].Run != "" {
-		archive := l.path("line." + entries[0].Run + ".jsonl")
-		if _, err := os.Stat(archive); os.IsNotExist(err) {
-			if err := os.Rename(l.path(RunFile), archive); err != nil {
-				return err
-			}
+		if err := l.archive(entries[0].Run); err != nil {
+			return err
 		}
 	}
 	return os.WriteFile(l.path(RunFile), nil, 0o644)
+}
+
+// archive appends the run file's bytes to line.<run>.jsonl, creating it when absent.
+func (l *Ledger) archive(run string) error {
+	data, err := os.ReadFile(l.path(RunFile))
+	if err != nil {
+		return err
+	}
+	handle, err := os.OpenFile(l.path("line."+run+".jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := handle.Write(data); err != nil {
+		return errors.Join(err, handle.Close())
+	}
+	return handle.Close()
 }
 
 // rotateAdhoc empties the ad hoc file when its first line is stale or the file is too large.
