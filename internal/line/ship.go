@@ -311,6 +311,111 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	return result, nil
 }
 
+// blockedLabel is the label a stopped group's draft pull request carries.
+const blockedLabel = "status: blocked"
+
+// ShipBlocked commits a stopped group's work as WIP, then its blocker note with open tasks BLOCKED, and publishes
+// the branch as a draft PR labelled status: blocked; a scrubbed environment keeps both commits local.
+func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.Client) (*ShipResult, error) {
+	worktree := WorktreePath(root, plan.Worktree)
+	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Draft: true}
+	var declared []string
+	for _, task := range plan.Tasks {
+		declared = append(declared, task.Files...)
+	}
+	wip := fmt.Sprintf("wip: %s, blocked at %s (%s)", plan.Title, note.State, plan.Group)
+	if err := commitStaged(worktree, declared, wip); err != nil {
+		return nil, err
+	}
+	head, err := git.Run(worktree, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	note.Saved = fmt.Sprintf("WIP commit `%s` on `%s`", head, plan.Branch)
+	path, err := backlog.Find(worktree)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	noted, err := backlog.AddNote(string(data), plan.Group, note)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
+		return nil, err
+	}
+	group, _ := backlog.Parse(noted).Group(plan.Group)
+	for _, task := range group.Tasks {
+		if task.Status == "BLOCKED" {
+			result.Blocked = append(result.Blocked, task.ID)
+		}
+	}
+	if err := commitStaged(worktree, nil, fmt.Sprintf("docs: %s is blocked (%s)", plan.Title, plan.Group)); err != nil {
+		return nil, err
+	}
+	if scrubbed() {
+		result.Warnings = append(result.Warnings, "no credential to publish; the blocker note is committed on "+plan.Branch)
+		return result, nil
+	}
+	result.Base = liveBase(root, plan.Base)
+	if err := PushFromWorktree(root, worktree, plan.Branch); err != nil {
+		return result, err
+	}
+	if client == nil {
+		return result, nil
+	}
+	title := fmt.Sprintf("%s: %s (%s), blocked", plan.Type, plan.Title, plan.Group)
+	body := note.Render()
+	url, err := client.Create(result.Base, plan.Branch, title, body, true)
+	if err != nil {
+		open, viewErr := client.View(plan.Branch)
+		if viewErr != nil || open.State != "OPEN" {
+			return result, err
+		}
+		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
+			return result, err
+		}
+		url = open.URL
+	}
+	result.URL = url
+	result.Labels, result.Warnings = labelBlocked(client, url)
+	return result, nil
+}
+
+// commitStaged stages every change in worktree, declared files included, and commits them when any is staged.
+func commitStaged(worktree string, declared []string, message string) error {
+	if err := stageWork(worktree, declared); err != nil {
+		return err
+	}
+	if staged, err := git.Run(worktree, "diff", "--cached", "--name-only"); err != nil || staged == "" {
+		return err
+	}
+	_, err := git.Run(worktree, "commit", "-m", message)
+	return err
+}
+
+// labelBlocked adds the status: blocked label the repo defines; a label whose name holds a space never
+// matches KeepKnown's rule, so it is matched here by its whole name.
+func labelBlocked(client *pr.Client, url string) (labels, warnings []string) {
+	known, err := client.Labels()
+	if err != nil {
+		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
+	}
+	for _, label := range known {
+		if label != blockedLabel && !strings.HasPrefix(label, blockedLabel+" ") {
+			continue
+		}
+		if err := client.Label(url, []string{label}); err != nil {
+			return nil, []string{fmt.Sprintf("could not add label(s): %v", err)}
+		}
+		return []string{label}, nil
+	}
+	return nil, []string{"the repo has no " + blockedLabel + " label"}
+}
+
 // ApplyLabels adds the repo labels matching wanted to the pull request, warning on each miss or failure.
 func ApplyLabels(client *pr.Client, url string, wanted []string) (kept, warnings []string) {
 	known, err := client.Labels()
