@@ -4299,6 +4299,160 @@ context:
 type: fix
 ```
 
+## [EPIC-10] Beta fixes
+*Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
+
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L11.
+
+### [TG-10.1] One backlog grammar
+```yaml
+type: fix
+version: 1.0.0-beta.3
+```
+* **Why:** a repo sees 47 groups through `komodo lint` and 1 through `komodo backlog`, and the shipped rule disagrees with lint about `done_when` (L1, L2).
+
+#### [TSK-10.1.1] `komodo backlog` and `komodo lint` read the same source [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, templates/project/AGENTS.md.tmpl]
+done_when:
+  - go test ./cmd/komodo/...
+context:
+  - "L1: lint reads BACKLOG.md (internal/backlog/lint.go); komodo backlog reads docs/backlog/ (internal/backlog/groupfile.go)"
+  - "until TG-07.10 lands, komodo backlog falls back to BACKLOG.md as lint does; the template's AGENTS.md names whichever source the line reads"
+type: fix
+```
+
+#### [TSK-10.1.2] The backlog rule requires `done_when` as lint does [P: H] [REFINEMENT]
+```yaml
+files: [komodo/rules/backlog.md]
+done_when:
+  - grep -q done_when komodo/rules/backlog.md
+  - go run ./cmd/komodo doctor
+context:
+  - "L2: internal/backlog/lint.go:129, komodo/skills/plan/SKILL.md and komodo/roles/planner.schema.json all require done_when on a READY agent task"
+type: docs
+```
+
+### [TG-10.2] Adopting an existing repo
+```yaml
+type: feat
+version: 1.0.0-beta.3
+depends_on: [TG-10.1]
+```
+* **Why:** a repo with its own backlog and docs is converted by hand today (L3, L4, L5).
+
+#### [TSK-10.2.1] `komodo init` reports how each kept file differs from its template [P: M] [REFINEMENT]
+```yaml
+files: [cmd/komodo/init.go, cmd/komodo/init_test.go]
+done_when:
+  - go test ./cmd/komodo/...
+context:
+  - "L4: writeStarters skips an existing file silently"
+  - "print one line per kept file naming the template sections it lacks, and lint any existing backlog"
+type: feat
+```
+
+#### [TSK-10.2.2] A migrate command converts an old backlog to the current grammar [P: M] [REFINEMENT]
+```yaml
+files: [cmd/komodo/migrate.go, cmd/komodo/migrate_test.go, internal/backlog/groupfile.go]
+done_when:
+  - go test ./cmd/komodo/... ./internal/backlog/...
+context:
+  - "L3: komodo help lists no migrate command"
+  - "covers one epic spanning several versions (split per version), GitHub-style anchors on numbered headings, and BACKLOG.md to docs/backlog/"
+type: feat
+```
+
+#### [TSK-10.2.3] The planner maps a foreign repo's docs into the four spec files [P: M] [REFINEMENT]
+```yaml
+files: [komodo/roles/planner.md, komodo/skills/plan/SKILL.md]
+done_when:
+  - go run ./cmd/komodo doctor
+context:
+  - "L5: komodo/roles/planner.md reads only docs that already exist"
+  - "an SDD or design doc maps to architecture.md, system-design.md and decisions.md per the standards-specs skill"
+type: docs
+```
+
+### [TG-10.3] Guardrail scope
+```yaml
+type: fix
+version: 1.0.0-beta.3
+```
+* **Why:** one standard loads where it does not apply, the guard covers two refs, and doctor misses a workflow file (L6, L7, L8).
+
+#### [TSK-10.3.1] standards-cicd loads only for a repo with a pipeline, and accepts non-hosted runners [P: M] [REFINEMENT]
+```yaml
+files: [komodo/skills/standards-cicd/SKILL.md]
+done_when:
+  - "! grep -q '\\*\\*/.github/\\*\\*\"' komodo/skills/standards-cicd/SKILL.md"
+  - go test ./internal/mount/...
+context:
+  - "L6: the glob **/.github/** matches a PR template alone, and the skill requires a CI stage on hosted runners"
+type: fix
+```
+
+#### [TSK-10.3.2] The guard protects every protected ref, not only main and master [P: C] [REFINEMENT]
+```yaml
+files: [komodo/policy.json, internal/guard/policy_test.go]
+done_when:
+  - go test ./internal/guard/...
+context:
+  - "L7: critical_refs is [main, master]"
+  - "add trunk, prod, production, release/* and hotfix/*, the refs komodo/AGENTS.md already forbids"
+type: fix
+```
+
+#### [TSK-10.3.3] Doctor fails when a `.github/workflows/` file exists [P: M] [REFINEMENT]
+```yaml
+files: [internal/doctor/workflows.go, internal/doctor/workflows_test.go, internal/doctor/doctor.go]
+done_when:
+  - go test ./internal/doctor/...
+context:
+  - "L8: internal/doctor has no such check"
+  - "the problem line names the file and the fix; komodo-cicd-runner-cli still carries .github/workflows/ci.yml, so its doctor fails until it moves off Actions"
+type: fix
+```
+
+### [TG-10.4] Usage pacing
+```yaml
+type: fix
+version: 1.0.0-beta.3
+```
+* **Why:** pacing never pauses, and the profile's concurrency and billing view is wrong (L9, L10, L11).
+
+#### [TSK-10.4.1] The plan probe reads the usage the current CLI writes [P: C] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/limits.go, internal/mount/claude/limits_test.go, internal/run/pace.go, internal/run/pace_test.go]
+done_when:
+  - go test ./internal/mount/claude/... ./internal/run/...
+context:
+  - "L9: limits.go reads cachedUsageUtilization, which CLI 2.1.284 no longer writes; pace.go never receives rate_limit_event"
+type: fix
+```
+
+#### [TSK-10.4.2] One concurrency table serves the conductor and the profile [P: H] [REFINEMENT]
+```yaml
+files: [internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test ./internal/conductor/... ./internal/profile/...
+context:
+  - "L10: schedule.go:9 says Max 5x 2, Max 20x 4; profile.go says 4 and 6"
+  - "the owner picks the right numbers; profile.go becomes the one table and schedule.go reads it"
+type: fix
+```
+
+#### [TSK-10.4.3] The profile reads extra usage and the billing type [P: M] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/limits.go, internal/mount/claude/limits_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test ./internal/mount/claude/... ./internal/profile/...
+depends_on: [TSK-10.4.1, TSK-10.4.2]
+context:
+  - "L11: limits.go never reads hasExtraUsageEnabled or billingType"
+type: fix
+```
+
 ## [EPIC-09] 1.0.0 LTS
 *Goal: the owner cuts 1.0.0 once all five success criteria hold. Ships as `1.0.0`.*
 
