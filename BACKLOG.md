@@ -4311,14 +4311,15 @@ version: 1.0.0-beta.3
 ```
 * **Why:** a repo sees 47 groups through `komodo lint` and 1 through `komodo backlog`, and the shipped rule disagrees with lint about `done_when` (L1, L2).
 
-#### [TSK-10.1.1] `komodo backlog` and `komodo lint` read the same source [P: H] [REFINEMENT]
+#### [TSK-10.1.1] A docs/backlog group-file queue loads into the same Backlog the line runs on [P: C] [REFINEMENT]
 ```yaml
-files: [cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, templates/project/AGENTS.md.tmpl]
+files: [internal/backlog/load.go, internal/backlog/load_test.go, internal/backlog/groupfile.go]
 done_when:
-  - go test ./cmd/komodo/...
+  - go test ./internal/backlog/...
 context:
-  - "L1: lint reads BACKLOG.md (internal/backlog/lint.go); komodo backlog reads docs/backlog/ (internal/backlog/groupfile.go)"
-  - "until TG-07.10 lands, komodo backlog falls back to BACKLOG.md as lint does; the template's AGENTS.md names whichever source the line reads"
+  - "L1: backlog.Find accepts only BACKLOG.md or docs/BACKLOG.md; 23 files call it, so next, list and step fail in a repo holding only docs/backlog/ with: no BACKLOG.md"
+  - "Load(root) returns BACKLOG.md's Backlog when it exists, else one built from every group file, with epics taken from each file's epic and version"
+  - "komodo-cicd-runner-cli PR #16 is the first repo on group files and cannot run the line until this and TSK-10.1.3 land"
 type: fix
 ```
 
@@ -4331,6 +4332,48 @@ done_when:
 context:
   - "L2: internal/backlog/lint.go:129, komodo/skills/plan/SKILL.md and komodo/roles/planner.schema.json all require done_when on a READY agent task"
 type: docs
+```
+
+#### [TSK-10.1.3] The line's commands load the backlog through Load [P: C] [REFINEMENT]
+```yaml
+files: [internal/line/next.go, internal/line/step.go, internal/line/brief.go, internal/line/close.go, internal/line/cut.go, internal/line/wave.go, internal/line/diff.go, internal/line/worktree.go, internal/line/collide.go, internal/line/status.go, internal/line/ship.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-10.1.1]
+type: fix
+```
+
+#### [TSK-10.1.4] Run, conductor, hooks, eval and the CLI load the backlog through Load [P: C] [REFINEMENT]
+```yaml
+files: [internal/run/run.go, internal/run/drive.go, internal/conductor/integrate.go, internal/conductor/abandon.go, internal/conductor/drive.go, internal/hooks/taskchecks.go, internal/hooks/evidence.go, internal/eval/run.go, internal/doctor/leftovers.go, cmd/komodo/line.go, cmd/komodo/backlog.go, cmd/komodo/main.go, templates/project/AGENTS.md.tmpl]
+done_when:
+  - go test ./internal/run/... ./internal/conductor/... ./internal/hooks/... ./internal/eval/... ./cmd/komodo/...
+depends_on: [TSK-10.1.1]
+context:
+  - "komodo backlog and komodo lint then read the same source, and the template's AGENTS.md names docs/backlog/"
+type: fix
+```
+
+#### [TSK-10.1.5] Group-file lint checks what BACKLOG.md lint checks [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/backlog.go, internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/... ./cmd/komodo/...
+context:
+  - "today a group file passes with any version, a group version that differs from another in its epic, a READY task with no files, a context anchor to no heading, and a depends_on naming no group"
+  - "the runner-cli migration needed its own validator for all five"
+type: fix
+```
+
+#### [TSK-10.1.6] The group-file grammar carries a task's owner, context and depends_on [P: H] [REFINEMENT]
+```yaml
+files: [komodo/rules/backlog.md, internal/backlog/groupfile.go, internal/backlog/groupfile_test.go]
+done_when:
+  - go test ./internal/backlog/...
+context:
+  - "BACKLOG.md tasks carry owner, context, depends_on, priority and status; a group file keeps only files, accept and checks"
+  - "without owner, a person's task needs its own BLOCKED group: runner-cli needed 10; context and task depends_on survive only as prose no brief reads"
+type: feat
 ```
 
 ### [TG-10.2] Adopting an existing repo
