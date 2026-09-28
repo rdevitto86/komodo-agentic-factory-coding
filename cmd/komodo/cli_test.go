@@ -125,6 +125,8 @@ func TestDispatchReachesEveryReadOnlyCommand(t *testing.T) {
 		{[]string{"metrics"}, 0, ""},
 		{[]string{"step", "--json"}, 0, "{"},
 		{[]string{"resume", "TG-90.2"}, 1, "has no saved state to resume"},
+		{[]string{"ship"}, 1, "usage: komodo ship"},
+		{[]string{"ship", "TSK-90.2.1"}, 1, "TG-90.2 has no ship waiting on a credential"},
 		{[]string{"release", "check"}, 0, ""},
 		{[]string{"install", "--host", "nope"}, 1, `unknown host "nope"`},
 		{[]string{"install", "--host", "ollama"}, 1, "nothing to install"},

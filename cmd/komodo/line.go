@@ -341,6 +341,22 @@ func runShip(root, base, group string) {
 	printJSON(result)
 }
 
+// runFinishShip publishes a group a missing or expired credential stopped before Ship: push, draft PR, labels.
+func runFinishShip(root string, args []string) {
+	group, _ := splitPositional(args)
+	if group == "" {
+		fail(fmt.Errorf("usage: komodo ship <group>"))
+	}
+	if owner := line.GroupFor(root, group); owner != "" {
+		group = owner
+	}
+	result, err := line.FinishShip(root, group, pr.New(root))
+	if err != nil {
+		fail(err)
+	}
+	printJSON(result)
+}
+
 // currentPlan is the plan for the run in progress, with its recorded base and branch.
 func currentPlan(root string) *line.Plan {
 	plan, err := line.PlanForStation(root, "")

@@ -859,8 +859,8 @@ func (l *Line) coverage(ctx context.Context, worktree, diff string) ([]string, e
 	return check.Evaluate(filepath.Join(dir, coverageBarFile), percent)
 }
 
-// Prepare reruns every check in the worktree the one group builder worked, since there are no task
-// branches to merge, then marks each task DONE so Ship commits and reports them.
+// Prepare reruns every check, marks each task DONE, commits the group, runs its hooks, rebases it and test-merges
+// every ready group; a refusal, a conflict or a breakage is a fix. It never pushes.
 func (l *Line) Prepare(ctx context.Context) ([]string, error) {
 	fixes, err := l.rerun(ctx)
 	if err != nil || len(fixes) > 0 {
@@ -871,7 +871,13 @@ func (l *Line) Prepare(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 	}
-	return nil, nil
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if fixes, err := line.PrepareGroup(l.Root, l.Plan); err != nil || len(fixes) > 0 {
+		return fixes, err
+	}
+	return l.integrate(ctx)
 }
 
 // Head returns the group's worktree HEAD commit.

@@ -104,21 +104,31 @@ func createEpicPull(client *pr.Client, base, head, title, body string) (url stri
 // labelWip adds the status: wip label the repo already defines, since KeepKnown's rule of a
 // label's name before its first space cannot match one whose own name holds a space.
 func labelWip(client *pr.Client, url string) (labels, warnings []string) {
-	const wanted = "status: wip"
 	known, err := client.Labels()
 	if err != nil {
 		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
 	}
-	for _, label := range known {
-		if label != wanted && !strings.HasPrefix(label, wanted+" ") {
-			continue
-		}
-		if err := client.Label(url, []string{label}); err != nil {
-			return nil, []string{fmt.Sprintf("could not add label(s): %v", err)}
-		}
-		return []string{label}, nil
+	label := wipLabel(known)
+	if label == "" {
+		return nil, []string{"the repo has no " + wipName + " label"}
 	}
-	return nil, []string{"the repo has no status: wip label"}
+	if err := client.Label(url, []string{label}); err != nil {
+		return nil, []string{fmt.Sprintf("could not add label(s): %v", err)}
+	}
+	return []string{label}, nil
+}
+
+// wipName is the label a PR carries in place of a draft the forge refused.
+const wipName = "status: wip"
+
+// wipLabel is the repo's status: wip label, matched by its whole name before any emoji, else empty.
+func wipLabel(known []string) string {
+	for _, label := range known {
+		if label == wipName || strings.HasPrefix(label, wipName+" ") {
+			return label
+		}
+	}
+	return ""
 }
 
 // epicTitle is the epic's heading text with its goal line stripped.

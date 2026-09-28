@@ -1259,7 +1259,7 @@ func TestScopeLabelRules(t *testing.T) {
 		{"agents", []string{"internal/profile/tier.go"}, "scope/agents"},
 		{"machine", []string{"internal/profile/machine.go"}, "scope/agents"},
 		{"harness", []string{"internal/line/ship.go"}, "scope/harness"},
-		{"profile without tier or machine", []string{"internal/profile/profile.go"}, "scope/harness"},
+		{"the profile itself", []string{"internal/profile/profile.go"}, "scope/agents"},
 		{"none", nil, "scope/harness"},
 	}
 	for _, c := range cases {
@@ -1588,5 +1588,742 @@ func TestShipLabelsThePullRequestOnlyAfterThePush(t *testing.T) {
 	}
 	if !labelled || len(result.Labels) != 2 {
 		t.Fatalf("labels = %v, warnings = %v; the labels must follow the push", result.Labels, result.Warnings)
+	}
+}
+
+// prepareRepo is shipRepo with the group's task still READY in both backlogs and its DONE recorded as live status,
+// plus a main branch in the group to rebase onto.
+func prepareRepo(t *testing.T) (root, group string, plan *Plan) {
+	t.Helper()
+	root, group = shipRepo(t)
+	ready := strings.Replace(shipBacklog, "[DONE]", "[READY]", 1)
+	for _, dir := range []string{root, group} {
+		if err := os.WriteFile(filepath.Join(dir, "BACKLOG.md"), []byte(ready), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, group, "commit", "-qam", "ready")
+	runGit(t, group, "branch", "main")
+	if err := RecordStatus(root, "TSK-09.1.1", "DONE"); err != nil {
+		t.Fatal(err)
+	}
+	plan = &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Version: "2.0.0", Base: "main", Branch: "feat/a-group",
+		Worktree: "group", Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it", Files: []string{"one.go"}}},
+	}
+	return root, group, plan
+}
+
+// stations lists the ledger stations stamped for root, in order.
+func stations(t *testing.T, root string) []string {
+	t.Helper()
+	entries, err := Book(root).All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, entry := range entries {
+		out = append(out, entry.Station+":"+entry.Outcome)
+	}
+	return out
+}
+
+func TestPrepareCommitsTheTickedListAndChangelogLineWithNoTrailers(t *testing.T) {
+	root, group, plan := prepareRepo(t)
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package a\n\nconst Built = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixes, err := PrepareGroup(root, plan)
+	if err != nil || len(fixes) > 0 {
+		t.Fatalf("prepare = %q, %v", fixes, err)
+	}
+	subject, _ := git.Run(group, "log", "-1", "--format=%s")
+	trailers, _ := git.Run(group, "log", "-1", "--format=%(trailers)")
+	if subject != "feat: A group (TG-09.1)" || trailers != "" {
+		t.Fatalf("commit = %q with trailers %q; want the conventional subject and no trailers", subject, trailers)
+	}
+	files, _ := git.Run(group, "show", "--name-only", "--format=", "HEAD")
+	for _, want := range []string{"BACKLOG.md", "one.go", "changelog.d/2.0.0/TG-09.1.md"} {
+		if !slices.Contains(strings.Fields(files), want) {
+			t.Fatalf("the commit holds %q, want %s in it", files, want)
+		}
+	}
+	ticked, _ := git.Run(group, "show", "HEAD:BACKLOG.md")
+	if !strings.Contains(ticked, "Do it [P: C] [DONE]") {
+		t.Fatalf("the committed backlog = %q, want the task ticked", ticked)
+	}
+	if status, _ := git.Run(group, "status", "--porcelain"); status != "" {
+		t.Fatalf("status = %q; prepare must commit every change", status)
+	}
+	if got := stations(t, root); !slices.Equal(got, []string{"prepare:done"}) {
+		t.Fatalf("ledger = %v, want one passed prepare and no ship", got)
+	}
+}
+
+func TestPrepareTurnsARefusedPrePushHookIntoAFixAndPushesNothing(t *testing.T) {
+	root, group, plan := prepareRepo(t)
+	installPrePush(t, group, 1)
+	fixes, err := PrepareGroup(root, plan)
+	if err != nil || len(fixes) != 1 || !strings.Contains(fixes[0], "pre-push hook refuses") {
+		t.Fatalf("prepare = %q, %v; want the hook's refusal as the one fix", fixes, err)
+	}
+	bare, _ := git.Run(root, "remote", "get-url", "--push", "origin")
+	if _, err := git.Run(bare, "rev-parse", "--verify", "--quiet", "refs/heads/feat/a-group"); err == nil {
+		t.Fatal("the branch reached origin before its checks passed")
+	}
+	if got := stations(t, root); !slices.Equal(got, []string{"prepare:fixes"}) {
+		t.Fatalf("ledger = %v, want the failed prepare and no ship", got)
+	}
+}
+
+func TestPrepareLeavesAConflictForARepairRoundThenFinishesTheRebase(t *testing.T) {
+	cases := []struct {
+		name string
+		// committed is whether Check committed the repair's resolution before Prepare ran again.
+		committed bool
+		// pushed is whether the branch is on origin, so it takes the base in a merge instead of a rebase.
+		pushed bool
+	}{
+		{"the resolution is uncommitted", false, false},
+		{"Check committed the resolution", true, false},
+		{"a pushed branch's merge is uncommitted", false, true},
+		{"Check committed a pushed branch's merge", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, group, plan := prepareRepo(t)
+			if tc.pushed {
+				runGit(t, group, "push", "-q", "origin", "feat/a-group")
+			}
+			runGit(t, group, "checkout", "-q", "main")
+			commitDated(t, group, "one.go", "package a\n\nconst Base = 1\n", "base moves", time.Now())
+			runGit(t, group, "checkout", "-q", "feat/a-group")
+			path := filepath.Join(group, "one.go")
+			if err := os.WriteFile(path, []byte("package a\n\nconst Built = 1\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			fixes, err := PrepareGroup(root, plan)
+			if err != nil || len(fixes) != 1 || !strings.HasPrefix(fixes[0], "one.go: resolve the conflict") {
+				t.Fatalf("prepare = %q, %v; want the conflict as a fix naming one.go", fixes, err)
+			}
+			marked, _ := os.ReadFile(path)
+			if !strings.Contains(string(marked), "<<<<<<< ") {
+				t.Fatalf("one.go = %q; the conflict markers must stay for the repair round", marked)
+			}
+			if _, err := PrepareGroup(root, plan); !errors.Is(err, errConflictRemains) {
+				t.Fatalf("prepare = %v; an unresolved conflict must stop the group", err)
+			}
+			if err := os.WriteFile(path, []byte("package a\n\nconst Base, Built = 1, 1\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if tc.committed {
+				runGit(t, group, "add", "-A")
+				runGit(t, group, "commit", "-qm", "as built")
+			}
+			if fixes, err := PrepareGroup(root, plan); err != nil || len(fixes) > 0 {
+				t.Fatalf("prepare = %q, %v; want the rebase finished", fixes, err)
+			}
+			if _, err := git.Run(group, "merge-base", "--is-ancestor", "main", "HEAD"); err != nil {
+				t.Fatal("the group does not sit on its base after the repaired rebase")
+			}
+			if branch, _ := git.Run(group, "rev-parse", "--abbrev-ref", "HEAD"); branch != "feat/a-group" {
+				t.Fatalf("HEAD is on %q; the rebase must finish on the group branch", branch)
+			}
+			if kept, _ := os.ReadFile(path); string(kept) != "package a\n\nconst Base, Built = 1, 1\n" {
+				t.Fatalf("one.go = %q, want the repair's resolution", kept)
+			}
+		})
+	}
+}
+
+func TestPrepareDeletesTheEpicsGroupFilesOnlyWithItsLastOpenGroup(t *testing.T) {
+	const (
+		shipping  = "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [ ] **TSK-02.1.1** One\n"
+		openFile  = "## [TG-02.2] Other [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [ ] **TSK-02.2.1** Two\n"
+		doneFile  = "## [TG-02.2] Other [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [x] **TSK-02.2.1** Two\n"
+		elsewhere = "## [TG-03.1] Elsewhere [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-03\n```\n\n- [ ] **TSK-03.1.1** Three\n"
+		loose     = "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\n```\n\n- [ ] **TSK-02.1.1** One\n"
+	)
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{"another group of the epic is open", map[string]string{"TG-02.1-a.md": shipping, "TG-02.2-b.md": openFile}, nil},
+		{"it is the epic's last open group", map[string]string{
+			"TG-02.1-a.md": shipping, "TG-02.2-b.md": doneFile, "TG-03.1-c.md": elsewhere,
+		}, []string{"TG-02.1-a.md", "TG-02.2-b.md"}},
+		{"it names no epic", map[string]string{"TG-02.1-a.md": loose, "TG-02.2-b.md": openFile}, []string{"TG-02.1-a.md"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			worktree := t.TempDir()
+			dir := filepath.Join(worktree, "docs", "backlog")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for name, text := range tc.files {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ended, err := endedEpicFiles(worktree, "TG-02.1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, path := range ended {
+				got = append(got, filepath.Base(path))
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("deleted = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// draftForge is a fake forge that refuses drafts when noDrafts is set and fails a label add when noLabels is,
+// recording every gh call.
+func draftForge(dir string, noDrafts, noLabels bool, calls *[]string) *pr.Client {
+	return &pr.Client{Dir: dir, Run: func(_ string, args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		*calls = append(*calls, joined)
+		switch {
+		case noDrafts && strings.HasPrefix(joined, "pr create") && slices.Contains(args, "--draft"):
+			return "", errors.New("Draft pull requests are not supported for this repository")
+		case args[0] == "label":
+			return `[{"name":"@agent"},{"name":"scope/harness"},{"name":"scope/agents"},{"name":"status: wip"}]`, nil
+		case noLabels && slices.Contains(args, "--add-label"):
+			return "", errors.New("label service unavailable")
+		}
+		return "https://example.com/pull/1", nil
+	}}
+}
+
+// called reports whether any recorded gh call starts with prefix and holds every part.
+func called(calls []string, prefix string, parts ...string) bool {
+	for _, call := range calls {
+		if !strings.HasPrefix(call, prefix) {
+			continue
+		}
+		missing := false
+		for _, part := range parts {
+			missing = missing || !strings.Contains(call, part)
+		}
+		if !missing {
+			return true
+		}
+	}
+	return false
+}
+
+func TestEveryPullRequestOpensAsADraftAndTurnsReadyOnlyOnceItsChecksPassed(t *testing.T) {
+	passed := []*WaveResult{{OK: true}}
+	cases := []struct {
+		name      string
+		noDrafts  bool
+		waves     []*WaveResult
+		wantDraft bool
+		wantReady bool
+		wantWip   bool
+	}{
+		{"a draft whose checks passed turns ready", false, passed, false, true, false},
+		{"a draft with no passed checks stays a draft", false, nil, true, false, false},
+		{"a draft with a failed check stays a draft", false, []*WaveResult{{OK: false}}, true, false, false},
+		{"a refused draft opens labelled status: wip, dropped once its checks passed", true, passed, false, true, false},
+		{"a refused draft keeps status: wip while its checks are unproven", true, nil, false, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, group := shipRepo(t)
+			plan := &Plan{
+				Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+				Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+			}
+			var calls []string
+			result, err := ShipGroup(root, plan, tc.waves, draftForge(group, tc.noDrafts, false, &calls))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !called(calls, "pr create", "--draft") {
+				t.Fatalf("calls = %q; every PR must first try to open as a draft", calls)
+			}
+			if result.Draft != tc.wantDraft || result.Ready != tc.wantReady {
+				t.Fatalf("draft = %v, ready = %v; want %v, %v (calls %q)",
+					result.Draft, result.Ready, tc.wantDraft, tc.wantReady, calls)
+			}
+			if readied := called(calls, "pr ready"); readied != (tc.wantReady && !tc.noDrafts) {
+				t.Fatalf("calls = %q; pr ready ran = %v", calls, readied)
+			}
+			if tc.noDrafts && !called(calls, "pr edit", "--add-label", "status: wip") {
+				t.Fatalf("calls = %q; a refused draft must be labelled status: wip", calls)
+			}
+			if dropped := called(calls, "pr edit", "--remove-label", "status: wip"); dropped != (tc.noDrafts && tc.wantReady) {
+				t.Fatalf("calls = %q; status: wip removed = %v", calls, dropped)
+			}
+			if hasWip := slices.Contains(result.Labels, "status: wip"); hasWip != tc.wantWip {
+				t.Fatalf("labels = %v; status: wip kept = %v, want %v", result.Labels, hasWip, tc.wantWip)
+			}
+		})
+	}
+}
+
+func TestAFailedLabelCallIsAWarningNotAFailedShip(t *testing.T) {
+	root, group := shipRepo(t)
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it", Files: []string{"internal/profile/profile.go"}}},
+	}
+	var calls []string
+	result, err := ShipGroup(root, plan, nil, draftForge(group, false, true, &calls))
+	if err != nil {
+		t.Fatalf("ship = %v; a label failure must never fail the ship", err)
+	}
+	if !called(calls, "pr edit", "--add-label", "scope/agents") {
+		t.Fatalf("calls = %q; the profile's group must ask for scope/agents", calls)
+	}
+	if result.URL == "" || !slices.ContainsFunc(result.Warnings, func(w string) bool {
+		return strings.Contains(w, "could not add label(s): ") && strings.Contains(w, "label service unavailable")
+	}) {
+		t.Fatalf("url = %q, warnings = %v; want the PR opened and the failed label call warned", result.URL, result.Warnings)
+	}
+}
+
+func TestCredentialRefusedReadsAMissingOrExpiredCredential(t *testing.T) {
+	cases := []struct {
+		output string
+		want   bool
+	}{
+		{"remote: Invalid username or password.\nfatal: Authentication failed for 'https://github.com/o/r.git/'", true},
+		{"fatal: could not read Username for 'https://github.com': terminal prompts disabled", true},
+		{"git@github.com: Permission denied (publickey).", true},
+		{"error: The requested URL returned error: 403", true},
+		{"fatal: unable to access 'https://127.0.0.1:1/o/r.git/': Failed to connect", false},
+		{"! [rejected] feat/a-group -> feat/a-group (non-fast-forward)", false},
+	}
+	for _, tc := range cases {
+		if got := credentialRefused(tc.output); got != tc.want {
+			t.Errorf("credentialRefused(%q) = %v, want %v", tc.output, got, tc.want)
+		}
+	}
+}
+
+// refusingRemote puts a git-remote-refuse helper on PATH that fails every push as an expired credential would.
+func refusingRemote(t *testing.T) string {
+	t.Helper()
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho \"fatal: Authentication failed for 'https://forge.invalid/o/r.git/'\" >&2\nexit 128\n"
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-refuse"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return "refuse://forge.invalid/o/r.git"
+}
+
+func TestAnExpiredCredentialStopsShipWithABlockerNoteAndKomodoShipFinishesIt(t *testing.T) {
+	root, group := shipRepo(t)
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "remote", "set-url", "--push", "origin", refusingRemote(t))
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	var calls []string
+	client := draftForge(group, false, false, &calls)
+	if _, err := ShipGroup(root, plan, nil, client); !errors.Is(err, ErrNoCredential) {
+		t.Fatalf("ship = %v, want the push stopped for its credential", err)
+	}
+	if len(calls) > 0 {
+		t.Fatalf("gh ran %q; a group stopped before Ship opens no PR", calls)
+	}
+	if _, err := os.Stat(HandoffPath(root, "TG-09.1")); err != nil {
+		t.Fatalf("no handoff for komodo ship to finish: %v", err)
+	}
+	noted, _ := git.Run(group, "show", "HEAD:BACKLOG.md")
+	if !strings.Contains(noted, "komodo ship TG-09.1") || !strings.Contains(noted, "Authentication failed") {
+		t.Fatalf("the branch's backlog = %q, want a committed blocker note naming the fix", noted)
+	}
+	if got := stations(t, root); !slices.Equal(got, []string{"ship:handoff"}) {
+		t.Fatalf("ledger = %v, want the ship handed off, not done", got)
+	}
+
+	runGit(t, root, "remote", "set-url", "--push", "origin", bare)
+	result, err := FinishShip(root, "TG-09.1", client)
+	if err != nil {
+		t.Fatalf("komodo ship = %v", err)
+	}
+	if result.URL == "" || !result.Draft || !called(calls, "pr create", "--draft", "--head feat/a-group") {
+		t.Fatalf("result = %+v, calls = %q; want the PR opened as a draft", result, calls)
+	}
+	pushed, err := git.Run(bare, "show", "refs/heads/feat/a-group:BACKLOG.md")
+	if err != nil || strings.Contains(pushed, "komodo ship TG-09.1") {
+		t.Fatalf("pushed backlog = %q (%v); the note must be gone and the commits kept", pushed, err)
+	}
+	if _, err := os.Stat(HandoffPath(root, "TG-09.1")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("handoff = %v; komodo ship must remove it", err)
+	}
+	if got := stations(t, root); !slices.Equal(got, []string{"ship:handoff", "ship:done"}) {
+		t.Fatalf("ledger = %v, want the finished ship stamped done", got)
+	}
+}
+
+func TestKomodoShipRefusesAGroupWithNoHandoff(t *testing.T) {
+	if _, err := FinishShip(t.TempDir(), "TG-09.1", nil); err == nil || !strings.Contains(err.Error(), "no ship waiting") {
+		t.Fatalf("finish = %v, want a refusal naming no waiting ship", err)
+	}
+}
+
+func TestKomodoShipRefusesAHandoffNamingAnotherGroupOrABadBranch(t *testing.T) {
+	cases := []struct {
+		name    string
+		handoff ShipHandoff
+		want    string
+	}{
+		{"another group", ShipHandoff{Group: "TG-09.2", Branch: "feat/a-group"}, "nothing was pushed"},
+		{"an option as its branch", ShipHandoff{Group: "TG-09.1", Branch: "--force"}, "nothing was pushed"},
+		{"an invalid branch", ShipHandoff{Group: "TG-09.1", Branch: "feat/a..b"}, "not a valid branch"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := HandoffPath(root, "TG-09.1")
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			data, err := json.Marshal(tc.handoff)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := FinishShip(root, "TG-09.1", nil); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("finish = %v, want a refusal naming %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// handOff writes the shipRepo group's handoff as a scrubbed ship leaves it, with after_publish as given.
+func handOff(t *testing.T, root, group, afterPublish string) {
+	t.Helper()
+	handoff := ShipHandoff{
+		Group: "TG-09.1", Worktree: group, Branch: "feat/a-group", Base: "main", Title: "feat: A group (TG-09.1)",
+		Body: "b", Labels: []string{"@agent"}, Draft: true, AfterPublish: afterPublish,
+	}
+	if err := writeShipHandoff(root, handoff); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKomodoShipRunsAfterPublishAndPushesWithNoForgeClient(t *testing.T) {
+	root, group := shipRepo(t)
+	handOff(t, root, group, "touch published.txt")
+	result, err := FinishShip(root, "TG-09.1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.URL != "" || result.Published == nil || !result.Published.OK() {
+		t.Fatalf("result = %+v; want after_publish run and no PR without a client", result)
+	}
+	if _, err := os.Stat(filepath.Join(group, "published.txt")); err != nil {
+		t.Fatalf("after_publish did not run: %v", err)
+	}
+	bare, _ := git.Run(root, "remote", "get-url", "--push", "origin")
+	if _, err := git.Run(bare, "rev-parse", "--verify", "--quiet", "refs/heads/feat/a-group"); err != nil {
+		t.Fatal("komodo ship did not push the branch")
+	}
+}
+
+func TestKomodoShipFailsOnAFailedAfterPublishAndKeepsTheHandoff(t *testing.T) {
+	root, group := shipRepo(t)
+	handOff(t, root, group, "exit 3")
+	if _, err := FinishShip(root, "TG-09.1", nil); err == nil || !strings.Contains(err.Error(), "after_publish") {
+		t.Fatalf("finish = %v, want the after_publish failure", err)
+	}
+	if _, err := os.Stat(HandoffPath(root, "TG-09.1")); err != nil {
+		t.Fatalf("handoff = %v; a failed finish must leave it for the next komodo ship", err)
+	}
+}
+
+func TestKomodoShipRefreshesAPullRequestAlreadyOpen(t *testing.T) {
+	cases := []struct {
+		name    string
+		view    string
+		wantURL string
+	}{
+		{"an open PR is reused", `{"number":7,"url":"https://example.com/pull/7","state":"OPEN","isDraft":true}`,
+			"https://example.com/pull/7"},
+		{"a closed PR fails the finish", `{"number":7,"url":"https://example.com/pull/7","state":"CLOSED"}`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, group := shipRepo(t)
+			handOff(t, root, group, "")
+			client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+				switch {
+				case args[0] == "pr" && args[1] == "create":
+					return "", errors.New("a pull request already exists")
+				case args[0] == "pr" && args[1] == "view":
+					return tc.view, nil
+				}
+				return "[]", nil
+			}}
+			result, err := FinishShip(root, "TG-09.1", client)
+			if tc.wantURL == "" {
+				if err == nil {
+					t.Fatal("finish = nil, want the create's failure")
+				}
+				return
+			}
+			if err != nil || result.URL != tc.wantURL || !result.Draft {
+				t.Fatalf("finish = %+v, %v; want the open draft PR reused", result, err)
+			}
+		})
+	}
+}
+
+func TestAFailedReadyCallLeavesTheDraftWithAWarning(t *testing.T) {
+	root, group := shipRepo(t)
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	client := &pr.Client{Dir: group, Run: func(_ string, args ...string) (string, error) {
+		switch {
+		case args[0] == "label":
+			return `[{"name":"@agent"},{"name":"scope/harness"}]`, nil
+		case args[0] == "pr" && args[1] == "ready":
+			return "", errors.New("forbidden")
+		}
+		return "https://example.com/pull/1", nil
+	}}
+	result, err := ShipGroup(root, plan, []*WaveResult{{OK: true}}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Draft || result.Ready || !slices.ContainsFunc(result.Warnings, func(w string) bool {
+		return strings.Contains(w, "could not mark the PR ready for review: ")
+	}) {
+		t.Fatalf("result = %+v; a failed ready call must leave a draft and warn", result)
+	}
+}
+
+func TestMarkReadyDropsStatusWipFromANormalPullRequest(t *testing.T) {
+	cases := []struct {
+		name   string
+		labels string
+		fail   bool
+		want   string
+	}{
+		{"the repo defines status: wip", `[{"name":"status: wip 🚧"}]`, false, "pr edit u --remove-label status: wip 🚧"},
+		{"the repo has no status: wip", `[{"name":"@agent"}]`, false, ""},
+		{"the labels cannot be listed", "", true, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			client := &pr.Client{Dir: ".", Run: func(_ string, args ...string) (string, error) {
+				calls = append(calls, strings.Join(args, " "))
+				if tc.fail {
+					return "", errors.New("gh is down")
+				}
+				return tc.labels, nil
+			}}
+			err := markReady(client, "u", false)
+			if tc.fail != (err != nil) {
+				t.Fatalf("markReady = %v, want failure %v", err, tc.fail)
+			}
+			if tc.want != "" && !slices.Contains(calls, tc.want) {
+				t.Fatalf("calls = %q, want %q", calls, tc.want)
+			}
+			if tc.want == "" && len(calls) > 1 {
+				t.Fatalf("calls = %q; nothing to remove means no edit", calls)
+			}
+		})
+	}
+}
+
+func TestPrepareStopsOnAConflictThatHasNoConflictedFile(t *testing.T) {
+	root, group, plan := prepareRepo(t)
+	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package a\n\nconst Built = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixes, err := settleCatchUp(group, "main", []string{"merge", "--abort"}, "merge", "no-such-ref")
+	if err == nil || len(fixes) > 0 {
+		t.Fatalf("settle = %q, %v; a failure with no conflict is an error, never a fix", fixes, err)
+	}
+	if _, err := PrepareGroup(root, plan); err != nil {
+		t.Fatalf("prepare = %v; the aborted step must leave the group preparable", err)
+	}
+}
+
+func TestPrepareCommitsTheDeletionOfAnEndedEpicsGroupFiles(t *testing.T) {
+	const (
+		shipping = "## [TG-02.1] Shipping [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [ ] **TSK-02.1.1** One\n"
+		done     = "## [TG-02.2] Other [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-02\n```\n\n- [x] **TSK-02.2.1** Two\n"
+	)
+	root := gitRepo(t)
+	commit(t, root, "docs/backlog/TG-02.2-b.md", done, "the other group")
+	commit(t, root, "docs/backlog/TG-02.1-a.md", shipping, "the shipping group")
+	plan := &Plan{Group: "TG-02.1", Title: "Shipping", Type: "feat", Base: "main", Branch: "main"}
+	if fixes, err := PrepareGroup(root, plan); err != nil || len(fixes) > 0 {
+		t.Fatalf("prepare = %q, %v", fixes, err)
+	}
+	if left, _ := git.Run(root, "ls-files", "docs/backlog"); left != "" {
+		t.Fatalf("group files still tracked: %q; the epic's last group deletes them", left)
+	}
+	if subject, _ := git.Run(root, "log", "-1", "--format=%s"); subject != "feat: Shipping (TG-02.1)" {
+		t.Fatalf("HEAD = %q, want the group's commit carrying the deletion", subject)
+	}
+}
+
+func TestPrepareTurnsARefusedPreCommitHookIntoAFix(t *testing.T) {
+	root, group, plan := prepareRepo(t)
+	hook := filepath.Join(group, ".git", "hooks", "pre-commit")
+	if err := os.MkdirAll(filepath.Dir(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho 'the pre-commit gate refuses' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixes, err := PrepareGroup(root, plan)
+	if err != nil || len(fixes) != 1 || !strings.Contains(fixes[0], "the pre-commit gate refuses") {
+		t.Fatalf("prepare = %q, %v; want the hook's refusal as the one fix", fixes, err)
+	}
+	if got := stations(t, root); !slices.Equal(got, []string{"prepare:fixes"}) {
+		t.Fatalf("ledger = %v, want the refused prepare", got)
+	}
+}
+
+func TestPrepareFailsWhenTheGroupsBacklogLacksATaskItTicks(t *testing.T) {
+	root, group, plan := prepareRepo(t)
+	other := strings.Replace(shipBacklog, "TSK-09.1.1", "TSK-09.1.2", 1)
+	if err := os.WriteFile(filepath.Join(group, "BACKLOG.md"), []byte(other), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PrepareGroup(root, plan); err == nil || !strings.Contains(err.Error(), "TSK-09.1.1") {
+		t.Fatalf("prepare = %v, want the missing task named", err)
+	}
+	if got := stations(t, root); !slices.Equal(got, []string{"prepare:failed"}) {
+		t.Fatalf("ledger = %v, want the failed prepare", got)
+	}
+}
+
+func TestEndedEpicFilesFailsOnAGroupFileItCannotRead(t *testing.T) {
+	worktree := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(worktree, "docs", "backlog", "TG-02.1-a.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := endedEpicFiles(worktree, "TG-02.1"); err == nil {
+		t.Fatal("endedEpicFiles = nil, want the unreadable file's error")
+	}
+}
+
+func TestChecksPassedNeedsAtLeastOneRunAndEveryOnePassed(t *testing.T) {
+	cases := []struct {
+		name  string
+		waves []*WaveResult
+		want  bool
+	}{
+		{"none ran", nil, false},
+		{"all passed", []*WaveResult{{OK: true}, {OK: true}}, true},
+		{"one failed", []*WaveResult{{OK: true}, {OK: false}}, false},
+		{"one is missing", []*WaveResult{{OK: true}, nil}, false},
+	}
+	for _, tc := range cases {
+		if got := checksPassed(tc.waves); got != tc.want {
+			t.Errorf("%s: checksPassed = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestKomodoShipRefusesAMalformedHandoff(t *testing.T) {
+	root := t.TempDir()
+	path := HandoffPath(root, "TG-09.1")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FinishShip(root, "TG-09.1", nil); err == nil {
+		t.Fatal("finish = nil, want the malformed handoff refused")
+	}
+}
+
+func TestKomodoShipKeepsTheHandoffWhileTheCredentialIsStillRefused(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, root, "remote", "set-url", "--push", "origin", refusingRemote(t))
+	handOff(t, root, group, "")
+	if _, err := FinishShip(root, "TG-09.1", nil); !errors.Is(err, ErrNoCredential) {
+		t.Fatalf("finish = %v, want the refused credential", err)
+	}
+	if _, err := os.Stat(HandoffPath(root, "TG-09.1")); err != nil {
+		t.Fatalf("handoff = %v; a refused finish must leave it for the next komodo ship", err)
+	}
+}
+
+func TestPrepareFailsOnWhatItCannotReadOrWrite(t *testing.T) {
+	cases := []struct {
+		name  string
+		spoil func(t *testing.T, root, group string, plan *Plan)
+	}{
+		{"the root has no backlog", func(t *testing.T, root, _ string, _ *Plan) {
+			if err := os.Remove(filepath.Join(root, "BACKLOG.md")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"the changelog fragment cannot be written", func(t *testing.T, _, group string, _ *Plan) {
+			if err := os.WriteFile(filepath.Join(group, "changelog.d"), []byte("x\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"a live status names a task neither backlog holds", func(t *testing.T, root, _ string, plan *Plan) {
+			plan.Tasks = append(plan.Tasks, PlanTask{ID: "TSK-09.1.9", Title: "Gone"})
+			if err := RecordStatus(root, "TSK-09.1.9", "DONE"); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"a group file cannot be read", func(t *testing.T, _, group string, _ *Plan) {
+			if err := os.MkdirAll(filepath.Join(group, "docs", "backlog", "TG-09.1-a.md"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, group, plan := prepareRepo(t)
+			tc.spoil(t, root, group, plan)
+			if _, err := PrepareGroup(root, plan); err == nil {
+				t.Fatal("prepare = nil, want the failure")
+			}
+			if got := stations(t, root); !slices.Equal(got, []string{"prepare:failed"}) {
+				t.Fatalf("ledger = %v, want the failed prepare", got)
+			}
+		})
+	}
+}
+
+func TestTheCredentialNoteNeedsABacklogAndItsRemovalSkipsNone(t *testing.T) {
+	plan := &Plan{Group: "TG-09.1", Title: "A group", Branch: "feat/a-group"}
+	if err := writeCredentialNote(t.TempDir(), plan, t.TempDir(), ErrNoCredential); err == nil {
+		t.Fatal("note = nil, want a worktree with no backlog refused")
+	}
+	if err := dropCredentialNote(t.TempDir(), ShipHandoff{Group: "TG-09.1"}); err != nil {
+		t.Fatalf("drop = %v; a worktree with no backlog has no note to drop", err)
+	}
+}
+
+func TestKomodoShipFailsOnAHandoffItCannotRead(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(HandoffPath(root, "TG-09.1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FinishShip(root, "TG-09.1", nil); err == nil || strings.Contains(err.Error(), "no ship waiting") {
+		t.Fatalf("finish = %v, want the read's own failure", err)
 	}
 }

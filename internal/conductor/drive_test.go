@@ -1309,3 +1309,43 @@ func TestCoverageSkipsPackagesGoTestNeverBuilds(t *testing.T) {
 		t.Fatalf("packages = %v; want internal/eval and the root, never testdata or _scratch", got)
 	}
 }
+
+func TestLinePrepareCommitsThenPassesNoGroupToShipUntilItsHooksPass(t *testing.T) {
+	root := checkRepo(t)
+	writeIn(t, root, ".komodo/commands.json", `{"compile": "true", "verify": "true"}`)
+	hook := filepath.Join(root, ".git", "hooks", "pre-push")
+	writeIn(t, root, filepath.Join(".git", "hooks", "pre-push"), "#!/bin/sh\necho 'the pre-push gate refuses' >&2\nexit 1\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stations := &Line{Root: root, Plan: &line.Plan{
+		Group: "TG-1", Title: "A group", Type: "feat", Base: "main", Branch: "main",
+		Tasks: []line.PlanTask{{ID: "TSK-1", Files: []string{"sneaky.txt"}}},
+	}}
+	writeIn(t, root, "sneaky.txt", "x\n")
+	fixes, err := stations.Prepare(context.Background())
+	if err != nil || len(fixes) != 1 || !strings.Contains(fixes[0], "the pre-push gate refuses") {
+		t.Fatalf("prepare = %q, %v; want the hook's refusal as a fix for a repair round", fixes, err)
+	}
+	subject, err := exec.Command("git", "-C", root, "log", "-1", "--format=%s").Output()
+	if err != nil || strings.TrimSpace(string(subject)) != "feat: A group (TG-1)" {
+		t.Fatalf("HEAD = %q (%v), want the group's commit made before the hooks ran", subject, err)
+	}
+	if err := os.Remove(hook); err != nil {
+		t.Fatal(err)
+	}
+	if fixes, err := stations.Prepare(context.Background()); err != nil || len(fixes) > 0 {
+		t.Fatalf("prepare = %q, %v; want it passed once the hook does", fixes, err)
+	}
+	entries, err := line.Book(root).All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stamped []string
+	for _, entry := range entries {
+		stamped = append(stamped, entry.Station+":"+entry.Outcome)
+	}
+	if !slices.Equal(stamped, []string{"prepare:fixes", "prepare:done"}) {
+		t.Fatalf("ledger = %v; want no ship before the prepare that passed", stamped)
+	}
+}
