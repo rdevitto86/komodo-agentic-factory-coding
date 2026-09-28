@@ -71,11 +71,10 @@ func CheckCommand(command, cwd string, policy Policy) Decision {
 	return Decision{Deny: len(findings) > 0, Findings: findings}
 }
 
-// commandFindings tokenizes one shell command and checks every git or gh subcommand and write
-// target it finds; a wrapper, a substitution, or an interpreter's own code hides nothing from it.
+// commandFindings checks each git, gh, and write target in one shell command, looking through wrappers, sh -c, and eval.
 func commandFindings(command, cwd, root, branch string, policy Policy) []string {
 	var findings []string
-	for _, item := range tokenize(command) {
+	for _, item := range nested(command) {
 		if len(item.words) > 0 {
 			switch commandName(item.words[0]) {
 			case "git":
@@ -89,6 +88,91 @@ func commandFindings(command, cwd, root, branch string, policy Policy) []string 
 		}
 	}
 	return findings
+}
+
+// wrappers run the rest of their words as a command of its own.
+var wrappers = map[string]bool{
+	"sudo": true, "doas": true, "env": true, "command": true, "exec": true, "nohup": true, "nice": true,
+	"time": true, "timeout": true, "xargs": true, "stdbuf": true, "caffeinate": true, "setsid": true,
+	"flock": true, "chronic": true, "ionice": true, "unbuffer": true,
+}
+
+// shells run the first operand after their -c flag as a command line of its own.
+var shells = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true}
+
+// keywords open or continue a shell compound command, and the call after one still runs.
+var keywords = map[string]bool{
+	"!": true, "{": true, "}": true, "if": true, "then": true, "else": true, "elif": true,
+	"do": true, "while": true, "until": true,
+}
+
+// nested splits a command line into calls, each followed by the calls it hands on. Every step
+// works on strictly shorter input, so the recursion ends without a depth cap.
+func nested(command string) []call {
+	var out []call
+	for _, item := range tokenize(command) {
+		out = append(out, unwrap(item)...)
+	}
+	return out
+}
+
+// unwrap returns a call without its keyword or VAR=value prefix, then what a wrapper, shell -c, or eval runs.
+func unwrap(item call) []call {
+	words := item.words
+	for len(words) > 0 && (keywords[words[0]] || isAssignment(words[0])) {
+		words = words[1:]
+	}
+	out := []call{{words: words, writes: item.writes}}
+	if len(words) == 0 {
+		return out
+	}
+	name := commandName(words[0])
+	switch {
+	case wrappers[name]:
+		// A flag's value can name a command too, so every candidate is unwrapped and the findings unioned.
+		for index := 1; index < len(words); index++ {
+			if inner := commandName(words[index]); inner == "git" || inner == "gh" || inner == "eval" ||
+				wrappers[inner] || shells[inner] {
+				out = append(out, unwrap(call{words: words[index:]})...)
+			}
+		}
+	case shells[name]:
+		if script, ok := shellScript(words[1:]); ok {
+			out = append(out, nested(script)...)
+		}
+	case name == "eval":
+		out = append(out, nested(strings.Join(words[1:], " "))...)
+	}
+	return out
+}
+
+// shellScript is the first operand after a shell's -c flag, skipping the options between them.
+func shellScript(args []string) (string, bool) {
+	for index, arg := range args {
+		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg, "c") {
+			for _, operand := range args[index+1:] {
+				if !strings.HasPrefix(operand, "-") && !strings.HasPrefix(operand, "+") {
+					return operand, true
+				}
+			}
+			return "", false
+		}
+	}
+	return "", false
+}
+
+// isAssignment reports whether a word is a NAME=value environment prefix.
+func isAssignment(word string) bool {
+	name, _, ok := strings.Cut(word, "=")
+	if !ok || name == "" {
+		return false
+	}
+	for _, char := range name {
+		if char != '_' && (char < 'A' || char > 'Z') && (char < 'a' || char > 'z') && (char < '0' || char > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // commandName is the base name a word runs as.
