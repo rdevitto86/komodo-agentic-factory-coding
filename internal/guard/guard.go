@@ -74,7 +74,7 @@ func CheckCommand(command, cwd string, policy Policy) Decision {
 // commandFindings checks each git, gh, and write target in one shell command, looking through wrappers, sh -c, and eval.
 func commandFindings(command, cwd, root, branch string, policy Policy) []string {
 	var findings []string
-	for _, item := range nested(command, 0) {
+	for _, item := range nested(command) {
 		if len(item.words) > 0 {
 			switch commandName(item.words[0]) {
 			case "git":
@@ -90,57 +90,75 @@ func commandFindings(command, cwd, root, branch string, policy Policy) []string 
 	return findings
 }
 
-// maxNesting caps how many wrappers, shells, or evals deep a command is unwrapped.
-const maxNesting = 4
-
 // wrappers run the rest of their words as a command of its own.
 var wrappers = map[string]bool{
-	"sudo": true, "doas": true, "env": true, "command": true, "exec": true, "nohup": true,
-	"nice": true, "time": true, "timeout": true, "xargs": true, "stdbuf": true,
+	"sudo": true, "doas": true, "env": true, "command": true, "exec": true, "nohup": true, "nice": true,
+	"time": true, "timeout": true, "xargs": true, "stdbuf": true, "caffeinate": true, "setsid": true,
+	"flock": true, "chronic": true, "ionice": true, "unbuffer": true,
 }
 
-// shells run the word after their -c flag as a command line of its own.
+// shells run the first operand after their -c flag as a command line of its own.
 var shells = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true}
 
-// nested splits a command line into calls, each followed by the calls it hands on.
-func nested(command string, depth int) []call {
+// keywords open or continue a shell compound command, and the call after one still runs.
+var keywords = map[string]bool{
+	"!": true, "{": true, "}": true, "if": true, "then": true, "else": true, "elif": true,
+	"do": true, "while": true, "until": true,
+}
+
+// nested splits a command line into calls, each followed by the calls it hands on. Every step
+// works on strictly shorter input, so the recursion ends without a depth cap.
+func nested(command string) []call {
 	var out []call
 	for _, item := range tokenize(command) {
-		out = append(out, unwrap(item, depth)...)
+		out = append(out, unwrap(item)...)
 	}
 	return out
 }
 
-// unwrap returns a call without its VAR=value prefix, then what a wrapper, shell -c, or eval inside it runs.
-func unwrap(item call, depth int) []call {
+// unwrap returns a call without its keyword or VAR=value prefix, then what a wrapper, shell -c, or eval runs.
+func unwrap(item call) []call {
 	words := item.words
-	for len(words) > 0 && isAssignment(words[0]) {
+	for len(words) > 0 && (keywords[words[0]] || isAssignment(words[0])) {
 		words = words[1:]
 	}
 	out := []call{{words: words, writes: item.writes}}
-	if len(words) == 0 || depth >= maxNesting {
+	if len(words) == 0 {
 		return out
 	}
 	name := commandName(words[0])
 	switch {
 	case wrappers[name]:
+		// A flag's value can name a command too, so every candidate is unwrapped and the findings unioned.
 		for index := 1; index < len(words); index++ {
 			if inner := commandName(words[index]); inner == "git" || inner == "gh" || inner == "eval" ||
 				wrappers[inner] || shells[inner] {
-				return append(out, unwrap(call{words: words[index:]}, depth+1)...)
+				out = append(out, unwrap(call{words: words[index:]})...)
 			}
 		}
 	case shells[name]:
-		for index := 1; index+1 < len(words); index++ {
-			if flag := words[index]; strings.HasPrefix(flag, "-") && !strings.HasPrefix(flag, "--") &&
-				strings.Contains(flag, "c") {
-				return append(out, nested(words[index+1], depth+1)...)
-			}
+		if script, ok := shellScript(words[1:]); ok {
+			out = append(out, nested(script)...)
 		}
 	case name == "eval":
-		return append(out, nested(strings.Join(words[1:], " "), depth+1)...)
+		out = append(out, nested(strings.Join(words[1:], " "))...)
 	}
 	return out
+}
+
+// shellScript is the first operand after a shell's -c flag, skipping the options between them.
+func shellScript(args []string) (string, bool) {
+	for index, arg := range args {
+		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg, "c") {
+			for _, operand := range args[index+1:] {
+				if !strings.HasPrefix(operand, "-") && !strings.HasPrefix(operand, "+") {
+					return operand, true
+				}
+			}
+			return "", false
+		}
+	}
+	return "", false
 }
 
 // isAssignment reports whether a word is a NAME=value environment prefix.

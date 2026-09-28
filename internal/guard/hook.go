@@ -87,7 +87,7 @@ func blockedReason(findings []string) string {
 // recordRefusal counts one more refusal of rule under session in the run folder, reporting
 // whether this is the refusalLimit-th; err is an I/O failure the caller must allow the call for.
 func recordRefusal(root, sessionID, rule string) (bool, error) {
-	if root == "" || sessionID == "" || sessionID != filepath.Base(sessionID) || sessionID == ".." {
+	if root == "" || !filepath.IsLocal(sessionID) || sessionID != filepath.Base(sessionID) {
 		return false, nil
 	}
 	path := filepath.Join(root, ".komodo", "runs", "guard-refusals", sessionID+".json")
