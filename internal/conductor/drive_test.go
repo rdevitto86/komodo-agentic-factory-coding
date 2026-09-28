@@ -166,6 +166,8 @@ type fakeStations struct {
 	// repair is the diff Diff returns, and diffedSince each commit it was asked for.
 	repair      string
 	diffedSince []string
+	// idle leaves the worktree as it was across every session, as a builder that edits nothing does.
+	idle bool
 }
 
 // record notes which station ran and the state saved before it.
@@ -212,7 +214,13 @@ func (f *fakeStations) Head() (string, error) {
 
 func (f *fakeStations) Diff(since string) (string, error) {
 	f.diffedSince = append(f.diffedSince, since)
-	return f.repair, nil
+	if f.idle {
+		return f.repair, nil
+	}
+	// Each session edits the worktree, so the diff grows by one line of work.txt per session saved so far.
+	edits := len((*f.saved)[len(*f.saved)-1].Sessions)
+	return f.repair + fmt.Sprintf("--- a/work.txt\n+++ b/work.txt\n@@ -0,0 +1,%d @@\n", edits) +
+		strings.Repeat("+edit\n", edits), nil
 }
 
 func (f *fakeStations) Merge() (bool, error) {
@@ -242,7 +250,6 @@ func newRig(t *testing.T) *rig {
 		Builder:       mount.StartRequest{Role: "builder", Brief: "build TG-1", Model: "sonnet"},
 		Reviewer:      mount.StartRequest{Role: "reviewer", Brief: "review TG-1", Model: "opus"},
 		SeverityFloor: "high",
-		Repairs:       2,
 		Save: func(s State) error {
 			*saved = append(*saved, s)
 			return nil
@@ -581,7 +588,6 @@ func TestDriveRunsOneColdPassBeforePreparingAfterTwoWarmRounds(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t)
-			r.driver.Repairs = 3
 			r.host.reviews = tc.reviews
 			final, err := r.drive(t)
 			if err != nil || final.Current != Shipped {
@@ -686,8 +692,9 @@ func TestDriveDropsANewReReviewFindingOnALineTheRepairLeftAlone(t *testing.T) {
 	finding := func(file string, line int) map[string]any {
 		return map[string]any{"severity": "high", "file": file, "line": line, "title": "wrong", "fix": "fix it"}
 	}
+	// The re-review closes e.go:7, so the round progresses and its kept findings reach a second repair.
 	r.host.reviews = []map[string]any{
-		{"findings": []any{finding("a.go", 3)}},
+		{"findings": []any{finding("a.go", 3), finding("e.go", 7)}},
 		{"findings": []any{finding("a.go", 3), finding("c.go", 1), finding("a.go", 4)}},
 	}
 	r.stations.repair = "--- a/a.go\n+++ b/a.go\n@@ -4,1 +4,1 @@\n-\told()\n+\tnew()\n"
@@ -827,6 +834,37 @@ func TestDriveStartsAFreshBuilderWhenItsBuilderIsGone(t *testing.T) {
 	}
 }
 
+func TestDriveClosesEachFixListWithEveryTasksFilesAsThePlanHoldsThem(t *testing.T) {
+	for _, resume := range []bool{true, false} {
+		t.Run(fmt.Sprintf("resume %v", resume), func(t *testing.T) {
+			r := newRig(t)
+			r.host.resume = resume
+			r.host.results["builder-0"] = mount.Result{Value: map[string]any{"result": "DONE"}}
+			// The plan loaded on resume holds c.go, a file the second task gained after the group was built.
+			r.driver.Tasks = []line.PlanTask{
+				{ID: "TSK-1", Files: []string{"a.go"}}, {ID: "TSK-2", Files: []string{"b.go", "c.go"}},
+			}
+			r.stations.checks = [][]string{{"`go vet` exited 1"}}
+			saved := State{Group: "TG-1", Current: Checking, Builder: "builder-0"}
+			*r.saved = append(*r.saved, saved)
+			if _, err := r.driver.Resume(context.Background(), saved); err != nil {
+				t.Fatalf("resume = %v", err)
+			}
+			input := ""
+			if resume && len(r.host.inputs) == 1 {
+				input = r.host.inputs[0]
+			} else if !resume && len(r.host.starts) > 0 {
+				input = r.host.starts[0].Brief
+			}
+			fix := strings.Index(input, "- [ ] `go vet` exited 1")
+			files := strings.Index(input, "- TSK-1: `a.go`\n- TSK-2: `b.go`, `c.go`")
+			if fix == -1 || files < fix {
+				t.Fatalf("repair input = %q, want the fix list closed by every task's files", input)
+			}
+		})
+	}
+}
+
 func TestDriveEscalatesABlockedBuilderAndWaits(t *testing.T) {
 	r := newRig(t)
 	r.host.builds = []map[string]any{{"result": "BLOCKED"}}
@@ -845,27 +883,12 @@ func TestDriveEscalatesABlockedBuilderAndWaits(t *testing.T) {
 	}
 }
 
-func TestDriveEscalatesOnceItsRepairRoundsAreSpent(t *testing.T) {
-	r := newRig(t)
-	r.stations.checks = [][]string{{"fail"}, {"fail"}, {"fail"}}
-	final, err := r.drive(t)
-	if err != nil {
-		t.Fatalf("drive = %v", err)
-	}
-	if final.Current != Escalated || final.Left != Repairing {
-		t.Fatalf("final = %s left %s, want Escalated from Repairing", final.Current, final.Left)
-	}
-	if got := r.sessions(t); !equal(got, []string{StationBuild, StationRepair, StationRepair}) {
-		t.Fatalf("ledger sessions = %v, want one build and two repairs", got)
-	}
-}
-
 func TestDriveKeepsItsRoundInTheStateAcrossCalls(t *testing.T) {
 	r := newRig(t)
-	r.stations.checks = [][]string{{"fail"}, {"fail"}, {"fail"}}
+	r.stations.checks = [][]string{{"fail"}, {"fail"}}
 	first, err := r.drive(t)
-	if err != nil || first.Current != Escalated {
-		t.Fatalf("first drive = %s, %v; want Escalated", first.Current, err)
+	if !errors.Is(err, errNoProgress) || first.Current != Escalated {
+		t.Fatalf("first drive = %s, %v; want Escalated with no progress", first.Current, err)
 	}
 	if first.Repairs == 0 || first.Builder == "" || len(first.Fixes) != 1 || first.Fixes[0] != "fail" {
 		t.Fatalf("state = %+v; the repair count, builder and fix list must be saved", first)
@@ -873,12 +896,13 @@ func TestDriveKeepsItsRoundInTheStateAcrossCalls(t *testing.T) {
 	sessions := len(r.sessions(t))
 	resumed := first
 	resumed.Answered = true
+	r.stations.checks = [][]string{{"fail"}}
 	second, err := r.driver.Drive(context.Background(), resumed)
-	if err != nil || second.Current != Escalated || second.Repairs < first.Repairs {
+	if !errors.Is(err, errNoProgress) || second.Current != Escalated || second.Repairs < first.Repairs {
 		t.Fatalf("second drive = %s with %d repairs, %v; the spent rounds must carry over", second.Current, second.Repairs, err)
 	}
 	if got := len(r.sessions(t)); got != sessions {
-		t.Fatalf("sessions went from %d to %d; a spent repair budget must not start another", sessions, got)
+		t.Fatalf("sessions went from %d to %d; the saved fix list must stop a check failing on it again", sessions, got)
 	}
 }
 
@@ -1143,8 +1167,9 @@ func TestResumeChecksAKilledSessionAgainstTheSnapshotTakenBeforeIt(t *testing.T)
 	start := State{Group: "TG-1", Current: Building, Sessions: []string{string(last)}}
 	*r.saved = append(*r.saved, start)
 
-	if _, err := r.driver.Resume(context.Background(), start); err != nil {
-		t.Fatalf("resume = %v", err)
+	// The fake repair edits no file, so the loop stops after it.
+	if _, err := r.driver.Resume(context.Background(), start); !errors.Is(err, errNoProgress) {
+		t.Fatalf("resume = %v, want the idle repair to stop the loop", err)
 	}
 	var repair string
 	for _, req := range r.host.starts {

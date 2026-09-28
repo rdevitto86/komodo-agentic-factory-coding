@@ -132,7 +132,7 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 			return ReReviewInput(root, plan, s, lens)
 		},
 		SeverityFloor: plan.Profile.SeverityFloor,
-		Repairs:       plan.Profile.ReviewRepairs,
+		Tasks:         plan.Tasks,
 		Save: func(s conductor.State) error {
 			return conductor.SaveState(conductor.StatePath(root, plan.Group), s)
 		},

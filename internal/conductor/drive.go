@@ -56,6 +56,22 @@ func fixList(fixes []string) string {
 	return "## Fix list\n\n" + strings.Join(lines, "\n")
 }
 
+// taskFiles renders each task's files as the plan holds them, which close a repair's fix list.
+func taskFiles(tasks []line.PlanTask) string {
+	if len(tasks) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		files := "none"
+		if len(task.Files) > 0 {
+			files = "`" + strings.Join(task.Files, "`, `") + "`"
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s", task.ID, files))
+	}
+	return "\n\n## Each task's files, as the plan holds them now\n\n" + strings.Join(lines, "\n")
+}
+
 // repairBrief is a fresh repair's brief: the fix list first, then the group's brief for reference.
 func repairBrief(fixList, brief string) string {
 	return repairLead + fixList + "\n\n## The group's brief, for reference\n\n" + brief
@@ -101,8 +117,8 @@ type Driver struct {
 	ReReview func(review.Lens, State) (string, error)
 	// SeverityFloor is the lowest review severity that blocks; empty blocks every finding.
 	SeverityFloor string
-	// Repairs is how many repair rounds a group gets before it escalates; zero means line.MaxRepairs.
-	Repairs int
+	// Tasks are the group's tasks as the plan the conductor loaded holds them; their files close each fix list.
+	Tasks []line.PlanTask
 	// Save writes the group's state to state.json.
 	Save func(State) error
 	// WriteReview keeps the reviewer's whole result where Ship's findings gate reads it; nil skips it.
@@ -174,12 +190,16 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 		if err != nil {
 			return err
 		}
-		r.builder = handle
+		r.builder, r.fixes = handle, nil
 		return d.build(ctx, s, StationBuild, d.Builder, handle)
 	case Checking:
 		fixes, err := d.Stations.Check()
 		if err != nil {
 			return err
+		}
+		// The open fix list is the one the last repair worked, so the same failures mean it fixed nothing.
+		if len(fixes) > 0 && slices.Equal(fixes, r.fixes) {
+			return fmt.Errorf("%w: the checks fail identically after a repair: %s", errNoProgress, strings.Join(fixes, "; "))
 		}
 		r.fixes = fixes
 		s.ChecksPassed = len(fixes) == 0
@@ -243,13 +263,18 @@ func (d *Driver) lenses() []review.Lens {
 }
 
 // review runs every lens's round in parallel, then, when no lens has a fix, the cold pass of each lens
-// whose warm reviewer passed a later round, so no anchored reviewer ships a group alone.
+// whose warm reviewer passed a later round; a round closing no open finding stops the loop.
 func (d *Driver) review(ctx context.Context, s *State, r *round) error {
 	lenses := d.lenses()
 	results := map[review.Lens]mount.Result{}
 	fixes := map[review.Lens][]string{}
+	before := openFindings(*s, lenses)
 	if err := d.reviewRound(ctx, s, lenses, results, fixes); err != nil {
 		return err
+	}
+	var stalled error
+	if after := openFindings(*s, lenses); closesNothing(before, after) {
+		stalled = stalledReview(after)
 	}
 	r.fixes = joinFixes(lenses, fixes)
 	var cold []review.Lens
@@ -276,9 +301,12 @@ func (d *Driver) review(ctx context.Context, s *State, r *round) error {
 		}
 	}
 	if d.WriteReview == nil {
-		return nil
+		return stalled
 	}
-	return d.WriteReview(s.Group, mergedReview(lenses, results))
+	if err := d.WriteReview(s.Group, mergedReview(lenses, results)); err != nil {
+		return err
+	}
+	return stalled
 }
 
 // reviewRound opens each lens's session, drains them all in parallel, then files each lens's findings,
@@ -499,24 +527,23 @@ func mergedReview(lenses []review.Lens, results map[review.Lens]mount.Result) mo
 }
 
 // repair resumes the builder with the fix list, or starts a fresh one when the host cannot resume,
-// and escalates once the group's repair rounds are spent.
+// and stops the loop when the repair changed no file.
 func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
-	limit := d.Repairs
-	if limit == 0 {
-		limit = line.MaxRepairs
-	}
 	r.repairs++
-	if r.repairs > limit {
-		s.Escalate = true
-		return nil
-	}
-	input := fixList(r.fixes)
+	input := fixList(r.fixes) + taskFiles(d.Tasks)
 	if err := d.Stations.Snapshot(); err != nil {
+		return err
+	}
+	head, err := d.Stations.Head()
+	if err != nil {
+		return err
+	}
+	before, err := d.Stations.Diff(head)
+	if err != nil {
 		return err
 	}
 	req := d.Builder
 	var handle mount.Handle
-	var err error
 	if r.builder != "" && d.Host.Capabilities().Resume {
 		handle, err = d.Host.Resume(r.builder, input)
 	}
@@ -529,7 +556,17 @@ func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 		return err
 	}
 	r.builder = handle
-	return d.build(ctx, s, StationRepair, req, handle)
+	if err := d.build(ctx, s, StationRepair, req, handle); err != nil || !s.SessionDone {
+		return err
+	}
+	after, err := d.Stations.Diff(head)
+	if err != nil {
+		return err
+	}
+	if after == before {
+		return fmt.Errorf("%w: the repair changed no file, leaving %s", errNoProgress, strings.Join(r.fixes, "; "))
+	}
+	return nil
 }
 
 // session records a session's handle in state.json, then drains it.
