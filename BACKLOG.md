@@ -2968,7 +2968,7 @@ depends_on: [TG-07.11]
 
 #### [TSK-07.12.1] A stopped run stops the station it is in, and never commits after the stop [P: H] [READY]
 ```yaml
-files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/check/check.go, internal/check/check_test.go]
+files: [internal/conductor/drive.go, internal/conductor/drive_test.go, internal/check/check.go, internal/check/check_test.go, internal/run/drive_test.go]
 done_when:
   - go test ./internal/conductor/... ./internal/check/...
 context:
