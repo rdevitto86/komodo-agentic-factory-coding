@@ -345,11 +345,7 @@ func pick(root string, parsed backlog.Backlog, needle string) (backlog.Group, st
 
 // ReadyGroups lists, in file order, the groups a drain would run, counting an earlier group's branch as a base.
 func ReadyGroups(root string) ([]backlog.Group, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil, err
 	}

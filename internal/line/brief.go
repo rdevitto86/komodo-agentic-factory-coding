@@ -122,17 +122,13 @@ func StandardsFor(all []Standard, files []string, role string) []Standard {
 
 // BuildBrief fills a role's template for one task from the worktree it will be built in.
 func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil, err
 	}
 	task, ok := parsed.Task(taskID)
 	if !ok {
-		return nil, fmt.Errorf("no task %s in %s", taskID, path)
+		return nil, fmt.Errorf("no task %s in %s", taskID, root)
 	}
 	group, _ := parsed.Group(task.GroupID)
 	task = cardTask(root, task, group)
@@ -188,11 +184,7 @@ func BuildBrief(root, cwd, taskID, role string, failure string) (*Brief, error) 
 // FixBrief fills the builder role with the group's tasks, files, and blocking review findings, and
 // writes it to .komodo/briefs/<group>-fix.md in the root and the group worktree.
 func FixBrief(root string, plan *Plan) (*Brief, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil, err
 	}

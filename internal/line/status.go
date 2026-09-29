@@ -146,14 +146,10 @@ func OverlayStatus(parsed backlog.Backlog, statuses map[string]TaskStatus) backl
 	return parsed
 }
 
-// LoadBacklog is root's BACKLOG.md with the statuses a group worktree's ship commit holds, then
-// the run's live status, laid over it; root's own file is never rewritten mid-run.
+// LoadBacklog is root's queue with the statuses a group worktree's ship commit holds, then
+// the run's live status, laid over it; root's own queue is never rewritten mid-run.
 func LoadBacklog(root string) (backlog.Backlog, string, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return backlog.Backlog{}, "", err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return backlog.Backlog{}, "", err
 	}
@@ -161,10 +157,10 @@ func LoadBacklog(root string) (backlog.Backlog, string, error) {
 	for id, status := range LoadStatus(root) {
 		shipped[id] = status
 	}
-	return OverlayStatus(parsed, shipped), path, nil
+	return OverlayStatus(parsed, shipped), root, nil
 }
 
-// shippedStatus is every DONE or BLOCKED status a recorded run's worktree BACKLOG.md holds for
+// shippedStatus is every DONE or BLOCKED status a recorded run's worktree queue holds for
 // one of its own group's tasks root still has open, which is what its ship commit carries until it lands.
 func shippedStatus(root string, parsed backlog.Backlog) map[string]TaskStatus {
 	statuses := map[string]TaskStatus{}
@@ -177,11 +173,7 @@ func shippedStatus(root string, parsed backlog.Backlog) map[string]TaskStatus {
 		if worktree == "" {
 			worktree = filepath.Join(StateDir, "wt", state.Group)
 		}
-		path, err := backlog.Find(WorktreePath(root, worktree))
-		if err != nil {
-			continue
-		}
-		committed, err := backlog.Load(path)
+		committed, err := backlog.LoadRoot(WorktreePath(root, worktree))
 		if err != nil {
 			continue
 		}

@@ -214,10 +214,7 @@ func GroupFor(root, id string) string {
 	if id == "" {
 		return ""
 	}
-	var parsed backlog.Backlog
-	if path, err := backlog.Find(root); err == nil {
-		parsed, _ = backlog.Load(path)
-	}
+	parsed, _ := backlog.LoadRoot(root)
 	if task, ok := parsed.Task(id); ok {
 		return task.GroupID
 	}
