@@ -119,6 +119,10 @@ func drain(options Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	// Every lane's session inherits this PATH, so a rebuild mid-drain never moves what one runs.
+	if err := pinDrainPath(options.Root, executable); err != nil {
+		return 1, err
+	}
 	// Every lane writes to the same output, so each write holds the one lock.
 	var outputLock sync.Mutex
 	stdout = lockedWriter{lock: &outputLock, out: stdout}
@@ -445,6 +449,30 @@ var symlink = os.Symlink
 
 // binPathLock keeps two lanes from replacing the shared komodo link at once.
 var binPathLock sync.Mutex
+
+// pinDrainPath puts the drain's own executable first on the process's PATH before any lane starts,
+// so every session Drive spawns runs it, never one rebuilt mid-drain; "" falls back to the running binary.
+func pinDrainPath(root, executable string) error {
+	if executable == "" {
+		var err error
+		executable, err = mount.Executable()
+		if err != nil {
+			return err
+		}
+	}
+	binPathLock.Lock()
+	defer binPathLock.Unlock()
+	env, err := withBinPath(os.Environ(), root, executable)
+	if err != nil {
+		return err
+	}
+	for _, entry := range env {
+		if key, value, ok := strings.Cut(entry, "="); ok && key == "PATH" {
+			return os.Setenv("PATH", value)
+		}
+	}
+	return nil
+}
 
 // withBinPath puts komodo on the run's PATH as root/.komodo/bin, then the inherited PATH, then the repo's own root/bin.
 func withBinPath(env []string, root, executable string) ([]string, error) {

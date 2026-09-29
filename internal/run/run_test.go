@@ -454,6 +454,12 @@ const driveDrainText = "### [TG-07.1] First\n```yaml\ntype: feat\nversion: 1.0.0
 	"### [TG-07.2] Second\n```yaml\ntype: feat\nversion: 1.1.0\nmode: single\n```\n\n" +
 	"#### [TSK-07.2.1] Two [P: C] [READY]\n```yaml\nfiles: [two.txt]\ndone_when: [\"true\"]\n```\n"
 
+// driveDrainSharedFileText is driveDrainText's two groups, both declaring the same file.
+const driveDrainSharedFileText = "### [TG-07.1] First\n```yaml\ntype: feat\nversion: 1.0.0\nmode: single\n```\n\n" +
+	"#### [TSK-07.1.1] One [P: C] [READY]\n```yaml\nfiles: [one.txt]\ndone_when: [\"true\"]\n```\n\n" +
+	"### [TG-07.2] Second\n```yaml\ntype: feat\nversion: 1.1.0\nmode: single\n```\n\n" +
+	"#### [TSK-07.2.1] Two [P: C] [READY]\n```yaml\nfiles: [one.txt]\ndone_when: [\"true\"]\n```\n"
+
 // fakeScript plays one group: it records the launch, then copies in the files staged for that group.
 const fakeScript = `echo "$1" >> .komodo/fake/launched
 cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
@@ -466,6 +472,8 @@ func drainRepo(t *testing.T) string {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skip("no /bin/sh on this machine")
 	}
+	// A real drain pins its own binary onto PATH for the whole process; restore it once the test ends.
+	t.Setenv("PATH", os.Getenv("PATH"))
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
 	root := t.TempDir()
@@ -499,17 +507,38 @@ func drainRepo(t *testing.T) string {
 const drainDriveFakeClaude = `#!/bin/sh
 if [ "$1" != "-p" ]; then echo "2.0.0"; exit 0; fi
 group=$(basename "$PWD")
+if [ "$KOMODO_ROLE" = "escalation" ] && [ -n "$FAKE_DEBUG" ]; then cat > "$FAKE_DEBUG" ; fi
 if [ "$group" = "$FAKE_BLOCK_GROUP" ]; then
   if [ "$KOMODO_ROLE" = "escalation" ]; then cat "$FAKE_STOP_FIXTURE"; else cat "$FAKE_BLOCK_FIXTURE"; fi
   exit 0
 fi
 if [ "$KOMODO_ROLE" = "builder" ]; then
-  case "$group" in
-    TG-07.1) echo built > one.txt ;;
-    TG-07.2) echo built > two.txt ;;
-    *) echo built > change.txt ;;
-  esac
+  if [ -n "$FAKE_PATH_FILE" ] && [ ! -f "$FAKE_PATH_FILE" ]; then echo "$PATH" > "$FAKE_PATH_FILE"; fi
+  if [ -n "$FAKE_OVERLAP_DIR" ]; then
+    touch "$FAKE_OVERLAP_DIR/$group.started"
+    i=0
+    while [ -z "$(ls "$FAKE_OVERLAP_DIR"/*.started 2>/dev/null | grep -v "/$group.started\$")" ] && [ $i -lt 30 ]; do
+      sleep 0.1
+      i=$((i+1))
+    done
+    other=$(ls "$FAKE_OVERLAP_DIR"/*.started 2>/dev/null | grep -v "/$group.started\$")
+    if [ -n "$other" ]; then
+      ended=$(ls "$FAKE_OVERLAP_DIR"/*.ended 2>/dev/null | grep -v "/$group.ended\$")
+      if [ -z "$ended" ]; then echo "$group" >> "$FAKE_OVERLAP_DIR/overlapped"; fi
+    fi
+  fi
+  if [ -n "$FAKE_SHARED_FILE" ]; then
+    echo built > one.txt
+  else
+    case "$group" in
+      TG-07.1) echo built > one.txt ;;
+      TG-07.2) echo built > two.txt ;;
+      *) echo built > change.txt ;;
+    esac
+  fi
   cat "$FAKE_BUILD_FIXTURE"
+  if [ -n "$FAKE_OVERLAP_DIR" ]; then touch "$FAKE_OVERLAP_DIR/$group.ended"; fi
+  if [ "$group" = "$FAKE_STALE_GROUP" ] && [ -n "$FAKE_ROOT" ]; then echo stale > "$FAKE_ROOT/bin/.built-from"; fi
 else
   cat "$FAKE_REVIEW_FIXTURE"
 fi
@@ -554,6 +583,8 @@ func setupDrainDriveFakeClaude(t *testing.T) {
 // holding backlogText, so a drain's lanes each cut a real worktree and branch through the conductor.
 func driveDrainRepo(t *testing.T, backlogText string) string {
 	t.Helper()
+	// A real drain pins its own binary onto PATH for the whole process; restore it once the test ends.
+	t.Setenv("PATH", os.Getenv("PATH"))
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
 		t.Fatal(err)
@@ -664,6 +695,52 @@ func TestDrainDrivesEachLaneThroughTheConductorAndShipsInOrder(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+// TestDrainRunsTwoLanesAtOnceWhenTheySharesNoFile proves two ready groups whose tasks touch no
+// common file run their Drive calls concurrently, and both still ship.
+func TestDrainRunsTwoLanesAtOnceWhenTheySharesNoFile(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
+	overlap := t.TempDir()
+	t.Setenv("FAKE_OVERLAP_DIR", overlap)
+	saved := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(saved) })
+	host, _ := mount.Get("claude")
+	host.Probe = func() (mount.Usage, bool) { return mount.Usage{Plan: "max_20x"}, true }
+	mount.Register(host)
+	var out bytes.Buffer
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
+	}
+	if !strings.Contains(out.String(), "TG-07.1 shipped:") || !strings.Contains(out.String(), "TG-07.2 shipped:") {
+		t.Fatalf("both groups should have shipped; out = %s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(overlap, "overlapped")); err != nil {
+		t.Fatalf("no lane overlapped; want two Drive calls running at once: %v", err)
+	}
+}
+
+// TestDrainRunsTwoLanesSharingAFileInTurn proves two ready groups whose tasks share one file never
+// run their Drive calls at once, so the second waits for the first to ship.
+func TestDrainRunsTwoLanesSharingAFileInTurn(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainSharedFileText)
+	setupDrainDriveFakeClaude(t)
+	t.Setenv("FAKE_SHARED_FILE", "1")
+	overlap := t.TempDir()
+	t.Setenv("FAKE_OVERLAP_DIR", overlap)
+	var out bytes.Buffer
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
+	}
+	if !strings.Contains(out.String(), "TG-07.1 shipped:") || !strings.Contains(out.String(), "TG-07.2 shipped:") {
+		t.Fatalf("both groups should have shipped; out = %s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(overlap, "overlapped")); err == nil {
+		t.Fatal("groups sharing a file overlapped; want them run one after another")
 	}
 }
 
@@ -808,6 +885,64 @@ func TestDrainSyncsOnceBeforeAndOnceAfterTheWholeRunNeverBetweenGroups(t *testin
 	}
 	if !strings.Contains(output, "TG-07.1 shipped") || !strings.Contains(output, "TG-07.2 shipped") {
 		t.Fatalf("both groups should have shipped; output:\n%s", output)
+	}
+}
+
+// TestDrainPinsTheRunsBinaryOnPathForEveryLane proves a rebuild sync does before a drain starts
+// lands on the run's own link, and every lane's builder session inherits it first on PATH.
+func TestDrainPinsTheRunsBinaryOnPathForEveryLane(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
+	toolkitCheckout(t, root, "stale-commit")
+	fakeBuild(t)
+	pathFile := filepath.Join(t.TempDir(), "path.txt")
+	t.Setenv("FAKE_PATH_FILE", pathFile)
+	var out bytes.Buffer
+	if _, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)}); err != nil {
+		t.Fatalf("launch failed: %v, out = %s", err, out.String())
+	}
+	link := filepath.Join(root, line.StateDir, "bin", "komodo")
+	data, err := os.ReadFile(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "bin" {
+		t.Fatalf("komodo on PATH = %q, want the rebuilt binary's own bytes", data)
+	}
+	seen, err := os.ReadFile(pathFile)
+	if err != nil {
+		t.Fatalf("no builder session recorded its PATH: %v", err)
+	}
+	first := strings.SplitN(strings.TrimSpace(string(seen)), string(os.PathListSeparator), 2)[0]
+	if first != filepath.Dir(link) {
+		t.Fatalf("a builder session's PATH started %q, want the run's own link dir %q", first, filepath.Dir(link))
+	}
+}
+
+// TestAStaleBuildMarkerDuringADriveRunChangesNothingUntilItEnds proves a marker a lane's session
+// leaves stale mid-drain rebuilds once, only after the whole drain ends, never moving a running lane.
+func TestAStaleBuildMarkerDuringADriveRunChangesNothingUntilItEnds(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
+	head := gitOut(t, root, "rev-parse", "HEAD")
+	toolkitCheckout(t, root, head)
+	builds, installs := fakeBuild(t)
+	// The first group's builder leaves the build marker stale, as a session's own rebuild might mid-run.
+	t.Setenv("FAKE_STALE_GROUP", "TG-07.1")
+	t.Setenv("FAKE_ROOT", root)
+	var out bytes.Buffer
+	if _, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)}); err != nil {
+		t.Fatalf("launch failed: %v, out = %s", err, out.String())
+	}
+	if *builds != 1 || *installs != 1 {
+		t.Fatalf("builds = %d, installs = %d; a marker gone stale mid-run rebuilds once, only after the run ends", *builds, *installs)
+	}
+	recorded, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(recorded)) != head {
+		t.Fatalf("marker = %q, want %q; the run's own end-of-run sync must fix it", recorded, head)
 	}
 }
 
