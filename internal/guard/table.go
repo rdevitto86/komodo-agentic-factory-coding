@@ -100,9 +100,8 @@ func Table(policy Policy) []Case {
 		bash("commit --no-verify skips the gate", "git commit --no-verify -m x", "feat/x", true, "skips the gate"),
 		bash("commit runs the gate", "git commit -m 'feat: thing'", "feat/x", false, ""),
 
-		// Rule 4: a commit message never carries an attribution trailer.
-		bash("co-author trailer", "git commit -m 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", true, "trailer"),
-		bash("commit with a body and no trailer", "git commit -m 'feat: x\n\nWhat it does.'", "feat/x", false, ""),
+		// A trailer is now the commit-msg hook's rule, not the guard's; the tool call itself is allowed.
+		bash("a trailer reaches the commit-msg hook, not the guard", "git commit -m 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", false, ""),
 
 		// Rule 5: a line session never edits or writes outside its worktree.
 		asRole("builder", write("edit above the root", "../outside/file.go", true, "outside the worktree")),
