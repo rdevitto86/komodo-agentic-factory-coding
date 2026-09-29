@@ -3,7 +3,6 @@ package eval
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -171,21 +170,20 @@ func (o *Outcome) measure(dir string) {
 	}
 }
 
-// shippedWorktree reads the ship handoff the group left, returning its worktree when the ship reached it;
-// a session can write the handoff, so a worktree outside the clone is refused.
+// shippedWorktree reads the group's saved state, returning its worktree once Drive left it ready to
+// ship; a session cannot write state.json itself, but a worktree outside the clone is still refused.
 func shippedWorktree(dir, group string) (string, bool, error) {
-	data, err := os.ReadFile(line.HandoffPath(dir, group))
+	state, err := conductor.LoadState(conductor.StatePath(dir, group))
 	if errors.Is(err, os.ErrNotExist) {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, err
 	}
-	var handoff line.ShipHandoff
-	if err := json.Unmarshal(data, &handoff); err != nil {
-		return "", false, fmt.Errorf("the ship handoff: %w", err)
+	if state.Current != conductor.Shipping {
+		return "", false, nil
 	}
-	worktree := handoff.Worktree
+	worktree := state.Worktree
 	if worktree == "" {
 		worktree = dir
 	}
@@ -196,11 +194,11 @@ func shippedWorktree(dir, group string) (string, bool, error) {
 	realDir, dirErr := filepath.EvalSymlinks(dir)
 	realWorktree, worktreeErr := filepath.EvalSymlinks(worktree)
 	if dirErr != nil || worktreeErr != nil {
-		return "", false, fmt.Errorf("the ship handoff names worktree %s, which does not exist", handoff.Worktree)
+		return "", false, fmt.Errorf("the group's saved state names worktree %s, which does not exist", state.Worktree)
 	}
 	rel, err := filepath.Rel(realDir, realWorktree)
 	if err != nil || !filepath.IsLocal(rel) {
-		return "", false, fmt.Errorf("the ship handoff names worktree %s, outside the clone", handoff.Worktree)
+		return "", false, fmt.Errorf("the group's saved state names worktree %s, outside the clone", state.Worktree)
 	}
 	return worktree, true, nil
 }

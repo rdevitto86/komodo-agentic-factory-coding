@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -458,7 +457,6 @@ func init() {
 		Concurrency: Concurrency,
 		LoggedIn:    LoggedIn,
 		Usage:       Usage,
-		Headless:    Headless,
 		Leftovers:   Leftovers,
 		WritePaths:  WritePaths,
 		ReviewerWhy: reviewerWhy,
@@ -467,27 +465,6 @@ func init() {
 		},
 	})
 	install.RegisterGlobal("claude", RenderGlobal)
-}
-
-// relayTools are the only tools a relay session may use; dontAsk refuses the rest without a prompt.
-var relayTools = []string{"Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent", "Skill"}
-
-// Headless returns this host's non-interactive command for one skill and one target: no prompt is
-// answered, only relayTools are allowed, the guard hook judges every call, and the standard tier drives.
-func Headless(skill, target string) (string, []string) {
-	prompt := "/" + skill
-	if target != "" {
-		prompt += " " + target
-	}
-	allowed := strings.Join(relayTools, ",")
-	args := []string{
-		"-p", prompt, "--permission-mode", "dontAsk",
-		"--tools", allowed, "--allowedTools", allowed, "--model", modelFor("standard"),
-	}
-	if settings := lineSandbox(mount.LoadOverlay(), runtime.GOOS); settings != "" {
-		args = append(args, "--settings", settings)
-	}
-	return "claude", args
 }
 
 // retiredCommands are the commands no hook, allow rule, or mcpServers entry may still name.

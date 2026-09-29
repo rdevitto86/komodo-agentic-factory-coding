@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
 )
 
 // captureStdout runs fn with os.Stdout redirected to a pipe and returns what it wrote.
@@ -277,5 +279,36 @@ func TestLintProblemsRefusesAnOpenGroupAtATaggedVersion(t *testing.T) {
 	}
 	if len(problems) != 1 || !strings.Contains(problems[0], "TG-01.1") {
 		t.Fatalf("problems = %v, want TG-01.1 named at the tagged 1.0.0", problems)
+	}
+}
+
+// TestLintPrintsAGroupFileTasksCallerNote proves komodo lint shows a group file's notes, not only BACKLOG.md's.
+func TestLintPrintsAGroupFileTasksCallerNote(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `internal/a/a.go`\n  - done_when: `go test ./internal/a/...`\n")
+	if notes := groupFileNotes(root); len(notes) != 1 || !strings.Contains(notes[0], "TSK-01.1.1") {
+		t.Fatalf("notes = %v, want TSK-01.1.1 noted for a done_when that never runs its caller", notes)
+	}
+}
+
+// TestCheckBaseDefaultsToTheGroupsEpicBranch proves check task diffs from the branch the line cut, not the default.
+func TestCheckBaseDefaultsToTheGroupsEpicBranch(t *testing.T) {
+	root := emptyRepo(t)
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+	runGit(t, root, "branch", "feat/1.0.0")
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := checkBase(root, parsed, "TG-01.1", ""); got != "feat/1.0.0" {
+		t.Fatalf("checkBase = %q, want the epic branch feat/1.0.0", got)
+	}
+	if got := checkBase(root, parsed, "TG-01.1", "main"); got != "main" {
+		t.Fatalf("checkBase with --base = %q, want main", got)
 	}
 }

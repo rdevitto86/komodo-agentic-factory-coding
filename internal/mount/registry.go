@@ -30,7 +30,6 @@ type Host struct {
 	// LoggedIn reports whether the host CLI holds a login, by subscription or key; nil skips the check.
 	LoggedIn   func() (bool, error)
 	Usage      func(root, task string, since, until time.Time) (TaskUsage, bool)
-	Headless   func(skill, target string) (string, []string)
 	EventsPath func(root, task string) string
 	// Leftovers names what a retired setup left in the host's user settings, such as a second agent hook.
 	Leftovers func() []string

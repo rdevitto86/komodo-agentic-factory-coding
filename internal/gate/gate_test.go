@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"komodo/internal/backlog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -63,7 +65,7 @@ func TestInstallWritesEveryHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(written) != 6 {
+	if len(written) != 7 {
 		t.Fatalf("written = %v", written)
 	}
 	for _, path := range written {
@@ -241,7 +243,12 @@ func TestHookInTheToolkitGatesFromTheCheckoutItCommits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for hook, args := range map[string]string{"pre-commit": "run ./cmd/komodo gate in", "pre-push": "run ./cmd/komodo gate --fuzz 10s in"} {
+	cases := map[string]string{
+		// pre-commit checks the branch first, then runs the full gate, both from the committing checkout.
+		"pre-commit": "run ./cmd/komodo gate --check-branch in " + want + "\ngo run ./cmd/komodo gate in " + want,
+		"pre-push":   "run ./cmd/komodo gate --fuzz 10s in " + want,
+	}
+	for hook, want := range cases {
 		script := filepath.Join(fakes, hook)
 		if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
 			t.Fatal(err)
@@ -250,8 +257,8 @@ func TestHookInTheToolkitGatesFromTheCheckoutItCommits(t *testing.T) {
 		cmd.Dir = sub
 		cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
 		out, err := cmd.CombinedOutput()
-		if err != nil || strings.TrimSpace(string(out)) != "go "+args+" "+want {
-			t.Fatalf("%s: err = %v, out = %q; want go %s %s", hook, err, out, args, want)
+		if err != nil || strings.TrimSpace(string(out)) != "go "+want {
+			t.Fatalf("%s: err = %v, out = %q; want go %s", hook, err, out, want)
 		}
 	}
 }
@@ -1077,5 +1084,192 @@ func TestPrePushHookFallsBackWithoutStdin(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "gate --fuzz 10s") || strings.Contains(string(out), "--from") {
 		t.Fatalf("out = %q, want the plain fuzz lane without a range", out)
+	}
+}
+
+// gateBinaryOnce builds this checkout's own komodo binary once, shared by every hook-installing test.
+var (
+	gateBinaryOnce sync.Once
+	gateBinaryPath string
+	gateBinaryErr  error
+)
+
+// gateBinary returns the path to a real, freshly built komodo binary for this module.
+func gateBinary(t *testing.T) string {
+	t.Helper()
+	gateBinaryOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "komodo-gate-test-bin")
+		if err != nil {
+			gateBinaryErr = err
+			return
+		}
+		path := filepath.Join(dir, LocalTarget().Name)
+		cmd := exec.Command("go", "build", "-o", path, "komodo/cmd/komodo")
+		if out, buildErr := cmd.CombinedOutput(); buildErr != nil {
+			gateBinaryErr = fmt.Errorf("build komodo: %v: %s", buildErr, out)
+			return
+		}
+		gateBinaryPath = path
+	})
+	if gateBinaryErr != nil {
+		t.Fatal(gateBinaryErr)
+	}
+	return gateBinaryPath
+}
+
+// installedRepo inits a repo on branch, installs the real hooks, and gives it the real binary and a
+// trivial build check, so a commit that clears --check-branch and --commit-msg clears the rest too.
+func installedRepo(t *testing.T, branch string) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "init", "-q", "-b", branch)
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if _, err := Install(filepath.Join(root, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	built, err := os.ReadFile(gateBinary(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, LocalTarget().Name), built, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".komodo", "commands.json"), []byte(`{"compile": "true"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gitattributes"), []byte("* text=auto eol=lf\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// commitIn runs git commit in root with a throwaway identity, returning its combined output.
+func commitIn(t *testing.T, root string, args ...string) (string, error) {
+	t.Helper()
+	full := append([]string{"-c", "user.email=a@example.com", "-c", "user.name=a", "commit"}, args...)
+	cmd := exec.Command("git", full...)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// TestPreCommitHookRefusesACriticalRef proves a commit on main is refused before the gate itself runs.
+func TestPreCommitHookRefusesACriticalRef(t *testing.T) {
+	root := installedRepo(t, "main")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "feat: x")
+	if err == nil {
+		t.Fatal("want a refusal, got none")
+	}
+	if !strings.Contains(out, "create a branch first") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// TestPreCommitHookRefusesANonConventionalBranch proves a branch such as wip is refused.
+func TestPreCommitHookRefusesANonConventionalBranch(t *testing.T) {
+	root := installedRepo(t, "wip")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "feat: x")
+	if err == nil {
+		t.Fatal("want a refusal, got none")
+	}
+	if !strings.Contains(out, "<type>/<kebab-name>") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// TestPreCommitHookAllowsAConventionalBranch proves a branch such as fix/x commits cleanly.
+func TestPreCommitHookAllowsAConventionalBranch(t *testing.T) {
+	root := installedRepo(t, "fix/x")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "fix: x")
+	if err != nil {
+		t.Fatalf("err = %v, out = %q", err, out)
+	}
+}
+
+// TestPreCommitHookAllowsTheEpicBranch proves an epic branch, feat plus a version, stays allowed.
+func TestPreCommitHookAllowsTheEpicBranch(t *testing.T) {
+	root := installedRepo(t, "feat/1.0.0-beta.3")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "feat: x")
+	if err != nil {
+		t.Fatalf("err = %v, out = %q", err, out)
+	}
+}
+
+// TestCommitMsgHookRefusesATrailer proves a co-authored-by trailer is refused, whatever wrote it.
+func TestCommitMsgHookRefusesATrailer(t *testing.T) {
+	root := installedRepo(t, "fix/x")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "feat: x\n\nCo-authored-by: A <a@b.c>")
+	if err == nil {
+		t.Fatal("want a refusal, got none")
+	}
+	if !strings.Contains(out, "trailer") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// TestPreCommitHookAllowsTheLinesOwnBranch proves a branch the line itself cuts, a parsed group's own
+// Branch, commits cleanly through the real installed hooks, not a hand-typed shell copy of its shape.
+func TestPreCommitHookAllowsTheLinesOwnBranch(t *testing.T) {
+	text := "### [TG-10.1] One backlog grammar\n```yaml\ntype: fix\n```\n"
+	parsed := backlog.Parse(text)
+	if len(parsed.Groups) != 1 {
+		t.Fatalf("groups = %d", len(parsed.Groups))
+	}
+	branch := parsed.Groups[0].Branch()
+	root := installedRepo(t, branch)
+	out, err := commitIn(t, root, "--allow-empty", "-m", "fix: x")
+	if err != nil {
+		t.Fatalf("branch = %q, err = %v, out = %q", branch, err, out)
+	}
+}
+
+// TestCommitMsgHookEnforcesARepoPolicysTrailerPattern proves a repo's own .komodo/policy.json widens
+// what the commit-msg hook refuses, since it reads the loaded policy, not a fixed shell pattern list.
+func TestCommitMsgHookEnforcesARepoPolicysTrailerPattern(t *testing.T) {
+	root := installedRepo(t, "fix/x")
+	policy := `{"critical_refs": ["main"], "trailer_patterns": ["(?im)^signed-off-by\\s*[:=]"]}`
+	if err := os.WriteFile(filepath.Join(root, ".komodo", "policy.json"), []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := commitIn(t, root, "--allow-empty", "-m", "fix: x\n\nSigned-off-by: A <a@b.c>")
+	if err == nil {
+		t.Fatal("want a refusal, got none")
+	}
+	if !strings.Contains(out, "trailer") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// TestPreCommitHookSkipsADetachedHead proves a rebase's detached HEAD never trips the branch check.
+func TestPreCommitHookSkipsADetachedHead(t *testing.T) {
+	root := installedRepo(t, "fix/x")
+	if out, err := commitIn(t, root, "--allow-empty", "-m", "fix: seed"); err != nil {
+		t.Fatalf("seed commit: err = %v, out = %q", err, out)
+	}
+	sha, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout := exec.Command("git", "checkout", "-q", strings.TrimSpace(string(sha)))
+	checkout.Dir = root
+	if out, err := checkout.CombinedOutput(); err != nil {
+		t.Fatalf("checkout: %v: %s", err, out)
+	}
+	out, err := commitIn(t, root, "--allow-empty", "-m", "fix: on a detached head")
+	if err != nil {
+		t.Fatalf("err = %v, out = %q", err, out)
 	}
 }

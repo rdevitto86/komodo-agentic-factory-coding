@@ -220,53 +220,6 @@ func TestSettingsDenyEditsToTheHostsOwnConfig(t *testing.T) {
 	}
 }
 
-func TestHeadlessIsSandboxedByDefaultWhereThePlatformHasOne(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	_, args := Headless("run", "TG-01.1")
-	if !platformSandbox(runtime.GOOS) {
-		if strings.Contains(strings.Join(args, " "), "--settings") {
-			t.Fatalf("args = %v; %s has no sandbox to start", args, runtime.GOOS)
-		}
-		return
-	}
-	if len(args) < 2 || args[len(args)-2] != "--settings" {
-		t.Fatalf("args = %v; with no overlay the run is still sandboxed", args)
-	}
-	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	overlay := `{"sandbox_write":["~/go/pkg/mod"],"sandbox_domains":["proxy.golang.org"]}`
-	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, args = Headless("run", "TG-01.1")
-	if len(args) < 2 || args[len(args)-2] != "--settings" {
-		t.Fatalf("args = %v; the run passes the sandbox as inline settings", args)
-	}
-	var settings struct {
-		Sandbox struct {
-			Enabled                  bool  `json:"enabled"`
-			FailIfUnavailable        bool  `json:"failIfUnavailable"`
-			AllowUnsandboxedCommands *bool `json:"allowUnsandboxedCommands"`
-			Filesystem               struct {
-				AllowWrite []string `json:"allowWrite"`
-			} `json:"filesystem"`
-			Network struct {
-				AllowedDomains []string `json:"allowedDomains"`
-			} `json:"network"`
-		} `json:"sandbox"`
-	}
-	if err := json.Unmarshal([]byte(args[len(args)-1]), &settings); err != nil {
-		t.Fatal(err)
-	}
-	s := settings.Sandbox
-	if !s.Enabled || !s.FailIfUnavailable || s.AllowUnsandboxedCommands == nil || *s.AllowUnsandboxedCommands ||
-		len(s.Filesystem.AllowWrite) != 1 || len(s.Network.AllowedDomains) != 1 {
-		t.Fatalf("sandbox = %s", args[len(args)-1])
-	}
-}
-
 func TestTheHookCommandIsAnAbsolutePath(t *testing.T) {
 	root := toolkitRepo(t)
 	raw := body(t, root, filepath.Join(Dir, "settings.json"))
@@ -927,33 +880,6 @@ func TestAWorktreesHookPointsAtTheMainCheckoutsBinary(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), filepath.Join(main, "bin", "komodo")+" guard") {
 		t.Fatalf("settings = %s; a worktree's hook must run the main checkout's binary, which a worktree lacks", raw)
-	}
-}
-
-func TestHeadlessBypassesPromptsAndDrivesOnTheStandardTier(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	name, args := Headless("run", "TG-01.1")
-	joined := strings.Join(args, " ")
-	if name != "claude" || !strings.Contains(joined, "-p /run TG-01.1") {
-		t.Fatalf("command = %s %s", name, joined)
-	}
-	if !strings.Contains(joined, "--permission-mode dontAsk") {
-		t.Fatalf("a headless run cannot answer a prompt: %s", joined)
-	}
-	// With dontAsk, a tool outside the allow list is refused, so the relay's own tools must be listed.
-	allowed := ""
-	for index, arg := range args[:len(args)-1] {
-		if arg == "--allowedTools" {
-			allowed = "," + args[index+1] + ","
-		}
-	}
-	for _, tool := range []string{"Bash", "Edit", "Write", "Agent", "Skill"} {
-		if !strings.Contains(allowed, ","+tool+",") {
-			t.Fatalf("the relay session cannot use %s: %s", tool, joined)
-		}
-	}
-	if !strings.Contains(joined, "--model "+models["standard"]) {
-		t.Fatalf("the driver did not take the standard tier: %s", joined)
 	}
 }
 

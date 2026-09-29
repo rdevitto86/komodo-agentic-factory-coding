@@ -119,13 +119,13 @@ func checkFindings(root, path, base string) []string {
 	return problems
 }
 
-// checkBase is the explicit base, else the group's declared base, else the remote's default branch.
+// checkBase is the explicit base, else the base the line cuts the group from, its epic's branch included.
 func checkBase(root string, parsed backlog.Backlog, groupID, base string) string {
 	if base != "" {
 		return base
 	}
-	if group, ok := parsed.Group(groupID); ok && group.Base() != "" {
-		return group.Base()
+	if group, ok := parsed.Group(groupID); ok {
+		return line.GroupBase(root, parsed, group)
 	}
 	return line.DefaultBase(root)
 }

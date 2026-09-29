@@ -22,8 +22,11 @@ import (
 	"komodo/internal/review"
 )
 
+// errStoppedBeforeShip signals a no-ship drive halted before running the ship station.
+var errStoppedBeforeShip = errors.New("stopped before ship")
+
 // Drive cuts one group's worktree when no run is open for it, then drives it through the conductor to Shipped,
-// merged into its epic branch when cut from one; it resumes a saved state.json and exits non-zero short of Shipped.
+// merged into its epic branch when cut from one; NoShip stops it once the group is ready to ship instead.
 func Drive(options Options) (int, error) {
 	markLine()
 	root := options.Root
@@ -48,7 +51,7 @@ func Drive(options Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	driver, err := newDriver(root, plan, runState.Run, contract, options.PR)
+	driver, err := newDriver(root, plan, runState.Run, contract, options.PR, options.NoShip)
 	if err != nil {
 		return 1, err
 	}
@@ -63,11 +66,20 @@ func Drive(options Options) (int, error) {
 	defer stop()
 	statePath := conductor.StatePath(root, plan.Group)
 	final, err := driveState(ctx, driver, statePath, plan, worktree)
+	if errors.Is(err, errStoppedBeforeShip) {
+		err = nil
+	}
 	if saveErr := conductor.SaveState(statePath, final); saveErr != nil && err == nil {
 		err = saveErr
 	}
 	if err != nil {
 		return 1, err
+	}
+	if options.NoShip {
+		if final.Current != conductor.Shipping {
+			return 1, fmt.Errorf("%s stopped at %s, not ready to ship", plan.Group, final.Current)
+		}
+		return 0, nil
 	}
 	if final.Current != conductor.Shipped {
 		return 1, fmt.Errorf("%s stopped at %s, not Shipped", plan.Group, final.Current)
@@ -141,8 +153,10 @@ func driverContract(root, worktree string) (mount.Contract, error) {
 }
 
 // newDriver builds the conductor's driver for one group: its host, its requests, its wrapped
-// stations, and the shared ledger, saving every move to the group's own state.json.
-func newDriver(root string, plan *line.Plan, run string, contract mount.Contract, client *pr.Client) (*conductor.Driver, error) {
+// stations, and the shared ledger; noShip stops it before the ship station ever runs.
+func newDriver(
+	root string, plan *line.Plan, run string, contract mount.Contract, client *pr.Client, noShip bool,
+) (*conductor.Driver, error) {
 	builder, err := BuilderRequest(root, plan)
 	if err != nil {
 		return nil, err
@@ -156,9 +170,13 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 		heavy.Effort = machine.Effort
 	}
 	stations := &conductor.Line{Root: root, Plan: plan, Client: client}
+	var driverStations conductor.Stations = stations
+	if noShip {
+		driverStations = noShipStations{stations}
+	}
 	return &conductor.Driver{
 		Host:     contract,
-		Stations: stations,
+		Stations: driverStations,
 		Block:    stations.Block,
 		Ledger:   line.Book(root),
 		Run:      run,
@@ -180,9 +198,7 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 		},
 		SeverityFloor: plan.Profile.SeverityFloor,
 		Tasks:         plan.Tasks,
-		Save: func(s conductor.State) error {
-			return conductor.SaveState(conductor.StatePath(root, plan.Group), s)
-		},
+		Save:          saveState(root, plan.Group, noShip),
 		WriteReview: func(group string, result mount.Result) error {
 			return writeReview(root, group, result)
 		},
@@ -194,6 +210,27 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 			return lintBacklog(worktree)
 		},
 	}, nil
+}
+
+// saveState writes a group's state to its state.json; with noShip it stops the drive instead of
+// saving the group's move into Shipping, so the ship station never runs.
+func saveState(root, group string, noShip bool) func(conductor.State) error {
+	return func(s conductor.State) error {
+		if noShip && s.Current == conductor.Shipping {
+			return errStoppedBeforeShip
+		}
+		return conductor.SaveState(conductor.StatePath(root, group), s)
+	}
+}
+
+// noShipStations wraps another Stations, refusing Ship so a resumed no-ship drive never pushes.
+type noShipStations struct {
+	conductor.Stations
+}
+
+// Ship returns errStoppedBeforeShip without pushing or opening a pull request.
+func (noShipStations) Ship(context.Context) error {
+	return errStoppedBeforeShip
 }
 
 // orchestratorRequest fills the headless escalation session's start request: its role's template with

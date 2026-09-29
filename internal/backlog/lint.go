@@ -189,7 +189,104 @@ func Notes(parsed Backlog) []string {
 				group.ID, longest, len(open)))
 		}
 	}
+	for _, task := range parsed.Tasks() {
+		if task.Owner() != "agent" || !task.Ready() {
+			continue
+		}
+		if untestedCaller(task.Files(), task.DoneWhen()) {
+			notes = append(notes, untestedCallerNote(task.ID))
+		}
+	}
 	return notes
+}
+
+// Group-file advice matching Notes: an untested-caller note for each open agent task in one file.
+func NotesGroupFile(file GroupFile) []string {
+	var notes []string
+	for _, task := range file.Tasks {
+		if task.Done {
+			continue
+		}
+		status := task.Status
+		if status == "" {
+			status = file.Status
+		}
+		if status != "READY" && status != "IN_PROGRESS" {
+			continue
+		}
+		owner := task.Owner
+		if owner == "" {
+			owner = "agent"
+		}
+		if owner != "agent" {
+			continue
+		}
+		if untestedCaller(task.Files, task.Checks) {
+			notes = append(notes, untestedCallerNote(task.ID))
+		}
+	}
+	return notes
+}
+
+// untestedCallerNote is the note text for a task whose done_when tests only its own package.
+func untestedCallerNote(id string) string {
+	return fmt.Sprintf("%s: done_when only runs go test of its own package(s); files name no caller such as cmd/komodo, the conductor, or a hook", id)
+}
+
+// untestedCaller reports whether every done_when command is a go test of exactly the packages the
+// task's own files live in, so nothing in files could call the changed code in.
+func untestedCaller(files, doneWhen []string) bool {
+	if len(files) == 0 || len(doneWhen) == 0 {
+		return false
+	}
+	var packages []string
+	for _, command := range doneWhen {
+		pkgs, ok := goTestPackages(command)
+		if !ok {
+			return false
+		}
+		packages = append(packages, pkgs...)
+	}
+	for _, file := range files {
+		clean := strings.ReplaceAll(file, "\\", "/")
+		if strings.HasPrefix(clean, "cmd/") || strings.Contains(clean, "/cmd/") {
+			return false
+		}
+		dir := clean
+		if filepath.Ext(clean) != "" {
+			dir = filepath.Dir(clean)
+		}
+		if !coveredByAPackage(dir, packages) {
+			return false
+		}
+	}
+	return true
+}
+
+// goTestPackages splits a `go test <pkg>...` command into the package paths it names, ok false for
+// any other shape: a flag, another subcommand, or a chained command.
+func goTestPackages(command string) (packages []string, ok bool) {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) < 3 || fields[0] != "go" || fields[1] != "test" {
+		return nil, false
+	}
+	for _, field := range fields[2:] {
+		if !strings.HasPrefix(field, "./") {
+			return nil, false
+		}
+		packages = append(packages, strings.TrimSuffix(strings.TrimPrefix(field, "./"), "/..."))
+	}
+	return packages, len(packages) > 0
+}
+
+// coveredByAPackage reports whether dir is a package go test already ran: itself or one of its subdirectories.
+func coveredByAPackage(dir string, packages []string) bool {
+	for _, pkg := range packages {
+		if dir == pkg || strings.HasPrefix(dir, pkg+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // LintContext reports every context anchor whose file exists under root but holds no matching

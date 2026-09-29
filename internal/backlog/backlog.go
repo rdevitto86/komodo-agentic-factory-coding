@@ -189,6 +189,23 @@ func (g Group) EpicBranch() string {
 	return ""
 }
 
+// groupIDPrefix matches a group heading's own id at a string's start, the same shape groupHeading parses.
+var groupIDPrefix = regexp.MustCompile(`^TG-[\w.]+`)
+
+// kebabSuffix matches one or more hyphenated lowercase words, the shape titleSlug appends to an id.
+var kebabSuffix = regexp.MustCompile(`^(-[a-z0-9]+)+$`)
+
+// IsGroupSlug reports whether a branch fragment could be a group's own slug: its id, optionally
+// followed by its title in kebab case, the exact shape Slug builds.
+func IsGroupSlug(slug string) bool {
+	loc := groupIDPrefix.FindStringIndex(slug)
+	if loc == nil || loc[0] != 0 {
+		return false
+	}
+	rest := slug[loc[1]:]
+	return rest == "" || kebabSuffix.MatchString(rest)
+}
+
 // Slug is the branch fragment naming a group: its ID, then its title in kebab case, capped at 40 characters.
 func (g Group) Slug() string {
 	if text := g.titleSlug(); text != "" {

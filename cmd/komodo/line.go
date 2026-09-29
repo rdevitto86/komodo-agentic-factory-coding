@@ -497,8 +497,8 @@ func runStep(root string, args []string) {
 	printCompactJSON(os.Stdout, next)
 }
 
-// runRun drives one group through the conductor to Shipped, falling back to the headless launcher for
-// --no-ship, a drain, or a dry run, which also skips the preflight and the lock.
+// runRun drives one group through the conductor to Shipped; --no-ship stops it ready to ship instead,
+// and a drain or a dry run skip the preflight and the lock.
 func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")

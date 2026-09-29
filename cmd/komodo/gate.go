@@ -9,12 +9,13 @@ import (
 
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
+	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 )
 
-// runGate runs the local precheck, or builds the local binary and installs it as a git hook.
+// runGate runs the local precheck, one of its git-hook checks, or builds and installs the binary.
 func runGate(root string, args []string) {
 	set := flag.NewFlagSet("gate", flag.ExitOnError)
 	install := set.Bool("install", false, "build the local binary and write the pre-commit and pre-push hooks")
@@ -22,7 +23,26 @@ func runGate(root string, args []string) {
 	rebuild := set.Bool("rebuild", false, "rebuild the local binary when a Go file, go.mod or go.sum changed between --from and --to")
 	from := set.String("from", "", "the commit before the change, for --rebuild")
 	to := set.String("to", "", "the commit after the change, for --rebuild")
+	commitMsg := set.String("commit-msg", "", "refuse an attribution trailer in this message file, for the commit-msg hook")
+	checkBranch := set.Bool("check-branch", false, "refuse a critical ref or a branch outside <type>/<kebab-name>, for the pre-commit hook")
 	_ = set.Parse(args)
+	if *commitMsg != "" {
+		message, err := os.ReadFile(*commitMsg)
+		if err != nil {
+			fail(err)
+		}
+		if problem := gate.TrailerProblem(string(message), guard.Load(root, root)); problem != "" {
+			fail(fmt.Errorf("%s", problem))
+		}
+		return
+	}
+	if *checkBranch {
+		branch := git.Or(root, "symbolic-ref", "--short", "HEAD")
+		if problem := gate.BranchProblem(branch, guard.Load(root, root)); problem != "" {
+			fail(fmt.Errorf("%s", problem))
+		}
+		return
+	}
 	if *rebuild {
 		if err := gate.Rebuild(root, *from, *to, os.Stdout); err != nil {
 			fail(err)
