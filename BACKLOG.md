@@ -4302,7 +4302,7 @@ type: fix
 ## [EPIC-10] Beta fixes
 *Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
 
-* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L23, from the runner-cli, both SDK and shared-infra repos.
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L26, from the runner-cli, both SDK and shared-infra repos.
 
 ### [TG-10.1] One backlog grammar
 ```yaml
@@ -4445,7 +4445,7 @@ type: docs
 
 #### [TSK-10.2.4] Migrate imports a TODO.md or a foreign BACKLOG.md into group files [P: H] [REFINEMENT]
 ```yaml
-files: [cmd/komodo/migrate.go, cmd/komodo/migrate_test.go, internal/backlog/import.go, internal/backlog/import_test.go]
+files: [cmd/komodo/migrate.go, cmd/komodo/migrate_test.go, internal/backlog/import.go, internal/backlog/import_test.go, komodo/skills/plan/SKILL.md, komodo/skills/komodo/SKILL.md]
 done_when:
   - go test ./cmd/komodo/... ./internal/backlog/...
 depends_on: [TSK-10.2.2]
@@ -4455,6 +4455,7 @@ context:
   - "a line it cannot place is printed with its source line number, never dropped silently"
   - "the source file stays until the human deletes it; the output passes komodo lint; --dry-run prints the files it would write"
   - "no model: the planner refines the imported REFINEMENT groups afterwards"
+  - "the plan and komodo skills run migrate first in an adopted repo, so a model finds the command without a person naming it"
 type: feat
 ```
 
@@ -4483,23 +4484,25 @@ type: fix
 
 #### [TSK-10.2.7] Doctor names old-harness leftovers and a gitignored AGENTS.md [P: M] [REFINEMENT]
 ```yaml
-files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go, internal/doctor/doctor.go]
+files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go, internal/doctor/doctor.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
 done_when:
   - go test ./internal/doctor/...
 context:
   - "L19: found by hand in 2 repos: a base key in .komodo/local.json, /assess-* commands, and python3 -m komodo calls"
   - "a gitignored AGENTS.md never reaches a line worktree, so a task there runs without the repo's rules; that one fails, the rest are notes"
+  - "the host's Leftovers (claude.go:423) also names a prototype MCP server in user settings, such as komodo-ollama-bridge; 1.0 ships no MCP"
 type: fix
 ```
 
-#### [TSK-10.2.8] The install gitignores the personal overlay it seeds [P: M] [REFINEMENT]
+#### [TSK-10.2.8] The install gitignores every file it seeds [P: M] [REFINEMENT]
 ```yaml
-files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
+files: [cmd/komodo/host.go, cmd/komodo/host_test.go]
 done_when:
-  - go test ./internal/mount/claude/...
+  - go test ./cmd/komodo/...
 context:
-  - "L22: claude.go:111 seeds CLAUDE.local.md but no AddIgnore names it, so a personal overlay can be committed"
-  - "the same run saw writes to the host's memory folder denied after install; cause not confirmed, not in this task"
+  - "L22: claude.go:110 and :111 seed .claude/settings.local.json and CLAUDE.local.md, but repoIgnores adds only Project changes, so both can be committed"
+  - "repoIgnores also ignores each Seed change, so every host's overlay is covered with no host named outside internal/mount"
+  - "the memory-write denial the same run saw is L24, TSK-10.3.5"
 type: fix
 ```
 
@@ -4508,7 +4511,7 @@ type: fix
 type: fix
 version: 1.0.0-beta.3
 ```
-* **Why:** one standard loads where it does not apply, the guard covers two refs, doctor misses a workflow file, and every push fuzzes (L6, L7, L8, L23).
+* **Why:** one standard loads where it does not apply, the guard covers two refs, doctor misses a workflow file, every push fuzzes, and the guard refuses a host's own memory (L6, L7, L8, L23, L24).
 
 #### [TSK-10.3.1] standards-cicd loads only for a repo with a pipeline, and accepts non-hosted runners [P: M] [REFINEMENT]
 ```yaml
@@ -4554,12 +4557,24 @@ context:
 type: perf
 ```
 
+#### [TSK-10.3.5] The guard allows the write paths a host mount declares [P: C] [REFINEMENT]
+```yaml
+files: [internal/mount/registry.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, internal/guard/paths.go, internal/guard/paths_test.go]
+done_when:
+  - go test ./internal/mount/... ./internal/guard/...
+context:
+  - "L24: isAllowedWrite (internal/guard/paths.go:12) allows only the worktree and temp dirs, so every write to ~/.claude/projects/<repo>/memory/ is refused once the guard hook is installed"
+  - "Host gains a WritePaths func; the claude mount returns its project memory dir; the guard allows those and nothing else outside the root"
+  - "a config path still wins: WritePaths never opens ~/.komodo or a host's settings"
+type: fix
+```
+
 ### [TG-10.4] Usage pacing
 ```yaml
 type: fix
 version: 1.0.0-beta.3
 ```
-* **Why:** pacing never pauses, and the profile's concurrency and billing view is wrong (L9, L10, L11).
+* **Why:** pacing never pauses, the profile's concurrency and billing view is wrong, and only Claude is paced at all (L9, L10, L11, L25, L26).
 
 #### [TSK-10.4.1] The plan probe reads the usage the current CLI writes [P: C] [REFINEMENT]
 ```yaml
@@ -4571,14 +4586,15 @@ context:
 type: fix
 ```
 
-#### [TSK-10.4.2] One concurrency table serves the conductor and the profile [P: H] [REFINEMENT]
+#### [TSK-10.4.2] Each host mount owns its concurrency, and the conductor and profile read it [P: H] [REFINEMENT]
 ```yaml
-files: [internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
+files: [internal/mount/registry.go, internal/mount/claude/claude.go, internal/mount/codex/codex.go, internal/mount/ollama/ollama.go, internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
 done_when:
-  - go test ./internal/conductor/... ./internal/profile/...
+  - go test ./internal/mount/... ./internal/conductor/... ./internal/profile/...
 context:
   - "L10: schedule.go:9 says Max 5x 2, Max 20x 4; profile.go says 4 and 6"
-  - "the owner picks the right numbers; profile.go becomes the one table and schedule.go reads it"
+  - "L25: both tables key on Claude plan names outside internal/mount, which the repo's host rule forbids"
+  - "Host gains a Concurrency(plan) func; the owner picks the Claude numbers; schedule.go and profile.go read it and name no plan"
 type: fix
 ```
 
@@ -4590,6 +4606,18 @@ done_when:
 depends_on: [TSK-10.4.1, TSK-10.4.2]
 context:
   - "L11: limits.go never reads hasExtraUsageEnabled or billingType"
+type: fix
+```
+
+#### [TSK-10.4.4] Codex and the local machine pace instead of running unbounded [P: M] [REFINEMENT]
+```yaml
+files: [internal/mount/codex/limits.go, internal/mount/codex/codex_test.go, internal/mount/ollama/ollama.go, internal/mount/ollama/ollama_test.go]
+done_when:
+  - go test ./internal/mount/codex/... ./internal/mount/ollama/...
+depends_on: [TSK-10.4.2]
+context:
+  - "L26: codex Probe (internal/mount/codex/limits.go:12) always returns no usage, and ollama sets no concurrency, so TG-10.4 paces Claude only"
+  - "codex reads the usage its CLI reports, or says in the profile that pacing is off; ollama defaults to 1 at a time, the overlay may raise it"
 type: fix
 ```
 
@@ -4636,23 +4664,25 @@ version: 1.0.0-beta.3
 
 #### [TSK-10.6.1] A rephase command moves an open epic to a new version [P: H] [REFINEMENT]
 ```yaml
-files: [cmd/komodo/rephase.go, cmd/komodo/rephase_test.go, cmd/komodo/main.go, internal/line/rephase.go, internal/line/rephase_test.go]
+files: [cmd/komodo/rephase.go, cmd/komodo/rephase_test.go, cmd/komodo/main.go, internal/line/rephase.go, internal/line/rephase_test.go, komodo/skills/release/SKILL.md]
 done_when:
   - go test ./cmd/komodo/... ./internal/line/...
 context:
   - "L20: decision 0029 fixes the epic branch to feat/<version>; re-phasing runner-cli nearly orphaned PR #15"
   - "rewrites every group's version, pushes feat/<new> from feat/<old>, retargets each open group PR, then asks before deleting feat/<old>"
+  - "the release skill's bump step runs rephase for an epic with an open branch, not a bare version edit"
 type: feat
 ```
 
 #### [TSK-10.6.2] A session claims its branch, and another session's claim stops a write [P: H] [REFINEMENT]
 ```yaml
-files: [internal/line/claim.go, internal/line/claim_test.go, internal/guard/policy_test.go]
+files: [internal/line/claim.go, internal/line/claim_test.go, internal/guard/policy_test.go, komodo/AGENTS.md]
 done_when:
   - go test ./internal/line/... ./internal/guard/...
 context:
   - "L21: another session's merge, revert and uncommitted work sat on #263's branch unseen; this session nearly overwrote it"
   - "a claim names the session and time under the git common dir; a stale claim is reported, never taken silently"
+  - "komodo/AGENTS.md's Git section tells every model to check the claim before writing a shared branch"
 type: feat
 ```
 
