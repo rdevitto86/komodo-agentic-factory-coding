@@ -4756,7 +4756,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.7.5] Line tests seed group files through one shared helper [P: H] [REFINEMENT]
+#### [TSK-10.7.5] Line tests seed group files through one shared helper [P: H] [DONE]
 ```yaml
 files: [internal/backlog/backlogtest, internal/line]
 done_when:
@@ -4768,7 +4768,7 @@ context:
 type: test
 ```
 
-#### [TSK-10.7.6] Every other package's tests seed group files [P: H] [REFINEMENT]
+#### [TSK-10.7.6] Every other package's tests seed group files [P: H] [DONE]
 ```yaml
 files: [cmd/komodo, internal/run, internal/doctor, internal/eval, internal/conductor, internal/hooks]
 done_when:
