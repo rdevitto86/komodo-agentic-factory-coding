@@ -9,6 +9,12 @@ import (
 
 var statusToken = regexp.MustCompile(`\[[A-Z_]+\]\s*$`)
 
+// groupFileCheckboxPrefix matches a group file task's checkbox, open or ticked.
+var groupFileCheckboxPrefix = regexp.MustCompile(`^-\s+\[[ xX]\]`)
+
+// groupFileStatusFieldLine matches a group file task's own status override field.
+var groupFileStatusFieldLine = regexp.MustCompile(`^\s{2}-\s+status:\s*.*$`)
+
 // SetStatus rewrites one task heading's status token, leaving every other byte alone.
 func SetStatus(text, taskID, status string) (string, error) {
 	if !contains(Statuses, status) {
@@ -25,6 +31,45 @@ func SetStatus(text, taskID, status string) (string, error) {
 		return strings.Join(lines, ""), nil
 	}
 	return "", fmt.Errorf("task %s not found", taskID)
+}
+
+// SetGroupFileTaskStatus writes a group file task's tick or blocker: DONE flips its checkbox, any
+// other status sets or replaces its own status field, leaving every other byte alone.
+func SetGroupFileTaskStatus(text, taskID, status string) (string, error) {
+	if !contains(Statuses, status) {
+		return "", fmt.Errorf("unknown status %q", status)
+	}
+	file := ParseGroupFile(text)
+	var task *GroupTask
+	for index := range file.Tasks {
+		if file.Tasks[index].ID == taskID {
+			task = &file.Tasks[index]
+			break
+		}
+	}
+	if task == nil {
+		return "", fmt.Errorf("task %s not found", taskID)
+	}
+	lines := strings.SplitAfter(text, "\n")
+	if status == "DONE" {
+		lines[task.Line] = groupFileCheckboxPrefix.ReplaceAllString(lines[task.Line], "- [x]")
+		return strings.Join(lines, ""), nil
+	}
+	end := task.Line + 1
+	for end < len(lines) && groupFileFieldLine.MatchString(strings.TrimRight(lines[end], "\r\n")) {
+		end++
+	}
+	statusLine := fmt.Sprintf("  - status: %s\n", status)
+	for index := task.Line + 1; index < end; index++ {
+		if groupFileStatusFieldLine.MatchString(strings.TrimRight(lines[index], "\r\n")) {
+			lines[index] = statusLine
+			return strings.Join(lines, ""), nil
+		}
+	}
+	out := append([]string{}, lines[:end]...)
+	out = append(out, statusLine)
+	out = append(out, lines[end:]...)
+	return strings.Join(out, ""), nil
 }
 
 // RenderTask renders a heading plus its fenced block in the grammar.

@@ -1,6 +1,9 @@
 package backlog
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const groupFileSample = "## [TG-04.1] Tokens report their expiry [P: H] [READY]\n\n" +
 	"```yaml\ntype: feat\nversion: 1.4.0\nepic: EPIC-04\ndepends_on: []\n```\n\n" +
@@ -136,6 +139,55 @@ func TestParseGroupFileReportsAMalformedHeading(t *testing.T) {
 	}
 	if len(file.Problems) == 0 {
 		t.Fatal("want a problem for the malformed heading")
+	}
+}
+
+// TestSetGroupFileTaskStatusTicksTheCheckbox proves a DONE status flips only that task's checkbox.
+func TestSetGroupFileTaskStatusTicksTheCheckbox(t *testing.T) {
+	out, err := SetGroupFileTaskStatus(groupFileSample, "TSK-04.1.1", "DONE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "- [x] **TSK-04.1.1**") {
+		t.Fatalf("checkbox not ticked: %s", out)
+	}
+	file := ParseGroupFile(out)
+	if !file.Tasks[0].Done || !file.Tasks[1].Done {
+		t.Fatalf("tasks = %+v", file.Tasks)
+	}
+}
+
+// TestSetGroupFileTaskStatusSetsAndReplacesTheStatusField proves a non-done status writes a status
+// field once, then replaces it in place on a second call.
+func TestSetGroupFileTaskStatusSetsAndReplacesTheStatusField(t *testing.T) {
+	out, err := SetGroupFileTaskStatus(groupFileSample, "TSK-04.1.1", "BLOCKED")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := ParseGroupFile(out)
+	if file.Tasks[0].Status != "BLOCKED" {
+		t.Fatalf("status = %q, want BLOCKED", file.Tasks[0].Status)
+	}
+	out, err = SetGroupFileTaskStatus(out, "TSK-04.1.1", "READY")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file = ParseGroupFile(out)
+	if file.Tasks[0].Status != "READY" {
+		t.Fatalf("status = %q, want READY", file.Tasks[0].Status)
+	}
+	if strings.Count(out, "- status:") != 1 {
+		t.Fatalf("status field written more than once:\n%s", out)
+	}
+}
+
+// TestSetGroupFileTaskStatusRejectsAnUnknownTaskOrStatus proves both failure paths report an error.
+func TestSetGroupFileTaskStatusRejectsAnUnknownTaskOrStatus(t *testing.T) {
+	if _, err := SetGroupFileTaskStatus(groupFileSample, "TSK-99.9.9", "DONE"); err == nil {
+		t.Fatal("want an error for an unknown task")
+	}
+	if _, err := SetGroupFileTaskStatus(groupFileSample, "TSK-04.1.1", "NOPE"); err == nil {
+		t.Fatal("want an error for an unknown status")
 	}
 }
 

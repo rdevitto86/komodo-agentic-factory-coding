@@ -190,7 +190,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome, Lines: lines})
 	}()
-	if err := tickTasks(plan, group, path, rootParsed, live, result); err != nil {
+	if err := tickTasks(plan, group, rootParsed, live, result); err != nil {
 		return nil, err
 	}
 	result.Draft = len(result.Blocked) > 0
@@ -328,10 +328,10 @@ func markReady(client *pr.Client, url string, draft bool) error {
 	return nil
 }
 
-// tickTasks sorts the plan's tasks into done and blocked, writes each tick and blocker into the group's
-// backlog at path, and writes its changelog fragment, so the group's commit carries both.
+// tickTasks sorts the plan's tasks into done and blocked, writes each tick and blocker into the
+// group's own backlog, and writes its changelog fragment, so the group's commit carries both.
 func tickTasks(
-	plan *Plan, group, path string, rootParsed backlog.Backlog, live map[string]TaskStatus, result *ShipResult,
+	plan *Plan, group string, rootParsed backlog.Backlog, live map[string]TaskStatus, result *ShipResult,
 ) error {
 	for _, task := range plan.Tasks {
 		current, ok := rootParsed.Task(task.ID)
@@ -346,14 +346,14 @@ func tickTasks(
 		}
 	}
 	for _, taskID := range result.Done {
-		if err := writeStatus(path, taskID, "DONE"); err != nil {
+		if err := writeStatus(group, taskID, "DONE"); err != nil {
 			return err
 		}
 	}
 	// This group's ticks and blockers land in BACKLOG.md once, in its commit; a status in flight never does.
 	for _, task := range plan.Tasks {
 		if status, ok := live[task.ID]; ok && backlogStatus(status.Status) {
-			if err := writeStatus(path, task.ID, status.Status); err != nil {
+			if err := writeStatus(group, task.ID, status.Status); err != nil {
 				return err
 			}
 		}
@@ -399,12 +399,12 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	if fixes, err := finishCatchUp(group, base, declared); err != nil || len(fixes) > 0 {
 		return fixes, err
 	}
-	if path, err := backlog.Find(group); err == nil {
+	if _, err := backlog.Find(group); err == nil {
 		rootParsed, _, err := LoadBacklog(root)
 		if err != nil {
 			return nil, err
 		}
-		if err := tickTasks(plan, group, path, rootParsed, LoadStatus(root), &ShipResult{}); err != nil {
+		if err := tickTasks(plan, group, rootParsed, LoadStatus(root), &ShipResult{}); err != nil {
 			return nil, err
 		}
 	}
