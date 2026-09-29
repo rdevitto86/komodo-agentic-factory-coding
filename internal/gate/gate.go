@@ -287,14 +287,21 @@ else
   fi
   cmd="$bin"
 fi
+# Commit rules run through the main checkout's built binary when it has one, so a branch whose source
+# predates a rule still meets it; the gate itself still runs from the checkout being committed.
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+rules="$cmd"
+for built in "${common%/.git}"/bin/komodo-*; do
+  if [ -x "$built" ] && [ "${built%.built-from}" = "$built" ]; then rules="$built"; fi
+done
 case "$name" in
   commit-msg)
     # The message file is the hook's one argument; the binary reads the loaded policy's trailer patterns.
-    exec $cmd gate --commit-msg "$1"
+    exec $rules gate --commit-msg "$1"
     ;;
   pre-commit)
     # A critical ref or a branch outside <type>/<kebab-name> is refused before the rest of the gate runs.
-    $cmd gate --check-branch || exit 1
+    $rules gate --check-branch || exit 1
     exec $cmd gate
     ;;
   # A push carries more weight than a commit, so it also fuzzes the parsers for a few seconds each.
