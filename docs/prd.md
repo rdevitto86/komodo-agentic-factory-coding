@@ -197,7 +197,7 @@ Each requirement is met only when its proof exits zero. A review can file a bug 
 | REQ-34 | No model session holds a forge credential. | Must | An eval case: a session's environment and credential paths contain no forge token. |
 | REQ-35 | Every line session runs in the OS sandbox on platforms that have one; the line refuses to run there without it. | Must | A write outside the worktree fails; `komodo run` exits non-zero with the sandbox off. |
 | REQ-36 | Check fails on edits outside the group's files, commits made by a model, or changed refs, git hooks or git config. | Must | Unit tests, one per case. |
-| REQ-37 | Every hook has one job, one stage and a refusal limit. Refusals past the limit end the session as blocked instead of looping. | Must | Unit tests per hook; the eval report shows no session past a refusal limit. |
+| REQ-37 | Every hook has one job, one stage and a refusal limit for a line session. Refusals past the limit end the session as blocked instead of looping. | Must | Unit tests per hook; the eval report shows no session past a refusal limit. |
 | REQ-38 | Each role's default allow list covers every command its stage needs. The conductor, never an agent, switches branches, syncs with the base and cleans up. | Must | Golden runs record no refusal of an allow-listed command. |
 
 ### Orchestrator and harness

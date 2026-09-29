@@ -49,7 +49,6 @@ const usage = `komodo: the code assembly line.
   komodo abandon <group>      Remove a group's worktree and branch on purpose, and mark its tasks BLOCKED
   komodo ship <group>         Publish a group a missing credential stopped: push, draft PR, labels
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
-  komodo stage <s> [group]    Run one stage ad hoc, build, review or ship, on a group or the current branch
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
   komodo threads --resolve id Mark one review thread resolved
@@ -144,8 +143,6 @@ func main() {
 		runFinishShip(root, os.Args[2:])
 	case "sync":
 		runSync(root, os.Args[2:])
-	case "stage":
-		runStage(root, os.Args[2:])
 	case "status":
 		runStatus(root, os.Args[2:])
 	case "step":
