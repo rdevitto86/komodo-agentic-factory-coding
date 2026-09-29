@@ -4313,7 +4313,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.1.2] The backlog rule requires `done_when` as lint does [P: H] [REFINEMENT]
+#### [TSK-10.1.2] The backlog rule requires `done_when` as lint does [P: H] [DONE]
 ```yaml
 files: [komodo/rules/backlog.md]
 done_when:
@@ -4390,7 +4390,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.1.9] Shipped rules and skills send work to docs/backlog/, never BACKLOG.md [P: H] [REFINEMENT]
+#### [TSK-10.1.9] Shipped rules and skills send work to docs/backlog/, never BACKLOG.md [P: H] [DONE]
 ```yaml
 files: [komodo/AGENTS.md, komodo/skills/standards-c/SKILL.md, komodo/skills/standards-cdk/SKILL.md, komodo/skills/standards-csharp/SKILL.md, komodo/skills/standards-java/SKILL.md, komodo/skills/standards-rust/SKILL.md]
 done_when:
@@ -4447,7 +4447,7 @@ context:
 type: feat
 ```
 
-#### [TSK-10.2.3] The planner maps a foreign repo's docs into the four spec files [P: M] [REFINEMENT]
+#### [TSK-10.2.3] The planner maps a foreign repo's docs into the four spec files [P: M] [DONE]
 ```yaml
 files: [komodo/roles/planner.md, komodo/skills/plan/SKILL.md]
 done_when:
@@ -4528,7 +4528,7 @@ version: 1.0.0-beta.3
 ```
 * **Why:** one standard loads where it does not apply, the guard covers two refs, doctor misses a workflow file, every push fuzzes, and the guard refuses a host's own memory (L6, L7, L8, L23, L24).
 
-#### [TSK-10.3.1] standards-cicd loads only for a repo with a pipeline, and accepts non-hosted runners [P: M] [REFINEMENT]
+#### [TSK-10.3.1] standards-cicd loads only for a repo with a pipeline, and accepts non-hosted runners [P: M] [DONE]
 ```yaml
 files: [komodo/skills/standards-cicd/SKILL.md]
 done_when:
@@ -4643,7 +4643,7 @@ version: 1.0.0-beta.3
 ```
 * **Why:** the rules define each phase but never say when a planner picks one, or which segment to bump (L13).
 
-#### [TSK-10.5.1] The backlog rule says how a planner picks a group's version [P: H] [REFINEMENT]
+#### [TSK-10.5.1] The backlog rule says how a planner picks a group's version [P: H] [DONE]
 ```yaml
 files: [komodo/rules/backlog.md, komodo/skills/plan/SKILL.md, komodo/roles/planner.md, komodo/skills/release/SKILL.md, README.md]
 done_when:
