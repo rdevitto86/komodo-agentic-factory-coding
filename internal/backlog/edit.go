@@ -175,6 +175,18 @@ func AppendGroupFileTask(text, title string, files, accept []string) (string, st
 	return out, taskID, nil
 }
 
+// AppendGroupFileTaskWith adds a checkbox task at the end of a group file's text, using every field
+// task already carries except its id, which is assigned next in sequence.
+func AppendGroupFileTaskWith(text string, task GroupTask) (string, string, error) {
+	file := ParseGroupFile(text)
+	if file.ID == "" {
+		return "", "", fmt.Errorf("no group heading found")
+	}
+	task.ID = NextGroupFileTaskID(file)
+	out := strings.TrimRight(text, "\n") + "\n" + RenderGroupFileTask(task)
+	return out, task.ID, nil
+}
+
 // backtickEach wraps each path in backticks, as a group file's files line quotes them.
 func backtickEach(paths []string) []string {
 	out := make([]string, len(paths))
