@@ -102,9 +102,12 @@ func main() {
 	case "backlog":
 		runBacklog(root)
 	case "add":
-		if _, err := backlog.Find(root); err == nil {
+		if names, _ := groupFileNames(root); len(names) > 0 {
+			runBacklogAdd(root, os.Args[2:])
+		} else if _, err := backlog.Find(root); err == nil {
 			runAdd(root, os.Args[2:])
 		} else {
+			// Neither exists yet: a fresh repo opens its first group file, the current grammar.
 			runBacklogAdd(root, os.Args[2:])
 		}
 	case "next":

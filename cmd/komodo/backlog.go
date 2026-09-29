@@ -266,9 +266,10 @@ func findGroupFile(root, groupID string) (path, text string, found bool, err err
 	return "", "", false, nil
 }
 
-// runBacklogAdd writes a new group file when groupID has none yet, else appends a task to its file.
+// runBacklogAdd is add's group-file path: it writes a new group file when groupID has none yet,
+// else appends a task to its file.
 func runBacklogAdd(root string, args []string) {
-	set := flag.NewFlagSet("backlog-add", flag.ExitOnError)
+	set := flag.NewFlagSet("add", flag.ExitOnError)
 	files := set.String("files", "", "comma-separated paths the task touches")
 	accept := set.String("accept", "", "comma-separated acceptance lines")
 	priority := set.String("priority", "M", "C, H, M, or L")
@@ -279,7 +280,7 @@ func runBacklogAdd(root string, args []string) {
 	positional, rest := splitFlags(args, "files", "accept", "priority", "status", "type", "version", "epic")
 	_ = set.Parse(rest)
 	if len(positional) < 2 {
-		fail(fmt.Errorf("usage: komodo backlog add <group> <title> [--files a,b]"))
+		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b]"))
 	}
 	groupID, title := positional[0], strings.Join(positional[1:], " ")
 	path, text, found, err := findGroupFile(root, groupID)
