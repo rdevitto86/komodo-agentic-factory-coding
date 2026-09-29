@@ -788,9 +788,13 @@ func (l *Line) Check(ctx context.Context) ([]string, error) {
 func (l *Line) rerun(ctx context.Context) ([]string, error) {
 	worktree := line.WorktreePath(l.Root, l.Plan.Worktree)
 	base := line.StartRef(worktree, l.Plan.Base)
-	// Ship also stages BACKLOG.md and the group's release note, so both count as in scope.
+	// Ship also stages the group's own backlog file and its release note, so both count as in scope.
 	files := []string{filepath.ToSlash(changelog.FragmentPath("", l.Plan.Version, l.Plan.Group))}
-	if found, err := backlog.Find(worktree); err == nil {
+	if found, _, ok, err := backlog.FindGroupFile(worktree, l.Plan.Group); err == nil && ok {
+		if rel, err := filepath.Rel(worktree, found); err == nil {
+			files = append(files, filepath.ToSlash(rel))
+		}
+	} else if found, err := backlog.Find(worktree); err == nil {
 		if rel, err := filepath.Rel(worktree, found); err == nil {
 			files = append(files, filepath.ToSlash(rel))
 		}

@@ -28,23 +28,16 @@ func Abandon(root, group string, at time.Time) error {
 	if guard.Load(root, root).IsCritical(run.Branch) {
 		return fmt.Errorf("%s runs on %s, a critical ref; nothing was removed", group, run.Branch)
 	}
-	path, err := backlog.Find(root)
-	if err != nil {
-		return err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
 	state := abandonedState
 	if saved, err := LoadState(StatePath(root, group)); err == nil && saved.Current != "" {
 		state = string(saved.Current)
 	}
-	noted, err := backlog.AddNote(string(data), group, backlog.BlockerNote{
+	note := backlog.BlockerNote{
 		At: at, Run: run.Run, State: state,
 		Items: []string{"abandoned on purpose with `komodo abandon`; its worktree and branch are removed"},
 		Needs: "a person to rework the group and set it READY",
-	})
+	}
+	path, noted, err := abandonNote(root, group, note)
 	if err != nil {
 		return err
 	}
@@ -73,4 +66,25 @@ func Abandon(root, group string, at time.Time) error {
 		return err
 	}
 	return os.RemoveAll(line.RunDir(root, group))
+}
+
+// abandonNote writes note into the group's own docs/backlog file when root holds one, else the
+// flat BACKLOG.md, returning the path and the text to write there.
+func abandonNote(root, group string, note backlog.BlockerNote) (path, noted string, err error) {
+	if groupPath, text, found, err := backlog.FindGroupFile(root, group); err != nil {
+		return "", "", err
+	} else if found {
+		out, err := backlog.AddGroupFileNote(text, note)
+		return groupPath, out, err
+	}
+	path, err = backlog.Find(root)
+	if err != nil {
+		return "", "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+	noted, err = backlog.AddNote(string(data), group, note)
+	return path, noted, err
 }

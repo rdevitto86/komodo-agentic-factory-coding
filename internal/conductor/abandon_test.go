@@ -12,9 +12,9 @@ import (
 	"komodo/internal/line"
 )
 
-const abandonBacklog = "### [TG-1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
-	"#### [TSK-1.1] Done already [P: C] [DONE]\n```yaml\nfiles: [a.go]\ndone_when:\n  - true\n```\n\n" +
-	"#### [TSK-1.2] Still open [P: C] [READY]\n```yaml\nfiles: [b.go]\ndone_when:\n  - true\n```\n"
+const abandonBacklog = "## [TG-1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+	"- [x] **TSK-1.1** Done already\n  - files: `a.go`\n\n" +
+	"- [ ] **TSK-1.2** Still open\n  - files: `b.go`\n"
 
 // abandonRepo builds a repo whose one group was cut into its own worktree and branch, with a run record.
 func abandonRepo(t *testing.T) (root, worktree string) {
@@ -29,7 +29,7 @@ func abandonRepo(t *testing.T) (root, worktree string) {
 	gitIn(root, "init", "-b", "main")
 	gitIn(root, "config", "user.email", "a@example.com")
 	gitIn(root, "config", "user.name", "a")
-	writeIn(t, root, "BACKLOG.md", abandonBacklog)
+	writeIn(t, root, "docs/backlog/TG-1-a-group.md", abandonBacklog)
 	gitIn(root, "add", "-A")
 	gitIn(root, "commit", "-m", "seed")
 	worktree = filepath.Join(root, line.StateDir, "wt", "TG-1")
@@ -60,7 +60,7 @@ func TestAbandonRemovesTheWorktreeAndBranchAndBlocksTheGroup(t *testing.T) {
 	if _, err := os.Stat(line.RunDir(root, "TG-1")); !os.IsNotExist(err) {
 		t.Fatalf("run dir stat = %v, want the run record removed", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
+	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-1-a-group.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,8 +68,8 @@ func TestAbandonRemovesTheWorktreeAndBranchAndBlocksTheGroup(t *testing.T) {
 	for _, want := range []string{
 		"> **Blocked** 2026-09-27 10:30, run run-1, at Blocked.",
 		"abandoned on purpose with `komodo abandon`",
-		"[TSK-1.1] Done already [P: C] [DONE]",
-		"[TSK-1.2] Still open [P: C] [BLOCKED]",
+		"- [x] **TSK-1.1**",
+		"[TG-1] A group [P: C] [BLOCKED]",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("backlog =\n%s\nwant %q", text, want)
@@ -82,7 +82,7 @@ func TestAbandonRefusesAGroupWithNoRunAndChangesNothing(t *testing.T) {
 	if err := Abandon(root, "TG-9", time.Now()); err == nil {
 		t.Fatal("abandon = nil, want a group never cut refused")
 	}
-	data, err := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
+	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-1-a-group.md"))
 	if err != nil || string(data) != abandonBacklog {
 		t.Fatalf("backlog = %q, %v; want it untouched", data, err)
 	}
@@ -103,7 +103,7 @@ func TestAbandonFindsTheDefaultWorktreeOfARunWithNoSavedState(t *testing.T) {
 	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
 		t.Fatalf("worktree stat = %v, want the default worktree removed", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
+	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-1-a-group.md"))
 	if err != nil || !strings.Contains(string(data), "run run-1, at "+abandonedState+".") {
 		t.Fatalf("backlog = %s, %v; want the note at %s", data, err, abandonedState)
 	}
@@ -123,7 +123,7 @@ func TestAbandonRefusesWhatItCannotNoteAndRemovesNothing(t *testing.T) {
 			}
 		}},
 		{"the repo has no backlog", "TG-1", func(t *testing.T, root string) {
-			if err := os.Remove(filepath.Join(root, "BACKLOG.md")); err != nil {
+			if err := os.RemoveAll(filepath.Join(root, "docs", "backlog")); err != nil {
 				t.Fatal(err)
 			}
 		}},
