@@ -868,3 +868,171 @@ func TestCommentsCheckOnlyFlagsAStagedLine(t *testing.T) {
 		t.Fatalf("out = %q, want the pre-existing Old left alone", out.String())
 	}
 }
+
+// pushRepo builds a root with a seed commit, then a second commit changing rel, returning both commits.
+func pushRepo(t *testing.T, rel, body string) (root, from, to string) {
+	t.Helper()
+	root = t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	from = gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", rel)
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "change "+rel)
+	to = gitCommand(t, root, "rev-parse", "HEAD")
+	return root, from, to
+}
+
+func TestPushedFilesListsWhatChangedBetweenTwoCommits(t *testing.T) {
+	root, from, to := pushRepo(t, "docs/notes.md", "notes\n")
+	paths, err := PushedFiles(root, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "docs/notes.md" {
+		t.Fatalf("paths = %v, want [docs/notes.md]", paths)
+	}
+}
+
+func TestPushedFilesDiffsAgainstTheEmptyTreeForANewBranch(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+
+	paths, err := PushedFiles(root, zeroOID, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "a.go" {
+		t.Fatalf("paths = %v, want [a.go]", paths)
+	}
+}
+
+func TestPushedFuzzTargetsNamesOnlyATouchedPackage(t *testing.T) {
+	touched := PushedFuzzTargets([]string{"internal/backlog/parse.go", "docs/notes.md"})
+	if len(touched) != 1 || touched[0].Name != "FuzzParse" {
+		t.Fatalf("touched = %v, want only FuzzParse", touched)
+	}
+}
+
+func TestPushedFuzzTargetsIsEmptyWithoutATouchedPackage(t *testing.T) {
+	if touched := PushedFuzzTargets([]string{"docs/notes.md"}); len(touched) != 0 {
+		t.Fatalf("touched = %v, want none", touched)
+	}
+}
+
+func TestPushChecksDropsBuildForAMarkdownOnlyPush(t *testing.T) {
+	root, from, to := pushRepo(t, "docs/notes.md", "notes\n")
+	build := []Check{{Name: "go test"}}
+	checks, err := PushChecks(root, from, to, "", build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 0 {
+		t.Fatalf("checks = %v, want none for a markdown-only push", checks)
+	}
+}
+
+func TestPushChecksKeepsBuildWhenAGoFileChanged(t *testing.T) {
+	root, from, to := pushRepo(t, "a.go", "package a\n")
+	build := []Check{{Name: "go test"}}
+	checks, err := PushChecks(root, from, to, "", build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 || checks[0].Name != "go test" {
+		t.Fatalf("checks = %v, want [go test]", checks)
+	}
+}
+
+func TestPushChecksOnlyFuzzesATouchedPackage(t *testing.T) {
+	root, from, to := pushRepo(t, "internal/backlog/parse.go", "package backlog\n")
+	checks, err := PushChecks(root, from, to, "1s", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 || checks[0].Name != "fuzz FuzzParse" {
+		t.Fatalf("checks = %v, want only fuzz FuzzParse", checks)
+	}
+}
+
+func TestPushChecksFuzzesNothingWithoutATouchedFuzzPackage(t *testing.T) {
+	root, from, to := pushRepo(t, "docs/notes.md", "notes\n")
+	checks, err := PushChecks(root, from, to, "1s", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 0 {
+		t.Fatalf("checks = %v, want none", checks)
+	}
+}
+
+// toolkitCheckoutFor builds a git repo whose cmd/komodo/main.go marks it as the toolkit's own checkout,
+// so the hook script gates it with "go run ./cmd/komodo" instead of a built binary.
+func toolkitCheckoutFor(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q", "-b", "main")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// TestPrePushHookScopesTheGateToTheRefsGitPasses proves the hook reads git's pre-push stdin protocol
+// and passes the pushed range, so the gate can scope its build and fuzz checks to it.
+func TestPrePushHookScopesTheGateToTheRefsGitPasses(t *testing.T) {
+	root := toolkitCheckoutFor(t)
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho go \"$@\"\n")
+	script := filepath.Join(fakes, "pre-push")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = root
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	cmd.Stdin = strings.NewReader("refs/heads/main abc123 refs/heads/main def456\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pre-push: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "gate --fuzz 10s --from def456 --to abc123") {
+		t.Fatalf("out = %q, want the pushed range passed through", out)
+	}
+}
+
+func TestPrePushHookFallsBackWithoutStdin(t *testing.T) {
+	root := toolkitCheckoutFor(t)
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho go \"$@\"\n")
+	script := filepath.Join(fakes, "pre-push")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = root
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	cmd.Stdin = strings.NewReader("")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pre-push: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "gate --fuzz 10s") || strings.Contains(string(out), "--from") {
+		t.Fatalf("out = %q, want the plain fuzz lane without a range", out)
+	}
+}

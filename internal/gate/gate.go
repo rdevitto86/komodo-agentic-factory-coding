@@ -144,6 +144,9 @@ const BuiltFrom = ".built-from"
 // zeroOID is git's null object id, the "from" a checkout hook passes when there was no prior commit.
 const zeroOID = "0000000000000000000000000000000000000000"
 
+// emptyTreeOID is git's empty tree hash, the "from" side of a diff for a push with no prior commit.
+const emptyTreeOID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 // changedBuildInputs reports whether a .go file, go.mod, or go.sum differs between two commits,
 // treating the checkout hook's zero OID for a first commit as no change to rebuild.
 func changedBuildInputs(root, from, to string) (bool, error) {
@@ -271,6 +274,12 @@ fi
 case "$name" in
   # A push carries more weight than a commit, so it also fuzzes the parsers for a few seconds each.
   pre-push)
+    # git passes each pushed ref's old and new commit on stdin; the first line scopes the push,
+    # so build and fuzz checks run only for what it touched.
+    read -r localref localsha remoteref remotesha 2>/dev/null || true
+    if [ -n "$remotesha" ]; then
+      exec $cmd gate --fuzz 10s --from "$remotesha" --to "$localsha"
+    fi
     exec $cmd gate --fuzz 10s
     ;;
   post-merge)
@@ -408,12 +417,78 @@ var FuzzTargets = []FuzzTarget{
 
 // FuzzChecks builds one check per fuzz target, each run for the given duration such as 10s.
 func FuzzChecks(root, duration string) []Check {
+	return FuzzChecksFor(root, duration, FuzzTargets)
+}
+
+// FuzzChecksFor builds one check per named fuzz target, each run for the given duration such as 10s.
+func FuzzChecksFor(root, duration string, targets []FuzzTarget) []Check {
 	var checks []Check
-	for _, target := range FuzzTargets {
+	for _, target := range targets {
 		checks = append(checks, Command("fuzz "+target.Name, root,
 			"go", "test", "-run=^$", "-fuzz=^"+target.Name+"$", "-fuzztime="+duration, target.Package))
 	}
 	return checks
+}
+
+// PushedFiles lists the files a push's range from..to added or changed, diffing against the empty tree
+// when from is empty or unset, as a new branch or tag push.
+func PushedFiles(root, from, to string) ([]string, error) {
+	if from == "" || from == zeroOID {
+		from = emptyTreeOID
+	}
+	if from == to {
+		return nil, nil
+	}
+	out, err := git.Run(root, "diff", "--name-only", from, to)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, name := range strings.Split(out, "\n") {
+		if name != "" {
+			paths = append(paths, name)
+		}
+	}
+	return paths, nil
+}
+
+// PushedFuzzTargets returns the fuzz targets whose package is among a push's changed paths.
+func PushedFuzzTargets(paths []string) []FuzzTarget {
+	var touched []FuzzTarget
+	for _, target := range FuzzTargets {
+		dir := strings.TrimPrefix(target.Package, "./")
+		for _, path := range paths {
+			if path == dir || strings.HasPrefix(path, dir+"/") {
+				touched = append(touched, target)
+				break
+			}
+		}
+	}
+	return touched
+}
+
+// PushChecks scopes a pre-push gate to what the push touched: build only when a .go file, go.mod or go.sum
+// changed, and a fuzz check only for a package FuzzTargets names that the push changed.
+func PushChecks(root, from, to, fuzzDuration string, build []Check) ([]Check, error) {
+	paths, err := PushedFiles(root, from, to)
+	if err != nil {
+		return build, err
+	}
+	touchesCode := false
+	for _, path := range paths {
+		if path == "go.mod" || path == "go.sum" || strings.HasSuffix(path, ".go") {
+			touchesCode = true
+			break
+		}
+	}
+	var checks []Check
+	if touchesCode {
+		checks = append(checks, build...)
+	}
+	if fuzzDuration != "" {
+		checks = append(checks, FuzzChecksFor(root, fuzzDuration, PushedFuzzTargets(paths))...)
+	}
+	return checks, nil
 }
 
 // TestArgs is the go test command line: under the race detector when cgo can build it, else plain.
