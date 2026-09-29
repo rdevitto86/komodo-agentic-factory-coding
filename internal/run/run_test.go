@@ -500,7 +500,7 @@ const drainDriveFakeClaude = `#!/bin/sh
 if [ "$1" != "-p" ]; then echo "2.0.0"; exit 0; fi
 group=$(basename "$PWD")
 if [ "$group" = "$FAKE_BLOCK_GROUP" ]; then
-  if [ "$KOMODO_ROLE" = "orchestrator" ]; then cat "$FAKE_STOP_FIXTURE"; else cat "$FAKE_BLOCK_FIXTURE"; fi
+  if [ "$KOMODO_ROLE" = "escalation" ]; then cat "$FAKE_STOP_FIXTURE"; else cat "$FAKE_BLOCK_FIXTURE"; fi
   exit 0
 fi
 if [ "$KOMODO_ROLE" = "builder" ]; then
@@ -515,12 +515,12 @@ else
 fi
 `
 
-// fakeBlockFixture is a builder result that stops a group for the orchestrator.
+// fakeBlockFixture is a builder result that stops a group for its escalation.
 const fakeBlockFixture = `{"type":"result","subtype":"success","is_error":false,"num_turns":1,` +
 	`"session_id":"build-blocked","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1},` +
 	`"structured_output":{"result":"BLOCKED","question":"stuck"}}` + "\n"
 
-// fakeStopFixture is an orchestrator's answer that gives up on a group, leaving it blocked.
+// fakeStopFixture is an escalation's answer that gives up on a group, leaving it blocked.
 const fakeStopFixture = `{"type":"result","subtype":"success","is_error":false,"num_turns":1,` +
 	`"session_id":"escalate-stop","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1},` +
 	`"structured_output":{"action":"stop","needs":"a person's call"}}` + "\n"

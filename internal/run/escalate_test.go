@@ -46,8 +46,8 @@ func TestOrchestratorRequestFillsTheRoleWithTheEscalation(t *testing.T) {
 			t.Fatalf("brief = %q, want %q", req.Brief, want)
 		}
 	}
-	if req.Role != "orchestrator" || strings.Contains(req.Brief, "{{") || !strings.Contains(string(req.Schema), "action") {
-		t.Fatalf("request = %+v, want the orchestrator role, every slot filled and its schema", req)
+	if req.Role != "escalation" || strings.Contains(req.Brief, "{{") || !strings.Contains(string(req.Schema), "action") {
+		t.Fatalf("request = %+v, want the escalation role, every slot filled and its schema", req)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestLintBacklogReportsTheWorktreesProblems(t *testing.T) {
 
 func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 	root := requestsRepo(t)
-	// The fixture's own roles directory hides the embedded tree, so it gets the shipped orchestrator role.
-	for _, name := range []string{"orchestrator.md", "orchestrator.schema.json"} {
+	// The fixture's own roles directory hides the embedded tree, so it gets the shipped escalation role.
+	for _, name := range []string{"escalation.md", "escalation.schema.json"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", line.RolesDir, name))
 		if err != nil {
 			t.Fatal(err)
@@ -95,7 +95,7 @@ func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 		t.Fatal("newDriver left Block nil; a stopped group would never be written down")
 	}
 	req, err := driver.Orchestrator(conductor.Escalation{Group: "TG-20.1", Left: conductor.Reviewing, Reason: "stalled"})
-	if err != nil || req.Role != "orchestrator" || !strings.Contains(req.Brief, "escalated at Reviewing") {
+	if err != nil || req.Role != "escalation" || !strings.Contains(req.Brief, "escalated at Reviewing") {
 		t.Fatalf("orchestrator request = %+v, %v; want the escalation filled in", req, err)
 	}
 	if _, err := driver.Lint(); err != nil {

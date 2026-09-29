@@ -196,10 +196,10 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 	}, nil
 }
 
-// orchestratorRequest fills the headless orchestrator's start request for one escalation: its role's
-// template with the group, the state it left, why, and each task's files, on the orchestrator's machine.
+// orchestratorRequest fills the headless escalation session's start request: its role's template with
+// the group, the state it left, why, and each task's files, on the escalation role's machine.
 func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (mount.StartRequest, error) {
-	definition, err := line.LoadRole(root, "orchestrator")
+	definition, err := line.LoadRole(root, "escalation")
 	if err != nil {
 		return mount.StartRequest{}, err
 	}
@@ -211,14 +211,14 @@ func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (
 		"{{group}}", e.Group, "{{branch}}", plan.Branch, "{{left}}", string(e.Left),
 		"{{reason}}", e.Reason, "{{tasks}}", strings.Join(tasks, "\n"),
 	).Replace(definition.Body)
-	machine, _ := plan.Profile.Machine("orchestrator")
+	machine, _ := plan.Profile.Machine("escalation")
 	return mount.StartRequest{
-		Role:   "orchestrator",
+		Role:   "escalation",
 		Brief:  brief,
 		Tools:  definition.Tools,
 		Model:  machine.Model,
 		Effort: machine.Effort,
-		Schema: []byte(line.SchemaText(root, "orchestrator")),
+		Schema: []byte(line.SchemaText(root, "escalation")),
 	}, nil
 }
 
