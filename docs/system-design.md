@@ -353,8 +353,8 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 | Hook | Session | Checks one thing | On a violation | Limit | If the hook itself fails |
 |---|---|---|---|---|---|
 | Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths | Refuses, naming the allowed alternative | — | Allows and logs |
-| Gate, commit-msg | Every committer, model or not | The message carries no attribution trailer | Refuses, naming the trailer to remove | — | N/A, a plain git hook |
-| Gate, pre-commit | Every committer, model or not | The branch is not critical and named `<type>/<kebab-name>`, an epic branch, or detached | Refuses, naming the branch to rename or create | — | N/A, a plain git hook |
+| Gate, commit-msg | Every committer, model or not | The message carries no trailer the loaded policy names | Refuses, naming the trailer to remove | — | Fails, naming the missing binary |
+| Gate, pre-commit | Every committer, model or not | The branch is not critical, and is `<type>/<kebab-name>`, an epic branch, a line-cut slug, or detached | Refuses, naming the branch to rename | — | Fails, naming the missing binary |
 | Guard, PreToolUse, line tier | A session `KOMODO_ROLE` names (decision 0034) | The global tier, plus writes outside the worktree, isolated spawns, and the epic branch's push and merge | Refuses, naming the allowed alternative | 3 refusals of one rule per session, then the session ends as blocked | Allows and logs |
 | Format, PostToolUse on edits | Builder | Formats the edited file and lints only that file | Never refuses; returns lint output as context | — | Skips |
 | Task checks, Stop | Builder | The group's checks pass | Refuses to stop, with the failing output | 3, the host's stop-hook cap | Allows; Check still reruns everything |

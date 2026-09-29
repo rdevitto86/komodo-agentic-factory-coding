@@ -7,14 +7,17 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"komodo/internal/backlog"
 	"komodo/internal/changelog"
 	"komodo/internal/comments"
 	"komodo/internal/git"
+	"komodo/internal/guard"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -261,31 +264,6 @@ const hookScript = `#!/bin/sh
 # Runs the local gate from the checkout being committed, else this host's built binary. Written by komodo gate --install.
 set -e
 name=$(basename "$0")
-# A trailer and a bad branch name are refused before the binary is found, so every committer is covered,
-# orchestrator, line or person alike, even with none built yet.
-case "$name" in
-  commit-msg)
-    if grep -Eqi '^(co-authored-by|generated[ -]with|generated[ -]by)[[:space:]]*[:=]' "$1" || grep -q '🤖' "$1"; then
-      echo "gate: commit message carries a co-author or generated-by trailer; remove it and commit again" >&2
-      exit 1
-    fi
-    exit 0
-    ;;
-  pre-commit)
-    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-    if [ -n "$branch" ]; then
-      if echo "$branch" | grep -Eq '^(main|master|trunk|prod|production)$|^(release|hotfix)/'; then
-        echo "gate: commit on $branch refused; create a branch first" >&2
-        exit 1
-      fi
-      if ! echo "$branch" | grep -Eq '^feat/[0-9]+\.[0-9]+\.[0-9]+' &&
-         ! echo "$branch" | grep -Eq '^(feat|fix|docs|chore|refactor|test|perf|ci|build)/[a-z0-9]+(-[a-z0-9]+)*$'; then
-        echo "gate: branch \"$branch\" is not <type>/<kebab-name>; rename it, such as fix/$branch" >&2
-        exit 1
-      fi
-    fi
-    ;;
-esac
 # The toolkit's own checkout gates from its source, so the guard table and comment rules are the ones committed.
 top=$(git rev-parse --show-toplevel 2>/dev/null || true)
 if [ -n "$top" ] && [ -f "$top/cmd/komodo/main.go" ]; then
@@ -310,6 +288,15 @@ else
   cmd="$bin"
 fi
 case "$name" in
+  commit-msg)
+    # The message file is the hook's one argument; the binary reads the loaded policy's trailer patterns.
+    exec $cmd gate --commit-msg "$1"
+    ;;
+  pre-commit)
+    # A critical ref or a branch outside <type>/<kebab-name> is refused before the rest of the gate runs.
+    $cmd gate --check-branch || exit 1
+    exec $cmd gate
+    ;;
   # A push carries more weight than a commit, so it also fuzzes the parsers for a few seconds each.
   pre-push)
     # git passes each pushed ref's old and new commit on stdin; the first line scopes the push,
@@ -385,6 +372,36 @@ func Install(gitDir string) ([]string, error) {
 		written = append(written, path)
 	}
 	return written, nil
+}
+
+// kebabName matches a plain <kebab-name>, the shape a person's own branch fragment takes.
+var kebabName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// TrailerProblem reports why the commit-msg hook refuses message, empty when it may proceed.
+func TrailerProblem(message string, policy guard.Policy) string {
+	if policy.HasTrailer(message) {
+		return "commit message carries a co-author or generated-by trailer; remove it and commit again"
+	}
+	return ""
+}
+
+// BranchProblem reports why the pre-commit hook refuses branch, empty when it may commit; a critical
+// ref, an epic branch, and a slug backlog.IsGroupSlug already recognizes are all allowed.
+func BranchProblem(branch string, policy guard.Policy) string {
+	if branch == "" {
+		return ""
+	}
+	if policy.IsCritical(branch) {
+		return fmt.Sprintf("commit on %s refused; create a branch first", branch)
+	}
+	if guard.IsEpicBranch(branch) {
+		return ""
+	}
+	typ, slug, ok := strings.Cut(branch, "/")
+	if ok && slices.Contains(backlog.Types, typ) && (kebabName.MatchString(slug) || backlog.IsGroupSlug(slug)) {
+		return ""
+	}
+	return fmt.Sprintf("branch %q is not <type>/<kebab-name>; rename it, or let the line cut its own", branch)
 }
 
 // hunkHeader captures a unified diff hunk's new-file start line, from a header such as "@@ -1,2 +3,4 @@".
