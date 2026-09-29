@@ -338,6 +338,57 @@ func TestTheHookCommandIsTheRunningBinaryInAForeignRepo(t *testing.T) {
 	t.Fatal("settings.json is not in the plan")
 }
 
+// TestTheHookCommandNamesACopyOfTheBinaryUnderHome proves the guard hook names a copy under
+// ~/.komodo/bin, never the repo's own path, so a rebuild there never moves an already-rendered hook.
+func TestTheHookCommandNamesACopyOfTheBinaryUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := toolkitRepo(t)
+	binary := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(binary, []byte("binary v1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var command string
+	for _, change := range plan.Changes {
+		if change.Path == filepath.Join(root, Dir, "settings.json") {
+			command = string(change.Body)
+		}
+	}
+	if strings.Contains(command, binary) {
+		t.Fatalf("settings.json = %s, want the repo's own binary path never named", command)
+	}
+	if !strings.Contains(command, filepath.Join(home, ".komodo", "bin", "komodo-")) {
+		t.Fatalf("settings.json = %s, want a copy named under HOME", command)
+	}
+	entries, err := os.ReadDir(filepath.Join(home, ".komodo", "bin"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entries = %v, err = %v; want exactly one copy written", entries, err)
+	}
+	copied, err := os.ReadFile(filepath.Join(home, ".komodo", "bin", entries[0].Name()))
+	if err != nil || string(copied) != "binary v1" {
+		t.Fatalf("copied = %q, err = %v; want the binary's own bytes", copied, err)
+	}
+	// A rebuild that changes the binary's bytes writes a new copy, and never touches the first one.
+	if err := os.WriteFile(binary, []byte("binary v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Render(root, binary); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(filepath.Join(home, ".komodo", "bin", entries[0].Name()))
+	if err != nil || string(first) != "binary v1" {
+		t.Fatalf("the first copy changed: %q, %v", first, err)
+	}
+	entries, err = os.ReadDir(filepath.Join(home, ".komodo", "bin"))
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("entries = %v, err = %v; want a second copy alongside the first", entries, err)
+	}
+}
+
 func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	root := toolkitRepo(t)
 	write := func(rel, contents string) {
@@ -1044,6 +1095,35 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 		if action.Verb != "same" {
 			t.Fatalf("a second global render would %s %s", action.Verb, action.Path)
 		}
+	}
+}
+
+// TestTheGlobalHookNamesACopyOfTheBinaryUnderHome proves the global settings never name the toolkit
+// repo's own binary path, so a rebuild there never moves this machine's orchestrator hook.
+func TestTheGlobalHookNamesACopyOfTheBinaryUnderHome(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binary := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(binary, []byte("toolkit binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := RenderGlobal(root, home, binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), binary) {
+		t.Fatalf("settings.json = %s, want the toolkit's own binary path never named", raw)
+	}
+	if !strings.Contains(string(raw), filepath.Join(home, ".komodo", "bin", "komodo-")) {
+		t.Fatalf("settings.json = %s, want a copy named under HOME", raw)
 	}
 }
 
