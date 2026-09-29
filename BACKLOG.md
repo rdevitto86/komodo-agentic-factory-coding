@@ -3647,26 +3647,13 @@ context:
 
 
 
-### [TG-07.10] This repo moves to group files
+### [TG-07.10] Phase 3 exit proof
 ```yaml
 type: chore
 version: 1.0.0-alpha.8
 depends_on: [TG-07.9]
 ```
-* **Why:** the line reads this file while it runs, so the orchestrator moves it once the new parser is merged and rebuilt.
-
-#### [TSK-07.10.1] The open groups move into docs/backlog/, and BACKLOG.md goes [P: H] [REFINEMENT]
-```yaml
-files: [BACKLOG.md, docs/backlog, AGENTS.md, komodo/AGENTS.md, README.md, CONTRIBUTING.md]
-done_when:
-  - test ! -f BACKLOG.md
-  - go run ./cmd/komodo lint
-  - go run ./cmd/komodo doctor
-context:
-  - "AGENTS.md and komodo/AGENTS.md send out-of-task work to komodo add instead of a BACKLOG.md line"
-owner: human
-type: chore
-```
+* **Why:** the phase exits on a 3-group plan run unattended; this repo's move to group files is now TSK-10.7.8.
 
 #### [TSK-07.10.2] Proof: a 3-group plan runs unattended to draft PRs [P: H] [REFINEMENT]
 ```yaml
@@ -4302,7 +4289,7 @@ type: fix
 ## [EPIC-10] Beta fixes
 *Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
 
-* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L29, from the runner-cli, both SDK and shared-infra repos.
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L30, from the runner-cli, both SDK and shared-infra repos.
 
 ### [TG-10.1] One backlog grammar
 ```yaml
@@ -4712,6 +4699,117 @@ context:
   - "a claim names the session and time under the git common dir; a stale claim is reported, never taken silently"
   - "komodo/AGENTS.md's Git section tells every model to check the claim before writing a shared branch"
 type: feat
+```
+
+### [TG-10.7] Group files are the only backlog
+```yaml
+type: fix
+version: 1.0.0-beta.3
+depends_on: [TG-10.1, TG-10.2]
+```
+* **Why:** TG-10.1 makes the line read group files, but ship, add, findings and release still write or compare BACKLOG.md, and 41 test files seed one (L30).
+* **Assumed:** BACKLOG.md survives only as `komodo migrate` input; findings and blocker notes land in the group's own file, as they land in its BACKLOG.md group today.
+
+#### [TSK-10.7.1] Ship writes a task's tick or blocker into its group's file [P: C] [REFINEMENT]
+```yaml
+files: [internal/line/status.go, internal/line/status_test.go, internal/backlog/edit.go, internal/backlog/groupfile_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/backlog/...
+context:
+  - "L30: writeStatus (status.go:203) and SetStatus (edit.go:13) rewrite only BACKLOG.md text"
+  - "the tick lands in docs/backlog/<group-id>-<slug>.md on the group's branch, so two group PRs never touch one file (decision 0009)"
+type: fix
+```
+
+#### [TSK-10.7.2] Review findings and blocker notes file into the group's own file [P: C] [REFINEMENT]
+```yaml
+files: [internal/line/wave.go, internal/line/wave_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/ship_blocked_test.go, internal/backlog/note.go, internal/backlog/note_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/backlog/...
+depends_on: [TSK-10.7.1]
+context:
+  - "FileFindings (wave.go:200) appends to BACKLOG.md, and ship stages BACKLOG.md at ship.go:212 and :420"
+  - "ShipBlocked (ship.go:598) writes its note through backlog.AddNote into BACKLOG.md"
+  - "ship.go:158's root-versus-group drift check compares the group's own file instead"
+type: fix
+```
+
+#### [TSK-10.7.3] `komodo add` is the one add, and it writes group files [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, cmd/komodo/main.go, komodo/rules/backlog.md, komodo/skills/plan/SKILL.md]
+done_when:
+  - go test ./cmd/komodo/...
+  - go run ./cmd/komodo doctor
+context:
+  - "today komodo add (backlog.go:138) appends to BACKLOG.md and komodo backlog add (backlog.go:246) writes group files"
+  - "komodo backlog add goes; komodo add opens a group file when the group has none, else appends to it"
+type: fix
+```
+
+#### [TSK-10.7.4] Release check compares the changelog with group files, not BACKLOG.md [P: H] [REFINEMENT]
+```yaml
+files: [internal/release/release.go, internal/release/release_test.go]
+done_when:
+  - go test ./internal/release/...
+context:
+  - "Drift (release.go:121) is a disagreement between the changelog, the tags, and BACKLOG.md"
+type: fix
+```
+
+#### [TSK-10.7.5] Line tests seed group files through one shared helper [P: H] [REFINEMENT]
+```yaml
+files: [internal/backlog/backlogtest, internal/line]
+done_when:
+  - go test ./internal/line/...
+  - "! grep -ln 'BACKLOG.md' internal/line/*_test.go"
+context:
+  - "15 internal/line test files write a BACKLOG.md fixture; ship_test.go alone names it 44 times"
+  - "backlogtest.Seed(t, root, groups) writes each group as docs/backlog/<group-id>-<slug>.md"
+type: test
+```
+
+#### [TSK-10.7.6] Every other package's tests seed group files [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo, internal/run, internal/doctor, internal/eval, internal/conductor, internal/hooks]
+done_when:
+  - go test ./...
+  - "! grep -rln 'BACKLOG.md' --include='*_test.go' cmd internal/run internal/doctor internal/eval internal/conductor internal/hooks"
+depends_on: [TSK-10.7.5]
+context:
+  - "26 test files across 6 packages seed or assert on BACKLOG.md"
+  - "internal/eval/run.go:216 writes a BACKLOG.md into each eval repo and moves to a group file too"
+type: test
+```
+
+#### [TSK-10.7.7] Only `komodo migrate` reads BACKLOG.md, and doctor fails on one left at the root [P: H] [REFINEMENT]
+```yaml
+files: [internal/backlog/backlog.go, internal/backlog/backlog_test.go, internal/backlog/fuzz_test.go, internal/backlog/legacy.go, cmd/komodo/migrate.go, internal/doctor/doctor.go, internal/doctor/doctor_test.go]
+done_when:
+  - go test ./...
+  - "! git grep -n 'BACKLOG.md' -- 'cmd/*.go' 'internal/*.go' ':!internal/backlog/legacy*.go' ':!cmd/komodo/migrate*.go'"
+depends_on: [TSK-10.7.1, TSK-10.7.2, TSK-10.7.3, TSK-10.7.4, TSK-10.7.6]
+context:
+  - "Find (backlog.go:291) and the BACKLOG.md Parse move to legacy.go, called only by migrate"
+  - "lint's BACKLOG.md branch (cmd/komodo/backlog.go:18) goes; lint reads group files only"
+  - "doctor names a root or docs/ BACKLOG.md as a failure with the fix: komodo migrate"
+type: refactor
+```
+
+#### [TSK-10.7.8] This repo moves to group files, and BACKLOG.md goes [P: H] [REFINEMENT]
+```yaml
+files: [BACKLOG.md, docs/backlog, AGENTS.md, README.md, CONTRIBUTING.md]
+done_when:
+  - test ! -f BACKLOG.md
+  - "! grep -n 'BACKLOG.md' AGENTS.md README.md CONTRIBUTING.md"
+  - go run ./cmd/komodo lint
+  - go run ./cmd/komodo doctor
+depends_on: [TSK-10.7.7]
+context:
+  - "moved from TSK-07.10.1; the line reads this file while it runs, so the orchestrator moves it with the owner once the new binary is rebuilt"
+  - "komodo migrate writes the open groups; closed groups stay history in CHANGELOG.md and git (decision 0009)"
+  - "AGENTS.md and CONTRIBUTING.md send out-of-task work to komodo add; README's quick start drops $EDITOR BACKLOG.md"
+owner: human
+type: chore
 ```
 
 ## [EPIC-09] 1.0.0 LTS
