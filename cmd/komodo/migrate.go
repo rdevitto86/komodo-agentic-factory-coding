@@ -91,6 +91,8 @@ func migrateGroupFiles(parsed backlog.Backlog) []backlog.GroupFile {
 			Type:      group.Type(),
 			Version:   group.Version(),
 			EpicID:    migrateEpicID(parsed, group),
+			Mode:      group.Fields.String("mode"),
+			Base:      group.Base(),
 			DependsOn: group.DependsOn(),
 			Tasks:     migrateGroupTasks(group),
 		})
@@ -182,6 +184,8 @@ func migrateGroupTasks(group backlog.Group) []backlog.GroupTask {
 			DependsOn: task.DependsOn(),
 			Priority:  task.Priority,
 			Status:    task.Status,
+			Tier:      task.Tier(),
+			Facets:    task.Facets(),
 		})
 	}
 	return out

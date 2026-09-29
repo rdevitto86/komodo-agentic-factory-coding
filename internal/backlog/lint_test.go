@@ -366,6 +366,35 @@ func TestLintGroupFileAcceptsADoneTaskWithNoFiles(t *testing.T) {
 	}
 }
 
+// TestLintGroupFileRejectsAReadyAgentTaskWithNoDoneWhen proves a READY task needs at least one
+// done_when command, matching Lint's check on the legacy grammar.
+func TestLintGroupFileRejectsAReadyAgentTaskWithNoDoneWhen(t *testing.T) {
+	file := ParseGroupFile("## [TG-64.1] No done_when [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-64\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-64.1.1** A task\n  - files: `a.go`\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-64.1": true}, map[string]bool{"TSK-64.1.1": true})
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TSK-64.1.1") && strings.Contains(problem, "no done_when") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a no-done_when problem; got %v", problems)
+	}
+}
+
+// TestLintGroupFileAcceptsAHumanTaskWithNoDoneWhen proves the done_when check exempts a human owner.
+func TestLintGroupFileAcceptsAHumanTaskWithNoDoneWhen(t *testing.T) {
+	file := ParseGroupFile("## [TG-65.1] Human owner [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-65\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-65.1.1** A task\n  - files: `a.go`\n  - owner: human\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-65.1": true}, map[string]bool{"TSK-65.1.1": true})
+	for _, problem := range problems {
+		if strings.Contains(problem, "no done_when") {
+			t.Fatalf("a human task should not need done_when; got %v", problems)
+		}
+	}
+}
+
 func TestLintGroupFileRejectsADependsOnNamingNoGroupOrTask(t *testing.T) {
 	file := ParseGroupFile("## [TG-63.1] Bad dependency [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-63\ndepends_on: [TG-99.9]\n```\n\n" +
 		"- [ ] **TSK-63.1.1** A task\n  - files: `a.go`\n")

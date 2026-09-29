@@ -10,6 +10,7 @@
 type: feat          # feat fix chore docs test refactor perf build ci (branch and commit type)
 version: 1.4.0      # the version this group ships, and picks the epic branch it cuts from
 epic: EPIC-01        # the epic this group's file is removed alongside
+mode: parallel       # parallel or single; single runs the whole group on one machine
 base: ""             # the branch this group cuts from; empty defaults to its epic's branch
 depends_on: []       # groups whose unmerged branch this one's PR stacks on instead
 ```
@@ -23,6 +24,8 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
   - depends_on: TSK-01.1.0
   - priority: C
   - status: BLOCKED
+  - tier: heavy
+  - facets: go
 ````
 
 ### Fields
@@ -30,6 +33,7 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
 - **`REFINEMENT`** is a group still being planned: the harness never runs it, and lint does not demand a task's `files`. Promote it to `READY` once every task names its files.
 - **`version`** is required on every group, as `x.y.z`, or `x.y.z-alpha.n`, `x.y.z-beta.n` or `x.y.z-rc.n` for a prerelease; rc is optional, and a release may go straight from beta to stable. It is the changelog version ship writes a fragment for and the tag `komodo tag` cuts, so the two can never drift. Groups shipping together share one version, and a group's version picks the branch it cuts from: `feat/<version>`.
 - **`epic`** is the `EPIC-` id the group's file carries. The PR of an epic's last open group deletes every group file that shares its epic; a group with no epic deletes its own file.
+- **`mode`** is `parallel` unless the group asks for `single`, one machine running the whole group instead of a session per task.
 - **`base`** is the branch a group cuts from. Empty by default: a group then cuts from its epic's branch, `feat/<version>`, falling back to the remote's default branch while that epic branch is not yet cut.
 - **`depends_on`** on a group is the groups whose unmerged branch this one's PR stacks on instead of its epic's. When a stacked parent merges, the child rebases onto the new base.
 - **`files`** lists every path a task will create or edit, always including the caller that wires new code in — the command dispatch, the conductor, or a hook — not only the package it lives in; scope refuses any other. A task needs only a title and its `files`. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
@@ -40,6 +44,8 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
 - **`depends_on`** on a task is the task ids that must be done before this one starts, narrower than the group's own `depends_on`.
 - **`priority`** overrides the group's `[P: <letter>]` for one task, else it inherits the group's.
 - **`status`** overrides the group's `[<STATUS>]` for one task, such as `BLOCKED` while a person acts, else it inherits the group's; a ticked checkbox always reads `DONE`.
+- **`tier`** overrides the role's machine size for one task: `light`, `standard`, or `heavy`; an agent task may never be `light` (REQ-30).
+- **`facets`** lists facet names this task adds to detection, beyond what the tree and the repo already override.
 - A group holds 1 to 12 tasks; lint refuses a larger one and suggests a split.
 
 ## Choosing a version

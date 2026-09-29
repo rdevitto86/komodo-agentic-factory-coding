@@ -165,6 +165,16 @@ func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 	if !strings.Contains(got.stdout, "A second task") {
 		t.Fatalf("list after add = %s", got.stdout)
 	}
+	// add has no --done-when flag yet; a READY group's new task needs one for lint, so add it by hand.
+	groupPath := filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md")
+	data, err := os.ReadFile(groupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patched := strings.Replace(string(data), "files: `c/three.go`\n", "files: `c/three.go`\n  - done_when: `go test ./c/...`\n", 1)
+	if err := os.WriteFile(groupPath, []byte(patched), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if lint := runCLI(t, root, "", "lint"); lint.code != 0 {
 		t.Fatalf("lint after add exited %d: %s", lint.code, lint.stdout)
 	}

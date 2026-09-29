@@ -69,7 +69,7 @@ func TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd(t *testing.T) {
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
@@ -99,7 +99,7 @@ func TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles(t *t
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task with no files\n")
+			"- [ ] **TSK-01.1.1** A task with no files\n  - done_when: `go test ./...`\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
@@ -267,7 +267,7 @@ func TestLintProblemsRefusesAnOpenGroupAtATaggedVersion(t *testing.T) {
 	root := emptyRepo(t)
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
 	if problems, _ := lintProblems(root); len(problems) != 0 {
 		t.Fatalf("problems before any tag = %v, want none", problems)
@@ -298,7 +298,7 @@ func TestCheckBaseDefaultsToTheGroupsEpicBranch(t *testing.T) {
 	root := emptyRepo(t)
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
 	runGit(t, root, "branch", "feat/1.0.0")
 	parsed, err := backlog.LoadRoot(root)

@@ -59,6 +59,34 @@ func TestRunMigrateWritesOneGroupFilePerGroup(t *testing.T) {
 	}
 }
 
+// TestRunMigrateCarriesModeBaseTierAndFacets proves migrate keeps a group's mode and base, and a
+// task's tier and facets, in the group file it writes.
+func TestRunMigrateCarriesModeBaseTierAndFacets(t *testing.T) {
+	root := t.TempDir()
+	sample := "## [EPIC-02] Sample epic\nShips as `1.0.0`.\n\n" +
+		"### [TG-02.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\nmode: single\nbase: feat/1.0.0\ndepends_on: []\n```\n\n" +
+		"#### [TSK-02.1.1] Do a thing [P: H] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [go test ./a/...]\n" +
+		"tier: heavy\nfacets: [go, docs]\n```\n"
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(sample), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runMigrate(root, nil)
+	data, err := os.ReadFile(filepath.Join(root, groupFilesDir, "TG-02.1-a-group.md"))
+	if err != nil {
+		t.Fatalf("group file: %v", err)
+	}
+	file := backlog.ParseGroupFile(string(data))
+	if file.Mode != "single" || file.Base != "feat/1.0.0" {
+		t.Fatalf("mode/base = %q/%q", file.Mode, file.Base)
+	}
+	if len(file.Tasks) != 1 || file.Tasks[0].Tier != "heavy" {
+		t.Fatalf("tasks = %+v", file.Tasks)
+	}
+	if got := file.Tasks[0].Facets; len(got) != 2 || got[0] != "go" || got[1] != "docs" {
+		t.Fatalf("facets = %v", got)
+	}
+}
+
 // TestRunMigrateSplitsAnEpicSpanningSeveralVersions proves a group whose version differs from its
 // epic's gets its own synthetic epic id, so the migrated group files never disagree on version.
 func TestRunMigrateSplitsAnEpicSpanningSeveralVersions(t *testing.T) {

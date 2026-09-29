@@ -89,6 +89,12 @@ func groupFileToGroup(file GroupFile) Group {
 	fields.Set("type", file.Type)
 	fields.Set("version", file.Version)
 	fields.Set("depends_on", toAnyList(file.DependsOn))
+	if file.Mode != "" {
+		fields.Set("mode", file.Mode)
+	}
+	if file.Base != "" {
+		fields.Set("base", file.Base)
+	}
 	group := Group{ID: file.ID, Title: file.Title, Fields: fields, EpicID: file.EpicID}
 	for _, task := range file.Tasks {
 		group.Tasks = append(group.Tasks, groupTaskToTask(file, task))
@@ -116,6 +122,12 @@ func groupTaskToTask(file GroupFile, task GroupTask) Task {
 	}
 	if task.Owner != "" {
 		fields.Set("owner", task.Owner)
+	}
+	if task.Tier != "" {
+		fields.Set("tier", task.Tier)
+	}
+	if len(task.Facets) > 0 {
+		fields.Set("facets", toAnyList(task.Facets))
 	}
 	return Task{
 		ID: task.ID, Title: task.Title, Priority: file.Priority, Status: status,

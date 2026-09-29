@@ -350,6 +350,17 @@ func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs m
 		if !task.Done && len(task.Files) == 0 {
 			problems = append(problems, fmt.Sprintf("%s: open task declares no files", task.ID))
 		}
+		status := task.Status
+		if status == "" {
+			status = file.Status
+		}
+		owner := task.Owner
+		if owner == "" {
+			owner = "agent"
+		}
+		if !task.Done && owner == "agent" && status == "READY" && len(task.Checks) == 0 {
+			problems = append(problems, fmt.Sprintf("%s: agent task declares no done_when commands", task.ID))
+		}
 	}
 	for _, line := range strings.Split(text, "\n") {
 		match := groupFileContextLine.FindStringSubmatch(line)

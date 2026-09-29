@@ -44,6 +44,36 @@ func TestLoadRootReadsGroupFilesWhenPresent(t *testing.T) {
 	}
 }
 
+func TestLoadRootCarriesModeBaseTierAndFacets(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "docs", "backlog", "TG-01.1-example.md"),
+		"## [TG-01.1] Example group [P: H] [READY]\n\n"+
+			"```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\nmode: single\nbase: feat/1.0.0\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** Do the thing\n  - files: `a.go`\n  - checks: `go test ./...`\n"+
+			"  - tier: heavy\n  - facets: go, docs\n")
+	parsed, err := LoadRoot(root)
+	if err != nil {
+		t.Fatalf("LoadRoot: %v", err)
+	}
+	group := parsed.Groups[0]
+	if group.Mode() != "single" {
+		t.Fatalf("mode = %q, want single", group.Mode())
+	}
+	if group.Base() != "feat/1.0.0" {
+		t.Fatalf("base = %q, want feat/1.0.0", group.Base())
+	}
+	task, ok := parsed.Task("TSK-01.1.1")
+	if !ok {
+		t.Fatal("want TSK-01.1.1")
+	}
+	if task.Tier() != "heavy" {
+		t.Fatalf("tier = %q, want heavy", task.Tier())
+	}
+	if got := task.Facets(); len(got) != 2 || got[0] != "go" || got[1] != "docs" {
+		t.Fatalf("facets = %v", got)
+	}
+}
+
 func TestLoadRootFallsBackToBacklogMdWithNoGroupFiles(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "BACKLOG.md"),
