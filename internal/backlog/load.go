@@ -10,30 +10,20 @@ import (
 // GroupFilesDir is where one file per task group lives, the grammar komodo/rules/backlog.md names.
 const GroupFilesDir = "docs/backlog"
 
-// LoadRoot loads the queue at root: every docs/backlog/ group file, merged into one Backlog, when
-// the directory holds one, else the legacy BACKLOG.md Find locates.
+// LoadRoot loads the queue at root: every docs/backlog/ group file, merged into one Backlog, empty
+// when root holds none.
 func LoadRoot(root string) (Backlog, error) {
 	paths, err := groupFilePaths(root)
 	if err != nil {
 		return Backlog{}, err
 	}
-	if len(paths) == 0 {
-		path, err := Find(root)
-		if err != nil {
-			return Backlog{}, err
-		}
-		return Load(path)
-	}
 	return loadGroupFiles(paths)
 }
 
-// Exists reports whether root holds a queue: a docs/backlog/ group file, or else a legacy BACKLOG.md.
+// Exists reports whether root holds a queue: at least one docs/backlog/ group file.
 func Exists(root string) bool {
-	if paths, err := groupFilePaths(root); err == nil && len(paths) > 0 {
-		return true
-	}
-	_, err := Find(root)
-	return err == nil
+	paths, err := groupFilePaths(root)
+	return err == nil && len(paths) > 0
 }
 
 // groupFilePaths lists every *.md file directly under root's docs/backlog/, sorted, nil when the
@@ -89,6 +79,12 @@ func groupFileToGroup(file GroupFile) Group {
 	fields.Set("type", file.Type)
 	fields.Set("version", file.Version)
 	fields.Set("depends_on", toAnyList(file.DependsOn))
+	if file.Mode != "" {
+		fields.Set("mode", file.Mode)
+	}
+	if file.Base != "" {
+		fields.Set("base", file.Base)
+	}
 	group := Group{ID: file.ID, Title: file.Title, Fields: fields, EpicID: file.EpicID}
 	for _, task := range file.Tasks {
 		group.Tasks = append(group.Tasks, groupTaskToTask(file, task))
@@ -116,6 +112,12 @@ func groupTaskToTask(file GroupFile, task GroupTask) Task {
 	}
 	if task.Owner != "" {
 		fields.Set("owner", task.Owner)
+	}
+	if task.Tier != "" {
+		fields.Set("tier", task.Tier)
+	}
+	if len(task.Facets) > 0 {
+		fields.Set("facets", toAnyList(task.Facets))
 	}
 	return Task{
 		ID: task.ID, Title: task.Title, Priority: file.Priority, Status: status,

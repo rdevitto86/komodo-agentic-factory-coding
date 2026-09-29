@@ -30,7 +30,8 @@ func lensRoot(t *testing.T, result string) string {
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write("BACKLOG.md", "# Backlog\n\n### [TG-90.1] A group\n```yaml\ntype: feat\nversion: 3.0.0\nbase: feat/base\n```\n")
+	write(filepath.Join("docs", "backlog", "TG-90.1-a-group.md"),
+		"## [TG-90.1] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 3.0.0\nepic: EPIC-90\nbase: feat/base\ndepends_on: []\n```\n")
 	write("a.go", "package a\n\nfunc Bad() {}\n")
 	if result != "" {
 		write(".komodo/results/TG-90.1-review.json", result)

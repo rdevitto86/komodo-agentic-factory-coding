@@ -131,6 +131,54 @@ func TestParseGroupFileLeavesOwnerContextDependsOnPriorityAndStatusEmptyByDefaul
 	}
 }
 
+// TestParseGroupFileReadsModeBaseTierAndFacets proves the grammar carries a group's mode and base,
+// and a task's tier and facets, the same fields the legacy grammar's Fields already carried.
+func TestParseGroupFileReadsModeBaseTierAndFacets(t *testing.T) {
+	text := "## [TG-10.1] Mode and base [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-10\n" +
+		"mode: single\nbase: feat/1.0.0\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-10.1.1** A task\n  - files: `a.go`\n  - tier: heavy\n  - facets: go, docs\n"
+	file := ParseGroupFile(text)
+	if len(file.Problems) != 0 {
+		t.Fatalf("problems = %v", file.Problems)
+	}
+	if file.Mode != "single" {
+		t.Fatalf("mode = %q, want single", file.Mode)
+	}
+	if file.Base != "feat/1.0.0" {
+		t.Fatalf("base = %q, want feat/1.0.0", file.Base)
+	}
+	task := file.Tasks[0]
+	if task.Tier != "heavy" {
+		t.Fatalf("tier = %q, want heavy", task.Tier)
+	}
+	if got := task.Facets; len(got) != 2 || got[0] != "go" || got[1] != "docs" {
+		t.Fatalf("facets = %v", got)
+	}
+}
+
+// TestRenderGroupFileDocumentRoundTripsModeBaseTierAndFacets proves rendering a group with these
+// fields reads back the same values.
+func TestRenderGroupFileDocumentRoundTripsModeBaseTierAndFacets(t *testing.T) {
+	file := GroupFile{
+		ID: "TG-10.1", Title: "Mode and base", Priority: "H", Status: "READY",
+		Type: "fix", Version: "1.0.0", EpicID: "EPIC-10", Mode: "single", Base: "feat/1.0.0",
+		Tasks: []GroupTask{
+			{ID: "TSK-10.1.1", Title: "A task", Files: []string{"a.go"}, Tier: "heavy", Facets: []string{"go", "docs"}},
+		},
+	}
+	out := RenderGroupFileDocument(file)
+	back := ParseGroupFile(out)
+	if back.Mode != "single" || back.Base != "feat/1.0.0" {
+		t.Fatalf("rendered = %q; mode/base = %q/%q", out, back.Mode, back.Base)
+	}
+	if back.Tasks[0].Tier != "heavy" {
+		t.Fatalf("tier = %q, want heavy", back.Tasks[0].Tier)
+	}
+	if got := back.Tasks[0].Facets; len(got) != 2 || got[0] != "go" || got[1] != "docs" {
+		t.Fatalf("facets = %v", got)
+	}
+}
+
 func TestParseGroupFileReportsAMalformedHeading(t *testing.T) {
 	text := "## [tg-08.1] Lowercase id [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n"
 	file := ParseGroupFile(text)

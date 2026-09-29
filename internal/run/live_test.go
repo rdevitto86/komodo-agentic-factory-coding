@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
 	"komodo/internal/install"
 	"komodo/internal/line"
@@ -76,14 +78,14 @@ func (h *liveHost) Result(handle mount.Handle) (mount.Result, error) {
 func liveRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	backlogText, err := os.ReadFile(filepath.Join("testdata", "live", "BACKLOG.md"))
+	backlogText, err := os.ReadFile(filepath.Join("testdata", "live", backlog.LegacyName))
 	if err != nil {
 		t.Fatal(err)
 	}
+	backlogtest.SeedText(t, root, string(backlogText))
 	files := map[string]string{
-		"BACKLOG.md": string(backlogText),
-		"go.mod":     "module example.com/live\n\ngo 1.22\n",
-		"README.md":  "# live\n\nA scratch repo for komodo's live smoke test.\n",
+		"go.mod":    "module example.com/live\n\ngo 1.22\n",
+		"README.md": "# live\n\nA scratch repo for komodo's live smoke test.\n",
 	}
 	for name, body := range files {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {

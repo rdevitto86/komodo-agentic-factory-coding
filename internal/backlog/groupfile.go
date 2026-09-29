@@ -9,7 +9,7 @@ import (
 var (
 	groupFileHeading   = regexp.MustCompile(`^##\s+\[(TG-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
 	groupFileTaskLine  = regexp.MustCompile(`^-\s+\[([ xX])\]\s+\*\*(TSK-[\w.]+)\*\*\s+(.+?)\s*$`)
-	groupFileFieldLine = regexp.MustCompile(`^\s{2}-\s+(files|accept|done_when|checks|owner|context|depends_on|priority|status):\s*(.*)$`)
+	groupFileFieldLine = regexp.MustCompile(`^\s{2}-\s+(files|accept|done_when|checks|owner|context|depends_on|priority|status|tier|facets):\s*(.*)$`)
 	groupFileBacktick  = regexp.MustCompile("`([^`]+)`")
 )
 
@@ -26,6 +26,8 @@ type GroupTask struct {
 	DependsOn []string
 	Priority  string
 	Status    string
+	Tier      string
+	Facets    []string
 	Line      int
 }
 
@@ -38,6 +40,8 @@ type GroupFile struct {
 	Type      string
 	Version   string
 	EpicID    string
+	Mode      string
+	Base      string
 	DependsOn []string
 	Tasks     []GroupTask
 	Problems  []string
@@ -61,6 +65,8 @@ func ParseGroupFile(text string) GroupFile {
 				file.Type = fields.String("type")
 				file.Version = fields.String("version")
 				file.EpicID = fields.String("epic")
+				file.Mode = fields.String("mode")
+				file.Base = fields.String("base")
 				file.DependsOn = fields.List("depends_on")
 				index = end + 1
 			}
@@ -97,6 +103,10 @@ func ParseGroupFile(text string) GroupFile {
 					task.Priority = value
 				case "status":
 					task.Status = strings.ToUpper(value)
+				case "tier":
+					task.Tier = value
+				case "facets":
+					task.Facets = append(task.Facets, splitGroupFileList(value)...)
 				}
 				index++
 			}
@@ -148,6 +158,12 @@ func RenderGroupFileTask(task GroupTask) string {
 	if task.Status != "" {
 		fmt.Fprintf(&b, "  - status: %s\n", task.Status)
 	}
+	if task.Tier != "" {
+		fmt.Fprintf(&b, "  - tier: %s\n", task.Tier)
+	}
+	if len(task.Facets) > 0 {
+		fmt.Fprintf(&b, "  - facets: %s\n", strings.Join(task.Facets, ", "))
+	}
 	return b.String()
 }
 
@@ -157,6 +173,12 @@ func RenderGroupFileDocument(file GroupFile) string {
 	fields.Set("type", file.Type)
 	fields.Set("version", file.Version)
 	fields.Set("epic", file.EpicID)
+	if file.Mode != "" {
+		fields.Set("mode", file.Mode)
+	}
+	if file.Base != "" {
+		fields.Set("base", file.Base)
+	}
 	fields.Set("depends_on", toAnyList(file.DependsOn))
 	out := RenderGroupFile(file.ID, file.Title, file.Priority, file.Status, fields)
 	for _, task := range file.Tasks {

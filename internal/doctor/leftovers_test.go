@@ -1,7 +1,6 @@
 package doctor
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -76,13 +75,8 @@ func TestDoctorIgnoresALocalJSONWithNoBaseKey(t *testing.T) {
 	}
 }
 
-// TestDoctorNamesAWorktreeNoGroupOwns also proves doctor names a legacy BACKLOG.md left behind
-// once a docs/backlog group file exists for the same repo.
 func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 	root, run := leftoverRepo(t)
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(openBacklog), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	write(t, root, "docs/backlog/TG-03.1-c.md", epicGroupFile("TG-03.1", "EPIC-03", false))
 	owned := filepath.Join(root, ".komodo", "wt", "TG-01.1")
 	byFile := filepath.Join(root, ".komodo", "wt", "TG-03.1")
@@ -95,9 +89,6 @@ func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 	joined := strings.Join(notes, "\n")
 	if !strings.Contains(joined, "TG-09.9") || !strings.Contains(joined, "feat/old") {
 		t.Fatalf("notes = %v, want a note naming the TG-09.9 worktree and its branch", notes)
-	}
-	if !strings.Contains(joined, "BACKLOG.md: a legacy backlog") {
-		t.Fatalf("notes = %v, want a note naming BACKLOG.md as a legacy backlog now a group file exists", notes)
 	}
 }
 

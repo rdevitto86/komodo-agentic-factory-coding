@@ -327,7 +327,7 @@ func hasHeading(text, anchor string) bool {
 
 var groupFileContextLine = regexp.MustCompile(`^\s{2}-\s+context:\s*(.*)$`)
 
-// LintGroupFile checks one docs/backlog group file as Lint checks a BACKLOG.md group: version,
+// LintGroupFile checks one docs/backlog group file as Lint checks a legacy backlog's group: version,
 // an open task's files, a context anchor, and depends_on naming a known group or task.
 func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs map[string]bool) []string {
 	var problems []string
@@ -347,8 +347,24 @@ func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs m
 		}
 	}
 	for _, task := range file.Tasks {
-		if !task.Done && len(task.Files) == 0 {
+		status := task.Status
+		if status == "" {
+			status = file.Status
+		}
+		owner := task.Owner
+		if owner == "" {
+			owner = "agent"
+		}
+		ready := status == "READY" || status == "IN_PROGRESS"
+		// A person's own task, or one still in REFINEMENT, needs neither files nor done_when yet.
+		if task.Done || owner != "agent" || !ready {
+			continue
+		}
+		if len(task.Files) == 0 {
 			problems = append(problems, fmt.Sprintf("%s: open task declares no files", task.ID))
+		}
+		if len(task.Checks) == 0 {
+			problems = append(problems, fmt.Sprintf("%s: agent task declares no done_when commands", task.ID))
 		}
 	}
 	for _, line := range strings.Split(text, "\n") {
@@ -455,6 +471,22 @@ func groupOpen(group Group) bool {
 		}
 	}
 	return false
+}
+
+// BuildableGroupFile counts a group file's tasks a builder session works: every one not waiting in
+// REFINEMENT, its own status or the group's own when the task carries none.
+func BuildableGroupFile(file GroupFile) int {
+	count := 0
+	for _, task := range file.Tasks {
+		status := task.Status
+		if status == "" {
+			status = file.Status
+		}
+		if status != "REFINEMENT" {
+			count++
+		}
+	}
+	return count
 }
 
 // buildable counts the group's tasks a builder session works: every one not waiting in REFINEMENT.

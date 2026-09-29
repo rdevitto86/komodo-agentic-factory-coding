@@ -59,16 +59,6 @@ func Rephase(root, epicID, newVersion string, client *pr.Client) (*RephaseResult
 		return nil, fmt.Errorf("epic %s already ships %s", epicID, newVersion)
 	}
 
-	// A legacy BACKLOG.md, when the repo still keeps one, moves with the group files.
-	if path, err := backlog.Find(root); err == nil {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(path, []byte(rewriteVersions(string(data), epicID, oldVersion, newVersion)), 0o644); err != nil {
-			return nil, err
-		}
-	}
 	groupFiles, err := rewriteGroupFileVersions(root, epicID, newVersion)
 	if err != nil {
 		return nil, err
@@ -158,20 +148,6 @@ var (
 	versionLine = regexp.MustCompile(`^version:\s*\S*\s*$`)
 )
 
-// rewriteVersions rewrites BACKLOG.md's text: every group under epicID gets newVersion in its
-// fenced block, and the epic's goal line's "Ships as `<version>`" text follows it.
-func rewriteVersions(text, epicID, oldVersion, newVersion string) string {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	parsed := backlog.Parse(text)
-	for _, group := range parsed.Groups {
-		if group.EpicID == epicID {
-			setGroupVersion(lines, group.Heading, newVersion)
-		}
-	}
-	out := strings.Join(lines, "\n")
-	return rewriteEpicGoal(out, epicID, oldVersion, newVersion)
-}
-
 // setGroupVersion replaces the version line in the fenced block directly under heading, reporting
 // whether it found one to replace.
 func setGroupVersion(lines []string, heading int, newVersion string) bool {
@@ -191,33 +167,6 @@ func setGroupVersion(lines []string, heading int, newVersion string) bool {
 		index++
 	}
 	return false
-}
-
-// rewriteEpicGoal replaces "Ships as `<oldVersion>`" with newVersion on the goal line just under
-// epicID's heading, leaving the text alone when the phrase is not there.
-func rewriteEpicGoal(text, epicID, oldVersion, newVersion string) string {
-	if oldVersion == "" || oldVersion == newVersion {
-		return text
-	}
-	heading := regexp.MustCompile(`^##\s+\[` + regexp.QuoteMeta(epicID) + `\]`)
-	old, replacement := "Ships as `"+oldVersion+"`", "Ships as `"+newVersion+"`"
-	lines := strings.Split(text, "\n")
-	for index, line := range lines {
-		if !heading.MatchString(line) {
-			continue
-		}
-		for cursor := index + 1; cursor < len(lines) && cursor < index+5; cursor++ {
-			if strings.HasPrefix(strings.TrimSpace(lines[cursor]), "#") {
-				break
-			}
-			if strings.Contains(lines[cursor], old) {
-				lines[cursor] = strings.ReplaceAll(lines[cursor], old, replacement)
-				return strings.Join(lines, "\n")
-			}
-		}
-		break
-	}
-	return text
 }
 
 // groupFileHeading matches a docs/backlog group file's own heading line.

@@ -26,8 +26,8 @@ func Seed(t *testing.T, root string, groups ...backlog.GroupFile) {
 	}
 }
 
-// SeedText parses a legacy BACKLOG.md fixture and writes its groups as group files, the same way
-// `komodo migrate` would, so an old-grammar fixture never has to be hand-translated.
+// SeedText parses an old-grammar backlog fixture and writes its groups as group files, the same
+// way `komodo migrate` would, so a legacy fixture never has to be hand-translated.
 func SeedText(t *testing.T, root, text string) {
 	t.Helper()
 	Seed(t, root, legacyGroupFiles(backlog.Parse(text))...)
@@ -41,8 +41,9 @@ func legacyGroupFiles(parsed backlog.Backlog) []backlog.GroupFile {
 		out = append(out, backlog.GroupFile{
 			ID: group.ID, Title: group.Title, Priority: legacyGroupPriority(group),
 			Status: legacyGroupStatus(group), Type: group.Type(), Version: group.Version(),
-			EpicID: legacyEpicID(parsed, group), DependsOn: group.DependsOn(),
-			Tasks: legacyGroupTasks(group),
+			EpicID: legacyEpicID(parsed, group), Mode: group.Fields.String("mode"), Base: group.Base(),
+			DependsOn: group.DependsOn(),
+			Tasks:     legacyGroupTasks(group),
 		})
 	}
 	return out
@@ -124,6 +125,7 @@ func legacyGroupTasks(group backlog.Group) []backlog.GroupTask {
 			Files: task.Files(), Checks: task.DoneWhen(), Owner: task.Fields.String("owner"),
 			Context: task.Context(), DependsOn: task.DependsOn(),
 			Priority: task.Priority, Status: task.Status,
+			Tier: task.Tier(), Facets: task.Facets(),
 		})
 	}
 	return out

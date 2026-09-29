@@ -259,24 +259,16 @@ func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (
 	}, nil
 }
 
-// editedGroup is the group's section of the worktree's backlog, as a person edited it on the group's branch.
+// editedGroup is the group's own docs/backlog file, as a person edited it on the group's branch.
 func editedGroup(worktree, group string) (string, bool) {
-	if _, text, found, err := backlog.FindGroupFile(worktree, group); err == nil && found {
-		return strings.TrimSpace(text), true
-	}
-	path, err := backlog.Find(worktree)
-	if err != nil {
+	_, text, found, err := backlog.FindGroupFile(worktree, group)
+	if err != nil || !found {
 		return "", false
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", false
-	}
-	return backlog.GroupText(string(data), group)
+	return strings.TrimSpace(text), true
 }
 
-// lintBacklog returns the worktree backlog's lint problems, as komodo lint reports them: the docs/backlog
-// group files' when the worktree holds one, else BACKLOG.md's.
+// lintBacklog returns the worktree backlog's lint problems, as komodo lint reports them.
 func lintBacklog(worktree string) ([]string, error) {
 	parsed, err := backlog.LoadRoot(worktree)
 	if err != nil {

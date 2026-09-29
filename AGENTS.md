@@ -1,6 +1,6 @@
 # komodo-agentic-factory-coding
 
-Komodo's code assembly line: one static binary is the conveyor and devices, markdown is all a model reads, one guard is the only hook, a model is a machine mounted per host. `docs/prd.md` is the requirements, proven by command; `BACKLOG.md` is the work.
+Komodo's code assembly line: one static binary is the conveyor and devices, markdown is all a model reads, one guard is the only hook, a model is a machine mounted per host. `docs/prd.md` is the requirements, proven by command; `docs/backlog/` is the work. Out-of-task work not already a task goes in with `komodo add`.
 
 ## Rules that hold here
 

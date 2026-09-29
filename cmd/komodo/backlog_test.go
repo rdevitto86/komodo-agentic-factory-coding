@@ -69,7 +69,7 @@ func TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd(t *testing.T) {
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
@@ -99,7 +99,7 @@ func TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles(t *t
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task with no files\n")
+			"- [ ] **TSK-01.1.1** A task with no files\n  - done_when: `go test ./...`\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
@@ -187,16 +187,16 @@ func TestRunBacklogAddWritesAGroupThenATask(t *testing.T) {
 	}
 }
 
-// TestAddPrefersGroupFilesOverALegacyBacklogMd proves a repo holding both writes into its group
-// file, never the legacy BACKLOG.md, since group files are the current grammar.
-func TestAddPrefersGroupFilesOverALegacyBacklogMd(t *testing.T) {
+// TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFile proves a repo holding both writes into its
+// group file, never the legacy backlog file, since group files are the current grammar.
+func TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFile(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-q")
 	writeGroupFile(t, root, "TG-08.1-existing.md",
 		"## [TG-08.1] Existing [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n\n"+
 			"- [ ] **TSK-08.1.1** A task\n  - files: `a.go`\n")
-	backlogPath := filepath.Join(root, "BACKLOG.md")
-	if err := os.WriteFile(backlogPath, []byte("### [TG-08.1] Existing\n"), 0o644); err != nil {
+	legacyPath := filepath.Join(root, backlog.LegacyName)
+	if err := os.WriteFile(legacyPath, []byte("### [TG-08.1] Existing\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := runCLI(t, root, "", "add", "TG-08.1", "A", "second", "task", "--files", "b.go")
@@ -210,12 +210,12 @@ func TestAddPrefersGroupFilesOverALegacyBacklogMd(t *testing.T) {
 	if !strings.Contains(string(data), "A second task") {
 		t.Fatalf("group file gained no task: %s", data)
 	}
-	backlogData, err := os.ReadFile(backlogPath)
+	legacyData, err := os.ReadFile(legacyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(backlogData), "A second task") {
-		t.Fatalf("add wrote into the legacy BACKLOG.md: %s", backlogData)
+	if strings.Contains(string(legacyData), "A second task") {
+		t.Fatalf("add wrote into the legacy backlog file: %s", legacyData)
 	}
 }
 
@@ -267,7 +267,7 @@ func TestLintProblemsRefusesAnOpenGroupAtATaggedVersion(t *testing.T) {
 	root := emptyRepo(t)
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
 	if problems, _ := lintProblems(root); len(problems) != 0 {
 		t.Fatalf("problems before any tag = %v, want none", problems)
@@ -282,7 +282,7 @@ func TestLintProblemsRefusesAnOpenGroupAtATaggedVersion(t *testing.T) {
 	}
 }
 
-// TestLintPrintsAGroupFileTasksCallerNote proves komodo lint shows a group file's notes, not only BACKLOG.md's.
+// TestLintPrintsAGroupFileTasksCallerNote proves komodo lint shows a group file's own notes.
 func TestLintPrintsAGroupFileTasksCallerNote(t *testing.T) {
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
@@ -298,7 +298,7 @@ func TestCheckBaseDefaultsToTheGroupsEpicBranch(t *testing.T) {
 	root := emptyRepo(t)
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
 	runGit(t, root, "branch", "feat/1.0.0")
 	parsed, err := backlog.LoadRoot(root)

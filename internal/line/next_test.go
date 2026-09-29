@@ -28,18 +28,6 @@ func repo(t *testing.T, text string) string {
 	return root
 }
 
-// legacyRepo is repo for a group needing its own base or mode key, which the group-file grammar
-// cannot yet carry.
-func legacyRepo(t *testing.T, text string) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	writeBuilderRole(t, root)
-	return root
-}
-
 // writeBuilderRole ships the one builder role a throwaway repo needs to plan and brief.
 func writeBuilderRole(t *testing.T, root string) {
 	t.Helper()

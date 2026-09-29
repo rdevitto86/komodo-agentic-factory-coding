@@ -58,7 +58,7 @@ func TestStepStartsWithIntake(t *testing.T) {
 func TestStepNamesTheBaseTheGroupDeclares(t *testing.T) {
 	stacked := "### [TG-12.2] A stacked group\n```yaml\ntype: feat\nversion: 2.0.0\nbase: release/2.0\n```\n\n" +
 		"#### [TSK-12.2.1] One [P: C] [READY]\n```yaml\nfiles: [b/one.go]\ndone_when: [\"go test ./b/...\"]\n```\n"
-	next, err := Step(legacyRepo(t, stacked), "")
+	next, err := Step(repo(t, stacked), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,17 +440,6 @@ func noKomodoRepo(t *testing.T, text string) string {
 	return root
 }
 
-// noKomodoLegacyRepo is noKomodoRepo for a task needing its own facets or tier key, which the
-// group-file grammar cannot yet carry, so text lands in a flat BACKLOG.md instead.
-func noKomodoLegacyRepo(t *testing.T, text string) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return root
-}
-
 func TestASpawnNamesTheStandardsItsFilesPullIn(t *testing.T) {
 	root := noKomodoRepo(t, stepBacklog)
 	startRun(t, root)
@@ -480,7 +469,7 @@ const stepBacklogWithFacet = "### [TG-12.1] A group\n```yaml\ntype: feat\nversio
 	"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\nfacets: [github-actions]\n```\n"
 
 func TestASpawnNamesTheFacetsItsTaskDeclares(t *testing.T) {
-	root := noKomodoLegacyRepo(t, stepBacklogWithFacet)
+	root := noKomodoRepo(t, stepBacklogWithFacet)
 	startRun(t, root)
 	briefPath := filepath.Join(root, StateDir, "briefs", "TSK-12.1.1.md")
 	if err := os.MkdirAll(filepath.Dir(briefPath), 0o755); err != nil {
@@ -541,7 +530,7 @@ const stepBacklogWithTaskTier = "### [TG-12.1] A group\n```yaml\ntype: feat\nver
 	"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\ntier: heavy\n```\n"
 
 func TestATaskTierOverridesTheRolesOwnTier(t *testing.T) {
-	root := legacyRepo(t, stepBacklogWithTaskTier)
+	root := repo(t, stepBacklogWithTaskTier)
 	role := "---\nname: reviewer\ndescription: Reviews.\ntier: heavy\ntools: [read, search]\nsession: true\nreturns: reviewer.schema.json\n---\n\nBody.\n"
 	if err := os.WriteFile(filepath.Join(root, RolesDir, "reviewer.md"), []byte(role), 0o644); err != nil {
 		t.Fatal(err)
@@ -693,7 +682,7 @@ func TestSpawnNamesTheWorktreeTheAgentWorksIn(t *testing.T) {
 // TestSingleModeSpawnSharesTheGroupWorktree proves step names the group's own worktree for a
 // single-mode task's spawn, the same one brief.go already picks, so the two never disagree.
 func TestSingleModeSpawnSharesTheGroupWorktree(t *testing.T) {
-	root := legacyRepo(t, singleModeBacklog)
+	root := repo(t, singleModeBacklog)
 	if err := SaveRun(root, RunState{Run: "TG-13.1-1", Group: "TG-13.1", Base: "main", Branch: "feat/a-single-mode-group", Worktree: root}); err != nil {
 		t.Fatal(err)
 	}
@@ -718,7 +707,7 @@ func TestSingleModeSpawnSharesTheGroupWorktree(t *testing.T) {
 // task in the group's own worktree on the group branch, then closes the wave with no merge.
 func TestSingleModeWalksBriefCloseAndCloseWave(t *testing.T) {
 	root := gitRepo(t)
-	commit(t, root, "BACKLOG.md", singleModeBacklog, "seed")
+	commitBacklogText(t, root, singleModeBacklog, "seed")
 	role := "---\nname: builder\ndescription: Writes code.\ntier: standard\ntools: [read, edit, write, shell, search]\n" +
 		"session: true\nreturns: builder.schema.json\n---\n\nTask {{task_id}}: {{title}}\n\n{{task_block}}\n" +
 		"{{repo_rules}}{{repo_context}}{{context}}{{files}}{{repo_profile}}{{standards}}{{done_when}}{{failure}}\n"
@@ -1105,13 +1094,6 @@ func briefWave(t *testing.T, text, group string, wave []string, taskIDs ...strin
 	return briefWaveFrom(t, repo(t, text), group, wave, taskIDs...)
 }
 
-// legacyBriefWave is briefWave for a group needing a mode or a task's own tier key, which the
-// group-file grammar cannot yet carry, so text lands in a flat BACKLOG.md instead.
-func legacyBriefWave(t *testing.T, text, group string, wave []string, taskIDs ...string) string {
-	t.Helper()
-	return briefWaveFrom(t, legacyRepo(t, text), group, wave, taskIDs...)
-}
-
 // briefWaveFrom is briefWave's own work once its repo root is built.
 func briefWaveFrom(t *testing.T, root, group string, wave []string, taskIDs ...string) string {
 	t.Helper()
@@ -1184,7 +1166,7 @@ func TestAWaveWritesEveryBriefBeforeItSpawns(t *testing.T) {
 
 func TestALocalTaskInAWaveRunsAloneThenTheOthersSpawn(t *testing.T) {
 	text := strings.Replace(waveBacklog, "files: [a/one.go]", "files: [a/one.go]\ntier: light", 1)
-	root := legacyBriefWave(t, text, "TG-14.1", wideWave, "TSK-14.1.1", "TSK-14.1.2", "TSK-14.1.3")
+	root := briefWave(t, text, "TG-14.1", wideWave, "TSK-14.1.1", "TSK-14.1.2", "TSK-14.1.3")
 	role := "---\nname: builder\ndescription: Writes code.\ntier: standard\ntools: [read, search]\nsession: true\nreturns: builder.schema.json\n---\n\nBody.\n"
 	if err := os.WriteFile(filepath.Join(root, RolesDir, "builder.md"), []byte(role), 0o644); err != nil {
 		t.Fatal(err)
@@ -1226,7 +1208,7 @@ func TestALocalTaskInAWaveRunsAloneThenTheOthersSpawn(t *testing.T) {
 }
 
 func TestASingleModeGroupSpawnsOneTaskAtATime(t *testing.T) {
-	root := legacyBriefWave(t, singleModeBacklog, "TG-13.1", []string{"TSK-13.1.1", "TSK-13.1.2"}, "TSK-13.1.1", "TSK-13.1.2")
+	root := briefWave(t, singleModeBacklog, "TG-13.1", []string{"TSK-13.1.1", "TSK-13.1.2"}, "TSK-13.1.1", "TSK-13.1.2")
 	next, err := Step(root, "")
 	if err != nil {
 		t.Fatal(err)
@@ -1395,13 +1377,6 @@ func tieredRepo(t *testing.T, fields, overlay string) string {
 	return tieredRepoFrom(t, fields, overlay, repo)
 }
 
-// legacyTieredRepo is tieredRepo for a task needing its own tier key, which the group-file
-// grammar cannot yet carry, so its text lands in a flat BACKLOG.md instead.
-func legacyTieredRepo(t *testing.T, fields, overlay string) string {
-	t.Helper()
-	return tieredRepoFrom(t, fields, overlay, legacyRepo)
-}
-
 // tieredRepoFrom is tieredRepo's own work, seeding its one task's backlog through builder.
 func tieredRepoFrom(t *testing.T, fields, overlay string, builder func(*testing.T, string) string) string {
 	t.Helper()
@@ -1502,7 +1477,7 @@ func TestATaskClaimingADirectoryBuildsOnStandard(t *testing.T) {
 }
 
 func TestATaskTierHeavyStaysOnHeavy(t *testing.T) {
-	root := legacyTieredRepo(t, "files: [a/one.go]\ntier: heavy\n", "")
+	root := tieredRepo(t, "files: [a/one.go]\ntier: heavy\n", "")
 	if machine, _ := builderMachine(t, root); machine != "vendora/opus" {
 		t.Fatalf("machine = %q; a task tier key picks the builder's machine", machine)
 	}

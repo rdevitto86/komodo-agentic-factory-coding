@@ -57,16 +57,13 @@ func briefRepo(t *testing.T) string {
 	return root
 }
 
-// swapToLegacyBacklog drops root's seeded group file and writes text as a flat BACKLOG.md, for a
-// task needing its own facets or mode key, which the group-file grammar cannot yet carry.
-func swapToLegacyBacklog(t *testing.T, root, text string) {
+// reseedGroupFiles drops root's seeded group files and reseeds them from text's legacy grammar.
+func reseedGroupFiles(t *testing.T, root, text string) {
 	t.Helper()
 	if err := os.RemoveAll(filepath.Join(root, "docs", "backlog")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, text)
 }
 
 func TestBuildBriefFillsEverySlot(t *testing.T) {
@@ -163,7 +160,7 @@ func TestBuildBriefAddsTheFacetsATaskNames(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	swapToLegacyBacklog(t, root, facetBacklog)
+	reseedGroupFiles(t, root, facetBacklog)
 	write(filepath.Join(facet.FacetsDir, "testfacet", "facet.md"),
 		"# Testfacet\n\n## Builder appendix\nBuilder rule text.\n\n## Reviewer appendix\nReviewer rule text.\n")
 	write(filepath.Join(facet.FacetsDir, "testfacet", "skill", "SKILL.md"),
@@ -274,7 +271,7 @@ func TestRepoContextSlotEnforcesItsTotalCap(t *testing.T) {
 func TestSingleModeBriefsShareTheGroupWorktree(t *testing.T) {
 	root := briefRepo(t)
 	text := strings.Replace(briefBacklog, "type: feat\nversion: 2.0.0", "type: feat\nversion: 2.0.0\nmode: single", 1)
-	swapToLegacyBacklog(t, root, text)
+	reseedGroupFiles(t, root, text)
 	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
 	if err != nil {
 		t.Fatal(err)

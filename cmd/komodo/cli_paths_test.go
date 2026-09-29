@@ -20,16 +20,13 @@ func TestACommandOutsideAGitRepoFails(t *testing.T) {
 	}
 }
 
-// TestLintFailsOnATaskWithNoDoneWhen proves the legacy grammar's lint still catches a missing
-// done_when; the group-file grammar's own lint has no equivalent check yet.
+// TestLintFailsOnATaskWithNoDoneWhen proves the group-file grammar's own lint catches a missing done_when.
 func TestLintFailsOnATaskWithNoDoneWhen(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-q")
-	broken := "# Backlog\n\n### [TG-91.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
-		"#### [TSK-91.1.1] No proof [P: C] [READY]\n```yaml\nfiles: [a.go]\n```\n"
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(broken), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeGroupFile(t, root, "TG-91.1-g.md",
+		"## [TG-91.1] G [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-91\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-91.1.1** No proof\n  - files: `a.go`\n")
 	got := runCLI(t, root, "", "lint")
 	if got.code != 1 || !strings.Contains(got.stdout+got.stderr, "no done_when") {
 		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", got.code, got.stdout, got.stderr)
