@@ -32,6 +32,8 @@ type Host struct {
 	EventsPath func(root, task string) string
 	// Leftovers names what a retired setup left in the host's user settings, such as a second agent hook.
 	Leftovers func() []string
+	// WritePaths names paths outside root this mount's session may still write, such as its own memory store.
+	WritePaths func(root string) []string
 	// ReviewerWhy says where review lands and why, when the overlay opts the reviewer onto the local machine.
 	ReviewerWhy func(plan string) string
 	// Deferred, when set, says why the mount is kept but unusable: nothing installs, selects, or renders it.
@@ -132,6 +134,17 @@ func ConfigPaths() []string {
 	var out []string
 	for _, host := range Hosts() {
 		out = append(out, host.ConfigPaths...)
+	}
+	return out
+}
+
+// WritePaths are every path outside root a registered mount's session may still write.
+func WritePaths(root string) []string {
+	var out []string
+	for _, host := range Hosts() {
+		if host.WritePaths != nil {
+			out = append(out, host.WritePaths(root)...)
+		}
 	}
 	return out
 }

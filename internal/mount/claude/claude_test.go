@@ -913,6 +913,23 @@ func TestLeftoversNamesARetiredHookAndAllowRuleOnly(t *testing.T) {
 	}
 }
 
+// TestWritePathsNamesTheProjectsMemoryDirectory checks the returned path matches this host's own
+// slug scheme: every / and . in the root folds to a dash, under ~/.claude/projects.
+func TestWritePathsNamesTheProjectsMemoryDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "work", "my.repo")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	slug := strings.ReplaceAll(strings.ReplaceAll(filepath.ToSlash(root), "/", "-"), ".", "-")
+	want := filepath.ToSlash(filepath.Join(home, Dir, "projects", slug, "memory")) + "/**"
+	got := WritePaths(root)
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("WritePaths = %v, want [%s]", got, want)
+	}
+}
+
 // TestSettingsTurnAttributionOff checks the rendered settings hide the trailer, the PR footer, and the session link.
 func TestSettingsTurnAttributionOff(t *testing.T) {
 	worktree := t.TempDir()

@@ -382,6 +382,27 @@ func readPolicy(tree fs.FS) (policyFile, error) {
 	return policy, json.Unmarshal(data, &policy)
 }
 
+// projectSlug turns an absolute path into this host's project-directory name under ~/.claude/projects.
+func projectSlug(path string) string {
+	slug := strings.ReplaceAll(path, "/", "-")
+	return strings.ReplaceAll(slug, ".", "-")
+}
+
+// WritePaths returns this host's project memory directory for root, the only path outside root its
+// session may still write.
+func WritePaths(root string) []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil
+	}
+	dir := filepath.ToSlash(filepath.Join(home, Dir, "projects", projectSlug(filepath.ToSlash(abs)), "memory"))
+	return []string{dir + "/**"}
+}
+
 // namesLocalServer reports whether a file still points at the retired local server.
 func namesLocalServer(path string) bool {
 	data, err := os.ReadFile(path)
@@ -409,6 +430,7 @@ func init() {
 		Usage:       Usage,
 		Headless:    Headless,
 		Leftovers:   Leftovers,
+		WritePaths:  WritePaths,
 		ReviewerWhy: reviewerWhy,
 		Contract: func(root, worktree string) mount.Contract {
 			return NewMount(root, worktree, profileTurnCap, 0)
