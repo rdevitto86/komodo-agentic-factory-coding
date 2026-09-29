@@ -4893,7 +4893,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.7] The gate's git hooks refuse trailers and branch names outside `<type>/<kebab-name>` [P: M] [REFINEMENT]
+#### [TSK-10.8.7] The gate's git hooks refuse trailers and branch names outside `<type>/<kebab-name>` [P: M] [DONE]
 ```yaml
 files: [internal/gate/gate.go, internal/gate/gate_test.go, internal/guard/git.go]
 done_when:
