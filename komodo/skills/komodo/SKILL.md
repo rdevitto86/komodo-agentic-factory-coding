@@ -9,6 +9,7 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
 
 ```
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
+  komodo migrate [--dry-run]  Convert BACKLOG.md into docs/backlog group files, in the current grammar
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo backlog             List the open groups under docs/backlog

@@ -19,6 +19,7 @@ import (
 const usage = `komodo: the code assembly line.
 
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
+  komodo migrate [--dry-run]  Convert BACKLOG.md into docs/backlog group files, in the current grammar
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo backlog             List the open groups under docs/backlog
@@ -92,6 +93,8 @@ func main() {
 	switch os.Args[1] {
 	case "init":
 		runInit(root, os.Args[2:])
+	case "migrate":
+		runMigrate(root, os.Args[2:])
 	case "lint":
 		runLint(root)
 	case "list":

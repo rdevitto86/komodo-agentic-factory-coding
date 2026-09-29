@@ -43,7 +43,14 @@ func lintProblems(root string) ([]string, error) {
 		problems, _, _, err := groupFileLintProblems(root)
 		return problems, err
 	}
-	_, parsed := load(root)
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := backlog.Load(path)
+	if err != nil {
+		return nil, err
+	}
 	return append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...), nil
 }
 
