@@ -1,5 +1,5 @@
 {
-  "critical_refs": ["main", "master"],
+  "critical_refs": ["main", "master", "trunk", "prod", "production", "release/*", "hotfix/*"],
   "config_paths": [
     "~/.komodo/**",
     "**/.git/config",
