@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -53,9 +54,7 @@ const reviewFixture = `{"type":"result","subtype":"success","is_error":false,"nu
 func driveRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(driveBacklog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, driveBacklog)
 	// The install ignores the state dir and the mount's rendered copies, so Check's scope never sees them.
 	ignore := "/" + line.StateDir + "/\n/" + claude.Dir + "/\n"
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(ignore), 0o644); err != nil {
@@ -175,9 +174,10 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	if err != nil || !strings.Contains(string(review), `"findings"`) {
 		t.Fatalf("review result = %q, %v; the reviewer's result must be saved for ship", review, err)
 	}
-	shipped, err := exec.Command("git", "-C", bareRemote(t, root), "show", "feat/TG-40.1-a-fake-group:BACKLOG.md").CombinedOutput()
-	if err != nil || strings.Contains(string(shipped), "[READY]") || !strings.Contains(string(shipped), "[DONE]") {
-		t.Fatalf("shipped BACKLOG.md = %s, %v; Prepare must mark every task DONE", shipped, err)
+	// A no-epic group deletes its own file once it ships, its tasks' ticks the record (decision 0009).
+	if _, err := exec.Command("git", "-C", bareRemote(t, root), "show",
+		"feat/TG-40.1-a-fake-group:docs/backlog/TG-40.1-a-fake-group.md").CombinedOutput(); err == nil {
+		t.Fatal("the shipped group's own file must be removed once it has no epic")
 	}
 
 	// A group sent back to review after Prepare closed its tasks still finds its plan, and ships again.
@@ -258,8 +258,16 @@ func TestRunRefusesToCutWhereLeftoversCannotBeListed(t *testing.T) {
 func TestRunMergesAShippedGroupIntoItsEpicBranch(t *testing.T) {
 	root := driveRepo(t)
 	setupDriveFakeClaude(t)
-	epicBacklog := "## [EPIC-40] The fake epic. Ships as `1.0.0`\n\n" + driveBacklog
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(epicBacklog), 0o644); err != nil {
+	groupPath := filepath.Join(root, "docs", "backlog", "TG-40.1-a-fake-group.md")
+	data, err := os.ReadFile(groupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withEpic := strings.Replace(string(data), "type: feat\n", "type: feat\nepic: EPIC-40\n", 1)
+	if withEpic == string(data) {
+		t.Fatal("the group's yaml block was not found to add an epic to")
+	}
+	if err := os.WriteFile(groupPath, []byte(withEpic), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runGit(t, root, "commit", "-am", "an epic")

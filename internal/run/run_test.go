@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
 	"komodo/internal/guard"
 	"komodo/internal/install"
@@ -197,9 +198,7 @@ func drainRepo(t *testing.T) string {
 	runGit(t, root, "push", "origin", "main")
 	runGit(t, root, "branch", "feat/first")
 	runGit(t, root, "branch", "feat/second")
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(drainText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, drainText)
 	if err := os.MkdirAll(filepath.Join(root, line.StateDir, "fake"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -296,9 +295,7 @@ func driveDrainRepo(t *testing.T, backlogText string) string {
 	// A real drain pins its own binary onto PATH for the whole process; restore it once the test ends.
 	t.Setenv("PATH", os.Getenv("PATH"))
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlogText)
 	ignore := "/" + line.StateDir + "/\n/" + claude.Dir + "/\n"
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(ignore), 0o644); err != nil {
 		t.Fatal(err)
@@ -486,9 +483,10 @@ func TestDrainDryRunListsTheGroupsInOrderAndLaunchesNothing(t *testing.T) {
 		"#### [TSK-07.3.1] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\ndone_when: [\"true\"]\n```\n\n" +
 		"### [TG-07.4] Fourth\n```yaml\ntype: feat\nversion: 1.3.0\nbase: feat/missing\n```\n\n" +
 		"#### [TSK-07.4.1] Four [P: C] [READY]\n```yaml\nfiles: [d/four.go]\ndone_when: [\"true\"]\n```\n"
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(stacked), 0o644); err != nil {
+	if err := os.RemoveAll(filepath.Join(root, "docs", "backlog")); err != nil {
 		t.Fatal(err)
 	}
+	backlogtest.SeedText(t, root, stacked)
 	var out bytes.Buffer
 	code, err := Launch(Options{Root: root, DryRun: true, Stdout: &out, Stderr: &out})
 	if err != nil || code != 0 {
@@ -534,8 +532,8 @@ func TestDrainStopsWhenTheWholeBudgetIsSpent(t *testing.T) {
 	}
 }
 
-// TestDrainSkipsAGroupThatComesUpAgainAfterItShipped proves a group still READY on the root's own
-// BACKLOG.md, since shipping never rewrites it, does not launch twice within the one drain.
+// TestDrainSkipsAGroupThatComesUpAgainAfterItShipped proves a group still READY in the root's own
+// backlog, since shipping never rewrites it, does not launch twice within the one drain.
 func TestDrainSkipsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
 	root := driveDrainRepo(t, driveDrainText)
 	setupDrainDriveFakeClaude(t)
@@ -702,10 +700,9 @@ func restackDrain(t *testing.T, clash bool) (string, string) {
 	runGit(t, root, "init", "-q", "-b", "main")
 	runGit(t, root, "config", "user.email", "a@example.com")
 	runGit(t, root, "config", "user.name", "a")
-	for name, text := range map[string]string{"BACKLOG.md": restackText, ".gitignore": "/.komodo/\n"} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	backlogtest.SeedText(t, root, restackText)
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("/.komodo/\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-q", "-m", "backlog")

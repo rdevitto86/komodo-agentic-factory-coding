@@ -1054,13 +1054,6 @@ func TestTemplateSectionsFollowTheRepoTemplate(t *testing.T) {
 	}
 }
 
-func TestGroupWhyReadsOnlyItsOwnGroup(t *testing.T) {
-	text := "### [TG-01.1] One\n* **Why:** first reason\n\n### [TG-01.2] Two\n* **Why:** second reason\n"
-	if got := groupWhy(text, "TG-01.2"); got != "second reason" {
-		t.Fatalf("why = %q", got)
-	}
-}
-
 func TestShipStampsTheChangedLinesOnItsRow(t *testing.T) {
 	root, group := shipRepo(t)
 	runGit(t, group, "branch", "main")
@@ -1133,7 +1126,7 @@ func TestReviewSizeCountsNoDeletion(t *testing.T) {
 func TestReviewSizeSkipsTheLinesBookkeeping(t *testing.T) {
 	_, group := shipRepo(t)
 	runGit(t, group, "branch", "main")
-	for _, path := range []string{"BACKLOG.md", "docs/backlog/TG-1.md", "changelog.d/1.0.0/TG-1.md", "code.go"} {
+	for _, path := range []string{"docs/backlog/TG-1.md", "changelog.d/1.0.0/TG-1.md", "code.go"} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(group, path)), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -2216,25 +2209,6 @@ func TestPrepareTurnsARefusedPreCommitHookIntoAFix(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsWhenTheGroupsBacklogLacksATaskItTicks proves the legacy BACKLOG.md path still
-// names the missing task, since a group file present but missing one task falls through to it.
-func TestPrepareFailsWhenTheGroupsBacklogLacksATaskItTicks(t *testing.T) {
-	root, group, plan := prepareRepo(t)
-	other := strings.Replace(shipBacklog, "TSK-09.1.1", "TSK-09.1.2", 1)
-	if err := os.RemoveAll(filepath.Join(group, "docs", "backlog")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(group, "BACKLOG.md"), []byte(other), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := PrepareGroup(root, plan); err == nil || !strings.Contains(err.Error(), "TSK-09.1.1") {
-		t.Fatalf("prepare = %v, want the missing task named", err)
-	}
-	if got := stations(t, root); !slices.Equal(got, []string{"prepare:failed"}) {
-		t.Fatalf("ledger = %v, want the failed prepare", got)
-	}
-}
-
 func TestEndedEpicFilesFailsOnAGroupFileItCannotRead(t *testing.T) {
 	worktree := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(worktree, "docs", "backlog", "TG-02.1-a.md"), 0o755); err != nil {
@@ -2294,11 +2268,6 @@ func TestPrepareFailsOnWhatItCannotReadOrWrite(t *testing.T) {
 		name  string
 		spoil func(t *testing.T, root, group string, plan *Plan)
 	}{
-		{"the root has no backlog", func(t *testing.T, root, _ string, _ *Plan) {
-			if err := os.RemoveAll(filepath.Join(root, "docs", "backlog")); err != nil {
-				t.Fatal(err)
-			}
-		}},
 		{"the changelog fragment cannot be written", func(t *testing.T, _, group string, _ *Plan) {
 			if err := os.WriteFile(filepath.Join(group, "changelog.d"), []byte("x\n"), 0o644); err != nil {
 				t.Fatal(err)

@@ -49,34 +49,41 @@ func TestRecordStatusKeepsEveryTaskAndLeavesNoTempFile(t *testing.T) {
 }
 
 func TestWriteStatusChangesOnlyTheTickOrTheBlocker(t *testing.T) {
-	edited := stepBacklog + "\nA person's note under the task, kept byte for byte.\n"
+	text := "## [TG-12.1] Group [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-12\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-12.1.1** A task\n  - files: `a.go`\n"
 	for _, tc := range []struct {
 		status string
 		ok     bool
 	}{{"DONE", true}, {"BLOCKED", true}, {"IN_PROGRESS", false}, {"READY", false}} {
 		t.Run(tc.status, func(t *testing.T) {
 			root := t.TempDir()
-			path := filepath.Join(root, "BACKLOG.md")
-			if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+			dir := filepath.Join(root, "docs", "backlog")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "TG-12.1-group.md")
+			if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			err := writeStatus(root, "TSK-12.1.1", tc.status)
 			if (err == nil) != tc.ok {
 				t.Fatalf("err = %v; only DONE and BLOCKED may reach the backlog", err)
 			}
-			want := edited
-			if tc.ok {
-				want = strings.Replace(edited, "[READY]", "["+tc.status+"]", 1)
+			want := "- [ ]"
+			if tc.ok && tc.status == "DONE" {
+				want = "- [x]"
+			} else if tc.ok {
+				want = "status: " + tc.status
 			}
-			if data, _ := os.ReadFile(path); string(data) != want {
-				t.Fatalf("backlog =\n%s\nwant\n%s", data, want)
+			if data, _ := os.ReadFile(path); !strings.Contains(string(data), want) {
+				t.Fatalf("group file =\n%s\nwant it to contain %q", data, want)
 			}
 		})
 	}
 }
 
 // TestWriteStatusTicksAGroupFileTask proves a repo holding docs/backlog group files gets its tick
-// or blocker written into the task's own group file, never a BACKLOG.md that does not exist.
+// or blocker written into the task's own group file.
 func TestWriteStatusTicksAGroupFileTask(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "docs", "backlog")

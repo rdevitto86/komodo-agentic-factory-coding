@@ -160,36 +160,8 @@ func TestCloseWaveSkipsTheMergeForASingleModeGroup(t *testing.T) {
 	}
 }
 
-func TestFileFindingsAppendsTasksByClass(t *testing.T) {
-	root := t.TempDir()
-	body := "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-		"#### [TSK-09.1.1] One [P: C] [DONE]\n```yaml\nfiles: [a/x.go]\ndone_when: [\"go test\"]\n```\n"
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	findings := []Finding{
-		{Severity: "low", Class: "simplify", File: "a/x.go", Line: 3, Title: "dead branch", Detail: "d", Fix: "f"},
-		{Severity: "medium", Class: "test-gap", File: "a/y.go", Line: 9, Title: "no test", Detail: "d", Fix: "f"},
-	}
-	added, err := FileFindings(root, "TG-09.1", findings)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(added) != 2 {
-		t.Fatalf("added = %v", added)
-	}
-	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	text := string(data)
-	if !strings.Contains(text, "dead branch") || !strings.Contains(text, "type: refactor") || !strings.Contains(text, "type: test") {
-		t.Fatalf("filed tasks are wrong:\n%s", text)
-	}
-	if !strings.Contains(text, "[REFINEMENT]") {
-		t.Fatal("a filed finding must open in REFINEMENT")
-	}
-}
-
 // TestFileFindingsAppendsIntoTheGroupsOwnFile proves a repo holding docs/backlog group files gets
-// its findings filed into the group's own file, never a BACKLOG.md that does not exist.
+// its findings filed into the group's own file.
 func TestFileFindingsAppendsIntoTheGroupsOwnFile(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "docs", "backlog")
@@ -220,8 +192,8 @@ func TestFileFindingsAppendsIntoTheGroupsOwnFile(t *testing.T) {
 	if !strings.Contains(text, "dead branch") || !strings.Contains(text, "status: REFINEMENT") {
 		t.Fatalf("filed task is wrong:\n%s", text)
 	}
-	if _, err := os.Stat(filepath.Join(root, "BACKLOG.md")); !os.IsNotExist(err) {
-		t.Fatal("FileFindings must never create a BACKLOG.md in a group-file repo")
+	if _, err := os.Stat(filepath.Join(root, backlog.LegacyName)); !os.IsNotExist(err) {
+		t.Fatal("FileFindings must never create a legacy backlog file in a group-file repo")
 	}
 }
 

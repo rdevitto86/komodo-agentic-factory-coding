@@ -58,21 +58,6 @@ func templateSections(dir string) []string {
 	return out
 }
 
-// groupWhy returns the reason line under a group's heading, or the empty string.
-func groupWhy(text, groupID string) string {
-	inGroup := false
-	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(line, "### ") {
-			inGroup = strings.HasPrefix(line, "### ["+groupID+"]")
-			continue
-		}
-		if why, ok := strings.CutPrefix(strings.TrimSpace(line), "* **Why:**"); ok && inGroup {
-			return strings.TrimSpace(why)
-		}
-	}
-	return ""
-}
-
 // reviewBlast reads the review's blast radius tier and its reason, or empty strings.
 func reviewBlast(root, groupID string) (string, string) {
 	data, _, err := ReadResultFile(root, groupID+"-review")

@@ -82,7 +82,7 @@ func LoadSnapshot(root, needle string) (Snapshot, error) {
 	if snap.Paused = pausedAction(plan); snap.Paused != nil {
 		return snap, nil
 	}
-	// The run's live status reads first, the parsed backlog second, so a close never edits BACKLOG.md.
+	// The run's live status reads first, the parsed backlog second, so a close never edits a group file.
 	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return Snapshot{}, err

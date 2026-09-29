@@ -190,60 +190,20 @@ func SplitFindings(findings []Finding, floor string) (repair, file []Finding) {
 	return repair, file
 }
 
-// classType maps a finding class to the conventional-commit type its task carries.
-var classType = map[string]string{
-	"bug": "fix", "security": "fix", "simplify": "refactor",
-	"narrative-comment": "docs", "undocumented-nonobvious": "docs", "test-gap": "test",
-}
-
 // FileFindings appends the findings under the floor as low-priority tasks, newest last, into the
-// group's own docs/backlog file when root holds one, else the flat BACKLOG.md.
+// group's own docs/backlog file.
 func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 	if len(findings) == 0 {
 		return nil, nil
 	}
-	if groupPath, groupText, found, err := backlog.FindGroupFile(root, groupID); err != nil {
-		return nil, err
-	} else if found {
-		return fileGroupFileFindings(groupPath, groupText, findings)
-	}
-	path, err := backlog.Find(root)
+	groupPath, groupText, found, err := backlog.FindGroupFile(root, groupID)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+	if !found {
+		return nil, fmt.Errorf("%s is not in %s", groupID, backlog.GroupFilesDir)
 	}
-	text := string(data)
-	filedTitles := filedTitles(text, groupID)
-	var added []string
-	for _, finding := range findings {
-		title := fmt.Sprintf("%s:%d %s", finding.File, finding.Line, finding.Title)
-		if filedTitles[title] {
-			continue
-		}
-		taskType := classType[finding.Class]
-		if taskType == "" {
-			taskType = "chore"
-		}
-		var fields backlog.Fields
-		fields.Set("files", []any{finding.File})
-		fields.Set("done_when", []any{"test -f " + finding.File})
-		fields.Set("type", taskType)
-		fields.Set("context", []any{strings.TrimSpace(finding.Detail + " " + finding.Fix)})
-		next, id, err := backlog.AppendTask(text, groupID, title, fields, "L", "REFINEMENT")
-		if err != nil {
-			return added, err
-		}
-		text = next
-		added = append(added, id)
-		filedTitles[title] = true
-	}
-	if len(added) == 0 {
-		return nil, nil
-	}
-	return added, os.WriteFile(path, []byte(text), 0o644)
+	return fileGroupFileFindings(groupPath, groupText, findings)
 }
 
 // fileGroupFileFindings appends every unfiled finding to one docs/backlog group file, newest last.
@@ -277,17 +237,4 @@ func fileGroupFileFindings(path, text string, findings []Finding) ([]string, err
 		return nil, nil
 	}
 	return added, os.WriteFile(path, []byte(text), 0o644)
-}
-
-// filedTitles is the set of task titles already filed under groupID.
-func filedTitles(text, groupID string) map[string]bool {
-	titles := make(map[string]bool)
-	group, ok := backlog.Parse(text).Group(groupID)
-	if !ok {
-		return titles
-	}
-	for _, task := range group.Tasks {
-		titles[task.Title] = true
-	}
-	return titles
 }
