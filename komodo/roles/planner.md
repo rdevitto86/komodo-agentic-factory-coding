@@ -21,9 +21,11 @@ You write one group file, one to twelve tasks, for `docs/backlog/<group-id>-<slu
 - Prefer more small tasks over one large one, but never split a change that only compiles as a whole.
 - Order by dependency, then by risk: the piece most likely to change the design goes first.
 - A group holds 1 to 12 tasks; split a larger one into two groups.
+- A new group's `version:` follows the backlog rule's Choosing a version section: the segment above the newest tag, the phase the epic's own state picks.
 - If the spec leaves a decision open that changes which files are touched, record it as a gap and plan the rest.
 - Never invent requirements. Every task traces to a line in the goal or the spec.
 - Read the spec files by path under docs: the architecture file whole, then the PRD if one exists, then the system-design sections and the decisions the goal touches. A repo may keep its design in its README instead.
+- A foreign repo's own doc shape still feeds a task: map an SDD or a design doc's parts, purpose and rationale onto the architecture file, its data model, interfaces and operations onto the system-design file, and its recorded choices onto the decisions file, per the standards-specs skill. Cite the source doc's section in the task's `context` until the owner splits it.
 
 ## Result JSON
 Return only the JSON object the schema describes: `tasks` with `depends_on` as indexes into your own list, and `gaps`.

@@ -1,7 +1,7 @@
 ---
 name: standards-cicd
 description: Pipeline stages, caching, artifacts, and what a failing job must do.
-globs: ["**/.github/**", "**/Makefile", "**/cicd.yaml"]
+globs: ["**/.github/workflows/**", "**/.gitlab-ci.yml", "**/.circleci/**", "**/Jenkinsfile", "**/azure-pipelines.yml", "**/Makefile", "**/cicd.yaml"]
 ---
 
 # CI/CD
@@ -12,7 +12,7 @@ Test tiers and coverage floors belong to the SDLC standard. This file owns which
 | Stage | Where | Runs | Gates |
 |---|---|---|---|
 | DEV | developer machine | unit, component, contract, smoke, integration | the commit and the push, via local hooks |
-| CI | ephemeral runner per PR | unit, component, contract in full, plus security scans | the merge |
+| CI | a hosted or self-hosted runner per PR | unit, component, contract in full, plus security scans | the merge |
 | STG | deployed post-merge | smoke, integration, e2e, perf when flagged | the release |
 | PROD | deployed on approval | smoke | nothing after it |
 
@@ -23,7 +23,7 @@ Test tiers and coverage floors belong to the SDLC standard. This file owns which
 - Both are local-only. A hook that needs infrastructure belongs in CI.
 
 ## CI
-- Ephemeral, disposable, hermetic. Never reaches STG; holds no production-adjacent credentials. LocalStack or equivalents stand in for cloud dependencies.
+- Hosted runners are ephemeral, disposable, hermetic; a self-hosted runner isolates each job in a fresh container instead. Never reaches STG; holds no production-adjacent credentials. LocalStack or equivalents stand in for cloud dependencies.
 - Runs unit, component, and contract in full. Contract verifies both sides in-process against file-based pacts.
 - Security gates, all blocking: secret scan on any verified live credential including branch history; dependency scan on High or Critical with no recorded exception; static analysis on High or Critical rules on changed files.
 - Path filters never skip the security scans. Draft PRs run the secret scan; the rest wait for ready-for-review.

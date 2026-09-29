@@ -10,7 +10,7 @@ Follow the comments standard: a doc line on every public function, a comment on 
 
 ## Conventions
 
-- **The configured analyzer set must pass** (`.editorconfig` or ruleset). Suppress with `#pragma warning disable <rule>` paired with `restore` after the line, no prose; reasons go in `BACKLOG.md`. Prefer fixing the finding.
+- **The configured analyzer set must pass** (`.editorconfig` or ruleset). Suppress with `#pragma warning disable <rule>` paired with `restore` after the line, no prose; reasons go via `komodo add`. Prefer fixing the finding.
 - **Naming**: `PascalCase` for types/methods/properties/public fields; `camelCase` for locals/parameters; `_camelCase` for private fields. No Hungarian notation, no `I` prefix beyond real interfaces.
 - **No `Utils`/`Common`/`Helpers` grab-bag statics.** Split by domain; `internal` for anything not crossing the assembly boundary.
 - **Static constructors and field initializers do no I/O.** Wire dependencies through DI, not a static singleton reaching out at load time.
