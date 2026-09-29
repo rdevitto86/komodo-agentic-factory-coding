@@ -34,6 +34,13 @@ func runInit(root string, args []string) {
 	if ignore := repoIgnores(root, nil); len(ignore.Changes) > 0 {
 		applyPlan(ignore, false)
 	}
+	if problems, err := lintProblems(root); err == nil && len(problems) > 0 {
+		fmt.Println()
+		for _, problem := range problems {
+			fmt.Println(problem)
+		}
+		fmt.Printf("%d backlog problem(s)\n", len(problems))
+	}
 	fmt.Println("\nnext:")
 	fmt.Printf("  komodo install --host %s\n", mount.Names()[0])
 	fmt.Println("  komodo lint")
@@ -88,7 +95,7 @@ func writeStarters(out io.Writer, tree fs.FS, root string, fill *strings.Replace
 		}
 		dest := filepath.Join(dir, filepath.Base(target))
 		if _, err := os.Lstat(dest); err == nil {
-			fmt.Fprintf(out, "keep %s\n", target)
+			reportKept(out, tree, name, target, dest)
 			return nil
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -99,7 +106,7 @@ func writeStarters(out io.Writer, tree fs.FS, root string, fill *strings.Replace
 		}
 		file, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if errors.Is(err, fs.ErrExist) {
-			fmt.Fprintf(out, "keep %s\n", target)
+			reportKept(out, tree, name, target, dest)
 			return nil
 		} else if err != nil {
 			return err
@@ -114,6 +121,62 @@ func writeStarters(out io.Writer, tree fs.FS, root string, fill *strings.Replace
 		fmt.Fprintf(out, "create %s\n", target)
 		return nil
 	})
+}
+
+// reportKept prints that a file was kept, naming each of the template's markdown sections it lacks.
+func reportKept(out io.Writer, tree fs.FS, name, target, dest string) {
+	if !strings.HasSuffix(target, ".md") {
+		fmt.Fprintf(out, "keep %s\n", target)
+		return
+	}
+	templateBody, err := fs.ReadFile(tree, name)
+	if err != nil {
+		fmt.Fprintf(out, "keep %s\n", target)
+		return
+	}
+	keptBody, err := os.ReadFile(dest)
+	if err != nil {
+		fmt.Fprintf(out, "keep %s\n", target)
+		return
+	}
+	missing := missingSections(string(templateBody), string(keptBody))
+	if len(missing) == 0 {
+		fmt.Fprintf(out, "keep %s\n", target)
+		return
+	}
+	fmt.Fprintf(out, "keep %s: missing %s\n", target, strings.Join(missing, ", "))
+}
+
+// templateSections lists a markdown body's level-2 headings, skipping one an unfilled placeholder still names.
+func templateSections(body string) []string {
+	var sections []string
+	for _, line := range strings.Split(body, "\n") {
+		title, ok := strings.CutPrefix(line, "## ")
+		if !ok {
+			continue
+		}
+		title = strings.TrimSpace(title)
+		if strings.Contains(title, "{{") {
+			continue
+		}
+		sections = append(sections, title)
+	}
+	return sections
+}
+
+// missingSections returns each of the template's sections the kept body lacks, in the template's order.
+func missingSections(templateBody, keptBody string) []string {
+	have := map[string]bool{}
+	for _, section := range templateSections(keptBody) {
+		have[section] = true
+	}
+	var missing []string
+	for _, section := range templateSections(templateBody) {
+		if !have[section] {
+			missing = append(missing, section)
+		}
+	}
+	return missing
 }
 
 // insideDir creates rel under root one directory at a time, stopping at any that resolves outside realRoot.

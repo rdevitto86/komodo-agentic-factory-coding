@@ -79,8 +79,9 @@ func TestInitTwiceCreatesNothingAndKeepsAnExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := runCLI(t, root, "", "init")
-	if first.code != 0 || !strings.Contains(first.stdout, "keep AGENTS.md\n") {
-		t.Fatalf("first init exited %d: %s%s", first.code, first.stdout, first.stderr)
+	wantMissing := "keep AGENTS.md: missing Quick reference, Commands, Harness, Where things are, Gotchas, Deviations\n"
+	if first.code != 0 || !strings.Contains(first.stdout, wantMissing) {
+		t.Fatalf("first init exited %d, want %q:\n%s%s", first.code, wantMissing, first.stdout, first.stderr)
 	}
 	if data, _ := os.ReadFile(filepath.Join(root, "AGENTS.md")); !bytes.Equal(data, mine) {
 		t.Fatalf("AGENTS.md changed:\n%s", data)
@@ -90,8 +91,12 @@ func TestInitTwiceCreatesNothingAndKeepsAnExistingFile(t *testing.T) {
 		t.Fatalf("second init exited %d or created a file:\n%s", second.code, second.stdout)
 	}
 	for _, file := range starterFiles {
-		if !strings.Contains(second.stdout, "keep "+file+"\n") {
-			t.Fatalf("second init printed no keep %s:\n%s", file, second.stdout)
+		want := "keep " + file + "\n"
+		if file == "AGENTS.md" {
+			want = wantMissing
+		}
+		if !strings.Contains(second.stdout, want) {
+			t.Fatalf("second init printed no %q for %s:\n%s", want, file, second.stdout)
 		}
 	}
 }
@@ -159,6 +164,46 @@ func TestInitWithoutANameUsesTheDirectoryAndTheDetectedLanguage(t *testing.T) {
 		if !strings.Contains(string(agents), want) {
 			t.Fatalf("AGENTS.md holds no %q:\n%s", want, agents)
 		}
+	}
+}
+
+// TestMissingSectionsNamesOnlyWhatTheKeptBodyLacks proves the diff is per section, in the template's order.
+func TestMissingSectionsNamesOnlyWhatTheKeptBodyLacks(t *testing.T) {
+	template := "# T\n\n## One\n\n## Two\n\n## Three\n"
+	kept := "# Mine\n\n## Two\n\nbody\n"
+	got := missingSections(template, kept)
+	if len(got) != 2 || got[0] != "One" || got[1] != "Three" {
+		t.Fatalf("missing = %v, want [One Three]", got)
+	}
+}
+
+// TestMissingSectionsIgnoresAnUnfilledPlaceholderHeading proves a dynamic section, such as a changelog's
+// dated release heading, is never reported missing.
+func TestMissingSectionsIgnoresAnUnfilledPlaceholderHeading(t *testing.T) {
+	template := "# Changelog\n\n## [0.1.0] — {{DATE}}\n"
+	kept := "# Changelog\n\n## [0.1.0] — 2024-01-01\n"
+	if got := missingSections(template, kept); len(got) != 0 {
+		t.Fatalf("missing = %v, want none for a placeholder heading", got)
+	}
+}
+
+// TestInitLintsAnAdoptedReposExistingBacklog proves init reports a broken backlog it kept, not just wrote.
+func TestInitLintsAnAdoptedReposExistingBacklog(t *testing.T) {
+	root := emptyRepo(t)
+	broken := "## [TG-01.1] A group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 0.1.0\n```\n\n" +
+		"- [ ] a task with no bold TSK id\n"
+	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "backlog", "TG-01.1-a.md"), []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "", "init")
+	if got.code != 0 {
+		t.Fatalf("init exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if !strings.Contains(got.stdout, "problem(s)") {
+		t.Fatalf("init printed no backlog problems for the broken group file:\n%s", got.stdout)
 	}
 }
 
