@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -39,6 +40,8 @@ var retired = []string{
 	filepath.Join(Dir, "hooks", "komodo-hooks"),
 	filepath.Join(Dir, "mcp.json"),
 	".mcp.json",
+	filepath.Join(Dir, "skills", "backlog", "SKILL.md"),
+	filepath.Join(Dir, "skills", "review", "SKILL.md"),
 }
 
 // claudeMDImport puts the rendered rules on the file this host always loads into a session.
@@ -115,7 +118,7 @@ func Render(root string, binary string) (install.Plan, error) {
 		if path == ".mcp.json" && !namesLocalServer(full) {
 			continue
 		}
-		plan.AddRemoval(full, "the prototype's render and the old local server entry")
+		plan.AddRemoval(full, "an old render's file, a skill komodo stopped shipping included")
 	}
 	return plan, nil
 }
@@ -125,6 +128,9 @@ var orchestratorSkills = []string{"adhoc", "komodo", "plan", "respond", "run"}
 
 // statusHook is the hook that adds the run's status and any blocked groups to a primary session as it starts.
 const statusHook = "status"
+
+// globalSkillsMarker names the file recording the orchestrator skills the last global render wrote.
+const globalSkillsMarker = ".komodo-rendered"
 
 // RenderGlobal builds the plan that adds the orchestrator layer to the user's config under home:
 // the guard and status hooks and the orchestrator's skills, keeping every setting and skill the user has.
@@ -146,7 +152,14 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 		}
 		plan.Add(filepath.Join(dir, name, "SKILL.md"), []byte(skill.Body), "the orchestrator's "+name+" skill")
 	}
-	// No prune: the user's own skills share this directory, and only a project render may remove skills.
+	// A marked skill absent from this render's list is removed; an unmarked one, such as the user's own, stays.
+	markerPath := filepath.Join(home, Dir, globalSkillsMarker)
+	for _, name := range readGlobalSkillsMarker(markerPath) {
+		if !slices.Contains(orchestratorSkills, name) {
+			plan.AddRemoval(filepath.Join(dir, name, "SKILL.md"), "an orchestrator skill this render drops")
+		}
+	}
+	plan.Add(markerPath, []byte(strings.Join(orchestratorSkills, "\n")+"\n"), "the record of which skills this render wrote")
 
 	if !filepath.IsAbs(binary) {
 		binary = filepath.Join(mount.MainCheckout(root), binary)
@@ -158,6 +171,15 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 	}
 	plan.Add(path, settings, "the guard on PreToolUse and the run's status on SessionStart")
 	return plan, nil
+}
+
+// readGlobalSkillsMarker returns the skill names an earlier global render wrote, or none.
+func readGlobalSkillsMarker(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(data))
 }
 
 // globalSettings reads the user's settings and swaps any komodo hook for the guard and status hooks, keeping the rest.
