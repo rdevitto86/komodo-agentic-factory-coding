@@ -25,6 +25,7 @@ import (
 // Drive cuts one group's worktree when no run is open for it, then drives it through the conductor to Shipped,
 // merged into its epic branch when cut from one; it resumes a saved state.json and exits non-zero short of Shipped.
 func Drive(options Options) (int, error) {
+	markLine()
 	root := options.Root
 	// A group resumed past Prepare has its tasks DONE already, so its open run's plan keeps closed tasks.
 	plan, err := line.PlanForGroup(root, options.Target)

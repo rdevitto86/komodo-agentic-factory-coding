@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/guard"
 	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -921,4 +923,18 @@ func restackDrain(t *testing.T, clash bool) (string, string) {
 		return "", nil
 	}}}, &out)
 	return out.String(), root
+}
+
+// TestLaunchAndDriveMarkEverySessionAsLine proves both entries set the guard's line marker, so no
+// session komodo run starts falls to the orchestrator's global tier only.
+func TestLaunchAndDriveMarkEverySessionAsLine(t *testing.T) {
+	for name, entry := range map[string]func(Options) (int, error){"Launch": Launch, "Drive": Drive} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(guard.RoleEnv, "")
+			_, _ = entry(Options{Root: t.TempDir(), Target: "TG-01.1", DryRun: true, Stdout: io.Discard, Stderr: io.Discard})
+			if got := os.Getenv(guard.RoleEnv); got != LineRole {
+				t.Fatalf("%s left %s = %q, want %q", name, guard.RoleEnv, got, LineRole)
+			}
+		})
+	}
 }

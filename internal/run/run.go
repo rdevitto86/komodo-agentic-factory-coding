@@ -63,11 +63,22 @@ func Command(root, target string) (string, []string, error) {
 // Launch drives the host non-interactively on one target and returns its exit code; with no
 // target it drains every ready group in order.
 func Launch(options Options) (int, error) {
+	markLine()
 	if options.Target == "" {
 		return drain(options)
 	}
 	code, _, err := launchTarget(options)
 	return code, err
+}
+
+// LineRole is the marker every session komodo run starts inherits when no role of its own replaces it.
+const LineRole = "line"
+
+// markLine puts this process, and every session and subagent it starts, under the guard's line tier.
+func markLine() {
+	if os.Getenv(guard.RoleEnv) == "" {
+		_ = os.Setenv(guard.RoleEnv, LineRole)
+	}
 }
 
 // launchTarget runs the host on one target, then finishes any push a scrubbed ship handed off,
