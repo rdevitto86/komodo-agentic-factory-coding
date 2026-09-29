@@ -4302,14 +4302,14 @@ type: fix
 ## [EPIC-10] Beta fixes
 *Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
 
-* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L26, from the runner-cli, both SDK and shared-infra repos.
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L29, from the runner-cli, both SDK and shared-infra repos.
 
 ### [TG-10.1] One backlog grammar
 ```yaml
 type: fix
 version: 1.0.0-beta.3
 ```
-* **Why:** a repo sees 47 groups through `komodo lint` and 1 through `komodo backlog`, the shipped rule disagrees with lint about `done_when`, and a legacy BACKLOG.md outranks the group files (L1, L2, L14, L17, L18).
+* **Why:** a repo sees 47 groups through `komodo lint` and 1 through `komodo backlog`, the shipped rule disagrees with lint about `done_when`, a legacy BACKLOG.md outranks the group files, and shipped rules and skills still send agents to BACKLOG.md (L1, L2, L14, L17, L18, L27, L28, L29).
 
 #### [TSK-10.1.1] A docs/backlog group-file queue loads into the same Backlog the line runs on [P: C] [REFINEMENT]
 ```yaml
@@ -4348,12 +4348,13 @@ type: fix
 
 #### [TSK-10.1.4] Run, conductor, hooks, eval and the CLI load the backlog through Load [P: C] [REFINEMENT]
 ```yaml
-files: [internal/run/run.go, internal/run/drive.go, internal/conductor/integrate.go, internal/conductor/abandon.go, internal/conductor/drive.go, internal/hooks/taskchecks.go, internal/hooks/evidence.go, internal/eval/run.go, internal/doctor/leftovers.go, cmd/komodo/line.go, cmd/komodo/backlog.go, cmd/komodo/main.go, templates/project/AGENTS.md.tmpl]
+files: [internal/run/run.go, internal/run/drive.go, internal/conductor/integrate.go, internal/conductor/abandon.go, internal/conductor/drive.go, internal/hooks/taskchecks.go, internal/hooks/evidence.go, internal/eval/run.go, internal/doctor/leftovers.go, internal/doctor/epics.go, cmd/komodo/line.go, cmd/komodo/backlog.go, cmd/komodo/main.go, templates/project/AGENTS.md.tmpl]
 done_when:
-  - go test ./internal/run/... ./internal/conductor/... ./internal/hooks/... ./internal/eval/... ./cmd/komodo/...
+  - go test ./internal/run/... ./internal/conductor/... ./internal/hooks/... ./internal/eval/... ./internal/doctor/... ./cmd/komodo/...
 depends_on: [TSK-10.1.1]
 context:
   - "komodo backlog and komodo lint then read the same source, and the template's AGENTS.md names docs/backlog/"
+  - "L29: internal/doctor/epics.go:25 opens the root BACKLOG.md directly, and the template's AGENTS.md:29 names the retired backlog skill"
   - "run and release check are the other two commands the beta found reading only BACKLOG.md"
 type: fix
 ```
@@ -4399,6 +4400,33 @@ done_when:
 context:
   - "L18: one epic whose groups disagree with its version printed 23 separate problems"
   - "print one problem per epic naming its version, each differing group, and: split the epic per version"
+type: fix
+```
+
+#### [TSK-10.1.9] Shipped rules and skills send work to docs/backlog/, never BACKLOG.md [P: H] [REFINEMENT]
+```yaml
+files: [komodo/AGENTS.md, komodo/skills/standards-c/SKILL.md, komodo/skills/standards-cdk/SKILL.md, komodo/skills/standards-csharp/SKILL.md, komodo/skills/standards-java/SKILL.md, komodo/skills/standards-rust/SKILL.md]
+done_when:
+  - "! grep -rn 'BACKLOG.md' komodo/AGENTS.md komodo/skills"
+  - go run ./cmd/komodo doctor
+context:
+  - "L28: every mounted repo loads komodo/AGENTS.md:9, which makes out-of-task work a BACKLOG.md line, so session agents hunt for a file the repo lacks"
+  - "the standards skills c:18, cdk:43, csharp:13, java:13 and rust:17 and :47 record reasons in BACKLOG.md"
+  - "out-of-task work becomes a komodo add task in docs/backlog/; this repo's own README, CONTRIBUTING and AGENTS.md move in TSK-07.10.1"
+type: fix
+```
+
+#### [TSK-10.1.10] The Claude mount removes the skills it no longer renders [P: H] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
+done_when:
+  - go test ./internal/mount/...
+context:
+  - "L27: skills/backlog and skills/review survive in both the repo's and the user's Claude config after TSK-08.4.2 retired them"
+  - "the stale backlog skill says BACKLOG.md is the only queue, and the stale review skill shadows adhoc's /review"
+  - "the user-level config also keeps 33 standards skills, though orchestratorSkills (claude.go:124) names 5"
+  - "retired (claude.go:36) lists only prototype hook and MCP files, so an install never removes a skill komodo stopped shipping"
+  - "assumed: retired names each exact SKILL.md komodo once wrote, so a skill the user added is never wiped"
 type: fix
 ```
 
