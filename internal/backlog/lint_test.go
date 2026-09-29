@@ -251,6 +251,12 @@ func TestLintRejectsABetaVersionWithNoNumber(t *testing.T) {
 	}
 }
 
+func TestSlugMatchesGitHubOnANumberedHeading(t *testing.T) {
+	if got := Slug("6.1 X"); got != "61-x" {
+		t.Fatalf("Slug(%q) = %q, want %q", "6.1 X", got, "61-x")
+	}
+}
+
 func TestLintAcceptsAStableVersionWhoseEpicHadNoRc(t *testing.T) {
 	text := "## [EPIC-57] Beta phase Ships as `1.0.0-beta.2`\n\n" +
 		"### [TG-57.1] Beta group\n```yaml\ntype: feat\nversion: 1.0.0-beta.2\n```\n\n" +

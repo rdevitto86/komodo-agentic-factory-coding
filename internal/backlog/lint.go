@@ -9,11 +9,12 @@ import (
 	"time"
 )
 
-var slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+var slugDrop = regexp.MustCompile(`[^a-z0-9_ -]+`)
 
-// Slug is the anchor form of a heading: lower case, runs of punctuation and space folded to one dash.
+// Slug is the anchor form of a heading, matching GitHub: lower case, punctuation
+// dropped except - and _, each space becomes a dash.
 func Slug(text string) string {
-	return strings.Trim(slugPattern.ReplaceAllString(strings.ToLower(text), "-"), "-")
+	return strings.ReplaceAll(slugDrop.ReplaceAllString(strings.ToLower(text), ""), " ", "-")
 }
 
 // Lint returns every problem that would stop the line running this backlog deterministically.
