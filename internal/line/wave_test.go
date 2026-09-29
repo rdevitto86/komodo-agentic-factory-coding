@@ -186,6 +186,43 @@ func TestFileFindingsAppendsTasksByClass(t *testing.T) {
 	}
 }
 
+// TestFileFindingsAppendsIntoTheGroupsOwnFile proves a repo holding docs/backlog group files gets
+// its findings filed into the group's own file, never a BACKLOG.md that does not exist.
+func TestFileFindingsAppendsIntoTheGroupsOwnFile(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "docs", "backlog")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	text := "## [TG-09.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-09\ndepends_on: []\n```\n\n" +
+		"- [x] **TSK-09.1.1** One\n  - files: `a/x.go`\n"
+	path := filepath.Join(dir, "TG-09.1-a-group.md")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	findings := []Finding{
+		{Severity: "low", Class: "simplify", File: "a/x.go", Line: 3, Title: "dead branch", Detail: "d", Fix: "f"},
+	}
+	added, err := FileFindings(root, "TG-09.1", findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(added) != 1 {
+		t.Fatalf("added = %v", added)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text = string(data)
+	if !strings.Contains(text, "dead branch") || !strings.Contains(text, "status: REFINEMENT") {
+		t.Fatalf("filed task is wrong:\n%s", text)
+	}
+	if _, err := os.Stat(filepath.Join(root, "BACKLOG.md")); !os.IsNotExist(err) {
+		t.Fatal("FileFindings must never create a BACKLOG.md in a group-file repo")
+	}
+}
+
 func TestFileFindingsIsANoOpWithoutFindings(t *testing.T) {
 	added, err := FileFindings(t.TempDir(), "TG-09.1", nil)
 	if err != nil || added != nil {

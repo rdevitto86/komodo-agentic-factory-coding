@@ -116,6 +116,55 @@ func ParseGroupFile(text string) GroupFile {
 	return file
 }
 
+// RenderGroupFileTask renders one checkbox task line and its fields, in group-file grammar order.
+func RenderGroupFileTask(task GroupTask) string {
+	check := " "
+	if task.Done {
+		check = "x"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "- [%s] **%s** %s\n", check, task.ID, strings.TrimSpace(task.Title))
+	if len(task.Files) > 0 {
+		fmt.Fprintf(&b, "  - files: %s\n", strings.Join(backtickEach(task.Files), ", "))
+	}
+	for _, line := range task.Accept {
+		fmt.Fprintf(&b, "  - accept: %s\n", line)
+	}
+	if len(task.Checks) > 0 {
+		fmt.Fprintf(&b, "  - done_when: %s\n", strings.Join(backtickEach(task.Checks), ", "))
+	}
+	if task.Owner != "" {
+		fmt.Fprintf(&b, "  - owner: %s\n", task.Owner)
+	}
+	if len(task.Context) > 0 {
+		fmt.Fprintf(&b, "  - context: %s\n", strings.Join(backtickEach(task.Context), ", "))
+	}
+	if len(task.DependsOn) > 0 {
+		fmt.Fprintf(&b, "  - depends_on: %s\n", strings.Join(task.DependsOn, ", "))
+	}
+	if task.Priority != "" {
+		fmt.Fprintf(&b, "  - priority: %s\n", task.Priority)
+	}
+	if task.Status != "" {
+		fmt.Fprintf(&b, "  - status: %s\n", task.Status)
+	}
+	return b.String()
+}
+
+// RenderGroupFileDocument renders one full group file: its heading, yaml block, then every task in order.
+func RenderGroupFileDocument(file GroupFile) string {
+	var fields Fields
+	fields.Set("type", file.Type)
+	fields.Set("version", file.Version)
+	fields.Set("epic", file.EpicID)
+	fields.Set("depends_on", toAnyList(file.DependsOn))
+	out := RenderGroupFile(file.ID, file.Title, file.Priority, file.Status, fields)
+	for _, task := range file.Tasks {
+		out += "\n" + RenderGroupFileTask(task)
+	}
+	return out
+}
+
 // splitGroupFileList splits a comma-separated, optionally backtick-quoted list into plain paths.
 func splitGroupFileList(value string) []string {
 	var out []string

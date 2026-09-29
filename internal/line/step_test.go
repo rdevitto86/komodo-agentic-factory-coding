@@ -655,8 +655,7 @@ func writeStepResult(t *testing.T, root, taskID string) {
 // markDone flips a task's status token in the test repo's backlog.
 func markDone(t *testing.T, root, taskID string) {
 	t.Helper()
-	path := filepath.Join(root, "BACKLOG.md")
-	if err := writeStatus(path, taskID, "DONE"); err != nil {
+	if err := writeStatus(root, taskID, "DONE"); err != nil {
 		t.Fatal(err)
 	}
 }

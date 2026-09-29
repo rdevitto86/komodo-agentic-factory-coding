@@ -196,10 +196,16 @@ var classType = map[string]string{
 	"narrative-comment": "docs", "undocumented-nonobvious": "docs", "test-gap": "test",
 }
 
-// FileFindings appends the findings under the floor as low-priority tasks, newest last.
+// FileFindings appends the findings under the floor as low-priority tasks, newest last, into the
+// group's own docs/backlog file when root holds one, else the flat BACKLOG.md.
 func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 	if len(findings) == 0 {
 		return nil, nil
+	}
+	if groupPath, groupText, found, err := backlog.FindGroupFile(root, groupID); err != nil {
+		return nil, err
+	} else if found {
+		return fileGroupFileFindings(groupPath, groupText, findings)
 	}
 	path, err := backlog.Find(root)
 	if err != nil {
@@ -233,6 +239,39 @@ func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 		text = next
 		added = append(added, id)
 		filedTitles[title] = true
+	}
+	if len(added) == 0 {
+		return nil, nil
+	}
+	return added, os.WriteFile(path, []byte(text), 0o644)
+}
+
+// fileGroupFileFindings appends every unfiled finding to one docs/backlog group file, newest last.
+func fileGroupFileFindings(path, text string, findings []Finding) ([]string, error) {
+	file := backlog.ParseGroupFile(text)
+	titles := map[string]bool{}
+	for _, task := range file.Tasks {
+		titles[task.Title] = true
+	}
+	var added []string
+	for _, finding := range findings {
+		title := fmt.Sprintf("%s:%d %s", finding.File, finding.Line, finding.Title)
+		if titles[title] {
+			continue
+		}
+		task := backlog.GroupTask{
+			Title: title, Files: []string{finding.File},
+			Checks:   []string{"test -f " + finding.File},
+			Context:  []string{strings.TrimSpace(finding.Detail + " " + finding.Fix)},
+			Priority: "L", Status: "REFINEMENT",
+		}
+		next, id, err := backlog.AppendGroupFileTaskWith(text, task)
+		if err != nil {
+			return added, err
+		}
+		text = next
+		added = append(added, id)
+		titles[title] = true
 	}
 	if len(added) == 0 {
 		return nil, nil

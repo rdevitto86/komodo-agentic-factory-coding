@@ -19,6 +19,7 @@ import (
 const usage = `komodo: the code assembly line.
 
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
+  komodo migrate [--dry-run]  Convert BACKLOG.md, a foreign one, or TODO.md into docs/backlog group files
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo backlog             List the open groups under docs/backlog
@@ -92,6 +93,8 @@ func main() {
 	switch os.Args[1] {
 	case "init":
 		runInit(root, os.Args[2:])
+	case "migrate":
+		runMigrate(root, os.Args[2:])
 	case "lint":
 		runLint(root)
 	case "list":
@@ -99,9 +102,12 @@ func main() {
 	case "backlog":
 		runBacklog(root)
 	case "add":
-		if _, err := backlog.Find(root); err == nil {
+		if names, _ := groupFileNames(root); len(names) > 0 {
+			runBacklogAdd(root, os.Args[2:])
+		} else if _, err := backlog.Find(root); err == nil {
 			runAdd(root, os.Args[2:])
 		} else {
+			// Neither exists yet: a fresh repo opens its first group file, the current grammar.
 			runBacklogAdd(root, os.Args[2:])
 		}
 	case "next":

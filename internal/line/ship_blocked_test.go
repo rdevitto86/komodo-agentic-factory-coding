@@ -44,6 +44,51 @@ func stopGroup(t *testing.T, group string) {
 	}
 }
 
+// TestAddBlockerNoteWritesIntoAGroupFile proves the note lands in the group's own docs/backlog
+// file, blocking its open task, when the worktree holds group files instead of a BACKLOG.md.
+func TestAddBlockerNoteWritesIntoAGroupFile(t *testing.T) {
+	worktree := t.TempDir()
+	runGit(t, worktree, "init")
+	runGit(t, worktree, "config", "user.email", "a@example.com")
+	runGit(t, worktree, "config", "user.name", "a")
+	dir := filepath.Join(worktree, "docs", "backlog")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	text := "## [TG-09.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-09\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-09.1.1** Do it\n  - files: `a/one.go`\n"
+	path := filepath.Join(dir, "TG-09.1-a-group.md")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "add", "-A")
+	runGit(t, worktree, "commit", "-m", "seed")
+	blocked, err := addBlockerNote(worktree, "TG-09.1", blockedNote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocked) != 1 || blocked[0] != "TSK-09.1.1" {
+		t.Fatalf("blocked = %v", blocked)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "[BLOCKED]") || !strings.Contains(string(data), "which clock?") {
+		t.Fatalf("group file = %s", data)
+	}
+	if err := dropCredentialNote(worktree, ShipHandoff{Group: "TG-09.1"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "which clock?") {
+		t.Fatalf("group file still carries the note: %s", data)
+	}
+}
+
 func TestShipBlockedCommitsTheWorkAndNoteThenOpensABlockedDraft(t *testing.T) {
 	root, group := shipRepo(t)
 	stopGroup(t, group)

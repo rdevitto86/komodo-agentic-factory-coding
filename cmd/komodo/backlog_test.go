@@ -185,6 +185,38 @@ func TestRunBacklogAddWritesAGroupThenATask(t *testing.T) {
 	}
 }
 
+// TestAddPrefersGroupFilesOverALegacyBacklogMd proves a repo holding both writes into its group
+// file, never the legacy BACKLOG.md, since group files are the current grammar.
+func TestAddPrefersGroupFilesOverALegacyBacklogMd(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-q")
+	writeGroupFile(t, root, "TG-08.1-existing.md",
+		"## [TG-08.1] Existing [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-08.1.1** A task\n  - files: `a.go`\n")
+	backlogPath := filepath.Join(root, "BACKLOG.md")
+	if err := os.WriteFile(backlogPath, []byte("### [TG-08.1] Existing\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "", "add", "TG-08.1", "A", "second", "task", "--files", "b.go")
+	if got.code != 0 {
+		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(root, groupFilesDir, "TG-08.1-existing.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "A second task") {
+		t.Fatalf("group file gained no task: %s", data)
+	}
+	backlogData, err := os.ReadFile(backlogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(backlogData), "A second task") {
+		t.Fatalf("add wrote into the legacy BACKLOG.md: %s", backlogData)
+	}
+}
+
 // TestMainDispatchesBacklogAndAdd proves `komodo backlog` and `komodo add` reach the group-file commands.
 func TestMainDispatchesBacklogAndAdd(t *testing.T) {
 	root := t.TempDir()

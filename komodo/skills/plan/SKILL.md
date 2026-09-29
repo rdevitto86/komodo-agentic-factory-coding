@@ -13,11 +13,12 @@ Never invent a field; the grammar below is everything the line parses.
 
 ## The steps
 
-1. Name the docs the human gave `/plan`, or the PRD and system design when none are named.
-2. Spawn the planner on them, with the goal and the existing groups it must not duplicate. It reads and returns tasks; it never edits.
-3. Write each group it returns as `docs/backlog/<group-id>-<slug>.md`, or append a task with `komodo add <group> <title>`.
-4. Run `komodo lint`. A non-zero exit means the file is wrong: fix it and lint again.
-5. Report each group, its tasks, and the planner's gaps to the human.
+1. Run `komodo migrate` first when the repo holds a BACKLOG.md or TODO.md but no `docs/backlog/`; it opens the imported groups in `REFINEMENT` for you to refine below.
+2. Name the docs the human gave `/plan`, or the PRD and system design when none are named.
+3. Spawn the planner on them, with the goal and the existing groups it must not duplicate. It reads and returns tasks; it never edits.
+4. Write each group it returns as `docs/backlog/<group-id>-<slug>.md`, or append a task with `komodo add <group> <title>`.
+5. Run `komodo lint`. A non-zero exit means the file is wrong: fix it and lint again.
+6. Report each group, its tasks, and the planner's gaps to the human.
 
 ## Rules
 
