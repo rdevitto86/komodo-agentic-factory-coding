@@ -274,6 +274,57 @@ func TestLintRejectsABetaVersionWithNoNumber(t *testing.T) {
 	}
 }
 
+func TestLintVersionsRejectsAnOpenGroupAtTheNewestTag(t *testing.T) {
+	text := "### [TG-70.1] Already tagged [P: C] [REFINEMENT]\n```yaml\ntype: feat\nversion: 1.2.3\n```\n\n"
+	problems := LintVersions(Parse(text), []string{"v1.2.3"})
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-70.1") && strings.Contains(problem, "1.2.3") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a problem naming the group and the tag; got %v", problems)
+	}
+}
+
+func TestLintVersionsRejectsAPrereleaseOfAnAlreadyTaggedVersion(t *testing.T) {
+	text := "### [TG-71.1] Prerelease of tagged [P: C] [REFINEMENT]\n```yaml\ntype: feat\nversion: 1.2.3-beta.1\n```\n\n"
+	problems := LintVersions(Parse(text), []string{"v1.2.3"})
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-71.1") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a problem for a prerelease behind the newest tag; got %v", problems)
+	}
+}
+
+func TestLintVersionsAcceptsAnOpenGroupAheadOfTheNewestTag(t *testing.T) {
+	text := "### [TG-72.1] Ahead of the tag [P: C] [REFINEMENT]\n```yaml\ntype: feat\nversion: 1.3.0\n```\n\n"
+	problems := LintVersions(Parse(text), []string{"v1.2.3"})
+	if len(problems) != 0 {
+		t.Fatalf("problems = %v, want none", problems)
+	}
+}
+
+func TestLintVersionsSkipsTheCheckWithNoTags(t *testing.T) {
+	text := "### [TG-73.1] No tags yet [P: C] [REFINEMENT]\n```yaml\ntype: feat\nversion: 0.0.1\n```\n\n"
+	if problems := LintVersions(Parse(text), nil); len(problems) != 0 {
+		t.Fatalf("problems = %v, want none with no tags", problems)
+	}
+}
+
+func TestLintVersionsSkipsAGroupWhoseTasksAreAllDone(t *testing.T) {
+	text := "### [TG-74.1] Already shipped [P: C] [REFINEMENT]\n```yaml\ntype: feat\nversion: 1.2.3\n```\n\n" +
+		"#### [TSK-74.1.1] Done task [P: C] [DONE]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n"
+	if problems := LintVersions(Parse(text), []string{"v1.2.3"}); len(problems) != 0 {
+		t.Fatalf("problems = %v, want none for a group whose tasks are all done", problems)
+	}
+}
+
 func TestLintGroupFileRejectsAMissingVersion(t *testing.T) {
 	file := ParseGroupFile("## [TG-60.1] No version [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-60\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-60.1.1** A task\n  - files: `a.go`\n")

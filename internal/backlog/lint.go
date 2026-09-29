@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"komodo/internal/changelog"
 )
 
 var slugDrop = regexp.MustCompile(`[^a-z0-9_ -]+`)
@@ -307,6 +309,55 @@ func LintGroupFileEpics(files []GroupFile) []string {
 			epicID, entry.version, strings.Join(entry.groups, ", ")))
 	}
 	return problems
+}
+
+// LintVersions reports every open group whose version, or a prerelease of it, sorts at or behind
+// tags' newest version; nil tags, from no repo or none cut, skip the check.
+func LintVersions(parsed Backlog, tags []string) []string {
+	newest := newestTag(tags)
+	if newest == "" {
+		return nil
+	}
+	var problems []string
+	for _, group := range parsed.Groups {
+		version := group.Version()
+		if version == "" || !versionRe.MatchString(version) || !groupOpen(group) {
+			continue
+		}
+		if changelog.Compare(version, newest) <= 0 {
+			problems = append(problems, fmt.Sprintf(
+				"%s: version %q is at or behind the newest tag %q", group.ID, version, newest))
+		}
+	}
+	return problems
+}
+
+// newestTag is the highest version among tags, a leading v stripped, or empty with none.
+func newestTag(tags []string) string {
+	newest := ""
+	for _, tag := range tags {
+		version := strings.TrimPrefix(tag, "v")
+		if !versionRe.MatchString(version) {
+			continue
+		}
+		if newest == "" || changelog.Compare(version, newest) > 0 {
+			newest = version
+		}
+	}
+	return newest
+}
+
+// groupOpen reports whether a group still has work: no tasks yet, or any task not DONE or BLOCKED.
+func groupOpen(group Group) bool {
+	if len(group.Tasks) == 0 {
+		return true
+	}
+	for _, task := range group.Tasks {
+		if task.Open() {
+			return true
+		}
+	}
+	return false
 }
 
 // buildable counts the group's tasks a builder session works: every one not waiting in REFINEMENT.
