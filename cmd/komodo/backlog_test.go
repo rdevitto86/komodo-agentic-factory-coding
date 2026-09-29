@@ -91,6 +91,47 @@ func TestLintProblemsReportsAGroupFileWithAMalformedHeading(t *testing.T) {
 	}
 }
 
+// TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles proves group-file lint
+// checks what BACKLOG.md lint checks, not only the parse errors ParseGroupFile itself reports.
+func TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task with no files\n")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	if len(problems) != 2 {
+		t.Fatalf("problems = %v, want a no-version and a no-files problem", problems)
+	}
+}
+
+// TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles proves group files in the same
+// epic must agree on the version it ships, as BACKLOG.md's epics and groups must.
+func TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+	writeGroupFile(t, root, "TG-01.2-second.md",
+		"## [TG-01.2] Second group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.2.1** A task\n  - files: `b.go`\n")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "EPIC-01") && strings.Contains(problem, "TG-01.2") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a problem naming the epic version disagreement; got %v", problems)
+	}
+}
+
 // TestRunBacklogOnAnEmptyRepoPrintsNoGroups proves backlog tolerates a repo with no docs/backlog yet.
 func TestRunBacklogOnAnEmptyRepoPrintsNoGroups(t *testing.T) {
 	root := t.TempDir()

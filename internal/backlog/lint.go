@@ -226,6 +226,89 @@ func hasHeading(text, anchor string) bool {
 	return false
 }
 
+var groupFileContextLine = regexp.MustCompile(`^\s{2}-\s+context:\s*(.*)$`)
+
+// LintGroupFile checks one docs/backlog group file as Lint checks a BACKLOG.md group: version,
+// an open task's files, a context anchor, and depends_on naming a known group or task.
+func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs map[string]bool) []string {
+	var problems []string
+	switch version := file.Version; {
+	case version == "":
+		problems = append(problems, fmt.Sprintf("%s: no version; a group declares the version it ships as `version: x.y.z`", file.ID))
+	case !versionRe.MatchString(version):
+		problems = append(problems, fmt.Sprintf("%s: version %q is not x.y.z", file.ID, version))
+	case !versionPhaseRe.MatchString(version):
+		problems = append(problems, fmt.Sprintf(
+			"%s: version %q must be x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n, the four phases alpha, beta, rc, stable",
+			file.ID, version))
+	}
+	for _, dep := range file.DependsOn {
+		if !groupIDs[dep] && !taskIDs[dep] {
+			problems = append(problems, fmt.Sprintf("%s: depends_on names unknown group or task %s", file.ID, dep))
+		}
+	}
+	for _, task := range file.Tasks {
+		if !task.Done && len(task.Files) == 0 {
+			problems = append(problems, fmt.Sprintf("%s: open task declares no files", task.ID))
+		}
+	}
+	for _, line := range strings.Split(text, "\n") {
+		match := groupFileContextLine.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		for _, ref := range splitGroupFileList(match[1]) {
+			path, anchor, found := strings.Cut(ref, "#")
+			if !found || anchor == "" || strings.ContainsAny(ref, " \t") {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(root, path))
+			if err != nil {
+				continue
+			}
+			if !hasHeading(string(data), anchor) {
+				problems = append(problems, fmt.Sprintf("%s: context %s names no heading in %s", file.ID, ref, path))
+			}
+		}
+	}
+	return problems
+}
+
+// LintGroupFileEpics reports one problem per epic whose docs/backlog group files disagree on the
+// version it ships, naming every group that differs from the first one seen.
+func LintGroupFileEpics(files []GroupFile) []string {
+	type mismatch struct {
+		version string
+		groups  []string
+	}
+	epics := map[string]*mismatch{}
+	var order []string
+	for _, file := range files {
+		if file.EpicID == "" || file.Version == "" {
+			continue
+		}
+		entry, ok := epics[file.EpicID]
+		if !ok {
+			epics[file.EpicID] = &mismatch{version: file.Version}
+			order = append(order, file.EpicID)
+			continue
+		}
+		if file.Version != entry.version {
+			entry.groups = append(entry.groups, file.ID)
+		}
+	}
+	var problems []string
+	for _, epicID := range order {
+		entry := epics[epicID]
+		if len(entry.groups) == 0 {
+			continue
+		}
+		problems = append(problems, fmt.Sprintf("%s: version %q disagrees with groups %s; split the epic per version",
+			epicID, entry.version, strings.Join(entry.groups, ", ")))
+	}
+	return problems
+}
+
 // buildable counts the group's tasks a builder session works: every one not waiting in REFINEMENT.
 func buildable(group Group) int {
 	count := 0

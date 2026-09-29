@@ -68,19 +68,35 @@ func groupFileLintProblems(root string) (problems []string, taskCount, groupCoun
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	var files []backlog.GroupFile
+	texts := map[string]string{}
 	for _, name := range names {
 		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
 		if err != nil {
 			return nil, 0, 0, err
 		}
 		group := backlog.ParseGroupFile(string(data))
-		problems = append(problems, group.Problems...)
-		if len(group.Tasks) > 12 {
-			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", group.ID, len(group.Tasks)))
-		}
-		taskCount += len(group.Tasks)
+		files = append(files, group)
+		texts[group.ID] = string(data)
 	}
-	return problems, taskCount, len(names), nil
+	groupIDs := map[string]bool{}
+	taskIDs := map[string]bool{}
+	for _, file := range files {
+		groupIDs[file.ID] = true
+		for _, task := range file.Tasks {
+			taskIDs[task.ID] = true
+		}
+	}
+	for _, file := range files {
+		problems = append(problems, file.Problems...)
+		if len(file.Tasks) > 12 {
+			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", file.ID, len(file.Tasks)))
+		}
+		problems = append(problems, backlog.LintGroupFile(root, file, texts[file.ID], groupIDs, taskIDs)...)
+		taskCount += len(file.Tasks)
+	}
+	problems = append(problems, backlog.LintGroupFileEpics(files)...)
+	return problems, taskCount, len(files), nil
 }
 
 // runList prints the tasks of one group, or of every group.

@@ -1,6 +1,8 @@
 package backlog
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -269,6 +271,123 @@ func TestLintRejectsABetaVersionWithNoNumber(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("beta with no number should be refused; got %v", problems)
+	}
+}
+
+func TestLintGroupFileRejectsAMissingVersion(t *testing.T) {
+	file := ParseGroupFile("## [TG-60.1] No version [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-60\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-60.1.1** A task\n  - files: `a.go`\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-60.1": true}, map[string]bool{"TSK-60.1.1": true})
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "no version") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a no-version problem; got %v", problems)
+	}
+}
+
+func TestLintGroupFileRejectsAnOpenTaskWithNoFiles(t *testing.T) {
+	file := ParseGroupFile("## [TG-61.1] Task with no files [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-61\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-61.1.1** A task with no files\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-61.1": true}, map[string]bool{"TSK-61.1.1": true})
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TSK-61.1.1") && strings.Contains(problem, "no files") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want an open task with no files problem; got %v", problems)
+	}
+}
+
+func TestLintGroupFileAcceptsADoneTaskWithNoFiles(t *testing.T) {
+	file := ParseGroupFile("## [TG-62.1] Done task with no files [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-62\ndepends_on: []\n```\n\n" +
+		"- [x] **TSK-62.1.1** A finished task\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-62.1": true}, map[string]bool{"TSK-62.1.1": true})
+	for _, problem := range problems {
+		if strings.Contains(problem, "no files") {
+			t.Fatalf("a done task should not need files; got %v", problems)
+		}
+	}
+}
+
+func TestLintGroupFileRejectsADependsOnNamingNoGroupOrTask(t *testing.T) {
+	file := ParseGroupFile("## [TG-63.1] Bad dependency [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-63\ndepends_on: [TG-99.9]\n```\n\n" +
+		"- [ ] **TSK-63.1.1** A task\n  - files: `a.go`\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-63.1": true}, map[string]bool{"TSK-63.1.1": true})
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "depends_on names unknown") && strings.Contains(problem, "TG-99.9") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a problem naming the unknown dependency; got %v", problems)
+	}
+}
+
+func TestLintGroupFileAcceptsADependsOnNamingAKnownTask(t *testing.T) {
+	file := ParseGroupFile("## [TG-64.1] Task dependency [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-64\ndepends_on: [TSK-01.1.1]\n```\n\n" +
+		"- [ ] **TSK-64.1.1** A task\n  - files: `a.go`\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-64.1": true}, map[string]bool{"TSK-01.1.1": true, "TSK-64.1.1": true})
+	for _, problem := range problems {
+		if strings.Contains(problem, "depends_on names unknown") {
+			t.Fatalf("a depends_on naming a known task should not produce an error; got %v", problems)
+		}
+	}
+}
+
+func TestLintGroupFileNamesAContextAnchorWithNoHeading(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "docs.md"), []byte("# Real heading\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := "## [TG-65.1] Bad anchor [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-65\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-65.1.1** A task\n  - files: `a.go`\n  - context: `docs.md#no-such-heading`\n"
+	file := ParseGroupFile(text)
+	problems := LintGroupFile(root, file, text, map[string]bool{"TG-65.1": true}, map[string]bool{"TSK-65.1.1": true})
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "names no heading") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a problem naming the missing heading; got %v", problems)
+	}
+}
+
+func TestLintGroupFileAcceptsAContextAnchorWithAMatchingHeading(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "docs.md"), []byte("# Real heading\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := "## [TG-66.1] Good anchor [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-66\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-66.1.1** A task\n  - files: `a.go`\n  - context: `docs.md#real-heading`\n"
+	file := ParseGroupFile(text)
+	problems := LintGroupFile(root, file, text, map[string]bool{"TG-66.1": true}, map[string]bool{"TSK-66.1.1": true})
+	for _, problem := range problems {
+		if strings.Contains(problem, "names no heading") {
+			t.Fatalf("a context anchor matching a heading should not produce an error; got %v", problems)
+		}
+	}
+}
+
+func TestLintGroupFileEpicsReportsOneProblemPerEpic(t *testing.T) {
+	first := ParseGroupFile("## [TG-67.1] First [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-67\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-67.1.1** A task\n  - files: `a.go`\n")
+	second := ParseGroupFile("## [TG-67.2] Second [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-67\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-67.2.1** A task\n  - files: `b.go`\n")
+	problems := LintGroupFileEpics([]GroupFile{first, second})
+	if len(problems) != 1 {
+		t.Fatalf("problems = %v, want exactly one", problems)
+	}
+	if !strings.Contains(problems[0], "EPIC-67") || !strings.Contains(problems[0], "TG-67.2") {
+		t.Fatalf("problem = %q, want it to name EPIC-67 and TG-67.2", problems[0])
 	}
 }
 
