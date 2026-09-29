@@ -23,6 +23,9 @@ func Lint(parsed Backlog) []string {
 	seen := map[string]int{}
 	ids := map[string]bool{}
 	groupIDs := map[string]bool{}
+	var mismatchEpics []string
+	mismatchGroups := map[string][]string{}
+	mismatchVersions := map[string]string{}
 	for _, task := range parsed.Tasks() {
 		ids[task.ID] = true
 	}
@@ -52,7 +55,11 @@ func Lint(parsed Backlog) []string {
 					if epicVersion == "" {
 						problems = append(problems, fmt.Sprintf("%s: epic %s has no version; an epic names the version it ships as Ships as `x.y.z`", group.ID, group.EpicID))
 					} else if epicVersion != version {
-						problems = append(problems, fmt.Sprintf("%s: version %q differs from epic %s version %q", group.ID, version, group.EpicID, epicVersion))
+						if _, seen := mismatchGroups[group.EpicID]; !seen {
+							mismatchEpics = append(mismatchEpics, group.EpicID)
+						}
+						mismatchGroups[group.EpicID] = append(mismatchGroups[group.EpicID], group.ID)
+						mismatchVersions[group.EpicID] = epicVersion
 					}
 				}
 			}
@@ -81,6 +88,10 @@ func Lint(parsed Backlog) []string {
 			problems = append(problems, fmt.Sprintf(
 				"%s: base %q is neither main nor its epic branch %q nor the branch of a group named in depends_on", group.ID, base, epicBranch))
 		}
+	}
+	for _, epicID := range mismatchEpics {
+		problems = append(problems, fmt.Sprintf("%s: version %q disagrees with groups %s; split the epic per version",
+			epicID, mismatchVersions[epicID], strings.Join(mismatchGroups[epicID], ", ")))
 	}
 	for _, task := range parsed.Tasks() {
 		where := fmt.Sprintf("%s (line %d)", task.ID, task.Heading+1)

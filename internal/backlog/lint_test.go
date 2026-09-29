@@ -164,13 +164,34 @@ func TestLintRejectsAGroupWhoseVersionDiffersFromItsEpic(t *testing.T) {
 	problems := Lint(Parse(text))
 	found := false
 	for _, problem := range problems {
-		if strings.Contains(problem, "TG-51.1") && strings.Contains(problem, "differs from epic") {
+		if strings.Contains(problem, "EPIC-51") && strings.Contains(problem, "TG-51.1") && strings.Contains(problem, "split the epic per version") {
 			found = true
 			break
 		}
 	}
 	if !found {
 		t.Fatalf("mismatched version should produce an error; got %v", problems)
+	}
+}
+
+func TestLintReportsOneMismatchPerEpicNamingEveryDifferingGroup(t *testing.T) {
+	text := "## [EPIC-59] Phase Ships as `1.0.0`\n\n" +
+		"### [TG-59.1] First mismatched group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-59.1.1] Task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"go test ./...\"]\n```\n\n" +
+		"### [TG-59.2] Second mismatched group\n```yaml\ntype: feat\nversion: 3.0.0\n```\n\n" +
+		"#### [TSK-59.2.1] Task [P: C] [READY]\n```yaml\nfiles: [b.go]\ndone_when: [\"go test ./...\"]\n```\n"
+	problems := Lint(Parse(text))
+	count := 0
+	for _, problem := range problems {
+		if strings.Contains(problem, "EPIC-59") {
+			count++
+			if !strings.Contains(problem, "TG-59.1") || !strings.Contains(problem, "TG-59.2") {
+				t.Fatalf("epic mismatch problem should name every differing group; got %q", problem)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected one problem for EPIC-59, got %d: %v", count, problems)
 	}
 }
 
