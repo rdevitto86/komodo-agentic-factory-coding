@@ -314,10 +314,10 @@ case "$name" in
     exit 0
     ;;
   post-commit)
-    # A merge committed after a conflict skips post-merge, so a merge commit rebuilds here instead.
+    # Every commit in the main working tree rebuilds when its build inputs changed, a conflicted merge included.
     gitdir=$(git rev-parse --path-format=absolute --git-dir)
     gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
-    if [ "$gitdir" = "$gitcommon" ] && git rev-parse --quiet --verify HEAD^2 >/dev/null 2>&1; then
+    if [ "$gitdir" = "$gitcommon" ] && git rev-parse --quiet --verify HEAD^1 >/dev/null 2>&1; then
       exec $cmd gate --rebuild --from "$(git rev-parse HEAD^1)" --to "$(git rev-parse HEAD)"
     fi
     exit 0
