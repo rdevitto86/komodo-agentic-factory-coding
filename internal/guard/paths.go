@@ -32,7 +32,7 @@ func isAllowedWrite(path string) bool {
 	return false
 }
 
-// pathFindings refuses a write that leaves the worktree or lands on a config the hosts own.
+// pathFindings refuses a write on a config the hosts own, and a line session's write outside its worktree.
 func pathFindings(path, cwd, root string, policy Policy) []string {
 	if path == "" {
 		return nil
@@ -48,7 +48,7 @@ func pathFindings(path, cwd, root string, policy Policy) []string {
 	if isAllowedWrite(resolved) {
 		return nil
 	}
-	if root == "" {
+	if root == "" || !IsLineSession() {
 		return nil
 	}
 	relative, err := filepath.Rel(root, resolved)

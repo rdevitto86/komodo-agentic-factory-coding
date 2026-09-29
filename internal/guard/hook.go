@@ -15,7 +15,7 @@ import (
 // ExitDeny is the exit code a host reads as a refusal when it cannot read the JSON.
 const ExitDeny = 2
 
-// refusalLimit is how many identical refusals one session may hit before the guard ends it (REQ-37).
+// refusalLimit is how many identical refusals one line session may hit before the guard ends it (REQ-37).
 const refusalLimit = 3
 
 // CurrentBranch is the branch a directory is on, or the empty string.
@@ -44,17 +44,21 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 	reason := Reason(decision.Findings)
-	var sessionPayload struct {
-		SessionID string `json:"session_id"`
-	}
-	_ = json.Unmarshal(raw, &sessionPayload)
-	blocked, err := recordRefusal(root, sessionPayload.SessionID, strings.Join(decision.Findings, "|"))
-	if err != nil {
-		fmt.Fprintf(stderr, "guard: %v; allowing\n", err)
-		return 0
-	}
-	if blocked {
-		reason = blockedReason(decision.Findings)
+	blocked := false
+	// Only a line session counts toward the refusal limit; the orchestrator is refused, never ended.
+	if IsLineSession() {
+		var sessionPayload struct {
+			SessionID string `json:"session_id"`
+		}
+		_ = json.Unmarshal(raw, &sessionPayload)
+		blocked, err = recordRefusal(root, sessionPayload.SessionID, strings.Join(decision.Findings, "|"))
+		if err != nil {
+			fmt.Fprintf(stderr, "guard: %v; allowing\n", err)
+			return 0
+		}
+		if blocked {
+			reason = blockedReason(decision.Findings)
+		}
 	}
 	if tools, ok := hostGuard(request.ToolName); ok && tools.Deny != nil {
 		if out := tools.Deny(reason, blocked); out != nil {

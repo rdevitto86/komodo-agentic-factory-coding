@@ -4820,7 +4820,7 @@ version: 1.0.0-beta.3
 * **Why:** the guard judged the orchestrator as a line session and ended its session for spawning isolated builders, a full drain runs a role-less model relay, and a rebuild here swaps the guard under every consumer repo (L31 to L36).
 * **Decided:** the guard has a global tier for every session and a line tier only where KOMODO_ROLE is set; the line's one entry is `komodo run`; ad hoc work is the orchestrator's own agents, with no skill.
 
-#### [TSK-10.8.1] The guard splits into a global tier and a line tier [P: C] [REFINEMENT]
+#### [TSK-10.8.1] The guard splits into a global tier and a line tier [P: C] [DONE]
 ```yaml
 files: [internal/guard/guard.go, internal/guard/git.go, internal/guard/paths.go, internal/guard/hook.go, internal/guard/table.go, internal/guard/hook_test.go]
 done_when:
@@ -4833,7 +4833,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.2] Every session `komodo run` starts carries the line marker [P: C] [REFINEMENT]
+#### [TSK-10.8.2] Every session `komodo run` starts carries the line marker [P: C] [DONE]
 ```yaml
 files: [cmd/komodo/line.go, internal/run/run.go, internal/run/run_test.go]
 done_when:

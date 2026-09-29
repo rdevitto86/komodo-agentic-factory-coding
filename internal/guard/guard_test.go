@@ -322,6 +322,7 @@ func TestCheckHonoursARegisteredHostsOwnToolNames(t *testing.T) {
 		ShellTool:    "Run",
 		CommandField: "line",
 	})
+	t.Setenv(RoleEnv, "builder")
 	root := worktree(t)
 	write := Request{ToolName: "Scribble", Cwd: root, ToolInput: map[string]any{"target": "/etc/hosts"}}
 	if !Check(write, DefaultPolicy(), "feat/x").Deny {
@@ -354,6 +355,7 @@ func TestFindingsAreNotRepeated(t *testing.T) {
 }
 
 func TestHookDeniesWithTheDecisionBothHostsAccept(t *testing.T) {
+	t.Setenv(RoleEnv, "builder")
 	root := worktree(t)
 	payload := `{"hook_event_name":"PreToolUse","tool_name":"Write","cwd":"` + root + `","tool_input":{"file_path":"/etc/hosts"}}`
 	var out, errOut strings.Builder
