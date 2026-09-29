@@ -8,8 +8,8 @@ import (
 	"komodo/internal/mount"
 )
 
-// Probe returns nothing: this host exposes no plan or window to read.
-func Probe() (mount.Usage, bool) { return mount.Usage{}, false }
+// Probe reports this host bills by the API, since it exposes no plan or usage window to read.
+func Probe() (mount.Usage, bool) { return mount.Usage{Plan: "api"}, true }
 
 // Installed reports whether this host's project directory has been rendered here.
 func Installed(root string) bool {

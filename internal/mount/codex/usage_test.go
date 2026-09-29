@@ -52,8 +52,9 @@ func TestUsageReturnsNothingWhenNoEventCarriesCounts(t *testing.T) {
 	}
 }
 
-func TestProbeReportsNothing(t *testing.T) {
-	if _, ok := Probe(); ok {
-		t.Fatal("this host exposes no plan and must report none")
+func TestProbeReportsAPIBillingWithNoWindow(t *testing.T) {
+	usage, ok := Probe()
+	if !ok || usage.Plan != "api" {
+		t.Fatalf("usage = %+v, ok = %v; this host bills by the API with no window to read", usage, ok)
 	}
 }

@@ -409,6 +409,7 @@ type Overlay struct {
 	LocalWindow         int               `json:"local_window"`
 	LocalReviewer       bool              `json:"local_reviewer"`
 	LocalReviewerRecall float64           `json:"local_reviewer_recall"`
+	LocalConcurrency    int               `json:"local_concurrency"`
 	Models              map[string]string `json:"models"`
 	// Sandbox runs every headless shell command in the host's OS sandbox, confined to the worktree and temp.
 	Sandbox bool `json:"sandbox"`
