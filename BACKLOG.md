@@ -4905,7 +4905,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.9] An orchestrator's isolated agent starts on the orchestrator's branch [P: H] [REFINEMENT]
+#### [TSK-10.8.9] An orchestrator's isolated agent starts on the orchestrator's branch [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, komodo/skills/run/SKILL.md]
 done_when:
