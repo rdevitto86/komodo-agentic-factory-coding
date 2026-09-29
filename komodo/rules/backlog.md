@@ -18,6 +18,11 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
   - files: `internal/backlog/backlog.go`, `internal/backlog/backlog_test.go`
   - accept: a refund over the limit is refused
   - checks: `go test ./internal/backlog/...`
+  - owner: human
+  - context: `docs/prd.md#refunds`, `internal/backlog/groupfile.go`
+  - depends_on: TSK-01.1.0
+  - priority: C
+  - status: BLOCKED
 ````
 
 ### Fields
@@ -30,6 +35,11 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
 - **`files`** lists every path a task will create or edit, including the caller that wires new code in, such as the command dispatch or the renderer; scope refuses any other. A task needs only a title and its `files`. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
 - **`accept`** is an optional line the correctness lens checks alongside the PRD, never a shell command.
 - **`checks`** are optional shell commands that add to the ones derived per detected language. Never prose.
+- **`owner`** is `agent` unless a task names `human`; a person's task stays in its own group instead of a whole group filed as `BLOCKED`.
+- **`context`** lists paths, each with an optional `#anchor`, a builder reads before starting this task.
+- **`depends_on`** on a task is the task ids that must be done before this one starts, narrower than the group's own `depends_on`.
+- **`priority`** overrides the group's `[P: <letter>]` for one task, else it inherits the group's.
+- **`status`** overrides the group's `[<STATUS>]` for one task, such as `BLOCKED` while a person acts, else it inherits the group's; a ticked checkbox always reads `DONE`.
 - A group holds 1 to 12 tasks; lint refuses a larger one and suggests a split.
 
 ### Adding a task

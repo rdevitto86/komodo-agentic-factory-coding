@@ -9,19 +9,24 @@ import (
 var (
 	groupFileHeading   = regexp.MustCompile(`^##\s+\[(TG-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
 	groupFileTaskLine  = regexp.MustCompile(`^-\s+\[([ xX])\]\s+\*\*(TSK-[\w.]+)\*\*\s+(.+?)\s*$`)
-	groupFileFieldLine = regexp.MustCompile(`^\s{2}-\s+(files|accept|checks):\s*(.*)$`)
+	groupFileFieldLine = regexp.MustCompile(`^\s{2}-\s+(files|accept|checks|owner|context|depends_on|priority|status):\s*(.*)$`)
 	groupFileBacktick  = regexp.MustCompile("`([^`]+)`")
 )
 
-// GroupTask is one checkbox task inside a group file: a title, its files, and optional accept and checks lines.
+// GroupTask is one checkbox task inside a group file, with its optional owner, context, depends_on, priority and status.
 type GroupTask struct {
-	ID     string
-	Title  string
-	Done   bool
-	Files  []string
-	Accept []string
-	Checks []string
-	Line   int
+	ID        string
+	Title     string
+	Done      bool
+	Files     []string
+	Accept    []string
+	Checks    []string
+	Owner     string
+	Context   []string
+	DependsOn []string
+	Priority  string
+	Status    string
+	Line      int
 }
 
 // GroupFile is one parsed <group-id>-<slug>.md file: its heading, yaml fields, and its tasks in order.
@@ -82,6 +87,16 @@ func ParseGroupFile(text string) GroupFile {
 					task.Checks = append(task.Checks, splitGroupFileList(value)...)
 				case "accept":
 					task.Accept = append(task.Accept, value)
+				case "owner":
+					task.Owner = value
+				case "context":
+					task.Context = append(task.Context, splitGroupFileList(value)...)
+				case "depends_on":
+					task.DependsOn = append(task.DependsOn, splitGroupFileList(value)...)
+				case "priority":
+					task.Priority = value
+				case "status":
+					task.Status = strings.ToUpper(value)
 				}
 				index++
 			}

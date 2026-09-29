@@ -85,6 +85,49 @@ func TestParseGroupFileReportsAnUnterminatedBlock(t *testing.T) {
 	}
 }
 
+func TestParseGroupFileReadsOwnerContextDependsOnPriorityAndStatus(t *testing.T) {
+	text := "## [TG-09.1] Human review needed [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-09\n" +
+		"depends_on: []\n```\n\n" +
+		"- [ ] **TSK-09.1.1** A person must approve the migration\n" +
+		"  - files: `internal/migrate/plan.go`\n" +
+		"  - owner: human\n" +
+		"  - context: `docs/prd.md#migrations`, `internal/migrate/README.md`\n" +
+		"  - depends_on: TSK-09.1.0\n" +
+		"  - priority: C\n" +
+		"  - status: BLOCKED\n"
+	file := ParseGroupFile(text)
+	if len(file.Problems) != 0 {
+		t.Fatalf("problems = %v", file.Problems)
+	}
+	if len(file.Tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(file.Tasks))
+	}
+	task := file.Tasks[0]
+	if task.Owner != "human" {
+		t.Fatalf("owner = %q, want human", task.Owner)
+	}
+	if got := task.Context; len(got) != 2 || got[0] != "docs/prd.md#migrations" || got[1] != "internal/migrate/README.md" {
+		t.Fatalf("context = %v", got)
+	}
+	if got := task.DependsOn; len(got) != 1 || got[0] != "TSK-09.1.0" {
+		t.Fatalf("depends_on = %v", got)
+	}
+	if task.Priority != "C" {
+		t.Fatalf("priority = %q, want C", task.Priority)
+	}
+	if task.Status != "BLOCKED" {
+		t.Fatalf("status = %q, want BLOCKED", task.Status)
+	}
+}
+
+func TestParseGroupFileLeavesOwnerContextDependsOnPriorityAndStatusEmptyByDefault(t *testing.T) {
+	file := ParseGroupFile(groupFileSample)
+	task := file.Tasks[0]
+	if task.Owner != "" || len(task.Context) != 0 || len(task.DependsOn) != 0 || task.Priority != "" || task.Status != "" {
+		t.Fatalf("task = %+v, want every new field empty", task)
+	}
+}
+
 func TestParseGroupFileReportsAMalformedHeading(t *testing.T) {
 	text := "## [tg-08.1] Lowercase id [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n"
 	file := ParseGroupFile(text)
