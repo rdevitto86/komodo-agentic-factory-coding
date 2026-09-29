@@ -460,16 +460,63 @@ func Headless(skill, target string) (string, []string) {
 	return "claude", args
 }
 
-// retiredCommands are the commands no hook or allow rule in this host's user settings may run.
-var retiredCommands = []string{"komodo-hooks", "python3 -m komodo"}
+// retiredCommands are the commands no hook, allow rule, or mcpServers entry may still name.
+var retiredCommands = []string{"komodo-hooks", "python3 -m komodo", "/assess-", "komodo-ollama-bridge"}
 
-// Leftovers names each hook and allow rule in this host's user settings that runs a retired command.
+// Leftovers names each hook, allow rule, and mcpServers entry in this host's user settings that
+// still names a retired command or server.
 func Leftovers() []string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
 	}
-	return leftoversIn(filepath.Join(home, Dir, "settings.json"))
+	notes := leftoversIn(filepath.Join(home, Dir, "settings.json"))
+	return append(notes, mcpLeftoversIn(filepath.Join(home, ".claude.json"))...)
+}
+
+// mcpLeftoversIn reads this host's own config and names each retired mcpServers entry it still
+// registers, at the top level and under each project entry.
+func mcpLeftoversIn(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var config struct {
+		McpServers map[string]json.RawMessage `json:"mcpServers"`
+		Projects   map[string]struct {
+			McpServers map[string]json.RawMessage `json:"mcpServers"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal(data, &config) != nil {
+		return nil
+	}
+	var found []string
+	found = append(found, retiredServerNames(path, config.McpServers)...)
+	projects := make([]string, 0, len(config.Projects))
+	for project := range config.Projects {
+		projects = append(projects, project)
+	}
+	sort.Strings(projects)
+	for _, project := range projects {
+		found = append(found, retiredServerNames(path, config.Projects[project].McpServers)...)
+	}
+	return found
+}
+
+// retiredServerNames names each retired server in one mcpServers map, in a stable order.
+func retiredServerNames(path string, servers map[string]json.RawMessage) []string {
+	names := make([]string, 0, len(servers))
+	for name := range servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var found []string
+	for _, name := range names {
+		if isRetired(name) {
+			found = append(found, fmt.Sprintf("%s: the mcpServers entry %q names a retired server", path, name))
+		}
+	}
+	return found
 }
 
 // leftoversIn reads one settings file and names each hook command and allow rule that runs a retired command.

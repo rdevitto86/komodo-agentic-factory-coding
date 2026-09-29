@@ -62,6 +62,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkPlugins(root)...)
 	problems = append(problems, checkOverlay(mount.OverlayPath())...)
 	if !options.NoGit {
+		problems = append(problems, checkAGENTSTracked(root)...)
 		if options.Warn != nil {
 			for _, note := range Leftovers(root) {
 				options.Warn(note)
@@ -96,6 +97,19 @@ func HostLeftovers(root string) []string {
 		}
 	}
 	return notes
+}
+
+// checkAGENTSTracked fails when AGENTS.md exists but git does not track it, since a line worktree
+// cut from a branch never receives a file git never committed.
+func checkAGENTSTracked(root string) []Problem {
+	path := filepath.Join(root, "AGENTS.md")
+	if !exists(path) {
+		return nil
+	}
+	if _, err := git.Run(root, "ls-files", "--error-unmatch", "--", "AGENTS.md"); err != nil {
+		return []Problem{{"leftovers", "AGENTS.md", "is not tracked by git, so a line worktree never receives it"}}
+	}
+	return nil
 }
 
 // checkPlugins reports each plugin manifest that did not load and a machine enable file that did not parse.

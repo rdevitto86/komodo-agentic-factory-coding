@@ -597,6 +597,28 @@ func TestAConflictMarkerOnTheFirstLineIsFound(t *testing.T) {
 	}
 }
 
+// TestAnUntrackedAGENTSFileFailsTheCheck proves a line worktree, cut from a branch, never gets a
+// file git never committed, so an AGENTS.md git does not track fails the check.
+func TestAnUntrackedAGENTSFileFailsTheCheck(t *testing.T) {
+	root := gitRepo(t)
+	write(t, root, "AGENTS.md", "# Rules\n")
+	if got := checkAGENTSTracked(root); len(got) != 1 || got[0].Where != "AGENTS.md" {
+		t.Fatalf("checkAGENTSTracked = %v, want one problem naming AGENTS.md", got)
+	}
+	commitAll(t, root, "init")
+	if got := checkAGENTSTracked(root); len(got) != 0 {
+		t.Fatalf("checkAGENTSTracked = %v, want none once AGENTS.md is committed", got)
+	}
+}
+
+// TestNoAGENTSFileIsNotAProblem proves a repo with no AGENTS.md at all fails no check of its own.
+func TestNoAGENTSFileIsNotAProblem(t *testing.T) {
+	root := gitRepo(t)
+	if got := checkAGENTSTracked(root); len(got) != 0 {
+		t.Fatalf("checkAGENTSTracked = %v, want none with no AGENTS.md", got)
+	}
+}
+
 func TestAWorktreeOutsideTheStateDirectoryYieldsANoteNotAProblem(t *testing.T) {
 	root := gitRepo(t)
 	write(t, root, "AGENTS.md", "# Rules\n")

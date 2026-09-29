@@ -57,6 +57,23 @@ func TestDoctorNamesAnEndedEpicsFiles(t *testing.T) {
 	}
 }
 
+func TestDoctorNamesAStaleLocalJSONBaseKey(t *testing.T) {
+	root, _ := leftoverRepo(t)
+	write(t, root, ".komodo/local.json", `{"base":"main"}`)
+	notes := Leftovers(root)
+	if len(notes) != 1 || !strings.Contains(notes[0], ".komodo/local.json") || !strings.Contains(notes[0], "base key") {
+		t.Fatalf("notes = %v, want one note naming the stale base key", notes)
+	}
+}
+
+func TestDoctorIgnoresALocalJSONWithNoBaseKey(t *testing.T) {
+	root, _ := leftoverRepo(t)
+	write(t, root, ".komodo/local.json", `{"sandbox":true}`)
+	if notes := Leftovers(root); len(notes) != 0 {
+		t.Fatalf("notes = %v, want none for a local.json with no base key", notes)
+	}
+}
+
 func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 	root, run := leftoverRepo(t)
 	write(t, root, "docs/backlog/TG-03.1-c.md", epicGroupFile("TG-03.1", "EPIC-03", false))

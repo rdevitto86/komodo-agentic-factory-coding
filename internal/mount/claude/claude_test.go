@@ -913,6 +913,47 @@ func TestLeftoversNamesARetiredHookAndAllowRuleOnly(t *testing.T) {
 	}
 }
 
+// TestLeftoversNamesAnAssessCommandAllowRule proves a retired /assess-* slash command still allowed
+// in a user's settings is named.
+func TestLeftoversNamesAnAssessCommandAllowRule(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	settings := `{"permissions": {"allow": ["SlashCommand(/assess-plan:*)", "Bash(go test:*)"]}}`
+	if err := os.WriteFile(path, []byte(settings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found := leftoversIn(path)
+	if len(found) != 1 || !strings.Contains(found[0], "/assess-plan") {
+		t.Fatalf("found = %q; want the retired /assess-* rule named", found)
+	}
+}
+
+// TestMcpLeftoversNamesARetiredServerAtEveryLevel proves a retired mcpServers entry is named at
+// the top level and under a project, keeping a current server unnamed.
+func TestMcpLeftoversNamesARetiredServerAtEveryLevel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude.json")
+	config := `{
+  "mcpServers": {"komodo-ollama-bridge": {"command": "old"}},
+  "projects": {
+    "/repo/a": {"mcpServers": {"komodo-ollama-bridge": {"command": "old"}, "current-tool": {"command": "keep"}}}
+  }
+}`
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found := mcpLeftoversIn(path)
+	if len(found) != 2 {
+		t.Fatalf("found = %q, want the retired server named once at each level", found)
+	}
+	for _, note := range found {
+		if !strings.Contains(note, "komodo-ollama-bridge") {
+			t.Fatalf("found = %q, want only the retired server named", found)
+		}
+	}
+	if got := mcpLeftoversIn(filepath.Join(t.TempDir(), "missing.json")); got != nil {
+		t.Fatalf("a missing file = %q, want nothing", got)
+	}
+}
+
 // TestWritePathsNamesTheProjectsMemoryDirectory checks the returned path matches this host's own
 // slug scheme: every / and . in the root folds to a dash, under ~/.claude/projects.
 func TestWritePathsNamesTheProjectsMemoryDirectory(t *testing.T) {
