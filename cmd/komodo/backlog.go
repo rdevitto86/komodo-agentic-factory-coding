@@ -83,6 +83,9 @@ func runLintGroupFiles(root string) {
 	for _, problem := range problems {
 		fmt.Println(problem)
 	}
+	for _, note := range groupFileNotes(root) {
+		fmt.Println("note " + note)
+	}
 	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n", taskCount, groupCount, len(problems))
 	if len(problems) > 0 {
 		exit(1)
@@ -249,6 +252,20 @@ func runBacklog(root string) {
 }
 
 // groupFileNames lists the group files under docs/backlog, sorted, or none when the directory is absent.
+// groupFileNotes collects every group file's lint notes, which never fail lint.
+func groupFileNotes(root string) []string {
+	names, _ := groupFileNames(root)
+	var notes []string
+	for _, name := range names {
+		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
+		if err != nil {
+			continue
+		}
+		notes = append(notes, backlog.NotesGroupFile(backlog.ParseGroupFile(string(data)))...)
+	}
+	return notes
+}
+
 func groupFileNames(root string) ([]string, error) {
 	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
 	if err != nil {

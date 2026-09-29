@@ -4289,7 +4289,7 @@ type: fix
 ## [EPIC-10] Beta fixes
 *Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
 
-* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L40, from the runner-cli, both SDK and shared-infra repos.
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L41, from the runner-cli, both SDK and shared-infra repos.
 
 ### [TG-10.1] One backlog grammar
 ```yaml
@@ -4817,7 +4817,7 @@ type: chore
 type: fix
 version: 1.0.0-beta.3
 ```
-* **Why:** the guard judged the orchestrator as a line session and ended its session for spawning isolated builders, a full drain runs a role-less model relay, and a rebuild here swaps the guard under every consumer repo (L31 to L40).
+* **Why:** the guard judged the orchestrator as a line session and ended its session for spawning isolated builders, a full drain runs a role-less model relay, and a rebuild here swaps the guard under every consumer repo (L31 to L41).
 * **Decided:** the guard has a global tier for every session and a line tier only where KOMODO_ROLE is set; the line's one entry is `komodo run`; ad hoc work is the orchestrator's own agents, with no skill.
 
 #### [TSK-10.8.1] The guard splits into a global tier and a line tier [P: C] [DONE]
@@ -4916,7 +4916,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.10] A task's done_when proves its outcome through the real command [P: H] [REFINEMENT]
+#### [TSK-10.8.10] A task's done_when proves its outcome through the real command [P: H] [DONE]
 ```yaml
 files: [komodo/rules/backlog.md, komodo/roles/planner.md, internal/backlog/lint.go, internal/backlog/lint_test.go]
 done_when:
@@ -4949,6 +4949,18 @@ done_when:
 context:
   - "TSK-10.8.3 kept a headless model relay for komodo run <group> --no-ship, which eval depends on, since Drive has no stop-before-ship mode"
   - "Drive gains a no-ship option; launchTarget, Command and Headless go"
+type: fix
+```
+
+#### [TSK-10.8.13] `komodo check task` diffs from the branch the line cut, and lint shows group-file notes [P: H] [DONE]
+```yaml
+files: [cmd/komodo/check.go, cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, internal/line/next.go]
+done_when:
+  - go test ./cmd/komodo/...
+context:
+  - "L41: with no --base, check task diffed from main, so every builder on the epic branch saw 70 to 120 false scope problems"
+  - "checkBase now resolves as the line does: declared base, the epic's branch, else the default"
+  - "TSK-10.8.10's group-file note was left unwired; komodo lint now prints it"
 type: fix
 ```
 

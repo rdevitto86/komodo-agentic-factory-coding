@@ -388,6 +388,11 @@ func onOrigin(root, branch string) bool {
 	return err == nil
 }
 
+// GroupBase is the branch a group cuts from and diffs against: its declared base, its epic's branch, else the default.
+func GroupBase(root string, parsed backlog.Backlog, group backlog.Group) string {
+	return groupBase(root, parsed, group)
+}
+
 // groupBase is the branch a group declares, else its epic's branch when that can be opened, else
 // the remote's default; a stacked base whose parent merged and vanished from origin also falls back.
 func groupBase(root string, parsed backlog.Backlog, group backlog.Group) string {
