@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,13 +11,14 @@ import (
 	"komodo/internal/line"
 )
 
-// Leftovers names what an ended epic or a finished run left behind: an ended epic's group files, and a worktree
-// under .komodo/wt or a run's local branch no open group owns; it never fails a check.
+// Leftovers names what an ended epic, a stale local.json, or a finished run left behind: an ended
+// epic's group files, and a worktree under .komodo/wt or a run's local branch no open group owns.
 func Leftovers(root string) []string {
 	paths, files := groupFiles(root)
 	open := openGroups(root, files)
 	notes := endedEpicFiles(root, paths, files)
 	notes = append(notes, legacyBacklog(root, files)...)
+	notes = append(notes, oldHarnessLeftovers(root)...)
 	worktrees, named := orphanWorktrees(root, open)
 	notes = append(notes, worktrees...)
 	return append(notes, orphanBranches(root, open, named)...)
@@ -33,6 +35,23 @@ func legacyBacklog(root string, files map[string]backlog.GroupFile) []string {
 		return nil
 	}
 	return []string{rel(root, path) + ": a legacy backlog; docs/backlog/ group files are read instead, remove it"}
+}
+
+// oldHarnessLeftovers names a .komodo/local.json a prior harness wrote, still holding its base key.
+func oldHarnessLeftovers(root string) []string {
+	path := filepath.Join(root, ".komodo", "local.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var parsed map[string]any
+	if json.Unmarshal(data, &parsed) != nil {
+		return nil
+	}
+	if _, ok := parsed["base"]; !ok {
+		return nil
+	}
+	return []string{rel(root, path) + ": a base key from an earlier harness; komodo no longer reads it"}
 }
 
 // groupFiles parses every docs/backlog group file, returning their paths in order and each one's parse.

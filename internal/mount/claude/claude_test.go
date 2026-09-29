@@ -352,6 +352,8 @@ func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	write(filepath.Join(Dir, "hooks", "guard.py"), "old")
 	write(filepath.Join(Dir, "hooks", "my-own-hook.sh"), "mine")
 	write(filepath.Join(Dir, "commands", "my-command.md"), "mine")
+	write(filepath.Join(Dir, "skills", "backlog", "SKILL.md"), "old")
+	write(filepath.Join(Dir, "skills", "review", "SKILL.md"), "old")
 	plan, err := Render(root, "komodo")
 	if err != nil {
 		t.Fatal(err)
@@ -367,6 +369,12 @@ func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, Dir, "commands", "my-command.md")); err != nil {
 		t.Fatal("a user's own command was removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "skills", "backlog", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("the retired backlog skill was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "skills", "review", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("the retired review skill was not removed")
 	}
 }
 
@@ -905,6 +913,64 @@ func TestLeftoversNamesARetiredHookAndAllowRuleOnly(t *testing.T) {
 	}
 }
 
+// TestLeftoversNamesAnAssessCommandAllowRule proves a retired /assess-* slash command still allowed
+// in a user's settings is named.
+func TestLeftoversNamesAnAssessCommandAllowRule(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	settings := `{"permissions": {"allow": ["SlashCommand(/assess-plan:*)", "Bash(go test:*)"]}}`
+	if err := os.WriteFile(path, []byte(settings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found := leftoversIn(path)
+	if len(found) != 1 || !strings.Contains(found[0], "/assess-plan") {
+		t.Fatalf("found = %q; want the retired /assess-* rule named", found)
+	}
+}
+
+// TestMcpLeftoversNamesARetiredServerAtEveryLevel proves a retired mcpServers entry is named at
+// the top level and under a project, keeping a current server unnamed.
+func TestMcpLeftoversNamesARetiredServerAtEveryLevel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude.json")
+	config := `{
+  "mcpServers": {"komodo-ollama-bridge": {"command": "old"}},
+  "projects": {
+    "/repo/a": {"mcpServers": {"komodo-ollama-bridge": {"command": "old"}, "current-tool": {"command": "keep"}}}
+  }
+}`
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found := mcpLeftoversIn(path)
+	if len(found) != 2 {
+		t.Fatalf("found = %q, want the retired server named once at each level", found)
+	}
+	for _, note := range found {
+		if !strings.Contains(note, "komodo-ollama-bridge") {
+			t.Fatalf("found = %q, want only the retired server named", found)
+		}
+	}
+	if got := mcpLeftoversIn(filepath.Join(t.TempDir(), "missing.json")); got != nil {
+		t.Fatalf("a missing file = %q, want nothing", got)
+	}
+}
+
+// TestWritePathsNamesTheProjectsMemoryDirectory checks the returned path matches this host's own
+// slug scheme: every / and . in the root folds to a dash, under ~/.claude/projects.
+func TestWritePathsNamesTheProjectsMemoryDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "work", "my.repo")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	slug := strings.ReplaceAll(strings.ReplaceAll(filepath.ToSlash(root), "/", "-"), ".", "-")
+	want := filepath.ToSlash(filepath.Join(home, Dir, "projects", slug, "memory")) + "/**"
+	got := WritePaths(root)
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("WritePaths = %v, want [%s]", got, want)
+	}
+}
+
 // TestSettingsTurnAttributionOff checks the rendered settings hide the trailer, the PR footer, and the session link.
 func TestSettingsTurnAttributionOff(t *testing.T) {
 	worktree := t.TempDir()
@@ -1044,6 +1110,43 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 		if action.Verb != "same" {
 			t.Fatalf("a second global render would %s %s", action.Verb, action.Path)
 		}
+	}
+}
+
+// TestTheGlobalRenderPrunesAnOrchestratorSkillItStoppedShipping checks a marked, dropped skill is
+// removed, while a skill the marker never named, such as one the user added, is left alone.
+func TestTheGlobalRenderPrunesAnOrchestratorSkillItStoppedShipping(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, Dir, "skills")
+	for _, name := range []string{"adhoc", "mine"} {
+		path := filepath.Join(dir, name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	marker := filepath.Join(home, Dir, globalSkillsMarker)
+	if err := os.WriteFile(marker, []byte("adhoc\nkomodo\nplan\nrespond\nrun\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	orchestratorSkills = []string{"komodo", "plan", "respond", "run"}
+	defer func() { orchestratorSkills = []string{"adhoc", "komodo", "plan", "respond", "run"} }()
+	plan, err := RenderGlobal(root, home, "/opt/komodo/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "adhoc", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("the adhoc skill this render stopped shipping was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "mine", "SKILL.md")); err != nil {
+		t.Fatal("a skill the marker never named was removed")
 	}
 }
 

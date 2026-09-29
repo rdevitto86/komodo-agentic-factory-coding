@@ -71,6 +71,16 @@ func TestOnlyTheOrchestratorOnABranchEditsTheShippedPolicy(t *testing.T) {
 	}
 }
 
+// TestTheShippedPolicyProtectsEveryCriticalRef proves komodo/policy.json names every ref AGENTS.md forbids.
+func TestTheShippedPolicyProtectsEveryCriticalRef(t *testing.T) {
+	policy := Load(t.TempDir(), t.TempDir())
+	for _, ref := range []string{"main", "master", "trunk", "prod", "production", "release/2.0", "hotfix/urgent"} {
+		if !policy.IsCritical(ref) {
+			t.Errorf("%s is not protected", ref)
+		}
+	}
+}
+
 func TestEverySessionIsRefusedTheHostsGitAndBinaryPaths(t *testing.T) {
 	registerFakeHost()
 	toolkit := toolkitWithoutPolicyPath(t)
