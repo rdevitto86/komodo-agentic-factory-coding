@@ -51,7 +51,10 @@ func runCheck(root string, args []string) {
 
 // checkTask reruns one task's done_when commands, then its scope, in the worktree.
 func checkTask(root, taskID, base string) []string {
-	_, parsed := load(root)
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		fail(err)
+	}
 	task, ok := parsed.Task(taskID)
 	if !ok {
 		fail(fmt.Errorf("no task %s", taskID))
@@ -62,7 +65,10 @@ func checkTask(root, taskID, base string) []string {
 
 // checkScope names every edit outside a task's files, or outside every file its group's tasks declare.
 func checkScope(root, target, base string) []string {
-	_, parsed := load(root)
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		fail(err)
+	}
 	if task, ok := parsed.Task(target); ok {
 		return check.Scope(root, checkBase(root, parsed, task.GroupID, base), task.Files())
 	}

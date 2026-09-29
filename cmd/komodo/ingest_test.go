@@ -5,17 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog/backlogtest"
 )
 
 const ingestSample = "## [EPIC-01] Epic\n\n### [TG-01.1] A card\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 	"#### [TSK-01.1.1] First task [P: C] [READY]\n```yaml\nfiles: [a/one.go]\n```\n"
 
-// writeBacklog writes text as the repo's BACKLOG.md.
+// writeBacklog writes text as the repo's own group file, one per group parsed.
 func writeBacklog(t *testing.T, root, text string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, text)
 }
 
 // TestRunIngestWritesACardForEveryReadyGroup proves ingest compiles every ready group with no name given.

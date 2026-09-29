@@ -62,7 +62,7 @@ func TestRunBacklogListsEveryOpenGroup(t *testing.T) {
 	}
 }
 
-// TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd proves the gate's lint check never needs BACKLOG.md.
+// TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd proves the gate's lint check never needs a flat backlog file.
 func TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd(t *testing.T) {
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
@@ -92,7 +92,7 @@ func TestLintProblemsReportsAGroupFileWithAMalformedHeading(t *testing.T) {
 }
 
 // TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles proves group-file lint
-// checks what BACKLOG.md lint checks, not only the parse errors ParseGroupFile itself reports.
+// checks what the legacy grammar's lint checks, not only the parse errors ParseGroupFile reports.
 func TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles(t *testing.T) {
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
@@ -108,7 +108,7 @@ func TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles(t *t
 }
 
 // TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles proves group files in the same
-// epic must agree on the version it ships, as BACKLOG.md's epics and groups must.
+// epic must agree on the version it ships, as the legacy grammar's epics and groups must.
 func TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles(t *testing.T) {
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
