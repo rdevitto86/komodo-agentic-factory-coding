@@ -17,7 +17,7 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
 - [ ] **TSK-01.1.1** Task title
   - files: `internal/backlog/backlog.go`, `internal/backlog/backlog_test.go`
   - accept: a refund over the limit is refused
-  - checks: `go test ./internal/backlog/...`
+  - done_when: `go test ./internal/backlog/...`
 ````
 
 ### Fields
@@ -29,7 +29,7 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
 - **`depends_on`** on a group is the groups whose unmerged branch this one's PR stacks on instead of its epic's. When a stacked parent merges, the child rebases onto the new base.
 - **`files`** lists every path a task will create or edit, including the caller that wires new code in, such as the command dispatch or the renderer; scope refuses any other. A task needs only a title and its `files`. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
 - **`accept`** is an optional line the correctness lens checks alongside the PRD, never a shell command.
-- **`checks`** are optional shell commands that add to the ones derived per detected language. Never prose.
+- **`done_when`** are the shell commands whose zero exit proves the task done; a `READY` agent task requires at least one. Never prose.
 - A group holds 1 to 12 tasks; lint refuses a larger one and suggests a split.
 
 ### Adding a task
