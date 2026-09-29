@@ -83,6 +83,10 @@ func migrateSource(root string) (files []backlog.GroupFile, source string, skipp
 func migrateGroupFiles(parsed backlog.Backlog) []backlog.GroupFile {
 	var out []backlog.GroupFile
 	for _, group := range parsed.Groups {
+		// A group whose every task is DONE stays history in CHANGELOG.md and git (decision 0009).
+		if migrateGroupStatus(group) == "DONE" {
+			continue
+		}
 		out = append(out, backlog.GroupFile{
 			ID:        group.ID,
 			Title:     group.Title,
