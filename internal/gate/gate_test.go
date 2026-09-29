@@ -515,6 +515,37 @@ func TestRebuildStampsTheNewHeadWhenAGoFileChanged(t *testing.T) {
 	}
 }
 
+// TestRebuildResolvesHEADToItsFullCommitSHA proves --to HEAD is never stamped literally, so doctor
+// never reads bin/.built-from as a name git cannot compare to a real commit.
+func TestRebuildResolvesHEADToItsFullCommitSHA(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "add a go file")
+	want := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+
+	if err := Rebuild(root, "HEAD~1", "HEAD", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(marker)); got != want || got == "HEAD" {
+		t.Fatalf("marker = %q, want the resolved commit %q", got, want)
+	}
+}
+
 // TestRebuildInstallsHooksBeforeStamping proves a pull that changes a Go file rewrites the git hooks,
 // not just the marker, so a hook script change is never hidden behind a stale-looking stamp.
 func TestRebuildInstallsHooksBeforeStamping(t *testing.T) {

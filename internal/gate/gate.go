@@ -173,9 +173,22 @@ func BuildInputsChanged(root, from, to string) (bool, error) {
 	return false, nil
 }
 
+// resolveCommit returns ref's full commit SHA, or ref unchanged when it is empty, a name git cannot
+// resolve, or the checkout hook's zero OID, so a name such as HEAD is never stamped literally.
+func resolveCommit(root, ref string) string {
+	if ref == "" || ref == zeroOID {
+		return ref
+	}
+	if sha, err := git.Run(root, "rev-parse", "--verify", ref); err == nil {
+		return sha
+	}
+	return ref
+}
+
 // Rebuild builds this host's binary and stamps bin/.built-from with to, only when a .go file,
 // go.mod or go.sum differs between from and to.
 func Rebuild(root, from, to string, out io.Writer) error {
+	from, to = resolveCommit(root, from), resolveCommit(root, to)
 	changed, err := changedBuildInputs(root, from, to)
 	if err != nil {
 		return err
