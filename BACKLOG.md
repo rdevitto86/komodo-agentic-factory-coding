@@ -4436,7 +4436,7 @@ context:
 type: feat
 ```
 
-#### [TSK-10.2.2] A migrate command converts an old backlog to the current grammar [P: M] [REFINEMENT]
+#### [TSK-10.2.2] A migrate command converts an old backlog to the current grammar [P: M] [DONE]
 ```yaml
 files: [cmd/komodo/migrate.go, cmd/komodo/migrate_test.go, internal/backlog/groupfile.go]
 done_when:
@@ -4458,7 +4458,7 @@ context:
 type: docs
 ```
 
-#### [TSK-10.2.4] Migrate imports a TODO.md or a foreign BACKLOG.md into group files [P: H] [REFINEMENT]
+#### [TSK-10.2.4] Migrate imports a TODO.md or a foreign BACKLOG.md into group files [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/migrate.go, cmd/komodo/migrate_test.go, internal/backlog/import.go, internal/backlog/import_test.go, komodo/skills/plan/SKILL.md, komodo/skills/komodo/SKILL.md]
 done_when:
@@ -4658,7 +4658,7 @@ context:
 type: docs
 ```
 
-#### [TSK-10.5.2] Lint refuses a group version at or below the newest tag [P: M] [REFINEMENT]
+#### [TSK-10.5.2] Lint refuses a group version at or below the newest tag [P: M] [DONE]
 ```yaml
 files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
 done_when:
@@ -4710,7 +4710,7 @@ depends_on: [TG-10.1, TG-10.2]
 * **Why:** TG-10.1 makes the line read group files, but ship, add, findings and release still write or compare BACKLOG.md, and 41 test files seed one (L30).
 * **Assumed:** BACKLOG.md survives only as `komodo migrate` input; findings and blocker notes land in the group's own file, as they land in its BACKLOG.md group today.
 
-#### [TSK-10.7.1] Ship writes a task's tick or blocker into its group's file [P: C] [REFINEMENT]
+#### [TSK-10.7.1] Ship writes a task's tick or blocker into its group's file [P: C] [DONE]
 ```yaml
 files: [internal/line/status.go, internal/line/status_test.go, internal/backlog/edit.go, internal/backlog/groupfile_test.go]
 done_when:
@@ -4721,7 +4721,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.7.2] Review findings and blocker notes file into the group's own file [P: C] [REFINEMENT]
+#### [TSK-10.7.2] Review findings and blocker notes file into the group's own file [P: C] [DONE]
 ```yaml
 files: [internal/line/wave.go, internal/line/wave_test.go, internal/line/ship.go, internal/line/ship_test.go, internal/line/ship_blocked_test.go, internal/backlog/note.go, internal/backlog/note_test.go]
 done_when:
@@ -4734,7 +4734,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.7.3] `komodo add` is the one add, and it writes group files [P: H] [REFINEMENT]
+#### [TSK-10.7.3] `komodo add` is the one add, and it writes group files [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, cmd/komodo/main.go, komodo/rules/backlog.md, komodo/skills/plan/SKILL.md]
 done_when:
@@ -4746,7 +4746,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.7.4] Release check compares the changelog with group files, not BACKLOG.md [P: H] [REFINEMENT]
+#### [TSK-10.7.4] Release check compares the changelog with group files, not BACKLOG.md [P: H] [DONE]
 ```yaml
 files: [internal/release/release.go, internal/release/release_test.go]
 done_when:

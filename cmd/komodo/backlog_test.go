@@ -259,3 +259,23 @@ func TestRunBacklogAddRejectsAMissingTitle(t *testing.T) {
 	}()
 	runBacklogAdd(root, []string{"TG-08.1"})
 }
+
+// TestLintProblemsRefusesAnOpenGroupAtATaggedVersion proves lint reads the repo's own tags.
+func TestLintProblemsRefusesAnOpenGroupAtATaggedVersion(t *testing.T) {
+	root := emptyRepo(t)
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+	if problems, _ := lintProblems(root); len(problems) != 0 {
+		t.Fatalf("problems before any tag = %v, want none", problems)
+	}
+	runGit(t, root, "tag", "v1.0.0")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0], "TG-01.1") {
+		t.Fatalf("problems = %v, want TG-01.1 named at the tagged 1.0.0", problems)
+	}
+}

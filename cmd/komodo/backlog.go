@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 )
@@ -23,6 +24,7 @@ func runLint(root string) {
 	}
 	_, parsed := load(root)
 	problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
+	problems = append(problems, versionProblems(root)...)
 	for _, problem := range problems {
 		fmt.Println(problem)
 	}
@@ -41,7 +43,7 @@ func runLint(root string) {
 func lintProblems(root string) ([]string, error) {
 	if names, _ := groupFileNames(root); len(names) > 0 {
 		problems, _, _, err := groupFileLintProblems(root)
-		return problems, err
+		return append(problems, versionProblems(root)...), err
 	}
 	if !backlog.Exists(root) {
 		return nil, nil
@@ -54,7 +56,21 @@ func lintProblems(root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...), nil
+	problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
+	return append(problems, versionProblems(root)...), nil
+}
+
+// versionProblems names each open group whose version is at or behind the repo's newest tag.
+func versionProblems(root string) []string {
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		return nil
+	}
+	out, err := git.Run(root, "tag", "--list")
+	if err != nil {
+		return nil
+	}
+	return backlog.LintVersions(parsed, strings.Fields(out))
 }
 
 // runLintGroupFiles reports every docs/backlog group file's own problems, plus a group over 12 tasks (REQ-8).
@@ -63,6 +79,7 @@ func runLintGroupFiles(root string) {
 	if err != nil {
 		fail(err)
 	}
+	problems = append(problems, versionProblems(root)...)
 	for _, problem := range problems {
 		fmt.Println(problem)
 	}
