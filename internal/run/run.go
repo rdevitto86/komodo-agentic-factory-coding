@@ -246,11 +246,33 @@ type laneResult struct {
 	launched time.Time
 }
 
-// runLane launches one group under its own budget and process group, so a runaway kills only its tree.
+// runLane drives one group through the conductor under its own budget, so a runaway kills only its tree.
 func runLane(options Options, finished chan<- laneResult) {
 	launched := time.Now()
-	code, url, err := launchTarget(options)
+	code, err := Drive(options)
+	url := ""
+	if err == nil {
+		url = laneURL(options)
+	}
 	finished <- laneResult{group: options.Target, code: code, url: url, err: err, launched: launched}
+}
+
+// laneURL is the pull request Drive shipped a group to, once its run's branch is known; a client
+// that cannot look it up leaves the drain to print its own group's message with no URL.
+func laneURL(options Options) string {
+	state, err := line.LoadRunFor(options.Root, options.Target)
+	if err != nil || state.Branch == "" {
+		return ""
+	}
+	client := options.PR
+	if client == nil {
+		client = pr.New(options.Root)
+	}
+	pull, err := client.View(state.Branch)
+	if err != nil {
+		return ""
+	}
+	return pull.URL
 }
 
 // lockedWriter serialises writes from every lane onto one writer.

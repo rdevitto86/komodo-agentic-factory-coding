@@ -75,10 +75,8 @@ func TestAwaitWindow(t *testing.T) {
 }
 
 func TestADrainPausedByARateLimitResumesAtTheResetWithNoPerson(t *testing.T) {
-	root := drainRepo(t)
-	host, _ := mount.Get("fakehost-drain")
-	host.Probe = func() (mount.Usage, bool) { return mount.Usage{Plan: "max_5x"}, true }
-	mount.Register(host)
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
 	// The rate-limit event lands on the drain's first window read, after its sync.
 	var reset time.Time
 	saved := usageWindow
@@ -89,13 +87,8 @@ func TestADrainPausedByARateLimitResumesAtTheResetWithNoPerson(t *testing.T) {
 		}
 		return windowAfter("max_5x", mount.RateLimit{FiveHour: 0.95, ResetsAt: reset})(root)
 	}
-	stageShip(t, root, "TG-07.1", "feat/first", drainText)
-	stageShip(t, root, "TG-07.2", "feat/second", drainText)
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
 	if err != nil || code != 0 {
 		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
 	}

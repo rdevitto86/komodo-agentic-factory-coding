@@ -7,6 +7,9 @@ description: Drive the line: ask for the next action, do exactly that, repeat un
 
 You drive one group through the line. The station order lives in the binary. You never guess it and never reorder it.
 
+A drain, and a plain `komodo run <group>`, drive the conductor directly; no session relays this loop for them.
+This skill's loop is what a headless `komodo run <group> --no-ship` or `--dry-run` still starts. There is no `--relay`.
+
 ## The loop
 
 1. Run `komodo step <group-or-task>`, or bare `komodo step` to continue the open run.
