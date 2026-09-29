@@ -83,30 +83,10 @@ func runLintGroupFiles(root string) {
 	for _, problem := range problems {
 		fmt.Println(problem)
 	}
-	for _, note := range groupFileNotes(root) {
-		fmt.Println("note " + note)
-	}
 	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n", taskCount, groupCount, len(problems))
 	if len(problems) > 0 {
 		exit(1)
 	}
-}
-
-// groupFileNotes collects backlog.NotesGroupFile across every docs/backlog group file.
-func groupFileNotes(root string) []string {
-	names, err := groupFileNames(root)
-	if err != nil {
-		return nil
-	}
-	var notes []string
-	for _, name := range names {
-		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
-		if err != nil {
-			continue
-		}
-		notes = append(notes, backlog.NotesGroupFile(backlog.ParseGroupFile(string(data)))...)
-	}
-	return notes
 }
 
 // groupFileLintProblems collects every problem across every docs/backlog group file, with the task and group counts.
