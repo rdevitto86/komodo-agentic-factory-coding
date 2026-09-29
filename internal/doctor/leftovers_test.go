@@ -1,11 +1,13 @@
 package doctor
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 )
 
@@ -23,7 +25,7 @@ func epicGroupFile(id, epic string, done bool) string {
 func leftoverRepo(t *testing.T) (string, func(dir string, args ...string)) {
 	t.Helper()
 	root := gitRepo(t)
-	write(t, root, "BACKLOG.md", openBacklog)
+	backlogtest.SeedText(t, root, openBacklog)
 	write(t, root, ".gitignore", "/.komodo/\n")
 	commitAll(t, root, "init")
 	run := func(dir string, args ...string) {
@@ -74,8 +76,13 @@ func TestDoctorIgnoresALocalJSONWithNoBaseKey(t *testing.T) {
 	}
 }
 
+// TestDoctorNamesAWorktreeNoGroupOwns also proves doctor names a legacy BACKLOG.md left behind
+// once a docs/backlog group file exists for the same repo.
 func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 	root, run := leftoverRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(openBacklog), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	write(t, root, "docs/backlog/TG-03.1-c.md", epicGroupFile("TG-03.1", "EPIC-03", false))
 	owned := filepath.Join(root, ".komodo", "wt", "TG-01.1")
 	byFile := filepath.Join(root, ".komodo", "wt", "TG-03.1")

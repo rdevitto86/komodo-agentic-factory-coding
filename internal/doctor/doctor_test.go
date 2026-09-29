@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/detect"
 	"komodo/internal/install"
 	"komodo/internal/ledger"
@@ -837,7 +838,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 		"#### [TSK-01.1.1] Do it [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when:\n  - true\n```\n"
 	done := strings.Replace(ready, "[READY]", "[DONE]", 1)
 	root := gitRepo(t)
-	write(t, root, "BACKLOG.md", ready)
+	backlogtest.SeedText(t, root, ready)
 	write(t, root, ".gitignore", "/.komodo/\n")
 	commitAll(t, root, "init")
 	bare := filepath.Join(t.TempDir(), "origin.git")
@@ -854,7 +855,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	run(root, "remote", "add", "origin", bare)
 	run(root, "push", "-q", "origin", "main")
 	run(root, "worktree", "add", "-q", "-b", "feat/g", worktree, "main")
-	write(t, worktree, "BACKLOG.md", done)
+	backlogtest.SeedText(t, worktree, done)
 	commitAll(t, worktree, "ship")
 	state := line.RunState{Run: "r", Group: "TG-01.1", Base: "main", Branch: "feat/g", Worktree: worktree}
 	if err := line.SaveRun(root, state); err != nil {
@@ -865,7 +866,8 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	if _, err := Prune(root, "main"); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != ready || !exists(worktree) {
+	rootGroupFile := filepath.Join(root, "docs", "backlog", "TG-01.1-g.md")
+	if data, _ := os.ReadFile(rootGroupFile); !strings.Contains(string(data), "[READY]") || !exists(worktree) {
 		t.Fatal("prune settled a run whose branch origin does not hold yet")
 	}
 
@@ -874,8 +876,8 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); string(data) != ready {
-		t.Fatalf("prune rewrote BACKLOG.md; no status flip is left uncommitted to restore; done = %v", got)
+	if data, _ := os.ReadFile(rootGroupFile); !strings.Contains(string(data), "[READY]") {
+		t.Fatalf("prune rewrote the group file; no status flip is left uncommitted to restore; done = %v", got)
 	}
 	if exists(worktree) {
 		t.Fatalf("the shipped worktree survived; done = %v", got)
@@ -946,7 +948,7 @@ func TestSettleShippedRunSkipsTheSweepWhileARunIsOpen(t *testing.T) {
 	const ready = "### [TG-01.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-01.1.1] Do it [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when:\n  - true\n```\n"
 	root := gitRepo(t)
-	write(t, root, "BACKLOG.md", ready)
+	backlogtest.SeedText(t, root, ready)
 	write(t, root, ".gitignore", "/.komodo/\n")
 	commitAll(t, root, "init")
 	bare := filepath.Join(t.TempDir(), "origin.git")
