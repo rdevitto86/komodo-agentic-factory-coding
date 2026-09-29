@@ -90,13 +90,12 @@ func TestTaskChecksAllowWhenTheBacklogHoldsNoSuchGroup(t *testing.T) {
 func TestTaskChecksRunACheckTwoTasksShareOnce(t *testing.T) {
 	t.Parallel()
 	root := groupRoot(t, "echo once >> ran.log")
-	path := filepath.Join(root, "BACKLOG.md")
+	path := filepath.Join(root, "docs", "backlog", "TG-90.1-a-group.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := "\n#### [TSK-90.1.2] Another task [P: C] [READY]\n```yaml\nfiles: [b.go]\n" +
-		"done_when: [\"echo once >> ran.log\"]\n```\n"
+	second := "\n- [ ] **TSK-90.1.2** Another task\n  - files: `b.go`\n  - done_when: `echo once >> ran.log`\n"
 	if err := os.WriteFile(path, append(data, second...), 0o644); err != nil {
 		t.Fatal(err)
 	}

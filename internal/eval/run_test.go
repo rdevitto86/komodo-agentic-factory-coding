@@ -54,11 +54,13 @@ func copyBytes(path, body string) error {
 	return os.WriteFile(path, []byte(body), 0o644)
 }
 
-// fakeClone makes an empty directory where a clone would be and records what it was asked for.
+// fakeClone makes an empty directory where a clone would be, its own group file already shipped,
+// and records what it was asked for.
 func fakeClone(asked *[]string) Clone {
 	return func(_ context.Context, url, commit, dir string) error {
 		*asked = append(*asked, url+"@"+commit)
-		return copyBytes(filepath.Join(dir, "BACKLOG.md"), "# Backlog\n\n### [TG-00.1] Shipped long ago\n")
+		return copyBytes(filepath.Join(dir, "docs", "backlog", "TG-00.1-shipped.md"),
+			"## [TG-00.1] Shipped long ago [P: M] [DONE]\n\n```yaml\ntype: feat\n```\n")
 	}
 }
 
@@ -72,9 +74,13 @@ type fakeLine struct {
 
 func (f fakeLine) drive(t *testing.T) Line {
 	return func(_ context.Context, dir string, group Group) error {
-		backlogText, err := os.ReadFile(filepath.Join(dir, "BACKLOG.md"))
-		if err != nil || !strings.Contains(string(backlogText), "[TG-00.1] Shipped long ago\n\n### [TG-01.1] Greet\n") {
-			t.Errorf("BACKLOG.md = %q, %v; the group file joins the clone's backlog before the line runs", backlogText, err)
+		shipped, err := os.ReadFile(filepath.Join(dir, "docs", "backlog", "TG-00.1-shipped.md"))
+		if err != nil || !strings.Contains(string(shipped), "[TG-00.1] Shipped long ago") {
+			t.Errorf("shipped group file = %q, %v; the clone's own group file must survive", shipped, err)
+		}
+		added, err := os.ReadFile(filepath.Join(dir, "docs", "backlog", "TG-01.1-greet.md"))
+		if err != nil || !strings.Contains(string(added), "[TG-01.1] Greet") {
+			t.Errorf("added group file = %q, %v; the suite's group file must join before the line runs", added, err)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "check.sh")); err == nil {
 			t.Error("a hidden test reached the clone before the line ran")
@@ -177,9 +183,9 @@ func TestRunStartsABacklogAndRejectsABrokenHandoff(t *testing.T) {
 		t.Run(each.name, func(t *testing.T) {
 			bare := func(_ context.Context, _, _, dir string) error { return os.MkdirAll(dir, 0o755) }
 			drive := func(_ context.Context, dir string, group Group) error {
-				backlogText, err := os.ReadFile(filepath.Join(dir, "BACKLOG.md"))
-				if err != nil || string(backlogText) != "# Backlog\n\n### [TG-01.1] Greet\n" {
-					t.Errorf("BACKLOG.md = %q, %v; a clone with no backlog starts one", backlogText, err)
+				added, err := os.ReadFile(filepath.Join(dir, "docs", "backlog", "TG-01.1-greet.md"))
+				if err != nil || !strings.Contains(string(added), "[TG-01.1] Greet") {
+					t.Errorf("added group file = %q, %v; a clone with no backlog starts one", added, err)
 				}
 				if each.state == "" {
 					return nil
@@ -241,7 +247,8 @@ func TestLaunchInstallsCommitsPushesAndRunsWithNoShip(t *testing.T) {
 	if err := CloneAt(context.Background(), source, parent, dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := copyBytes(filepath.Join(dir, "BACKLOG.md"), "# Backlog\n"); err != nil {
+	if err := copyBytes(filepath.Join(dir, "docs", "backlog", "TG-01.1-greet.md"),
+		"## [TG-01.1] Greet [P: M] [READY]\n\n```yaml\ntype: feat\n```\n"); err != nil {
 		t.Fatal(err)
 	}
 	calls := filepath.Join(t.TempDir(), "calls")

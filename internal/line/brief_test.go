@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/facet"
 	profilepkg "komodo/internal/profile"
 	repopkg "komodo/internal/repo"
@@ -36,7 +37,7 @@ func briefRepo(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	write("BACKLOG.md", briefBacklog)
+	backlogtest.SeedText(t, root, briefBacklog)
 	write(filepath.Join(RolesDir, "builder.md"), briefRole)
 	write(filepath.Join(SkillsDir, "standards-go", "SKILL.md"),
 		"---\nname: standards-go\ndescription: Go.\nglobs: [\"**/*.go\"]\n---\n\n# Go\n\nGodoc on every export.\n")
@@ -54,6 +55,18 @@ func briefRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+// swapToLegacyBacklog drops root's seeded group file and writes text as a flat BACKLOG.md, for a
+// task needing its own facets or mode key, which the group-file grammar cannot yet carry.
+func swapToLegacyBacklog(t *testing.T, root, text string) {
+	t.Helper()
+	if err := os.RemoveAll(filepath.Join(root, "docs", "backlog")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestBuildBriefFillsEverySlot(t *testing.T) {
@@ -150,7 +163,7 @@ func TestBuildBriefAddsTheFacetsATaskNames(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("BACKLOG.md", facetBacklog)
+	swapToLegacyBacklog(t, root, facetBacklog)
 	write(filepath.Join(facet.FacetsDir, "testfacet", "facet.md"),
 		"# Testfacet\n\n## Builder appendix\nBuilder rule text.\n\n## Reviewer appendix\nReviewer rule text.\n")
 	write(filepath.Join(facet.FacetsDir, "testfacet", "skill", "SKILL.md"),
@@ -261,9 +274,7 @@ func TestRepoContextSlotEnforcesItsTotalCap(t *testing.T) {
 func TestSingleModeBriefsShareTheGroupWorktree(t *testing.T) {
 	root := briefRepo(t)
 	text := strings.Replace(briefBacklog, "type: feat\nversion: 2.0.0", "type: feat\nversion: 2.0.0\nmode: single", 1)
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	swapToLegacyBacklog(t, root, text)
 	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
 	if err != nil {
 		t.Fatal(err)
@@ -432,7 +443,7 @@ func TestBuildBriefFillsFilesAndContextFromTheQueueCard(t *testing.T) {
 	globBacklog := "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 		"#### [TSK-07.1.1] Build the thing [P: C] [READY]\n```yaml\nfiles: [a/*.go]\n" +
 		"done_when:\n  - go test ./a/...\ncontext:\n  - docs/spec/SDD.md#The plan\n  - docs/spec/SDD.md#Other\n```\n"
-	write("BACKLOG.md", globBacklog)
+	backlogtest.SeedText(t, root, globBacklog)
 	write("a/two.go", "package a\n\nfunc Two() {}\n")
 	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
 		`{"group":"TG-07.1","files":["a/one.go","a/two.go"],"context":["docs/spec/SDD.md#Other"]}`)
@@ -467,7 +478,7 @@ func TestBuildBriefKeepsOnlyATasksOwnFilesFromTheCard(t *testing.T) {
 		"done_when:\n  - go test ./a/...\n```\n\n" +
 		"#### [TSK-07.1.2] Second task [P: C] [READY]\n```yaml\nfiles: [b/two.go]\n" +
 		"done_when:\n  - go test ./b/...\n```\n"
-	write("BACKLOG.md", twoTaskBacklog)
+	backlogtest.SeedText(t, root, twoTaskBacklog)
 	write("b/two.go", "package b\n\nfunc Two() {}\n")
 	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
 		`{"group":"TG-07.1","files":["a/one.go","b/two.go"],"context":[],`+

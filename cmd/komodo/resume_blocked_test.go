@@ -11,21 +11,24 @@ import (
 	"komodo/internal/conductor"
 )
 
-// blockedGroup is a one-group backlog whose task a person set back to READY after it stopped.
-const blockedGroup = "# Backlog\n\n### [TG-1] A group\n```yaml\ntype: feat\n```\n\n" +
-	"#### [TSK-1.1] Do it [P: C] [READY]\n```yaml\nfiles: [a.go]\n```\n"
+// blockedGroup is a one-group file whose task a person set back to READY after it stopped.
+const blockedGroup = "## [TG-1] A group [P: C] [READY]\n\n```yaml\ntype: feat\n```\n\n" +
+	"- [ ] **TSK-1.1** Do it\n  - files: `a.go`\n"
 
-// blockedRun saves a Blocked state whose worktree holds the noted backlog, its task at status.
+// blockedRun saves a Blocked state whose worktree holds the noted group file, its task at status.
 func blockedRun(t *testing.T, status string) (root, path string) {
 	t.Helper()
 	root = t.TempDir()
 	worktree := t.TempDir()
-	noted, err := backlog.AddNote(blockedGroup, "TG-1", backlog.BlockerNote{At: time.Now(), Run: "run-1", State: "Building"})
+	noted, err := backlog.AddGroupFileNote(blockedGroup, backlog.BlockerNote{At: time.Now(), Run: "run-1", State: "Building"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	noted = strings.Replace(noted, "[P: C] [BLOCKED]", "[P: C] ["+status+"]", 1)
-	path = filepath.Join(worktree, "BACKLOG.md")
+	if err := os.MkdirAll(filepath.Join(worktree, "docs", "backlog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path = filepath.Join(worktree, "docs", "backlog", "TG-1-a-group.md")
 	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +77,10 @@ func TestClearBlockerNamesAMissingBacklogOrGroup(t *testing.T) {
 		t.Fatal("clear = nil, want an error for a worktree with no backlog")
 	}
 	worktree := t.TempDir()
-	if err := os.WriteFile(filepath.Join(worktree, "BACKLOG.md"), []byte(blockedGroup), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(worktree, "docs", "backlog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "docs", "backlog", "TG-1-a-group.md"), []byte(blockedGroup), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := clearBlocker(conductor.State{Group: "TG-9", Worktree: worktree}); err == nil {

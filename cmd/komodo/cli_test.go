@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 )
@@ -86,9 +87,7 @@ func fixtureRepo(t *testing.T) string {
 	t.Helper()
 	t.Setenv("OLLAMA_BASE_URL", "http://127.0.0.1:1")
 	root, _ := tagRepo(t, "main", releaseChangelog)
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte("# Backlog\n\n"+shippedGroup+"\n"+cliPendingGroup), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, shippedGroup+"\n"+cliPendingGroup)
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module fixture\n\ngo 1.22\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +158,7 @@ func TestDispatchReachesEveryReadOnlyCommand(t *testing.T) {
 // TestAddAppendsATaskTheListThenShows proves add writes a task that list and lint then read.
 func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 	root := fixtureRepo(t)
-	if got := runCLI(t, root, "", "add", "TG-90.2", "A second task"); got.code != 0 {
+	if got := runCLI(t, root, "", "add", "TG-90.2", "A second task", "--files", "c/three.go"); got.code != 0 {
 		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
 	}
 	got := runCLI(t, root, "", "list", "TG-90.2")
@@ -171,7 +170,7 @@ func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 	}
 }
 
-// TestListShowsTheOpenRunsLiveStatus proves list overlays status.json while BACKLOG.md stays as committed.
+// TestListShowsTheOpenRunsLiveStatus proves list overlays status.json while the group file stays as committed.
 func TestListShowsTheOpenRunsLiveStatus(t *testing.T) {
 	root := fixtureRepo(t)
 	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "[READY]") {
@@ -187,8 +186,8 @@ func TestListShowsTheOpenRunsLiveStatus(t *testing.T) {
 	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "TSK-90.2.1       [DONE]") {
 		t.Fatalf("list during the run = %s; it must show the run's live status", got.stdout)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); !strings.Contains(string(data), "[TSK-90.2.1] Not done [P: C] [READY]") {
-		t.Fatal("list rewrote BACKLOG.md")
+	if data, _ := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md")); !strings.Contains(string(data), "- [ ] **TSK-90.2.1**") {
+		t.Fatal("list rewrote the group file")
 	}
 }
 
@@ -223,8 +222,8 @@ func TestListAfterShipShowsWhatStepSees(t *testing.T) {
 	if got := runCLI(t, root, "", "list", "TG-90.2"); !strings.Contains(got.stdout, "TSK-90.2.1       [DONE]") {
 		t.Fatalf("list after ship = %s; it must show the ship commit's status, as step does", got.stdout)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md")); !strings.Contains(string(data), "[TSK-90.2.1] Not done [P: C] [READY]") {
-		t.Fatal("ship rewrote the root's BACKLOG.md")
+	if data, _ := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md")); !strings.Contains(string(data), "- [ ] **TSK-90.2.1**") {
+		t.Fatal("ship rewrote the root's group file")
 	}
 }
 
@@ -462,9 +461,10 @@ func TestBareDiffPairsTheOpenGroupWithItsOwnBranch(t *testing.T) {
 		"#### [TSK-91.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n\n" +
 		"### [TG-91.2] Second\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
 		"#### [TSK-91.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"true\"]\n```\n"
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
+	if err := os.RemoveAll(filepath.Join(root, "docs", "backlog")); err != nil {
 		t.Fatal(err)
 	}
+	backlogtest.SeedText(t, root, text)
 	started := time.Now().UTC()
 	for index, group := range []string{"TG-91.1", "TG-91.2"} {
 		state := line.RunState{Run: group + "-1", Group: group, Base: "main", Branch: "feat/" + group,

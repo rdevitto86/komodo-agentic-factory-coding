@@ -29,13 +29,19 @@ func EpicBranchName(version string) string {
 // OpenEpic cuts the plan's epic branch from main, pushes it, and opens its draft pull request
 // to main, the first time a group of that epic cuts; an existing branch is left alone.
 func OpenEpic(root string, plan *Plan, client *pr.Client) (*EpicResult, error) {
-	branch := EpicBranchName(plan.Version)
-	if branch == "" {
-		return nil, nil
-	}
 	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
+	}
+	return openEpic(root, parsed, plan, client)
+}
+
+// openEpic is OpenEpic's own work once its backlog is parsed, so a caller already holding one
+// need not have it read from root again.
+func openEpic(root string, parsed backlog.Backlog, plan *Plan, client *pr.Client) (*EpicResult, error) {
+	branch := EpicBranchName(plan.Version)
+	if branch == "" {
+		return nil, nil
 	}
 	group, ok := parsed.Group(plan.Group)
 	if !ok || group.EpicID == "" {

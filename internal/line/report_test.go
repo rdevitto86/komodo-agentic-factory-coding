@@ -2,24 +2,26 @@ package line
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/ledger"
 )
 
-const reportBacklog = "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-	"#### [TSK-09.1.1] Do it [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - test -f a/one.go\n```\n"
+var reportGroup = backlog.GroupFile{
+	ID: "TG-09.1", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "2.0.0",
+	Tasks: []backlog.GroupTask{
+		{ID: "TSK-09.1.1", Title: "Do it", Files: []string{"a/one.go"}, Checks: []string{"test -f a/one.go"}},
+	},
+}
 
 // reportRepo builds a repo with a backlog whose one task is already DONE in the run's status.
 func reportRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(reportBacklog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.Seed(t, root, reportGroup)
 	if err := RecordStatus(root, "TSK-09.1.1", "DONE"); err != nil {
 		t.Fatal(err)
 	}
@@ -100,17 +102,19 @@ func TestReportExcludesBriefAndAdhocTokens(t *testing.T) {
 	}
 }
 
-const twoTaskBacklog = "### [TG-09.2] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-	"#### [TSK-09.2.1] Do it [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - test -f a/one.go\n```\n\n" +
-	"#### [TSK-09.2.2] Do it too [P: C] [READY]\n```yaml\nfiles: [a/two.go]\ndone_when:\n  - test -f a/two.go\n```\n"
+var twoTaskGroup = backlog.GroupFile{
+	ID: "TG-09.2", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "2.0.0",
+	Tasks: []backlog.GroupTask{
+		{ID: "TSK-09.2.1", Title: "Do it", Files: []string{"a/one.go"}, Checks: []string{"test -f a/one.go"}},
+		{ID: "TSK-09.2.2", Title: "Do it too", Files: []string{"a/two.go"}, Checks: []string{"test -f a/two.go"}},
+	},
+}
 
 // TestReportRequiresEveryTaskDoneToAccept proves a group with one Done and one still-READY
 // task is never accepted, since accepting requires every plan task to be done.
 func TestReportRequiresEveryTaskDoneToAccept(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(twoTaskBacklog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.Seed(t, root, twoTaskGroup)
 	if err := RecordStatus(root, "TSK-09.2.1", "DONE"); err != nil {
 		t.Fatal(err)
 	}

@@ -81,8 +81,8 @@ func TestNewLiveMountsCommitsAndDrivesTheGroupsClone(t *testing.T) {
 	if subject := gitIn(t, dir+".origin.git", "log", "-1", "--format=%s", "main"); subject != "eval: TG-99.1" {
 		t.Fatalf("origin main = %q, want the added group pushed", subject)
 	}
-	backlog, err := os.ReadFile(filepath.Join(dir, "BACKLOG.md"))
-	if err != nil || !strings.Contains(string(backlog), "#### [TSK-99.1.1]") {
+	backlog, err := os.ReadFile(filepath.Join(dir, "docs", "backlog", "TG-99.1-probe.md"))
+	if err != nil || !strings.Contains(string(backlog), "**TSK-99.1.1**") {
 		t.Fatalf("backlog = %q, %v, want the added group", backlog, err)
 	}
 	ended, cancel := context.WithCancel(context.Background())

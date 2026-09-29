@@ -118,7 +118,10 @@ func TestRunRefusesToNestInsideASessionItStarted(t *testing.T) {
 func TestAbandonBlocksAGroupFromTheCommandLine(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init")
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(blockedGroup), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "backlog", "TG-1-a-group.md"), []byte(blockedGroup), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	run := line.RunState{Run: "run-1", Group: "TG-1", Worktree: filepath.Join(root, "gone")}
@@ -140,7 +143,7 @@ func TestAbandonBlocksAGroupFromTheCommandLine(t *testing.T) {
 			t.Fatalf("%v = exit %d, %q %q; want exit %d naming %q", tc.args, got.code, got.stdout, got.stderr, tc.code, tc.want)
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
+	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-1-a-group.md"))
 	if err != nil || !strings.Contains(string(data), "[P: C] [BLOCKED]") {
 		t.Fatalf("backlog = %s, %v; want the task BLOCKED", data, err)
 	}

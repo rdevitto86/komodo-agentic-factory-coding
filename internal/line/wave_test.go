@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
 )
 
 func TestAtOrAboveRanksSeverities(t *testing.T) {
@@ -284,11 +286,14 @@ func TestTheReviewsFindingsReachTheLine(t *testing.T) {
 
 func TestACollisionIsASharedFileNotASharedDirectory(t *testing.T) {
 	root := gitRepo(t)
-	text := "### [TG-21.2] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
-		"#### [TSK-21.2.1] First [P: C] [READY]\n```yaml\nfiles: [web/a/x.ts]\ndone_when: [\"true\"]\n```\n\n" +
-		"#### [TSK-21.2.2] Sibling [P: C] [READY]\n```yaml\nfiles: [web/a/y.ts]\ndone_when: [\"true\"]\n```\n\n" +
-		"#### [TSK-21.2.3] Same [P: C] [READY]\n```yaml\nfiles: [web/a/x.ts]\ndone_when: [\"true\"]\n```\n"
-	commit(t, root, "BACKLOG.md", text, "seed")
+	commitGroupFile(t, root, backlog.GroupFile{
+		ID: "TG-21.2", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "1.0.0",
+		Tasks: []backlog.GroupTask{
+			{ID: "TSK-21.2.1", Title: "First", Files: []string{"web/a/x.ts"}, Checks: []string{"true"}},
+			{ID: "TSK-21.2.2", Title: "Sibling", Files: []string{"web/a/y.ts"}, Checks: []string{"true"}},
+			{ID: "TSK-21.2.3", Title: "Same", Files: []string{"web/a/x.ts"}, Checks: []string{"true"}},
+		},
+	})
 	gitCmd(t, root, "branch", "feat/group")
 	gitCmd(t, root, "checkout", "-q", "-b", TaskBranch("TSK-21.2.1"))
 	commit(t, root, "web/a/x.ts", "export const x = 1\n", "first")

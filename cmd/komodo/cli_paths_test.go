@@ -20,8 +20,11 @@ func TestACommandOutsideAGitRepoFails(t *testing.T) {
 	}
 }
 
+// TestLintFailsOnATaskWithNoDoneWhen proves the legacy grammar's lint still catches a missing
+// done_when; the group-file grammar's own lint has no equivalent check yet.
 func TestLintFailsOnATaskWithNoDoneWhen(t *testing.T) {
-	root := fixtureRepo(t)
+	root := t.TempDir()
+	runGit(t, root, "init", "-q")
 	broken := "# Backlog\n\n### [TG-91.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-91.1.1] No proof [P: C] [READY]\n```yaml\nfiles: [a.go]\n```\n"
 	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(broken), 0o644); err != nil {

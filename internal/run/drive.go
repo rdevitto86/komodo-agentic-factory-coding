@@ -261,6 +261,9 @@ func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (
 
 // editedGroup is the group's section of the worktree's backlog, as a person edited it on the group's branch.
 func editedGroup(worktree, group string) (string, bool) {
+	if _, text, found, err := backlog.FindGroupFile(worktree, group); err == nil && found {
+		return strings.TrimSpace(text), true
+	}
 	path, err := backlog.Find(worktree)
 	if err != nil {
 		return "", false

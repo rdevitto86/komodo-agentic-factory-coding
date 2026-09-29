@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog/backlogtest"
 )
 
 func TestRecordStatusKeepsEveryTaskAndLeavesNoTempFile(t *testing.T) {
@@ -141,9 +143,10 @@ func TestLoadBacklogReadsTheRunsStatusBeforeTheFile(t *testing.T) {
 	if task, _ := parsed.Task("TSK-12.1.1"); task.Status != "DONE" {
 		t.Fatalf("status = %s; the run's live status must win", task.Status)
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
+	groupFile := filepath.Join(root, "docs", "backlog", "TG-12.1-a-group.md")
+	data, _ := os.ReadFile(groupFile)
 	if !strings.Contains(string(data), "[READY]") {
-		t.Fatal("reading the overlay rewrote BACKLOG.md")
+		t.Fatal("reading the overlay rewrote the group file")
 	}
 }
 
@@ -154,9 +157,7 @@ func TestLoadBacklogKeepsAShippedGroupClosedUntilItLands(t *testing.T) {
 		t.Fatal(err)
 	}
 	shipped := strings.Replace(stepBacklog, "[READY]", "[DONE]", 1)
-	if err := os.WriteFile(filepath.Join(worktree, "BACKLOG.md"), []byte(shipped), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, worktree, shipped)
 	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		t.Fatal(err)

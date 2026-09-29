@@ -7,9 +7,18 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/git"
 	repopkg "komodo/internal/repo"
 )
+
+// commitGroupFile commits one group as its own docs/backlog file, the seed backlog.LoadRoot reads.
+func commitGroupFile(t *testing.T, root string, group backlog.GroupFile) {
+	t.Helper()
+	name := filepath.Join("docs", "backlog", group.ID+"-"+backlog.Slug(group.Title)+".md")
+	commit(t, root, name, backlog.RenderGroupFileDocument(group), "backlog")
+}
 
 // gitRepo builds a throwaway repository with one commit on main.
 func gitRepo(t *testing.T) string {
@@ -50,9 +59,12 @@ func commit(t *testing.T, root, name, body, message string) {
 
 func TestDiffForCarriesTasksStandardsAndTheDiff(t *testing.T) {
 	root := gitRepo(t)
-	backlogText := "### [TG-10.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-		"#### [TSK-10.1.1] Add one [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./...\"]\n```\n"
-	commit(t, root, "BACKLOG.md", backlogText, "backlog")
+	commitGroupFile(t, root, backlog.GroupFile{
+		ID: "TG-10.1", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "2.0.0",
+		Tasks: []backlog.GroupTask{
+			{ID: "TSK-10.1.1", Title: "Add one", Files: []string{"a/one.go"}, Checks: []string{"go test ./..."}},
+		},
+	})
 	skill := "---\nname: standards-go\ndescription: Go.\nglobs: [\"**/*.go\"]\n---\n\n# Go\n\nGodoc on every export.\n"
 	commit(t, root, filepath.Join(SkillsDir, "standards-go", "SKILL.md"), skill, "skill")
 	commit(t, root, "a/one.go", "package a\n\n// One returns one.\nfunc One() int { return 1 }\n", "the change")
@@ -77,7 +89,7 @@ func TestDiffForCarriesTasksStandardsAndTheDiff(t *testing.T) {
 
 func TestReReviewForCarriesOnlyTheRepairAndTheOpenFindings(t *testing.T) {
 	root := gitRepo(t)
-	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commitGroupFile(t, root, backlog.GroupFile{ID: "TG-10.1", Title: "G", Priority: "M", Status: "REFINEMENT", Type: "feat", Version: "2.0.0"})
 	commit(t, root, "a/one.go", "package a\n\nfunc One() int { return 1 }\n", "the build")
 	reviewed, err := git.Run(root, "rev-parse", "HEAD")
 	if err != nil {
@@ -106,7 +118,7 @@ func TestReReviewForCarriesOnlyTheRepairAndTheOpenFindings(t *testing.T) {
 
 func TestReReviewForWithNoReviewedCommitReadsTheWholeDiff(t *testing.T) {
 	root := gitRepo(t)
-	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commitGroupFile(t, root, backlog.GroupFile{ID: "TG-10.1", Title: "G", Priority: "M", Status: "REFINEMENT", Type: "feat", Version: "2.0.0"})
 	commit(t, root, "a/one.go", "package a\n", "one")
 	commit(t, root, "a/two.go", "package a\n", "two")
 
@@ -121,7 +133,7 @@ func TestReReviewForWithNoReviewedCommitReadsTheWholeDiff(t *testing.T) {
 
 func TestDiffNamesABinaryWithoutItsBytes(t *testing.T) {
 	root := gitRepo(t)
-	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commitGroupFile(t, root, backlog.GroupFile{ID: "TG-10.1", Title: "G", Priority: "M", Status: "REFINEMENT", Type: "feat", Version: "2.0.0"})
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -144,9 +156,7 @@ func TestBuildReportUsesTheAccessibilityHeadings(t *testing.T) {
 	body := "### [TG-11.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 		"#### [TSK-11.1.1] One [P: C] [DONE]\n```yaml\nfiles: [a/x.go]\ndone_when: [\"go test\"]\n```\n\n" +
 		"#### [TSK-11.1.2] Two [P: C] [BLOCKED]\n```yaml\nfiles: [b/y.go]\ndone_when: [\"go test\"]\n```\n"
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, body)
 	if _, err := bumpAttempt(root, "TSK-11.1.2", "done_when `go test` failed: exit 1", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +198,7 @@ func TestClipDiffDropsWholeFilesAndNamesTheCount(t *testing.T) {
 
 func TestDiffForClipsOnAFileBoundary(t *testing.T) {
 	root := gitRepo(t)
-	commit(t, root, "BACKLOG.md", "### [TG-10.2] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commitGroupFile(t, root, backlog.GroupFile{ID: "TG-10.2", Title: "G", Priority: "M", Status: "REFINEMENT", Type: "feat", Version: "2.0.0"})
 	for _, name := range []string{"a/big.go", "b/big.go", "c/big.go", "d/big.go"} {
 		body := "package p\n\n// Big holds padding.\nvar Big = \"" + strings.Repeat("x", 30000) + "\"\n"
 		commit(t, root, name, body, "add "+name)
@@ -318,7 +328,7 @@ func TestDiffForNamesADeletedFileWithoutItsContents(t *testing.T) {
 
 func TestDiffForCarriesRepoStandardsAndTheFacetReviewerAppendix(t *testing.T) {
 	root := gitRepo(t)
-	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commitGroupFile(t, root, backlog.GroupFile{ID: "TG-10.1", Title: "G", Priority: "M", Status: "REFINEMENT", Type: "feat", Version: "2.0.0"})
 	override := "Extract this repo's own error-wrapping convention.\n"
 	commit(t, root, filepath.Join(repopkg.StandardsDir, "go.md"), override, "repo standard")
 	commit(t, root, "a/one.go", "package a\n", "the change")
@@ -335,7 +345,7 @@ func TestDiffForCarriesRepoStandardsAndTheFacetReviewerAppendix(t *testing.T) {
 
 func TestDiffForDecodesAQuotedNonASCIIPathAndKeepsItsChunk(t *testing.T) {
 	root := gitRepo(t)
-	commit(t, root, "BACKLOG.md", "### [TG-10.1] G\n```yaml\ntype: feat\nversion: 2.0.0\n```\n", "backlog")
+	commitGroupFile(t, root, backlog.GroupFile{ID: "TG-10.1", Title: "G", Priority: "M", Status: "REFINEMENT", Type: "feat", Version: "2.0.0"})
 	commit(t, root, "a/one.go", "package a\n", "an ascii file")
 	commit(t, root, "a/héllo.go", "package a\n", "a non-ascii file")
 

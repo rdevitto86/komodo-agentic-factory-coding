@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog/backlogtest"
 )
 
 // checkBacklog is one group whose first task passes its check and whose second fails it.
@@ -12,14 +14,15 @@ const checkBacklog = "# Backlog\n\n### [TG-91.1] A checked group\n```yaml\ntype:
 	"#### [TSK-91.1.1] Passes [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"test -f a/one.go\"]\n```\n\n" +
 	"#### [TSK-91.1.2] Fails [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"test -f b/missing.go\"]\n```\n"
 
-// checkRepo commits BACKLOG.md on main, then edits a/one.go and c/stray.go in the working tree.
+// checkRepo commits the group's own file on main, then edits a/one.go and c/stray.go in the
+// working tree.
 func checkRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	runGit(t, root, "init", "-b", "main")
 	runGit(t, root, "config", "user.email", "a@example.com")
 	runGit(t, root, "config", "user.name", "a")
-	writeCheckFile(t, root, "BACKLOG.md", checkBacklog)
+	backlogtest.SeedText(t, root, checkBacklog)
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "backlog")
 	writeCheckFile(t, root, "a/one.go", "package a\n\nfunc One() {}\n")
@@ -42,7 +45,7 @@ func writeCheckFile(t *testing.T, root, name, body string) {
 func TestCheckRunsEachKindThroughOneEntryPoint(t *testing.T) {
 	root := checkRepo(t)
 	onChanged := `{"findings":[{"severity":"high","class":"bug","file":"a/one.go","line":3,"title":"on it","detail":"d"}]}`
-	offChanged := `{"findings":[{"severity":"high","class":"bug","file":"BACKLOG.md","line":1,"title":"off it","detail":"d"}]}`
+	offChanged := `{"findings":[{"severity":"high","class":"bug","file":"docs/backlog/TG-91.1-a-checked-group.md","line":1,"title":"off it","detail":"d"}]}`
 	results := t.TempDir()
 	writeCheckFile(t, results, "on.json", onChanged)
 	writeCheckFile(t, results, "off.json", offChanged)
@@ -61,7 +64,7 @@ func TestCheckRunsEachKindThroughOneEntryPoint(t *testing.T) {
 		{"task scope", []string{"scope", "TSK-91.1.1"}, 1, "c/stray.go is edited outside"},
 		{"group scope", []string{"scope", "TG-91.1"}, 1, "1 problem(s)"},
 		{"finding on a changed line", []string{"findings", filepath.Join(results, "on.json"), "--base", "main"}, 0, "0 problem(s)"},
-		{"finding off the diff", []string{"findings", filepath.Join(results, "off.json")}, 1, "BACKLOG.md:1 off it"},
+		{"finding off the diff", []string{"findings", filepath.Join(results, "off.json")}, 1, "docs/backlog/TG-91.1-a-checked-group.md:1 off it"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

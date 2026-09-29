@@ -2,12 +2,12 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/git"
 	"komodo/internal/pr"
 )
@@ -33,9 +33,7 @@ func rephaseCommandRepo(t *testing.T) string {
 			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(rephaseTestBacklog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, rephaseTestBacklog)
 	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "seed"}} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = root

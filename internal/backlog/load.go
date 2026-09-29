@@ -108,6 +108,15 @@ func groupTaskToTask(file GroupFile, task GroupTask) Task {
 	if len(task.Checks) > 0 {
 		fields.Set("done_when", toAnyList(task.Checks))
 	}
+	if len(task.DependsOn) > 0 {
+		fields.Set("depends_on", toAnyList(task.DependsOn))
+	}
+	if len(task.Context) > 0 {
+		fields.Set("context", toAnyList(task.Context))
+	}
+	if task.Owner != "" {
+		fields.Set("owner", task.Owner)
+	}
 	return Task{
 		ID: task.ID, Title: task.Title, Priority: file.Priority, Status: status,
 		Fields: fields, Heading: task.Line, BlockStart: task.Line, BlockEnd: task.Line, GroupID: file.ID,

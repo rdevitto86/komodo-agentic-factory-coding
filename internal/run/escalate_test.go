@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
 	"komodo/internal/line"
 )
@@ -61,12 +62,12 @@ func TestOrchestratorRequestFailsWithNoOrchestratorRole(t *testing.T) {
 
 func TestLintBacklogReportsTheWorktreesProblems(t *testing.T) {
 	clean := t.TempDir()
-	writeFile(t, clean, "BACKLOG.md", escalateBacklog)
+	backlogtest.SeedText(t, clean, escalateBacklog)
 	if problems, err := lintBacklog(clean); err != nil || len(problems) != 0 {
 		t.Fatalf("lint = %v, %v; want a clean backlog to pass", problems, err)
 	}
 	broken := t.TempDir()
-	writeFile(t, broken, "BACKLOG.md", strings.Replace(escalateBacklog, "done_when:\n  - go test ./...\n", "", 1))
+	backlogtest.SeedText(t, broken, strings.Replace(escalateBacklog, "done_when:\n  - go test ./...\n", "", 1))
 	if problems, err := lintBacklog(broken); err != nil || len(problems) == 0 {
 		t.Fatalf("lint = %v, %v; want a task with no done_when to fail", problems, err)
 	}
@@ -126,7 +127,7 @@ func TestDrainHoldsAGroupThatDependsOnAParkedOne(t *testing.T) {
 
 func TestAnEditedBlockedGroupRestartsWithItsEditedText(t *testing.T) {
 	worktree := t.TempDir()
-	writeFile(t, worktree, "BACKLOG.md", escalateBacklog)
+	backlogtest.SeedText(t, worktree, escalateBacklog)
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	saved := conductor.State{Group: "TG-40.1", Current: conductor.Blocked, Edited: true}
 	if err := conductor.SaveState(statePath, saved); err != nil {
@@ -142,7 +143,7 @@ func TestAnEditedBlockedGroupRestartsWithItsEditedText(t *testing.T) {
 	if final.Current != conductor.Ready || !final.SlotFree || final.Edited {
 		t.Fatalf("state = %+v, want Ready with its slot taken and the edit consumed", final)
 	}
-	if !strings.HasPrefix(driver.Builder.Brief, "# The group, as a person edited it\n\n### [TG-40.1] Group") ||
+	if !strings.HasPrefix(driver.Builder.Brief, "# The group, as a person edited it\n\n## [TG-40.1] Group") ||
 		!strings.HasSuffix(driver.Builder.Brief, "the brief") {
 		t.Fatalf("brief = %q, want the edited group ahead of the builder's brief", driver.Builder.Brief)
 	}
