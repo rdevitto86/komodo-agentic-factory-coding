@@ -118,7 +118,7 @@ func Unreleased(text string, tags []string) []string {
 	return out
 }
 
-// Drift is one disagreement between the changelog, the tags, and BACKLOG.md.
+// Drift is one disagreement between the changelog, the tags, and each group's declared version.
 type Drift struct {
 	Subject string `json:"subject"`
 	Detail  string `json:"detail"`

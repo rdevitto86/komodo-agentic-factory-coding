@@ -176,7 +176,10 @@ func checkRelease(root string) ([]release.Drift, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, parsed := load(root)
+	parsed, _, err := line.LoadBacklog(root)
+	if err != nil {
+		return nil, err
+	}
 	var versions []string
 	for _, group := range parsed.Groups {
 		if !shipped(group) {
