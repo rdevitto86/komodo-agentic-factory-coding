@@ -4289,7 +4289,7 @@ type: fix
 ## [EPIC-10] Beta fixes
 *Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
 
-* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L30, from the runner-cli, both SDK and shared-infra repos.
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L36, from the runner-cli, both SDK and shared-infra repos.
 
 ### [TG-10.1] One backlog grammar
 ```yaml
@@ -4810,6 +4810,109 @@ context:
   - "AGENTS.md and CONTRIBUTING.md send out-of-task work to komodo add; README's quick start drops $EDITOR BACKLOG.md"
 owner: human
 type: chore
+```
+
+### [TG-10.8] The orchestrator sits outside a captive line
+```yaml
+type: fix
+version: 1.0.0-beta.3
+```
+* **Why:** the guard judged the orchestrator as a line session and ended its session for spawning isolated builders, a full drain runs a role-less model relay, and a rebuild here swaps the guard under every consumer repo (L31 to L36).
+* **Decided:** the guard has a global tier for every session and a line tier only where KOMODO_ROLE is set; the line's one entry is `komodo run`; ad hoc work is the orchestrator's own agents, with no skill.
+
+#### [TSK-10.8.1] The guard splits into a global tier and a line tier [P: C] [REFINEMENT]
+```yaml
+files: [internal/guard/guard.go, internal/guard/git.go, internal/guard/paths.go, internal/guard/hook.go, internal/guard/table.go, internal/guard/hook_test.go]
+done_when:
+  - go test ./internal/guard/...
+context:
+  - "L31: guard.go:59 refused every spawn with isolation set, so the orchestrator could not run builders in parallel worktrees"
+  - "L32: six parallel refused spawns in one message hit the 3-refusal limit, and continue false ended the orchestrator's turn"
+  - "global: critical refs, force push, --no-verify, trailers, host and toolkit config paths"
+  - "line only: writes outside the worktree, isolated spawns, LineRefusedPaths, epic-branch push and merge, the refusal limit"
+type: fix
+```
+
+#### [TSK-10.8.2] Every session `komodo run` starts carries the line marker [P: C] [REFINEMENT]
+```yaml
+files: [cmd/komodo/line.go, internal/run/run.go, internal/run/run_test.go]
+done_when:
+  - go test ./internal/run/... ./cmd/komodo/...
+context:
+  - "L33: run.Launch and Headless set no KOMODO_ROLE, so a drain or --relay session would fall to the global tier only"
+  - "komodo run sets the marker in its own environment at start, so every session and subagent under it inherits it"
+type: fix
+```
+
+#### [TSK-10.8.3] A drain runs each lane through the conductor, and the relay goes [P: H] [REFINEMENT]
+```yaml
+files: [internal/run/run.go, internal/run/run_test.go, cmd/komodo/line.go, internal/mount/claude/claude.go, internal/mount/registry.go, komodo/skills/run/SKILL.md]
+done_when:
+  - go test ./internal/run/... ./cmd/komodo/... ./internal/mount/...
+depends_on: [TSK-10.8.2]
+context:
+  - "L34: runLane (run.go:239) launches a headless model relaying /run, the model-driven loop decision 0005 retired"
+  - "runLane calls Drive; --relay and Headless go; --dry-run lists the drain without a model"
+type: fix
+```
+
+#### [TSK-10.8.4] The adhoc skill and `komodo stage` go; ad hoc work is the orchestrator's own agents [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/stage.go, cmd/komodo/stage_test.go, internal/conductor/stage.go, internal/conductor/stage_test.go, komodo/skills/adhoc/SKILL.md, cmd/komodo/main.go, komodo/skills/komodo/SKILL.md, komodo/skills/run/SKILL.md, internal/mount/claude/claude.go, internal/ledger/ledger.go, docs/decisions.md, docs/prd.md, docs/system-design.md, docs/architecture.md, README.md]
+done_when:
+  - go test ./...
+  - test ! -e komodo/skills/adhoc
+  - go run ./cmd/komodo doctor
+context:
+  - "the line is captive: /run and komodo run are its one entry; no stage runs outside it"
+  - "the run skill says what ad hoc means: the orchestrator's own default agents, outside the line and its line tier"
+  - "decision 0034 records the two tiers and the captive line, amending 0005, 0012 and 0013; REQ-37 names a line session"
+  - "regenerate komodo/skills/komodo/SKILL.md with komodo help --skill, or help_test.go fails the gate"
+type: refactor
+```
+
+#### [TSK-10.8.5] Hooks run a commit-named copy of the binary, so a rebuild never moves another repo [P: C] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, internal/run/sync.go, internal/run/sync_test.go]
+done_when:
+  - go test ./internal/mount/... ./internal/run/...
+context:
+  - "L35: runner-cli's and the global settings run this repo's bin/ guard, and the post-merge hook rebuilds bin/ in place"
+  - "the rendered hook names ~/.komodo/bin/komodo-<sha>; a repo moves to a new binary only on komodo sync or install"
+type: fix
+```
+
+#### [TSK-10.8.6] `komodo sync` removes a clean line worktree whose branch has merged [P: M] [REFINEMENT]
+```yaml
+files: [internal/run/sync.go, internal/run/sync_test.go]
+done_when:
+  - go test ./internal/run/...
+context:
+  - "L36: .komodo/wt/fix-host-pin outlived its merge in #262"
+  - "a worktree with uncommitted changes or an unmerged branch is named, never removed"
+type: fix
+```
+
+#### [TSK-10.8.7] The gate's git hooks refuse trailers and branch names outside `<type>/<kebab-name>` [P: M] [REFINEMENT]
+```yaml
+files: [internal/gate/gate.go, internal/gate/gate_test.go, internal/guard/git.go]
+done_when:
+  - go test ./internal/gate/... ./internal/guard/...
+context:
+  - "a commit-msg and pre-commit hook covers the orchestrator, the line and a person alike, with no model"
+  - "the guard then keeps only what a git hook cannot see: --no-verify, force push and config writes"
+  - "this also refuses a person's commit on a branch such as wip"
+type: fix
+```
+
+#### [TSK-10.8.8] The escalation session's role is not named orchestrator [P: L] [REFINEMENT]
+```yaml
+files: [internal/run/drive.go, komodo/roles/orchestrator.md]
+done_when:
+  - go test ./internal/run/...
+context:
+  - "drive.go:215 starts the line's escalation session as Role orchestrator, which reads as the primary session but runs the line tier"
+type: refactor
 ```
 
 ## [EPIC-09] 1.0.0 LTS
