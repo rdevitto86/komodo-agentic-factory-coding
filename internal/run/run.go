@@ -273,10 +273,8 @@ func drainGroups(root string) ([]backlog.Group, error) {
 		return nil, err
 	}
 	var parsed backlog.Backlog
-	if path, err := backlog.Find(root); err == nil {
-		if parsed, err = backlog.Load(path); err != nil {
-			return nil, err
-		}
+	if loaded, err := backlog.LoadRoot(root); err == nil {
+		parsed = loaded
 	}
 	groups := make([]backlog.Group, 0, len(order))
 	for _, id := range order {

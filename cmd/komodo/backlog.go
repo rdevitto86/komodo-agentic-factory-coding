@@ -15,9 +15,9 @@ import (
 )
 
 // runLint prints every grammar problem, then each advisory note, and exits non-zero only on a problem.
-// A repo with no BACKLOG.md but a docs/backlog/ directory lints its group files instead.
+// A repo holding docs/backlog/ group files lints those; BACKLOG.md lints only when it holds none.
 func runLint(root string) {
-	if _, err := backlog.Find(root); err != nil {
+	if names, _ := groupFileNames(root); len(names) > 0 {
 		runLintGroupFiles(root)
 		return
 	}
@@ -36,9 +36,10 @@ func runLint(root string) {
 	}
 }
 
-// lintProblems returns every grammar problem for this repo: BACKLOG.md's when it exists, else docs/backlog's group files.
+// lintProblems returns every grammar problem for this repo: docs/backlog's group files when the repo
+// holds one, else BACKLOG.md's.
 func lintProblems(root string) ([]string, error) {
-	if _, err := backlog.Find(root); err != nil {
+	if names, _ := groupFileNames(root); len(names) > 0 {
 		problems, _, _, err := groupFileLintProblems(root)
 		return problems, err
 	}
