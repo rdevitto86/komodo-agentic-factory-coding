@@ -4302,14 +4302,14 @@ type: fix
 ## [EPIC-10] Beta fixes
 *Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
 
-* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L11.
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L23, from the runner-cli, both SDK and shared-infra repos.
 
 ### [TG-10.1] One backlog grammar
 ```yaml
 type: fix
 version: 1.0.0-beta.3
 ```
-* **Why:** a repo sees 47 groups through `komodo lint` and 1 through `komodo backlog`, and the shipped rule disagrees with lint about `done_when` (L1, L2).
+* **Why:** a repo sees 47 groups through `komodo lint` and 1 through `komodo backlog`, the shipped rule disagrees with lint about `done_when`, and a legacy BACKLOG.md outranks the group files (L1, L2, L14, L17, L18).
 
 #### [TSK-10.1.1] A docs/backlog group-file queue loads into the same Backlog the line runs on [P: C] [REFINEMENT]
 ```yaml
@@ -4318,7 +4318,10 @@ done_when:
   - go test ./internal/backlog/...
 context:
   - "L1: backlog.Find accepts only BACKLOG.md or docs/BACKLOG.md; 23 files call it, so next, list and step fail in a repo holding only docs/backlog/ with: no BACKLOG.md"
-  - "Load(root) returns BACKLOG.md's Backlog when it exists, else one built from every group file, with epics taken from each file's epic and version"
+  - "Load(root) returns the Backlog built from every group file when docs/backlog/ holds one, with epics taken from each file's epic and version, else BACKLOG.md's"
+  - "L14: preferring BACKLOG.md runs legacy work silently; in both SDK repos komodo next picked the legacy TG-01.1 Cross-Cutting"
+  - "with both present, Load uses the group files and komodo doctor names the legacy BACKLOG.md to remove"
+  - "backlog.Load(path) already exists at internal/backlog/backlog.go:414; the root loader takes a new name, or Load(path) is renamed with its callers"
   - "komodo-cicd-runner-cli PR #16 is the first repo on group files and cannot run the line until this and TSK-10.1.3 land"
 type: fix
 ```
@@ -4351,6 +4354,7 @@ done_when:
 depends_on: [TSK-10.1.1]
 context:
   - "komodo backlog and komodo lint then read the same source, and the template's AGENTS.md names docs/backlog/"
+  - "run and release check are the other two commands the beta found reading only BACKLOG.md"
 type: fix
 ```
 
@@ -4365,7 +4369,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.1.6] The group-file grammar carries a task's owner, context and depends_on [P: H] [REFINEMENT]
+#### [TSK-10.1.6] The group-file grammar carries a task's owner, context, depends_on, priority and status [P: H] [REFINEMENT]
 ```yaml
 files: [komodo/rules/backlog.md, internal/backlog/groupfile.go, internal/backlog/groupfile_test.go]
 done_when:
@@ -4376,13 +4380,35 @@ context:
 type: feat
 ```
 
+#### [TSK-10.1.7] Lint's heading anchor matches GitHub's for numbered headings [P: M] [REFINEMENT]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+context:
+  - "L17: Slug folds punctuation to a dash, so '6.1 X' gives #6-1-x where GitHub gives #61-x; 6 false failures in one repo"
+  - "GitHub lowercases, drops punctuation except - and _, and turns each space into -"
+type: fix
+```
+
+#### [TSK-10.1.8] One version mismatch reports once per epic, with a split hint [P: M] [REFINEMENT]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+context:
+  - "L18: one epic whose groups disagree with its version printed 23 separate problems"
+  - "print one problem per epic naming its version, each differing group, and: split the epic per version"
+type: fix
+```
+
 ### [TG-10.2] Adopting an existing repo
 ```yaml
 type: feat
 version: 1.0.0-beta.3
 depends_on: [TG-10.1]
 ```
-* **Why:** a repo with its own backlog and docs is converted by hand today (L3, L4, L5).
+* **Why:** a repo with its own backlog and docs is converted by hand today, and the first gate refuses it (L3, L4, L5, L12, L15, L16, L19, L22).
 
 #### [TSK-10.2.1] `komodo init` reports how each kept file differs from its template [P: M] [REFINEMENT]
 ```yaml
@@ -4417,12 +4443,72 @@ context:
 type: docs
 ```
 
+#### [TSK-10.2.4] Migrate imports a TODO.md or a foreign BACKLOG.md into group files [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/migrate.go, cmd/komodo/migrate_test.go, internal/backlog/import.go, internal/backlog/import_test.go]
+done_when:
+  - go test ./cmd/komodo/... ./internal/backlog/...
+depends_on: [TSK-10.2.2]
+context:
+  - "L12: a repo's TODO.md or free-form BACKLOG.md has no path into docs/backlog/; each is converted by hand"
+  - "a heading becomes a REFINEMENT group, an open checkbox or bullet becomes a task, a ticked one is kept as ticked"
+  - "a line it cannot place is printed with its source line number, never dropped silently"
+  - "the source file stays until the human deletes it; the output passes komodo lint; --dry-run prints the files it would write"
+  - "no model: the planner refines the imported REFINEMENT groups afterwards"
+type: feat
+```
+
+#### [TSK-10.2.5] Detect reads the package manager and the scripts package.json declares [P: C] [REFINEMENT]
+```yaml
+files: [internal/detect/detect.go, internal/detect/detect_test.go]
+done_when:
+  - go test ./internal/detect/...
+context:
+  - "L15: detect.go:235 returns npm test and npm run build for any package.json; shared-infra is pnpm with no build script"
+  - "the lockfile picks pnpm, yarn, bun or npm; a missing test or build script derives no command and prints a warning naming it"
+type: fix
+```
+
+#### [TSK-10.2.6] An adopted repo's existing comments do not fail its first commit [P: C] [REFINEMENT]
+```yaml
+files: [internal/comments/lint.go, internal/comments/comments_test.go, internal/gate/gate.go, internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/comments/... ./internal/gate/...
+context:
+  - "L16: comment lint found 8 problems in runner-cli on day one and the gate refused its first commit; no baseline exists"
+  - "assumed: the gate checks only comments the staged diff adds or changes; komodo comments check keeps the whole-tree view"
+  - "a diff scope needs no baseline file, keeping decision 0021's no-required-config rule"
+type: fix
+```
+
+#### [TSK-10.2.7] Doctor names old-harness leftovers and a gitignored AGENTS.md [P: M] [REFINEMENT]
+```yaml
+files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go, internal/doctor/doctor.go]
+done_when:
+  - go test ./internal/doctor/...
+context:
+  - "L19: found by hand in 2 repos: a base key in .komodo/local.json, /assess-* commands, and python3 -m komodo calls"
+  - "a gitignored AGENTS.md never reaches a line worktree, so a task there runs without the repo's rules; that one fails, the rest are notes"
+type: fix
+```
+
+#### [TSK-10.2.8] The install gitignores the personal overlay it seeds [P: M] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
+done_when:
+  - go test ./internal/mount/claude/...
+context:
+  - "L22: claude.go:111 seeds CLAUDE.local.md but no AddIgnore names it, so a personal overlay can be committed"
+  - "the same run saw writes to the host's memory folder denied after install; cause not confirmed, not in this task"
+type: fix
+```
+
 ### [TG-10.3] Guardrail scope
 ```yaml
 type: fix
 version: 1.0.0-beta.3
 ```
-* **Why:** one standard loads where it does not apply, the guard covers two refs, and doctor misses a workflow file (L6, L7, L8).
+* **Why:** one standard loads where it does not apply, the guard covers two refs, doctor misses a workflow file, and every push fuzzes (L6, L7, L8, L23).
 
 #### [TSK-10.3.1] standards-cicd loads only for a repo with a pipeline, and accepts non-hosted runners [P: M] [REFINEMENT]
 ```yaml
@@ -4455,6 +4541,17 @@ context:
   - "L8: internal/doctor has no such check"
   - "the problem line names the file and the fix; komodo-cicd-runner-cli still carries .github/workflows/ci.yml, so its doctor fails until it moves off Actions"
 type: fix
+```
+
+#### [TSK-10.3.4] A push that touches no code skips tests and fuzzing [P: M] [REFINEMENT]
+```yaml
+files: [internal/gate/gate.go, internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/gate/...
+context:
+  - "L23: the pre-push gate takes 1 to 2 minutes with fuzzing on every push, backlog-only ones included"
+  - "a push changing only markdown runs lint, comments and doctor; fuzzing runs only when a push changes a package FuzzTargets names"
+type: perf
 ```
 
 ### [TG-10.4] Usage pacing
@@ -4494,6 +4591,69 @@ depends_on: [TSK-10.4.1, TSK-10.4.2]
 context:
   - "L11: limits.go never reads hasExtraUsageEnabled or billingType"
 type: fix
+```
+
+### [TG-10.5] Choosing a version
+```yaml
+type: docs
+version: 1.0.0-beta.3
+```
+* **Why:** the rules define each phase but never say when a planner picks one, or which segment to bump (L13).
+
+#### [TSK-10.5.1] The backlog rule says how a planner picks a group's version [P: H] [REFINEMENT]
+```yaml
+files: [komodo/rules/backlog.md, komodo/skills/plan/SKILL.md, komodo/roles/planner.md, komodo/skills/release/SKILL.md, README.md]
+done_when:
+  - grep -q '## Choosing a version' komodo/rules/backlog.md
+  - go run ./cmd/komodo doctor
+context:
+  - "L13: nothing tells an agent why it would pick 1.43.56-alpha.1 over 1.43.57 when scoping new work"
+  - "segment: a breaking change bumps major, a feat bumps minor, anything else bumps patch, above the newest tag"
+  - "a prerelease precedes its release: 1.43.56-alpha.1 sorts before 1.43.56, so it is only valid while 1.43.56 is untagged"
+  - "straight to x.y.z when every group in the epic is READY and proven by its checks; alpha while the shape can still move; beta once feature-complete and only fixes land; rc only when the owner asks"
+  - "a prerelease line keeps its x.y.z and raises n; it never jumps to a new x.y.z until the stable cut; README's Versions section links the rule, not a copy"
+type: docs
+```
+
+#### [TSK-10.5.2] Lint refuses a group version at or below the newest tag [P: M] [REFINEMENT]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+depends_on: [TSK-10.5.1]
+context:
+  - "an open group naming a tagged version, or a prerelease of one, would cut a tag that already exists or sorts behind it"
+  - "the problem line names the group, its version and the newest tag"
+type: fix
+```
+
+### [TG-10.6] Epic branches across versions and sessions
+```yaml
+type: feat
+version: 1.0.0-beta.3
+```
+* **Why:** a re-phased epic strands its branch and PRs, and two sessions can work one branch unseen (L20, L21).
+
+#### [TSK-10.6.1] A rephase command moves an open epic to a new version [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/rephase.go, cmd/komodo/rephase_test.go, cmd/komodo/main.go, internal/line/rephase.go, internal/line/rephase_test.go]
+done_when:
+  - go test ./cmd/komodo/... ./internal/line/...
+context:
+  - "L20: decision 0029 fixes the epic branch to feat/<version>; re-phasing runner-cli nearly orphaned PR #15"
+  - "rewrites every group's version, pushes feat/<new> from feat/<old>, retargets each open group PR, then asks before deleting feat/<old>"
+type: feat
+```
+
+#### [TSK-10.6.2] A session claims its branch, and another session's claim stops a write [P: H] [REFINEMENT]
+```yaml
+files: [internal/line/claim.go, internal/line/claim_test.go, internal/guard/policy_test.go]
+done_when:
+  - go test ./internal/line/... ./internal/guard/...
+context:
+  - "L21: another session's merge, revert and uncommitted work sat on #263's branch unseen; this session nearly overwrote it"
+  - "a claim names the session and time under the git common dir; a stale claim is reported, never taken silently"
+type: feat
 ```
 
 ## [EPIC-09] 1.0.0 LTS
