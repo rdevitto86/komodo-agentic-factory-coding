@@ -156,7 +156,7 @@ func TestLiveDrivesATwoTaskGroupThroughRealSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := &liveHost{Contract: contract, light: plan.Profile.Tiers.Light, reviewers: map[mount.Handle]bool{}}
-	driver, err := newDriver(root, plan, runState.Run, host, client)
+	driver, err := newDriver(root, plan, runState.Run, host, client, false)
 	if err != nil {
 		t.Fatal(err)
 	}

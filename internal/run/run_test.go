@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/conductor"
 	"komodo/internal/guard"
 	"komodo/internal/install"
 	"komodo/internal/line"
@@ -110,76 +111,16 @@ func TestTheRunsPathFallsBackToTheBinarysOwnDirWhenNothingCanBeWritten(t *testin
 	}
 }
 
-func TestLaunchWithNoMountSaysToInstall(t *testing.T) {
-	code, err := Launch(Options{Root: t.TempDir(), Target: "TG-01.1", DryRun: true})
-	if code == 0 || err == nil {
-		t.Fatalf("code = %d, err = %v; want a refusal", code, err)
-	}
-	if !strings.Contains(err.Error(), "komodo install") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestLaunchKillsARunThatPassesItsBudget(t *testing.T) {
-	if _, err := os.Stat("/bin/sleep"); err != nil {
-		t.Skip("no sleep on this machine")
-	}
+// TestLaunchDryRunPrintsTheTargetWithNoMountAndNoModel proves a targeted dry run needs no mount and
+// starts no model: it only names the group Drive would run.
+func TestLaunchDryRunPrintsTheTargetWithNoMountAndNoModel(t *testing.T) {
 	var out bytes.Buffer
-	code, err := launch(Options{
-		Root: t.TempDir(), Budget: 50 * time.Millisecond,
-		Stdout: &out, Stderr: &out, Env: []string{"PATH=/usr/bin:/bin"},
-	}, "/bin/sleep", []string{"30"})
-	if code != 124 || err == nil {
-		t.Fatalf("code = %d, err = %v; want the budget kill", code, err)
-	}
-}
-
-func TestLaunchReturnsTheHostsExitCode(t *testing.T) {
-	var out bytes.Buffer
-	code, err := launch(Options{
-		Root: t.TempDir(), Stdout: &out, Stderr: &out, Env: []string{"PATH=/usr/bin:/bin"},
-	}, "/bin/sh", []string{"-c", "exit 7"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code != 7 {
-		t.Fatalf("code = %d, want 7", code)
-	}
-}
-
-func TestLaunchTeesTheHeadlessJSONToTheHostsUsageEventsFile(t *testing.T) {
-	if _, err := os.Stat("/bin/sh"); err != nil {
-		t.Skip("no /bin/sh on this machine")
-	}
-	saved := mount.Snapshot()
-	defer mount.Restore(saved)
-	mount.Register(mount.Host{
-		Name:      "codex",
-		Installed: func(string) bool { return true },
-		Headless: func(skill, target string) (string, []string) {
-			return "/bin/sh", []string{"-c", `echo '{"type":"turn.completed"}'`}
-		},
-		EventsPath: func(root, task string) string {
-			return filepath.Join(root, line.StateDir, "codex", task+".jsonl")
-		},
-	})
-	root := t.TempDir()
-	var out, errOut bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Target: "TSK-01.1.1", Stdout: &out, Stderr: &errOut, Env: []string{"PATH=/usr/bin:/bin"},
-	})
+	code, err := Launch(Options{Root: t.TempDir(), Target: "TG-01.1", DryRun: true, Stdout: &out})
 	if err != nil || code != 0 {
 		t.Fatalf("code = %d, err = %v", code, err)
 	}
-	events, err := os.ReadFile(filepath.Join(root, line.StateDir, "codex", "TSK-01.1.1.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(events), "turn.completed") {
-		t.Fatalf("events file = %q", events)
-	}
-	if !strings.Contains(out.String(), "turn.completed") {
-		t.Fatalf("stdout lost the tee: %q", out.String())
+	if got := out.String(); got != "1. TG-01.1\n" {
+		t.Fatalf("out = %q, want the one target named, no model started", got)
 	}
 }
 
@@ -190,228 +131,6 @@ func runGit(t *testing.T, dir string, args ...string) {
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-}
-
-// writeHandoff writes a ship handoff file the way a scrubbed ship leaves it, under its group's run directory.
-func writeHandoff(t *testing.T, root string, handoff line.ShipHandoff) {
-	t.Helper()
-	path := line.HandoffPath(root, handoff.Group)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(handoff)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestLaunchTargetSkipsFinishShipWithNoShip(t *testing.T) {
-	if _, err := os.Stat("/bin/sh"); err != nil {
-		t.Skip("no /bin/sh on this machine")
-	}
-	saved := mount.Snapshot()
-	defer mount.Restore(saved)
-	mount.Register(mount.Host{
-		Name:      "codex",
-		Installed: func(string) bool { return true },
-		Headless: func(skill, target string) (string, []string) {
-			return "/bin/sh", []string{"-c", "exit 0"}
-		},
-	})
-	root := t.TempDir()
-	writeHandoff(t, root, line.ShipHandoff{Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b"})
-	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
-		t.Fatalf("gh must not run with --no-ship: %v", args)
-		return "", nil
-	}}
-	code, url, err := launchTarget(Options{
-		Root: root, Target: "TG-01.1", NoShip: true, PR: client, Env: []string{"PATH=/usr/bin:/bin"},
-	})
-	if err != nil || code != 0 {
-		t.Fatalf("code = %d, err = %v", code, err)
-	}
-	if url != "" {
-		t.Fatalf("url = %q, want none with --no-ship", url)
-	}
-	if _, err := os.Stat(line.HandoffPath(root, "TG-01.1")); err != nil {
-		t.Fatalf("ship.json was consumed with --no-ship: %v", err)
-	}
-}
-
-func TestFinishShipPushesOpensThePullRequestThenStampsAndClearsTheHandoff(t *testing.T) {
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", bare)
-	root := t.TempDir()
-	runGit(t, root, "init")
-	runGit(t, root, "config", "user.email", "a@example.com")
-	runGit(t, root, "config", "user.name", "a")
-	runGit(t, root, "remote", "add", "origin", bare)
-	runGit(t, root, "checkout", "-b", "feat/a-group")
-	if err := os.WriteFile(filepath.Join(root, "one.go"), []byte("package a\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, root, "add", "-A")
-	runGit(t, root, "commit", "-m", "seed")
-	writeHandoff(t, root, line.ShipHandoff{
-		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", Labels: []string{"@agent"},
-	})
-	created := false
-	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
-		switch {
-		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
-			created = true
-			return "https://example.invalid/pr/1", nil
-		case len(args) > 0 && args[0] == "label":
-			return "[]", nil
-		}
-		t.Fatalf("gh must not run any other command: %v", args)
-		return "", nil
-	}}
-	var stderr bytes.Buffer
-	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client, Stderr: &stderr}); err != nil {
-		t.Fatal(err)
-	}
-	if !created {
-		t.Fatal("gh pr create never ran")
-	}
-	if !strings.Contains(stderr.String(), "the repo has no @agent label") {
-		t.Fatalf("a handoff ship dropped the missing label silently: %q", stderr.String())
-	}
-	if _, err := os.Stat(line.HandoffPath(root, "TG-01.1")); !os.IsNotExist(err) {
-		t.Fatalf("ship.json survived a finished ship: %v", err)
-	}
-	entries, err := line.Book(root).All()
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, entry := range entries {
-		if entry.Station == "ship" && entry.Outcome == "done" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("the ledger never recorded ship done")
-	}
-	out, err := exec.Command("git", "ls-remote", "--heads", bare, "feat/a-group").Output()
-	if err != nil || len(out) == 0 {
-		t.Fatalf("the branch never reached origin: %v %q", err, out)
-	}
-}
-
-func TestFinishShipRunsAfterPublishWithoutThePushCredentials(t *testing.T) {
-	t.Setenv("GH_TOKEN", "secret-token")
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", bare)
-	root := t.TempDir()
-	runGit(t, root, "init")
-	runGit(t, root, "config", "user.email", "a@example.com")
-	runGit(t, root, "config", "user.name", "a")
-	runGit(t, root, "remote", "add", "origin", bare)
-	runGit(t, root, "checkout", "-b", "feat/a-group")
-	runGit(t, root, "commit", "--allow-empty", "-m", "seed")
-	writeHandoff(t, root, line.ShipHandoff{
-		Group: "TG-01.1", Branch: "feat/a-group", Base: "main", Title: "t", Body: "b", AfterPublish: "env > after.env",
-	})
-	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
-		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
-			return "https://example.invalid/pr/1", nil
-		}
-		return "[]", nil
-	}}
-	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(root, "after.env"))
-	if err != nil {
-		t.Fatalf("after_publish never ran: %v", err)
-	}
-	env := string(data)
-	if strings.Contains(env, "secret-token") || !strings.Contains(env, "GIT_TERMINAL_PROMPT=0") {
-		t.Fatalf("after_publish, which an agent can write, ran with the push credentials:\n%s", env)
-	}
-}
-
-func TestFinishShipPushesFromTheGroupsWorktreeSoThePrePushGateJudgesTheBranch(t *testing.T) {
-	bare := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, "", "init", "--bare", "-b", "main", bare)
-	root := t.TempDir()
-	runGit(t, root, "init", "-b", "main")
-	runGit(t, root, "config", "user.email", "a@example.com")
-	runGit(t, root, "config", "user.name", "a")
-	runGit(t, root, "remote", "add", "origin", bare)
-	runGit(t, root, "commit", "--allow-empty", "-m", "seed")
-	worktree := filepath.Join(root, ".komodo", "wt", "TG-01.1")
-	runGit(t, root, "worktree", "add", "-b", "feat/a-group", worktree)
-	runGit(t, worktree, "commit", "--allow-empty", "-m", "group")
-	marker := filepath.Join(t.TempDir(), "pushed-from")
-	hook := "#!/bin/sh\ngit rev-parse --show-toplevel > " + marker + "\n"
-	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-push"), []byte(hook), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeHandoff(t, root, line.ShipHandoff{
-		Group: "TG-01.1", Worktree: worktree, Branch: "feat/a-group", Base: "main", Title: "t", Body: "b",
-	})
-	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
-		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
-			return "https://example.invalid/pr/1", nil
-		}
-		return "[]", nil
-	}}
-	if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(marker)
-	if err != nil {
-		t.Fatalf("the pre-push hook never ran: %v", err)
-	}
-	got, _ := filepath.EvalSymlinks(strings.TrimSpace(string(data)))
-	want, _ := filepath.EvalSymlinks(worktree)
-	if got != want {
-		t.Fatalf("the push ran from %s, want the group's worktree %s", got, want)
-	}
-}
-
-func TestFinishShipRefusesARefspecOrCriticalBranchAnAgentWrote(t *testing.T) {
-	for _, branch := range []string{"+HEAD:main", "--mirror", "main", "feat/x:main", "feat/x..y"} {
-		bare := filepath.Join(t.TempDir(), "origin.git")
-		runGit(t, "", "init", "--bare", bare)
-		root := t.TempDir()
-		runGit(t, root, "init", "-b", "main")
-		runGit(t, root, "config", "user.email", "a@example.com")
-		runGit(t, root, "config", "user.name", "a")
-		runGit(t, root, "remote", "add", "origin", bare)
-		runGit(t, root, "commit", "--allow-empty", "-m", "seed")
-		writeHandoff(t, root, line.ShipHandoff{Group: "TG-01.1", Branch: branch, Base: "main", Title: "t", Body: "b"})
-		client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
-			t.Fatalf("gh ran for %q: %v", branch, args)
-			return "", nil
-		}}
-		if _, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err == nil {
-			t.Fatalf("finishShip pushed the handoff branch %q", branch)
-		}
-		if out, _ := exec.Command("git", "ls-remote", bare).Output(); len(out) != 0 {
-			t.Fatalf("origin received refs for %q: %s", branch, out)
-		}
-	}
-}
-
-func TestFinishShipReadsOnlyItsOwnGroupsHandoff(t *testing.T) {
-	root := t.TempDir()
-	writeHandoff(t, root, line.ShipHandoff{Group: "TG-02.1", Branch: "+HEAD:main", Base: "main", Title: "t", Body: "b"})
-	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
-		t.Fatalf("gh ran for another group's handoff: %v", args)
-		return "", nil
-	}}
-	if url, err := finishShip(Options{Root: root, Target: "TG-01.1", PR: client}); err != nil || url != "" {
-		t.Fatalf("url = %q, err = %v; TG-01.1 has no handoff of its own", url, err)
-	}
-	if _, err := os.Stat(line.HandoffPath(root, "TG-02.1")); err != nil {
-		t.Fatalf("another group's handoff was touched: %v", err)
 	}
 }
 
@@ -434,15 +153,6 @@ func TestDrainOrderPutsEveryOpenRunFirst(t *testing.T) {
 	}
 }
 
-func TestFinishShipDoesNothingWithNoHandoff(t *testing.T) {
-	if _, err := finishShip(Options{Root: t.TempDir()}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := finishShip(Options{Root: t.TempDir(), Target: "TG-01.1"}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 const drainText = "### [TG-07.1] First\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 	"#### [TSK-07.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"true\"]\n```\n\n" +
 	"### [TG-07.2] Second\n```yaml\ntype: feat\nversion: 1.1.0\n```\n\n" +
@@ -459,12 +169,6 @@ const driveDrainSharedFileText = "### [TG-07.1] First\n```yaml\ntype: feat\nvers
 	"#### [TSK-07.1.1] One [P: C] [READY]\n```yaml\nfiles: [one.txt]\ndone_when: [\"true\"]\n```\n\n" +
 	"### [TG-07.2] Second\n```yaml\ntype: feat\nversion: 1.1.0\nmode: single\n```\n\n" +
 	"#### [TSK-07.2.1] Two [P: C] [READY]\n```yaml\nfiles: [one.txt]\ndone_when: [\"true\"]\n```\n"
-
-// fakeScript plays one group: it records the launch, then copies in the files staged for that group.
-const fakeScript = `echo "$1" >> .komodo/fake/launched
-cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
-mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json" 2>/dev/null
-exit 0`
 
 // fakeConcurrency is the fake host's own lanes: one by default, four once a test names a busier plan.
 func fakeConcurrency(plan string) int {
@@ -502,11 +206,8 @@ func drainRepo(t *testing.T) string {
 	saved := mount.Snapshot()
 	t.Cleanup(func() { mount.Restore(saved) })
 	mount.Register(mount.Host{
-		Name:      "fakehost-drain",
-		Installed: func(string) bool { return true },
-		Headless: func(skill, target string) (string, []string) {
-			return "/bin/sh", []string{"-c", fakeScript, "sh", target}
-		},
+		Name:        "fakehost-drain",
+		Installed:   func(string) bool { return true },
 		Concurrency: fakeConcurrency,
 	})
 	return root
@@ -1045,6 +746,108 @@ func restackDrain(t *testing.T, clash bool) (string, string) {
 		return "", nil
 	}}}, &out)
 	return out.String(), root
+}
+
+// noShipArgsFakeClaude plays a builder then a reviewer session, logging its argv to FAKE_ARGS_LOG.
+const noShipArgsFakeClaude = `#!/bin/sh
+echo "$@" >> "$FAKE_ARGS_LOG"
+if [ "$1" != "-p" ]; then echo "2.0.0"; exit 0; fi
+if [ "$KOMODO_ROLE" = "builder" ]; then
+  echo built > one.txt
+  cat "$FAKE_BUILD_FIXTURE"
+else
+  cat "$FAKE_REVIEW_FIXTURE"
+fi
+`
+
+// TestDriveWithNoShipRunsNoRelayAndStopsBeforeShip proves a single-target --no-ship run drives the
+// conductor directly, no relay prompt, and stops the group ready to ship, without ever calling gh.
+func TestDriveWithNoShipRunsNoRelayAndStopsBeforeShip(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	dir := t.TempDir()
+	script := filepath.Join(dir, "claude")
+	if err := os.WriteFile(script, []byte(noShipArgsFakeClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := t.TempDir()
+	for name, text := range map[string]string{"build.jsonl": buildFixture, "review.jsonl": reviewFixture} {
+		if err := os.WriteFile(filepath.Join(fixtures, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_BUILD_FIXTURE", filepath.Join(fixtures, "build.jsonl"))
+	t.Setenv("FAKE_REVIEW_FIXTURE", filepath.Join(fixtures, "review.jsonl"))
+	argsLog := filepath.Join(t.TempDir(), "args.log")
+	t.Setenv("FAKE_ARGS_LOG", argsLog)
+	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		t.Fatalf("gh must not run with --no-ship: %v", args)
+		return "", nil
+	}}
+	code, err := Launch(Options{Root: root, Target: "TG-07.1", NoShip: true, Budget: time.Minute, PR: client})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v", code, err)
+	}
+	logged, err := os.ReadFile(argsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(logged), "/run") {
+		t.Fatalf("a session received the run skill's relay prompt: %q", logged)
+	}
+	state, err := conductor.LoadState(conductor.StatePath(root, "TG-07.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Current != conductor.Shipping {
+		t.Fatalf("state = %s, want the group stopped ready to ship, at Shipping", state.Current)
+	}
+}
+
+// TestDriveResumedWithNoShipNeverShipsFromShipping proves a group whose saved state is already at
+// Shipping, not yet shipped, stays there and never calls gh when a --no-ship run resumes it.
+func TestDriveResumedWithNoShipNeverShipsFromShipping(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	dir := t.TempDir()
+	script := filepath.Join(dir, "claude")
+	if err := os.WriteFile(script, []byte(noShipArgsFakeClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := t.TempDir()
+	for name, text := range map[string]string{"build.jsonl": buildFixture, "review.jsonl": reviewFixture} {
+		if err := os.WriteFile(filepath.Join(fixtures, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_BUILD_FIXTURE", filepath.Join(fixtures, "build.jsonl"))
+	t.Setenv("FAKE_REVIEW_FIXTURE", filepath.Join(fixtures, "review.jsonl"))
+	t.Setenv("FAKE_ARGS_LOG", filepath.Join(t.TempDir(), "args.log"))
+	refusing := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
+		t.Fatalf("gh must not run on a --no-ship drive, resumed or not: %v", args)
+		return "", nil
+	}}
+	if code, err := Launch(Options{Root: root, Target: "TG-07.1", NoShip: true, Budget: time.Minute, PR: refusing}); err != nil || code != 0 {
+		t.Fatalf("first pass: code = %d, err = %v", code, err)
+	}
+	statePath := conductor.StatePath(root, "TG-07.1")
+	before, err := conductor.LoadState(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Current != conductor.Shipping || before.ShipDone {
+		t.Fatalf("state = %+v, want it saved at Shipping with ShipDone false", before)
+	}
+	if code, err := Launch(Options{Root: root, Target: "TG-07.1", NoShip: true, Budget: time.Minute, PR: refusing}); err != nil || code != 0 {
+		t.Fatalf("resumed pass: code = %d, err = %v", code, err)
+	}
+	after, err := conductor.LoadState(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Current != conductor.Shipping {
+		t.Fatalf("state = %s after a resumed --no-ship run, want it to stay at Shipping", after.Current)
+	}
 }
 
 // TestLaunchAndDriveMarkEverySessionAsLine proves both entries set the guard's line marker, so no
