@@ -4941,7 +4941,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.12] A single-target `--no-ship` run drives the conductor, and Headless goes [P: M] [REFINEMENT]
+#### [TSK-10.8.12] A single-target `--no-ship` run drives the conductor, and Headless goes [P: M] [DONE]
 ```yaml
 files: [internal/run/run.go, internal/run/drive.go, internal/run/run_test.go, internal/mount/claude/claude.go, internal/mount/registry.go, internal/eval/run.go]
 done_when:
@@ -4949,18 +4949,6 @@ done_when:
 context:
   - "TSK-10.8.3 kept a headless model relay for komodo run <group> --no-ship, which eval depends on, since Drive has no stop-before-ship mode"
   - "Drive gains a no-ship option; launchTarget, Command and Headless go"
-type: fix
-```
-
-#### [TSK-10.8.13] `komodo check task` diffs from the branch the line cut, and lint shows group-file notes [P: H] [DONE]
-```yaml
-files: [cmd/komodo/check.go, cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, internal/line/next.go]
-done_when:
-  - go test ./cmd/komodo/...
-context:
-  - "L41: with no --base, check task diffed from main, so every builder on the epic branch saw 70 to 120 false scope problems"
-  - "checkBase now resolves as the line does: declared base, the epic's branch, else the default"
-  - "TSK-10.8.10's group-file note was left unwired; komodo lint now prints it"
 type: fix
 ```
 
@@ -4972,6 +4960,25 @@ done_when:
 context:
   - "drive.go:215 starts the line's escalation session as Role orchestrator, which reads as the primary session but runs the line tier"
 type: refactor
+```
+
+### [TG-10.9] Checks resolve as the line does
+```yaml
+type: fix
+version: 1.0.0-beta.3
+```
+* **Why:** a builder's `komodo check task` diffed from the wrong base, and a lint note never reached group-file repos (L41).
+
+#### [TSK-10.9.1] `komodo check task` diffs from the branch the line cut, and lint shows group-file notes [P: H] [DONE]
+```yaml
+files: [cmd/komodo/check.go, cmd/komodo/backlog.go, cmd/komodo/backlog_test.go, internal/line/next.go]
+done_when:
+  - go test ./cmd/komodo/...
+context:
+  - "L41: with no --base, check task diffed from main, so every builder on the epic branch saw 70 to 120 false scope problems"
+  - "checkBase now resolves as the line does: declared base, the epic's branch, else the default"
+  - "TSK-10.8.10's group-file note was left unwired; komodo lint now prints it"
+type: fix
 ```
 
 ## [EPIC-09] 1.0.0 LTS
