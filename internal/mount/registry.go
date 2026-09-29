@@ -25,6 +25,8 @@ type Host struct {
 	Installed   func(root string) bool
 	Tiers       func(plan string, ollama bool) Tiers
 	Probe       func() (Usage, bool)
+	// Concurrency is how many groups or tasks the named plan runs at once; nil defers to a caller's own default.
+	Concurrency func(plan string) int
 	// LoggedIn reports whether the host CLI holds a login, by subscription or key; nil skips the check.
 	LoggedIn   func() (bool, error)
 	Usage      func(root, task string, since, until time.Time) (TaskUsage, bool)
@@ -81,6 +83,16 @@ func Active() []Host {
 		}
 	}
 	return out
+}
+
+// ConcurrencyFor is the named plan's lanes, from the first active mount that owns a Concurrency func.
+func ConcurrencyFor(plan string) int {
+	for _, host := range Active() {
+		if host.Concurrency != nil {
+			return host.Concurrency(plan)
+		}
+	}
+	return 1
 }
 
 // Snapshot copies the registry, so a test can restore it after registering a fake host.

@@ -80,6 +80,17 @@ func planName(parsed account) string {
 	return ""
 }
 
+// planConcurrency is how many groups or builder tasks each of this host's plans runs at once.
+var planConcurrency = map[string]int{"pro": 1, "max_5x": 4, "max_20x": 6, "api": 4}
+
+// Concurrency is how many groups or builder tasks the named plan runs at once; an unknown plan runs 2.
+func Concurrency(plan string) int {
+	if lanes, ok := planConcurrency[plan]; ok {
+		return lanes
+	}
+	return 2
+}
+
 // Installed reports whether this host's project directory has been rendered here.
 func Installed(root string) bool {
 	_, err := os.Stat(filepath.Join(root, Dir, "settings.json"))

@@ -22,6 +22,18 @@ func fakeHost(name string, installed bool, usage mount.Usage, probed bool) mount
 		HybridName: hybrid,
 		Installed:  func(string) bool { return installed },
 		Probe:      func() (mount.Usage, bool) { return usage, probed },
+		Concurrency: func(plan string) int {
+			switch plan {
+			case "pro":
+				return 1
+			case "max_5x":
+				return 4
+			case "max_20x":
+				return 6
+			default:
+				return 2
+			}
+		},
 		Tiers: func(plan string, ollama bool) mount.Tiers {
 			tiers := mount.Tiers{
 				Light:    mount.Machine{Provider: name, Model: "small"},

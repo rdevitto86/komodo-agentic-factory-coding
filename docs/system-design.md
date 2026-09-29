@@ -394,7 +394,7 @@ Native Windows comes first, and WSL2 is used when present (decision 0017). WSL2 
 ### Pacing, limits and loop detection
 
 - **Bound or unbound.** The plan probe (`internal/mount/claude/limits.go`) and the host's `rate_limit_event` stream messages give the plan and its usage windows. On a subscription the conductor paces to the windows and pauses until the reset (REQ-32). On API billing, a spend budget applies instead.
-- **Concurrency.** Groups at once, as starting values: Pro 1, Max 5x 2, Max 20x 4, API 4.
+- **Concurrency.** Groups at once, as starting values: Pro 1, Max 5x 4, Max 20x 6, API 4, from the mount's own `Concurrency(plan)`.
 - **Time.** A group has 60 minutes (REQ-29). Session starting values: build 25 minutes, each lens 8, each repair 10, each re-review 5.
 - **Loop detection.** The conductor stops a group and escalates when:
   - a round leaves the open findings unchanged

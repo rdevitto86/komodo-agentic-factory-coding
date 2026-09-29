@@ -383,6 +383,7 @@ func init() {
 		Installed:   Installed,
 		Tiers:       Tiers,
 		Probe:       Probe,
+		Concurrency: Concurrency,
 		LoggedIn:    LoggedIn,
 		Usage:       Usage,
 		Headless:    Headless,

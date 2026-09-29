@@ -126,7 +126,7 @@ func drain(options Options) (int, error) {
 	if options.Stderr != nil {
 		options.Stderr = lockedWriter{lock: &outputLock, out: options.Stderr}
 	}
-	capacity := conductor.Concurrency(profile.Select(options.Root).Plan)
+	capacity := profile.Select(options.Root).MaxParallel
 	started := time.Now()
 	ran := map[string]bool{}
 	running := map[string]backlog.Group{}
