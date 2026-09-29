@@ -180,7 +180,14 @@ func TestSkillSwapReachesTheBriefAndTheRender(t *testing.T) {
 // three ways reaches the brief's standards slot, its profile slot, and the render.
 func TestFacetSwapReachesTheStandardsSlotTheProfileSlotAndTheRender(t *testing.T) {
 	t.Run("a task's facets key reaches the standards slot", func(t *testing.T) {
-		root := repo(t, groupText)
+		// The group-file grammar cannot yet carry a task's facets key, so this seeds a flat BACKLOG.md.
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(groupText), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, RolesDir), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := placeholderRole(root, "builder", "standard", "{{standards}}\n"); err != nil {
 			t.Fatal(err)
 		}

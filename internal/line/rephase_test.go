@@ -10,24 +10,16 @@ import (
 	"komodo/internal/pr"
 )
 
-// rephaseBacklog holds one epic with two groups sharing its version.
-const rephaseBacklog = "## [EPIC-05] Phase 1: the conductor drives\n" +
-	"*Goal: one group runs through the conductor within 60 minutes. Ships as `2.0.0`.*\n\n" +
-	"### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-	"#### [TSK-05.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n\n" +
-	"### [TG-05.2] Another group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-	"#### [TSK-05.2.1] Two [P: C] [READY]\n```yaml\nfiles: [a/two.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
-
 // rephaseGroupFile is the first group's own docs/backlog file, carrying the epic's version too.
 const rephaseGroupFile = "## [TG-05.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-05\n```\n"
 
-// rephaseSecondGroupFile is the second group's file, so the group files and BACKLOG.md name the same groups.
+// rephaseSecondGroupFile is the second group's own docs/backlog file, sharing the epic's version.
 const rephaseSecondGroupFile = "## [TG-05.2] Another group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-05\n```\n"
 
 // rephaseRepo builds a remoted repo with the epic branch already pushed and one group file.
 func rephaseRepo(t *testing.T) string {
 	t.Helper()
-	root := epicRepo(t, rephaseBacklog)
+	root := epicRepo(t)
 	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
 	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
 		t.Fatal(err)
@@ -74,21 +66,6 @@ func TestRephaseRewritesVersionsPushesAndRetargetsPulls(t *testing.T) {
 	}
 	if len(result.Retargeted) != 1 || result.Retargeted[0] != "https://example.com/pull/15" {
 		t.Fatalf("retargeted = %v", result.Retargeted)
-	}
-
-	data, err := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(data)
-	if strings.Contains(text, "version: 2.0.0") {
-		t.Fatal("BACKLOG.md still carries the old version")
-	}
-	if strings.Count(text, "version: 3.0.0") != 2 {
-		t.Fatalf("BACKLOG.md = %s, want both groups moved to 3.0.0", text)
-	}
-	if !strings.Contains(text, "Ships as `3.0.0`") {
-		t.Fatalf("BACKLOG.md = %s, want the epic's goal line moved too", text)
 	}
 
 	groupFile, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-05.1-a-group.md"))
