@@ -43,6 +43,9 @@ func lintProblems(root string) ([]string, error) {
 		problems, _, _, err := groupFileLintProblems(root)
 		return problems, err
 	}
+	if !backlog.Exists(root) {
+		return nil, nil
+	}
 	_, parsed := load(root)
 	return append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...), nil
 }
