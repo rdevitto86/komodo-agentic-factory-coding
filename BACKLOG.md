@@ -4346,7 +4346,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.1.5] Group-file lint checks what BACKLOG.md lint checks [P: H] [REFINEMENT]
+#### [TSK-10.1.5] Group-file lint checks what BACKLOG.md lint checks [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/backlog.go, internal/backlog/lint.go, internal/backlog/lint_test.go]
 done_when:
@@ -4368,7 +4368,7 @@ context:
 type: feat
 ```
 
-#### [TSK-10.1.7] Lint's heading anchor matches GitHub's for numbered headings [P: M] [REFINEMENT]
+#### [TSK-10.1.7] Lint's heading anchor matches GitHub's for numbered headings [P: M] [DONE]
 ```yaml
 files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
 done_when:
@@ -4379,7 +4379,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.1.8] One version mismatch reports once per epic, with a split hint [P: M] [REFINEMENT]
+#### [TSK-10.1.8] One version mismatch reports once per epic, with a split hint [P: M] [DONE]
 ```yaml
 files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
 done_when:
