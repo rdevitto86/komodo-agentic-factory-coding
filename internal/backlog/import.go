@@ -24,7 +24,7 @@ type ImportResult struct {
 	Skipped []ImportSkip
 }
 
-// Import turns a foreign TODO.md or free-form BACKLOG.md into REFINEMENT group files: a heading
+// Import turns a foreign TODO.md or free-form legacy backlog file into REFINEMENT group files: a heading
 // opens a group, a bullet becomes a task, ticked stays ticked; every task's files name source.
 func Import(text, source string) ImportResult {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")

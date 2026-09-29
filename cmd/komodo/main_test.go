@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/changelog"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -200,10 +201,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 
 func TestCheckReleaseSkipsAGroupWhoseTasksAreNotAllDone(t *testing.T) {
 	root := t.TempDir()
-	backlog := shippedGroup + pendingGroup
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, shippedGroup+pendingGroup)
 	if err := os.WriteFile(filepath.Join(root, "CHANGELOG.md"), []byte(releaseChangelog), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +217,7 @@ func TestCheckReleaseSkipsAGroupWhoseTasksAreNotAllDone(t *testing.T) {
 }
 
 // TestCheckReleaseReadsGroupFilesWhenTheRepoHoldsThem proves release check compares the changelog
-// against docs/backlog group files, never a BACKLOG.md the repo does not have.
+// against docs/backlog group files.
 func TestCheckReleaseReadsGroupFilesWhenTheRepoHoldsThem(t *testing.T) {
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-90.1-shipped.md",

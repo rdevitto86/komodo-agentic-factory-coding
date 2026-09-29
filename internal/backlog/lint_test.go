@@ -340,6 +340,19 @@ func TestLintGroupFileRejectsAMissingVersion(t *testing.T) {
 	}
 }
 
+// TestLintGroupFileAcceptsARefinementTaskWithNoFiles proves a group still being planned does not
+// demand a task's files, matching the legacy grammar's own exemption.
+func TestLintGroupFileAcceptsARefinementTaskWithNoFiles(t *testing.T) {
+	file := ParseGroupFile("## [TG-66.1] Still planning [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-66\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-66.1.1** A task with no files yet\n")
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-66.1": true}, map[string]bool{"TSK-66.1.1": true})
+	for _, problem := range problems {
+		if strings.Contains(problem, "no files") {
+			t.Fatalf("a REFINEMENT task should not need files; got %v", problems)
+		}
+	}
+}
+
 func TestLintGroupFileRejectsAnOpenTaskWithNoFiles(t *testing.T) {
 	file := ParseGroupFile("## [TG-61.1] Task with no files [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-61\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-61.1.1** A task with no files\n")

@@ -10,30 +10,20 @@ import (
 // GroupFilesDir is where one file per task group lives, the grammar komodo/rules/backlog.md names.
 const GroupFilesDir = "docs/backlog"
 
-// LoadRoot loads the queue at root: every docs/backlog/ group file, merged into one Backlog, when
-// the directory holds one, else the legacy BACKLOG.md Find locates.
+// LoadRoot loads the queue at root: every docs/backlog/ group file, merged into one Backlog, empty
+// when root holds none.
 func LoadRoot(root string) (Backlog, error) {
 	paths, err := groupFilePaths(root)
 	if err != nil {
 		return Backlog{}, err
 	}
-	if len(paths) == 0 {
-		path, err := Find(root)
-		if err != nil {
-			return Backlog{}, err
-		}
-		return Load(path)
-	}
 	return loadGroupFiles(paths)
 }
 
-// Exists reports whether root holds a queue: a docs/backlog/ group file, or else a legacy BACKLOG.md.
+// Exists reports whether root holds a queue: at least one docs/backlog/ group file.
 func Exists(root string) bool {
-	if paths, err := groupFilePaths(root); err == nil && len(paths) > 0 {
-		return true
-	}
-	_, err := Find(root)
-	return err == nil
+	paths, err := groupFilePaths(root)
+	return err == nil && len(paths) > 0
 }
 
 // groupFilePaths lists every *.md file directly under root's docs/backlog/, sorted, nil when the

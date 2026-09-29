@@ -497,37 +497,6 @@ func TestNotesNeverCountDoneTasks(t *testing.T) {
 	}
 }
 
-func TestFindLooksAtTheRootThenDocs(t *testing.T) {
-	root := t.TempDir()
-	if _, err := Find(root); err == nil {
-		t.Fatal("Find named a BACKLOG.md that does not exist")
-	}
-	docs := filepath.Join(root, "docs", "BACKLOG.md")
-	if err := os.MkdirAll(filepath.Dir(docs), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(docs, []byte(sample), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if found, err := Find(root); err != nil || found != docs {
-		t.Fatalf("found = %q, err = %v; docs/BACKLOG.md is the fallback", found, err)
-	}
-	top := filepath.Join(root, "BACKLOG.md")
-	if err := os.WriteFile(top, []byte(sample), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if found, err := Find(root); err != nil || found != top {
-		t.Fatalf("found = %q, err = %v; the root's BACKLOG.md wins", found, err)
-	}
-	loaded, err := Load(top)
-	if err != nil || len(loaded.Tasks()) != 2 {
-		t.Fatalf("loaded %d task(s), err = %v", len(loaded.Tasks()), err)
-	}
-	if _, err := Load(filepath.Join(root, "missing.md")); err == nil {
-		t.Fatal("Load read a file that does not exist")
-	}
-}
-
 func TestLintContextNamesAnAnchorWithNoHeading(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "spec.md"), []byte("# Spec\n\n## Refunds\n\nText.\n"), 0o644); err != nil {

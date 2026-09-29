@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/detect"
 	"komodo/internal/install"
@@ -620,6 +621,20 @@ func TestNoAGENTSFileIsNotAProblem(t *testing.T) {
 	}
 }
 
+// TestCheckLegacyBacklogFailsOnARootBacklogFile proves a legacy backlog file at the repo's root or
+// under docs/ fails doctor, naming `komodo migrate` as the fix.
+func TestCheckLegacyBacklogFailsOnARootBacklogFile(t *testing.T) {
+	root := gitRepo(t)
+	if got := checkLegacyBacklog(root); len(got) != 0 {
+		t.Fatalf("checkLegacyBacklog = %v, want none with no legacy backlog file", got)
+	}
+	write(t, root, backlog.LegacyName, "# Backlog\n")
+	got := checkLegacyBacklog(root)
+	if len(got) != 1 || got[0].Where != backlog.LegacyName || !strings.Contains(got[0].Detail, "komodo migrate") {
+		t.Fatalf("checkLegacyBacklog = %+v, want one problem naming the legacy file and komodo migrate", got)
+	}
+}
+
 func TestAWorktreeOutsideTheStateDirectoryYieldsANoteNotAProblem(t *testing.T) {
 	root := gitRepo(t)
 	write(t, root, "AGENTS.md", "# Rules\n")
@@ -889,7 +904,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 
 func TestPruneSweepsAnEarlierRunsMergedWorktreeWhileTheCurrentRunIsStillOpen(t *testing.T) {
 	root := gitRepo(t)
-	write(t, root, "BACKLOG.md", "# Backlog\n")
+	write(t, root, "README.md", "# Readme\n")
 	write(t, root, ".gitignore", "/.komodo/\n")
 	commitAll(t, root, "init")
 	bare := filepath.Join(t.TempDir(), "origin.git")
@@ -986,7 +1001,7 @@ func TestSettleShippedRunSkipsTheSweepWhileARunIsOpen(t *testing.T) {
 
 func TestPruneRemovesBothRunsWorktreesWhenOnlyTheLatestIsRecorded(t *testing.T) {
 	root := gitRepo(t)
-	write(t, root, "BACKLOG.md", "# Backlog\n")
+	write(t, root, "README.md", "# Readme\n")
 	write(t, root, ".gitignore", "/.komodo/\n")
 	commitAll(t, root, "init")
 	bare := filepath.Join(t.TempDir(), "origin.git")

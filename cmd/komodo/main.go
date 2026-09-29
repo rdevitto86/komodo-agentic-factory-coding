@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"komodo/internal/backlog"
 	_ "komodo/internal/mount/ollama"
 
 	_ "komodo/internal/mount/claude"
@@ -19,7 +18,7 @@ import (
 const usage = `komodo: the code assembly line.
 
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
-  komodo migrate [--dry-run]  Convert BACKLOG.md, a foreign one, or TODO.md into docs/backlog group files
+  komodo migrate [--dry-run]  Convert a legacy backlog file, or TODO.md, into docs/backlog group files
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo backlog             List the open groups under docs/backlog
@@ -102,14 +101,7 @@ func main() {
 	case "backlog":
 		runBacklog(root)
 	case "add":
-		if names, _ := groupFileNames(root); len(names) > 0 {
-			runBacklogAdd(root, os.Args[2:])
-		} else if _, err := backlog.Find(root); err == nil {
-			runAdd(root, os.Args[2:])
-		} else {
-			// Neither exists yet: a fresh repo opens its first group file, the current grammar.
-			runBacklogAdd(root, os.Args[2:])
-		}
+		runBacklogAdd(root, os.Args[2:])
 	case "next":
 		runNext(root, os.Args[2:])
 	case "brief":
@@ -196,19 +188,6 @@ func repoRoot() (string, error) {
 		}
 		dir = parent
 	}
-}
-
-// load reads and parses the repo's backlog.
-func load(root string) (string, backlog.Backlog) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		fail(err)
-	}
-	parsed, err := backlog.Load(path)
-	if err != nil {
-		fail(err)
-	}
-	return path, parsed
 }
 
 // printJSON writes one value as indented JSON.
