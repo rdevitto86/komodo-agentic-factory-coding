@@ -44,3 +44,6 @@ except the headless launcher's own `--no-ship` and `--dry-run` invocations. Ad h
 group, or with no group at all — is never this skill; it is the orchestrator's own default agents, spawned
 outside the line and its line tier, with no skill of their own (decision 0034). `komodo brief <task>` on
 its own is legal, and so is a review with no group, but neither runs through `komodo step`.
+
+An isolated spawn's worktree starts at the default branch, not yours: put `git checkout -b <branch> <sha>`
+first in its prompt, naming your own branch tip.
