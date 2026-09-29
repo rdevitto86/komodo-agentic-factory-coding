@@ -251,7 +251,6 @@ func runBacklog(root string) {
 	fmt.Printf("%d group(s)\n", count)
 }
 
-// groupFileNames lists the group files under docs/backlog, sorted, or none when the directory is absent.
 // groupFileNotes collects every group file's lint notes, which never fail lint.
 func groupFileNotes(root string) []string {
 	names, _ := groupFileNames(root)
@@ -266,6 +265,7 @@ func groupFileNotes(root string) []string {
 	return notes
 }
 
+// groupFileNames lists the group files under docs/backlog, sorted, or none when the directory is absent.
 func groupFileNames(root string) ([]string, error) {
 	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
 	if err != nil {
