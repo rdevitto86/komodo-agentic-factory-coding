@@ -343,8 +343,8 @@ func renderedIgnores(t *testing.T, root, newline string) string {
 		t.Fatal(err)
 	}
 	var out string
-	for _, change := range plan.Project().Changes {
-		if change.Remove {
+	for _, change := range plan.Changes {
+		if change.Remove || !(change.Project || change.Seed) {
 			continue
 		}
 		rel, err := filepath.Rel(root, change.Path)
@@ -361,6 +361,7 @@ func renderedIgnores(t *testing.T, root, newline string) string {
 
 // TestInstallIgnoresTheStateDirAndRenderedCopiesOnceAndKeepsTheFilesLineEndings proves each ignore line lands once, in the file's ending.
 func TestInstallIgnoresTheStateDirAndRenderedCopiesOnceAndKeepsTheFilesLineEndings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolates check-ignore from the developer's own global excludes
 	fakeToolkitBinary(t)
 	cases := []struct {
 		name, before, after string

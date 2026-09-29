@@ -99,13 +99,14 @@ func installGlobal(root, binary string, chosen []mount.Host, dryRun bool) {
 	}
 }
 
-// repoIgnores plans the .gitignore lines for the state dir and each rendered project copy git does not already ignore.
+// repoIgnores plans the .gitignore lines for the state dir, each rendered project copy, and each
+// seeded personal overlay, whichever git does not already ignore.
 func repoIgnores(root string, plans []install.Plan) install.Plan {
 	ignore := install.Plan{Host: "repo", Root: root}
 	ignore.AddIgnore("/"+line.StateDir+"/", "the line's run state and worktrees stay out of git")
 	for _, plan := range plans {
-		for _, change := range plan.Project().Changes {
-			if change.Remove {
+		for _, change := range plan.Changes {
+			if change.Remove || !(change.Project || change.Seed) {
 				continue
 			}
 			rel, err := filepath.Rel(root, change.Path)
@@ -117,7 +118,11 @@ func repoIgnores(root string, plans []install.Plan) install.Plan {
 			if _, err := git.Run(root, "check-ignore", "-q", "--no-index", "--", rel); err == nil {
 				continue
 			}
-			ignore.AddIgnore("/"+rel, "a rendered copy the install rebuilds on every machine")
+			why := "a rendered copy the install rebuilds on every machine"
+			if change.Seed {
+				why = "a personal overlay the install seeds once and never overwrites"
+			}
+			ignore.AddIgnore("/"+rel, why)
 		}
 	}
 	return ignore
