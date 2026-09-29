@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"komodo/internal/changelog"
+	"komodo/internal/comments"
 	"komodo/internal/git"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -141,6 +144,9 @@ const BuiltFrom = ".built-from"
 // zeroOID is git's null object id, the "from" a checkout hook passes when there was no prior commit.
 const zeroOID = "0000000000000000000000000000000000000000"
 
+// emptyTreeOID is git's empty tree hash, the "from" side of a diff for a push with no prior commit.
+const emptyTreeOID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 // changedBuildInputs reports whether a .go file, go.mod, or go.sum differs between two commits,
 // treating the checkout hook's zero OID for a first commit as no change to rebuild.
 func changedBuildInputs(root, from, to string) (bool, error) {
@@ -167,9 +173,22 @@ func BuildInputsChanged(root, from, to string) (bool, error) {
 	return false, nil
 }
 
+// resolveCommit returns ref's full commit SHA, or ref unchanged when it is empty, a name git cannot
+// resolve, or the checkout hook's zero OID, so a name such as HEAD is never stamped literally.
+func resolveCommit(root, ref string) string {
+	if ref == "" || ref == zeroOID {
+		return ref
+	}
+	if sha, err := git.Run(root, "rev-parse", "--verify", ref); err == nil {
+		return sha
+	}
+	return ref
+}
+
 // Rebuild builds this host's binary and stamps bin/.built-from with to, only when a .go file,
 // go.mod or go.sum differs between from and to.
 func Rebuild(root, from, to string, out io.Writer) error {
+	from, to = resolveCommit(root, from), resolveCommit(root, to)
 	changed, err := changedBuildInputs(root, from, to)
 	if err != nil {
 		return err
@@ -268,6 +287,12 @@ fi
 case "$name" in
   # A push carries more weight than a commit, so it also fuzzes the parsers for a few seconds each.
   pre-push)
+    # git passes each pushed ref's old and new commit on stdin; the first line scopes the push,
+    # so build and fuzz checks run only for what it touched.
+    read -r localref localsha remoteref remotesha 2>/dev/null || true
+    if [ -n "$remotesha" ]; then
+      exec $cmd gate --fuzz 10s --from "$remotesha" --to "$localsha"
+    fi
     exec $cmd gate --fuzz 10s
     ;;
   post-merge)
@@ -327,6 +352,68 @@ func Install(gitDir string) ([]string, error) {
 	return written, nil
 }
 
+// hunkHeader captures a unified diff hunk's new-file start line, from a header such as "@@ -1,2 +3,4 @@".
+var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+
+// diffAddedLines parses a unified diff and returns, per new-file path, the line numbers it adds or changes.
+func diffAddedLines(diff string) map[string][]int {
+	added := map[string][]int{}
+	path, line := "", 0
+	for _, raw := range strings.Split(diff, "\n") {
+		switch {
+		case strings.HasPrefix(raw, "+++ "):
+			name := strings.TrimPrefix(strings.TrimPrefix(raw, "+++ "), "b/")
+			if name == "/dev/null" {
+				path = ""
+			} else {
+				path = name
+			}
+		case strings.HasPrefix(raw, "@@ "):
+			if match := hunkHeader.FindStringSubmatch(raw); match != nil {
+				line, _ = strconv.Atoi(match[1])
+			}
+		case strings.HasPrefix(raw, "+") && !strings.HasPrefix(raw, "+++"):
+			if path != "" {
+				added[path] = append(added[path], line)
+			}
+			line++
+		case strings.HasPrefix(raw, " "):
+			line++
+		}
+	}
+	return added
+}
+
+// StagedDiffLines returns, per path relative to root, the line numbers a staged diff adds or changes.
+func StagedDiffLines(root string) (map[string][]int, error) {
+	out, err := git.Run(root, "diff", "--cached", "-U0", "--no-color")
+	if err != nil {
+		return nil, err
+	}
+	return diffAddedLines(out), nil
+}
+
+// CommentsCheck builds a gate check that lints only the comment lines a staged diff adds or changes.
+func CommentsCheck(root, require string) Check {
+	return Check{Name: "komodo comments check", Run: func(out io.Writer) error {
+		added, err := StagedDiffLines(root)
+		if err != nil {
+			return err
+		}
+		problems, err := comments.CheckDiff(root, added, require)
+		if err != nil {
+			return err
+		}
+		for _, problem := range problems {
+			fmt.Fprintln(out, problem)
+		}
+		if len(problems) > 0 {
+			return fmt.Errorf("%d comment problem(s)", len(problems))
+		}
+		return nil
+	}}
+}
+
 // FuzzTarget is one fuzz function and the package that holds it.
 type FuzzTarget struct {
 	Name    string
@@ -343,12 +430,85 @@ var FuzzTargets = []FuzzTarget{
 
 // FuzzChecks builds one check per fuzz target, each run for the given duration such as 10s.
 func FuzzChecks(root, duration string) []Check {
+	return FuzzChecksFor(root, duration, FuzzTargets)
+}
+
+// FuzzChecksFor builds one check per named fuzz target, each run for the given duration such as 10s.
+func FuzzChecksFor(root, duration string, targets []FuzzTarget) []Check {
 	var checks []Check
-	for _, target := range FuzzTargets {
+	for _, target := range targets {
 		checks = append(checks, Command("fuzz "+target.Name, root,
 			"go", "test", "-run=^$", "-fuzz=^"+target.Name+"$", "-fuzztime="+duration, target.Package))
 	}
 	return checks
+}
+
+// PushedFiles lists the files a push's range from..to added or changed, diffing against the empty tree
+// when from is empty or unset, as a new branch or tag push.
+func PushedFiles(root, from, to string) ([]string, error) {
+	if from == "" || from == zeroOID {
+		from = emptyTreeOID
+	}
+	if from == to {
+		return nil, nil
+	}
+	out, err := git.Run(root, "diff", "--name-only", from, to)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, name := range strings.Split(out, "\n") {
+		if name != "" {
+			paths = append(paths, name)
+		}
+	}
+	return paths, nil
+}
+
+// PushedFuzzTargets returns the fuzz targets whose package is among a push's changed paths.
+func PushedFuzzTargets(paths []string) []FuzzTarget {
+	var touched []FuzzTarget
+	for _, target := range FuzzTargets {
+		dir := strings.TrimPrefix(target.Package, "./")
+		for _, path := range paths {
+			if path == dir || strings.HasPrefix(path, dir+"/") {
+				touched = append(touched, target)
+				break
+			}
+		}
+	}
+	return touched
+}
+
+// PushChecks scopes a gate to what a push touched: build only when a .go file, go.mod or go.sum changed,
+// and a fuzz check only for a touched package. With no to it runs every build check and fuzz target.
+func PushChecks(root, from, to, fuzzDuration string, build []Check) ([]Check, error) {
+	if to == "" {
+		checks := append([]Check{}, build...)
+		if fuzzDuration != "" {
+			checks = append(checks, FuzzChecksFor(root, fuzzDuration, FuzzTargets)...)
+		}
+		return checks, nil
+	}
+	paths, err := PushedFiles(root, from, to)
+	if err != nil {
+		return build, err
+	}
+	touchesCode := false
+	for _, path := range paths {
+		if path == "go.mod" || path == "go.sum" || strings.HasSuffix(path, ".go") {
+			touchesCode = true
+			break
+		}
+	}
+	var checks []Check
+	if touchesCode {
+		checks = append(checks, build...)
+	}
+	if fuzzDuration != "" {
+		checks = append(checks, FuzzChecksFor(root, fuzzDuration, PushedFuzzTargets(paths))...)
+	}
+	return checks, nil
 }
 
 // TestArgs is the go test command line: under the race detector when cgo can build it, else plain.

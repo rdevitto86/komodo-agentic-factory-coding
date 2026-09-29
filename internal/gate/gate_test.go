@@ -515,6 +515,37 @@ func TestRebuildStampsTheNewHeadWhenAGoFileChanged(t *testing.T) {
 	}
 }
 
+// TestRebuildResolvesHEADToItsFullCommitSHA proves --to HEAD is never stamped literally, so doctor
+// never reads bin/.built-from as a name git cannot compare to a real commit.
+func TestRebuildResolvesHEADToItsFullCommitSHA(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "add a go file")
+	want := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+
+	if err := Rebuild(root, "HEAD~1", "HEAD", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(marker)); got != want || got == "HEAD" {
+		t.Fatalf("marker = %q, want the resolved commit %q", got, want)
+	}
+}
+
 // TestRebuildInstallsHooksBeforeStamping proves a pull that changes a Go file rewrites the git hooks,
 // not just the marker, so a hook script change is never hidden behind a stale-looking stamp.
 func TestRebuildInstallsHooksBeforeStamping(t *testing.T) {
@@ -785,5 +816,266 @@ func TestPostRewriteOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
 	}
 	if out := run(main); !strings.Contains(out, "ran run ./cmd/komodo gate --rebuild --from old1 --to new2") {
 		t.Fatalf("the main working tree must rebuild: out = %q", out)
+	}
+}
+
+func TestDiffAddedLinesReadsOnlyAddedAndChangedLines(t *testing.T) {
+	diff := "diff --git a/a.go b/a.go\n" +
+		"--- a/a.go\n" +
+		"+++ b/a.go\n" +
+		"@@ -1,2 +1,3 @@\n" +
+		" package a\n" +
+		"-func Old() {}\n" +
+		"+func Old() { return }\n" +
+		"+func New() {}\n"
+
+	added := diffAddedLines(diff)
+	if got := added["a.go"]; len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("added = %v, want [2 3]", got)
+	}
+}
+
+func TestDiffAddedLinesSkipsADeletedFile(t *testing.T) {
+	diff := "diff --git a/a.go b/a.go\n" +
+		"--- a/a.go\n" +
+		"+++ /dev/null\n" +
+		"@@ -1,1 +0,0 @@\n" +
+		"-func Old() {}\n"
+
+	if added := diffAddedLines(diff); len(added) != 0 {
+		t.Fatalf("added = %v, want none for a deleted file", added)
+	}
+}
+
+func TestStagedDiffLinesReadsTheIndex(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n\nfunc New() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+
+	added, err := StagedDiffLines(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := added["a.go"]; len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("added = %v, want [2 3]", got)
+	}
+}
+
+func TestCommentsCheckOnlyFlagsAStagedLine(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	body := "package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed, undocumented on purpose")
+
+	added := "package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n\nfunc New() int {\n\ty := 1\n\treturn y\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte(added), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+
+	var out strings.Builder
+	check := CommentsCheck(root, "nonobvious")
+	err := check.Run(&out)
+	if err == nil {
+		t.Fatal("want the new undocumented function to fail the check")
+	}
+	if !strings.Contains(out.String(), "New") {
+		t.Fatalf("out = %q, want it to name New", out.String())
+	}
+	if strings.Contains(out.String(), "Old") {
+		t.Fatalf("out = %q, want the pre-existing Old left alone", out.String())
+	}
+}
+
+// pushRepo builds a root with a seed commit, then a second commit changing rel, returning both commits.
+func pushRepo(t *testing.T, rel, body string) (root, from, to string) {
+	t.Helper()
+	root = t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	from = gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", rel)
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "change "+rel)
+	to = gitCommand(t, root, "rev-parse", "HEAD")
+	return root, from, to
+}
+
+func TestPushedFilesListsWhatChangedBetweenTwoCommits(t *testing.T) {
+	root, from, to := pushRepo(t, "docs/notes.md", "notes\n")
+	paths, err := PushedFiles(root, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "docs/notes.md" {
+		t.Fatalf("paths = %v, want [docs/notes.md]", paths)
+	}
+}
+
+func TestPushedFilesDiffsAgainstTheEmptyTreeForANewBranch(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+
+	paths, err := PushedFiles(root, zeroOID, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "a.go" {
+		t.Fatalf("paths = %v, want [a.go]", paths)
+	}
+}
+
+func TestPushedFuzzTargetsNamesOnlyATouchedPackage(t *testing.T) {
+	touched := PushedFuzzTargets([]string{"internal/backlog/parse.go", "docs/notes.md"})
+	if len(touched) != 1 || touched[0].Name != "FuzzParse" {
+		t.Fatalf("touched = %v, want only FuzzParse", touched)
+	}
+}
+
+func TestPushedFuzzTargetsIsEmptyWithoutATouchedPackage(t *testing.T) {
+	if touched := PushedFuzzTargets([]string{"docs/notes.md"}); len(touched) != 0 {
+		t.Fatalf("touched = %v, want none", touched)
+	}
+}
+
+func TestPushChecksDropsBuildForAMarkdownOnlyPush(t *testing.T) {
+	root, from, to := pushRepo(t, "docs/notes.md", "notes\n")
+	build := []Check{{Name: "go test"}}
+	checks, err := PushChecks(root, from, to, "", build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 0 {
+		t.Fatalf("checks = %v, want none for a markdown-only push", checks)
+	}
+}
+
+func TestPushChecksKeepsBuildWhenAGoFileChanged(t *testing.T) {
+	root, from, to := pushRepo(t, "a.go", "package a\n")
+	build := []Check{{Name: "go test"}}
+	checks, err := PushChecks(root, from, to, "", build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 || checks[0].Name != "go test" {
+		t.Fatalf("checks = %v, want [go test]", checks)
+	}
+}
+
+func TestPushChecksOnlyFuzzesATouchedPackage(t *testing.T) {
+	root, from, to := pushRepo(t, "internal/backlog/parse.go", "package backlog\n")
+	checks, err := PushChecks(root, from, to, "1s", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 || checks[0].Name != "fuzz FuzzParse" {
+		t.Fatalf("checks = %v, want only fuzz FuzzParse", checks)
+	}
+}
+
+func TestPushChecksFuzzesNothingWithoutATouchedFuzzPackage(t *testing.T) {
+	root, from, to := pushRepo(t, "docs/notes.md", "notes\n")
+	checks, err := PushChecks(root, from, to, "1s", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 0 {
+		t.Fatalf("checks = %v, want none", checks)
+	}
+}
+
+func TestPushChecksRunsEverythingWithoutATo(t *testing.T) {
+	root, from, _ := pushRepo(t, "docs/notes.md", "notes\n")
+	build := []Check{{Name: "go test"}}
+	checks, err := PushChecks(root, from, "", "1s", build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1+len(FuzzTargets) || checks[0].Name != "go test" {
+		t.Fatalf("checks = %v, want go test plus every fuzz target", checks)
+	}
+}
+
+// toolkitCheckoutFor builds a git repo whose cmd/komodo/main.go marks it as the toolkit's own checkout,
+// so the hook script gates it with "go run ./cmd/komodo" instead of a built binary.
+func toolkitCheckoutFor(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q", "-b", "main")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// TestPrePushHookScopesTheGateToTheRefsGitPasses proves the hook reads git's pre-push stdin protocol
+// and passes the pushed range, so the gate can scope its build and fuzz checks to it.
+func TestPrePushHookScopesTheGateToTheRefsGitPasses(t *testing.T) {
+	root := toolkitCheckoutFor(t)
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho go \"$@\"\n")
+	script := filepath.Join(fakes, "pre-push")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = root
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	cmd.Stdin = strings.NewReader("refs/heads/main abc123 refs/heads/main def456\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pre-push: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "gate --fuzz 10s --from def456 --to abc123") {
+		t.Fatalf("out = %q, want the pushed range passed through", out)
+	}
+}
+
+func TestPrePushHookFallsBackWithoutStdin(t *testing.T) {
+	root := toolkitCheckoutFor(t)
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho go \"$@\"\n")
+	script := filepath.Join(fakes, "pre-push")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = root
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	cmd.Stdin = strings.NewReader("")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pre-push: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "gate --fuzz 10s") || strings.Contains(string(out), "--from") {
+		t.Fatalf("out = %q, want the plain fuzz lane without a range", out)
 	}
 }

@@ -311,6 +311,62 @@ func TestLoadCachedReportsNoCacheWhenNoneWasWritten(t *testing.T) {
 	}
 }
 
+func TestDetectPicksPnpmFromItsLockfileAndReadsItsScripts(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "package.json", `{"scripts": {"test": "vitest", "build": "vite build"}}`)
+	write(t, root, "pnpm-lock.yaml", "lockfileVersion: '6.0'\n")
+
+	profile, _ := Detect(root)
+
+	if profile.Verify != "pnpm test" {
+		t.Fatalf("verify = %q, want pnpm test", profile.Verify)
+	}
+	if profile.Compile != "pnpm run build" {
+		t.Fatalf("compile = %q, want pnpm run build", profile.Compile)
+	}
+}
+
+func TestDetectPicksYarnAndBunFromTheirLockfiles(t *testing.T) {
+	yarnRoot := t.TempDir()
+	write(t, yarnRoot, "package.json", `{"scripts": {"test": "jest"}}`)
+	write(t, yarnRoot, "yarn.lock", "# yarn lockfile v1\n")
+	if profile, _ := Detect(yarnRoot); profile.Verify != "yarn test" {
+		t.Fatalf("verify = %q, want yarn test", profile.Verify)
+	}
+
+	bunRoot := t.TempDir()
+	write(t, bunRoot, "package.json", `{"scripts": {"test": "bun test"}}`)
+	write(t, bunRoot, "bun.lockb", "")
+	if profile, _ := Detect(bunRoot); profile.Verify != "bun test" {
+		t.Fatalf("verify = %q, want bun test", profile.Verify)
+	}
+}
+
+func TestDetectDefaultsToNpmWithNoLockfile(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "package.json", `{"scripts": {"test": "jest", "build": "webpack"}}`)
+
+	profile, _ := Detect(root)
+
+	if profile.Verify != "npm test" || profile.Compile != "npm run build" {
+		t.Fatalf("commands = %q, %q, want npm test, npm run build", profile.Verify, profile.Compile)
+	}
+}
+
+func TestDetectDerivesNoCommandForAMissingScript(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "package.json", `{"scripts": {"test": "jest"}}`)
+
+	profile, _ := Detect(root)
+
+	if profile.Verify != "npm test" {
+		t.Fatalf("verify = %q, want npm test", profile.Verify)
+	}
+	if profile.Compile != "" {
+		t.Fatalf("compile = %q, want empty with no build script", profile.Compile)
+	}
+}
+
 func TestLoadNoticesALanguageAddedWithNoManifestOfItsOwn(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "go.mod", "module example\n")

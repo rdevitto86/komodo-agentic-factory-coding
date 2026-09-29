@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"komodo/internal/comments"
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
 	"komodo/internal/guard"
@@ -45,7 +44,11 @@ func runGate(root string, args []string) {
 		}
 		return
 	}
-	checks := append(buildChecks(root), []gate.Check{
+	scoped, err := gate.PushChecks(root, *from, *to, fuzzDuration(root, *fuzz), buildChecks(root))
+	if err != nil {
+		fail(err)
+	}
+	checks := append(scoped, []gate.Check{
 		{Name: "komodo lint", Run: func(_ io.Writer) error {
 			problems, err := lintProblems(root)
 			if err != nil {
@@ -78,26 +81,19 @@ func runGate(root string, args []string) {
 			}
 			return nil
 		}},
-		{Name: "komodo comments check", Run: func(_ io.Writer) error {
-			problems, err := comments.Check(root, trackedFiles(root), "nonobvious")
-			if err != nil {
-				return err
-			}
-			for _, problem := range problems {
-				fmt.Println(problem)
-			}
-			if len(problems) > 0 {
-				return fmt.Errorf("%d comment problem(s)", len(problems))
-			}
-			return nil
-		}},
+		gate.CommentsCheck(root, "nonobvious"),
 	}...)
-	if *fuzz != "" && toolkitCheckout(root) {
-		checks = append(checks, gate.FuzzChecks(root, *fuzz)...)
-	}
 	if err := gate.Run(checks, os.Stdout); err != nil {
 		fail(err)
 	}
+}
+
+// fuzzDuration is the fuzz flag's value, but only in the toolkit's own checkout, whose fuzz targets exist.
+func fuzzDuration(root, requested string) string {
+	if requested != "" && toolkitCheckout(root) {
+		return requested
+	}
+	return ""
 }
 
 // buildChecks are the toolkit's own vet and race tests in its checkout, else the compile and verify

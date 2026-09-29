@@ -320,6 +320,40 @@ func CheckFile(path, require string) ([]Finding, []Undocumented, error) {
 	return InvalidComments(text, path), UndocumentedFunctions(text, path, require), nil
 }
 
+// CheckDiff lints only the lines a diff added or changed, keyed by path to the line numbers it touched.
+func CheckDiff(root string, added map[string][]int, require string) ([]string, error) {
+	var out []string
+	for path, numbers := range added {
+		touched := map[int]bool{}
+		for _, number := range numbers {
+			touched[number] = true
+		}
+		full := path
+		if !filepath.IsAbs(path) {
+			full = filepath.Join(root, path)
+		}
+		if info, err := os.Stat(full); err != nil || info.IsDir() {
+			continue
+		}
+		findings, undocumented, err := CheckFile(full, require)
+		if err != nil {
+			return nil, err
+		}
+		for _, finding := range findings {
+			if touched[finding.Line] {
+				out = append(out, fmt.Sprintf("%s:%d %s: %s", path, finding.Line, finding.Rule, finding.Detail))
+			}
+		}
+		for _, item := range undocumented {
+			if touched[item.Line] {
+				out = append(out, fmt.Sprintf("%s:%d UNDOCUMENTED: %s owes a one-line comment", path, item.Line, item.Name))
+			}
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // Check lints every path and returns one line per problem.
 func Check(root string, paths []string, require string) ([]string, error) {
 	var out []string
