@@ -46,8 +46,8 @@ func TestOrchestratorRequestFillsTheRoleWithTheEscalation(t *testing.T) {
 			t.Fatalf("brief = %q, want %q", req.Brief, want)
 		}
 	}
-	if req.Role != "orchestrator" || strings.Contains(req.Brief, "{{") || !strings.Contains(string(req.Schema), "action") {
-		t.Fatalf("request = %+v, want the orchestrator role, every slot filled and its schema", req)
+	if req.Role != "escalation" || strings.Contains(req.Brief, "{{") || !strings.Contains(string(req.Schema), "action") {
+		t.Fatalf("request = %+v, want the escalation role, every slot filled and its schema", req)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestLintBacklogReportsTheWorktreesProblems(t *testing.T) {
 
 func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 	root := requestsRepo(t)
-	// The fixture's own roles directory hides the embedded tree, so it gets the shipped orchestrator role.
-	for _, name := range []string{"orchestrator.md", "orchestrator.schema.json"} {
+	// The fixture's own roles directory hides the embedded tree, so it gets the shipped escalation role.
+	for _, name := range []string{"escalation.md", "escalation.schema.json"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", line.RolesDir, name))
 		if err != nil {
 			t.Fatal(err)
@@ -95,7 +95,7 @@ func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 		t.Fatal("newDriver left Block nil; a stopped group would never be written down")
 	}
 	req, err := driver.Orchestrator(conductor.Escalation{Group: "TG-20.1", Left: conductor.Reviewing, Reason: "stalled"})
-	if err != nil || req.Role != "orchestrator" || !strings.Contains(req.Brief, "escalated at Reviewing") {
+	if err != nil || req.Role != "escalation" || !strings.Contains(req.Brief, "escalated at Reviewing") {
 		t.Fatalf("orchestrator request = %+v, %v; want the escalation filled in", req, err)
 	}
 	if _, err := driver.Lint(); err != nil {
@@ -104,21 +104,20 @@ func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 }
 
 func TestDrainHoldsAGroupThatDependsOnAParkedOne(t *testing.T) {
-	root := drainRepo(t)
-	dependent := strings.Replace(drainText, "version: 1.1.0\n", "version: 1.1.0\ndepends_on: [TG-07.1]\n", 1)
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(dependent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	dependent := strings.Replace(driveDrainText, "version: 1.1.0\n", "version: 1.1.0\ndepends_on: [TG-07.1]\n", 1)
+	root := driveDrainRepo(t, dependent)
+	setupDrainDriveFakeClaude(t)
+	t.Setenv("FAKE_BLOCK_GROUP", "TG-07.1")
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code == 0 || launched(t, root) != "TG-07.1" {
-		t.Fatalf("code %d, launched %q; want only TG-07.1 run and the drain failing", code, launched(t, root))
+	if code == 0 {
+		t.Fatalf("code = 0; want the drain failing once TG-07.1 parked")
+	}
+	if !strings.Contains(out.String(), "TG-07.1 parked:") {
+		t.Fatalf("output lacks TG-07.1 parking:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "TG-07.2 held: it depends on TG-07.1, which parked") {
 		t.Fatalf("output lacks the held line:\n%s", out.String())

@@ -106,7 +106,7 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 ## 0005. A mechanical conductor runs the line, and the primary session is the orchestrator
 
-**Status:** Accepted, 2026-09-25.
+**Status:** Accepted, 2026-09-25. Amended by 0034.
 
 **Context.** A model relaying stages failed in the ways evidence 1 and 5 record. The owner wants the primary session to be the one place a person talks to the line: spawning agents, answering questions about them, tearing down, and taking ad hoc requests. Routing should be as mechanical as possible.
 
@@ -231,7 +231,7 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 ## 0012. Safety comes from the human merge, draft PRs, credential isolation, the sandbox and output checks
 
-**Status:** Accepted, 2026-09-25. Replaces the first line's decisions 0004 and 0005.
+**Status:** Accepted, 2026-09-25. Replaces the first line's decisions 0004 and 0005. Amended by 0034.
 
 **Context.** The guard was scored as a wall and never could be one (evidence 2). The forge is GitHub Free, and the developer's local git PAT is the only credential. GitHub Free offers rulesets and draft PRs only on public repositories.
 
@@ -250,7 +250,7 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 ## 0013. Every hook has one job, one stage and a refusal limit
 
-**Status:** Accepted, 2026-09-25.
+**Status:** Accepted, 2026-09-25. Amended by 0034.
 
 **Context.** Most loops came from hooks and guards (evidence 2 and 5), including a regression where the guard judged the line's own commands. While these docs were written, the guard refused a Python script because its text held the word "git", and refused editing a script and running it in one command.
 
@@ -643,3 +643,26 @@ The Python prototype died the same way: "every open backlog item was about keepi
 
 - **A host update no longer stops the gate or the line.**
 - **A host change that breaks the line shows up as a failed session,** not a doctor finding; the host's own `--version` names the release when it matters.
+
+## 0034. The guard splits into a global and a line tier, and ad hoc work is the orchestrator's own agents
+
+**Status:** Accepted, 2026-09-29. Amends 0005, 0012 and 0013.
+
+**Context.** The guard judged the orchestrator as a line session and ended its session for spawning isolated builders, a plain `komodo run` refusal limit hit the orchestrator's own parallel spawns, and a full drain still ran a role-less model relaying `/run`, the loop 0005 meant to retire. Nothing named which rules held for every session and which held only for the line.
+
+**Decision.**
+
+- **The guard has a global tier for every session:** critical refs, force push, `--no-verify`, commit trailers, and host and toolkit config paths, with no refusal limit.
+- **The guard has a line tier for a session `KOMODO_ROLE` names:** writes outside the worktree, isolated spawns, `LineRefusedPaths`, the epic branch's push and merge, and the refusal limit of 0013. `komodo run` sets the marker in its own environment, so every session and subagent it starts inherits it.
+- **The line is captive: `/run`, which runs `komodo run`, is its one entry.** A drain drives each group through the conductor directly; no session relays the loop.
+- **Ad hoc work is the orchestrator spawning its own default agents, outside the line and its line tier, with no skill of its own.** The `adhoc` skill and `komodo stage` go.
+
+**Alternatives.**
+
+- **Keep one guard tier and add an orchestrator exception.** Every new orchestrator behavior would need its own carve-out.
+- **Keep the `adhoc` skill and `komodo stage`.** They duplicated the orchestrator's own ability to spawn an agent for one stage, with an extra skill to keep pinned and scoped.
+
+**Consequences.**
+
+- **The orchestrator spawns parallel builders and isolated agents without tripping the line's rules.**
+- **A session outside the line still answers for the rules that hold everywhere.**

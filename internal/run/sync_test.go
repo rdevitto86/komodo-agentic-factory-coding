@@ -319,6 +319,92 @@ func TestSyncSkipsABranchOtherThanTheDefault(t *testing.T) {
 	}
 }
 
+// syncWorktreeRepo builds a root remoted at origin with a .komodo/wt worktree on its own branch,
+// merged into main and pushed when merged is set, with an uncommitted edit when dirty is set.
+func syncWorktreeRepo(t *testing.T, merged, dirty bool) (root, worktree string) {
+	t.Helper()
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", "-b", "main", bare)
+	root = t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "commit", "--allow-empty", "-m", "seed")
+	runGit(t, root, "push", "origin", "main")
+	branch := "feat/side"
+	worktree = filepath.Join(root, ".komodo", "wt", "side")
+	runGit(t, root, "branch", branch)
+	runGit(t, root, "worktree", "add", worktree, branch)
+	runGit(t, worktree, "commit", "--allow-empty", "-m", "work")
+	if merged {
+		runGit(t, root, "merge", "--no-ff", "--no-edit", branch)
+		runGit(t, root, "push", "origin", "main")
+	}
+	if dirty {
+		if err := os.WriteFile(filepath.Join(worktree, "dirty.txt"), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root, worktree
+}
+
+func TestSyncRemovesACleanMergedWorktree(t *testing.T) {
+	root, worktree := syncWorktreeRepo(t, true, false)
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(worktree); err == nil {
+		t.Fatalf("the clean merged worktree survived sync; out = %s", out.String())
+	}
+	if !strings.Contains(out.String(), "removed worktree") {
+		t.Fatalf("out = %q, want sync to say what it removed", out.String())
+	}
+}
+
+func TestSyncNamesADirtyWorktreeWithoutRemovingIt(t *testing.T) {
+	root, worktree := syncWorktreeRepo(t, true, true)
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(worktree); err != nil {
+		t.Fatalf("a dirty worktree was removed: %v; out = %s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "worktree: ") || !strings.Contains(out.String(), "is dirty, not removed") {
+		t.Fatalf("out = %q, want the dirty worktree named", out.String())
+	}
+}
+
+func TestSyncNamesAnUnmergedWorktreeWithoutRemovingIt(t *testing.T) {
+	root, worktree := syncWorktreeRepo(t, false, false)
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(worktree); err != nil {
+		t.Fatalf("an unmerged worktree was removed: %v; out = %s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "has not merged, not removed") {
+		t.Fatalf("out = %q, want the unmerged worktree named", out.String())
+	}
+}
+
+func TestSyncDryRunRemovesNoWorktree(t *testing.T) {
+	root, worktree := syncWorktreeRepo(t, true, false)
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, DryRun: true, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(worktree); err != nil {
+		t.Fatalf("a dry run removed a worktree: %v; out = %s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "worktree: skipped in a dry run") {
+		t.Fatalf("out = %q", out.String())
+	}
+}
+
 func TestSyncBinary(t *testing.T) {
 	cases := []struct {
 		name     string

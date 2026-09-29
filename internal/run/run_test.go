@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 	"komodo/internal/install"
 	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/mount/claude"
 	"komodo/internal/pr"
 )
 
@@ -446,6 +448,18 @@ const drainText = "### [TG-07.1] First\n```yaml\ntype: feat\nversion: 1.0.0\n```
 	"### [TG-07.2] Second\n```yaml\ntype: feat\nversion: 1.1.0\n```\n\n" +
 	"#### [TSK-07.2.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"true\"]\n```\n"
 
+// driveDrainText is two ready groups, each declaring the file its own fake claude session writes.
+const driveDrainText = "### [TG-07.1] First\n```yaml\ntype: feat\nversion: 1.0.0\nmode: single\n```\n\n" +
+	"#### [TSK-07.1.1] One [P: C] [READY]\n```yaml\nfiles: [one.txt]\ndone_when: [\"true\"]\n```\n\n" +
+	"### [TG-07.2] Second\n```yaml\ntype: feat\nversion: 1.1.0\nmode: single\n```\n\n" +
+	"#### [TSK-07.2.1] Two [P: C] [READY]\n```yaml\nfiles: [two.txt]\ndone_when: [\"true\"]\n```\n"
+
+// driveDrainSharedFileText is driveDrainText's two groups, both declaring the same file.
+const driveDrainSharedFileText = "### [TG-07.1] First\n```yaml\ntype: feat\nversion: 1.0.0\nmode: single\n```\n\n" +
+	"#### [TSK-07.1.1] One [P: C] [READY]\n```yaml\nfiles: [one.txt]\ndone_when: [\"true\"]\n```\n\n" +
+	"### [TG-07.2] Second\n```yaml\ntype: feat\nversion: 1.1.0\nmode: single\n```\n\n" +
+	"#### [TSK-07.2.1] Two [P: C] [READY]\n```yaml\nfiles: [one.txt]\ndone_when: [\"true\"]\n```\n"
+
 // fakeScript plays one group: it records the launch, then copies in the files staged for that group.
 const fakeScript = `echo "$1" >> .komodo/fake/launched
 cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
@@ -466,6 +480,8 @@ func drainRepo(t *testing.T) string {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skip("no /bin/sh on this machine")
 	}
+	// A real drain pins its own binary onto PATH for the whole process; restore it once the test ends.
+	t.Setenv("PATH", os.Getenv("PATH"))
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", bare)
 	root := t.TempDir()
@@ -496,6 +512,114 @@ func drainRepo(t *testing.T) string {
 	return root
 }
 
+// drainDriveFakeClaude plays every lane's session by its KOMODO_ROLE, except FAKE_BLOCK_GROUP's own.
+const drainDriveFakeClaude = `#!/bin/sh
+if [ "$1" != "-p" ]; then echo "2.0.0"; exit 0; fi
+group=$(basename "$PWD")
+if [ "$KOMODO_ROLE" = "escalation" ] && [ -n "$FAKE_DEBUG" ]; then cat > "$FAKE_DEBUG" ; fi
+if [ "$group" = "$FAKE_BLOCK_GROUP" ]; then
+  if [ "$KOMODO_ROLE" = "escalation" ]; then cat "$FAKE_STOP_FIXTURE"; else cat "$FAKE_BLOCK_FIXTURE"; fi
+  exit 0
+fi
+if [ "$KOMODO_ROLE" = "builder" ]; then
+  if [ -n "$FAKE_PATH_FILE" ] && [ ! -f "$FAKE_PATH_FILE" ]; then echo "$PATH" > "$FAKE_PATH_FILE"; fi
+  if [ -n "$FAKE_OVERLAP_DIR" ]; then
+    touch "$FAKE_OVERLAP_DIR/$group.started"
+    i=0
+    while [ -z "$(ls "$FAKE_OVERLAP_DIR"/*.started 2>/dev/null | grep -v "/$group.started\$")" ] && [ $i -lt 30 ]; do
+      sleep 0.1
+      i=$((i+1))
+    done
+    other=$(ls "$FAKE_OVERLAP_DIR"/*.started 2>/dev/null | grep -v "/$group.started\$")
+    if [ -n "$other" ]; then
+      ended=$(ls "$FAKE_OVERLAP_DIR"/*.ended 2>/dev/null | grep -v "/$group.ended\$")
+      if [ -z "$ended" ]; then echo "$group" >> "$FAKE_OVERLAP_DIR/overlapped"; fi
+    fi
+  fi
+  if [ -n "$FAKE_SHARED_FILE" ]; then
+    echo built > one.txt
+  else
+    case "$group" in
+      TG-07.1) echo built > one.txt ;;
+      TG-07.2) echo built > two.txt ;;
+      *) echo built > change.txt ;;
+    esac
+  fi
+  cat "$FAKE_BUILD_FIXTURE"
+  if [ -n "$FAKE_OVERLAP_DIR" ]; then touch "$FAKE_OVERLAP_DIR/$group.ended"; fi
+  if [ "$group" = "$FAKE_STALE_GROUP" ] && [ -n "$FAKE_ROOT" ]; then echo stale > "$FAKE_ROOT/bin/.built-from"; fi
+else
+  cat "$FAKE_REVIEW_FIXTURE"
+fi
+`
+
+// fakeBlockFixture is a builder result that stops a group for its escalation.
+const fakeBlockFixture = `{"type":"result","subtype":"success","is_error":false,"num_turns":1,` +
+	`"session_id":"build-blocked","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1},` +
+	`"structured_output":{"result":"BLOCKED","question":"stuck"}}` + "\n"
+
+// fakeStopFixture is an escalation's answer that gives up on a group, leaving it blocked.
+const fakeStopFixture = `{"type":"result","subtype":"success","is_error":false,"num_turns":1,` +
+	`"session_id":"escalate-stop","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1},` +
+	`"structured_output":{"action":"stop","needs":"a person's call"}}` + "\n"
+
+// setupDrainDriveFakeClaude drops the fake claude script on a fresh PATH entry, with its fixtures at
+// absolute paths, so a drain's lanes each build then review clean through the real conductor.
+func setupDrainDriveFakeClaude(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "claude")
+	if err := os.WriteFile(script, []byte(drainDriveFakeClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := t.TempDir()
+	for name, text := range map[string]string{
+		"build.jsonl": buildFixture, "review.jsonl": reviewFixture,
+		"block.jsonl": fakeBlockFixture, "stop.jsonl": fakeStopFixture,
+	} {
+		if err := os.WriteFile(filepath.Join(fixtures, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_BUILD_FIXTURE", filepath.Join(fixtures, "build.jsonl"))
+	t.Setenv("FAKE_REVIEW_FIXTURE", filepath.Join(fixtures, "review.jsonl"))
+	t.Setenv("FAKE_BLOCK_FIXTURE", filepath.Join(fixtures, "block.jsonl"))
+	t.Setenv("FAKE_STOP_FIXTURE", filepath.Join(fixtures, "stop.jsonl"))
+}
+
+// driveDrainRepo builds a root remoted at a bare origin, with main pushed and the claude mount installed,
+// holding backlogText, so a drain's lanes each cut a real worktree and branch through the conductor.
+func driveDrainRepo(t *testing.T, backlogText string) string {
+	t.Helper()
+	// A real drain pins its own binary onto PATH for the whole process; restore it once the test ends.
+	t.Setenv("PATH", os.Getenv("PATH"))
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ignore := "/" + line.StateDir + "/\n/" + claude.Dir + "/\n"
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(ignore), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "seed")
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "remote", "add", "origin", bare)
+	runGit(t, root, "push", "origin", "main")
+	if err := os.MkdirAll(filepath.Join(root, claude.Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, claude.Dir, "settings.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 // stageShip stages what the fake host leaves for a group: its tasks closed and its branch handed off.
 func stageShip(t *testing.T, root, group, branch, backlogAfter string) {
 	t.Helper()
@@ -512,23 +636,44 @@ func stageShip(t *testing.T, root, group, branch, backlogAfter string) {
 	}
 }
 
-// fakeForge answers pr create with a numbered pull request and label with none.
+// fakeForge answers pr create with a numbered pull request, pr view with the URL its own head branch
+// got, and label with none, so a lane can look its own pull request back up once Drive ships it.
 func fakeForge(t *testing.T, root string) *pr.Client {
 	var lock sync.Mutex
 	created := 0
+	urls := map[string]string{}
 	return &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		lock.Lock()
 		defer lock.Unlock()
 		switch {
 		case len(args) > 1 && args[0] == "pr" && args[1] == "create":
 			created++
-			return "https://example.invalid/pr/" + strconv.Itoa(created), nil
+			url := "https://example.invalid/pr/" + strconv.Itoa(created)
+			urls[argAfter(args, "--head")] = url
+			return url, nil
+		case len(args) > 2 && args[0] == "pr" && args[1] == "view":
+			if url, ok := urls[args[2]]; ok {
+				return fmt.Sprintf(`{"number":%d,"url":%q,"state":"OPEN"}`, created, url), nil
+			}
+			return "", fmt.Errorf("no pull request for %s", args[2])
 		case len(args) > 0 && args[0] == "label":
 			return "[]", nil
+		case len(args) > 1 && args[0] == "pr" && args[1] == "ready":
+			return "", nil
 		}
-		t.Fatalf("gh must not run any other command: %v", args)
-		return "", nil
+		t.Errorf("gh must not run any other command: %v", args)
+		return "", fmt.Errorf("gh must not run any other command: %v", args)
 	}}
+}
+
+// argAfter is the value gh args holds right after flag, or empty when flag is absent.
+func argAfter(args []string, flag string) string {
+	for i, arg := range args {
+		if arg == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // launched reads which groups the fake host was given, in order.
@@ -541,25 +686,19 @@ func launched(t *testing.T, root string) string {
 	return strings.TrimSpace(string(data))
 }
 
-func TestDrainLaunchesAndShipsTwoReadyGroupsInOrder(t *testing.T) {
-	root := drainRepo(t)
-	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
-	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
-	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+// TestDrainDrivesEachLaneThroughTheConductorAndShipsInOrder proves a drain runs each of its groups
+// to Shipped through Drive, no relay involved, and prints the pull request each one opened.
+func TestDrainDrivesEachLaneThroughTheConductorAndShipsInOrder(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
 	if err != nil || code != 0 {
 		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
 	}
-	if got := launched(t, root); got != "TG-07.1\nTG-07.2" {
-		t.Fatalf("launched = %q; want both groups in order", got)
-	}
 	for _, want := range []string{
-		"TG-07.1 shipped: https://example.invalid/pr/1",
-		"TG-07.2 shipped: https://example.invalid/pr/2",
+		"TG-07.1 shipped: https://example.invalid/pr/",
+		"TG-07.2 shipped: https://example.invalid/pr/",
 		"nothing is ready",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -568,26 +707,70 @@ func TestDrainLaunchesAndShipsTwoReadyGroupsInOrder(t *testing.T) {
 	}
 }
 
-func TestDrainParksAGroupThatEndsUnshippedAndRunsTheNext(t *testing.T) {
-	root := drainRepo(t)
-	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(drainText, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+// TestDrainRunsTwoLanesAtOnceWhenTheySharesNoFile proves two ready groups whose tasks touch no
+// common file run their Drive calls concurrently, and both still ship.
+func TestDrainRunsTwoLanesAtOnceWhenTheySharesNoFile(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
+	overlap := t.TempDir()
+	t.Setenv("FAKE_OVERLAP_DIR", overlap)
+	saved := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(saved) })
+	host, _ := mount.Get("claude")
+	host.Probe = func() (mount.Usage, bool) { return mount.Usage{Plan: "max_20x"}, true }
+	mount.Register(host)
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
+	}
+	if !strings.Contains(out.String(), "TG-07.1 shipped:") || !strings.Contains(out.String(), "TG-07.2 shipped:") {
+		t.Fatalf("both groups should have shipped; out = %s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(overlap, "overlapped")); err != nil {
+		t.Fatalf("no lane overlapped; want two Drive calls running at once: %v", err)
+	}
+}
+
+// TestDrainRunsTwoLanesSharingAFileInTurn proves two ready groups whose tasks share one file never
+// run their Drive calls at once, so the second waits for the first to ship.
+func TestDrainRunsTwoLanesSharingAFileInTurn(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainSharedFileText)
+	setupDrainDriveFakeClaude(t)
+	t.Setenv("FAKE_SHARED_FILE", "1")
+	overlap := t.TempDir()
+	t.Setenv("FAKE_OVERLAP_DIR", overlap)
+	var out bytes.Buffer
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
+	if err != nil || code != 0 {
+		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
+	}
+	if !strings.Contains(out.String(), "TG-07.1 shipped:") || !strings.Contains(out.String(), "TG-07.2 shipped:") {
+		t.Fatalf("both groups should have shipped; out = %s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(overlap, "overlapped")); err == nil {
+		t.Fatal("groups sharing a file overlapped; want them run one after another")
+	}
+}
+
+// TestDrainParksAGroupThatEndsUnshippedAndRunsTheNext proves a group the conductor cannot settle
+// parks without a URL, and the drain still drives the next ready group to Shipped.
+func TestDrainParksAGroupThatEndsUnshippedAndRunsTheNext(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
+	t.Setenv("FAKE_BLOCK_GROUP", "TG-07.1")
+	var out bytes.Buffer
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if code == 0 {
 		t.Fatalf("code = 0; a drain that parked a group must end with a failure")
 	}
-	if got := launched(t, root); got != "TG-07.1\nTG-07.2" {
-		t.Fatalf("launched = %q; the drain must run the next group past a parked one, each once", got)
-	}
 	for _, want := range []string{
-		"TG-07.1 parked: it ended without shipping",
-		"TG-07.2 shipped: https://example.invalid/pr/1",
+		"TG-07.1 parked:",
+		"stopped at Blocked, not Shipped",
+		"TG-07.2 shipped: https://example.invalid/pr/",
 		"drain done: nothing is ready; 1 shipped, 1 parked (TG-07.1)",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -650,20 +833,15 @@ func TestDrainStopsWhenTheWholeBudgetIsSpent(t *testing.T) {
 	}
 }
 
+// TestDrainSkipsAGroupThatComesUpAgainAfterItShipped proves a group still READY on the root's own
+// BACKLOG.md, since shipping never rewrites it, does not launch twice within the one drain.
 func TestDrainSkipsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
-	root := drainRepo(t)
-	stageShip(t, root, "TG-07.1", "feat/first", drainText)
-	stageShip(t, root, "TG-07.2", "feat/second", drainText)
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
 	if err != nil || code != 0 {
 		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
-	}
-	if got := launched(t, root); got != "TG-07.1\nTG-07.2" {
-		t.Fatalf("launched = %q; a shipped group still ready on the root must not launch twice", got)
 	}
 	if !strings.Contains(out.String(), "drain done: nothing is ready; 2 shipped, 0 parked") {
 		t.Fatalf("output = %s", out.String())
@@ -671,61 +849,6 @@ func TestDrainSkipsAGroupThatComesUpAgainAfterItShipped(t *testing.T) {
 }
 
 // laneScript plays one group, recording itself when the group named second runs at the same time.
-const laneScript = `touch ".komodo/fake/$1.started"
-i=0
-while [ ! -f ".komodo/fake/$2.started" ] && [ $i -lt 10 ]; do sleep 0.1; i=$((i+1)); done
-if [ -f ".komodo/fake/$2.started" ] && [ ! -f ".komodo/fake/$2.ended" ]; then echo "$1" >> .komodo/fake/overlapped; fi
-mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json"
-touch ".komodo/fake/$1.ended"
-exit 0`
-
-func TestDrainOverlapsGroupsSharingNoFileAndRunsGroupsSharingOneInTurn(t *testing.T) {
-	shared := strings.Replace(drainText, "files: [b/two.go]", "files: [a/one.go]", 1)
-	cases := []struct {
-		name    string
-		backlog string
-		overlap bool
-	}{
-		{"groups sharing no file overlap", drainText, true},
-		{"groups sharing a file run one after another", shared, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			root := drainRepo(t)
-			if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(tc.backlog), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			other := map[string]string{"TG-07.1": "TG-07.2", "TG-07.2": "TG-07.1"}
-			host, _ := mount.Get("fakehost-drain")
-			host.Probe = func() (mount.Usage, bool) { return mount.Usage{Plan: "max_20x"}, true }
-			host.Headless = func(_, target string) (string, []string) {
-				return "/bin/sh", []string{"-c", laneScript, "sh", target, other[target]}
-			}
-			mount.Register(host)
-			stageShip(t, root, "TG-07.1", "feat/first", tc.backlog)
-			stageShip(t, root, "TG-07.2", "feat/second", tc.backlog)
-			var out bytes.Buffer
-			code, err := Launch(Options{
-				Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-				Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-			})
-			if err != nil || code != 0 {
-				t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
-			}
-			if !strings.Contains(out.String(), "drain done: nothing is ready; 2 shipped, 0 parked") {
-				t.Fatalf("output = %s", out.String())
-			}
-			data, err := os.ReadFile(filepath.Join(root, line.StateDir, "fake", "overlapped"))
-			if err != nil && !os.IsNotExist(err) {
-				t.Fatal(err)
-			}
-			if overlapped := len(data) > 0; overlapped != tc.overlap {
-				t.Fatalf("overlapped = %v (%q), want %v", overlapped, data, tc.overlap)
-			}
-		})
-	}
-}
-
 func TestDrainReRendersTheRootWhenTheDoctorReportsDrift(t *testing.T) {
 	root := drainRepo(t)
 	rendered := filepath.Join(root, "rendered.md")
@@ -755,41 +878,13 @@ func TestDrainReRendersTheRootWhenTheDoctorReportsDrift(t *testing.T) {
 	}
 }
 
-func TestDrainPutsARebuiltBinaryOnThePathForTheNextGroup(t *testing.T) {
-	root := drainRepo(t)
-	toolkitCheckout(t, root, "stale-commit")
-	fakeBuild(t)
-	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
-	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
-	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
-	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
-	if code != 0 || err != nil {
-		t.Fatalf("launch failed: code %d, err %v, out %s", code, err, out.String())
-	}
-	link := filepath.Join(root, line.StateDir, "bin", "komodo")
-	data, err := os.ReadFile(link)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != "bin" {
-		t.Fatalf("komodo on PATH = %q, want the rebuilt binary's own bytes", data)
-	}
-}
-
+// TestDrainSyncsOnceBeforeAndOnceAfterTheWholeRunNeverBetweenGroups proves the drain's own sync runs
+// exactly twice around the whole run, never per lane, while every lane still ships through Drive.
 func TestDrainSyncsOnceBeforeAndOnceAfterTheWholeRunNeverBetweenGroups(t *testing.T) {
-	root := drainRepo(t)
-	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
-	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
-	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
 	if code != 0 || err != nil {
 		t.Fatalf("launch failed: code %d, err %v", code, err)
 	}
@@ -802,33 +897,51 @@ func TestDrainSyncsOnceBeforeAndOnceAfterTheWholeRunNeverBetweenGroups(t *testin
 	}
 }
 
-// staleMarkerScript plays the first group like fakeScript, but also overwrites the build marker mid-run.
-const staleMarkerScript = `echo "$1" >> .komodo/fake/launched
-cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
-mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json" 2>/dev/null
-if [ "$1" = "TG-07.1" ]; then echo stale > bin/.built-from; fi
-exit 0`
+// TestDrainPinsTheRunsBinaryOnPathForEveryLane proves a rebuild sync does before a drain starts
+// lands on the run's own link, and every lane's builder session inherits it first on PATH.
+func TestDrainPinsTheRunsBinaryOnPathForEveryLane(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
+	toolkitCheckout(t, root, "stale-commit")
+	fakeBuild(t)
+	pathFile := filepath.Join(t.TempDir(), "path.txt")
+	t.Setenv("FAKE_PATH_FILE", pathFile)
+	var out bytes.Buffer
+	if _, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)}); err != nil {
+		t.Fatalf("launch failed: %v, out = %s", err, out.String())
+	}
+	link := filepath.Join(root, line.StateDir, "bin", "komodo")
+	data, err := os.ReadFile(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "bin" {
+		t.Fatalf("komodo on PATH = %q, want the rebuilt binary's own bytes", data)
+	}
+	seen, err := os.ReadFile(pathFile)
+	if err != nil {
+		t.Fatalf("no builder session recorded its PATH: %v", err)
+	}
+	first := strings.SplitN(strings.TrimSpace(string(seen)), string(os.PathListSeparator), 2)[0]
+	if first != filepath.Dir(link) {
+		t.Fatalf("a builder session's PATH started %q, want the run's own link dir %q", first, filepath.Dir(link))
+	}
+}
 
-func TestAStaleBuildMarkerDuringARunChangesNothingUntilTheRunEnds(t *testing.T) {
-	root := drainRepo(t)
+// TestAStaleBuildMarkerDuringADriveRunChangesNothingUntilItEnds proves a marker a lane's session
+// leaves stale mid-drain rebuilds once, only after the whole drain ends, never moving a running lane.
+func TestAStaleBuildMarkerDuringADriveRunChangesNothingUntilItEnds(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
 	head := gitOut(t, root, "rev-parse", "HEAD")
 	toolkitCheckout(t, root, head)
 	builds, installs := fakeBuild(t)
-	host, _ := mount.Get("fakehost-drain")
-	host.Headless = func(_, target string) (string, []string) {
-		return "/bin/sh", []string{"-c", staleMarkerScript, "sh", target}
-	}
-	mount.Register(host)
-	firstDone := strings.Replace(drainText, "One [P: C] [READY]", "One [P: C] [DONE]", 1)
-	stageShip(t, root, "TG-07.1", "feat/first", firstDone)
-	stageShip(t, root, "TG-07.2", "feat/second", strings.Replace(firstDone, "Two [P: C] [READY]", "Two [P: C] [DONE]", 1))
+	// The first group's builder leaves the build marker stale, as a session's own rebuild might mid-run.
+	t.Setenv("FAKE_STALE_GROUP", "TG-07.1")
+	t.Setenv("FAKE_ROOT", root)
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
-	if code != 0 || err != nil {
-		t.Fatalf("launch failed: code %d, err %v, out %s", code, err, out.String())
+	if _, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)}); err != nil {
+		t.Fatalf("launch failed: %v, out = %s", err, out.String())
 	}
 	if *builds != 1 || *installs != 1 {
 		t.Fatalf("builds = %d, installs = %d; a marker gone stale mid-run rebuilds once, only after the run ends", *builds, *installs)

@@ -487,14 +487,13 @@ func runStep(root string, args []string) {
 	printCompactJSON(os.Stdout, next)
 }
 
-// runRun drives one group through the conductor to Shipped, falling back to the relay skill for
-// --relay, --no-ship, a drain, or a dry run, which also skips the preflight and the lock.
+// runRun drives one group through the conductor to Shipped, falling back to the headless launcher for
+// --no-ship, a drain, or a dry run, which also skips the preflight and the lock.
 func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
 	noShip := flags.Bool("no-ship", false,
 		"stop each group at shipped-ready, skipping the forge credential check and the push")
-	relay := flags.Bool("relay", false, "drive the group through the relay skill instead of the conductor")
 	budget := flags.Duration("budget", 0, "how long the run may take before it is killed (default: "+
 		run.GroupBudget.String()+" per group)")
 	target, rest := splitPositional(args, "budget")
@@ -523,7 +522,7 @@ func runRun(root string, args []string) {
 	options := run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry, NoShip: *noShip}
 	var code int
 	var err error
-	if *dry || *relay || *noShip || target == "" {
+	if *dry || *noShip || target == "" {
 		code, err = run.Launch(options)
 	} else {
 		code, err = run.Drive(options)

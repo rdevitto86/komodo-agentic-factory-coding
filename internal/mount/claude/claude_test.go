@@ -338,6 +338,57 @@ func TestTheHookCommandIsTheRunningBinaryInAForeignRepo(t *testing.T) {
 	t.Fatal("settings.json is not in the plan")
 }
 
+// TestTheHookCommandNamesACopyOfTheBinaryUnderHome proves the guard hook names a copy under
+// ~/.komodo/bin, never the repo's own path, so a rebuild there never moves an already-rendered hook.
+func TestTheHookCommandNamesACopyOfTheBinaryUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := toolkitRepo(t)
+	binary := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(binary, []byte("binary v1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var command string
+	for _, change := range plan.Changes {
+		if change.Path == filepath.Join(root, Dir, "settings.json") {
+			command = string(change.Body)
+		}
+	}
+	if strings.Contains(command, binary) {
+		t.Fatalf("settings.json = %s, want the repo's own binary path never named", command)
+	}
+	if !strings.Contains(command, filepath.Join(home, ".komodo", "bin", "komodo-")) {
+		t.Fatalf("settings.json = %s, want a copy named under HOME", command)
+	}
+	entries, err := os.ReadDir(filepath.Join(home, ".komodo", "bin"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entries = %v, err = %v; want exactly one copy written", entries, err)
+	}
+	copied, err := os.ReadFile(filepath.Join(home, ".komodo", "bin", entries[0].Name()))
+	if err != nil || string(copied) != "binary v1" {
+		t.Fatalf("copied = %q, err = %v; want the binary's own bytes", copied, err)
+	}
+	// A rebuild that changes the binary's bytes writes a new copy, and never touches the first one.
+	if err := os.WriteFile(binary, []byte("binary v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Render(root, binary); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(filepath.Join(home, ".komodo", "bin", entries[0].Name()))
+	if err != nil || string(first) != "binary v1" {
+		t.Fatalf("the first copy changed: %q, %v", first, err)
+	}
+	entries, err = os.ReadDir(filepath.Join(home, ".komodo", "bin"))
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("entries = %v, err = %v; want a second copy alongside the first", entries, err)
+	}
+}
+
 func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	root := toolkitRepo(t)
 	write := func(rel, contents string) {
@@ -354,6 +405,7 @@ func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	write(filepath.Join(Dir, "commands", "my-command.md"), "mine")
 	write(filepath.Join(Dir, "skills", "backlog", "SKILL.md"), "old")
 	write(filepath.Join(Dir, "skills", "review", "SKILL.md"), "old")
+	write(filepath.Join(Dir, "skills", "adhoc", "SKILL.md"), "old")
 	plan, err := Render(root, "komodo")
 	if err != nil {
 		t.Fatal(err)
@@ -375,6 +427,9 @@ func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, Dir, "skills", "review", "SKILL.md")); !os.IsNotExist(err) {
 		t.Fatal("the retired review skill was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "skills", "adhoc", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("the retired adhoc skill was not removed")
 	}
 }
 
@@ -1043,7 +1098,7 @@ func addSkills(t *testing.T, root string, names ...string) {
 func orchestratorRepo(t *testing.T) string {
 	t.Helper()
 	root := toolkitRepo(t)
-	addSkills(t, root, "adhoc", "komodo", "plan", "respond")
+	addSkills(t, root, "komodo", "plan", "respond")
 	return root
 }
 
@@ -1087,7 +1142,7 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	if strings.Join(names, ",") != "adhoc,build,komodo,mine,plan,respond,run,standards-go" {
+	if strings.Join(names, ",") != "build,komodo,mine,plan,respond,run,standards-go" {
 		t.Fatalf("global skills = %v, want the user's own kept and the orchestrator's added", names)
 	}
 	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
@@ -1143,8 +1198,9 @@ func TestTheGlobalRenderPrunesAnOrchestratorSkillItStoppedShipping(t *testing.T)
 	if err := os.WriteFile(marker, []byte("adhoc\nkomodo\nplan\nrespond\nrun\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	original := orchestratorSkills
 	orchestratorSkills = []string{"komodo", "plan", "respond", "run"}
-	defer func() { orchestratorSkills = []string{"adhoc", "komodo", "plan", "respond", "run"} }()
+	defer func() { orchestratorSkills = original }()
 	plan, err := RenderGlobal(root, home, "/opt/komodo/komodo")
 	if err != nil {
 		t.Fatal(err)
@@ -1157,6 +1213,35 @@ func TestTheGlobalRenderPrunesAnOrchestratorSkillItStoppedShipping(t *testing.T)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "mine", "SKILL.md")); err != nil {
 		t.Fatal("a skill the marker never named was removed")
+	}
+}
+
+// TestTheGlobalHookNamesACopyOfTheBinaryUnderHome proves the global settings never name the toolkit
+// repo's own binary path, so a rebuild there never moves this machine's orchestrator hook.
+func TestTheGlobalHookNamesACopyOfTheBinaryUnderHome(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binary := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(binary, []byte("toolkit binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := RenderGlobal(root, home, binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), binary) {
+		t.Fatalf("settings.json = %s, want the toolkit's own binary path never named", raw)
+	}
+	if !strings.Contains(string(raw), filepath.Join(home, ".komodo", "bin", "komodo-")) {
+		t.Fatalf("settings.json = %s, want a copy named under HOME", raw)
 	}
 }
 
@@ -1283,7 +1368,7 @@ func TestTheGlobalRenderFailsWhenTheToolkitSkillsCannotBeRead(t *testing.T) {
 
 func TestTheGlobalRenderFailsWhenAnOrchestratorSkillIsMissing(t *testing.T) {
 	root := toolkitRepo(t)
-	addSkills(t, root, "adhoc", "komodo", "plan")
+	addSkills(t, root, "komodo", "plan")
 	_, err := RenderGlobal(root, t.TempDir(), "/opt/komodo")
 	if err == nil || !strings.Contains(err.Error(), "respond") {
 		t.Fatalf("err = %v, want the missing respond skill named", err)

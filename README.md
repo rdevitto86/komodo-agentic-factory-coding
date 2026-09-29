@@ -13,7 +13,7 @@ The full design lives in `docs/architecture.md` and `docs/system-design.md`; `do
 - **Devices.** The brief in, the schema-checked result out, each slot capped; see `docs/system-design.md#briefs`.
 - **Metrics.** Every stage writes to the run's local, gitignored ledger; see `docs/system-design.md#run-state-and-metrics`.
 - **Machines and mounts.** A profile maps each role's tier to a model and effort, per plan and per host; see `docs/system-design.md#profiles-and-economy-mode`.
-- **Ad hoc work.** Any stage runs alone through the orchestrator's own skills; see `docs/system-design.md#orchestrator-commands`.
+- **Ad hoc work.** The line is captive to `/run`; ad hoc work is the orchestrator spawning its own default agents outside it, with no skill of its own; see `docs/system-design.md#orchestrator-commands`.
 - **The guard.** One hook holds five rules on every tool call, on every host; see `docs/system-design.md#security`.
 - **The binary.** `komodo` is one static Go binary, rebuilt on pull in this repo; see `docs/system-design.md#binaries-and-releases`.
 - **The gate.** Local build, lint and doctor checks run before every commit and push, no model, nothing on GitHub; see `docs/system-design.md#binaries-and-releases`.
