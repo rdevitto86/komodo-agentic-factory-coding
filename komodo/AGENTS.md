@@ -18,7 +18,7 @@ Universal rules for every model and tool on Komodo software, hosted or local, pl
 - **Never leave the worktree.** No edit, write, delete, or move outside its root, or on host/toolkit config: home dirs, machine overlay, `.git/config`, `.git/hooks`, and toolkit binaries.
 - **Never add a trailer or session link.** No co-author, generated-by, or session URL.
 - **Landing is a person merging the epic PR.** A group PR targets its epic branch. Hand the user a refused command; after a merge, run `komodo sync`.
-- **Check the claim before writing a shared branch.** A claim under the git common dir names the session and time; another session's live claim stops your write, and a stale one is reported, never taken silently.
+- **The guard claims the branch you write on.** It refuses a write or a commit, merge, push, reset, or rebase when another session's claim on the current branch is still live, naming that session and the way forward; a stale claim is taken and reported, never silently.
 - Past a one-line fix, run: `/run <group>` in session, `komodo run <group>` headless.
 
 ## Comments

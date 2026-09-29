@@ -39,18 +39,31 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 		request.Cwd, _ = os.Getwd()
 	}
 	root := WorktreeRoot(request.Cwd)
-	decision := Check(request, Load(toolkitRoot, root), CurrentBranch(request.Cwd))
+	branch := CurrentBranch(request.Cwd)
+	decision := Check(request, Load(toolkitRoot, root), branch)
+	var sessionPayload struct {
+		SessionID string `json:"session_id"`
+	}
+	_ = json.Unmarshal(raw, &sessionPayload)
+	notice := ""
 	if !decision.Deny {
+		claimed := ClaimCheck(request, root, branch, sessionPayload.SessionID)
+		if claimed.Deny {
+			decision = Decision{Deny: true, Findings: []string{claimed.Finding}}
+		} else {
+			notice = claimed.Notice
+		}
+	}
+	if !decision.Deny {
+		if notice != "" {
+			fmt.Fprintln(stderr, notice)
+		}
 		return 0
 	}
 	reason := Reason(decision.Findings)
 	blocked := false
 	// Only a line session counts toward the refusal limit; the orchestrator is refused, never ended.
 	if IsLineSession() {
-		var sessionPayload struct {
-			SessionID string `json:"session_id"`
-		}
-		_ = json.Unmarshal(raw, &sessionPayload)
 		blocked, err = recordRefusal(root, sessionPayload.SessionID, strings.Join(decision.Findings, "|"))
 		if err != nil {
 			fmt.Fprintf(stderr, "guard: %v; allowing\n", err)
