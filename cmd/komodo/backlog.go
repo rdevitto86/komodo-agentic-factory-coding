@@ -232,15 +232,16 @@ func runBacklogAdd(root string, args []string) {
 	set := flag.NewFlagSet("add", flag.ExitOnError)
 	files := set.String("files", "", "comma-separated paths the task touches")
 	accept := set.String("accept", "", "comma-separated acceptance lines")
+	doneWhen := set.String("done-when", "", "comma-separated shell commands whose zero exit proves the task done")
 	priority := set.String("priority", "M", "C, H, M, or L")
 	status := set.String("status", "REFINEMENT", "the status to open the group in")
 	groupType := set.String("type", "feat", "the conventional-commit type")
 	version := set.String("version", "", "the version the group ships")
 	epic := set.String("epic", "", "the epic id the group belongs to")
-	positional, rest := splitFlags(args, "files", "accept", "priority", "status", "type", "version", "epic")
+	positional, rest := splitFlags(args, "files", "accept", "done-when", "priority", "status", "type", "version", "epic")
 	_ = set.Parse(rest)
 	if len(positional) < 2 {
-		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b]"))
+		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
 	}
 	groupID, title := positional[0], strings.Join(positional[1:], " ")
 	path, text, found, err := findGroupFile(root, groupID)
@@ -248,7 +249,12 @@ func runBacklogAdd(root string, args []string) {
 		fail(err)
 	}
 	if found {
-		out, id, err := backlog.AppendGroupFileTask(text, title, splitStrings(*files), splitStrings(*accept))
+		if len(splitStrings(*files)) == 0 {
+			fail(fmt.Errorf("task declares no files; pass --files"))
+		}
+		out, id, err := backlog.AppendGroupFileTaskWith(text, backlog.GroupTask{
+			Title: title, Files: splitStrings(*files), Accept: splitStrings(*accept), Checks: splitStrings(*doneWhen),
+		})
 		if err != nil {
 			fail(err)
 		}
