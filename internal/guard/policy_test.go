@@ -87,3 +87,16 @@ func TestEverySessionIsRefusedTheHostsGitAndBinaryPaths(t *testing.T) {
 		})
 	}
 }
+
+// TestASharedBranchClaimIsAGlobalTierCheckNotOnlyALineRole documents that a claim check runs for
+// every session, so IsLineSession alone must never be the only gate on it.
+func TestASharedBranchClaimIsAGlobalTierCheckNotOnlyALineRole(t *testing.T) {
+	t.Setenv(RoleEnv, "")
+	if IsLineSession() {
+		t.Fatal("the orchestrator carries no role; a claim check gated on IsLineSession would skip it")
+	}
+	t.Setenv(RoleEnv, "builder")
+	if !IsLineSession() {
+		t.Fatal("a builder carries a role; a claim check still applies to it as well")
+	}
+}
