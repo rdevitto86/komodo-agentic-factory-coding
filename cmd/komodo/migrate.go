@@ -11,23 +11,20 @@ import (
 	"komodo/internal/line"
 )
 
-// runMigrate converts the repo's BACKLOG.md into one docs/backlog group file per group, in the
-// current grammar; --dry-run prints the files it would write without writing them.
+// runMigrate converts the repo's BACKLOG.md, or a foreign BACKLOG.md or TODO.md, into one
+// docs/backlog group file per group; --dry-run prints the files it would write without writing them.
 func runMigrate(root string, args []string) {
 	set := flag.NewFlagSet("migrate", flag.ExitOnError)
 	dryRun := set.Bool("dry-run", false, "print the files migrate would write, without writing them")
 	_ = set.Parse(args)
 
-	path, err := backlog.Find(root)
+	files, source, skipped, err := migrateSource(root)
 	if err != nil {
 		fail(err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		fail(err)
+	for _, skip := range skipped {
+		fmt.Printf("%s:%d: could not place: %s\n", relPath(root, source), skip.Line, skip.Text)
 	}
-	parsed := backlog.Parse(string(data))
-	files := migrateGroupFiles(parsed)
 
 	written := 0
 	for _, file := range files {
@@ -50,11 +47,35 @@ func runMigrate(root string, args []string) {
 		written++
 	}
 	if *dryRun {
-		fmt.Printf("%d group file(s) would be written; %s stays until it is removed by hand\n", len(files), path)
+		fmt.Printf("%d group file(s) would be written; %s stays until it is removed by hand\n", len(files), source)
 		return
 	}
-	fmt.Printf("%d group file(s) written; %s stays until it is removed by hand\n", written, path)
-	line.Stamp(root, ledger.Entry{Station: "migrate", Task: "BACKLOG.md", Outcome: "migrated"})
+	fmt.Printf("%d group file(s) written; %s stays until it is removed by hand\n", written, source)
+	line.Stamp(root, ledger.Entry{Station: "migrate", Task: relPath(root, source), Outcome: "migrated"})
+}
+
+// migrateSource picks what migrate converts: this repo's own current-grammar BACKLOG.md, a foreign
+// BACKLOG.md or TODO.md through Import, and reports the lines Import could not place.
+func migrateSource(root string) (files []backlog.GroupFile, source string, skipped []backlog.ImportSkip, err error) {
+	if path, findErr := backlog.Find(root); findErr == nil {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil, "", nil, readErr
+		}
+		parsed := backlog.Parse(string(data))
+		if len(parsed.Groups) > 0 {
+			return migrateGroupFiles(parsed), path, nil, nil
+		}
+		result := backlog.Import(string(data), relPath(root, path))
+		return result.Groups, path, result.Skipped, nil
+	}
+	todo := filepath.Join(root, "TODO.md")
+	data, readErr := os.ReadFile(todo)
+	if readErr != nil {
+		return nil, "", nil, fmt.Errorf("no BACKLOG.md or TODO.md at %s to migrate", root)
+	}
+	result := backlog.Import(string(data), "TODO.md")
+	return result.Groups, todo, result.Skipped, nil
 }
 
 // migrateGroupFiles converts every group of a parsed BACKLOG.md into a GroupFile, splitting an

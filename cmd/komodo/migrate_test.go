@@ -126,6 +126,68 @@ func TestRunMigrateDryRunWritesNothing(t *testing.T) {
 	}
 }
 
+const foreignTODO = "# Refunds\n\n- [ ] Add a partial refund endpoint\n- [x] Log every refund\n" +
+	"A line neither a heading nor a bullet.\n"
+
+// TestRunMigrateImportsATODOFile proves a repo with no BACKLOG.md but a TODO.md imports it into a
+// REFINEMENT group file, printing the line Import could not place.
+func TestRunMigrateImportsATODOFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "TODO.md"), []byte(foreignTODO), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() { runMigrate(root, nil) })
+	if !strings.Contains(out, "could not place") {
+		t.Fatalf("migrate printed no skipped line: %s", out)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entries = %v, err = %v, want one group file", entries, err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, groupFilesDir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := backlog.ParseGroupFile(string(data))
+	if len(file.Problems) != 0 {
+		t.Fatalf("problems = %v", file.Problems)
+	}
+	if file.Status != "REFINEMENT" || len(file.Tasks) != 2 || file.Tasks[0].Done || !file.Tasks[1].Done {
+		t.Fatalf("file = %+v", file)
+	}
+	if _, err := os.Stat(filepath.Join(root, "TODO.md")); err != nil {
+		t.Fatal("TODO.md must stay until a human removes it")
+	}
+	problems, _, _, err := groupFileLintProblems(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 0 {
+		t.Fatalf("lint problems = %v", problems)
+	}
+}
+
+// TestRunMigrateImportsAForeignBacklogWithNoTGHeadings proves a BACKLOG.md that names no
+// komodo-grammar group imports through Import instead of writing nothing.
+func TestRunMigrateImportsAForeignBacklogWithNoTGHeadings(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(foreignTODO), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runMigrate(root, nil)
+	entries, err := os.ReadDir(filepath.Join(root, groupFilesDir))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entries = %v, err = %v, want one group file", entries, err)
+	}
+}
+
+// TestRunMigrateRefusesWithNeitherBacklogNorTODO proves migrate fails clearly instead of writing nothing silently.
+func TestRunMigrateRefusesWithNeitherBacklogNorTODO(t *testing.T) {
+	if _, _, _, err := migrateSource(t.TempDir()); err == nil {
+		t.Fatal("want an error with no BACKLOG.md or TODO.md")
+	}
+}
+
 // TestRunMigrateSkipsAGroupFileThatAlreadyExists proves migrate never overwrites a hand-edited group file.
 func TestRunMigrateSkipsAGroupFileThatAlreadyExists(t *testing.T) {
 	root := t.TempDir()

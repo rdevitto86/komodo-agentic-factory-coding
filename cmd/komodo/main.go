@@ -19,7 +19,7 @@ import (
 const usage = `komodo: the code assembly line.
 
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
-  komodo migrate [--dry-run]  Convert BACKLOG.md into docs/backlog group files, in the current grammar
+  komodo migrate [--dry-run]  Convert BACKLOG.md, a foreign one, or TODO.md into docs/backlog group files
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo backlog             List the open groups under docs/backlog
