@@ -3,6 +3,7 @@ package detect
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -78,6 +79,19 @@ var terraformFacetMarker = map[string]struct{ kind, value string }{
 // composeServices matches a Docker Compose services block.
 var composeServices = regexp.MustCompile(`(?m)^services:`)
 
+// packageManagerByLockfile maps a lockfile name to the package manager it names.
+var packageManagerByLockfile = map[string]string{
+	"pnpm-lock.yaml":    "pnpm",
+	"yarn.lock":         "yarn",
+	"bun.lockb":         "bun",
+	"package-lock.json": "npm",
+}
+
+// packageManifest is the part of a package.json a detection reads.
+type packageManifest struct {
+	Scripts map[string]string `json:"scripts"`
+}
+
 // verifyDiscovery is the root-only file order QC resolves a verify command from, first hit wins.
 var verifyDiscovery = []struct{ File, Command string }{
 	{".komodo/verify.sh", "sh .komodo/verify.sh"},
@@ -133,6 +147,7 @@ func Detect(root string) (Profile, []string) {
 	cloud := map[string]bool{}
 	data := map[string]bool{}
 	found := map[string]bool{}
+	var scripts map[string]string
 
 	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -179,7 +194,15 @@ func Detect(root string) (Profile, []string) {
 			if body, readErr := os.ReadFile(path); readErr == nil && composeServices.Match(body) {
 				data["compose"] = true
 			}
-		case "go.mod", "package.json", "pyproject.toml", "requirements.txt", "Cargo.toml", "Gemfile":
+		case "package.json":
+			manifests = append(manifests, rel)
+			if body, readErr := os.ReadFile(path); readErr == nil {
+				var manifest packageManifest
+				if json.Unmarshal(body, &manifest) == nil {
+					scripts = manifest.Scripts
+				}
+			}
+		case "go.mod", "pyproject.toml", "requirements.txt", "Cargo.toml", "Gemfile":
 			manifests = append(manifests, rel)
 		}
 		if strings.HasSuffix(name, ".tf") {
@@ -209,7 +232,7 @@ func Detect(root string) (Profile, []string) {
 		manifests = append(manifests, filepath.Join(".github", "workflows"))
 	}
 
-	verify, compile := commands(found)
+	verify, compile := commands(found, scripts)
 	if override := VerifyCommand(root); override != "" {
 		verify = override
 	}
@@ -227,12 +250,12 @@ func Detect(root string) (Profile, []string) {
 }
 
 // commands picks the verify and compile commands from the first manifest a fixed discovery order names.
-func commands(found map[string]bool) (verify, compile string) {
+func commands(found map[string]bool, scripts map[string]string) (verify, compile string) {
 	switch {
 	case found["go.mod"]:
 		return "go test ./...", "go build ./..."
 	case found["package.json"]:
-		return "npm test", "npm run build"
+		return packageCommands(found, scripts)
 	case found["pyproject.toml"], found["requirements.txt"]:
 		return "pytest", ""
 	case found["Cargo.toml"]:
@@ -242,6 +265,32 @@ func commands(found map[string]bool) (verify, compile string) {
 	default:
 		return "", ""
 	}
+}
+
+// packageManager picks pnpm, yarn or bun from the lockfile a repo carries, else npm.
+func packageManager(found map[string]bool) string {
+	for lockfile, manager := range packageManagerByLockfile {
+		if found[lockfile] {
+			return manager
+		}
+	}
+	return "npm"
+}
+
+// packageCommands derives verify and compile from the scripts package.json declares, warning on a missing one.
+func packageCommands(found map[string]bool, scripts map[string]string) (verify, compile string) {
+	manager := packageManager(found)
+	if _, ok := scripts["test"]; ok {
+		verify = manager + " test"
+	} else {
+		fmt.Fprintf(os.Stderr, "komodo detect: package.json has no test script; deriving no verify command\n")
+	}
+	if _, ok := scripts["build"]; ok {
+		compile = manager + " run build"
+	} else {
+		fmt.Fprintf(os.Stderr, "komodo detect: package.json has no build script; deriving no compile command\n")
+	}
+	return verify, compile
 }
 
 // sorted returns the keys of a set, alphabetised, or nil for an empty set.
