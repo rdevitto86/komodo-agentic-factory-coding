@@ -77,11 +77,9 @@ func checkEvidence(_ context.Context, in Input) (Outcome, error) {
 // lensTree is the worktree, its diff against the group's base, and the validators' report when one was saved.
 func lensTree(root, group string) (review.Tree, error) {
 	base := line.DefaultBase(root)
-	if path, err := backlog.Find(root); err == nil {
-		if parsed, err := backlog.Load(path); err == nil {
-			if found, ok := parsed.Group(group); ok && found.Base() != "" {
-				base = found.Base()
-			}
+	if parsed, err := backlog.LoadRoot(root); err == nil {
+		if found, ok := parsed.Group(group); ok && found.Base() != "" {
+			base = found.Base()
 		}
 	}
 	diff, err := lensDiff(root, base)

@@ -3,7 +3,6 @@ package doctor
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"komodo/internal/backlog"
@@ -22,8 +21,7 @@ func CheckEpics(root string, defaultBranch string, run pr.Runner) []Problem {
 
 // checkEpicsWithRunners is the internal implementation accepting git and pr runners for testing.
 func checkEpicsWithRunners(root string, defaultBranch string, gitRun GitRunner, prRun pr.Runner) []Problem {
-	path := filepath.Join(root, "BACKLOG.md")
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil
 	}

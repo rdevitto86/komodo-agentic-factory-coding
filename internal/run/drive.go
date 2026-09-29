@@ -235,29 +235,14 @@ func editedGroup(worktree, group string) (string, bool) {
 	return backlog.GroupText(string(data), group)
 }
 
-// lintBacklog returns the worktree backlog's lint problems, as komodo lint reports them: BACKLOG.md's when it
-// exists, else each docs/backlog group file's own.
+// lintBacklog returns the worktree backlog's lint problems, as komodo lint reports them: the docs/backlog
+// group files' when the worktree holds one, else BACKLOG.md's.
 func lintBacklog(worktree string) ([]string, error) {
-	if path, err := backlog.Find(worktree); err == nil {
-		parsed, err := backlog.Load(path)
-		if err != nil {
-			return nil, err
-		}
-		return append(backlog.Lint(parsed), backlog.LintContext(worktree, parsed)...), nil
-	}
-	files, err := filepath.Glob(filepath.Join(worktree, "docs", "backlog", "*.md"))
+	parsed, err := backlog.LoadRoot(worktree)
 	if err != nil {
 		return nil, err
 	}
-	var problems []string
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return nil, err
-		}
-		problems = append(problems, backlog.ParseGroupFile(string(data)).Problems...)
-	}
-	return problems, nil
+	return append(backlog.Lint(parsed), backlog.LintContext(worktree, parsed)...), nil
 }
 
 // writeReview saves the reviewer's whole result, findings with their files and titles, where

@@ -16,9 +16,23 @@ func Leftovers(root string) []string {
 	paths, files := groupFiles(root)
 	open := openGroups(root, files)
 	notes := endedEpicFiles(root, paths, files)
+	notes = append(notes, legacyBacklog(root, files)...)
 	worktrees, named := orphanWorktrees(root, open)
 	notes = append(notes, worktrees...)
 	return append(notes, orphanBranches(root, open, named)...)
+}
+
+// legacyBacklog names root's own BACKLOG.md to remove once docs/backlog group files exist, since a group
+// file now outranks it and the two grammars are never both read.
+func legacyBacklog(root string, files map[string]backlog.GroupFile) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil
+	}
+	return []string{rel(root, path) + ": a legacy backlog; docs/backlog/ group files are read instead, remove it"}
 }
 
 // groupFiles parses every docs/backlog group file, returning their paths in order and each one's parse.

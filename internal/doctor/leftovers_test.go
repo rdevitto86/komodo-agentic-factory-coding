@@ -68,8 +68,12 @@ func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 	run(root, "worktree", "add", "-q", "-b", "feat/old", orphan, "main")
 
 	notes := Leftovers(root)
-	if len(notes) != 1 || !strings.Contains(notes[0], "TG-09.9") || !strings.Contains(notes[0], "feat/old") {
-		t.Fatalf("notes = %v, want one note naming the TG-09.9 worktree and its branch", notes)
+	joined := strings.Join(notes, "\n")
+	if !strings.Contains(joined, "TG-09.9") || !strings.Contains(joined, "feat/old") {
+		t.Fatalf("notes = %v, want a note naming the TG-09.9 worktree and its branch", notes)
+	}
+	if !strings.Contains(joined, "BACKLOG.md: a legacy backlog") {
+		t.Fatalf("notes = %v, want a note naming BACKLOG.md as a legacy backlog now a group file exists", notes)
 	}
 }
 
