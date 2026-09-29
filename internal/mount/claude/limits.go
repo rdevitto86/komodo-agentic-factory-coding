@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
@@ -39,17 +38,10 @@ type account struct {
 		SeatTier                  string `json:"seatTier"`
 		SubscriptionType          string `json:"subscriptionType"`
 	} `json:"oauthAccount"`
-	Cached struct {
-		Utilization struct {
-			FiveHour struct {
-				Utilization float64 `json:"utilization"`
-				ResetsAt    string  `json:"resets_at"`
-			} `json:"five_hour"`
-		} `json:"utilization"`
-	} `json:"cachedUsageUtilization"`
 }
 
-// Probe reads the plan and the window from this host's config file, never from its status line.
+// Probe reads the plan from this host's config file, never a usage window; only a running
+// session's rate_limit_event carries FiveHour and ResetsAt.
 func Probe() (mount.Usage, bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -63,10 +55,7 @@ func Probe() (mount.Usage, bool) {
 	if json.Unmarshal(data, &parsed) != nil {
 		return mount.Usage{}, false
 	}
-	usage := mount.Usage{Plan: planName(parsed), FiveHour: parsed.Cached.Utilization.FiveHour.Utilization / 100}
-	if stamp, err := time.Parse(time.RFC3339, parsed.Cached.Utilization.FiveHour.ResetsAt); err == nil {
-		usage.ResetsAt = stamp
-	}
+	usage := mount.Usage{Plan: planName(parsed)}
 	if usage.Plan == "" {
 		return usage, false
 	}
