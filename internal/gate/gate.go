@@ -261,6 +261,31 @@ const hookScript = `#!/bin/sh
 # Runs the local gate from the checkout being committed, else this host's built binary. Written by komodo gate --install.
 set -e
 name=$(basename "$0")
+# A trailer and a bad branch name are refused before the binary is found, so every committer is covered,
+# orchestrator, line or person alike, even with none built yet.
+case "$name" in
+  commit-msg)
+    if grep -Eqi '^(co-authored-by|generated[ -]with|generated[ -]by)[[:space:]]*[:=]' "$1" || grep -q '🤖' "$1"; then
+      echo "gate: commit message carries a co-author or generated-by trailer; remove it and commit again" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  pre-commit)
+    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    if [ -n "$branch" ]; then
+      if echo "$branch" | grep -Eq '^(main|master|trunk|prod|production)$|^(release|hotfix)/'; then
+        echo "gate: commit on $branch refused; create a branch first" >&2
+        exit 1
+      fi
+      if ! echo "$branch" | grep -Eq '^feat/[0-9]+\.[0-9]+\.[0-9]+' &&
+         ! echo "$branch" | grep -Eq '^(feat|fix|docs|chore|refactor|test|perf|ci|build)/[a-z0-9]+(-[a-z0-9]+)*$'; then
+        echo "gate: branch \"$branch\" is not <type>/<kebab-name>; rename it, such as fix/$branch" >&2
+        exit 1
+      fi
+    fi
+    ;;
+esac
 # The toolkit's own checkout gates from its source, so the guard table and comment rules are the ones committed.
 top=$(git rev-parse --show-toplevel 2>/dev/null || true)
 if [ -n "$top" ] && [ -f "$top/cmd/komodo/main.go" ]; then
@@ -344,14 +369,15 @@ case "$name" in
 esac
 `
 
-// Install writes the pre-commit, pre-push, post-commit, post-merge, post-checkout and post-rewrite hooks that run this gate.
+// Install writes the pre-commit, commit-msg, pre-push, post-commit, post-merge, post-checkout and
+// post-rewrite hooks that run this gate.
 func Install(gitDir string) ([]string, error) {
 	dir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	var written []string
-	for _, name := range []string{"pre-commit", "pre-push", "post-commit", "post-merge", "post-checkout", "post-rewrite"} {
+	for _, name := range []string{"pre-commit", "commit-msg", "pre-push", "post-commit", "post-merge", "post-checkout", "post-rewrite"} {
 		path := filepath.Join(dir, name)
 		if err := os.WriteFile(path, []byte(hookScript), 0o755); err != nil {
 			return nil, err

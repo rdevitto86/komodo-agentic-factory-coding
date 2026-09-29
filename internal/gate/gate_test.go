@@ -63,7 +63,7 @@ func TestInstallWritesEveryHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(written) != 6 {
+	if len(written) != 7 {
 		t.Fatalf("written = %v", written)
 	}
 	for _, path := range written {
@@ -1077,5 +1077,91 @@ func TestPrePushHookFallsBackWithoutStdin(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "gate --fuzz 10s") || strings.Contains(string(out), "--from") {
 		t.Fatalf("out = %q, want the plain fuzz lane without a range", out)
+	}
+}
+
+// installedRepo inits a repo on branch, installs the real hooks, and drops a binary that lets a
+// commit clear the rest of the gate trivially, so a test only proves the hook itself.
+func installedRepo(t *testing.T, branch string) string {
+	t.Helper()
+	root := t.TempDir()
+	cmd := exec.Command("git", "init", "-q", "-b", branch)
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if _, err := Install(filepath.Join(root, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	target := LocalTarget()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeBinary(t, binDir, target.Name, "#!/bin/sh\nexit 0\n")
+	return root
+}
+
+// commitIn runs git commit in root with a throwaway identity, returning its combined output.
+func commitIn(t *testing.T, root string, args ...string) (string, error) {
+	t.Helper()
+	full := append([]string{"-c", "user.email=a@example.com", "-c", "user.name=a", "commit"}, args...)
+	cmd := exec.Command("git", full...)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// TestPreCommitHookRefusesACriticalRef proves a commit on main is refused before the gate itself runs.
+func TestPreCommitHookRefusesACriticalRef(t *testing.T) {
+	root := installedRepo(t, "main")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "feat: x")
+	if err == nil {
+		t.Fatal("want a refusal, got none")
+	}
+	if !strings.Contains(out, "create a branch first") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// TestPreCommitHookRefusesANonConventionalBranch proves a branch such as wip is refused.
+func TestPreCommitHookRefusesANonConventionalBranch(t *testing.T) {
+	root := installedRepo(t, "wip")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "feat: x")
+	if err == nil {
+		t.Fatal("want a refusal, got none")
+	}
+	if !strings.Contains(out, "<type>/<kebab-name>") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// TestPreCommitHookAllowsAConventionalBranch proves a branch such as fix/x commits cleanly.
+func TestPreCommitHookAllowsAConventionalBranch(t *testing.T) {
+	root := installedRepo(t, "fix/x")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "fix: x")
+	if err != nil {
+		t.Fatalf("err = %v, out = %q", err, out)
+	}
+}
+
+// TestPreCommitHookAllowsTheEpicBranch proves an epic branch, feat plus a version, stays allowed.
+func TestPreCommitHookAllowsTheEpicBranch(t *testing.T) {
+	root := installedRepo(t, "feat/1.0.0-beta.3")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "feat: x")
+	if err != nil {
+		t.Fatalf("err = %v, out = %q", err, out)
+	}
+}
+
+// TestCommitMsgHookRefusesATrailer proves a co-authored-by trailer is refused, whatever wrote it.
+func TestCommitMsgHookRefusesATrailer(t *testing.T) {
+	root := installedRepo(t, "fix/x")
+	out, err := commitIn(t, root, "--allow-empty", "-m", "feat: x\n\nCo-authored-by: A <a@b.c>")
+	if err == nil {
+		t.Fatal("want a refusal, got none")
+	}
+	if !strings.Contains(out, "trailer") {
+		t.Fatalf("out = %q", out)
 	}
 }
