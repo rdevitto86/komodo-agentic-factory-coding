@@ -480,9 +480,16 @@ func PushedFuzzTargets(paths []string) []FuzzTarget {
 	return touched
 }
 
-// PushChecks scopes a pre-push gate to what the push touched: build only when a .go file, go.mod or go.sum
-// changed, and a fuzz check only for a package FuzzTargets names that the push changed.
+// PushChecks scopes a gate to what a push touched: build only when a .go file, go.mod or go.sum changed,
+// and a fuzz check only for a touched package. With no to it runs every build check and fuzz target.
 func PushChecks(root, from, to, fuzzDuration string, build []Check) ([]Check, error) {
+	if to == "" {
+		checks := append([]Check{}, build...)
+		if fuzzDuration != "" {
+			checks = append(checks, FuzzChecksFor(root, fuzzDuration, FuzzTargets)...)
+		}
+		return checks, nil
+	}
 	paths, err := PushedFiles(root, from, to)
 	if err != nil {
 		return build, err

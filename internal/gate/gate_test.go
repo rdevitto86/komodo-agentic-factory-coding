@@ -1008,6 +1008,18 @@ func TestPushChecksFuzzesNothingWithoutATouchedFuzzPackage(t *testing.T) {
 	}
 }
 
+func TestPushChecksRunsEverythingWithoutATo(t *testing.T) {
+	root, from, _ := pushRepo(t, "docs/notes.md", "notes\n")
+	build := []Check{{Name: "go test"}}
+	checks, err := PushChecks(root, from, "", "1s", build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1+len(FuzzTargets) || checks[0].Name != "go test" {
+		t.Fatalf("checks = %v, want go test plus every fuzz target", checks)
+	}
+}
+
 // toolkitCheckoutFor builds a git repo whose cmd/komodo/main.go marks it as the toolkit's own checkout,
 // so the hook script gates it with "go run ./cmd/komodo" instead of a built binary.
 func toolkitCheckoutFor(t *testing.T) string {
