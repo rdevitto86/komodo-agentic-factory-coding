@@ -48,6 +48,8 @@ type Profile struct {
 	CriticalRefs     []string               `json:"critical_refs,omitempty"`
 	Utilization      float64                `json:"utilization"`
 	ResetsAt         time.Time              `json:"resets_at,omitempty"`
+	ExtraUsage       bool                   `json:"extra_usage"`
+	BillingType      string                 `json:"billing_type,omitempty"`
 	Why              string                 `json:"why"`
 	Mode             string                 `json:"mode"`
 	Roles            map[string]RoleProfile `json:"roles"`
@@ -170,6 +172,8 @@ func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profil
 			plan = usage.Plan
 			profile.Utilization = usage.FiveHour
 			profile.ResetsAt = usage.ResetsAt
+			profile.ExtraUsage = usage.ExtraUsage
+			profile.BillingType = usage.BillingType
 		}
 	}
 	profile = planOverlay(profile, plan)
@@ -196,6 +200,9 @@ func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profil
 	}
 	if plan == "" {
 		profile.Why += "; no plan probe, so the conservative overlay applies"
+	}
+	if profile.ExtraUsage {
+		profile.Why += "; extra usage is enabled, so a spent window still bills instead of pausing"
 	}
 	return withMode(root, profile)
 }
@@ -279,8 +286,9 @@ func lower(current, proposed int) int {
 	return current
 }
 
-// Bound reports whether a usage window paces the plan; API billing runs unbound, to a spend budget instead.
-func (p Profile) Bound() bool { return p.Plan != apiPlan }
+// Bound reports whether a usage window paces the plan; API billing and extra usage run unbound,
+// to a spend budget instead.
+func (p Profile) Bound() bool { return p.Plan != apiPlan && !p.ExtraUsage }
 
 // Paused reports whether a bound plan's window is too far spent to start another wave.
 func (p Profile) Paused() bool { return p.Bound() && p.Utilization >= p.PauseAt }

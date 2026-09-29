@@ -264,6 +264,20 @@ func TestAPIBillingRunsUnboundPastASpentWindow(t *testing.T) {
 	}
 }
 
+func TestExtraUsageCarriesTheBillingTypeAndRunsUnbound(t *testing.T) {
+	host := fakeHost("h", true, mount.Usage{Plan: "max_5x", ExtraUsage: true, BillingType: "metered"}, true)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
+	if !got.ExtraUsage || got.BillingType != "metered" {
+		t.Fatalf("profile = %+v; extra usage and billing type did not carry over", got)
+	}
+	if got.Bound() {
+		t.Fatal("extra usage must run unbound past a spent window")
+	}
+	if !strings.Contains(got.Why, "extra usage is enabled") {
+		t.Fatalf("why = %q", got.Why)
+	}
+}
+
 // TestWhyNamesWhereReviewLandsWhenTheOverlayOptsTheReviewerIn checks the mount's reviewer reason reaches the profile.
 func TestWhyNamesWhereReviewLandsWhenTheOverlayOptsTheReviewerIn(t *testing.T) {
 	home := t.TempDir()

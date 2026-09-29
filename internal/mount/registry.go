@@ -331,9 +331,11 @@ func (t Tiers) FirstRemote() (Machine, bool) {
 
 // Usage is what a host's own config says about the account's plan and window.
 type Usage struct {
-	Plan     string    `json:"plan"`
-	FiveHour float64   `json:"five_hour"`
-	ResetsAt time.Time `json:"resets_at"`
+	Plan        string    `json:"plan"`
+	FiveHour    float64   `json:"five_hour"`
+	ResetsAt    time.Time `json:"resets_at"`
+	ExtraUsage  bool      `json:"extra_usage"`
+	BillingType string    `json:"billing_type"`
 }
 
 // GuardTools is what the guard needs from one mount: its tool names, extra paths, and denial encoding.

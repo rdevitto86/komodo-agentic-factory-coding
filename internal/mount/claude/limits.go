@@ -37,11 +37,13 @@ type account struct {
 		UserRateLimitTier         string `json:"userRateLimitTier"`
 		SeatTier                  string `json:"seatTier"`
 		SubscriptionType          string `json:"subscriptionType"`
+		HasExtraUsageEnabled      bool   `json:"hasExtraUsageEnabled"`
+		BillingType               string `json:"billingType"`
 	} `json:"oauthAccount"`
 }
 
-// Probe reads the plan from this host's config file, never a usage window; only a running
-// session's rate_limit_event carries FiveHour and ResetsAt.
+// Probe reads the plan, the extra-usage switch and the billing type from this host's config file,
+// never a usage window; only a running session's rate_limit_event carries FiveHour and ResetsAt.
 func Probe() (mount.Usage, bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -55,7 +57,11 @@ func Probe() (mount.Usage, bool) {
 	if json.Unmarshal(data, &parsed) != nil {
 		return mount.Usage{}, false
 	}
-	usage := mount.Usage{Plan: planName(parsed)}
+	usage := mount.Usage{
+		Plan:        planName(parsed),
+		ExtraUsage:  parsed.OAuth.HasExtraUsageEnabled,
+		BillingType: parsed.OAuth.BillingType,
+	}
 	if usage.Plan == "" {
 		return usage, false
 	}
