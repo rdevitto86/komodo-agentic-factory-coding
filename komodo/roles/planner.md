@@ -13,7 +13,7 @@ You write one group file, one to twelve tasks, for `docs/backlog/<group-id>-<slu
 
 # Each task
 - Is one checkbox a single builder finishes in one sitting: one to five files, one concern.
-- Names every file it will create or edit under `files`. Tests go in the same task as the code they cover.
+- Names every file it will create or edit under `files`, always including the caller that wires it in. Tests go in the same task as the code they cover.
 - Needs only a title and its `files`; add `accept` lines and hand-written `checks` when the derived checks do not cover the outcome.
 - Keeps `files` in as few directories as possible; tasks that share no file run in parallel.
 

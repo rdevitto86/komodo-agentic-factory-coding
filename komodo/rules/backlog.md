@@ -32,9 +32,9 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
 - **`epic`** is the `EPIC-` id the group's file carries. The PR of an epic's last open group deletes every group file that shares its epic; a group with no epic deletes its own file.
 - **`base`** is the branch a group cuts from. Empty by default: a group then cuts from its epic's branch, `feat/<version>`, falling back to the remote's default branch while that epic branch is not yet cut.
 - **`depends_on`** on a group is the groups whose unmerged branch this one's PR stacks on instead of its epic's. When a stacked parent merges, the child rebases onto the new base.
-- **`files`** lists every path a task will create or edit, including the caller that wires new code in, such as the command dispatch or the renderer; scope refuses any other. A task needs only a title and its `files`. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
+- **`files`** lists every path a task will create or edit, always including the caller that wires new code in — the command dispatch, the conductor, or a hook — not only the package it lives in; scope refuses any other. A task needs only a title and its `files`. Tasks that share no file run in parallel; a shared file, or a directory holding another task's path, serializes.
 - **`accept`** is an optional line the correctness lens checks alongside the PRD, never a shell command.
-- **`done_when`** are the shell commands whose zero exit proves the task done; a `READY` agent task requires at least one. Never prose.
+- **`done_when`** are the shell commands whose zero exit proves the outcome through the real command, not only a unit test of the changed package; a `READY` agent task requires at least one. Never prose.
 - **`owner`** is `agent` unless a task names `human`; a person's task stays in its own group instead of a whole group filed as `BLOCKED`.
 - **`context`** lists paths, each with an optional `#anchor`, a builder reads before starting this task.
 - **`depends_on`** on a task is the task ids that must be done before this one starts, narrower than the group's own `depends_on`.

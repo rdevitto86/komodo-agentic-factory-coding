@@ -448,6 +448,64 @@ func TestSlugMatchesGitHubOnANumberedHeading(t *testing.T) {
 	}
 }
 
+func TestNotesFlagsAReadyTaskWhoseDoneWhenOnlyTestsItsOwnPackage(t *testing.T) {
+	text := "### [TG-80.1] No caller\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-80.1.1] Task with no caller [P: C] [READY]\n```yaml\n" +
+		"files: [internal/widget/widget.go, internal/widget/widget_test.go]\n" +
+		"done_when: [\"go test ./internal/widget/...\"]\n```\n"
+	notes := Notes(Parse(text))
+	found := false
+	for _, note := range notes {
+		if strings.Contains(note, "TSK-80.1.1") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a note naming TSK-80.1.1; got %v", notes)
+	}
+}
+
+func TestNotesAcceptsAReadyTaskWhoseFilesNameACaller(t *testing.T) {
+	text := "### [TG-81.1] Has a caller\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-81.1.1] Task with a caller [P: C] [READY]\n```yaml\n" +
+		"files: [internal/widget/widget.go, cmd/komodo/widget.go]\n" +
+		"done_when: [\"go test ./internal/widget/...\"]\n```\n"
+	notes := Notes(Parse(text))
+	for _, note := range notes {
+		if strings.Contains(note, "TSK-81.1.1") {
+			t.Fatalf("a task naming a caller in files should not be noted; got %v", notes)
+		}
+	}
+}
+
+func TestNotesGroupFileFlagsAReadyTaskWhoseDoneWhenOnlyTestsItsOwnPackage(t *testing.T) {
+	file := ParseGroupFile("## [TG-82.1] No caller [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-82\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-82.1.1** A task with no caller\n  - files: `internal/widget/widget.go`, `internal/widget/widget_test.go`\n" +
+		"  - done_when: `go test ./internal/widget/...`\n")
+	notes := NotesGroupFile(file)
+	found := false
+	for _, note := range notes {
+		if strings.Contains(note, "TSK-82.1.1") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a note naming TSK-82.1.1; got %v", notes)
+	}
+}
+
+func TestNotesGroupFileAcceptsAReadyTaskWhoseDoneWhenRunsTheRealCommand(t *testing.T) {
+	file := ParseGroupFile("## [TG-83.1] Has a caller [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-83\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-83.1.1** A task proved by the real command\n  - files: `internal/widget/widget.go`, `internal/widget/widget_test.go`\n" +
+		"  - done_when: `go test ./internal/widget/...`, `go run ./cmd/komodo doctor`\n")
+	notes := NotesGroupFile(file)
+	for _, note := range notes {
+		if strings.Contains(note, "TSK-83.1.1") {
+			t.Fatalf("a task proved by the real command should not be noted; got %v", notes)
+		}
+	}
+}
+
 func TestLintAcceptsAStableVersionWhoseEpicHadNoRc(t *testing.T) {
 	text := "## [EPIC-57] Beta phase Ships as `1.0.0-beta.2`\n\n" +
 		"### [TG-57.1] Beta group\n```yaml\ntype: feat\nversion: 1.0.0-beta.2\n```\n\n" +
