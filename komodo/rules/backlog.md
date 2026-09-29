@@ -32,6 +32,17 @@ depends_on: []       # groups whose unmerged branch this one's PR stacks on inst
 - **`done_when`** are the shell commands whose zero exit proves the task done; a `READY` agent task requires at least one. Never prose.
 - A group holds 1 to 12 tasks; lint refuses a larger one and suggests a split.
 
+## Choosing a version
+
+A group's `version:` is the newest tag with one segment raised, never a bare guess.
+
+- **Segment.** A breaking change bumps major; a feat bumps minor; anything else, fix included, bumps patch. Bump above the newest tag, not the epic's last version.
+- **Phase.** Cut straight to `x.y.z` only when every group in the epic is `READY` and proven by its checks. Use `x.y.z-alpha.n` while the shape can still move, `x.y.z-beta.n` once feature-complete and only fixes land, and `x.y.z-rc.n` only when the owner asks.
+- **Prerelease order.** A prerelease sorts before its release: `1.43.56-alpha.1` precedes `1.43.56`, so it is a valid `version:` only while `1.43.56` is untagged.
+- **Raising a prerelease line.** A prerelease keeps its `x.y.z` and raises `n` for the next round; it never jumps to a new `x.y.z` until the stable cut.
+
+The README's Versions section links here rather than copying it.
+
 ### Adding a task
 Append a checkbox in the shape above, at the end of its group file, with the next free `TSK-` suffix. Or run:
 ```

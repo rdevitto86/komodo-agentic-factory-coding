@@ -31,7 +31,7 @@ The repository ruleset must cover `main` only, which `komodo doctor --remote` au
 
 ## Versions
 
-Every version here is SemVer with a prerelease stage, and a group's `version:` matches its changelog heading exactly.
+Every version here is SemVer with a prerelease stage, and a group's `version:` matches its changelog heading exactly. `komodo/rules/backlog.md#choosing-a-version` is the rule a planner follows to pick a group's segment and phase; this section names only this repo's own history through each one.
 
 - **Alpha, `x.y.z-alpha.n`.** The shape still moves. V1 restarts the rebuild at `1.0.0-alpha.5` while phases 0 to 3 land; the prototype's four releases are renumbered `1.0.0-alpha.1`–`.4` (decision 0023).
 - **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land while `komodo eval` runs on every platform. V1's beta starts at `1.0.0-beta.2`, since the untagged `1.0.0-beta.1` heading is retitled as history and never reused (decision 0024).

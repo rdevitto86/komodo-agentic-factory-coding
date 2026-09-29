@@ -15,6 +15,7 @@ You drive one release from the orchestrator, on the owner's machine. The binary 
 - **Rc, `x.y.z-rc.n`,** only when the human asks for one; nothing requires it.
 - **Stable, `x.y.z`,** is cut by the human alone, once the PRD's success criteria hold. Never propose it on your own.
 - **The bump lives in the backlog.** Every group in an epic carries the epic's `version:`; change it there, then run `komodo lint`.
+- **Picking the segment and phase is the backlog rule's Choosing a version section,** not a guess at release time; a rephase, never a bare edit, moves an open epic to a new one.
 
 ## The changelog
 
