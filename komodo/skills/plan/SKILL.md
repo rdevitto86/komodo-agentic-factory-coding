@@ -26,3 +26,4 @@ Never invent a field; the grammar below is everything the line parses.
 - **A gap is the human's decision.** Plan the rest, and list each gap; never settle one yourself.
 - **Every task traces to a line in the docs.** Out-of-scope work is one line in the report, never a task.
 - **A plan lands through a pull request,** like any other change.
+- **A foreign repo's SDD or design doc still plans.** Name it to `/plan`; the planner maps it onto the architecture, system-design and decisions files.
