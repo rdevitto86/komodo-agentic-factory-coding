@@ -3,7 +3,6 @@ package run
 import (
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	"komodo/internal/ledger"
@@ -28,29 +27,17 @@ const (
 // usageWindow reads the plan and its usage window from the plan probe; a test swaps it.
 var usageWindow = profile.Select
 
-// liveLimit is the freshest rate_limit_event a running session reported, pace's only live source.
-var (
-	liveLimitMu sync.Mutex
-	liveLimit   *mount.RateLimit
-)
-
 // ObserveRateLimit records a session's live rate_limit_event, so the next wait paces from it
-// instead of the plan probe's stale or empty usage window.
+// instead of the plan probe's stale or empty usage window; the conductor calls this as it streams.
 func ObserveRateLimit(limit mount.RateLimit) {
-	liveLimitMu.Lock()
-	defer liveLimitMu.Unlock()
-	stored := limit
-	liveLimit = &stored
+	mount.ObserveRateLimit(limit)
 }
 
 // currentWindow is the plan probe's profile, with any live rate-limit event layered over its
 // usage window and reset time.
 func currentWindow(root string) profile.Profile {
 	selected := usageWindow(root)
-	liveLimitMu.Lock()
-	limit := liveLimit
-	liveLimitMu.Unlock()
-	if limit != nil {
+	if limit, ok := mount.LatestRateLimit(); ok {
 		selected.Utilization = limit.FiveHour
 		selected.ResetsAt = limit.ResetsAt
 	}

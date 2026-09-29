@@ -43,6 +43,8 @@ type fakeHost struct {
 	waiting  int
 	release  chan struct{}
 	gatherMu sync.Mutex
+	// rateLimit, when set, rides the builder's next streamed event, as a session's own rate_limit_event would.
+	rateLimit *mount.RateLimit
 }
 
 // gatherTimeout bounds how long a reviewer stream waits for the rest of its round to open.
@@ -129,7 +131,7 @@ func (f *fakeHost) Stream(handle mount.Handle) (<-chan mount.Event, error) {
 		}
 	}
 	out := make(chan mount.Event, 1)
-	out <- mount.Event{Turns: 2, Usage: mount.TaskUsage{TokensIn: 100, TokensOut: 20, Turns: 2}}
+	out <- mount.Event{Turns: 2, Usage: mount.TaskUsage{TokensIn: 100, TokensOut: 20, Turns: 2}, RateLimit: f.rateLimit}
 	close(out)
 	return out, nil
 }
@@ -336,6 +338,24 @@ func TestDriveRunsAGroupFromReadyToShipped(t *testing.T) {
 	}
 	if len(final.Sessions) != 2 {
 		t.Fatalf("sessions = %v, want the builder's and the reviewer's", final.Sessions)
+	}
+}
+
+func TestDriveFeedsASessionsRateLimitEventToPacing(t *testing.T) {
+	mount.ClearRateLimit()
+	t.Cleanup(mount.ClearRateLimit)
+	reset := time.Now().Add(time.Hour).Truncate(time.Second)
+	r := newRig(t)
+	r.host.rateLimit = &mount.RateLimit{FiveHour: 0.95, ResetsAt: reset}
+	if _, err := r.drive(t); err != nil {
+		t.Fatalf("drive = %v", err)
+	}
+	limit, ok := mount.LatestRateLimit()
+	if !ok {
+		t.Fatal("the driver's stream never fed pacing a rate_limit_event")
+	}
+	if limit.FiveHour != 0.95 || !limit.ResetsAt.Equal(reset) {
+		t.Fatalf("limit = %+v", limit)
 	}
 }
 

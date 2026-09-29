@@ -75,7 +75,7 @@ func TestAwaitWindow(t *testing.T) {
 }
 
 func TestALiveRateLimitEventOverridesTheProbesEmptyWindow(t *testing.T) {
-	t.Cleanup(func() { liveLimit = nil })
+	t.Cleanup(mount.ClearRateLimit)
 	saved := usageWindow
 	t.Cleanup(func() { usageWindow = saved })
 	// The plan probe carries no usage window on the current CLI; only the plan comes from it.
