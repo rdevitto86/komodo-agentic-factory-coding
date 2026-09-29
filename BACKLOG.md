@@ -4289,7 +4289,7 @@ type: fix
 ## [EPIC-10] Beta fixes
 *Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
 
-* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L36, from the runner-cli, both SDK and shared-infra repos.
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L40, from the runner-cli, both SDK and shared-infra repos.
 
 ### [TG-10.1] One backlog grammar
 ```yaml
@@ -4298,7 +4298,7 @@ version: 1.0.0-beta.3
 ```
 * **Why:** a repo sees 47 groups through `komodo lint` and 1 through `komodo backlog`, the shipped rule disagrees with lint about `done_when`, a legacy BACKLOG.md outranks the group files, and shipped rules and skills still send agents to BACKLOG.md (L1, L2, L14, L17, L18, L27, L28, L29).
 
-#### [TSK-10.1.1] A docs/backlog group-file queue loads into the same Backlog the line runs on [P: C] [REFINEMENT]
+#### [TSK-10.1.1] A docs/backlog group-file queue loads into the same Backlog the line runs on [P: C] [DONE]
 ```yaml
 files: [internal/backlog/load.go, internal/backlog/load_test.go, internal/backlog/groupfile.go]
 done_when:
@@ -4324,7 +4324,7 @@ context:
 type: docs
 ```
 
-#### [TSK-10.1.3] The line's commands load the backlog through Load [P: C] [REFINEMENT]
+#### [TSK-10.1.3] The line's commands load the backlog through Load [P: C] [DONE]
 ```yaml
 files: [internal/line/next.go, internal/line/step.go, internal/line/brief.go, internal/line/close.go, internal/line/cut.go, internal/line/wave.go, internal/line/diff.go, internal/line/worktree.go, internal/line/collide.go, internal/line/status.go, internal/line/ship.go]
 done_when:
@@ -4333,7 +4333,7 @@ depends_on: [TSK-10.1.1]
 type: fix
 ```
 
-#### [TSK-10.1.4] Run, conductor, hooks, eval and the CLI load the backlog through Load [P: C] [REFINEMENT]
+#### [TSK-10.1.4] Run, conductor, hooks, eval and the CLI load the backlog through Load [P: C] [DONE]
 ```yaml
 files: [internal/run/run.go, internal/run/drive.go, internal/conductor/integrate.go, internal/conductor/abandon.go, internal/conductor/drive.go, internal/hooks/taskchecks.go, internal/hooks/evidence.go, internal/eval/run.go, internal/doctor/leftovers.go, internal/doctor/epics.go, cmd/komodo/line.go, cmd/komodo/backlog.go, cmd/komodo/main.go, templates/project/AGENTS.md.tmpl]
 done_when:
@@ -4357,7 +4357,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.1.6] The group-file grammar carries a task's owner, context, depends_on, priority and status [P: H] [REFINEMENT]
+#### [TSK-10.1.6] The group-file grammar carries a task's owner, context, depends_on, priority and status [P: H] [DONE]
 ```yaml
 files: [komodo/rules/backlog.md, internal/backlog/groupfile.go, internal/backlog/groupfile_test.go]
 done_when:
@@ -4403,7 +4403,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.1.10] The Claude mount removes the skills it no longer renders [P: H] [REFINEMENT]
+#### [TSK-10.1.10] The Claude mount removes the skills it no longer renders [P: H] [DONE]
 ```yaml
 files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
 done_when:
@@ -4425,7 +4425,7 @@ depends_on: [TG-10.1]
 ```
 * **Why:** a repo with its own backlog and docs is converted by hand today, and the first gate refuses it (L3, L4, L5, L12, L15, L16, L19, L22).
 
-#### [TSK-10.2.1] `komodo init` reports how each kept file differs from its template [P: M] [REFINEMENT]
+#### [TSK-10.2.1] `komodo init` reports how each kept file differs from its template [P: M] [DONE]
 ```yaml
 files: [cmd/komodo/init.go, cmd/komodo/init_test.go]
 done_when:
@@ -4474,7 +4474,7 @@ context:
 type: feat
 ```
 
-#### [TSK-10.2.5] Detect reads the package manager and the scripts package.json declares [P: C] [REFINEMENT]
+#### [TSK-10.2.5] Detect reads the package manager and the scripts package.json declares [P: C] [DONE]
 ```yaml
 files: [internal/detect/detect.go, internal/detect/detect_test.go]
 done_when:
@@ -4485,7 +4485,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.2.6] An adopted repo's existing comments do not fail its first commit [P: C] [REFINEMENT]
+#### [TSK-10.2.6] An adopted repo's existing comments do not fail its first commit [P: C] [DONE]
 ```yaml
 files: [internal/comments/lint.go, internal/comments/comments_test.go, internal/gate/gate.go, internal/gate/gate_test.go]
 done_when:
@@ -4497,7 +4497,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.2.7] Doctor names old-harness leftovers and a gitignored AGENTS.md [P: M] [REFINEMENT]
+#### [TSK-10.2.7] Doctor names old-harness leftovers and a gitignored AGENTS.md [P: M] [DONE]
 ```yaml
 files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go, internal/doctor/doctor.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
 done_when:
@@ -4509,7 +4509,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.2.8] The install gitignores every file it seeds [P: M] [REFINEMENT]
+#### [TSK-10.2.8] The install gitignores every file it seeds [P: M] [DONE]
 ```yaml
 files: [cmd/komodo/host.go, cmd/komodo/host_test.go]
 done_when:
@@ -4539,7 +4539,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.3.2] The guard protects every protected ref, not only main and master [P: C] [REFINEMENT]
+#### [TSK-10.3.2] The guard protects every protected ref, not only main and master [P: C] [DONE]
 ```yaml
 files: [komodo/policy.json, internal/guard/policy_test.go]
 done_when:
@@ -4550,7 +4550,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.3.3] Doctor fails when a `.github/workflows/` file exists [P: M] [REFINEMENT]
+#### [TSK-10.3.3] Doctor fails when a `.github/workflows/` file exists [P: M] [DONE]
 ```yaml
 files: [internal/doctor/workflows.go, internal/doctor/workflows_test.go, internal/doctor/doctor.go]
 done_when:
@@ -4561,7 +4561,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.3.4] A push that touches no code skips tests and fuzzing [P: M] [REFINEMENT]
+#### [TSK-10.3.4] A push that touches no code skips tests and fuzzing [P: M] [DONE]
 ```yaml
 files: [internal/gate/gate.go, internal/gate/gate_test.go]
 done_when:
@@ -4572,7 +4572,7 @@ context:
 type: perf
 ```
 
-#### [TSK-10.3.5] The guard allows the write paths a host mount declares [P: C] [REFINEMENT]
+#### [TSK-10.3.5] The guard allows the write paths a host mount declares [P: C] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, internal/guard/paths.go, internal/guard/paths_test.go]
 done_when:
@@ -4591,7 +4591,7 @@ version: 1.0.0-beta.3
 ```
 * **Why:** pacing never pauses, the profile's concurrency and billing view is wrong, and only Claude is paced at all (L9, L10, L11, L25, L26).
 
-#### [TSK-10.4.1] The plan probe reads the usage the current CLI writes [P: C] [REFINEMENT]
+#### [TSK-10.4.1] The plan probe reads the usage the current CLI writes [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/limits.go, internal/mount/claude/limits_test.go, internal/run/pace.go, internal/run/pace_test.go]
 done_when:
@@ -4601,7 +4601,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.4.2] Each host mount owns its concurrency, and the conductor and profile read it [P: H] [REFINEMENT]
+#### [TSK-10.4.2] Each host mount owns its concurrency, and the conductor and profile read it [P: H] [DONE]
 ```yaml
 files: [internal/mount/registry.go, internal/mount/claude/claude.go, internal/mount/codex/codex.go, internal/mount/ollama/ollama.go, internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
 done_when:
@@ -4613,7 +4613,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.4.3] The profile reads extra usage and the billing type [P: M] [REFINEMENT]
+#### [TSK-10.4.3] The profile reads extra usage and the billing type [P: M] [DONE]
 ```yaml
 files: [internal/mount/claude/limits.go, internal/mount/claude/limits_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
 done_when:
@@ -4624,7 +4624,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.4.4] Codex and the local machine pace instead of running unbounded [P: M] [REFINEMENT]
+#### [TSK-10.4.4] Codex and the local machine pace instead of running unbounded [P: M] [DONE]
 ```yaml
 files: [internal/mount/codex/limits.go, internal/mount/codex/codex_test.go, internal/mount/ollama/ollama.go, internal/mount/ollama/ollama_test.go]
 done_when:
@@ -4677,7 +4677,7 @@ version: 1.0.0-beta.3
 ```
 * **Why:** a re-phased epic strands its branch and PRs, and two sessions can work one branch unseen (L20, L21).
 
-#### [TSK-10.6.1] A rephase command moves an open epic to a new version [P: H] [REFINEMENT]
+#### [TSK-10.6.1] A rephase command moves an open epic to a new version [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/rephase.go, cmd/komodo/rephase_test.go, cmd/komodo/main.go, internal/line/rephase.go, internal/line/rephase_test.go, komodo/skills/release/SKILL.md]
 done_when:
@@ -4689,7 +4689,7 @@ context:
 type: feat
 ```
 
-#### [TSK-10.6.2] A session claims its branch, and another session's claim stops a write [P: H] [REFINEMENT]
+#### [TSK-10.6.2] A session claims its branch, and another session's claim stops a write [P: H] [DONE]
 ```yaml
 files: [internal/line/claim.go, internal/line/claim_test.go, internal/guard/policy_test.go, komodo/AGENTS.md]
 done_when:
@@ -4817,7 +4817,7 @@ type: chore
 type: fix
 version: 1.0.0-beta.3
 ```
-* **Why:** the guard judged the orchestrator as a line session and ended its session for spawning isolated builders, a full drain runs a role-less model relay, and a rebuild here swaps the guard under every consumer repo (L31 to L36).
+* **Why:** the guard judged the orchestrator as a line session and ended its session for spawning isolated builders, a full drain runs a role-less model relay, and a rebuild here swaps the guard under every consumer repo (L31 to L40).
 * **Decided:** the guard has a global tier for every session and a line tier only where KOMODO_ROLE is set; the line's one entry is `komodo run`; ad hoc work is the orchestrator's own agents, with no skill.
 
 #### [TSK-10.8.1] The guard splits into a global tier and a line tier [P: C] [DONE]
@@ -4902,6 +4902,53 @@ context:
   - "a commit-msg and pre-commit hook covers the orchestrator, the line and a person alike, with no model"
   - "the guard then keeps only what a git hook cannot see: --no-verify, force push and config writes"
   - "this also refuses a person's commit on a branch such as wip"
+type: fix
+```
+
+#### [TSK-10.8.9] An orchestrator's isolated agent starts on the orchestrator's branch [P: H] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, komodo/skills/run/SKILL.md]
+done_when:
+  - go test ./internal/mount/...
+context:
+  - "L37: every isolated builder's worktree started at main (79a0e2d2), not feat/1.0.0-beta.3; each had to reset by hand"
+  - "assumed: a host hook on worktree creation checks out the spawning session's branch, else the run skill tells a spawn to branch from it"
+type: fix
+```
+
+#### [TSK-10.8.10] A task's done_when proves its outcome through the real command [P: H] [REFINEMENT]
+```yaml
+files: [komodo/rules/backlog.md, komodo/roles/planner.md, internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+  - go run ./cmd/komodo doctor
+context:
+  - "L38: TSK-10.5.2, 10.2.6, 10.3.4, 10.4.1 and 10.6.2 passed done_when with unit tests while nothing called the new code"
+  - "each time the caller that wires it in (cmd/komodo, the conductor, the hook) was missing from files"
+  - "lint notes a READY task whose done_when is only go test and whose files name no caller outside its package"
+type: fix
+```
+
+#### [TSK-10.8.11] A merge re-renders the host files and rebuilds the binary itself [P: H] [REFINEMENT]
+```yaml
+files: [internal/gate/gate.go, internal/gate/gate_test.go, cmd/komodo/gate.go]
+done_when:
+  - go test ./internal/gate/... ./cmd/komodo/...
+context:
+  - "L39: after a merge that changed a rule or skill, the pre-commit doctor failed on drift in gitignored .claude files no commit can fix, until komodo install ran"
+  - "L40: a merge committed after a conflict skips post-merge, so bin/ went stale; bin/.built-from stamps only from a clean tree, so a rebuild mid-merge could not clear it"
+  - "post-merge, post-checkout and a post-commit on a merge commit re-render the repo's host files and rebuild bin/ when their sources changed"
+type: fix
+```
+
+#### [TSK-10.8.12] A single-target `--no-ship` run drives the conductor, and Headless goes [P: M] [REFINEMENT]
+```yaml
+files: [internal/run/run.go, internal/run/drive.go, internal/run/run_test.go, internal/mount/claude/claude.go, internal/mount/registry.go, internal/eval/run.go]
+done_when:
+  - go test ./internal/run/... ./internal/eval/... ./internal/mount/...
+context:
+  - "TSK-10.8.3 kept a headless model relay for komodo run <group> --no-ship, which eval depends on, since Drive has no stop-before-ship mode"
+  - "Drive gains a no-ship option; launchTarget, Command and Headless go"
 type: fix
 ```
 
