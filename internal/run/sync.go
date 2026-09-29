@@ -73,6 +73,9 @@ func Sync(options SyncOptions) (string, error) {
 	if err := syncConfig(options.Root, options.DryRun, out, suffix); err != nil {
 		return "", err
 	}
+	if err := syncWorktrees(options.Root, line.DefaultBase(options.Root), options.DryRun, out, suffix); err != nil {
+		return "", err
+	}
 	client := options.PR
 	if client == nil {
 		client = pr.New(options.Root)
@@ -81,6 +84,69 @@ func Sync(options SyncOptions) (string, error) {
 		return "", err
 	}
 	return built, nil
+}
+
+// syncWorktrees removes every clean .komodo/wt worktree whose branch has merged into base, then
+// names, never removes, one still on disk that is dirty or whose branch has not merged.
+func syncWorktrees(root, base string, dryRun bool, out io.Writer, suffix string) error {
+	if dryRun {
+		fmt.Fprintf(out, "worktree: skipped in a dry run%s\n", suffix)
+		return nil
+	}
+	done, err := doctor.Prune(root, base)
+	if err != nil {
+		return err
+	}
+	for _, item := range done {
+		fmt.Fprintf(out, "%s%s\n", item, suffix)
+	}
+	left, err := staleWorktrees(root)
+	if err != nil {
+		return err
+	}
+	for _, item := range left {
+		fmt.Fprintf(out, "worktree: %s%s\n", item, suffix)
+	}
+	if len(done) == 0 && len(left) == 0 {
+		fmt.Fprintf(out, "worktree: nothing to remove%s\n", suffix)
+	}
+	return nil
+}
+
+// staleWorktrees names, without touching, each .komodo/wt worktree still on disk, other than an
+// open run's own, that is dirty or whose branch has not merged into its base.
+func staleWorktrees(root string) ([]string, error) {
+	worktrees, err := git.Worktrees(root)
+	if err != nil {
+		return nil, err
+	}
+	running := map[string]bool{}
+	for _, state := range line.OpenRuns(root) {
+		running[state.Branch] = true
+	}
+	base := line.DefaultBase(root)
+	remote := "origin/" + base
+	var named []string
+	for _, worktree := range worktrees {
+		if worktree.Branch == "" || running[worktree.Branch] || !strings.Contains(worktree.Path, filepath.Join(".komodo", "wt")) {
+			continue
+		}
+		if _, err := os.Stat(worktree.Path); err != nil {
+			continue
+		}
+		relPath, err := filepath.Rel(root, worktree.Path)
+		if err != nil {
+			relPath = worktree.Path
+		}
+		if status, err := git.Run(worktree.Path, "status", "--porcelain"); err != nil || status != "" {
+			named = append(named, fmt.Sprintf("%s is dirty, not removed", relPath))
+			continue
+		}
+		if _, err := git.Run(root, "merge-base", "--is-ancestor", worktree.Branch, remote); err != nil {
+			named = append(named, fmt.Sprintf("%s on %s has not merged, not removed", relPath, worktree.Branch))
+		}
+	}
+	return named, nil
 }
 
 // syncCleanup opens one PR per epic whose every group file on origin's default branch has every task
