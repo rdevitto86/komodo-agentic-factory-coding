@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"komodo/internal/backlog"
+	"komodo/internal/mount"
 )
 
 // scheduleGroup is one group of a test backlog: its id, its one task's files, and the groups it depends on.
@@ -40,12 +41,30 @@ func ids(groups []backlog.Group) string {
 	return strings.Join(out, " ")
 }
 
-func TestConcurrencyStartsFromThePlansValues(t *testing.T) {
-	cases := map[string]int{"pro": 1, "max_5x": 2, "max_20x": 4, "api": 4, "unknown": 1, "": 1}
-	for plan, want := range cases {
-		if got := Concurrency(plan); got != want {
-			t.Errorf("Concurrency(%q) = %d, want %d", plan, got, want)
+func TestConcurrencyReadsTheActiveMountsOwnNumbers(t *testing.T) {
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Restore(map[string]mount.Host{})
+	mount.Register(mount.Host{Name: "fake", Concurrency: func(lane string) int {
+		if lane == "big" {
+			return 6
 		}
+		return 1
+	}})
+	if got := Concurrency("big"); got != 6 {
+		t.Errorf("Concurrency(%q) = %d, want 6", "big", got)
+	}
+	if got := Concurrency("small"); got != 1 {
+		t.Errorf("Concurrency(%q) = %d, want 1", "small", got)
+	}
+}
+
+func TestConcurrencyWithNoActiveMountRunsOneLane(t *testing.T) {
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Restore(map[string]mount.Host{})
+	if got := Concurrency("anything"); got != 1 {
+		t.Errorf("Concurrency(%q) = %d, want 1", "anything", got)
 	}
 }
 

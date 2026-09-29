@@ -1,6 +1,9 @@
 package mount
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // Handle names one session a mount is running, which Stream, Result, Stop and Resume use to find it again.
 type Handle string
@@ -30,6 +33,37 @@ type Event struct {
 	Usage     TaskUsage
 	CostUSD   float64
 	RateLimit *RateLimit
+}
+
+// liveRateLimit is the freshest rate_limit_event any session reported, pace's only live source.
+var (
+	liveRateLimitMu sync.Mutex
+	liveRateLimit   *RateLimit
+)
+
+// ObserveRateLimit records a session's live rate_limit_event, the newest one always wins.
+func ObserveRateLimit(limit RateLimit) {
+	liveRateLimitMu.Lock()
+	defer liveRateLimitMu.Unlock()
+	stored := limit
+	liveRateLimit = &stored
+}
+
+// LatestRateLimit is the freshest rate_limit_event a session reported, or false when none arrived yet.
+func LatestRateLimit() (RateLimit, bool) {
+	liveRateLimitMu.Lock()
+	defer liveRateLimitMu.Unlock()
+	if liveRateLimit == nil {
+		return RateLimit{}, false
+	}
+	return *liveRateLimit, true
+}
+
+// ClearRateLimit forgets any observed rate_limit_event, which a test calls to isolate itself.
+func ClearRateLimit() {
+	liveRateLimitMu.Lock()
+	defer liveRateLimitMu.Unlock()
+	liveRateLimit = nil
 }
 
 // Result is a session's final answer: the JSON its role's schema checked.

@@ -452,6 +452,14 @@ cp ".komodo/fake/$1.md" BACKLOG.md 2>/dev/null
 mkdir -p ".komodo/runs/$1" && cp ".komodo/fake/$1.json" ".komodo/runs/$1/ship.json" 2>/dev/null
 exit 0`
 
+// fakeConcurrency is the fake host's own lanes: one by default, four once a test names a busier plan.
+func fakeConcurrency(plan string) int {
+	if plan == "max_20x" {
+		return 4
+	}
+	return 1
+}
+
 // drainRepo builds a remoted repo holding drainText, one local branch per group, and a fake host that plays each group.
 func drainRepo(t *testing.T) string {
 	t.Helper()
@@ -483,6 +491,7 @@ func drainRepo(t *testing.T) string {
 		Headless: func(skill, target string) (string, []string) {
 			return "/bin/sh", []string{"-c", fakeScript, "sh", target}
 		},
+		Concurrency: fakeConcurrency,
 	})
 	return root
 }

@@ -659,17 +659,13 @@ func TestPlanNameFallsDownTheTiers(t *testing.T) {
 }
 
 func TestTheProbeStructReadsNoIdentity(t *testing.T) {
-	body := `{"oauthAccount":{"emailAddress":"a@b.c","accountUuid":"u","organizationRateLimitTier":"default_claude_max_5x"},
-	          "cachedUsageUtilization":{"utilization":{"five_hour":{"utilization":42,"resets_at":"2026-09-22T08:00:00Z"}}}}`
+	body := `{"oauthAccount":{"emailAddress":"a@b.c","accountUuid":"u","organizationRateLimitTier":"default_claude_max_5x"}}`
 	var parsed account
 	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
 		t.Fatal(err)
 	}
 	if planName(parsed) != "max_5x" {
 		t.Fatalf("plan = %q", planName(parsed))
-	}
-	if parsed.Cached.Utilization.FiveHour.Utilization != 42 {
-		t.Fatalf("utilization = %v", parsed.Cached.Utilization.FiveHour.Utilization)
 	}
 	rendered, err := json.Marshal(parsed)
 	if err != nil {
@@ -679,6 +675,20 @@ func TestTheProbeStructReadsNoIdentity(t *testing.T) {
 		if strings.Contains(string(rendered), forbidden) {
 			t.Fatalf("the probe struct carries %q", forbidden)
 		}
+	}
+}
+
+// TestTheProbeIgnoresARemovedUsageField proves a fixture from an older CLI, which still carries
+// cachedUsageUtilization, decodes without error; the field is simply never read.
+func TestTheProbeIgnoresARemovedUsageField(t *testing.T) {
+	body := `{"oauthAccount":{"organizationRateLimitTier":"default_claude_max_5x"},
+	          "cachedUsageUtilization":{"utilization":{"five_hour":{"utilization":42,"resets_at":"2026-09-22T08:00:00Z"}}}}`
+	var parsed account
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if planName(parsed) != "max_5x" {
+		t.Fatalf("plan = %q", planName(parsed))
 	}
 }
 

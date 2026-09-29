@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // clearEnv unsets everything ModelName and BaseURL might read from the process.
@@ -191,6 +193,63 @@ func TestPostFailsWhenThePromptCountShowsTruncation(t *testing.T) {
 	_, err := Post(server.URL, "llama3", brief, []byte(`{}`))
 	if err == nil || !strings.Contains(err.Error(), "truncated") {
 		t.Fatalf("err = %v, want a truncation error", err)
+	}
+}
+
+func TestConcurrencyDefaultsToOneCallAtATime(t *testing.T) {
+	clearEnv(t)
+	if got := Concurrency(); got != 1 {
+		t.Fatalf("Concurrency() = %d, want 1", got)
+	}
+}
+
+func TestConcurrencyReadsTheOverlayRaise(t *testing.T) {
+	clearEnv(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeOverlay(t, home, `{"local_concurrency": 3}`)
+	if got := Concurrency(); got != 3 {
+		t.Fatalf("Concurrency() = %d, want 3", got)
+	}
+}
+
+// stallingOllama answers every /api/chat call after a short stall, tracking the busiest moment.
+func stallingOllama(t *testing.T) (*httptest.Server, *int32) {
+	t.Helper()
+	var inFlight, peak int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		now := atomic.AddInt32(&inFlight, 1)
+		for {
+			seen := atomic.LoadInt32(&peak)
+			if now <= seen || atomic.CompareAndSwapInt32(&peak, seen, now) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		atomic.AddInt32(&inFlight, -1)
+		reply := reply{Message: message{Role: "assistant", Content: `{"result":"DONE"}`}}
+		body, _ := json.Marshal(reply)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body)
+	}))
+	return server, &peak
+}
+
+func TestPostNeverRunsPastConcurrency(t *testing.T) {
+	clearEnv(t)
+	server, peak := stallingOllama(t)
+	defer server.Close()
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			Post(server.URL, "llama3", "a brief", []byte(`{}`))
+		}()
+	}
+	wg.Wait()
+	if got := atomic.LoadInt32(peak); got != 1 {
+		t.Fatalf("busiest moment ran %d calls at once, want 1", got)
 	}
 }
 

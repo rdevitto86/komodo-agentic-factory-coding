@@ -25,6 +25,8 @@ type Host struct {
 	Installed   func(root string) bool
 	Tiers       func(plan string, ollama bool) Tiers
 	Probe       func() (Usage, bool)
+	// Concurrency is how many groups or tasks the named plan runs at once; nil defers to a caller's own default.
+	Concurrency func(plan string) int
 	// LoggedIn reports whether the host CLI holds a login, by subscription or key; nil skips the check.
 	LoggedIn   func() (bool, error)
 	Usage      func(root, task string, since, until time.Time) (TaskUsage, bool)
@@ -83,6 +85,16 @@ func Active() []Host {
 		}
 	}
 	return out
+}
+
+// ConcurrencyFor is the named plan's lanes, from the first active mount that owns a Concurrency func.
+func ConcurrencyFor(plan string) int {
+	for _, host := range Active() {
+		if host.Concurrency != nil {
+			return host.Concurrency(plan)
+		}
+	}
+	return 1
 }
 
 // Snapshot copies the registry, so a test can restore it after registering a fake host.
@@ -332,9 +344,11 @@ func (t Tiers) FirstRemote() (Machine, bool) {
 
 // Usage is what a host's own config says about the account's plan and window.
 type Usage struct {
-	Plan     string    `json:"plan"`
-	FiveHour float64   `json:"five_hour"`
-	ResetsAt time.Time `json:"resets_at"`
+	Plan        string    `json:"plan"`
+	FiveHour    float64   `json:"five_hour"`
+	ResetsAt    time.Time `json:"resets_at"`
+	ExtraUsage  bool      `json:"extra_usage"`
+	BillingType string    `json:"billing_type"`
 }
 
 // GuardTools is what the guard needs from one mount: its tool names, extra paths, and denial encoding.
@@ -408,6 +422,7 @@ type Overlay struct {
 	LocalWindow         int               `json:"local_window"`
 	LocalReviewer       bool              `json:"local_reviewer"`
 	LocalReviewerRecall float64           `json:"local_reviewer_recall"`
+	LocalConcurrency    int               `json:"local_concurrency"`
 	Models              map[string]string `json:"models"`
 	// Sandbox runs every headless shell command in the host's OS sandbox, confined to the worktree and temp.
 	Sandbox bool `json:"sandbox"`

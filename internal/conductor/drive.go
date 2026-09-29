@@ -659,6 +659,9 @@ func (d *Driver) drain(
 			entry.TokensIn += event.Usage.TokensIn
 			entry.TokensOut += event.Usage.TokensOut
 			entry.TokensCached += event.Usage.TokensCached
+			if event.RateLimit != nil {
+				mount.ObserveRateLimit(*event.RateLimit)
+			}
 		}
 	}
 	result, err := d.Host.Result(handle)

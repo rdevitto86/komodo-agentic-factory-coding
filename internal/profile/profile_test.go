@@ -22,6 +22,18 @@ func fakeHost(name string, installed bool, usage mount.Usage, probed bool) mount
 		HybridName: hybrid,
 		Installed:  func(string) bool { return installed },
 		Probe:      func() (mount.Usage, bool) { return usage, probed },
+		Concurrency: func(plan string) int {
+			switch plan {
+			case "pro":
+				return 1
+			case "max_5x":
+				return 4
+			case "max_20x":
+				return 6
+			default:
+				return 2
+			}
+		},
 		Tiers: func(plan string, ollama bool) mount.Tiers {
 			tiers := mount.Tiers{
 				Light:    mount.Machine{Provider: name, Model: "small"},
@@ -249,6 +261,20 @@ func TestAPIBillingRunsUnboundPastASpentWindow(t *testing.T) {
 	subscription := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
 	if !subscription.Bound() {
 		t.Fatal("a subscription plan must be bound to its window")
+	}
+}
+
+func TestExtraUsageCarriesTheBillingTypeAndRunsUnbound(t *testing.T) {
+	host := fakeHost("h", true, mount.Usage{Plan: "max_5x", ExtraUsage: true, BillingType: "metered"}, true)
+	got := SelectWith(t.TempDir(), []mount.Host{host}, false, false)
+	if !got.ExtraUsage || got.BillingType != "metered" {
+		t.Fatalf("profile = %+v; extra usage and billing type did not carry over", got)
+	}
+	if got.Bound() {
+		t.Fatal("extra usage must run unbound past a spent window")
+	}
+	if !strings.Contains(got.Why, "extra usage is enabled") {
+		t.Fatalf("why = %q", got.Why)
 	}
 }
 

@@ -2,18 +2,13 @@ package conductor
 
 import (
 	"komodo/internal/backlog"
+	"komodo/internal/mount"
 	"komodo/internal/plan"
 )
 
-// concurrency is how many groups each plan runs at once, as starting values.
-var concurrency = map[string]int{"pro": 1, "max_5x": 2, "max_20x": 4, "api": 4}
-
-// Concurrency is how many groups the plan runs at once; a plan it does not know runs one.
+// Concurrency is how many groups the plan runs at once, from the active mount's own numbers.
 func Concurrency(planName string) int {
-	if lanes, ok := concurrency[planName]; ok {
-		return lanes
-	}
-	return 1
+	return mount.ConcurrencyFor(planName)
 }
 
 // Startable is the pending groups, in order, that may start beside the running ones, up to capacity.

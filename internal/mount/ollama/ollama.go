@@ -84,6 +84,40 @@ func Fits(chars int) bool {
 	return chars/4+1024 <= Window()
 }
 
+// defaultConcurrency is how many calls to the local machine run at once with no overlay choice.
+const defaultConcurrency = 1
+
+// Concurrency is how many calls to the local machine run at once: one, unless the overlay raises it.
+func Concurrency() int {
+	if raised := mount.LoadOverlay().LocalConcurrency; raised > 0 {
+		return raised
+	}
+	return defaultConcurrency
+}
+
+// lane gates concurrent Post calls against Concurrency's current count.
+var (
+	laneMu   sync.Mutex
+	laneCond = sync.NewCond(&laneMu)
+	laneUsed int
+)
+
+// acquireLane blocks until fewer than Concurrency calls are in flight, then returns the func that frees it.
+func acquireLane() func() {
+	laneMu.Lock()
+	for laneUsed >= Concurrency() {
+		laneCond.Wait()
+	}
+	laneUsed++
+	laneMu.Unlock()
+	return func() {
+		laneMu.Lock()
+		laneUsed--
+		laneCond.Signal()
+		laneMu.Unlock()
+	}
+}
+
 var (
 	tagOnce  sync.Once
 	tagFirst string
@@ -220,8 +254,11 @@ type Result struct {
 	TokensOut int
 }
 
-// Post sends one brief to the chat endpoint and parses the answer against the schema.
+// Post sends one brief to the chat endpoint and parses the answer against the schema, at most
+// Concurrency calls at once.
 func Post(base, model, brief string, schema []byte) (Result, error) {
+	release := acquireLane()
+	defer release()
 	window := contextSize(brief)
 	if window > Window() {
 		return Result{}, fmt.Errorf("the brief needs a %d-token window and the local machine allows %d; route it to a remote machine or raise %s", window, Window(), WindowEnv)

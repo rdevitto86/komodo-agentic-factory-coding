@@ -74,6 +74,24 @@ func TestAwaitWindow(t *testing.T) {
 	}
 }
 
+func TestALiveRateLimitEventOverridesTheProbesEmptyWindow(t *testing.T) {
+	t.Cleanup(mount.ClearRateLimit)
+	saved := usageWindow
+	t.Cleanup(func() { usageWindow = saved })
+	// The plan probe carries no usage window on the current CLI; only the plan comes from it.
+	usageWindow = func(string) profile.Profile { return profile.Profile{Plan: "max_5x", PauseAt: 0.9} }
+	root := t.TempDir()
+	reset := time.Now().Add(time.Hour)
+	ObserveRateLimit(mount.RateLimit{FiveHour: 0.95, ResetsAt: reset})
+	selected := currentWindow(root)
+	if !selected.Paused() {
+		t.Fatalf("a live rate-limit event did not pace an empty probe: %+v", selected)
+	}
+	if !selected.WaitUntil().Equal(reset) {
+		t.Fatalf("wait until = %v, want %v", selected.WaitUntil(), reset)
+	}
+}
+
 func TestADrainPausedByARateLimitResumesAtTheResetWithNoPerson(t *testing.T) {
 	root := drainRepo(t)
 	host, _ := mount.Get("fakehost-drain")
