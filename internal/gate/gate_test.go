@@ -63,7 +63,7 @@ func TestInstallWritesEveryHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(written) != 5 {
+	if len(written) != 6 {
 		t.Fatalf("written = %v", written)
 	}
 	for _, path := range written {

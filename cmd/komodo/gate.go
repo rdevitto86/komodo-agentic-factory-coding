@@ -27,6 +27,9 @@ func runGate(root string, args []string) {
 		if err := gate.Rebuild(root, *from, *to, os.Stdout); err != nil {
 			fail(err)
 		}
+		if err := rerenderHosts(root, os.Stdout); err != nil {
+			fail(err)
+		}
 		return
 	}
 	if *install {
@@ -49,6 +52,8 @@ func runGate(root string, args []string) {
 		fail(err)
 	}
 	checks := append(scoped, []gate.Check{
+		// Rendered host files are gitignored and derived, so the gate refreshes them before doctor judges drift.
+		{Name: "komodo render", Run: func(out io.Writer) error { return rerenderHosts(root, out) }},
 		{Name: "komodo lint", Run: func(_ io.Writer) error {
 			problems, err := lintProblems(root)
 			if err != nil {

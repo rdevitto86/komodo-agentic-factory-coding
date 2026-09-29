@@ -4844,7 +4844,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.3] A drain runs each lane through the conductor, and the relay goes [P: H] [REFINEMENT]
+#### [TSK-10.8.3] A drain runs each lane through the conductor, and the relay goes [P: H] [DONE]
 ```yaml
 files: [internal/run/run.go, internal/run/run_test.go, cmd/komodo/line.go, internal/mount/claude/claude.go, internal/mount/registry.go, komodo/skills/run/SKILL.md]
 done_when:
@@ -4856,7 +4856,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.4] The adhoc skill and `komodo stage` go; ad hoc work is the orchestrator's own agents [P: H] [REFINEMENT]
+#### [TSK-10.8.4] The adhoc skill and `komodo stage` go; ad hoc work is the orchestrator's own agents [P: H] [DONE]
 ```yaml
 files: [cmd/komodo/stage.go, cmd/komodo/stage_test.go, internal/conductor/stage.go, internal/conductor/stage_test.go, komodo/skills/adhoc/SKILL.md, cmd/komodo/main.go, komodo/skills/komodo/SKILL.md, komodo/skills/run/SKILL.md, internal/mount/claude/claude.go, internal/ledger/ledger.go, docs/decisions.md, docs/prd.md, docs/system-design.md, docs/architecture.md, README.md]
 done_when:
@@ -4871,7 +4871,7 @@ context:
 type: refactor
 ```
 
-#### [TSK-10.8.5] Hooks run a commit-named copy of the binary, so a rebuild never moves another repo [P: C] [REFINEMENT]
+#### [TSK-10.8.5] Hooks run a commit-named copy of the binary, so a rebuild never moves another repo [P: C] [DONE]
 ```yaml
 files: [internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, internal/run/sync.go, internal/run/sync_test.go]
 done_when:
@@ -4882,7 +4882,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.6] `komodo sync` removes a clean line worktree whose branch has merged [P: M] [REFINEMENT]
+#### [TSK-10.8.6] `komodo sync` removes a clean line worktree whose branch has merged [P: M] [DONE]
 ```yaml
 files: [internal/run/sync.go, internal/run/sync_test.go]
 done_when:
@@ -4929,7 +4929,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.11] A merge re-renders the host files and rebuilds the binary itself [P: H] [REFINEMENT]
+#### [TSK-10.8.11] A merge re-renders the host files and rebuilds the binary itself [P: H] [DONE]
 ```yaml
 files: [internal/gate/gate.go, internal/gate/gate_test.go, cmd/komodo/gate.go]
 done_when:
@@ -4952,7 +4952,7 @@ context:
 type: fix
 ```
 
-#### [TSK-10.8.8] The escalation session's role is not named orchestrator [P: L] [REFINEMENT]
+#### [TSK-10.8.8] The escalation session's role is not named orchestrator [P: L] [DONE]
 ```yaml
 files: [internal/run/drive.go, komodo/roles/orchestrator.md]
 done_when:

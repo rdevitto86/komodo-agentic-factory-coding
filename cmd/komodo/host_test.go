@@ -47,3 +47,20 @@ func TestRepoIgnoresSkipsAPathAlreadyCovered(t *testing.T) {
 		t.Fatalf("changes = %v, want only the line StateDir entry", ignore.Changes)
 	}
 }
+
+// TestPlanMountedSeesOnlyARenderedFile proves the gate re-renders a host only where one already landed.
+func TestPlanMountedSeesOnlyARenderedFile(t *testing.T) {
+	dir := t.TempDir()
+	rendered := filepath.Join(dir, "settings.json")
+	plan := install.Plan{Host: "fake", Root: dir}
+	plan.Add(rendered, []byte("{}"), "a rendered file")
+	if planMounted(plan) {
+		t.Fatal("a host with nothing on disk counted as mounted")
+	}
+	if err := os.WriteFile(rendered, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !planMounted(plan) {
+		t.Fatal("a host with its rendered file on disk did not count as mounted")
+	}
+}

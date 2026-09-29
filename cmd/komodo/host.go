@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,6 +127,46 @@ func repoIgnores(root string, plans []install.Plan) install.Plan {
 		}
 	}
 	return ignore
+}
+
+// rerenderHosts re-renders each host this main checkout already mounts, so a merged rule or skill leaves no drift.
+func rerenderHosts(root string, out io.Writer) error {
+	if mount.MainCheckout(root) != root {
+		return nil
+	}
+	for _, host := range mount.Active() {
+		if host.Render == nil || host.Deferred != "" {
+			continue
+		}
+		plan, err := host.Render(root, mount.BinaryPath())
+		if err != nil {
+			return err
+		}
+		if !planMounted(plan) {
+			continue
+		}
+		done, err := plan.Apply()
+		if err != nil {
+			return err
+		}
+		for _, action := range done {
+			fmt.Fprintf(out, "%-7s %s\n", action.Verb, action.Path)
+		}
+	}
+	return nil
+}
+
+// planMounted reports whether a host's plan already has a rendered file on disk, so an unmounted host stays so.
+func planMounted(plan install.Plan) bool {
+	for _, change := range plan.Changes {
+		if change.Remove || change.Seed {
+			continue
+		}
+		if _, err := os.Stat(change.Path); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // applyPlan prints a plan under --dry-run, or writes it and lists what it changed.

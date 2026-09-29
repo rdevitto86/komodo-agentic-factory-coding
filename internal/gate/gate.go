@@ -313,6 +313,15 @@ case "$name" in
     fi
     exit 0
     ;;
+  post-commit)
+    # A merge committed after a conflict skips post-merge, so a merge commit rebuilds here instead.
+    gitdir=$(git rev-parse --path-format=absolute --git-dir)
+    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
+    if [ "$gitdir" = "$gitcommon" ] && git rev-parse --quiet --verify HEAD^2 >/dev/null 2>&1; then
+      exec $cmd gate --rebuild --from "$(git rev-parse HEAD^1)" --to "$(git rev-parse HEAD)"
+    fi
+    exit 0
+    ;;
   post-rewrite)
     # Reads old-new commit pairs from stdin; a rebase rewrites many, so only the span end to end matters.
     old=""
@@ -335,14 +344,14 @@ case "$name" in
 esac
 `
 
-// Install writes the pre-commit, pre-push, post-merge, post-checkout and post-rewrite hooks that run this gate.
+// Install writes the pre-commit, pre-push, post-commit, post-merge, post-checkout and post-rewrite hooks that run this gate.
 func Install(gitDir string) ([]string, error) {
 	dir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	var written []string
-	for _, name := range []string{"pre-commit", "pre-push", "post-merge", "post-checkout", "post-rewrite"} {
+	for _, name := range []string{"pre-commit", "pre-push", "post-commit", "post-merge", "post-checkout", "post-rewrite"} {
 		path := filepath.Join(dir, name)
 		if err := os.WriteFile(path, []byte(hookScript), 0o755); err != nil {
 			return nil, err
