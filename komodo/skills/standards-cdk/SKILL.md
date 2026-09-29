@@ -40,7 +40,7 @@ komodo-<service>-<env>-<resource>
 - Default to the shared CDK toolkit published by the TypeScript SDK — the typescript standard names the package. A gap there gets fixed with an upstream PR, not a local workaround; the fix should benefit every repo, not just this one.
 - **A local construct is allowed only when it is genuinely unique to this repo** — for example, a one-off Lambda-backed construct with no equivalent building block anywhere in the SDK. The test is reusability, not convenience: if the same shape would plausibly get built by a second team, it belongs upstream, not local.
 - Never write a local version of something the SDK already provides, even if the SDK's version is inconvenient to use — fix the SDK instead.
-- Raw `aws-cdk-lib`, unwrapped, is acceptable only where no SDK construct exists yet. Track the eventual SDK migration in `BACKLOG.md` rather than treating the raw usage as permanent.
+- Raw `aws-cdk-lib`, unwrapped, is acceptable only where no SDK construct exists yet. Track the eventual SDK migration with a `komodo add` task in `docs/backlog/` rather than treating the raw usage as permanent.
 
 ## Config authority
 
