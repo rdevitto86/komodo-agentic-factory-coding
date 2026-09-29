@@ -212,6 +212,40 @@ func TestCheckReportsOneLinePerProblem(t *testing.T) {
 	}
 }
 
+func TestCheckDiffIgnoresAProblemOutsideTheTouchedLines(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/a.go"
+	body := "package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n\nfunc New() int {\n\ty := 1\n\treturn y\n}\n"
+	if err := writeFile(path, body); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := CheckDiff(dir, map[string][]int{"a.go": {8}}, "nonobvious")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || !strings.Contains(out[0], "New") {
+		t.Fatalf("out = %v, want only the touched New finding", out)
+	}
+}
+
+func TestCheckDiffReportsNothingWhenNoTouchedLineHasAProblem(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/a.go"
+	body := "package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n"
+	if err := writeFile(path, body); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := CheckDiff(dir, map[string][]int{"a.go": {4}}, "nonobvious")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("out = %v, want none", out)
+	}
+}
+
 // containsRule reports whether any finding carries the rule.
 func containsRule(findings []Finding, rule string) bool {
 	for _, finding := range findings {

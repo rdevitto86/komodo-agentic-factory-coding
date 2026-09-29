@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"komodo/internal/changelog"
+	"komodo/internal/comments"
 	"komodo/internal/git"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -325,6 +328,68 @@ func Install(gitDir string) ([]string, error) {
 		written = append(written, path)
 	}
 	return written, nil
+}
+
+// hunkHeader captures a unified diff hunk's new-file start line, from a header such as "@@ -1,2 +3,4 @@".
+var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+
+// diffAddedLines parses a unified diff and returns, per new-file path, the line numbers it adds or changes.
+func diffAddedLines(diff string) map[string][]int {
+	added := map[string][]int{}
+	path, line := "", 0
+	for _, raw := range strings.Split(diff, "\n") {
+		switch {
+		case strings.HasPrefix(raw, "+++ "):
+			name := strings.TrimPrefix(strings.TrimPrefix(raw, "+++ "), "b/")
+			if name == "/dev/null" {
+				path = ""
+			} else {
+				path = name
+			}
+		case strings.HasPrefix(raw, "@@ "):
+			if match := hunkHeader.FindStringSubmatch(raw); match != nil {
+				line, _ = strconv.Atoi(match[1])
+			}
+		case strings.HasPrefix(raw, "+") && !strings.HasPrefix(raw, "+++"):
+			if path != "" {
+				added[path] = append(added[path], line)
+			}
+			line++
+		case strings.HasPrefix(raw, " "):
+			line++
+		}
+	}
+	return added
+}
+
+// StagedDiffLines returns, per path relative to root, the line numbers a staged diff adds or changes.
+func StagedDiffLines(root string) (map[string][]int, error) {
+	out, err := git.Run(root, "diff", "--cached", "-U0", "--no-color")
+	if err != nil {
+		return nil, err
+	}
+	return diffAddedLines(out), nil
+}
+
+// CommentsCheck builds a gate check that lints only the comment lines a staged diff adds or changes.
+func CommentsCheck(root, require string) Check {
+	return Check{Name: "komodo comments check", Run: func(out io.Writer) error {
+		added, err := StagedDiffLines(root)
+		if err != nil {
+			return err
+		}
+		problems, err := comments.CheckDiff(root, added, require)
+		if err != nil {
+			return err
+		}
+		for _, problem := range problems {
+			fmt.Fprintln(out, problem)
+		}
+		if len(problems) > 0 {
+			return fmt.Errorf("%d comment problem(s)", len(problems))
+		}
+		return nil
+	}}
 }
 
 // FuzzTarget is one fuzz function and the package that holds it.

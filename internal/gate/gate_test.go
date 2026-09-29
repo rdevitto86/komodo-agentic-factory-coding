@@ -787,3 +787,84 @@ func TestPostRewriteOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
 		t.Fatalf("the main working tree must rebuild: out = %q", out)
 	}
 }
+
+func TestDiffAddedLinesReadsOnlyAddedAndChangedLines(t *testing.T) {
+	diff := "diff --git a/a.go b/a.go\n" +
+		"--- a/a.go\n" +
+		"+++ b/a.go\n" +
+		"@@ -1,2 +1,3 @@\n" +
+		" package a\n" +
+		"-func Old() {}\n" +
+		"+func Old() { return }\n" +
+		"+func New() {}\n"
+
+	added := diffAddedLines(diff)
+	if got := added["a.go"]; len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("added = %v, want [2 3]", got)
+	}
+}
+
+func TestDiffAddedLinesSkipsADeletedFile(t *testing.T) {
+	diff := "diff --git a/a.go b/a.go\n" +
+		"--- a/a.go\n" +
+		"+++ /dev/null\n" +
+		"@@ -1,1 +0,0 @@\n" +
+		"-func Old() {}\n"
+
+	if added := diffAddedLines(diff); len(added) != 0 {
+		t.Fatalf("added = %v, want none for a deleted file", added)
+	}
+}
+
+func TestStagedDiffLinesReadsTheIndex(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n\nfunc New() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+
+	added, err := StagedDiffLines(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := added["a.go"]; len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("added = %v, want [2 3]", got)
+	}
+}
+
+func TestCommentsCheckOnlyFlagsAStagedLine(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	body := "package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed, undocumented on purpose")
+
+	added := "package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n\nfunc New() int {\n\ty := 1\n\treturn y\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte(added), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+
+	var out strings.Builder
+	check := CommentsCheck(root, "nonobvious")
+	err := check.Run(&out)
+	if err == nil {
+		t.Fatal("want the new undocumented function to fail the check")
+	}
+	if !strings.Contains(out.String(), "New") {
+		t.Fatalf("out = %q, want it to name New", out.String())
+	}
+	if strings.Contains(out.String(), "Old") {
+		t.Fatalf("out = %q, want the pre-existing Old left alone", out.String())
+	}
+}
