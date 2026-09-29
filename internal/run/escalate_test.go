@@ -87,7 +87,7 @@ func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 		}
 		writeFile(t, root, filepath.Join(line.RolesDir, name), string(data))
 	}
-	driver, err := newDriver(root, requestsPlan(), "run-1", nil, nil)
+	driver, err := newDriver(root, requestsPlan(), "run-1", nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

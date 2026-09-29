@@ -2,7 +2,6 @@ package eval
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -63,7 +62,7 @@ func fakeClone(asked *[]string) Clone {
 	}
 }
 
-// fakeLine writes answer into worktree, stamps a build and a review, and hands off a ship when ship is set.
+// fakeLine writes answer into worktree, stamps a build and review, and saves state ready to ship if ship is set.
 type fakeLine struct {
 	answer   string
 	ship     bool
@@ -88,18 +87,14 @@ func (f fakeLine) drive(t *testing.T) Line {
 		for _, entry := range []ledger.Entry{
 			{Group: group.ID, Station: conductor.StationBuild, Role: "builder", Turns: 3, TokensIn: 100, TokensOut: 50},
 			{Group: group.ID, Station: conductor.StationReview, Role: "reviewer", Turns: 2, TokensIn: 40, TokensOut: 10},
-			{Group: group.ID, Station: "ship", Outcome: "handoff"},
 		} {
 			if err := book.Stamp(entry); err != nil {
 				return err
 			}
 		}
 		if f.ship {
-			data, err := json.Marshal(line.ShipHandoff{Group: group.ID, Worktree: worktree, Branch: "feat/greet"})
-			if err != nil {
-				return err
-			}
-			if err := copyBytes(line.HandoffPath(dir, group.ID), string(data)); err != nil {
+			state := conductor.State{Group: group.ID, Current: conductor.Shipping, Worktree: worktree, Branch: "feat/greet"}
+			if err := conductor.SaveState(conductor.StatePath(dir, group.ID), state); err != nil {
 				return err
 			}
 		}
@@ -171,12 +166,12 @@ func TestRunJudgesEachRunByItsShipAndItsHiddenTests(t *testing.T) {
 func TestRunStartsABacklogAndRejectsABrokenHandoff(t *testing.T) {
 	cases := []struct {
 		name     string
-		handoff  string
+		state    string
 		errorHas string
 	}{
-		{"no handoff", "", ""},
-		{"an unreadable handoff", "{", "the ship handoff"},
-		{"a worktree that does not exist", `{"worktree": "gone"}`, "does not exist"},
+		{"no state", "", ""},
+		{"an unreadable state", "{", "state.json"},
+		{"a worktree that does not exist", `{"state": "Shipping", "worktree": "gone"}`, "does not exist"},
 	}
 	for _, each := range cases {
 		t.Run(each.name, func(t *testing.T) {
@@ -186,10 +181,10 @@ func TestRunStartsABacklogAndRejectsABrokenHandoff(t *testing.T) {
 				if err != nil || string(backlogText) != "# Backlog\n\n### [TG-01.1] Greet\n" {
 					t.Errorf("BACKLOG.md = %q, %v; a clone with no backlog starts one", backlogText, err)
 				}
-				if each.handoff == "" {
+				if each.state == "" {
 					return nil
 				}
-				return copyBytes(line.HandoffPath(dir, group.ID), each.handoff)
+				return copyBytes(conductor.StatePath(dir, group.ID), each.state)
 			}
 			outcomes, err := Run(context.Background(), Options{
 				Suite: offlineSuite(t), Runs: 1, Work: t.TempDir(), Clone: bare, Line: drive,

@@ -309,7 +309,7 @@ func bareRemote(t *testing.T, root string) string {
 func TestNewDriverWiresTheReReviewToCommitTheRepairAndDiffSinceTheReviewedCommit(t *testing.T) {
 	root := requestsRepo(t)
 	plan := requestsPlan()
-	driver, err := newDriver(root, plan, "run-1", nil, nil)
+	driver, err := newDriver(root, plan, "run-1", nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestRunStartsOneReviewerSessionPerLens(t *testing.T) {
 			plan := requestsPlan()
 			plan.Profile.Mode = tc.mode
 			host := &lensHost{}
-			driver, err := newDriver(root, plan, "run-1", host, nil)
+			driver, err := newDriver(root, plan, "run-1", host, nil, false)
 			if err != nil {
 				t.Fatal(err)
 			}
