@@ -34,6 +34,7 @@ const usage = `komodo: the code assembly line.
   komodo diff                 The reviewer's whole input: tasks, standards, diff
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
+  komodo rephase <e> <v>      Move an open epic to a new version: branch, pull requests, backlog
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo release build        Build the per-platform binaries as release assets
   komodo release fold         Fold every changelog fragment into CHANGELOG.md
@@ -122,6 +123,8 @@ func main() {
 		runReport(root)
 	case "tag":
 		runTag(root)
+	case "rephase":
+		runRephase(root, os.Args[2:])
 	case "release":
 		runRelease(root, os.Args[2:])
 	case "detect":
