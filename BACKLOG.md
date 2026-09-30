@@ -4299,6 +4299,393 @@ context:
 type: fix
 ```
 
+## [EPIC-10] Beta fixes
+*Goal: the gaps the first consumer-repo setup found are closed, so a second repo adopts the line without hand edits. Ships as `1.0.0-beta.3`.*
+
+* **Source:** the initial beta setup of `komodo-cicd-runner-cli`, findings L1 to L26, from the runner-cli, both SDK and shared-infra repos.
+
+### [TG-10.1] One backlog grammar
+```yaml
+type: fix
+version: 1.0.0-beta.3
+```
+* **Why:** a repo sees 47 groups through `komodo lint` and 1 through `komodo backlog`, the shipped rule disagrees with lint about `done_when`, and a legacy BACKLOG.md outranks the group files (L1, L2, L14, L17, L18).
+
+#### [TSK-10.1.1] A docs/backlog group-file queue loads into the same Backlog the line runs on [P: C] [REFINEMENT]
+```yaml
+files: [internal/backlog/load.go, internal/backlog/load_test.go, internal/backlog/groupfile.go]
+done_when:
+  - go test ./internal/backlog/...
+context:
+  - "L1: backlog.Find accepts only BACKLOG.md or docs/BACKLOG.md; 23 files call it, so next, list and step fail in a repo holding only docs/backlog/ with: no BACKLOG.md"
+  - "Load(root) returns the Backlog built from every group file when docs/backlog/ holds one, with epics taken from each file's epic and version, else BACKLOG.md's"
+  - "L14: preferring BACKLOG.md runs legacy work silently; in both SDK repos komodo next picked the legacy TG-01.1 Cross-Cutting"
+  - "with both present, Load uses the group files and komodo doctor names the legacy BACKLOG.md to remove"
+  - "backlog.Load(path) already exists at internal/backlog/backlog.go:414; the root loader takes a new name, or Load(path) is renamed with its callers"
+  - "komodo-cicd-runner-cli PR #16 is the first repo on group files and cannot run the line until this and TSK-10.1.3 land"
+type: fix
+```
+
+#### [TSK-10.1.2] The backlog rule requires `done_when` as lint does [P: H] [REFINEMENT]
+```yaml
+files: [komodo/rules/backlog.md]
+done_when:
+  - grep -q done_when komodo/rules/backlog.md
+  - go run ./cmd/komodo doctor
+context:
+  - "L2: internal/backlog/lint.go:129, komodo/skills/plan/SKILL.md and komodo/roles/planner.schema.json all require done_when on a READY agent task"
+type: docs
+```
+
+#### [TSK-10.1.3] The line's commands load the backlog through Load [P: C] [REFINEMENT]
+```yaml
+files: [internal/line/next.go, internal/line/step.go, internal/line/brief.go, internal/line/close.go, internal/line/cut.go, internal/line/wave.go, internal/line/diff.go, internal/line/worktree.go, internal/line/collide.go, internal/line/status.go, internal/line/ship.go]
+done_when:
+  - go test ./internal/line/...
+depends_on: [TSK-10.1.1]
+type: fix
+```
+
+#### [TSK-10.1.4] Run, conductor, hooks, eval and the CLI load the backlog through Load [P: C] [REFINEMENT]
+```yaml
+files: [internal/run/run.go, internal/run/drive.go, internal/conductor/integrate.go, internal/conductor/abandon.go, internal/conductor/drive.go, internal/hooks/taskchecks.go, internal/hooks/evidence.go, internal/eval/run.go, internal/doctor/leftovers.go, cmd/komodo/line.go, cmd/komodo/backlog.go, cmd/komodo/main.go, templates/project/AGENTS.md.tmpl]
+done_when:
+  - go test ./internal/run/... ./internal/conductor/... ./internal/hooks/... ./internal/eval/... ./cmd/komodo/...
+depends_on: [TSK-10.1.1]
+context:
+  - "komodo backlog and komodo lint then read the same source, and the template's AGENTS.md names docs/backlog/"
+  - "run and release check are the other two commands the beta found reading only BACKLOG.md"
+type: fix
+```
+
+#### [TSK-10.1.5] Group-file lint checks what BACKLOG.md lint checks [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/backlog.go, internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/... ./cmd/komodo/...
+context:
+  - "today a group file passes with any version, a group version that differs from another in its epic, a READY task with no files, a context anchor to no heading, and a depends_on naming no group"
+  - "the runner-cli migration needed its own validator for all five"
+type: fix
+```
+
+#### [TSK-10.1.6] The group-file grammar carries a task's owner, context, depends_on, priority and status [P: H] [REFINEMENT]
+```yaml
+files: [komodo/rules/backlog.md, internal/backlog/groupfile.go, internal/backlog/groupfile_test.go]
+done_when:
+  - go test ./internal/backlog/...
+context:
+  - "BACKLOG.md tasks carry owner, context, depends_on, priority and status; a group file keeps only files, accept and checks"
+  - "without owner, a person's task needs its own BLOCKED group: runner-cli needed 10; context and task depends_on survive only as prose no brief reads"
+type: feat
+```
+
+#### [TSK-10.1.7] Lint's heading anchor matches GitHub's for numbered headings [P: M] [REFINEMENT]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+context:
+  - "L17: Slug folds punctuation to a dash, so '6.1 X' gives #6-1-x where GitHub gives #61-x; 6 false failures in one repo"
+  - "GitHub lowercases, drops punctuation except - and _, and turns each space into -"
+type: fix
+```
+
+#### [TSK-10.1.8] One version mismatch reports once per epic, with a split hint [P: M] [REFINEMENT]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+context:
+  - "L18: one epic whose groups disagree with its version printed 23 separate problems"
+  - "print one problem per epic naming its version, each differing group, and: split the epic per version"
+type: fix
+```
+
+### [TG-10.2] Adopting an existing repo
+```yaml
+type: feat
+version: 1.0.0-beta.3
+depends_on: [TG-10.1]
+```
+* **Why:** a repo with its own backlog and docs is converted by hand today, and the first gate refuses it (L3, L4, L5, L12, L15, L16, L19, L22).
+
+#### [TSK-10.2.1] `komodo init` reports how each kept file differs from its template [P: M] [REFINEMENT]
+```yaml
+files: [cmd/komodo/init.go, cmd/komodo/init_test.go]
+done_when:
+  - go test ./cmd/komodo/...
+context:
+  - "L4: writeStarters skips an existing file silently"
+  - "print one line per kept file naming the template sections it lacks, and lint any existing backlog"
+type: feat
+```
+
+#### [TSK-10.2.2] A migrate command converts an old backlog to the current grammar [P: M] [REFINEMENT]
+```yaml
+files: [cmd/komodo/migrate.go, cmd/komodo/migrate_test.go, internal/backlog/groupfile.go]
+done_when:
+  - go test ./cmd/komodo/... ./internal/backlog/...
+context:
+  - "L3: komodo help lists no migrate command"
+  - "covers one epic spanning several versions (split per version), GitHub-style anchors on numbered headings, and BACKLOG.md to docs/backlog/"
+type: feat
+```
+
+#### [TSK-10.2.3] The planner maps a foreign repo's docs into the four spec files [P: M] [REFINEMENT]
+```yaml
+files: [komodo/roles/planner.md, komodo/skills/plan/SKILL.md]
+done_when:
+  - go run ./cmd/komodo doctor
+context:
+  - "L5: komodo/roles/planner.md reads only docs that already exist"
+  - "an SDD or design doc maps to architecture.md, system-design.md and decisions.md per the standards-specs skill"
+type: docs
+```
+
+#### [TSK-10.2.4] Migrate imports a TODO.md or a foreign BACKLOG.md into group files [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/migrate.go, cmd/komodo/migrate_test.go, internal/backlog/import.go, internal/backlog/import_test.go, komodo/skills/plan/SKILL.md, komodo/skills/komodo/SKILL.md]
+done_when:
+  - go test ./cmd/komodo/... ./internal/backlog/...
+depends_on: [TSK-10.2.2]
+context:
+  - "L12: a repo's TODO.md or free-form BACKLOG.md has no path into docs/backlog/; each is converted by hand"
+  - "a heading becomes a REFINEMENT group, an open checkbox or bullet becomes a task, a ticked one is kept as ticked"
+  - "a line it cannot place is printed with its source line number, never dropped silently"
+  - "the source file stays until the human deletes it; the output passes komodo lint; --dry-run prints the files it would write"
+  - "no model: the planner refines the imported REFINEMENT groups afterwards"
+  - "the plan and komodo skills run migrate first in an adopted repo, so a model finds the command without a person naming it"
+type: feat
+```
+
+#### [TSK-10.2.5] Detect reads the package manager and the scripts package.json declares [P: C] [REFINEMENT]
+```yaml
+files: [internal/detect/detect.go, internal/detect/detect_test.go]
+done_when:
+  - go test ./internal/detect/...
+context:
+  - "L15: detect.go:235 returns npm test and npm run build for any package.json; shared-infra is pnpm with no build script"
+  - "the lockfile picks pnpm, yarn, bun or npm; a missing test or build script derives no command and prints a warning naming it"
+type: fix
+```
+
+#### [TSK-10.2.6] An adopted repo's existing comments do not fail its first commit [P: C] [REFINEMENT]
+```yaml
+files: [internal/comments/lint.go, internal/comments/comments_test.go, internal/gate/gate.go, internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/comments/... ./internal/gate/...
+context:
+  - "L16: comment lint found 8 problems in runner-cli on day one and the gate refused its first commit; no baseline exists"
+  - "assumed: the gate checks only comments the staged diff adds or changes; komodo comments check keeps the whole-tree view"
+  - "a diff scope needs no baseline file, keeping decision 0021's no-required-config rule"
+type: fix
+```
+
+#### [TSK-10.2.7] Doctor names old-harness leftovers and a gitignored AGENTS.md [P: M] [REFINEMENT]
+```yaml
+files: [internal/doctor/leftovers.go, internal/doctor/leftovers_test.go, internal/doctor/doctor.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go]
+done_when:
+  - go test ./internal/doctor/...
+context:
+  - "L19: found by hand in 2 repos: a base key in .komodo/local.json, /assess-* commands, and python3 -m komodo calls"
+  - "a gitignored AGENTS.md never reaches a line worktree, so a task there runs without the repo's rules; that one fails, the rest are notes"
+  - "the host's Leftovers (claude.go:423) also names a prototype MCP server in user settings, such as komodo-ollama-bridge; 1.0 ships no MCP"
+type: fix
+```
+
+#### [TSK-10.2.8] The install gitignores every file it seeds [P: M] [REFINEMENT]
+```yaml
+files: [cmd/komodo/host.go, cmd/komodo/host_test.go]
+done_when:
+  - go test ./cmd/komodo/...
+context:
+  - "L22: claude.go:110 and :111 seed .claude/settings.local.json and CLAUDE.local.md, but repoIgnores adds only Project changes, so both can be committed"
+  - "repoIgnores also ignores each Seed change, so every host's overlay is covered with no host named outside internal/mount"
+  - "the memory-write denial the same run saw is L24, TSK-10.3.5"
+type: fix
+```
+
+### [TG-10.3] Guardrail scope
+```yaml
+type: fix
+version: 1.0.0-beta.3
+```
+* **Why:** one standard loads where it does not apply, the guard covers two refs, doctor misses a workflow file, every push fuzzes, and the guard refuses a host's own memory (L6, L7, L8, L23, L24).
+
+#### [TSK-10.3.1] standards-cicd loads only for a repo with a pipeline, and accepts non-hosted runners [P: M] [REFINEMENT]
+```yaml
+files: [komodo/skills/standards-cicd/SKILL.md]
+done_when:
+  - "! grep -q '\\*\\*/.github/\\*\\*\"' komodo/skills/standards-cicd/SKILL.md"
+  - go test ./internal/mount/...
+context:
+  - "L6: the glob **/.github/** matches a PR template alone, and the skill requires a CI stage on hosted runners"
+type: fix
+```
+
+#### [TSK-10.3.2] The guard protects every protected ref, not only main and master [P: C] [REFINEMENT]
+```yaml
+files: [komodo/policy.json, internal/guard/policy_test.go]
+done_when:
+  - go test ./internal/guard/...
+context:
+  - "L7: critical_refs is [main, master]"
+  - "add trunk, prod, production, release/* and hotfix/*, the refs komodo/AGENTS.md already forbids"
+type: fix
+```
+
+#### [TSK-10.3.3] Doctor fails when a `.github/workflows/` file exists [P: M] [REFINEMENT]
+```yaml
+files: [internal/doctor/workflows.go, internal/doctor/workflows_test.go, internal/doctor/doctor.go]
+done_when:
+  - go test ./internal/doctor/...
+context:
+  - "L8: internal/doctor has no such check"
+  - "the problem line names the file and the fix; komodo-cicd-runner-cli still carries .github/workflows/ci.yml, so its doctor fails until it moves off Actions"
+type: fix
+```
+
+#### [TSK-10.3.4] A push that touches no code skips tests and fuzzing [P: M] [REFINEMENT]
+```yaml
+files: [internal/gate/gate.go, internal/gate/gate_test.go]
+done_when:
+  - go test ./internal/gate/...
+context:
+  - "L23: the pre-push gate takes 1 to 2 minutes with fuzzing on every push, backlog-only ones included"
+  - "a push changing only markdown runs lint, comments and doctor; fuzzing runs only when a push changes a package FuzzTargets names"
+type: perf
+```
+
+#### [TSK-10.3.5] The guard allows the write paths a host mount declares [P: C] [REFINEMENT]
+```yaml
+files: [internal/mount/registry.go, internal/mount/claude/claude.go, internal/mount/claude/claude_test.go, internal/guard/paths.go, internal/guard/paths_test.go]
+done_when:
+  - go test ./internal/mount/... ./internal/guard/...
+context:
+  - "L24: isAllowedWrite (internal/guard/paths.go:12) allows only the worktree and temp dirs, so every write to ~/.claude/projects/<repo>/memory/ is refused once the guard hook is installed"
+  - "Host gains a WritePaths func; the claude mount returns its project memory dir; the guard allows those and nothing else outside the root"
+  - "a config path still wins: WritePaths never opens ~/.komodo or a host's settings"
+type: fix
+```
+
+### [TG-10.4] Usage pacing
+```yaml
+type: fix
+version: 1.0.0-beta.3
+```
+* **Why:** pacing never pauses, the profile's concurrency and billing view is wrong, and only Claude is paced at all (L9, L10, L11, L25, L26).
+
+#### [TSK-10.4.1] The plan probe reads the usage the current CLI writes [P: C] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/limits.go, internal/mount/claude/limits_test.go, internal/run/pace.go, internal/run/pace_test.go]
+done_when:
+  - go test ./internal/mount/claude/... ./internal/run/...
+context:
+  - "L9: limits.go reads cachedUsageUtilization, which CLI 2.1.284 no longer writes; pace.go never receives rate_limit_event"
+type: fix
+```
+
+#### [TSK-10.4.2] Each host mount owns its concurrency, and the conductor and profile read it [P: H] [REFINEMENT]
+```yaml
+files: [internal/mount/registry.go, internal/mount/claude/claude.go, internal/mount/codex/codex.go, internal/mount/ollama/ollama.go, internal/conductor/schedule.go, internal/conductor/schedule_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test ./internal/mount/... ./internal/conductor/... ./internal/profile/...
+context:
+  - "L10: schedule.go:9 says Max 5x 2, Max 20x 4; profile.go says 4 and 6"
+  - "L25: both tables key on Claude plan names outside internal/mount, which the repo's host rule forbids"
+  - "Host gains a Concurrency(plan) func; the owner picks the Claude numbers; schedule.go and profile.go read it and name no plan"
+type: fix
+```
+
+#### [TSK-10.4.3] The profile reads extra usage and the billing type [P: M] [REFINEMENT]
+```yaml
+files: [internal/mount/claude/limits.go, internal/mount/claude/limits_test.go, internal/profile/profile.go, internal/profile/profile_test.go]
+done_when:
+  - go test ./internal/mount/claude/... ./internal/profile/...
+depends_on: [TSK-10.4.1, TSK-10.4.2]
+context:
+  - "L11: limits.go never reads hasExtraUsageEnabled or billingType"
+type: fix
+```
+
+#### [TSK-10.4.4] Codex and the local machine pace instead of running unbounded [P: M] [REFINEMENT]
+```yaml
+files: [internal/mount/codex/limits.go, internal/mount/codex/codex_test.go, internal/mount/ollama/ollama.go, internal/mount/ollama/ollama_test.go]
+done_when:
+  - go test ./internal/mount/codex/... ./internal/mount/ollama/...
+depends_on: [TSK-10.4.2]
+context:
+  - "L26: codex Probe (internal/mount/codex/limits.go:12) always returns no usage, and ollama sets no concurrency, so TG-10.4 paces Claude only"
+  - "codex reads the usage its CLI reports, or says in the profile that pacing is off; ollama defaults to 1 at a time, the overlay may raise it"
+type: fix
+```
+
+### [TG-10.5] Choosing a version
+```yaml
+type: docs
+version: 1.0.0-beta.3
+```
+* **Why:** the rules define each phase but never say when a planner picks one, or which segment to bump (L13).
+
+#### [TSK-10.5.1] The backlog rule says how a planner picks a group's version [P: H] [REFINEMENT]
+```yaml
+files: [komodo/rules/backlog.md, komodo/skills/plan/SKILL.md, komodo/roles/planner.md, komodo/skills/release/SKILL.md, README.md]
+done_when:
+  - grep -q '## Choosing a version' komodo/rules/backlog.md
+  - go run ./cmd/komodo doctor
+context:
+  - "L13: nothing tells an agent why it would pick 1.43.56-alpha.1 over 1.43.57 when scoping new work"
+  - "segment: a breaking change bumps major, a feat bumps minor, anything else bumps patch, above the newest tag"
+  - "a prerelease precedes its release: 1.43.56-alpha.1 sorts before 1.43.56, so it is only valid while 1.43.56 is untagged"
+  - "straight to x.y.z when every group in the epic is READY and proven by its checks; alpha while the shape can still move; beta once feature-complete and only fixes land; rc only when the owner asks"
+  - "a prerelease line keeps its x.y.z and raises n; it never jumps to a new x.y.z until the stable cut; README's Versions section links the rule, not a copy"
+type: docs
+```
+
+#### [TSK-10.5.2] Lint refuses a group version at or below the newest tag [P: M] [REFINEMENT]
+```yaml
+files: [internal/backlog/lint.go, internal/backlog/lint_test.go]
+done_when:
+  - go test ./internal/backlog/...
+depends_on: [TSK-10.5.1]
+context:
+  - "an open group naming a tagged version, or a prerelease of one, would cut a tag that already exists or sorts behind it"
+  - "the problem line names the group, its version and the newest tag"
+type: fix
+```
+
+### [TG-10.6] Epic branches across versions and sessions
+```yaml
+type: feat
+version: 1.0.0-beta.3
+```
+* **Why:** a re-phased epic strands its branch and PRs, and two sessions can work one branch unseen (L20, L21).
+
+#### [TSK-10.6.1] A rephase command moves an open epic to a new version [P: H] [REFINEMENT]
+```yaml
+files: [cmd/komodo/rephase.go, cmd/komodo/rephase_test.go, cmd/komodo/main.go, internal/line/rephase.go, internal/line/rephase_test.go, komodo/skills/release/SKILL.md]
+done_when:
+  - go test ./cmd/komodo/... ./internal/line/...
+context:
+  - "L20: decision 0029 fixes the epic branch to feat/<version>; re-phasing runner-cli nearly orphaned PR #15"
+  - "rewrites every group's version, pushes feat/<new> from feat/<old>, retargets each open group PR, then asks before deleting feat/<old>"
+  - "the release skill's bump step runs rephase for an epic with an open branch, not a bare version edit"
+type: feat
+```
+
+#### [TSK-10.6.2] A session claims its branch, and another session's claim stops a write [P: H] [REFINEMENT]
+```yaml
+files: [internal/line/claim.go, internal/line/claim_test.go, internal/guard/policy_test.go, komodo/AGENTS.md]
+done_when:
+  - go test ./internal/line/... ./internal/guard/...
+context:
+  - "L21: another session's merge, revert and uncommitted work sat on #263's branch unseen; this session nearly overwrote it"
+  - "a claim names the session and time under the git common dir; a stale claim is reported, never taken silently"
+  - "komodo/AGENTS.md's Git section tells every model to check the claim before writing a shared branch"
+type: feat
+```
+
 ## [EPIC-09] 1.0.0 LTS
 *Goal: the owner cuts 1.0.0 once all five success criteria hold. Ships as `1.0.0`.*
 
