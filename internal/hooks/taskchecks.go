@@ -54,11 +54,7 @@ func runTaskChecks(ctx context.Context, in Input) (Outcome, error) {
 
 // worktreeTasks are the tasks of the group or task the worktree is named for, from its own backlog.
 func worktreeTasks(root string) ([]backlog.Task, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil, err
 	}
@@ -71,5 +67,5 @@ func worktreeTasks(root string) ([]backlog.Task, error) {
 	if task, ok := parsed.Task(id); ok {
 		return []backlog.Task{task}, nil
 	}
-	return nil, fmt.Errorf("no group or task %s in %s", id, path)
+	return nil, fmt.Errorf("no group or task %s in %s", id, root)
 }

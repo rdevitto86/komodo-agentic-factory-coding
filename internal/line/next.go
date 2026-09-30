@@ -45,7 +45,7 @@ type Plan struct {
 	WaitUntil string          `json:"wait_until,omitempty"`
 }
 
-// Intent states whether a plan is for the run's own open group, or a fresh group off BACKLOG.md.
+// Intent states whether a plan is for the run's own open group, or a fresh group off its queue.
 type Intent int
 
 const (
@@ -66,7 +66,7 @@ func planForGroup(root, groupID string) (*Plan, error) {
 }
 
 // PlanForStation is the one resolver a station calls to decide which group it plans for: the
-// run's own open group while it is not yet shipped, or a fresh group off BACKLOG.md otherwise.
+// run's own open group while it is not yet shipped, or a fresh group off its queue otherwise.
 func PlanForStation(root, needle string) (*Plan, error) {
 	plan, err := next(root, needle)
 	if err != nil {
@@ -148,7 +148,7 @@ func openRun(root, groupID string) (*Plan, error) {
 }
 
 // planFor is the one place that resolves a group and renders its plan; every caller states
-// whether it wants a fresh group off BACKLOG.md or the group a run already has open.
+// whether it wants a fresh group off its queue or the group a run already has open.
 func planFor(root, needle string, intent Intent) (*Plan, error) {
 	parsed, group, only, ok, err := groupFor(root, needle)
 	if err != nil || !ok {
@@ -195,7 +195,7 @@ func pinWaves(root string, plan *Plan) {
 	plan.Waves = waves
 }
 
-// groupFor reads BACKLOG.md and picks the group a needle names, or the next ready one; only
+// groupFor reads the queue and picks the group a needle names, or the next ready one; only
 // names the single task a task needle matched, empty when the needle named a group or nothing.
 func groupFor(root, needle string) (backlog.Backlog, backlog.Group, string, bool, error) {
 	parsed, _, err := LoadBacklog(root)
@@ -345,11 +345,7 @@ func pick(root string, parsed backlog.Backlog, needle string) (backlog.Group, st
 
 // ReadyGroups lists, in file order, the groups a drain would run, counting an earlier group's branch as a base.
 func ReadyGroups(root string) ([]backlog.Group, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil, err
 	}
@@ -390,6 +386,11 @@ func hasOrigin(root string) bool {
 func onOrigin(root, branch string) bool {
 	_, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 	return err == nil
+}
+
+// GroupBase is the branch a group cuts from and diffs against: its declared base, its epic's branch, else the default.
+func GroupBase(root string, parsed backlog.Backlog, group backlog.Group) string {
+	return groupBase(root, parsed, group)
 }
 
 // groupBase is the branch a group declares, else its epic's branch when that can be opened, else

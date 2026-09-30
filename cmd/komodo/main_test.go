@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/changelog"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -200,10 +201,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 
 func TestCheckReleaseSkipsAGroupWhoseTasksAreNotAllDone(t *testing.T) {
 	root := t.TempDir()
-	backlog := shippedGroup + pendingGroup
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, shippedGroup+pendingGroup)
 	if err := os.WriteFile(filepath.Join(root, "CHANGELOG.md"), []byte(releaseChangelog), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -215,6 +213,31 @@ func TestCheckReleaseSkipsAGroupWhoseTasksAreNotAllDone(t *testing.T) {
 		if item.Subject == "3.0.0" {
 			t.Fatalf("drift = %+v; a group whose tasks are not all DONE must not be checked", drift)
 		}
+	}
+}
+
+// TestCheckReleaseReadsGroupFilesWhenTheRepoHoldsThem proves release check compares the changelog
+// against docs/backlog group files.
+func TestCheckReleaseReadsGroupFilesWhenTheRepoHoldsThem(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-90.1-shipped.md",
+		"## [TG-90.1] A shipped group [P: H] [DONE]\n\n```yaml\ntype: feat\nversion: 4.0.0\nepic: EPIC-90\ndepends_on: []\n```\n\n"+
+			"- [x] **TSK-90.1.1** Done\n  - files: `a.go`\n")
+	if err := os.WriteFile(filepath.Join(root, "CHANGELOG.md"), []byte(releaseChangelog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	drift, err := checkRelease(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range drift {
+		if item.Subject == "4.0.0" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("drift = %+v; a shipped group file's version must be checked against the changelog", drift)
 	}
 }
 

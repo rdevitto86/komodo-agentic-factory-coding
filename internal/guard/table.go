@@ -70,8 +70,10 @@ func Table(policy Policy) []Case {
 		bash("gh pr merge", "gh pr merge 12 --squash", "feat/x", true, "merge button"),
 		bash("branch -D main", "git branch -D main", "feat/x", true, "never deleted"),
 		bash("delete its own branch", "git branch -D feat/old", "feat/x", false, ""),
-		bash("a model session's push to an epic branch is refused (decision 0028)", "git push origin feat/1.0.0-alpha.7", "feat/x", true, "open a pull request"),
-		bash("a model session's merge onto an epic branch is refused (decision 0028)", "git merge feat/x", "feat/1.0.0-alpha.7", true, "merge button"),
+		asRole("builder", bash("a line session's push to an epic branch is refused (decision 0028)", "git push origin feat/1.0.0-alpha.7", "feat/x", true, "open a pull request")),
+		asRole("builder", bash("a line session's merge onto an epic branch is refused (decision 0028)", "git merge feat/x", "feat/1.0.0-alpha.7", true, "merge button")),
+		bash("the orchestrator pushes an epic branch; a person still merges it into main", "git push origin feat/1.0.0-alpha.7", "feat/x", false, ""),
+		bash("the orchestrator merges onto an epic branch", "git merge feat/x", "feat/1.0.0-alpha.7", false, ""),
 		bash("push to a slugged feat branch is not an epic branch", "git push origin feat/versions-go-alpha", "feat/x", false, ""),
 		bash("a push with several refspecs is judged on every one, not only the last", "git push origin main feat/x", "feat/x", true, "open a pull request"),
 		bash("sudo push to main", "sudo git push origin main", "feat/x", true, "open a pull request"),
@@ -98,20 +100,21 @@ func Table(policy Policy) []Case {
 		bash("commit --no-verify skips the gate", "git commit --no-verify -m x", "feat/x", true, "skips the gate"),
 		bash("commit runs the gate", "git commit -m 'feat: thing'", "feat/x", false, ""),
 
-		// Rule 4: a commit message never carries an attribution trailer.
-		bash("co-author trailer", "git commit -m 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", true, "trailer"),
-		bash("commit with a body and no trailer", "git commit -m 'feat: x\n\nWhat it does.'", "feat/x", false, ""),
+		// A trailer is now the commit-msg hook's rule, not the guard's; the tool call itself is allowed.
+		bash("a trailer reaches the commit-msg hook, not the guard", "git commit -m 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", false, ""),
 
-		// Rule 5: no edit or write outside the worktree.
-		write("edit above the root", "../outside/file.go", true, "outside the worktree"),
-		write("a new source file", "internal/line/new.go", false, ""),
-		bash("redirect above the root", "echo x > ../outside.txt", "feat/x", true, "outside the worktree"),
-		bash("redirect into the worktree", "echo x > out.txt", "feat/x", false, ""),
-		bash("a shell -c redirect above the root", "sh -c 'echo x > ../outside.txt'", "feat/x", true, "outside the worktree"),
+		// Rule 5: a line session never edits or writes outside its worktree.
+		asRole("builder", write("edit above the root", "../outside/file.go", true, "outside the worktree")),
+		asRole("builder", write("a new source file", "internal/line/new.go", false, "")),
+		asRole("builder", bash("redirect above the root", "echo x > ../outside.txt", "feat/x", true, "outside the worktree")),
+		asRole("builder", bash("redirect into the worktree", "echo x > out.txt", "feat/x", false, "")),
+		asRole("builder", bash("a shell -c redirect above the root", "sh -c 'echo x > ../outside.txt'", "feat/x", true, "outside the worktree")),
+		write("the orchestrator writes outside the repo", "../outside/file.go", false, ""),
 
-		// A spawn never cuts its own worktree; the line already cut it.
-		spawn("a spawn with isolation set is denied", "worktree", true, "a spawn never cuts its own worktree"),
-		spawn("a spawn without isolation is allowed", "", false, ""),
+		// A line spawn never cuts its own worktree; the line already cut it. The orchestrator may.
+		asRole("builder", spawn("a line spawn with isolation set is denied", "worktree", true, "a spawn never cuts its own worktree")),
+		asRole("builder", spawn("a line spawn without isolation is allowed", "", false, "")),
+		spawn("the orchestrator spawns an isolated agent", "worktree", false, ""),
 
 		// Structural, not one of the five: docs/prd.md and eval/** refuse every line role (REQ-41).
 		asRole("builder", write("a line role's write to docs/prd.md is refused (REQ-41)", "docs/prd.md", true, "host or toolkit config")),

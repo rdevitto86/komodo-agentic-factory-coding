@@ -13,11 +13,12 @@ Never invent a field; the grammar below is everything the line parses.
 
 ## The steps
 
-1. Name the docs the human gave `/plan`, or the PRD and system design when none are named.
-2. Spawn the planner on them, with the goal and the existing groups it must not duplicate. It reads and returns tasks; it never edits.
-3. Write each group it returns as `docs/backlog/<group-id>-<slug>.md`, or append a task with `komodo add <group> <title>`.
-4. Run `komodo lint`. A non-zero exit means the file is wrong: fix it and lint again.
-5. Report each group, its tasks, and the planner's gaps to the human.
+1. Run `komodo migrate` first when the repo holds a BACKLOG.md or TODO.md but no `docs/backlog/`; it opens the imported groups in `REFINEMENT` for you to refine below.
+2. Name the docs the human gave `/plan`, or the PRD and system design when none are named.
+3. Spawn the planner on them, with the goal and the existing groups it must not duplicate. It reads and returns tasks; it never edits.
+4. Write each group it returns as `docs/backlog/<group-id>-<slug>.md`, or append a task with `komodo add <group> <title>`.
+5. Run `komodo lint`. A non-zero exit means the file is wrong: fix it and lint again.
+6. Report each group, its tasks, and the planner's gaps to the human.
 
 ## Rules
 
@@ -26,3 +27,4 @@ Never invent a field; the grammar below is everything the line parses.
 - **A gap is the human's decision.** Plan the rest, and list each gap; never settle one yourself.
 - **Every task traces to a line in the docs.** Out-of-scope work is one line in the report, never a task.
 - **A plan lands through a pull request,** like any other change.
+- **A foreign repo's SDD or design doc still plans.** Name it to `/plan`; the planner maps it onto the architecture, system-design and decisions files.

@@ -1,9 +1,9 @@
-// Package backlog parses, lints, and rewrites the BACKLOG.md grammar.
+// Package backlog parses, lints, and rewrites the backlog grammar: docs/backlog group files, and a
+// legacy backlog file only `komodo migrate` reads.
 package backlog
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -28,10 +28,6 @@ var Tiers = []string{"light", "standard", "heavy"}
 var Modes = []string{"parallel", "single"}
 
 var (
-	epicHeading    = regexp.MustCompile(`^##\s+\[(EPIC-[\w.]+)\]\s*(.*?)\s*$`)
-	groupHeading   = regexp.MustCompile(`^###\s+\[(TG-[\w.]+)\]\s*(.*?)\s*$`)
-	taskHeading    = regexp.MustCompile(`^####\s+\[(TSK-[\w.]+)\]\s+(.+?)\s*\[P:\s*([A-Z])\]\s*\[([A-Z_]+)\]\s*$`)
-	taskLike       = regexp.MustCompile(`^####\s+\[TSK-`)
 	fenceOpen      = regexp.MustCompile("^```(?:yaml|yml)\\s*$")
 	fenceClose     = regexp.MustCompile("^```\\s*$")
 	versionRe      = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
@@ -41,8 +37,6 @@ var (
 		`(!|go|npm|pnpm|bun|npx|python3?|py\b|pytest|make|task|just|cdk|tsc|cargo|dotnet|mvn|gradle|zig|swift` +
 		`|bash|sh|grep|rg|sed|awk|find|test\b|git\b|komodo\b|\./|/|"|'|[A-Za-z]:[\\/])`)
 )
-
-var legacyStatus = map[string]string{"WIP": "IN_PROGRESS", "TODO": "READY"}
 
 // Task is one task heading plus its fenced block, with the line positions a rewrite needs.
 type Task struct {
@@ -189,6 +183,23 @@ func (g Group) EpicBranch() string {
 	return ""
 }
 
+// groupIDPrefix matches a group heading's own id at a string's start, the same shape groupHeading parses.
+var groupIDPrefix = regexp.MustCompile(`^TG-[\w.]+`)
+
+// kebabSuffix matches one or more hyphenated lowercase words, the shape titleSlug appends to an id.
+var kebabSuffix = regexp.MustCompile(`^(-[a-z0-9]+)+$`)
+
+// IsGroupSlug reports whether a branch fragment could be a group's own slug: its id, optionally
+// followed by its title in kebab case, the exact shape Slug builds.
+func IsGroupSlug(slug string) bool {
+	loc := groupIDPrefix.FindStringIndex(slug)
+	if loc == nil || loc[0] != 0 {
+		return false
+	}
+	rest := slug[loc[1]:]
+	return rest == "" || kebabSuffix.MatchString(rest)
+}
+
 // Slug is the branch fragment naming a group: its ID, then its title in kebab case, capped at 40 characters.
 func (g Group) Slug() string {
 	if text := g.titleSlug(); text != "" {
@@ -287,17 +298,6 @@ func (g Group) HasReadyTask() bool {
 	return false
 }
 
-// Find locates BACKLOG.md at the repo root or under docs/.
-func Find(root string) (string, error) {
-	for _, candidate := range []string{"BACKLOG.md", filepath.Join("docs", "BACKLOG.md")} {
-		path := filepath.Join(root, candidate)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return path, nil
-		}
-	}
-	return "", fmt.Errorf("no BACKLOG.md at %s or %s/docs", root, root)
-}
-
 // readBlock reads the fenced yaml block directly under a heading and returns its bounds.
 func readBlock(lines []string, start int) (Fields, int, int, error) {
 	index := start
@@ -322,101 +322,6 @@ func readBlock(lines []string, start int) (Fields, int, int, error) {
 		return Fields{}, open, index, fmt.Errorf("line %d: %v", open+1, err)
 	}
 	return fields, open, index, nil
-}
-
-// Parse reads BACKLOG.md text into groups and tasks without judging their content.
-func Parse(text string) Backlog {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	parsed := Backlog{Lines: lines}
-	epicID := ""
-	current := -1
-	index := 0
-	for index < len(lines) {
-		line := lines[index]
-		if match := epicHeading.FindStringSubmatch(line); match != nil {
-			epicID = match[1]
-			epicTitle := match[2]
-			// Look ahead for the goal line containing "Ships as" information
-			for i := index + 1; i < len(lines) && i < index+5; i++ {
-				nextLine := strings.TrimSpace(lines[i])
-				if nextLine == "" {
-					continue
-				}
-				if strings.HasPrefix(nextLine, "#") || strings.HasPrefix(nextLine, "###") {
-					break // Stop at next heading
-				}
-				if idx := strings.Index(nextLine, "Ships as `"); idx >= 0 {
-					epicTitle = epicTitle + " " + nextLine
-					break
-				}
-			}
-			epic := Epic{ID: epicID, Title: epicTitle}
-			parsed.Epics = append(parsed.Epics, epic)
-			index++
-			continue
-		}
-		if match := groupHeading.FindStringSubmatch(line); match != nil {
-			group := Group{ID: match[1], Title: match[2], Heading: index, EpicID: epicID}
-			fields, _, end, err := readBlock(lines, index+1)
-			if err != nil {
-				parsed.Problems = append(parsed.Problems, err.Error())
-			}
-			if end >= 0 && err == nil && fields.values != nil {
-				group.Fields = fields
-				index = end + 1
-			} else {
-				index++
-			}
-			parsed.Groups = append(parsed.Groups, group)
-			current = len(parsed.Groups) - 1
-			continue
-		}
-		if match := taskHeading.FindStringSubmatch(line); match != nil {
-			status := strings.ToUpper(match[4])
-			if mapped, ok := legacyStatus[status]; ok {
-				status = mapped
-			}
-			task := Task{
-				ID: match[1], Title: strings.TrimSpace(match[2]), Priority: match[3],
-				Status: status, Heading: index, BlockStart: -1, BlockEnd: -1,
-			}
-			fields, start, end, err := readBlock(lines, index+1)
-			if err != nil {
-				parsed.Problems = append(parsed.Problems, err.Error())
-			}
-			if end >= 0 && err == nil && fields.values != nil {
-				task.Fields = fields
-				task.BlockStart, task.BlockEnd = start, end
-				index = end + 1
-			} else {
-				index++
-			}
-			if current < 0 {
-				parsed.Problems = append(parsed.Problems,
-					fmt.Sprintf("line %d: task %s appears before any ### [TG-] heading", task.Heading+1, task.ID))
-				parsed.Groups = append(parsed.Groups, Group{ID: "TG-ORPHAN", Title: "Orphaned tasks", Heading: task.Heading})
-				current = len(parsed.Groups) - 1
-			}
-			task.GroupID = parsed.Groups[current].ID
-			parsed.Groups[current].Tasks = append(parsed.Groups[current].Tasks, task)
-			continue
-		}
-		if taskLike.MatchString(line) {
-			parsed.Problems = append(parsed.Problems,
-				fmt.Sprintf("line %d: heading does not match the task pattern: %q", index+1, line))
-		}
-		index++
-	}
-	return parsed
-}
-
-// Load reads and parses one BACKLOG.md file.
-func Load(path string) (Backlog, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Backlog{}, err
-	}
-	return Parse(string(data)), nil
 }
 
 // contains reports whether the slice already holds the value.

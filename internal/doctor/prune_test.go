@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 )
 
@@ -15,11 +16,12 @@ import (
 const openBacklog = "### [TG-01.1] G\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 	"#### [TSK-01.1.1] Do it [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when:\n  - true\n```\n"
 
-// pruneRepo builds a root on main with backlog committed, and returns it with a git runner that fails the test.
+// pruneRepo builds a root on main with its group's own file committed, and returns it with a git
+// runner that fails the test.
 func pruneRepo(t *testing.T, backlog string) (string, func(dir string, args ...string)) {
 	t.Helper()
 	root := gitRepo(t)
-	write(t, root, "BACKLOG.md", backlog)
+	backlogtest.SeedText(t, root, backlog)
 	write(t, root, ".gitignore", "/.komodo/\n")
 	commitAll(t, root, "init")
 	run := func(dir string, args ...string) {

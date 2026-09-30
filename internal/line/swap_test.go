@@ -194,16 +194,16 @@ func TestFacetSwapReachesTheStandardsSlotTheProfileSlotAndTheRender(t *testing.T
 			t.Fatalf("brief = %s, want no aws appendix before the task carries the facet", before.Text)
 		}
 
-		path := filepath.Join(root, "BACKLOG.md")
+		path := filepath.Join(root, "docs", "backlog", "TG-05.1-a-group.md")
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		swapped := strings.Replace(string(data),
-			"#### [TSK-05.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```",
-			"#### [TSK-05.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\nfacets: [aws]\n```", 1)
+			"- [ ] **TSK-05.1.1** One\n  - files: `a/one.go`\n  - done_when: `go test ./a/...`\n",
+			"- [ ] **TSK-05.1.1** One\n  - files: `a/one.go`\n  - done_when: `go test ./a/...`\n  - facets: aws\n", 1)
 		if swapped == string(data) {
-			t.Fatal("the task block was not found to swap")
+			t.Fatalf("the task block was not found to swap: %s", data)
 		}
 		if err := os.WriteFile(path, []byte(swapped), 0o644); err != nil {
 			t.Fatal(err)

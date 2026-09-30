@@ -14,7 +14,7 @@ Follow the comments standard: a doc line on every public function, a comment on 
 
 - **`cargo fmt` and `cargo clippy -- -D warnings`** both pass before anything is considered done.
 - **Edition 2021 or later**, MSRV pinned in `Cargo.toml`.
-- **A suppression is a bare `#[allow(...)]`** with the reason recorded in `BACKLOG.md`, never in a comment. Prefer fixing the lint.
+- **A suppression is a bare `#[allow(...)]`** with the reason recorded in a `komodo add` task in `docs/backlog/`, never in a comment. Prefer fixing the lint.
 
 ## Errors
 
@@ -44,7 +44,7 @@ Follow the comments standard: a doc line on every public function, a comment on 
 ## Unsafe
 
 - **`#![forbid(unsafe_code)]` at the crate root by default.**
-- **Removing it requires the user's explicit sign-off**, and the invariant being upheld goes in `BACKLOG.md`, not a comment.
+- **Removing it requires the user's explicit sign-off**, and the invariant being upheld goes in a `komodo add` task in `docs/backlog/`, not a comment.
 
 ## Testing
 

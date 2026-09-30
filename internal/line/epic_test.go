@@ -2,11 +2,10 @@ package line
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog"
 	"komodo/internal/git"
 	"komodo/internal/pr"
 )
@@ -17,14 +16,12 @@ const epicBacklog = "## [EPIC-05] Phase 1: the conductor drives\n" +
 	"### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 	"#### [TSK-05.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
 
-// epicRepo builds a remoted repo with main pushed and text written as its backlog.
-func epicRepo(t *testing.T, text string) string {
+// epicRepo builds a remoted repo with main pushed; the group-file grammar cannot yet carry an
+// epic's phase title or goal, so openEpic runs against text parsed straight into memory.
+func epicRepo(t *testing.T) string {
 	t.Helper()
 	root, _ := remotedRepo(t)
 	runGit(t, root, "push", "origin", "HEAD:refs/heads/main")
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	return root
 }
 
@@ -38,14 +35,14 @@ func TestEpicBranchNameIsEmptyWithNoVersion(t *testing.T) {
 }
 
 func TestOpenEpicCutsPushesAndOpensADraftPull(t *testing.T) {
-	root := epicRepo(t, epicBacklog)
+	root := epicRepo(t)
 	var calls []string
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		calls = append(calls, strings.Join(args, " "))
 		return "https://example.com/pull/9", nil
 	}}
 	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
-	result, err := OpenEpic(root, plan, client)
+	result, err := openEpic(root, backlog.Parse(epicBacklog), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +67,7 @@ func TestOpenEpicCutsPushesAndOpensADraftPull(t *testing.T) {
 }
 
 func TestOpenEpicLabelsStatusWipWhenDraftsAreUnavailable(t *testing.T) {
-	root := epicRepo(t, epicBacklog)
+	root := epicRepo(t)
 	var calls []string
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		joined := strings.Join(args, " ")
@@ -87,7 +84,7 @@ func TestOpenEpicLabelsStatusWipWhenDraftsAreUnavailable(t *testing.T) {
 		}
 	}}
 	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
-	result, err := OpenEpic(root, plan, client)
+	result, err := openEpic(root, backlog.Parse(epicBacklog), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,14 +100,14 @@ func TestOpenEpicLabelsStatusWipWhenDraftsAreUnavailable(t *testing.T) {
 }
 
 func TestOpenEpicLeavesABranchAlreadyOnOriginAlone(t *testing.T) {
-	root := epicRepo(t, epicBacklog)
+	root := epicRepo(t)
 	runGit(t, root, "push", "origin", "HEAD:refs/heads/feat/2.0.0")
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		t.Fatalf("gh must not run once the epic branch already lives on origin: %v", args)
 		return "", nil
 	}}
 	plan := &Plan{Group: "TG-05.1", Version: "2.0.0"}
-	result, err := OpenEpic(root, plan, client)
+	result, err := openEpic(root, backlog.Parse(epicBacklog), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,13 +119,13 @@ func TestOpenEpicLeavesABranchAlreadyOnOriginAlone(t *testing.T) {
 func TestOpenEpicSkipsAGroupThatNamesNoEpic(t *testing.T) {
 	text := "### [TG-15.1] First\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 		"#### [TSK-15.1.1] One [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when: [\"go test ./a/...\"]\n```\n"
-	root := epicRepo(t, text)
+	root := epicRepo(t)
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		t.Fatalf("gh must not run for a group with no epic: %v", args)
 		return "", nil
 	}}
 	plan := &Plan{Group: "TG-15.1", Version: "2.0.0"}
-	result, err := OpenEpic(root, plan, client)
+	result, err := openEpic(root, backlog.Parse(text), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,13 +138,13 @@ func TestOpenEpicSkipsAGroupThatNamesNoEpic(t *testing.T) {
 }
 
 func TestOpenEpicSkipsAPlanWithNoVersion(t *testing.T) {
-	root := epicRepo(t, epicBacklog)
+	root := epicRepo(t)
 	client := &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		t.Fatalf("gh must not run for a plan with no version: %v", args)
 		return "", nil
 	}}
 	plan := &Plan{Group: "TG-05.1"}
-	result, err := OpenEpic(root, plan, client)
+	result, err := openEpic(root, backlog.Parse(epicBacklog), plan, client)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,21 +1,24 @@
 package line
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
+
+	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 )
 
-const bareBacklog = "### [TG-90.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-	"#### [TSK-90.1.1] Build the thing [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - go test ./a/...\n```\n"
+var bareGroup = backlog.GroupFile{
+	ID: "TG-90.1", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "2.0.0",
+	Tasks: []backlog.GroupTask{
+		{ID: "TSK-90.1.1", Title: "Build the thing", Files: []string{"a/one.go"}, Checks: []string{"go test ./a/..."}},
+	},
+}
 
-// bareRepo builds a repo holding only a BACKLOG.md, no komodo/ directory of its own.
+// bareRepo builds a repo holding only a group file, no komodo/ directory of its own.
 func bareRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(bareBacklog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.Seed(t, root, bareGroup)
 	return root
 }
 

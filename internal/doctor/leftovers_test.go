@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 )
 
@@ -23,7 +24,7 @@ func epicGroupFile(id, epic string, done bool) string {
 func leftoverRepo(t *testing.T) (string, func(dir string, args ...string)) {
 	t.Helper()
 	root := gitRepo(t)
-	write(t, root, "BACKLOG.md", openBacklog)
+	backlogtest.SeedText(t, root, openBacklog)
 	write(t, root, ".gitignore", "/.komodo/\n")
 	commitAll(t, root, "init")
 	run := func(dir string, args ...string) {
@@ -57,6 +58,23 @@ func TestDoctorNamesAnEndedEpicsFiles(t *testing.T) {
 	}
 }
 
+func TestDoctorNamesAStaleLocalJSONBaseKey(t *testing.T) {
+	root, _ := leftoverRepo(t)
+	write(t, root, ".komodo/local.json", `{"base":"main"}`)
+	notes := Leftovers(root)
+	if len(notes) != 1 || !strings.Contains(notes[0], ".komodo/local.json") || !strings.Contains(notes[0], "base key") {
+		t.Fatalf("notes = %v, want one note naming the stale base key", notes)
+	}
+}
+
+func TestDoctorIgnoresALocalJSONWithNoBaseKey(t *testing.T) {
+	root, _ := leftoverRepo(t)
+	write(t, root, ".komodo/local.json", `{"sandbox":true}`)
+	if notes := Leftovers(root); len(notes) != 0 {
+		t.Fatalf("notes = %v, want none for a local.json with no base key", notes)
+	}
+}
+
 func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 	root, run := leftoverRepo(t)
 	write(t, root, "docs/backlog/TG-03.1-c.md", epicGroupFile("TG-03.1", "EPIC-03", false))
@@ -68,8 +86,9 @@ func TestDoctorNamesAWorktreeNoGroupOwns(t *testing.T) {
 	run(root, "worktree", "add", "-q", "-b", "feat/old", orphan, "main")
 
 	notes := Leftovers(root)
-	if len(notes) != 1 || !strings.Contains(notes[0], "TG-09.9") || !strings.Contains(notes[0], "feat/old") {
-		t.Fatalf("notes = %v, want one note naming the TG-09.9 worktree and its branch", notes)
+	joined := strings.Join(notes, "\n")
+	if !strings.Contains(joined, "TG-09.9") || !strings.Contains(joined, "feat/old") {
+		t.Fatalf("notes = %v, want a note naming the TG-09.9 worktree and its branch", notes)
 	}
 }
 

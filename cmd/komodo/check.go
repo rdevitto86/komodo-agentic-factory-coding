@@ -51,7 +51,10 @@ func runCheck(root string, args []string) {
 
 // checkTask reruns one task's done_when commands, then its scope, in the worktree.
 func checkTask(root, taskID, base string) []string {
-	_, parsed := load(root)
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		fail(err)
+	}
 	task, ok := parsed.Task(taskID)
 	if !ok {
 		fail(fmt.Errorf("no task %s", taskID))
@@ -62,7 +65,10 @@ func checkTask(root, taskID, base string) []string {
 
 // checkScope names every edit outside a task's files, or outside every file its group's tasks declare.
 func checkScope(root, target, base string) []string {
-	_, parsed := load(root)
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		fail(err)
+	}
 	if task, ok := parsed.Task(target); ok {
 		return check.Scope(root, checkBase(root, parsed, task.GroupID, base), task.Files())
 	}
@@ -113,13 +119,13 @@ func checkFindings(root, path, base string) []string {
 	return problems
 }
 
-// checkBase is the explicit base, else the group's declared base, else the remote's default branch.
+// checkBase is the explicit base, else the base the line cuts the group from, its epic's branch included.
 func checkBase(root string, parsed backlog.Backlog, groupID, base string) string {
 	if base != "" {
 		return base
 	}
-	if group, ok := parsed.Group(groupID); ok && group.Base() != "" {
-		return group.Base()
+	if group, ok := parsed.Group(groupID); ok {
+		return line.GroupBase(root, parsed, group)
 	}
 	return line.DefaultBase(root)
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,13 +100,14 @@ func installGlobal(root, binary string, chosen []mount.Host, dryRun bool) {
 	}
 }
 
-// repoIgnores plans the .gitignore lines for the state dir and each rendered project copy git does not already ignore.
+// repoIgnores plans the .gitignore lines for the state dir, each rendered project copy, and each
+// seeded personal overlay, whichever git does not already ignore.
 func repoIgnores(root string, plans []install.Plan) install.Plan {
 	ignore := install.Plan{Host: "repo", Root: root}
 	ignore.AddIgnore("/"+line.StateDir+"/", "the line's run state and worktrees stay out of git")
 	for _, plan := range plans {
-		for _, change := range plan.Project().Changes {
-			if change.Remove {
+		for _, change := range plan.Changes {
+			if change.Remove || !(change.Project || change.Seed) {
 				continue
 			}
 			rel, err := filepath.Rel(root, change.Path)
@@ -117,10 +119,54 @@ func repoIgnores(root string, plans []install.Plan) install.Plan {
 			if _, err := git.Run(root, "check-ignore", "-q", "--no-index", "--", rel); err == nil {
 				continue
 			}
-			ignore.AddIgnore("/"+rel, "a rendered copy the install rebuilds on every machine")
+			why := "a rendered copy the install rebuilds on every machine"
+			if change.Seed {
+				why = "a personal overlay the install seeds once and never overwrites"
+			}
+			ignore.AddIgnore("/"+rel, why)
 		}
 	}
 	return ignore
+}
+
+// rerenderHosts re-renders each host this main checkout already mounts, so a merged rule or skill leaves no drift.
+func rerenderHosts(root string, out io.Writer) error {
+	if mount.MainCheckout(root) != root {
+		return nil
+	}
+	for _, host := range mount.Active() {
+		if host.Render == nil || host.Deferred != "" {
+			continue
+		}
+		plan, err := host.Render(root, mount.BinaryPath())
+		if err != nil {
+			return err
+		}
+		if !planMounted(plan) {
+			continue
+		}
+		done, err := plan.Apply()
+		if err != nil {
+			return err
+		}
+		for _, action := range done {
+			fmt.Fprintf(out, "%-7s %s\n", action.Verb, action.Path)
+		}
+	}
+	return nil
+}
+
+// planMounted reports whether a host's plan already has a rendered file on disk, so an unmounted host stays so.
+func planMounted(plan install.Plan) bool {
+	for _, change := range plan.Changes {
+		if change.Remove || change.Seed {
+			continue
+		}
+		if _, err := os.Stat(change.Path); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // applyPlan prints a plan under --dry-run, or writes it and lists what it changed.

@@ -257,11 +257,7 @@ func clipDiff(files, pieces []string, limit int) string {
 
 // taskBlocks renders every task block in the group, which is what the diff was meant to deliver.
 func taskBlocks(root string, plan *Plan) string {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return ""
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return ""
 	}
@@ -315,11 +311,7 @@ func facetReviewSlot(root, worktree string, plan *Plan) string {
 
 // facetsForPlan unions the facets every task in the group declares.
 func facetsForPlan(root string, plan *Plan) []string {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil
 	}

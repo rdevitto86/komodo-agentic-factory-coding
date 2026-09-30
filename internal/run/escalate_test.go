@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
 	"komodo/internal/line"
 )
@@ -46,8 +47,8 @@ func TestOrchestratorRequestFillsTheRoleWithTheEscalation(t *testing.T) {
 			t.Fatalf("brief = %q, want %q", req.Brief, want)
 		}
 	}
-	if req.Role != "orchestrator" || strings.Contains(req.Brief, "{{") || !strings.Contains(string(req.Schema), "action") {
-		t.Fatalf("request = %+v, want the orchestrator role, every slot filled and its schema", req)
+	if req.Role != "escalation" || strings.Contains(req.Brief, "{{") || !strings.Contains(string(req.Schema), "action") {
+		t.Fatalf("request = %+v, want the escalation role, every slot filled and its schema", req)
 	}
 }
 
@@ -61,12 +62,12 @@ func TestOrchestratorRequestFailsWithNoOrchestratorRole(t *testing.T) {
 
 func TestLintBacklogReportsTheWorktreesProblems(t *testing.T) {
 	clean := t.TempDir()
-	writeFile(t, clean, "BACKLOG.md", escalateBacklog)
+	backlogtest.SeedText(t, clean, escalateBacklog)
 	if problems, err := lintBacklog(clean); err != nil || len(problems) != 0 {
 		t.Fatalf("lint = %v, %v; want a clean backlog to pass", problems, err)
 	}
 	broken := t.TempDir()
-	writeFile(t, broken, "BACKLOG.md", strings.Replace(escalateBacklog, "done_when:\n  - go test ./...\n", "", 1))
+	backlogtest.SeedText(t, broken, strings.Replace(escalateBacklog, "done_when:\n  - go test ./...\n", "", 1))
 	if problems, err := lintBacklog(broken); err != nil || len(problems) == 0 {
 		t.Fatalf("lint = %v, %v; want a task with no done_when to fail", problems, err)
 	}
@@ -79,15 +80,15 @@ func TestLintBacklogReportsTheWorktreesProblems(t *testing.T) {
 
 func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 	root := requestsRepo(t)
-	// The fixture's own roles directory hides the embedded tree, so it gets the shipped orchestrator role.
-	for _, name := range []string{"orchestrator.md", "orchestrator.schema.json"} {
+	// The fixture's own roles directory hides the embedded tree, so it gets the shipped escalation role.
+	for _, name := range []string{"escalation.md", "escalation.schema.json"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", line.RolesDir, name))
 		if err != nil {
 			t.Fatal(err)
 		}
 		writeFile(t, root, filepath.Join(line.RolesDir, name), string(data))
 	}
-	driver, err := newDriver(root, requestsPlan(), "run-1", nil, nil)
+	driver, err := newDriver(root, requestsPlan(), "run-1", nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +96,7 @@ func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 		t.Fatal("newDriver left Block nil; a stopped group would never be written down")
 	}
 	req, err := driver.Orchestrator(conductor.Escalation{Group: "TG-20.1", Left: conductor.Reviewing, Reason: "stalled"})
-	if err != nil || req.Role != "orchestrator" || !strings.Contains(req.Brief, "escalated at Reviewing") {
+	if err != nil || req.Role != "escalation" || !strings.Contains(req.Brief, "escalated at Reviewing") {
 		t.Fatalf("orchestrator request = %+v, %v; want the escalation filled in", req, err)
 	}
 	if _, err := driver.Lint(); err != nil {
@@ -104,21 +105,20 @@ func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 }
 
 func TestDrainHoldsAGroupThatDependsOnAParkedOne(t *testing.T) {
-	root := drainRepo(t)
-	dependent := strings.Replace(drainText, "version: 1.1.0\n", "version: 1.1.0\ndepends_on: [TG-07.1]\n", 1)
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(dependent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	dependent := strings.Replace(driveDrainText, "version: 1.1.0\n", "version: 1.1.0\ndepends_on: [TG-07.1]\n", 1)
+	root := driveDrainRepo(t, dependent)
+	setupDrainDriveFakeClaude(t)
+	t.Setenv("FAKE_BLOCK_GROUP", "TG-07.1")
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code == 0 || launched(t, root) != "TG-07.1" {
-		t.Fatalf("code %d, launched %q; want only TG-07.1 run and the drain failing", code, launched(t, root))
+	if code == 0 {
+		t.Fatalf("code = 0; want the drain failing once TG-07.1 parked")
+	}
+	if !strings.Contains(out.String(), "TG-07.1 parked:") {
+		t.Fatalf("output lacks TG-07.1 parking:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "TG-07.2 held: it depends on TG-07.1, which parked") {
 		t.Fatalf("output lacks the held line:\n%s", out.String())
@@ -127,7 +127,7 @@ func TestDrainHoldsAGroupThatDependsOnAParkedOne(t *testing.T) {
 
 func TestAnEditedBlockedGroupRestartsWithItsEditedText(t *testing.T) {
 	worktree := t.TempDir()
-	writeFile(t, worktree, "BACKLOG.md", escalateBacklog)
+	backlogtest.SeedText(t, worktree, escalateBacklog)
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	saved := conductor.State{Group: "TG-40.1", Current: conductor.Blocked, Edited: true}
 	if err := conductor.SaveState(statePath, saved); err != nil {
@@ -143,7 +143,7 @@ func TestAnEditedBlockedGroupRestartsWithItsEditedText(t *testing.T) {
 	if final.Current != conductor.Ready || !final.SlotFree || final.Edited {
 		t.Fatalf("state = %+v, want Ready with its slot taken and the edit consumed", final)
 	}
-	if !strings.HasPrefix(driver.Builder.Brief, "# The group, as a person edited it\n\n### [TG-40.1] Group") ||
+	if !strings.HasPrefix(driver.Builder.Brief, "# The group, as a person edited it\n\n## [TG-40.1] Group") ||
 		!strings.HasSuffix(driver.Builder.Brief, "the brief") {
 		t.Fatalf("brief = %q, want the edited group ahead of the builder's brief", driver.Builder.Brief)
 	}

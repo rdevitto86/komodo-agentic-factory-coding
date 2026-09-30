@@ -74,11 +74,27 @@ func TestAwaitWindow(t *testing.T) {
 	}
 }
 
+func TestALiveRateLimitEventOverridesTheProbesEmptyWindow(t *testing.T) {
+	t.Cleanup(mount.ClearRateLimit)
+	saved := usageWindow
+	t.Cleanup(func() { usageWindow = saved })
+	// The plan probe carries no usage window on the current CLI; only the plan comes from it.
+	usageWindow = func(string) profile.Profile { return profile.Profile{Plan: "max_5x", PauseAt: 0.9} }
+	root := t.TempDir()
+	reset := time.Now().Add(time.Hour)
+	ObserveRateLimit(mount.RateLimit{FiveHour: 0.95, ResetsAt: reset})
+	selected := currentWindow(root)
+	if !selected.Paused() {
+		t.Fatalf("a live rate-limit event did not pace an empty probe: %+v", selected)
+	}
+	if !selected.WaitUntil().Equal(reset) {
+		t.Fatalf("wait until = %v, want %v", selected.WaitUntil(), reset)
+	}
+}
+
 func TestADrainPausedByARateLimitResumesAtTheResetWithNoPerson(t *testing.T) {
-	root := drainRepo(t)
-	host, _ := mount.Get("fakehost-drain")
-	host.Probe = func() (mount.Usage, bool) { return mount.Usage{Plan: "max_5x"}, true }
-	mount.Register(host)
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
 	// The rate-limit event lands on the drain's first window read, after its sync.
 	var reset time.Time
 	saved := usageWindow
@@ -89,13 +105,8 @@ func TestADrainPausedByARateLimitResumesAtTheResetWithNoPerson(t *testing.T) {
 		}
 		return windowAfter("max_5x", mount.RateLimit{FiveHour: 0.95, ResetsAt: reset})(root)
 	}
-	stageShip(t, root, "TG-07.1", "feat/first", drainText)
-	stageShip(t, root, "TG-07.2", "feat/second", drainText)
 	var out bytes.Buffer
-	code, err := Launch(Options{
-		Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out,
-		Env: []string{"PATH=/usr/bin:/bin"}, PR: fakeForge(t, root),
-	})
+	code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: fakeForge(t, root)})
 	if err != nil || code != 0 {
 		t.Fatalf("code = %d, err = %v, out = %s", code, err, out.String())
 	}

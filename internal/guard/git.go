@@ -29,12 +29,10 @@ func gitFindings(words []string, branch string, policy Policy) []string {
 		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git commit on %s: create a branch first", branch))
 		}
-		findings = append(findings, trailerFindings(commitMessage(rest), policy)...)
 	case "merge":
-		if (policy.IsCritical(branch) || IsEpicBranch(branch)) && normalizeMode(policy.Mode) != ModeUnsafe {
+		if (policy.IsCritical(branch) || lineEpicBranch(branch)) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git merge on %s: landing is the human's merge button", branch))
 		}
-		findings = append(findings, trailerFindings(commitMessage(rest), policy)...)
 	case "branch":
 		findings = append(findings, branchFindings(rest, policy)...)
 	}
@@ -106,7 +104,7 @@ func pushFindings(rest []string, branch string, policy Policy) []string {
 		if target == "HEAD" {
 			target = branch
 		}
-		if policy.IsCritical(target) || IsEpicBranch(target) {
+		if policy.IsCritical(target) || lineEpicBranch(target) {
 			verb := "push to"
 			if deletes {
 				verb = "delete"
@@ -153,31 +151,7 @@ func branchFindings(rest []string, policy Policy) []string {
 	return findings
 }
 
-// commitMessage composes a commit or merge's own message from every -m paragraph, the only form
-// the guard still reads: a message piped through a file or a substitution is not visible to it.
-func commitMessage(rest []string) string {
-	var parts []string
-	for index := 0; index < len(rest); index++ {
-		arg := rest[index]
-		switch {
-		case arg == "-m" || arg == "--message":
-			if index+1 < len(rest) {
-				index++
-				parts = append(parts, rest[index])
-			}
-		case strings.HasPrefix(arg, "--message="):
-			parts = append(parts, strings.TrimPrefix(arg, "--message="))
-		case strings.HasPrefix(arg, "-m") && arg != "-m":
-			parts = append(parts, strings.TrimPrefix(arg, "-m"))
-		}
-	}
-	return strings.Join(parts, "\n\n")
-}
-
-// trailerFindings refuses a commit message that carries an attribution trailer.
-func trailerFindings(message string, policy Policy) []string {
-	if policy.HasTrailer(message) {
-		return []string{"commit message carries a co-author or generated-by trailer"}
-	}
-	return nil
+// lineEpicBranch reports whether a line session names an epic branch, which only the conductor pushes and merges.
+func lineEpicBranch(branch string) bool {
+	return IsLineSession() && IsEpicBranch(branch)
 }

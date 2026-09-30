@@ -7,15 +7,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"komodo/internal/comments"
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
+	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 )
 
-// runGate runs the local precheck, or builds the local binary and installs it as a git hook.
+// runGate runs the local precheck, one of its git-hook checks, or builds and installs the binary.
 func runGate(root string, args []string) {
 	set := flag.NewFlagSet("gate", flag.ExitOnError)
 	install := set.Bool("install", false, "build the local binary and write the pre-commit and pre-push hooks")
@@ -23,9 +23,31 @@ func runGate(root string, args []string) {
 	rebuild := set.Bool("rebuild", false, "rebuild the local binary when a Go file, go.mod or go.sum changed between --from and --to")
 	from := set.String("from", "", "the commit before the change, for --rebuild")
 	to := set.String("to", "", "the commit after the change, for --rebuild")
+	commitMsg := set.String("commit-msg", "", "refuse an attribution trailer in this message file, for the commit-msg hook")
+	checkBranch := set.Bool("check-branch", false, "refuse a critical ref or a branch outside <type>/<kebab-name>, for the pre-commit hook")
 	_ = set.Parse(args)
+	if *commitMsg != "" {
+		message, err := os.ReadFile(*commitMsg)
+		if err != nil {
+			fail(err)
+		}
+		if problem := gate.TrailerProblem(string(message), guard.Load(root, root)); problem != "" {
+			fail(fmt.Errorf("%s", problem))
+		}
+		return
+	}
+	if *checkBranch {
+		branch := git.Or(root, "symbolic-ref", "--short", "HEAD")
+		if problem := gate.BranchProblem(branch, guard.Load(root, root)); problem != "" {
+			fail(fmt.Errorf("%s", problem))
+		}
+		return
+	}
 	if *rebuild {
 		if err := gate.Rebuild(root, *from, *to, os.Stdout); err != nil {
+			fail(err)
+		}
+		if err := rerenderHosts(root, os.Stdout); err != nil {
 			fail(err)
 		}
 		return
@@ -45,7 +67,13 @@ func runGate(root string, args []string) {
 		}
 		return
 	}
-	checks := append(buildChecks(root), []gate.Check{
+	scoped, err := gate.PushChecks(root, *from, *to, fuzzDuration(root, *fuzz), buildChecks(root))
+	if err != nil {
+		fail(err)
+	}
+	checks := append(scoped, []gate.Check{
+		// Rendered host files are gitignored and derived, so the gate refreshes them before doctor judges drift.
+		{Name: "komodo render", Run: func(out io.Writer) error { return rerenderHosts(root, out) }},
 		{Name: "komodo lint", Run: func(_ io.Writer) error {
 			problems, err := lintProblems(root)
 			if err != nil {
@@ -78,26 +106,19 @@ func runGate(root string, args []string) {
 			}
 			return nil
 		}},
-		{Name: "komodo comments check", Run: func(_ io.Writer) error {
-			problems, err := comments.Check(root, trackedFiles(root), "nonobvious")
-			if err != nil {
-				return err
-			}
-			for _, problem := range problems {
-				fmt.Println(problem)
-			}
-			if len(problems) > 0 {
-				return fmt.Errorf("%d comment problem(s)", len(problems))
-			}
-			return nil
-		}},
+		gate.CommentsCheck(root, "nonobvious"),
 	}...)
-	if *fuzz != "" && toolkitCheckout(root) {
-		checks = append(checks, gate.FuzzChecks(root, *fuzz)...)
-	}
 	if err := gate.Run(checks, os.Stdout); err != nil {
 		fail(err)
 	}
+}
+
+// fuzzDuration is the fuzz flag's value, but only in the toolkit's own checkout, whose fuzz targets exist.
+func fuzzDuration(root, requested string) string {
+	if requested != "" && toolkitCheckout(root) {
+		return requested
+	}
+	return ""
 }
 
 // buildChecks are the toolkit's own vet and race tests in its checkout, else the compile and verify

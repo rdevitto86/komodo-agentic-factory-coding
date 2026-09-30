@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 
+	"komodo/internal/backlog"
 	"komodo/internal/git"
 	"komodo/internal/mount"
 	"komodo/internal/plugin"
@@ -61,7 +62,10 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkPins(root)...)
 	problems = append(problems, checkPlugins(root)...)
 	problems = append(problems, checkOverlay(mount.OverlayPath())...)
+	problems = append(problems, checkWorkflows(root)...)
+	problems = append(problems, checkLegacyBacklog(root)...)
 	if !options.NoGit {
+		problems = append(problems, checkAGENTSTracked(root)...)
 		if options.Warn != nil {
 			for _, note := range Leftovers(root) {
 				options.Warn(note)
@@ -96,6 +100,29 @@ func HostLeftovers(root string) []string {
 		}
 	}
 	return notes
+}
+
+// checkLegacyBacklog fails when a legacy backlog file sits at the repo's root or under docs/, since
+// only docs/backlog/ group files are read; the fix is running the migrate command.
+func checkLegacyBacklog(root string) []Problem {
+	path, err := backlog.Find(root)
+	if err != nil {
+		return nil
+	}
+	return []Problem{{"legacy-backlog", rel(root, path), "still holds tasks; run `komodo migrate` and remove it"}}
+}
+
+// checkAGENTSTracked fails when AGENTS.md exists but git does not track it, since a line worktree
+// cut from a branch never receives a file git never committed.
+func checkAGENTSTracked(root string) []Problem {
+	path := filepath.Join(root, "AGENTS.md")
+	if !exists(path) {
+		return nil
+	}
+	if _, err := git.Run(root, "ls-files", "--error-unmatch", "--", "AGENTS.md"); err != nil {
+		return []Problem{{"leftovers", "AGENTS.md", "is not tracked by git, so a line worktree never receives it"}}
+	}
+	return nil
 }
 
 // checkPlugins reports each plugin manifest that did not load and a machine enable file that did not parse.

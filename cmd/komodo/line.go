@@ -169,25 +169,19 @@ func runAbandon(root string, args []string) {
 // clearBlocker removes a blocked group's note from its branch's backlog once a person set every task back
 // from BLOCKED, so komodo run feeds the edited group to its resumed builder.
 func clearBlocker(state conductor.State) error {
-	path, err := backlog.Find(state.Worktree)
+	path, text, found, err := backlog.FindGroupFile(state.Worktree, state.Group)
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
+	if !found {
+		return fmt.Errorf("%s is not in %s", state.Group, backlog.GroupFilesDir)
 	}
-	group, ok := backlog.Parse(string(data)).Group(state.Group)
-	if !ok {
-		return fmt.Errorf("%s is not in %s", state.Group, path)
+	group := backlog.ParseGroupFile(text)
+	if group.Status == "BLOCKED" {
+		return fmt.Errorf("%s is still BLOCKED in %s; edit the group and set it READY, then resume", state.Group, path)
 	}
-	for _, task := range group.Tasks {
-		if task.Status == "BLOCKED" {
-			return fmt.Errorf("%s is still BLOCKED in %s; edit the group and set it READY, then resume", task.ID, path)
-		}
-	}
-	text, _ := backlog.RemoveNote(string(data), state.Group)
-	return os.WriteFile(path, []byte(text), 0o644)
+	out, _ := backlog.RemoveGroupFileNote(text)
+	return os.WriteFile(path, []byte(out), 0o644)
 }
 
 // planOutput is what next --json prints: tasks, waves, and machines, not the whole profile.
@@ -487,14 +481,13 @@ func runStep(root string, args []string) {
 	printCompactJSON(os.Stdout, next)
 }
 
-// runRun drives one group through the conductor to Shipped, falling back to the relay skill for
-// --relay, --no-ship, a drain, or a dry run, which also skips the preflight and the lock.
+// runRun drives one group through the conductor to Shipped; --no-ship stops it ready to ship instead,
+// and a drain or a dry run skip the preflight and the lock.
 func runRun(root string, args []string) {
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
 	dry := flags.Bool("dry-run", false, "print the command the host would be given and stop")
 	noShip := flags.Bool("no-ship", false,
 		"stop each group at shipped-ready, skipping the forge credential check and the push")
-	relay := flags.Bool("relay", false, "drive the group through the relay skill instead of the conductor")
 	budget := flags.Duration("budget", 0, "how long the run may take before it is killed (default: "+
 		run.GroupBudget.String()+" per group)")
 	target, rest := splitPositional(args, "budget")
@@ -523,7 +516,7 @@ func runRun(root string, args []string) {
 	options := run.Options{Root: root, Target: target, Budget: *budget, DryRun: *dry, NoShip: *noShip}
 	var code int
 	var err error
-	if *dry || *relay || *noShip || target == "" {
+	if *dry || *noShip || target == "" {
 		code, err = run.Launch(options)
 	} else {
 		code, err = run.Drive(options)

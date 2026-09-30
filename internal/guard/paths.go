@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"komodo/internal/mount"
 )
 
 // isAllowedWrite reports whether a write may always land here: the null device, or a scratch
@@ -32,7 +34,7 @@ func isAllowedWrite(path string) bool {
 	return false
 }
 
-// pathFindings refuses a write that leaves the worktree or lands on a config the hosts own.
+// pathFindings refuses a write on a config the hosts own, and a line session's write outside its worktree.
 func pathFindings(path, cwd, root string, policy Policy) []string {
 	if path == "" {
 		return nil
@@ -42,13 +44,16 @@ func pathFindings(path, cwd, root string, policy Policy) []string {
 		resolved = filepath.Join(cwd, resolved)
 	}
 	resolved = filepath.Clean(resolved)
+	if isHostWritePath(resolved, root) {
+		return nil
+	}
 	if policy.IsConfigPath(resolved, root) {
 		return []string{fmt.Sprintf("%s is a host or toolkit config; the guard owns it", path)}
 	}
 	if isAllowedWrite(resolved) {
 		return nil
 	}
-	if root == "" {
+	if root == "" || !IsLineSession() {
 		return nil
 	}
 	relative, err := filepath.Rel(root, resolved)
@@ -56,6 +61,20 @@ func pathFindings(path, cwd, root string, policy Policy) []string {
 		return []string{fmt.Sprintf("%s is outside the worktree root %s", path, root)}
 	}
 	return nil
+}
+
+// isHostWritePath reports whether a resolved path is a write a registered mount declares for root,
+// such as its own memory store, allowed outside the worktree with no other config path opened.
+func isHostWritePath(resolved, root string) bool {
+	if root == "" {
+		return false
+	}
+	compare := filepath.ToSlash(resolved)
+	if foldsCase() {
+		compare = strings.ToLower(compare)
+	}
+	home, _ := homeDir()
+	return matchesAnyPattern(mount.WritePaths(root), home, compare, compare)
 }
 
 // expandHome replaces a leading tilde with the user's home directory.

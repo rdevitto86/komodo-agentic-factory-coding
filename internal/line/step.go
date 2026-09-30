@@ -452,11 +452,9 @@ func taskFiles(plan *Plan, taskID string) []string {
 func facetsFor(root, worktree, taskID string) []string {
 	tree, _ := detect.Detect(worktree)
 	var declared []string
-	if path, err := backlog.Find(root); err == nil {
-		if parsed, err := backlog.Load(path); err == nil {
-			if task, ok := parsed.Task(taskID); ok {
-				declared = task.Facets()
-			}
+	if parsed, err := backlog.LoadRoot(root); err == nil {
+		if task, ok := parsed.Task(taskID); ok {
+			declared = task.Facets()
 		}
 	}
 	names, err := facet.Select(root, tree, declared)

@@ -3,7 +3,6 @@ package eval
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -171,21 +170,20 @@ func (o *Outcome) measure(dir string) {
 	}
 }
 
-// shippedWorktree reads the ship handoff the group left, returning its worktree when the ship reached it;
-// a session can write the handoff, so a worktree outside the clone is refused.
+// shippedWorktree reads the group's saved state, returning its worktree once Drive left it ready to
+// ship; a session cannot write state.json itself, but a worktree outside the clone is still refused.
 func shippedWorktree(dir, group string) (string, bool, error) {
-	data, err := os.ReadFile(line.HandoffPath(dir, group))
+	state, err := conductor.LoadState(conductor.StatePath(dir, group))
 	if errors.Is(err, os.ErrNotExist) {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, err
 	}
-	var handoff line.ShipHandoff
-	if err := json.Unmarshal(data, &handoff); err != nil {
-		return "", false, fmt.Errorf("the ship handoff: %w", err)
+	if state.Current != conductor.Shipping {
+		return "", false, nil
 	}
-	worktree := handoff.Worktree
+	worktree := state.Worktree
 	if worktree == "" {
 		worktree = dir
 	}
@@ -196,35 +194,108 @@ func shippedWorktree(dir, group string) (string, bool, error) {
 	realDir, dirErr := filepath.EvalSymlinks(dir)
 	realWorktree, worktreeErr := filepath.EvalSymlinks(worktree)
 	if dirErr != nil || worktreeErr != nil {
-		return "", false, fmt.Errorf("the ship handoff names worktree %s, which does not exist", handoff.Worktree)
+		return "", false, fmt.Errorf("the group's saved state names worktree %s, which does not exist", state.Worktree)
 	}
 	rel, err := filepath.Rel(realDir, realWorktree)
 	if err != nil || !filepath.IsLocal(rel) {
-		return "", false, fmt.Errorf("the ship handoff names worktree %s, outside the clone", handoff.Worktree)
+		return "", false, fmt.Errorf("the group's saved state names worktree %s, outside the clone", state.Worktree)
 	}
 	return worktree, true, nil
 }
 
-// appendGroup appends the group file to the clone's backlog, starting a root BACKLOG.md when it has none.
+// appendGroup writes the suite's legacy-grammar group section into the clone's own docs/backlog
+// group file, the shape `komodo migrate` writes.
 func appendGroup(dir, groupFile string) error {
 	text, err := os.ReadFile(groupFile)
 	if err != nil {
 		return err
 	}
-	path, err := backlog.Find(dir)
-	if err != nil {
-		path = filepath.Join(dir, "BACKLOG.md")
-		if err := os.WriteFile(path, []byte("# Backlog\n"), 0o644); err != nil {
-			return err
-		}
+	parsed := backlog.Parse(string(text))
+	if len(parsed.Groups) == 0 {
+		return fmt.Errorf("%s names no group", groupFile)
 	}
-	handle, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
+	group := parsed.Groups[0]
+	file := backlog.GroupFile{
+		ID: group.ID, Title: group.Title, Priority: groupPriority(group), Status: groupStatus(group),
+		Type: group.Type(), Version: group.Version(), EpicID: group.EpicID, DependsOn: group.DependsOn(),
+		Tasks: groupTasks(group),
+	}
+	dest := filepath.Join(dir, backlog.GroupFilesDir, file.ID+"-"+backlog.Slug(file.Title)+".md")
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
-	defer handle.Close()
-	_, err = handle.Write(append([]byte("\n"), text...))
-	return err
+	return os.WriteFile(dest, []byte(backlog.RenderGroupFileDocument(file)), 0o644)
+}
+
+// priorityRank orders a priority letter from most to least urgent, for finding a group's own.
+var priorityRank = []string{"C", "H", "M", "L"}
+
+// rankIndex is a priority letter's position in priorityRank, last with an unknown letter.
+func rankIndex(priority string) int {
+	for index, letter := range priorityRank {
+		if letter == priority {
+			return index
+		}
+	}
+	return len(priorityRank)
+}
+
+// groupPriority is the most urgent priority among a group's tasks, M with none.
+func groupPriority(group backlog.Group) string {
+	best := ""
+	for _, task := range group.Tasks {
+		if best == "" || rankIndex(task.Priority) < rankIndex(best) {
+			best = task.Priority
+		}
+	}
+	if best == "" {
+		return "M"
+	}
+	return best
+}
+
+// groupStatus is a group file's own status: DONE once every task is, BLOCKED with one stopped,
+// READY with one runnable, else REFINEMENT.
+func groupStatus(group backlog.Group) string {
+	if len(group.Tasks) == 0 {
+		return "REFINEMENT"
+	}
+	allDone, anyBlocked, anyReady := true, false, false
+	for _, task := range group.Tasks {
+		if task.Status != "DONE" {
+			allDone = false
+		}
+		if task.Status == "BLOCKED" {
+			anyBlocked = true
+		}
+		if task.Ready() {
+			anyReady = true
+		}
+	}
+	switch {
+	case allDone:
+		return "DONE"
+	case anyBlocked:
+		return "BLOCKED"
+	case anyReady:
+		return "READY"
+	default:
+		return "REFINEMENT"
+	}
+}
+
+// groupTasks converts every legacy-grammar task of a group into a group-file checkbox task.
+func groupTasks(group backlog.Group) []backlog.GroupTask {
+	var out []backlog.GroupTask
+	for _, task := range group.Tasks {
+		out = append(out, backlog.GroupTask{
+			ID: task.ID, Title: task.Title, Done: task.Status == "DONE",
+			Files: task.Files(), Checks: task.DoneWhen(), Owner: task.Fields.String("owner"),
+			Context: task.Context(), DependsOn: task.DependsOn(),
+			Priority: task.Priority, Status: task.Status,
+		})
+	}
+	return out
 }
 
 // copyFile copies one file to target, making its directories.

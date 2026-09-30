@@ -52,6 +52,7 @@ func hookDenialReason(t *testing.T, root, payload string) string {
 // a session denied the same rule three times is told the session ends here, blocked.
 func TestHookEndsTheSessionOnTheThirdIdenticalRefusal(t *testing.T) {
 	registerFakeHost()
+	t.Setenv(RoleEnv, "builder")
 	root := worktree(t)
 	payload := pushPayload(root, "session-a")
 	for attempt := 1; attempt <= 2; attempt++ {
@@ -71,10 +72,31 @@ func TestHookEndsTheSessionOnTheThirdIdenticalRefusal(t *testing.T) {
 	}
 }
 
+// TestHookNeverEndsTheOrchestratorsSession proves the refusal limit is the line's: a session with
+// no role is refused every time, but never told to stop.
+func TestHookNeverEndsTheOrchestratorsSession(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	payload := pushPayload(root, "session-orchestrator")
+	for attempt := 1; attempt <= refusalLimit+1; attempt++ {
+		denial := runHook(t, root, payload)
+		if denial.Continue != nil && !*denial.Continue {
+			t.Fatalf("attempt %d ended the orchestrator's session: %+v", attempt, denial)
+		}
+		if !strings.Contains(denial.Reason, "open a pull request") {
+			t.Fatalf("attempt %d was not refused with the way forward: %q", attempt, denial.Reason)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".komodo", "runs", "guard-refusals", "session-orchestrator.json")); !os.IsNotExist(err) {
+		t.Fatalf("the orchestrator's refusals were counted: %v", err)
+	}
+}
+
 // TestHookRefusalNamesTheWayForward proves every refusal, blocked or not, still names the
 // allowed alternative, so a session ended as blocked is not left without an answer.
 func TestHookRefusalNamesTheWayForward(t *testing.T) {
 	registerFakeHost()
+	t.Setenv(RoleEnv, "builder")
 	root := worktree(t)
 	payload := pushPayload(root, "session-b")
 	for attempt := 1; attempt <= 3; attempt++ {
@@ -107,6 +129,7 @@ func TestASessionIDThatClimbsOutIsNeverAPath(t *testing.T) {
 // allows the call and logs it, rather than denying a call the counting step could not track.
 func TestHookFailsOpenWhenItCannotRecordARefusal(t *testing.T) {
 	registerFakeHost()
+	t.Setenv(RoleEnv, "builder")
 	root := worktree(t)
 	// A file where the refusals directory belongs makes MkdirAll fail underneath it.
 	blocker := filepath.Join(root, ".komodo", "runs")

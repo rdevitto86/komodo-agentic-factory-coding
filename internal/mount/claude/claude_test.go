@@ -220,53 +220,6 @@ func TestSettingsDenyEditsToTheHostsOwnConfig(t *testing.T) {
 	}
 }
 
-func TestHeadlessIsSandboxedByDefaultWhereThePlatformHasOne(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	_, args := Headless("run", "TG-01.1")
-	if !platformSandbox(runtime.GOOS) {
-		if strings.Contains(strings.Join(args, " "), "--settings") {
-			t.Fatalf("args = %v; %s has no sandbox to start", args, runtime.GOOS)
-		}
-		return
-	}
-	if len(args) < 2 || args[len(args)-2] != "--settings" {
-		t.Fatalf("args = %v; with no overlay the run is still sandboxed", args)
-	}
-	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	overlay := `{"sandbox_write":["~/go/pkg/mod"],"sandbox_domains":["proxy.golang.org"]}`
-	if err := os.WriteFile(filepath.Join(home, ".komodo", "config.json"), []byte(overlay), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, args = Headless("run", "TG-01.1")
-	if len(args) < 2 || args[len(args)-2] != "--settings" {
-		t.Fatalf("args = %v; the run passes the sandbox as inline settings", args)
-	}
-	var settings struct {
-		Sandbox struct {
-			Enabled                  bool  `json:"enabled"`
-			FailIfUnavailable        bool  `json:"failIfUnavailable"`
-			AllowUnsandboxedCommands *bool `json:"allowUnsandboxedCommands"`
-			Filesystem               struct {
-				AllowWrite []string `json:"allowWrite"`
-			} `json:"filesystem"`
-			Network struct {
-				AllowedDomains []string `json:"allowedDomains"`
-			} `json:"network"`
-		} `json:"sandbox"`
-	}
-	if err := json.Unmarshal([]byte(args[len(args)-1]), &settings); err != nil {
-		t.Fatal(err)
-	}
-	s := settings.Sandbox
-	if !s.Enabled || !s.FailIfUnavailable || s.AllowUnsandboxedCommands == nil || *s.AllowUnsandboxedCommands ||
-		len(s.Filesystem.AllowWrite) != 1 || len(s.Network.AllowedDomains) != 1 {
-		t.Fatalf("sandbox = %s", args[len(args)-1])
-	}
-}
-
 func TestTheHookCommandIsAnAbsolutePath(t *testing.T) {
 	root := toolkitRepo(t)
 	raw := body(t, root, filepath.Join(Dir, "settings.json"))
@@ -338,6 +291,57 @@ func TestTheHookCommandIsTheRunningBinaryInAForeignRepo(t *testing.T) {
 	t.Fatal("settings.json is not in the plan")
 }
 
+// TestTheHookCommandNamesACopyOfTheBinaryUnderHome proves the guard hook names a copy under
+// ~/.komodo/bin, never the repo's own path, so a rebuild there never moves an already-rendered hook.
+func TestTheHookCommandNamesACopyOfTheBinaryUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := toolkitRepo(t)
+	binary := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(binary, []byte("binary v1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Render(root, binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var command string
+	for _, change := range plan.Changes {
+		if change.Path == filepath.Join(root, Dir, "settings.json") {
+			command = string(change.Body)
+		}
+	}
+	if strings.Contains(command, binary) {
+		t.Fatalf("settings.json = %s, want the repo's own binary path never named", command)
+	}
+	if !strings.Contains(command, filepath.Join(home, ".komodo", "bin", "komodo-")) {
+		t.Fatalf("settings.json = %s, want a copy named under HOME", command)
+	}
+	entries, err := os.ReadDir(filepath.Join(home, ".komodo", "bin"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entries = %v, err = %v; want exactly one copy written", entries, err)
+	}
+	copied, err := os.ReadFile(filepath.Join(home, ".komodo", "bin", entries[0].Name()))
+	if err != nil || string(copied) != "binary v1" {
+		t.Fatalf("copied = %q, err = %v; want the binary's own bytes", copied, err)
+	}
+	// A rebuild that changes the binary's bytes writes a new copy, and never touches the first one.
+	if err := os.WriteFile(binary, []byte("binary v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Render(root, binary); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(filepath.Join(home, ".komodo", "bin", entries[0].Name()))
+	if err != nil || string(first) != "binary v1" {
+		t.Fatalf("the first copy changed: %q, %v", first, err)
+	}
+	entries, err = os.ReadDir(filepath.Join(home, ".komodo", "bin"))
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("entries = %v, err = %v; want a second copy alongside the first", entries, err)
+	}
+}
+
 func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	root := toolkitRepo(t)
 	write := func(rel, contents string) {
@@ -352,6 +356,9 @@ func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	write(filepath.Join(Dir, "hooks", "guard.py"), "old")
 	write(filepath.Join(Dir, "hooks", "my-own-hook.sh"), "mine")
 	write(filepath.Join(Dir, "commands", "my-command.md"), "mine")
+	write(filepath.Join(Dir, "skills", "backlog", "SKILL.md"), "old")
+	write(filepath.Join(Dir, "skills", "review", "SKILL.md"), "old")
+	write(filepath.Join(Dir, "skills", "adhoc", "SKILL.md"), "old")
 	plan, err := Render(root, "komodo")
 	if err != nil {
 		t.Fatal(err)
@@ -367,6 +374,15 @@ func TestOldHooksFilesAreRemovedButAUsersOwnHookSurvives(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, Dir, "commands", "my-command.md")); err != nil {
 		t.Fatal("a user's own command was removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "skills", "backlog", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("the retired backlog skill was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "skills", "review", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("the retired review skill was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "skills", "adhoc", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("the retired adhoc skill was not removed")
 	}
 }
 
@@ -651,17 +667,13 @@ func TestPlanNameFallsDownTheTiers(t *testing.T) {
 }
 
 func TestTheProbeStructReadsNoIdentity(t *testing.T) {
-	body := `{"oauthAccount":{"emailAddress":"a@b.c","accountUuid":"u","organizationRateLimitTier":"default_claude_max_5x"},
-	          "cachedUsageUtilization":{"utilization":{"five_hour":{"utilization":42,"resets_at":"2026-09-22T08:00:00Z"}}}}`
+	body := `{"oauthAccount":{"emailAddress":"a@b.c","accountUuid":"u","organizationRateLimitTier":"default_claude_max_5x"}}`
 	var parsed account
 	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
 		t.Fatal(err)
 	}
 	if planName(parsed) != "max_5x" {
 		t.Fatalf("plan = %q", planName(parsed))
-	}
-	if parsed.Cached.Utilization.FiveHour.Utilization != 42 {
-		t.Fatalf("utilization = %v", parsed.Cached.Utilization.FiveHour.Utilization)
 	}
 	rendered, err := json.Marshal(parsed)
 	if err != nil {
@@ -671,6 +683,20 @@ func TestTheProbeStructReadsNoIdentity(t *testing.T) {
 		if strings.Contains(string(rendered), forbidden) {
 			t.Fatalf("the probe struct carries %q", forbidden)
 		}
+	}
+}
+
+// TestTheProbeIgnoresARemovedUsageField proves a fixture from an older CLI, which still carries
+// cachedUsageUtilization, decodes without error; the field is simply never read.
+func TestTheProbeIgnoresARemovedUsageField(t *testing.T) {
+	body := `{"oauthAccount":{"organizationRateLimitTier":"default_claude_max_5x"},
+	          "cachedUsageUtilization":{"utilization":{"five_hour":{"utilization":42,"resets_at":"2026-09-22T08:00:00Z"}}}}`
+	var parsed account
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if planName(parsed) != "max_5x" {
+		t.Fatalf("plan = %q", planName(parsed))
 	}
 }
 
@@ -857,33 +883,6 @@ func TestAWorktreesHookPointsAtTheMainCheckoutsBinary(t *testing.T) {
 	}
 }
 
-func TestHeadlessBypassesPromptsAndDrivesOnTheStandardTier(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	name, args := Headless("run", "TG-01.1")
-	joined := strings.Join(args, " ")
-	if name != "claude" || !strings.Contains(joined, "-p /run TG-01.1") {
-		t.Fatalf("command = %s %s", name, joined)
-	}
-	if !strings.Contains(joined, "--permission-mode dontAsk") {
-		t.Fatalf("a headless run cannot answer a prompt: %s", joined)
-	}
-	// With dontAsk, a tool outside the allow list is refused, so the relay's own tools must be listed.
-	allowed := ""
-	for index, arg := range args[:len(args)-1] {
-		if arg == "--allowedTools" {
-			allowed = "," + args[index+1] + ","
-		}
-	}
-	for _, tool := range []string{"Bash", "Edit", "Write", "Agent", "Skill"} {
-		if !strings.Contains(allowed, ","+tool+",") {
-			t.Fatalf("the relay session cannot use %s: %s", tool, joined)
-		}
-	}
-	if !strings.Contains(joined, "--model "+models["standard"]) {
-		t.Fatalf("the driver did not take the standard tier: %s", joined)
-	}
-}
-
 func TestLeftoversNamesARetiredHookAndAllowRuleOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	settings := `{
@@ -902,6 +901,64 @@ func TestLeftoversNamesARetiredHookAndAllowRuleOnly(t *testing.T) {
 	}
 	if got := leftoversIn(filepath.Join(t.TempDir(), "missing.json")); got != nil {
 		t.Fatalf("a missing file = %q, want nothing", got)
+	}
+}
+
+// TestLeftoversNamesAnAssessCommandAllowRule proves a retired /assess-* slash command still allowed
+// in a user's settings is named.
+func TestLeftoversNamesAnAssessCommandAllowRule(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	settings := `{"permissions": {"allow": ["SlashCommand(/assess-plan:*)", "Bash(go test:*)"]}}`
+	if err := os.WriteFile(path, []byte(settings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found := leftoversIn(path)
+	if len(found) != 1 || !strings.Contains(found[0], "/assess-plan") {
+		t.Fatalf("found = %q; want the retired /assess-* rule named", found)
+	}
+}
+
+// TestMcpLeftoversNamesARetiredServerAtEveryLevel proves a retired mcpServers entry is named at
+// the top level and under a project, keeping a current server unnamed.
+func TestMcpLeftoversNamesARetiredServerAtEveryLevel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude.json")
+	config := `{
+  "mcpServers": {"komodo-ollama-bridge": {"command": "old"}},
+  "projects": {
+    "/repo/a": {"mcpServers": {"komodo-ollama-bridge": {"command": "old"}, "current-tool": {"command": "keep"}}}
+  }
+}`
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found := mcpLeftoversIn(path)
+	if len(found) != 2 {
+		t.Fatalf("found = %q, want the retired server named once at each level", found)
+	}
+	for _, note := range found {
+		if !strings.Contains(note, "komodo-ollama-bridge") {
+			t.Fatalf("found = %q, want only the retired server named", found)
+		}
+	}
+	if got := mcpLeftoversIn(filepath.Join(t.TempDir(), "missing.json")); got != nil {
+		t.Fatalf("a missing file = %q, want nothing", got)
+	}
+}
+
+// TestWritePathsNamesTheProjectsMemoryDirectory checks the returned path matches this host's own
+// slug scheme: every / and . in the root folds to a dash, under ~/.claude/projects.
+func TestWritePathsNamesTheProjectsMemoryDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "work", "my.repo")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	slug := strings.ReplaceAll(strings.ReplaceAll(filepath.ToSlash(root), "/", "-"), ".", "-")
+	want := filepath.ToSlash(filepath.Join(home, Dir, "projects", slug, "memory")) + "/**"
+	got := WritePaths(root)
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("WritePaths = %v, want [%s]", got, want)
 	}
 }
 
@@ -967,7 +1024,7 @@ func addSkills(t *testing.T, root string, names ...string) {
 func orchestratorRepo(t *testing.T) string {
 	t.Helper()
 	root := toolkitRepo(t)
-	addSkills(t, root, "adhoc", "komodo", "plan", "respond")
+	addSkills(t, root, "komodo", "plan", "respond")
 	return root
 }
 
@@ -1011,7 +1068,7 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	if strings.Join(names, ",") != "adhoc,build,komodo,mine,plan,respond,run,standards-go" {
+	if strings.Join(names, ",") != "build,komodo,mine,plan,respond,run,standards-go" {
 		t.Fatalf("global skills = %v, want the user's own kept and the orchestrator's added", names)
 	}
 	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
@@ -1044,6 +1101,73 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 		if action.Verb != "same" {
 			t.Fatalf("a second global render would %s %s", action.Verb, action.Path)
 		}
+	}
+}
+
+// TestTheGlobalRenderPrunesAnOrchestratorSkillItStoppedShipping checks a marked, dropped skill is
+// removed, while a skill the marker never named, such as one the user added, is left alone.
+func TestTheGlobalRenderPrunesAnOrchestratorSkillItStoppedShipping(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, Dir, "skills")
+	for _, name := range []string{"adhoc", "mine"} {
+		path := filepath.Join(dir, name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	marker := filepath.Join(home, Dir, globalSkillsMarker)
+	if err := os.WriteFile(marker, []byte("adhoc\nkomodo\nplan\nrespond\nrun\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	original := orchestratorSkills
+	orchestratorSkills = []string{"komodo", "plan", "respond", "run"}
+	defer func() { orchestratorSkills = original }()
+	plan, err := RenderGlobal(root, home, "/opt/komodo/komodo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "adhoc", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatal("the adhoc skill this render stopped shipping was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "mine", "SKILL.md")); err != nil {
+		t.Fatal("a skill the marker never named was removed")
+	}
+}
+
+// TestTheGlobalHookNamesACopyOfTheBinaryUnderHome proves the global settings never name the toolkit
+// repo's own binary path, so a rebuild there never moves this machine's orchestrator hook.
+func TestTheGlobalHookNamesACopyOfTheBinaryUnderHome(t *testing.T) {
+	root := orchestratorRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binary := filepath.Join(t.TempDir(), "komodo")
+	if err := os.WriteFile(binary, []byte("toolkit binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := RenderGlobal(root, home, binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(home, Dir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), binary) {
+		t.Fatalf("settings.json = %s, want the toolkit's own binary path never named", raw)
+	}
+	if !strings.Contains(string(raw), filepath.Join(home, ".komodo", "bin", "komodo-")) {
+		t.Fatalf("settings.json = %s, want a copy named under HOME", raw)
 	}
 }
 
@@ -1170,7 +1294,7 @@ func TestTheGlobalRenderFailsWhenTheToolkitSkillsCannotBeRead(t *testing.T) {
 
 func TestTheGlobalRenderFailsWhenAnOrchestratorSkillIsMissing(t *testing.T) {
 	root := toolkitRepo(t)
-	addSkills(t, root, "adhoc", "komodo", "plan")
+	addSkills(t, root, "komodo", "plan")
 	_, err := RenderGlobal(root, t.TempDir(), "/opt/komodo")
 	if err == nil || !strings.Contains(err.Error(), "respond") {
 		t.Fatalf("err = %v, want the missing respond skill named", err)

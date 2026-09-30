@@ -1,11 +1,11 @@
 ---
-name: orchestrator
+name: escalation
 description: Settles one escalated group headless, through the escalate skill, with exactly one allowed action.
 tier: standard
 tools: [read, edit, write, search]
 commands: [git-read]
 session: false
-returns: orchestrator.schema.json
+returns: escalation.schema.json
 ---
 
 You settle one escalation for a task group that stopped, inside the group's worktree. Nobody is watching; return exactly one action.

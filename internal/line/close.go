@@ -46,17 +46,13 @@ type Attempt struct {
 
 // CloseTask validates a task's result, reruns its checks, and records its status in the run.
 func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil, err
 	}
 	task, ok := parsed.Task(taskID)
 	if !ok {
-		return nil, fmt.Errorf("no task %s in %s", taskID, path)
+		return nil, fmt.Errorf("no task %s in %s", taskID, root)
 	}
 	cwd := TaskWorktree(root, taskID)
 	started := time.Now()
@@ -104,11 +100,7 @@ func CloseTask(root, taskID string, runGate bool) (*Outcome, error) {
 
 // CloseFix reruns the group's done_when, comment lint, and gate on a fix round, commits it, and clears the review.
 func CloseFix(root string, plan *Plan) (*Outcome, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil, err
 	}
@@ -467,11 +459,9 @@ func fillMachine(root, taskID string, entry *ledger.Entry) {
 	if role, err := LoadRole(root, "builder"); err == nil && role.Tier != "" {
 		tier = role.Tier
 	}
-	if path, err := backlog.Find(root); err == nil {
-		if parsed, err := backlog.Load(path); err == nil {
-			if task, ok := parsed.Task(taskID); ok && task.Tier() != "" {
-				tier = task.Tier()
-			}
+	if parsed, err := backlog.LoadRoot(root); err == nil {
+		if task, ok := parsed.Task(taskID); ok && task.Tier() != "" {
+			tier = task.Tier()
 		}
 	}
 	machine := resolveProfile(root).Tiers.Machine(tier)

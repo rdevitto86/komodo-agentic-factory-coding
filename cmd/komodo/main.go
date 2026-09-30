@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"komodo/internal/backlog"
 	_ "komodo/internal/mount/ollama"
 
 	_ "komodo/internal/mount/claude"
@@ -19,6 +18,7 @@ import (
 const usage = `komodo: the code assembly line.
 
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
+  komodo migrate [--dry-run]  Convert a legacy backlog file, or TODO.md, into docs/backlog group files
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo backlog             List the open groups under docs/backlog
@@ -34,6 +34,7 @@ const usage = `komodo: the code assembly line.
   komodo diff                 The reviewer's whole input: tasks, standards, diff
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
+  komodo rephase <e> <v>      Move an open epic to a new version: branch, pull requests, backlog
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo release build        Build the per-platform binaries as release assets
   komodo release fold         Fold every changelog fragment into CHANGELOG.md
@@ -49,7 +50,6 @@ const usage = `komodo: the code assembly line.
   komodo abandon <group>      Remove a group's worktree and branch on purpose, and mark its tasks BLOCKED
   komodo ship <group>         Publish a group a missing credential stopped: push, draft PR, labels
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
-  komodo stage <s> [group]    Run one stage ad hoc, build, review or ship, on a group or the current branch
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
   komodo threads --resolve id Mark one review thread resolved
@@ -92,6 +92,8 @@ func main() {
 	switch os.Args[1] {
 	case "init":
 		runInit(root, os.Args[2:])
+	case "migrate":
+		runMigrate(root, os.Args[2:])
 	case "lint":
 		runLint(root)
 	case "list":
@@ -99,11 +101,7 @@ func main() {
 	case "backlog":
 		runBacklog(root)
 	case "add":
-		if _, err := backlog.Find(root); err == nil {
-			runAdd(root, os.Args[2:])
-		} else {
-			runBacklogAdd(root, os.Args[2:])
-		}
+		runBacklogAdd(root, os.Args[2:])
 	case "next":
 		runNext(root, os.Args[2:])
 	case "brief":
@@ -122,6 +120,8 @@ func main() {
 		runReport(root)
 	case "tag":
 		runTag(root)
+	case "rephase":
+		runRephase(root, os.Args[2:])
 	case "release":
 		runRelease(root, os.Args[2:])
 	case "detect":
@@ -144,8 +144,6 @@ func main() {
 		runFinishShip(root, os.Args[2:])
 	case "sync":
 		runSync(root, os.Args[2:])
-	case "stage":
-		runStage(root, os.Args[2:])
 	case "status":
 		runStatus(root, os.Args[2:])
 	case "step":
@@ -190,19 +188,6 @@ func repoRoot() (string, error) {
 		}
 		dir = parent
 	}
-}
-
-// load reads and parses the repo's backlog.
-func load(root string) (string, backlog.Backlog) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		fail(err)
-	}
-	parsed, err := backlog.Load(path)
-	if err != nil {
-		fail(err)
-	}
-	return path, parsed
 }
 
 // printJSON writes one value as indented JSON.

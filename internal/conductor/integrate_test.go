@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/line"
 	"komodo/internal/pr"
 )
@@ -119,7 +120,7 @@ func TestTestMergeTurnsEachBreakageIntoAFixForTheGroupPreparing(t *testing.T) {
 func stackRepo(t *testing.T) (root, child string, parsed backlog.Backlog) {
 	t.Helper()
 	root = checkRepo(t)
-	writeIn(t, root, "BACKLOG.md", stackText)
+	backlogtest.SeedText(t, root, stackText)
 	gitIn(t, root, "add", "-A")
 	gitIn(t, root, "commit", "-q", "-m", "backlog")
 	gitIn(t, root, "branch", "feat/1.0.0")

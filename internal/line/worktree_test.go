@@ -2,7 +2,6 @@ package line
 
 import (
 	"encoding/json"
-	"komodo/internal/git"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog/backlogtest"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 )
 
@@ -386,24 +387,44 @@ func TestTheRepoLockCoversEveryGroup(t *testing.T) {
 	}
 }
 
+// stageFixtures copies a staged repo's group files and its builder role into root.
+func stageFixtures(t *testing.T, staged, root string) {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(staged, "docs", "backlog"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "backlog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(staged, "docs", "backlog", entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "docs", "backlog", entry.Name()), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	role := filepath.Join(RolesDir, "builder.md")
+	data, err := os.ReadFile(filepath.Join(staged, role))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, RolesDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, role), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // cutRepo is a real repo pushed to a bare origin, holding text as its backlog and a builder role.
 func cutRepo(t *testing.T, text string) string {
 	t.Helper()
 	root, _ := remotedRepo(t)
 	runGit(t, root, "push", "origin", "main")
-	staged := repo(t, text)
-	for _, name := range []string{"BACKLOG.md", filepath.Join(RolesDir, "builder.md")} {
-		data, err := os.ReadFile(filepath.Join(staged, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, name), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	stageFixtures(t, repo(t, text), root)
 	return root
 }
 
@@ -499,9 +520,7 @@ func TestAGroupWithAFilelessTaskOverlapsEveryOpenGroup(t *testing.T) {
 	root := twoOpenRuns(t)
 	fileless := "\n### [TG-15.4] Fourth\n```yaml\ntype: feat\nversion: 2.3.0\n```\n\n" +
 		"#### [TSK-15.4.1] Four [P: C] [READY]\n```yaml\ndone_when: [\"true\"]\n```\n"
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(twoGroupBacklog+fileless), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, twoGroupBacklog+fileless)
 	if err := RefuseOpenRun(root, "TG-15.4"); err == nil || !strings.Contains(err.Error(), "is open") {
 		t.Fatalf("err = %v; a task declaring no files may touch any, so its group must be refused", err)
 	}
@@ -597,19 +616,7 @@ func TestAddWorktreeCutsFromBaseNotFromStaleOrigin(t *testing.T) {
 func TestStartCutsAGroupFromTheFetchedOriginMain(t *testing.T) {
 	root, bare := remotedRepo(t)
 	runGit(t, root, "push", "origin", "main")
-	staged := repo(t, twoGroupBacklog)
-	for _, name := range []string{"BACKLOG.md", filepath.Join(RolesDir, "builder.md")} {
-		data, err := os.ReadFile(filepath.Join(staged, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, name), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	stageFixtures(t, repo(t, twoGroupBacklog), root)
 	// A GitHub merge lands on origin/main; local main never moves.
 	clone := t.TempDir()
 	runGit(t, "", "clone", bare, clone)

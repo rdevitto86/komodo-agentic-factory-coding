@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
@@ -435,9 +436,7 @@ func TestEveryActionNamesItsResolvedParts(t *testing.T) {
 func noKomodoRepo(t *testing.T, text string) string {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, text)
 	return root
 }
 
@@ -655,8 +654,7 @@ func writeStepResult(t *testing.T, root, taskID string) {
 // markDone flips a task's status token in the test repo's backlog.
 func markDone(t *testing.T, root, taskID string) {
 	t.Helper()
-	path := filepath.Join(root, "BACKLOG.md")
-	if err := writeStatus(path, taskID, "DONE"); err != nil {
+	if err := writeStatus(root, taskID, "DONE"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -709,7 +707,7 @@ func TestSingleModeSpawnSharesTheGroupWorktree(t *testing.T) {
 // task in the group's own worktree on the group branch, then closes the wave with no merge.
 func TestSingleModeWalksBriefCloseAndCloseWave(t *testing.T) {
 	root := gitRepo(t)
-	commit(t, root, "BACKLOG.md", singleModeBacklog, "seed")
+	commitBacklogText(t, root, singleModeBacklog, "seed")
 	role := "---\nname: builder\ndescription: Writes code.\ntier: standard\ntools: [read, edit, write, shell, search]\n" +
 		"session: true\nreturns: builder.schema.json\n---\n\nTask {{task_id}}: {{title}}\n\n{{task_block}}\n" +
 		"{{repo_rules}}{{repo_context}}{{context}}{{files}}{{repo_profile}}{{standards}}{{done_when}}{{failure}}\n"
@@ -1093,8 +1091,13 @@ const waveBacklog = "### [TG-14.1] A wide group\n```yaml\ntype: feat\nversion: 2
 // briefWave cuts a group with its waves pinned to one, and writes a brief for each named task.
 func briefWave(t *testing.T, text, group string, wave []string, taskIDs ...string) string {
 	t.Helper()
+	return briefWaveFrom(t, repo(t, text), group, wave, taskIDs...)
+}
+
+// briefWaveFrom is briefWave's own work once its repo root is built.
+func briefWaveFrom(t *testing.T, root, group string, wave []string, taskIDs ...string) string {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	root := repo(t, text)
 	if err := SaveRun(root, RunState{Run: group + "-1", Group: group, Base: "main", Branch: "feat/wide", Worktree: root, Waves: [][]string{wave}}); err != nil {
 		t.Fatal(err)
 	}
@@ -1371,6 +1374,12 @@ func TestALegacyRunRecordIsMovedUnderItsGroupOnce(t *testing.T) {
 // tieredRepo is a one-task run on a fake host with a light, standard, and heavy machine, its brief written.
 func tieredRepo(t *testing.T, fields, overlay string) string {
 	t.Helper()
+	return tieredRepoFrom(t, fields, overlay, repo)
+}
+
+// tieredRepoFrom is tieredRepo's own work, seeding its one task's backlog through builder.
+func tieredRepoFrom(t *testing.T, fields, overlay string, builder func(*testing.T, string) string) string {
+	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if overlay != "" {
@@ -1383,7 +1392,7 @@ func tieredRepo(t *testing.T, fields, overlay string) string {
 	}
 	text := "### [TG-12.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
 		"#### [TSK-12.1.1] One [P: C] [READY]\n```yaml\n" + fields + "done_when: [\"go test ./a/...\"]\n```\n"
-	root := repo(t, text)
+	root := builder(t, text)
 	startRun(t, root)
 	if err := os.WriteFile(filepath.Join(root, ".fakehost-tiers-marker"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)

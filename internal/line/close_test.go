@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
 )
@@ -29,7 +30,7 @@ func closeRepo(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	write("BACKLOG.md", closeBacklog)
+	backlogtest.SeedText(t, root, closeBacklog)
 	write("a/one.go", "package a\n\n// One returns one.\nfunc One() int {\n\tx := 1\n\treturn x\n}\n")
 	schema := `{"type":"object","properties":{"result":{"type":"string","enum":["DONE","BLOCKED"]},` +
 		`"summary":{"type":"string"},"changed":{"type":"array","items":{"type":"object",` +
@@ -79,9 +80,9 @@ func TestCloseRecordsDoneInTheRunWhenEverythingPasses(t *testing.T) {
 	if got := LoadStatus(root)["TSK-08.1.1"]; got.Status != "DONE" {
 		t.Fatalf("status = %+v; the run must record DONE", got)
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if !strings.Contains(string(data), "[TSK-08.1.1] Do it [P: C] [READY]") {
-		t.Fatal("close edited BACKLOG.md; the status lives in the run until ship")
+	data, _ := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-08.1-a-group.md"))
+	if !strings.Contains(string(data), "- [ ] **TSK-08.1.1**") {
+		t.Fatal("close edited the group file; the status lives in the run until ship")
 	}
 }
 
@@ -159,9 +160,9 @@ func TestSecondFailureBlocksTheTask(t *testing.T) {
 	if got.Status != "BLOCKED" {
 		t.Fatalf("status = %+v; the blocked status was not recorded", got)
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	if strings.Contains(string(data), "[BLOCKED]") {
-		t.Fatal("close edited BACKLOG.md; the status lives in the run until ship")
+	data, _ := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-08.1-a-group.md"))
+	if strings.Contains(string(data), "[BLOCKED]") || strings.Contains(string(data), "status: BLOCKED") {
+		t.Fatal("close edited the group file; the status lives in the run until ship")
 	}
 }
 

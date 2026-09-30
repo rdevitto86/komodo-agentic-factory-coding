@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/mount"
 )
 
@@ -57,9 +58,7 @@ func groupRoot(t *testing.T, command string) string {
 	}
 	backlog := "# Backlog\n\n### [TG-90.1] A group\n```yaml\ntype: feat\nversion: 3.0.0\n```\n\n" +
 		"#### [TSK-90.1.1] A task [P: C] [READY]\n```yaml\nfiles: [a.go]\ndone_when: [\"" + command + "\"]\n```\n"
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlog)
 	return root
 }
 

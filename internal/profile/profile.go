@@ -48,6 +48,8 @@ type Profile struct {
 	CriticalRefs     []string               `json:"critical_refs,omitempty"`
 	Utilization      float64                `json:"utilization"`
 	ResetsAt         time.Time              `json:"resets_at,omitempty"`
+	ExtraUsage       bool                   `json:"extra_usage"`
+	BillingType      string                 `json:"billing_type,omitempty"`
 	Why              string                 `json:"why"`
 	Mode             string                 `json:"mode"`
 	Roles            map[string]RoleProfile `json:"roles"`
@@ -112,30 +114,37 @@ func planOverlay(profile Profile, plan string) Profile {
 	profile.Plan = plan
 	switch plan {
 	case economyPlan:
-		profile.MaxParallel = 1
 		profile.SeverityFloor = "medium"
 		profile.ReviewSkipLines = 40
 		profile.Repairs = 1
 		profile.PauseAt = 0.75
 		profile.WarnAt = 0.6
 	case "max_5x":
-		profile.MaxParallel = 4
 		profile.PauseAt = 0.9
 		profile.WarnAt = 0.75
 	case "max_20x":
-		profile.MaxParallel = 6
 		profile.PauseAt = 0.9
 		profile.WarnAt = 0.8
 	case apiPlan:
 	default:
 		profile.Plan = "unknown"
-		profile.MaxParallel = 2
 		profile.SeverityFloor = "medium"
 		profile.ReviewSkipLines = 40
 		profile.PauseAt = 0.7
 		profile.WarnAt = 0.55
 	}
 	return profile
+}
+
+// defaultConcurrency is how many builder tasks a profile runs at once when no mount names its own.
+const defaultConcurrency = 2
+
+// concurrency is the host's own Concurrency for the plan, or the default when the host names none.
+func concurrency(host mount.Host, plan string) int {
+	if host.Concurrency != nil {
+		return host.Concurrency(plan)
+	}
+	return defaultConcurrency
 }
 
 // Select picks the profile with no flag: the host installed, the plan probed, the local machine
@@ -152,7 +161,9 @@ func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profil
 	host, found := installed(root, hosts)
 	if !found {
 		profile.Name, profile.Why = "none", "no mount is installed here; run komodo install"
-		return withMode(root, planOverlay(profile, ""))
+		profile = planOverlay(profile, "")
+		profile.MaxParallel = defaultConcurrency
+		return withMode(root, profile)
 	}
 	profile.Host = host.Name
 	plan := ""
@@ -161,9 +172,12 @@ func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profil
 			plan = usage.Plan
 			profile.Utilization = usage.FiveHour
 			profile.ResetsAt = usage.ResetsAt
+			profile.ExtraUsage = usage.ExtraUsage
+			profile.BillingType = usage.BillingType
 		}
 	}
 	profile = planOverlay(profile, plan)
+	profile.MaxParallel = concurrency(host, plan)
 	if host.Tiers != nil {
 		profile.Tiers = host.Tiers(profile.Plan, local)
 	}
@@ -186,6 +200,9 @@ func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profil
 	}
 	if plan == "" {
 		profile.Why += "; no plan probe, so the conservative overlay applies"
+	}
+	if profile.ExtraUsage {
+		profile.Why += "; extra usage is enabled, so a spent window still bills instead of pausing"
 	}
 	return withMode(root, profile)
 }
@@ -269,8 +286,9 @@ func lower(current, proposed int) int {
 	return current
 }
 
-// Bound reports whether a usage window paces the plan; API billing runs unbound, to a spend budget instead.
-func (p Profile) Bound() bool { return p.Plan != apiPlan }
+// Bound reports whether a usage window paces the plan; API billing and extra usage run unbound,
+// to a spend budget instead.
+func (p Profile) Bound() bool { return p.Plan != apiPlan && !p.ExtraUsage }
 
 // Paused reports whether a bound plan's window is too far spent to start another wave.
 func (p Profile) Paused() bool { return p.Bound() && p.Utilization >= p.PauseAt }

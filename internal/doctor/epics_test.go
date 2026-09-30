@@ -1,10 +1,10 @@
 package doctor
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog/backlogtest"
 )
 
 func TestCheckEpicsFlagsEpicWithReadyGroupsButMissingBranchAndDraftPR(t *testing.T) {
@@ -22,9 +22,7 @@ func TestCheckEpicsFlagsEpicWithReadyGroupsButMissingBranchAndDraftPR(t *testing
 		"done_when: [true]\n" +
 		"```\n"
 
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlogText)
 
 	// Mock pr.Runner that returns no draft PR
 	mockPRRun := func(_ string, args ...string) (string, error) {
@@ -63,9 +61,7 @@ func TestCheckEpicsIgnoresEpicWithoutReadyGroups(t *testing.T) {
 		"done_when: [true]\n" +
 		"```\n"
 
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlogText)
 
 	mockPRRun := func(_ string, args ...string) (string, error) {
 		return `[]`, nil
@@ -95,9 +91,7 @@ func TestCheckEpicsIgnoresEpicWithExistingBranchOrDraftPR(t *testing.T) {
 		"done_when: [true]\n" +
 		"```\n"
 
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlogText)
 
 	// Mock pr.Runner that returns a draft PR
 	mockPRRun := func(_ string, args ...string) (string, error) {
@@ -135,9 +129,7 @@ func TestCheckEpicsIgnoresEpicWithExistingBranch(t *testing.T) {
 		"done_when: [true]\n" +
 		"```\n"
 
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlogText)
 
 	mockPRRun := func(_ string, args ...string) (string, error) {
 		return `[]`, nil
@@ -171,9 +163,7 @@ func TestCheckGroupPRFlagsWrongBaseWhenEpicBranchExists(t *testing.T) {
 		"done_when: [true]\n" +
 		"```\n"
 
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlogText)
 
 	// Mock pr.Runner that returns a PR with base=main
 	mockPRRun := func(_ string, args ...string) (string, error) {
@@ -211,9 +201,7 @@ func TestCheckGroupPRIgnoresCorrectBase(t *testing.T) {
 		"done_when: [true]\n" +
 		"```\n"
 
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlogText)
 
 	// Mock pr.Runner that returns a PR with correct base (epic branch)
 	mockPRRun := func(_ string, args ...string) (string, error) {
@@ -251,9 +239,7 @@ func TestCheckGroupPRIgnoresNonGroupBranches(t *testing.T) {
 		"done_when: [true]\n" +
 		"```\n"
 
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(backlogText), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, root, backlogText)
 
 	// Mock pr.Runner that distinguishes between the draft PR check and the group PR check
 	mockPRRun := func(_ string, args ...string) (string, error) {

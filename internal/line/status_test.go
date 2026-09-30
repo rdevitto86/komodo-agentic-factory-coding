@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog/backlogtest"
 )
 
 func TestRecordStatusKeepsEveryTaskAndLeavesNoTempFile(t *testing.T) {
@@ -47,28 +49,62 @@ func TestRecordStatusKeepsEveryTaskAndLeavesNoTempFile(t *testing.T) {
 }
 
 func TestWriteStatusChangesOnlyTheTickOrTheBlocker(t *testing.T) {
-	edited := stepBacklog + "\nA person's note under the task, kept byte for byte.\n"
+	text := "## [TG-12.1] Group [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-12\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-12.1.1** A task\n  - files: `a.go`\n"
 	for _, tc := range []struct {
 		status string
 		ok     bool
 	}{{"DONE", true}, {"BLOCKED", true}, {"IN_PROGRESS", false}, {"READY", false}} {
 		t.Run(tc.status, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "BACKLOG.md")
-			if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+			root := t.TempDir()
+			dir := filepath.Join(root, "docs", "backlog")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			err := writeStatus(path, "TSK-12.1.1", tc.status)
+			path := filepath.Join(dir, "TG-12.1-group.md")
+			if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := writeStatus(root, "TSK-12.1.1", tc.status)
 			if (err == nil) != tc.ok {
 				t.Fatalf("err = %v; only DONE and BLOCKED may reach the backlog", err)
 			}
-			want := edited
-			if tc.ok {
-				want = strings.Replace(edited, "[READY]", "["+tc.status+"]", 1)
+			want := "- [ ]"
+			if tc.ok && tc.status == "DONE" {
+				want = "- [x]"
+			} else if tc.ok {
+				want = "status: " + tc.status
 			}
-			if data, _ := os.ReadFile(path); string(data) != want {
-				t.Fatalf("backlog =\n%s\nwant\n%s", data, want)
+			if data, _ := os.ReadFile(path); !strings.Contains(string(data), want) {
+				t.Fatalf("group file =\n%s\nwant it to contain %q", data, want)
 			}
 		})
+	}
+}
+
+// TestWriteStatusTicksAGroupFileTask proves a repo holding docs/backlog group files gets its tick
+// or blocker written into the task's own group file.
+func TestWriteStatusTicksAGroupFileTask(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "docs", "backlog")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	text := "## [TG-20.1] Group [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-20\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-20.1.1** A task\n  - files: `a.go`\n"
+	path := filepath.Join(dir, "TG-20.1-group.md")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStatus(root, "TSK-20.1.1", "DONE"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "- [x] **TSK-20.1.1**") {
+		t.Fatalf("group file was not ticked: %s", data)
 	}
 }
 
@@ -114,9 +150,10 @@ func TestLoadBacklogReadsTheRunsStatusBeforeTheFile(t *testing.T) {
 	if task, _ := parsed.Task("TSK-12.1.1"); task.Status != "DONE" {
 		t.Fatalf("status = %s; the run's live status must win", task.Status)
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
+	groupFile := filepath.Join(root, "docs", "backlog", "TG-12.1-a-group.md")
+	data, _ := os.ReadFile(groupFile)
 	if !strings.Contains(string(data), "[READY]") {
-		t.Fatal("reading the overlay rewrote BACKLOG.md")
+		t.Fatal("reading the overlay rewrote the group file")
 	}
 }
 
@@ -127,9 +164,7 @@ func TestLoadBacklogKeepsAShippedGroupClosedUntilItLands(t *testing.T) {
 		t.Fatal(err)
 	}
 	shipped := strings.Replace(stepBacklog, "[READY]", "[DONE]", 1)
-	if err := os.WriteFile(filepath.Join(worktree, "BACKLOG.md"), []byte(shipped), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, worktree, shipped)
 	parsed, _, err := LoadBacklog(root)
 	if err != nil {
 		t.Fatal(err)

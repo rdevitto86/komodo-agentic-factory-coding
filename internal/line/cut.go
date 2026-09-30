@@ -28,11 +28,7 @@ func RefuseOpenRun(root, group string) error {
 
 // groupsOverlap reports whether any task of one group claims a file a task of the other claims.
 func groupsOverlap(root, left, right string) bool {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return true
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return true
 	}
@@ -164,11 +160,7 @@ func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
 // keepGroupStatus drops the live status of every task outside groupID, so another group's never
 // ships here, sparing each other open group's own status file.
 func keepGroupStatus(root, groupID string) error {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ Follow the comments standard.
 
 ## Conventions
 
-- **Checkstyle and SpotBugs must both pass** (`checkstyle.xml`, `spotbugs-exclude.xml`). Suppress with `@SuppressWarnings("<rule>")` or a scoped SpotBugs `<Match>`, no prose; reasons go in `BACKLOG.md`. Prefer fixing the finding.
+- **Checkstyle and SpotBugs must both pass** (`checkstyle.xml`, `spotbugs-exclude.xml`). Suppress with `@SuppressWarnings("<rule>")` or a scoped SpotBugs `<Match>`, no prose; reasons go via `komodo add`. Prefer fixing the finding.
 - **Naming**: `PascalCase` for classes/interfaces/records/enums; `camelCase` for methods/fields/locals; `SCREAMING_SNAKE_CASE` for `static final` constants. No Hungarian notation, no `I` prefix.
 - **No `Utils`/`Common`/`Helpers` grab-bag classes.** Split by domain; package-private for anything not crossing the package boundary.
 - **Static initializers and field initializers do no I/O.** Wire through constructor injection, not a static singleton reaching out at class-load time.

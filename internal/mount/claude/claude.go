@@ -2,12 +2,14 @@
 package claude
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -39,6 +41,9 @@ var retired = []string{
 	filepath.Join(Dir, "hooks", "komodo-hooks"),
 	filepath.Join(Dir, "mcp.json"),
 	".mcp.json",
+	filepath.Join(Dir, "skills", "backlog", "SKILL.md"),
+	filepath.Join(Dir, "skills", "review", "SKILL.md"),
+	filepath.Join(Dir, "skills", "adhoc", "SKILL.md"),
 }
 
 // claudeMDImport puts the rendered rules on the file this host always loads into a session.
@@ -115,16 +120,19 @@ func Render(root string, binary string) (install.Plan, error) {
 		if path == ".mcp.json" && !namesLocalServer(full) {
 			continue
 		}
-		plan.AddRemoval(full, "the prototype's render and the old local server entry")
+		plan.AddRemoval(full, "an old render's file, a skill komodo stopped shipping included")
 	}
 	return plan, nil
 }
 
 // orchestratorSkills are the only skills the user-level config carries, so no other role's skill loads there.
-var orchestratorSkills = []string{"adhoc", "komodo", "plan", "respond", "run"}
+var orchestratorSkills = []string{"komodo", "plan", "respond", "run"}
 
 // statusHook is the hook that adds the run's status and any blocked groups to a primary session as it starts.
 const statusHook = "status"
+
+// globalSkillsMarker names the file recording the orchestrator skills the last global render wrote.
+const globalSkillsMarker = ".komodo-rendered"
 
 // RenderGlobal builds the plan that adds the orchestrator layer to the user's config under home:
 // the guard and status hooks and the orchestrator's skills, keeping every setting and skill the user has.
@@ -146,7 +154,14 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 		}
 		plan.Add(filepath.Join(dir, name, "SKILL.md"), []byte(skill.Body), "the orchestrator's "+name+" skill")
 	}
-	// No prune: the user's own skills share this directory, and only a project render may remove skills.
+	// A marked skill absent from this render's list is removed; an unmarked one, such as the user's own, stays.
+	markerPath := filepath.Join(home, Dir, globalSkillsMarker)
+	for _, name := range readGlobalSkillsMarker(markerPath) {
+		if !slices.Contains(orchestratorSkills, name) {
+			plan.AddRemoval(filepath.Join(dir, name, "SKILL.md"), "an orchestrator skill this render drops")
+		}
+	}
+	plan.Add(markerPath, []byte(strings.Join(orchestratorSkills, "\n")+"\n"), "the record of which skills this render wrote")
 
 	if !filepath.IsAbs(binary) {
 		binary = filepath.Join(mount.MainCheckout(root), binary)
@@ -158,6 +173,15 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 	}
 	plan.Add(path, settings, "the guard on PreToolUse and the run's status on SessionStart")
 	return plan, nil
+}
+
+// readGlobalSkillsMarker returns the skill names an earlier global render wrote, or none.
+func readGlobalSkillsMarker(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(data))
 }
 
 // globalSettings reads the user's settings and swaps any komodo hook for the guard and status hooks, keeping the rest.
@@ -178,10 +202,11 @@ func globalSettings(path, binary string) ([]byte, error) {
 	if events == nil {
 		events = map[string]any{}
 	}
+	named := hookBinary(binary)
 	command := func(line string) []any { return []any{map[string]any{"type": "command", "command": line}} }
 	own := map[string]map[string]any{
-		"PreToolUse":   {"matcher": hookMatcher(), "hooks": command(binary + " guard")},
-		"SessionStart": {"hooks": command(fmt.Sprintf("%s hook %s --host claude", binary, statusHook))},
+		"PreToolUse":   {"matcher": hookMatcher(), "hooks": command(named + " guard")},
+		"SessionStart": {"hooks": command(fmt.Sprintf("%s hook %s --host claude", named, statusHook))},
 	}
 	for event, entry := range own {
 		groups, _ := events[event].([]any)
@@ -295,6 +320,31 @@ func agentFile(role mount.Role, ollama bool) string {
 	return strings.Join(head, "\n") + "\n" + role.Instructions() + "\n"
 }
 
+// hookBinary names a copy of binary under ~/.komodo/bin, by its own content, so a rebuild elsewhere
+// never moves an already-rendered repo's hook; a binary this cannot read, hash or copy is named directly.
+func hookBinary(binary string) string {
+	data, err := os.ReadFile(binary)
+	if err != nil {
+		return binary
+	}
+	sum := sha256.Sum256(data)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return binary
+	}
+	target := filepath.Join(home, ".komodo", "bin", "komodo-"+hex.EncodeToString(sum[:])[:12])
+	if _, err := os.Stat(target); err == nil {
+		return target
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return binary
+	}
+	if err := os.WriteFile(target, data, 0o755); err != nil {
+		return binary
+	}
+	return target
+}
+
 // settingsFile renders the hook registration, the permissions convenience layer, and attribution off.
 func settingsFile(root, binary string) ([]byte, error) {
 	policy, err := readPolicy(toolkit.FS(root))
@@ -308,7 +358,7 @@ func settingsFile(root, binary string) ([]byte, error) {
 		"hooks": map[string]any{
 			"PreToolUse": []any{map[string]any{
 				"matcher": hookMatcher(),
-				"hooks":   []any{map[string]any{"type": "command", "command": binary + " guard"}},
+				"hooks":   []any{map[string]any{"type": "command", "command": hookBinary(binary) + " guard"}},
 			}},
 		},
 		"permissions": map[string]any{"deny": denyList(policy)},
@@ -360,6 +410,27 @@ func readPolicy(tree fs.FS) (policyFile, error) {
 	return policy, json.Unmarshal(data, &policy)
 }
 
+// projectSlug turns an absolute path into this host's project-directory name under ~/.claude/projects.
+func projectSlug(path string) string {
+	slug := strings.ReplaceAll(path, "/", "-")
+	return strings.ReplaceAll(slug, ".", "-")
+}
+
+// WritePaths returns this host's project memory directory for root, the only path outside root its
+// session may still write.
+func WritePaths(root string) []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil
+	}
+	dir := filepath.ToSlash(filepath.Join(home, Dir, "projects", projectSlug(filepath.ToSlash(abs)), "memory"))
+	return []string{dir + "/**"}
+}
+
 // namesLocalServer reports whether a file still points at the retired local server.
 func namesLocalServer(path string) bool {
 	data, err := os.ReadFile(path)
@@ -383,10 +454,11 @@ func init() {
 		Installed:   Installed,
 		Tiers:       Tiers,
 		Probe:       Probe,
+		Concurrency: Concurrency,
 		LoggedIn:    LoggedIn,
 		Usage:       Usage,
-		Headless:    Headless,
 		Leftovers:   Leftovers,
+		WritePaths:  WritePaths,
 		ReviewerWhy: reviewerWhy,
 		Contract: func(root, worktree string) mount.Contract {
 			return NewMount(root, worktree, profileTurnCap, 0)
@@ -395,37 +467,63 @@ func init() {
 	install.RegisterGlobal("claude", RenderGlobal)
 }
 
-// relayTools are the only tools a relay session may use; dontAsk refuses the rest without a prompt.
-var relayTools = []string{"Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent", "Skill"}
+// retiredCommands are the commands no hook, allow rule, or mcpServers entry may still name.
+var retiredCommands = []string{"komodo-hooks", "python3 -m komodo", "/assess-", "komodo-ollama-bridge"}
 
-// Headless returns this host's non-interactive command for one skill and one target: no prompt is
-// answered, only relayTools are allowed, the guard hook judges every call, and the standard tier drives.
-func Headless(skill, target string) (string, []string) {
-	prompt := "/" + skill
-	if target != "" {
-		prompt += " " + target
-	}
-	allowed := strings.Join(relayTools, ",")
-	args := []string{
-		"-p", prompt, "--permission-mode", "dontAsk",
-		"--tools", allowed, "--allowedTools", allowed, "--model", modelFor("standard"),
-	}
-	if settings := lineSandbox(mount.LoadOverlay(), runtime.GOOS); settings != "" {
-		args = append(args, "--settings", settings)
-	}
-	return "claude", args
-}
-
-// retiredCommands are the commands no hook or allow rule in this host's user settings may run.
-var retiredCommands = []string{"komodo-hooks", "python3 -m komodo"}
-
-// Leftovers names each hook and allow rule in this host's user settings that runs a retired command.
+// Leftovers names each hook, allow rule, and mcpServers entry in this host's user settings that
+// still names a retired command or server.
 func Leftovers() []string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
 	}
-	return leftoversIn(filepath.Join(home, Dir, "settings.json"))
+	notes := leftoversIn(filepath.Join(home, Dir, "settings.json"))
+	return append(notes, mcpLeftoversIn(filepath.Join(home, ".claude.json"))...)
+}
+
+// mcpLeftoversIn reads this host's own config and names each retired mcpServers entry it still
+// registers, at the top level and under each project entry.
+func mcpLeftoversIn(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var config struct {
+		McpServers map[string]json.RawMessage `json:"mcpServers"`
+		Projects   map[string]struct {
+			McpServers map[string]json.RawMessage `json:"mcpServers"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal(data, &config) != nil {
+		return nil
+	}
+	var found []string
+	found = append(found, retiredServerNames(path, config.McpServers)...)
+	projects := make([]string, 0, len(config.Projects))
+	for project := range config.Projects {
+		projects = append(projects, project)
+	}
+	sort.Strings(projects)
+	for _, project := range projects {
+		found = append(found, retiredServerNames(path, config.Projects[project].McpServers)...)
+	}
+	return found
+}
+
+// retiredServerNames names each retired server in one mcpServers map, in a stable order.
+func retiredServerNames(path string, servers map[string]json.RawMessage) []string {
+	names := make([]string, 0, len(servers))
+	for name := range servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var found []string
+	for _, name := range names {
+		if isRetired(name) {
+			found = append(found, fmt.Sprintf("%s: the mcpServers entry %q names a retired server", path, name))
+		}
+	}
+	return found
 }
 
 // leftoversIn reads one settings file and names each hook command and allow rule that runs a retired command.

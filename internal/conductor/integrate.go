@@ -110,7 +110,7 @@ func mergedInto(root, branch, epic string) bool {
 // Restack moves each open group stacked on a parent that has since merged onto its new base: it takes the
 // base in, pushes a pushed branch, points its PR there and records the base, returning each move.
 func Restack(root string, client *pr.Client) ([]string, error) {
-	if _, err := backlog.Find(root); err != nil {
+	if !backlog.Exists(root) {
 		return nil, nil
 	}
 	parsed, _, err := line.LoadBacklog(root)

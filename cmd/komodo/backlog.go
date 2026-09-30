@@ -10,40 +10,34 @@ import (
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 )
 
 // runLint prints every grammar problem, then each advisory note, and exits non-zero only on a problem.
-// A repo with no BACKLOG.md but a docs/backlog/ directory lints its group files instead.
 func runLint(root string) {
-	if _, err := backlog.Find(root); err != nil {
-		runLintGroupFiles(root)
-		return
-	}
-	_, parsed := load(root)
-	problems := append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...)
-	for _, problem := range problems {
-		fmt.Println(problem)
-	}
-	for _, note := range backlog.Notes(parsed) {
-		fmt.Println("note " + note)
-	}
-	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n",
-		len(parsed.Tasks()), len(parsed.Groups), len(problems))
-	if len(problems) > 0 {
-		exit(1)
-	}
+	runLintGroupFiles(root)
 }
 
-// lintProblems returns every grammar problem for this repo: BACKLOG.md's when it exists, else docs/backlog's group files.
+// lintProblems returns every grammar problem across the repo's docs/backlog group files, none with no
+// group files at all.
 func lintProblems(root string) ([]string, error) {
-	if _, err := backlog.Find(root); err != nil {
-		problems, _, _, err := groupFileLintProblems(root)
-		return problems, err
+	problems, _, _, err := groupFileLintProblems(root)
+	return append(problems, versionProblems(root)...), err
+}
+
+// versionProblems names each open group whose version is at or behind the repo's newest tag.
+func versionProblems(root string) []string {
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		return nil
 	}
-	_, parsed := load(root)
-	return append(backlog.Lint(parsed), backlog.LintContext(root, parsed)...), nil
+	out, err := git.Run(root, "tag", "--list")
+	if err != nil {
+		return nil
+	}
+	return backlog.LintVersions(parsed, strings.Fields(out))
 }
 
 // runLintGroupFiles reports every docs/backlog group file's own problems, plus a group over 12 tasks (REQ-8).
@@ -52,8 +46,12 @@ func runLintGroupFiles(root string) {
 	if err != nil {
 		fail(err)
 	}
+	problems = append(problems, versionProblems(root)...)
 	for _, problem := range problems {
 		fmt.Println(problem)
+	}
+	for _, note := range groupFileNotes(root) {
+		fmt.Println("note " + note)
 	}
 	fmt.Printf("%d task(s), %d group(s), %d problem(s)\n", taskCount, groupCount, len(problems))
 	if len(problems) > 0 {
@@ -68,19 +66,36 @@ func groupFileLintProblems(root string) (problems []string, taskCount, groupCoun
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	var files []backlog.GroupFile
+	texts := map[string]string{}
 	for _, name := range names {
 		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
 		if err != nil {
 			return nil, 0, 0, err
 		}
 		group := backlog.ParseGroupFile(string(data))
-		problems = append(problems, group.Problems...)
-		if len(group.Tasks) > 12 {
-			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", group.ID, len(group.Tasks)))
-		}
-		taskCount += len(group.Tasks)
+		files = append(files, group)
+		texts[group.ID] = string(data)
 	}
-	return problems, taskCount, len(names), nil
+	groupIDs := map[string]bool{}
+	taskIDs := map[string]bool{}
+	for _, file := range files {
+		groupIDs[file.ID] = true
+		for _, task := range file.Tasks {
+			taskIDs[task.ID] = true
+		}
+	}
+	for _, file := range files {
+		problems = append(problems, file.Problems...)
+		// Filed findings wait in REFINEMENT and no builder works them, so only the rest count toward the cap.
+		if built := backlog.BuildableGroupFile(file); built > 12 {
+			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", file.ID, built))
+		}
+		problems = append(problems, backlog.LintGroupFile(root, file, texts[file.ID], groupIDs, taskIDs)...)
+		taskCount += len(file.Tasks)
+	}
+	problems = append(problems, backlog.LintGroupFileEpics(files)...)
+	return problems, taskCount, len(files), nil
 }
 
 // runList prints the tasks of one group, or of every group.
@@ -90,7 +105,7 @@ func runList(root string, args []string) {
 	status := set.String("status", "", "only tasks with this status")
 	needle, rest := splitPositional(args, "status")
 	_ = set.Parse(rest)
-	// A run keeps live status in .komodo, not BACKLOG.md, until it ships; list reads what step reads.
+	// A run keeps live status in .komodo, not its group file, until it ships; list reads what step reads.
 	parsed, _, err := line.LoadBacklog(root)
 	if err != nil {
 		fail(err)
@@ -134,51 +149,6 @@ func runList(root string, args []string) {
 	fmt.Printf("%d task(s)\n", len(rows))
 }
 
-// runAdd appends one task to a group in BACKLOG.md and prints its new id.
-func runAdd(root string, args []string) {
-	set := flag.NewFlagSet("add", flag.ExitOnError)
-	files := set.String("files", "", "comma-separated paths the task touches")
-	doneWhen := set.String("done-when", "", "comma-separated commands that prove it done")
-	priority := set.String("priority", "M", "C, H, M, or L")
-	status := set.String("status", "REFINEMENT", "the status to open the task in")
-	taskType := set.String("type", "feat", "the conventional-commit type")
-	positional, rest := splitFlags(args, "files", "done-when", "priority", "status", "type")
-	_ = set.Parse(rest)
-	if len(positional) < 2 {
-		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
-	}
-	path, _ := load(root)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		fail(err)
-	}
-	var fields backlog.Fields
-	fields.Set("files", split(*files))
-	fields.Set("done_when", split(*doneWhen))
-	fields.Set("type", *taskType)
-	title := strings.Join(positional[1:], " ")
-	out, id, err := backlog.AppendTask(string(data), positional[0], title, fields, *priority, *status)
-	if err != nil {
-		fail(err)
-	}
-	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
-		fail(err)
-	}
-	fmt.Println(id)
-	line.Stamp(root, ledger.Entry{Station: "add", Task: id, Outcome: "added"})
-}
-
-// split turns a comma-separated flag into the list a task block holds.
-func split(value string) []any {
-	items := []any{}
-	for _, part := range strings.Split(value, ",") {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			items = append(items, trimmed)
-		}
-	}
-	return items
-}
-
 // groupFilesDir is where one file per group lives, named <group-id>-<slug>.md.
 const groupFilesDir = "docs/backlog"
 
@@ -202,6 +172,20 @@ func runBacklog(root string) {
 		count++
 	}
 	fmt.Printf("%d group(s)\n", count)
+}
+
+// groupFileNotes collects every group file's lint notes, which never fail lint.
+func groupFileNotes(root string) []string {
+	names, _ := groupFileNames(root)
+	var notes []string
+	for _, name := range names {
+		data, err := os.ReadFile(filepath.Join(root, groupFilesDir, name))
+		if err != nil {
+			continue
+		}
+		notes = append(notes, backlog.NotesGroupFile(backlog.ParseGroupFile(string(data)))...)
+	}
+	return notes
 }
 
 // groupFileNames lists the group files under docs/backlog, sorted, or none when the directory is absent.
@@ -242,20 +226,22 @@ func findGroupFile(root, groupID string) (path, text string, found bool, err err
 	return "", "", false, nil
 }
 
-// runBacklogAdd writes a new group file when groupID has none yet, else appends a task to its file.
+// runBacklogAdd is add's group-file path: it writes a new group file when groupID has none yet,
+// else appends a task to its file.
 func runBacklogAdd(root string, args []string) {
-	set := flag.NewFlagSet("backlog-add", flag.ExitOnError)
+	set := flag.NewFlagSet("add", flag.ExitOnError)
 	files := set.String("files", "", "comma-separated paths the task touches")
 	accept := set.String("accept", "", "comma-separated acceptance lines")
+	doneWhen := set.String("done-when", "", "comma-separated shell commands whose zero exit proves the task done")
 	priority := set.String("priority", "M", "C, H, M, or L")
 	status := set.String("status", "REFINEMENT", "the status to open the group in")
 	groupType := set.String("type", "feat", "the conventional-commit type")
 	version := set.String("version", "", "the version the group ships")
 	epic := set.String("epic", "", "the epic id the group belongs to")
-	positional, rest := splitFlags(args, "files", "accept", "priority", "status", "type", "version", "epic")
+	positional, rest := splitFlags(args, "files", "accept", "done-when", "priority", "status", "type", "version", "epic")
 	_ = set.Parse(rest)
 	if len(positional) < 2 {
-		fail(fmt.Errorf("usage: komodo backlog add <group> <title> [--files a,b]"))
+		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
 	}
 	groupID, title := positional[0], strings.Join(positional[1:], " ")
 	path, text, found, err := findGroupFile(root, groupID)
@@ -263,7 +249,12 @@ func runBacklogAdd(root string, args []string) {
 		fail(err)
 	}
 	if found {
-		out, id, err := backlog.AppendGroupFileTask(text, title, splitStrings(*files), splitStrings(*accept))
+		if len(splitStrings(*files)) == 0 {
+			fail(fmt.Errorf("task declares no files; pass --files"))
+		}
+		out, id, err := backlog.AppendGroupFileTaskWith(text, backlog.GroupTask{
+			Title: title, Files: splitStrings(*files), Accept: splitStrings(*accept), Checks: splitStrings(*doneWhen),
+		})
 		if err != nil {
 			fail(err)
 		}

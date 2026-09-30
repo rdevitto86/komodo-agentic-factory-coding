@@ -124,7 +124,6 @@ Every model session returns JSON checked against its role's schema; the conducto
 | `komodo status [--watch]` | The current run: groups by state, time used and blockers |
 | `komodo stop [group]`, `komodo resume [group…]` | Stops with the work saved, or resumes stopped and edited groups |
 | `komodo ship <group>` | Finishes a group stopped before Ship |
-| `komodo stage <build\|review\|ship> …` | Runs one stage ad hoc |
 | `komodo check <task\|findings\|scope>` | The checks that hooks and agents call |
 | `komodo backlog`, `komodo add <group> "<title>"` | Lists the open groups; adds a group or task |
 | `komodo report [run]` | Summarises a run's metrics |
@@ -135,14 +134,15 @@ Every model session returns JSON checked against its role's schema; the conducto
 
 ### Orchestrator commands
 
-Each one is a thin skill that calls `komodo`; the orchestrator never routes stages itself.
+Each one is a thin skill that calls `komodo`. `/run` is the line's one entry; the conductor drives every
+stage from there, no session relaying it. Ad hoc work is the orchestrator spawning its own default
+agents outside the line, with no skill of its own (decision 0034).
 
 | Command | Does |
 |---|---|
 | `/run [groups]` | Starts the conductor in the background and reports progress |
 | `/status` | Shows groups by state, time used and blocker notes |
 | `/plan <docs>` | Drafts task groups from the PRD and specs through the planner; they must pass lint |
-| `/build`, `/review`, `/ship` | Runs one stage ad hoc on a group or the current branch |
 | `/stop`, `/resume` | Stops or resumes groups |
 | `/release` | This repo only: cuts a release through `komodo release` |
 
@@ -326,7 +326,6 @@ Each role runs with its own plugin directory and nothing else. The global layer 
 | `komodo` | The command reference, generated from `komodo help` | Orchestrator | Any time the line is driven |
 | `run` | Start, watch, stop and resume runs; answer status questions | Orchestrator | `/run`, `/status`, `/stop`, `/resume` |
 | `plan` | Turn the PRD and specs into task groups that pass lint | Orchestrator, planner | `/plan` |
-| `adhoc` | Run a single stage without the pipeline | Orchestrator | `/build`, `/review`, `/ship` |
 | `escalate` | Settle an escalation with one allowed action | Orchestrator | On an escalation |
 | `build` | Work a task list: order, checks, scope, finishing as blocked | Builder | Build, Repair |
 | `review-correctness`, `review-security`, `review-quality` | One lens's checklist and evidence rules | Matching lens | Review |
@@ -353,7 +352,10 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 
 | Hook | Session | Checks one thing | On a violation | Limit | If the hook itself fails |
 |---|---|---|---|---|---|
-| Guard, PreToolUse | Every session | The five rules in [Security](#security), plus the builder's file scope | Refuses, naming the allowed alternative | 3 refusals of one rule per session, then the session ends as blocked | Allows and logs |
+| Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths | Refuses, naming the allowed alternative | — | Allows and logs |
+| Gate, commit-msg | Every committer, model or not | The message carries no trailer the loaded policy names | Refuses, naming the trailer to remove | — | Fails, naming the missing binary |
+| Gate, pre-commit | Every committer, model or not | The branch is not critical, and is `<type>/<kebab-name>`, an epic branch, a line-cut slug, or detached | Refuses, naming the branch to rename | — | Fails, naming the missing binary |
+| Guard, PreToolUse, line tier | A session `KOMODO_ROLE` names (decision 0034) | The global tier, plus writes outside the worktree, isolated spawns, and the epic branch's push and merge | Refuses, naming the allowed alternative | 3 refusals of one rule per session, then the session ends as blocked | Allows and logs |
 | Format, PostToolUse on edits | Builder | Formats the edited file and lints only that file | Never refuses; returns lint output as context | — | Skips |
 | Task checks, Stop | Builder | The group's checks pass | Refuses to stop, with the failing output | 3, the host's stop-hook cap | Allows; Check still reruns everything |
 | Evidence, Stop | Review lens | Every blocking finding carries evidence | Refuses to stop, listing the findings without evidence | 2, then those findings become notes | Allows |
@@ -376,7 +378,7 @@ Each role's settings carry an allow list that covers everything its stage needs 
 |---|---|---|---|
 | Builder | Reading, searching, creating, editing, moving and deleting files in the worktree; read-only git (`status`, `diff`, `log`, `show`, `blame`); the repo's build, test, lint and format commands; `komodo check` | Git writes (commit, switch, reset, rebase, merge, stash, push); network tools beyond the sandbox allowlist; anything outside the worktree | Commits, branches, syncing with the base, conflict setup, cleanup |
 | Review lens | Reading, searching, read-only git | Every edit and every git write | Running reproducers and validators |
-| Orchestrator | Everything in the current repo, including this repo's rules, skills and guard source; switching to `main` and fast-forwarding it; creating and deleting feature branches; `komodo`; read-only `gh` | Commits, pushes, merges, deletes or force on `main`; commit trailers; hand edits to `.git/config` and `.git/hooks` | Shipping, through `komodo ship` |
+| Orchestrator | Everything in the current repo, including this repo's rules, skills and guard source; switching to `main` and fast-forwarding it; creating and deleting feature branches; spawning its own isolated agents for ad hoc work; `komodo`; read-only `gh` | Commits, pushes, merges, deletes or force on `main`; commit trailers; hand edits to `.git/config` and `.git/hooks` | Shipping, through `komodo ship` |
 
 ### Cross-platform: macOS, Linux, Windows
 
@@ -394,7 +396,7 @@ Native Windows comes first, and WSL2 is used when present (decision 0017). WSL2 
 ### Pacing, limits and loop detection
 
 - **Bound or unbound.** The plan probe (`internal/mount/claude/limits.go`) and the host's `rate_limit_event` stream messages give the plan and its usage windows. On a subscription the conductor paces to the windows and pauses until the reset (REQ-32). On API billing, a spend budget applies instead.
-- **Concurrency.** Groups at once, as starting values: Pro 1, Max 5x 2, Max 20x 4, API 4.
+- **Concurrency.** Groups at once, as starting values: Pro 1, Max 5x 4, Max 20x 6, API 4, from the mount's own `Concurrency(plan)`.
 - **Time.** A group has 60 minutes (REQ-29). Session starting values: build 25 minutes, each lens 8, each repair 10, each re-review 5.
 - **Loop detection.** The conductor stops a group and escalates when:
   - a round leaves the open findings unchanged
@@ -422,12 +424,13 @@ Native Windows comes first, and WSL2 is used when present (decision 0017). WSL2 
 
 ### Security
 
-The guard keeps five rules:
+The guard keeps four rules:
 1. no commit, push, merge, delete or force on a critical ref
 2. no push that rewrites history
 3. no skipping git hooks
-4. no attribution trailers
-5. no edit or write outside the worktree
+4. no edit or write outside the worktree
+
+A commit's trailer and its branch name are refused by the gate's commit-msg and pre-commit git hooks instead, so every committer answers to them, model or not, not only a tool call the guard can see.
 
 Its matcher covers every host tool that runs a command: Bash, PowerShell and Monitor. It does not stop links, command launchers, HTTP forge writes, or expansion it cannot see at runtime. The sandbox, where the platform has one, and the absent forge credential hold against those.
 
@@ -451,7 +454,7 @@ Inside WSL2, the installer also checks that the repo is on the Linux filesystem.
 
 ### Binaries and releases
 
-- **This repo rebuilds itself.** The gate installs post-merge, post-checkout and post-rewrite hooks alongside pre-commit and pre-push. When Go sources changed, they rebuild `bin/`, so nobody runs a command to get the latest binary (REQ-5, decision 0018).
+- **This repo rebuilds itself.** The gate installs post-merge, post-checkout and post-rewrite hooks alongside pre-commit, commit-msg and pre-push. When Go sources changed, they rebuild `bin/`, so nobody runs a command to get the latest binary (REQ-5, decision 0018).
 - **A build is reproducible.** `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false` and `-ldflags "-s -w"` plus the changelog version and commit make a rebuild of one commit byte-identical (decision 0002); `GOTOOLCHAIN` is pinned to `go.mod`'s `toolchain` line, and `komodo version` prints what a binary was built from.
 - **`komodo release` publishes.** On the owner's machine it cross-compiles every platform into `dist/`, runs the tests, writes checksums and publishes a GitHub Release. No forge CI runs.
 - **The `release` skill** drives it from the orchestrator, including the version bump and changelog.

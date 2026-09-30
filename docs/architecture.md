@@ -9,7 +9,7 @@ The parts and how they connect: small enough for a planner and a reviewer to rea
 Komodo bolts onto Claude Code as rules, skills, configuration and compiled binaries. It is two products in one install:
 
 - **A session harness.** Every Claude Code session a developer opens gains the orchestrator: the guard, the line's commands, and the skills to plan, run and watch work.
-- **A code factory.** The assembly line turns task groups into reviewed, draft-first pull requests, the same way on every machine.
+- **A code factory.** The assembly line turns task groups into reviewed, draft-first pull requests, the same way on every machine. The line is captive: `/run`, which runs `komodo run`, is its one entry, and the conductor binary drives every stage from there (decision 0005, amended by 0034).
 
 Five principles shape it:
 
@@ -35,7 +35,7 @@ Five principles shape it:
 
 | Component | Responsibility | Runs where |
 |---|---|---|
-| Orchestrator | The person's single interface: plans work, starts and watches runs, answers questions, injects groups, runs single stages ad hoc, and settles escalations | The primary Claude Code session, with the global layer |
+| Orchestrator | The person's single interface: plans work, starts and watches runs, answers questions, injects groups, spawns its own agents for ad hoc work, and settles escalations | The primary Claude Code session, with the global layer |
 | Conductor | Runs the stages, spawns and resumes sessions, enforces limits, runs every check and all git work, paces to the plan, and stops what can't be settled | The `komodo` binary |
 | Builder | Works one task group's task list, then repairs from a fix list | A headless session in the group's worktree |
 | Review lenses | Judge one group's diff against its task list, each through one lens, with evidence | Headless read-only sessions, run in parallel |

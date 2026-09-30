@@ -16,11 +16,7 @@ func RefuseCollision(root, taskID string) error {
 	if err != nil || state.Branch == "" {
 		return nil
 	}
-	path, err := backlog.Find(root)
-	if err != nil {
-		return nil
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return nil
 	}

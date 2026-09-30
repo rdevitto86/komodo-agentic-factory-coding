@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
@@ -38,18 +37,13 @@ type account struct {
 		UserRateLimitTier         string `json:"userRateLimitTier"`
 		SeatTier                  string `json:"seatTier"`
 		SubscriptionType          string `json:"subscriptionType"`
+		HasExtraUsageEnabled      bool   `json:"hasExtraUsageEnabled"`
+		BillingType               string `json:"billingType"`
 	} `json:"oauthAccount"`
-	Cached struct {
-		Utilization struct {
-			FiveHour struct {
-				Utilization float64 `json:"utilization"`
-				ResetsAt    string  `json:"resets_at"`
-			} `json:"five_hour"`
-		} `json:"utilization"`
-	} `json:"cachedUsageUtilization"`
 }
 
-// Probe reads the plan and the window from this host's config file, never from its status line.
+// Probe reads the plan, the extra-usage switch and the billing type from this host's config file,
+// never a usage window; only a running session's rate_limit_event carries FiveHour and ResetsAt.
 func Probe() (mount.Usage, bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -63,9 +57,10 @@ func Probe() (mount.Usage, bool) {
 	if json.Unmarshal(data, &parsed) != nil {
 		return mount.Usage{}, false
 	}
-	usage := mount.Usage{Plan: planName(parsed), FiveHour: parsed.Cached.Utilization.FiveHour.Utilization / 100}
-	if stamp, err := time.Parse(time.RFC3339, parsed.Cached.Utilization.FiveHour.ResetsAt); err == nil {
-		usage.ResetsAt = stamp
+	usage := mount.Usage{
+		Plan:        planName(parsed),
+		ExtraUsage:  parsed.OAuth.HasExtraUsageEnabled,
+		BillingType: parsed.OAuth.BillingType,
 	}
 	if usage.Plan == "" {
 		return usage, false
@@ -89,6 +84,17 @@ func planName(parsed account) string {
 		}
 	}
 	return ""
+}
+
+// planConcurrency is how many groups or builder tasks each of this host's plans runs at once.
+var planConcurrency = map[string]int{"pro": 1, "max_5x": 4, "max_20x": 6, "api": 4}
+
+// Concurrency is how many groups or builder tasks the named plan runs at once; an unknown plan runs 2.
+func Concurrency(plan string) int {
+	if lanes, ok := planConcurrency[plan]; ok {
+		return lanes
+	}
+	return 2
 }
 
 // Installed reports whether this host's project directory has been rendered here.

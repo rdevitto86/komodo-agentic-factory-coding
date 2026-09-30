@@ -22,9 +22,13 @@ import (
 	"komodo/internal/review"
 )
 
+// errStoppedBeforeShip signals a no-ship drive halted before running the ship station.
+var errStoppedBeforeShip = errors.New("stopped before ship")
+
 // Drive cuts one group's worktree when no run is open for it, then drives it through the conductor to Shipped,
-// merged into its epic branch when cut from one; it resumes a saved state.json and exits non-zero short of Shipped.
+// merged into its epic branch when cut from one; NoShip stops it once the group is ready to ship instead.
 func Drive(options Options) (int, error) {
+	markLine()
 	root := options.Root
 	// A group resumed past Prepare has its tasks DONE already, so its open run's plan keeps closed tasks.
 	plan, err := line.PlanForGroup(root, options.Target)
@@ -47,7 +51,7 @@ func Drive(options Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	driver, err := newDriver(root, plan, runState.Run, contract, options.PR)
+	driver, err := newDriver(root, plan, runState.Run, contract, options.PR, options.NoShip)
 	if err != nil {
 		return 1, err
 	}
@@ -62,11 +66,20 @@ func Drive(options Options) (int, error) {
 	defer stop()
 	statePath := conductor.StatePath(root, plan.Group)
 	final, err := driveState(ctx, driver, statePath, plan, worktree)
+	if errors.Is(err, errStoppedBeforeShip) {
+		err = nil
+	}
 	if saveErr := conductor.SaveState(statePath, final); saveErr != nil && err == nil {
 		err = saveErr
 	}
 	if err != nil {
 		return 1, err
+	}
+	if options.NoShip {
+		if final.Current != conductor.Shipping {
+			return 1, fmt.Errorf("%s stopped at %s, not ready to ship", plan.Group, final.Current)
+		}
+		return 0, nil
 	}
 	if final.Current != conductor.Shipped {
 		return 1, fmt.Errorf("%s stopped at %s, not Shipped", plan.Group, final.Current)
@@ -140,8 +153,10 @@ func driverContract(root, worktree string) (mount.Contract, error) {
 }
 
 // newDriver builds the conductor's driver for one group: its host, its requests, its wrapped
-// stations, and the shared ledger, saving every move to the group's own state.json.
-func newDriver(root string, plan *line.Plan, run string, contract mount.Contract, client *pr.Client) (*conductor.Driver, error) {
+// stations, and the shared ledger; noShip stops it before the ship station ever runs.
+func newDriver(
+	root string, plan *line.Plan, run string, contract mount.Contract, client *pr.Client, noShip bool,
+) (*conductor.Driver, error) {
 	builder, err := BuilderRequest(root, plan)
 	if err != nil {
 		return nil, err
@@ -155,9 +170,13 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 		heavy.Effort = machine.Effort
 	}
 	stations := &conductor.Line{Root: root, Plan: plan, Client: client}
+	var driverStations conductor.Stations = stations
+	if noShip {
+		driverStations = noShipStations{stations}
+	}
 	return &conductor.Driver{
 		Host:     contract,
-		Stations: stations,
+		Stations: driverStations,
 		Block:    stations.Block,
 		Ledger:   line.Book(root),
 		Run:      run,
@@ -179,9 +198,7 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 		},
 		SeverityFloor: plan.Profile.SeverityFloor,
 		Tasks:         plan.Tasks,
-		Save: func(s conductor.State) error {
-			return conductor.SaveState(conductor.StatePath(root, plan.Group), s)
-		},
+		Save:          saveState(root, plan.Group, noShip),
 		WriteReview: func(group string, result mount.Result) error {
 			return writeReview(root, group, result)
 		},
@@ -195,10 +212,31 @@ func newDriver(root string, plan *line.Plan, run string, contract mount.Contract
 	}, nil
 }
 
-// orchestratorRequest fills the headless orchestrator's start request for one escalation: its role's
-// template with the group, the state it left, why, and each task's files, on the orchestrator's machine.
+// saveState writes a group's state to its state.json; with noShip it stops the drive instead of
+// saving the group's move into Shipping, so the ship station never runs.
+func saveState(root, group string, noShip bool) func(conductor.State) error {
+	return func(s conductor.State) error {
+		if noShip && s.Current == conductor.Shipping {
+			return errStoppedBeforeShip
+		}
+		return conductor.SaveState(conductor.StatePath(root, group), s)
+	}
+}
+
+// noShipStations wraps another Stations, refusing Ship so a resumed no-ship drive never pushes.
+type noShipStations struct {
+	conductor.Stations
+}
+
+// Ship returns errStoppedBeforeShip without pushing or opening a pull request.
+func (noShipStations) Ship(context.Context) error {
+	return errStoppedBeforeShip
+}
+
+// orchestratorRequest fills the headless escalation session's start request: its role's template with
+// the group, the state it left, why, and each task's files, on the escalation role's machine.
 func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (mount.StartRequest, error) {
-	definition, err := line.LoadRole(root, "orchestrator")
+	definition, err := line.LoadRole(root, "escalation")
 	if err != nil {
 		return mount.StartRequest{}, err
 	}
@@ -210,53 +248,33 @@ func orchestratorRequest(root string, plan *line.Plan, e conductor.Escalation) (
 		"{{group}}", e.Group, "{{branch}}", plan.Branch, "{{left}}", string(e.Left),
 		"{{reason}}", e.Reason, "{{tasks}}", strings.Join(tasks, "\n"),
 	).Replace(definition.Body)
-	machine, _ := plan.Profile.Machine("orchestrator")
+	machine, _ := plan.Profile.Machine("escalation")
 	return mount.StartRequest{
-		Role:   "orchestrator",
+		Role:   "escalation",
 		Brief:  brief,
 		Tools:  definition.Tools,
 		Model:  machine.Model,
 		Effort: machine.Effort,
-		Schema: []byte(line.SchemaText(root, "orchestrator")),
+		Schema: []byte(line.SchemaText(root, "escalation")),
 	}, nil
 }
 
-// editedGroup is the group's section of the worktree's backlog, as a person edited it on the group's branch.
+// editedGroup is the group's own docs/backlog file, as a person edited it on the group's branch.
 func editedGroup(worktree, group string) (string, bool) {
-	path, err := backlog.Find(worktree)
-	if err != nil {
+	_, text, found, err := backlog.FindGroupFile(worktree, group)
+	if err != nil || !found {
 		return "", false
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", false
-	}
-	return backlog.GroupText(string(data), group)
+	return strings.TrimSpace(text), true
 }
 
-// lintBacklog returns the worktree backlog's lint problems, as komodo lint reports them: BACKLOG.md's when it
-// exists, else each docs/backlog group file's own.
+// lintBacklog returns the worktree backlog's lint problems, as komodo lint reports them.
 func lintBacklog(worktree string) ([]string, error) {
-	if path, err := backlog.Find(worktree); err == nil {
-		parsed, err := backlog.Load(path)
-		if err != nil {
-			return nil, err
-		}
-		return append(backlog.Lint(parsed), backlog.LintContext(worktree, parsed)...), nil
-	}
-	files, err := filepath.Glob(filepath.Join(worktree, "docs", "backlog", "*.md"))
+	parsed, err := backlog.LoadRoot(worktree)
 	if err != nil {
 		return nil, err
 	}
-	var problems []string
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return nil, err
-		}
-		problems = append(problems, backlog.ParseGroupFile(string(data)).Problems...)
-	}
-	return problems, nil
+	return append(backlog.Lint(parsed), backlog.LintContext(worktree, parsed)...), nil
 }
 
 // writeReview saves the reviewer's whole result, findings with their files and titles, where

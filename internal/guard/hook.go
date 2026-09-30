@@ -15,7 +15,7 @@ import (
 // ExitDeny is the exit code a host reads as a refusal when it cannot read the JSON.
 const ExitDeny = 2
 
-// refusalLimit is how many identical refusals one session may hit before the guard ends it (REQ-37).
+// refusalLimit is how many identical refusals one line session may hit before the guard ends it (REQ-37).
 const refusalLimit = 3
 
 // CurrentBranch is the branch a directory is on, or the empty string.
@@ -39,22 +39,39 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 		request.Cwd, _ = os.Getwd()
 	}
 	root := WorktreeRoot(request.Cwd)
-	decision := Check(request, Load(toolkitRoot, root), CurrentBranch(request.Cwd))
-	if !decision.Deny {
-		return 0
-	}
-	reason := Reason(decision.Findings)
+	branch := CurrentBranch(request.Cwd)
+	decision := Check(request, Load(toolkitRoot, root), branch)
 	var sessionPayload struct {
 		SessionID string `json:"session_id"`
 	}
 	_ = json.Unmarshal(raw, &sessionPayload)
-	blocked, err := recordRefusal(root, sessionPayload.SessionID, strings.Join(decision.Findings, "|"))
-	if err != nil {
-		fmt.Fprintf(stderr, "guard: %v; allowing\n", err)
+	notice := ""
+	if !decision.Deny {
+		claimed := ClaimCheck(request, root, branch, sessionPayload.SessionID)
+		if claimed.Deny {
+			decision = Decision{Deny: true, Findings: []string{claimed.Finding}}
+		} else {
+			notice = claimed.Notice
+		}
+	}
+	if !decision.Deny {
+		if notice != "" {
+			fmt.Fprintln(stderr, notice)
+		}
 		return 0
 	}
-	if blocked {
-		reason = blockedReason(decision.Findings)
+	reason := Reason(decision.Findings)
+	blocked := false
+	// Only a line session counts toward the refusal limit; the orchestrator is refused, never ended.
+	if IsLineSession() {
+		blocked, err = recordRefusal(root, sessionPayload.SessionID, strings.Join(decision.Findings, "|"))
+		if err != nil {
+			fmt.Fprintf(stderr, "guard: %v; allowing\n", err)
+			return 0
+		}
+		if blocked {
+			reason = blockedReason(decision.Findings)
+		}
 	}
 	if tools, ok := hostGuard(request.ToolName); ok && tools.Deny != nil {
 		if out := tools.Deny(reason, blocked); out != nil {

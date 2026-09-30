@@ -71,6 +71,16 @@ func TestOnlyTheOrchestratorOnABranchEditsTheShippedPolicy(t *testing.T) {
 	}
 }
 
+// TestTheShippedPolicyProtectsEveryCriticalRef proves komodo/policy.json names every ref AGENTS.md forbids.
+func TestTheShippedPolicyProtectsEveryCriticalRef(t *testing.T) {
+	policy := Load(t.TempDir(), t.TempDir())
+	for _, ref := range []string{"main", "master", "trunk", "prod", "production", "release/2.0", "hotfix/urgent"} {
+		if !policy.IsCritical(ref) {
+			t.Errorf("%s is not protected", ref)
+		}
+	}
+}
+
 func TestEverySessionIsRefusedTheHostsGitAndBinaryPaths(t *testing.T) {
 	registerFakeHost()
 	toolkit := toolkitWithoutPolicyPath(t)
@@ -85,5 +95,18 @@ func TestEverySessionIsRefusedTheHostsGitAndBinaryPaths(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestASharedBranchClaimIsAGlobalTierCheckNotOnlyALineRole documents that a claim check runs for
+// every session, so IsLineSession alone must never be the only gate on it.
+func TestASharedBranchClaimIsAGlobalTierCheckNotOnlyALineRole(t *testing.T) {
+	t.Setenv(RoleEnv, "")
+	if IsLineSession() {
+		t.Fatal("the orchestrator carries no role; a claim check gated on IsLineSession would skip it")
+	}
+	t.Setenv(RoleEnv, "builder")
+	if !IsLineSession() {
+		t.Fatal("a builder carries a role; a claim check still applies to it as well")
 	}
 }

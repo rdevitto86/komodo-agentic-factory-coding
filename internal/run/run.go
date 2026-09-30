@@ -2,13 +2,9 @@
 package run
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -18,21 +14,15 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/conductor"
-	"komodo/internal/git"
 	"komodo/internal/guard"
-	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
-	"komodo/internal/proc"
 	"komodo/internal/profile"
 )
 
 // GroupBudget is how long one headless group may run before the launcher kills it.
 const GroupBudget = 90 * time.Minute
-
-// Skill is the skill a headless run always enters through.
-const Skill = "run"
 
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {
@@ -49,44 +39,37 @@ type Options struct {
 	Executable string
 }
 
-// Command resolves the host from the profile and returns what a headless run would invoke.
-func Command(root, target string) (string, []string, error) {
-	selected := profile.Select(root)
-	host, ok := mount.Get(selected.Host)
-	if !ok || host.Headless == nil {
-		return "", nil, errors.New("no mount is installed here; run komodo install")
-	}
-	name, args := host.Headless(Skill, target)
-	return name, args, nil
-}
-
-// Launch drives the host non-interactively on one target and returns its exit code; with no
+// Launch drives one target through Drive, or prints its plan with no model on a dry run; with no
 // target it drains every ready group in order.
 func Launch(options Options) (int, error) {
+	markLine()
 	if options.Target == "" {
 		return drain(options)
 	}
-	code, _, err := launchTarget(options)
-	return code, err
+	if options.DryRun {
+		return dryRunTarget(options)
+	}
+	return Drive(options)
 }
 
-// launchTarget runs the host on one target, then finishes any push a scrubbed ship handed off,
-// returning the host's exit code and the pull request it opened.
-func launchTarget(options Options) (int, string, error) {
-	name, args, err := Command(options.Root, options.Target)
-	if err != nil {
-		return 1, "", err
+// dryRunTarget prints the one group a targeted run would drive, launching no model.
+func dryRunTarget(options Options) (int, error) {
+	stdout := options.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
 	}
-	code, err := launch(options, name, args)
-	url := ""
-	if !options.DryRun && !options.NoShip {
-		created, shipErr := finishShip(options)
-		url = created
-		if shipErr != nil && err == nil {
-			err = shipErr
-		}
+	fmt.Fprintf(stdout, "1. %s\n", options.Target)
+	return 0, nil
+}
+
+// LineRole is the marker every session komodo run starts inherits when no role of its own replaces it.
+const LineRole = "line"
+
+// markLine puts this process, and every session and subagent it starts, under the guard's line tier.
+func markLine() {
+	if os.Getenv(guard.RoleEnv) == "" {
+		_ = os.Setenv(guard.RoleEnv, LineRole)
 	}
-	return code, url, err
 }
 
 // drain launches each ready group once, as many at once as the plan and their files allow, parking any
@@ -108,6 +91,10 @@ func drain(options Options) (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	// Every lane's session inherits this PATH, so a rebuild mid-drain never moves what one runs.
+	if err := pinDrainPath(options.Root, executable); err != nil {
+		return 1, err
+	}
 	// Every lane writes to the same output, so each write holds the one lock.
 	var outputLock sync.Mutex
 	stdout = lockedWriter{lock: &outputLock, out: stdout}
@@ -115,7 +102,7 @@ func drain(options Options) (int, error) {
 	if options.Stderr != nil {
 		options.Stderr = lockedWriter{lock: &outputLock, out: options.Stderr}
 	}
-	capacity := conductor.Concurrency(profile.Select(options.Root).Plan)
+	capacity := profile.Select(options.Root).MaxParallel
 	started := time.Now()
 	ran := map[string]bool{}
 	running := map[string]backlog.Group{}
@@ -235,11 +222,33 @@ type laneResult struct {
 	launched time.Time
 }
 
-// runLane launches one group under its own budget and process group, so a runaway kills only its tree.
+// runLane drives one group through the conductor under its own budget, so a runaway kills only its tree.
 func runLane(options Options, finished chan<- laneResult) {
 	launched := time.Now()
-	code, url, err := launchTarget(options)
+	code, err := Drive(options)
+	url := ""
+	if err == nil {
+		url = laneURL(options)
+	}
 	finished <- laneResult{group: options.Target, code: code, url: url, err: err, launched: launched}
+}
+
+// laneURL is the pull request Drive shipped a group to, once its run's branch is known; a client
+// that cannot look it up leaves the drain to print its own group's message with no URL.
+func laneURL(options Options) string {
+	state, err := line.LoadRunFor(options.Root, options.Target)
+	if err != nil || state.Branch == "" {
+		return ""
+	}
+	client := options.PR
+	if client == nil {
+		client = pr.New(options.Root)
+	}
+	pull, err := client.View(state.Branch)
+	if err != nil {
+		return ""
+	}
+	return pull.URL
 }
 
 // lockedWriter serialises writes from every lane onto one writer.
@@ -262,10 +271,8 @@ func drainGroups(root string) ([]backlog.Group, error) {
 		return nil, err
 	}
 	var parsed backlog.Backlog
-	if path, err := backlog.Find(root); err == nil {
-		if parsed, err = backlog.Load(path); err != nil {
-			return nil, err
-		}
+	if loaded, err := backlog.LoadRoot(root); err == nil {
+		parsed = loaded
 	}
 	groups := make([]backlog.Group, 0, len(order))
 	for _, id := range order {
@@ -340,78 +347,35 @@ func shipped(root, group string, since time.Time) bool {
 	return false
 }
 
-// launch runs one resolved command under the budget, in its own process group, in a scrubbed
-// environment, teeing its stdout to the host's own usage events file.
-func launch(options Options, name string, args []string) (int, error) {
-	stdout, stderr := options.Stdout, options.Stderr
-	if stdout == nil {
-		stdout = os.Stdout
-	}
-	if stderr == nil {
-		stderr = os.Stderr
-	}
-	if options.DryRun {
-		fmt.Fprintf(stdout, "%s %s\n", name, strings.Join(args, " "))
-		return 0, nil
-	}
-	budget := options.Budget
-	if budget <= 0 {
-		budget = GroupBudget
-	}
-	base := options.Env
-	if base == nil {
-		base = os.Environ()
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), budget)
-	defer cancel()
-	command := exec.CommandContext(ctx, name, args...)
-	command.Dir = options.Root
-	executable := options.Executable
-	if executable == "" {
-		var err error
-		executable, err = mount.Executable()
-		if err != nil {
-			return 1, fmt.Errorf("cannot find the running komodo binary: %w", err)
-		}
-	}
-	binPathLock.Lock()
-	env, err := withBinPath(line.Scrub(base), options.Root, executable)
-	binPathLock.Unlock()
-	if err != nil {
-		return 1, err
-	}
-	command.Env = env
-	proc.Group(command)
-	command.Cancel = func() error {
-		proc.KillGroup(command)
-		return nil
-	}
-	command.WaitDelay = 5 * time.Second
-	out := stdout
-	if events, err := eventsFile(options); err == nil && events != nil {
-		defer events.Close()
-		out = io.MultiWriter(stdout, events)
-	}
-	command.Stdout, command.Stderr = out, stderr
-	err = command.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return 124, fmt.Errorf("the run passed its %s budget and was killed", budget)
-	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return exit.ExitCode(), nil
-	}
-	if err != nil {
-		return 1, err
-	}
-	return 0, nil
-}
-
 // symlink links a path to a target; a test swaps it to act like Windows without Developer Mode.
 var symlink = os.Symlink
 
 // binPathLock keeps two lanes from replacing the shared komodo link at once.
 var binPathLock sync.Mutex
+
+// pinDrainPath puts the drain's own executable first on the process's PATH before any lane starts,
+// so every session Drive spawns runs it, never one rebuilt mid-drain; "" falls back to the running binary.
+func pinDrainPath(root, executable string) error {
+	if executable == "" {
+		var err error
+		executable, err = mount.Executable()
+		if err != nil {
+			return err
+		}
+	}
+	binPathLock.Lock()
+	defer binPathLock.Unlock()
+	env, err := withBinPath(os.Environ(), root, executable)
+	if err != nil {
+		return err
+	}
+	for _, entry := range env {
+		if key, value, ok := strings.Cut(entry, "="); ok && key == "PATH" {
+			return os.Setenv("PATH", value)
+		}
+	}
+	return nil
+}
 
 // withBinPath puts komodo on the run's PATH as root/.komodo/bin, then the inherited PATH, then the repo's own root/bin.
 func withBinPath(env []string, root, executable string) ([]string, error) {
@@ -458,95 +422,6 @@ func copyExecutable(executable, target string) error {
 	if err := os.WriteFile(target, data, 0o755); err != nil {
 		_ = os.Remove(target)
 		return err
-	}
-	return nil
-}
-
-// eventsFile opens the events file the installed mount names for one target, or returns
-// nothing when there is no target or the mount reads no events.
-func eventsFile(options Options) (*os.File, error) {
-	if options.Target == "" {
-		return nil, nil
-	}
-	host, ok := mount.Get(profile.Select(options.Root).Host)
-	if !ok || host.EventsPath == nil {
-		return nil, nil
-	}
-	path := host.EventsPath(options.Root, options.Target)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
-	}
-	return os.Create(path)
-}
-
-// finishShip pushes and opens the pull request the target's group handed off from a scrubbed ship,
-// in the launcher's own credentialed environment, stamps ship done, removes the handoff, and returns the pull request.
-func finishShip(options Options) (string, error) {
-	group := line.GroupFor(options.Root, options.Target)
-	if group == "" {
-		return "", nil
-	}
-	path := line.HandoffPath(options.Root, group)
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	var handoff line.ShipHandoff
-	if err := json.Unmarshal(data, &handoff); err != nil {
-		return "", err
-	}
-	if handoff.Group != group {
-		return "", fmt.Errorf("the handoff under %s names group %q; nothing was pushed", group, handoff.Group)
-	}
-	if err := pushable(options.Root, handoff.Branch); err != nil {
-		return "", err
-	}
-	worktree := handoff.Worktree
-	if worktree == "" {
-		worktree = options.Root
-	}
-	// The push runs from the group's worktree, so the pre-push gate judges the branch, not the root checkout.
-	if err := line.PushFromWorktree(options.Root, worktree, handoff.Branch); err != nil {
-		return "", err
-	}
-	client := options.PR
-	if client == nil {
-		client = pr.New(options.Root)
-	}
-	url, err := client.Create(handoff.Base, handoff.Branch, handoff.Title, handoff.Body, handoff.Draft)
-	if err != nil {
-		return "", err
-	}
-	_, warnings := line.ApplyLabels(client, url, handoff.Labels)
-	if options.Stderr != nil {
-		for _, warning := range warnings {
-			fmt.Fprintf(options.Stderr, "ship: %s\n", warning)
-		}
-	}
-	// An agent can write after_publish into ship.json, so it runs scrubbed, never with the push credentials.
-	if handoff.AfterPublish != "" {
-		if published := line.RunCommandEnv(worktree, handoff.AfterPublish, line.Scrub(os.Environ())); !published.OK() {
-			return url, fmt.Errorf("after_publish: %s", line.FailureText(published))
-		}
-	}
-	line.Stamp(options.Root, ledger.Entry{Group: handoff.Group, Station: "ship", Outcome: "done"})
-	return url, os.Remove(path)
-}
-
-// pushable refuses a handoff branch that is a refspec, an option, an invalid name, or a critical ref,
-// since an agent can write ship.json and the launcher pushes with real credentials.
-func pushable(root, branch string) error {
-	if branch == "" || strings.HasPrefix(branch, "-") || strings.ContainsAny(branch, ":+ ") {
-		return fmt.Errorf("ship.json names %q, which is not a plain branch; nothing was pushed", branch)
-	}
-	if _, err := git.Run(root, "check-ref-format", "--branch", branch); err != nil {
-		return fmt.Errorf("ship.json names %q, which is not a valid branch; nothing was pushed", branch)
-	}
-	if guard.Load(root, root).IsCritical(branch) {
-		return fmt.Errorf("ship.json names the critical ref %q; landing is the human's merge button", branch)
 	}
 	return nil
 }

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
 )
 
 func TestAtOrAboveRanksSeverities(t *testing.T) {
@@ -158,31 +160,40 @@ func TestCloseWaveSkipsTheMergeForASingleModeGroup(t *testing.T) {
 	}
 }
 
-func TestFileFindingsAppendsTasksByClass(t *testing.T) {
+// TestFileFindingsAppendsIntoTheGroupsOwnFile proves a repo holding docs/backlog group files gets
+// its findings filed into the group's own file.
+func TestFileFindingsAppendsIntoTheGroupsOwnFile(t *testing.T) {
 	root := t.TempDir()
-	body := "### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
-		"#### [TSK-09.1.1] One [P: C] [DONE]\n```yaml\nfiles: [a/x.go]\ndone_when: [\"go test\"]\n```\n"
-	if err := os.WriteFile(filepath.Join(root, "BACKLOG.md"), []byte(body), 0o644); err != nil {
+	dir := filepath.Join(root, "docs", "backlog")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	text := "## [TG-09.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-09\ndepends_on: []\n```\n\n" +
+		"- [x] **TSK-09.1.1** One\n  - files: `a/x.go`\n"
+	path := filepath.Join(dir, "TG-09.1-a-group.md")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	findings := []Finding{
 		{Severity: "low", Class: "simplify", File: "a/x.go", Line: 3, Title: "dead branch", Detail: "d", Fix: "f"},
-		{Severity: "medium", Class: "test-gap", File: "a/y.go", Line: 9, Title: "no test", Detail: "d", Fix: "f"},
 	}
 	added, err := FileFindings(root, "TG-09.1", findings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(added) != 2 {
+	if len(added) != 1 {
 		t.Fatalf("added = %v", added)
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "BACKLOG.md"))
-	text := string(data)
-	if !strings.Contains(text, "dead branch") || !strings.Contains(text, "type: refactor") || !strings.Contains(text, "type: test") {
-		t.Fatalf("filed tasks are wrong:\n%s", text)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(text, "[REFINEMENT]") {
-		t.Fatal("a filed finding must open in REFINEMENT")
+	text = string(data)
+	if !strings.Contains(text, "dead branch") || !strings.Contains(text, "status: REFINEMENT") {
+		t.Fatalf("filed task is wrong:\n%s", text)
+	}
+	if _, err := os.Stat(filepath.Join(root, backlog.LegacyName)); !os.IsNotExist(err) {
+		t.Fatal("FileFindings must never create a legacy backlog file in a group-file repo")
 	}
 }
 
@@ -247,11 +258,14 @@ func TestTheReviewsFindingsReachTheLine(t *testing.T) {
 
 func TestACollisionIsASharedFileNotASharedDirectory(t *testing.T) {
 	root := gitRepo(t)
-	text := "### [TG-21.2] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
-		"#### [TSK-21.2.1] First [P: C] [READY]\n```yaml\nfiles: [web/a/x.ts]\ndone_when: [\"true\"]\n```\n\n" +
-		"#### [TSK-21.2.2] Sibling [P: C] [READY]\n```yaml\nfiles: [web/a/y.ts]\ndone_when: [\"true\"]\n```\n\n" +
-		"#### [TSK-21.2.3] Same [P: C] [READY]\n```yaml\nfiles: [web/a/x.ts]\ndone_when: [\"true\"]\n```\n"
-	commit(t, root, "BACKLOG.md", text, "seed")
+	commitGroupFile(t, root, backlog.GroupFile{
+		ID: "TG-21.2", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "1.0.0",
+		Tasks: []backlog.GroupTask{
+			{ID: "TSK-21.2.1", Title: "First", Files: []string{"web/a/x.ts"}, Checks: []string{"true"}},
+			{ID: "TSK-21.2.2", Title: "Sibling", Files: []string{"web/a/y.ts"}, Checks: []string{"true"}},
+			{ID: "TSK-21.2.3", Title: "Same", Files: []string{"web/a/x.ts"}, Checks: []string{"true"}},
+		},
+	})
 	gitCmd(t, root, "branch", "feat/group")
 	gitCmd(t, root, "checkout", "-q", "-b", TaskBranch("TSK-21.2.1"))
 	commit(t, root, "web/a/x.ts", "export const x = 1\n", "first")

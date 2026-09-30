@@ -659,6 +659,9 @@ func (d *Driver) drain(
 			entry.TokensIn += event.Usage.TokensIn
 			entry.TokensOut += event.Usage.TokensOut
 			entry.TokensCached += event.Usage.TokensCached
+			if event.RateLimit != nil {
+				mount.ObserveRateLimit(*event.RateLimit)
+			}
 		}
 	}
 	result, err := d.Host.Result(handle)
@@ -785,13 +788,8 @@ func (l *Line) Check(ctx context.Context) ([]string, error) {
 func (l *Line) rerun(ctx context.Context) ([]string, error) {
 	worktree := line.WorktreePath(l.Root, l.Plan.Worktree)
 	base := line.StartRef(worktree, l.Plan.Base)
-	// Ship also stages BACKLOG.md and the group's release note, so both count as in scope.
-	files := []string{filepath.ToSlash(changelog.FragmentPath("", l.Plan.Version, l.Plan.Group))}
-	if found, err := backlog.Find(worktree); err == nil {
-		if rel, err := filepath.Rel(worktree, found); err == nil {
-			files = append(files, filepath.ToSlash(rel))
-		}
-	}
+	// Ship stages, or removes, the group's own file and its release note, so both stay in scope.
+	files := []string{filepath.ToSlash(changelog.FragmentPath("", l.Plan.Version, l.Plan.Group)), backlog.GroupFilesDir}
 	for _, task := range l.Plan.Tasks {
 		files = append(files, task.Files...)
 	}

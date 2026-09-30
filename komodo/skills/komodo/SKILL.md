@@ -9,6 +9,7 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
 
 ```
   komodo init [--name n]      Write the starter files into a new repo, keeping any that exist
+  komodo migrate [--dry-run]  Convert a legacy backlog file, or TODO.md, into docs/backlog group files
   komodo lint                 Check the backlog against the grammar
   komodo list [--json]        List every task, or one group's tasks
   komodo backlog             List the open groups under docs/backlog
@@ -24,6 +25,7 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo diff                 The reviewer's whole input: tasks, standards, diff
   komodo report               What the run did, in the accessibility contract
   komodo tag                  Tag every changelog version no tag points at
+  komodo rephase <e> <v>      Move an open epic to a new version: branch, pull requests, backlog
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo release build        Build the per-platform binaries as release assets
   komodo release fold         Fold every changelog fragment into CHANGELOG.md
@@ -39,7 +41,6 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo abandon <group>      Remove a group's worktree and branch on purpose, and mark its tasks BLOCKED
   komodo ship <group>         Publish a group a missing credential stopped: push, draft PR, labels
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
-  komodo stage <s> [group]    Run one stage ad hoc, build, review or ship, on a group or the current branch
   komodo step [group|task]    The one next action, as JSON
   komodo threads [pr]         The unresolved review threads, as JSON
   komodo threads --resolve id Mark one review thread resolved

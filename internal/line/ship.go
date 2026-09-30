@@ -142,20 +142,16 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		waves = RecordedWaves(root, plan.Group)
 	}
 	group := WorktreePath(root, plan.Worktree)
-	path, err := backlog.Find(group)
-	if err != nil {
-		return nil, err
-	}
 	rootParsed, _, err := LoadBacklog(root)
 	if err != nil {
 		return nil, err
 	}
-	groupParsed, err := backlog.Load(path)
+	groupParsed, err := backlog.LoadRoot(group)
 	if err != nil {
 		return nil, err
 	}
 	if refined := refinedTasks(rootParsed, groupParsed, plan.Tasks); len(refined) > 0 {
-		return nil, fmt.Errorf("the root's BACKLOG.md differs from this group's at %s; rebase or edit before ship",
+		return nil, fmt.Errorf("the root's backlog differs from this group's queue at %s; rebase or edit before ship",
 			strings.Join(refined, ", "))
 	}
 	// A missing review reads as no findings, so ship refuses rather than ship an unreviewed group.
@@ -190,7 +186,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		Stamp(root, ledger.Entry{Group: plan.Group, Station: "ship", Seconds: Since(started), Outcome: outcome, Lines: lines})
 	}()
-	if err := tickTasks(plan, group, path, rootParsed, live, result); err != nil {
+	if err := tickTasks(plan, group, rootParsed, live, result); err != nil {
 		return nil, err
 	}
 	result.Draft = len(result.Blocked) > 0
@@ -202,15 +198,21 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := stageWork(group, declared); err != nil {
 		return nil, err
 	}
-	// File findings into BACKLOG.md before push so they are in the ship commit.
+	// File findings before push so they are in the ship commit.
 	filed, err := FileFindings(group, plan.Group, minor)
 	if err != nil {
 		return result, err
 	}
 	result.Filed = filed
-	// Stage BACKLOG.md with findings for commit.
-	if err := stageWork(group, []string{"BACKLOG.md"}); err != nil {
-		return nil, err
+	if len(filed) > 0 {
+		// Stage whichever backlog file the findings landed in for commit.
+		stagePath, err := findingsPath(group, plan.Group)
+		if err != nil {
+			return nil, err
+		}
+		if err := stageWork(group, []string{stagePath}); err != nil {
+			return nil, err
+		}
 	}
 	if staged, _ := git.Run(group, "diff", "--cached", "--name-only"); staged != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
@@ -233,9 +235,6 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	}
 	title := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
 	context := BodyContext{Sections: templateSections(group), DefaultBase: DefaultBase(root)}
-	if data, err := os.ReadFile(path); err == nil {
-		context.Why = groupWhy(string(data), plan.Group)
-	}
 	context.BlastRadius, context.BlastRadiusWhy = reviewBlast(root, plan.Group)
 	context.SizeNote = sizeNote(added, plan.Profile.PRLinesPreferred)
 	body := ReportBody(plan, result, waves, context)
@@ -328,11 +327,17 @@ func markReady(client *pr.Client, url string, draft bool) error {
 	return nil
 }
 
-// tickTasks sorts the plan's tasks into done and blocked, writes each tick and blocker into the group's
-// backlog at path, and writes its changelog fragment, so the group's commit carries both.
+// tickTasks sorts the plan's tasks into done and blocked, writes each tick and blocker into the
+// group's own backlog, and writes its changelog fragment, so the group's commit carries both.
 func tickTasks(
-	plan *Plan, group, path string, rootParsed backlog.Backlog, live map[string]TaskStatus, result *ShipResult,
+	plan *Plan, group string, rootParsed backlog.Backlog, live map[string]TaskStatus, result *ShipResult,
 ) error {
+	// A no-epic group's own file is already gone once an earlier commit shipped it; nothing left to tick.
+	_, _, ownFileGone, err := backlog.FindGroupFile(group, plan.Group)
+	if err != nil {
+		return err
+	}
+	ownFileGone = !ownFileGone
 	for _, task := range plan.Tasks {
 		current, ok := rootParsed.Task(task.ID)
 		if !ok {
@@ -346,14 +351,14 @@ func tickTasks(
 		}
 	}
 	for _, taskID := range result.Done {
-		if err := writeStatus(path, taskID, "DONE"); err != nil {
+		if err := writeStatus(group, taskID, "DONE"); err != nil && !(ownFileGone && errors.Is(err, errTaskGroupFileGone)) {
 			return err
 		}
 	}
-	// This group's ticks and blockers land in BACKLOG.md once, in its commit; a status in flight never does.
+	// This group's ticks and blockers land in its group file once, in its commit; a status in flight never does.
 	for _, task := range plan.Tasks {
 		if status, ok := live[task.ID]; ok && backlogStatus(status.Status) {
-			if err := writeStatus(path, task.ID, status.Status); err != nil {
+			if err := writeStatus(group, task.ID, status.Status); err != nil && !(ownFileGone && errors.Is(err, errTaskGroupFileGone)) {
 				return err
 			}
 		}
@@ -366,6 +371,18 @@ func tickTasks(
 		result.Changelog = line
 	}
 	return nil
+}
+
+// findingsPath is the file FileFindings wrote into, relative to group: its own docs/backlog file.
+func findingsPath(group, groupID string) (string, error) {
+	path, _, found, err := backlog.FindGroupFile(group, groupID)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", fmt.Errorf("%s is not in %s", groupID, backlog.GroupFilesDir)
+	}
+	return filepath.Rel(group, path)
 }
 
 // declaredFiles is every file the plan's tasks declare.
@@ -399,12 +416,12 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	if fixes, err := finishCatchUp(group, base, declared); err != nil || len(fixes) > 0 {
 		return fixes, err
 	}
-	if path, err := backlog.Find(group); err == nil {
+	if backlog.Exists(group) {
 		rootParsed, _, err := LoadBacklog(root)
 		if err != nil {
 			return nil, err
 		}
-		if err := tickTasks(plan, group, path, rootParsed, LoadStatus(root), &ShipResult{}); err != nil {
+		if err := tickTasks(plan, group, rootParsed, LoadStatus(root), &ShipResult{}); err != nil {
 			return nil, err
 		}
 	}
@@ -417,7 +434,7 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 			return nil, err
 		}
 	}
-	if err := stageWork(group, append(declared, "BACKLOG.md")); err != nil {
+	if err := stageWork(group, declared); err != nil {
 		return nil, err
 	}
 	staged, err := git.Run(group, "diff", "--cached", "--name-only")
@@ -611,27 +628,11 @@ func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.C
 		return nil, err
 	}
 	note.Saved = fmt.Sprintf("WIP commit `%s` on `%s`", head, plan.Branch)
-	path, err := backlog.Find(worktree)
+	blocked, err := addBlockerNote(worktree, plan.Group, note)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	noted, err := backlog.AddNote(string(data), plan.Group, note)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
-		return nil, err
-	}
-	group, _ := backlog.Parse(noted).Group(plan.Group)
-	for _, task := range group.Tasks {
-		if task.Status == "BLOCKED" {
-			result.Blocked = append(result.Blocked, task.ID)
-		}
-	}
+	result.Blocked = blocked
 	if err := commitStaged(worktree, nil, fmt.Sprintf("docs: %s is blocked (%s)", plan.Title, plan.Group)); err != nil {
 		return nil, err
 	}
@@ -666,31 +667,45 @@ func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.C
 
 // writeCredentialNote commits a blocker note on the group's branch naming the refused push and komodo ship as the fix.
 func writeCredentialNote(root string, plan *Plan, worktree string, cause error) error {
-	path, err := backlog.Find(worktree)
-	if err != nil {
-		return err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
 	head, err := git.Run(worktree, "rev-parse", "--short", "HEAD")
 	if err != nil {
 		return err
 	}
 	state, _ := RunFor(root, plan.Group)
-	noted, err := backlog.AddNote(string(data), plan.Group, backlog.BlockerNote{
+	if _, err := addBlockerNote(worktree, plan.Group, backlog.BlockerNote{
 		At: time.Now().UTC(), Run: state.Run, State: "Shipping", Items: []string{cause.Error()},
 		Needs: "a valid forge credential, then `komodo ship " + plan.Group + "`",
 		Saved: fmt.Sprintf("commit `%s` on `%s`", head, plan.Branch),
-	})
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
+	}); err != nil {
 		return err
 	}
 	return commitStaged(worktree, nil, fmt.Sprintf("docs: %s waits on a forge credential (%s)", plan.Title, plan.Group))
+}
+
+// addBlockerNote writes note into the group's own docs/backlog file, returning every task the note
+// left BLOCKED.
+func addBlockerNote(worktree, groupID string, note backlog.BlockerNote) ([]string, error) {
+	path, text, found, err := backlog.FindGroupFile(worktree, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("%s is not in %s", groupID, backlog.GroupFilesDir)
+	}
+	noted, err := backlog.AddGroupFileNote(text, note)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
+		return nil, err
+	}
+	var blocked []string
+	for _, task := range backlog.ParseGroupFile(noted).Tasks {
+		if !task.Done {
+			blocked = append(blocked, task.ID)
+		}
+	}
+	return blocked, nil
 }
 
 // FinishShip publishes a group whose ship handed off for want of a credential: it drops the blocker note, pushes,
@@ -753,19 +768,18 @@ func FinishShip(root, groupID string, client *pr.Client) (*ShipResult, error) {
 
 // dropCredentialNote removes the group's blocker note from its branch and commits that, when it holds one.
 func dropCredentialNote(worktree string, handoff ShipHandoff) error {
-	path, err := backlog.Find(worktree)
-	if err != nil {
-		return nil
-	}
-	data, err := os.ReadFile(path)
+	path, text, found, err := backlog.FindGroupFile(worktree, handoff.Group)
 	if err != nil {
 		return err
 	}
-	text, removed := backlog.RemoveNote(string(data), handoff.Group)
+	if !found {
+		return nil
+	}
+	out, removed := backlog.RemoveGroupFileNote(text)
 	if !removed {
 		return nil
 	}
-	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
 		return err
 	}
 	return commitStaged(worktree, nil, fmt.Sprintf("docs: %s's forge credential is back", handoff.Group))
@@ -934,9 +948,9 @@ func ReviewSize(dir, base, branch string) (files, added int) {
 	return files, added
 }
 
-// bookkeeping reports a path Ship writes itself: task status, a group file, or a changelog fragment.
+// bookkeeping reports a path Ship writes itself: a group file, or a changelog fragment.
 func bookkeeping(path string) bool {
-	return path == "BACKLOG.md" || strings.HasPrefix(path, "docs/backlog/") || strings.HasPrefix(path, "changelog.d/")
+	return strings.HasPrefix(path, "docs/backlog/") || strings.HasPrefix(path, "changelog.d/")
 }
 
 // checkPRSize refuses a diff over either the kept-file or the added-line ceiling, naming a split as the fix.

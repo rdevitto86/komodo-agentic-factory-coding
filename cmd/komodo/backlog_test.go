@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/backlog"
 )
 
 // captureStdout runs fn with os.Stdout redirected to a pipe and returns what it wrote.
@@ -62,12 +64,12 @@ func TestRunBacklogListsEveryOpenGroup(t *testing.T) {
 	}
 }
 
-// TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd proves the gate's lint check never needs BACKLOG.md.
+// TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd proves the gate's lint check never needs a flat backlog file.
 func TestLintProblemsFallsBackToGroupFilesWithNoBacklogMd(t *testing.T) {
 	root := t.TempDir()
 	writeGroupFile(t, root, "TG-01.1-first.md",
 		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
-			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
 	problems, err := lintProblems(root)
 	if err != nil {
 		t.Fatalf("lintProblems: %v", err)
@@ -88,6 +90,47 @@ func TestLintProblemsReportsAGroupFileWithAMalformedHeading(t *testing.T) {
 	}
 	if len(problems) == 0 {
 		t.Fatal("want a problem for the malformed heading")
+	}
+}
+
+// TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles proves group-file lint
+// checks what the legacy grammar's lint checks, not only the parse errors ParseGroupFile reports.
+func TestLintProblemsReportsAGroupFileWithNoVersionAndAnOpenTaskWithNoFiles(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task with no files\n  - done_when: `go test ./...`\n")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	if len(problems) != 2 {
+		t.Fatalf("problems = %v, want a no-version and a no-files problem", problems)
+	}
+}
+
+// TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles proves group files in the same
+// epic must agree on the version it ships, as the legacy grammar's epics and groups must.
+func TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+	writeGroupFile(t, root, "TG-01.2-second.md",
+		"## [TG-01.2] Second group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.2.1** A task\n  - files: `b.go`\n")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "EPIC-01") && strings.Contains(problem, "TG-01.2") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a problem naming the epic version disagreement; got %v", problems)
 	}
 }
 
@@ -144,6 +187,38 @@ func TestRunBacklogAddWritesAGroupThenATask(t *testing.T) {
 	}
 }
 
+// TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFile proves a repo holding both writes into its
+// group file, never the legacy backlog file, since group files are the current grammar.
+func TestAddIgnoresALegacyBacklogFileAndWritesTheGroupFile(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-q")
+	writeGroupFile(t, root, "TG-08.1-existing.md",
+		"## [TG-08.1] Existing [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-08.1.1** A task\n  - files: `a.go`\n")
+	legacyPath := filepath.Join(root, backlog.LegacyName)
+	if err := os.WriteFile(legacyPath, []byte("### [TG-08.1] Existing\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "", "add", "TG-08.1", "A", "second", "task", "--files", "b.go")
+	if got.code != 0 {
+		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(root, groupFilesDir, "TG-08.1-existing.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "A second task") {
+		t.Fatalf("group file gained no task: %s", data)
+	}
+	legacyData, err := os.ReadFile(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(legacyData), "A second task") {
+		t.Fatalf("add wrote into the legacy backlog file: %s", legacyData)
+	}
+}
+
 // TestMainDispatchesBacklogAndAdd proves `komodo backlog` and `komodo add` reach the group-file commands.
 func TestMainDispatchesBacklogAndAdd(t *testing.T) {
 	root := t.TempDir()
@@ -185,4 +260,55 @@ func TestRunBacklogAddRejectsAMissingTitle(t *testing.T) {
 		}
 	}()
 	runBacklogAdd(root, []string{"TG-08.1"})
+}
+
+// TestLintProblemsRefusesAnOpenGroupAtATaggedVersion proves lint reads the repo's own tags.
+func TestLintProblemsRefusesAnOpenGroupAtATaggedVersion(t *testing.T) {
+	root := emptyRepo(t)
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
+	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+	if problems, _ := lintProblems(root); len(problems) != 0 {
+		t.Fatalf("problems before any tag = %v, want none", problems)
+	}
+	runGit(t, root, "tag", "v1.0.0")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0], "TG-01.1") {
+		t.Fatalf("problems = %v, want TG-01.1 named at the tagged 1.0.0", problems)
+	}
+}
+
+// TestLintPrintsAGroupFileTasksCallerNote proves komodo lint shows a group file's own notes.
+func TestLintPrintsAGroupFileTasksCallerNote(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `internal/a/a.go`\n  - done_when: `go test ./internal/a/...`\n")
+	if notes := groupFileNotes(root); len(notes) != 1 || !strings.Contains(notes[0], "TSK-01.1.1") {
+		t.Fatalf("notes = %v, want TSK-01.1.1 noted for a done_when that never runs its caller", notes)
+	}
+}
+
+// TestCheckBaseDefaultsToTheGroupsEpicBranch proves check task diffs from the branch the line cut, not the default.
+func TestCheckBaseDefaultsToTheGroupsEpicBranch(t *testing.T) {
+	root := emptyRepo(t)
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n  - done_when: `go test ./a/...`\n")
+	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+	runGit(t, root, "branch", "feat/1.0.0")
+	parsed, err := backlog.LoadRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := checkBase(root, parsed, "TG-01.1", ""); got != "feat/1.0.0" {
+		t.Fatalf("checkBase = %q, want the epic branch feat/1.0.0", got)
+	}
+	if got := checkBase(root, parsed, "TG-01.1", "main"); got != "main" {
+		t.Fatalf("checkBase with --base = %q, want main", got)
+	}
 }

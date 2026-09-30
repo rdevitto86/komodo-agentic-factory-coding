@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/pr"
 )
 
@@ -33,14 +34,57 @@ var blockedNote = backlog.BlockerNote{
 // stopGroup writes the open backlog and a change the builder left, as a group stops with.
 func stopGroup(t *testing.T, group string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(group, "BACKLOG.md"), []byte(blockedBacklog), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	backlogtest.SeedText(t, group, blockedBacklog)
 	if err := os.MkdirAll(filepath.Join(group, "a"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(group, "a", "one.go"), []byte("package a\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestAddBlockerNoteWritesIntoAGroupFile proves the note lands in the group's own docs/backlog
+// file, blocking its open task.
+func TestAddBlockerNoteWritesIntoAGroupFile(t *testing.T) {
+	worktree := t.TempDir()
+	runGit(t, worktree, "init")
+	runGit(t, worktree, "config", "user.email", "a@example.com")
+	runGit(t, worktree, "config", "user.name", "a")
+	dir := filepath.Join(worktree, "docs", "backlog")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	text := "## [TG-09.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 2.0.0\nepic: EPIC-09\ndepends_on: []\n```\n\n" +
+		"- [ ] **TSK-09.1.1** Do it\n  - files: `a/one.go`\n"
+	path := filepath.Join(dir, "TG-09.1-a-group.md")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "add", "-A")
+	runGit(t, worktree, "commit", "-m", "seed")
+	blocked, err := addBlockerNote(worktree, "TG-09.1", blockedNote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocked) != 1 || blocked[0] != "TSK-09.1.1" {
+		t.Fatalf("blocked = %v", blocked)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "[BLOCKED]") || !strings.Contains(string(data), "which clock?") {
+		t.Fatalf("group file = %s", data)
+	}
+	if err := dropCredentialNote(worktree, ShipHandoff{Group: "TG-09.1"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "which clock?") {
+		t.Fatalf("group file still carries the note: %s", data)
 	}
 }
 
@@ -78,7 +122,7 @@ func TestShipBlockedCommitsTheWorkAndNoteThenOpensABlockedDraft(t *testing.T) {
 		!strings.HasPrefix(subjects[0], "docs: A group is blocked") || !strings.HasPrefix(subjects[1], "wip: A group") {
 		t.Fatalf("commits = %q, want the WIP commit then the note", subjects)
 	}
-	data, err := os.ReadFile(filepath.Join(group, "BACKLOG.md"))
+	data, err := os.ReadFile(filepath.Join(group, "docs", "backlog", "TG-09.1-a-group.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +185,7 @@ func TestShipBlockedRefreshesThePullRequestAlreadyOpen(t *testing.T) {
 
 func TestShipBlockedRefusesAWorktreeWithNoBacklog(t *testing.T) {
 	root, group := shipRepo(t)
-	if err := os.Remove(filepath.Join(group, "BACKLOG.md")); err != nil {
+	if err := os.RemoveAll(filepath.Join(group, "docs", "backlog")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ShipBlocked(root, blockedPlan(), blockedNote, nil); err == nil {

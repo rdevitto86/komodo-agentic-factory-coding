@@ -7,6 +7,7 @@ import (
 
 	"komodo/internal/ledger"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 	"komodo/internal/profile"
 )
 
@@ -26,10 +27,27 @@ const (
 // usageWindow reads the plan and its usage window from the plan probe; a test swaps it.
 var usageWindow = profile.Select
 
+// ObserveRateLimit records a session's live rate_limit_event, so the next wait paces from it
+// instead of the plan probe's stale or empty usage window; the conductor calls this as it streams.
+func ObserveRateLimit(limit mount.RateLimit) {
+	mount.ObserveRateLimit(limit)
+}
+
+// currentWindow is the plan probe's profile, with any live rate-limit event layered over its
+// usage window and reset time.
+func currentWindow(root string) profile.Profile {
+	selected := usageWindow(root)
+	if limit, ok := mount.LatestRateLimit(); ok {
+		selected.Utilization = limit.FiveHour
+		selected.ResetsAt = limit.ResetsAt
+	}
+	return selected
+}
+
 // awaitWindow holds the drain while the plan's usage window is too far spent, stamping a pause and then a
 // resume to events.jsonl, and reports false when the reset falls past the deadline.
 func awaitWindow(root string, stdout io.Writer, deadline time.Time) bool {
-	selected := usageWindow(root)
+	selected := currentWindow(root)
 	if !selected.Paused() {
 		return true
 	}
@@ -46,7 +64,7 @@ func awaitWindow(root string, stdout io.Writer, deadline time.Time) bool {
 			return false
 		}
 		time.Sleep(wait)
-		selected = usageWindow(root)
+		selected = currentWindow(root)
 	}
 	stampPace(root, stdout, outcomeResumed)
 	fmt.Fprintln(stdout, "drain resumed: the usage window reset")

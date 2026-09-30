@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -47,7 +48,7 @@ func requestsRepo(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	write("BACKLOG.md", requestsBacklog)
+	backlogtest.SeedText(t, root, requestsBacklog)
 	write(filepath.Join(line.RolesDir, "builder.md"), requestsBuilderRole)
 	write(filepath.Join(line.RolesDir, "builder.schema.json"), requestsSchema)
 	write(filepath.Join(line.RolesDir, "reviewer.md"), requestsReviewerRole)

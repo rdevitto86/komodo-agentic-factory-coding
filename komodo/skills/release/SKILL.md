@@ -14,7 +14,8 @@ You drive one release from the orchestrator, on the owner's machine. The binary 
 - **Beta, `x.y.z-beta.n`,** once `x.y.z` is feature-complete; only fixes land. V1's beta starts at `1.0.0-beta.2`; `1.0.0-beta.1` is never used.
 - **Rc, `x.y.z-rc.n`,** only when the human asks for one; nothing requires it.
 - **Stable, `x.y.z`,** is cut by the human alone, once the PRD's success criteria hold. Never propose it on your own.
-- **The bump lives in the backlog.** Every group in an epic carries the epic's `version:`; change it there, then run `komodo lint`.
+- **The bump lives in the backlog.** Every group in an epic carries the epic's `version:`; change it there, then run `komodo lint`. An epic with an open branch runs `komodo rephase <epic> <new-version>` instead of a bare edit, so its branch and pull requests move with it.
+- **Picking the segment and phase is the backlog rule's Choosing a version section,** not a guess at release time.
 
 ## The changelog
 

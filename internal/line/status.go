@@ -2,9 +2,12 @@ package line
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"komodo/internal/backlog"
 )
@@ -14,7 +17,7 @@ type TaskStatus struct {
 	Status string `json:"status"`
 }
 
-// statusPath is where a group keeps live task status until ship writes it into BACKLOG.md; a
+// statusPath is where a group keeps live task status until ship writes it into its group file; a
 // task no group names keeps it in the repo's own file.
 func statusPath(root, group string) string {
 	if group == "" {
@@ -99,7 +102,7 @@ func saveStatus(path string, statuses map[string]TaskStatus) error {
 	return os.Rename(temp.Name(), path)
 }
 
-// ClearStatus drops the named tasks' live status, once ship has written it into BACKLOG.md.
+// ClearStatus drops the named tasks' live status, once ship has written it into its group file.
 func ClearStatus(root string, taskIDs []string) error {
 	return pruneStatus(root, nil, func(taskID string) bool { return !contains(taskIDs, taskID) })
 }
@@ -146,14 +149,10 @@ func OverlayStatus(parsed backlog.Backlog, statuses map[string]TaskStatus) backl
 	return parsed
 }
 
-// LoadBacklog is root's BACKLOG.md with the statuses a group worktree's ship commit holds, then
-// the run's live status, laid over it; root's own file is never rewritten mid-run.
+// LoadBacklog is root's queue with the statuses a group worktree's ship commit holds, then
+// the run's live status, laid over it; root's own queue is never rewritten mid-run.
 func LoadBacklog(root string) (backlog.Backlog, string, error) {
-	path, err := backlog.Find(root)
-	if err != nil {
-		return backlog.Backlog{}, "", err
-	}
-	parsed, err := backlog.Load(path)
+	parsed, err := backlog.LoadRoot(root)
 	if err != nil {
 		return backlog.Backlog{}, "", err
 	}
@@ -161,10 +160,10 @@ func LoadBacklog(root string) (backlog.Backlog, string, error) {
 	for id, status := range LoadStatus(root) {
 		shipped[id] = status
 	}
-	return OverlayStatus(parsed, shipped), path, nil
+	return OverlayStatus(parsed, shipped), root, nil
 }
 
-// shippedStatus is every DONE or BLOCKED status a recorded run's worktree BACKLOG.md holds for
+// shippedStatus is every DONE or BLOCKED status a recorded run's worktree queue holds for
 // one of its own group's tasks root still has open, which is what its ship commit carries until it lands.
 func shippedStatus(root string, parsed backlog.Backlog) map[string]TaskStatus {
 	statuses := map[string]TaskStatus{}
@@ -177,11 +176,7 @@ func shippedStatus(root string, parsed backlog.Backlog) map[string]TaskStatus {
 		if worktree == "" {
 			worktree = filepath.Join(StateDir, "wt", state.Group)
 		}
-		path, err := backlog.Find(WorktreePath(root, worktree))
-		if err != nil {
-			continue
-		}
-		committed, err := backlog.Load(path)
+		committed, err := backlog.LoadRoot(WorktreePath(root, worktree))
 		if err != nil {
 			continue
 		}
@@ -195,24 +190,63 @@ func shippedStatus(root string, parsed backlog.Backlog) map[string]TaskStatus {
 	return statuses
 }
 
-// backlogStatus reports whether a status is one a run writes into BACKLOG.md: the tick, or the blocker.
+// backlogStatus reports whether a status is one a run writes into its group file: the tick, or the blocker.
 func backlogStatus(status string) bool {
 	return status == "DONE" || status == "BLOCKED"
 }
 
-// writeStatus rewrites one task's status token in BACKLOG.md, refusing any status but the tick or the blocker,
-// so every other byte a person wrote survives the run.
-func writeStatus(path, taskID, status string) error {
+// errTaskGroupFileGone reports a task whose group file a prior commit already removed.
+var errTaskGroupFileGone = errors.New("its group file is already gone")
+
+// writeStatus writes one task's tick or blocker into its own docs/backlog group file, refusing any
+// status but the tick or the blocker.
+func writeStatus(root, taskID, status string) error {
 	if !backlogStatus(status) {
 		return fmt.Errorf("a run writes only DONE or BLOCKED into the backlog, not %s", status)
 	}
-	data, err := os.ReadFile(path)
+	groupPath, text, found, err := findTaskGroupFile(root, taskID)
 	if err != nil {
 		return err
 	}
-	out, err := backlog.SetStatus(string(data), taskID, status)
+	if !found {
+		return fmt.Errorf("%s: %w", taskID, errTaskGroupFileGone)
+	}
+	out, err := backlog.SetGroupFileTaskStatus(text, taskID, status)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(out), 0o644)
+	return os.WriteFile(groupPath, []byte(out), 0o644)
+}
+
+// findTaskGroupFile returns the path and text of the docs/backlog group file that declares taskID,
+// nil when root holds no group files or none names it.
+func findTaskGroupFile(root, taskID string) (path, text string, found bool, err error) {
+	entries, err := os.ReadDir(filepath.Join(root, backlog.GroupFilesDir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", false, nil
+		}
+		return "", "", false, err
+	}
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		candidate := filepath.Join(root, backlog.GroupFilesDir, name)
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			return "", "", false, err
+		}
+		file := backlog.ParseGroupFile(string(data))
+		for _, task := range file.Tasks {
+			if task.ID == taskID {
+				return candidate, string(data), true, nil
+			}
+		}
+	}
+	return "", "", false, nil
 }
