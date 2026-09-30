@@ -377,8 +377,7 @@ func settingsFile(root, binary string) ([]byte, error) {
 func denyList(policy policyFile) []string {
 	var out []string
 	for _, ref := range policy.CriticalRefs {
-		out = append(out, fmt.Sprintf("Bash(git push origin %s:*)", ref))
-		out = append(out, fmt.Sprintf("Bash(git push %s:*)", ref))
+		out = append(out, pushRule("git push origin "+ref), pushRule("git push "+ref))
 	}
 	// The hosts' own config, the hook's settings file included, is denied beside the policy's paths.
 	seen := map[string]bool{}
@@ -389,6 +388,14 @@ func denyList(policy policyFile) []string {
 		}
 	}
 	return out
+}
+
+// pushRule denies command as a prefix; a glob ref drops the :* suffix, which would make its * literal.
+func pushRule(command string) string {
+	if strings.Contains(command, "*") {
+		return "Bash(" + command + ")"
+	}
+	return "Bash(" + command + ":*)"
 }
 
 // policyFile is the part of the policy this host's permission layer mirrors.

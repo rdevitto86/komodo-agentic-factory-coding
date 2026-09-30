@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -216,6 +217,20 @@ func TestSettingsDenyEditsToTheHostsOwnConfig(t *testing.T) {
 	for _, want := range []string{"Edit(~/.claude/**)", "Edit(~/.claude.json)", "Edit(.claude/settings.json)"} {
 		if !strings.Contains(raw, `"`+want+`"`) {
 			t.Fatalf("settings deny no %s, so the hook's own config is left to the guard alone:\n%s", want, raw)
+		}
+	}
+}
+
+func TestAGlobRefDenyDropsThePrefixSuffix(t *testing.T) {
+	deny := denyList(policyFile{CriticalRefs: []string{"main", "release/*"}})
+	for _, want := range []string{"Bash(git push origin main:*)", "Bash(git push origin release/*)", "Bash(git push release/*)"} {
+		if !slices.Contains(deny, want) {
+			t.Fatalf("deny has no %s:\n%v", want, deny)
+		}
+	}
+	for _, entry := range deny {
+		if strings.Contains(entry, "*:*") {
+			t.Fatalf("deny entry %q mixes * with :*, so the host matches its * literally", entry)
 		}
 	}
 }
