@@ -432,6 +432,61 @@ func InvalidComments(text, path string) []Finding {
 	return findings
 }
 
+// fixMarker rewrites a malformed marker line, inserting the colon the shape requires.
+func fixMarker(line, family string) (string, bool) {
+	start := CommentStart(line, family)
+	if start == -1 {
+		return line, false
+	}
+	body := CommentBody(line[start:], family)
+	upper := strings.ToUpper(body)
+	for _, name := range markers {
+		if strings.HasPrefix(upper, name) {
+			rest := strings.TrimLeft(body[len(name):], " ")
+			return line[:start] + lineMarker[family] + " " + name + ": " + rest, true
+		}
+	}
+	return line, false
+}
+
+// Fix rewrites every finding with one mechanical rule and reports how many it applied.
+func Fix(text, path string) (string, int) {
+	family := ResolveFamily(path, text)
+	if family == "" {
+		return text, 0
+	}
+	findings := InvalidComments(text, path)
+	lines := strings.Split(text, "\n")
+	drop := map[int]bool{}
+	count := 0
+	for _, finding := range findings {
+		index := finding.Line - 1
+		if index < 0 || index >= len(lines) {
+			continue
+		}
+		switch finding.Rule {
+		case "MALFORMED_MARKER":
+			if fixed, ok := fixMarker(lines[index], family); ok {
+				lines[index] = fixed
+				count++
+			}
+		case "NAME_ECHO":
+			drop[index] = true
+			count++
+		}
+	}
+	if len(drop) == 0 {
+		return strings.Join(lines, "\n"), count
+	}
+	kept := make([]string, 0, len(lines)-len(drop))
+	for index, line := range lines {
+		if !drop[index] {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n"), count
+}
+
 // CheckFile lints one file on disk and returns its findings and what it left undocumented.
 func CheckFile(path, require string) ([]Finding, []Undocumented, error) {
 	data, err := os.ReadFile(path)

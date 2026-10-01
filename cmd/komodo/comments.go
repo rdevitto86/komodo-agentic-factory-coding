@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"komodo/internal/comments"
@@ -21,12 +23,17 @@ func commentsArgs(args []string, valueFlags ...string) (paths, rest []string) {
 func runComments(root string, args []string) {
 	set := flag.NewFlagSet("comments", flag.ExitOnError)
 	require := set.String("require", "nonobvious", "none, nonobvious, or exported")
+	apply := set.Bool("fix", false, "rewrite every finding with one mechanical rule")
 	paths, rest := commentsArgs(args, "require")
 	_ = set.Parse(rest)
 	if len(paths) == 0 {
 		paths = trackedFiles(root)
 	} else if err := verifyPaths(root, paths); err != nil {
 		fail(err)
+	}
+	if *apply {
+		runCommentsFix(root, paths)
+		return
 	}
 	problems, err := comments.Check(root, paths, *require)
 	if err != nil {
@@ -39,6 +46,31 @@ func runComments(root string, args []string) {
 	if len(problems) > 0 {
 		exit(1)
 	}
+}
+
+// runCommentsFix rewrites every mechanical finding in the named files and reports how many it applied.
+func runCommentsFix(root string, paths []string) {
+	fixed := 0
+	for _, path := range paths {
+		full := filepath.Join(root, path)
+		info, err := os.Stat(full)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(full)
+		if err != nil {
+			fail(err)
+		}
+		rewritten, count := comments.Fix(string(data), path)
+		if count == 0 {
+			continue
+		}
+		if err := os.WriteFile(full, []byte(rewritten), info.Mode()); err != nil {
+			fail(err)
+		}
+		fixed += count
+	}
+	fmt.Printf("%d fix(es) applied\n", fixed)
 }
 
 // trackedFiles lists what git tracks plus untracked files the exclude rules keep, what the lint walks by default.

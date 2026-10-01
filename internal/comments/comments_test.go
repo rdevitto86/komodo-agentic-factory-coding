@@ -350,6 +350,34 @@ func TestShellFunctionsAreDeclarations(t *testing.T) {
 	}
 }
 
+func TestFixRewritesAMalformedMarker(t *testing.T) {
+	text := "package a\n\n// TODO fix this later\nvar x = 1\n"
+	fixed, count := Fix(text, "a/b.go")
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	if !strings.Contains(fixed, "// TODO: fix this later") {
+		t.Fatalf("malformed marker not fixed: %s", fixed)
+	}
+	if got := InvalidComments(fixed, "a/b.go"); len(got) != 0 {
+		t.Fatalf("fixed text still has findings: %+v", got)
+	}
+}
+
+func TestFixDropsAnEchoedComment(t *testing.T) {
+	text := "import os\n\nx = 1\n\n# greet\ndef greet():\n    pass\n"
+	fixed, count := Fix(text, "a/b.py")
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	if strings.Contains(fixed, "# greet") {
+		t.Fatalf("echoed comment not dropped: %s", fixed)
+	}
+	if got := InvalidComments(fixed, "a/b.py"); len(got) != 0 {
+		t.Fatalf("fixed text still has findings: %+v", got)
+	}
+}
+
 func TestHeaderCommentNeverDocumentsTheFirstFunction(t *testing.T) {
 	text := "package a\n\n// File-level note, not a doc comment for what follows below.\n\nfunc Exported() int {\n\tx := 1\n\treturn x\n}\n"
 	got := UndocumentedFunctions(text, "a/b.go", "nonobvious")
