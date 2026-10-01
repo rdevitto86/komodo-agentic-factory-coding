@@ -47,7 +47,8 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 	_ = json.Unmarshal(raw, &sessionPayload)
 	notice := ""
 	if !decision.Deny {
-		claimed := ClaimCheck(request, root, branch, sessionPayload.SessionID)
+		target := claimDir(request)
+		claimed := ClaimCheck(request, WorktreeRoot(target), CurrentBranch(target), sessionPayload.SessionID)
 		if claimed.Deny {
 			decision = Decision{Deny: true, Findings: []string{claimed.Finding}}
 		} else {

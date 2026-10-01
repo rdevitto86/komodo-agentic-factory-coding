@@ -8,7 +8,31 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"komodo/internal/proc"
 )
+
+// init makes every claim test's host unknown, so only a test that fakes one exercises the host path.
+func init() {
+	hostProcess = func() (proc.Process, bool) { return proc.Process{}, false }
+	processAlive = func(proc.Process) (bool, bool) { return false, false }
+}
+
+// fakeHost makes the claiming session's host me, and reads every process in live as running.
+func fakeHost(t *testing.T, me proc.Process, live ...proc.Process) {
+	t.Helper()
+	oldHost, oldAlive := hostProcess, processAlive
+	t.Cleanup(func() { hostProcess, processAlive = oldHost, oldAlive })
+	hostProcess = func() (proc.Process, bool) { return me, true }
+	processAlive = func(process proc.Process) (bool, bool) {
+		for _, running := range live {
+			if running == process {
+				return true, true
+			}
+		}
+		return false, true
+	}
+}
 
 // claimRepo builds a real git repository on branch, so rev-parse --git-common-dir resolves.
 func claimRepo(t *testing.T, branch string) string {
@@ -172,5 +196,127 @@ func TestHookOnlyGatesAClaimableCall(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git", "komodo-claims")); !os.IsNotExist(err) {
 		t.Fatal("a read-only call must never claim a branch")
+	}
+}
+
+var (
+	hostA = proc.Process{PID: 100, Start: "Wed Sep 30 10:00:00 2026"}
+	hostB = proc.Process{PID: 200, Start: "Wed Sep 30 11:00:00 2026"}
+)
+
+func TestHookHandsAClaimToANewSessionOfTheSameHostProcess(t *testing.T) {
+	registerFakeHost()
+	root := claimRepo(t, "feat/x")
+	fakeHost(t, hostA, hostA)
+	var out, errOut strings.Builder
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-a")), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want session-a's first write allowed", code)
+	}
+	errOut.Reset()
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-b")), &out, &errOut); code != 0 || out.Len() != 0 {
+		t.Fatalf("exit = %d, out = %q; want a cleared session on the same host to take its own claim", code, out.String())
+	}
+	if !strings.Contains(errOut.String(), "same host process") {
+		t.Fatalf("stderr = %q, want a notice saying why the claim moved", errOut.String())
+	}
+}
+
+func TestHookTakesAClaimWhoseHostProcessEnded(t *testing.T) {
+	registerFakeHost()
+	root := claimRepo(t, "feat/x")
+	fakeHost(t, hostA, hostA)
+	var out, errOut strings.Builder
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-a")), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want session-a's first write allowed", code)
+	}
+	fakeHost(t, hostB, hostB)
+	errOut.Reset()
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-b")), &out, &errOut); code != 0 || out.Len() != 0 {
+		t.Fatalf("exit = %d, out = %q; want a dead host's claim taken", code, out.String())
+	}
+	if !strings.Contains(errOut.String(), "outlived its host process") {
+		t.Fatalf("stderr = %q, want a notice that the old host ended", errOut.String())
+	}
+}
+
+func TestHookRefusesALiveHostsClaimAndNamesTheReleaseCommand(t *testing.T) {
+	registerFakeHost()
+	root := claimRepo(t, "feat/x")
+	fakeHost(t, hostA, hostA, hostB)
+	var out, errOut strings.Builder
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-a")), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want session-a's first write allowed", code)
+	}
+	fakeHost(t, hostB, hostA, hostB)
+	denial := runHook(t, root, editPayload(root, "session-b"))
+	for _, want := range []string{"still running", "komodo guard release feat/x"} {
+		if !strings.Contains(denial.Reason, want) {
+			t.Fatalf("reason = %q, want %q", denial.Reason, want)
+		}
+	}
+}
+
+func TestHookKeysAWriteOnTheBranchOfTheWorktreeItTargets(t *testing.T) {
+	registerFakeHost()
+	root := claimRepo(t, "feat/x")
+	var out, errOut strings.Builder
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-a")), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want session-a's first write allowed", code)
+	}
+	tree := filepath.Join(t.TempDir(), "tree")
+	if result, err := exec.Command("git", "-C", root, "worktree", "add", "-q", "-b", "chore/y", tree).CombinedOutput(); err != nil {
+		t.Fatalf("worktree add: %v: %s", err, result)
+	}
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Edit","session_id":"session-b","cwd":"` + root +
+		`","tool_input":{"file_path":"` + filepath.Join(tree, "new", "a.go") + `"}}`
+	if code := Hook(root, strings.NewReader(payload), &out, &errOut); code != 0 || out.Len() != 0 {
+		t.Fatalf("exit = %d, out = %q; want a write into another worktree held to that worktree's branch", code, out.String())
+	}
+}
+
+func TestReleaseClaimFreesTheBranchForAnotherSession(t *testing.T) {
+	registerFakeHost()
+	root := claimRepo(t, "feat/x")
+	var out, errOut strings.Builder
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-a")), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want session-a's first write allowed", code)
+	}
+	if session, err := ReleaseClaim(root, "feat/x"); err != nil || session != "session-a" {
+		t.Fatalf("ReleaseClaim = %q, %v; want session-a released", session, err)
+	}
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-b")), &out, &errOut); code != 0 || out.Len() != 0 {
+		t.Fatalf("exit = %d, out = %q; want session-b free after the release", code, out.String())
+	}
+	if session, err := ReleaseClaim(root, "feat/none"); err != nil || session != "" {
+		t.Fatalf("ReleaseClaim on no claim = %q, %v; want nothing released and no error", session, err)
+	}
+}
+
+func TestPruneClaimsFreesOnlyADeadOrStaleClaim(t *testing.T) {
+	root := claimRepo(t, "feat/x")
+	fakeHost(t, hostA, hostA)
+	for _, item := range []claim{
+		{Session: "live", Branch: "feat/live", Started: time.Now().UTC(), Host: &hostA},
+		{Session: "dead", Branch: "feat/dead", Started: time.Now().UTC(), Host: &hostB},
+		{Session: "old", Branch: "feat/old", Started: time.Now().UTC().Add(-13 * time.Hour)},
+	} {
+		path, err := claimPath(root, item.Branch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.Marshal(item)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := strings.Join(PruneClaims(root), "\n")
+	if !strings.Contains(done, "feat/dead") || !strings.Contains(done, "feat/old") || strings.Contains(done, "feat/live") {
+		t.Fatalf("pruned = %q, want feat/dead and feat/old freed and feat/live kept", done)
+	}
+	if _, found, _ := readClaim(root, "feat/live"); !found {
+		t.Fatal("a live host's claim must survive a prune")
 	}
 }
