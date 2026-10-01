@@ -233,10 +233,14 @@ func UndocumentedFunctions(text, path, require string) []Undocumented {
 	return found
 }
 
+// lockfileNames are generated dependency lockfiles the lint never reads as prose.
+var lockfileNames = []string{"pnpm-lock.yaml", "package-lock.json", "yarn.lock", "composer.lock",
+	"Cargo.lock", "poetry.lock", "Gemfile.lock", "go.sum"}
+
 // InvalidComments returns every comment breaking a mechanical rule.
 func InvalidComments(text, path string) []Finding {
 	family := ResolveFamily(path)
-	if family == "" {
+	if family == "" || has(lockfileNames, filepath.Base(path)) {
 		return nil
 	}
 	ext := strings.ToLower(filepath.Ext(path))

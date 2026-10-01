@@ -196,6 +196,13 @@ func TestUsedToAsHistoryIsStillFlagged(t *testing.T) {
 	}
 }
 
+func TestGeneratedLockfileIsSkipped(t *testing.T) {
+	text := "lockfileVersion: '6.0'\n\ndependencies:\n  foo: 1.2.3 # EPIC-01 pin\n"
+	if got := InvalidComments(text, "pnpm-lock.yaml"); len(got) != 0 {
+		t.Fatalf("a generated lockfile was flagged: %+v", got)
+	}
+}
+
 func TestOverLongCharacterCommentIsFlaggedSeparately(t *testing.T) {
 	text := "package a\n\nvar x = 1 // " + strings.Repeat("alphabetic ", 15) + "\n"
 	got := rules(InvalidComments(text, "a/b.go"))
