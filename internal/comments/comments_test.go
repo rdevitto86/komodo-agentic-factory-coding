@@ -181,6 +181,28 @@ func TestLonePronounIIsStillFirstPerson(t *testing.T) {
 	}
 }
 
+func TestUsedToAsPurposeIsNotHistory(t *testing.T) {
+	text := "package a\n\n// Config holds the region and endpoint used to construct a Client.\ntype Config struct{}\n"
+	if got := InvalidComments(text, "a/b.go"); len(got) != 0 {
+		t.Fatalf("a purpose phrase was flagged: %+v", got)
+	}
+}
+
+func TestUsedToAsHistoryIsStillFlagged(t *testing.T) {
+	text := "package a\n\nvar x = 1 // This used to call X.\n"
+	got := rules(InvalidComments(text, "a/b.go"))
+	if len(got) != 1 || got[0] != "NARRATIVE" {
+		t.Fatalf("rules = %v", got)
+	}
+}
+
+func TestGeneratedLockfileIsSkipped(t *testing.T) {
+	text := "lockfileVersion: '6.0'\n\ndependencies:\n  foo: 1.2.3 # EPIC-01 pin\n"
+	if got := InvalidComments(text, "pnpm-lock.yaml"); len(got) != 0 {
+		t.Fatalf("a generated lockfile was flagged: %+v", got)
+	}
+}
+
 func TestOverLongCharacterCommentIsFlaggedSeparately(t *testing.T) {
 	text := "package a\n\nvar x = 1 // " + strings.Repeat("alphabetic ", 15) + "\n"
 	got := rules(InvalidComments(text, "a/b.go"))
@@ -258,3 +280,152 @@ func containsRule(findings []Finding, rule string) bool {
 
 // writeFile writes a test fixture.
 func writeFile(path, body string) error { return os.WriteFile(path, []byte(body), 0o644) }
+
+func TestLineCommentAboveATopLevelScriptDeclarationIsFlagged(t *testing.T) {
+	for _, decl := range []string{"function at() {", "const LIMIT = 3;", "export class Box {", "interface Shape {", "type Id = string;"} {
+		text := "// Walks a path through unknown JSON.\n" + decl + "\n  return 1;\n}\n"
+		if got := rules(InvalidComments(text, "a/b.ts")); len(got) != 1 || got[0] != "LINE_DOC" {
+			t.Errorf("%q: rules = %v", decl, got)
+		}
+	}
+}
+
+func TestLineCommentInsideAScriptBodyOrAboveAStatementIsPermitted(t *testing.T) {
+	text := "/** Sums the list. */\nfunction sum() {\n  // Starts from zero.\n  const total = 0;\n  return total;\n}\n\n// Runs when invoked directly.\nif (main) {\n  sum();\n}\n"
+	if got := InvalidComments(text, "a/b.ts"); len(got) != 0 {
+		t.Fatalf("findings = %+v", got)
+	}
+}
+
+func TestLineCommentAboveAGoDeclarationIsPermitted(t *testing.T) {
+	text := "package a\n\n// limit caps the retries.\nconst limit = 3\n"
+	if got := InvalidComments(text, "a/b.go"); len(got) != 0 {
+		t.Fatalf("findings = %+v", got)
+	}
+}
+
+func TestLeadingScriptDocCommentNeedsAModuleTag(t *testing.T) {
+	bare := "/** Builds the contract. */\nimport { a } from 'b';\n"
+	if got := rules(InvalidComments(bare, "a/b.ts")); len(got) != 1 || got[0] != "MODULE_TAG" {
+		t.Fatalf("rules = %v", got)
+	}
+	tagged := "/**\n * Builds the contract.\n *\n * @packageDocumentation\n */\nimport { a } from 'b';\n"
+	if got := InvalidComments(tagged, "a/b.ts"); len(got) != 0 {
+		t.Fatalf("a tagged module comment was flagged: %+v", got)
+	}
+	declared := "/** Builds the contract. */\nexport function build() {\n  return 1;\n}\n"
+	if got := InvalidComments(declared, "a/b.ts"); len(got) != 0 {
+		t.Fatalf("a declaration's doc comment was flagged: %+v", got)
+	}
+}
+
+func TestShellScriptWithoutAHeaderIsFlagged(t *testing.T) {
+	bare := "#!/usr/bin/env bash\nset -euo pipefail\necho hi\n"
+	if got := rules(InvalidComments(bare, "scripts/a.sh")); len(got) != 1 || got[0] != "SHELL_HEADER" {
+		t.Fatalf("rules = %v", got)
+	}
+	directive := "#!/usr/bin/env bash\n# shellcheck disable=SC2034\nx=1\n"
+	if got := rules(InvalidComments(directive, "scripts/a.sh")); len(got) != 1 || got[0] != "SHELL_HEADER" {
+		t.Fatalf("a directive passed as a header: %v", got)
+	}
+	headed := "#!/usr/bin/env bash\n# Prints a greeting.\nset -euo pipefail\necho hi\n"
+	if got := InvalidComments(headed, "scripts/a.sh"); len(got) != 0 {
+		t.Fatalf("a headed script was flagged: %+v", got)
+	}
+	if got := InvalidComments("print('hi')\n", "a/b.py"); len(got) != 0 {
+		t.Fatalf("a non-shell hash file was flagged: %+v", got)
+	}
+}
+
+func TestShellFunctionsAreDeclarations(t *testing.T) {
+	for line, want := range map[string]string{"deploy() {": "deploy", "function deploy {": "deploy", "  build_all () {": "build_all", "echo hi": ""} {
+		if got := FunctionName(line, ".sh"); got != want {
+			t.Errorf("FunctionName(%q) = %q, want %q", line, got, want)
+		}
+	}
+	body := strings.Repeat("  echo step\n", 10)
+	text := "#!/usr/bin/env bash\n# Deploys.\nset -eu\n\ndeploy() {\n" + body + "}\n"
+	if got := UndocumentedFunctions(text, "scripts/a.sh", "nonobvious"); len(got) != 1 || got[0].Name != "deploy" {
+		t.Fatalf("undocumented = %+v", got)
+	}
+}
+
+func TestFixRewritesAMalformedMarker(t *testing.T) {
+	text := "package a\n\n// TODO fix this later\nvar x = 1\n"
+	fixed, count := Fix(text, "a/b.go")
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	if !strings.Contains(fixed, "// TODO: fix this later") {
+		t.Fatalf("malformed marker not fixed: %s", fixed)
+	}
+	if got := InvalidComments(fixed, "a/b.go"); len(got) != 0 {
+		t.Fatalf("fixed text still has findings: %+v", got)
+	}
+}
+
+func TestFixDropsAnEchoedComment(t *testing.T) {
+	text := "import os\n\nx = 1\n\n# greet\ndef greet():\n    pass\n"
+	fixed, count := Fix(text, "a/b.py")
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	if strings.Contains(fixed, "# greet") {
+		t.Fatalf("echoed comment not dropped: %s", fixed)
+	}
+	if got := InvalidComments(fixed, "a/b.py"); len(got) != 0 {
+		t.Fatalf("fixed text still has findings: %+v", got)
+	}
+}
+
+func TestHeaderCommentNeverDocumentsTheFirstFunction(t *testing.T) {
+	text := "package a\n\n// File-level note, not a doc comment for what follows below.\n\nfunc Exported() int {\n\tx := 1\n\treturn x\n}\n"
+	got := UndocumentedFunctions(text, "a/b.go", "nonobvious")
+	if len(got) != 1 || got[0].Name != "Exported" {
+		t.Fatalf("a header separated by a blank line documented the first function: %+v", got)
+	}
+}
+
+func TestExtensionlessScriptsAreLintedByShebang(t *testing.T) {
+	bash := "#!/usr/bin/env bash\n# Runs pre-commit.\nset -euo pipefail\n"
+	if got := ResolveFamily(".husky/pre-commit", bash); got != familyHash {
+		t.Fatalf("ResolveFamily(husky hook) = %q, want %q", got, familyHash)
+	}
+	overLong := "#!/usr/bin/env bash\nset -eu # " + strings.Repeat("word ", 25) + "\n"
+	if got := rules(InvalidComments(overLong, "bin/run")); len(got) != 1 || got[0] != "OVER_WORDS" {
+		t.Fatalf("an extensionless bin/ script skipped the word cap: rules = %v", got)
+	}
+	if got := ResolveFamily("README.md", "# Title\n"); got != "" {
+		t.Fatalf("ResolveFamily(no shebang) = %q, want empty", got)
+	}
+}
+
+func TestLineCommentAboveAClassMethodIsFlagged(t *testing.T) {
+	text := "export class Box {\n  // Builds the box.\n  build() {\n    return 1;\n  }\n}\n"
+	if got := rules(InvalidComments(text, "a/b.ts")); len(got) != 1 || got[0] != "LINE_DOC" {
+		t.Fatalf("// above a class method was not flagged: rules = %v", got)
+	}
+}
+
+func TestLineCommentAboveAnIfInsideAMethodIsPermitted(t *testing.T) {
+	text := "export class Box {\n  build() {\n    // Guards the empty case.\n    if (x) {\n      return 1;\n    }\n    return 0;\n  }\n}\n"
+	if got := InvalidComments(text, "a/b.ts"); len(got) != 0 {
+		t.Fatalf("a comment above an if statement was flagged: %+v", got)
+	}
+}
+
+func TestBlockDocCommentTakesTheWordCap(t *testing.T) {
+	text := "/**\n * Builds the contract from " + strings.Repeat("word ", 22) + "fields.\n */\nexport function build() {\n  return 1;\n}\n"
+	got := rules(InvalidComments(text, "a/b.ts"))
+	if len(got) != 1 || got[0] != "OVER_WORDS" {
+		t.Fatalf("a /** */ comment skipped the word cap: rules = %v", got)
+	}
+}
+
+func TestBlockDocCommentTakesTheWordingChecks(t *testing.T) {
+	text := "/**\n * We previously built this differently.\n */\nexport function build() {\n  return 1;\n}\n"
+	got := rules(InvalidComments(text, "a/b.ts"))
+	if len(got) != 1 || got[0] != "NARRATIVE" {
+		t.Fatalf("a /** */ comment skipped the wording checks: rules = %v", got)
+	}
+}

@@ -35,6 +35,7 @@ die() {
   exit 1
 }
 
+# Sets OS and ARCH from uname, or dies on an unsupported platform.
 detect_platform() {
   case "$(uname -s)" in
     Darwin) OS=darwin ;;
@@ -48,6 +49,7 @@ detect_platform() {
   esac
 }
 
+# Checks for git and go on PATH, printing an install hint for whichever is missing.
 check_prerequisites() {
   local missing=0
   if ! command -v git >/dev/null 2>&1; then
@@ -93,6 +95,7 @@ build_binary() {
   BINARY="$SCRIPT_DIR/bin/$name"
 }
 
+# Downloads the release binary for OS and ARCH, verifying it before use.
 download_binary() {
   local name="komodo-$OS-$ARCH"
   local base="$KOMODO_RELEASE_URL/$KOMODO_VERSION"
@@ -128,6 +131,7 @@ link_binary() {
   esac
 }
 
+# Parses flags, resolves the binary, and installs it, or shows usage on -h/--help.
 main() {
   if [ "$#" -gt 0 ]; then
     case "$1" in

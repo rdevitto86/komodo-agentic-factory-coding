@@ -323,6 +323,45 @@ func TestADeletedSeedFileIsNotDrift(t *testing.T) {
 	}
 }
 
+// TestCheckStaleSkillsNamesATrackedSkillThatDiffersAndSaysTheFix proves a skill git tracks, which
+// install leaves alone, is still named when its body differs from the binary's own render.
+func TestCheckStaleSkillsNamesATrackedSkillThatDiffersAndSaysTheFix(t *testing.T) {
+	root := gitRepo(t)
+	skillPath := filepath.Join(root, ".testhost", "skills", "run", "SKILL.md")
+	write(t, root, filepath.Join(".testhost", "skills", "run", "SKILL.md"), "old body\n")
+	commitAll(t, root, "init")
+	registerHost(t, mount.Host{Name: "testhost", Installed: func(string) bool { return true },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "testhost", Root: root}
+			plan.AddProject(skillPath, []byte("new body\n"), "the run skill")
+			return plan, nil
+		}})
+	got := checkStaleSkills(renderInstalled(root, pinLocalDown))
+	if len(got) != 1 || got[0].Where != filepath.Join(".testhost", "skills", "run", "SKILL.md") {
+		t.Fatalf("checkStaleSkills = %+v", got)
+	}
+	if !strings.Contains(got[0].Detail, "git rm --cached") {
+		t.Fatalf("detail = %q, want the fix command", got[0].Detail)
+	}
+}
+
+// TestCheckStaleSkillsIgnoresAnUntrackedSkill proves checkDrift, not checkStaleSkills, names a skill
+// that is merely stale because the repo never tracked it.
+func TestCheckStaleSkillsIgnoresAnUntrackedSkill(t *testing.T) {
+	root := clean(t)
+	skillPath := filepath.Join(root, ".testhost", "skills", "run", "SKILL.md")
+	write(t, root, filepath.Join(".testhost", "skills", "run", "SKILL.md"), "old body\n")
+	registerHost(t, mount.Host{Name: "testhost", Installed: func(string) bool { return true },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "testhost", Root: root}
+			plan.AddProject(skillPath, []byte("new body\n"), "the run skill")
+			return plan, nil
+		}})
+	if got := checkStaleSkills(renderInstalled(root, pinLocalDown)); len(got) != 0 {
+		t.Fatalf("checkStaleSkills = %+v, want none for an untracked skill; checkDrift covers that", got)
+	}
+}
+
 func TestAPromisedAccessorWithNoRealCallerIsFound(t *testing.T) {
 	root := clean(t)
 	write(t, root, "komodo/rules/backlog.md", "# Backlog grammar\n\n## Rules\n"+
@@ -685,7 +724,7 @@ func TestPruneNeverDeletesACriticalRef(t *testing.T) {
 			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
 	}
-	done, err := Prune(root, "docs/v2-plan")
+	done, err := Prune(root, "docs/v2-plan", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -878,7 +917,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	}
 	line.Stamp(root, ledger.Entry{Station: "ship", Outcome: "done"})
 
-	if _, err := Prune(root, "main"); err != nil {
+	if _, err := Prune(root, "main", true); err != nil {
 		t.Fatal(err)
 	}
 	rootGroupFile := filepath.Join(root, "docs", "backlog", "TG-01.1-g.md")
@@ -887,7 +926,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	}
 
 	run(worktree, "push", "-q", "origin", "feat/g:main")
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -941,7 +980,7 @@ func TestPruneSweepsAnEarlierRunsMergedWorktreeWhileTheCurrentRunIsStillOpen(t *
 		t.Fatal(err)
 	}
 
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -990,7 +1029,7 @@ func TestSettleShippedRunSkipsTheSweepWhileARunIsOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1035,7 +1074,7 @@ func TestPruneRemovesBothRunsWorktreesWhenOnlyTheLatestIsRecorded(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}

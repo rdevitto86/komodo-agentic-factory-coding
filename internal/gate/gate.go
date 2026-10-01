@@ -245,6 +245,15 @@ func Sum(path string) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+// BuildLocalIfGoRepo builds this host's own binary when root pins a Go toolchain, returning an empty
+// path with no error in a repo without go.mod, so install still writes its hooks there.
+func BuildLocalIfGoRepo(root string, out io.Writer) (string, error) {
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		return "", nil
+	}
+	return BuildLocal(root, out)
+}
+
 // BuildLocal builds this host's own binary into root/bin and returns the path it wrote.
 func BuildLocal(root string, out io.Writer) (string, error) {
 	dir := filepath.Join(root, "bin")
@@ -452,22 +461,39 @@ func StagedDiffLines(root string) (map[string][]int, error) {
 	return diffAddedLines(out), nil
 }
 
-// CommentsCheck builds a gate check that lints only the comment lines a staged diff adds or changes.
+// CommentsCheck builds a gate check that lints a staged diff's changed lines, or every tracked file
+// when the lint's rule fingerprint has moved past the repo's last recorded sweep.
 func CommentsCheck(root, require string) Check {
 	return Check{Name: "komodo comments check", Run: func(out io.Writer) error {
-		added, err := StagedDiffLines(root)
-		if err != nil {
-			return err
-		}
-		problems, err := comments.CheckDiff(root, added, require)
-		if err != nil {
-			return err
+		var problems []string
+		sweep := comments.NeedsSweep(root)
+		if sweep {
+			swept, err := comments.Check(root, comments.TrackedFiles(root), require)
+			if err != nil {
+				return err
+			}
+			problems = swept
+		} else {
+			added, err := StagedDiffLines(root)
+			if err != nil {
+				return err
+			}
+			diffed, err := comments.CheckDiff(root, added, require)
+			if err != nil {
+				return err
+			}
+			problems = diffed
 		}
 		for _, problem := range problems {
 			fmt.Fprintln(out, problem)
 		}
 		if len(problems) > 0 {
 			return fmt.Errorf("%d comment problem(s)", len(problems))
+		}
+		if sweep {
+			if err := comments.RecordSweep(root); err != nil {
+				return err
+			}
 		}
 		return nil
 	}}

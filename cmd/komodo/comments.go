@@ -3,10 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"strings"
+	"os"
+	"path/filepath"
 
 	"komodo/internal/comments"
-	"komodo/internal/git"
 )
 
 // commentsArgs strips the check subcommand, if present, then splits what remains into paths and flags.
@@ -21,12 +21,17 @@ func commentsArgs(args []string, valueFlags ...string) (paths, rest []string) {
 func runComments(root string, args []string) {
 	set := flag.NewFlagSet("comments", flag.ExitOnError)
 	require := set.String("require", "nonobvious", "none, nonobvious, or exported")
+	apply := set.Bool("fix", false, "rewrite every finding with one mechanical rule")
 	paths, rest := commentsArgs(args, "require")
 	_ = set.Parse(rest)
 	if len(paths) == 0 {
-		paths = trackedFiles(root)
+		paths = comments.TrackedFiles(root)
 	} else if err := verifyPaths(root, paths); err != nil {
 		fail(err)
+	}
+	if *apply {
+		runCommentsFix(root, paths)
+		return
 	}
 	problems, err := comments.Check(root, paths, *require)
 	if err != nil {
@@ -41,17 +46,27 @@ func runComments(root string, args []string) {
 	}
 }
 
-// trackedFiles lists what git tracks plus untracked files the exclude rules keep, what the lint walks by default.
-func trackedFiles(root string) []string {
-	out, err := git.Run(root, "ls-files", "--cached", "--others", "--exclude-standard")
-	if err != nil {
-		return nil
-	}
-	var paths []string
-	for _, line := range strings.Split(out, "\n") {
-		if line != "" {
-			paths = append(paths, line)
+// runCommentsFix rewrites every mechanical finding in the named files and reports how many it applied.
+func runCommentsFix(root string, paths []string) {
+	fixed := 0
+	for _, path := range paths {
+		full := filepath.Join(root, path)
+		info, err := os.Stat(full)
+		if err != nil || info.IsDir() {
+			continue
 		}
+		data, err := os.ReadFile(full)
+		if err != nil {
+			fail(err)
+		}
+		rewritten, count := comments.Fix(string(data), path)
+		if count == 0 {
+			continue
+		}
+		if err := os.WriteFile(full, []byte(rewritten), info.Mode()); err != nil {
+			fail(err)
+		}
+		fixed += count
 	}
-	return paths
+	fmt.Printf("%d fix(es) applied\n", fixed)
 }

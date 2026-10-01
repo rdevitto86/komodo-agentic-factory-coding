@@ -180,6 +180,88 @@ func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 	}
 }
 
+// TestAddHonorsFilesBeforeANewGroupsPositionals proves flags given ahead of group and title still
+// land on the new group's first task, instead of being dropped with an empty group left behind.
+func TestAddHonorsFilesBeforeANewGroupsPositionals(t *testing.T) {
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "add", "--files", "c/four.go", "--done-when", "go test ./c/...", "TG-91", "A new group")
+	if got.code != 0 {
+		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	groupPath := filepath.Join(root, "docs", "backlog", "TG-91-a-new-group.md")
+	data, err := os.ReadFile(groupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "c/four.go") {
+		t.Fatalf("add dropped --files on a new group; got %s", data)
+	}
+	if !strings.Contains(string(data), "- [ ] **TSK-91.1**") {
+		t.Fatalf("add wrote a new group with no task; got %s", data)
+	}
+}
+
+// TestAddAcceptsRepeatedAcceptFlags proves --accept can be passed more than once instead of comma-joined,
+// so an acceptance line may itself hold a comma.
+func TestAddAcceptsRepeatedAcceptFlags(t *testing.T) {
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "add", "TG-90.2", "A third task", "--files", "c/five.go",
+		"--accept", "first line, with a comma", "--accept", "second line")
+	if got.code != 0 {
+		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "accept: first line, with a comma") {
+		t.Fatalf("add lost the comma in a repeated --accept line; got %s", data)
+	}
+	if !strings.Contains(string(data), "accept: second line") {
+		t.Fatalf("add dropped the second --accept line; got %s", data)
+	}
+}
+
+// TestAddRefusesAGroupIDTakenOnAnUnmergedBranch proves add checks every local branch's docs/backlog,
+// not only the working tree, before writing a new group file.
+func TestAddRefusesAGroupIDTakenOnAnUnmergedBranch(t *testing.T) {
+	root := fixtureRepo(t)
+	runGit(t, root, "checkout", "-b", "feat/TG-08.12-taken")
+	writeGroupFile(t, root, "TG-08.12-taken.md",
+		"## [TG-08.12] Taken elsewhere [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "taken")
+	runGit(t, root, "checkout", "main")
+	got := runCLI(t, root, "", "add", "TG-08.12", "A fresh checkout cannot see this")
+	if got.code == 0 {
+		t.Fatalf("add wrote a group id already taken on another branch: %s", got.stdout)
+	}
+	if !strings.Contains(got.stdout+got.stderr, "TG-08.12") {
+		t.Fatalf("refusal names no colliding id: %s%s", got.stdout, got.stderr)
+	}
+}
+
+// TestAddNextProposesTheFreeGroupIDAcrossBranches proves --next skips every id taken in the working
+// tree or on an unmerged branch, for both.
+func TestAddNextProposesTheFreeGroupIDAcrossBranches(t *testing.T) {
+	root := fixtureRepo(t)
+	writeGroupFile(t, root, "TG-08.13-untracked.md",
+		"## [TG-08.13] Untracked [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
+	runGit(t, root, "checkout", "-b", "feat/TG-08.14-taken")
+	writeGroupFile(t, root, "TG-08.14-taken.md",
+		"## [TG-08.14] Taken elsewhere [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "taken")
+	runGit(t, root, "checkout", "main")
+	got := runCLI(t, root, "", "add", "--next", "EPIC-08")
+	if got.code != 0 {
+		t.Fatalf("add --next exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if !strings.Contains(got.stdout, "TG-08.15") {
+		t.Fatalf("add --next = %q, want TG-08.15 free past the untracked and unmerged ids", got.stdout)
+	}
+}
+
 // TestListShowsTheOpenRunsLiveStatus proves list overlays status.json while the group file stays as committed.
 func TestListShowsTheOpenRunsLiveStatus(t *testing.T) {
 	root := fixtureRepo(t)
@@ -312,6 +394,28 @@ func TestCommentsCheckReadsUntrackedFilesButSkipsIgnoredOnes(t *testing.T) {
 	}
 	if strings.Contains(got.stdout, "ignored.py") {
 		t.Fatalf("comments check read a file the exclude rules ignore: %s", got.stdout)
+	}
+}
+
+// TestCommentsCheckFixAppliesTheMechanicalRules proves --fix rewrites a malformed marker on disk.
+func TestCommentsCheckFixAppliesTheMechanicalRules(t *testing.T) {
+	root := fixtureRepo(t)
+	path := filepath.Join(root, "a.go")
+	if err := os.WriteFile(path, []byte("package a\n\n// TODO fix this later\nvar x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := runCLI(t, root, "", "comments", "check", "--fix", "a.go"); got.code != 0 {
+		t.Fatalf("comments check --fix exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "// TODO: fix this later") {
+		t.Fatalf("fix did not rewrite the file: %s", data)
+	}
+	if got := runCLI(t, root, "", "comments", "check", "a.go"); got.code != 0 {
+		t.Fatalf("the fixed file still fails comments check: %s%s", got.stdout, got.stderr)
 	}
 }
 

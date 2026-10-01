@@ -10,7 +10,8 @@ Komodo's default for user interfaces, with Vue or Svelte on top. A suggestion, n
 
 ## Comments
 - A JSDoc line on every exported function, class, and type: one sentence saying what it does or returns.
-- A non-exported function gets a one-line `//` comment when its body is longer than a screen or its behaviour is not obvious.
+- A non-exported function gets a one-line JSDoc comment when its body is longer than a screen or its behaviour is not obvious.
+- `//` belongs inside bodies only. A file's leading `/** */` comment carries `@packageDocumentation`.
 - Error messages lead with a verb phrase and never name the function.
 
 ## Conventions

@@ -214,15 +214,19 @@ func TestSettingsRegisterTheGuardOnceAndNoMCP(t *testing.T) {
 func TestSettingsDenyEditsToTheHostsOwnConfig(t *testing.T) {
 	root := toolkitRepo(t)
 	raw := body(t, root, filepath.Join(Dir, "settings.json"))
-	for _, want := range []string{"Edit(~/.claude/**)", "Edit(~/.claude.json)", "Edit(.claude/settings.json)"} {
+	for _, want := range []string{"Edit(~/.claude/*)", "Edit(~/.claude/skills/**)", "Edit(~/.claude.json)", "Edit(.claude/settings.json)"} {
 		if !strings.Contains(raw, `"`+want+`"`) {
 			t.Fatalf("settings deny no %s, so the hook's own config is left to the guard alone:\n%s", want, raw)
 		}
 	}
+	// The blanket form would also refuse a session's own write to its project memory directory.
+	if strings.Contains(raw, `"Edit(~/.claude/**)"`) {
+		t.Fatal("settings denies the whole ~/.claude tree, which also refuses the project memory directory")
+	}
 }
 
 func TestAGlobRefDenyDropsThePrefixSuffix(t *testing.T) {
-	deny := denyList(policyFile{CriticalRefs: []string{"main", "release/*"}})
+	deny := denyList(t.TempDir(), policyFile{CriticalRefs: []string{"main", "release/*"}})
 	for _, want := range []string{"Bash(git push origin main:*)", "Bash(git push origin release/*)", "Bash(git push release/*)"} {
 		if !slices.Contains(deny, want) {
 			t.Fatalf("deny has no %s:\n%v", want, deny)

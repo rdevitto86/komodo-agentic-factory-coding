@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,6 +84,10 @@ func Lint(parsed Backlog) []string {
 			if depGroup, ok := parsed.Group(dep); ok {
 				// A dependency's branch already on origin may carry the title-only form, which still counts.
 				depBranches = append(depBranches, depGroup.Branch(), depGroup.TitleBranch())
+				if own, later := group.Version(), depGroup.Version(); own != "" && later != "" && changelog.Compare(own, later) < 0 {
+					problems = append(problems, fmt.Sprintf(
+						"%s: depends_on names %s at a later version (%s depends on %s)", group.ID, dep, own, later))
+				}
 			}
 		}
 		epicBranch := group.EpicBranch()
@@ -328,8 +333,8 @@ func hasHeading(text, anchor string) bool {
 var groupFileContextLine = regexp.MustCompile(`^\s{2}-\s+context:\s*(.*)$`)
 
 // LintGroupFile checks one docs/backlog group file as Lint checks a legacy backlog's group: version,
-// an open task's files, a context anchor, and depends_on naming a known group or task.
-func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs map[string]bool) []string {
+// an open task's files, a context anchor, and depends_on naming a known group or task at no later version.
+func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs map[string]bool, groupVersions map[string]string) []string {
 	var problems []string
 	switch version := file.Version; {
 	case version == "":
@@ -344,6 +349,11 @@ func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs m
 	for _, dep := range file.DependsOn {
 		if !groupIDs[dep] && !taskIDs[dep] {
 			problems = append(problems, fmt.Sprintf("%s: depends_on names unknown group or task %s", file.ID, dep))
+			continue
+		}
+		if own, later := file.Version, groupVersions[dep]; own != "" && later != "" && changelog.Compare(own, later) < 0 {
+			problems = append(problems, fmt.Sprintf(
+				"%s: depends_on names %s at a later version (%s depends on %s)", file.ID, dep, own, later))
 		}
 	}
 	for _, task := range file.Tasks {
@@ -487,6 +497,25 @@ func BuildableGroupFile(file GroupFile) int {
 		}
 	}
 	return count
+}
+
+// NextGroupID is the next free group id for the given epic id, skipping every id already taken
+// so a collision on an unmerged branch is never proposed again.
+func NextGroupID(epicID string, taken map[string]bool) (string, error) {
+	num := strings.TrimPrefix(epicID, "EPIC-")
+	if num == "" || num == epicID {
+		return "", fmt.Errorf("not an epic id: %q", epicID)
+	}
+	prefix := "TG-" + num + "."
+	highest := 0
+	for id := range taken {
+		if suffix, ok := strings.CutPrefix(id, prefix); ok {
+			if n, err := strconv.Atoi(suffix); err == nil && n > highest {
+				highest = n
+			}
+		}
+	}
+	return fmt.Sprintf("%s%d", prefix, highest+1), nil
 }
 
 // buildable counts the group's tasks a builder session works: every one not waiting in REFINEMENT.

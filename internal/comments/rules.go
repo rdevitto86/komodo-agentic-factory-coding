@@ -36,6 +36,12 @@ var extensionFamily = map[string]string{
 
 var filenameFamily = map[string]string{"Dockerfile": familyHash, "Makefile": familyHash, "Justfile": familyHash}
 
+var shebangFamily = map[string]string{
+	"sh": familyHash, "bash": familyHash, "zsh": familyHash, "dash": familyHash, "ksh": familyHash,
+	"python": familyHash, "python3": familyHash, "ruby": familyHash,
+	"node": familyC, "ts-node": familyC, "deno": familyC,
+}
+
 var lineMarker = map[string]string{familyC: "//", familyHash: "#", familyDash: "--"}
 
 var quotes = map[string]string{familyC: "\"'`", familyHash: "\"'", familyDash: "'\""}
@@ -66,18 +72,23 @@ var externalRefs = []namedPattern{
 var narrativePatterns = []namedPattern{
 	{regexp.MustCompile(`(?i)(?:(?:^|\s)(?:we're|we've|we|let's|our)\b|(?:^|\s)i(?:[\s']|$))`), "first person"},
 	{regexp.MustCompile(`(?i)\b(?:probably|maybe|i think|should work|hopefully|seems? to|might be|kind of|sort of)\b`), "a hedge"},
-	{regexp.MustCompile(`(?i)\b(?:previously|used to|no longer|now uses|was changed|refactored|moved from|instead of the old)\b`), "history"},
+	{regexp.MustCompile(`(?i)\b(?:previously|no longer|now uses|was changed|refactored|moved from|instead of the old|(?:it|this|that|they|he|she)\s+used to)\b`), "history"},
 }
 
 var (
 	funcDecl = regexp.MustCompile(`^(?:(?:export|default|public|private|protected|internal|static|final|abstract|async|inline|open|override|suspend|pub)(?:\([^)]*\))?\s+)*` +
 		`(?:func|function|def|fn)\s+(?:\([^)]*\)\s*)?(\w+)`)
-	arrowDecl    = regexp.MustCompile(`^(?:export\s+)?(?:default\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:\([^)]*\)|\w+)\s*=>`)
-	goMethod     = regexp.MustCompile(`^func\s*\([^)]*\)\s*(\w+)`)
-	goFunc       = regexp.MustCompile(`^func\s+(\w+)`)
-	markerShape  = regexp.MustCompile(`^(NOTE|FIXME|TODO):\s+\S`)
-	annotation   = regexp.MustCompile(`^(?:@\w+(?:\(.*\))?|#!?\[.*\]|\[[A-Za-z_][^\]]*\])$`)
-	dunder       = regexp.MustCompile(`^__\w+__$`)
+	arrowDecl   = regexp.MustCompile(`^(?:export\s+)?(?:default\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:\([^)]*\)|\w+)\s*=>`)
+	goMethod    = regexp.MustCompile(`^func\s*\([^)]*\)\s*(\w+)`)
+	goFunc      = regexp.MustCompile(`^func\s+(\w+)`)
+	markerShape = regexp.MustCompile(`^(NOTE|FIXME|TODO):\s+\S`)
+	annotation  = regexp.MustCompile(`^(?:@\w+(?:\(.*\))?|#!?\[.*\]|\[[A-Za-z_][^\]]*\])$`)
+	dunder      = regexp.MustCompile(`^__\w+__$`)
+	shellFunc   = regexp.MustCompile(`^(?:function\s+(\w[\w-]*)(?:\s*\(\))?|(\w[\w-]*)\s*\(\))\s*\{?\s*$`)
+	scriptDecl  = regexp.MustCompile(`^(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?` +
+		`(?:function\*?|class|interface|type|enum|const|let|var|namespace)\s`)
+	classMethod = regexp.MustCompile(`^(?:public\s+|private\s+|protected\s+|static\s+|async\s+|abstract\s+|override\s+|readonly\s+)*` +
+		`(?:get\s+|set\s+)?(\w+)\s*(?:<[^>]*>)?\([^)]*\)\s*(?::\s*[^{;=]+)?\s*\{\s*$`)
 	testFileName = []*regexp.Regexp{
 		regexp.MustCompile(`_test\.[^.]+$`), regexp.MustCompile(`^test_`),
 		regexp.MustCompile(`\.(?:test|spec)\.[^.]+$`), regexp.MustCompile(`^conftest\.`),
@@ -90,6 +101,9 @@ var (
 	generatedDirs  = []string{"vendor", "node_modules", "generated", "third_party", "dist", "build"}
 	generatedSuffs = []string{".gen.go", ".pb.go", "_pb2.py", ".generated.ts", ".d.ts", ".min.js"}
 	markers        = []string{"NOTE", "FIXME", "TODO"}
+	shellExts      = []string{".sh", ".bash", ".zsh"}
+	scriptExts     = []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
+	moduleTags     = []string{"@packageDocumentation", "@module", "@file", "@fileoverview"}
 )
 
 // Finding is one comment breaking one mechanical rule.
@@ -105,13 +119,36 @@ type Undocumented struct {
 	Name string `json:"name"`
 }
 
-// ResolveFamily returns the comment family for a path, or the empty string when the lint has no opinion.
-func ResolveFamily(path string) string {
+// ResolveFamily returns the comment family for a path, by name, extension, or a shebang when extensionless.
+func ResolveFamily(path string, text ...string) string {
 	base := filepath.Base(path)
 	if family, ok := filenameFamily[base]; ok {
 		return family
 	}
-	return extensionFamily[strings.ToLower(filepath.Ext(base))]
+	if family := extensionFamily[strings.ToLower(filepath.Ext(base))]; family != "" {
+		return family
+	}
+	if filepath.Ext(base) != "" || len(text) == 0 {
+		return ""
+	}
+	return shebangFamily[shebangInterpreter(text[0])]
+}
+
+// shebangInterpreter names the interpreter a script's first line invokes, or the empty string.
+func shebangInterpreter(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	if !strings.HasPrefix(line, "#!") {
+		return ""
+	}
+	fields := strings.Fields(line[2:])
+	if len(fields) == 0 {
+		return ""
+	}
+	name := filepath.Base(fields[0])
+	if name == "env" && len(fields) > 1 {
+		name = fields[1]
+	}
+	return name
 }
 
 // IsTestPath reports whether a path is a test file or sits under a test directory.
@@ -230,6 +267,12 @@ func FunctionName(line, ext string) string {
 		}
 		if match := goFunc.FindStringSubmatch(stripped); match != nil {
 			return match[1]
+		}
+		return ""
+	}
+	if has(shellExts, ext) {
+		if match := shellFunc.FindStringSubmatch(stripped); match != nil {
+			return match[1] + match[2]
 		}
 		return ""
 	}

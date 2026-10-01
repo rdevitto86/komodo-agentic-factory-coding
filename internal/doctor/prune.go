@@ -13,9 +13,8 @@ import (
 // keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
 const keptRuns = 10
 
-// Prune removes stale worktrees, deletes merged branches, settles each group origin has merged or dropped,
-// keeps only the newest run folders, and frees dead branch claims; an open run's worktree and folder stay.
-func Prune(root, base string) ([]string, error) {
+// Prune clears stale worktrees, old runs and dead claims; it deletes merged branches only when confirm, else lists them.
+func Prune(root, base string, confirm bool) ([]string, error) {
 	var done []string
 	worktrees, err := git.Worktrees(root)
 	if err != nil {
@@ -37,11 +36,15 @@ func Prune(root, base string) ([]string, error) {
 		done = append(done, "pruned the worktree list")
 	}
 	open := line.OpenRuns(root)
-	done = append(done, settleShippedRun(root, base, open)...)
+	done = append(done, settleShippedRun(root, base, open, confirm)...)
 	policy := guard.Load(root, root)
 	merged := lines(git.Run(root, "branch", "--merged", base, "--format=%(refname:short)"))
 	for _, branch := range merged {
 		if branch == base || branch == "" || strings.HasPrefix(branch, "*") || policy.IsCritical(branch) {
+			continue
+		}
+		if !confirm {
+			done = append(done, "would delete merged branch "+branch+"; rerun with --confirm to delete")
 			continue
 		}
 		if _, err := git.Run(root, "branch", "-d", branch); err == nil {
@@ -54,8 +57,8 @@ func Prune(root, base string) ([]string, error) {
 }
 
 // settleShippedRun sweeps each clean worktree origin has merged or whose pushed branch origin dropped,
-// skipping an open run's own worktree.
-func settleShippedRun(root, base string, open []line.RunState) []string {
+// skipping an open run's own worktree. Unconfirmed, it only lists the worktree and branch it would take.
+func settleShippedRun(root, base string, open []line.RunState, confirm bool) []string {
 	if _, err := git.Run(root, "fetch", "--quiet", "origin", base); err != nil {
 		return nil
 	}
@@ -74,6 +77,11 @@ func settleShippedRun(root, base string, open []line.RunState) []string {
 			continue
 		}
 		if !landed(root, worktree.Branch, remote) {
+			continue
+		}
+		if !confirm {
+			done = append(done, "would remove worktree "+rel(root, worktree.Path)+" and delete branch "+
+				worktree.Branch+"; rerun with --confirm to delete")
 			continue
 		}
 		if _, err := git.Run(root, "worktree", "remove", "--force", worktree.Path); err != nil {

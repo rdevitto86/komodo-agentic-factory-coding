@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -79,8 +80,10 @@ func groupFileLintProblems(root string) (problems []string, taskCount, groupCoun
 	}
 	groupIDs := map[string]bool{}
 	taskIDs := map[string]bool{}
+	groupVersions := map[string]string{}
 	for _, file := range files {
 		groupIDs[file.ID] = true
+		groupVersions[file.ID] = file.Version
 		for _, task := range file.Tasks {
 			taskIDs[task.ID] = true
 		}
@@ -91,7 +94,7 @@ func groupFileLintProblems(root string) (problems []string, taskCount, groupCoun
 		if built := backlog.BuildableGroupFile(file); built > 12 {
 			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", file.ID, built))
 		}
-		problems = append(problems, backlog.LintGroupFile(root, file, texts[file.ID], groupIDs, taskIDs)...)
+		problems = append(problems, backlog.LintGroupFile(root, file, texts[file.ID], groupIDs, taskIDs, groupVersions)...)
 		taskCount += len(file.Tasks)
 	}
 	problems = append(problems, backlog.LintGroupFileEpics(files)...)
@@ -231,15 +234,29 @@ func findGroupFile(root, groupID string) (path, text string, found bool, err err
 func runBacklogAdd(root string, args []string) {
 	set := flag.NewFlagSet("add", flag.ExitOnError)
 	files := set.String("files", "", "comma-separated paths the task touches")
-	accept := set.String("accept", "", "comma-separated acceptance lines")
+	var accept repeatedFlag
+	set.Var(&accept, "accept", "one acceptance line; repeat --accept for more than one")
 	doneWhen := set.String("done-when", "", "comma-separated shell commands whose zero exit proves the task done")
 	priority := set.String("priority", "M", "C, H, M, or L")
 	status := set.String("status", "REFINEMENT", "the status to open the group in")
 	groupType := set.String("type", "feat", "the conventional-commit type")
 	version := set.String("version", "", "the version the group ships")
 	epic := set.String("epic", "", "the epic id the group belongs to")
-	positional, rest := splitFlags(args, "files", "accept", "done-when", "priority", "status", "type", "version", "epic")
+	next := set.String("next", "", "an epic id; print the next free group id across local branches and exit")
+	positional, rest := splitFlags(args, "files", "accept", "done-when", "priority", "status", "type", "version", "epic", "next")
 	_ = set.Parse(rest)
+	if *next != "" {
+		taken, err := takenGroupIDs(root)
+		if err != nil {
+			fail(err)
+		}
+		id, err := backlog.NextGroupID(*next, taken)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Println(id)
+		return
+	}
 	if len(positional) < 2 {
 		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
 	}
@@ -248,12 +265,22 @@ func runBacklogAdd(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
+	if !found {
+		taken, err := takenGroupIDs(root)
+		if err != nil {
+			fail(err)
+		}
+		if taken[groupID] {
+			fail(fmt.Errorf("%s is already taken in the working tree or on a local branch", groupID))
+		}
+	}
+	taskFlagsGiven := len(splitStrings(*files)) > 0 || len(accept) > 0 || len(splitStrings(*doneWhen)) > 0
 	if found {
 		if len(splitStrings(*files)) == 0 {
 			fail(fmt.Errorf("task declares no files; pass --files"))
 		}
 		out, id, err := backlog.AppendGroupFileTaskWith(text, backlog.GroupTask{
-			Title: title, Files: splitStrings(*files), Accept: splitStrings(*accept), Checks: splitStrings(*doneWhen),
+			Title: title, Files: splitStrings(*files), Accept: accept, Checks: splitStrings(*doneWhen),
 		})
 		if err != nil {
 			fail(err)
@@ -265,6 +292,9 @@ func runBacklogAdd(root string, args []string) {
 		line.Stamp(root, ledger.Entry{Station: "add", Task: id, Outcome: "added"})
 		return
 	}
+	if taskFlagsGiven && len(splitStrings(*files)) == 0 {
+		fail(fmt.Errorf("task declares no files; pass --files"))
+	}
 	var fields backlog.Fields
 	fields.Set("type", *groupType)
 	fields.Set("version", *version)
@@ -275,11 +305,70 @@ func runBacklogAdd(root string, args []string) {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		fail(err)
 	}
+	taskID := groupID
+	if taskFlagsGiven {
+		out, taskID, err = backlog.AppendGroupFileTaskWith(out, backlog.GroupTask{
+			Title: title, Files: splitStrings(*files), Accept: accept, Checks: splitStrings(*doneWhen),
+		})
+		if err != nil {
+			fail(err)
+		}
+	}
 	if err := os.WriteFile(dest, []byte(out), 0o644); err != nil {
 		fail(err)
 	}
 	fmt.Println(groupID)
-	line.Stamp(root, ledger.Entry{Station: "add", Task: groupID, Outcome: "added"})
+	line.Stamp(root, ledger.Entry{Station: "add", Task: taskID, Outcome: "added"})
+}
+
+// repeatedFlag collects every occurrence of a flag given more than once, in order.
+type repeatedFlag []string
+
+// String joins the collected values for flag's usage output.
+func (r *repeatedFlag) String() string { return strings.Join(*r, ", ") }
+
+// Set appends one more occurrence's value.
+func (r *repeatedFlag) Set(value string) error {
+	*r = append(*r, value)
+	return nil
+}
+
+// groupFilename is a docs/backlog group file's leading group id, matching how its own file names it.
+var groupFilename = regexp.MustCompile(`^(TG-[\w.]+)-`)
+
+// takenGroupIDs is every group id already in the working tree, including an untracked file, plus
+// every group id docs/backlog holds on any local branch, so a fresh checkout still sees it.
+func takenGroupIDs(root string) (map[string]bool, error) {
+	taken := map[string]bool{}
+	names, err := groupFileNames(root)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range names {
+		if match := groupFilename.FindStringSubmatch(name); match != nil {
+			taken[match[1]] = true
+		}
+	}
+	branches, err := git.Run(root, "branch", "--list", "--format=%(refname:short)")
+	if err != nil {
+		return taken, nil // no repo, or no git at all; the working tree is every id there is
+	}
+	for _, branch := range strings.Split(branches, "\n") {
+		branch = strings.TrimSpace(branch)
+		if branch == "" {
+			continue
+		}
+		listing, err := git.Run(root, "ls-tree", "-r", "--name-only", branch, "--", groupFilesDir)
+		if err != nil {
+			continue // a branch with no docs/backlog yet names none
+		}
+		for _, name := range strings.Split(listing, "\n") {
+			if match := groupFilename.FindStringSubmatch(filepath.Base(name)); match != nil {
+				taken[match[1]] = true
+			}
+		}
+	}
+	return taken, nil
 }
 
 // splitStrings turns a comma-separated flag into a plain string slice, dropping empty parts.

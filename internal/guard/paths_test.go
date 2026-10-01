@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -30,6 +31,68 @@ func TestAPathOutsideEveryDeclaredWritePathIsStillRefused(t *testing.T) {
 	target := filepath.Join(filepath.Dir(root), "elsewhere.md")
 	if findings := pathFindings(target, root, root, DefaultPolicy()); len(findings) == 0 {
 		t.Fatal("a write outside the worktree with no declared write path passed")
+	}
+}
+
+// TestADollarHomePathExpandsAndIsRefused proves a $HOME reference expands against the session's
+// environment and is judged as the real config path it names, not skipped outright.
+func TestADollarHomePathExpandsAndIsRefused(t *testing.T) {
+	t.Setenv(RoleEnv, "builder")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := worktree(t)
+	policy := DefaultPolicy()
+	policy.ConfigPaths = append(policy.ConfigPaths, "~/.claude/**")
+	if findings := pathFindings("$HOME/.claude/CLAUDE.md", root, root, policy); len(findings) == 0 {
+		t.Fatal("a $HOME config path expanded past the guard")
+	}
+}
+
+// TestABracedHomePathExpandsAndIsRefused proves the ${VAR} form expands the same way $VAR does.
+func TestABracedHomePathExpandsAndIsRefused(t *testing.T) {
+	t.Setenv(RoleEnv, "builder")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := worktree(t)
+	policy := DefaultPolicy()
+	policy.ConfigPaths = append(policy.ConfigPaths, "~/.claude/**")
+	if findings := pathFindings("${HOME}/.claude/settings.json", root, root, policy); len(findings) == 0 {
+		t.Fatal("a ${HOME} config path expanded past the guard")
+	}
+}
+
+// TestAPathWithCommandSubstitutionStaysRefused proves a path the guard cannot resolve, since it
+// carries a command substitution, is still judged on its literal text, never allowed outright.
+func TestAPathWithCommandSubstitutionStaysRefused(t *testing.T) {
+	t.Setenv(RoleEnv, "builder")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := worktree(t)
+	policy := DefaultPolicy()
+	policy.ConfigPaths = append(policy.ConfigPaths, "~/.claude/**")
+	if findings := pathFindings("~/.claude/x$(true)", root, root, policy); len(findings) == 0 {
+		t.Fatal("a path with a command substitution was allowed past the guard")
+	}
+}
+
+// TestABacktickPathIsStillJudgedNormally proves a path naming a backtick is never blanket-skipped;
+// one that genuinely sits outside the worktree is still refused.
+func TestABacktickPathIsStillJudgedNormally(t *testing.T) {
+	t.Setenv(RoleEnv, "builder")
+	root := worktree(t)
+	if findings := pathFindings("/etc/passwd`", root, root, DefaultPolicy()); len(findings) == 0 {
+		t.Fatal("a backtick-carrying path outside the worktree was allowed")
+	}
+}
+
+// TestAPathNamingTMPDIRExpandsAndPasses proves the logged false positive is fixed by expansion:
+// once $TMPDIR resolves, the path lands inside the real temp directory isAllowedWrite already covers.
+func TestAPathNamingTMPDIRExpandsAndPasses(t *testing.T) {
+	t.Setenv(RoleEnv, "builder")
+	root := worktree(t)
+	t.Setenv("TMPDIR", os.TempDir())
+	if findings := pathFindings("/tmp/../$TMPDIR/v.log", root, root, DefaultPolicy()); len(findings) != 0 {
+		t.Fatalf("a path naming TMPDIR was refused: %v", findings)
 	}
 }
 

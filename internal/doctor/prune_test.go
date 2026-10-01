@@ -56,7 +56,7 @@ func TestPruneSettlesASquashMergedGroupWhoseBranchIsGone(t *testing.T) {
 	run(root, "push", "-q", "origin", "--delete", "feat/g")
 	unpushed := cut("TG-01.2", "feat/h")
 
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +68,43 @@ func TestPruneSettlesASquashMergedGroupWhoseBranchIsGone(t *testing.T) {
 	}
 	if !exists(unpushed) {
 		t.Fatalf("a branch never pushed was taken for one origin deleted; done = %v", got)
+	}
+}
+
+// TestPruneDefaultsToADryRunAndNeverDeletesABranch proves an unconfirmed prune only lists a merged
+// branch it would delete, and a confirmed prune then deletes it.
+func TestPruneDefaultsToADryRunAndNeverDeletesABranch(t *testing.T) {
+	root, run := pruneRepo(t, "# Backlog\n")
+	run(root, "branch", "feat/merged")
+	run(root, "checkout", "-q", "feat/merged")
+	write(t, root, "merged.txt", "done\n")
+	commitAll(t, root, "merged work")
+	run(root, "checkout", "-q", "main")
+	run(root, "merge", "-q", "--ff-only", "feat/merged")
+
+	dryRun, err := Prune(root, "main", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/merged").Output(); strings.TrimSpace(string(out)) == "" {
+		t.Fatalf("feat/merged was deleted though prune ran unconfirmed; done = %v", dryRun)
+	}
+	found := false
+	for _, item := range dryRun {
+		if strings.Contains(item, "feat/merged") && strings.Contains(item, "--confirm") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("done = %v, want a would-delete line naming feat/merged and --confirm", dryRun)
+	}
+
+	confirmed, err := Prune(root, "main", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/merged").Output(); strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("feat/merged survived a confirmed prune; done = %v", confirmed)
 	}
 }
 
@@ -85,7 +122,7 @@ func TestPruneKeepsOnlyTheNewestRunFolders(t *testing.T) {
 		}
 	}
 
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
