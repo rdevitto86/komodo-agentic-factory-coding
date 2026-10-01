@@ -89,22 +89,20 @@ func bodySpan(lines []string, index int, family string) (int, int) {
 	return statements, returns
 }
 
-// documentedAbove reports whether the nearest line above, skipping blanks and attributes, is a comment.
+// documentedAbove reports whether the nearest line above, skipping attributes only, is a comment.
 func documentedAbove(lines []string, index int, family string) bool {
 	marker := lineMarker[family]
 	look := index - 1
-	for look >= 0 {
-		trimmed := strings.TrimSpace(lines[look])
-		if trimmed == "" || IsAnnotation(trimmed) {
-			look--
-			continue
-		}
-		break
+	for look >= 0 && IsAnnotation(strings.TrimSpace(lines[look])) {
+		look--
 	}
 	if look < 0 {
 		return false
 	}
 	previous := strings.TrimSpace(lines[look])
+	if previous == "" {
+		return false
+	}
 	return strings.HasPrefix(previous, marker) || strings.HasSuffix(previous, "*/") ||
 		hasPrefixAny(previous, "/**", "/*", "///")
 }

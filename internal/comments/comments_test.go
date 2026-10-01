@@ -350,6 +350,14 @@ func TestShellFunctionsAreDeclarations(t *testing.T) {
 	}
 }
 
+func TestHeaderCommentNeverDocumentsTheFirstFunction(t *testing.T) {
+	text := "package a\n\n// File-level note, not a doc comment for what follows below.\n\nfunc Exported() int {\n\tx := 1\n\treturn x\n}\n"
+	got := UndocumentedFunctions(text, "a/b.go", "nonobvious")
+	if len(got) != 1 || got[0].Name != "Exported" {
+		t.Fatalf("a header separated by a blank line documented the first function: %+v", got)
+	}
+}
+
 func TestExtensionlessScriptsAreLintedByShebang(t *testing.T) {
 	bash := "#!/usr/bin/env bash\n# Runs pre-commit.\nset -euo pipefail\n"
 	if got := ResolveFamily(".husky/pre-commit", bash); got != familyHash {
