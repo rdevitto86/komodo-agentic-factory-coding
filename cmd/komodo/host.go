@@ -25,7 +25,28 @@ func runGuard(root string, args []string) {
 		}
 		return
 	}
+	if len(args) > 0 && args[0] == "release" {
+		runReleaseClaim(root, args[1:])
+		return
+	}
 	exit(guard.Hook(root, os.Stdin, os.Stdout, os.Stderr))
+}
+
+// runReleaseClaim frees one branch's session claim, the current branch when none is named.
+func runReleaseClaim(root string, args []string) {
+	branch := guard.CurrentBranch(root)
+	if len(args) > 0 {
+		branch = args[0]
+	}
+	session, err := guard.ReleaseClaim(root, branch)
+	if err != nil {
+		fail(err)
+	}
+	if session == "" {
+		fmt.Printf("no claim on %s\n", branch)
+		return
+	}
+	fmt.Printf("released %s from %s\n", branch, session)
 }
 
 // runInstall renders this repo's host configuration, or with --global the user's, or prints what it would change.

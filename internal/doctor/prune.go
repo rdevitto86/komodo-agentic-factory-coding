@@ -14,7 +14,7 @@ import (
 const keptRuns = 10
 
 // Prune removes stale worktrees, deletes merged branches, settles each group origin has merged or dropped,
-// and keeps only the newest run folders; an open run's worktree and folder stay.
+// keeps only the newest run folders, and frees dead branch claims; an open run's worktree and folder stay.
 func Prune(root, base string) ([]string, error) {
 	var done []string
 	worktrees, err := git.Worktrees(root)
@@ -49,6 +49,7 @@ func Prune(root, base string) ([]string, error) {
 		}
 	}
 	done = append(done, pruneRuns(root, open)...)
+	done = append(done, guard.PruneClaims(root)...)
 	return done, nil
 }
 
