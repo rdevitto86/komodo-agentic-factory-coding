@@ -31,4 +31,4 @@ roles: [builder, reviewer]
 - Go: exported identifiers get a godoc line starting with the name. Unexported ones follow the private rule.
 - Python: docstrings, not `#` lines, for functions and classes. Module docstring on every module.
 - TypeScript: JSDoc `/** */` on every declaration comment, exported or not; `//` only inside bodies. A module comment carries `@packageDocumentation`.
-- Shell: a header block under the shebang; almost nothing below it.
+- Shell: a header block under the shebang; almost nothing below it. A `name() {` function follows the private rule, one `#` line above it.

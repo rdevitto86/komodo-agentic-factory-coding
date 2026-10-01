@@ -14,6 +14,7 @@ globs: ["**/*.bash", "**/*.sh"]
 ## Comments
 - A header block under the shebang says what the script does and how it is run. Below it, a comment only where a line cannot say it itself.
 - A `# shellcheck disable=SCxxxx` directive sits directly above the line it covers.
+- `name() {` and `function name {` both declare a function; a long or non-obvious one gets a one-line `#` comment above it.
 
 ## Conventions
 - `set -euo pipefail` after the shebang and header. Drop `-e` only where the script must survive a failing step to report results, and say so in the header.
