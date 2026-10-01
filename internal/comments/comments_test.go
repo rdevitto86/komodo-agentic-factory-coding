@@ -181,6 +181,21 @@ func TestLonePronounIIsStillFirstPerson(t *testing.T) {
 	}
 }
 
+func TestUsedToAsPurposeIsNotHistory(t *testing.T) {
+	text := "package a\n\n// Config holds the region and endpoint used to construct a Client.\ntype Config struct{}\n"
+	if got := InvalidComments(text, "a/b.go"); len(got) != 0 {
+		t.Fatalf("a purpose phrase was flagged: %+v", got)
+	}
+}
+
+func TestUsedToAsHistoryIsStillFlagged(t *testing.T) {
+	text := "package a\n\nvar x = 1 // This used to call X.\n"
+	got := rules(InvalidComments(text, "a/b.go"))
+	if len(got) != 1 || got[0] != "NARRATIVE" {
+		t.Fatalf("rules = %v", got)
+	}
+}
+
 func TestOverLongCharacterCommentIsFlaggedSeparately(t *testing.T) {
 	text := "package a\n\nvar x = 1 // " + strings.Repeat("alphabetic ", 15) + "\n"
 	got := rules(InvalidComments(text, "a/b.go"))

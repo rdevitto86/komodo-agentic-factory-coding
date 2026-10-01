@@ -66,7 +66,7 @@ var externalRefs = []namedPattern{
 var narrativePatterns = []namedPattern{
 	{regexp.MustCompile(`(?i)(?:(?:^|\s)(?:we're|we've|we|let's|our)\b|(?:^|\s)i(?:[\s']|$))`), "first person"},
 	{regexp.MustCompile(`(?i)\b(?:probably|maybe|i think|should work|hopefully|seems? to|might be|kind of|sort of)\b`), "a hedge"},
-	{regexp.MustCompile(`(?i)\b(?:previously|used to|no longer|now uses|was changed|refactored|moved from|instead of the old)\b`), "history"},
+	{regexp.MustCompile(`(?i)\b(?:previously|no longer|now uses|was changed|refactored|moved from|instead of the old|(?:it|this|that|they|he|she)\s+used to)\b`), "history"},
 }
 
 var (
