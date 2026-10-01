@@ -155,3 +155,75 @@ func branchFindings(rest []string, policy Policy) []string {
 func lineEpicBranch(branch string) bool {
 	return IsLineSession() && IsEpicBranch(branch)
 }
+
+// branchFor is the branch one git call is judged on: the real branch of its -C target when the
+// call points at another directory, or dir's tracked branch when it does not.
+func branchFor(words []string, dir, branch string) string {
+	if len(words) < 1 {
+		return branch
+	}
+	if target := gitDirectory(dir, words[1:]); target != dir {
+		return CurrentBranch(target)
+	}
+	return branch
+}
+
+// afterGit is the branch dir holds after one git call there: the branch a switch or checkout in
+// it moved to, or branch unchanged, including when the call targeted another directory via -C.
+func afterGit(words []string, dir, branch string) string {
+	if len(words) < 1 || gitDirectory(dir, words[1:]) != dir {
+		return branch
+	}
+	args := skipGlobalFlags(words[1:])
+	if len(args) == 0 {
+		return branch
+	}
+	switch args[0] {
+	case "switch":
+		return switchTarget(args[1:], branch)
+	case "checkout":
+		return checkoutTarget(args[1:], branch)
+	}
+	return branch
+}
+
+// switchTarget is the branch git switch moves to: the name after -c/-C/--create, or the first
+// positional operand, or branch unchanged when neither names one.
+func switchTarget(args []string, branch string) string {
+	for index, arg := range args {
+		if arg == "-c" || arg == "-C" || arg == "--create" || arg == "--force-create" {
+			if index+1 < len(args) {
+				return args[index+1]
+			}
+			return branch
+		}
+	}
+	for _, arg := range args {
+		if arg != "" && !strings.HasPrefix(arg, "-") {
+			return arg
+		}
+	}
+	return branch
+}
+
+// checkoutTarget is the branch git checkout moves to: the name after -b/-B, or the first
+// positional operand before a `--` pathspec separator, or branch unchanged when neither names one.
+func checkoutTarget(args []string, branch string) string {
+	for index, arg := range args {
+		if arg == "-b" || arg == "-B" {
+			if index+1 < len(args) {
+				return args[index+1]
+			}
+			return branch
+		}
+	}
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if arg != "" && !strings.HasPrefix(arg, "-") {
+			return arg
+		}
+	}
+	return branch
+}
