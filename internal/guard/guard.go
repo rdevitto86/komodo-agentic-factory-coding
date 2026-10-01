@@ -71,14 +71,22 @@ func CheckCommand(command, cwd string, policy Policy) Decision {
 	return Decision{Deny: len(findings) > 0, Findings: findings}
 }
 
-// commandFindings checks each git, gh, and write target in one shell command, looking through wrappers, sh -c, and eval.
+// commandFindings checks each git, gh, and write target in one command, through wrappers, sh -c,
+// and eval; a git call is judged on the branch its -C, cd, or a switch left current.
 func commandFindings(command, cwd, root, branch string, policy Policy) []string {
 	var findings []string
+	dir := cwd
 	for _, item := range nested(command) {
 		if len(item.words) > 0 {
 			switch commandName(item.words[0]) {
+			case "cd":
+				if len(item.words) > 1 {
+					dir = resolveDir(dir, item.words[1])
+					branch = CurrentBranch(dir)
+				}
 			case "git":
-				findings = append(findings, gitFindings(item.words, branch, policy)...)
+				findings = append(findings, gitFindings(item.words, branchFor(item.words, dir, branch), policy)...)
+				branch = afterGit(item.words, dir, branch)
 			case "gh":
 				findings = append(findings, ghFindings(item.words)...)
 			}
