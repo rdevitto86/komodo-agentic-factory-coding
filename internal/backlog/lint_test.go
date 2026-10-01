@@ -328,7 +328,7 @@ func TestLintVersionsSkipsAGroupWhoseTasksAreAllDone(t *testing.T) {
 func TestLintGroupFileRejectsAMissingVersion(t *testing.T) {
 	file := ParseGroupFile("## [TG-60.1] No version [P: H] [READY]\n\n```yaml\ntype: feat\nepic: EPIC-60\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-60.1.1** A task\n  - files: `a.go`\n")
-	problems := LintGroupFile(".", file, "", map[string]bool{"TG-60.1": true}, map[string]bool{"TSK-60.1.1": true})
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-60.1": true}, map[string]bool{"TSK-60.1.1": true}, nil)
 	found := false
 	for _, problem := range problems {
 		if strings.Contains(problem, "no version") {
@@ -345,7 +345,7 @@ func TestLintGroupFileRejectsAMissingVersion(t *testing.T) {
 func TestLintGroupFileAcceptsARefinementTaskWithNoFiles(t *testing.T) {
 	file := ParseGroupFile("## [TG-66.1] Still planning [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-66\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-66.1.1** A task with no files yet\n")
-	problems := LintGroupFile(".", file, "", map[string]bool{"TG-66.1": true}, map[string]bool{"TSK-66.1.1": true})
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-66.1": true}, map[string]bool{"TSK-66.1.1": true}, nil)
 	for _, problem := range problems {
 		if strings.Contains(problem, "no files") {
 			t.Fatalf("a REFINEMENT task should not need files; got %v", problems)
@@ -356,7 +356,7 @@ func TestLintGroupFileAcceptsARefinementTaskWithNoFiles(t *testing.T) {
 func TestLintGroupFileRejectsAnOpenTaskWithNoFiles(t *testing.T) {
 	file := ParseGroupFile("## [TG-61.1] Task with no files [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-61\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-61.1.1** A task with no files\n")
-	problems := LintGroupFile(".", file, "", map[string]bool{"TG-61.1": true}, map[string]bool{"TSK-61.1.1": true})
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-61.1": true}, map[string]bool{"TSK-61.1.1": true}, nil)
 	found := false
 	for _, problem := range problems {
 		if strings.Contains(problem, "TSK-61.1.1") && strings.Contains(problem, "no files") {
@@ -371,7 +371,7 @@ func TestLintGroupFileRejectsAnOpenTaskWithNoFiles(t *testing.T) {
 func TestLintGroupFileAcceptsADoneTaskWithNoFiles(t *testing.T) {
 	file := ParseGroupFile("## [TG-62.1] Done task with no files [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-62\ndepends_on: []\n```\n\n" +
 		"- [x] **TSK-62.1.1** A finished task\n")
-	problems := LintGroupFile(".", file, "", map[string]bool{"TG-62.1": true}, map[string]bool{"TSK-62.1.1": true})
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-62.1": true}, map[string]bool{"TSK-62.1.1": true}, nil)
 	for _, problem := range problems {
 		if strings.Contains(problem, "no files") {
 			t.Fatalf("a done task should not need files; got %v", problems)
@@ -384,7 +384,7 @@ func TestLintGroupFileAcceptsADoneTaskWithNoFiles(t *testing.T) {
 func TestLintGroupFileRejectsAReadyAgentTaskWithNoDoneWhen(t *testing.T) {
 	file := ParseGroupFile("## [TG-64.1] No done_when [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-64\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-64.1.1** A task\n  - files: `a.go`\n")
-	problems := LintGroupFile(".", file, "", map[string]bool{"TG-64.1": true}, map[string]bool{"TSK-64.1.1": true})
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-64.1": true}, map[string]bool{"TSK-64.1.1": true}, nil)
 	found := false
 	for _, problem := range problems {
 		if strings.Contains(problem, "TSK-64.1.1") && strings.Contains(problem, "no done_when") {
@@ -400,7 +400,7 @@ func TestLintGroupFileRejectsAReadyAgentTaskWithNoDoneWhen(t *testing.T) {
 func TestLintGroupFileAcceptsAHumanTaskWithNoDoneWhen(t *testing.T) {
 	file := ParseGroupFile("## [TG-65.1] Human owner [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-65\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-65.1.1** A task\n  - files: `a.go`\n  - owner: human\n")
-	problems := LintGroupFile(".", file, "", map[string]bool{"TG-65.1": true}, map[string]bool{"TSK-65.1.1": true})
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-65.1": true}, map[string]bool{"TSK-65.1.1": true}, nil)
 	for _, problem := range problems {
 		if strings.Contains(problem, "no done_when") {
 			t.Fatalf("a human task should not need done_when; got %v", problems)
@@ -411,7 +411,7 @@ func TestLintGroupFileAcceptsAHumanTaskWithNoDoneWhen(t *testing.T) {
 func TestLintGroupFileRejectsADependsOnNamingNoGroupOrTask(t *testing.T) {
 	file := ParseGroupFile("## [TG-63.1] Bad dependency [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-63\ndepends_on: [TG-99.9]\n```\n\n" +
 		"- [ ] **TSK-63.1.1** A task\n  - files: `a.go`\n")
-	problems := LintGroupFile(".", file, "", map[string]bool{"TG-63.1": true}, map[string]bool{"TSK-63.1.1": true})
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-63.1": true}, map[string]bool{"TSK-63.1.1": true}, nil)
 	found := false
 	for _, problem := range problems {
 		if strings.Contains(problem, "depends_on names unknown") && strings.Contains(problem, "TG-99.9") {
@@ -426,10 +426,40 @@ func TestLintGroupFileRejectsADependsOnNamingNoGroupOrTask(t *testing.T) {
 func TestLintGroupFileAcceptsADependsOnNamingAKnownTask(t *testing.T) {
 	file := ParseGroupFile("## [TG-64.1] Task dependency [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-64\ndepends_on: [TSK-01.1.1]\n```\n\n" +
 		"- [ ] **TSK-64.1.1** A task\n  - files: `a.go`\n")
-	problems := LintGroupFile(".", file, "", map[string]bool{"TG-64.1": true}, map[string]bool{"TSK-01.1.1": true, "TSK-64.1.1": true})
+	problems := LintGroupFile(".", file, "", map[string]bool{"TG-64.1": true}, map[string]bool{"TSK-01.1.1": true, "TSK-64.1.1": true}, nil)
 	for _, problem := range problems {
 		if strings.Contains(problem, "depends_on names unknown") {
 			t.Fatalf("a depends_on naming a known task should not produce an error; got %v", problems)
+		}
+	}
+}
+
+func TestLintGroupFileRejectsADependsOnNamingALaterVersionGroup(t *testing.T) {
+	file := ParseGroupFile("## [TG-68.1] Early group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0-alpha.1\nepic: EPIC-68\ndepends_on: [TG-68.2]\n```\n\n" +
+		"- [ ] **TSK-68.1.1** A task\n  - files: `a.go`\n")
+	groupIDs := map[string]bool{"TG-68.1": true, "TG-68.2": true}
+	versions := map[string]string{"TG-68.1": "1.0.0-alpha.1", "TG-68.2": "1.0.0-alpha.2"}
+	problems := LintGroupFile(".", file, "", groupIDs, map[string]bool{"TSK-68.1.1": true}, versions)
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-68.2") && strings.Contains(problem, "later version") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no problem names the later-version dependency; got %v", problems)
+	}
+}
+
+func TestLintGroupFileAcceptsADependsOnNamingAnEarlierVersionGroup(t *testing.T) {
+	file := ParseGroupFile("## [TG-69.1] Late group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0-alpha.2\nepic: EPIC-69\ndepends_on: [TG-69.2]\n```\n\n" +
+		"- [ ] **TSK-69.1.1** A task\n  - files: `a.go`\n")
+	groupIDs := map[string]bool{"TG-69.1": true, "TG-69.2": true}
+	versions := map[string]string{"TG-69.1": "1.0.0-alpha.2", "TG-69.2": "1.0.0-alpha.1"}
+	problems := LintGroupFile(".", file, "", groupIDs, map[string]bool{"TSK-69.1.1": true}, versions)
+	for _, problem := range problems {
+		if strings.Contains(problem, "later version") {
+			t.Fatalf("depending on an earlier version should not produce an error; got %v", problems)
 		}
 	}
 }
@@ -442,7 +472,7 @@ func TestLintGroupFileNamesAContextAnchorWithNoHeading(t *testing.T) {
 	text := "## [TG-65.1] Bad anchor [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-65\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-65.1.1** A task\n  - files: `a.go`\n  - context: `docs.md#no-such-heading`\n"
 	file := ParseGroupFile(text)
-	problems := LintGroupFile(root, file, text, map[string]bool{"TG-65.1": true}, map[string]bool{"TSK-65.1.1": true})
+	problems := LintGroupFile(root, file, text, map[string]bool{"TG-65.1": true}, map[string]bool{"TSK-65.1.1": true}, nil)
 	found := false
 	for _, problem := range problems {
 		if strings.Contains(problem, "names no heading") {
@@ -462,7 +492,7 @@ func TestLintGroupFileAcceptsAContextAnchorWithAMatchingHeading(t *testing.T) {
 	text := "## [TG-66.1] Good anchor [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-66\ndepends_on: []\n```\n\n" +
 		"- [ ] **TSK-66.1.1** A task\n  - files: `a.go`\n  - context: `docs.md#real-heading`\n"
 	file := ParseGroupFile(text)
-	problems := LintGroupFile(root, file, text, map[string]bool{"TG-66.1": true}, map[string]bool{"TSK-66.1.1": true})
+	problems := LintGroupFile(root, file, text, map[string]bool{"TG-66.1": true}, map[string]bool{"TSK-66.1.1": true}, nil)
 	for _, problem := range problems {
 		if strings.Contains(problem, "names no heading") {
 			t.Fatalf("a context anchor matching a heading should not produce an error; got %v", problems)

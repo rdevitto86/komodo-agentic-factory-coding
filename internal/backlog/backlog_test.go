@@ -292,6 +292,32 @@ func TestLintRejectsAGroupDependsOnNamingAnUnknownGroup(t *testing.T) {
 	}
 }
 
+func TestLintRejectsAGroupDependingOnALaterVersionGroup(t *testing.T) {
+	text := "### [TG-01.10] Early group\n```yaml\ntype: feat\nversion: 1.0.0-alpha.1\ndepends_on: [TG-02.2]\n```\n" +
+		"### [TG-02.2] Later group\n```yaml\ntype: feat\nversion: 1.0.0-alpha.2\ndepends_on: []\n```\n"
+	problems := Lint(Parse(text))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-01.10") && strings.Contains(problem, "TG-02.2") && strings.Contains(problem, "later version") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no problem names the later-version dependency; got %v", problems)
+	}
+}
+
+func TestLintAcceptsAGroupDependingOnAnEarlierVersionGroup(t *testing.T) {
+	text := "### [TG-01.11] Late group\n```yaml\ntype: feat\nversion: 1.0.0-alpha.2\ndepends_on: [TG-02.3]\n```\n" +
+		"### [TG-02.3] Early group\n```yaml\ntype: feat\nversion: 1.0.0-alpha.1\ndepends_on: []\n```\n"
+	problems := Lint(Parse(text))
+	for _, problem := range problems {
+		if strings.Contains(problem, "later version") {
+			t.Fatalf("depending on an earlier version should not produce an error; got %v", problems)
+		}
+	}
+}
+
 func TestTaskTierAndFacets(t *testing.T) {
 	parsed := Parse("### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-01.1.1] Heavy task [P: C] [READY]\n```yaml\nfiles: [a/one.go]\ndone_when:\n  - go test ./...\n" +

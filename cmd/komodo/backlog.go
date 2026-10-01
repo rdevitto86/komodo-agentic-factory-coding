@@ -79,8 +79,10 @@ func groupFileLintProblems(root string) (problems []string, taskCount, groupCoun
 	}
 	groupIDs := map[string]bool{}
 	taskIDs := map[string]bool{}
+	groupVersions := map[string]string{}
 	for _, file := range files {
 		groupIDs[file.ID] = true
+		groupVersions[file.ID] = file.Version
 		for _, task := range file.Tasks {
 			taskIDs[task.ID] = true
 		}
@@ -91,7 +93,7 @@ func groupFileLintProblems(root string) (problems []string, taskCount, groupCoun
 		if built := backlog.BuildableGroupFile(file); built > 12 {
 			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", file.ID, built))
 		}
-		problems = append(problems, backlog.LintGroupFile(root, file, texts[file.ID], groupIDs, taskIDs)...)
+		problems = append(problems, backlog.LintGroupFile(root, file, texts[file.ID], groupIDs, taskIDs, groupVersions)...)
 		taskCount += len(file.Tasks)
 	}
 	problems = append(problems, backlog.LintGroupFileEpics(files)...)
