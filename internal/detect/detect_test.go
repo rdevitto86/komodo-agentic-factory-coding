@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,27 @@ func write(t *testing.T, root, rel, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// captureStderr runs fn with os.Stderr redirected to a pipe and returns what it wrote.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = old
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestDetectFindsLanguageAndCommandsFromGoMod(t *testing.T) {
@@ -364,6 +386,57 @@ func TestDetectDerivesNoCommandForAMissingScript(t *testing.T) {
 	}
 	if profile.Compile != "" {
 		t.Fatalf("compile = %q, want empty with no build script", profile.Compile)
+	}
+}
+
+func TestDetectWarnsOnceForARootEvenAcrossRepeatedCalls(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "package.json", `{"scripts": {}}`)
+
+	var output string
+	output = captureStderr(t, func() {
+		Detect(root)
+		Load(root)
+		Detect(root)
+	})
+
+	if count := strings.Count(output, "no build"); count != 1 {
+		t.Fatalf("stderr = %q, want the no-build-script warning exactly once, got %d", output, count)
+	}
+	if count := strings.Count(output, "no test script"); count != 1 {
+		t.Fatalf("stderr = %q, want the no-test-script warning exactly once, got %d", output, count)
+	}
+}
+
+func TestDetectUsesTheTypecheckScriptWhenThereIsNoBuildScript(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "package.json", `{"scripts": {"test": "jest", "typecheck": "tsc --noEmit"}}`)
+
+	var output string
+	output = captureStderr(t, func() {
+		profile, _ := Detect(root)
+		if profile.Compile != "npm run typecheck" {
+			t.Fatalf("compile = %q, want npm run typecheck", profile.Compile)
+		}
+	})
+
+	if strings.Contains(output, "no build") {
+		t.Fatalf("stderr = %q, want no warning once typecheck covers compile", output)
+	}
+}
+
+func TestDetectHonorsCommandsJSONOverrideForVerifyAndCompile(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example\n")
+	write(t, root, ".komodo/commands.json", `{"verify":"make check","compile":"make build"}`)
+
+	profile, _ := Detect(root)
+
+	if profile.Verify != "make check" {
+		t.Fatalf("verify = %q, want the .komodo/commands.json override", profile.Verify)
+	}
+	if profile.Compile != "make build" {
+		t.Fatalf("compile = %q, want the .komodo/commands.json override", profile.Compile)
 	}
 }
 
