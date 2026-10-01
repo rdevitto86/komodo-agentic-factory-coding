@@ -47,16 +47,31 @@ type ClaimDecision struct {
 	Notice  string
 }
 
-// ClaimCheck enforces one branch's session claim for the orchestrator tier only; a line session
+// ClaimCheck enforces each claim a call's writes touch, for the orchestrator tier only; a line session
 // skips it, since the conductor already serializes a group branch across its own sessions.
-func ClaimCheck(request Request, root, branch, sessionID string) ClaimDecision {
-	if IsLineSession() || root == "" || branch == "" || !claimableCall(request) {
+func ClaimCheck(request Request, sessionID string) ClaimDecision {
+	if IsLineSession() {
 		return ClaimDecision{}
 	}
-	taken, reason, err := writeClaim(root, branch, sessionID)
+	var notices []string
+	for _, target := range claimTargets(request) {
+		decision := claimOne(target, sessionID)
+		if decision.Deny {
+			return decision
+		}
+		if decision.Notice != "" {
+			notices = append(notices, decision.Notice)
+		}
+	}
+	return ClaimDecision{Notice: strings.Join(notices, "\n")}
+}
+
+// claimOne claims one checkout's branch for sessionID, or refuses when another live session holds it.
+func claimOne(target claimTarget, sessionID string) ClaimDecision {
+	taken, reason, err := writeClaim(target.root, target.branch, sessionID)
 	if err != nil {
 		if errors.Is(err, errClaimed) {
-			existing, _, readErr := readClaim(root, branch)
+			existing, _, readErr := readClaim(target.root, target.branch)
 			if readErr != nil {
 				return ClaimDecision{}
 			}
@@ -68,7 +83,7 @@ func ClaimCheck(request Request, root, branch, sessionID string) ClaimDecision {
 	if taken != nil {
 		return ClaimDecision{Notice: fmt.Sprintf(
 			"%s's claim on %s from %s %s; %s now holds it",
-			taken.Session, branch, taken.Started.Format(time.RFC3339), reason, sessionID)}
+			taken.Session, target.branch, taken.Started.Format(time.RFC3339), reason, sessionID)}
 	}
 	return ClaimDecision{}
 }
@@ -105,33 +120,115 @@ func takeover(existing claim, now time.Time, host *proc.Process) string {
 	return ""
 }
 
-// claimableCall reports whether request is a write tool call, or a shell call running a git verb
-// claimVerbs names, looking through wrappers, shell -c, and eval the way the rest of the guard does.
-func claimableCall(request Request) bool {
-	for _, tools := range mount.GuardHosts() {
-		if tools.WriteTools[request.ToolName] {
-			return true
-		}
-		if tools.ShellTool != "" && request.ToolName == tools.ShellTool &&
-			claimableCommand(stringField(request.ToolInput, tools.CommandField)) {
-			return true
-		}
-	}
-	return false
+// claimTarget is one checkout and the branch a call writes there.
+type claimTarget struct {
+	root, branch string
 }
 
-// claimableCommand reports whether command runs git commit, merge, push, reset, or rebase.
-func claimableCommand(command string) bool {
-	for _, item := range nested(command) {
-		if len(item.words) == 0 || commandName(item.words[0]) != "git" {
-			continue
+// claimTargets lists the checkouts and branches a call writes: a write tool's target file, or each
+// claimVerbs git call's directory after any cd or -C, and each branch a push names.
+func claimTargets(request Request) []claimTarget {
+	var targets []claimTarget
+	add := func(dir, branch string) {
+		root := WorktreeRoot(dir)
+		if branch == "" {
+			branch = CurrentBranch(dir)
 		}
-		args := skipGlobalFlags(item.words[1:])
-		if len(args) > 0 && claimVerbs[args[0]] {
-			return true
+		if root != "" && branch != "" && branch != "HEAD" {
+			targets = append(targets, claimTarget{root: root, branch: branch})
 		}
 	}
-	return false
+	for _, tools := range mount.GuardHosts() {
+		if tools.WriteTools[request.ToolName] {
+			for _, field := range tools.PathFields {
+				if path := stringField(request.ToolInput, field); path != "" {
+					add(existingDir(filepath.Dir(resolveDir(request.Cwd, path))), "")
+					return targets
+				}
+			}
+			add(request.Cwd, "")
+			return targets
+		}
+		if tools.ShellTool == "" || request.ToolName != tools.ShellTool {
+			continue
+		}
+		dir := request.Cwd
+		for _, item := range nested(stringField(request.ToolInput, tools.CommandField)) {
+			if len(item.words) == 0 {
+				continue
+			}
+			if item.words[0] == "cd" && len(item.words) > 1 {
+				dir = resolveDir(dir, item.words[1])
+				continue
+			}
+			if commandName(item.words[0]) != "git" {
+				continue
+			}
+			gitDir := gitDirectory(dir, item.words[1:])
+			args := skipGlobalFlags(item.words[1:])
+			if len(args) == 0 || !claimVerbs[args[0]] {
+				continue
+			}
+			branches := []string{""}
+			if args[0] == "push" {
+				if named := pushBranches(args[1:]); len(named) > 0 {
+					branches = named
+				}
+			}
+			for _, branch := range branches {
+				add(gitDir, branch)
+			}
+		}
+		return targets
+	}
+	return targets
+}
+
+// gitDirectory is where one git call runs: dir, moved by each leading -C flag in turn.
+func gitDirectory(dir string, args []string) string {
+	for index := 0; index < len(args) && strings.HasPrefix(args[index], "-"); index++ {
+		if args[index] == "-c" {
+			index++
+			continue
+		}
+		if args[index] == "-C" && index+1 < len(args) {
+			index++
+			dir = resolveDir(dir, args[index])
+		}
+	}
+	return dir
+}
+
+// pushBranches are the branches a push names after its remote, the destination side of each refspec.
+func pushBranches(rest []string) []string {
+	var positional []string
+	for _, arg := range rest {
+		if arg != "" && !strings.HasPrefix(arg, "-") {
+			positional = append(positional, strings.TrimPrefix(arg, "+"))
+		}
+	}
+	if len(positional) < 2 {
+		return nil
+	}
+	var branches []string
+	for _, refspec := range positional[1:] {
+		if _, after, found := strings.Cut(refspec, ":"); found {
+			refspec = after
+		}
+		if refspec != "" && refspec != "HEAD" {
+			branches = append(branches, strings.TrimPrefix(refspec, "refs/heads/"))
+		}
+	}
+	return branches
+}
+
+// resolveDir joins path onto dir unless it is absolute, expanding a leading tilde first.
+func resolveDir(dir, path string) string {
+	path = expandHome(path)
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(dir, path)
 }
 
 // claimPath is where branch's claim file lives, under the git common dir so every worktree of the
@@ -265,27 +362,6 @@ func PruneClaims(root string) []string {
 		}
 	}
 	return done
-}
-
-// claimDir is the directory whose branch a call's claim keys on: a write tool's target, else the cwd,
-// so a write into another worktree is held to that worktree's branch.
-func claimDir(request Request) string {
-	for _, tools := range mount.GuardHosts() {
-		if !tools.WriteTools[request.ToolName] {
-			continue
-		}
-		for _, field := range tools.PathFields {
-			path := stringField(request.ToolInput, field)
-			if path == "" {
-				continue
-			}
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(request.Cwd, path)
-			}
-			return existingDir(filepath.Dir(path))
-		}
-	}
-	return request.Cwd
 }
 
 // existingDir walks up from dir to the nearest directory on disk, since a write may create its parents.

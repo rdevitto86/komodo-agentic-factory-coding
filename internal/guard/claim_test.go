@@ -320,3 +320,53 @@ func TestPruneClaimsFreesOnlyADeadOrStaleClaim(t *testing.T) {
 		t.Fatal("a live host's claim must survive a prune")
 	}
 }
+
+// shellPayload is one hook call a shell command made from cwd.
+func shellPayload(cwd, sessionID, command string) string {
+	encoded, _ := json.Marshal(command)
+	return `{"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"` + sessionID +
+		`","cwd":"` + cwd + `","tool_input":{"command":` + string(encoded) + `}}`
+}
+
+func TestHookKeysAShellGitCallOnTheBranchItWrites(t *testing.T) {
+	registerFakeHost()
+	root := claimRepo(t, "feat/x")
+	var out, errOut strings.Builder
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-a")), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want session-a's first write allowed", code)
+	}
+	tree := filepath.Join(t.TempDir(), "tree")
+	if result, err := exec.Command("git", "-C", root, "worktree", "add", "-q", "-b", "fix/stacked", tree).CombinedOutput(); err != nil {
+		t.Fatalf("worktree add: %v: %s", err, result)
+	}
+	for _, command := range []string{
+		"cd " + tree + " && git commit -m fix",
+		"git -C " + tree + " commit -m fix",
+		"git push origin --delete fix/merged",
+		"git push origin fix/stacked",
+	} {
+		out.Reset()
+		if code := Hook(root, strings.NewReader(shellPayload(root, "session-b", command)), &out, &errOut); code != 0 || out.Len() != 0 {
+			t.Fatalf("%q: exit = %d, out = %q; want a write to another branch free of feat/x's claim", command, code, out.String())
+		}
+	}
+	denial := runHook(t, root, shellPayload(root, "session-b", "git commit -m x"))
+	if !strings.Contains(denial.Reason, "session-a") {
+		t.Fatalf("reason = %q, want a commit on feat/x itself still refused", denial.Reason)
+	}
+}
+
+func TestHookNeverClaimsAWriteOutsideEveryRepository(t *testing.T) {
+	registerFakeHost()
+	root := claimRepo(t, "feat/x")
+	var out, errOut strings.Builder
+	if code := Hook(root, strings.NewReader(editPayload(root, "session-a")), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want session-a's first write allowed", code)
+	}
+	outside := filepath.Join(t.TempDir(), "dotfile")
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Edit","session_id":"session-b","cwd":"` + root +
+		`","tool_input":{"file_path":"` + outside + `"}}`
+	if code := Hook(root, strings.NewReader(payload), &out, &errOut); code != 0 || out.Len() != 0 {
+		t.Fatalf("exit = %d, out = %q; want a write outside every repository never gated by a claim", code, out.String())
+	}
+}
