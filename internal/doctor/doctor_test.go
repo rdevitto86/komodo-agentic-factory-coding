@@ -685,7 +685,7 @@ func TestPruneNeverDeletesACriticalRef(t *testing.T) {
 			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
 	}
-	done, err := Prune(root, "docs/v2-plan")
+	done, err := Prune(root, "docs/v2-plan", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -878,7 +878,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	}
 	line.Stamp(root, ledger.Entry{Station: "ship", Outcome: "done"})
 
-	if _, err := Prune(root, "main"); err != nil {
+	if _, err := Prune(root, "main", true); err != nil {
 		t.Fatal(err)
 	}
 	rootGroupFile := filepath.Join(root, "docs", "backlog", "TG-01.1-g.md")
@@ -887,7 +887,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	}
 
 	run(worktree, "push", "-q", "origin", "feat/g:main")
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -941,7 +941,7 @@ func TestPruneSweepsAnEarlierRunsMergedWorktreeWhileTheCurrentRunIsStillOpen(t *
 		t.Fatal(err)
 	}
 
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -990,7 +990,7 @@ func TestSettleShippedRunSkipsTheSweepWhileARunIsOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1035,7 +1035,7 @@ func TestPruneRemovesBothRunsWorktreesWhenOnlyTheLatestIsRecorded(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	got, err := Prune(root, "main")
+	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -93,7 +93,7 @@ func syncWorktrees(root, base string, dryRun bool, out io.Writer, suffix string)
 		fmt.Fprintf(out, "worktree: skipped in a dry run%s\n", suffix)
 		return nil
 	}
-	done, err := doctor.Prune(root, base)
+	done, err := doctor.Prune(root, base, true)
 	if err != nil {
 		return err
 	}
