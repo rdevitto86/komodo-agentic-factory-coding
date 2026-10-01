@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"komodo/internal/mount"
 )
@@ -34,12 +35,17 @@ func isAllowedWrite(path string) bool {
 	return false
 }
 
-// pathFindings refuses a write on a config the hosts own, and a line session's write outside its worktree.
+// pathFindings refuses a write on a config the hosts own, and a line session's write outside its
+// worktree; a resolvable $VAR expands first, an unresolvable one is judged on its literal text.
 func pathFindings(path, cwd, root string, policy Policy) []string {
 	if path == "" {
 		return nil
 	}
-	resolved := expandHome(path)
+	judged := path
+	if expanded, ok := expandVars(path); ok {
+		judged = expanded
+	}
+	resolved := expandHome(judged)
 	if !filepath.IsAbs(resolved) {
 		resolved = filepath.Join(cwd, resolved)
 	}
@@ -75,6 +81,53 @@ func isHostWritePath(resolved, root string) bool {
 	}
 	home, _ := homeDir()
 	return matchesAnyPattern(mount.WritePaths(root), home, compare, compare)
+}
+
+// expandVars substitutes every $NAME or ${NAME} reference in path with the session's own
+// environment, reporting false when a command substitution or an unset name leaves it unresolved.
+func expandVars(path string) (string, bool) {
+	if strings.Contains(path, "$(") {
+		return path, false
+	}
+	var out strings.Builder
+	runes := []rune(path)
+	for index := 0; index < len(runes); index++ {
+		if runes[index] != '$' {
+			out.WriteRune(runes[index])
+			continue
+		}
+		name, consumed := varName(runes[index+1:])
+		if name == "" {
+			out.WriteRune(runes[index])
+			continue
+		}
+		value, ok := os.LookupEnv(name)
+		if !ok {
+			return path, false
+		}
+		out.WriteString(value)
+		index += consumed
+	}
+	return out.String(), true
+}
+
+// varName reads a $NAME reference's name right after the $, braced or bare, and how many runes
+// of the input it consumed; "" names none.
+func varName(runes []rune) (string, int) {
+	if len(runes) > 0 && runes[0] == '{' {
+		for index := 1; index < len(runes); index++ {
+			if runes[index] == '}' {
+				return string(runes[1:index]), index + 1
+			}
+		}
+		return "", 0
+	}
+	index := 0
+	for index < len(runes) && (runes[index] == '_' || unicode.IsLetter(runes[index]) ||
+		(index > 0 && unicode.IsDigit(runes[index]))) {
+		index++
+	}
+	return string(runes[:index]), index
 }
 
 // expandHome replaces a leading tilde with the user's home directory.
