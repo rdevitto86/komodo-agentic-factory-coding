@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -241,8 +242,21 @@ func runBacklogAdd(root string, args []string) {
 	groupType := set.String("type", "feat", "the conventional-commit type")
 	version := set.String("version", "", "the version the group ships")
 	epic := set.String("epic", "", "the epic id the group belongs to")
-	positional, rest := splitFlags(args, "files", "accept", "done-when", "priority", "status", "type", "version", "epic")
+	next := set.String("next", "", "an epic id; print the next free group id across local branches and exit")
+	positional, rest := splitFlags(args, "files", "accept", "done-when", "priority", "status", "type", "version", "epic", "next")
 	_ = set.Parse(rest)
+	if *next != "" {
+		taken, err := takenGroupIDs(root)
+		if err != nil {
+			fail(err)
+		}
+		id, err := backlog.NextGroupID(*next, taken)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Println(id)
+		return
+	}
 	if len(positional) < 2 {
 		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
 	}
@@ -250,6 +264,15 @@ func runBacklogAdd(root string, args []string) {
 	path, text, found, err := findGroupFile(root, groupID)
 	if err != nil {
 		fail(err)
+	}
+	if !found {
+		taken, err := takenGroupIDs(root)
+		if err != nil {
+			fail(err)
+		}
+		if taken[groupID] {
+			fail(fmt.Errorf("%s is already taken in the working tree or on a local branch", groupID))
+		}
 	}
 	taskFlagsGiven := len(splitStrings(*files)) > 0 || len(accept) > 0 || len(splitStrings(*doneWhen)) > 0
 	if found {
@@ -308,6 +331,44 @@ func (r *repeatedFlag) String() string { return strings.Join(*r, ", ") }
 func (r *repeatedFlag) Set(value string) error {
 	*r = append(*r, value)
 	return nil
+}
+
+// groupFilename is a docs/backlog group file's leading group id, matching how its own file names it.
+var groupFilename = regexp.MustCompile(`^(TG-[\w.]+)-`)
+
+// takenGroupIDs is every group id already in the working tree, including an untracked file, plus
+// every group id docs/backlog holds on any local branch, so a fresh checkout still sees it.
+func takenGroupIDs(root string) (map[string]bool, error) {
+	taken := map[string]bool{}
+	names, err := groupFileNames(root)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range names {
+		if match := groupFilename.FindStringSubmatch(name); match != nil {
+			taken[match[1]] = true
+		}
+	}
+	branches, err := git.Run(root, "branch", "--list", "--format=%(refname:short)")
+	if err != nil {
+		return taken, nil // no repo, or no git at all; the working tree is every id there is
+	}
+	for _, branch := range strings.Split(branches, "\n") {
+		branch = strings.TrimSpace(branch)
+		if branch == "" {
+			continue
+		}
+		listing, err := git.Run(root, "ls-tree", "-r", "--name-only", branch, "--", groupFilesDir)
+		if err != nil {
+			continue // a branch with no docs/backlog yet names none
+		}
+		for _, name := range strings.Split(listing, "\n") {
+			if match := groupFilename.FindStringSubmatch(filepath.Base(name)); match != nil {
+				taken[match[1]] = true
+			}
+		}
+	}
+	return taken, nil
 }
 
 // splitStrings turns a comma-separated flag into a plain string slice, dropping empty parts.

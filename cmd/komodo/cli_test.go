@@ -222,6 +222,46 @@ func TestAddAcceptsRepeatedAcceptFlags(t *testing.T) {
 	}
 }
 
+// TestAddRefusesAGroupIDTakenOnAnUnmergedBranch proves add checks every local branch's docs/backlog,
+// not only the working tree, before writing a new group file.
+func TestAddRefusesAGroupIDTakenOnAnUnmergedBranch(t *testing.T) {
+	root := fixtureRepo(t)
+	runGit(t, root, "checkout", "-b", "feat/TG-08.12-taken")
+	writeGroupFile(t, root, "TG-08.12-taken.md",
+		"## [TG-08.12] Taken elsewhere [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "taken")
+	runGit(t, root, "checkout", "main")
+	got := runCLI(t, root, "", "add", "TG-08.12", "A fresh checkout cannot see this")
+	if got.code == 0 {
+		t.Fatalf("add wrote a group id already taken on another branch: %s", got.stdout)
+	}
+	if !strings.Contains(got.stdout+got.stderr, "TG-08.12") {
+		t.Fatalf("refusal names no colliding id: %s%s", got.stdout, got.stderr)
+	}
+}
+
+// TestAddNextProposesTheFreeGroupIDAcrossBranches proves --next skips every id taken in the working
+// tree or on an unmerged branch, for both.
+func TestAddNextProposesTheFreeGroupIDAcrossBranches(t *testing.T) {
+	root := fixtureRepo(t)
+	writeGroupFile(t, root, "TG-08.13-untracked.md",
+		"## [TG-08.13] Untracked [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
+	runGit(t, root, "checkout", "-b", "feat/TG-08.14-taken")
+	writeGroupFile(t, root, "TG-08.14-taken.md",
+		"## [TG-08.14] Taken elsewhere [P: H] [REFINEMENT]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-08\ndepends_on: []\n```\n")
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-m", "taken")
+	runGit(t, root, "checkout", "main")
+	got := runCLI(t, root, "", "add", "--next", "EPIC-08")
+	if got.code != 0 {
+		t.Fatalf("add --next exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if !strings.Contains(got.stdout, "TG-08.15") {
+		t.Fatalf("add --next = %q, want TG-08.15 free past the untracked and unmerged ids", got.stdout)
+	}
+}
+
 // TestListShowsTheOpenRunsLiveStatus proves list overlays status.json while the group file stays as committed.
 func TestListShowsTheOpenRunsLiveStatus(t *testing.T) {
 	root := fixtureRepo(t)

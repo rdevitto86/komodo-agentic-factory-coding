@@ -464,6 +464,23 @@ func TestLintGroupFileAcceptsADependsOnNamingAnEarlierVersionGroup(t *testing.T)
 	}
 }
 
+func TestNextGroupIDSkipsEveryTakenSuffix(t *testing.T) {
+	taken := map[string]bool{"TG-08.13": true, "TG-08.14": true, "TG-08.16": true, "TG-09.1": true}
+	got, err := NextGroupID("EPIC-08", taken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "TG-08.17" {
+		t.Fatalf("NextGroupID = %q, want TG-08.17", got)
+	}
+}
+
+func TestNextGroupIDRejectsANonEpicID(t *testing.T) {
+	if _, err := NextGroupID("TG-08.1", map[string]bool{}); err == nil {
+		t.Fatal("want an error for a non-epic id")
+	}
+}
+
 func TestLintGroupFileNamesAContextAnchorWithNoHeading(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "docs.md"), []byte("# Real heading\n"), 0o644); err != nil {

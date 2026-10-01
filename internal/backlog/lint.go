@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -496,6 +497,25 @@ func BuildableGroupFile(file GroupFile) int {
 		}
 	}
 	return count
+}
+
+// NextGroupID is the next free group id for the given epic id, skipping every id already taken
+// so a collision on an unmerged branch is never proposed again.
+func NextGroupID(epicID string, taken map[string]bool) (string, error) {
+	num := strings.TrimPrefix(epicID, "EPIC-")
+	if num == "" || num == epicID {
+		return "", fmt.Errorf("not an epic id: %q", epicID)
+	}
+	prefix := "TG-" + num + "."
+	highest := 0
+	for id := range taken {
+		if suffix, ok := strings.CutPrefix(id, prefix); ok {
+			if n, err := strconv.Atoi(suffix); err == nil && n > highest {
+				highest = n
+			}
+		}
+	}
+	return fmt.Sprintf("%s%d", prefix, highest+1), nil
 }
 
 // buildable counts the group's tasks a builder session works: every one not waiting in REFINEMENT.
