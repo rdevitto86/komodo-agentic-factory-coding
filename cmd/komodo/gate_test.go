@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/comments"
 )
 
 // gitOutput runs one git command in dir and returns its trimmed stdout, failing the test on error.
@@ -61,6 +63,10 @@ func TestGateInALineWorktreeReadsTheMainCheckoutsCommands(t *testing.T) {
 // never touches does not fail the gate, only a newly staged one would.
 func TestGateCommentsCheckIsScopedToTheStagedDiff(t *testing.T) {
 	root := fixtureRepo(t)
+	// A sweep already recorded for this fingerprint, so the next runs stay diff-only.
+	if err := comments.RecordSweep(root); err != nil {
+		t.Fatal(err)
+	}
 	bad := filepath.Join(root, "a", "one.go")
 	if err := os.MkdirAll(filepath.Dir(bad), 0o755); err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"komodo/internal/backlog"
+	"komodo/internal/comments"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -916,6 +917,9 @@ func TestCommentsCheckOnlyFlagsAStagedLine(t *testing.T) {
 	}
 	gitCommand(t, root, "add", "a.go")
 	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed, undocumented on purpose")
+	if err := comments.RecordSweep(root); err != nil {
+		t.Fatal(err)
+	}
 
 	added := "package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n\nfunc New() int {\n\ty := 1\n\treturn y\n}\n"
 	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte(added), 0o644); err != nil {
@@ -934,6 +938,107 @@ func TestCommentsCheckOnlyFlagsAStagedLine(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "Old") {
 		t.Fatalf("out = %q, want the pre-existing Old left alone", out.String())
+	}
+}
+
+// seedOldUndocumented commits a.go holding one undocumented exported function, Old.
+func seedOldUndocumented(t *testing.T, root string) {
+	t.Helper()
+	gitCommand(t, root, "init", "-q")
+	body := "package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "a.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed, Old left undocumented")
+}
+
+// stageDocumentedNew stages b.go holding one documented exported function, New.
+func stageDocumentedNew(t *testing.T, root string) {
+	t.Helper()
+	body := "package a\n\n// New says hi.\nfunc New() int {\n\treturn 1\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "b.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "b.go")
+}
+
+// TestCommentsCheckSweepsAFreshRepo proves a repo with no recorded sweep gets a full one.
+func TestCommentsCheckSweepsAFreshRepo(t *testing.T) {
+	root := t.TempDir()
+	seedOldUndocumented(t, root)
+	stageDocumentedNew(t, root)
+
+	var out strings.Builder
+	if err := CommentsCheck(root, "nonobvious").Run(&out); err == nil {
+		t.Fatal("want a fresh repo's full sweep to catch the pre-existing Old")
+	}
+	if !strings.Contains(out.String(), "Old") {
+		t.Fatalf("out = %q, want it to name the pre-existing Old", out.String())
+	}
+}
+
+// TestCommentsCheckSecondRunWithTheSameFingerprintIsDiffOnly proves a recorded sweep narrows later runs.
+func TestCommentsCheckSecondRunWithTheSameFingerprintIsDiffOnly(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+
+	var first strings.Builder
+	if err := CommentsCheck(root, "nonobvious").Run(&first); err != nil {
+		t.Fatalf("want the first sweep on an empty repo to pass: %s", first.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, ".komodo", "comments-sweep.json")); err != nil {
+		t.Fatalf("a passing sweep did not record its fingerprint: %v", err)
+	}
+
+	old := filepath.Join(root, "old.go")
+	if err := os.WriteFile(old, []byte("package a\n\nfunc Old() int {\n\tx := 1\n\treturn x\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "old.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed Old, left undocumented")
+	stageDocumentedNew(t, root)
+
+	var second strings.Builder
+	if err := CommentsCheck(root, "nonobvious").Run(&second); err != nil {
+		t.Fatalf("want a diff-only run to leave the untouched Old alone: %s", second.String())
+	}
+}
+
+// TestCommentsCheckSweepsAgainWhenTheFingerprintChanges proves a stale recorded fingerprint triggers a sweep.
+func TestCommentsCheckSweepsAgainWhenTheFingerprintChanges(t *testing.T) {
+	root := t.TempDir()
+	seedOldUndocumented(t, root)
+	if err := comments.RecordSweep(root); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(root, ".komodo", "comments-sweep.json")
+	if err := os.WriteFile(stale, []byte(`{"fingerprint":"stale"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stageDocumentedNew(t, root)
+
+	var out strings.Builder
+	if err := CommentsCheck(root, "nonobvious").Run(&out); err == nil {
+		t.Fatal("want a stale fingerprint to trigger a full sweep that catches the pre-existing Old")
+	}
+	if !strings.Contains(out.String(), "Old") {
+		t.Fatalf("out = %q, want it to name the pre-existing Old", out.String())
+	}
+}
+
+// TestCommentsCheckAFailingSweepDoesNotRecord proves a sweep that finds problems leaves no state behind.
+func TestCommentsCheckAFailingSweepDoesNotRecord(t *testing.T) {
+	root := t.TempDir()
+	seedOldUndocumented(t, root)
+
+	var out strings.Builder
+	if err := CommentsCheck(root, "nonobvious").Run(&out); err == nil {
+		t.Fatal("want the first sweep to fail on the undocumented Old")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".komodo", "comments-sweep.json")); err == nil {
+		t.Fatal("a failing sweep recorded its fingerprint")
 	}
 }
 

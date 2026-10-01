@@ -397,6 +397,28 @@ func TestCommentsCheckReadsUntrackedFilesButSkipsIgnoredOnes(t *testing.T) {
 	}
 }
 
+// TestCommentsCheckFixAppliesTheMechanicalRules proves --fix rewrites a malformed marker on disk.
+func TestCommentsCheckFixAppliesTheMechanicalRules(t *testing.T) {
+	root := fixtureRepo(t)
+	path := filepath.Join(root, "a.go")
+	if err := os.WriteFile(path, []byte("package a\n\n// TODO fix this later\nvar x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := runCLI(t, root, "", "comments", "check", "--fix", "a.go"); got.code != 0 {
+		t.Fatalf("comments check --fix exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "// TODO: fix this later") {
+		t.Fatalf("fix did not rewrite the file: %s", data)
+	}
+	if got := runCLI(t, root, "", "comments", "check", "a.go"); got.code != 0 {
+		t.Fatalf("the fixed file still fails comments check: %s%s", got.stdout, got.stderr)
+	}
+}
+
 // TestInstallDryRunWritesNothing proves a dry-run install prints its plan and leaves the tree alone.
 func TestInstallDryRunWritesNothing(t *testing.T) {
 	root := fixtureRepo(t)

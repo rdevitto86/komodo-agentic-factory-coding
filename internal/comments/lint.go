@@ -1,11 +1,14 @@
 package comments
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"komodo/internal/git"
 )
 
 // maskedLines blanks the interior of multi-line strings so a # inside a docstring is not a comment.
@@ -89,22 +92,20 @@ func bodySpan(lines []string, index int, family string) (int, int) {
 	return statements, returns
 }
 
-// documentedAbove reports whether the nearest line above, skipping blanks and attributes, is a comment.
+// documentedAbove reports whether the nearest line above, skipping attributes only, is a comment.
 func documentedAbove(lines []string, index int, family string) bool {
 	marker := lineMarker[family]
 	look := index - 1
-	for look >= 0 {
-		trimmed := strings.TrimSpace(lines[look])
-		if trimmed == "" || IsAnnotation(trimmed) {
-			look--
-			continue
-		}
-		break
+	for look >= 0 && IsAnnotation(strings.TrimSpace(lines[look])) {
+		look--
 	}
 	if look < 0 {
 		return false
 	}
 	previous := strings.TrimSpace(lines[look])
+	if previous == "" {
+		return false
+	}
 	return strings.HasPrefix(previous, marker) || strings.HasSuffix(previous, "*/") ||
 		hasPrefixAny(previous, "/**", "/*", "///")
 }
@@ -127,13 +128,20 @@ func hasDocstring(lines []string, index int) bool {
 	return false
 }
 
-// lineDocAbove reports whether a script's unindented // block sits directly on a top-level declaration.
+// lineDocAbove reports whether a script's // block sits directly on a declaration or a class method.
 func lineDocAbove(lines []string, start, end int, ext, family string) bool {
-	if !has(scriptExts, ext) || end >= len(lines) || lines[start] != strings.TrimLeft(lines[start], " \t") {
+	if !has(scriptExts, ext) || end >= len(lines) {
 		return false
 	}
-	if !scriptDecl.MatchString(lines[end]) {
-		return false
+	if lines[start] == strings.TrimLeft(lines[start], " \t") {
+		if !scriptDecl.MatchString(lines[end]) {
+			return false
+		}
+	} else {
+		match := classMethod.FindStringSubmatch(strings.TrimSpace(lines[end]))
+		if match == nil || has(nonDecl, match[1]) {
+			return false
+		}
 	}
 	for number := start; number < end; number++ {
 		if !IsDirective(CommentBody(lines[number], family)) {
@@ -194,7 +202,7 @@ func UndocumentedFunctions(text, path, require string) []Undocumented {
 	if require == "none" {
 		return nil
 	}
-	family := ResolveFamily(path)
+	family := ResolveFamily(path, text)
 	if family == "" || IsTestPath(path) {
 		return nil
 	}
@@ -233,10 +241,14 @@ func UndocumentedFunctions(text, path, require string) []Undocumented {
 	return found
 }
 
+// lockfileNames are generated dependency lockfiles the lint never reads as prose.
+var lockfileNames = []string{"pnpm-lock.yaml", "package-lock.json", "yarn.lock", "composer.lock",
+	"Cargo.lock", "poetry.lock", "Gemfile.lock", "go.sum"}
+
 // InvalidComments returns every comment breaking a mechanical rule.
 func InvalidComments(text, path string) []Finding {
-	family := ResolveFamily(path)
-	if family == "" {
+	family := ResolveFamily(path, text)
+	if family == "" || has(lockfileNames, filepath.Base(path)) {
 		return nil
 	}
 	ext := strings.ToLower(filepath.Ext(path))
@@ -367,6 +379,45 @@ func InvalidComments(text, path string) []Finding {
 			}
 		}
 	}
+	if family == familyC {
+		for blockIndex := 0; blockIndex < len(lines); blockIndex++ {
+			if !strings.HasPrefix(strings.TrimSpace(lines[blockIndex]), "/*") {
+				continue
+			}
+			start := blockIndex
+			var parts []string
+			for blockIndex < len(lines) {
+				current := strings.TrimSpace(lines[blockIndex])
+				current = strings.TrimSuffix(current, "*/")
+				current = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(current, "/**"), "/*"), "*"))
+				if current != "" {
+					parts = append(parts, current)
+				}
+				if strings.Contains(lines[blockIndex], "*/") {
+					break
+				}
+				blockIndex++
+			}
+			body := strings.Join(parts, " ")
+			if IsDirective(body) {
+				continue
+			}
+			switch {
+			case len(strings.Fields(body)) > MaxWords:
+				findings = append(findings, Finding{start + 1, "OVER_WORDS",
+					fmt.Sprintf("comment runs %d words; the cap is %d", len(strings.Fields(body)), MaxWords)})
+			case len(body) > MaxChars:
+				findings = append(findings, Finding{start + 1, "OVER_CHARS",
+					fmt.Sprintf("comment runs %d characters; the cap is %d", len(body), MaxChars)})
+			case ExternalReference(body) != "":
+				findings = append(findings, Finding{start + 1, "EXTERNAL_REF",
+					"comment cites " + ExternalReference(body) + "; describe the code, not a document, version, or conversation"})
+			case Narrative(body) != "":
+				findings = append(findings, Finding{start + 1, "NARRATIVE",
+					"comment carries " + Narrative(body) + "; state what the code does"})
+			}
+		}
+	}
 	if missingShellHeader(lines, ext) {
 		findings = append(findings, Finding{1, "SHELL_HEADER",
 			"a shell script opens with a # header saying what it does and how it is run"})
@@ -382,6 +433,110 @@ func InvalidComments(text, path string) []Finding {
 		return findings[i].Rule < findings[j].Rule
 	})
 	return findings
+}
+
+// fixMarker rewrites a malformed marker line, inserting the colon the shape requires.
+func fixMarker(line, family string) (string, bool) {
+	start := CommentStart(line, family)
+	if start == -1 {
+		return line, false
+	}
+	body := CommentBody(line[start:], family)
+	upper := strings.ToUpper(body)
+	for _, name := range markers {
+		if strings.HasPrefix(upper, name) {
+			rest := strings.TrimLeft(body[len(name):], " ")
+			return line[:start] + lineMarker[family] + " " + name + ": " + rest, true
+		}
+	}
+	return line, false
+}
+
+// Fix rewrites every finding with one mechanical rule and reports how many it applied.
+func Fix(text, path string) (string, int) {
+	family := ResolveFamily(path, text)
+	if family == "" {
+		return text, 0
+	}
+	findings := InvalidComments(text, path)
+	lines := strings.Split(text, "\n")
+	drop := map[int]bool{}
+	count := 0
+	for _, finding := range findings {
+		index := finding.Line - 1
+		if index < 0 || index >= len(lines) {
+			continue
+		}
+		switch finding.Rule {
+		case "MALFORMED_MARKER":
+			if fixed, ok := fixMarker(lines[index], family); ok {
+				lines[index] = fixed
+				count++
+			}
+		case "NAME_ECHO":
+			drop[index] = true
+			count++
+		}
+	}
+	if len(drop) == 0 {
+		return strings.Join(lines, "\n"), count
+	}
+	kept := make([]string, 0, len(lines)-len(drop))
+	for index, line := range lines {
+		if !drop[index] {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n"), count
+}
+
+// TrackedFiles lists what git tracks plus untracked files the exclude rules keep.
+func TrackedFiles(root string) []string {
+	out, err := git.Run(root, "ls-files", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, line := range strings.Split(out, "\n") {
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+	return paths
+}
+
+// sweepStateFile is where the gate records the fingerprint of its last full comments sweep.
+const sweepStateFile = ".komodo/comments-sweep.json"
+
+// sweepState is what sweepStateFile holds.
+type sweepState struct {
+	Fingerprint string `json:"fingerprint"`
+}
+
+// NeedsSweep reports whether the repo's recorded sweep fingerprint is missing or stale.
+func NeedsSweep(root string) bool {
+	data, err := os.ReadFile(filepath.Join(root, sweepStateFile))
+	if err != nil {
+		return true
+	}
+	var state sweepState
+	if json.Unmarshal(data, &state) != nil {
+		return true
+	}
+	return state.Fingerprint != Fingerprint
+}
+
+// RecordSweep saves the lint's current fingerprint as the repo's last full sweep.
+func RecordSweep(root string) error {
+	path := filepath.Join(root, sweepStateFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(sweepState{Fingerprint: Fingerprint})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 // CheckFile lints one file on disk and returns its findings and what it left undocumented.
