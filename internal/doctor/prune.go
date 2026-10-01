@@ -13,8 +13,7 @@ import (
 // keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
 const keptRuns = 10
 
-// Prune removes stale worktrees, settles each merged or dropped group, and keeps only the newest run
-// folders; confirm must be true before it deletes a branch, else it only lists what it would delete.
+// Prune clears stale worktrees, old runs and dead claims; it deletes merged branches only when confirm, else lists them.
 func Prune(root, base string, confirm bool) ([]string, error) {
 	var done []string
 	worktrees, err := git.Worktrees(root)
