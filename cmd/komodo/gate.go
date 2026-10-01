@@ -53,11 +53,13 @@ func runGate(root string, args []string) {
 		return
 	}
 	if *install {
-		path, err := gate.BuildLocal(root, os.Stdout)
+		path, err := gate.BuildLocalIfGoRepo(root, os.Stdout)
 		if err != nil {
 			fail(err)
 		}
-		fmt.Println("built", path)
+		if path != "" {
+			fmt.Println("built", path)
+		}
 		written, err := gate.Install(filepath.Join(root, ".git"))
 		if err != nil {
 			fail(err)
