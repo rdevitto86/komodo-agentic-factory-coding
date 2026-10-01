@@ -11,6 +11,9 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+
+	repopkg "komodo/internal/repo"
 )
 
 // cacheFile is where a detection's profile lives, relative to the repo root.
@@ -232,9 +235,16 @@ func Detect(root string) (Profile, []string) {
 		manifests = append(manifests, filepath.Join(".github", "workflows"))
 	}
 
-	verify, compile := commands(found, scripts)
+	verify, compile := commands(root, found, scripts)
 	if override := VerifyCommand(root); override != "" {
 		verify = override
+	}
+	overrides := repopkg.LoadCommands(root)
+	if overrides.Verify != "" {
+		verify = overrides.Verify
+	}
+	if overrides.Compile != "" {
+		compile = overrides.Compile
 	}
 
 	profile := Profile{
@@ -250,12 +260,12 @@ func Detect(root string) (Profile, []string) {
 }
 
 // commands picks the verify and compile commands from the first manifest a fixed discovery order names.
-func commands(found map[string]bool, scripts map[string]string) (verify, compile string) {
+func commands(root string, found map[string]bool, scripts map[string]string) (verify, compile string) {
 	switch {
 	case found["go.mod"]:
 		return "go test ./...", "go build ./..."
 	case found["package.json"]:
-		return packageCommands(found, scripts)
+		return packageCommands(root, found, scripts)
 	case found["pyproject.toml"], found["requirements.txt"]:
 		return "pytest", ""
 	case found["Cargo.toml"]:
@@ -277,20 +287,41 @@ func packageManager(found map[string]bool) string {
 	return "npm"
 }
 
-// packageCommands derives verify and compile from the scripts package.json declares, warning on a missing one.
-func packageCommands(found map[string]bool, scripts map[string]string) (verify, compile string) {
+// packageCommands derives verify and compile from the scripts package.json declares, warning once on a missing one.
+func packageCommands(root string, found map[string]bool, scripts map[string]string) (verify, compile string) {
 	manager := packageManager(found)
 	if _, ok := scripts["test"]; ok {
 		verify = manager + " test"
 	} else {
-		fmt.Fprintf(os.Stderr, "komodo detect: package.json has no test script; deriving no verify command\n")
+		warnOnce(root, "no test script", "komodo detect: package.json has no test script; deriving no verify command\n")
 	}
-	if _, ok := scripts["build"]; ok {
+	switch {
+	case scripts["build"] != "":
 		compile = manager + " run build"
-	} else {
-		fmt.Fprintf(os.Stderr, "komodo detect: package.json has no build script; deriving no compile command\n")
+	case scripts["typecheck"] != "":
+		compile = manager + " run typecheck"
+	default:
+		warnOnce(root, "no build script", "komodo detect: package.json has no build or typecheck script; deriving no compile command\n")
 	}
 	return verify, compile
+}
+
+// warned tracks which root and warning a detection already printed, so a repeat call stays silent.
+var warned = struct {
+	mu   sync.Mutex
+	seen map[string]bool
+}{seen: map[string]bool{}}
+
+// warnOnce prints message to stderr the first time root and key pair it, and stays silent after.
+func warnOnce(root, key, message string) {
+	warned.mu.Lock()
+	defer warned.mu.Unlock()
+	full := root + "|" + key
+	if warned.seen[full] {
+		return
+	}
+	warned.seen[full] = true
+	fmt.Fprint(os.Stderr, message)
 }
 
 // sorted returns the keys of a set, alphabetised, or nil for an empty set.

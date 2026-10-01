@@ -2,10 +2,41 @@ package install
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// trackedRepo makes a fresh git repo a test can commit tracked fixture files into.
+func trackedRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	return root
+}
+
+// commitAll stages and commits every change in the fixture.
+func commitAll(t *testing.T, root, message string) {
+	t.Helper()
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", message}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
 
 func TestAddIgnoreAppendsAMissingEntryAndKeepsEveryExistingLine(t *testing.T) {
 	root := t.TempDir()
@@ -279,5 +310,102 @@ func TestGlobalPlanRendersIntoHomeAndRefusesAHostWithoutOne(t *testing.T) {
 	t.Setenv("home", "")
 	if _, err := GlobalPlan("test-home", "", "komodo"); err == nil {
 		t.Fatal("a user with no home directory got a plan")
+	}
+}
+
+// TestApplyNeverWritesToAFileGitTracks proves install leaves a tracked file alone, even when its
+// rendered body differs, so a branch switch never leaves the installer's own edits as local drift.
+func TestApplyNeverWritesToAFileGitTracks(t *testing.T) {
+	root := trackedRepo(t)
+	path := filepath.Join(root, "CLAUDE.md")
+	if err := os.WriteFile(path, []byte("# rules\ncommitted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commitAll(t, root, "init")
+
+	plan := Plan{Host: "repo", Root: root}
+	plan.Add(path, []byte("# rules\nrendered\n"), "rules import")
+	done, err := plan.Apply()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(done) != 0 {
+		t.Fatalf("done = %+v, want no action for a tracked file", done)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "# rules\ncommitted\n" {
+		t.Fatalf("CLAUDE.md = %q, want the committed body untouched", got)
+	}
+}
+
+// TestActionsReportsATrackedFileAsKeptNotUpdated proves drift never fires for a file git tracks.
+func TestActionsReportsATrackedFileAsKeptNotUpdated(t *testing.T) {
+	root := trackedRepo(t)
+	path := filepath.Join(root, ".gitignore")
+	if err := os.WriteFile(path, []byte("node_modules/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commitAll(t, root, "init")
+
+	plan := Plan{Host: "repo", Root: root}
+	plan.Add(path, []byte("node_modules/\n/.komodo/\n"), "state")
+	actions := plan.Actions()
+	if len(actions) != 1 || actions[0].Verb != "keep" {
+		t.Fatalf("actions = %+v, want keep for a tracked file", actions)
+	}
+	if got := plan.Drift(); len(got) != 1 || got[0].Verb != "keep" {
+		t.Fatalf("drift = %+v, want keep for a tracked file", got)
+	}
+}
+
+// TestActionsFlagsATrackedSkillThatDiffersFromTheRender proves a tracked file's kept action carries
+// Tracked, so a caller can still name it, though install itself never writes over it.
+func TestActionsFlagsATrackedSkillThatDiffersFromTheRender(t *testing.T) {
+	root := trackedRepo(t)
+	path := filepath.Join(root, ".claude", "skills", "run", "SKILL.md")
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("old body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commitAll(t, root, "init")
+
+	plan := Plan{Host: "repo", Root: root}
+	plan.AddProject(path, []byte("new body\n"), "the run skill")
+	actions := plan.Actions()
+	if len(actions) != 1 || actions[0].Verb != "keep" || !actions[0].Tracked {
+		t.Fatalf("actions = %+v, want one kept action flagged Tracked", actions)
+	}
+
+	same := Plan{Host: "repo", Root: root}
+	same.AddProject(path, []byte("old body\n"), "the run skill")
+	if got := same.Actions(); len(got) != 1 || got[0].Verb != "keep" || got[0].Tracked {
+		t.Fatalf("actions = %+v, want Tracked false once the content matches", got)
+	}
+}
+
+// TestApplyStillWritesAnUntrackedFile proves the tracked-file skip never reaches a plain, ungoverned path.
+func TestApplyStillWritesAnUntrackedFile(t *testing.T) {
+	root := trackedRepo(t)
+	path := filepath.Join(root, "settings.json")
+
+	plan := Plan{Host: "repo", Root: root}
+	plan.Add(path, []byte(`{"ok": true}`), "settings")
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"ok": true}` {
+		t.Fatalf("settings.json = %q, want the rendered body for an untracked file", got)
 	}
 }

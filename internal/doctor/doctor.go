@@ -55,6 +55,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root, rendered)...)
 	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinLocalUp))...)
+	problems = append(problems, checkStaleSkills(rendered)...)
 	problems = append(problems, checkHookBinary(root, rendered)...)
 	problems = append(problems, checkProfileDrift(root)...)
 	problems = append(problems, checkPromises(root)...)
@@ -110,6 +111,25 @@ func checkLegacyBacklog(root string) []Problem {
 		return nil
 	}
 	return []Problem{{"legacy-backlog", rel(root, path), "still holds tasks; run `komodo migrate` and remove it"}}
+}
+
+// checkStaleSkills names each installed SKILL.md git tracks whose body differs from the binary's own
+// copy, since install leaves a tracked file alone and never refreshes it on its own.
+func checkStaleSkills(rendered []renderedHost) []Problem {
+	var problems []Problem
+	for _, host := range rendered {
+		if host.Err != nil {
+			continue
+		}
+		for _, action := range host.Plan.Actions() {
+			if !action.Tracked || filepath.Base(action.Path) != "SKILL.md" {
+				continue
+			}
+			problems = append(problems, Problem{"skills", action.Path,
+				"git tracks this stale copy; untrack it (git rm --cached) and run komodo install"})
+		}
+	}
+	return problems
 }
 
 // checkAGENTSTracked fails when AGENTS.md exists but git does not track it, since a line worktree

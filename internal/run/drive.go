@@ -132,7 +132,7 @@ func pruneLeftovers(root, base string, out io.Writer) error {
 	if base == "" {
 		base = line.DefaultBase(root)
 	}
-	done, err := doctor.Prune(root, base)
+	done, err := doctor.Prune(root, base, true)
 	if err != nil {
 		return err
 	}

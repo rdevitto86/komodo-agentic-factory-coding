@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"komodo/internal/git"
 )
 
 // Change is one file the install writes, seeds, or removes.
@@ -194,6 +196,8 @@ type Action struct {
 	Path string
 	Why  string
 	Seed bool
+	// Tracked marks a kept file git tracks whose content differs from what the plan would render.
+	Tracked bool
 }
 
 // Actions describes the plan against the current tree without touching it.
@@ -208,6 +212,7 @@ func (p Plan) Drift() []Action {
 
 // actions compares each change to the tree after passing both sides through normalise.
 func (p Plan) actions(normalise func([]byte) []byte) []Action {
+	tracked := trackedFiles(p.Root)
 	var out []Action
 	for _, change := range p.Changes {
 		relative := change.Path
@@ -224,6 +229,13 @@ func (p Plan) actions(normalise func([]byte) []byte) []Action {
 		switch {
 		case change.Seed && err == nil:
 			out = append(out, Action{Verb: "keep", Path: relative, Why: "seeded once, never overwritten", Seed: true})
+		case err == nil && tracked[relative]:
+			if bytes.Equal(normalise(existing), normalise(change.Body)) {
+				out = append(out, Action{Verb: "keep", Path: relative, Why: "git tracks this file; install leaves it alone"})
+				continue
+			}
+			out = append(out, Action{Verb: "keep", Path: relative, Tracked: true,
+				Why: "git tracks this file and its content differs; install leaves it alone"})
 		case err != nil:
 			out = append(out, Action{Verb: "create", Path: relative, Why: change.Why, Seed: change.Seed})
 		case !bytes.Equal(normalise(existing), normalise(change.Body)):
@@ -236,26 +248,46 @@ func (p Plan) actions(normalise func([]byte) []byte) []Action {
 	return out
 }
 
-// Apply writes the plan and returns what it changed.
+// trackedFiles lists the paths root's git index tracks, relative to root, or nil outside a git repo.
+func trackedFiles(root string) map[string]bool {
+	out, err := git.Run(root, "ls-files")
+	if err != nil {
+		return nil
+	}
+	tracked := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		if line != "" {
+			tracked[filepath.FromSlash(line)] = true
+		}
+	}
+	return tracked
+}
+
+// Apply writes the plan and returns what it changed; a change Actions marks same or kept, such as a
+// seeded file that exists or a path git tracks, is never written.
 func (p Plan) Apply() ([]Action, error) {
+	verbByPath := map[string]string{}
 	var done []Action
 	for _, action := range p.Actions() {
+		verbByPath[action.Path] = action.Verb
 		if action.Verb == "same" || action.Verb == "keep" {
 			continue
 		}
 		done = append(done, action)
 	}
 	for _, change := range p.Changes {
+		relative := change.Path
+		if rel, err := filepath.Rel(p.Root, change.Path); err == nil && !strings.HasPrefix(rel, "..") {
+			relative = rel
+		}
 		if change.Remove {
 			if err := os.RemoveAll(change.Path); err != nil && !os.IsNotExist(err) {
 				return done, err
 			}
 			continue
 		}
-		if change.Seed {
-			if _, err := os.Stat(change.Path); err == nil {
-				continue
-			}
+		if verb := verbByPath[relative]; verb == "same" || verb == "keep" {
+			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(change.Path), 0o755); err != nil {
 			return done, err
