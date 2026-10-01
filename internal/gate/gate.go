@@ -245,6 +245,15 @@ func Sum(path string) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+// BuildLocalIfGoRepo builds this host's own binary when root pins a Go toolchain, returning an empty
+// path with no error in a repo without go.mod, so install still writes its hooks there.
+func BuildLocalIfGoRepo(root string, out io.Writer) (string, error) {
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		return "", nil
+	}
+	return BuildLocal(root, out)
+}
+
 // BuildLocal builds this host's own binary into root/bin and returns the path it wrote.
 func BuildLocal(root string, out io.Writer) (string, error) {
 	dir := filepath.Join(root, "bin")

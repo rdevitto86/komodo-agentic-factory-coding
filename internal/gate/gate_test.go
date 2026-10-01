@@ -445,6 +445,36 @@ func TestBuildLocalFailsWhenBinIsAFile(t *testing.T) {
 	}
 }
 
+// TestBuildLocalIfGoRepoSkipsWithoutGoMod proves install never fails building a non-Go repo's binary.
+func TestBuildLocalIfGoRepoSkipsWithoutGoMod(t *testing.T) {
+	root := t.TempDir()
+	path, err := BuildLocalIfGoRepo(root, io.Discard)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if path != "" {
+		t.Fatalf("path = %q, want empty", path)
+	}
+}
+
+// TestBuildLocalIfGoRepoBuildsWithAGoMod proves install still builds the binary in the toolkit's own checkout.
+func TestBuildLocalIfGoRepoBuildsWithAGoMod(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	path, err := BuildLocalIfGoRepo(root, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(root, "bin", LocalTarget().Name); path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+}
+
 // TestInstallFailsWhenHooksIsAFile proves a blocked hooks/ directory surfaces its error.
 func TestInstallFailsWhenHooksIsAFile(t *testing.T) {
 	dir := t.TempDir()

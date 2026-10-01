@@ -15,6 +15,7 @@ import (
 
 	"komodo/internal/detect"
 	"komodo/internal/facet"
+	"komodo/internal/glob"
 	"komodo/internal/install"
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
@@ -361,7 +362,7 @@ func settingsFile(root, binary string) ([]byte, error) {
 				"hooks":   []any{map[string]any{"type": "command", "command": hookBinary(binary) + " guard"}},
 			}},
 		},
-		"permissions": map[string]any{"deny": denyList(policy)},
+		"permissions": map[string]any{"deny": denyList(root, policy)},
 		// No co-author trailer, no pull request footer, no session link, in every session and subagent.
 		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": false},
 	}
@@ -372,9 +373,12 @@ func settingsFile(root, binary string) ([]byte, error) {
 	return append(body, '\n'), nil
 }
 
-// denyList turns the policy's critical refs and config paths into this host's permission entries;
-// one edit entry covers every file-editing tool this host has.
-func denyList(policy policyFile) []string {
+// homeOwnedDirs are the subdirectories this host documents under its home directory.
+var homeOwnedDirs = []string{"agents", "commands", "hooks", "output-styles", "plugins", "rules", "skills"}
+
+// denyList turns the policy's critical refs and config paths into this host's permission entries,
+// narrowing one that would also cover a registered mount's own write path for root.
+func denyList(root string, policy policyFile) []string {
 	var out []string
 	for _, ref := range policy.CriticalRefs {
 		out = append(out, pushRule("git push origin "+ref), pushRule("git push "+ref))
@@ -382,12 +386,45 @@ func denyList(policy policyFile) []string {
 	// The hosts' own config, the hook's settings file included, is denied beside the policy's paths.
 	seen := map[string]bool{}
 	for _, path := range append(append(append([]string{}, policy.ConfigPaths...), mount.ConfigPaths()...), mount.GuardConfigPaths()...) {
-		if !seen[path] {
-			seen[path] = true
-			out = append(out, fmt.Sprintf("Edit(%s)", path))
+		for _, rule := range denyRulesFor(root, path) {
+			if !seen[rule] {
+				seen[rule] = true
+				out = append(out, rule)
+			}
 		}
 	}
 	return out
+}
+
+// denyRulesFor renders path as one Edit rule, or as the narrower homeOwnedDirs rules when path
+// would also cover a registered mount's own write path for root.
+func denyRulesFor(root, path string) []string {
+	if !coversAWritePath(root, path) {
+		return []string{fmt.Sprintf("Edit(%s)", path)}
+	}
+	home := strings.TrimSuffix(path, "**")
+	rules := []string{fmt.Sprintf("Edit(%s*)", home)}
+	for _, dir := range homeOwnedDirs {
+		rules = append(rules, fmt.Sprintf("Edit(%s%s/**)", home, dir))
+	}
+	return rules
+}
+
+// coversAWritePath reports whether path, a config path pattern, also matches a registered mount's
+// own write path for root, such as a session's project memory directory.
+func coversAWritePath(root, path string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	expanded := strings.Replace(path, "~", home, 1)
+	for _, writePath := range mount.WritePaths(root) {
+		sample := strings.TrimSuffix(writePath, "/**") + "/x"
+		if glob.Match(expanded, sample) {
+			return true
+		}
+	}
+	return false
 }
 
 // pushRule denies command as a prefix; a glob ref drops the :* suffix, which would make its * literal.
