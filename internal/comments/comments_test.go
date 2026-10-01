@@ -349,3 +349,19 @@ func TestShellFunctionsAreDeclarations(t *testing.T) {
 		t.Fatalf("undocumented = %+v", got)
 	}
 }
+
+func TestBlockDocCommentTakesTheWordCap(t *testing.T) {
+	text := "/**\n * Builds the contract from " + strings.Repeat("word ", 22) + "fields.\n */\nexport function build() {\n  return 1;\n}\n"
+	got := rules(InvalidComments(text, "a/b.ts"))
+	if len(got) != 1 || got[0] != "OVER_WORDS" {
+		t.Fatalf("a /** */ comment skipped the word cap: rules = %v", got)
+	}
+}
+
+func TestBlockDocCommentTakesTheWordingChecks(t *testing.T) {
+	text := "/**\n * We previously built this differently.\n */\nexport function build() {\n  return 1;\n}\n"
+	got := rules(InvalidComments(text, "a/b.ts"))
+	if len(got) != 1 || got[0] != "NARRATIVE" {
+		t.Fatalf("a /** */ comment skipped the wording checks: rules = %v", got)
+	}
+}

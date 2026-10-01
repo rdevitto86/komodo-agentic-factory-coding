@@ -371,6 +371,45 @@ func InvalidComments(text, path string) []Finding {
 			}
 		}
 	}
+	if family == familyC {
+		for blockIndex := 0; blockIndex < len(lines); blockIndex++ {
+			if !strings.HasPrefix(strings.TrimSpace(lines[blockIndex]), "/*") {
+				continue
+			}
+			start := blockIndex
+			var parts []string
+			for blockIndex < len(lines) {
+				current := strings.TrimSpace(lines[blockIndex])
+				current = strings.TrimSuffix(current, "*/")
+				current = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(current, "/**"), "/*"), "*"))
+				if current != "" {
+					parts = append(parts, current)
+				}
+				if strings.Contains(lines[blockIndex], "*/") {
+					break
+				}
+				blockIndex++
+			}
+			body := strings.Join(parts, " ")
+			if IsDirective(body) {
+				continue
+			}
+			switch {
+			case len(strings.Fields(body)) > MaxWords:
+				findings = append(findings, Finding{start + 1, "OVER_WORDS",
+					fmt.Sprintf("comment runs %d words; the cap is %d", len(strings.Fields(body)), MaxWords)})
+			case len(body) > MaxChars:
+				findings = append(findings, Finding{start + 1, "OVER_CHARS",
+					fmt.Sprintf("comment runs %d characters; the cap is %d", len(body), MaxChars)})
+			case ExternalReference(body) != "":
+				findings = append(findings, Finding{start + 1, "EXTERNAL_REF",
+					"comment cites " + ExternalReference(body) + "; describe the code, not a document, version, or conversation"})
+			case Narrative(body) != "":
+				findings = append(findings, Finding{start + 1, "NARRATIVE",
+					"comment carries " + Narrative(body) + "; state what the code does"})
+			}
+		}
+	}
 	if missingShellHeader(lines, ext) {
 		findings = append(findings, Finding{1, "SHELL_HEADER",
 			"a shell script opens with a # header saying what it does and how it is run"})
