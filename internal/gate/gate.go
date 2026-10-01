@@ -452,22 +452,39 @@ func StagedDiffLines(root string) (map[string][]int, error) {
 	return diffAddedLines(out), nil
 }
 
-// CommentsCheck builds a gate check that lints only the comment lines a staged diff adds or changes.
+// CommentsCheck builds a gate check that lints a staged diff's changed lines, or every tracked file
+// when the lint's rule fingerprint has moved past the repo's last recorded sweep.
 func CommentsCheck(root, require string) Check {
 	return Check{Name: "komodo comments check", Run: func(out io.Writer) error {
-		added, err := StagedDiffLines(root)
-		if err != nil {
-			return err
-		}
-		problems, err := comments.CheckDiff(root, added, require)
-		if err != nil {
-			return err
+		var problems []string
+		sweep := comments.NeedsSweep(root)
+		if sweep {
+			swept, err := comments.Check(root, comments.TrackedFiles(root), require)
+			if err != nil {
+				return err
+			}
+			problems = swept
+		} else {
+			added, err := StagedDiffLines(root)
+			if err != nil {
+				return err
+			}
+			diffed, err := comments.CheckDiff(root, added, require)
+			if err != nil {
+				return err
+			}
+			problems = diffed
 		}
 		for _, problem := range problems {
 			fmt.Fprintln(out, problem)
 		}
 		if len(problems) > 0 {
 			return fmt.Errorf("%d comment problem(s)", len(problems))
+		}
+		if sweep {
+			if err := comments.RecordSweep(root); err != nil {
+				return err
+			}
 		}
 		return nil
 	}}

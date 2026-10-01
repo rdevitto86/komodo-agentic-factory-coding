@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"komodo/internal/comments"
-	"komodo/internal/git"
 )
 
 // commentsArgs strips the check subcommand, if present, then splits what remains into paths and flags.
@@ -27,7 +25,7 @@ func runComments(root string, args []string) {
 	paths, rest := commentsArgs(args, "require")
 	_ = set.Parse(rest)
 	if len(paths) == 0 {
-		paths = trackedFiles(root)
+		paths = comments.TrackedFiles(root)
 	} else if err := verifyPaths(root, paths); err != nil {
 		fail(err)
 	}
@@ -73,17 +71,3 @@ func runCommentsFix(root string, paths []string) {
 	fmt.Printf("%d fix(es) applied\n", fixed)
 }
 
-// trackedFiles lists what git tracks plus untracked files the exclude rules keep, what the lint walks by default.
-func trackedFiles(root string) []string {
-	out, err := git.Run(root, "ls-files", "--cached", "--others", "--exclude-standard")
-	if err != nil {
-		return nil
-	}
-	var paths []string
-	for _, line := range strings.Split(out, "\n") {
-		if line != "" {
-			paths = append(paths, line)
-		}
-	}
-	return paths
-}

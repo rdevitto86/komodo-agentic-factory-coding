@@ -1,11 +1,14 @@
 package comments
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"komodo/internal/git"
 )
 
 // maskedLines blanks the interior of multi-line strings so a # inside a docstring is not a comment.
@@ -485,6 +488,55 @@ func Fix(text, path string) (string, int) {
 		}
 	}
 	return strings.Join(kept, "\n"), count
+}
+
+// TrackedFiles lists what git tracks plus untracked files the exclude rules keep.
+func TrackedFiles(root string) []string {
+	out, err := git.Run(root, "ls-files", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, line := range strings.Split(out, "\n") {
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
+	return paths
+}
+
+// sweepStateFile is where the gate records the fingerprint of its last full comments sweep.
+const sweepStateFile = ".komodo/comments-sweep.json"
+
+// sweepState is what sweepStateFile holds.
+type sweepState struct {
+	Fingerprint string `json:"fingerprint"`
+}
+
+// NeedsSweep reports whether the repo's recorded sweep fingerprint is missing or stale.
+func NeedsSweep(root string) bool {
+	data, err := os.ReadFile(filepath.Join(root, sweepStateFile))
+	if err != nil {
+		return true
+	}
+	var state sweepState
+	if json.Unmarshal(data, &state) != nil {
+		return true
+	}
+	return state.Fingerprint != Fingerprint
+}
+
+// RecordSweep saves the lint's current fingerprint as the repo's last full sweep.
+func RecordSweep(root string) error {
+	path := filepath.Join(root, sweepStateFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(sweepState{Fingerprint: Fingerprint})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 // CheckFile lints one file on disk and returns its findings and what it left undocumented.
