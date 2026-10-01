@@ -81,6 +81,8 @@ var (
 	shellFunc   = regexp.MustCompile(`^(?:function\s+(\w[\w-]*)(?:\s*\(\))?|(\w[\w-]*)\s*\(\))\s*\{?\s*$`)
 	scriptDecl  = regexp.MustCompile(`^(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?` +
 		`(?:function\*?|class|interface|type|enum|const|let|var|namespace)\s`)
+	classMethod = regexp.MustCompile(`^(?:public\s+|private\s+|protected\s+|static\s+|async\s+|abstract\s+|override\s+|readonly\s+)*` +
+		`(?:get\s+|set\s+)?(\w+)\s*(?:<[^>]*>)?\([^)]*\)\s*(?::\s*[^{;=]+)?\s*\{\s*$`)
 	testFileName = []*regexp.Regexp{
 		regexp.MustCompile(`_test\.[^.]+$`), regexp.MustCompile(`^test_`),
 		regexp.MustCompile(`\.(?:test|spec)\.[^.]+$`), regexp.MustCompile(`^conftest\.`),

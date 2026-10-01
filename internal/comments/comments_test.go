@@ -350,6 +350,20 @@ func TestShellFunctionsAreDeclarations(t *testing.T) {
 	}
 }
 
+func TestLineCommentAboveAClassMethodIsFlagged(t *testing.T) {
+	text := "export class Box {\n  // Builds the box.\n  build() {\n    return 1;\n  }\n}\n"
+	if got := rules(InvalidComments(text, "a/b.ts")); len(got) != 1 || got[0] != "LINE_DOC" {
+		t.Fatalf("// above a class method was not flagged: rules = %v", got)
+	}
+}
+
+func TestLineCommentAboveAnIfInsideAMethodIsPermitted(t *testing.T) {
+	text := "export class Box {\n  build() {\n    // Guards the empty case.\n    if (x) {\n      return 1;\n    }\n    return 0;\n  }\n}\n"
+	if got := InvalidComments(text, "a/b.ts"); len(got) != 0 {
+		t.Fatalf("a comment above an if statement was flagged: %+v", got)
+	}
+}
+
 func TestBlockDocCommentTakesTheWordCap(t *testing.T) {
 	text := "/**\n * Builds the contract from " + strings.Repeat("word ", 22) + "fields.\n */\nexport function build() {\n  return 1;\n}\n"
 	got := rules(InvalidComments(text, "a/b.ts"))

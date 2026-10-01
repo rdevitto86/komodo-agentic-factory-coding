@@ -127,13 +127,20 @@ func hasDocstring(lines []string, index int) bool {
 	return false
 }
 
-// lineDocAbove reports whether a script's unindented // block sits directly on a top-level declaration.
+// lineDocAbove reports whether a script's // block sits directly on a declaration or a class method.
 func lineDocAbove(lines []string, start, end int, ext, family string) bool {
-	if !has(scriptExts, ext) || end >= len(lines) || lines[start] != strings.TrimLeft(lines[start], " \t") {
+	if !has(scriptExts, ext) || end >= len(lines) {
 		return false
 	}
-	if !scriptDecl.MatchString(lines[end]) {
-		return false
+	if lines[start] == strings.TrimLeft(lines[start], " \t") {
+		if !scriptDecl.MatchString(lines[end]) {
+			return false
+		}
+	} else {
+		match := classMethod.FindStringSubmatch(strings.TrimSpace(lines[end]))
+		if match == nil || has(nonDecl, match[1]) {
+			return false
+		}
 	}
 	for number := start; number < end; number++ {
 		if !IsDirective(CommentBody(lines[number], family)) {
