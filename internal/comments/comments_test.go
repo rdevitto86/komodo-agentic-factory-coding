@@ -350,6 +350,20 @@ func TestShellFunctionsAreDeclarations(t *testing.T) {
 	}
 }
 
+func TestExtensionlessScriptsAreLintedByShebang(t *testing.T) {
+	bash := "#!/usr/bin/env bash\n# Runs pre-commit.\nset -euo pipefail\n"
+	if got := ResolveFamily(".husky/pre-commit", bash); got != familyHash {
+		t.Fatalf("ResolveFamily(husky hook) = %q, want %q", got, familyHash)
+	}
+	overLong := "#!/usr/bin/env bash\nset -eu # " + strings.Repeat("word ", 25) + "\n"
+	if got := rules(InvalidComments(overLong, "bin/run")); len(got) != 1 || got[0] != "OVER_WORDS" {
+		t.Fatalf("an extensionless bin/ script skipped the word cap: rules = %v", got)
+	}
+	if got := ResolveFamily("README.md", "# Title\n"); got != "" {
+		t.Fatalf("ResolveFamily(no shebang) = %q, want empty", got)
+	}
+}
+
 func TestLineCommentAboveAClassMethodIsFlagged(t *testing.T) {
 	text := "export class Box {\n  // Builds the box.\n  build() {\n    return 1;\n  }\n}\n"
 	if got := rules(InvalidComments(text, "a/b.ts")); len(got) != 1 || got[0] != "LINE_DOC" {

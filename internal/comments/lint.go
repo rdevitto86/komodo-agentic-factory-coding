@@ -201,7 +201,7 @@ func UndocumentedFunctions(text, path, require string) []Undocumented {
 	if require == "none" {
 		return nil
 	}
-	family := ResolveFamily(path)
+	family := ResolveFamily(path, text)
 	if family == "" || IsTestPath(path) {
 		return nil
 	}
@@ -246,7 +246,7 @@ var lockfileNames = []string{"pnpm-lock.yaml", "package-lock.json", "yarn.lock",
 
 // InvalidComments returns every comment breaking a mechanical rule.
 func InvalidComments(text, path string) []Finding {
-	family := ResolveFamily(path)
+	family := ResolveFamily(path, text)
 	if family == "" || has(lockfileNames, filepath.Base(path)) {
 		return nil
 	}

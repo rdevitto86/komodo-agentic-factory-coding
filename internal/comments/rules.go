@@ -36,6 +36,12 @@ var extensionFamily = map[string]string{
 
 var filenameFamily = map[string]string{"Dockerfile": familyHash, "Makefile": familyHash, "Justfile": familyHash}
 
+var shebangFamily = map[string]string{
+	"sh": familyHash, "bash": familyHash, "zsh": familyHash, "dash": familyHash, "ksh": familyHash,
+	"python": familyHash, "python3": familyHash, "ruby": familyHash,
+	"node": familyC, "ts-node": familyC, "deno": familyC,
+}
+
 var lineMarker = map[string]string{familyC: "//", familyHash: "#", familyDash: "--"}
 
 var quotes = map[string]string{familyC: "\"'`", familyHash: "\"'", familyDash: "'\""}
@@ -113,13 +119,36 @@ type Undocumented struct {
 	Name string `json:"name"`
 }
 
-// ResolveFamily returns the comment family for a path, or the empty string when the lint has no opinion.
-func ResolveFamily(path string) string {
+// ResolveFamily returns the comment family for a path, by name, extension, or a shebang when extensionless.
+func ResolveFamily(path string, text ...string) string {
 	base := filepath.Base(path)
 	if family, ok := filenameFamily[base]; ok {
 		return family
 	}
-	return extensionFamily[strings.ToLower(filepath.Ext(base))]
+	if family := extensionFamily[strings.ToLower(filepath.Ext(base))]; family != "" {
+		return family
+	}
+	if filepath.Ext(base) != "" || len(text) == 0 {
+		return ""
+	}
+	return shebangFamily[shebangInterpreter(text[0])]
+}
+
+// shebangInterpreter names the interpreter a script's first line invokes, or the empty string.
+func shebangInterpreter(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	if !strings.HasPrefix(line, "#!") {
+		return ""
+	}
+	fields := strings.Fields(line[2:])
+	if len(fields) == 0 {
+		return ""
+	}
+	name := filepath.Base(fields[0])
+	if name == "env" && len(fields) > 1 {
+		name = fields[1]
+	}
+	return name
 }
 
 // IsTestPath reports whether a path is a test file or sits under a test directory.
