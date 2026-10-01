@@ -72,12 +72,15 @@ var narrativePatterns = []namedPattern{
 var (
 	funcDecl = regexp.MustCompile(`^(?:(?:export|default|public|private|protected|internal|static|final|abstract|async|inline|open|override|suspend|pub)(?:\([^)]*\))?\s+)*` +
 		`(?:func|function|def|fn)\s+(?:\([^)]*\)\s*)?(\w+)`)
-	arrowDecl    = regexp.MustCompile(`^(?:export\s+)?(?:default\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:\([^)]*\)|\w+)\s*=>`)
-	goMethod     = regexp.MustCompile(`^func\s*\([^)]*\)\s*(\w+)`)
-	goFunc       = regexp.MustCompile(`^func\s+(\w+)`)
-	markerShape  = regexp.MustCompile(`^(NOTE|FIXME|TODO):\s+\S`)
-	annotation   = regexp.MustCompile(`^(?:@\w+(?:\(.*\))?|#!?\[.*\]|\[[A-Za-z_][^\]]*\])$`)
-	dunder       = regexp.MustCompile(`^__\w+__$`)
+	arrowDecl   = regexp.MustCompile(`^(?:export\s+)?(?:default\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:\([^)]*\)|\w+)\s*=>`)
+	goMethod    = regexp.MustCompile(`^func\s*\([^)]*\)\s*(\w+)`)
+	goFunc      = regexp.MustCompile(`^func\s+(\w+)`)
+	markerShape = regexp.MustCompile(`^(NOTE|FIXME|TODO):\s+\S`)
+	annotation  = regexp.MustCompile(`^(?:@\w+(?:\(.*\))?|#!?\[.*\]|\[[A-Za-z_][^\]]*\])$`)
+	dunder      = regexp.MustCompile(`^__\w+__$`)
+	shellFunc   = regexp.MustCompile(`^(?:function\s+(\w[\w-]*)(?:\s*\(\))?|(\w[\w-]*)\s*\(\))\s*\{?\s*$`)
+	scriptDecl  = regexp.MustCompile(`^(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?` +
+		`(?:function\*?|class|interface|type|enum|const|let|var|namespace)\s`)
 	testFileName = []*regexp.Regexp{
 		regexp.MustCompile(`_test\.[^.]+$`), regexp.MustCompile(`^test_`),
 		regexp.MustCompile(`\.(?:test|spec)\.[^.]+$`), regexp.MustCompile(`^conftest\.`),
@@ -90,6 +93,9 @@ var (
 	generatedDirs  = []string{"vendor", "node_modules", "generated", "third_party", "dist", "build"}
 	generatedSuffs = []string{".gen.go", ".pb.go", "_pb2.py", ".generated.ts", ".d.ts", ".min.js"}
 	markers        = []string{"NOTE", "FIXME", "TODO"}
+	shellExts      = []string{".sh", ".bash", ".zsh"}
+	scriptExts     = []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
+	moduleTags     = []string{"@packageDocumentation", "@module", "@file", "@fileoverview"}
 )
 
 // Finding is one comment breaking one mechanical rule.
@@ -230,6 +236,12 @@ func FunctionName(line, ext string) string {
 		}
 		if match := goFunc.FindStringSubmatch(stripped); match != nil {
 			return match[1]
+		}
+		return ""
+	}
+	if has(shellExts, ext) {
+		if match := shellFunc.FindStringSubmatch(stripped); match != nil {
+			return match[1] + match[2]
 		}
 		return ""
 	}

@@ -258,3 +258,72 @@ func containsRule(findings []Finding, rule string) bool {
 
 // writeFile writes a test fixture.
 func writeFile(path, body string) error { return os.WriteFile(path, []byte(body), 0o644) }
+
+func TestLineCommentAboveATopLevelScriptDeclarationIsFlagged(t *testing.T) {
+	for _, decl := range []string{"function at() {", "const LIMIT = 3;", "export class Box {", "interface Shape {", "type Id = string;"} {
+		text := "// Walks a path through unknown JSON.\n" + decl + "\n  return 1;\n}\n"
+		if got := rules(InvalidComments(text, "a/b.ts")); len(got) != 1 || got[0] != "LINE_DOC" {
+			t.Errorf("%q: rules = %v", decl, got)
+		}
+	}
+}
+
+func TestLineCommentInsideAScriptBodyOrAboveAStatementIsPermitted(t *testing.T) {
+	text := "/** Sums the list. */\nfunction sum() {\n  // Starts from zero.\n  const total = 0;\n  return total;\n}\n\n// Runs when invoked directly.\nif (main) {\n  sum();\n}\n"
+	if got := InvalidComments(text, "a/b.ts"); len(got) != 0 {
+		t.Fatalf("findings = %+v", got)
+	}
+}
+
+func TestLineCommentAboveAGoDeclarationIsPermitted(t *testing.T) {
+	text := "package a\n\n// limit caps the retries.\nconst limit = 3\n"
+	if got := InvalidComments(text, "a/b.go"); len(got) != 0 {
+		t.Fatalf("findings = %+v", got)
+	}
+}
+
+func TestLeadingScriptDocCommentNeedsAModuleTag(t *testing.T) {
+	bare := "/** Builds the contract. */\nimport { a } from 'b';\n"
+	if got := rules(InvalidComments(bare, "a/b.ts")); len(got) != 1 || got[0] != "MODULE_TAG" {
+		t.Fatalf("rules = %v", got)
+	}
+	tagged := "/**\n * Builds the contract.\n *\n * @packageDocumentation\n */\nimport { a } from 'b';\n"
+	if got := InvalidComments(tagged, "a/b.ts"); len(got) != 0 {
+		t.Fatalf("a tagged module comment was flagged: %+v", got)
+	}
+	declared := "/** Builds the contract. */\nexport function build() {\n  return 1;\n}\n"
+	if got := InvalidComments(declared, "a/b.ts"); len(got) != 0 {
+		t.Fatalf("a declaration's doc comment was flagged: %+v", got)
+	}
+}
+
+func TestShellScriptWithoutAHeaderIsFlagged(t *testing.T) {
+	bare := "#!/usr/bin/env bash\nset -euo pipefail\necho hi\n"
+	if got := rules(InvalidComments(bare, "scripts/a.sh")); len(got) != 1 || got[0] != "SHELL_HEADER" {
+		t.Fatalf("rules = %v", got)
+	}
+	directive := "#!/usr/bin/env bash\n# shellcheck disable=SC2034\nx=1\n"
+	if got := rules(InvalidComments(directive, "scripts/a.sh")); len(got) != 1 || got[0] != "SHELL_HEADER" {
+		t.Fatalf("a directive passed as a header: %v", got)
+	}
+	headed := "#!/usr/bin/env bash\n# Prints a greeting.\nset -euo pipefail\necho hi\n"
+	if got := InvalidComments(headed, "scripts/a.sh"); len(got) != 0 {
+		t.Fatalf("a headed script was flagged: %+v", got)
+	}
+	if got := InvalidComments("print('hi')\n", "a/b.py"); len(got) != 0 {
+		t.Fatalf("a non-shell hash file was flagged: %+v", got)
+	}
+}
+
+func TestShellFunctionsAreDeclarations(t *testing.T) {
+	for line, want := range map[string]string{"deploy() {": "deploy", "function deploy {": "deploy", "  build_all () {": "build_all", "echo hi": ""} {
+		if got := FunctionName(line, ".sh"); got != want {
+			t.Errorf("FunctionName(%q) = %q, want %q", line, got, want)
+		}
+	}
+	body := strings.Repeat("  echo step\n", 10)
+	text := "#!/usr/bin/env bash\n# Deploys.\nset -eu\n\ndeploy() {\n" + body + "}\n"
+	if got := UndocumentedFunctions(text, "scripts/a.sh", "nonobvious"); len(got) != 1 || got[0].Name != "deploy" {
+		t.Fatalf("undocumented = %+v", got)
+	}
+}

@@ -30,5 +30,5 @@ roles: [builder, reviewer]
 ## Language notes
 - Go: exported identifiers get a godoc line starting with the name. Unexported ones follow the private rule.
 - Python: docstrings, not `#` lines, for functions and classes. Module docstring on every module.
-- TypeScript: JSDoc `/** */` on exports; `//` inside bodies.
+- TypeScript: JSDoc `/** */` on every declaration comment, exported or not; `//` only inside bodies. A module comment carries `@packageDocumentation`.
 - Shell: a header block under the shebang; almost nothing below it.

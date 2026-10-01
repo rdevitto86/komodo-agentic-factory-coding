@@ -127,6 +127,68 @@ func hasDocstring(lines []string, index int) bool {
 	return false
 }
 
+// lineDocAbove reports whether a script's unindented // block sits directly on a top-level declaration.
+func lineDocAbove(lines []string, start, end int, ext, family string) bool {
+	if !has(scriptExts, ext) || end >= len(lines) || lines[start] != strings.TrimLeft(lines[start], " \t") {
+		return false
+	}
+	if !scriptDecl.MatchString(lines[end]) {
+		return false
+	}
+	for number := start; number < end; number++ {
+		if !IsDirective(CommentBody(lines[number], family)) {
+			return true
+		}
+	}
+	return false
+}
+
+// missingShellHeader reports whether a shell script's first line past the shebang is anything but a prose comment.
+func missingShellHeader(lines []string, ext string) bool {
+	if !has(shellExts, ext) {
+		return false
+	}
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || (index == 0 && strings.HasPrefix(trimmed, "#!")) {
+			continue
+		}
+		return !strings.HasPrefix(trimmed, "#") || IsDirective(CommentBody(trimmed, familyHash))
+	}
+	return false
+}
+
+// untaggedModuleDoc returns the line of a script's leading /** */ block that precedes an import without a module tag.
+func untaggedModuleDoc(lines []string, ext string) (int, bool) {
+	if !has(scriptExts, ext) {
+		return 0, false
+	}
+	index := 0
+	for index < len(lines) && (strings.TrimSpace(lines[index]) == "" || strings.HasPrefix(lines[index], "#!")) {
+		index++
+	}
+	if index >= len(lines) || !strings.HasPrefix(strings.TrimSpace(lines[index]), "/**") {
+		return 0, false
+	}
+	start, tagged := index, false
+	for ; index < len(lines); index++ {
+		for _, tag := range moduleTags {
+			if strings.Contains(lines[index], tag) {
+				tagged = true
+			}
+		}
+		if strings.Contains(lines[index], "*/") {
+			break
+		}
+	}
+	for index++; index < len(lines) && strings.TrimSpace(lines[index]) == ""; index++ {
+	}
+	if tagged || index >= len(lines) || !strings.HasPrefix(lines[index], "import ") {
+		return 0, false
+	}
+	return start + 1, true
+}
+
 // UndocumentedFunctions lists declarations that owe a comment under the requirement and lack one.
 func UndocumentedFunctions(text, path, require string) []Undocumented {
 	if require == "none" {
@@ -222,6 +284,10 @@ func InvalidComments(text, path string) []Finding {
 			}
 		}
 		previousEnd = block.end
+		if lineDocAbove(lines, block.start, block.end, ext, family) {
+			findings = append(findings, Finding{block.start + 1, "LINE_DOC",
+				"a top-level declaration takes a /** */ doc comment, not //"})
+		}
 		if block.end <= headerEnd {
 			continue
 		}
@@ -300,6 +366,14 @@ func InvalidComments(text, path string) []Finding {
 				findings = append(findings, Finding{lineno, "NAME_ECHO", "comment restates the identifier below it"})
 			}
 		}
+	}
+	if missingShellHeader(lines, ext) {
+		findings = append(findings, Finding{1, "SHELL_HEADER",
+			"a shell script opens with a # header saying what it does and how it is run"})
+	}
+	if line, ok := untaggedModuleDoc(lines, ext); ok {
+		findings = append(findings, Finding{line, "MODULE_TAG",
+			"a file's leading /** */ comment needs @packageDocumentation or @module"})
 	}
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].Line != findings[j].Line {
