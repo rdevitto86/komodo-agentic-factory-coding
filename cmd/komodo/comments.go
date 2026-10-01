@@ -70,4 +70,3 @@ func runCommentsFix(root string, paths []string) {
 	}
 	fmt.Printf("%d fix(es) applied\n", fixed)
 }
-
