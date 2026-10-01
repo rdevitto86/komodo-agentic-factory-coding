@@ -196,6 +196,8 @@ type Action struct {
 	Path string
 	Why  string
 	Seed bool
+	// Tracked marks a kept file git tracks whose content differs from what the plan would render.
+	Tracked bool
 }
 
 // Actions describes the plan against the current tree without touching it.
@@ -228,7 +230,12 @@ func (p Plan) actions(normalise func([]byte) []byte) []Action {
 		case change.Seed && err == nil:
 			out = append(out, Action{Verb: "keep", Path: relative, Why: "seeded once, never overwritten", Seed: true})
 		case err == nil && tracked[relative]:
-			out = append(out, Action{Verb: "keep", Path: relative, Why: "git tracks this file; install leaves it alone"})
+			if bytes.Equal(normalise(existing), normalise(change.Body)) {
+				out = append(out, Action{Verb: "keep", Path: relative, Why: "git tracks this file; install leaves it alone"})
+				continue
+			}
+			out = append(out, Action{Verb: "keep", Path: relative, Tracked: true,
+				Why: "git tracks this file and its content differs; install leaves it alone"})
 		case err != nil:
 			out = append(out, Action{Verb: "create", Path: relative, Why: change.Why, Seed: change.Seed})
 		case !bytes.Equal(normalise(existing), normalise(change.Body)):

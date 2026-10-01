@@ -361,6 +361,36 @@ func TestActionsReportsATrackedFileAsKeptNotUpdated(t *testing.T) {
 	}
 }
 
+// TestActionsFlagsATrackedSkillThatDiffersFromTheRender proves a tracked file's kept action carries
+// Tracked, so a caller can still name it, though install itself never writes over it.
+func TestActionsFlagsATrackedSkillThatDiffersFromTheRender(t *testing.T) {
+	root := trackedRepo(t)
+	path := filepath.Join(root, ".claude", "skills", "run", "SKILL.md")
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("old body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commitAll(t, root, "init")
+
+	plan := Plan{Host: "repo", Root: root}
+	plan.AddProject(path, []byte("new body\n"), "the run skill")
+	actions := plan.Actions()
+	if len(actions) != 1 || actions[0].Verb != "keep" || !actions[0].Tracked {
+		t.Fatalf("actions = %+v, want one kept action flagged Tracked", actions)
+	}
+
+	same := Plan{Host: "repo", Root: root}
+	same.AddProject(path, []byte("old body\n"), "the run skill")
+	if got := same.Actions(); len(got) != 1 || got[0].Verb != "keep" || got[0].Tracked {
+		t.Fatalf("actions = %+v, want Tracked false once the content matches", got)
+	}
+}
+
 // TestApplyStillWritesAnUntrackedFile proves the tracked-file skip never reaches a plain, ungoverned path.
 func TestApplyStillWritesAnUntrackedFile(t *testing.T) {
 	root := trackedRepo(t)

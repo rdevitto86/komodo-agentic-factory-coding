@@ -323,6 +323,45 @@ func TestADeletedSeedFileIsNotDrift(t *testing.T) {
 	}
 }
 
+// TestCheckStaleSkillsNamesATrackedSkillThatDiffersAndSaysTheFix proves a skill git tracks, which
+// install leaves alone, is still named when its body differs from the binary's own render.
+func TestCheckStaleSkillsNamesATrackedSkillThatDiffersAndSaysTheFix(t *testing.T) {
+	root := gitRepo(t)
+	skillPath := filepath.Join(root, ".testhost", "skills", "run", "SKILL.md")
+	write(t, root, filepath.Join(".testhost", "skills", "run", "SKILL.md"), "old body\n")
+	commitAll(t, root, "init")
+	registerHost(t, mount.Host{Name: "testhost", Installed: func(string) bool { return true },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "testhost", Root: root}
+			plan.AddProject(skillPath, []byte("new body\n"), "the run skill")
+			return plan, nil
+		}})
+	got := checkStaleSkills(renderInstalled(root, pinLocalDown))
+	if len(got) != 1 || got[0].Where != filepath.Join(".testhost", "skills", "run", "SKILL.md") {
+		t.Fatalf("checkStaleSkills = %+v", got)
+	}
+	if !strings.Contains(got[0].Detail, "git rm --cached") {
+		t.Fatalf("detail = %q, want the fix command", got[0].Detail)
+	}
+}
+
+// TestCheckStaleSkillsIgnoresAnUntrackedSkill proves checkDrift, not checkStaleSkills, names a skill
+// that is merely stale because the repo never tracked it.
+func TestCheckStaleSkillsIgnoresAnUntrackedSkill(t *testing.T) {
+	root := clean(t)
+	skillPath := filepath.Join(root, ".testhost", "skills", "run", "SKILL.md")
+	write(t, root, filepath.Join(".testhost", "skills", "run", "SKILL.md"), "old body\n")
+	registerHost(t, mount.Host{Name: "testhost", Installed: func(string) bool { return true },
+		Render: func(root, binary string) (install.Plan, error) {
+			plan := install.Plan{Host: "testhost", Root: root}
+			plan.AddProject(skillPath, []byte("new body\n"), "the run skill")
+			return plan, nil
+		}})
+	if got := checkStaleSkills(renderInstalled(root, pinLocalDown)); len(got) != 0 {
+		t.Fatalf("checkStaleSkills = %+v, want none for an untracked skill; checkDrift covers that", got)
+	}
+}
+
 func TestAPromisedAccessorWithNoRealCallerIsFound(t *testing.T) {
 	root := clean(t)
 	write(t, root, "komodo/rules/backlog.md", "# Backlog grammar\n\n## Rules\n"+
