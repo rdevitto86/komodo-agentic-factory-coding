@@ -231,7 +231,8 @@ func findGroupFile(root, groupID string) (path, text string, found bool, err err
 func runBacklogAdd(root string, args []string) {
 	set := flag.NewFlagSet("add", flag.ExitOnError)
 	files := set.String("files", "", "comma-separated paths the task touches")
-	accept := set.String("accept", "", "comma-separated acceptance lines")
+	var accept repeatedFlag
+	set.Var(&accept, "accept", "one acceptance line; repeat --accept for more than one")
 	doneWhen := set.String("done-when", "", "comma-separated shell commands whose zero exit proves the task done")
 	priority := set.String("priority", "M", "C, H, M, or L")
 	status := set.String("status", "REFINEMENT", "the status to open the group in")
@@ -248,12 +249,13 @@ func runBacklogAdd(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
+	taskFlagsGiven := len(splitStrings(*files)) > 0 || len(accept) > 0 || len(splitStrings(*doneWhen)) > 0
 	if found {
 		if len(splitStrings(*files)) == 0 {
 			fail(fmt.Errorf("task declares no files; pass --files"))
 		}
 		out, id, err := backlog.AppendGroupFileTaskWith(text, backlog.GroupTask{
-			Title: title, Files: splitStrings(*files), Accept: splitStrings(*accept), Checks: splitStrings(*doneWhen),
+			Title: title, Files: splitStrings(*files), Accept: accept, Checks: splitStrings(*doneWhen),
 		})
 		if err != nil {
 			fail(err)
@@ -265,6 +267,9 @@ func runBacklogAdd(root string, args []string) {
 		line.Stamp(root, ledger.Entry{Station: "add", Task: id, Outcome: "added"})
 		return
 	}
+	if taskFlagsGiven && len(splitStrings(*files)) == 0 {
+		fail(fmt.Errorf("task declares no files; pass --files"))
+	}
 	var fields backlog.Fields
 	fields.Set("type", *groupType)
 	fields.Set("version", *version)
@@ -275,11 +280,32 @@ func runBacklogAdd(root string, args []string) {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		fail(err)
 	}
+	taskID := groupID
+	if taskFlagsGiven {
+		out, taskID, err = backlog.AppendGroupFileTaskWith(out, backlog.GroupTask{
+			Title: title, Files: splitStrings(*files), Accept: accept, Checks: splitStrings(*doneWhen),
+		})
+		if err != nil {
+			fail(err)
+		}
+	}
 	if err := os.WriteFile(dest, []byte(out), 0o644); err != nil {
 		fail(err)
 	}
 	fmt.Println(groupID)
-	line.Stamp(root, ledger.Entry{Station: "add", Task: groupID, Outcome: "added"})
+	line.Stamp(root, ledger.Entry{Station: "add", Task: taskID, Outcome: "added"})
+}
+
+// repeatedFlag collects every occurrence of a flag given more than once, in order.
+type repeatedFlag []string
+
+// String joins the collected values for flag's usage output.
+func (r *repeatedFlag) String() string { return strings.Join(*r, ", ") }
+
+// Set appends one more occurrence's value.
+func (r *repeatedFlag) Set(value string) error {
+	*r = append(*r, value)
+	return nil
 }
 
 // splitStrings turns a comma-separated flag into a plain string slice, dropping empty parts.

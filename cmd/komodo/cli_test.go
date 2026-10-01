@@ -180,6 +180,48 @@ func TestAddAppendsATaskTheListThenShows(t *testing.T) {
 	}
 }
 
+// TestAddHonorsFilesBeforeANewGroupsPositionals proves flags given ahead of group and title still
+// land on the new group's first task, instead of being dropped with an empty group left behind.
+func TestAddHonorsFilesBeforeANewGroupsPositionals(t *testing.T) {
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "add", "--files", "c/four.go", "--done-when", "go test ./c/...", "TG-91", "A new group")
+	if got.code != 0 {
+		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	groupPath := filepath.Join(root, "docs", "backlog", "TG-91-a-new-group.md")
+	data, err := os.ReadFile(groupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "c/four.go") {
+		t.Fatalf("add dropped --files on a new group; got %s", data)
+	}
+	if !strings.Contains(string(data), "- [ ] **TSK-91.1**") {
+		t.Fatalf("add wrote a new group with no task; got %s", data)
+	}
+}
+
+// TestAddAcceptsRepeatedAcceptFlags proves --accept can be passed more than once instead of comma-joined,
+// so an acceptance line may itself hold a comma.
+func TestAddAcceptsRepeatedAcceptFlags(t *testing.T) {
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "add", "TG-90.2", "A third task", "--files", "c/five.go",
+		"--accept", "first line, with a comma", "--accept", "second line")
+	if got.code != 0 {
+		t.Fatalf("add exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "docs", "backlog", "TG-90.2-a-pending-group.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "accept: first line, with a comma") {
+		t.Fatalf("add lost the comma in a repeated --accept line; got %s", data)
+	}
+	if !strings.Contains(string(data), "accept: second line") {
+		t.Fatalf("add dropped the second --accept line; got %s", data)
+	}
+}
+
 // TestListShowsTheOpenRunsLiveStatus proves list overlays status.json while the group file stays as committed.
 func TestListShowsTheOpenRunsLiveStatus(t *testing.T) {
 	root := fixtureRepo(t)
