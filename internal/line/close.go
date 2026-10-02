@@ -10,6 +10,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
 	"komodo/internal/mount"
@@ -350,8 +351,7 @@ func declares(task backlog.Task, path string) bool {
 
 // isToolkit reports whether this repo is the toolkit, which gates its own commits.
 func isToolkit(root string) bool {
-	_, err := os.Stat(filepath.Join(root, "cmd", "komodo", "main.go"))
-	return err == nil
+	return gate.IsToolkit(root)
 }
 
 // gateCommand runs the local gate in the worktree under its own wall clock.

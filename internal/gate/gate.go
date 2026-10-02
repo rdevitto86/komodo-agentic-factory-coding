@@ -245,10 +245,27 @@ func Sum(path string) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
-// BuildLocalIfGoRepo builds this host's own binary when root pins a Go toolchain, returning an empty
-// path with no error in a repo without go.mod, so install still writes its hooks there.
+// IsToolkit reports whether root is the toolkit's own checkout: cmd/komodo under the komodo module.
+func IsToolkit(root string) bool {
+	if _, err := os.Stat(filepath.Join(root, "cmd", "komodo", "main.go")); err != nil {
+		return false
+	}
+	mod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(mod), "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "module" {
+			return fields[1] == "komodo"
+		}
+	}
+	return false
+}
+
+// BuildLocalIfGoRepo builds this host's own binary in the toolkit's checkout, returning an empty
+// path with no error in any other repo, so install still writes its hooks there.
 func BuildLocalIfGoRepo(root string, out io.Writer) (string, error) {
-	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+	if !IsToolkit(root) {
 		return "", nil
 	}
 	return BuildLocal(root, out)
@@ -275,7 +292,7 @@ set -e
 name=$(basename "$0")
 # The toolkit's own checkout gates from its source, so the guard table and comment rules are the ones committed.
 top=$(git rev-parse --show-toplevel 2>/dev/null || true)
-if [ -n "$top" ] && [ -f "$top/cmd/komodo/main.go" ]; then
+if [ -n "$top" ] && [ -f "$top/cmd/komodo/main.go" ] && grep -qx 'module komodo' "$top/go.mod" 2>/dev/null; then
   cd "$top"
   cmd="go run ./cmd/komodo"
 else
@@ -290,11 +307,15 @@ else
     MINGW*|MSYS*|CYGWIN*) bin="$root/bin/komodo-windows-amd64.exe" ;;
     *) echo "gate: no binary for this platform ($(uname -s)-$(uname -m)); run go build ./cmd/komodo yourself" >&2; exit 1 ;;
   esac
-  if [ ! -x "$bin" ]; then
-    echo "gate: no binary at $bin; run 'komodo gate --install' to build it" >&2
+  if [ -x "$bin" ]; then
+    cmd="$bin"
+  elif command -v komodo >/dev/null 2>&1; then
+    # A target repo builds no line binary of its own, so it gates with the host's installed one.
+    cmd=komodo
+  else
+    echo "gate: no binary at $bin and no komodo on PATH; run 'komodo gate --install' to build it" >&2
     exit 1
   fi
-  cmd="$bin"
 fi
 # Commit rules run through the main checkout's built binary when it has one, so a branch whose source
 # predates a rule still meets it; the gate itself still runs from the checkout being committed.
