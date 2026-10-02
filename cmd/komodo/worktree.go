@@ -32,6 +32,11 @@ func runWorktreeAdd(root string, args []string) {
 		fail(fmt.Errorf("usage: komodo worktree add <branch> [--from <ref>]"))
 	}
 	branch := set.Arg(0)
+	// Flags may follow the branch too; the flag package stops at the first positional argument.
+	_ = set.Parse(set.Args()[1:])
+	if set.NArg() > 0 {
+		fail(fmt.Errorf("usage: komodo worktree add <branch> [--from <ref>]; unexpected %q", set.Arg(0)))
+	}
 	start := *from
 	if start == "" {
 		start = line.StartRef(root, line.DefaultBase(root))

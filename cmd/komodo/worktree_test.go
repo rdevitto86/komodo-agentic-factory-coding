@@ -44,3 +44,21 @@ func TestWorktreeAddUsageWithNoBranch(t *testing.T) {
 		t.Fatalf("want the usage line, got %d: %s%s", got.code, got.stdout, got.stderr)
 	}
 }
+
+func TestWorktreeAddReadsFromAfterTheBranch(t *testing.T) {
+	root, _ := tagRepo(t, "main", "## 1.0.0\n")
+	first := gitOutput(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "later.txt"), []byte("later\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "later.txt")
+	runGit(t, root, "commit", "-q", "-m", "later")
+	got := runCLI(t, root, "", "worktree", "add", "task/y", "--from", first)
+	if got.code != 0 {
+		t.Fatalf("worktree add exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	head := gitOutput(t, filepath.Join(root, ".komodo", "wt", "y"), "rev-parse", "HEAD")
+	if head != first {
+		t.Fatalf("worktree HEAD = %s, want --from %s", head, first)
+	}
+}
