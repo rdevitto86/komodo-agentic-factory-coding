@@ -43,7 +43,7 @@ func runReleaseClaim(root string, args []string) {
 		fail(err)
 	}
 	if session == "" {
-		fmt.Printf("no claim on %s\n", branch)
+		fmt.Printf("no claim on %s in %s; a claim lives in the repo that holds the branch\n", branch, root)
 		return
 	}
 	fmt.Printf("released %s from %s\n", branch, session)
