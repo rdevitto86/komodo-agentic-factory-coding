@@ -123,6 +123,17 @@ func TestLocalTargetMatchesRuntime(t *testing.T) {
 	}
 }
 
+// pathWithoutKomodo is this PATH minus any directory holding a komodo, so a hook never finds the host's line.
+func pathWithoutKomodo() string {
+	var keep []string
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if _, err := os.Stat(filepath.Join(dir, "komodo")); err != nil {
+			keep = append(keep, dir)
+		}
+	}
+	return strings.Join(keep, string(os.PathListSeparator))
+}
+
 // writeFakeBinary drops an executable shell script named name on a fake PATH entry.
 func writeFakeBinary(t *testing.T, dir, name, body string) {
 	t.Helper()
@@ -131,10 +142,10 @@ func writeFakeBinary(t *testing.T, dir, name, body string) {
 	}
 }
 
-// runHook runs the hook script under sh, with fakeDir first on PATH.
+// runHook runs the hook script under sh, with fakeDir first on PATH and no installed komodo on it.
 func runHook(fakeDir, script string) (string, error) {
 	cmd := exec.Command("sh", script)
-	cmd.Env = []string{"PATH=" + fakeDir + ":" + os.Getenv("PATH")}
+	cmd.Env = []string{"PATH=" + fakeDir + ":" + pathWithoutKomodo()}
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()
@@ -235,6 +246,9 @@ func TestHookInTheToolkitGatesFromTheCheckoutItCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(source, []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	fakes := t.TempDir()
@@ -461,7 +475,13 @@ func TestBuildLocalIfGoRepoSkipsWithoutGoMod(t *testing.T) {
 // TestBuildLocalIfGoRepoBuildsWithAGoMod proves install still builds the binary in the toolkit's own checkout.
 func TestBuildLocalIfGoRepoBuildsWithAGoMod(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module komodo\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	fakeDir := t.TempDir()
@@ -473,6 +493,15 @@ func TestBuildLocalIfGoRepoBuildsWithAGoMod(t *testing.T) {
 	}
 	if want := filepath.Join(root, "bin", LocalTarget().Name); path != want {
 		t.Fatalf("path = %q, want %q", path, want)
+	}
+}
+
+// TestBuildLocalIfGoRepoSkipsATargetRepoWithItsOwnCmdKomodo proves install never builds a target repo's own CLI as the line.
+func TestBuildLocalIfGoRepoSkipsATargetRepoWithItsOwnCmdKomodo(t *testing.T) {
+	root := checkoutWithModule(t, "github.com/example/runner")
+	path, err := BuildLocalIfGoRepo(root, io.Discard)
+	if err != nil || path != "" {
+		t.Fatalf("path = %q, err = %v; want no build", path, err)
 	}
 }
 
@@ -697,7 +726,10 @@ func TestHookScriptRebuildsOnPostMergeAndPostRewrite(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(main, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitCommand(t, main, "add", "cmd/komodo/main.go")
+	if err := os.WriteFile(filepath.Join(main, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, main, "add", "cmd/komodo/main.go", "go.mod")
 	gitCommand(t, main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
 	head := gitCommand(t, main, "rev-parse", "HEAD")
 
@@ -747,7 +779,10 @@ func TestPostCheckoutOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(main, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitCommand(t, main, "add", "cmd/komodo/main.go")
+	if err := os.WriteFile(filepath.Join(main, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, main, "add", "cmd/komodo/main.go", "go.mod")
 	gitCommand(t, main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
 	worktree := filepath.Join(t.TempDir(), "wt")
 	gitCommand(t, main, "worktree", "add", "-q", "-b", "feat/x", worktree)
@@ -787,7 +822,10 @@ func TestPostMergeOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(main, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitCommand(t, main, "add", "cmd/komodo/main.go")
+	if err := os.WriteFile(filepath.Join(main, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, main, "add", "cmd/komodo/main.go", "go.mod")
 	gitCommand(t, main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
 	worktree := filepath.Join(t.TempDir(), "wt")
 	gitCommand(t, main, "worktree", "add", "-q", "-b", "feat/x", worktree)
@@ -827,7 +865,10 @@ func TestPostRewriteOnlyRebuildsInTheMainWorkingTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(main, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitCommand(t, main, "add", "cmd/komodo/main.go")
+	if err := os.WriteFile(filepath.Join(main, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, main, "add", "cmd/komodo/main.go", "go.mod")
 	gitCommand(t, main, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
 	worktree := filepath.Join(t.TempDir(), "wt")
 	gitCommand(t, main, "worktree", "add", "-q", "-b", "feat/x", worktree)
@@ -1162,9 +1203,15 @@ func TestPushChecksRunsEverythingWithoutATo(t *testing.T) {
 	}
 }
 
-// toolkitCheckoutFor builds a git repo whose cmd/komodo/main.go marks it as the toolkit's own checkout,
+// toolkitCheckoutFor builds a git repo whose cmd/komodo/main.go and komodo module mark it as the toolkit's own checkout,
 // so the hook script gates it with "go run ./cmd/komodo" instead of a built binary.
 func toolkitCheckoutFor(t *testing.T) string {
+	t.Helper()
+	return checkoutWithModule(t, "komodo")
+}
+
+// checkoutWithModule builds a git repo holding cmd/komodo/main.go under the named go.mod module.
+func checkoutWithModule(t *testing.T, module string) string {
 	t.Helper()
 	root := t.TempDir()
 	gitCommand(t, root, "init", "-q", "-b", "main")
@@ -1175,7 +1222,30 @@ func toolkitCheckoutFor(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module "+module+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return root
+}
+
+// TestHookInATargetRepoWithItsOwnCmdKomodoUsesTheInstalledLine proves a repo whose own binary is
+// also cmd/komodo is not mistaken for the toolkit, so the hook never runs that repo's CLI.
+func TestHookInATargetRepoWithItsOwnCmdKomodoUsesTheInstalledLine(t *testing.T) {
+	root := checkoutWithModule(t, "github.com/example/runner")
+	fakes := t.TempDir()
+	writeFakeBinary(t, fakes, "go", "#!/bin/sh\necho go \"$@\"\n")
+	writeFakeBinary(t, fakes, "komodo", "#!/bin/sh\necho komodo \"$@\"\n")
+	script := filepath.Join(fakes, "pre-commit")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = root
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	out, err := cmd.CombinedOutput()
+	if err != nil || strings.Contains(string(out), "go run") || !strings.Contains(string(out), "komodo gate --check-branch") {
+		t.Fatalf("err = %v, out = %q; want the installed komodo, never go run", err, out)
+	}
 }
 
 // TestPrePushHookScopesTheGateToTheRefsGitPasses proves the hook reads git's pre-push stdin protocol

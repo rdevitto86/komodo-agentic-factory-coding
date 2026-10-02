@@ -458,3 +458,25 @@ func TestAFixThatBreaksADoneWhenDoesNotCommit(t *testing.T) {
 		t.Fatal("the next fix brief must carry the done_when failure")
 	}
 }
+
+// TestIsToolkitNeedsTheKomodoModule proves a target repo whose own binary is cmd/komodo is not the toolkit.
+func TestIsToolkitNeedsTheKomodoModule(t *testing.T) {
+	cases := map[string]bool{"komodo": true, "github.com/example/runner": false, "": false}
+	for module, want := range cases {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if module != "" {
+			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module "+module+"\n\ngo 1.27\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := isToolkit(root); got != want {
+			t.Errorf("module %q: isToolkit = %v, want %v", module, got, want)
+		}
+	}
+}
