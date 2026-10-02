@@ -28,7 +28,7 @@ const usage = `komodo: the code assembly line.
   komodo ingest [group]       Compile each READY group into a card under .komodo/queue
   komodo close <task>         Validate the result, rerun the checks, flip the status
   komodo close --wave N [g]   QC: merge the group's wave, compile, verify
-  komodo close --group [g]    Ship: commit, push, the pull request, the changelog
+  komodo close --group [g]    Ship: commit, push, the pull request
   komodo check <kind> <id>    The checks hooks and agents call: task, scope, or a review's findings
   komodo comments check       The mechanical comment lint
   komodo diff                 The reviewer's whole input: tasks, standards, diff
@@ -37,7 +37,6 @@ const usage = `komodo: the code assembly line.
   komodo rephase <e> <v>      Move an open epic to a new version: branch, pull requests, backlog
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo release build        Build the per-platform binaries as release assets
-  komodo release fold         Fold every changelog fragment into CHANGELOG.md
   komodo release publish      Build, test, checksum and publish the newest version as a release
   komodo install --host X     Mount this repo on a host, or on both
   komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
