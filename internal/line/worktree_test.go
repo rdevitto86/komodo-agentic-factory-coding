@@ -697,6 +697,28 @@ func TestAddWorktreeCutsFromBaseNotFromStaleOrigin(t *testing.T) {
 	}
 }
 
+// TestAPersonOwnsEveryBranchTheLineCut proves a cut branch is free for a person to take: checked
+// out, committed to, and deleted in the root, all while the line's own worktree lives.
+func TestAPersonOwnsEveryBranchTheLineCut(t *testing.T) {
+	root := cutRepo(t, twoGroupBacklog)
+	state, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(root, "checkout", "-b", state.Branch, TipRef(state.Branch)); err != nil {
+		t.Fatalf("a person must still check out the line's branch: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "person.txt"), []byte("person\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-q", "-m", "a person's own commit")
+	runGit(t, root, "checkout", "main")
+	if _, err := git.Run(root, "branch", "-D", state.Branch); err != nil {
+		t.Fatalf("a person must still delete the line's branch: %v", err)
+	}
+}
+
 // TestStartCutsAGroupFromTheFetchedOriginMain proves Start's own fetch of the base is not wasted:
 // a group cut after a GitHub merge carries origin/main forward, not a stale local main.
 func TestStartCutsAGroupFromTheFetchedOriginMain(t *testing.T) {

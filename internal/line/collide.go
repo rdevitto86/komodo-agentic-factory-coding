@@ -25,8 +25,9 @@ func RefuseCollision(root, taskID string) error {
 		return nil
 	}
 	merged := map[string]bool{}
-	for _, name := range strings.Split(git.Or(root, "branch", "--merged", state.Branch, "--format=%(refname:short)"), "\n") {
-		merged[strings.TrimSpace(name)] = true
+	for _, name := range strings.Split(git.Or(root, "for-each-ref", "--merged", TipRef(state.Branch),
+		"--format=%(refname)", "refs/komodo/task/"), "\n") {
+		merged[strings.TrimPrefix(strings.TrimSpace(name), "refs/komodo/")] = true
 	}
 	for _, wave := range state.Waves {
 		for _, other := range wave {
@@ -34,7 +35,7 @@ func RefuseCollision(root, taskID string) error {
 				continue
 			}
 			branch := TaskBranch(other)
-			if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/"+branch); err != nil || merged[branch] {
+			if _, err := git.Run(root, "rev-parse", "--verify", TipRef(branch)); err != nil || merged[branch] {
 				continue
 			}
 			candidate, ok := parsed.Task(other)

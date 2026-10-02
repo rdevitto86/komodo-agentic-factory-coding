@@ -311,10 +311,13 @@ func TestFacetMCPJSONChangesNothing(t *testing.T) {
 func TestCommandsJSONSwapReplacesVerifyAtQC(t *testing.T) {
 	root := gitRepo(t)
 	commit(t, root, "Makefile", "verify:\n\t@true\n", "seed")
-	if _, err := git.Run(root, "branch", "task/tsk-14.1.1"); err != nil {
+	if _, err := git.Run(root, "update-ref", TipRef("feat/a"), "HEAD"); err != nil {
 		t.Fatal(err)
 	}
-	plan := &Plan{Group: "TG-14.1", Waves: [][]string{{"TSK-14.1.1"}}}
+	if _, err := git.Run(root, "update-ref", TipRef("task/tsk-14.1.1"), "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{Group: "TG-14.1", Branch: "feat/a", Waves: [][]string{{"TSK-14.1.1"}}}
 
 	before, err := CloseWave(root, plan, 0)
 	if err != nil {

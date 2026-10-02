@@ -978,7 +978,8 @@ func PushFromWorktree(root, worktree, branch string) error {
 	if err := runPrePush(worktree, clean, ref); err != nil {
 		return fmt.Errorf("pre-push hook for %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
-	args := []string{"push", "--no-verify", clean, ref + ":" + ref}
+	// A detached worktree carries no refs/heads/<branch>; its own HEAD is always the source, attached or not.
+	args := []string{"push", "--no-verify", clean, "HEAD:" + ref}
 	env := os.Environ()
 	if username != "" || password != "" {
 		args = append([]string{"-c", "credential.helper=", "-c", "credential.helper=" + pushCredentialHelper}, args...)
@@ -1043,9 +1044,9 @@ func splitCredential(raw string) (clean, username, password string) {
 const zeroSHA = "0000000000000000000000000000000000000000"
 
 // runPrePush runs worktree's pre-push hook, if any, on ref as a push to origin at url would, in hookEnv's environment.
+// The object pushed is always the worktree's own HEAD, attached or detached, never a named local ref.
 func runPrePush(worktree, url, ref string) error {
-	// A ref that does not resolve has nothing to gate; the push itself reports it.
-	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", ref)
+	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", "HEAD")
 	if err != nil {
 		return nil
 	}

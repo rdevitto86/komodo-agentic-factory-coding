@@ -50,16 +50,22 @@ func CloseWave(root string, plan *Plan, index int) (*WaveResult, error) {
 		// A single-mode group already committed every task on the group branch; nothing to merge.
 		result.Merged = append(result.Merged, plan.Waves[index]...)
 	} else {
+		old, tipErr := git.Run(group, "rev-parse", "--verify", TipRef(plan.Branch))
 		var previous string
 		for _, taskID := range plan.Waves[index] {
 			branch := TaskBranch(taskID)
-			if _, err := git.Run(group, "merge", "--no-ff", "-m", "merge "+taskID, branch); err != nil {
+			if _, err := git.Run(group, "merge", "--no-ff", "-m", "merge "+taskID, TipRef(branch)); err != nil {
 				result.Conflict = conflictMessage(previous, taskID, err)
 				_, _ = git.Run(group, "merge", "--abort")
 				return result, nil
 			}
 			result.Merged = append(result.Merged, taskID)
 			previous = taskID
+		}
+		if tipErr == nil {
+			if err := Advance(group, plan.Branch, group, old); err != nil {
+				return result, err
+			}
 		}
 	}
 	result.Gates = RunGate(group, CompileCommands(root, group))

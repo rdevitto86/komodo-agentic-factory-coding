@@ -150,6 +150,15 @@ func AddDetached(root, branch, startRef, path string) error {
 	return nil
 }
 
+// startFor resolves the ref to cut branch from: its own komodo tip when the line already holds
+// one, else branch itself, so a task cut from a line-cut group finds its detached tip.
+func startFor(root, branch string) string {
+	if _, err := git.Run(root, "rev-parse", "--verify", TipRef(branch)); err == nil {
+		return TipRef(branch)
+	}
+	return branch
+}
+
 // worktreeTracking names the path of a worktree already tracking branch, empty when none does.
 func worktreeTracking(root, branch string) (string, error) {
 	worktrees, err := git.Worktrees(root)
