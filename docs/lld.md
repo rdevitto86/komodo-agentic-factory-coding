@@ -39,7 +39,7 @@ Cleanup is mechanical (REQ-46):
 |---|---|
 | An epic's group files | The PR of the epic's last open group deletes them; a group with no epic deletes its own file |
 | An epic's files that outlived it | `komodo sync` opens a cleanup PR, for example when an epic's last two groups finished together |
-| A group's worktree and local branch | Ship finishes, or the next run starts, for merged or abandoned groups |
+| A group's detached worktree and its `refs/komodo/<branch>` tip | Ship finishes, or the next run starts, for merged or abandoned groups; Komodo never deletes a branch under `refs/heads/` (decision 0012) |
 | A group's remote branch | The forge deletes head branches on merge; `komodo doctor --remote` checks that setting |
 | Run folders | Only the last 10 runs are kept, a starting value |
 | Anything else | `komodo doctor` flags an ended epic's files, and any worktree or branch with no group |
@@ -124,12 +124,13 @@ Every model session returns JSON checked against its role's schema; the conducto
 | `komodo status [--watch]` | The current run: groups by state, time used and blockers |
 | `komodo stop [group]`, `komodo resume [group…]` | Stops with the work saved, or resumes stopped and edited groups |
 | `komodo ship <group>` | Finishes a group stopped before Ship |
+| `komodo worktree add <branch>` | Cuts a detached worktree for ad hoc work, tracking `<branch>` (decision 0012) |
 | `komodo pr create`, `komodo pr label` | Opens a pull request outside the line with its title checked and its labels applied: `@agent`, the scope `.komodo/labels.json` maps, the stage, and `branch/feature` off the default branch |
 | `komodo check <task\|findings\|scope>` | The checks that hooks and agents call |
 | `komodo backlog`, `komodo add <group> "<title>"` | Lists the open groups; adds a group or task |
 | `komodo report [run]` | Summarises a run's metrics |
-| `komodo sync` | Removes merged groups' worktrees and branches, opens a cleanup PR for an epic whose files outlived it, and updates the toolkit between runs |
-| `komodo abandon <group>` | Removes a group's worktree and branch on purpose, and marks its file BLOCKED |
+| `komodo sync` | Removes merged groups' worktrees and `refs/komodo` tips, opens a cleanup PR for an epic whose files outlived it, and updates the toolkit between runs |
+| `komodo abandon <group>` | Removes a group's worktree and `refs/komodo` tip on purpose, and marks its file BLOCKED |
 | `komodo lint`, `komodo doctor [--remote]`, `komodo eval` | Backlog grammar, machine and forge health, the golden suite |
 | `komodo release` | This repo only: builds every platform, tests and publishes |
 
@@ -265,11 +266,11 @@ Prepare runs locally with no model (REQ-24):
 Ship is the only stage that reads the forge credential (REQ-26):
 
 1. If the group's epic has no branch yet, cut `feat/v<epic's version>` from `main` and open it as a draft PR to `main`.
-2. Push the group branch, never a protected one.
+2. Push `refs/komodo/<branch>` to `refs/heads/<branch>` on origin, never a protected one; the push drops the builder's lease.
 3. Open the group's PR against its base from step 5 above. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status: wip` (REQ-25).
 4. Add the labels. Once every check and review has passed, mark the PR ready and remove `status: wip`, then the conductor merges it into its epic branch. Only a person merges an epic branch's own PR into `main` (decision 0006).
 5. When a stacked parent merges, rebase the child and point its PR at the new base.
-6. Remove the group's worktree, local branch and sessions.
+6. Remove the group's worktree, its `refs/komodo` tip and sessions.
 
 Ship also publishes a blocked group: it pushes the group's branch with its blocker note and opens a draft PR labelled `status: blocked`.
 
@@ -353,9 +354,10 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 
 | Hook | Session | Checks one thing | On a violation | Limit | If the hook itself fails |
 |---|---|---|---|---|---|
-| Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths | Refuses, naming the allowed alternative | — | Allows and logs |
+| Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths, attaching a branch in a linked worktree, a push to a branch a builder's lease holds | Refuses, naming the allowed alternative | — | Allows and logs |
 | Gate, commit-msg | Every committer, model or not | The message carries no trailer the loaded policy names | Refuses, naming the trailer to remove | — | Fails, naming the missing binary |
-| Gate, pre-commit | Every committer, model or not | The branch is not critical, and is `<type>/<kebab-name>`, an epic branch, a line-cut slug, or detached | Refuses, naming the branch to rename | — | Fails, naming the missing binary |
+| Gate, pre-commit | Every committer, model or not | The branch, or a detached worktree's tracked branch, is not critical, and is `<type>/<kebab-name>`, an epic branch, a line-cut slug, or detached | Refuses, naming the branch to rename | — | Fails, naming the missing binary |
+| Gate, pre-push | Every pusher, model or not | The pushed ref is not critical, and no builder's lease holds it | Refuses, naming the lease's group, pid and lapse time | — | Fails, naming the missing binary |
 | Guard, PreToolUse, line tier | A session `KOMODO_ROLE` names (decision 0008) | The global tier, plus writes outside the worktree, isolated spawns, and the epic branch's push and merge | Refuses, naming the allowed alternative | 3 refusals of one rule per session, then the session ends as blocked | Allows and logs |
 | Format, PostToolUse on edits | Builder | Formats the edited file and lints only that file | Never refuses; returns lint output as context | — | Skips |
 | Task checks, Stop | Builder | The group's checks pass | Refuses to stop, with the failing output | 3, the host's stop-hook cap | Allows; Check still reruns everything |
@@ -379,7 +381,7 @@ Each role's settings carry an allow list that covers everything its stage needs 
 |---|---|---|---|
 | Builder | Reading, searching, creating, editing, moving and deleting files in the worktree; read-only git (`status`, `diff`, `log`, `show`, `blame`); the repo's build, test, lint and format commands; `komodo check` | Git writes (commit, switch, reset, rebase, merge, stash, push); network tools beyond the sandbox allowlist; anything outside the worktree | Commits, branches, syncing with the base, conflict setup, cleanup |
 | Review lens | Reading, searching, read-only git | Every edit and every git write | Running reproducers and validators |
-| Orchestrator | Everything in the current repo, including this repo's rules, skills and guard source; switching to `main` and fast-forwarding it; creating and deleting feature branches; spawning its own isolated agents for ad hoc work; `komodo`; read-only `gh` | Commits, pushes, merges, deletes or force on `main`; commit trailers; hand edits to `.git/config` and `.git/hooks` | Shipping, through `komodo ship` |
+| Orchestrator | Everything in the current repo, including this repo's rules, skills and guard source; switching to `main` and fast-forwarding it; creating and deleting feature branches; cutting detached worktrees with `komodo worktree add`; spawning its own isolated agents for ad hoc work; `komodo`; read-only `gh` | Commits, pushes, merges, deletes or force on `main`; commit trailers; hand edits to `.git/config` and `.git/hooks`; attaching a branch in a linked worktree; a push to a branch a builder's lease holds | Shipping, through `komodo ship` |
 
 ### Cross-platform: macOS, Linux, Windows
 

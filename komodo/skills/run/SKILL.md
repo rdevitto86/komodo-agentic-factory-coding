@@ -46,5 +46,5 @@ orchestrator's own default agents, spawned outside the line and its line tier, w
 own (decision 0003). `komodo brief <task>` on its own is legal, and so is a review with no group, but
 neither runs through `komodo step`.
 
-An isolated spawn's worktree starts at the default branch, not yours: put `git checkout -b <branch> <sha>`
+An isolated spawn's worktree starts at the default branch, not yours: put `git switch --detach <sha>`
 first in its prompt, naming your own branch tip.

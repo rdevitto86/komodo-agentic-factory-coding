@@ -1,6 +1,6 @@
 # 0008. The guard has a global tier and a line tier
 
-**Status:** Accepted, 2026-10-02.
+**Status:** Accepted, 2026-10-02. Amended by 0012, 2026-10-02.
 
 **Context.** Most of the first line's loops came from hooks: the guard judged the line's own commands, refused a script whose text held "git", and ended the orchestrator's session for spawning builders. One set of rules can't fit both a captive line session and the person's own orchestrator.
 
