@@ -26,7 +26,7 @@ type kindLine struct {
 	Type string `json:"type"`
 }
 
-// resultLine is the result event's fields: the meter's totals and the ID a resume reuses (decision 0025).
+// resultLine is the result event's fields: the meter's totals and the ID a resume reuses.
 type resultLine struct {
 	NumTurns     int     `json:"num_turns"`
 	SessionID    string  `json:"session_id"`

@@ -1,6 +1,6 @@
 # 0001. V1 is a clean rebuild in which the binary decides and models do
 
-**Status:** Accepted, 2026-09-25.
+**Status:** Accepted, 2026-09-25. Port table locations updated 2026-10-02.
 
 **Context.** The first 1.0.0 line worked end to end on one Mac, but readiness stalled between 72 and 88 for two weeks. The cause was the design, not the models. Every row below was measured in this repo on 2026-09-25; later entries cite a row as "evidence n".
 
@@ -31,7 +31,7 @@ The Python prototype died the same way: "every open backlog item was about keepi
 | A pure decision function over disk state | `Next` in `internal/line/snapshot.go`, fuzzed | Deterministic, restartable, testable without a model |
 | A worktree per unit of work, waves by file overlap | `internal/line/worktree.go`, `internal/plan` | Parallel builds with no shared state |
 | Schema-checked results | `komodo/roles/*.schema.json`, `internal/line/schema.go` | Output is data, rejected when wrong |
-| Credential scrub, then the binary pushes | `Scrub` and `finishShip` in `internal/run/run.go` | The model never pushes |
+| Credential scrub, then the binary pushes | `Scrub` and `FinishShip` in `internal/line/ship.go` | The model never pushes |
 | Brief slots with caps and clip markers | `internal/line/brief_slots.go`, `clip.go` | Bounded input, the same bytes on any machine |
 | The ledger | `internal/ledger` | Metrics cost zero tokens |
 | The plan probe | `internal/mount/claude/limits.go` | Reads the plan and usage window without a model |

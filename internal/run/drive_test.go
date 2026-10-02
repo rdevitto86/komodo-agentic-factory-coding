@@ -174,7 +174,7 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	if err != nil || !strings.Contains(string(review), `"findings"`) {
 		t.Fatalf("review result = %q, %v; the reviewer's result must be saved for ship", review, err)
 	}
-	// A no-epic group deletes its own file once it ships, its tasks' ticks the record (decision 0009).
+	// A no-epic group deletes its own file once it ships, its tasks' ticks the record.
 	if _, err := exec.Command("git", "-C", bareRemote(t, root), "show",
 		"feat/TG-40.1-a-fake-group:docs/backlog/TG-40.1-a-fake-group.md").CombinedOutput(); err == nil {
 		t.Fatal("the shipped group's own file must be removed once it has no epic")

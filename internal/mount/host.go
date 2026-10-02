@@ -71,7 +71,7 @@ type Result struct {
 	Value map[string]any
 }
 
-// Capabilities are the four things a mount's sessions may do (decision 0004).
+// Capabilities are the four things a mount's sessions may do.
 type Capabilities struct {
 	Resume     bool
 	Sandbox    bool
@@ -79,7 +79,7 @@ type Capabilities struct {
 	Structured bool
 }
 
-// Contract is the host contract every mount implements (decision 0004).
+// Contract is the host contract every mount implements.
 type Contract interface {
 	// Preflight reports whether the host is installed, pinned and logged in, or the fix when not.
 	Preflight() error

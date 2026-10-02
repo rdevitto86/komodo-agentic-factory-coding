@@ -2,7 +2,7 @@
 
 How each part works. A builder reads one section of this file through a task's `context`, such as `docs/lld.md#interfaces`; nobody reads it whole. Headings carry no numbers, so a citation survives a reorder. A requirement's number is cited by its `REQ-n`, never copied. A contract, manifest, schema, or migration is linked, never restated. A section that does not apply says "Not applicable."
 
-**Status:** Accepted, 2026-09-25, for 1.0.0. The mechanics behind decisions 0001 to 0023. Values marked "starting value" are tunables that no requirement sets; the first eval recalibrates them.
+**Status:** Accepted, 2026-09-25, for 1.0.0. The mechanics behind the decisions in `decisions/`. Values marked "starting value" are tunables that no requirement sets; the first eval recalibrates them.
 
 ## Data model
 
@@ -31,7 +31,7 @@ A task needs a title and its files (REQ-9). `accept` lines are optional; they fe
 
 ### The backlog
 
-The backlog is a committed plan that keeps agents in sync across workloads (decision 0009). It is one file per group in `docs/backlog/`, named `<group-id>-<slug>.md`, and each file carries its epic's ID. People and the orchestrator write groups through `/plan` or `komodo add`, and plan changes land through pull requests like any other change. The conductor reads groups from the base branch, ticks boxes on each group's own branch, and keeps live progress in run state. A group's PR therefore shows the code and the completed task list together, and adds the group's line as a fragment in `changelog.d/<version>/<group>.md`, so two open PRs never edit the same file. Every reader folds the fragments into `CHANGELOG.md`, the shared history, and `komodo release fold` writes them in on a branch before a release. There is no index and no archive: `komodo backlog` lists the open groups.
+The backlog is a committed plan that keeps agents in sync across workloads (decision 0007). It is one file per group in `docs/backlog/`, named `<group-id>-<slug>.md`, and each file carries its epic's ID. People and the orchestrator write groups through `/plan` or `komodo add`, and plan changes land through pull requests like any other change. The conductor reads groups from the base branch, ticks boxes on each group's own branch, and keeps live progress in run state. A group's PR therefore shows the code and the completed task list together, and adds the group's line as a fragment in `changelog.d/<version>/<group>.md`, so two open PRs never edit the same file. Every reader folds the fragments into `CHANGELOG.md`, the shared history, and `komodo release fold` writes them in on a branch before a release. There is no index and no archive: `komodo backlog` lists the open groups.
 
 Cleanup is mechanical (REQ-46):
 
@@ -48,7 +48,7 @@ A PR closed without merging gets a blocker note, and its group stays open.
 
 ### Blocker notes
 
-When the orchestrator can't settle an escalation, the conductor stops the group and sets it BLOCKED. It writes a note under the group heading on the group's branch, then publishes the branch as a draft PR labelled `status: blocked`, so every developer and agent sees it (decision 0011):
+When the orchestrator can't settle an escalation, the conductor stops the group and sets it BLOCKED. It writes a note under the group heading on the group's branch, then publishes the branch as a draft PR labelled `status: blocked`, so every developer and agent sees it (decision 0010):
 
 ```markdown
 > **Blocked** 2026-09-25 14:02, run r-0142, at Review.
@@ -137,7 +137,7 @@ Every model session returns JSON checked against its role's schema; the conducto
 
 Each one is a thin skill that calls `komodo`. `/run` is the line's one entry; the conductor drives every
 stage from there, no session relaying it. Ad hoc work is the orchestrator spawning its own default
-agents outside the line, with no skill of its own (decision 0034).
+agents outside the line, with no skill of its own (decision 0005).
 
 | Command | Does |
 |---|---|
@@ -149,7 +149,7 @@ agents outside the line, with no skill of its own (decision 0034).
 
 ### The host contract
 
-A host mount implements these operations (decision 0004). Claude Code implements every one.
+A host mount implements these operations (decision 0002). Claude Code implements every one.
 
 | Operation | Contract | Claude Code, CLI 2.1.282 |
 |---|---|---|
@@ -166,7 +166,7 @@ A host without resume gets a fresh session with the fix list and the saved diff.
 ### How the conductor runs a Claude Code session
 
 - **Where:** the process starts in the group's worktree.
-- **What it loads:** the host's default config directory, which holds the login (decision 0025). `--setting-sources local` shuts out personal settings and instructions and the project's shared skills; the brief carries the repo's `AGENTS.md` rules (decision 0027). `--plugin-dir` adds the role's own plugin (its skills, hooks and agents). `--settings` adds the role's permissions and turns auto-memory off. `--strict-mcp-config` keeps MCP servers out.
+- **What it loads:** the host's default config directory, which holds the login (decision 0006). `--setting-sources local` shuts out personal settings and instructions and the project's shared skills; the brief carries the repo's `AGENTS.md` rules (decision 0006). `--plugin-dir` adds the role's own plugin (its skills, hooks and agents). `--settings` adds the role's permissions and turns auto-memory off. `--strict-mcp-config` keeps MCP servers out.
 - **What it may use:** `--tools` lists the role's tools. `--permission-mode dontAsk` refuses anything outside the allow list without a prompt (spike S2).
 - **Which model:** `--model` and `--effort` come from the profile.
 - **Limits:** `--max-budget-usd` on API billing, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=3`, `CLAUDE_CODE_MAX_TURNS` per role, and the conductor's clock, which kills the process tree at the limit. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is never set: it keeps `GH_TOKEN` and overrides `dontAsk` (spike S8).
@@ -294,9 +294,9 @@ GitHub Free offers draft PRs and rulesets only on public repositories; `komodo d
 
 | Variable | Pinned by |
 |---|---|
-| Host CLI version | Not pinned (decision 0033). `DISABLE_AUTOUPDATER` is set in each session's environment, so it never changes mid-run. |
+| Host CLI version | Not pinned (decision 0006). `DISABLE_AUTOUPDATER` is set in each session's environment, so it never changes mid-run. |
 | Model | Full IDs in the profile, such as `claude-sonnet-5` and `claude-opus-5-5` |
-| Personal layer | `--setting-sources local` and `--strict-mcp-config`; no personal settings, instructions, plugins or MCP, and no shared project skills (REQ-3, decisions 0025 and 0027) |
+| Personal layer | `--setting-sources local` and `--strict-mcp-config`; no personal settings, instructions, plugins or MCP, and no shared project skills (REQ-3, decision 0006) |
 | Rules and skills | The role's own plugin, plus the repo's `AGENTS.md` |
 | `komodo` binary | A published release in product repos; rebuilt on pull in this repo (REQ-5) |
 | Shell | POSIX `sh`: native on macOS, Linux and WSL2; Git Bash's on native Windows |
@@ -309,7 +309,7 @@ A profile maps each role to a model and an effort. The conductor picks full or e
 
 | Role | Full mode: Max plans and API billing | Economy mode: Pro plan |
 |---|---|---|
-| Builder, and every repair | Opus, medium effort (decision 0031) | Sonnet, medium effort |
+| Builder, and every repair | Opus, medium effort (decision 0016) | Sonnet, medium effort |
 | Correctness, and security and readiness lenses | Opus, high effort | One combined lens: Sonnet, high effort |
 | Quality lens | Sonnet, medium effort | Part of the combined lens |
 | Planner | Opus | Sonnet |
@@ -356,7 +356,7 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 | Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths | Refuses, naming the allowed alternative | — | Allows and logs |
 | Gate, commit-msg | Every committer, model or not | The message carries no trailer the loaded policy names | Refuses, naming the trailer to remove | — | Fails, naming the missing binary |
 | Gate, pre-commit | Every committer, model or not | The branch is not critical, and is `<type>/<kebab-name>`, an epic branch, a line-cut slug, or detached | Refuses, naming the branch to rename | — | Fails, naming the missing binary |
-| Guard, PreToolUse, line tier | A session `KOMODO_ROLE` names (decision 0034) | The global tier, plus writes outside the worktree, isolated spawns, and the epic branch's push and merge | Refuses, naming the allowed alternative | 3 refusals of one rule per session, then the session ends as blocked | Allows and logs |
+| Guard, PreToolUse, line tier | A session `KOMODO_ROLE` names (decision 0013) | The global tier, plus writes outside the worktree, isolated spawns, and the epic branch's push and merge | Refuses, naming the allowed alternative | 3 refusals of one rule per session, then the session ends as blocked | Allows and logs |
 | Format, PostToolUse on edits | Builder | Formats the edited file and lints only that file | Never refuses; returns lint output as context | — | Skips |
 | Task checks, Stop | Builder | The group's checks pass | Refuses to stop, with the failing output | 3, the host's stop-hook cap | Allows; Check still reruns everything |
 | Evidence, Stop | Review lens | Every blocking finding carries evidence | Refuses to stop, listing the findings without evidence | 2, then those findings become notes | Allows |
@@ -373,7 +373,7 @@ The boundaries that stop hook loops:
 
 ### Permissions
 
-Each role's settings carry an allow list that covers everything its stage needs (REQ-38, decision 0014). Git housekeeping belongs to the conductor, so no agent ever needs it.
+Each role's settings carry an allow list that covers everything its stage needs (REQ-38, decision 0013). Git housekeeping belongs to the conductor, so no agent ever needs it.
 
 | Role | Allowed without asking | Refused | Done by the conductor instead |
 |---|---|---|---|
@@ -437,13 +437,13 @@ Its matcher covers every host tool that runs a command: Bash, PowerShell and Mon
 
 The forge credential stays with the conductor. Ship reads it from the developer's git credential store, or from `gh`, and gives it only to its own push. Every model session starts from a scrubbed environment, and the sandbox's network allowlist excludes the forge.
 
-In this repo, the orchestrator may edit the guard, the policy and the skills on a branch (decision 0015). A change takes effect only after a human merges it and the binary rebuilds, so a session never loosens its own guard. A builder may edit those files only when its task list names them.
+In this repo, the orchestrator may edit the guard, the policy and the skills on a branch (decision 0013). A change takes effect only after a human merges it and the binary rebuilds, so a session never loosens its own guard. A builder may edit those files only when its task list names them.
 
 ## Operations
 
 ### Install
 
-`install.sh` (macOS, Linux, WSL2) and `install.ps1` (native Windows) sit at the repo root (decision 0019). Each is safe to run again, which is also how an update works:
+`install.sh` (macOS, Linux, WSL2) and `install.ps1` (native Windows) sit at the repo root (decision 0017). Each is safe to run again, which is also how an update works:
 
 1. Check for git and Claude Code, and say how to install whichever is missing.
 2. Build the binary if Go is present; otherwise download the pinned release and verify its checksum.
@@ -476,7 +476,7 @@ Inside WSL2, the installer also checks that the repo is on the Linux filesystem.
 
 ### Plugins
 
-A plugin is a folder with a manifest naming its type, the roles and stages it attaches to, and its settings. V1 ships the three types, each disabled until enabled per machine (REQ-42, decision 0020):
+A plugin is a folder with a manifest naming its type, the roles and stages it attaches to, and its settings. V1 ships the three types, each disabled until enabled per machine (REQ-42):
 
 - **Notifiers:** copy blocker notes and run summaries somewhere else, such as Slack or Google Chat later. They never decide anything.
 - **Tool packs:** mechanical commands, such as cloud CLIs for AWS, GCP or Azure, added to a role's allow list behind the guard.
@@ -494,7 +494,7 @@ Each phase is a patch on the current code: `Next`, the stations and the ledger s
 | 3. Groups, review and repair, weeks 2–3 | REQ-7–REQ-10, REQ-12, REQ-18–REQ-25, REQ-27, REQ-30, REQ-32, REQ-45, REQ-46 | The backlog files, cleanup and blocker notes; group cards and checkboxes; parallel lenses and evidence checks; resumed repair and re-review; the progress rule; escalations; draft-first shipping; pacing. Open groups move from `BACKLOG.md` into `docs/backlog/`. | A 3-group plan runs unattended to draft PRs |
 | 4. Install, platforms and eval, weeks 3–4 | REQ-1, REQ-39, REQ-42–REQ-44 | Install scripts, native Windows and WSL2, the release command, plugin points, the golden suite and `komodo eval` | The success criteria hold on all three platforms, and the owner cuts 1.0.0 |
 
-A phase starts once the spikes its decisions name have passed. Work that decision 0022 parks lands nothing new.
+A phase starts once the spikes its decisions name have passed. Work the PRD scopes out of 1.0.0 lands nothing new.
 
 ## Recovery
 

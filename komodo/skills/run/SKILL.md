@@ -43,7 +43,7 @@ The line is captive: `/run`, which runs `komodo run`, is its one entry. No sessi
 a drain, `komodo run <group>`, `--no-ship`, and `--dry-run` all drive the conductor directly, never a
 model. Ad hoc work — one stage on a group, or with no group at all — is never this skill; it is the
 orchestrator's own default agents, spawned outside the line and its line tier, with no skill of their
-own (decision 0034). `komodo brief <task>` on its own is legal, and so is a review with no group, but
+own (decision 0005). `komodo brief <task>` on its own is legal, and so is a review with no group, but
 neither runs through `komodo step`.
 
 An isolated spawn's worktree starts at the default branch, not yours: put `git checkout -b <branch> <sha>`

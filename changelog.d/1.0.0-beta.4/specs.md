@@ -1,4 +1,4 @@
 - **Specs are `prd.md`, `hld.md`, `lld.md` and `docs/decisions/`,** one file per decision, with `docs/diagrams/` and `docs/media/` beside them; `komodo lint` refuses two decisions with one number (decision 0035)
 - **The backlog carries EPIC-04 to EPIC-08's 174 open findings into EPIC-11,** and drops the shipped groups and 22 findings already fixed or obsolete
 - **`komodo guard release` names the repo it searched** when it finds no claim
-- **`komodo pr create` and `komodo pr label` open and label a pull request outside the line,** checking its title; the guard refuses a model's `gh pr create`, and a repo maps its scopes in `.komodo/labels.json` (decision 0036)
+- **`komodo pr create` and `komodo pr label` open and label a pull request outside the line,** checking its title; the guard refuses a model's `gh pr create`, and a repo maps its scopes in `.komodo/labels.json` (decision 0028)

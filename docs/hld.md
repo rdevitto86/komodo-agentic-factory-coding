@@ -2,14 +2,14 @@
 
 The parts and how they connect: small enough for a planner and a reviewer to read whole. Names and reasons only; a flag, field, or version belongs in `lld.md`, and a number in `prd.md`. Every heading here exists in exactly one spec file, so a task cites one place.
 
-**Status:** Accepted, 2026-09-25, for 1.0.0. It describes the target that decisions 0001 to 0023 set; `decisions/` holds why.
+**Status:** Accepted, 2026-09-25, for 1.0.0. It describes the target the decisions set; `decisions/` holds why.
 
 ## Purpose
 
 Komodo bolts onto Claude Code as rules, skills, configuration and compiled binaries. It is two products in one install:
 
 - **A session harness.** Every Claude Code session a developer opens gains the orchestrator: the guard, the line's commands, and the skills to plan, run and watch work.
-- **A code factory.** The assembly line turns task groups into reviewed, draft-first pull requests, the same way on every machine. The line is captive: `/run`, which runs `komodo run`, is its one entry, and the conductor binary drives every stage from there (decision 0005, amended by 0034).
+- **A code factory.** The assembly line turns task groups into reviewed, draft-first pull requests, the same way on every machine. The line is captive: `/run`, which runs `komodo run`, is its one entry, and the conductor binary drives every stage from there (decision 0005).
 
 Five principles shape it:
 

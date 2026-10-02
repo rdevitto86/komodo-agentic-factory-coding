@@ -10,7 +10,7 @@ import (
 )
 
 // TestSessionCanaryInPersonalConfigDoesNotLeakToArgv verifies that personal config
-// canary strings never appear in session argv per decision 0025.
+// canary strings never appear in session argv.
 func TestSessionCanaryInPersonalConfigDoesNotLeakToArgv(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

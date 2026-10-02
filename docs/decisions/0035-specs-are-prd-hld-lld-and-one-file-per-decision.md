@@ -2,7 +2,7 @@
 
 **Status:** Accepted, 2026-10-02.
 
-**Context.** The four spec files were `prd.md`, `architecture.md`, `system-design.md` and `decisions.md`. People and agents confused the middle two: both describe the design, and the names do not say where one ends. The decision log was one append-only file, so two branches that each added a decision always conflicted at its end, the same failure that moved the backlog to one file per group (0009). Repos on the older PRD and SDD pair mixed slow structure with code-paced detail in one file, and buried decisions in a table.
+**Context.** The four spec files were `prd.md`, `architecture.md`, `system-design.md` and `decisions.md`. People and agents confused the middle two: both describe the design, and the names do not say where one ends. The decision log was one append-only file, so two branches that each added a decision always conflicted at its end, the same failure that moved the backlog to one file per group (0007). Repos on the older PRD and SDD pair mixed slow structure with code-paced detail in one file, and buried decisions in a table.
 
 **Decision.** A repo's specs are `docs/prd.md`, `docs/hld.md`, `docs/lld.md` and `docs/decisions/`, one file per decision named `NNNN-<slug>.md`. The high-level design holds what would survive a rewrite in another language: purpose, context, components, boundaries, data flow, the C4 context and container levels. The low-level design holds what changes with the code: data model, interfaces, operations, recovery and testing, the component level and below. `komodo lint` refuses two decision files with one number. Beside them, `docs/diagrams/` holds each diagram's editable source next to its export, and `docs/media/` the static images, videos and GIFs a doc shows.
 
