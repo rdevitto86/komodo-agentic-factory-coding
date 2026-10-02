@@ -57,7 +57,27 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 		done = append(done, "merged local branch "+branch+"; komodo never deletes it, run git branch -d "+branch+" to")
 	}
 	done = append(done, pruneRuns(root, open)...)
+	done = append(done, pruneClaims(root)...)
 	return done, nil
+}
+
+// claimsDir is where the guard kept branch claims until they were removed; nothing reads it now.
+const claimsDir = "komodo-claims"
+
+// pruneClaims deletes the shared git dir's dead branch-claim directory.
+func pruneClaims(root string) []string {
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(common, claimsDir)
+	if _, err := os.Stat(dir); err != nil {
+		return nil
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return []string{"could not remove the dead branch claims at " + dir + ": " + err.Error()}
+	}
+	return []string{"removed the dead branch claims at " + dir}
 }
 
 // settleShippedRun sweeps clean, unleased, landed worktrees and orphan landed tips, never an open run's; unconfirmed, it lists.

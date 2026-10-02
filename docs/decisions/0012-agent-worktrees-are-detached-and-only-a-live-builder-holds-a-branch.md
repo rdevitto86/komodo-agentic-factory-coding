@@ -20,6 +20,7 @@
 
 **Consequences.**
 
+- **`komodo worktree add` is a complete ad hoc workflow:** it cuts the detached worktree and leaves it free to push the branch it tracks, by the command it prints; only a builder's worktree refuses a push.
 - **A person can always check out, commit to or delete any local branch.** Only a push to a branch a builder is working on is refused, for at most 2 hours.
 - **A line branch appears locally after a fetch,** and `refs/komodo/*` holds unpushed work until it ships or is abandoned.
 - **The line's merged worktrees leave no local branch to delete;** REQ-46's "branches" now means the `refs/komodo` tips.
