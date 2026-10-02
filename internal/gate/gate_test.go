@@ -7,13 +7,18 @@ import (
 	"io"
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/guard"
+	"komodo/internal/lease"
+	"komodo/internal/proc"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestRunStopsAtTheFirstFailure(t *testing.T) {
@@ -1272,7 +1277,7 @@ func TestPrePushHookScopesTheGateToTheRefsGitPasses(t *testing.T) {
 }
 
 // TestGatePrePushHookChecksThePushedRefsBranchName proves the hook passes remoteref to
-// --check-push-ref, so a critical ref or a non-conforming branch name is refused before the fuzz lane runs.
+// --check-push, so a critical ref or a non-conforming branch name is refused before the fuzz lane runs.
 func TestGatePrePushHookChecksThePushedRefsBranchName(t *testing.T) {
 	root := toolkitCheckoutFor(t)
 	fakes := t.TempDir()
@@ -1289,7 +1294,7 @@ func TestGatePrePushHookChecksThePushedRefsBranchName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pre-push: %v: %s", err, out)
 	}
-	if !strings.Contains(string(out), "gate --check-push-ref refs/heads/main") {
+	if !strings.Contains(string(out), "gate --check-push refs/heads/main") {
 		t.Fatalf("out = %q, want the pushed ref checked", out)
 	}
 }
@@ -1499,5 +1504,59 @@ func TestPreCommitHookSkipsADetachedHead(t *testing.T) {
 	out, err := commitIn(t, root, "--allow-empty", "-m", "fix: on a detached head")
 	if err != nil {
 		t.Fatalf("err = %v, out = %q", err, out)
+	}
+}
+
+// TestPrePushHookChecksEveryPushedRef proves each stdin line's remote ref reaches --check-push, not just the first.
+func TestPrePushHookChecksEveryPushedRef(t *testing.T) {
+	root := toolkitCheckoutFor(t)
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho go \"$@\"\n")
+	script := filepath.Join(fakes, "pre-push")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = root
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	cmd.Stdin = strings.NewReader("refs/heads/feat/a abc refs/heads/feat/a def\nrefs/heads/feat/b abc refs/heads/feat/b def\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pre-push: %v: %s", err, out)
+	}
+	for _, ref := range []string{"refs/heads/feat/a", "refs/heads/feat/b"} {
+		if !strings.Contains(string(out), "gate --check-push "+ref) {
+			t.Fatalf("out = %q, want %s checked", out, ref)
+		}
+	}
+}
+
+// TestPushProblemRefusesALeasedBranchExceptToItsOwnRun proves a person's push to a live lease is refused
+// with the group, pid and lapse time, the lease's own run passes, and a lapsed lease frees the branch.
+func TestPushProblemRefusesALeasedBranchExceptToItsOwnRun(t *testing.T) {
+	root, _, _ := pushRepo(t, "a.txt", "a\n")
+	holder, ok := proc.Of(os.Getpid())
+	if !ok {
+		t.Skip("this platform cannot name a process by its start time")
+	}
+	now := time.Now()
+	if err := lease.Take(root, "TG-1", "feat/held", holder, now); err != nil {
+		t.Fatal(err)
+	}
+	policy := guard.DefaultPolicy()
+	t.Setenv(lease.RunEnv, "")
+	problem := PushProblem(root, "refs/heads/feat/held", policy, now)
+	if !strings.Contains(problem, "TG-1") || !strings.Contains(problem, strconv.Itoa(os.Getpid())) || !strings.Contains(problem, "until") {
+		t.Fatalf("problem = %q, want the group, pid and lapse time", problem)
+	}
+	if problem := PushProblem(root, "refs/heads/feat/free", policy, now); problem != "" {
+		t.Fatalf("an unleased branch refused: %q", problem)
+	}
+	if problem := PushProblem(root, "refs/heads/feat/held", policy, now.Add(lease.TTL+time.Minute)); problem != "" {
+		t.Fatalf("a lapsed lease refused: %q", problem)
+	}
+	t.Setenv(lease.RunEnv, strconv.Itoa(os.Getpid()))
+	if problem := PushProblem(root, "refs/heads/feat/held", policy, now); problem != "" {
+		t.Fatalf("the lease's own run refused: %q", problem)
 	}
 }

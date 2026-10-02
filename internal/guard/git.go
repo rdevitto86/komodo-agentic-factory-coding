@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"komodo/internal/git"
+	"komodo/internal/lease"
 )
 
 // noVerifyCommands are the git subcommands whose --no-verify skips the gate's own hook.
@@ -27,7 +29,7 @@ func gitFindings(words []string, dir, branch string, policy Policy) []string {
 	}
 	switch sub {
 	case "push":
-		findings = append(findings, pushFindings(rest, branch, policy)...)
+		findings = append(findings, pushFindings(rest, dir, branch, policy)...)
 	case "commit":
 		if policy.IsCritical(branch) && normalizeMode(policy.Mode) != ModeUnsafe {
 			findings = append(findings, fmt.Sprintf("git commit on %s: create a branch first", branch))
@@ -45,7 +47,7 @@ func gitFindings(words []string, dir, branch string, policy Policy) []string {
 	case "switch":
 		findings = append(findings, switchFindings(rest, gitDirectory(dir, words[1:]), policy)...)
 	case "update-ref":
-		findings = append(findings, updateRefFindings(rest, policy)...)
+		findings = append(findings, updateRefFindings(rest, dir, policy)...)
 	}
 	return findings
 }
@@ -108,7 +110,7 @@ func switchFindings(rest []string, dir string, policy Policy) []string {
 }
 
 // updateRefFindings refuses a git update-ref that moves a critical ref by hand.
-func updateRefFindings(rest []string, policy Policy) []string {
+func updateRefFindings(rest []string, dir string, policy Policy) []string {
 	if normalizeMode(policy.Mode) == ModeUnsafe {
 		return nil
 	}
@@ -120,9 +122,24 @@ func updateRefFindings(rest []string, policy Policy) []string {
 		if policy.IsCritical(ref) {
 			return []string{fmt.Sprintf("git update-ref %s: a critical ref is never moved by hand; %s", arg, worktreeAttach)}
 		}
+		if tip, ok := strings.CutPrefix(arg, "refs/komodo/"); ok {
+			return leaseFindings(dir, tip, "git update-ref "+arg)
+		}
 		break
 	}
 	return nil
+}
+
+// leaseFindings refuses an orchestrator session's write to a branch a live builder holds, unless it is that builder's own run.
+func leaseFindings(dir, branch, what string) []string {
+	if IsLineSession() {
+		return nil
+	}
+	held, ok := lease.Held(dir, branch, time.Now())
+	if !ok || held.Own() {
+		return nil
+	}
+	return []string{fmt.Sprintf("%s: %s", what, held.Refusal())}
 }
 
 // flagValue is the word after flag's first occurrence in args, or nothing when flag is absent or last.
@@ -211,7 +228,7 @@ func isForceFlag(arg string) bool {
 }
 
 // pushFindings refuses a push that rewrites history or lands on a critical ref.
-func pushFindings(rest []string, branch string, policy Policy) []string {
+func pushFindings(rest []string, dir, branch string, policy Policy) []string {
 	var findings []string
 	var positional []string
 	deletes := false
@@ -247,6 +264,7 @@ func pushFindings(rest []string, branch string, policy Policy) []string {
 			}
 			findings = append(findings, fmt.Sprintf("git %s %s: open a pull request instead", verb, target))
 		}
+		findings = append(findings, leaseFindings(dir, strings.TrimPrefix(target, "refs/heads/"), "git push to "+target)...)
 	}
 	return findings
 }

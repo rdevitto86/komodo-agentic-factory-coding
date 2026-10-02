@@ -1,13 +1,16 @@
 package doctor
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/line"
+	"komodo/internal/pr"
 )
 
 // keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
@@ -76,7 +79,8 @@ func settleShippedRun(root, base string, open []line.RunState, confirm bool) []s
 		if ref := git.Or(root, "rev-parse", "--verify", "--quiet", line.TipRef(branch)); ref != "" {
 			tip = ref
 		}
-		if !landed(root, branch, tip, remote) {
+		pushed := git.Or(worktree.Path, "config", "--worktree", "--get", "komodo.pushed")
+		if !landed(root, branch, tip, remote) && !squashLanded(root, branch, worktree.Head, pushed) {
 			continue
 		}
 		if !confirm {
@@ -97,7 +101,7 @@ func settleShippedRun(root, base string, open []line.RunState, confirm bool) []s
 		if branch == "" || held[branch] || running[branch] {
 			continue
 		}
-		if !landed(root, branch, ref, remote) {
+		if !landed(root, branch, ref, remote) && !squashLanded(root, branch, ref, "") {
 			continue
 		}
 		if !confirm {
@@ -126,6 +130,29 @@ func landed(root, branch, tip, remote string) bool {
 	}
 	_, err := git.Run(root, "merge-base", "--is-ancestor", tip, remote)
 	return err == nil
+}
+
+// mergedOnForge reports whether the forge holds a merged pull request headed by branch; no forge says no.
+var mergedOnForge = func(root, branch string) bool {
+	merged, err := pr.New(root).MergedHead(branch)
+	return err == nil && merged
+}
+
+// squashLanded reports a squash-merged branch: the forge lists its merged pull request, or origin dropped it at the pushed tip.
+func squashLanded(root, branch, tip, pushed string) bool {
+	if pushed != "" && pushed == tip && originLacks(root, branch) {
+		return true
+	}
+	return mergedOnForge(root, branch)
+}
+
+// originLacks reports whether origin answers and holds no branch of that name.
+func originLacks(root, branch string) bool {
+	cmd := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", branch)
+	cmd.Dir = root
+	err := cmd.Run()
+	var exit *exec.ExitError
+	return errors.As(err, &exit) && exit.ExitCode() == 2
 }
 
 // pruneRuns removes every run folder older than the newest keptRuns, never an open run's.

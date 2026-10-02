@@ -138,3 +138,24 @@ func TestDeleteBranchRemovesTheOldBranch(t *testing.T) {
 		t.Fatal("feat/2.0.0 should be gone from origin")
 	}
 }
+
+func TestRephasePushesTheOldTipWithoutCuttingALocalBranch(t *testing.T) {
+	root := rephaseRepo(t)
+	if _, err := Rephase(root, "EPIC-05", "3.0.0", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/feat/3.0.0"); err == nil {
+		t.Fatal("the rephase cut a local branch feat/3.0.0")
+	}
+	out, err := git.Run(root, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/feat/3.0.0")
+	if err != nil {
+		t.Fatalf("feat/3.0.0 never reached origin: %v", err)
+	}
+	old := git.Or(root, "rev-parse", "origin/feat/2.0.0")
+	if !strings.HasPrefix(out, old) {
+		t.Fatalf("origin feat/3.0.0 = %q, want the old branch's tip %s", out, old)
+	}
+	if err := pushRephasedBranch(root, "feat/2.0.0", "main"); err == nil {
+		t.Fatal("a rephase onto a critical ref was allowed")
+	}
+}

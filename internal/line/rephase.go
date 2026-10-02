@@ -93,18 +93,15 @@ func DeleteBranch(root, branch string) error {
 	return err
 }
 
-// pushRephasedBranch points newBranch at old's tip on origin and pushes it, cutting a local branch
-// only when none exists yet, so a retry never loses a branch already recut.
+// pushRephasedBranch pushes origin's oldBranch to refs/heads/newBranch, cutting no local branch, so a retry is the same push.
 func pushRephasedBranch(root, oldBranch, newBranch string) error {
+	if guard.Load(root, root).IsCritical(newBranch) {
+		return fmt.Errorf("git push to origin %s: a critical ref; landing is the human's merge button", newBranch)
+	}
 	if err := Fetch(root, oldBranch); err != nil {
 		return err
 	}
-	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", newBranch); err != nil {
-		if _, err := git.Run(root, "branch", newBranch, "origin/"+oldBranch); err != nil {
-			return err
-		}
-	}
-	return PushFromWorktree(root, root, newBranch)
+	return pushRef(root, root, "origin/"+oldBranch, newBranch)
 }
 
 // retargetPulls moves every open pull request based on oldBranch onto newBranch, returning each

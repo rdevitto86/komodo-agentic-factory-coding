@@ -83,6 +83,26 @@ func (c *Client) View(number string) (Pull, error) {
 	return pull, json.Unmarshal([]byte(out), &pull)
 }
 
+// MergedHead reports whether the forge holds a merged pull request whose head is branch.
+func (c *Client) MergedHead(branch string) (bool, error) {
+	out, err := c.run("pr", "list", "--head", branch, "--state", "merged", "--json", "headRefName", "--limit", "1")
+	if err != nil {
+		return false, err
+	}
+	var rows []struct {
+		Head string `json:"headRefName"`
+	}
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		return false, err
+	}
+	for _, row := range rows {
+		if row.Head == branch {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Edit changes a pull request's body, title, or draft state.
 func (c *Client) Edit(number string, args ...string) error {
 	_, err := c.run(append([]string{"pr", "edit", number}, args...)...)

@@ -49,6 +49,16 @@ func hostIn(pid int, table map[int]started) (Process, bool) {
 	return Process{}, false
 }
 
+// Of is the process with this pid, named with its start time; false when it is not running.
+func Of(pid int) (Process, bool) {
+	table, err := startTable()
+	if err != nil {
+		return Process{}, false
+	}
+	entry, ok := table[pid]
+	return Process{PID: pid, Start: entry.start}, ok
+}
+
 // Alive reports whether process still runs; known is false when this platform cannot tell.
 func Alive(process Process) (alive, known bool) {
 	table, err := startTable()

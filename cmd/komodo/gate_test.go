@@ -63,17 +63,17 @@ func TestGateCheckBranchPassesADetachedWorktreeTrackingNoBranch(t *testing.T) {
 	}
 }
 
-// TestGateCheckPushRefRefusesACriticalOrNonConformingBranch proves the pre-push hook's own flag
+// TestGateCheckPushRefusesACriticalOrNonConformingBranch proves the pre-push hook's own flag
 // catches what a detached worktree's pre-commit check cannot.
-func TestGateCheckPushRefRefusesACriticalOrNonConformingBranch(t *testing.T) {
+func TestGateCheckPushRefusesACriticalOrNonConformingBranch(t *testing.T) {
 	root := emptyRepo(t)
 	for _, ref := range []string{"refs/heads/main", "refs/heads/not a branch"} {
-		got := runCLI(t, root, "", "gate", "--check-push-ref", ref)
+		got := runCLI(t, root, "", "gate", "--check-push", ref)
 		if got.code == 0 {
 			t.Fatalf("ref %q: want a refusal, got exit 0: %s%s", ref, got.stdout, got.stderr)
 		}
 	}
-	got := runCLI(t, root, "", "gate", "--check-push-ref", "refs/heads/feat/x")
+	got := runCLI(t, root, "", "gate", "--check-push", "refs/heads/feat/x")
 	if got.code != 0 {
 		t.Fatalf("feat/x: want it to pass, got %d: %s%s", got.code, got.stdout, got.stderr)
 	}
