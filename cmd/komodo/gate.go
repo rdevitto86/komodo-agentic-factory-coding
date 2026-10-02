@@ -98,7 +98,8 @@ func runGate(root string, args []string) {
 			return nil
 		}},
 		{Name: "komodo doctor", Run: func(out io.Writer) error {
-			problems, err := doctor.Run(root, doctor.Options{})
+			problems, err := doctor.Run(root, doctor.Options{RepoOnly: true,
+				Warn: func(note string) { fmt.Fprintln(out, "warning:", note) }})
 			if err != nil {
 				return err
 			}

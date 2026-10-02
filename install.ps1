@@ -141,7 +141,7 @@ try {
     $name = "komodo-windows-$(Get-Arch).exe"
     $repo = Get-RepoRoot (Get-Location).Path
     if ((Get-Command go -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $PSScriptRoot 'cmd\komodo\main.go'))) {
-        $binary = Build-Binary $name
+        $binary = Build-Binary 'komodo.exe'
     } else {
         $binary = Get-Release $name
     }

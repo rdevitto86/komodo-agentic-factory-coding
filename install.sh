@@ -88,7 +88,7 @@ sha256_of() {
 }
 
 build_binary() {
-  local name="komodo-$OS-$ARCH"
+  local name="komodo"
   say "building $name from $SCRIPT_DIR"
   mkdir -p "$SCRIPT_DIR/bin"
   (cd "$SCRIPT_DIR" && go build -o "bin/$name" ./cmd/komodo)
