@@ -219,17 +219,13 @@ func commitBranch(root string, parsed backlog.Backlog, task backlog.Task) string
 }
 
 // commitTask commits a passing task onto branch, so QC has something to merge, and refuses
-// when cwd sits on any other branch, which is someone else's checkout, not the task's own.
+// when cwd tracks any other branch, which is someone else's checkout, not the task's own.
 func commitTask(cwd string, task backlog.Task, branch string) error {
 	if _, err := git.Run(cwd, "rev-parse", "--git-dir"); err != nil {
 		return nil
 	}
-	current, err := git.Run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
-		return err
-	}
-	if current != branch {
-		return fmt.Errorf("cwd is on %s, not %s; refusing to commit onto the wrong checkout", current, branch)
+	if current := git.TrackedBranch(cwd); current != branch {
+		return fmt.Errorf("cwd tracks %s, not %s; refusing to commit onto the wrong checkout", current, branch)
 	}
 	status, err := git.Run(cwd, "status", "--porcelain")
 	if err != nil {
@@ -247,9 +243,15 @@ func commitTask(cwd string, task backlog.Task, branch string) error {
 	if staged, err := git.Run(cwd, "diff", "--cached", "--name-only"); err != nil || strings.TrimSpace(staged) == "" {
 		return err
 	}
+	old, tipErr := git.Run(cwd, "rev-parse", "--verify", TipRef(branch))
 	message := fmt.Sprintf("%s: %s (%s)", task.Type(), task.Title, task.ID)
-	_, err = git.Run(cwd, "commit", "-m", message)
-	return err
+	if _, err := git.Run(cwd, "commit", "-m", message); err != nil {
+		return err
+	}
+	if tipErr != nil {
+		return nil
+	}
+	return Advance(cwd, branch, cwd, old)
 }
 
 // CommitBuild commits a group builder's uncommitted work onto the group branch, so review reads it in the branch's diff.
@@ -268,8 +270,14 @@ func CommitBuild(root string, plan *Plan) error {
 	if staged, err := git.Run(worktree, "diff", "--cached", "--name-only"); err != nil || strings.TrimSpace(staged) == "" {
 		return err
 	}
-	_, err := git.Run(worktree, "commit", "-m", fmt.Sprintf("%s: %s, as built (%s)", plan.Type, plan.Title, plan.Group))
-	return err
+	old, tipErr := git.Run(worktree, "rev-parse", "--verify", TipRef(plan.Branch))
+	if _, err := git.Run(worktree, "commit", "-m", fmt.Sprintf("%s: %s, as built (%s)", plan.Type, plan.Title, plan.Group)); err != nil {
+		return err
+	}
+	if tipErr != nil {
+		return nil
+	}
+	return Advance(worktree, plan.Branch, worktree, old)
 }
 
 // stageWork stages every change in cwd except the state dir and each mount's rendered project copies, unless declared.

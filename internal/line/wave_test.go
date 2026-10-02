@@ -266,10 +266,12 @@ func TestACollisionIsASharedFileNotASharedDirectory(t *testing.T) {
 			{ID: "TSK-21.2.3", Title: "Same", Files: []string{"web/a/x.ts"}, Checks: []string{"true"}},
 		},
 	})
-	gitCmd(t, root, "branch", "feat/group")
+	gitCmd(t, root, "update-ref", TipRef("feat/group"), "HEAD")
 	gitCmd(t, root, "checkout", "-q", "-b", TaskBranch("TSK-21.2.1"))
 	commit(t, root, "web/a/x.ts", "export const x = 1\n", "first")
+	gitCmd(t, root, "update-ref", TipRef(TaskBranch("TSK-21.2.1")), "HEAD")
 	gitCmd(t, root, "checkout", "-q", "main")
+	gitCmd(t, root, "branch", "-D", TaskBranch("TSK-21.2.1"))
 	state := RunState{Group: "TG-21.2", Branch: "feat/group", Waves: [][]string{{"TSK-21.2.1", "TSK-21.2.2", "TSK-21.2.3"}}}
 	if err := SaveRun(root, state); err != nil {
 		t.Fatal(err)

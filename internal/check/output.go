@@ -21,10 +21,11 @@ type Snapshot struct {
 	Config map[string]string `json:"config"`
 }
 
-// Ref prefixes other lanes write to concurrently: their own branches, and the remote-tracking refs fetch and push move.
+// Ref prefixes other lanes write to concurrently: their own branches and komodo tips, and the remote-tracking refs.
 const (
 	branchRefs = "refs/heads/"
 	remoteRefs = "refs/remotes/"
+	tipRefs    = "refs/komodo/"
 )
 
 // branchSection prefixes the config keys git keeps per branch, as branch.<name>.<key>.
@@ -36,7 +37,7 @@ func TakeSnapshot(worktree string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	branch := strings.TrimPrefix(git.Or(worktree, "symbolic-ref", "--quiet", "HEAD"), branchRefs)
+	branch := git.TrackedBranch(worktree)
 	refs, err := snapshotRefs(worktree, branch)
 	if err != nil {
 		return Snapshot{}, err
@@ -72,7 +73,12 @@ func snapshotRefs(worktree, branch string) (map[string]string, error) {
 			continue
 		}
 		name := fields[0]
-		if strings.HasPrefix(name, remoteRefs) || strings.HasPrefix(name, branchRefs) && name != branchRefs+branch {
+		switch {
+		case strings.HasPrefix(name, remoteRefs):
+			continue
+		case strings.HasPrefix(name, branchRefs) && name != branchRefs+branch:
+			continue
+		case strings.HasPrefix(name, tipRefs) && name != tipRefs+branch:
 			continue
 		}
 		refs[name] = fields[1]

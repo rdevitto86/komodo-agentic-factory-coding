@@ -340,7 +340,7 @@ func WriteBrief(root string, brief *Brief, groupBranch string) error {
 	worktree := filepath.Join(root, brief.Worktree)
 	if _, err := os.Stat(worktree); err != nil {
 		branch := "task/" + strings.ToLower(brief.Task)
-		if err := AddWorktree(root, branch, groupBranch, worktree); err != nil {
+		if err := AddDetached(root, branch, startFor(root, groupBranch), worktree); err != nil {
 			return err
 		}
 	}
