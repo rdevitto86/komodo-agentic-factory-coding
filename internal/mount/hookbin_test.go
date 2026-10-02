@@ -82,7 +82,7 @@ func TestPruneHookCopiesRemovesOnlyHashedCopiesAndTheAsideBinary(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	removed, err := PruneHookCopies()
+	removed, err := PruneHookCopies(nil)
 	if err != nil || len(removed) != 2 {
 		t.Fatalf("removed = %v, %v; want the hashed copy and the aside binary", removed, err)
 	}
@@ -90,5 +90,28 @@ func TestPruneHookCopiesRemovesOnlyHashedCopiesAndTheAsideBinary(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, kept)); err != nil {
 			t.Fatalf("%s was removed: %v", kept, err)
 		}
+	}
+}
+
+func TestPruneHookCopiesKeepsACopyAnInstalledHookStillRuns(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dir := filepath.Join(home, ".komodo", "bin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	used, stale := filepath.Join(dir, "komodo-aaaaaaaaaaaa"), filepath.Join(dir, "komodo-bbbbbbbbbbbb")
+	for _, path := range []string{used, stale} {
+		if err := os.WriteFile(path, []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := PruneHookCopies(map[string]bool{used: true})
+	if err != nil || len(removed) != 1 || removed[0] != stale {
+		t.Fatalf("removed = %v, %v; want only the copy no hook runs", removed, err)
+	}
+	if _, err := os.Stat(used); err != nil {
+		t.Fatalf("the copy a hook runs was removed: %v", err)
 	}
 }

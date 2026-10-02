@@ -935,9 +935,9 @@ func TestLeftoversNamesAnAssessCommandAllowRule(t *testing.T) {
 func TestMcpLeftoversNamesARetiredServerAtEveryLevel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".claude.json")
 	config := `{
-  "mcpServers": {"komodo-ollama-bridge": {"command": "old"}},
+  "mcpServers": {"komodo-hooks": {"command": "old"}},
   "projects": {
-    "/repo/a": {"mcpServers": {"komodo-ollama-bridge": {"command": "old"}, "current-tool": {"command": "keep"}}}
+    "/repo/a": {"mcpServers": {"komodo-hooks": {"command": "old"}, "current-tool": {"command": "keep"}}}
   }
 }`
 	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
@@ -948,7 +948,7 @@ func TestMcpLeftoversNamesARetiredServerAtEveryLevel(t *testing.T) {
 		t.Fatalf("found = %q, want the retired server named once at each level", found)
 	}
 	for _, note := range found {
-		if !strings.Contains(note, "komodo-ollama-bridge") {
+		if !strings.Contains(note, "komodo-hooks") {
 			t.Fatalf("found = %q, want only the retired server named", found)
 		}
 	}
