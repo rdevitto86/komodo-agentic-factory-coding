@@ -1,6 +1,6 @@
-# Architecture — <Repo Name>
+# High-level design — <Repo Name>
 
-The parts and how they connect: small enough for a planner and a reviewer to read whole. Names and reasons only; a flag, field, or version belongs in `system-design.md`, and a number in `prd.md`. Every heading here exists in exactly one spec file, so a task cites one place.
+The parts and how they connect: small enough for a planner and a reviewer to read whole. Names and reasons only; a flag, field, or version belongs in `lld.md`, and a number in `prd.md`. Every heading here exists in exactly one spec file, so a task cites one place.
 
 ## Purpose
 
@@ -8,7 +8,7 @@ The parts and how they connect: small enough for a planner and a reviewer to rea
 
 ## Context
 
-<The people and external systems it works with, one line each. How each integration works lives in system-design.md.>
+<The people and external systems it works with, one line each. How each integration works lives in lld.md.>
 
 ## Components
 

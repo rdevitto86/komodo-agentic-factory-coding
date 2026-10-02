@@ -7,7 +7,7 @@
 | Target milestone | Version 1.0.0 LTS, reached through alpha and beta releases |
 | Document owner | Engineering Lead / System Architect |
 | Status | Approved, 2026-09-25. Open questions hold their defaults. |
-| Design | `docs/architecture.md`, `docs/system-design.md`, `docs/decisions.md` |
+| Design | `docs/hld.md`, `docs/lld.md`, `docs/decisions/` |
 | Change control | Only the owner edits this file. Line sessions are refused edits; the owner's primary session may edit it on request. |
 
 Planner-facing, and the north star for every other document. Requirement IDs are minted only under Requirements below, never by anything reading this document.
@@ -59,7 +59,7 @@ The personas are examples of who uses the line, not named people.
 | Integrations | Plugin points, shipped disabled: notifiers, tool packs, stage hooks | Enabled Slack, Google Chat and cloud plugins |
 | Authentication | The host's own login; the developer's local git PAT for the forge | API-key billing modes, bot accounts |
 | Guardrails | OS sandbox where the platform has one, output checks, a guard that catches mistakes, draft-first PRs | A guard that stops an adversarial model |
-| Skills | The founding skills in `docs/system-design.md#skills-and-scoping`, each scoped to its roles | New standards skills |
+| Skills | The founding skills in `docs/lld.md#skills-and-scoping`, each scoped to its roles | New standards skills |
 | Quality proofs | Programmatic proofs and `komodo eval` | Model-scored rubrics, a local model as a gate |
 
 ## Lifecycle workflow
@@ -103,7 +103,7 @@ The personas are examples of who uses the line, not named people.
 [ A human reviews and merges ]
 ```
 
-A task group has 60 minutes from Build to Ship. Repair returns to Check and then to the same review session, and the loop continues only while open findings shrink. The component view is `docs/architecture.md#data-flow`.
+A task group has 60 minutes from Build to Ship. Repair returns to Check and then to the same review session, and the loop continues only while open findings shrink. The component view is `docs/hld.md#data-flow`.
 
 ## Success criteria
 
@@ -115,7 +115,7 @@ V1 ships in three stages: alpha while the rebuild lands, beta once it is feature
 4. **Unattended execution.** A plan of at least 12 task groups runs to draft PRs in golden repositories with no human input, except to settle groups the line stopped and documented.
 5. **Time.** The median task group finishes in 40 minutes or less, and none takes more than 60.
 
-No model's score counts toward 1.0.0. The rollout phases, and the requirements each one proves, are in `docs/system-design.md#rollout`.
+No model's score counts toward 1.0.0. The rollout phases, and the requirements each one proves, are in `docs/lld.md#rollout`.
 
 ## Requirements
 
@@ -240,7 +240,7 @@ Time limits change only by editing this file. After the first eval, the 5-to-40-
 
 ## Open questions
 
-The owner resolves each one; its default holds until then. Technical questions are Proposed entries in `docs/decisions.md`.
+The owner resolves each one; its default holds until then. Technical questions are Proposed entries in `docs/decisions/`.
 
 | # | Question | Default if unanswered |
 |---|---|---|

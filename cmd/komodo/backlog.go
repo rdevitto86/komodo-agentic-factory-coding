@@ -25,7 +25,8 @@ func runLint(root string) {
 // group files at all.
 func lintProblems(root string) ([]string, error) {
 	problems, _, _, err := groupFileLintProblems(root)
-	return append(problems, versionProblems(root)...), err
+	problems = append(problems, versionProblems(root)...)
+	return append(problems, backlog.LintDecisions(root)...), err
 }
 
 // versionProblems names each open group whose version is at or behind the repo's newest tag.
@@ -48,6 +49,7 @@ func runLintGroupFiles(root string) {
 		fail(err)
 	}
 	problems = append(problems, versionProblems(root)...)
+	problems = append(problems, backlog.LintDecisions(root)...)
 	for _, problem := range problems {
 		fmt.Println(problem)
 	}

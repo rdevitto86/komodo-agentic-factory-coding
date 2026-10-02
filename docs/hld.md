@@ -1,8 +1,8 @@
-# Architecture — komodo-agentic-factory-coding
+# High-level design — komodo-agentic-factory-coding
 
-The parts and how they connect: small enough for a planner and a reviewer to read whole. Names and reasons only; a flag, field, or version belongs in `system-design.md`, and a number in `prd.md`. Every heading here exists in exactly one spec file, so a task cites one place.
+The parts and how they connect: small enough for a planner and a reviewer to read whole. Names and reasons only; a flag, field, or version belongs in `lld.md`, and a number in `prd.md`. Every heading here exists in exactly one spec file, so a task cites one place.
 
-**Status:** Accepted, 2026-09-25, for 1.0.0. It describes the target that decisions 0001 to 0023 set; `decisions.md` holds why.
+**Status:** Accepted, 2026-09-25, for 1.0.0. It describes the target that decisions 0001 to 0023 set; `decisions/` holds why.
 
 ## Purpose
 
@@ -78,7 +78,7 @@ The threat model is a cooperative model that makes mistakes. An adversarial mode
 | Output checks | Edits outside the group's files, model commits, changed refs, hooks or git config | The conductor, comparing before and after |
 | The guard | Common mistakes on model tool calls | One hook; fails open |
 
-Native Windows has no OS sandbox, so there the other layers carry the load. `system-design.md#security` lists what the guard does not stop.
+Native Windows has no OS sandbox, so there the other layers carry the load. `lld.md#security` lists what the guard does not stop.
 
 ## Data flow
 

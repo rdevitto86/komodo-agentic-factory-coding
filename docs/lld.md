@@ -1,6 +1,6 @@
-# System design — komodo-agentic-factory-coding
+# Low-level design — komodo-agentic-factory-coding
 
-How each part works. A builder reads one section of this file through a task's `context`, such as `docs/system-design.md#interfaces`; nobody reads it whole. Headings carry no numbers, so a citation survives a reorder. A requirement's number is cited by its `REQ-n`, never copied. A contract, manifest, schema, or migration is linked, never restated. A section that does not apply says "Not applicable."
+How each part works. A builder reads one section of this file through a task's `context`, such as `docs/lld.md#interfaces`; nobody reads it whole. Headings carry no numbers, so a citation survives a reorder. A requirement's number is cited by its `REQ-n`, never copied. A contract, manifest, schema, or migration is linked, never restated. A section that does not apply says "Not applicable."
 
 **Status:** Accepted, 2026-09-25, for 1.0.0. The mechanics behind decisions 0001 to 0023. Values marked "starting value" are tunables that no requirement sets; the first eval recalibrates them.
 

@@ -1,6 +1,6 @@
-# System design — <Repo Name>
+# Low-level design — <Repo Name>
 
-How each part works. A builder reads one section of this file through a task's `context`, such as `docs/system-design.md#interfaces`; nobody reads it whole. Headings carry no numbers, so a citation survives a reorder. A requirement's number is cited by its `REQ-n`, never copied. A contract, manifest, schema, or migration is linked, never restated. A section that does not apply says "Not applicable."
+How each part works. A builder reads one section of this file through a task's `context`, such as `docs/lld.md#interfaces`; nobody reads it whole. Headings carry no numbers, so a citation survives a reorder. A requirement's number is cited by its `REQ-n`, never copied. A contract, manifest, schema, or migration is linked, never restated. A section that does not apply says "Not applicable."
 
 ## Data model
 

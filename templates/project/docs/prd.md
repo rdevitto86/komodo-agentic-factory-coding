@@ -7,7 +7,7 @@
 | Target milestone | <The release this document targets> |
 | Document owner | <Role> |
 | Status | Draft, {{DATE}} |
-| Design | `docs/architecture.md`, `docs/system-design.md`, `docs/decisions.md` |
+| Design | `docs/hld.md`, `docs/lld.md`, `docs/decisions/` |
 | Change control | Only the owner edits this file. |
 
 Why the system exists and what must be true. Planner-facing. A repo with no PRD has no requirement IDs to cite, and that is not a gap to fill. IDs are minted only under Requirements below, never by anything reading this document.
@@ -40,7 +40,7 @@ Why the system exists and what must be true. Planner-facing. A repo with no PRD 
 
 ## Lifecycle workflow
 
-<The stages a unit of work passes through, as the product sees them, with each stage's limits. The component flow lives in architecture.md.>
+<The stages a unit of work passes through, as the product sees them, with each stage's limits. The component flow lives in hld.md.>
 
 ## Success criteria
 
@@ -66,4 +66,4 @@ Why the system exists and what must be true. Planner-facing. A repo with no PRD 
 
 ## Open questions
 
-<Product questions still unresolved, and who resolves each. A technical question is a Proposed entry in decisions.md.>
+<Product questions still unresolved, and who resolves each. A technical question is a Proposed entry in `decisions/`.>
