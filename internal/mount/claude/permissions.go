@@ -47,7 +47,10 @@ var languageCommands = map[string]map[string][]string{
 }
 
 // gitWrites are the git subcommands only the conductor runs, refused to every role with a shell.
-var gitWrites = []string{"add", "commit", "switch", "checkout", "branch", "reset", "rebase", "merge", "stash", "push"}
+var gitWrites = []string{
+	"add", "commit", "switch", "checkout", "branch", "reset", "rebase", "merge", "stash", "push",
+	"update-ref", "symbolic-ref", "worktree",
+}
 
 // roleTools returns the role's verbs, adding a shell when its frontmatter names command classes to run in one.
 // A request carrying no tools gets none.

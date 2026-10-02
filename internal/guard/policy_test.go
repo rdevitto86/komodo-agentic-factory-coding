@@ -71,6 +71,41 @@ func TestOnlyTheOrchestratorOnABranchEditsTheShippedPolicy(t *testing.T) {
 	}
 }
 
+// detachedWorktreeOn cuts a detached worktree of root tracking branch via komodo.branch config,
+// as komodo worktree add leaves one.
+func detachedWorktreeOn(t *testing.T, root, branch string) string {
+	t.Helper()
+	runGit := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit(root, "config", "extensions.worktreeConfig", "true")
+	path := t.TempDir() + "-wt"
+	runGit(root, "worktree", "add", "--detach", path)
+	runGit(path, "config", "--worktree", "komodo.branch", branch)
+	return path
+}
+
+// TestOnFeatureBranchReadsADetachedWorktreesTrackedBranch proves the orchestrator may edit
+// komodo/policy.json in a detached worktree tracking a feature branch, not only an attached one.
+func TestOnFeatureBranchReadsADetachedWorktreesTrackedBranch(t *testing.T) {
+	registerFakeHost()
+	toolkit := toolkitWithoutPolicyPath(t)
+	root := gitRepo(t, "main")
+	detached := detachedWorktreeOn(t, root, "feat/x")
+	request := Request{
+		HookEventName: "PreToolUse", ToolName: "Edit", Cwd: detached,
+		ToolInput: map[string]any{"file_path": filepath.Join(detached, "komodo", "policy.json")},
+	}
+	decision := Check(request, Load(toolkit, detached), "feat/x")
+	if decision.Deny {
+		t.Fatalf("the orchestrator in a detached worktree on feat/x is refused: %v", decision.Findings)
+	}
+}
+
 // TestTheShippedPolicyProtectsEveryCriticalRef proves komodo/policy.json names every ref AGENTS.md forbids.
 func TestTheShippedPolicyProtectsEveryCriticalRef(t *testing.T) {
 	policy := Load(t.TempDir(), t.TempDir())

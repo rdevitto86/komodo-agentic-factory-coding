@@ -3,6 +3,7 @@ package guard
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -122,6 +123,36 @@ func TestASessionIDThatClimbsOutIsNeverAPath(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("a refusal count landed at %s: %v", path, err)
 		}
+	}
+}
+
+// runGit runs one git command in dir, failing the test on any error.
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+}
+
+// TestCurrentBranchFallsBackToTheTrackedBranchInADetachedWorktree proves CurrentBranch reads a
+// detached worktree's komodo.branch config, since rev-parse --abbrev-ref names no branch there.
+func TestCurrentBranchFallsBackToTheTrackedBranchInADetachedWorktree(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-q", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "commit", "--allow-empty", "-q", "-m", "seed")
+	runGit(t, root, "config", "extensions.worktreeConfig", "true")
+	path := t.TempDir() + "-wt"
+	runGit(t, root, "worktree", "add", "--detach", path)
+	if got := CurrentBranch(path); got != "HEAD" {
+		t.Fatalf("CurrentBranch before any komodo.branch config = %q, want HEAD", got)
+	}
+	runGit(t, path, "config", "--worktree", "komodo.branch", "feat/x")
+	if got := CurrentBranch(path); got != "feat/x" {
+		t.Fatalf("CurrentBranch = %q, want the worktree's tracked branch feat/x", got)
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"strings"
 
-	"komodo/internal/git"
 	"komodo/internal/mount"
 	"komodo/internal/toolkit"
 )
@@ -268,13 +267,13 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 }
 
 // onFeatureBranch reports whether repoRoot has a branch checked out that is not a critical ref;
-// symbolic-ref names a branch with no commit yet, and a detached HEAD names none.
+// CurrentBranch falls back to a detached worktree's tracked branch, and a plain detached HEAD names none.
 func (p Policy) onFeatureBranch(repoRoot string) bool {
 	if repoRoot == "" {
 		return false
 	}
-	branch := git.Or(repoRoot, "symbolic-ref", "--short", "HEAD")
-	return branch != "" && !p.IsCritical(branch)
+	branch := CurrentBranch(repoRoot)
+	return branch != "" && branch != "HEAD" && !p.IsCritical(branch)
 }
 
 // matchesAnyPattern reports whether normal or relative matches any pattern, expanding a leading

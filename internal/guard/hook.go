@@ -18,8 +18,12 @@ const ExitDeny = 2
 // refusalLimit is how many identical refusals one line session may hit before the guard ends it (REQ-37).
 const refusalLimit = 3
 
-// CurrentBranch is the branch a directory is on, or the empty string.
+// CurrentBranch is the branch a directory is on, falling back to a detached worktree's
+// komodo.branch config, or the empty string when neither names one.
 func CurrentBranch(dir string) string {
+	if branch := git.TrackedBranch(dir); branch != "" {
+		return branch
+	}
 	return git.Or(dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
@@ -45,19 +49,7 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SessionID string `json:"session_id"`
 	}
 	_ = json.Unmarshal(raw, &sessionPayload)
-	notice := ""
 	if !decision.Deny {
-		claimed := ClaimCheck(request, sessionPayload.SessionID)
-		if claimed.Deny {
-			decision = Decision{Deny: true, Findings: []string{claimed.Finding}}
-		} else {
-			notice = claimed.Notice
-		}
-	}
-	if !decision.Deny {
-		if notice != "" {
-			fmt.Fprintln(stderr, notice)
-		}
 		return 0
 	}
 	reason := Reason(decision.Findings)

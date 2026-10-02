@@ -85,7 +85,7 @@ func commandFindings(command, cwd, root, branch string, policy Policy) []string 
 					branch = CurrentBranch(dir)
 				}
 			case "git":
-				findings = append(findings, gitFindings(item.words, branchFor(item.words, dir, branch), policy)...)
+				findings = append(findings, gitFindings(item.words, dir, branchFor(item.words, dir, branch), policy)...)
 				branch = afterGit(item.words, dir, branch)
 			case "gh":
 				findings = append(findings, ghFindings(item.words)...)
