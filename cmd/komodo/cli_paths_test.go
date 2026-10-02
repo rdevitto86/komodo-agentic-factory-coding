@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"komodo/internal/recall"
 	"net/http"
 	"net/http/httptest"
@@ -107,9 +108,12 @@ func TestMachineWritesTheLocalReviewersResultAndStampsTheLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var sent string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/chat" {
+			body, _ := io.ReadAll(r.Body)
+			sent = string(body)
 			_, _ = w.Write(chat)
 			return
 		}
@@ -137,6 +141,10 @@ func TestMachineWritesTheLocalReviewersResultAndStampsTheLedger(t *testing.T) {
 	got := runCLI(t, root, "", "machine", "TSK-90.2.1", "--role", "reviewer")
 	if got.code != 0 || !strings.Contains(got.stdout, "wrote") {
 		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", got.code, got.stdout, got.stderr)
+	}
+	// The local model reads the compact rules ahead of the brief, since it loads no host config.
+	if rules, brief := strings.Index(sent, "Answer with a verdict"), strings.Index(sent, "Review this diff."); rules < 0 || brief < rules {
+		t.Fatalf("sent = %q; want the compact rules ahead of the brief", sent)
 	}
 	result, err := os.ReadFile(filepath.Join(root, ".komodo", "results", "TSK-90.2.1.json"))
 	if err != nil || !strings.Contains(string(result), `"blast_radius"`) {

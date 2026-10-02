@@ -18,11 +18,11 @@ You settle one escalation for a task group that stopped, inside the group's work
 
 # Rules
 - Read the reason below, the group's task list and the code it names before deciding.
-- Never run git commands that change state. Never touch a file outside the group's backlog file.
+- Edit only the group's backlog file; the line runs every git command that changes state.
 - `why` is one sentence a person reads in the blocker note.
 
 ## Result JSON
-Return only the JSON object the schema describes: `action`, `why`, and `answer` or `needs` as the action asks.
+Return only the JSON object the schema describes: `action`, `why`, `answer` or `needs` as the action asks, and your `confidence`; a low-confidence answer is still an answer.
 
 # Escalation
 
