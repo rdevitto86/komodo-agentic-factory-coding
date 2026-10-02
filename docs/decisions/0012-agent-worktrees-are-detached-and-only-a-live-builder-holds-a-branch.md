@@ -8,7 +8,7 @@
 
 - **Every worktree an agent or the line makes is detached.** `komodo worktree add <branch>` cuts one for ad hoc work and records the branch as `komodo.branch` in its worktree config.
 - **Komodo never checks out, moves or deletes a branch under `refs/heads/`.** The line keeps each tip at `refs/komodo/<branch>` and pushes it to `refs/heads/<branch>` on `origin`.
-- **A working builder holds a lease on its branch; nothing else holds a lock.** The line takes it when a stage starts writing, in `.komodo/runs/<group>/lease.json`. While it lives, the guard refuses a session's push to that branch and the gate's pre-push refuses a person's.
+- **A working builder holds a lease on its branch; nothing else holds a lock.** The line takes it when a stage starts writing, in `komodo/leases/<branch>.json` under the git common dir, so every worktree finds it. While it lives, the guard refuses a session's push to that branch and the gate's pre-push refuses a person's.
 - **The lease ends mechanically:** the line's push drops it, and it lapses 2 hours after it was taken or as soon as its holder process exits. A later stage that writes again takes a fresh lease. Branch claims and `komodo guard release` are removed.
 - **The global tier refuses attaching a branch in a linked worktree:** `git worktree add` without `--detach`, and `git checkout` or `git switch` onto a branch there. It also refuses `update-ref`, `checkout -B` and `switch -C` on a critical ref, naming `komodo worktree add` or `--detach`.
 
