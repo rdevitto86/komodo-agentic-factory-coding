@@ -35,7 +35,7 @@ var goToolchain = func(root string) string {
 }
 
 // checkPins reports the profile's model IDs, the go.mod toolchain and the built komodo binary
-// that differ from the pin every machine must run (REQ-2, decision 0006).
+// that differ from the pin every machine must run (REQ-2, decision 0001).
 func checkPins(root string) []Problem {
 	current := profile.Select(root)
 	var problems []Problem
@@ -64,7 +64,7 @@ func checkModelIDs(current profile.Profile) []Problem {
 		}
 		if machine.Model == "" || bareModelWords[strings.ToLower(machine.Model)] || !modelHasVersion.MatchString(machine.Model) {
 			problems = append(problems, Problem{"pins", name,
-				fmt.Sprintf("model %q is not a full ID (decision 0006)", machine.Model)})
+				fmt.Sprintf("model %q is not a full ID (decision 0001)", machine.Model)})
 		}
 	}
 	return problems

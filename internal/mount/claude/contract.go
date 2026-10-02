@@ -27,7 +27,7 @@ var versionOutput = func() (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// Mount runs Claude Code sessions and implements the host contract (decision 0004).
+// Mount runs Claude Code sessions and implements the host contract.
 type Mount struct {
 	root, worktree string
 	maxTurns       int

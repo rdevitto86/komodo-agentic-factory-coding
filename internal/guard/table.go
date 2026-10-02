@@ -70,8 +70,8 @@ func Table(policy Policy) []Case {
 		bash("gh pr merge", "gh pr merge 12 --squash", "feat/x", true, "merge button"),
 		bash("branch -D main", "git branch -D main", "feat/x", true, "never deleted"),
 		bash("delete its own branch", "git branch -D feat/old", "feat/x", false, ""),
-		asRole("builder", bash("a line session's push to an epic branch is refused (decision 0028)", "git push origin feat/1.0.0-alpha.7", "feat/x", true, "open a pull request")),
-		asRole("builder", bash("a line session's merge onto an epic branch is refused (decision 0028)", "git merge feat/x", "feat/1.0.0-alpha.7", true, "merge button")),
+		asRole("builder", bash("a line session's push to an epic branch is refused (decision 0006)", "git push origin feat/1.0.0-alpha.7", "feat/x", true, "open a pull request")),
+		asRole("builder", bash("a line session's merge onto an epic branch is refused (decision 0006)", "git merge feat/x", "feat/1.0.0-alpha.7", true, "merge button")),
 		bash("the orchestrator pushes an epic branch; a person still merges it into main", "git push origin feat/1.0.0-alpha.7", "feat/x", false, ""),
 		bash("the orchestrator merges onto an epic branch", "git merge feat/x", "feat/1.0.0-alpha.7", false, ""),
 		bash("push to a slugged feat branch is not an epic branch", "git push origin feat/versions-go-alpha", "feat/x", false, ""),
@@ -130,7 +130,8 @@ func Table(policy Policy) []Case {
 		// Inside the worktree an agent is free.
 		bash("rm -rf a build directory", "rm -rf node_modules", "feat/x", false, ""),
 		bash("run the tests", "go test ./...", "feat/x", false, ""),
-		bash("open a pull request", "gh pr create --base main --head feat/x --title t --body b", "feat/x", false, ""),
+		bash("open a pull request through komodo", "komodo pr create --title 'fix: x' --body b", "feat/x", false, ""),
+		bash("gh pr create skips the title check and the labels", "gh pr create --base main --head feat/x --title t --body b", "feat/x", true, "komodo pr create"),
 	}...)
 	return table
 }

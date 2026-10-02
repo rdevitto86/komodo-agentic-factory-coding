@@ -185,7 +185,7 @@ func union(base, extra []string) []string {
 	return base
 }
 
-// epicBranchRe matches an epic branch, feat/ plus a version exactly (decision 0028).
+// epicBranchRe matches an epic branch, feat/ plus a version exactly (decision 0006).
 var epicBranchRe = regexp.MustCompile(`^feat/\d+\.\d+\.\d+`)
 
 // IsCritical reports whether a ref is one the guard protects from every session, model or conductor.
@@ -199,7 +199,7 @@ func (p Policy) IsCritical(ref string) bool {
 	return false
 }
 
-// IsEpicBranch reports whether a ref is an epic branch (decision 0028), which only a model
+// IsEpicBranch reports whether a ref is an epic branch (decision 0006), which only a model
 // session is refused; the conductor still pushes to and merges it, so IsCritical excludes it.
 func IsEpicBranch(ref string) bool {
 	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "origin/")

@@ -16,7 +16,7 @@ const sampleGroupFile = "docs/backlog/TG-01.1-example-group.md"
 // starterFiles are the paths init writes into an empty repo.
 var starterFiles = []string{
 	"AGENTS.md", "CHANGELOG.md", sampleGroupFile,
-	"docs/prd.md", "docs/architecture.md", "docs/system-design.md", "docs/decisions.md",
+	"docs/prd.md", "docs/hld.md", "docs/lld.md", "docs/decisions/README.md", "docs/diagrams/README.md", "docs/media/README.md",
 	".github/PULL_REQUEST_TEMPLATE.md", ".komodo/context/example.md", ".gitattributes",
 }
 
@@ -121,9 +121,9 @@ func TestInitNeverWritesThroughASymlinkOrADirectory(t *testing.T) {
 	want := []string{
 		"keep AGENTS.md\n", "keep CHANGELOG.md\n",
 		"skip docs/prd.md: outside the repo\n",
-		"skip docs/architecture.md: outside the repo\n",
-		"skip docs/system-design.md: outside the repo\n",
-		"skip docs/decisions.md: outside the repo\n",
+		"skip docs/hld.md: outside the repo\n",
+		"skip docs/lld.md: outside the repo\n",
+		"skip docs/decisions/README.md: outside the repo\n",
 		"skip " + sampleGroupFile + ": outside the repo\n",
 	}
 	for _, line := range want {

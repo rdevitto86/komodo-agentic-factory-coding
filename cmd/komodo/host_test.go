@@ -64,3 +64,15 @@ func TestPlanMountedSeesOnlyARenderedFile(t *testing.T) {
 		t.Fatal("a host with its rendered file on disk did not count as mounted")
 	}
 }
+
+// TestGuardReleaseNamesTheRepoItSearched proves a release that finds no claim says which repo it looked in.
+func TestGuardReleaseNamesTheRepoItSearched(t *testing.T) {
+	root := emptyRepo(t)
+	got := runCLI(t, root, "", "guard", "release", "docs/elsewhere")
+	if got.code != 0 {
+		t.Fatalf("release exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if !strings.Contains(got.stdout, "no claim on docs/elsewhere in ") || !strings.Contains(got.stdout, filepath.Base(root)) {
+		t.Fatalf("want the searched repo named, got %q", got.stdout)
+	}
+}

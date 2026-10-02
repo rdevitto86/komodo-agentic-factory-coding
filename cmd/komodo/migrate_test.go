@@ -60,7 +60,7 @@ func TestRunMigrateWritesOneGroupFilePerGroup(t *testing.T) {
 }
 
 // TestRunMigrateSkipsAGroupWhoseEveryTaskIsDone proves a fully done group stays history in
-// CHANGELOG.md and git, migrate never opening a file for it (decision 0009).
+// CHANGELOG.md and git, migrate never opening a file for it.
 func TestRunMigrateSkipsAGroupWhoseEveryTaskIsDone(t *testing.T) {
 	root := t.TempDir()
 	sample := "## [EPIC-03] Sample epic\nShips as `1.0.0`.\n\n" +

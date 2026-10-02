@@ -54,7 +54,7 @@ func TestMergeGroupMergesAReviewedCheckedGroupWithAMergeCommit(t *testing.T) {
 }
 
 // TestMergeGroupMergesAGroupOntoAnEpicBranch proves the conductor's own merge is not refused by
-// decision 0028, which refuses only a model session's push or merge onto an epic branch.
+// decision 0006, which refuses only a model session's push or merge onto an epic branch.
 func TestMergeGroupMergesAGroupOntoAnEpicBranch(t *testing.T) {
 	root, _ := mergeRepo(t)
 	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {

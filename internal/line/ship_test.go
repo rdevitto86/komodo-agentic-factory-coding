@@ -1661,7 +1661,7 @@ func TestPrepareCommitsTheTickedListAndChangelogLineWithNoTrailers(t *testing.T)
 			t.Fatalf("the commit holds %q, want %s in it", files, want)
 		}
 	}
-	// The group's only task is done, so its own group file leaves with the group, per decision 0009.
+	// The group's only task is done, so its own group file leaves with the group.
 	if left, _ := git.Run(group, "ls-files", "docs/backlog"); left != "" {
 		t.Fatalf("group files still tracked: %q; a finished group with no epic deletes its own", left)
 	}

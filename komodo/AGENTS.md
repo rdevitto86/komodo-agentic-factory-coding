@@ -17,6 +17,7 @@ Universal rules for every model and tool on Komodo software, hosted or local, pl
 - **Never touch a critical ref.** No commit, push, merge, delete, or force on `main`, `master`, or a `komodo/policy.json` ref; work on a `<type>/<kebab-name>` branch.
 - **Never touch host or toolkit config.** Home dirs, machine overlay, `.git/config`, `.git/hooks`, toolkit binaries.
 - **Never add a trailer or session link.** No co-author, generated-by, or session URL.
+- **Open a pull request with `komodo pr create`.** It checks the title and applies the labels; the guard refuses `gh pr create`. `komodo pr label` labels one opened another way.
 - **Landing is a person merging the epic PR.** A group PR targets its epic branch. Hand the user a refused command; after a merge, run `komodo sync`.
 - **One session writes a branch.** The guard refuses a write on another session's live claim; switch to your own branch.
 - Past a one-line fix, run: `/run <group>` in session, `komodo run <group>` headless.

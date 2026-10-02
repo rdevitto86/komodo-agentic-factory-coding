@@ -181,7 +181,7 @@ func TestCheckGroupPRFlagsWrongBaseWhenEpicBranchExists(t *testing.T) {
 	}
 
 	problems := checkEpicsWithRunners(root, "main", mockGitRun, mockPRRun)
-	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "decision 0028") {
+	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "decision 0006") {
 		t.Fatalf("expected wrong base problem, got %+v", problems)
 	}
 }

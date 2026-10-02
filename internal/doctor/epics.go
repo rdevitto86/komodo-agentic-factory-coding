@@ -14,7 +14,7 @@ import (
 type GitRunner func(dir string, args ...string) (string, error)
 
 // CheckEpics reports an epic holding READY groups whose branch or draft PR is missing on origin,
-// and an open group PR whose base is main while its epic branch exists (decision 0028).
+// and an open group PR whose base is main while its epic branch exists (decision 0006).
 func CheckEpics(root string, defaultBranch string, run pr.Runner) []Problem {
 	return checkEpicsWithRunners(root, defaultBranch, git.Run, run)
 }
@@ -159,7 +159,7 @@ func checkGroupPRBasesWithRunners(root, defaultBranch string, parsed backlog.Bac
 		out, _ := gitRun(root, "branch", "-r", "--list", "origin/"+epicBranch)
 		if strings.TrimSpace(out) != "" {
 			problems = append(problems, Problem{"epic", fmt.Sprintf("PR #%d", p.Number),
-				fmt.Sprintf("group PR for %s targets %s but its epic branch %s exists on origin; target the epic branch instead (decision 0028)", group.ID, defaultBranch, epicBranch)})
+				fmt.Sprintf("group PR for %s targets %s but its epic branch %s exists on origin; target the epic branch instead (decision 0006)", group.ID, defaultBranch, epicBranch)})
 		}
 	}
 

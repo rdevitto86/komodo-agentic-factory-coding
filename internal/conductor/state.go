@@ -9,7 +9,7 @@ import (
 	"komodo/internal/review"
 )
 
-// GroupState is one of the states a task group's state.json can hold (system-design.md#group-states).
+// GroupState is one of the states a task group's state.json can hold (lld.md#group-states).
 type GroupState string
 
 const (

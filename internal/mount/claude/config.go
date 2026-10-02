@@ -2,7 +2,7 @@
 package claude
 
 const (
-	// settingSourcesFlag excludes personal layer per decision 0025.
+	// settingSourcesFlag excludes personal layer.
 	settingSourcesFlag = "project,local"
 
 	// strictMCPConfigFlag restricts MCP to project and role definitions only.
