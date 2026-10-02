@@ -52,6 +52,9 @@ func TestOpenEpicCutsPushesAndOpensADraftPull(t *testing.T) {
 	if _, err := git.Run(root, "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/feat/2.0.0"); err != nil {
 		t.Fatalf("the epic branch never reached origin: %v", err)
 	}
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/feat/2.0.0"); err == nil {
+		t.Fatal("opening the epic cut a local branch; it must push origin/main alone")
+	}
 	if len(calls) != 1 {
 		t.Fatalf("calls = %v, want exactly one pull request created", calls)
 	}

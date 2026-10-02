@@ -77,18 +77,12 @@ func onEpicOrigin(root, branch string) bool {
 	return err == nil && heads != ""
 }
 
-// cutEpicBranch fetches main, points branch at it locally when branch does not exist yet, and
-// pushes branch to origin.
+// cutEpicBranch fetches main and pushes origin/main to origin as branch, with no local branch cut.
 func cutEpicBranch(root, branch string) error {
 	if err := Fetch(root, "main"); err != nil {
 		return err
 	}
-	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", branch); err != nil {
-		if _, err := git.Run(root, "branch", branch, "origin/main"); err != nil {
-			return err
-		}
-	}
-	return PushFromWorktree(root, root, branch)
+	return pushRef(root, root, "origin/main", branch)
 }
 
 // createEpicPull opens head's pull request to base as a draft, or a normal one labelled

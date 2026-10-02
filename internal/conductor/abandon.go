@@ -15,7 +15,7 @@ import (
 // abandonedState is the state an abandoned group's note names when its run saved no state.json.
 const abandonedState = "Abandoned"
 
-// Abandon removes a group's worktree, branch and run record on purpose, and writes a blocker note saying so
+// Abandon removes a group's worktree, tip ref and run record on purpose, and writes a blocker note saying so
 // into the root's backlog, with every open task BLOCKED; it refuses while a live run holds the group.
 func Abandon(root, group string, at time.Time) error {
 	if err := line.CheckLock(root, group); err != nil {
@@ -34,7 +34,7 @@ func Abandon(root, group string, at time.Time) error {
 	}
 	note := backlog.BlockerNote{
 		At: at, Run: run.Run, State: state,
-		Items: []string{"abandoned on purpose with `komodo abandon`; its worktree and branch are removed"},
+		Items: []string{"abandoned on purpose with `komodo abandon`; its worktree and tip are removed"},
 		Needs: "a person to rework the group and set it READY",
 	}
 	path, noted, err := abandonNote(root, group, note)
@@ -56,8 +56,8 @@ func Abandon(root, group string, at time.Time) error {
 		return err
 	}
 	if run.Branch != "" {
-		if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+run.Branch); err == nil {
-			if _, err := git.Run(root, "branch", "-D", run.Branch); err != nil {
+		if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", line.TipRef(run.Branch)); err == nil {
+			if _, err := git.Run(root, "update-ref", "-d", line.TipRef(run.Branch)); err != nil {
 				return err
 			}
 		}

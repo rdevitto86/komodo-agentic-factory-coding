@@ -33,7 +33,9 @@ func abandonRepo(t *testing.T) (root, worktree string) {
 	gitIn(root, "add", "-A")
 	gitIn(root, "commit", "-m", "seed")
 	worktree = filepath.Join(root, line.StateDir, "wt", "TG-1")
-	gitIn(root, "worktree", "add", "-b", "feat/a-group", worktree)
+	gitIn(root, "worktree", "add", "--detach", worktree)
+	gitIn(root, "update-ref", line.TipRef("feat/a-group"), "HEAD")
+	gitIn(root, "branch", "feat/a-group")
 	run := line.RunState{Run: "run-1", Group: "TG-1", Base: "main", Branch: "feat/a-group", Worktree: worktree}
 	if err := line.SaveRun(root, run); err != nil {
 		t.Fatal(err)
@@ -44,7 +46,7 @@ func abandonRepo(t *testing.T) (root, worktree string) {
 	return root, worktree
 }
 
-func TestAbandonRemovesTheWorktreeAndBranchAndBlocksTheGroup(t *testing.T) {
+func TestAbandonRemovesTheWorktreeAndTipAndBlocksTheGroup(t *testing.T) {
 	root, worktree := abandonRepo(t)
 	at := time.Date(2026, 9, 27, 10, 30, 0, 0, time.UTC)
 	if err := Abandon(root, "TG-1", at); err != nil {
@@ -53,9 +55,12 @@ func TestAbandonRemovesTheWorktreeAndBranchAndBlocksTheGroup(t *testing.T) {
 	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
 		t.Fatalf("worktree stat = %v, want it removed", err)
 	}
+	if err := exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", line.TipRef("feat/a-group")).Run(); err == nil {
+		t.Fatal("the group's tip ref survives; abandon must drop it")
+	}
 	if out, err := exec.Command("git", "-C", root, "branch", "--list", "feat/a-group").Output(); err != nil ||
-		strings.TrimSpace(string(out)) != "" {
-		t.Fatalf("branch list = %q, %v; want the group's branch deleted", out, err)
+		strings.TrimSpace(string(out)) == "" {
+		t.Fatalf("branch list = %q, %v; abandon must never delete a person's local branch", out, err)
 	}
 	if _, err := os.Stat(line.RunDir(root, "TG-1")); !os.IsNotExist(err) {
 		t.Fatalf("run dir stat = %v, want the run record removed", err)

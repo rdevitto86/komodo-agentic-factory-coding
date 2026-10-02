@@ -172,7 +172,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if result.Base != plan.Base {
 		result.StaleBase = plan.Base
 	}
-	if err := catchUp(group, result.Base); err != nil {
+	if err := catchUp(root, group, plan.Branch, result.Base); err != nil {
 		return nil, err
 	}
 	outcome := ""
@@ -223,8 +223,12 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	if err := ClearStatus(root, shippedIDs); err != nil {
 		return nil, err
 	}
-	lines = ChangedLines(group, StartRef(group, plan.Base), plan.Branch)
-	files, added := ReviewSize(group, StartRef(group, plan.Base), plan.Branch)
+	if err := syncTip(root, group, plan.Branch); err != nil {
+		return nil, err
+	}
+	tip := diffTip(root, plan.Branch)
+	lines = ChangedLines(group, StartRef(group, plan.Base), tip)
+	files, added := ReviewSize(group, StartRef(group, plan.Base), tip)
 	if err := checkPRSize(plan.Group, files, added, plan.Profile.PRFiles, plan.Profile.PRLinesMax); err != nil {
 		return nil, err
 	}
@@ -451,10 +455,13 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	}
 	pushURL, _ := git.Run(root, "remote", "get-url", "--push", "origin")
 	clean, _, _ := splitCredential(pushURL)
-	if err := runPrePush(group, clean, "refs/heads/"+plan.Branch); err != nil {
+	if err := syncTip(root, group, plan.Branch); err != nil {
+		return nil, err
+	}
+	if err := runPrePush(group, clean, diffTip(root, plan.Branch), "refs/heads/"+plan.Branch); err != nil {
 		return []string{"the pre-push hook refuses the group: " + redactURL(err.Error(), pushURL)}, nil
 	}
-	return rebaseForRepair(group, base)
+	return rebaseForRepair(root, group, plan.Branch, base)
 }
 
 // endedEpicFiles lists the docs/backlog group files a group's commit deletes: its epic's every file once no
@@ -509,7 +516,7 @@ func conflictFixes(files []string, target string) []string {
 
 // rebaseForRepair rebases the group onto the latest base, or merges it into a pushed branch; a conflict
 // leaves its markers in the worktree and returns one fix per conflicted file.
-func rebaseForRepair(group, base string) ([]string, error) {
+func rebaseForRepair(root, group, branch, base string) ([]string, error) {
 	if hasOrigin(group) {
 		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
 		_ = Fetch(group, base)
@@ -523,10 +530,15 @@ func rebaseForRepair(group, base string) ([]string, error) {
 	}
 	args, abort := []string{"rebase", "--autostash", target}, []string{"rebase", "--abort"}
 	// A pushed branch is never rewritten, so it takes the base in a merge commit instead.
-	if branch, err := git.Run(group, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && onOrigin(group, strings.TrimSpace(branch)) {
+	if onOrigin(group, branch) {
 		args, abort = []string{"merge", "--autostash", "--no-edit", target}, []string{"merge", "--abort"}
 	}
-	return settleCatchUp(group, target, abort, args...)
+	old, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", TipRef(branch))
+	fixes, err := settleCatchUp(group, target, abort, args...)
+	if err != nil || len(fixes) > 0 || tipErr != nil {
+		return fixes, err
+	}
+	return nil, Advance(root, branch, group, old)
 }
 
 // settleCatchUp runs one rebase or merge step, returning its conflicted files as fixes; a failure with
@@ -859,9 +871,9 @@ func liveBase(root, base string) string {
 	return DefaultBase(root)
 }
 
-// catchUp rebases the group branch onto the latest base, keeping uncommitted edits, so its pull request never
-// starts behind; a conflict aborts the rebase and names the files.
-func catchUp(group, base string) error {
+// catchUp brings the group onto the latest base keeping edits: a rebase, or merges for a pushed branch.
+// Its tip ref follows; a conflict aborts and names the files.
+func catchUp(root, group, branch, base string) error {
 	if hasOrigin(group) {
 		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
 		_ = Fetch(group, base)
@@ -870,24 +882,44 @@ func catchUp(group, base string) error {
 	if _, err := git.Run(group, "rev-parse", "--verify", "--quiet", target); err != nil {
 		return nil
 	}
-	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err == nil {
-		return nil
+	old, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", TipRef(branch))
+	pushed := onOrigin(group, branch)
+	// A person's push to the branch is merged in before the base, since a pushed branch is never rewritten.
+	if pushed {
+		remote := "origin/" + branch
+		if _, err := git.Run(group, "merge-base", "--is-ancestor", remote, "HEAD"); err != nil {
+			if err := mergeStep(group, remote, "%s moved and the group no longer merges it; resolve %s on the group branch, then ship"); err != nil {
+				return err
+			}
+		}
 	}
-	// A pushed branch is never rewritten, so it takes the base in a merge commit instead.
-	if branch, err := git.Run(group, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && onOrigin(group, strings.TrimSpace(branch)) {
-		if _, err := git.Run(group, "merge", "--autostash", "--no-edit", target); err != nil {
+	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err != nil {
+		if pushed {
+			if err := mergeStep(group, target, "%s moved and the group no longer merges it; resolve %s on the group branch, then ship"); err != nil {
+				return err
+			}
+		} else if _, err := git.Run(group, "rebase", "--autostash", target); err != nil {
 			conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
-			_, _ = git.Run(group, "merge", "--abort")
-			return fmt.Errorf("%s moved and the group no longer merges it; resolve %s on the group branch, then ship",
+			_, _ = git.Run(group, "rebase", "--abort")
+			return fmt.Errorf("%s moved and the group no longer rebases onto it; resolve %s on the group branch, then ship",
 				target, strings.Join(strings.Fields(conflicts), ", "))
 		}
+	}
+	if tipErr != nil {
 		return nil
 	}
-	if _, err := git.Run(group, "rebase", "--autostash", target); err != nil {
+	if head, err := git.Run(group, "rev-parse", "HEAD"); err == nil && head == old {
+		return nil
+	}
+	return Advance(root, branch, group, old)
+}
+
+// mergeStep merges target into group, aborting on a conflict and returning failure formatted with target and its files.
+func mergeStep(group, target, failure string) error {
+	if _, err := git.Run(group, "merge", "--autostash", "--no-edit", target); err != nil {
 		conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
-		_, _ = git.Run(group, "rebase", "--abort")
-		return fmt.Errorf("%s moved and the group no longer rebases onto it; resolve %s on the group branch, then ship",
-			target, strings.Join(strings.Fields(conflicts), ", "))
+		_, _ = git.Run(group, "merge", "--abort")
+		return fmt.Errorf(failure, target, strings.Join(strings.Fields(conflicts), ", "))
 	}
 	return nil
 }
@@ -962,12 +994,43 @@ func ChangelogLine(plan *Plan, result *ShipResult) string {
 	return line
 }
 
-// PushFromWorktree pushes branch from worktree to the root's origin URL, past its refused pushurl, and sets its upstream.
+// PushFromWorktree pushes branch's tip ref from worktree to the root's origin URL, past its refused pushurl.
 // It refuses a critical ref, since the push carries the forge credential and landing is the human's merge.
 func PushFromWorktree(root, worktree, branch string) error {
 	if guard.Load(root, root).IsCritical(branch) {
 		return fmt.Errorf("git push to origin %s: a critical ref; landing is the human's merge button", branch)
 	}
+	if err := syncTip(root, worktree, branch); err != nil {
+		return err
+	}
+	return pushRef(root, worktree, diffTip(root, branch), branch)
+}
+
+// diffTip is branch's tip ref, else the local branch of a repo never cut detached.
+func diffTip(root, branch string) string {
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", TipRef(branch)); err == nil {
+		return TipRef(branch)
+	}
+	return branch
+}
+
+// syncTip moves branch's tip ref to the HEAD of a detached worktree tracking it; any other worktree is left alone.
+func syncTip(root, worktree, branch string) error {
+	if git.Or(worktree, "symbolic-ref", "--short", "HEAD") != "" || git.TrackedBranch(worktree) != branch {
+		return nil
+	}
+	old, err := git.Run(root, "rev-parse", "--verify", "--quiet", TipRef(branch))
+	if err != nil {
+		return nil
+	}
+	if head, err := git.Run(worktree, "rev-parse", "HEAD"); err != nil || head == old {
+		return err
+	}
+	return Advance(root, branch, worktree, old)
+}
+
+// pushRef pushes source to branch on the root's origin URL, past its refused pushurl, after the pre-push hook.
+func pushRef(root, worktree, source, branch string) error {
 	pushURL, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
@@ -975,11 +1038,10 @@ func PushFromWorktree(root, worktree, branch string) error {
 	ref := "refs/heads/" + branch
 	clean, username, password := splitCredential(pushURL)
 	// The hook runs here without the credential, so the push that holds it skips the hook.
-	if err := runPrePush(worktree, clean, ref); err != nil {
+	if err := runPrePush(worktree, clean, source, ref); err != nil {
 		return fmt.Errorf("pre-push hook for %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
-	// A detached worktree carries no refs/heads/<branch>; its own HEAD is always the source, attached or not.
-	args := []string{"push", "--no-verify", clean, "HEAD:" + ref}
+	args := []string{"push", "--no-verify", clean, source + ":" + ref}
 	env := os.Environ()
 	if username != "" || password != "" {
 		args = append([]string{"-c", "credential.helper=", "-c", "credential.helper=" + pushCredentialHelper}, args...)
@@ -994,10 +1056,6 @@ func PushFromWorktree(root, worktree, branch string) error {
 			return fmt.Errorf("git push to origin %s: %w: %s", branch, ErrNoCredential, failure)
 		}
 		return fmt.Errorf("git push to origin %s: %s", branch, failure)
-	}
-	// An upstream is a convenience for a person on the branch later; a push that landed never fails on it.
-	if _, err := git.Run(worktree, "fetch", "origin", branch); err == nil {
-		_, _ = git.Run(worktree, "branch", "--set-upstream-to=origin/"+branch, branch)
 	}
 	return nil
 }
@@ -1043,10 +1101,9 @@ func splitCredential(raw string) (clean, username, password string) {
 // zeroSHA is the object name a pre-push hook reads for a remote ref it cannot see.
 const zeroSHA = "0000000000000000000000000000000000000000"
 
-// runPrePush runs worktree's pre-push hook, if any, on ref as a push to origin at url would, in hookEnv's environment.
-// The object pushed is always the worktree's own HEAD, attached or detached, never a named local ref.
-func runPrePush(worktree, url, ref string) error {
-	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", "HEAD")
+// runPrePush runs worktree's pre-push hook, if any, as a push of source to ref at url would, in hookEnv's environment.
+func runPrePush(worktree, url, source, ref string) error {
+	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", source)
 	if err != nil {
 		return nil
 	}
