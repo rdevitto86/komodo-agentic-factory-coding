@@ -91,6 +91,7 @@ func TestLimitsMatchTheContract(t *testing.T) {
 		{"taskchecks", Stop, 3},
 		{"evidence", Stop, 2},
 		{"timewarn", PostToolUse, 0},
+		{"prune", SessionStart, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

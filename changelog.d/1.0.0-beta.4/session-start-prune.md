@@ -1,0 +1,1 @@
+- **A person's session start sweeps finished worktrees in the background:** detached, one at a time, capped at 2 minutes, logged to `.komodo/prune.log`; a clean, unleased worktree goes once merged or idle 24 hours with every commit on origin, and never one with work past its tip

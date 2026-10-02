@@ -40,6 +40,7 @@ Cleanup is mechanical (REQ-46):
 | An epic's group files | The PR of the epic's last open group deletes them; a group with no epic deletes its own file |
 | An epic's files that outlived it | `komodo sync` opens a cleanup PR, for example when an epic's last two groups finished together |
 | A group's detached worktree and its `refs/komodo/<branch>` tip | Ship finishes, or the next run starts, for merged or abandoned groups; Komodo never deletes a branch under `refs/heads/` (decision 0012) |
+| Any `.komodo/wt` worktree whose work is safe on origin | A person's session starts and sweeps in the background: clean, unleased, no open run, and either merged or idle 24 hours with every commit on origin |
 | A group's remote branch | The forge deletes head branches on merge; `komodo doctor --remote` checks that setting |
 | Run folders | Only the last 10 runs are kept, a starting value |
 | Anything else | `komodo doctor` flags an ended epic's files, and any worktree or branch with no group |
@@ -364,6 +365,7 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 | Evidence, Stop | Review lens | Every blocking finding carries evidence | Refuses to stop, listing the findings without evidence | 2, then those findings become notes | Allows |
 | Time warning, PostToolUse | Builder, lens | Time and turns used | Never refuses; warns at 80% | — | Skips |
 | Status, SessionStart | Orchestrator | — | Adds the run's status and any blocked groups | — | Skips |
+| Prune, SessionStart | Orchestrator | — | Launches the worktree sweep detached, one at a time, capped at 2 minutes, logged to `.komodo/prune.log`; names the last sweep's failure | — | Skips |
 
 The boundaries that stop hook loops:
 

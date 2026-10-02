@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,9 @@ import (
 
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/git"
+	"komodo/internal/lease"
 	"komodo/internal/line"
+	"komodo/internal/proc"
 )
 
 // openBacklog holds one ready group, so a run recorded for it stays open.
@@ -236,5 +239,112 @@ func TestPruneKeepsADroppedBranchWithNoPushedRecordOrNewWork(t *testing.T) {
 	}
 	if !exists(worktree) {
 		t.Fatal("a worktree with unpushed work past its record was swept")
+	}
+}
+
+// TestPruneSweepsAnIdleWorktreeWhoseWorkIsOnOrigin proves an idle worktree with every commit on origin goes,
+// freeing its pinned branch, while a recent, unpushed, dirty, leased, open-lane or past-its-tip one stays.
+func TestPruneSweepsAnIdleWorktreeWhoseWorkIsOnOrigin(t *testing.T) {
+	root, run := pruneRepo(t, openBacklog)
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	run(root, "init", "-q", "--bare", bare)
+	run(root, "remote", "add", "origin", bare)
+	run(root, "push", "-q", "origin", "main")
+	wt := func(name string) string { return filepath.Join(root, ".komodo", "wt", name) }
+	// cut builds a detached worktree tracking branch with one commit, pushing it to origin when asked.
+	cut := func(name, branch string, push bool) string {
+		path := wt(name)
+		if err := line.AddDetached(root, branch, "main", path); err != nil {
+			t.Fatal(err)
+		}
+		write(t, path, name+".txt", "work\n")
+		commitAll(t, path, "work "+name)
+		if err := line.Advance(root, branch, path, git.Or(root, "rev-parse", line.TipRef(branch))); err != nil {
+			t.Fatal(err)
+		}
+		if push {
+			run(root, "push", "-q", "origin", git.Or(path, "rev-parse", "HEAD")+":refs/heads/"+branch)
+		}
+		return path
+	}
+	group := cut("TG-09.1", "feat/done", true)
+	run(root, "fetch", "-q", "origin")
+	pinned := wt("TSK-09.1.1")
+	run(root, "worktree", "add", "-q", "-b", "task/tsk-09.1.1", pinned, "origin/feat/done")
+	unpushed := cut("TG-09.2", "feat/local", false)
+	dirty := cut("TG-09.3", "feat/dirty", true)
+	write(t, dirty, "draft.txt", "unsaved\n")
+	leased := cut("TG-09.4", "feat/leased", true)
+	ahead := wt("TG-09.5")
+	if err := line.AddDetached(root, "feat/ahead", "main", ahead); err != nil {
+		t.Fatal(err)
+	}
+	run(root, "push", "-q", "origin", "main:refs/heads/feat/ahead")
+	write(t, ahead, "ahead.txt", "past the tip\n")
+	commitAll(t, ahead, "work past the tip")
+	lane := wt("TSK-01.1.1")
+	if err := line.AddDetached(root, line.TaskBranch("TSK-01.1.1"), "origin/feat/done", lane); err != nil {
+		t.Fatal(err)
+	}
+	state := line.RunState{Run: "r", Group: "TG-01.1", Base: "main", Branch: "feat/g", Waves: [][]string{{"TSK-01.1.1"}}}
+	if err := line.SaveRun(root, state); err != nil {
+		t.Fatal(err)
+	}
+	kept := []string{unpushed, dirty, leased, lane, ahead}
+
+	got, err := Prune(root, "main", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range append([]string{group, pinned}, kept...) {
+		if !exists(path) {
+			t.Fatalf("%s was swept before it sat idle; done = %v", path, got)
+		}
+	}
+
+	later := time.Now().Add(idleFor + time.Hour)
+	now = func() time.Time { return later }
+	t.Cleanup(func() { now = time.Now })
+	self, ok := proc.Of(os.Getpid())
+	if !ok {
+		t.Skip("no process table on this platform")
+	}
+	if err := lease.Take(root, "TG-09.4", "feat/leased", self, later); err != nil {
+		t.Fatal(err)
+	}
+	got, err = Prune(root, "main", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists(group) || exists(pinned) {
+		t.Fatalf("an idle worktree with its work on origin survived; done = %v", got)
+	}
+	for _, path := range kept {
+		if !exists(path) {
+			t.Fatalf("%s was swept; done = %v", path, got)
+		}
+	}
+	if !refExists(root, "refs/heads/task/tsk-09.1.1") {
+		t.Fatal("prune deleted a branch under refs/heads/")
+	}
+	run(root, "branch", "-D", "task/tsk-09.1.1")
+}
+
+// TestPruneKeepsNewWorkOnABranchTheForgeReportsMerged proves a commit past the line's push survives a merged pull request.
+func TestPruneKeepsNewWorkOnABranchTheForgeReportsMerged(t *testing.T) {
+	root, _, worktree, _ := squashRepo(t, "feat/reused")
+	old := git.Or(root, "rev-parse", line.TipRef("feat/reused"))
+	write(t, worktree, "next.txt", "after the merge\n")
+	commitAll(t, worktree, "work after the merge")
+	if err := line.Advance(root, "feat/reused", worktree, old); err != nil {
+		t.Fatal(err)
+	}
+	mergedOnForge = func(_, branch string) bool { return branch == "feat/reused" }
+	t.Cleanup(func() { mergedOnForge = func(string, string) bool { return false } })
+	if _, err := Prune(root, "main", true); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(worktree) || !refExists(root, line.TipRef("feat/reused")) {
+		t.Fatal("unpushed work on a forge-merged branch was swept")
 	}
 }
