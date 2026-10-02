@@ -93,6 +93,18 @@ func TestTheReviewerIsAllowedOnlyReadsAndReadOnlyGit(t *testing.T) {
 	}
 }
 
+// TestABuilderWithAShellIsDeniedBranchPinningGitCalls proves a builder never runs the git calls
+// that move or pin a branch; only komodo worktree add does (decision 0012).
+func TestABuilderWithAShellIsDeniedBranchPinningGitCalls(t *testing.T) {
+	req := mount.StartRequest{Role: "builder", Tools: []string{"read", "edit", "write", "shell", "search"}}
+	_, deny := rolePermissions(t.TempDir(), goRepo(t), req)
+	for _, rule := range []string{"Bash(git update-ref:*)", "Bash(git symbolic-ref:*)", "Bash(git worktree:*)"} {
+		if !slices.Contains(deny, rule) {
+			t.Fatalf("deny = %v, missing %q", deny, rule)
+		}
+	}
+}
+
 func TestTheGoldenSuiteDenyNeverReachesANestedEvalPackage(t *testing.T) {
 	_, deny := rolePermissions(t.TempDir(), "/repo", mount.StartRequest{Role: "builder", Tools: []string{"read"}})
 	for _, rule := range deny {

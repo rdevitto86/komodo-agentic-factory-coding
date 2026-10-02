@@ -41,9 +41,8 @@ const usage = `komodo: the code assembly line.
   komodo release publish      Build, test, checksum and publish the newest version as a release
   komodo install --host X     Mount this repo on a host, or on both
   komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
-  komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers; prune frees dead claims
+  komodo doctor [--prune]     References, roles, leaks, drift, budgets, leftovers; prune clears stale worktrees and runs
   komodo guard [check]        The one agent hook; check runs its table
-  komodo guard release [b]    Free a branch's session claim, the current branch by default
   komodo hook <name>          Every other agent hook's entry point; a hook that fails allows
   komodo run [group|task]     Drive the line headless on this host, under a budget
   komodo resume <group>       The state a killed run left: continue its session or start from its WIP

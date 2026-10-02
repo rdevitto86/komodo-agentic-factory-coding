@@ -109,6 +109,17 @@ func Table(policy Policy) []Case {
 		// A trailer is now the commit-msg hook's rule, not the guard's; the tool call itself is allowed.
 		bash("a trailer reaches the commit-msg hook, not the guard", "git commit -m 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", false, ""),
 
+		// Rule 6: a branch is never pinned; komodo worktree add is the one way to cut one (decision 0012).
+		bash("worktree add without --detach", "git worktree add ../x feat/y", "feat/x", true, "komodo worktree add"),
+		bash("worktree add -b attaches a branch", "git worktree add --detach -b feat/y ../x", "feat/x", true, "komodo worktree add"),
+		bash("worktree add --detach is free", "git worktree add --detach ../x feat/y", "feat/x", false, ""),
+		bash("worktree add -B on main", "git worktree add -B main ../x origin/main", "feat/x", true, "never moved by hand"),
+		bash("checkout -B on main", "git checkout -B main", "feat/x", true, "never moved by hand"),
+		bash("switch -C on main", "git switch -C main", "feat/x", true, "never moved by hand"),
+		bash("checkout -B on its own branch", "git checkout -B feat/y", "feat/x", false, ""),
+		bash("update-ref on refs/heads/main", "git update-ref refs/heads/main HEAD~1", "feat/x", true, "never moved by hand"),
+		bash("update-ref on its own branch", "git update-ref refs/heads/feat/x HEAD~1", "feat/x", false, ""),
+
 		// Rule 5: a line session never edits or writes outside its worktree.
 		asRole("builder", write("edit above the root", "../outside/file.go", true, "outside the worktree")),
 		asRole("builder", write("a new source file", "internal/line/new.go", false, "")),

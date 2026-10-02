@@ -2,7 +2,10 @@ package guard
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
+
+	"komodo/internal/git"
 )
 
 // noVerifyCommands are the git subcommands whose --no-verify skips the gate's own hook.
@@ -11,8 +14,8 @@ var noVerifyCommands = map[string]bool{
 }
 
 // gitFindings checks one git call against the guard's rules: a critical ref is never committed,
-// pushed, merged, or moved by hand; pushed history is never rewritten; hooks are never skipped.
-func gitFindings(words []string, branch string, policy Policy) []string {
+// pushed, merged, or moved by hand; pushed history and hooks hold; a branch is never pinned.
+func gitFindings(words []string, dir, branch string, policy Policy) []string {
 	args := skipGlobalFlags(words[1:])
 	if len(args) == 0 {
 		return nil
@@ -35,8 +38,141 @@ func gitFindings(words []string, branch string, policy Policy) []string {
 		}
 	case "branch":
 		findings = append(findings, branchFindings(rest, policy)...)
+	case "worktree":
+		findings = append(findings, worktreeFindings(rest, policy)...)
+	case "checkout":
+		findings = append(findings, checkoutFindings(rest, gitDirectory(dir, words[1:]), policy)...)
+	case "switch":
+		findings = append(findings, switchFindings(rest, gitDirectory(dir, words[1:]), policy)...)
+	case "update-ref":
+		findings = append(findings, updateRefFindings(rest, policy)...)
 	}
 	return findings
+}
+
+// worktreeAttach names what komodo worktree add or --detach replaces, for every attach refusal.
+const worktreeAttach = "name komodo worktree add or git switch --detach"
+
+// worktreeFindings refuses a git worktree add that attaches a branch instead of detaching one, and
+// a -B that would force-move a critical ref.
+func worktreeFindings(rest []string, policy Policy) []string {
+	if len(rest) == 0 || rest[0] != "add" {
+		return nil
+	}
+	args := rest[1:]
+	if target, ok := flagValue(args, "-B"); ok && normalizeMode(policy.Mode) != ModeUnsafe && policy.IsCritical(target) {
+		return []string{fmt.Sprintf("git worktree add -B %s: a critical ref is never moved by hand; %s", target, worktreeAttach)}
+	}
+	detached, attach := false, false
+	for _, arg := range args {
+		switch arg {
+		case "--detach":
+			detached = true
+		case "-b", "-B":
+			attach = true
+		}
+	}
+	switch {
+	case attach:
+		return []string{"git worktree add -b/-B attaches a branch; " + worktreeAttach}
+	case !detached:
+		return []string{"git worktree add without --detach attaches a branch; " + worktreeAttach}
+	}
+	return nil
+}
+
+// checkoutFindings refuses checkout -B onto a critical ref, and, in a linked worktree, a plain
+// checkout onto a branch git already has or would create tracking a same-named remote branch.
+func checkoutFindings(rest []string, dir string, policy Policy) []string {
+	var findings []string
+	if target, ok := flagValue(rest, "-B"); ok && normalizeMode(policy.Mode) != ModeUnsafe && policy.IsCritical(target) {
+		findings = append(findings, fmt.Sprintf("git checkout -B %s: a critical ref is never moved by hand; %s", target, worktreeAttach))
+	}
+	if target := plainCheckoutTarget(rest); target != "" && isLinkedWorktree(dir) && attachesBranch(dir, target) {
+		findings = append(findings, fmt.Sprintf("git checkout %s: a linked worktree never attaches a branch; %s", target, worktreeAttach))
+	}
+	return findings
+}
+
+// switchFindings refuses switch -C onto a critical ref, and, in a linked worktree, a plain switch
+// onto a branch git already has or would create tracking a same-named remote branch.
+func switchFindings(rest []string, dir string, policy Policy) []string {
+	var findings []string
+	if target, ok := flagValue(rest, "-C"); ok && normalizeMode(policy.Mode) != ModeUnsafe && policy.IsCritical(target) {
+		findings = append(findings, fmt.Sprintf("git switch -C %s: a critical ref is never moved by hand; %s", target, worktreeAttach))
+	}
+	if target := plainSwitchTarget(rest); target != "" && isLinkedWorktree(dir) && attachesBranch(dir, target) {
+		findings = append(findings, fmt.Sprintf("git switch %s: a linked worktree never attaches a branch; %s", target, worktreeAttach))
+	}
+	return findings
+}
+
+// updateRefFindings refuses a git update-ref that moves a critical ref by hand.
+func updateRefFindings(rest []string, policy Policy) []string {
+	if normalizeMode(policy.Mode) == ModeUnsafe {
+		return nil
+	}
+	for _, arg := range rest {
+		if arg == "" || strings.HasPrefix(arg, "-") {
+			continue
+		}
+		ref := strings.TrimPrefix(arg, "refs/heads/")
+		if policy.IsCritical(ref) {
+			return []string{fmt.Sprintf("git update-ref %s: a critical ref is never moved by hand; %s", arg, worktreeAttach)}
+		}
+		break
+	}
+	return nil
+}
+
+// flagValue is the word after flag's first occurrence in args, or nothing when flag is absent or last.
+func flagValue(args []string, flag string) (string, bool) {
+	for index, arg := range args {
+		if arg == flag && index+1 < len(args) {
+			return args[index+1], true
+		}
+	}
+	return "", false
+}
+
+// plainCheckoutTarget is the branch a checkout with no -b, -B, or --detach would attach, or "".
+func plainCheckoutTarget(rest []string) string {
+	for _, arg := range rest {
+		if arg == "-b" || arg == "-B" || arg == "--detach" {
+			return ""
+		}
+	}
+	return checkoutTarget(rest, "")
+}
+
+// plainSwitchTarget is the branch a switch with no -c, -C, or --detach would attach, or "".
+func plainSwitchTarget(rest []string) string {
+	for _, arg := range rest {
+		if arg == "-c" || arg == "-C" || arg == "--create" || arg == "--force-create" || arg == "--detach" {
+			return ""
+		}
+	}
+	return switchTarget(rest, "")
+}
+
+// isLinkedWorktree reports whether dir is a linked worktree, not the repository's main checkout.
+func isLinkedWorktree(dir string) bool {
+	gitDir := git.Or(dir, "rev-parse", "--path-format=absolute", "--git-dir")
+	common := git.Or(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	return gitDir != "" && gitDir != common
+}
+
+// attachesBranch reports whether target names a local branch dir already has, or one with no local
+// branch git would create there tracking a same-named branch on origin; either way an attach.
+func attachesBranch(dir, target string) bool {
+	if target == "" {
+		return false
+	}
+	if _, err := git.Run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+target); err == nil {
+		return true
+	}
+	_, err := git.Run(dir, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+target)
+	return err == nil
 }
 
 // skipGlobalFlags drops a leading run of git's own flags, so the subcommand after them is found;
@@ -156,6 +292,30 @@ func lineEpicBranch(branch string) bool {
 	return IsLineSession() && IsEpicBranch(branch)
 }
 
+// gitDirectory is where one git call runs: dir, moved by each leading -C flag in turn.
+func gitDirectory(dir string, args []string) string {
+	for index := 0; index < len(args) && strings.HasPrefix(args[index], "-"); index++ {
+		if args[index] == "-c" {
+			index++
+			continue
+		}
+		if args[index] == "-C" && index+1 < len(args) {
+			index++
+			dir = resolveDir(dir, args[index])
+		}
+	}
+	return dir
+}
+
+// resolveDir joins path onto dir unless it is absolute, expanding a leading tilde first.
+func resolveDir(dir, path string) string {
+	path = expandHome(path)
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(dir, path)
+}
+
 // branchFor is the branch one git call is judged on: the real branch of its -C target when the
 // call points at another directory, or dir's tracked branch when it does not.
 func branchFor(words []string, dir, branch string) string {
@@ -187,9 +347,14 @@ func afterGit(words []string, dir, branch string) string {
 	return branch
 }
 
-// switchTarget is the branch git switch moves to: the name after -c/-C/--create, or the first
-// positional operand, or branch unchanged when neither names one.
+// switchTarget is the branch git switch moves to: HEAD on --detach/-d, the name after
+// -c/-C/--create, or the first positional operand, or branch unchanged when none names one.
 func switchTarget(args []string, branch string) string {
+	for _, arg := range args {
+		if arg == "--detach" || arg == "-d" {
+			return "HEAD"
+		}
+	}
 	for index, arg := range args {
 		if arg == "-c" || arg == "-C" || arg == "--create" || arg == "--force-create" {
 			if index+1 < len(args) {
@@ -206,9 +371,14 @@ func switchTarget(args []string, branch string) string {
 	return branch
 }
 
-// checkoutTarget is the branch git checkout moves to: the name after -b/-B, or the first
-// positional operand before a `--` pathspec separator, or branch unchanged when neither names one.
+// checkoutTarget is the branch git checkout moves to: HEAD on --detach, the name after -b/-B, or
+// the first positional operand before a `--` pathspec separator, or branch unchanged when none names one.
 func checkoutTarget(args []string, branch string) string {
+	for _, arg := range args {
+		if arg == "--detach" {
+			return "HEAD"
+		}
+	}
 	for index, arg := range args {
 		if arg == "-b" || arg == "-B" {
 			if index+1 < len(args) {
