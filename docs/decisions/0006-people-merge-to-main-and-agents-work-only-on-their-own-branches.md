@@ -1,6 +1,6 @@
 # 0006. People merge to `main`, and agents work only on their own branches
 
-**Status:** Accepted, 2026-10-02.
+**Status:** Accepted, 2026-10-02. Amended by 0012, 2026-10-02.
 
 **Context.** The forge is GitHub Free, and the developer's own token is the only credential, so the developer authors every PR and their own approval doesn't count; the merge is the human check. Hosted CI costs minutes and moves failure away from the person who can fix it.
 

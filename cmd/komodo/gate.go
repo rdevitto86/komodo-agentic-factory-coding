@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"komodo/internal/doctor"
 	"komodo/internal/gate"
@@ -25,6 +26,7 @@ func runGate(root string, args []string) {
 	to := set.String("to", "", "the commit after the change, for --rebuild")
 	commitMsg := set.String("commit-msg", "", "refuse an attribution trailer in this message file, for the commit-msg hook")
 	checkBranch := set.Bool("check-branch", false, "refuse a critical ref or a branch outside <type>/<kebab-name>, for the pre-commit hook")
+	checkPushRef := set.String("check-push-ref", "", "refuse a push to a critical ref or a branch outside <type>/<kebab-name>, for the pre-push hook")
 	_ = set.Parse(args)
 	if *commitMsg != "" {
 		message, err := os.ReadFile(*commitMsg)
@@ -37,7 +39,14 @@ func runGate(root string, args []string) {
 		return
 	}
 	if *checkBranch {
-		branch := git.Or(root, "symbolic-ref", "--short", "HEAD")
+		branch := git.TrackedBranch(root)
+		if problem := gate.BranchProblem(branch, guard.Load(root, root)); problem != "" {
+			fail(fmt.Errorf("%s", problem))
+		}
+		return
+	}
+	if *checkPushRef != "" {
+		branch := strings.TrimPrefix(*checkPushRef, "refs/heads/")
 		if problem := gate.BranchProblem(branch, guard.Load(root, root)); problem != "" {
 			fail(fmt.Errorf("%s", problem))
 		}

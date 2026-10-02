@@ -1,6 +1,6 @@
 # 0004. One builder session works one task group, in its own worktree
 
-**Status:** Accepted, 2026-10-02.
+**Status:** Accepted, 2026-10-02. Amended by 0012, 2026-10-02.
 
 **Context.** A task group is the size of one engineering story: a task list for one agent, checked by one review. A session per task pays the fixed prompt again for every task, and the reviewer sees fragments of one story.
 

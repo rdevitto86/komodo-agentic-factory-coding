@@ -58,3 +58,24 @@ func TestPRCreateRefusesABadTitleBeforeTouchingTheForge(t *testing.T) {
 		t.Fatalf("want a title refusal, got %d: %s%s", got.code, got.stdout, got.stderr)
 	}
 }
+
+func TestPRCreateRefusesADetachedHeadThatTracksNoBranch(t *testing.T) {
+	root, _ := tagRepo(t, "main", "## 1.0.0\n")
+	runGit(t, root, "checkout", "--detach", "HEAD")
+	got := runCLI(t, root, "", "pr", "create", "--title", "feat: a thing", "--body", "b")
+	if got.code == 0 || !strings.Contains(got.stderr, "tracks no branch") {
+		t.Fatalf("want a detached-untracked refusal, got %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+}
+
+func TestPRCreateOnADetachedWorktreeReadsItsTrackedBranch(t *testing.T) {
+	root, _ := tagRepo(t, "main", "## 1.0.0\n")
+	runGit(t, root, "push", "origin", "main")
+	runGit(t, root, "checkout", "--detach", "HEAD")
+	runGit(t, root, "config", "extensions.worktreeConfig", "true")
+	runGit(t, root, "config", "--worktree", "komodo.branch", "task/x")
+	got := runCLI(t, root, "", "pr", "create", "--title", "feat: a thing", "--body", "b")
+	if got.code == 0 || !strings.Contains(got.stderr, "git push origin HEAD:refs/heads/task/x") {
+		t.Fatalf("want a refusal naming the push, got %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+}

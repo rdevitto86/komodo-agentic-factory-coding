@@ -40,6 +40,7 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo resume <group>       The state a killed run left: continue its session or start from its WIP
   komodo status [--watch]     The current run: groups by state, time used and blockers
   komodo abandon <group>      Remove a group's worktree and branch on purpose, and mark its tasks BLOCKED
+  komodo worktree add <b>     Cut an ad hoc detached worktree at .komodo/wt tracking branch b
   komodo ship <group>         Publish a group a missing credential stopped: push, draft PR, labels
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
   komodo step [group|task]    The one next action, as JSON

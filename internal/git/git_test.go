@@ -26,7 +26,7 @@ func TestParseWorktrees(t *testing.T) {
 	want := []Worktree{
 		{Path: "/repo", Branch: "main", Head: "1111111111111111111111111111111111111111"},
 		{Path: "/repo/.komodo/wt/a", Branch: "feat/a", Head: "2222222222222222222222222222222222222222"},
-		{Path: "/repo/.komodo/wt/detached", Head: "3333333333333333333333333333333333333333"},
+		{Path: "/repo/.komodo/wt/detached", Head: "3333333333333333333333333333333333333333", Detached: true},
 	}
 	if got := ParseWorktrees(out); !reflect.DeepEqual(got, want) {
 		t.Fatalf("ParseWorktrees = %+v, want %+v", got, want)
@@ -79,5 +79,43 @@ func TestRunOrAndWorktrees(t *testing.T) {
 	}
 	if _, err := Worktrees(filepath.Join(os.TempDir(), "komodo-no-such-dir")); err == nil {
 		t.Fatal("Worktrees outside a repo succeeded")
+	}
+}
+
+func TestWorktreesReadsADetachedWorktreesTrackedBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"},
+	} {
+		if _, err := Run(root, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	detached := filepath.Join(t.TempDir(), "detached")
+	if _, err := Run(root, "worktree", "add", "-q", "--detach", detached); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(root, "config", "extensions.worktreeConfig", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(detached, "config", "--worktree", "komodo.branch", "task/x"); err != nil {
+		t.Fatal(err)
+	}
+	worktrees, err := Worktrees(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(worktrees) != 2 || !worktrees[1].Detached || worktrees[1].Tracked != "task/x" {
+		t.Fatalf("Worktrees = %+v, want the second detached and tracking task/x", worktrees)
+	}
+	if got := TrackedBranch(root); got != "main" {
+		t.Fatalf("TrackedBranch(root) = %q, want main", got)
+	}
+	if got := TrackedBranch(detached); got != "task/x" {
+		t.Fatalf("TrackedBranch(detached) = %q, want task/x", got)
 	}
 }

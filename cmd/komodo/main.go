@@ -49,6 +49,7 @@ const usage = `komodo: the code assembly line.
   komodo resume <group>       The state a killed run left: continue its session or start from its WIP
   komodo status [--watch]     The current run: groups by state, time used and blockers
   komodo abandon <group>      Remove a group's worktree and branch on purpose, and mark its tasks BLOCKED
+  komodo worktree add <b>     Cut an ad hoc detached worktree at .komodo/wt tracking branch b
   komodo ship <group>         Publish a group a missing credential stopped: push, draft PR, labels
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
   komodo step [group|task]    The one next action, as JSON
@@ -143,6 +144,8 @@ func main() {
 		runResume(root, os.Args[2:])
 	case "abandon":
 		runAbandon(root, os.Args[2:])
+	case "worktree":
+		runWorktree(root, os.Args[2:])
 	case "ship":
 		runFinishShip(root, os.Args[2:])
 	case "sync":

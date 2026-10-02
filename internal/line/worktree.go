@@ -14,6 +14,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/git"
+	"komodo/internal/guard"
 )
 
 // StateDir is where a run's own files live, gitignored, never committed.
@@ -76,24 +77,102 @@ func AddWorktree(root, branch, startRef, path string) error {
 // refuseWorktreePush sets path's pushurl to RefusedPushURL, erroring when it cannot; core.bare
 // and core.worktree repos cannot hold worktree config, so those only note a skip.
 func refuseWorktreePush(root, path string) error {
-	if bare, err := git.Run(root, "config", "--get", "core.bare"); err == nil && bare == "true" {
-		fmt.Fprintln(os.Stderr, "komodo: core.bare is true on the repo's common config; skipping the worktree push refusal")
-		return nil
+	enabled, err := enableWorktreeConfig(root)
+	if err != nil {
+		return err
 	}
-	if _, err := git.Run(root, "config", "--get", "core.worktree"); err == nil {
-		fmt.Fprintln(os.Stderr, "komodo: core.worktree is set on the repo's common config; skipping the worktree push refusal")
+	if !enabled {
 		return nil
-	}
-	// Written only when not already on locally, since concurrent cuts race on the shared config's lock.
-	if on, err := git.Run(root, "config", "--local", "--get", "extensions.worktreeConfig"); err != nil || on != "true" {
-		if _, err := git.Run(root, "config", "extensions.worktreeConfig", "true"); err != nil {
-			return fmt.Errorf("enable extensions.worktreeConfig for the worktree push refusal: %w", err)
-		}
 	}
 	if _, err := git.Run(path, "config", "--worktree", "remote.origin.pushurl", RefusedPushURL); err != nil {
 		return fmt.Errorf("set the worktree's refused pushurl: %w", err)
 	}
 	return nil
+}
+
+// enableWorktreeConfig turns on extensions.worktreeConfig so a linked worktree can hold its own
+// config, reporting false for a core.bare or core.worktree repo, which cannot hold any.
+func enableWorktreeConfig(root string) (bool, error) {
+	if bare, err := git.Run(root, "config", "--get", "core.bare"); err == nil && bare == "true" {
+		fmt.Fprintln(os.Stderr, "komodo: core.bare is true on the repo's common config; skipping per-worktree config")
+		return false, nil
+	}
+	if _, err := git.Run(root, "config", "--get", "core.worktree"); err == nil {
+		fmt.Fprintln(os.Stderr, "komodo: core.worktree is set on the repo's common config; skipping per-worktree config")
+		return false, nil
+	}
+	// Written only when not already on locally, since concurrent cuts race on the shared config's lock.
+	if on, err := git.Run(root, "config", "--local", "--get", "extensions.worktreeConfig"); err != nil || on != "true" {
+		if _, err := git.Run(root, "config", "extensions.worktreeConfig", "true"); err != nil {
+			return false, fmt.Errorf("enable extensions.worktreeConfig for a worktree's own config: %w", err)
+		}
+	}
+	return true, nil
+}
+
+// TipRef is where the line keeps a detached branch's tip, since it never advances refs/heads/<branch>.
+func TipRef(branch string) string {
+	return "refs/komodo/" + branch
+}
+
+// AddDetached cuts a detached worktree at path tracking branch, starting at its tip ref when one
+// exists, else at startRef; it refuses a critical branch and a second worktree tracking branch.
+func AddDetached(root, branch, startRef, path string) error {
+	if guard.Load(root, root).IsCritical(branch) {
+		return fmt.Errorf("%s is a critical ref; komodo never checks it out, detached or not", branch)
+	}
+	if tracker, err := worktreeTracking(root, branch); err != nil {
+		return err
+	} else if tracker != "" {
+		return fmt.Errorf("the worktree at %s already tracks %s", tracker, branch)
+	}
+	start := startRef
+	if _, err := git.Run(root, "rev-parse", "--verify", TipRef(branch)); err == nil {
+		start = TipRef(branch)
+	} else if _, err := git.Run(root, "update-ref", TipRef(branch), startRef); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if _, err := git.Run(root, "worktree", "add", "--detach", path, start); err != nil {
+		return err
+	}
+	if err := refuseWorktreePush(root, path); err != nil {
+		// A retry recuts a missing worktree, so a cut without its refusal is never left behind.
+		_, _ = git.Run(root, "worktree", "remove", "--force", path)
+		return err
+	}
+	if _, err := git.Run(path, "config", "--worktree", "komodo.branch", branch); err != nil {
+		_, _ = git.Run(root, "worktree", "remove", "--force", path)
+		return fmt.Errorf("record the worktree's tracked branch: %w", err)
+	}
+	return nil
+}
+
+// worktreeTracking names the path of a worktree already tracking branch, empty when none does.
+func worktreeTracking(root, branch string) (string, error) {
+	worktrees, err := git.Worktrees(root)
+	if err != nil {
+		return "", err
+	}
+	for _, worktree := range worktrees {
+		if worktree.Branch == branch || worktree.Tracked == branch {
+			return worktree.Path, nil
+		}
+	}
+	return "", nil
+}
+
+// Advance moves branch's tip ref to worktree's current HEAD, refusing when the ref's value
+// differs from old, so a stale caller never clobbers work the ref already holds.
+func Advance(root, branch, worktree, old string) error {
+	head, err := git.Run(worktree, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	_, err = git.Run(root, "update-ref", TipRef(branch), head, old)
+	return err
 }
 
 // StartRef is the ref a group is cut from and diffed against: the remote-tracked copy of base
