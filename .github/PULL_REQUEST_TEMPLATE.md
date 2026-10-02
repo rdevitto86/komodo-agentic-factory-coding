@@ -2,6 +2,7 @@
 Title: <type>: <summary>  — max 72 chars, imperative, no trailing period.
 Types: feat fix chore docs test refactor perf build ci
 No co-author, generated-by line, or session link, anywhere.
+Open it with `komodo pr create --title ... --body-file ...`: it checks this title and applies the labels.
 -->
 
 ## Summary

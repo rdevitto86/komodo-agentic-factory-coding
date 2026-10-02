@@ -124,6 +124,7 @@ Every model session returns JSON checked against its role's schema; the conducto
 | `komodo status [--watch]` | The current run: groups by state, time used and blockers |
 | `komodo stop [group]`, `komodo resume [group…]` | Stops with the work saved, or resumes stopped and edited groups |
 | `komodo ship <group>` | Finishes a group stopped before Ship |
+| `komodo pr create`, `komodo pr label` | Opens a pull request outside the line with its title checked and its labels applied: `@agent`, the scope `.komodo/labels.json` maps, the stage, and `branch/feature` off the default branch |
 | `komodo check <task\|findings\|scope>` | The checks that hooks and agents call |
 | `komodo backlog`, `komodo add <group> "<title>"` | Lists the open groups; adds a group or task |
 | `komodo report [run]` | Summarises a run's metrics |

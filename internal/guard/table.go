@@ -130,7 +130,8 @@ func Table(policy Policy) []Case {
 		// Inside the worktree an agent is free.
 		bash("rm -rf a build directory", "rm -rf node_modules", "feat/x", false, ""),
 		bash("run the tests", "go test ./...", "feat/x", false, ""),
-		bash("open a pull request", "gh pr create --base main --head feat/x --title t --body b", "feat/x", false, ""),
+		bash("open a pull request through komodo", "komodo pr create --title 'fix: x' --body b", "feat/x", false, ""),
+		bash("gh pr create skips the title check and the labels", "gh pr create --base main --head feat/x --title t --body b", "feat/x", true, "komodo pr create"),
 	}...)
 	return table
 }

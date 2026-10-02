@@ -12,7 +12,7 @@ Komodo's code assembly line: one static binary is the conveyor and devices, mark
 - **No repo config is required;** the gate refuses only on no build check (decision 0021).
 - **Standard library only.** Go, no dependencies; `bin/` is gitignored, built by `komodo gate --install`.
 - **Versions go alpha, beta, optional rc, stable,** as README defines.
-- **A pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`.**
+- **A pull request opens with `komodo pr create`,** its body following `.github/PULL_REQUEST_TEMPLATE.md`.
 - **The prototype is history,** at tag `prototype-final`; nothing returns without a task.
 
 ## Commands

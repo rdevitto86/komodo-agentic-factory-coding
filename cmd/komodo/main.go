@@ -52,6 +52,8 @@ const usage = `komodo: the code assembly line.
   komodo ship <group>         Publish a group a missing credential stopped: push, draft PR, labels
   komodo sync [--dry-run]     Fast-forward the root to origin, rebuild a stale binary, re-render drift
   komodo step [group|task]    The one next action, as JSON
+  komodo pr create --title t  Open a pull request from this branch: title checked, labels applied
+  komodo pr label             Apply the labels this branch's open pull request earns
   komodo threads [pr]         The unresolved review threads, as JSON
   komodo threads --resolve id Mark one review thread resolved
   komodo machine <task>       Post a brief to the local machine, write the result, stamp the ledger
@@ -149,6 +151,8 @@ func main() {
 		runStatus(root, os.Args[2:])
 	case "step":
 		runStep(root, os.Args[2:])
+	case "pr":
+		runPR(root, os.Args[2:])
 	case "threads":
 		runThreads(root, os.Args[2:])
 	case "machine":

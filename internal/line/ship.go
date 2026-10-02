@@ -238,7 +238,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	context.BlastRadius, context.BlastRadiusWhy = reviewBlast(root, plan.Group)
 	context.SizeNote = sizeNote(added, plan.Profile.PRLinesPreferred)
 	body := ReportBody(plan, result, waves, context)
-	wanted := []string{"@agent", scopeLabel(declared)}
+	wanted := []string{"@agent", ScopeLabel(root, declared)}
 	handoff := ShipHandoff{
 		Group: plan.Group, Worktree: group, Branch: plan.Branch, Base: result.Base, Title: title, Body: body,
 		Labels: wanted, Draft: true,
@@ -284,7 +284,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		url, draft = open.URL, open.Draft
 	}
 	result.URL, result.Draft = url, draft
-	kept, labelWarnings := ApplyLabels(client, url, wanted)
+	kept, labelWarnings := ApplyLabelSet(client, url, wanted, OptionalLabels(root, result.Base))
 	result.Warnings = append(warnings, labelWarnings...)
 	if len(result.Blocked) > 0 || !checksPassed(waves) {
 		result.Labels = append(wip, kept...)
@@ -758,7 +758,7 @@ func FinishShip(root, groupID string, client *pr.Client) (*ShipResult, error) {
 			}
 			url, draft = open.URL, open.Draft
 		}
-		kept, labelWarnings := ApplyLabels(client, url, handoff.Labels)
+		kept, labelWarnings := ApplyLabelSet(client, url, handoff.Labels, OptionalLabels(root, handoff.Base))
 		result.URL, result.Draft = url, draft
 		result.Labels, result.Warnings = append(wip, kept...), append(warnings, labelWarnings...)
 	}
@@ -818,11 +818,16 @@ func labelBlocked(client *pr.Client, url string) (labels, warnings []string) {
 
 // ApplyLabels adds the repo labels matching wanted to the pull request, warning on each miss or failure.
 func ApplyLabels(client *pr.Client, url string, wanted []string) (kept, warnings []string) {
+	return ApplyLabelSet(client, url, wanted, nil)
+}
+
+// ApplyLabelSet adds the repo labels matching wanted and optional, warning only on a missing wanted one.
+func ApplyLabelSet(client *pr.Client, url string, wanted, optional []string) (kept, warnings []string) {
 	known, err := client.Labels()
 	if err != nil {
 		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
 	}
-	kept = pr.KeepKnown(wanted, known)
+	kept = pr.KeepKnown(append(append([]string(nil), wanted...), optional...), known)
 	for _, label := range wanted {
 		if !hasWanted(kept, label) {
 			warnings = append(warnings, fmt.Sprintf("the repo has no %s label", label))
@@ -832,31 +837,6 @@ func ApplyLabels(client *pr.Client, url string, wanted []string) (kept, warnings
 		warnings = append(warnings, fmt.Sprintf("could not add label(s): %v", err))
 	}
 	return kept, warnings
-}
-
-// scopeLabel is the one scope label a group's task files earn, its rules checked in order.
-func scopeLabel(files []string) string {
-	for _, f := range files {
-		if strings.HasPrefix(f, "internal/guard/") {
-			return "scope/guard"
-		}
-	}
-	for _, f := range files {
-		if strings.HasPrefix(f, "internal/mount/") {
-			return "scope/mount"
-		}
-	}
-	for _, f := range files {
-		if strings.HasPrefix(f, "komodo/skills/") || strings.HasPrefix(f, "komodo/roles/") {
-			return "scope/skills"
-		}
-	}
-	for _, f := range files {
-		if strings.HasPrefix(f, "internal/profile/") {
-			return "scope/agents"
-		}
-	}
-	return "scope/harness"
 }
 
 // hasWanted reports whether kept already carries the label wanted asked for, by its name before any space.
