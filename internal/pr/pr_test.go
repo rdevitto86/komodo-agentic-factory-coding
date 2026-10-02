@@ -373,3 +373,26 @@ func TestRunWrapsAFailingGh(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// TestMergedHeadReadsTheForgesMergedPullRequestForABranch proves a merged pull request headed by the
+// branch counts, and an empty list or another head does not.
+func TestMergedHeadReadsTheForgesMergedPullRequestForABranch(t *testing.T) {
+	var asked []string
+	reply := `[{"headRefName":"feat/x"}]`
+	client := &Client{Dir: ".", Run: func(_ string, args ...string) (string, error) {
+		asked = args
+		return reply, nil
+	}}
+	merged, err := client.MergedHead("feat/x")
+	if err != nil || !merged {
+		t.Fatalf("merged = %v, %v; want true", merged, err)
+	}
+	if got := strings.Join(asked, " "); !strings.Contains(got, "--head feat/x") || !strings.Contains(got, "--state merged") {
+		t.Fatalf("asked %q, want a merged-state list for the head", got)
+	}
+	for _, reply = range []string{`[]`, `[{"headRefName":"feat/y"}]`} {
+		if merged, _ := client.MergedHead("feat/x"); merged {
+			t.Fatalf("reply %s counted as merged", reply)
+		}
+	}
+}

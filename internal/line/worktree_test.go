@@ -27,10 +27,10 @@ func remotedRepo(t *testing.T) (root, bare string) {
 	return root, bare
 }
 
-func TestAddWorktreeRefusesAPushFromATaskWorktree(t *testing.T) {
+func TestAddDetachedRefusesAPushFromATaskWorktree(t *testing.T) {
 	root, _ := remotedRepo(t)
 	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
-	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
+	if err := AddDetached(root, "task/x", "main", worktree); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("git", "push", "origin", "task/x")
@@ -52,7 +52,7 @@ func TestAGlobalWorktreeConfigStillEnablesItInTheRepo(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	root, _ := remotedRepo(t)
 	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
-	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
+	if err := AddDetached(root, "task/x", "main", worktree); err != nil {
 		t.Fatalf("a global extensions.worktreeConfig must not skip the repo-local write: %v", err)
 	}
 	if on, err := git.Run(root, "config", "--local", "--get", "extensions.worktreeConfig"); err != nil || on != "true" {
@@ -63,10 +63,10 @@ func TestAGlobalWorktreeConfigStillEnablesItInTheRepo(t *testing.T) {
 	}
 }
 
-func TestAddWorktreeLeavesAPushFromTheRootWorking(t *testing.T) {
+func TestAddDetachedLeavesAPushFromTheRootWorking(t *testing.T) {
 	root, bare := remotedRepo(t)
 	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
-	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
+	if err := AddDetached(root, "task/x", "main", worktree); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := git.Run(root, "push", "origin", "main"); err != nil {
@@ -84,40 +84,9 @@ func TestAddWorktreeLeavesAPushFromTheRootWorking(t *testing.T) {
 	}
 }
 
-func TestAddWorktreeSkipsTheRefusalWhenCommonConfigHoldsCoreWorktree(t *testing.T) {
-	root, _ := remotedRepo(t)
-	if _, err := git.Run(root, "config", "core.worktree", "."); err != nil {
-		t.Fatal(err)
-	}
-	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
-	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git.Run(worktree, "config", "--worktree", "--get", "remote.origin.pushurl"); err == nil {
-		t.Fatal("a repo whose common config holds core.worktree must skip the pushurl refusal")
-	}
-}
-
-func TestAddWorktreeStillCutsWhenCommonConfigIsBare(t *testing.T) {
-	root, _ := remotedRepo(t)
-	if _, err := git.Run(root, "config", "core.bare", "true"); err != nil {
-		t.Fatal(err)
-	}
-	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
-	if err := AddWorktree(root, "task/x", "main", worktree); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(worktree, "a.txt")); err != nil {
-		t.Fatalf("a bare common config must still cut the worktree: %v", err)
-	}
-	if _, err := git.Run(worktree, "config", "--worktree", "--get", "remote.origin.pushurl"); err == nil {
-		t.Fatal("a repo whose common config is bare must write no worktree pushurl")
-	}
-}
-
 func TestASecondCutLeavesTheSharedConfigAlone(t *testing.T) {
 	root, _ := remotedRepo(t)
-	if err := AddWorktree(root, "task/x", "main", filepath.Join(root, StateDir, "wt", "TSK-01.1.1")); err != nil {
+	if err := AddDetached(root, "task/x", "main", filepath.Join(root, StateDir, "wt", "TSK-01.1.1")); err != nil {
 		t.Fatal(err)
 	}
 	config := filepath.Join(root, ".git", "config")
@@ -126,7 +95,7 @@ func TestASecondCutLeavesTheSharedConfigAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	second := filepath.Join(root, StateDir, "wt", "TSK-01.1.2")
-	if err := AddWorktree(root, "task/y", "main", second); err != nil {
+	if err := AddDetached(root, "task/y", "main", second); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(config)
@@ -154,7 +123,7 @@ func TestAFailedPushurlWriteFailsTheCut(t *testing.T) {
 	}
 	t.Setenv("PATH", fakes+string(os.PathListSeparator)+os.Getenv("PATH"))
 	worktree := filepath.Join(root, StateDir, "wt", "TSK-01.1.1")
-	err = AddWorktree(root, "task/x", "main", worktree)
+	err = AddDetached(root, "task/x", "main", worktree)
 	if err == nil || !strings.Contains(err.Error(), "refused pushurl") {
 		t.Fatalf("err = %v; a pushurl write that fails must fail the cut", err)
 	}
@@ -643,7 +612,7 @@ func TestALegacyStatusIsMergedIntoItsGroupsAndRemoved(t *testing.T) {
 	}
 }
 
-func TestAddWorktreeCutsFromBaseNotFromStaleOrigin(t *testing.T) {
+func TestAddDetachedCutsFromBaseNotFromStaleOrigin(t *testing.T) {
 	root, _ := remotedRepo(t)
 	// Push main to remote, creating origin/main
 	if _, err := git.Run(root, "push", "origin", "main"); err != nil {
@@ -651,7 +620,7 @@ func TestAddWorktreeCutsFromBaseNotFromStaleOrigin(t *testing.T) {
 	}
 	// Create a second worktree and push to feat/a
 	worktree1 := filepath.Join(root, StateDir, "wt", "TSK-20.1.1")
-	if err := AddWorktree(root, "feat/a", "main", worktree1); err != nil {
+	if err := AddDetached(root, "feat/a", "main", worktree1); err != nil {
 		t.Fatal(err)
 	}
 	// Create a file and commit in the first worktree
@@ -665,14 +634,14 @@ func TestAddWorktreeCutsFromBaseNotFromStaleOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Push feat/a, so now origin/feat/a exists with the old commit
-	if _, err := git.Run(root, "push", "origin", "feat/a"); err != nil {
+	if _, err := git.Run(root, "push", "origin", TipRef("feat/a")+":refs/heads/feat/a"); err != nil {
 		t.Fatal(err)
 	}
-	// Clean up the first worktree and branch so they don't interfere
+	// Clean up the first worktree and tip so they don't interfere
 	if _, err := git.Run(root, "worktree", "remove", worktree1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := git.Run(root, "branch", "-D", "feat/a"); err != nil {
+	if _, err := git.Run(root, "update-ref", "-d", TipRef("feat/a")); err != nil {
 		t.Fatal(err)
 	}
 	// Confirms feat/a is absent locally while origin/feat/a remains
@@ -684,7 +653,7 @@ func TestAddWorktreeCutsFromBaseNotFromStaleOrigin(t *testing.T) {
 	}
 	// Cuts a new worktree for feat/a from base, not from stale origin/feat/a
 	worktree2 := filepath.Join(root, StateDir, "wt", "TSK-20.1.2")
-	if err := AddWorktree(root, "feat/a", "main", worktree2); err != nil {
+	if err := AddDetached(root, "feat/a", "main", worktree2); err != nil {
 		t.Fatal(err)
 	}
 	// The new worktree should be based on main, not contain the old file from origin/feat/a

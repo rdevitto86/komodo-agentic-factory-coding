@@ -1,8 +1,15 @@
 package guard
 
 import (
+	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
+
+	"komodo/internal/lease"
+	"komodo/internal/proc"
 )
 
 // gitRepo builds a real git repository on branch, so a -C or cd into it resolves a real branch.
@@ -178,5 +185,66 @@ func TestSwitchDetachInALinkedWorktreeIsAllowed(t *testing.T) {
 	decision := CheckCommand("git switch --detach feat/y", linked, DefaultPolicy())
 	if decision.Deny {
 		t.Fatalf("a detached switch in a linked worktree is refused: %v", decision.Findings)
+	}
+}
+
+// leased takes a live lease on branch in repo, held by this test process.
+func leased(t *testing.T, repo, branch string) {
+	t.Helper()
+	holder, ok := proc.Of(os.Getpid())
+	if !ok {
+		t.Skip("this platform cannot name a process by its start time")
+	}
+	if err := lease.Take(repo, "TG-1", branch, holder, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestASessionsPushOrTipWriteToALeasedBranchIsRefused proves the orchestrator cannot push a branch a live
+// builder holds, nor move its refs/komodo tip, and that the refusal names the group, pid and lapse.
+func TestASessionsPushOrTipWriteToALeasedBranchIsRefused(t *testing.T) {
+	registerFakeHost()
+	t.Setenv(RoleEnv, "")
+	t.Setenv(lease.RunEnv, "")
+	repo := gitRepo(t, "feat/me")
+	leased(t, repo, "feat/held")
+	for _, command := range []string{
+		"git push origin HEAD:refs/heads/feat/held",
+		"git push origin feat/held",
+		"git update-ref refs/komodo/feat/held HEAD",
+	} {
+		decision := CheckCommand(command, repo, DefaultPolicy())
+		if !decision.Deny {
+			t.Fatalf("%q is allowed; want it refused", command)
+		}
+		text := strings.Join(decision.Findings, "\n")
+		if !strings.Contains(text, "TG-1") || !strings.Contains(text, strconv.Itoa(os.Getpid())) || !strings.Contains(text, "until") {
+			t.Fatalf("%q findings = %q; want the group, pid and lapse time", command, text)
+		}
+	}
+	for _, command := range []string{"git push origin feat/free", "git update-ref refs/komodo/feat/free HEAD"} {
+		if decision := CheckCommand(command, repo, DefaultPolicy()); decision.Deny {
+			t.Fatalf("%q refused: %v", command, decision.Findings)
+		}
+	}
+}
+
+// TestTheLeasesOwnRunAndAnExpiredLeasePassTheGuard proves the holder's run and a lapsed lease may push.
+func TestTheLeasesOwnRunAndAnExpiredLeasePassTheGuard(t *testing.T) {
+	registerFakeHost()
+	t.Setenv(RoleEnv, "")
+	repo := gitRepo(t, "feat/me")
+	leased(t, repo, "feat/held")
+	t.Setenv(lease.RunEnv, strconv.Itoa(os.Getpid()))
+	if decision := CheckCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
+		t.Fatalf("the lease's own run is refused: %v", decision.Findings)
+	}
+	t.Setenv(lease.RunEnv, "")
+	holder, _ := proc.Of(os.Getpid())
+	if err := lease.Take(repo, "TG-1", "feat/held", holder, time.Now().Add(-lease.TTL-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if decision := CheckCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
+		t.Fatalf("an expired lease refuses: %v", decision.Findings)
 	}
 }

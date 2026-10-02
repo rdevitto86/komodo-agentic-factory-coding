@@ -15,6 +15,7 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/git"
 	"komodo/internal/guard"
+	"komodo/internal/lease"
 )
 
 // StateDir is where a run's own files live, gitignored, never committed.
@@ -51,28 +52,6 @@ func BranchName(groupType, slug string) string { return groupType + "/" + slug }
 
 // RefusedPushURL is the pushurl that makes git push origin fail inside a line worktree.
 const RefusedPushURL = "refused://the-line-pushes"
-
-// AddWorktree cuts branch from startRef into its own worktree, whose scoped pushurl refuses git
-// push origin; the caller resolves startRef, preferring origin only where that freshness matters.
-func AddWorktree(root, branch, startRef, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	start := startRef
-	if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
-		if _, err := git.Run(root, "worktree", "add", path, branch); err != nil {
-			return err
-		}
-	} else if _, err := git.Run(root, "worktree", "add", "-b", branch, path, start); err != nil {
-		return err
-	}
-	if err := refuseWorktreePush(root, path); err != nil {
-		// A retry recuts a missing worktree, so a cut without its refusal is never left behind.
-		_, _ = git.Run(root, "worktree", "remove", "--force", path)
-		return err
-	}
-	return nil
-}
 
 // refuseWorktreePush sets path's pushurl to RefusedPushURL, erroring when it cannot; core.bare
 // and core.worktree repos cannot hold worktree config, so those only note a skip.
@@ -462,7 +441,7 @@ func AcquireLock(root, group, run string) error {
 }
 
 // LockEnv carries the launcher's pid into the host it starts, so that host's stations pass the lock.
-const LockEnv = "KOMODO_RUN_PID"
+const LockEnv = lease.RunEnv
 
 // CheckLock refuses when a live process other than this host's own launcher holds a lock that
 // covers group: its own and the repo's, or, with no group, every lock.

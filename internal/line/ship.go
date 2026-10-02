@@ -1003,7 +1003,23 @@ func PushFromWorktree(root, worktree, branch string) error {
 	if err := syncTip(root, worktree, branch); err != nil {
 		return err
 	}
-	return pushRef(root, worktree, diffTip(root, branch), branch)
+	source := diffTip(root, branch)
+	if err := pushRef(root, worktree, source, branch); err != nil {
+		return err
+	}
+	DropLease(root, branch)
+	recordPushed(worktree, source, branch)
+	return nil
+}
+
+// recordPushed notes the sha a detached worktree tracking branch last pushed, so prune can tell a squash-merged branch it lost.
+func recordPushed(worktree, source, branch string) {
+	if git.Or(worktree, "symbolic-ref", "--short", "HEAD") != "" || git.TrackedBranch(worktree) != branch {
+		return
+	}
+	if sha := git.Or(worktree, "rev-parse", source); sha != "" {
+		_, _ = git.Run(worktree, "config", "--worktree", "komodo.pushed", sha)
+	}
 }
 
 // diffTip is branch's tip ref, else the local branch of a repo never cut detached.
@@ -1122,6 +1138,10 @@ func runPrePush(worktree, url, source, ref string) error {
 	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
 	cmd.Dir = worktree
 	cmd.Env = hookEnv(os.Environ())
+	// The line's own push passes the lease the hook would refuse another writer for.
+	if held, ok := Lease(worktree, strings.TrimPrefix(ref, "refs/heads/"), time.Now()); ok {
+		cmd.Env = append(cmd.Env, LockEnv+"="+strconv.Itoa(held.Holder.PID))
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%v: %s", err, Clip(string(out), 4000, "pre-push"))
 	}

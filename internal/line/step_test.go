@@ -723,7 +723,7 @@ func TestSingleModeWalksBriefCloseAndCloseWave(t *testing.T) {
 		t.Fatalf("plan = %+v", plan)
 	}
 	worktree := WorktreePath(root, plan.Worktree)
-	if err := AddWorktree(root, plan.Branch, plan.Base, worktree); err != nil {
+	if err := AddDetached(root, plan.Branch, plan.Base, worktree); err != nil {
 		t.Fatal(err)
 	}
 	if err := SaveRun(root, RunState{

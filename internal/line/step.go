@@ -39,6 +39,15 @@ func Step(root, needle string) (*Action, error) {
 	if err != nil {
 		return nil, err
 	}
+	act, err := stepFrom(root, snap)
+	if err == nil && snap.Plan != nil {
+		takeLeases(root, snap.Plan, act)
+	}
+	return act, err
+}
+
+// stepFrom decides the next action for one loaded snapshot.
+func stepFrom(root string, snap Snapshot) (*Action, error) {
 	next, pastReview := decide(snap)
 	if snap.Plan == nil {
 		return &next, nil

@@ -147,3 +147,94 @@ func TestPruneKeepsOnlyTheNewestRunFolders(t *testing.T) {
 		}
 	}
 }
+
+// noForge keeps every prune test off the real gh unless it names its own forge.
+func init() {
+	mergedOnForge = func(string, string) bool { return false }
+}
+
+// squashRepo is a root on main remoted at a bare origin, with a clean detached worktree cut for branch
+// that holds one commit the line pushed through PushFromWorktree.
+func squashRepo(t *testing.T, branch string) (root, bare, worktree string, run func(dir string, args ...string)) {
+	t.Helper()
+	root, run = pruneRepo(t, "# Backlog\n")
+	bare = filepath.Join(t.TempDir(), "origin.git")
+	run(root, "init", "-q", "--bare", bare)
+	run(root, "remote", "add", "origin", bare)
+	run(root, "push", "-q", "origin", "main")
+	worktree = filepath.Join(root, ".komodo", "wt", "TG-01.1")
+	if err := line.AddDetached(root, branch, "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	write(t, worktree, "work.txt", "done\n")
+	commitAll(t, worktree, "work")
+	if err := line.PushFromWorktree(root, worktree, branch); err != nil {
+		t.Fatal(err)
+	}
+	return root, bare, worktree, run
+}
+
+// TestPruneSweepsASquashMergedBranchTheForgeReportsMerged proves a merged pull request headed by the
+// branch lands it, though its commits are no ancestor of the base.
+func TestPruneSweepsASquashMergedBranchTheForgeReportsMerged(t *testing.T) {
+	root, _, worktree, _ := squashRepo(t, "feat/squash")
+	if _, err := Prune(root, "main", true); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(worktree) || !refExists(root, line.TipRef("feat/squash")) {
+		t.Fatal("an unmerged pushed branch was swept with the forge silent")
+	}
+	mergedOnForge = func(_, branch string) bool { return branch == "feat/squash" }
+	t.Cleanup(func() { mergedOnForge = func(string, string) bool { return false } })
+	if _, err := Prune(root, "main", true); err != nil {
+		t.Fatal(err)
+	}
+	if exists(worktree) || refExists(root, line.TipRef("feat/squash")) {
+		t.Fatal("a branch the forge reports merged kept its worktree or tip")
+	}
+}
+
+// TestPruneSweepsABranchOriginDroppedAfterTheLinesOwnPush proves the worktree's pushed record, with its
+// branch gone from origin, lands it; a branch origin still holds, or one with no record, stays.
+func TestPruneSweepsABranchOriginDroppedAfterTheLinesOwnPush(t *testing.T) {
+	root, bare, worktree, run := squashRepo(t, "feat/dropped")
+	if got := git.Or(worktree, "config", "--worktree", "--get", "komodo.pushed"); got == "" {
+		t.Fatal("PushFromWorktree recorded no komodo.pushed sha")
+	}
+	if _, err := Prune(root, "main", true); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(worktree) {
+		t.Fatal("a branch origin still holds was swept")
+	}
+	run(root, "-C", bare, "branch", "-D", "feat/dropped")
+	if _, err := Prune(root, "main", true); err != nil {
+		t.Fatal(err)
+	}
+	if exists(worktree) || refExists(root, line.TipRef("feat/dropped")) {
+		t.Fatal("a pushed branch origin dropped kept its worktree or tip")
+	}
+}
+
+// TestPruneKeepsADroppedBranchWithNoPushedRecordOrNewWork proves no forge and no record keeps a worktree,
+// and a record is void once the tip moved past it.
+func TestPruneKeepsADroppedBranchWithNoPushedRecordOrNewWork(t *testing.T) {
+	root, bare, worktree, run := squashRepo(t, "feat/kept")
+	run(root, "-C", bare, "branch", "-D", "feat/kept")
+	run(worktree, "config", "--worktree", "--unset", "komodo.pushed")
+	if _, err := Prune(root, "main", true); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(worktree) {
+		t.Fatal("a branch with no forge and no record was swept")
+	}
+	run(worktree, "config", "--worktree", "komodo.pushed", git.Or(worktree, "rev-parse", "HEAD"))
+	write(t, worktree, "more.txt", "more\n")
+	commitAll(t, worktree, "more")
+	if _, err := Prune(root, "main", true); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(worktree) {
+		t.Fatal("a worktree with unpushed work past its record was swept")
+	}
+}

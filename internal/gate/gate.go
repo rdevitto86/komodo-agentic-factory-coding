@@ -12,6 +12,7 @@ import (
 	"komodo/internal/comments"
 	"komodo/internal/git"
 	"komodo/internal/guard"
+	"komodo/internal/lease"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Target is one komodo binary: its file name and the platform it is built for.
@@ -338,12 +340,17 @@ case "$name" in
   pre-push)
     # git passes each pushed ref's old and new commit on stdin; the first line scopes the push,
     # so build and fuzz checks run only for what it touched.
-    read -r localref localsha remoteref remotesha 2>/dev/null || true
-    # A detached worktree's pre-commit check passes trivially, so the pushed ref is the one place
-    # left to refuse a critical ref or a non-conforming branch name before it reaches origin.
-    if [ -n "$remoteref" ]; then
-      $rules gate --check-push-ref "$remoteref" || exit 1
-    fi
+    lines=$(cat 2>/dev/null || true)
+    first=$(printf '%s\n' "$lines" | head -n 1)
+    set -- $first
+    localref=${1:-}; localsha=${2:-}; remoteref=${3:-}; remotesha=${4:-}
+    # A detached worktree's pre-commit check passes trivially, so each pushed ref is the one place
+    # left to refuse a critical ref, a non-conforming branch name, or a branch a live builder leases.
+    printf '%s\n' "$lines" | while read -r _ _ pushedref _; do
+      if [ -n "$pushedref" ]; then
+        $rules gate --check-push "$pushedref" || exit 1
+      fi
+    done || exit 1
     if [ -n "$remotesha" ]; then
       exec $cmd gate --fuzz 10s --from "$remotesha" --to "$localsha"
     fi
@@ -444,6 +451,19 @@ func BranchProblem(branch string, policy guard.Policy) string {
 		return ""
 	}
 	return fmt.Sprintf("branch %q is not <type>/<kebab-name>; rename it, or let the line cut its own", branch)
+}
+
+// PushProblem reports why the pre-push hook refuses the remote ref, empty when it may go: a branch
+// BranchProblem refuses, or one a live builder's lease holds against anyone but its own run.
+func PushProblem(dir, ref string, policy guard.Policy, now time.Time) string {
+	branch := strings.TrimPrefix(ref, "refs/heads/")
+	if problem := BranchProblem(branch, policy); problem != "" {
+		return problem
+	}
+	if held, ok := lease.Held(dir, branch, now); ok && !held.Own() {
+		return "push to " + held.Refusal()
+	}
+	return ""
 }
 
 // hunkHeader captures a unified diff hunk's new-file start line, from a header such as "@@ -1,2 +3,4 @@".
