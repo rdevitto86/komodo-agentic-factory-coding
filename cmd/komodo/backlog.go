@@ -29,6 +29,7 @@ func lintProblems(root string) ([]string, error) {
 	problems = append(problems, versionProblems(root)...)
 	problems = append(problems, install.ScriptProblems(root)...)
 	problems = append(problems, install.SkillProblems(root)...)
+	problems = append(problems, install.RuleProblems(root)...)
 	return append(problems, backlog.LintDecisions(root)...), err
 }
 

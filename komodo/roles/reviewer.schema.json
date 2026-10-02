@@ -89,12 +89,21 @@
           "fix"
         ]
       }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
     }
   },
   "required": [
     "summary",
     "blast_radius",
     "blast_radius_why",
-    "findings"
+    "findings",
+    "confidence"
   ]
 }

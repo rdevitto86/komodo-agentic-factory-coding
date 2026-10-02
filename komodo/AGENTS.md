@@ -3,29 +3,30 @@
 Rules for every model and tool on Komodo software.
 
 ## Working
-- **Recommend before rewriting.** A patch, not a rewrite.
-- **Read freely, write on a directive.** Read, search anytime; edit only on implement, fix, add, remove, or update; review, assess, consider stay analysis.
-- **Assume and state it.** Ask only on a user-only decision, or before an irreversible or shared step.
-- **Never widen scope.** Out-of-task work is a `komodo add` task in `docs/backlog/`, not a change.
-- **Report honestly.** State any failure, skip, or gap, with evidence.
-- **Verify the real source.** Read the file, manifest, or docs, never memory.
+- **Act, then report.** Anything reversible in your own branch or worktree, do it without asking. Stop only for a critical ref, a remote delete, an external post, or spending money.
+- **A directive is a change; a question is analysis.** Implement, fix, add, remove, or update: change the code. Review, assess, or consider: answer with findings and the change you recommend.
+- **Assume and state it.** Pick the sensible default, name it, and keep going; ask only for a decision that is the user's alone.
+- **Disagree once, with evidence, then do it their way.**
+- **Patch; keep scope.** The smallest change that does the job; out-of-task work is a `komodo add` task in `docs/backlog/`.
+- **Report verdicts.** Say what passed, failed, or was skipped, with evidence, not "might", "probably", or "I think".
+- **Verify the real source.** Read the file, manifest, or docs, not memory.
 - **Suggested languages; existing code keeps its own.** Zig embedded, C++ robotics and modules, Rust routers and nodes, Go web and cloud, Python AI/ML, TypeScript with Vue or Svelte for UIs; C only when a vendor SDK or a hot path forces it.
 
 ## Git
 - **Inside your worktree you are free.** Reset, restore, rebase, or delete; keep a linked worktree detached.
-- **Set work aside with a WIP commit, never `git stash`.** Every worktree and session shares one stash list; the sweep archives a week-old stash and drops it.
-- **Never rewrite pushed history.** No force push, `--force-with-lease`, or `+refspec`; push a new commit.
-- **Never touch a critical ref.** No commit, push, merge, delete, or force on `main`, `master`, or a `komodo/policy.json` ref; work on a `<type>/<kebab-name>` branch.
-- **Never touch host or toolkit config.** Home dirs, machine overlay, `.git/config`, `.git/hooks`, toolkit binaries.
-- **Never add a trailer or session link.** No co-author, generated-by, or session URL.
-- **Open a pull request with `komodo pr create`,** never `gh pr create`; `komodo pr label` labels one opened elsewhere.
+- **Set work aside with a WIP commit, not `git stash`.** Every worktree and session shares one stash list; the sweep archives a week-old stash and drops it.
+- **Push new commits; pushed history is fixed.** No force push, `--force-with-lease`, or `+refspec`.
+- **Critical refs belong to people.** Work on a `<type>/<kebab-name>` branch; no commit, push, merge, delete, or force on `main`, `master`, or a `komodo/policy.json` ref.
+- **Leave host and toolkit config alone.** Home dirs, machine overlay, `.git/config`, `.git/hooks`, toolkit binaries.
+- **Commits and pull requests carry no trailer or session link.** No co-author, generated-by, or session URL.
+- **Open a pull request with `komodo pr create`;** `komodo pr label` labels one opened elsewhere.
 - **Landing is a person merging the epic PR.** Hand the user a refused command; after a merge, run `komodo sync`.
 - **A working builder leases its branch.** Its push frees it, or 2 hours.
 - Past a one-line fix, run: `/run <group>` in session, `komodo run <group>` headless.
 
 ## Comments
 - A public function gets a one-line doc comment per its language; a private one only when long or non-obvious.
-- At most twenty words, what the code does: never a restated name, version, ticket, first person, hedge, or history.
+- At most twenty words, what the code does: not a restated name, version, ticket, first person, hedge, or history.
 - The gate lints them with `komodo comments check`.
 
 {{accessibility}}
