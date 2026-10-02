@@ -549,6 +549,9 @@ func TestAFailedGateRecordsShipAsFailedNotDone(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	plan := &Plan{
 		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
 		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
