@@ -106,11 +106,16 @@ func Render(root string, binary string) (install.Plan, error) {
 	mount.PruneSkills(&plan, root, filepath.Join(root, Dir, "plugins", "reviewer", "skills"))
 	mount.PruneSkills(&plan, root, filepath.Join(root, Dir, "plugins", "orchestrator", "skills"))
 
-	settings, err := settingsFile(root, binary)
+	settings, err := settingsFile(root, binary, false)
 	if err != nil {
 		return plan, err
 	}
-	plan.Add(filepath.Join(root, Dir, "settings.json"), settings, "the guard on PreToolUse and the permissions layer")
+	plan.Add(filepath.Join(root, Dir, "settings.json"), settings, "the permissions layer; the global layer runs the guard")
+	lineSettings, err := settingsFile(root, binary, true)
+	if err != nil {
+		return plan, err
+	}
+	plan.Add(filepath.Join(root, Dir, LineSettings), lineSettings, "a line session's only settings: the guard and the permissions layer")
 	plan.AddSeed(filepath.Join(root, Dir, "settings.local.json"), []byte("{\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n"), "the personal overlay")
 	plan.AddSeed(filepath.Join(root, "CLAUDE.local.md"), []byte("# Personal overlay\n\nYours. The install never overwrites this file.\n"), "the personal overlay")
 
@@ -323,8 +328,12 @@ func agentFile(role mount.Role, ollama bool) string {
 	return strings.Join(head, "\n") + "\n" + role.Instructions() + "\n"
 }
 
-// settingsFile renders the hook registration, the permissions convenience layer, and attribution off.
-func settingsFile(root, binary string) ([]byte, error) {
+// LineSettings is the settings file a headless line session loads alone, so its guard runs once.
+const LineSettings = "line-settings.json"
+
+// settingsFile renders the permissions layer and attribution off, plus the guard when guarded: a line
+// session loads no user settings, so it takes its one guard from here.
+func settingsFile(root, binary string, guarded bool) ([]byte, error) {
 	policy, err := readPolicy(toolkit.FS(root))
 	if err != nil {
 		return nil, err
@@ -333,15 +342,17 @@ func settingsFile(root, binary string) ([]byte, error) {
 		binary = filepath.Join(mount.MainCheckout(root), binary)
 	}
 	settings := map[string]any{
-		"hooks": map[string]any{
+		"permissions": map[string]any{"deny": denyList(root, policy)},
+		// No co-author trailer, no pull request footer, no session link, in every session and subagent.
+		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": false},
+	}
+	if guarded {
+		settings["hooks"] = map[string]any{
 			"PreToolUse": []any{map[string]any{
 				"matcher": hookMatcher(),
 				"hooks":   []any{map[string]any{"type": "command", "command": mount.Publish(binary) + " guard"}},
 			}},
-		},
-		"permissions": map[string]any{"deny": denyList(root, policy)},
-		// No co-author trailer, no pull request footer, no session link, in every session and subagent.
-		"attribution": map[string]any{"commit": "", "pr": "", "sessionUrl": false},
+		}
 	}
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {

@@ -365,7 +365,9 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 | Evidence, Stop | Review lens | Every blocking finding carries evidence | Refuses to stop, listing the findings without evidence | 2, then those findings become notes | Allows |
 | Time warning, PostToolUse | Builder, lens | Time and turns used | Never refuses; warns at 80% | — | Skips |
 | Status, SessionStart | Orchestrator | — | Adds the run's status and any blocked groups | — | Skips |
-| Prune, SessionStart | Orchestrator | — | Launches the worktree sweep detached, one at a time, capped at 2 minutes, logged to `.komodo/prune.log`; names the last sweep's failure | — | Skips |
+| Prune, SessionStart | Orchestrator | — | Launches the sweep detached, one at a time, capped at 2 minutes, logged to `.komodo/prune.log`: it publishes the newest binary, re-renders this repo's layer and an installed global layer, then prunes finished worktrees; names the last sweep's failure | — | Skips |
+
+**Every hook registers once, and every hook runs `~/.komodo/bin/komodo`.** An interactive session takes the guard from the user's global layer; the repo's `.claude/settings.json` registers no hook. A line session loads only `.claude/line-settings.json` (`--setting-sources local`), which carries the guard. So no tool call is judged twice.
 
 The boundaries that stop hook loops:
 
