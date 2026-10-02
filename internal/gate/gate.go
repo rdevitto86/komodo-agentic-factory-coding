@@ -339,6 +339,11 @@ case "$name" in
     # git passes each pushed ref's old and new commit on stdin; the first line scopes the push,
     # so build and fuzz checks run only for what it touched.
     read -r localref localsha remoteref remotesha 2>/dev/null || true
+    # A detached worktree's pre-commit check passes trivially, so the pushed ref is the one place
+    # left to refuse a critical ref or a non-conforming branch name before it reaches origin.
+    if [ -n "$remoteref" ]; then
+      $rules gate --check-push-ref "$remoteref" || exit 1
+    fi
     if [ -n "$remotesha" ]; then
       exec $cmd gate --fuzz 10s --from "$remotesha" --to "$localsha"
     fi

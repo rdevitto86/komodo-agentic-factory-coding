@@ -1271,6 +1271,29 @@ func TestPrePushHookScopesTheGateToTheRefsGitPasses(t *testing.T) {
 	}
 }
 
+// TestGatePrePushHookChecksThePushedRefsBranchName proves the hook passes remoteref to
+// --check-push-ref, so a critical ref or a non-conforming branch name is refused before the fuzz lane runs.
+func TestGatePrePushHookChecksThePushedRefsBranchName(t *testing.T) {
+	root := toolkitCheckoutFor(t)
+	fakes := t.TempDir()
+	fakeGo(t, fakes, "#!/bin/sh\necho go \"$@\"\n")
+	script := filepath.Join(fakes, "pre-push")
+	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = root
+	cmd.Env = []string{"PATH=" + fakes + ":" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	cmd.Stdin = strings.NewReader("refs/heads/main abc123 refs/heads/main def456\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pre-push: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "gate --check-push-ref refs/heads/main") {
+		t.Fatalf("out = %q, want the pushed ref checked", out)
+	}
+}
+
 func TestPrePushHookFallsBackWithoutStdin(t *testing.T) {
 	root := toolkitCheckoutFor(t)
 	fakes := t.TempDir()

@@ -37,6 +37,48 @@ func TestGateFailsWhenNoCompileOrVerifyCommandFound(t *testing.T) {
 	}
 }
 
+// TestGateCheckBranchReadsADetachedWorktreesTrackedBranch proves --check-branch reads komodo.branch
+// on a detached HEAD, where symbolic-ref is empty, instead of passing it trivially.
+func TestGateCheckBranchReadsADetachedWorktreesTrackedBranch(t *testing.T) {
+	root := emptyRepo(t)
+	runGit(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	runGit(t, root, "checkout", "--detach", "HEAD")
+	runGit(t, root, "config", "extensions.worktreeConfig", "true")
+	runGit(t, root, "config", "--worktree", "komodo.branch", "not a branch")
+	got := runCLI(t, root, "", "gate", "--check-branch")
+	if got.code == 0 || !strings.Contains(got.stderr, "not a branch") {
+		t.Fatalf("want a refusal naming the tracked branch, got %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+}
+
+// TestGateCheckBranchPassesADetachedWorktreeTrackingNoBranch keeps a plain git worktree --detach,
+// which holds no komodo.branch, clear: BranchProblem passes on an empty branch.
+func TestGateCheckBranchPassesADetachedWorktreeTrackingNoBranch(t *testing.T) {
+	root := emptyRepo(t)
+	runGit(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	runGit(t, root, "checkout", "--detach", "HEAD")
+	got := runCLI(t, root, "", "gate", "--check-branch")
+	if got.code != 0 {
+		t.Fatalf("gate --check-branch exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+}
+
+// TestGateCheckPushRefRefusesACriticalOrNonConformingBranch proves the pre-push hook's own flag
+// catches what a detached worktree's pre-commit check cannot.
+func TestGateCheckPushRefRefusesACriticalOrNonConformingBranch(t *testing.T) {
+	root := emptyRepo(t)
+	for _, ref := range []string{"refs/heads/main", "refs/heads/not a branch"} {
+		got := runCLI(t, root, "", "gate", "--check-push-ref", ref)
+		if got.code == 0 {
+			t.Fatalf("ref %q: want a refusal, got exit 0: %s%s", ref, got.stdout, got.stderr)
+		}
+	}
+	got := runCLI(t, root, "", "gate", "--check-push-ref", "refs/heads/feat/x")
+	if got.code != 0 {
+		t.Fatalf("feat/x: want it to pass, got %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+}
+
 // TestGateInALineWorktreeReadsTheMainCheckoutsCommands verifies a worktree finds the root's gitignored build check.
 func TestGateInALineWorktreeReadsTheMainCheckoutsCommands(t *testing.T) {
 	root := emptyRepo(t)

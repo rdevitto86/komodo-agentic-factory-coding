@@ -64,16 +64,19 @@ func runPRCreate(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	head, err := git.Run(root, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
-		fail(err)
+	head := git.TrackedBranch(root)
+	if head == "" {
+		fail(errors.New("HEAD tracks no branch; check out one, or cut a detached worktree with komodo worktree add"))
 	}
 	target := *base
 	if target == "" {
 		target = line.DefaultBase(root)
 	}
-	if head == target || head == "HEAD" {
+	if head == target {
 		fail(fmt.Errorf("check out the branch to open a pull request from; HEAD is %s", head))
+	}
+	if _, err := git.Run(root, "rev-parse", "--verify", "origin/"+head); err != nil {
+		fail(fmt.Errorf("origin has no %s; push it first: git push origin HEAD:refs/heads/%s", head, head))
 	}
 	client := pr.New(root)
 	url, err := client.Create(target, head, *title, text, *draft)

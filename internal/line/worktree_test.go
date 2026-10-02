@@ -163,6 +163,92 @@ func TestAFailedPushurlWriteFailsTheCut(t *testing.T) {
 	}
 }
 
+func TestAddDetachedCutsADetachedWorktreeTrackingItsBranch(t *testing.T) {
+	root, _ := remotedRepo(t)
+	path := filepath.Join(root, StateDir, "wt", "ad-hoc")
+	if err := AddDetached(root, "task/x", "main", path); err != nil {
+		t.Fatal(err)
+	}
+	if branch, err := git.Run(path, "symbolic-ref", "--short", "HEAD"); err == nil {
+		t.Fatalf("HEAD = %s; a cut worktree must be detached", branch)
+	}
+	if got := git.Or(path, "config", "--worktree", "--get", "komodo.branch"); got != "task/x" {
+		t.Fatalf("komodo.branch = %q, want task/x", got)
+	}
+	if _, err := git.Run(root, "rev-parse", "--verify", TipRef("task/x")); err != nil {
+		t.Fatalf("TipRef must exist after a cut: %v", err)
+	}
+}
+
+func TestAddDetachedRefusesACriticalBranch(t *testing.T) {
+	root, _ := remotedRepo(t)
+	path := filepath.Join(root, StateDir, "wt", "ad-hoc")
+	err := AddDetached(root, "main", "main", path)
+	if err == nil || !strings.Contains(err.Error(), "critical") {
+		t.Fatalf("err = %v; a critical branch must be refused", err)
+	}
+}
+
+func TestAddDetachedRefusesASecondWorktreeTrackingTheSameBranch(t *testing.T) {
+	root, _ := remotedRepo(t)
+	first := filepath.Join(root, StateDir, "wt", "a")
+	if err := AddDetached(root, "task/x", "main", first); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(root, StateDir, "wt", "b")
+	err := AddDetached(root, "task/x", "main", second)
+	if err == nil || !strings.Contains(err.Error(), "already tracks") {
+		t.Fatalf("err = %v; a second worktree tracking the same branch must be refused", err)
+	}
+}
+
+func TestAddDetachedResumesFromAnEarlierTipAfterTheFirstWorktreeIsGone(t *testing.T) {
+	root, _ := remotedRepo(t)
+	first := filepath.Join(root, StateDir, "wt", "a")
+	if err := AddDetached(root, "task/x", "main", first); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(first, "work.txt"), []byte("work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, first, "add", "-A")
+	runGit(t, first, "commit", "-q", "-m", "work")
+	old, err := git.Run(root, "rev-parse", TipRef("task/x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Advance(root, "task/x", first, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(root, "worktree", "remove", "--force", first); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(root, StateDir, "wt", "b")
+	if err := AddDetached(root, "task/x", "main", second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(second, "work.txt")); err != nil {
+		t.Fatalf("a resumed cut must start from the advanced tip, not startRef: %v", err)
+	}
+}
+
+func TestAdvanceRefusesAStaleOldValue(t *testing.T) {
+	root, _ := remotedRepo(t)
+	worktree := filepath.Join(root, StateDir, "wt", "a")
+	if err := AddDetached(root, "task/x", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "work.txt"), []byte("work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "add", "-A")
+	runGit(t, worktree, "commit", "-q", "-m", "work")
+	stale := strings.Repeat("0", 40)
+	if err := Advance(root, "task/x", worktree, stale); err == nil {
+		t.Fatal("Advance with a stale old value must be refused")
+	}
+}
+
 func TestResultIsFoundInTheWorktreeTheBuilderIsSandboxedTo(t *testing.T) {
 	root := t.TempDir()
 	worktree := filepath.Join(root, StateDir, "wt", "TG-01.1")

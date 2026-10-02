@@ -10,9 +10,11 @@ import (
 
 // Worktree is one entry of worktree list --porcelain.
 type Worktree struct {
-	Path   string
-	Branch string
-	Head   string
+	Path     string
+	Branch   string
+	Head     string
+	Detached bool
+	Tracked  string
 }
 
 // Run runs one git command in dir and returns its trimmed stdout, or an error naming the command and stderr.
@@ -36,13 +38,29 @@ func Or(dir string, args ...string) string {
 	return out
 }
 
-// Worktrees lists the repo's worktrees, main first, from worktree list --porcelain.
+// Worktrees lists the repo's worktrees, main first, from worktree list --porcelain, with each
+// detached worktree's Tracked branch read from its own komodo.branch config.
 func Worktrees(dir string) ([]Worktree, error) {
 	out, err := Run(dir, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
-	return ParseWorktrees(out), nil
+	worktrees := ParseWorktrees(out)
+	for index := range worktrees {
+		if worktrees[index].Detached {
+			worktrees[index].Tracked = Or(worktrees[index].Path, "config", "--worktree", "--get", "komodo.branch")
+		}
+	}
+	return worktrees, nil
+}
+
+// TrackedBranch is the branch dir's HEAD moves with, or, on a detached HEAD, the branch its
+// worktree's komodo.branch config names.
+func TrackedBranch(dir string) string {
+	if branch := Or(dir, "symbolic-ref", "--short", "HEAD"); branch != "" {
+		return branch
+	}
+	return Or(dir, "config", "--worktree", "--get", "komodo.branch")
 }
 
 // ParseWorktrees reads worktree list --porcelain output into its entries, in order.
@@ -59,6 +77,9 @@ func ParseWorktrees(out string) []Worktree {
 			}
 			if head, ok := strings.CutPrefix(field, "HEAD "); ok {
 				current.Head = head
+			}
+			if field == "detached" {
+				current.Detached = true
 			}
 		}
 		if current.Path != "" {
