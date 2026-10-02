@@ -12,7 +12,7 @@ import (
 	"komodo/internal/toolkit"
 )
 
-// economyPlan is the plan decision 0016 drops into economy mode; every other plan runs full mode.
+// economyPlan is the plan decision 0009 drops into economy mode; every other plan runs full mode.
 const economyPlan = "pro"
 
 // apiPlan is the plan that bills by the token, keeping the base profile's values.
@@ -58,7 +58,7 @@ type Profile struct {
 	PRLinesMax       int                    `json:"pr_lines_max"`
 }
 
-// RoleProfile names one role's tier and effort; the host's mount pins the tier's full model ID (decision 0006).
+// RoleProfile names one role's tier and effort; the host's mount pins the tier's full model ID (decision 0001).
 type RoleProfile struct {
 	Tier   string `json:"tier"`
 	Effort string `json:"effort"`
@@ -69,7 +69,7 @@ type modeProfile struct {
 	Roles map[string]RoleProfile `json:"roles"`
 }
 
-// mode picks full or economy from the plan (decision 0016): a Pro plan runs economy, everything else full.
+// mode picks full or economy from the plan (decision 0009): a Pro plan runs economy, everything else full.
 func mode(plan string) string {
 	if plan == economyPlan {
 		return "economy"

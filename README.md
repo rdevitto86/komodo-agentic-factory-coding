@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `docs/backlog/` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README describes the line as it runs today. The V1 target is `docs/prd.md`, the requirements, with `docs/hld.md`, `docs/lld.md` and `docs/decisions/`. V1 restarts at `1.0.0-alpha.5` and moves through `1.0.0-beta.2` to the `1.0.0` LTS release the human cuts (decision 0023); the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `docs/backlog/`.
+This README describes the line as it runs today. The V1 target is `docs/prd.md`, the requirements, with `docs/hld.md`, `docs/lld.md` and `docs/decisions/`. V1 restarts at `1.0.0-alpha.5` and moves through `1.0.0-beta.2` to the `1.0.0` LTS release the human cuts (decision 0010); the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `docs/backlog/`.
 
 ## Design
 
@@ -33,9 +33,9 @@ The repository ruleset must cover `main` only, which `komodo doctor --remote` au
 
 Every version here is SemVer with a prerelease stage, and a group's `version:` matches its changelog heading exactly. `komodo/rules/backlog.md#choosing-a-version` is the rule a planner follows to pick a group's segment and phase; this section names only this repo's own history through each one.
 
-- **Alpha, `x.y.z-alpha.n`.** The shape still moves. V1 restarts the rebuild at `1.0.0-alpha.5` while phases 0 to 3 land; the prototype's four releases are renumbered `1.0.0-alpha.1`–`.4` (decision 0023).
-- **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land while `komodo eval` runs on every platform. V1's beta starts at `1.0.0-beta.2`, since the untagged `1.0.0-beta.1` heading is retitled as history and never reused (decision 0023).
-- **Rc, `x.y.z-rc.n`, optional.** Nothing requires, gates, or checks it; a release may go straight from beta to stable. V1 takes that path (decision 0023).
+- **Alpha, `x.y.z-alpha.n`.** The shape still moves. V1 restarts the rebuild at `1.0.0-alpha.5` while phases 0 to 3 land; the prototype's four releases are renumbered `1.0.0-alpha.1`–`.4` (decision 0010).
+- **Beta, `x.y.z-beta.n`.** Feature-complete for `x.y.z`; only fixes land while `komodo eval` runs on every platform. V1's beta starts at `1.0.0-beta.2`, since the untagged `1.0.0-beta.1` heading is retitled as history and never reused (decision 0010).
+- **Rc, `x.y.z-rc.n`, optional.** Nothing requires, gates, or checks it; a release may go straight from beta to stable. V1 takes that path (decision 0010).
 - **Stable, `x.y.z`.** The LTS release, cut by the owner once `docs/prd.md#success-criteria` holds. `komodo tag` never promotes a beta on its own.
 
 ## Names
