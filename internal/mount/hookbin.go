@@ -78,8 +78,9 @@ func replaceHook(target string, data []byte) error {
 // hookCopy names a content-hashed hook copy an earlier render wrote, or a binary Publish moved aside.
 var hookCopy = regexp.MustCompile(`^komodo-[0-9a-f]{12}$|^komodo\.old\.exe$`)
 
-// PruneHookCopies deletes every hashed hook copy and moved-aside binary under ~/.komodo/bin, returning what it removed.
-func PruneHookCopies() ([]string, error) {
+// PruneHookCopies deletes every hashed hook copy and moved-aside binary under ~/.komodo/bin that keep does not
+// name, returning what it removed.
+func PruneHookCopies(keep map[string]bool) ([]string, error) {
 	target, err := HookPath()
 	if err != nil {
 		return nil, err
@@ -94,7 +95,7 @@ func PruneHookCopies() ([]string, error) {
 	}
 	var removed []string
 	for _, entry := range entries {
-		if entry.IsDir() || !hookCopy.MatchString(entry.Name()) {
+		if entry.IsDir() || !hookCopy.MatchString(entry.Name()) || keep[filepath.Join(dir, entry.Name())] {
 			continue
 		}
 		// A copy Windows still holds open stays until a later sweep.
