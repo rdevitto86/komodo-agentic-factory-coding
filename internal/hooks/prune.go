@@ -33,6 +33,9 @@ var sweepLimit = 2 * time.Minute
 // prune is the sweep's work; tests swap it.
 var prune = doctor.Prune
 
+// Refresh publishes the newest binary and re-renders stale layers before the prune; nil skips it.
+var Refresh func(root string) ([]string, error)
+
 // launch starts the sweep as its own process group at root and returns without waiting; tests swap it.
 var launch = func(root string) error {
 	exe, err := os.Executable()
@@ -76,12 +79,21 @@ func Sweep(root string) {
 	defer os.Remove(lock)
 	result, work := make(chan string, 1), prune
 	go func() {
+		var refreshed []string
+		if Refresh != nil {
+			var err error
+			if refreshed, err = Refresh(root); err != nil {
+				result <- sweepFailed + " refreshing the machine: " + err.Error() + "\n"
+				return
+			}
+		}
 		done, err := work(root, line.DefaultBase(root), true)
 		if err != nil {
 			result <- sweepFailed + " " + err.Error() + "\n"
 			return
 		}
-		result <- "swept at " + time.Now().Format(time.RFC3339) + "\n" + strings.Join(done, "\n") + "\n"
+		lines := append(refreshed, done...)
+		result <- "swept at " + time.Now().Format(time.RFC3339) + "\n" + strings.Join(lines, "\n") + "\n"
 	}()
 	var text string
 	select {
