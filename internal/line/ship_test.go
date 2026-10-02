@@ -858,7 +858,7 @@ func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
 	runGit(t, root, "push", "origin", "main")
 	runGit(t, root, "fetch", "origin")
 	worktree := filepath.Join(root, StateDir, "wt", "TG-09.1")
-	if err := AddWorktree(root, "feat/a-group", "main", worktree); err != nil {
+	if err := AddDetached(root, "feat/a-group", "main", worktree); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := exec.Command("git", "-C", worktree, "push", "origin", "feat/a-group").CombinedOutput(); err == nil {
@@ -882,8 +882,12 @@ func TestShipGroupPushesFromAWorktreeThatRefusesPush(t *testing.T) {
 	if err != nil || !strings.Contains(string(out), "feat/a-group") {
 		t.Fatalf("branch = %s, err = %v; ship must land the branch on origin", out, err)
 	}
-	if merge, err := git.Run(worktree, "config", "--get", "branch.feat/a-group.merge"); err != nil || merge != "refs/heads/feat/a-group" {
-		t.Fatalf("upstream merge = %q, err = %v; ship must set the branch's upstream the way push -u does", merge, err)
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/feat/a-group"); err == nil {
+		t.Fatal("ship created a local branch; it pushes the tip ref and keeps refs/heads to the person")
+	}
+	tip, _ := git.Run(root, "rev-parse", TipRef("feat/a-group"))
+	if pushed, _ := git.Run(bare, "rev-parse", "refs/heads/feat/a-group"); pushed != tip {
+		t.Fatalf("origin holds %s, tip ref is %s; ship must push the tip", pushed, tip)
 	}
 	if refused, err := git.Run(worktree, "config", "--get", "remote.origin.pushurl"); err != nil || refused != RefusedPushURL {
 		t.Fatalf("pushurl = %q; ship must leave the worktree's refusal in place", refused)
@@ -1380,7 +1384,7 @@ func TestCatchUpRebasesOntoAMovedBaseKeepingEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	runGit(t, group, "add", "CHANGELOG.md")
-	if err := catchUp(group, "main"); err != nil {
+	if err := catchUp(group, group, "feat/a-group", "main"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(group, "two.go")); err != nil {
@@ -1404,7 +1408,7 @@ func TestCatchUpMergesAPushedBranchInsteadOfRewritingIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := catchUp(group, "main"); err != nil {
+	if err := catchUp(group, group, "feat/a-group", "main"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := git.Run(group, "merge-base", "--is-ancestor", pushed, "HEAD"); err != nil {
@@ -1422,7 +1426,7 @@ func TestCatchUpStopsOnAConflictNamingTheFile(t *testing.T) {
 	commitDated(t, group, "one.go", "package base\n", "base edits one.go", time.Now())
 	runGit(t, group, "checkout", "-q", "feat/a-group")
 	commitDated(t, group, "one.go", "package group\n", "group edits one.go", time.Now())
-	err := catchUp(group, "main")
+	err := catchUp(group, group, "feat/a-group", "main")
 	if err == nil || !strings.Contains(err.Error(), "one.go") {
 		t.Fatalf("want a conflict naming one.go, got %v", err)
 	}
@@ -2385,5 +2389,111 @@ func TestShipBlockedKeepsTheNoteLocalWhenThePrePushGateRefuses(t *testing.T) {
 	}
 	if heads, err := git.Run(group, "ls-remote", "origin", "refs/heads/feat/a-group"); err != nil || heads != "" {
 		t.Fatalf("ls-remote = %q, %v; want nothing on origin after the refusal", heads, err)
+	}
+}
+
+// detachedGroup cuts a detached worktree for branch from main in a root with a bare origin, as the line does.
+func detachedGroup(t *testing.T, branch string) (root, bare, worktree string) {
+	t.Helper()
+	root = t.TempDir()
+	bare = filepath.Join(t.TempDir(), "origin.git")
+	runGit(t, "", "init", "--bare", bare)
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.email", "a@example.com")
+	runGit(t, root, "config", "user.name", "a")
+	runGit(t, root, "remote", "add", "origin", bare)
+	commit(t, root, "base.txt", "base\n", "base")
+	runGit(t, root, "push", "-q", "origin", "main")
+	runGit(t, root, "fetch", "-q", "origin")
+	worktree = filepath.Join(root, StateDir, "wt", "g")
+	if err := AddDetached(root, branch, "origin/main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	return root, bare, worktree
+}
+
+func TestPushSendsTheTipRefToTheBranchAndGivesThePrePushHookItsObject(t *testing.T) {
+	root, bare, worktree := detachedGroup(t, "feat/tip")
+	envLog := installPrePush(t, root, 0)
+	commit(t, worktree, "work.txt", "work\n", "work")
+	if err := PushFromWorktree(root, worktree, "feat/tip"); err != nil {
+		t.Fatal(err)
+	}
+	head, _ := git.Run(worktree, "rev-parse", "HEAD")
+	if tip, _ := git.Run(root, "rev-parse", TipRef("feat/tip")); tip != head {
+		t.Fatalf("tip = %s, want the worktree's HEAD %s", tip, head)
+	}
+	if pushed, _ := git.Run(bare, "rev-parse", "refs/heads/feat/tip"); pushed != head {
+		t.Fatalf("origin = %s, want %s", pushed, head)
+	}
+	if seen, _ := os.ReadFile(envLog); !strings.Contains(string(seen), "refs/heads/feat/tip "+head) {
+		t.Fatalf("the pre-push hook never read the tip's object:\n%s", seen)
+	}
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/feat/tip"); err == nil {
+		t.Fatal("the push cut a local branch")
+	}
+	if _, err := git.Run(worktree, "config", "--get", "branch.feat/tip.merge"); err == nil {
+		t.Fatal("the push set an upstream")
+	}
+}
+
+func TestSizeCapReadsTheTipRefOverTheLocalBranch(t *testing.T) {
+	root, _, worktree := detachedGroup(t, "feat/size")
+	runGit(t, root, "branch", "feat/size", "origin/main")
+	commit(t, worktree, "work.txt", "work\n", "work")
+	if err := syncTip(root, worktree, "feat/size"); err != nil {
+		t.Fatal(err)
+	}
+	if got := diffTip(root, "feat/size"); got != TipRef("feat/size") {
+		t.Fatalf("diffTip = %q, want the tip ref", got)
+	}
+	if files, _ := ReviewSize(worktree, "origin/main", diffTip(root, "feat/size")); files != 1 {
+		t.Fatalf("files = %d, want the tip's one file", files)
+	}
+}
+
+func TestCatchUpRebasesADetachedGroupAndAdvancesItsTip(t *testing.T) {
+	root, _, worktree := detachedGroup(t, "feat/catch")
+	commit(t, worktree, "work.txt", "work\n", "work")
+	if err := syncTip(root, worktree, "feat/catch"); err != nil {
+		t.Fatal(err)
+	}
+	commit(t, root, "moved.txt", "moved\n", "base moved")
+	runGit(t, root, "push", "-q", "origin", "main")
+	if err := catchUp(root, worktree, "feat/catch", "main"); err != nil {
+		t.Fatal(err)
+	}
+	head, _ := git.Run(worktree, "rev-parse", "HEAD")
+	if tip, _ := git.Run(root, "rev-parse", TipRef("feat/catch")); tip != head {
+		t.Fatalf("tip = %s, want the rebased HEAD %s", tip, head)
+	}
+	if _, err := os.Stat(filepath.Join(worktree, "moved.txt")); err != nil {
+		t.Fatal("the base's commit is not under the group")
+	}
+}
+
+func TestCatchUpMergesWhatAPersonPushedToTheBranchBeforeTheBase(t *testing.T) {
+	root, bare, worktree := detachedGroup(t, "feat/person")
+	commit(t, worktree, "work.txt", "work\n", "work")
+	if err := PushFromWorktree(root, worktree, "feat/person"); err != nil {
+		t.Fatal(err)
+	}
+	person := filepath.Join(t.TempDir(), "person")
+	runGit(t, "", "clone", "-q", bare, person)
+	runGit(t, person, "config", "user.email", "p@example.com")
+	runGit(t, person, "config", "user.name", "p")
+	runGit(t, person, "checkout", "-q", "feat/person")
+	commit(t, person, "theirs.txt", "theirs\n", "a person's fix")
+	runGit(t, person, "push", "-q", "origin", "feat/person")
+	runGit(t, root, "fetch", "-q", "origin")
+	if err := catchUp(root, worktree, "feat/person", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(worktree, "theirs.txt")); err != nil {
+		t.Fatal("the person's push is not merged into the group")
+	}
+	head, _ := git.Run(worktree, "rev-parse", "HEAD")
+	if tip, _ := git.Run(root, "rev-parse", TipRef("feat/person")); tip != head {
+		t.Fatalf("tip = %s, want %s", tip, head)
 	}
 }

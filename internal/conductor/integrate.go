@@ -98,12 +98,16 @@ func StackBase(parsed backlog.Backlog, group backlog.Group, merged func(branch s
 	return epic
 }
 
-// mergedInto reports whether branch has merged into epic, or has no branch left to stack on.
+// mergedInto reports whether branch has merged into epic, or has no tip or pushed branch left to stack on.
 func mergedInto(root, branch, epic string) bool {
-	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
-		return true
+	tip := line.TipRef(branch)
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", tip); err != nil {
+		tip = "refs/remotes/origin/" + branch
+		if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", tip); err != nil {
+			return true
+		}
 	}
-	_, err := git.Run(root, "merge-base", "--is-ancestor", "refs/heads/"+branch, line.StartRef(root, epic))
+	_, err := git.Run(root, "merge-base", "--is-ancestor", tip, line.StartRef(root, epic))
 	return err == nil
 }
 
@@ -159,10 +163,14 @@ func restackOnto(root, worktree, branch, base string) (bool, error) {
 	target := line.StartRef(worktree, base)
 	_, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 	pushed := err == nil
+	old, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", line.TipRef(branch))
 	if !pushed {
 		if _, err := git.Run(worktree, "rebase", "--autostash", target); err != nil {
 			_, _ = git.Run(worktree, "rebase", "--abort")
 			return false, err
+		}
+		if tipErr == nil {
+			return false, line.Advance(root, branch, worktree, old)
 		}
 		return false, nil
 	}
@@ -170,6 +178,11 @@ func restackOnto(root, worktree, branch, base string) (bool, error) {
 	if _, err := git.Run(worktree, "merge", "--autostash", "--no-edit", target); err != nil {
 		_, _ = git.Run(worktree, "merge", "--abort")
 		return true, err
+	}
+	if tipErr == nil {
+		if err := line.Advance(root, branch, worktree, old); err != nil {
+			return true, err
+		}
 	}
 	return true, line.PushFromWorktree(root, worktree, branch)
 }

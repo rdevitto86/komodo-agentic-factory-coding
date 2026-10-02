@@ -128,11 +128,13 @@ func stackRepo(t *testing.T) (root, child string, parsed backlog.Backlog) {
 	parent := stackGroup(t, parsed, "TG-01.1").Branch()
 	childBranch := stackGroup(t, parsed, "TG-01.2").Branch()
 	branchWith(t, root, parent, "a.txt", "a\n")
+	gitIn(t, root, "update-ref", line.TipRef(parent), parent)
 	child = filepath.Join(t.TempDir(), "child")
 	gitIn(t, root, "worktree", "add", "-q", "-b", childBranch, child, parent)
 	writeIn(t, child, "b.txt", "b\n")
 	gitIn(t, child, "add", "-A")
 	gitIn(t, child, "commit", "-q", "-m", "child")
+	gitIn(t, root, "update-ref", line.TipRef(childBranch), childBranch)
 	state := line.RunState{Run: "r1", Group: "TG-01.2", Base: parent, Branch: childBranch, Worktree: child}
 	if err := line.SaveRun(root, state); err != nil {
 		t.Fatal(err)
@@ -310,5 +312,21 @@ func TestPrepareTestMergesEveryGroupReadyInTheSameRun(t *testing.T) {
 	fixes, err := stations.Prepare(context.Background())
 	if err != nil || len(fixes) != 1 || !strings.Contains(fixes[0], "`test ! -f broken.txt`") {
 		t.Fatalf("prepare = %q, %v; want the breakage TG-2 brings in as TG-1's one fix", fixes, err)
+	}
+}
+
+func TestMergedIntoReadsTheTipRefAndNeverCallsAMissingLocalBranchMerged(t *testing.T) {
+	root, _, parsed := stackRepo(t)
+	parent := stackGroup(t, parsed, "TG-01.1").Branch()
+	if mergedInto(root, parent, "feat/1.0.0") {
+		t.Fatal("an unmerged tip reads merged")
+	}
+	gitIn(t, root, "branch", "-D", parent)
+	if mergedInto(root, parent, "feat/1.0.0") {
+		t.Fatal("a deleted local branch made its tip read merged")
+	}
+	gitIn(t, root, "update-ref", "-d", line.TipRef(parent))
+	if !mergedInto(root, parent, "feat/1.0.0") {
+		t.Fatal("a branch with no tip and no pushed copy reads unmerged")
 	}
 }
