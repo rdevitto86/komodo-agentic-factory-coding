@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"komodo/internal/backlog"
 	"komodo/internal/mount"
 )
 
@@ -45,6 +46,14 @@ func (d *Driver) escalate(ctx context.Context, s *State, r *round) error {
 	if err != nil {
 		return err
 	}
+	head, err := d.Stations.Head()
+	if err != nil {
+		return err
+	}
+	before, err := d.Stations.Diff(head)
+	if err != nil {
+		return err
+	}
 	handle, err := d.Host.Start(req)
 	if err != nil {
 		return err
@@ -59,6 +68,17 @@ func (d *Driver) escalate(ctx context.Context, s *State, r *round) error {
 	case ActionAnswer:
 		r.answer = answer
 	case ActionSplit, ActionClarify:
+		after, err := d.Stations.Diff(head)
+		if err != nil {
+			return err
+		}
+		// A rewrite touching a file outside the group's own backlog file is outside the orchestrator's limits.
+		if outside := outsideGroupFile(s.Group, before, after); len(outside) > 0 {
+			s.Stop, r.needs = true, fmt.Sprintf(
+				"the %s touched %s outside its own backlog file", action, strings.Join(outside, ", "),
+			)
+			break
+		}
 		problems, err := d.lint()
 		if err != nil {
 			return err
@@ -83,6 +103,50 @@ func (d *Driver) escalate(ctx context.Context, s *State, r *round) error {
 	}
 	s.Answered = true
 	return nil
+}
+
+// changedFiles returns every path a unified diff's "+++ " and "--- " lines name, skipping /dev/null.
+func changedFiles(diff string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, line := range strings.Split(diff, "\n") {
+		var prefix string
+		switch {
+		case strings.HasPrefix(line, "+++ "):
+			prefix = "+++ "
+		case strings.HasPrefix(line, "--- "):
+			prefix = "--- "
+		default:
+			continue
+		}
+		path := strings.TrimPrefix(line, prefix)
+		if path == "/dev/null" {
+			continue
+		}
+		path = strings.TrimPrefix(strings.TrimPrefix(path, "a/"), "b/")
+		if !seen[path] {
+			seen[path] = true
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+// outsideGroupFile returns every path after's diff newly touches past before's, outside groupID's own backlog file.
+func outsideGroupFile(groupID, before, after string) []string {
+	had := map[string]bool{}
+	for _, path := range changedFiles(before) {
+		had[path] = true
+	}
+	own := backlog.GroupFilesDir + "/" + groupID + "-"
+	var outside []string
+	for _, path := range changedFiles(after) {
+		if had[path] || strings.HasPrefix(path, own) {
+			continue
+		}
+		outside = append(outside, path)
+	}
+	return outside
 }
 
 // lint returns the lint problems a split or clarify left; with no linter wired nothing proves the rewrite.

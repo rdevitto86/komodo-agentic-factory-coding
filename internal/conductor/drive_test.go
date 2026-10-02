@@ -885,6 +885,33 @@ func TestDriveClosesEachFixListWithEveryTasksFilesAsThePlanHoldsThem(t *testing.
 	}
 }
 
+// TestDriveResumesARepairStoppedBeforeItFinishedWithItsFixListAndTaskFiles resumes a Repairing
+// state whose session never finished, through pendingSession rather than Driver.repair.
+func TestDriveResumesARepairStoppedBeforeItFinishedWithItsFixListAndTaskFiles(t *testing.T) {
+	r := newRig(t)
+	r.host.results["builder-0"] = mount.Result{Value: map[string]any{"result": "DONE"}}
+	r.driver.Tasks = []line.PlanTask{
+		{ID: "TSK-1", Files: []string{"a.go"}}, {ID: "TSK-2", Files: []string{"c.go"}},
+	}
+	saved := State{
+		Group: "TG-1", Current: Repairing, Sessions: []string{"builder-0"},
+		Fixes: []string{"a.go:3 the loop never ends"},
+	}
+	*r.saved = append(*r.saved, saved)
+	if _, err := r.driver.Resume(context.Background(), saved); err != nil {
+		t.Fatalf("resume = %v", err)
+	}
+	if len(r.host.inputs) != 1 {
+		t.Fatalf("resume inputs = %v, want the stopped repair resumed once", r.host.inputs)
+	}
+	input := r.host.inputs[0]
+	fix := strings.Index(input, "- [ ] a.go:3 the loop never ends")
+	files := strings.Index(input, "- TSK-1: `a.go`\n- TSK-2: `c.go`")
+	if fix == -1 || files == -1 || files < fix {
+		t.Fatalf("resumed repair input = %q, want the fix list closed by every task's files", input)
+	}
+}
+
 func TestDriveEscalatesABlockedBuilderAndWaits(t *testing.T) {
 	r := newRig(t)
 	r.host.builds = []map[string]any{{"result": "BLOCKED"}}

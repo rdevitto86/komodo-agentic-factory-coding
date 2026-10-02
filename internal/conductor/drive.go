@@ -148,14 +148,14 @@ type round struct {
 func newRound(s State) round {
 	return round{
 		fixes: s.Fixes, builder: mount.Handle(s.Builder), repairs: s.Repairs,
-		reason: s.Reason, answer: s.Answer, stalls: s.Stalls, heavy: s.Heavy,
+		reason: s.Reason, needs: s.Needs, answer: s.Answer, stalls: s.Stalls, heavy: s.Heavy,
 	}
 }
 
 // keep writes the round into s, so the next save of s carries it.
 func (r *round) keep(s *State) {
 	s.Fixes, s.Builder, s.Repairs = r.fixes, string(r.builder), r.repairs
-	s.Reason, s.Answer, s.Stalls, s.Heavy = r.reason, r.answer, r.stalls, r.heavy
+	s.Reason, s.Needs, s.Answer, s.Stalls, s.Heavy = r.reason, r.needs, r.answer, r.stalls, r.heavy
 }
 
 // Drive moves a group from s until it waits on something outside the conductor, and returns that state.

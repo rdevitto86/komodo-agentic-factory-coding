@@ -145,6 +145,42 @@ func TestASplitWithNoLintWiredStopsTheGroup(t *testing.T) {
 	}
 }
 
+// diffStations wraps a Stations double, returning each of diffs in turn on successive Diff calls.
+type diffStations struct {
+	*fakeStations
+	diffs []string
+	calls int
+}
+
+func (d *diffStations) Diff(since string) (string, error) {
+	d.fakeStations.diffedSince = append(d.fakeStations.diffedSince, since)
+	if d.calls >= len(d.diffs) {
+		return "", nil
+	}
+	out := d.diffs[d.calls]
+	d.calls++
+	return out, nil
+}
+
+// TestASplitThatTouchesAFileOutsideItsBacklogStopsTheGroup refuses a rewrite that edited a file
+// a split or clarify never owns, instead of letting it pass lint unreported.
+func TestASplitThatTouchesAFileOutsideItsBacklogStopsTheGroup(t *testing.T) {
+	r := newRig(t)
+	r.host.builds = []map[string]any{{"result": "BLOCKED"}}
+	escalating(r, nil, map[string]any{"action": ActionSplit, "answer": "TG-1 splits in two"})
+	r.driver.Stations = &diffStations{fakeStations: r.stations, diffs: []string{
+		"", "--- /dev/null\n+++ b/internal/conductor/escalate.go\n@@ -0,0 +1,1 @@\n+hack\n",
+	}}
+	notes := blocking(r, nil)
+	final, err := r.drive(t)
+	if err != nil || final.Current != Blocked {
+		t.Fatalf("drive = %s, %v; want Blocked", final.Current, err)
+	}
+	if len(*notes) != 1 || !strings.Contains((*notes)[0].Needs, "internal/conductor/escalate.go") {
+		t.Fatalf("notes = %+v, want one naming the file the split touched outside its backlog file", *notes)
+	}
+}
+
 func TestASavedUnansweredEscalationAsksTheOrchestrator(t *testing.T) {
 	r := newRig(t)
 	host := escalating(r, nil, map[string]any{"action": ActionAnswer, "answer": "ship it"})
@@ -171,6 +207,31 @@ func TestAnAnswerStartsAFreshBuilderWhenTheHostCannotResume(t *testing.T) {
 		}
 	}
 	if len(builders) != 2 || !strings.HasSuffix(builders[1].Brief, answerLead+"use the fake clock") {
+		t.Fatalf("builder starts = %+v, want a fresh builder whose brief ends with the answer", builders)
+	}
+}
+
+// TestAnAnswerStartsAFreshBuilderWhenItsResumeFails falls back to a fresh builder when the host can
+// resume in general but its own Resume call errors, not only when resume is off entirely.
+func TestAnAnswerStartsAFreshBuilderWhenItsResumeFails(t *testing.T) {
+	r := newRig(t)
+	host := escalating(r, nil, map[string]any{"action": ActionAnswer, "answer": "use the fake clock"})
+	saved := State{Group: "TG-1", Current: Escalated, Escalate: true, Left: Building, Builder: "builder-ghost"}
+	*r.saved = append(*r.saved, saved)
+	final, err := r.driver.Drive(context.Background(), saved)
+	if err != nil || final.Current != Shipped {
+		t.Fatalf("drive = %s, %v; want Shipped", final.Current, err)
+	}
+	if len(host.asked) != 1 {
+		t.Fatalf("orchestrator sessions = %d, want one", len(host.asked))
+	}
+	var builders []mount.StartRequest
+	for _, req := range r.host.starts {
+		if req.Role == "builder" {
+			builders = append(builders, req)
+		}
+	}
+	if len(builders) == 0 || !strings.HasSuffix(builders[len(builders)-1].Brief, answerLead+"use the fake clock") {
 		t.Fatalf("builder starts = %+v, want a fresh builder whose brief ends with the answer", builders)
 	}
 }
