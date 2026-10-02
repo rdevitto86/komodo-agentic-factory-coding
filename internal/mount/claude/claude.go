@@ -132,11 +132,13 @@ var orchestratorSkills = []string{"komodo", "plan", "respond", "run"}
 // statusHook is the hook that adds the run's status and any blocked groups to a primary session as it starts.
 const statusHook = "status"
 
+// pruneHook is the hook that launches the background worktree sweep as a primary session starts.
+const pruneHook = "prune"
+
 // globalSkillsMarker names the file recording the orchestrator skills the last global render wrote.
 const globalSkillsMarker = ".komodo-rendered"
 
-// RenderGlobal builds the plan that adds the orchestrator layer to the user's config under home:
-// the guard and status hooks and the orchestrator's skills, keeping every setting and skill the user has.
+// RenderGlobal plans the user-level orchestrator layer under home: guard, status and prune hooks, and skills.
 func RenderGlobal(root, home, binary string) (install.Plan, error) {
 	plan := install.Plan{Host: "claude", Root: home}
 	skills, err := mount.LoadSkills(root)
@@ -172,7 +174,7 @@ func RenderGlobal(root, home, binary string) (install.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
-	plan.Add(path, settings, "the guard on PreToolUse and the run's status on SessionStart")
+	plan.Add(path, settings, "the guard on PreToolUse, and the run's status and the worktree sweep on SessionStart")
 	return plan, nil
 }
 
@@ -185,7 +187,7 @@ func readGlobalSkillsMarker(path string) []string {
 	return strings.Fields(string(data))
 }
 
-// globalSettings reads the user's settings and swaps any komodo hook for the guard and status hooks, keeping the rest.
+// globalSettings swaps any komodo hook in the user's settings for the guard, status and prune hooks.
 func globalSettings(path, binary string) ([]byte, error) {
 	settings := map[string]any{}
 	data, err := os.ReadFile(path)
@@ -206,8 +208,9 @@ func globalSettings(path, binary string) ([]byte, error) {
 	named := hookBinary(binary)
 	command := func(line string) []any { return []any{map[string]any{"type": "command", "command": line}} }
 	own := map[string]map[string]any{
-		"PreToolUse":   {"matcher": hookMatcher(), "hooks": command(named + " guard")},
-		"SessionStart": {"hooks": command(fmt.Sprintf("%s hook %s --host claude", named, statusHook))},
+		"PreToolUse": {"matcher": hookMatcher(), "hooks": command(named + " guard")},
+		"SessionStart": {"hooks": append(command(fmt.Sprintf("%s hook %s --host claude", named, statusHook)),
+			command(fmt.Sprintf("%s hook %s --host claude", named, pruneHook))...)},
 	}
 	for event, entry := range own {
 		groups, _ := events[event].([]any)

@@ -6,15 +6,23 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"komodo/internal/git"
 	"komodo/internal/guard"
+	"komodo/internal/lease"
 	"komodo/internal/line"
 	"komodo/internal/pr"
 )
 
 // keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
 const keptRuns = 10
+
+// idleFor is how long a worktree's git state must sit unchanged before its pushed work alone lets prune take it.
+const idleFor = 24 * time.Hour
+
+// now is the clock the idle and lease checks read; tests swap it.
+var now = time.Now
 
 // Prune clears stale worktrees, landed refs/komodo tips and old runs, and only lists merged local branches; confirm gates the sweep.
 func Prune(root, base string, confirm bool) ([]string, error) {
@@ -52,17 +60,22 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 	return done, nil
 }
 
-// settleShippedRun sweeps each clean worktree whose branch origin has merged, then each landed
-// refs/komodo tip no worktree holds, skipping an open run's own. Unconfirmed, it only lists what it would take.
+// settleShippedRun sweeps clean, unleased, landed worktrees and orphan landed tips, never an open run's; unconfirmed, it lists.
 func settleShippedRun(root, base string, open []line.RunState, confirm bool) []string {
-	if _, err := git.Run(root, "fetch", "--quiet", "origin", base); err != nil {
-		return nil
+	if _, err := git.Run(root, "fetch", "--quiet", "--prune", "origin"); err != nil {
+		return []string{"skipped the worktree sweep: origin did not answer"}
 	}
 	remote := "origin/" + base
 	running := map[string]bool{}
 	for _, state := range open {
 		running[state.Branch] = true
 		running[filepath.Clean(line.WorktreePath(root, state.Worktree))] = true
+		for _, wave := range state.Waves {
+			for _, task := range wave {
+				running[line.TaskBranch(task)] = true
+				running[filepath.Join(root, line.StateDir, "wt", task)] = true
+			}
+		}
 	}
 	var done []string
 	held := map[string]bool{}
@@ -70,6 +83,9 @@ func settleShippedRun(root, base string, open []line.RunState, confirm bool) []s
 		branch := TrackedOf(worktree)
 		held[branch] = true
 		if running[branch] || running[filepath.Clean(worktree.Path)] {
+			continue
+		}
+		if _, leased := lease.Held(root, branch, now()); leased {
 			continue
 		}
 		if status, err := git.Run(worktree.Path, "status", "--porcelain"); err != nil || status != "" {
@@ -80,7 +96,12 @@ func settleShippedRun(root, base string, open []line.RunState, confirm bool) []s
 			tip = ref
 		}
 		pushed := git.Or(worktree.Path, "config", "--worktree", "--get", "komodo.pushed")
-		if !landed(root, branch, tip, remote) && !squashLanded(root, branch, worktree.Head, pushed) {
+		// A commit neither on origin nor the line's own recorded push is unpushed work, whatever else says landed.
+		if !safe(root, pushed, worktree.Head) || !safe(root, pushed, tip) {
+			continue
+		}
+		if !landed(root, branch, tip, remote) && !squashLanded(root, branch, worktree.Head, pushed) &&
+			!idlePushed(root, worktree.Path, worktree.Head, tip) {
 			continue
 		}
 		if !confirm {
@@ -130,6 +151,39 @@ func landed(root, branch, tip, remote string) bool {
 	}
 	_, err := git.Run(root, "merge-base", "--is-ancestor", tip, remote)
 	return err == nil
+}
+
+// idlePushed reports a worktree whose git state sat unchanged for idleFor and whose every commit is on origin.
+func idlePushed(root, path string, commits ...string) bool {
+	admin, err := git.Run(path, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return false
+	}
+	var touched time.Time
+	for _, name := range []string{"HEAD", "index"} {
+		if info, err := os.Stat(filepath.Join(admin, name)); err == nil && info.ModTime().After(touched) {
+			touched = info.ModTime()
+		}
+	}
+	if touched.IsZero() || now().Sub(touched) < idleFor {
+		return false
+	}
+	for _, commit := range commits {
+		if !onOrigin(root, commit) {
+			return false
+		}
+	}
+	return true
+}
+
+// safe reports whether commit is on origin or is the push the line recorded for this worktree.
+func safe(root, pushed, commit string) bool {
+	return commit == pushed || onOrigin(root, commit)
+}
+
+// onOrigin reports whether some remote-tracking branch of origin contains commit.
+func onOrigin(root, commit string) bool {
+	return git.Or(root, "for-each-ref", "--count=1", "--contains", commit, "refs/remotes/origin/") != ""
 }
 
 // mergedOnForge reports whether the forge holds a merged pull request headed by branch; no forge says no.

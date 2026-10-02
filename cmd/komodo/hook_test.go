@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/hooks"
 )
 
 // hookRun is what one runHook call printed and the code it exited with, -1 when it returned.
@@ -95,5 +97,15 @@ func TestRunHookDispatchesThroughTheTable(t *testing.T) {
 				t.Fatalf("stderr = %q, want logged %v", got.stderr, tc.logs)
 			}
 		})
+	}
+}
+
+func TestRunHookRunsTheSweepItselfWhenLaunchedForIt(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(hooks.SweepEnv, "1")
+	runHook(root, []string{"prune"})
+	data, err := os.ReadFile(filepath.Join(root, ".komodo", "prune.log"))
+	if err != nil || !strings.HasPrefix(string(data), "failed:") {
+		t.Fatalf("log = %q, %v; want the sweep run and its git failure logged", data, err)
 	}
 }

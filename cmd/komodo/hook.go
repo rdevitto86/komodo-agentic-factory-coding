@@ -17,5 +17,9 @@ func runHook(root string, args []string) {
 		runGuard(root, nil)
 		return
 	}
+	if args[0] == "prune" && os.Getenv(hooks.SweepEnv) == "1" {
+		hooks.Sweep(root)
+		return
+	}
 	exit(hooks.Dispatch(root, args[0], args[1:], os.Stdin, os.Stdout, os.Stderr))
 }

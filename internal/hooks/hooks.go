@@ -166,6 +166,11 @@ func Table() []Hook {
 			Timeout: 10 * time.Second, OnFailure: Skip, run: addStatus,
 		},
 		{
+			Name: "prune", Job: "sweeps finished worktrees in the background",
+			Event: SessionStart, Sessions: []Session{SessionPrimary},
+			Timeout: 10 * time.Second, OnFailure: Skip, run: startSweep,
+		},
+		{
 			Name: "timewarn", Job: "time and turns used",
 			Event: PostToolUse, Tools: AnyTool, Sessions: []Session{SessionBuilder, SessionLens},
 			Timeout: 10 * time.Second, OnFailure: Skip, run: warnTime,

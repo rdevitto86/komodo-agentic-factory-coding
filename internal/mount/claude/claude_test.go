@@ -1109,7 +1109,8 @@ func TestTheGlobalRenderCarriesOnlyTheOrchestratorLayer(t *testing.T) {
 	if len(pre) != 1 || pre[0].Matcher != hookMatcher() || pre[0].Hooks[0].Command != "/opt/komodo/komodo guard" {
 		t.Fatalf("PreToolUse = %+v", pre)
 	}
-	if len(start) != 1 || start[0].Hooks[0].Command != "/opt/komodo/komodo hook status --host claude" {
+	if len(start) != 1 || len(start[0].Hooks) != 2 || start[0].Hooks[0].Command != "/opt/komodo/komodo hook status --host claude" ||
+		start[0].Hooks[1].Command != "/opt/komodo/komodo hook prune --host claude" {
 		t.Fatalf("SessionStart = %+v", start)
 	}
 	again, err := RenderGlobal(root, home, "/opt/komodo/komodo")
