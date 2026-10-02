@@ -8,7 +8,7 @@ This README describes the line as it runs today. The V1 target is `docs/prd.md`,
 
 The full design lives in `docs/hld.md` and `docs/lld.md`; `docs/decisions/` holds why. This file keeps only what a developer needs to run the line day to day.
 
-- **The line.** One binary conveys work through eight stages, with two machines and one mount per host; see `docs/hld.md#components`.
+- **The line.** One binary conveys work through eight stages, with two machines and one mount per host; see `docs/hld.md#components` and the flow in `docs/diagrams/assembly-line.svg`.
 - **Stations.** Ingest, Coordinate, Build, Check, Review, Repair, Prepare and Ship; see `docs/hld.md#components`.
 - **Devices.** The brief in, the schema-checked result out, each slot capped; see `docs/lld.md#briefs`.
 - **Metrics.** Every stage writes to the run's local, gitignored ledger; see `docs/lld.md#run-state-and-metrics`.

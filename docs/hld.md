@@ -82,6 +82,10 @@ Native Windows has no OS sandbox, so there the other layers carry the load. `lld
 
 ## Data flow
 
+![The assembly line: one task group from READY to merge](diagrams/assembly-line.svg)
+
+The editable source is `diagrams/assembly-line.drawio`. The two flows below give the same path in text.
+
 ```mermaid
 flowchart TD
     O([Orchestrator]) -. plans, starts .-> B
@@ -94,7 +98,7 @@ flowchart TD
     RV --> VF[verify findings]
     VF -->|verified findings| RP{{6 Repair<br/>builder resumed}}
     RP --> CK
-    VF -->|none left, or no progress| PR[7 Prepare<br/>commit, hooks, rebase,<br/>integration]
+    VF -->|none left| PR[7 Prepare<br/>commit, hooks, rebase,<br/>integration]
     PR --> S[8 Ship<br/>push, draft PR, labels]
     S --> H[a human merges]
     H --> CL[an epic's files are deleted<br/>when its last group merges]
