@@ -111,3 +111,42 @@ func TestDoctorNamesARunsBranchWhoseGroupIsNoLongerOpen(t *testing.T) {
 		t.Fatalf("notes = %v, want one note naming feat/old and its closed group", notes)
 	}
 }
+
+func TestDoctorNamesADetachedWorktreeNoGroupOwnsByItsTrackedBranch(t *testing.T) {
+	root, _ := leftoverRepo(t)
+	orphan := filepath.Join(root, ".komodo", "wt", "TG-09.9")
+	if err := line.AddDetached(root, "feat/old", "main", orphan); err != nil {
+		t.Fatal(err)
+	}
+	notes := Leftovers(root)
+	if len(notes) != 1 || !strings.Contains(notes[0], "TG-09.9") || !strings.Contains(notes[0], "on branch feat/old") {
+		t.Fatalf("notes = %v, want one note naming the detached worktree's tracked branch", notes)
+	}
+}
+
+func TestDoctorNamesARunsTipRefWhoseGroupIsNoLongerOpen(t *testing.T) {
+	root, run := leftoverRepo(t)
+	run(root, "update-ref", line.TipRef("feat/old"), "main")
+	if err := line.SaveRun(root, line.RunState{Run: "r2", Group: "TG-09.9", Base: "main", Branch: "feat/old"}); err != nil {
+		t.Fatal(err)
+	}
+	notes := Leftovers(root)
+	if len(notes) != 1 || !strings.Contains(notes[0], "branch feat/old") {
+		t.Fatalf("notes = %v, want one note naming the tip ref's branch", notes)
+	}
+}
+
+func TestStrayWorktreesNamesADetachedOneOutsideButNotInside(t *testing.T) {
+	root, _ := leftoverRepo(t)
+	outside := filepath.Join(t.TempDir(), "elsewhere")
+	if err := line.AddDetached(root, "feat/out", "main", outside); err != nil {
+		t.Fatal(err)
+	}
+	if err := line.AddDetached(root, "feat/in", "main", filepath.Join(root, ".komodo", "wt", "TG-01.1")); err != nil {
+		t.Fatal(err)
+	}
+	notes := StrayWorktrees(root)
+	if len(notes) != 1 || !strings.Contains(notes[0], "on branch feat/out") {
+		t.Fatalf("notes = %v, want one note for the detached worktree outside", notes)
+	}
+}

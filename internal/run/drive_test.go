@@ -190,9 +190,9 @@ func TestRunDrivesAGroupEndToEnd(t *testing.T) {
 	}
 }
 
-// TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts checks a run removes an earlier group's worktree and
-// branch once origin deleted that branch, and leaves its own shipped group's worktree for the merge.
-func TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts(t *testing.T) {
+// TestRunClearsAMergedGroupsWorktreeBeforeItCuts checks a run removes an earlier group's worktree once origin
+// holds its pushed branch in main, keeps the person's branch, and leaves its own shipped group's worktree for the merge.
+func TestRunClearsAMergedGroupsWorktreeBeforeItCuts(t *testing.T) {
 	root := driveRepo(t)
 	setupDriveFakeClaude(t)
 	stale := filepath.Join(root, line.StateDir, "wt", "TG-39.1")
@@ -202,9 +202,7 @@ func TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts(t *testing.T) {
 	}
 	runGit(t, stale, "add", "old.txt")
 	runGit(t, stale, "commit", "-m", "old")
-	runGit(t, stale, "push", "origin", "feat/old")
-	runGit(t, stale, "branch", "--set-upstream-to=origin/feat/old", "feat/old")
-	runGit(t, root, "push", "origin", "--delete", "feat/old")
+	runGit(t, stale, "push", "origin", "feat/old", "feat/old:main")
 	client := &pr.Client{Run: func(_ string, args ...string) (string, error) {
 		if len(args) > 1 && args[0] == "pr" && args[1] == "create" {
 			return "https://example.invalid/pr/1", nil
@@ -220,10 +218,10 @@ func TestRunClearsASquashMergedGroupsLeftoversBeforeItCuts(t *testing.T) {
 		t.Fatalf("Drive = %d, %v", code, err)
 	}
 	if _, err := os.Stat(stale); err == nil {
-		t.Fatalf("the squash-merged group's worktree survived the run; out = %s", out.String())
+		t.Fatalf("the merged group's worktree survived the run; out = %s", out.String())
 	}
-	if branches := gitOut(t, root, "branch", "--list", "feat/old"); branches != "" {
-		t.Fatalf("feat/old survived the run; out = %s", out.String())
+	if branches := gitOut(t, root, "branch", "--list", "feat/old"); branches == "" {
+		t.Fatalf("feat/old, a person's branch, was deleted by the run; out = %s", out.String())
 	}
 	if !strings.Contains(out.String(), "removed worktree") {
 		t.Fatalf("out = %q; the run must print what it removed", out.String())

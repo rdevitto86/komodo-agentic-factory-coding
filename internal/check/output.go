@@ -14,16 +14,17 @@ import (
 
 // Snapshot is what an output check compares before and after a model session.
 type Snapshot struct {
-	Head   string            `json:"head"`
-	Branch string            `json:"branch"`
-	Refs   map[string]string `json:"refs"`
-	Hooks  map[string]string `json:"hooks"`
-	Config map[string]string `json:"config"`
+	Head   string `json:"head"`
+	Branch string `json:"branch"`
+	// Attached is true when HEAD names a branch, so a detached worktree that attaches shows.
+	Attached bool              `json:"attached"`
+	Refs     map[string]string `json:"refs"`
+	Hooks    map[string]string `json:"hooks"`
+	Config   map[string]string `json:"config"`
 }
 
-// Ref prefixes other lanes write to concurrently: their own branches and komodo tips, and the remote-tracking refs.
+// Ref prefixes: every local branch is watched, but not the remote-tracking refs or other lanes' komodo tips.
 const (
-	branchRefs = "refs/heads/"
 	remoteRefs = "refs/remotes/"
 	tipRefs    = "refs/komodo/"
 )
@@ -31,7 +32,7 @@ const (
 // branchSection prefixes the config keys git keeps per branch, as branch.<name>.<key>.
 const branchSection = "branch."
 
-// TakeSnapshot reads worktree's HEAD and branch, the refs no lane owns, and the shared git hooks and config.
+// TakeSnapshot reads worktree's HEAD, branch, attachment, every local branch, its komodo tip, and the shared hooks and config.
 func TakeSnapshot(worktree string) (Snapshot, error) {
 	head, err := git.Run(worktree, "rev-parse", "HEAD")
 	if err != nil {
@@ -57,10 +58,11 @@ func TakeSnapshot(worktree string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{Head: head, Branch: branch, Refs: refs, Hooks: hooks, Config: config}, nil
+	attached := git.Or(worktree, "symbolic-ref", "--short", "HEAD") != ""
+	return Snapshot{Head: head, Branch: branch, Attached: attached, Refs: refs, Hooks: hooks, Config: config}, nil
 }
 
-// snapshotRefs reads the commit hash of branch and of every ref outside other lanes' branches and the remotes.
+// snapshotRefs reads the commit hash of every ref but the remotes and the komodo tips of lanes other than branch.
 func snapshotRefs(worktree, branch string) (map[string]string, error) {
 	out, err := git.Run(worktree, "for-each-ref", "--format=%(refname) %(objectname)")
 	if err != nil {
@@ -75,8 +77,6 @@ func snapshotRefs(worktree, branch string) (map[string]string, error) {
 		name := fields[0]
 		switch {
 		case strings.HasPrefix(name, remoteRefs):
-			continue
-		case strings.HasPrefix(name, branchRefs) && name != branchRefs+branch:
 			continue
 		case strings.HasPrefix(name, tipRefs) && name != tipRefs+branch:
 			continue
@@ -151,7 +151,7 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// Compare names every way after diverges from before: a moved HEAD, a switched branch, a changed or
+// Compare names every way after diverges from before: a moved HEAD, a switched branch, an attached HEAD, a changed or
 // removed ref, a changed git hook, or a changed git config key.
 func Compare(before, after Snapshot) []string {
 	var problems []string
@@ -160,6 +160,9 @@ func Compare(before, after Snapshot) []string {
 	}
 	if before.Branch != after.Branch {
 		problems = append(problems, fmt.Sprintf("HEAD switched from branch %q to %q", before.Branch, after.Branch))
+	}
+	if !before.Attached && after.Attached {
+		problems = append(problems, fmt.Sprintf("HEAD attached to branch %q; a detached worktree must stay detached", after.Branch))
 	}
 	problems = append(problems, compareRefs(before.Refs, after.Refs)...)
 	problems = append(problems, compareHooks(before.Hooks, after.Hooks)...)

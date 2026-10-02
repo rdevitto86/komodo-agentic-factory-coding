@@ -695,8 +695,10 @@ func TestAWorktreeOutsideTheStateDirectoryYieldsANoteNotAProblem(t *testing.T) {
 	run("worktree", "add", "-q", "-b", "feat/inside", inside, "main")
 
 	notes := StrayWorktrees(root)
-	if len(notes) != 1 || !strings.Contains(notes[0], outside) || !strings.Contains(notes[0], "feat/outside") {
-		t.Fatalf("StrayWorktrees = %+v, want one note naming the outside path and branch", notes)
+	joined := strings.Join(notes, "\n")
+	if len(notes) != 2 || !strings.Contains(joined, outside+" pins feat/outside; git -C "+outside+" switch --detach frees it") ||
+		!strings.Contains(joined, " pins feat/inside; git -C ") {
+		t.Fatalf("StrayWorktrees = %+v, want a pin note and its fix for each attached worktree", notes)
 	}
 
 	problems, err := checkGit(root)
@@ -925,7 +927,7 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 		t.Fatal("prune settled a run whose branch origin does not hold yet")
 	}
 
-	run(worktree, "push", "-q", "origin", "feat/g:main")
+	run(worktree, "push", "-q", "origin", "feat/g:main", "feat/g")
 	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
@@ -936,8 +938,8 @@ func TestPruneSettlesAShippedRunOnceOriginHoldsItsBranch(t *testing.T) {
 	if exists(worktree) {
 		t.Fatalf("the shipped worktree survived; done = %v", got)
 	}
-	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/g").Output(); strings.TrimSpace(string(out)) != "" {
-		t.Fatalf("feat/g survived; done = %v", got)
+	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/g").Output(); strings.TrimSpace(string(out)) == "" {
+		t.Fatalf("feat/g, a person's branch, was deleted; done = %v", got)
 	}
 }
 
@@ -970,7 +972,7 @@ func TestPruneSweepsAnEarlierRunsMergedWorktreeWhileTheCurrentRunIsStillOpen(t *
 
 	// the first run ships and origin's main already holds it.
 	first := branch("TG-01.1", "feat/g", "main")
-	run(first, "push", "-q", "origin", "feat/g:main")
+	run(first, "push", "-q", "origin", "feat/g:main", "feat/g")
 	run(root, "fetch", "-q", "origin", "main")
 
 	// the second run is still open: its branch has not reached origin.
@@ -987,8 +989,8 @@ func TestPruneSweepsAnEarlierRunsMergedWorktreeWhileTheCurrentRunIsStillOpen(t *
 	if exists(first) {
 		t.Fatalf("the first run's merged worktree survived because the second run is still open; done = %v", got)
 	}
-	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/g").Output(); strings.TrimSpace(string(out)) != "" {
-		t.Fatalf("feat/g survived; done = %v", got)
+	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/g").Output(); strings.TrimSpace(string(out)) == "" {
+		t.Fatalf("feat/g, a person's branch, was deleted; done = %v", got)
 	}
 	if !exists(second) {
 		t.Fatalf("the second run's own unmerged worktree was removed; done = %v", got)
@@ -1062,7 +1064,7 @@ func TestPruneRemovesBothRunsWorktreesWhenOnlyTheLatestIsRecorded(t *testing.T) 
 		run(root, "worktree", "add", "-q", "-b", branch, worktree, start)
 		write(t, worktree, group+".txt", "done\n")
 		commitAll(t, worktree, "ship "+group)
-		run(worktree, "push", "-q", "origin", branch+":main")
+		run(worktree, "push", "-q", "origin", branch+":main", branch)
 		return worktree
 	}
 
@@ -1082,8 +1084,8 @@ func TestPruneRemovesBothRunsWorktreesWhenOnlyTheLatestIsRecorded(t *testing.T) 
 		t.Fatalf("a shipped worktree from an earlier run survived one prune; done = %v", got)
 	}
 	for _, branch := range []string{"feat/g", "feat/h"} {
-		if out, _ := exec.Command("git", "-C", root, "branch", "--list", branch).Output(); strings.TrimSpace(string(out)) != "" {
-			t.Fatalf("%s survived; done = %v", branch, got)
+		if out, _ := exec.Command("git", "-C", root, "branch", "--list", branch).Output(); strings.TrimSpace(string(out)) == "" {
+			t.Fatalf("%s, a person's branch, was deleted; done = %v", branch, got)
 		}
 	}
 }

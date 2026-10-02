@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog/backlogtest"
+	"komodo/internal/git"
 	"komodo/internal/line"
 )
 
@@ -35,45 +36,61 @@ func pruneRepo(t *testing.T, backlog string) (string, func(dir string, args ...s
 	return root, run
 }
 
-func TestPruneSettlesASquashMergedGroupWhoseBranchIsGone(t *testing.T) {
+// refExists reports whether ref resolves in root.
+func refExists(root, ref string) bool {
+	return exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", ref).Run() == nil
+}
+
+func TestPruneRemovesALandedDetachedWorktreeAndItsTipButNotAFreshCut(t *testing.T) {
 	root, run := pruneRepo(t, "# Backlog\n")
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	run(root, "init", "-q", "--bare", bare)
 	run(root, "remote", "add", "origin", bare)
 	run(root, "push", "-q", "origin", "main")
 
-	// cut builds a clean worktree off main holding one commit of its own.
+	// cut builds a clean detached worktree off main tracking branch, its tip at refs/komodo/<branch>.
 	cut := func(group, branch string) string {
 		worktree := filepath.Join(root, ".komodo", "wt", group)
-		run(root, "worktree", "add", "-q", "-b", branch, worktree, "main")
+		if err := line.AddDetached(root, branch, "main", worktree); err != nil {
+			t.Fatal(err)
+		}
 		write(t, worktree, group+".txt", "done\n")
 		commitAll(t, worktree, "ship "+group)
+		if err := line.Advance(root, branch, worktree, git.Or(root, "rev-parse", line.TipRef(branch))); err != nil {
+			t.Fatal(err)
+		}
 		return worktree
 	}
-	squashed := cut("TG-01.1", "feat/g")
-	run(squashed, "push", "-q", "origin", "feat/g")
-	run(squashed, "branch", "-q", "--set-upstream-to=origin/feat/g", "feat/g")
-	run(root, "push", "-q", "origin", "--delete", "feat/g")
-	unpushed := cut("TG-01.2", "feat/h")
+	landedTree := cut("TG-01.1", "feat/g")
+	run(root, "push", "-q", "origin", line.TipRef("feat/g")+":refs/heads/feat/g")
+	run(root, "push", "-q", "origin", line.TipRef("feat/g")+":refs/heads/main")
+	run(root, "fetch", "-q", "origin")
+	run(root, "branch", "feat/person", "main")
+	fresh := cut("TG-01.2", "feat/h")
+	pushedOnly := cut("TG-01.3", "feat/i")
+	run(root, "push", "-q", "origin", line.TipRef("feat/i")+":refs/heads/feat/i")
+	run(root, "fetch", "-q", "origin")
 
 	got, err := Prune(root, "main", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exists(squashed) {
-		t.Fatalf("the squash-merged group's worktree survived though origin deleted its branch; done = %v", got)
+	if exists(landedTree) || refExists(root, line.TipRef("feat/g")) {
+		t.Fatalf("the landed worktree or its tip survived; done = %v", got)
 	}
-	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/g").Output(); strings.TrimSpace(string(out)) != "" {
-		t.Fatalf("feat/g survived; done = %v", got)
+	if !exists(fresh) || !refExists(root, line.TipRef("feat/h")) {
+		t.Fatalf("a fresh cut, never pushed, counted as landed; done = %v", got)
 	}
-	if !exists(unpushed) {
-		t.Fatalf("a branch never pushed was taken for one origin deleted; done = %v", got)
+	if !exists(pushedOnly) || !refExists(root, line.TipRef("feat/i")) {
+		t.Fatalf("a pushed branch not in main counted as landed; done = %v", got)
+	}
+	if !refExists(root, "refs/heads/feat/person") {
+		t.Fatalf("a person's branch was deleted; done = %v", got)
 	}
 }
 
-// TestPruneDefaultsToADryRunAndNeverDeletesABranch proves an unconfirmed prune only lists a merged
-// branch it would delete, and a confirmed prune then deletes it.
-func TestPruneDefaultsToADryRunAndNeverDeletesABranch(t *testing.T) {
+// TestPruneListsAMergedBranchAndNeverDeletesIt proves prune only names a merged local branch, confirmed or not.
+func TestPruneListsAMergedBranchAndNeverDeletesIt(t *testing.T) {
 	root, run := pruneRepo(t, "# Backlog\n")
 	run(root, "branch", "feat/merged")
 	run(root, "checkout", "-q", "feat/merged")
@@ -82,29 +99,21 @@ func TestPruneDefaultsToADryRunAndNeverDeletesABranch(t *testing.T) {
 	run(root, "checkout", "-q", "main")
 	run(root, "merge", "-q", "--ff-only", "feat/merged")
 
-	dryRun, err := Prune(root, "main", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/merged").Output(); strings.TrimSpace(string(out)) == "" {
-		t.Fatalf("feat/merged was deleted though prune ran unconfirmed; done = %v", dryRun)
-	}
-	found := false
-	for _, item := range dryRun {
-		if strings.Contains(item, "feat/merged") && strings.Contains(item, "--confirm") {
-			found = true
+	for _, confirm := range []bool{false, true} {
+		got, err := Prune(root, "main", confirm)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !found {
-		t.Fatalf("done = %v, want a would-delete line naming feat/merged and --confirm", dryRun)
-	}
-
-	confirmed, err := Prune(root, "main", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out, _ := exec.Command("git", "-C", root, "branch", "--list", "feat/merged").Output(); strings.TrimSpace(string(out)) != "" {
-		t.Fatalf("feat/merged survived a confirmed prune; done = %v", confirmed)
+		if !refExists(root, "refs/heads/feat/merged") {
+			t.Fatalf("feat/merged was deleted (confirm=%v); done = %v", confirm, got)
+		}
+		found := false
+		for _, item := range got {
+			found = found || (strings.Contains(item, "feat/merged") && strings.Contains(item, "git branch -d"))
+		}
+		if !found {
+			t.Fatalf("done = %v, want a line naming feat/merged and git branch -d", got)
+		}
 	}
 }
 

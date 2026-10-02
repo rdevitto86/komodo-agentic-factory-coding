@@ -184,7 +184,8 @@ func PluginStates(root string) []string {
 	return notes
 }
 
-// StrayWorktrees names each linked worktree parked outside .komodo/wt by its path and branch; it never fails a check.
+// StrayWorktrees names each linked worktree that pins a branch with the one-line fix, and each one
+// parked outside .komodo/wt by its path and tracked branch; it never fails a check.
 func StrayWorktrees(root string) []string {
 	worktrees, err := git.Worktrees(root)
 	if err != nil {
@@ -197,10 +198,12 @@ func StrayWorktrees(root string) []string {
 			parked = filepath.Join(current.Path, ".komodo", "wt") + string(filepath.Separator)
 			continue
 		}
-		if strings.HasPrefix(filepath.Clean(current.Path), parked) {
-			continue
+		switch {
+		case current.Branch != "":
+			notes = append(notes, current.Path+" pins "+current.Branch+"; git -C "+current.Path+" switch --detach frees it")
+		case !strings.HasPrefix(filepath.Clean(current.Path), parked):
+			notes = append(notes, current.Path+" on branch "+current.Tracked)
 		}
-		notes = append(notes, current.Path+" on branch "+current.Branch)
 	}
 	return notes
 }
