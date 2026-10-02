@@ -155,26 +155,6 @@ func NextGroupFileTaskID(file GroupFile) string {
 	return fmt.Sprintf("TSK-%s.%d", base, highest+1)
 }
 
-// AppendGroupFileTask adds a checkbox task at the end of a group file's text, returning the text and its id.
-func AppendGroupFileTask(text, title string, files, accept []string) (string, string, error) {
-	file := ParseGroupFile(text)
-	if file.ID == "" {
-		return "", "", fmt.Errorf("no group heading found")
-	}
-	if len(files) == 0 {
-		return "", "", fmt.Errorf("task declares no files")
-	}
-	taskID := NextGroupFileTaskID(file)
-	var block strings.Builder
-	fmt.Fprintf(&block, "- [ ] **%s** %s\n", taskID, strings.TrimSpace(title))
-	fmt.Fprintf(&block, "  - files: %s\n", strings.Join(backtickEach(files), ", "))
-	for _, line := range accept {
-		fmt.Fprintf(&block, "  - accept: %s\n", line)
-	}
-	out := strings.TrimRight(text, "\n") + "\n" + block.String()
-	return out, taskID, nil
-}
-
 // AppendGroupFileTaskWith adds a checkbox task at the end of a group file's text, using every field
 // task already carries except its id, which is assigned next in sequence.
 func AppendGroupFileTaskWith(text string, task GroupTask) (string, string, error) {

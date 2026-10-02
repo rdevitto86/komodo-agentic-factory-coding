@@ -301,7 +301,7 @@ func TestCommandDropsTheGitEnvironmentAHookSets(t *testing.T) {
 
 // TestFuzzChecksCoverEveryTarget proves the gate builds one named check per fuzz target.
 func TestFuzzChecksCoverEveryTarget(t *testing.T) {
-	checks := FuzzChecks(t.TempDir(), "1s")
+	checks := FuzzChecksFor(t.TempDir(), "1s", FuzzTargets)
 	if len(checks) != len(FuzzTargets) {
 		t.Fatalf("checks = %d, targets = %d", len(checks), len(FuzzTargets))
 	}
