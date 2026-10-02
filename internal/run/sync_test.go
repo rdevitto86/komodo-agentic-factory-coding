@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"komodo/internal/gate"
+	"komodo/internal/line"
 	"komodo/internal/pr"
 )
 
@@ -339,7 +340,7 @@ func syncWorktreeRepo(t *testing.T, merged, dirty bool) (root, worktree string) 
 	runGit(t, worktree, "commit", "--allow-empty", "-m", "work")
 	if merged {
 		runGit(t, root, "merge", "--no-ff", "--no-edit", branch)
-		runGit(t, root, "push", "origin", "main")
+		runGit(t, root, "push", "origin", "main", branch)
 	}
 	if dirty {
 		if err := os.WriteFile(filepath.Join(worktree, "dirty.txt"), []byte("x\n"), 0o644); err != nil {
@@ -388,6 +389,82 @@ func TestSyncNamesAnUnmergedWorktreeWithoutRemovingIt(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "has not merged, not removed") {
 		t.Fatalf("out = %q, want the unmerged worktree named", out.String())
+	}
+}
+
+func TestSyncRemovesACleanMergedDetachedWorktreeAndItsTip(t *testing.T) {
+	root, worktree := syncWorktreeRepo(t, false, false)
+	runGit(t, root, "worktree", "remove", "--force", worktree)
+	if err := line.AddDetached(root, "feat/side", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "commit", "--allow-empty", "-m", "work")
+	if err := line.Advance(root, "feat/side", worktree, gitOut(t, root, "rev-parse", line.TipRef("feat/side"))); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "push", "origin", line.TipRef("feat/side")+":refs/heads/feat/side", line.TipRef("feat/side")+":refs/heads/main")
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(worktree); err == nil {
+		t.Fatalf("the merged detached worktree survived sync; out = %s", out.String())
+	}
+	if gitOut(t, root, "for-each-ref", "refs/komodo/") != "" {
+		t.Fatalf("the tip ref survived sync; out = %s", out.String())
+	}
+}
+
+func TestSyncNamesAnUnmergedDetachedWorktreeByItsTrackedBranch(t *testing.T) {
+	root, worktree := syncWorktreeRepo(t, false, false)
+	runGit(t, root, "worktree", "remove", "--force", worktree)
+	if err := line.AddDetached(root, "feat/side", "main", worktree); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, worktree, "commit", "--allow-empty", "-m", "work")
+	if err := line.Advance(root, "feat/side", worktree, gitOut(t, root, "rev-parse", line.TipRef("feat/side"))); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "on feat/side has not merged, not removed") {
+		t.Fatalf("out = %q, want the detached worktree named by its tracked branch", out.String())
+	}
+}
+
+func TestSyncDetachesACleanAttachedWorktree(t *testing.T) {
+	root, worktree := syncWorktreeRepo(t, false, false)
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOut(t, worktree, "config", "--worktree", "--get", "komodo.branch"); got != "feat/side" {
+		t.Fatalf("komodo.branch = %q; out = %s", got, out.String())
+	}
+	if gitOut(t, root, "rev-parse", line.TipRef("feat/side")) != gitOut(t, worktree, "rev-parse", "HEAD") {
+		t.Fatalf("the tip ref does not hold the worktree's commit; out = %s", out.String())
+	}
+	if exec.Command("git", "-C", worktree, "symbolic-ref", "-q", "HEAD").Run() == nil {
+		t.Fatalf("the worktree still holds a branch; out = %s", out.String())
+	}
+	if gitOut(t, root, "branch", "--list", "feat/side") == "" {
+		t.Fatal("the person's branch was deleted")
+	}
+}
+
+func TestSyncDetachNamesADirtyWorktreeAndLeavesItAttached(t *testing.T) {
+	root, worktree := syncWorktreeRepo(t, false, true)
+	var out bytes.Buffer
+	if _, err := Sync(SyncOptions{Root: root, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if exec.Command("git", "-C", worktree, "symbolic-ref", "-q", "HEAD").Run() != nil {
+		t.Fatalf("a dirty worktree was detached; out = %s", out.String())
+	}
+	if !strings.Contains(out.String(), "still holds feat/side, not detached") {
+		t.Fatalf("out = %q", out.String())
 	}
 }
 
@@ -543,6 +620,9 @@ func TestSyncOpensACleanupPRForAnEpicWhoseFilesOutlivedIt(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(root, ".komodo", "wt", "cleanup-epic-01")); err == nil {
 				t.Fatal("the cleanup worktree outlived its PR")
+			}
+			if gitOut(t, root, "branch", "--list", "chore/cleanup-epic-01") != "" || gitOut(t, root, "for-each-ref", "refs/komodo/") != "" {
+				t.Fatal("the cleanup left a local branch or tip ref behind")
 			}
 		})
 	}

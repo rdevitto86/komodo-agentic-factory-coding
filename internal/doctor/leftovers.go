@@ -12,7 +12,7 @@ import (
 )
 
 // Leftovers names what an ended epic, a stale local.json, or a finished run left behind: an ended
-// epic's group files, and a worktree under .komodo/wt or a run's local branch no open group owns.
+// epic's group files, and a worktree under .komodo/wt or a run's branch or refs/komodo tip no open group owns.
 func Leftovers(root string) []string {
 	paths, files := groupFiles(root)
 	open := openGroups(files)
@@ -107,13 +107,14 @@ func orphanWorktrees(root string, open map[string]bool) ([]string, map[string]bo
 		if !strings.HasPrefix(path, parked) || open[filepath.Base(path)] {
 			continue
 		}
-		named[current.Branch] = true
-		notes = append(notes, current.Path+" on branch "+current.Branch+": no open group owns this worktree")
+		branch := TrackedOf(current)
+		named[branch] = true
+		notes = append(notes, current.Path+" on branch "+branch+": no open group owns this worktree")
 	}
 	return notes, named
 }
 
-// orphanBranches names each local branch a recorded run cut for a group with no open task, skipping
+// orphanBranches names each local branch or refs/komodo tip a recorded run cut for a group with no open task, skipping
 // the branches a worktree note already named.
 func orphanBranches(root string, open, named map[string]bool) []string {
 	var notes []string
@@ -121,7 +122,9 @@ func orphanBranches(root string, open, named map[string]bool) []string {
 		if state.Branch == "" || open[state.Group] || named[state.Branch] {
 			continue
 		}
-		if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+state.Branch); err != nil {
+		_, headErr := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+state.Branch)
+		_, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", line.TipRef(state.Branch))
+		if headErr != nil && tipErr != nil {
 			continue
 		}
 		named[state.Branch] = true

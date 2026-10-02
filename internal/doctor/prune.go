@@ -13,7 +13,7 @@ import (
 // keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
 const keptRuns = 10
 
-// Prune clears stale worktrees and old runs; it deletes merged branches only when confirm, else lists them.
+// Prune clears stale worktrees, landed refs/komodo tips and old runs, and only lists merged local branches; confirm gates the sweep.
 func Prune(root, base string, confirm bool) ([]string, error) {
 	var done []string
 	worktrees, err := git.Worktrees(root)
@@ -43,20 +43,14 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 		if branch == base || branch == "" || strings.HasPrefix(branch, "*") || policy.IsCritical(branch) {
 			continue
 		}
-		if !confirm {
-			done = append(done, "would delete merged branch "+branch+"; rerun with --confirm to delete")
-			continue
-		}
-		if _, err := git.Run(root, "branch", "-d", branch); err == nil {
-			done = append(done, "deleted merged branch "+branch)
-		}
+		done = append(done, "merged local branch "+branch+"; komodo never deletes it, run git branch -d "+branch+" to")
 	}
 	done = append(done, pruneRuns(root, open)...)
 	return done, nil
 }
 
-// settleShippedRun sweeps each clean worktree origin has merged or whose pushed branch origin dropped,
-// skipping an open run's own worktree. Unconfirmed, it only lists the worktree and branch it would take.
+// settleShippedRun sweeps each clean worktree whose branch origin has merged, then each landed
+// refs/komodo tip no worktree holds, skipping an open run's own. Unconfirmed, it only lists what it would take.
 func settleShippedRun(root, base string, open []line.RunState, confirm bool) []string {
 	if _, err := git.Run(root, "fetch", "--quiet", "origin", base); err != nil {
 		return nil
@@ -68,44 +62,70 @@ func settleShippedRun(root, base string, open []line.RunState, confirm bool) []s
 		running[filepath.Clean(line.WorktreePath(root, state.Worktree))] = true
 	}
 	var done []string
+	held := map[string]bool{}
 	for _, worktree := range stateWorktrees(root) {
-		if running[worktree.Branch] || running[filepath.Clean(worktree.Path)] {
+		branch := TrackedOf(worktree)
+		held[branch] = true
+		if running[branch] || running[filepath.Clean(worktree.Path)] {
 			continue
 		}
 		if status, err := git.Run(worktree.Path, "status", "--porcelain"); err != nil || status != "" {
 			continue
 		}
-		if !landed(root, worktree.Branch, remote) {
+		tip := worktree.Head
+		if ref := git.Or(root, "rev-parse", "--verify", "--quiet", line.TipRef(branch)); ref != "" {
+			tip = ref
+		}
+		if !landed(root, branch, tip, remote) {
 			continue
 		}
 		if !confirm {
-			done = append(done, "would remove worktree "+rel(root, worktree.Path)+" and delete branch "+
-				worktree.Branch+"; rerun with --confirm to delete")
+			done = append(done, "would remove worktree "+rel(root, worktree.Path)+" and its ref "+line.TipRef(branch)+
+				"; rerun with --confirm to delete")
 			continue
 		}
 		if _, err := git.Run(root, "worktree", "remove", "--force", worktree.Path); err != nil {
 			continue
 		}
 		done = append(done, "removed worktree "+rel(root, worktree.Path))
-		if _, err := git.Run(root, "branch", "-D", worktree.Branch); err == nil {
-			done = append(done, "deleted merged branch "+worktree.Branch)
+		if _, err := git.Run(root, "update-ref", "-d", line.TipRef(branch)); err == nil && worktree.Detached {
+			done = append(done, "removed ref "+line.TipRef(branch))
+		}
+	}
+	for _, ref := range lines(git.Run(root, "for-each-ref", "--format=%(refname)", "refs/komodo/")) {
+		branch := strings.TrimPrefix(ref, "refs/komodo/")
+		if branch == "" || held[branch] || running[branch] {
+			continue
+		}
+		if !landed(root, branch, ref, remote) {
+			continue
+		}
+		if !confirm {
+			done = append(done, "would remove ref "+ref+"; rerun with --confirm to delete")
+			continue
+		}
+		if _, err := git.Run(root, "update-ref", "-d", ref); err == nil {
+			done = append(done, "removed ref "+ref)
 		}
 	}
 	return done
 }
 
-// landed reports whether branch is in remote, or was pushed with an upstream origin has since deleted,
-// as a squash merge or an abandoned pull request leaves it.
-func landed(root, branch, remote string) bool {
-	if _, err := git.Run(root, "merge-base", "--is-ancestor", branch, remote); err == nil {
-		return true
+// TrackedOf is the branch a worktree holds or, detached, the branch its komodo.branch config names.
+func TrackedOf(worktree git.Worktree) string {
+	if worktree.Branch != "" {
+		return worktree.Branch
 	}
-	upstream, err := git.Run(root, "config", "--get", "branch."+branch+".merge")
-	if err != nil || upstream == "" {
+	return worktree.Tracked
+}
+
+// landed reports whether branch was pushed (origin holds a remote-tracking ref for it) and tip is in remote.
+func landed(root, branch, tip, remote string) bool {
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch); err != nil {
 		return false
 	}
-	heads, err := git.Run(root, "ls-remote", "--heads", "origin", upstream)
-	return err == nil && heads == ""
+	_, err := git.Run(root, "merge-base", "--is-ancestor", tip, remote)
+	return err == nil
 }
 
 // pruneRuns removes every run folder older than the newest keptRuns, never an open run's.
@@ -131,7 +151,7 @@ func pruneRuns(root string, open []line.RunState) []string {
 	return done
 }
 
-// stateWorktrees lists the worktrees under .komodo/wt that exist on disk and hold a branch.
+// stateWorktrees lists the worktrees under .komodo/wt that exist on disk and hold or track a branch.
 func stateWorktrees(root string) []git.Worktree {
 	worktrees, err := git.Worktrees(root)
 	if err != nil {
@@ -139,7 +159,7 @@ func stateWorktrees(root string) []git.Worktree {
 	}
 	var found []git.Worktree
 	for _, current := range worktrees {
-		if current.Branch != "" && strings.Contains(current.Path, filepath.Join(".komodo", "wt")) && exists(current.Path) {
+		if TrackedOf(current) != "" && strings.Contains(current.Path, filepath.Join(".komodo", "wt")) && exists(current.Path) {
 			found = append(found, current)
 		}
 	}

@@ -76,6 +76,9 @@ func Sync(options SyncOptions) (string, error) {
 	if err := syncWorktrees(options.Root, line.DefaultBase(options.Root), options.DryRun, out, suffix); err != nil {
 		return "", err
 	}
+	if err := syncDetach(options.Root, options.DryRun, out, suffix); err != nil {
+		return "", err
+	}
 	client := options.PR
 	if client == nil {
 		client = pr.New(options.Root)
@@ -113,6 +116,59 @@ func syncWorktrees(root, base string, dryRun bool, out io.Writer, suffix string)
 	return nil
 }
 
+// syncDetach detaches each clean .komodo/wt worktree still holding a branch, recording it as komodo.branch
+// and its tip at refs/komodo/<branch>; a dirty one or an open run's own is named and left alone.
+func syncDetach(root string, dryRun bool, out io.Writer, suffix string) error {
+	worktrees, err := git.Worktrees(root)
+	if err != nil {
+		return err
+	}
+	running := map[string]bool{}
+	for _, state := range line.OpenRuns(root) {
+		running[state.Branch] = true
+	}
+	for _, worktree := range worktrees {
+		if worktree.Branch == "" || worktree.Path == root || !strings.Contains(worktree.Path, filepath.Join(".komodo", "wt")) {
+			continue
+		}
+		if _, err := os.Stat(worktree.Path); err != nil || running[worktree.Branch] {
+			continue
+		}
+		relPath, err := filepath.Rel(root, worktree.Path)
+		if err != nil {
+			relPath = worktree.Path
+		}
+		if status, err := git.Run(worktree.Path, "status", "--porcelain"); err != nil || status != "" {
+			fmt.Fprintf(out, "worktree: %s is dirty and still holds %s, not detached%s\n", relPath, worktree.Branch, suffix)
+			continue
+		}
+		if !dryRun {
+			if err := detachWorktree(root, worktree); err != nil {
+				fmt.Fprintf(out, "worktree: %s still holds %s, not detached: %v%s\n", relPath, worktree.Branch, err, suffix)
+				continue
+			}
+		}
+		fmt.Fprintf(out, "worktree: detached %s from %s%s\n", relPath, worktree.Branch, suffix)
+	}
+	return nil
+}
+
+// detachWorktree records worktree's branch as komodo.branch and its tip at refs/komodo/<branch>, then detaches it.
+func detachWorktree(root string, worktree git.Worktree) error {
+	if _, err := git.Run(root, "config", "extensions.worktreeConfig", "true"); err != nil {
+		return err
+	}
+	if _, err := git.Run(root, "update-ref", line.TipRef(worktree.Branch), worktree.Head, ""); err != nil &&
+		git.Or(root, "rev-parse", "--verify", "--quiet", line.TipRef(worktree.Branch)) == "" {
+		return err
+	}
+	if _, err := git.Run(worktree.Path, "config", "--worktree", "komodo.branch", worktree.Branch); err != nil {
+		return err
+	}
+	_, err := git.Run(worktree.Path, "switch", "--detach")
+	return err
+}
+
 // staleWorktrees names, without touching, each .komodo/wt worktree still on disk, other than an
 // open run's own, that is dirty or whose branch has not merged into its base.
 func staleWorktrees(root string) ([]string, error) {
@@ -128,7 +184,8 @@ func staleWorktrees(root string) ([]string, error) {
 	remote := "origin/" + base
 	var named []string
 	for _, worktree := range worktrees {
-		if worktree.Branch == "" || running[worktree.Branch] || !strings.Contains(worktree.Path, filepath.Join(".komodo", "wt")) {
+		branch := doctor.TrackedOf(worktree)
+		if branch == "" || running[branch] || !strings.Contains(worktree.Path, filepath.Join(".komodo", "wt")) {
 			continue
 		}
 		if _, err := os.Stat(worktree.Path); err != nil {
@@ -142,8 +199,14 @@ func staleWorktrees(root string) ([]string, error) {
 			named = append(named, fmt.Sprintf("%s is dirty, not removed", relPath))
 			continue
 		}
-		if _, err := git.Run(root, "merge-base", "--is-ancestor", worktree.Branch, remote); err != nil {
-			named = append(named, fmt.Sprintf("%s on %s has not merged, not removed", relPath, worktree.Branch))
+		tip := worktree.Head
+		if ref := git.Or(root, "rev-parse", "--verify", "--quiet", line.TipRef(branch)); ref != "" {
+			tip = ref
+		} else if worktree.Branch != "" {
+			tip = worktree.Branch
+		}
+		if _, err := git.Run(root, "merge-base", "--is-ancestor", tip, remote); err != nil {
+			named = append(named, fmt.Sprintf("%s on %s has not merged, not removed", relPath, branch))
 		}
 	}
 	return named, nil
@@ -226,10 +289,10 @@ func endedEpics(root, ref string) (map[string][]string, error) {
 }
 
 // openCleanup cuts branch from origin's base in its own worktree, deletes the epic's group files there,
-// pushes it, and opens its PR; the worktree and local branch go once the PR is open.
+// pushes it, and opens its PR; the worktree and its tip ref go once the PR is open.
 func openCleanup(root string, client *pr.Client, base, branch, epic string, paths []string) error {
 	worktree := filepath.Join(root, line.StateDir, "wt", "cleanup-"+strings.ToLower(epic))
-	if err := line.AddWorktree(root, branch, "origin/"+base, worktree); err != nil {
+	if err := line.AddDetached(root, branch, "origin/"+base, worktree); err != nil {
 		return err
 	}
 	if _, err := git.Run(worktree, append([]string{"rm", "--quiet", "--"}, paths...)...); err != nil {
@@ -252,7 +315,7 @@ func openCleanup(root string, client *pr.Client, base, branch, epic string, path
 	if _, err := git.Run(root, "worktree", "remove", "--force", worktree); err != nil {
 		return err
 	}
-	_, err := git.Run(root, "branch", "-D", branch)
+	_, err := git.Run(root, "update-ref", "-d", line.TipRef(branch))
 	return err
 }
 

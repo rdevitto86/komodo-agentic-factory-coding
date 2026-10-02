@@ -166,28 +166,74 @@ func TestCompareCatchesASwitchedBranch(t *testing.T) {
 	}
 }
 
-func TestCompareIgnoresAnotherLanesBranchRefsAndConfig(t *testing.T) {
+func TestCompareIgnoresAnotherLanesTipRefsRemotesAndConfig(t *testing.T) {
 	repo := newRepo(t)
 	lane := filepath.Join(t.TempDir(), "lane")
-	gitRun(t, repo, "worktree", "add", "-q", "-b", "feat/other", lane)
-	before, err := TakeSnapshot(repo)
+	gitRun(t, repo, "worktree", "add", "-q", "--detach", lane)
+	gitRun(t, repo, "config", "extensions.worktreeConfig", "true")
+	gitRun(t, lane, "config", "--worktree", "komodo.branch", "feat/mine")
+	before, err := TakeSnapshot(lane)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(lane, "other.txt"), []byte("x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitRun(t, lane, "add", "-A")
-	gitRun(t, lane, "commit", "-q", "-m", "another lane ships")
-	gitRun(t, lane, "update-ref", "refs/remotes/origin/feat/other", "HEAD")
-	gitRun(t, lane, "config", "branch.feat/other.remote", "origin")
-	gitRun(t, lane, "config", "branch.feat/other.merge", "refs/heads/feat/other")
-	gitRun(t, repo, "branch", "feat/third")
-	after, err := TakeSnapshot(repo)
+	gitRun(t, repo, "update-ref", "refs/komodo/feat/other", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/remotes/origin/feat/other", "HEAD")
+	gitRun(t, repo, "config", "branch.feat/other.remote", "origin")
+	after, err := TakeSnapshot(lane)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
 	if problems := Compare(before, after); len(problems) != 0 {
-		t.Fatalf("problems = %v, want none from another lane's branch, remote ref and branch config", problems)
+		t.Fatalf("problems = %v, want none from another lane's tip, remote ref and branch config", problems)
+	}
+}
+
+func TestCompareCatchesAMovedLocalBranchAndTheLanesOwnTip(t *testing.T) {
+	repo := newRepo(t)
+	lane := filepath.Join(t.TempDir(), "lane")
+	gitRun(t, repo, "worktree", "add", "-q", "--detach", lane)
+	gitRun(t, repo, "config", "extensions.worktreeConfig", "true")
+	gitRun(t, lane, "config", "--worktree", "komodo.branch", "feat/mine")
+	gitRun(t, repo, "update-ref", "refs/komodo/feat/mine", "HEAD")
+	gitRun(t, repo, "branch", "person")
+	before, err := TakeSnapshot(lane)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(lane, "x.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, lane, "add", "-A")
+	gitRun(t, lane, "commit", "-q", "-m", "model work")
+	gitRun(t, lane, "update-ref", "refs/heads/person", "HEAD")
+	gitRun(t, lane, "update-ref", "refs/komodo/feat/mine", "HEAD")
+	after, err := TakeSnapshot(lane)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	joined := strings.Join(Compare(before, after), "\n")
+	if !strings.Contains(joined, "refs/heads/person changed") || !strings.Contains(joined, "refs/komodo/feat/mine changed") {
+		t.Fatalf("problems = %q, want the moved branch and the lane's own tip named", joined)
+	}
+}
+
+func TestCompareCatchesADetachedWorktreeAttaching(t *testing.T) {
+	repo := newRepo(t)
+	lane := filepath.Join(t.TempDir(), "lane")
+	gitRun(t, repo, "worktree", "add", "-q", "--detach", lane)
+	gitRun(t, repo, "config", "extensions.worktreeConfig", "true")
+	gitRun(t, lane, "config", "--worktree", "komodo.branch", "feat/mine")
+	before, err := TakeSnapshot(lane)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	gitRun(t, lane, "checkout", "-q", "-b", "feat/mine")
+	after, err := TakeSnapshot(lane)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	joined := strings.Join(Compare(before, after), "\n")
+	if !strings.Contains(joined, "attached to branch") {
+		t.Fatalf("problems = %q, want the attach named", joined)
 	}
 }
