@@ -94,8 +94,20 @@ func FoldFiles(root, date string) error {
 	return os.RemoveAll(filepath.Join(root, Dir))
 }
 
-// versionHeading matches a version heading with or without brackets, a leading v, or a date.
-var versionHeading = regexp.MustCompile(`(?m)^##\s+\[?v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\]?.*$`)
+// SemVer matches x.y.z with an optional prerelease such as -alpha.1.
+const SemVer = `\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
+
+// Heading matches a whole version heading line; its first group is the version.
+var Heading = regexp.MustCompile(`(?m)^##\s+\[?v?(` + SemVer + `)\]?.*$`)
+
+// versionHeading is the heading pattern this package reads.
+var versionHeading = Heading
+
+// validVersion is one whole version, with an optional leading v.
+var validVersion = regexp.MustCompile(`^v?` + SemVer + `$`)
+
+// Valid reports whether version is a whole semantic version; Compare reads anything else as zeros.
+func Valid(version string) bool { return validVersion.MatchString(version) }
 
 // anyHeading is any second-level heading: a version, or a titled history section.
 var anyHeading = regexp.MustCompile(`(?m)^## `)

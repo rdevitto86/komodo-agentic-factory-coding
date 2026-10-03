@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 )
 
@@ -284,7 +285,7 @@ func (p Plan) Apply() ([]Action, error) {
 		if err := os.MkdirAll(filepath.Dir(change.Path), 0o755); err != nil {
 			return done, err
 		}
-		if err := os.WriteFile(change.Path, change.Body, change.Mode); err != nil {
+		if err := fsx.WriteFile(change.Path, change.Body, change.Mode); err != nil {
 			return done, err
 		}
 	}

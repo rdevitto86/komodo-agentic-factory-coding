@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -71,11 +70,6 @@ func reproduces(root, path string, target gate.Target) error {
 	return nil
 }
 
-// semver matches x.y.z with an optional prerelease such as -alpha.1.
-const semver = `\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
-
-var headingRe = regexp.MustCompile(`(?m)^##\s+\[?v?(` + semver + `)\]?`)
-
 // Version is one changelog heading and the lines under it.
 type Version struct {
 	Number string
@@ -84,7 +78,7 @@ type Version struct {
 
 // Versions lists every version the changelog names, newest first as the file orders them.
 func Versions(text string) []Version {
-	matches := headingRe.FindAllStringSubmatchIndex(text, -1)
+	matches := changelog.Heading.FindAllStringSubmatchIndex(text, -1)
 	var out []Version
 	for index, match := range matches {
 		end := len(text)
@@ -100,18 +94,7 @@ func Versions(text string) []Version {
 }
 
 // Latest is the highest version the changelog names.
-func Latest(text string) string {
-	versions := Versions(text)
-	if len(versions) == 0 {
-		return ""
-	}
-	numbers := make([]string, 0, len(versions))
-	for _, version := range versions {
-		numbers = append(numbers, version.Number)
-	}
-	sort.Slice(numbers, func(i, j int) bool { return Compare(numbers[i], numbers[j]) > 0 })
-	return numbers[0]
-}
+func Latest(text string) string { return changelog.Latest(text) }
 
 // Compare orders two semantic versions, returning -1, 0, or 1; a prerelease sorts before its release.
 func Compare(left, right string) int { return changelog.Compare(left, right) }
@@ -136,7 +119,7 @@ func Taggable(text string, tags []string) []string {
 func Unreleased(text string, tags []string) []string {
 	newest := ""
 	for _, tag := range tags {
-		if number := strings.TrimPrefix(tag, "v"); versionTag.MatchString(tag) && (newest == "" || Compare(number, newest) > 0) {
+		if number := strings.TrimPrefix(tag, "v"); changelog.Valid(tag) && (newest == "" || Compare(number, newest) > 0) {
 			newest = number
 		}
 	}
@@ -155,14 +138,12 @@ type Drift struct {
 	Detail  string `json:"detail"`
 }
 
-var versionTag = regexp.MustCompile(`^v?` + semver + `$`)
-
 // Check audits the changelog against the tags and the versions each group declares.
-func Check(changelog string, tags, groupVersions []string) []Drift {
+func Check(text string, tags, groupVersions []string) []Drift {
 	var drift []Drift
 	named := map[string]bool{}
 	counts := map[string]int{}
-	versions := Versions(changelog)
+	versions := Versions(text)
 	for index, version := range versions {
 		named[version.Number] = true
 		if version.Body == "" {
@@ -177,7 +158,7 @@ func Check(changelog string, tags, groupVersions []string) []Drift {
 		}
 	}
 	for _, tag := range tags {
-		if !versionTag.MatchString(tag) {
+		if !changelog.Valid(tag) {
 			continue
 		}
 		if number := strings.TrimPrefix(tag, "v"); !named[number] {
