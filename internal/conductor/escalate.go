@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"komodo/internal/backlog"
 	"komodo/internal/mount"
@@ -103,6 +104,28 @@ func (d *Driver) escalate(ctx context.Context, s *State, r *round) error {
 	}
 	s.Answered = true
 	return nil
+}
+
+// timeout saves a group whose own budget ran out as an escalation, and asks the orchestrator about it
+// on a fresh context, so the spent budget never cuts off the session that decides what happens next.
+func (d *Driver) timeout(s State, r *round, cause error) (State, error) {
+	s.Left = s.Current
+	s.Current = Escalated
+	s.SlotFree, s.SessionDone, s.ChecksPassed, s.Conflict, s.ShipDone, s.Edited = false, false, false, false, false, false
+	s.Escalate, s.Answered, s.Stop = true, false, false
+	r.reason = fmt.Sprintf("%s ran out of its budget after %s", s.Group, s.TimeUsed.Round(time.Second))
+	r.keep(&s)
+	if err := d.Save(s); err != nil {
+		return s, fmt.Errorf("saving %s at %s: %w", s.Group, s.Current, err)
+	}
+	if err := d.escalate(context.Background(), &s, r); err != nil {
+		return s, fmt.Errorf("%s escalated at %s: %w", s.Group, s.Current, err)
+	}
+	r.keep(&s)
+	if err := d.Save(s); err != nil {
+		return s, fmt.Errorf("saving %s at %s: %w", s.Group, s.Current, err)
+	}
+	return s, cause
 }
 
 // changedFiles returns every path a unified diff's "+++ " and "--- " lines name, skipping /dev/null.

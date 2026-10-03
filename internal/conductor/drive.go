@@ -180,6 +180,9 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 	for {
 		r.keep(&s)
 		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && s.Current != Escalated {
+				return d.timeout(s, &r, err)
+			}
 			return s, err
 		}
 		next := Next(s)
@@ -205,6 +208,9 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 			}
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
+			if errors.Is(ctxErr, context.DeadlineExceeded) && s.Current != Escalated {
+				return d.timeout(s, &r, ctxErr)
+			}
 			return s, ctxErr
 		}
 		if err != nil {
@@ -659,6 +665,7 @@ func (d *Driver) drain(
 			entry.TokensIn += event.Usage.TokensIn
 			entry.TokensOut += event.Usage.TokensOut
 			entry.TokensCached += event.Usage.TokensCached
+			entry.Cost += event.CostUSD
 			if event.RateLimit != nil {
 				mount.ObserveRateLimit(*event.RateLimit)
 			}

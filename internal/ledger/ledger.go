@@ -40,6 +40,7 @@ type Entry struct {
 	Provider     string    `json:"provider,omitempty"`
 	Model        string    `json:"model,omitempty"`
 	Seconds      float64   `json:"seconds,omitempty"`
+	Cost         float64   `json:"cost,omitempty"`
 	TokensIn     int       `json:"tokens_in,omitempty"`
 	TokensOut    int       `json:"tokens_out,omitempty"`
 	TokensCached int       `json:"tokens_cached,omitempty"`
