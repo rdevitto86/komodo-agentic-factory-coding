@@ -314,121 +314,18 @@ func BuildLocal(root string, out io.Writer) (string, error) {
 	return path, nil
 }
 
-const hookScript = `#!/bin/sh
-# Runs the local gate from the checkout being committed, else this host's built binary. Written by komodo gate --install.
-set -e
-name=$(basename "$0")
-# The toolkit's own checkout gates from its source, so the guard table and comment rules are the ones committed.
-top=$(git rev-parse --show-toplevel 2>/dev/null || true)
-if [ -n "$top" ] && [ -f "$top/cmd/komodo/main.go" ] && grep -qx 'module komodo' "$top/go.mod" 2>/dev/null; then
-  cd "$top"
-  cmd="go run ./cmd/komodo"
-else
-  # The shared git dir sits in the main checkout, where bin/ lives, even when committing from a worktree.
-  common=$(git rev-parse --path-format=absolute --git-common-dir)
-  root=${common%/.git}
-  # The built binary is bin/komodo on every platform; Windows adds .exe.
-  bin="$root/bin/komodo"
-  [ -x "$bin" ] || [ ! -x "$bin.exe" ] || bin="$bin.exe"
-  if [ -x "$bin" ]; then
-    cmd="$bin"
-  elif command -v komodo >/dev/null 2>&1; then
-    # A target repo builds no line binary of its own, so it gates with the host's installed one.
-    cmd=komodo
-  else
-    echo "gate: no binary at $bin and no komodo on PATH; run 'komodo gate --install' to build it" >&2
-    exit 1
-  fi
-fi
-# Commit rules run through the main checkout's built binary when it has one, so a branch whose source
-# predates a rule still meets it; the gate itself still runs from the checkout being committed.
-common=$(git rev-parse --path-format=absolute --git-common-dir)
-rules="$cmd"
-for built in "${common%/.git}"/bin/komodo-*; do
-  if [ -x "$built" ] && [ "${built%.built-from}" = "$built" ]; then rules="$built"; fi
-done
-case "$name" in
-  commit-msg)
-    # The message file is the hook's one argument; the binary reads the loaded policy's trailer patterns.
-    exec $rules gate --commit-msg "$1"
-    ;;
-  pre-commit)
-    # A critical ref or a branch outside <type>/<kebab-name> is refused before the rest of the gate runs.
-    $rules gate --check-branch || exit 1
-    exec $cmd gate
-    ;;
-  # A push carries more weight than a commit, so it also fuzzes the parsers for a few seconds each.
-  pre-push)
-    # git passes each pushed ref's old and new commit on stdin; the first line scopes the push,
-    # so build and fuzz checks run only for what it touched.
-    lines=$(cat 2>/dev/null || true)
-    first=$(printf '%s\n' "$lines" | head -n 1)
-    set -- $first
-    localref=${1:-}; localsha=${2:-}; remoteref=${3:-}; remotesha=${4:-}
-    # A detached worktree's pre-commit check passes trivially, so each pushed ref is the one place
-    # left to refuse a critical ref, a non-conforming branch name, or a branch a live builder leases.
-    printf '%s\n' "$lines" | while read -r _ _ pushedref _; do
-      if [ -n "$pushedref" ]; then
-        $rules gate --check-push "$pushedref" || exit 1
-      fi
-    done || exit 1
-    if [ -n "$remotesha" ]; then
-      exec $cmd gate --fuzz 10s --from "$remotesha" --to "$localsha"
-    fi
-    exec $cmd gate --fuzz 10s
-    ;;
-  post-merge)
-    # Only the main working tree rebuilds; the line merges task branches in a worktree it cut.
-    gitdir=$(git rev-parse --path-format=absolute --git-dir)
-    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
-    if [ "$gitdir" = "$gitcommon" ]; then
-      exec $cmd gate --rebuild --from "$(git rev-parse --quiet --verify ORIG_HEAD 2>/dev/null || true)" --to "$(git rev-parse HEAD)"
-    fi
-    exit 0
-    ;;
-  post-checkout)
-    # Only a branch checkout ($3 = 1) in the main working tree rebuilds; a worktree the line cut never does.
-    gitdir=$(git rev-parse --path-format=absolute --git-dir)
-    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
-    if [ "$3" = "1" ] && [ "$gitdir" = "$gitcommon" ]; then
-      exec $cmd gate --rebuild --from "$1" --to "$2"
-    fi
-    exit 0
-    ;;
-  post-commit)
-    # Every commit in the main working tree rebuilds when its build inputs changed, a conflicted merge included.
-    gitdir=$(git rev-parse --path-format=absolute --git-dir)
-    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
-    if [ "$gitdir" = "$gitcommon" ] && git rev-parse --quiet --verify HEAD^1 >/dev/null 2>&1; then
-      exec $cmd gate --rebuild --from "$(git rev-parse HEAD^1)" --to "$(git rev-parse HEAD)"
-    fi
-    exit 0
-    ;;
-  post-rewrite)
-    # Reads old-new commit pairs from stdin; a rebase rewrites many, so only the span end to end matters.
-    old=""
-    new=""
-    while read -r pairOld pairNew rest; do
-      if [ -z "$old" ]; then old=$pairOld; fi
-      new=$pairNew
-    done
-    # Only the main working tree rebuilds; the line rebases a task's branch in a worktree it cut.
-    gitdir=$(git rev-parse --path-format=absolute --git-dir)
-    gitcommon=$(git rev-parse --path-format=absolute --git-common-dir)
-    if [ "$gitdir" = "$gitcommon" ]; then
-      exec $cmd gate --rebuild --from "$old" --to "$new"
-    fi
-    exit 0
-    ;;
-  *)
-    exec $cmd gate
-    ;;
-esac
-`
+// hookScript is every git hook's whole body: one exec of the installed binary, which holds the hook's logic.
+func hookScript(binary string) string {
+	return "#!/bin/sh\n# Written by komodo gate --install; komodo git-hook holds every hook's logic.\n" +
+		"exec \"" + filepath.ToSlash(binary) + "\" git-hook \"$(basename \"$0\")\" \"$@\"\n"
+}
 
-// Install writes the pre-commit, commit-msg, pre-push, post-commit, post-merge, post-checkout and
-// post-rewrite hooks that run this gate.
+// Install writes the seven git hooks, each a one-line trampoline into the installed binary's git-hook command.
 func Install(gitDir string) ([]string, error) {
+	binary, err := mount.HookPath()
+	if err != nil {
+		return nil, err
+	}
 	dir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -436,7 +333,7 @@ func Install(gitDir string) ([]string, error) {
 	var written []string
 	for _, name := range []string{"pre-commit", "commit-msg", "pre-push", "post-commit", "post-merge", "post-checkout", "post-rewrite"} {
 		path := filepath.Join(dir, name)
-		if err := fsx.WriteFile(path, []byte(hookScript), 0o755); err != nil {
+		if err := fsx.WriteFile(path, []byte(hookScript(binary)), 0o755); err != nil {
 			return nil, err
 		}
 		written = append(written, path)

@@ -67,6 +67,8 @@ func runGate(root string, args []string) {
 		}
 		if path != "" {
 			fmt.Println("built", path)
+			// The git hooks exec the published binary, so it must exist before they do.
+			fmt.Println("published", mount.Publish(path))
 		}
 		written, err := gate.Install(filepath.Join(root, ".git"))
 		if err != nil {

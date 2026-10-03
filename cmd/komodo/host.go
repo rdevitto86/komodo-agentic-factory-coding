@@ -10,6 +10,7 @@ import (
 
 	"komodo/internal/detect"
 	"komodo/internal/doctor"
+	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/install"
@@ -33,8 +34,11 @@ func runInstall(root string, args []string) {
 	set := flag.NewFlagSet("install", flag.ExitOnError)
 	host := set.String("host", mount.Names()[0], "a mount name, several separated by commas, or both")
 	dryRun := set.Bool("dry-run", false, "print what would change and write nothing")
-	global := set.Bool("global", false, "add the orchestrator layer to the user's host config instead of this repo")
+	global := set.Bool("global", false, "install only the orchestrator layer in the user's host config, not this repo")
 	_ = set.Parse(args)
+	if root == "" {
+		*global = true
+	}
 	binary := mount.BinaryPath()
 	var chosen []mount.Host
 	for _, name := range strings.Split(*host, ",") {
@@ -64,9 +68,23 @@ func runInstall(root string, args []string) {
 	if !filepath.IsAbs(hook) {
 		hook = filepath.Join(mount.MainCheckout(root), hook)
 	}
+	toolkit := root != "" && gate.IsToolkit(mount.MainCheckout(root))
 	if !*dryRun {
+		if err := install.CheckFilesystem(root); err != nil {
+			fail(err)
+		}
+		// The toolkit's own checkout builds its binary when it has none, so one install sets up a fresh clone.
+		if _, err := os.Stat(hook); err != nil && toolkit && !*global {
+			if _, err := gate.BuildLocal(mount.MainCheckout(root), os.Stdout); err != nil {
+				fail(err)
+			}
+		}
 		if _, err := os.Stat(hook); err != nil {
 			fail(fmt.Errorf("the guard hook would run %s, which does not exist; build it with komodo gate --install", hook))
+		}
+		publishAndLink(hook)
+		if toolkit && !*global {
+			installGitHooks(root)
 		}
 	}
 	if *global {
@@ -87,6 +105,37 @@ func runInstall(root string, args []string) {
 	for _, plan := range plans {
 		applyPlan(plan, *dryRun)
 	}
+	installGlobal(root, hook, chosen, *dryRun)
+}
+
+// publishAndLink puts binary at the one path every hook runs, then links it onto PATH for a person.
+func publishAndLink(binary string) {
+	published := mount.Publish(binary)
+	fmt.Println("published", published)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fail(err)
+	}
+	hint, err := install.LinkOnPath(published, install.PathDir(home), os.Getenv("PATH"))
+	if err != nil {
+		fail(err)
+	}
+	if hint != "" {
+		fmt.Println(hint)
+	}
+}
+
+// installGitHooks writes the git hooks, each a trampoline into the published binary, into the shared git dir.
+func installGitHooks(root string) {
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		fail(err)
+	}
+	written, err := gate.Install(common)
+	if err != nil {
+		fail(err)
+	}
+	fmt.Printf("git hooks: %d written\n", len(written))
 }
 
 // installGlobal renders each chosen host's orchestrator layer into the user's home, or prints what it would change.
