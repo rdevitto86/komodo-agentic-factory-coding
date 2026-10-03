@@ -1,6 +1,9 @@
 package guard
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // TestTeeCpMvAndSedInPlaceAreWriteTargets proves REQ-41's refusal holds for the common ways to
 // edit a file besides a shell redirect: tee, cp and mv's destination, and sed -i's own operand.
@@ -35,6 +38,39 @@ func TestSedInPlaceWithAnExplicitScriptFlagStillFindsItsFile(t *testing.T) {
 		DefaultPolicy(), "feat/x")
 	if !decision.Deny {
 		t.Fatal("sed -i -e s/a/b/ eval/golden.json is allowed; want the file operand caught")
+	}
+}
+
+// TestBSDSedsEmptyBackupSuffixIsNeverReadAsTheFile proves BSD sed -i with an empty backup suffix reads that suffix
+// as a separate argument, consumed the way -e and -f's values already are, not read as the file.
+func TestBSDSedsEmptyBackupSuffixIsNeverReadAsTheFile(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"with an implicit script", []string{"-i", "", "s/a/b/", "eval/golden.json"}, []string{"eval/golden.json"}},
+		{"with an explicit -e script", []string{"-i", "", "-e", "s/a/b/", "eval/golden.json"}, []string{"eval/golden.json"}},
+	}
+	for _, c := range cases {
+		if got := sedInPlaceTargets(c.args); !reflect.DeepEqual(got, c.want) {
+			t.Fatalf("%s: sedInPlaceTargets(%q) = %q, want %q", c.name, c.args, got, c.want)
+		}
+	}
+}
+
+// TestBSDSedInPlaceWithItsOwnBackupSuffixIsStillCaught proves the guard still refuses BSD sed -i with an empty suffix
+// editing a protected path, the empty suffix never swallowing or masking the real target.
+func TestBSDSedInPlaceWithItsOwnBackupSuffixIsStillCaught(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	t.Setenv(RoleEnv, "builder")
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root,
+			ToolInput: map[string]any{"command": "sed -i '' s/a/b/ eval/golden.json"}},
+		DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatal("sed -i '' s/a/b/ eval/golden.json is allowed; want the real file caught, not the suffix")
 	}
 }
 
@@ -231,6 +267,20 @@ func TestAnInterpretersStdinScriptNamingACriticalPushIsRefused(t *testing.T) {
 		if !decision.Deny {
 			t.Fatalf("%q is allowed; want the push to main caught inside its stdin script", command)
 		}
+	}
+}
+
+// TestABacktickQuotedCommandInAStdinHeredocIsUnwrappedAndJudged proves Ruby's own backtick shell
+// call, inside an interpreter's stdin heredoc, is unwrapped and judged the way a quoted one is.
+func TestABacktickQuotedCommandInAStdinHeredocIsUnwrappedAndJudged(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	command := "ruby <<EOF\n`git push origin main`\nEOF"
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}},
+		DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatalf("%q is allowed; want the push to main caught inside its backtick call", command)
 	}
 }
 

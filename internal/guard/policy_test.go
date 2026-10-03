@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,6 +110,7 @@ func TestOnFeatureBranchReadsADetachedWorktreesTrackedBranch(t *testing.T) {
 
 // TestTheShippedPolicyProtectsEveryCriticalRef proves komodo/policy.json names every ref AGENTS.md forbids.
 func TestTheShippedPolicyProtectsEveryCriticalRef(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	policy := Load(t.TempDir(), t.TempDir())
 	for _, ref := range []string{"main", "master", "trunk", "prod", "production", "release/2.0", "hotfix/urgent"} {
 		if !policy.IsCritical(ref) {
@@ -144,5 +146,86 @@ func TestASharedBranchClaimIsAGlobalTierCheckNotOnlyALineRole(t *testing.T) {
 	t.Setenv(RoleEnv, "builder")
 	if !IsLineSession() {
 		t.Fatal("a builder carries a role; a claim check still applies to it as well")
+	}
+}
+
+// writeConfig writes body to rel under dir, making its parent directories, and returns its path.
+func writeConfig(t *testing.T, dir, rel, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestAMalformedConfigIsNamedAndSkippedWhileTheShippedPolicyHolds proves a present but broken
+// policy or overlay is reported by path, and the guard still protects every shipped critical ref.
+func TestAMalformedConfigIsNamedAndSkippedWhileTheShippedPolicyHolds(t *testing.T) {
+	cases := []struct {
+		name, rel, body string
+		inHome          bool
+	}{
+		{"bad JSON in the repo policy", filepath.Join(".komodo", "policy.json"), "{broken", false},
+		{"an unknown field in the repo policy", filepath.Join(".komodo", "policy.json"), `{"not_a_real_field":true}`, false},
+		{"bad JSON in the machine overlay", filepath.Join(".komodo", "config.json"), "{broken", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home, repo := t.TempDir(), t.TempDir()
+			t.Setenv("HOME", home)
+			dir := repo
+			if tc.inHome {
+				dir = home
+			}
+			path := writeConfig(t, dir, tc.rel, tc.body)
+			policy, err := LoadChecked(t.TempDir(), repo)
+			if err == nil || !strings.Contains(err.Error(), path) {
+				t.Fatalf("LoadChecked error = %v, want one naming %s", err, path)
+			}
+			if !policy.IsCritical("main") || !Load(t.TempDir(), repo).IsCritical("main") {
+				t.Fatal("a malformed config must never drop the shipped critical refs")
+			}
+		})
+	}
+}
+
+// TestHookStillRefusesAPushToMainWithAMalformedOverlay proves a broken machine overlay never
+// turns the guard off: the hook warns, names the file, and still denies.
+func TestHookStillRefusesAPushToMainWithAMalformedOverlay(t *testing.T) {
+	registerFakeHost()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := writeConfig(t, home, filepath.Join(".komodo", "config.json"), "{broken")
+	root := worktree(t)
+	var out, errOut strings.Builder
+	Hook(root, strings.NewReader(pushPayload(root, "session-m")), &out, &errOut)
+	if !strings.Contains(out.String(), "deny") {
+		t.Fatalf("hook output = %q, want a denial of the push to main", out.String())
+	}
+	if !strings.Contains(errOut.String(), path) {
+		t.Fatalf("hook stderr = %q, want it to name %s", errOut.String(), path)
+	}
+}
+
+// TestAWriteUnderTheUsersKomodoDirIsRefused proves the shipped policy's ~/.komodo/** rule reaches
+// a real write, under the session's own home, on every platform the guard's paths run on.
+func TestAWriteUnderTheUsersKomodoDirIsRefused(t *testing.T) {
+	registerFakeHost()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(RoleEnv, "builder")
+	root := repoOn(t, "feat/x")
+	target := filepath.Join(home, ".komodo", "recall.json")
+	request := Request{
+		HookEventName: "PreToolUse", ToolName: "Write", Cwd: root,
+		ToolInput: map[string]any{"file_path": target},
+	}
+	decision := Check(request, DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatalf("a write under the user's own ~/.komodo/ was allowed: %v", decision.Findings)
 	}
 }
