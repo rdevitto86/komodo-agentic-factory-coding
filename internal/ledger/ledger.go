@@ -593,35 +593,38 @@ func aggregateMetrics(entries []Entry) []Metric {
 	return metrics
 }
 
+// eventTypes maps an outcome events.jsonl records to the event type it is filed under.
+var eventTypes = map[string]string{
+	"escalated": "escalation",
+	"stopped":   "stop",
+	"paused":    "pause",
+	"resumed":   "resume",
+}
+
 // extractEvents returns entries that represent notable events.
 func extractEvents(entries []Entry) []Event {
 	var events []Event
 	for _, e := range entries {
-		if isEvent(e) {
-			ev := Event{
-				At:      e.At,
-				Run:     e.Run,
-				Group:   e.Group,
-				Task:    e.Task,
-				Station: e.Station,
-				Outcome: e.Outcome,
-			}
-			if e.Outcome == "escalated" {
-				ev.Type = "escalation"
-			} else if e.Outcome == "paused" {
-				ev.Type = "pause"
-			} else if e.Outcome == "resumed" {
-				ev.Type = "resume"
-			}
-			events = append(events, ev)
+		if !isEvent(e) {
+			continue
 		}
+		events = append(events, Event{
+			At:      e.At,
+			Run:     e.Run,
+			Group:   e.Group,
+			Task:    e.Task,
+			Station: e.Station,
+			Type:    eventTypes[e.Outcome],
+			Outcome: e.Outcome,
+		})
 	}
 	return events
 }
 
 // isEvent returns true if an entry represents a notable event.
 func isEvent(e Entry) bool {
-	return e.Outcome == "escalated" || e.Outcome == "paused" || e.Outcome == "resumed"
+	_, ok := eventTypes[e.Outcome]
+	return ok
 }
 
 // sortedKeys orders the keys of a float map.

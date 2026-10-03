@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
-	"komodo/internal/changelog"
 	"komodo/internal/check"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
@@ -788,8 +787,8 @@ func (l *Line) Check(ctx context.Context) ([]string, error) {
 func (l *Line) rerun(ctx context.Context) ([]string, error) {
 	worktree := line.WorktreePath(l.Root, l.Plan.Worktree)
 	base := line.StartRef(worktree, l.Plan.Base)
-	// Ship stages, or removes, the group's own file and its release note, so both stay in scope.
-	files := []string{filepath.ToSlash(changelog.FragmentPath("", l.Plan.Version, l.Plan.Group)), backlog.GroupFilesDir}
+	// Ship stages, or removes, the group's own file, so it stays in scope.
+	files := []string{backlog.GroupFilesDir}
 	for _, task := range l.Plan.Tasks {
 		files = append(files, task.Files...)
 	}
