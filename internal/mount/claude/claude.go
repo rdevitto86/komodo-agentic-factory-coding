@@ -70,14 +70,14 @@ func Render(root string, binary string) (install.Plan, error) {
 		plan.Add(filepath.Join(root, Dir, "agents", role.Name+".md"), []byte(agentFile(role, localUp)), "the "+role.Name+" role as an agent")
 	}
 
-	detected := detect.Load(root)
+	detected, _ := detect.Detect(root)
 	skills, err := mount.LoadSkills(root)
 	if err != nil {
 		return plan, err
 	}
 	skills = mount.SelectStandards(root, skills)
 	skills = repoSkills(root, skills)
-	builderOwned := RenderBuilderPlugin(&plan, root, detected, skills)
+	builderOwned := RenderBuilderPlugin(&plan, root, skills)
 	reviewerOwned := RenderReviewerPlugin(&plan, root, skills)
 	orchestratorOwned := RenderOrchestratorPlugin(&plan, root, skills)
 	RenderPluginHooks(&plan, root, binary)

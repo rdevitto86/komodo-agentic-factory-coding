@@ -19,7 +19,12 @@ type hookRun struct {
 // runHookWith runs runHook on stdin in a scratch worktree, capturing both streams and the exit code.
 func runHookWith(t *testing.T, stdin string, args ...string) hookRun {
 	t.Helper()
-	scratch := t.TempDir()
+	return runHookInWith(t, t.TempDir(), stdin, args...)
+}
+
+// runHookInWith runs runHook on stdin in scratch, capturing both streams and the exit code.
+func runHookInWith(t *testing.T, scratch, stdin string, args ...string) hookRun {
+	t.Helper()
 	stdinPath := filepath.Join(scratch, "stdin")
 	if err := os.WriteFile(stdinPath, []byte(stdin), 0o644); err != nil {
 		t.Fatal(err)
@@ -62,6 +67,28 @@ func TestRunHookAllowsWithNoHookNamed(t *testing.T) {
 	got := runHookWith(t, "")
 	if got.code != -1 || !strings.Contains(got.stderr, "name a hook; allowing") {
 		t.Fatalf("got %+v, want a logged allow", got)
+	}
+}
+
+// TestRunHookGuardReachesTheRealGuardOnARefusal proves "komodo hook guard" runs the guard itself:
+// a push to main is denied with the guard's own JSON payload, not Dispatch's generic fallback.
+func TestRunHookGuardReachesTheRealGuardOnARefusal(t *testing.T) {
+	root := t.TempDir()
+	// Its own .git stops the worktree walk here; a sandbox's temp dir sits inside the real worktree.
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"s",` +
+		`"cwd":"` + root + `","tool_input":{"command":"git push origin main"}}`
+	got := runHookInWith(t, root, payload, "guard")
+	if got.code != 0 {
+		t.Fatalf("got %+v, want the guard's own JSON denial exit", got)
+	}
+	if !strings.Contains(got.stdout, "permissionDecisionReason") || !strings.Contains(got.stdout, "open a pull request") {
+		t.Fatalf("stdout = %q, want the guard's own denial of a push to main", got.stdout)
+	}
+	if strings.Contains(got.stderr, "served by its own command") {
+		t.Fatalf("stderr = %q, hook guard fell through to the table's generic dispatch", got.stderr)
 	}
 }
 

@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +59,22 @@ func TestRunStatusShowsEachGroupsStateTimeAndBlocker(t *testing.T) {
 		if !strings.Contains(text, line) {
 			t.Fatalf("status text holds no %q:\n%s", line, text)
 		}
+	}
+}
+
+// TestGroupStatusJSONNamesTimeUsedInSeconds proves status --json never serialises TimeUsed as
+// raw nanoseconds under a key that names no unit: time_used_seconds carries whole seconds.
+func TestGroupStatusJSONNamesTimeUsedInSeconds(t *testing.T) {
+	t.Parallel()
+	data, err := json.Marshal(GroupStatus{Group: "TG-1", State: "Building", TimeUsed: 90 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"time_used_seconds":90`) {
+		t.Fatalf("json = %s, want time_used_seconds in whole seconds", data)
+	}
+	if strings.Contains(string(data), `"time_used"`) {
+		t.Fatalf("json = %s, must not carry the old unitless key", data)
 	}
 }
 

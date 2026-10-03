@@ -100,7 +100,8 @@ func repoSkills(root string, skills []mount.Skill) []mount.Skill {
 
 // facetSkills names the facets the detected profile and the repo's own additions select.
 func facetSkills(root string) []string {
-	names, err := facet.Select(root, detect.Load(root), nil)
+	profile, _ := detect.Detect(root)
+	names, err := facet.Select(root, profile, nil)
 	if err != nil {
 		return nil
 	}
