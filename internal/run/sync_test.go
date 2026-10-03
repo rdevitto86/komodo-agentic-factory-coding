@@ -20,6 +20,7 @@ import (
 	"komodo/internal/gate"
 	"komodo/internal/line"
 	"komodo/internal/pr"
+	"komodo/internal/release"
 )
 
 // syncRepo builds a root on main whose origin holds one commit the root lacks, and returns that commit.
@@ -95,7 +96,7 @@ func toolkitCheckout(t *testing.T, root, builtFrom string) {
 }
 
 // pinRelease makes root a product repo whose profiles pin version, sends HOME to a temp dir, and swaps the
-// download for one serving body and a SHA256SUMS with sum; it returns the release binary's path and the URLs fetched.
+// download for one serving body and a release.SumsFile with sum; it returns the release binary's path and the URLs fetched.
 func pinRelease(t *testing.T, root, version string, body []byte, sum string) (string, *[]string) {
 	t.Helper()
 	profile := []byte(`{"release": "` + version + `", "roles": {}}`)
@@ -117,8 +118,8 @@ func pinRelease(t *testing.T, root, version string, body []byte, sum string) (st
 	name := gate.PlatformName()
 	base := "https://example.test/download/v" + strings.TrimPrefix(version, "v") + "/"
 	served := map[string][]byte{
-		base + name:         body,
-		base + "SHA256SUMS": []byte(sum + "  " + name + "\n" + strings.Repeat("0", 64) + "  komodo-other\n"),
+		base + name:             body,
+		base + release.SumsFile: []byte(sum + "  " + name + "\n" + strings.Repeat("0", 64) + "  komodo-other\n"),
 	}
 	fetched := &[]string{}
 	old := fetch
@@ -150,7 +151,7 @@ func TestSyncFetchesThePinnedReleaseOutsideTheToolkit(t *testing.T) {
 		drop      string
 		noHome    bool
 	}{
-		{name: "a release with no manifest installs nothing", pin: "1.0.0-beta.2", sum: good, drop: "SHA256SUMS",
+		{name: "a release with no manifest installs nothing", pin: "1.0.0-beta.2", sum: good, drop: release.SumsFile,
 			wantErr: "404"},
 		{name: "a release with no binary installs nothing", pin: "1.0.0-beta.2", sum: good,
 			drop: gate.PlatformName(), wantErr: "404"},
