@@ -54,6 +54,7 @@ func TestOnlyTheOrchestratorOnABranchEditsTheShippedPolicy(t *testing.T) {
 		{"a builder on feat/x", "builder", "feat/x", true},
 		{"the orchestrator on main", "", "main", true},
 		{"a builder on main", "builder", "main", true},
+		{"the orchestrator on an epic branch", "", "feat/1.0.0-alpha.7", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
