@@ -84,7 +84,7 @@ func Shell(dir, command string, timeout time.Duration) Result {
 // ShellEnv is Shell in the given environment, or in this process's own when env is nil.
 func ShellEnv(dir, command string, timeout time.Duration, env []string) Result {
 	argv := ShellArgv(command)
-	return run(dir, timeout, env, argv[0], argv[1:]...)
+	return run(context.Background(), dir, timeout, env, argv[0], argv[1:]...)
 }
 
 // shellGOOS and lookPath are the platform and PATH ShellArgv reads; tests swap them.
@@ -106,17 +106,23 @@ func ShellArgv(command string) []string {
 
 // Exec runs one program in dir under timeout, killing its whole process group when the clock runs out.
 func Exec(dir string, timeout time.Duration, name string, args ...string) Result {
-	return run(dir, timeout, nil, name, args...)
+	return run(context.Background(), dir, timeout, nil, name, args...)
 }
 
-// run is Exec in the given environment, or in this process's own when env is nil.
-func run(dir string, timeout time.Duration, env []string, name string, args ...string) Result {
+// ExecContext is Exec whose process group is also killed once ctx is done.
+func ExecContext(ctx context.Context, dir string, timeout time.Duration, name string, args ...string) Result {
+	return run(ctx, dir, timeout, nil, name, args...)
+}
+
+// run is Exec in the given environment, or in this process's own when env is nil, and is also
+// killed once the parent ctx is done.
+func run(ctx context.Context, dir string, timeout time.Duration, env []string, name string, args ...string) Result {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	clock, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(clock, name, args...)
 	cmd.Dir = dir
 	cmd.Env = env
 	Group(cmd)
@@ -142,17 +148,16 @@ func run(dir string, timeout time.Duration, env []string, name string, args ...s
 		breach = watcher.Breach()
 	}
 	result := Result{Output: strings.TrimSpace(output.String()), Seconds: time.Since(started).Seconds()}
-	if breach != "" {
+	switch {
+	case breach != "":
 		result.ExitCode = ExitRunaway
 		result.Output = strings.TrimSpace(result.Output + "\n[runaway: " + breach + "; the process tree was killed]")
-		return result
-	}
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	case ctx.Err() == nil && errors.Is(clock.Err(), context.DeadlineExceeded):
 		result.ExitCode, result.TimedOut = ExitTimeout, true
-		result.Output = strings.TrimSpace(result.Output + fmt.Sprintf("\n[timed out after %s; the process group was killed]", timeout))
-		return result
-	}
-	if err != nil {
+		result.Output = strings.TrimSpace(
+			result.Output + fmt.Sprintf("\n[timed out after %s; the process group was killed]", timeout),
+		)
+	case err != nil:
 		result.ExitCode = 1
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
