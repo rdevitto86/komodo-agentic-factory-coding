@@ -22,7 +22,7 @@ import (
 	"komodo/internal/proc"
 )
 
-// keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
+// keptRuns is how many run folders Prune keeps, the newest by start.
 const keptRuns = 10
 
 // idleFor is how long a worktree's git state must sit unchanged before its pushed work alone lets prune take it.
@@ -402,7 +402,7 @@ func pruneRuns(root string, open []line.RunState) []string {
 	}
 	var done []string
 	for _, state := range runs[:len(runs)-keptRuns] {
-		if running[state.Group] {
+		if running[state.Group] || !line.PlainGroup(state.Group) {
 			continue
 		}
 		dir := line.RunDir(root, state.Group)
