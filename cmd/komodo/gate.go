@@ -131,7 +131,7 @@ func runGate(root string, args []string) {
 
 // fuzzDuration is the fuzz flag's value, but only in the toolkit's own checkout, whose fuzz targets exist.
 func fuzzDuration(root, requested string) string {
-	if requested != "" && toolkitCheckout(root) {
+	if requested != "" && gate.IsToolkit(root) {
 		return requested
 	}
 	return ""
@@ -156,7 +156,7 @@ func crossVets(root string) []gate.Check {
 // buildChecks are the toolkit's own vet and race tests in its checkout, else the compile and verify
 // commands QC runs, so the gate fits any repo's language; thorough adds the push-time checks.
 func buildChecks(root string, thorough bool) []gate.Check {
-	if toolkitCheckout(root) {
+	if gate.IsToolkit(root) {
 		checks := []gate.Check{gate.Command("go vet", root, "go", "vet", "./...")}
 		if thorough {
 			checks = append(checks, crossVets(root)...)
@@ -187,10 +187,4 @@ func buildChecks(root string, thorough bool) []gate.Check {
 		}})
 	}
 	return checks
-}
-
-// toolkitCheckout reports whether root is the toolkit's own source, whose Go checks and fuzz targets the gate runs.
-func toolkitCheckout(root string) bool {
-	_, err := os.Stat(filepath.Join(root, "cmd", "komodo", "main.go"))
-	return err == nil
 }
