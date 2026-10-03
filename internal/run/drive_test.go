@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
@@ -106,6 +107,54 @@ func setupDriveFakeClaude(t *testing.T) {
 	t.Setenv("FAKE_COUNTER", filepath.Join(fixtures, "counter"))
 	t.Setenv("FAKE_BUILD_FIXTURE", build)
 	t.Setenv("FAKE_REVIEW_FIXTURE", review)
+}
+
+// escalateOnTimeoutClaude hangs a builder, then answers its escalation session by its plugin-dir argument.
+const escalateOnTimeoutClaude = `#!/bin/sh
+case "$*" in
+  *"/plugins/escalation"*) cat "$FAKE_ESCALATE_FIXTURE"; exit 0 ;;
+esac
+sleep "$FAKE_HANG_SLEEP"
+`
+
+// escalateFixture is the orchestrator's one settled action: stop the group for a person.
+const escalateFixture = `{"type":"result","subtype":"success","is_error":false,"num_turns":1,` +
+	`"session_id":"escalate-1","total_cost_usd":0,"usage":{"input_tokens":1,"output_tokens":1},` +
+	`"structured_output":{"action":"stop","needs":"a person's call"}}` + "\n"
+
+// TestAGroupPastItsBudgetSavesAndEscalatesInsteadOfOnlyDying hangs a builder under a short budget,
+// and proves the conductor saves it as a settled escalation, never only the budget's own error.
+func TestAGroupPastItsBudgetSavesAndEscalatesInsteadOfOnlyDying(t *testing.T) {
+	root := driveRepo(t)
+	dir := t.TempDir()
+	script := filepath.Join(dir, "claude")
+	if err := os.WriteFile(script, []byte(escalateOnTimeoutClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(t.TempDir(), "escalate.jsonl")
+	if err := os.WriteFile(fixture, []byte(escalateFixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_ESCALATE_FIXTURE", fixture)
+	t.Setenv("FAKE_HANG_SLEEP", fmt.Sprintf("61.%d", os.Getpid()))
+	client := &pr.Client{Run: func(string, ...string) (string, error) { return "[]", nil }}
+
+	code, err := Drive(Options{Root: root, Target: "TG-40.1", Budget: 50 * time.Millisecond, PR: client})
+	if code != 1 || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("drive = %d, %v; want the spent budget once the escalation settles", code, err)
+	}
+
+	state, err := conductor.LoadState(conductor.StatePath(root, "TG-40.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Current != conductor.Escalated || !state.Answered || !state.Stop {
+		t.Fatalf("state = %+v, want an answered, stopped escalation saved", state)
+	}
+	if !strings.Contains(state.Reason, "ran out of its budget") {
+		t.Fatalf("reason = %q, want it naming the spent budget", state.Reason)
+	}
 }
 
 // TestRunDrivesAGroupEndToEnd checks a group reaches Shipped, pushes its branch, and stamps one

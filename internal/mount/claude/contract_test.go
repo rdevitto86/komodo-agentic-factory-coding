@@ -32,6 +32,7 @@ if [ "$FAKE_CLAUDE_FORK" = "1" ]; then
 fi
 if [ "$FAKE_CLAUDE_HANG" = "1" ]; then
   sleep 30 &
+  if [ -n "$FAKE_CLAUDE_HANG_MARKER" ]; then touch "$FAKE_CLAUDE_HANG_MARKER"; fi
   wait
   exit 0
 fi
@@ -71,6 +72,22 @@ func setupFakeClaude(t *testing.T) (logPath string) {
 	t.Setenv("FAKE_CLAUDE_HANG", "0")
 	t.Setenv("FAKE_CLAUDE_FORK", "0")
 	return logPath
+}
+
+// awaitMarker blocks until path exists, bounded by a deadline, so a test never races the fake
+// claude script's own hung child into existing before it signals it.
+func awaitMarker(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the fake claude script never signalled its hang")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // drainMountEvents collects every event a Contract's Stream reports.
@@ -332,6 +349,8 @@ func TestContractStopKillsTheProcessGroup(t *testing.T) {
 	ctx := context.Background()
 	setupFakeClaude(t)
 	t.Setenv("FAKE_CLAUDE_HANG", "1")
+	marker := filepath.Join(t.TempDir(), "hung")
+	t.Setenv("FAKE_CLAUDE_HANG_MARKER", marker)
 	root, worktree := t.TempDir(), t.TempDir()
 	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
@@ -344,7 +363,7 @@ func TestContractStopKillsTheProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stream = %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	awaitMarker(t, marker)
 
 	started := time.Now()
 	if err := m.Stop(ctx, handle); err != nil {

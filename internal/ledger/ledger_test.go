@@ -25,6 +25,21 @@ func TestStampWritesToTheRunFile(t *testing.T) {
 	}
 }
 
+// TestStampRoundTripsASessionsCost proves an entry's cost survives a write and a read unchanged.
+func TestStampRoundTripsASessionsCost(t *testing.T) {
+	book := New(t.TempDir())
+	if err := book.Stamp(Entry{Run: "r1", Station: "build", Cost: 0.0842}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := book.Read(RunFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Cost != 0.0842 {
+		t.Fatalf("entries = %+v, want the session's cost unchanged", entries)
+	}
+}
+
 func TestStampWithoutARunGoesToTheAdhocFile(t *testing.T) {
 	book := New(t.TempDir())
 	if err := book.Stamp(Entry{Station: "add"}); err != nil {

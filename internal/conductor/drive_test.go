@@ -45,6 +45,8 @@ type fakeHost struct {
 	gatherMu sync.Mutex
 	// rateLimit, when set, rides the builder's next streamed event, as a session's own rate_limit_event would.
 	rateLimit *mount.RateLimit
+	// cost, when set, rides every streamed event, as a session's own result totals would.
+	cost float64
 }
 
 // gatherTimeout bounds how long a reviewer stream waits for the rest of its round to open.
@@ -131,7 +133,9 @@ func (f *fakeHost) Stream(ctx context.Context, handle mount.Handle) (<-chan moun
 		}
 	}
 	out := make(chan mount.Event, 1)
-	out <- mount.Event{Turns: 2, Usage: mount.TaskUsage{TokensIn: 100, TokensOut: 20, Turns: 2}, RateLimit: f.rateLimit}
+	out <- mount.Event{
+		Turns: 2, Usage: mount.TaskUsage{TokensIn: 100, TokensOut: 20, Turns: 2}, RateLimit: f.rateLimit, CostUSD: f.cost,
+	}
 	close(out)
 	return out, nil
 }
@@ -356,6 +360,25 @@ func TestDriveFeedsASessionsRateLimitEventToPacing(t *testing.T) {
 	}
 	if limit.FiveHour != 0.95 || !limit.ResetsAt.Equal(reset) {
 		t.Fatalf("limit = %+v", limit)
+	}
+}
+
+// TestDriveStampsASessionsCostFromTheHostsResultTotals proves a build session's streamed cost
+// lands in its own ledger row, the figure komodo report later sums for the group.
+func TestDriveStampsASessionsCostFromTheHostsResultTotals(t *testing.T) {
+	r := newRig(t)
+	r.host.cost = 0.0842
+	if _, err := r.drive(t); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := r.driver.Ledger.Read(ledger.RunFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Station == StationBuild && entry.Cost != 0.0842 {
+			t.Fatalf("build row cost = %v, want the host's own result total", entry.Cost)
+		}
 	}
 }
 
