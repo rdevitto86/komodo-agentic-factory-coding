@@ -181,10 +181,10 @@ func TestGateStillRunsToolkitChecksWhenNoCommandsJsonExists(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := runCLI(t, root, "", "gate")
-	if !strings.Contains(got.stdout, "go vet") {
-		t.Fatalf("stdout %q, want it to run go vet", got.stdout)
-	}
-	if !strings.Contains(got.stdout, "go test") {
-		t.Fatalf("stdout %q, want it to run go test", got.stdout)
+	// Only the toolkit branch names its checks bare; generic detection prints the commands it runs.
+	for _, line := range []string{"gate: go vet\n", "gate: go test\n"} {
+		if !strings.Contains(got.stdout, line) {
+			t.Fatalf("stdout %q, want the toolkit's own %q check", got.stdout, strings.TrimSpace(line))
+		}
 	}
 }

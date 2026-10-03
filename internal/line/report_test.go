@@ -28,7 +28,7 @@ func reportRepo(t *testing.T) string {
 	return root
 }
 
-// TestReportSumsASessionsRecordedTokens proves REQ-28: a recorded stream's result totals equal the
+// TestReportSumsASessionsRecordedTokens proves a recorded stream's result totals equal the
 // report's line for that session.
 func TestReportSumsASessionsRecordedTokens(t *testing.T) {
 	root := reportRepo(t)
