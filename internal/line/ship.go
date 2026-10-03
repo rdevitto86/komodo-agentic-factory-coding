@@ -819,11 +819,6 @@ func labelBlocked(client *pr.Client, url string) (labels, warnings []string) {
 	return nil, []string{"the repo has no " + blockedLabel + " label"}
 }
 
-// ApplyLabels adds the repo labels matching wanted to the pull request, warning on each miss or failure.
-func ApplyLabels(client *pr.Client, url string, wanted []string) (kept, warnings []string) {
-	return ApplyLabelSet(client, url, wanted, nil)
-}
-
 // ApplyLabelSet adds the repo labels matching wanted and optional, warning only on a missing wanted one.
 func ApplyLabelSet(client *pr.Client, url string, wanted, optional []string) (kept, warnings []string) {
 	known, err := client.Labels()
