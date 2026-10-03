@@ -142,6 +142,16 @@ type round struct {
 	needs   string
 	heavy   bool
 	stalls  int
+	// reviewers caches the StartRequest each lens's reviewer last started with, for a warm resume to reuse.
+	reviewers map[review.Lens]mount.StartRequest
+}
+
+// remember caches the StartRequest a lens's reviewer was started with, for a later warm resume to reuse.
+func (r *round) remember(lens review.Lens, request mount.StartRequest) {
+	if r.reviewers == nil {
+		r.reviewers = map[review.Lens]mount.StartRequest{}
+	}
+	r.reviewers[lens] = request
 }
 
 // newRound is the round state.json saved for s, so a resumed run keeps its fixes, builder, repairs and escalation.
@@ -173,6 +183,18 @@ func (d *Driver) Drive(ctx context.Context, s State) (State, error) {
 		if err != nil {
 			return s, fmt.Errorf("%s escalated at %s: %w", s.Group, s.Current, err)
 		}
+		if err := d.Save(s); err != nil {
+			return s, fmt.Errorf("saving %s at %s: %w", s.Group, s.Current, err)
+		}
+	}
+	// A group saved at Shipped with no merge yet retries the merge before Next reads it.
+	if s.Current == Shipped && !s.Merged {
+		if err := d.work(ctx, &s, &r); err != nil {
+			s.Escalate = true
+			r.reason = err.Error()
+			failure = fmt.Errorf("%s escalated at %s: %w", s.Group, s.Current, err)
+		}
+		r.keep(&s)
 		if err := d.Save(s); err != nil {
 			return s, fmt.Errorf("saving %s at %s: %w", s.Group, s.Current, err)
 		}
@@ -324,7 +346,7 @@ func (d *Driver) review(ctx context.Context, s *State, r *round) error {
 	results := map[review.Lens]mount.Result{}
 	fixes := map[review.Lens][]string{}
 	before := openFindings(*s, lenses)
-	if err := d.reviewRound(ctx, s, lenses, results, fixes); err != nil {
+	if err := d.reviewRound(ctx, s, lenses, results, fixes, r); err != nil {
 		return err
 	}
 	var stalled error
@@ -344,7 +366,7 @@ func (d *Driver) review(ctx context.Context, s *State, r *round) error {
 			s.ColdPass[lens] = true
 			delete(s.Reviewer, lens)
 		}
-		if err := d.reviewRound(ctx, s, cold, results, fixes); err != nil {
+		if err := d.reviewRound(ctx, s, cold, results, fixes, r); err != nil {
 			return err
 		}
 		r.fixes = joinFixes(lenses, fixes)
@@ -368,13 +390,13 @@ func (d *Driver) review(ctx context.Context, s *State, r *round) error {
 // and its fixes for those at or above the floor, into results and fixes.
 func (d *Driver) reviewRound(
 	ctx context.Context, s *State, lenses []review.Lens,
-	results map[review.Lens]mount.Result, fixes map[review.Lens][]string,
+	results map[review.Lens]mount.Result, fixes map[review.Lens][]string, r *round,
 ) error {
 	s.Findings, s.Reviewer, s.ReviewRounds = cloned(s.Findings), cloned(s.Reviewer), cloned(s.ReviewRounds)
 	since, warm := s.Reviewed, false
 	sessions := make([]lensSession, 0, len(lenses))
 	for _, lens := range lenses {
-		session, err := d.openLens(ctx, s, lens)
+		session, err := d.openLens(ctx, s, lens, r)
 		if err != nil {
 			return errors.Join(err, d.stopAll(ctx, sessions))
 		}
@@ -435,8 +457,13 @@ func (d *Driver) reviewRound(
 
 // openLens resumes a lens's reviewer with its re-review input, or starts a cold one carrying the lens's
 // open findings when it has none, the host cannot resume, or the resume fails.
-func (d *Driver) openLens(ctx context.Context, s *State, lens review.Lens) (lensSession, error) {
-	session := lensSession{lens: lens, station: StationReReview, request: d.Reviewer}
+func (d *Driver) openLens(ctx context.Context, s *State, lens review.Lens, r *round) (lensSession, error) {
+	// A warm resume is stamped with the request its lens's reviewer actually started with.
+	request := d.Reviewer
+	if cached, ok := r.reviewers[lens]; ok {
+		request = cached
+	}
+	session := lensSession{lens: lens, station: StationReReview, request: request}
 	var err error
 	if previous := s.Reviewer[lens]; previous != "" && d.Host.Capabilities().Resume {
 		input := line.OpenFindings(s.Open(lens))
@@ -455,7 +482,13 @@ func (d *Driver) openLens(ctx context.Context, s *State, lens review.Lens) (lens
 				return session, err
 			}
 		}
-		if open := s.Open(lens); len(open) > 0 {
+		r.remember(lens, session.request)
+		open := s.Open(lens)
+		// A pre-lens record files every finding under the economy lens; a lens-split driver still owes it.
+		if !slices.Contains(d.lenses(), review.Economy) {
+			open = append(open, s.Open(review.Economy)...)
+		}
+		if len(open) > 0 {
 			session.request.Brief += "\n\n" + line.OpenFindings(open)
 		}
 		session.handle, err = d.Host.Start(ctx, session.request)
@@ -759,11 +792,12 @@ func (l *Line) Check(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	fixes, err := l.rerun(ctx)
+	// Taken before rerun's own commands run, so a verify script's git side effects are never the model's.
+	after, err := check.TakeSnapshot(line.WorktreePath(l.Root, l.Plan.Worktree))
 	if err != nil {
 		return nil, err
 	}
-	after, err := check.TakeSnapshot(line.WorktreePath(l.Root, l.Plan.Worktree))
+	fixes, err := l.rerun(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -6,7 +6,7 @@ import "testing"
 const repairDiff = "--- a/a.go\n+++ b/a.go\n@@ -3,3 +3,3 @@\n func A() {\n-\treturn\n+\tpanic(nil)\n }\n" +
 	"--- /dev/null\n+++ b/b.go\n@@ -0,0 +1,2 @@\n+package a\n+func B() {}\n"
 
-// TestARereviewDropsANewFindingOnAnUnchangedLine is REQ-21: a resumed lens may only keep its own
+// TestARereviewDropsANewFindingOnAnUnchangedLine: a resumed lens may only keep its own
 // open findings or flag a line the repair changed.
 func TestARereviewDropsANewFindingOnAnUnchangedLine(t *testing.T) {
 	open := []Finding{{Lens: "correctness", File: "a.go", Line: 9, Title: "nil map"}}
