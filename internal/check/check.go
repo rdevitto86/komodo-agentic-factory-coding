@@ -53,7 +53,8 @@ func runNamed(ctx context.Context, worktree, name, command string) []string {
 	if command == "" {
 		return nil
 	}
-	ran := Exec(ctx, worktree, CommandTimeout, "sh", "-c", command)
+	argv := proc.ShellArgv(command)
+	ran := Exec(ctx, worktree, CommandTimeout, argv[0], argv[1:]...)
 	if ran.OK() {
 		return nil
 	}

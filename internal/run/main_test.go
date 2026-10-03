@@ -1,6 +1,7 @@
 package run
 
 import (
+	"komodo/internal/testhome"
 	"os"
 	"testing"
 )
@@ -10,5 +11,8 @@ func TestMain(m *testing.M) {
 	for _, key := range []string{"GIT_TERMINAL_PROMPT", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"} {
 		os.Unsetenv(key)
 	}
-	os.Exit(m.Run())
+	cleanup := testhome.Isolate()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }

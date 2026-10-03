@@ -365,7 +365,9 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 | Evidence, Stop | Review lens | Every blocking finding carries evidence | Refuses to stop, listing the findings without evidence | 2, then those findings become notes | Allows |
 | Time warning, PostToolUse | Builder, lens | Time and turns used | Never refuses; warns at 80% | — | Skips |
 | Status, SessionStart | Orchestrator | — | Adds the run's status and any blocked groups | — | Skips |
-| Prune, SessionStart | Orchestrator | — | Launches the worktree sweep detached, one at a time, capped at 2 minutes, logged to `.komodo/prune.log`; names the last sweep's failure | — | Skips |
+| Prune, SessionStart | Orchestrator | — | Launches the sweep detached, one at a time, capped at 2 minutes, logged to `.komodo/prune.log`: it publishes the newest binary, re-renders this repo's layer and an installed global layer, then prunes finished worktrees; names the last sweep's failure | — | Skips |
+
+**Every hook registers once, and every hook runs `~/.komodo/bin/komodo`.** An interactive session takes the guard from the user's global layer; the repo's `.claude/settings.json` registers no hook. A line session loads only `.claude/line-settings.json` (`--setting-sources local`), which carries the guard. So no tool call is judged twice.
 
 The boundaries that stop hook loops:
 
@@ -447,15 +449,13 @@ In this repo, the orchestrator may edit the guard, the policy and the skills on 
 
 ### Install
 
-`install.sh` (macOS, Linux, WSL2) and `install.ps1` (native Windows) sit at the repo root (decision 0002). Each is safe to run again, which is also how an update works:
+`komodo install` is the one setup step, the same on every platform, and safe to run again. From a checkout with Go, run it as `go run komodo/cmd/komodo install`; elsewhere `install.sh` (macOS, Linux, WSL2) or `install.ps1` (native Windows) downloads the pinned release, verifies its SHA-256 and runs it. Those two scripts hold no other logic, and `komodo lint` keeps every other committed script to one exec into komodo. The command:
 
-1. Check for git and Claude Code, and say how to install whichever is missing.
-2. Build the binary if Go is present; otherwise download the pinned release and verify its checksum.
-3. Link `komodo` onto PATH: a symlink on macOS and Linux, a small wrapper on Windows, where symlinks need admin rights.
-4. Run `komodo install`: the global orchestrator layer (the guard hook, the orchestrator skills and commands) goes into the user's Claude Code config.
-5. Run `komodo init` when started inside a repo, then `komodo doctor`.
-
-Inside WSL2, the installer also checks that the repo is on the Linux filesystem.
+1. Refuses a repo on the Windows filesystem under WSL2, naming where to clone it.
+2. In the toolkit's own checkout, builds `bin/komodo` when it is missing.
+3. Publishes the binary to `~/.komodo/bin/komodo`, the one path every hook runs, and links `komodo` onto PATH: a symlink in `~/.local/bin` on macOS and Linux; on Windows `install.ps1` puts the binary's own directory on the user PATH.
+4. In the toolkit's own checkout, writes the git hooks: each is one exec into `komodo git-hook <name>`, which holds the hook's logic.
+5. Renders this repo's layer, then the user's global layer. Outside a repo it installs only the global layer; `komodo init` adds the line to a new repo.
 
 ### Binaries and releases
 

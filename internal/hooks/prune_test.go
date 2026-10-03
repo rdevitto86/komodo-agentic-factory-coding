@@ -164,3 +164,37 @@ func TestSweepStopsAtItsLimitAndLogsTheFailure(t *testing.T) {
 		t.Fatalf("log = %q, want the overrun named", got)
 	}
 }
+
+func TestSweepRefreshesTheMachineBeforeItPrunes(t *testing.T) {
+	root := sweepRepo(t)
+	var order []string
+	swapPrune(t, func() ([]string, error) { order = append(order, "prune"); return []string{"removed worktree x"}, nil })
+	old := Refresh
+	Refresh = func(at string) ([]string, error) {
+		order = append(order, "refresh")
+		return []string{"binary /home/.komodo/bin/komodo"}, nil
+	}
+	t.Cleanup(func() { Refresh = old })
+	Sweep(root)
+	if strings.Join(order, ",") != "refresh,prune" {
+		t.Fatalf("order = %v, want the refresh before the prune", order)
+	}
+	log, err := os.ReadFile(filepath.Join(root, ".komodo", sweepLog))
+	if err != nil || !strings.Contains(string(log), "binary /home/.komodo/bin/komodo") || !strings.Contains(string(log), "removed worktree x") {
+		t.Fatalf("log = %q, %v; want both the refresh and the prune recorded", log, err)
+	}
+}
+
+func TestAFailedRefreshFailsTheSweepAndSkipsThePrune(t *testing.T) {
+	root := sweepRepo(t)
+	pruned := false
+	swapPrune(t, func() ([]string, error) { pruned = true; return nil, nil })
+	old := Refresh
+	Refresh = func(string) ([]string, error) { return nil, errors.New("render broke") }
+	t.Cleanup(func() { Refresh = old })
+	Sweep(root)
+	log, _ := os.ReadFile(filepath.Join(root, ".komodo", sweepLog))
+	if pruned || !strings.HasPrefix(string(log), sweepFailed) || !strings.Contains(string(log), "render broke") {
+		t.Fatalf("pruned = %v, log = %q; a failed refresh must stop the sweep and say why", pruned, log)
+	}
+}

@@ -349,6 +349,80 @@ func TestPruneKeepsNewWorkOnABranchTheForgeReportsMerged(t *testing.T) {
 	}
 }
 
+func TestGroupOfNamesTheGroupEveryStateFileBelongsTo(t *testing.T) {
+	cases := map[string]string{
+		"TSK-03.7.11.json":          "TG-03.7",
+		"TSK-03.7.11.md":            "TG-03.7",
+		"TG-03.10-review.json":      "TG-03.10",
+		"TG-07.2-fix.md":            "TG-07.2",
+		"TG-03.10-1790218115.jsonl": "TG-03.10",
+		"TG-03.6.jsonl":             "TG-03.6",
+		"line.jsonl":                "",
+		"notes.md":                  "",
+	}
+	for name, want := range cases {
+		if got := groupOf(name); got != want {
+			t.Errorf("groupOf(%s) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestPruneSpentStateKeepsALiveGroupsFilesAndDropsTheRest(t *testing.T) {
+	root, _ := pruneRepo(t, openBacklog)
+	state := filepath.Join(root, ".komodo")
+	live := []string{"briefs/TSK-01.1.1.md", "results/TG-01.1-review.json", "line.TG-01.1-1790000000.jsonl", "line.jsonl"}
+	spent := []string{"briefs/TSK-03.7.11.md", "results/TSK-03.7.11.json", "line.TG-03.10-1790218115.jsonl"}
+	for _, rel := range append(append([]string{}, live...), spent...) {
+		write(t, state, rel, "x\n")
+	}
+	if dry := pruneSpentState(root, nil, false); len(dry) != len(spent) || !strings.HasPrefix(dry[0], "would remove") {
+		t.Fatalf("dry run = %q, want %d would-remove lines", dry, len(spent))
+	}
+	done := pruneSpentState(root, nil, true)
+	if len(done) != len(spent) {
+		t.Fatalf("done = %q, want the %d spent files removed", done, len(spent))
+	}
+	for _, rel := range spent {
+		if _, err := os.Stat(filepath.Join(state, rel)); !os.IsNotExist(err) {
+			t.Fatalf("%s survived (%v)", rel, err)
+		}
+	}
+	for _, rel := range live {
+		if _, err := os.Stat(filepath.Join(state, rel)); err != nil {
+			t.Fatalf("%s was removed: %v; a live group's state stays", rel, err)
+		}
+	}
+}
+
+func TestPruneStashesArchivesAWeekOldStashThenDropsIt(t *testing.T) {
+	root, run := pruneRepo(t, openBacklog)
+	write(t, root, "wip.txt", "old work\n")
+	stash := exec.Command("git", "stash", "push", "-u", "-q", "-m", "old work")
+	stash.Dir = root
+	stash.Env = append(os.Environ(), "GIT_COMMITTER_DATE=2026-09-01T00:00:00Z", "GIT_AUTHOR_DATE=2026-09-01T00:00:00Z")
+	if out, err := stash.CombinedOutput(); err != nil {
+		t.Fatalf("stash: %v: %s", err, out)
+	}
+	write(t, root, "fresh.txt", "new work\n")
+	run(root, "stash", "push", "-u", "-q", "-m", "fresh work")
+	at := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	done := pruneStashes(root, at, true)
+	if len(done) != 1 || !strings.Contains(done[0], "archived") {
+		t.Fatalf("done = %q, want the old stash archived", done)
+	}
+	out, err := exec.Command("git", "-C", root, "stash", "list").Output()
+	if left := strings.TrimSpace(string(out)); err != nil || strings.Count(left, "\n") != 0 || !strings.Contains(left, "fresh work") {
+		t.Fatalf("stash list = %q, want only the fresh stash", left)
+	}
+	patches, _ := filepath.Glob(filepath.Join(root, ".komodo", "stash-archive", "2026-09-01-*.patch"))
+	if len(patches) != 1 {
+		t.Fatalf("patches = %v, want one archive", patches)
+	}
+	if body, _ := os.ReadFile(patches[0]); !strings.Contains(string(body), "old work") {
+		t.Fatalf("patch = %q, want the stash's own change", body)
+	}
+}
+
 func TestPruneRemovesTheDeadBranchClaims(t *testing.T) {
 	root := gitRepo(t)
 	claims := filepath.Join(root, ".git", "komodo-claims")
