@@ -124,24 +124,42 @@ func TestShellBoundsAFloodingCommandsOutput(t *testing.T) {
 	}
 }
 
-func TestShellArgvUsesShEverywhereAndCmdOnlyOnWindowsWithoutIt(t *testing.T) {
+func TestShellArgvUsesAShellOnlyForShellSyntax(t *testing.T) {
 	saved, savedLook := shellGOOS, lookPath
 	t.Cleanup(func() { shellGOOS, lookPath = saved, savedLook })
 	found := func(string) (string, error) { return "/usr/bin/sh", nil }
 	missing := func(string) (string, error) { return "", exec.ErrNotFound }
+	syntax := "go test ./... && ! grep -q x y"
 	cases := []struct {
-		goos string
-		look func(string) (string, error)
-		want []string
+		goos, command string
+		look          func(string) (string, error)
+		want          []string
 	}{
-		{"linux", missing, []string{"sh", "-c", "go test ./..."}},
-		{"windows", found, []string{"sh", "-c", "go test ./..."}},
-		{"windows", missing, []string{"cmd", "/C", "go test ./..."}},
+		{"linux", "go test ./...", missing, []string{"go", "test", "./..."}},
+		{"windows", "go test ./...", found, []string{"go", "test", "./..."}},
+		{"windows", "go test ./...", missing, []string{"go", "test", "./..."}},
+		{"linux", syntax, missing, []string{"sh", "-c", syntax}},
+		{"windows", syntax, found, []string{"sh", "-c", syntax}},
+		{"windows", syntax, missing, []string{"cmd", "/C", syntax}},
+		{"linux", "GOOS=windows go vet ./...", missing, []string{"sh", "-c", "GOOS=windows go vet ./..."}},
+		{"linux", "echo $HOME", missing, []string{"sh", "-c", "echo $HOME"}},
+		{"linux", "ls *.go", missing, []string{"sh", "-c", "ls *.go"}},
+		{"linux", "exit 3", missing, []string{"sh", "-c", "exit 3"}},
+		{"linux", "cd sub", missing, []string{"sh", "-c", "cd sub"}},
+		{"linux", "", missing, []string{"sh", "-c", ""}},
 	}
 	for _, c := range cases {
 		shellGOOS, lookPath = c.goos, c.look
-		if got := ShellArgv("go test ./..."); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s: argv = %q, want %q", c.goos, got, c.want)
+		if got := ShellArgv(c.command); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s %q: argv = %q, want %q", c.goos, c.command, got, c.want)
 		}
+	}
+}
+
+// TestAMissingProgramKeepsTheShellsNotFoundCode proves a plain command naming no program reports 127,
+// as sh would, so callers that read the code keep working.
+func TestAMissingProgramKeepsTheShellsNotFoundCode(t *testing.T) {
+	if ran := Shell(t.TempDir(), "komodo-no-such-program-anywhere arg", time.Minute); ran.ExitCode != ExitNotFound {
+		t.Fatalf("exit = %d, want %d", ran.ExitCode, ExitNotFound)
 	}
 }

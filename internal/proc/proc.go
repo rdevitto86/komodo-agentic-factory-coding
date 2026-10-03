@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -23,6 +25,12 @@ const ExitTimeout = 124
 
 // ExitRunaway is the exit code a command reports when its process tree broke DefaultLimits and was killed.
 const ExitRunaway = 125
+
+// ExitNotExecutable and ExitNotFound are the shell's codes for a program that cannot run or does not exist.
+const (
+	ExitNotExecutable = 126
+	ExitNotFound      = 127
+)
 
 // BoundedWriter keeps up to Limit bytes of what it is written, discarding the rest.
 type BoundedWriter struct {
@@ -93,9 +101,28 @@ var (
 	lookPath  = exec.LookPath
 )
 
-// ShellArgv runs command through POSIX sh, which native Windows takes from Git for Windows; with no sh
-// on PATH there, it falls back to cmd /C.
+// plainWord is a word no shell would change: no operator, quote, expansion, glob or assignment.
+var plainWord = regexp.MustCompile(`^[A-Za-z0-9_./:@%+,-]+$`)
+
+// shellBuiltins are the commands only a shell runs; a plain line starting with one still needs the shell.
+var shellBuiltins = map[string]bool{
+	":": true, ".": true, "alias": true, "bg": true, "break": true, "cd": true, "command": true, "continue": true,
+	"eval": true, "exec": true, "exit": true, "export": true, "fg": true, "getopts": true, "hash": true, "jobs": true,
+	"local": true, "read": true, "readonly": true, "return": true, "set": true, "shift": true, "source": true,
+	"times": true, "trap": true, "type": true, "ulimit": true, "umask": true, "unalias": true, "unset": true, "wait": true,
+}
+
+// ShellArgv runs a plain command line as its own argv with no shell; shell syntax or a builtin goes through
+// POSIX sh, which native Windows takes from Git for Windows, else cmd /C.
 func ShellArgv(command string) []string {
+	fields := strings.Fields(command)
+	plain := len(fields) > 0 && !shellBuiltins[fields[0]]
+	for _, field := range fields {
+		plain = plain && plainWord.MatchString(field)
+	}
+	if plain {
+		return fields
+	}
 	if shellGOOS == "windows" {
 		if _, err := lookPath("sh"); err != nil {
 			return []string{"cmd", "/C", command}
@@ -160,8 +187,13 @@ func run(ctx context.Context, dir string, timeout time.Duration, env []string, n
 	case err != nil:
 		result.ExitCode = 1
 		var exit *exec.ExitError
-		if errors.As(err, &exit) {
+		switch {
+		case errors.As(err, &exit):
 			result.ExitCode = exit.ExitCode()
+		case errors.Is(err, exec.ErrNotFound):
+			result.ExitCode = ExitNotFound
+		case errors.Is(err, fs.ErrPermission):
+			result.ExitCode = ExitNotExecutable
 		}
 		if result.Output == "" {
 			result.Output = err.Error()

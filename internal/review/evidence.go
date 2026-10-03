@@ -68,12 +68,6 @@ var ruleLens = map[string]string{
 	"QUA-1": "quality", "QUA-2": "quality", "QUA-3": "quality", "QUA-4": "quality", "QUA-5": "quality",
 }
 
-// Exit codes a shell reports when the command itself could not run.
-const (
-	exitNotExecutable = 126
-	exitNotFound      = 127
-)
-
 // Verify checks each finding's evidence against the tree, keeping a finding as blocking only when it holds.
 func Verify(tree Tree, findings []Finding) ([]Checked, error) {
 	added := map[string]map[int]bool{}
@@ -127,7 +121,7 @@ func reproduces(worktree, command string) (bool, string, error) {
 	switch {
 	case ran.OK():
 		return false, "the reproducer passes on the current tree", nil
-	case ran.TimedOut, ran.ExitCode == exitNotExecutable, ran.ExitCode == exitNotFound:
+	case ran.TimedOut, ran.ExitCode == proc.ExitNotExecutable, ran.ExitCode == proc.ExitNotFound:
 		return false, fmt.Sprintf("the reproducer did not run: %v", ran.Err()), nil
 	}
 	return true, fmt.Sprintf("the reproducer fails on the current tree: %v", ran.Err()), nil

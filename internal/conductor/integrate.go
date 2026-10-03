@@ -72,7 +72,8 @@ func TestMerge(ctx context.Context, worktree string, ready []line.RunState, comm
 		if command == "" {
 			continue
 		}
-		if ran := proc.ExecContext(ctx, scratch, check.CommandTimeout, "sh", "-c", command); !ran.OK() {
+		argv := proc.ShellArgv(command)
+		if ran := proc.ExecContext(ctx, scratch, check.CommandTimeout, argv[0], argv[1:]...); !ran.OK() {
 			fixes = append(fixes, fmt.Sprintf("integration: `%s` %v with every ready group merged in\n%s",
 				command, ran.Err(), ran.Output))
 		}
