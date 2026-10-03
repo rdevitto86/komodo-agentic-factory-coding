@@ -59,3 +59,14 @@ func TestCompareOrdersAlphaBetaRcThenStable(t *testing.T) {
 		t.Fatal("the stable version should be latest over a beta with no rc between")
 	}
 }
+
+func TestValidAcceptsOnlyWholeVersions(t *testing.T) {
+	for version, want := range map[string]bool{
+		"1.0.0": true, "v1.0.0-beta.4": true, "1.0.0-rc.1": true,
+		"prototype-final": false, "1.0": false, "1.0.x": false, "v1.0.0 extra": false,
+	} {
+		if got := Valid(version); got != want {
+			t.Errorf("Valid(%q) = %v, want %v", version, got, want)
+		}
+	}
+}

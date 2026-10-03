@@ -398,3 +398,19 @@ func TestApplyStillWritesAnUntrackedFile(t *testing.T) {
 		t.Fatalf("settings.json = %q, want the rendered body for an untracked file", got)
 	}
 }
+
+func TestApplyWritesEachFileWholeAndLeavesNoTemp(t *testing.T) {
+	root := t.TempDir()
+	plan := Plan{Host: "h", Root: root}
+	path := filepath.Join(root, "nested", "settings.json")
+	plan.Add(path, []byte(`{"hooks": []}`), "settings")
+	if _, err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != `{"hooks": []}` {
+		t.Fatalf("file = %q, %v", data, err)
+	}
+	if entries, _ := os.ReadDir(filepath.Dir(path)); len(entries) != 1 {
+		t.Fatalf("dir holds %d entries; a temp file was left behind", len(entries))
+	}
+}
