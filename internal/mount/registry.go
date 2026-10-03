@@ -199,7 +199,7 @@ var Executable = func() (string, error) {
 
 // BinaryPath is the running toolkit binary's absolute path, or bin/<name> relative to the main checkout under go run.
 func BinaryPath() string {
-	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
+	name := "komodo"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}

@@ -179,3 +179,17 @@ func TestHookFailsOpenWhenItCannotRecordARefusal(t *testing.T) {
 		t.Fatalf("stderr = %q, want a log of the guard's own failure", errOut.String())
 	}
 }
+
+func TestHookAllowsTheCallWhenItPanics(t *testing.T) {
+	root := t.TempDir()
+	previous := check
+	check = func(Request, Policy, string) Decision { panic("a guard bug") }
+	t.Cleanup(func() { check = previous })
+	var out, errOut strings.Builder
+	if code := Hook(root, strings.NewReader(pushPayload(root, "s1")), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want 0; a guard bug must never read as a refusal", code)
+	}
+	if out.Len() != 0 || !strings.Contains(errOut.String(), "panic: a guard bug; allowing") {
+		t.Fatalf("stdout = %q, stderr = %q", out.String(), errOut.String())
+	}
+}

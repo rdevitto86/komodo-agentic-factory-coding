@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -118,7 +117,7 @@ func TestMachineWritesTheLocalReviewersResultAndStampsTheLedger(t *testing.T) {
 	}))
 	defer server.Close()
 	t.Setenv("OLLAMA_BASE_URL", server.URL)
-	binary := filepath.Join(root, "bin", "komodo-"+runtime.GOOS+"-"+runtime.GOARCH)
+	binary := filepath.Join(root, "bin", "komodo")
 	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
 		t.Fatal(err)
 	}

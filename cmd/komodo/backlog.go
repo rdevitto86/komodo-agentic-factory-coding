@@ -12,6 +12,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/git"
+	"komodo/internal/install"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 )
@@ -26,6 +27,8 @@ func runLint(root string) {
 func lintProblems(root string) ([]string, error) {
 	problems, _, _, err := groupFileLintProblems(root)
 	problems = append(problems, versionProblems(root)...)
+	problems = append(problems, install.ScriptProblems(root)...)
+	problems = append(problems, install.SkillProblems(root)...)
 	return append(problems, backlog.LintDecisions(root)...), err
 }
 

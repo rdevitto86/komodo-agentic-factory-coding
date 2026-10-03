@@ -2,6 +2,7 @@ package proc
 
 import (
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -58,4 +59,26 @@ func TestShellEnvRunsInOnlyTheGivenEnvironment(t *testing.T) {
 
 func TestKillGroupIgnoresACommandThatNeverStarted(t *testing.T) {
 	KillGroup(exec.Command("true"))
+}
+
+func TestShellArgvUsesShEverywhereAndCmdOnlyOnWindowsWithoutIt(t *testing.T) {
+	saved, savedLook := shellGOOS, lookPath
+	t.Cleanup(func() { shellGOOS, lookPath = saved, savedLook })
+	found := func(string) (string, error) { return "/usr/bin/sh", nil }
+	missing := func(string) (string, error) { return "", exec.ErrNotFound }
+	cases := []struct {
+		goos string
+		look func(string) (string, error)
+		want []string
+	}{
+		{"linux", missing, []string{"sh", "-c", "go test ./..."}},
+		{"windows", found, []string{"sh", "-c", "go test ./..."}},
+		{"windows", missing, []string{"cmd", "/C", "go test ./..."}},
+	}
+	for _, c := range cases {
+		shellGOOS, lookPath = c.goos, c.look
+		if got := ShellArgv("go test ./..."); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: argv = %q, want %q", c.goos, got, c.want)
+		}
+	}
 }

@@ -1,6 +1,7 @@
 package line
 
 import (
+	"komodo/internal/testhome"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,10 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("GIT_CEILING_DIRECTORIES", strings.Join(tempRoots(), string(os.PathListSeparator))); err != nil {
 		panic(err)
 	}
-	os.Exit(m.Run())
+	cleanup := testhome.Isolate()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 // tempRoots are the directories t.TempDir creates under, as given and with symlinks resolved.

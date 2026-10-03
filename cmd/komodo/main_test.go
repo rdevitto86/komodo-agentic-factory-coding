@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"komodo/internal/testhome"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,7 +25,10 @@ func TestMain(m *testing.M) {
 	os.Setenv("GIT_CONFIG_VALUE_0", "0")
 	os.Setenv("GIT_CONFIG_KEY_1", "maintenance.auto")
 	os.Setenv("GIT_CONFIG_VALUE_1", "false")
-	os.Exit(m.Run())
+	cleanup := testhome.Isolate()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 func TestSplitTaskArgFindsTheTaskAfterTheRoleFlag(t *testing.T) {
