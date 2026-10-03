@@ -99,6 +99,14 @@
       "items": {
         "type": "string"
       }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
     }
   },
   "required": [

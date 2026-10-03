@@ -617,7 +617,8 @@ func TestPolicyEditStopsWhenTheRepoCannotTakeTheEdit(t *testing.T) {
 // TestCasesStopOnAnEnvFailure proves a case whose setup the env cannot give stops with that failure.
 func TestCasesStopOnAnEnvFailure(t *testing.T) {
 	broken := errors.New("the env broke")
-	skip := map[string]bool{"kill and resume": true, "owner-directed policy edit": true}
+	// These cases ask the env for no setup, so there is no setup failure to stop on.
+	skip := map[string]bool{"kill and resume": true, "owner-directed policy edit": true, "acts without asking": true}
 	for _, each := range Cases() {
 		if skip[each.Name] {
 			continue
