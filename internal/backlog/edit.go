@@ -92,38 +92,6 @@ func NextTaskID(group Group) string {
 	return fmt.Sprintf("TSK-%s.%d", base, highest+1)
 }
 
-// AppendTask adds a task at the end of a group and returns the new text and the new id.
-func AppendTask(text, groupID, title string, fields Fields, priority, status string) (string, string, error) {
-	if !contains(Priorities, priority) {
-		return "", "", fmt.Errorf("unknown priority %q", priority)
-	}
-	if !contains(Statuses, status) {
-		return "", "", fmt.Errorf("unknown status %q", status)
-	}
-	parsed := Parse(text)
-	group, ok := parsed.Group(groupID)
-	if !ok {
-		return "", "", fmt.Errorf("group %s not found", groupID)
-	}
-	taskID := NextTaskID(group)
-	lines := strings.SplitAfter(text, "\n")
-	position := groupEnd(lines, group.Heading)
-	for position > group.Heading+1 && strings.TrimSpace(lines[position-1]) == "" {
-		position--
-	}
-	block := RenderTask(taskID, title, priority, status, fields)
-	if position > 0 && strings.TrimSpace(lines[position-1]) != "" {
-		block = "\n" + block
-	}
-	if position < len(lines) {
-		block += "\n"
-	}
-	out := append([]string{}, lines[:position]...)
-	out = append(out, block)
-	out = append(out, lines[position:]...)
-	return strings.Join(out, ""), taskID, nil
-}
-
 // groupEnd is the first line after heading that opens the next group or epic, or a rule between them.
 func groupEnd(lines []string, heading int) int {
 	for index := heading + 1; index < len(lines); index++ {
