@@ -15,9 +15,9 @@ import (
 
 // File names, both under .komodo and both gitignored.
 const (
-	RunFile     = "line.jsonl"
-	AdhocFile   = "adhoc.jsonl"
-	EventsFile  = "events.jsonl"
+	RunFile    = "line.jsonl"
+	AdhocFile  = "adhoc.jsonl"
+	EventsFile = "events.jsonl"
 )
 
 // Limits at which the ad hoc file is truncated by its next writer.
@@ -104,9 +104,8 @@ func (l *Ledger) Stamp(entry Entry) error {
 	if err != nil {
 		return err
 	}
-	defer handle.Close()
 	_, err = handle.Write(append(data, '\n'))
-	return err
+	return errors.Join(err, handle.Close())
 }
 
 // TruncateRun appends the run file to its archive, line.<run>.jsonl, then empties it.

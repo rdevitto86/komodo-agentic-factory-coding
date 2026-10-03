@@ -98,4 +98,3 @@ func TestFindGroupFileLocatesTheFileNamingTheGroup(t *testing.T) {
 		t.Fatalf("found = %v, err = %v, want none for an unknown group", found, err)
 	}
 }
-

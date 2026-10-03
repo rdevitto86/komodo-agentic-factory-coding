@@ -33,17 +33,23 @@ type Action struct {
 	Spawns   []Action `json:"spawns,omitempty"`
 }
 
-// Step reads one snapshot, decides with Next, then writes the review stamp and brief it needs.
+// Step reads one snapshot, decides with Next, then writes the review stamp and brief it needs; a
+// failed lease take stops the builder instead of sending it to write with no lease held.
 func Step(root, needle string) (*Action, error) {
 	snap, err := LoadSnapshot(root, needle)
 	if err != nil {
 		return nil, err
 	}
 	act, err := stepFrom(root, snap)
-	if err == nil && snap.Plan != nil {
-		takeLeases(root, snap.Plan, act)
+	if err != nil {
+		return act, err
 	}
-	return act, err
+	if snap.Plan != nil {
+		if err := takeLeases(root, snap.Plan, act); err != nil {
+			return nil, err
+		}
+	}
+	return act, nil
 }
 
 // stepFrom decides the next action for one loaded snapshot.

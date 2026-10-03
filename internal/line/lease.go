@@ -38,12 +38,13 @@ func leaseHolder() proc.Process {
 	return holder
 }
 
-// takeLeases leases the group branch when action sends a builder to write on it.
-func takeLeases(root string, plan *Plan, next *Action) {
+// takeLeases leases the group branch when action sends a builder to write on it, returning any
+// failure to take it instead of discarding it.
+func takeLeases(root string, plan *Plan, next *Action) error {
 	if plan.Branch == "" || !writes(*next) {
-		return
+		return nil
 	}
-	_ = TakeLease(root, plan.Group, plan.Branch, time.Now())
+	return TakeLease(root, plan.Group, plan.Branch, time.Now())
 }
 
 // writes reports whether action hands a builder the branch to write: a spawn, or a local builder run.
