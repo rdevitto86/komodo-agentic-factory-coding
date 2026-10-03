@@ -500,7 +500,7 @@ func init() {
 }
 
 // retiredCommands are the commands no hook, allow rule, or mcpServers entry may still name.
-var retiredCommands = []string{"komodo-hooks", "python3 -m komodo", "/assess-", "komodo-ollama-bridge"}
+var retiredCommands = []string{"komodo-hooks", "python3 -m komodo", "/assess-"}
 
 // Leftovers names each hook, allow rule, and mcpServers entry in this host's user settings that
 // still names a retired command or server.
