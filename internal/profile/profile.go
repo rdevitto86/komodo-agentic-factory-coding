@@ -43,7 +43,6 @@ type Profile struct {
 	PauseAt          float64                `json:"pause_at"`
 	WarnAt           float64                `json:"warn_at"`
 	Labels           []string               `json:"labels"`
-	Changelog        string                 `json:"changelog"`
 	Base             string                 `json:"base"`
 	CriticalRefs     []string               `json:"critical_refs,omitempty"`
 	Utilization      float64                `json:"utilization"`
@@ -102,7 +101,6 @@ func base() Profile {
 		PauseAt:          0.9,
 		WarnAt:           0.75,
 		Labels:           []string{"agent"},
-		Changelog:        "CHANGELOG.md",
 		PRFiles:          20,
 		PRLinesPreferred: 1000,
 		PRLinesMax:       2000,
