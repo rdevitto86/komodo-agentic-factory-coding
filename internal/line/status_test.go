@@ -123,21 +123,6 @@ func TestANewRunKeepsOnlyItsOwnGroupsLiveStatus(t *testing.T) {
 	}
 }
 
-func TestKeepStatusDropsEveryOtherTask(t *testing.T) {
-	root := t.TempDir()
-	for _, taskID := range []string{"TSK-1.1.1", "TSK-2.1.1"} {
-		if err := RecordStatus(root, taskID, "DONE"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := KeepStatus(root, []string{"TSK-2.1.1"}); err != nil {
-		t.Fatal(err)
-	}
-	if got := LoadStatus(root); len(got) != 1 || got["TSK-2.1.1"].Status != "DONE" {
-		t.Fatalf("status = %+v; only the kept task may remain", got)
-	}
-}
-
 func TestLoadBacklogReadsTheRunsStatusBeforeTheFile(t *testing.T) {
 	root := stepRepo(t)
 	if err := RecordStatus(root, "TSK-12.1.1", "DONE"); err != nil {

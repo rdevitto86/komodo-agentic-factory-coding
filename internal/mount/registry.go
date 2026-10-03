@@ -404,15 +404,6 @@ func GuardConfigPaths() []string {
 	return out
 }
 
-// GuardPrivatePatterns are every private-text pattern a registered mount's guard refuses to send out.
-func GuardPrivatePatterns() []string {
-	var out []string
-	for _, tools := range GuardHosts() {
-		out = append(out, tools.PrivatePatterns...)
-	}
-	return out
-}
-
 // Overlay is the developer's own ~/.komodo/config.json as the mounts read it.
 type Overlay struct {
 	Local               bool              `json:"local"`

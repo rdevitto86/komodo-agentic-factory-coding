@@ -138,6 +138,14 @@ func TestStartableRunsGroupsSharingNoFileTogetherAndQueuesOnesThatDo(t *testing.
 			want:     "TG-1.2",
 		},
 		{
+			name: "a child waiting on its parent never claims the parent's file",
+			pending: []scheduleGroup{
+				{"TG-1.2", "a/one.go", "TG-1.1"}, {"TG-1.1", "a/one.go", ""},
+			},
+			capacity: 4,
+			want:     "TG-1.1",
+		},
+		{
 			name:     "no capacity still runs one lane",
 			pending:  []scheduleGroup{{"TG-1.1", "a/one.go", ""}, {"TG-1.2", "b/two.go", ""}},
 			capacity: 0,

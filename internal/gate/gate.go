@@ -477,11 +477,6 @@ var FuzzTargets = []FuzzTarget{
 	{Name: "FuzzRead", Package: "./internal/ledger"},
 }
 
-// FuzzChecks builds one check per fuzz target, each run for the given duration such as 10s.
-func FuzzChecks(root, duration string) []Check {
-	return FuzzChecksFor(root, duration, FuzzTargets)
-}
-
 // FuzzChecksFor builds one check per named fuzz target, each run for the given duration such as 10s.
 func FuzzChecksFor(root, duration string, targets []FuzzTarget) []Check {
 	var checks []Check

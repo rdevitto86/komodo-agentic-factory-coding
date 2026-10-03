@@ -94,6 +94,14 @@ func TipRef(branch string) string {
 	return "refs/komodo/" + branch
 }
 
+// AllowWorktreePush clears path's refused pushurl, so a person's ad hoc worktree pushes the branch it tracks.
+func AllowWorktreePush(path string) error {
+	if _, err := git.Run(path, "config", "--worktree", "--unset-all", "remote.origin.pushurl"); err != nil {
+		return fmt.Errorf("clear the worktree's refused pushurl: %w", err)
+	}
+	return nil
+}
+
 // AddDetached cuts a detached worktree at path tracking branch, starting at its tip ref when one
 // exists, else at startRef; it refuses a critical branch and a second worktree tracking branch.
 func AddDetached(root, branch, startRef, path string) error {

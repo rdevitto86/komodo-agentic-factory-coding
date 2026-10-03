@@ -65,6 +65,7 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 	done = append(done, pruneSpentState(root, open, confirm)...)
 	done = append(done, pruneStashes(root, now(), confirm)...)
 	done = append(done, pruneHookCopies(root, confirm)...)
+	done = append(done, pruneClaims(root, confirm)...)
 	return done, nil
 }
 
@@ -201,6 +202,28 @@ func pruneHookCopies(root string, confirm bool) []string {
 		done = append(done, "removed old hook binary "+path)
 	}
 	return done
+}
+
+// claimsDir is where the guard kept branch claims until they were removed; nothing reads it now.
+const claimsDir = "komodo-claims"
+
+// pruneClaims deletes the shared git dir's dead branch-claim directory; unconfirmed, it lists it.
+func pruneClaims(root string, confirm bool) []string {
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(common, claimsDir)
+	if _, err := os.Stat(dir); err != nil {
+		return nil
+	}
+	if !confirm {
+		return []string{"would remove the dead branch claims at " + dir + "; rerun with --confirm to delete"}
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return []string{"could not remove the dead branch claims at " + dir + ": " + err.Error()}
+	}
+	return []string{"removed the dead branch claims at " + dir}
 }
 
 // settleShippedRun sweeps clean, unleased, landed worktrees and orphan landed tips, never an open run's; unconfirmed, it lists.

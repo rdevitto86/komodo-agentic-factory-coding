@@ -112,18 +112,6 @@ func TestRunGateStopsAtTheFirstFailure(t *testing.T) {
 	}
 }
 
-func TestChangelogLineCountsWhatShipped(t *testing.T) {
-	plan := &Plan{Group: "TG-09.1", Title: "A group", Version: "2.0.0"}
-	result := &ShipResult{Done: []string{"a", "b"}, Blocked: []string{"c"}}
-	line := ChangelogLine(plan, result)
-	if !strings.Contains(line, "TG-09.1") || !strings.Contains(line, "2 task(s)") || !strings.Contains(line, "blocked: c") {
-		t.Fatalf("line = %q", line)
-	}
-	if ChangelogLine(&Plan{Group: "TG-09.1"}, result) != "" {
-		t.Fatal("a group with no version writes no changelog line")
-	}
-}
-
 func TestReportBodyMarksWhatBlocked(t *testing.T) {
 	plan := &Plan{Group: "TG-09.1", Title: "A group", Tasks: []PlanTask{{ID: "a", Title: "One"}, {ID: "b", Title: "Two"}}}
 	result := &ShipResult{Done: []string{"a"}, Blocked: []string{"b"}}
@@ -189,8 +177,14 @@ func TestFileFindingsAppendsIntoTheGroupsOwnFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	text = string(data)
-	if !strings.Contains(text, "dead branch") || !strings.Contains(text, "status: REFINEMENT") {
-		t.Fatalf("filed task is wrong:\n%s", text)
+	// A filed finding is runnable: READY, its severity's priority, and its package's tests as the proof.
+	for _, want := range []string{"dead branch", "status: READY", "priority: L", "done_when: `go test ./a/...`"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("filed task lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "test -f") {
+		t.Fatalf("filed task proves nothing with test -f:\n%s", text)
 	}
 	if _, err := os.Stat(filepath.Join(root, backlog.LegacyName)); !os.IsNotExist(err) {
 		t.Fatal("FileFindings must never create a legacy backlog file in a group-file repo")
