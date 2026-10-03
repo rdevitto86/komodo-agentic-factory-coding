@@ -7,29 +7,26 @@ import (
 	"strings"
 	"testing"
 
-	"komodo/internal/detect"
 	"komodo/internal/hooks"
 	"komodo/internal/install"
 	"komodo/internal/mount"
 )
 
-func TestBuilderPluginSkillsIncludeBuildAndLanguageStandards(t *testing.T) {
-	detected := detect.Profile{
-		Languages: []string{"Go", "TypeScript", "Python"},
-	}
+// TestBuilderPluginSkillsIncludesBuildAndEveryStandardItIsGiven proves the builder's plugin takes
+// every standard straight from the skills mount.SelectStandards already kept for this repo.
+func TestBuilderPluginSkillsIncludesBuildAndEveryStandardItIsGiven(t *testing.T) {
 	skills := []mount.Skill{
 		{Name: "build", Body: "# Build\n"},
 		{Name: "standards-go", Body: "# Go\n"},
 		{Name: "standards-typescript", Body: "# TS\n"},
 		{Name: "standards-python", Body: "# Python\n"},
-		{Name: "standards-java", Body: "# Java\n"},
 		{Name: "review-correctness", Body: "# Review\n"},
 	}
-	got := BuilderPluginSkills(detected, skills)
-	if len(got) != 4 {
-		t.Fatalf("got %d skills, want 4: %v", len(got), got)
-	}
+	got := BuilderPluginSkills(skills)
 	wantSkills := []string{"build", "standards-go", "standards-python", "standards-typescript"}
+	if len(got) != len(wantSkills) {
+		t.Fatalf("got %d skills, want %d: %v", len(got), len(wantSkills), got)
+	}
 	for i, want := range wantSkills {
 		if got[i] != want {
 			t.Fatalf("skill[%d] = %q, want %q", i, got[i], want)
@@ -38,9 +35,6 @@ func TestBuilderPluginSkillsIncludeBuildAndLanguageStandards(t *testing.T) {
 }
 
 func TestBuilderPluginSkillsExcludesReviewSkills(t *testing.T) {
-	detected := detect.Profile{
-		Languages: []string{"Go"},
-	}
 	skills := []mount.Skill{
 		{Name: "build", Body: "# Build\n"},
 		{Name: "standards-go", Body: "# Go\n"},
@@ -50,7 +44,7 @@ func TestBuilderPluginSkillsExcludesReviewSkills(t *testing.T) {
 		{Name: "run", Body: "# Run\n"},
 		{Name: "plan", Body: "# Plan\n"},
 	}
-	got := BuilderPluginSkills(detected, skills)
+	got := BuilderPluginSkills(skills)
 	for _, skill := range got {
 		if strings.Contains(skill, "review") || strings.Contains(skill, "respond") ||
 			strings.Contains(skill, "run") || strings.Contains(skill, "plan") {
@@ -60,16 +54,13 @@ func TestBuilderPluginSkillsExcludesReviewSkills(t *testing.T) {
 }
 
 func TestBuilderPluginSkillsIsSorted(t *testing.T) {
-	detected := detect.Profile{
-		Languages: []string{"C++", "Go", "Rust"},
-	}
 	skills := []mount.Skill{
 		{Name: "build", Body: "# Build\n"},
 		{Name: "standards-cpp", Body: "# C++\n"},
 		{Name: "standards-go", Body: "# Go\n"},
 		{Name: "standards-rust", Body: "# Rust\n"},
 	}
-	got := BuilderPluginSkills(detected, skills)
+	got := BuilderPluginSkills(skills)
 	for i := 0; i < len(got)-1; i++ {
 		if got[i] > got[i+1] {
 			t.Fatalf("skills not sorted: %v", got)
@@ -77,30 +68,32 @@ func TestBuilderPluginSkillsIsSorted(t *testing.T) {
 	}
 }
 
-func TestBuilderPluginSkillsWithNoDetectedLanguages(t *testing.T) {
-	detected := detect.Profile{
-		Languages: []string{},
-	}
+// TestBuilderPluginSkillsNeedsNoDetectedProfile proves the builder's plugin trusts the skills it
+// is given, carrying a standard with no language profile behind it at all.
+func TestBuilderPluginSkillsNeedsNoDetectedProfile(t *testing.T) {
 	skills := []mount.Skill{
 		{Name: "build", Body: "# Build\n"},
 		{Name: "standards-go", Body: "# Go\n"},
 	}
-	got := BuilderPluginSkills(detected, skills)
-	if len(got) != 1 || got[0] != "build" {
-		t.Fatalf("got %v, want only build skill", got)
+	got := BuilderPluginSkills(skills)
+	want := []string{"build", "standards-go"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Fatalf("skill[%d] = %q, want %q", i, got[i], w)
+		}
 	}
 }
 
 func TestBuilderPluginSkillsOmitsMissingStandards(t *testing.T) {
-	detected := detect.Profile{
-		Languages: []string{"Go", "Java"},
-	}
 	skills := []mount.Skill{
 		{Name: "build", Body: "# Build\n"},
 		{Name: "standards-go", Body: "# Go\n"},
 		// standards-java is not in the skills list
 	}
-	got := BuilderPluginSkills(detected, skills)
+	got := BuilderPluginSkills(skills)
 	want := []string{"build", "standards-go"}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -116,7 +109,6 @@ func TestBuilderPluginSkillsOmitsMissingStandards(t *testing.T) {
 // directory holds exactly the skills BuilderPluginSkills names, and no others.
 func TestRenderBuilderPluginListsExactlyThoseSkills(t *testing.T) {
 	root := "/repo"
-	detected := detect.Profile{Languages: []string{"Go"}}
 	skills := []mount.Skill{
 		{Name: "build", Body: "# Build\n"},
 		{Name: "standards-go", Body: "# Go\n"},
@@ -125,7 +117,7 @@ func TestRenderBuilderPluginListsExactlyThoseSkills(t *testing.T) {
 	}
 
 	var plan install.Plan
-	owned := RenderBuilderPlugin(&plan, root, detected, skills)
+	owned := RenderBuilderPlugin(&plan, root, skills)
 
 	if len(owned) != 2 || !owned["build"] || !owned["standards-go"] {
 		t.Fatalf("owned = %+v, want exactly build and standards-go", owned)
@@ -154,15 +146,12 @@ func TestRenderBuilderPluginListsExactlyThoseSkills(t *testing.T) {
 }
 
 func TestBuilderPluginSkillsNoDuplicates(t *testing.T) {
-	detected := detect.Profile{
-		Languages: []string{"Go"},
-	}
 	skills := []mount.Skill{
 		{Name: "build", Body: "# Build\n"},
 		{Name: "standards-go", Body: "# Go\n"},
 		{Name: "standards-go", Body: "# Go again (shouldn't happen)\n"},
 	}
-	got := BuilderPluginSkills(detected, skills)
+	got := BuilderPluginSkills(skills)
 	if len(got) != 2 {
 		t.Fatalf("got %d skills, want 2 (no duplicates): %v", len(got), got)
 	}
@@ -221,6 +210,9 @@ func TestEachRolePluginCarriesOnlyItsOwnHooks(t *testing.T) {
 					}
 					if strings.Contains(command, " guard") {
 						t.Fatalf("the guard belongs to every session, not the %s plugin: %q", tc.role, command)
+					}
+					if name == "timewarn" && !strings.Contains(command, " --minutes ") {
+						t.Fatalf("%s timewarn hook = %q, missing --minutes; the time warning can never fire", tc.role, command)
 					}
 				}
 			}
