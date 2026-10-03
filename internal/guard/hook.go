@@ -30,8 +30,11 @@ func CurrentBranch(dir string) string {
 	return git.Or(dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
-// check judges one request; tests swap it to prove the guard fails open.
-var check = Check
+// check judges one request and getwd reads the process directory; tests swap them to prove the guard fails open.
+var (
+	check = Check
+	getwd = os.Getwd
+)
 
 // Hook reads one payload, writes the denial the matching host reads, and returns the exit code.
 // Its own failure allows the call: an unrecovered panic exits 2, which a host reads as a refusal.
@@ -53,7 +56,7 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) (code i
 		return 0
 	}
 	if request.Cwd == "" {
-		cwd, err := os.Getwd()
+		cwd, err := getwd()
 		if err != nil {
 			fmt.Fprintf(stderr, "guard: no working directory: %v; allowing\n", err)
 			return 0

@@ -803,3 +803,20 @@ func TestWriteBriefCutsATaskFromTheLocalGroupBranchNotStaleOrigin(t *testing.T) 
 		t.Fatalf("stat = %v; a task must be cut from the group branch's local tip", err)
 	}
 }
+
+// TestStartNamesAndDatesARunFromOneClockReading fixes the cut's clock and proves the run id and
+// start time both come from that one reading.
+func TestStartNamesAndDatesARunFromOneClockReading(t *testing.T) {
+	root := cutRepo(t, twoGroupBacklog)
+	fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	saved := now
+	t.Cleanup(func() { now = saved })
+	now = func() time.Time { return fixed }
+	state, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "TG-15.1-" + strconv.FormatInt(fixed.Unix(), 10); state.Run != want || !state.Started.Equal(fixed) {
+		t.Fatalf("run = %s started %s, want %s started %s", state.Run, state.Started, want, fixed)
+	}
+}

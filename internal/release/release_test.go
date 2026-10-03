@@ -120,6 +120,15 @@ func TestCheckIsQuietWhenEverythingAgrees(t *testing.T) {
 	}
 }
 
+// TestCheckReportsAMalformedVersionTagButIgnoresOtherTags proves a tag meant as a version but not
+// x.y.z is drift, while a tag that is not a version at all stays quiet.
+func TestCheckReportsAMalformedVersionTagButIgnoresOtherTags(t *testing.T) {
+	drift := Check(twoVersions, []string{"v2.0.0", "v1.3.0", "v1.4", "prototype-final"}, []string{"2.0.0"})
+	if len(drift) != 1 || drift[0].Subject != "v1.4" {
+		t.Fatalf("drift = %+v, want only v1.4 reported", drift)
+	}
+}
+
 func TestTagNameAndMessage(t *testing.T) {
 	if TagName("2.0.0") != "v2.0.0" || TagMessage("2.0.0") != "release 2.0.0" {
 		t.Fatal("tag name or message is wrong")

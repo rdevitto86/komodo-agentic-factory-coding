@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -95,6 +96,9 @@ func Versions(text string) []Version {
 // Latest is the highest version the changelog names.
 func Latest(text string) string { return changelog.Latest(text) }
 
+// versionShaped matches a tag meant as a version, a digit after an optional v, so a malformed one is reported.
+var versionShaped = regexp.MustCompile(`^v?[0-9]`)
+
 // Compare orders two semantic versions, returning -1, 0, or 1; a prerelease sorts before its release.
 func Compare(left, right string) int { return changelog.Compare(left, right) }
 
@@ -158,6 +162,9 @@ func Check(text string, tags, groupVersions []string) []Drift {
 	}
 	for _, tag := range tags {
 		if !changelog.Valid(tag) {
+			if versionShaped.MatchString(tag) {
+				drift = append(drift, Drift{tag, "a version tag that is not x.y.z"})
+			}
 			continue
 		}
 		if number := strings.TrimPrefix(tag, "v"); !named[number] {
