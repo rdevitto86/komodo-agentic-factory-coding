@@ -113,6 +113,25 @@ func TestDiffCoversCommittedUncommittedAndUntrackedEdits(t *testing.T) {
 	}
 }
 
+func TestDiffIgnoresTheCallersGitConfig(t *testing.T) {
+	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n", "café.go": "package a\n"})
+	mustOutput(t, worktree, "config", "diff.noprefix", "true")
+	mustOutput(t, worktree, "config", "color.ui", "always")
+	diff, err := Diff(worktree, base)
+	if err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	got := map[string]bool{}
+	for _, line := range ParseAddedLines(diff) {
+		got[line.File] = true
+	}
+	for _, want := range []string{"a.go", "café.go"} {
+		if !got[want] {
+			t.Fatalf("added lines = %v, want %q", got, want)
+		}
+	}
+}
+
 func TestScopeAllowsADeclaredFilesOwnTest(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{
 		"a.go": "package a\n", "a_test.go": "package a\n", "b/b_test.go": "package b\n", "ui/c.test.ts": "x\n",
@@ -181,21 +200,18 @@ func TestScopeSkipsWithNoBase(t *testing.T) {
 func TestRunReportsEachFailure(t *testing.T) {
 	cases := []struct {
 		name    string
-		format  string
-		lint    string
 		checks  []string
 		wantLen int
 		want    string
 	}{
-		{"everything passes", "true", "true", []string{"true"}, 0, ""},
-		{"format fails", "exit 1", "true", nil, 1, "format:"},
-		{"lint fails", "true", "exit 2", nil, 1, "lint:"},
-		{"a group check fails", "true", "true", []string{"exit 3"}, 1, "check:"},
+		{"everything passes", []string{"true"}, 0, ""},
+		{"a check fails", []string{"exit 1"}, 1, "check:"},
+		{"two checks fail", []string{"exit 1", "exit 2"}, 2, "check:"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			worktree, base := initRepo(t, map[string]string{"a.go": "package a\n"})
-			problems := Run(Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, tc.format, tc.lint, tc.checks)
+			problems := Run(Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, tc.checks)
 			if len(problems) != tc.wantLen {
 				t.Fatalf("problems = %v, want %d", problems, tc.wantLen)
 			}
@@ -215,7 +231,7 @@ func TestRunContextKillsItsCommandsOnceTheContextIsDone(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), stopAfter)
 	defer cancel()
 	began := time.Now()
-	problems := RunContext(ctx, Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, "", "", []string{"sleep 60"})
+	problems := RunContext(ctx, Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, []string{"sleep 60"})
 	if took := time.Since(began); took > bound {
 		t.Fatalf("run took %s after its context ended, want under %s", took, bound)
 	}
@@ -224,34 +240,11 @@ func TestRunContextKillsItsCommandsOnceTheContextIsDone(t *testing.T) {
 	}
 }
 
-func TestExecReportsHowACommandEnded(t *testing.T) {
-	const timeout = 200 * time.Millisecond
-	cases := []struct {
-		name     string
-		command  string
-		exit     int
-		timedOut bool
-		output   string
-	}{
-		{"it passes", "echo fine", 0, false, "fine"},
-		{"it fails", "echo broken; exit 3", 3, false, "broken"},
-		{"its clock runs out", "sleep 60", 124, true, "timed out after 200ms"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ran := Exec(context.Background(), t.TempDir(), timeout, "sh", "-c", tc.command)
-			if ran.ExitCode != tc.exit || ran.TimedOut != tc.timedOut || !strings.Contains(ran.Output, tc.output) {
-				t.Fatalf("result = %+v, want exit %d, timed out %v, output naming %q", ran, tc.exit, tc.timedOut, tc.output)
-			}
-		})
-	}
-}
-
 func TestRunCombinesFailuresWithScope(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n", "b.go": "package b\n"})
-	problems := Run(Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, "exit 1", "true", nil)
+	problems := Run(Group{Worktree: worktree, Base: base, Files: []string{"a.go"}}, []string{"exit 1"})
 	if len(problems) != 2 {
-		t.Fatalf("problems = %v, want a format failure and a scope failure", problems)
+		t.Fatalf("problems = %v, want a check failure and a scope failure", problems)
 	}
 }
 

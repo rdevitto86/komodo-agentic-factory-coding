@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"context"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -46,6 +47,43 @@ func TestExecRunsAProgramWithoutAShell(t *testing.T) {
 	missing := Exec(t.TempDir(), time.Second, "komodo-no-such-program")
 	if missing.OK() || missing.Output == "" {
 		t.Fatalf("result = %+v; a missing program fails and says why", missing)
+	}
+}
+
+func TestExecContextReportsHowACommandEnded(t *testing.T) {
+	const timeout = 200 * time.Millisecond
+	cases := []struct {
+		name     string
+		command  string
+		exit     int
+		timedOut bool
+		output   string
+	}{
+		{"it passes", "echo fine", 0, false, "fine"},
+		{"it fails", "echo broken; exit 3", 3, false, "broken"},
+		{"its clock runs out", "sleep 60", 124, true, "timed out after 200ms"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ran := ExecContext(context.Background(), t.TempDir(), timeout, "sh", "-c", tc.command)
+			if ran.ExitCode != tc.exit || ran.TimedOut != tc.timedOut || !strings.Contains(ran.Output, tc.output) {
+				t.Fatalf("result = %+v, want exit %d, timed out %v, output naming %q", ran, tc.exit, tc.timedOut, tc.output)
+			}
+		})
+	}
+}
+
+func TestExecContextKillsTheGroupOnceItsParentContextIsDone(t *testing.T) {
+	const stopAfter = 200 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), stopAfter)
+	defer cancel()
+	began := time.Now()
+	ran := ExecContext(ctx, t.TempDir(), time.Minute, "sh", "-c", "sleep 60")
+	if took := time.Since(began); took > 10*time.Second {
+		t.Fatalf("exec took %s after its context ended, want under 10s", took)
+	}
+	if ran.TimedOut {
+		t.Fatalf("result = %+v; a parent ctx ending is not the command's own clock running out", ran)
 	}
 }
 
