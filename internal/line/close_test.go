@@ -1,6 +1,7 @@
 package line
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -398,6 +399,40 @@ func TestATaskThatOwnsABuiltPathStillCommitsIt(t *testing.T) {
 	}
 	if !strings.Contains(changed, "bin/MANIFEST.sha256") {
 		t.Fatalf("committed %q; a task that declares a built path owns it", changed)
+	}
+}
+
+func TestAStopDuringCommitBuildsPreCommitHookNeverCommits(t *testing.T) {
+	const bound = 10 * time.Second
+	root := gitRepo(t)
+	commit(t, root, "a.txt", "a\n", "seed")
+	hook := filepath.Join(root, ".git", "hooks", "pre-commit")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-1", Title: "A group", Type: "feat", Branch: "main", Worktree: root,
+		Tasks: []PlanTask{{ID: "TSK-1", Files: []string{"a.txt"}}},
+	}
+	before, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	began := time.Now()
+	if err := CommitBuildContext(ctx, root, plan); err == nil {
+		t.Fatal("commit build = nil, want the stopped hook's failure")
+	}
+	if took := time.Since(began); took > bound {
+		t.Fatalf("commit build took %s after the stop, want under %s", took, bound)
+	}
+	after, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil || after != before {
+		t.Fatalf("HEAD = %s (%v), want %s; a stop mid-hook must never commit", after, err, before)
 	}
 }
 

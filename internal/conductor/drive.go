@@ -777,7 +777,7 @@ func (l *Line) Check(ctx context.Context) ([]string, error) {
 	}
 	l.checked = passed(l.ran)
 	// Committing runs the repo's own pre-commit hooks; a refusal is a fix for the builder, not an escalation.
-	if err := line.CommitBuild(l.Root, l.Plan); err != nil {
+	if err := line.CommitBuildContext(ctx, l.Root, l.Plan); err != nil {
 		return []string{"the build does not commit: " + err.Error()}, nil
 	}
 	return nil, nil
@@ -930,7 +930,7 @@ func (l *Line) Ship(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	shipped, err := line.ShipGroup(l.Root, l.Plan, []*line.WaveResult{l.checked}, l.Client)
+	shipped, err := line.ShipGroupContext(ctx, l.Root, l.Plan, []*line.WaveResult{l.checked}, l.Client)
 	l.shipped = shipped
 	return err
 }
