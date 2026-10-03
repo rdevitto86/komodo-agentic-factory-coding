@@ -72,6 +72,8 @@ type session struct {
 	buf    *bytes.Buffer
 	reader io.Reader
 	req    mount.StartRequest
+	// logs are the session's own stream and stderr files, closed once it ends.
+	logs []io.Closer
 	// watcher stops the session's process tree past proc.DefaultLimits and reaps what it leaves behind.
 	watcher *proc.Watcher
 
@@ -91,6 +93,14 @@ type session struct {
 func (s *session) wait() error {
 	s.waitOnce.Do(func() { s.waitErr = s.cmd.Wait() })
 	return s.waitErr
+}
+
+// closeLogs closes every log file spawn opened; a failed close is not actionable once the
+// session has already produced its result.
+func (s *session) closeLogs() {
+	for _, closer := range s.logs {
+		_ = closer.Close()
+	}
 }
 
 // NewMount builds a Claude Code mount that starts every session in worktree, with root naming the
@@ -204,12 +214,13 @@ func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest)
 	// Each session's stream and errors stay on disk, so a failed session can be diagnosed afterwards.
 	logs := filepath.Join(m.worktree, ".komodo", "sessions")
 	var record io.Writer = io.Discard
+	var logFiles []io.Closer
 	if err := os.MkdirAll(logs, 0o755); err == nil {
 		if out, err := os.Create(filepath.Join(logs, string(handle)+".jsonl")); err == nil {
-			record = out
+			record, logFiles = out, append(logFiles, out)
 		}
 		if errs, err := os.Create(filepath.Join(logs, string(handle)+".err")); err == nil {
-			cmd.Stderr = errs
+			cmd.Stderr, logFiles = errs, append(logFiles, errs)
 		}
 	}
 	saved, err := json.Marshal(req)
@@ -225,7 +236,7 @@ func (m *Mount) spawn(argv, env []string, prompt string, req mount.StartRequest)
 
 	buf := &bytes.Buffer{}
 	sess := &session{cmd: cmd, buf: buf, reader: io.TeeReader(stdout, io.MultiWriter(buf, record)), req: req, done: make(chan struct{}),
-		watcher: proc.Watch(cmd.Process.Pid, proc.DefaultLimits)}
+		logs: logFiles, watcher: proc.Watch(cmd.Process.Pid, proc.DefaultLimits)}
 
 	m.mu.Lock()
 	m.sessions[handle] = sess
@@ -253,6 +264,7 @@ func (m *Mount) Stream(handle mount.Handle) (<-chan mount.Event, error) {
 		// Nothing the session started may outlive it; a tree that ran away is the session's error.
 		proc.KillGroup(sess.cmd)
 		sess.watcher.Stop()
+		sess.closeLogs()
 		if breach := sess.watcher.Breach(); breach != "" {
 			waitErr = fmt.Errorf("the session's process tree ran away (%s) and was killed", breach)
 		}

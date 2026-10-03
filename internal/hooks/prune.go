@@ -76,9 +76,10 @@ func Sweep(root string) {
 	if !takeLock(lock) {
 		return
 	}
-	defer os.Remove(lock)
 	result, work := make(chan string, 1), prune
 	go func() {
+		// The lock outlives a timed-out select below, so a second sweep never starts while this one works.
+		defer os.Remove(lock)
 		var refreshed []string
 		if Refresh != nil {
 			var err error

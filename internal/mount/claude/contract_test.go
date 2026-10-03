@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -129,6 +130,36 @@ func TestContractStartRunsClaudeAndStreamsTheStartFixture(t *testing.T) {
 	saved, err := os.ReadFile(filepath.Join(worktree, ".komodo", "sessions", string(handle)+".jsonl"))
 	if err != nil || !strings.Contains(string(saved), `"type":"result"`) {
 		t.Fatalf("saved stream = %q, %v; the session's stream must be kept", saved, err)
+	}
+}
+
+// TestStreamClosesTheSessionsLogFiles proves the stream and stderr log files a session opens are
+// closed once it ends, instead of left open for the mount's whole lifetime.
+func TestStreamClosesTheSessionsLogFiles(t *testing.T) {
+	setupFakeClaude(t)
+	root, worktree := t.TempDir(), t.TempDir()
+	m := NewMount(root, worktree, 10, 0)
+
+	handle, err := m.Start(newFakeRequest())
+	if err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	sess, ok := m.get(handle)
+	if !ok {
+		t.Fatal("no session recorded for the handle")
+	}
+	if len(sess.logs) == 0 {
+		t.Fatal("spawn opened no log files to close")
+	}
+	drainMountEvents(t, mustStream(t, m, handle))
+	for _, closer := range sess.logs {
+		file, ok := closer.(*os.File)
+		if !ok {
+			continue
+		}
+		if _, err := file.Write([]byte("x")); !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("write to %s after the stream ended = %v, want it already closed", file.Name(), err)
+		}
 	}
 }
 
