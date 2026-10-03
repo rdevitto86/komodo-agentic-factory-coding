@@ -209,6 +209,7 @@ Each requirement is met only when its proof exits zero. A review can file a bug 
 | REQ-41 | Line sessions cannot edit this PRD or the golden suite. | Must | A guard table row and a settings deny entry for each. |
 | REQ-42 | The plugin points (notifiers, tool packs, stage hooks) exist and ship disabled. | Must | `komodo doctor` lists each one as disabled. |
 | REQ-45 | Every escalation goes to the orchestrator first. What it can't settle stops the group: the conductor saves the work, writes a blocker note into the group's backlog file, publishes it as a draft PR labelled `status: blocked`, and waits for a person. A headless run exits non-zero. | Must | One test per path. |
+| REQ-47 | Agents act with confidence. On a fully specified task an agent acts without asking and reports a verdict with evidence, with no hedge; it stops only for a critical ref, a remote delete, an external post, or spending money. | Must | An eval case: a fully specified group finishes with no question and no hedge in any result; `komodo lint` holds each always-on rule file to its never budget. |
 
 ### Platforms and evaluation
 

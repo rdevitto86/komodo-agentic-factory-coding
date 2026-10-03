@@ -85,6 +85,10 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
+	// A small local model gets the compact rules ahead of the brief, since it reads no host config.
+	if rules, err := fs.ReadFile(toolkit.FS(root), path.Join("rules", "compact.md")); err == nil {
+		brief = append(append(rules, '\n'), brief...)
+	}
 	started := time.Now()
 	result, err := local.Post(model, string(brief), schema)
 	if err != nil {
