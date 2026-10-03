@@ -367,6 +367,7 @@ func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Gr
 			return out
 		}
 		ahead[BranchName(group.Type(), group.Slug())] = true
+		ahead[group.TitleBranch()] = true
 	}
 	return out
 }

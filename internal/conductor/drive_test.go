@@ -95,9 +95,9 @@ func (f *fakeHost) handle(role string, value map[string]any) mount.Handle {
 	return handle
 }
 
-func (f *fakeHost) Preflight() error { return nil }
+func (f *fakeHost) Preflight(ctx context.Context) error { return nil }
 
-func (f *fakeHost) Start(req mount.StartRequest) (mount.Handle, error) {
+func (f *fakeHost) Start(ctx context.Context, req mount.StartRequest) (mount.Handle, error) {
 	f.starts = append(f.starts, req)
 	if f.cancel != nil {
 		f.cancel()
@@ -108,7 +108,7 @@ func (f *fakeHost) Start(req mount.StartRequest) (mount.Handle, error) {
 	return f.handle(req.Role, pop(&f.builds, map[string]any{"result": "DONE"})), nil
 }
 
-func (f *fakeHost) Resume(handle mount.Handle, input string) (mount.Handle, error) {
+func (f *fakeHost) Resume(ctx context.Context, handle mount.Handle, input string) (mount.Handle, error) {
 	if _, ok := f.results[handle]; !ok {
 		return "", errors.New("no such session")
 	}
@@ -121,7 +121,7 @@ func (f *fakeHost) Resume(handle mount.Handle, input string) (mount.Handle, erro
 	return f.handle("builder", pop(&f.repairs, map[string]any{"result": "DONE"})), nil
 }
 
-func (f *fakeHost) Stream(handle mount.Handle) (<-chan mount.Event, error) {
+func (f *fakeHost) Stream(ctx context.Context, handle mount.Handle) (<-chan mount.Event, error) {
 	if f.hang {
 		return make(chan mount.Event), nil
 	}
@@ -144,7 +144,7 @@ func (f *fakeHost) Result(handle mount.Handle) (mount.Result, error) {
 	return result, nil
 }
 
-func (f *fakeHost) Stop(handle mount.Handle) error {
+func (f *fakeHost) Stop(ctx context.Context, handle mount.Handle) error {
 	f.stopMu.Lock()
 	defer f.stopMu.Unlock()
 	f.stopped = append(f.stopped, handle)
@@ -882,6 +882,33 @@ func TestDriveClosesEachFixListWithEveryTasksFilesAsThePlanHoldsThem(t *testing.
 				t.Fatalf("repair input = %q, want the fix list closed by every task's files", input)
 			}
 		})
+	}
+}
+
+// TestDriveResumesARepairStoppedBeforeItFinishedWithItsFixListAndTaskFiles resumes a Repairing
+// state whose session never finished, through pendingSession rather than Driver.repair.
+func TestDriveResumesARepairStoppedBeforeItFinishedWithItsFixListAndTaskFiles(t *testing.T) {
+	r := newRig(t)
+	r.host.results["builder-0"] = mount.Result{Value: map[string]any{"result": "DONE"}}
+	r.driver.Tasks = []line.PlanTask{
+		{ID: "TSK-1", Files: []string{"a.go"}}, {ID: "TSK-2", Files: []string{"c.go"}},
+	}
+	saved := State{
+		Group: "TG-1", Current: Repairing, Sessions: []string{"builder-0"},
+		Fixes: []string{"a.go:3 the loop never ends"},
+	}
+	*r.saved = append(*r.saved, saved)
+	if _, err := r.driver.Resume(context.Background(), saved); err != nil {
+		t.Fatalf("resume = %v", err)
+	}
+	if len(r.host.inputs) != 1 {
+		t.Fatalf("resume inputs = %v, want the stopped repair resumed once", r.host.inputs)
+	}
+	input := r.host.inputs[0]
+	fix := strings.Index(input, "- [ ] a.go:3 the loop never ends")
+	files := strings.Index(input, "- TSK-1: `a.go`\n- TSK-2: `c.go`")
+	if fix == -1 || files == -1 || files < fix {
+		t.Fatalf("resumed repair input = %q, want the fix list closed by every task's files", input)
 	}
 }
 

@@ -50,9 +50,9 @@ func (d *Driver) Resume(ctx context.Context, s State) (State, error) {
 	if d.Host == nil || d.Stations == nil || d.Ledger == nil || d.Save == nil {
 		return s, errNotWired
 	}
-	station, req, waiting := pendingSession(d, s)
+	station, req, input, waiting := pendingSession(d, s)
 	if waiting {
-		handle, err := d.startOrResume(s, req)
+		handle, err := d.startOrResume(ctx, s, req, input)
 		if err != nil {
 			return s, fmt.Errorf("resuming %s at %s: %w", s.Group, s.Current, err)
 		}
@@ -87,37 +87,38 @@ func interrupted(s State) bool {
 	return false
 }
 
-// pendingSession names the station and request a stopped Building or Repairing group was
-// running, so Resume knows what to restart; every other state has nothing left to resume.
-func pendingSession(d *Driver, s State) (station string, req mount.StartRequest, waiting bool) {
+// pendingSession names the station, request and resume input a stopped Building or Repairing
+// group was running, so Resume knows what to restart; every other state has nothing to resume.
+func pendingSession(d *Driver, s State) (station string, req mount.StartRequest, input string, waiting bool) {
 	if s.SessionDone {
-		return "", mount.StartRequest{}, false
+		return "", mount.StartRequest{}, "", false
 	}
 	switch s.Current {
 	case Building:
-		return StationBuild, d.Builder, true
+		return StationBuild, d.Builder, "", true
 	case Repairing:
 		req = d.Builder
 		if len(s.Fixes) > 0 {
-			req.Brief = repairBrief(fixList(s.Fixes), req.Brief)
+			input = fixList(s.Fixes) + taskFiles(d.Tasks)
+			req.Brief = repairBrief(input, req.Brief)
 		}
-		return StationRepair, req, true
+		return StationRepair, req, input, true
 	default:
-		return "", mount.StartRequest{}, false
+		return "", mount.StartRequest{}, "", false
 	}
 }
 
-// startOrResume resumes the group's last recorded session when the host supports it, else
-// starts a fresh one from the same request, so a killed run never repeats a finished session.
-func (d *Driver) startOrResume(s State, req mount.StartRequest) (mount.Handle, error) {
+// startOrResume resumes the group's last recorded session with input when the host supports it,
+// else starts a fresh one from req, so a killed run never repeats a finished session.
+func (d *Driver) startOrResume(ctx context.Context, s State, req mount.StartRequest, input string) (mount.Handle, error) {
 	if last := lastSession(s); last != "" && d.Host.Capabilities().Resume {
-		if handle, err := d.Host.Resume(last, ""); err == nil {
+		if handle, err := d.Host.Resume(ctx, last, input); err == nil {
 			return handle, nil
 		}
 		// The session died with its process; a fresh one continues from the worktree instead of failing the group.
 		req.Brief = continueLead + req.Brief
 	}
-	return d.Host.Start(req)
+	return d.Host.Start(ctx, req)
 }
 
 // lastSession returns the most recent session handle state.json recorded, or none.
