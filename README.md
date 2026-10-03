@@ -64,8 +64,8 @@ Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optio
 ```bash
 git clone <this repo> ~/komodo/ai/komodo-agentic-factory-coding
 cd ~/komodo/ai/komodo-agentic-factory-coding
-go run ./cmd/komodo gate --install                # builds bin/komodo-<os>-<arch>, then the git hooks
-bin/komodo-<os>-<arch> install --host claude       # the one host mounted today; Codex is deferred
+go run ./cmd/komodo gate --install                # builds bin/komodo, then the git hooks
+bin/komodo install --host claude                  # the one host mounted today; Codex is deferred
 ```
 
 The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. `komodo gate --install` builds this host's own binary into `bin/` and puts the gate on pre-commit and pre-push once; run it again after editing Go source.

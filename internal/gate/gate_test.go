@@ -83,8 +83,8 @@ func TestInstallWritesEveryHook(t *testing.T) {
 			t.Fatalf("%s is not executable", path)
 		}
 		body, _ := os.ReadFile(path)
-		if !strings.Contains(string(body), "gate") || !strings.Contains(string(body), "uname") {
-			t.Fatalf("%s does not run the gate by platform", path)
+		if !strings.Contains(string(body), "gate") || !strings.Contains(string(body), "/bin/komodo") {
+			t.Fatalf("%s does not run the gate through bin/komodo", path)
 		}
 	}
 }
@@ -119,9 +119,12 @@ func TestLocalTargetMatchesRuntime(t *testing.T) {
 	if target.GOOS != runtime.GOOS || target.Arch != runtime.GOARCH {
 		t.Fatalf("target = %+v", target)
 	}
-	want := fmt.Sprintf("komodo-%s-%s", runtime.GOOS, runtime.GOARCH)
+	want := "komodo"
 	if runtime.GOOS == "windows" {
 		want += ".exe"
+	}
+	if platform := fmt.Sprintf("komodo-%s-%s", runtime.GOOS, runtime.GOARCH); !strings.HasPrefix(PlatformName(), platform) {
+		t.Fatalf("platform name = %s, want %s", PlatformName(), platform)
 	}
 	if target.Name != want {
 		t.Fatalf("name = %q, want %q", target.Name, want)
@@ -157,39 +160,20 @@ func runHook(fakeDir, script string) (string, error) {
 	return out.String(), err
 }
 
-// TestHookScriptPicksBinaryPerPlatform proves the case statement never falls back to the Windows exe.
-func TestHookScriptPicksBinaryPerPlatform(t *testing.T) {
+// TestHookScriptNamesBinKomodoOnEveryPlatform proves the hook looks for bin/komodo, the one name every platform builds.
+func TestHookScriptNamesBinKomodoOnEveryPlatform(t *testing.T) {
 	dir := t.TempDir()
 	writeFakeBinary(t, dir, "git", "#!/bin/sh\necho /fake/root/.git\n")
 	script := filepath.Join(dir, "hook")
 	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cases := []struct{ unameS, unameM, wantBin string }{
-		{"Darwin", "arm64", "komodo-darwin-arm64"},
-		{"Darwin", "x86_64", "komodo-darwin-amd64"},
-		{"Linux", "x86_64", "komodo-linux-amd64"},
-		{"Linux", "aarch64", "komodo-linux-arm64"},
-		{"MINGW64_NT-10.0", "x86_64", "komodo-windows-amd64.exe"},
-	}
-	for _, c := range cases {
-		writeFakeBinary(t, dir, "uname", fmt.Sprintf(
-			"#!/bin/sh\ncase \"$1\" in\n-s) echo '%s' ;;\n-m) echo '%s' ;;\nesac\n", c.unameS, c.unameM))
-		out, err := runHook(dir, script)
-		if err == nil {
-			t.Fatalf("%s-%s: want failure, no binary is built in the fake root", c.unameS, c.unameM)
-		}
-		if want := "no binary at /fake/root/bin/" + c.wantBin; !strings.Contains(out, want) {
-			t.Errorf("%s-%s: out = %q, want contains %q", c.unameS, c.unameM, out, want)
-		}
-	}
-	writeFakeBinary(t, dir, "uname", "#!/bin/sh\ncase \"$1\" in\n-s) echo 'FreeBSD' ;;\n-m) echo 'amd64' ;;\nesac\n")
 	out, err := runHook(dir, script)
 	if err == nil {
-		t.Fatal("want failure for an unrecognised platform")
+		t.Fatal("want failure, no binary is built in the fake root")
 	}
-	if !strings.Contains(out, "no binary for this platform") || strings.Contains(out, "windows") {
-		t.Fatalf("an unknown platform must not fall back to the Windows binary: out = %q", out)
+	if want := "no binary at /fake/root/bin/komodo"; !strings.Contains(out, want) {
+		t.Fatalf("out = %q, want contains %q", out, want)
 	}
 }
 
@@ -209,11 +193,11 @@ func TestHookFromAWorktreeUsesTheMainCheckoutBinary(t *testing.T) {
 	git(main, "worktree", "add", "-q", "-b", "feat/x", worktree)
 	fakes := t.TempDir()
 	writeFakeBinary(t, fakes, "uname", "#!/bin/sh\ncase \"$1\" in\n-s) echo 'Darwin' ;;\n-m) echo 'arm64' ;;\nesac\n")
-	binary := filepath.Join(main, "bin", "komodo-darwin-arm64")
+	binary := filepath.Join(main, "bin", "komodo")
 	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFakeBinary(t, filepath.Dir(binary), "komodo-darwin-arm64", "#!/bin/sh\necho ran \"$1\"\n")
+	writeFakeBinary(t, filepath.Dir(binary), "komodo", "#!/bin/sh\necho ran \"$1\"\n")
 	script := filepath.Join(fakes, "hook")
 	if err := os.WriteFile(script, []byte(hookScript), 0o755); err != nil {
 		t.Fatal(err)
@@ -1558,5 +1542,43 @@ func TestPushProblemRefusesALeasedBranchExceptToItsOwnRun(t *testing.T) {
 	t.Setenv(lease.RunEnv, strconv.Itoa(os.Getpid()))
 	if problem := PushProblem(root, "refs/heads/feat/held", policy, now); problem != "" {
 		t.Fatalf("the lease's own run refused: %q", problem)
+	}
+}
+
+func TestStampPublishesACleanBuildAndDropsADirtyOnesStamp(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "seed")
+	head := gitCommand(t, root, "rev-parse", "HEAD")
+	var published []string
+	previous := publish
+	publish = func(path string) string { published = append(published, path); return path }
+	t.Cleanup(func() { publish = previous })
+	build := func(root string, _ io.Writer) (string, error) {
+		path := filepath.Join(root, "bin", "komodo")
+		return path, os.MkdirAll(filepath.Dir(path), 0o755)
+	}
+	install := func(string) ([]string, error) { return nil, nil }
+	if _, stamped, err := Stamp(root, t.TempDir(), head, build, install, io.Discard); err != nil || !stamped {
+		t.Fatalf("stamped = %v, %v; want a clean tree stamped", stamped, err)
+	}
+	if len(published) != 1 {
+		t.Fatalf("published = %v, want the clean build once", published)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\n// edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, stamped, err := Stamp(root, t.TempDir(), head, build, install, io.Discard); err != nil || stamped {
+		t.Fatalf("stamped = %v, %v; want a dirty tree left unstamped", stamped, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("stamp still present (%v); a dirty build is no commit's", err)
+	}
+	if len(published) != 1 {
+		t.Fatalf("published = %v; a dirty build must never reach the hooks", published)
 	}
 }

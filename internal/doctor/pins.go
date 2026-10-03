@@ -126,7 +126,7 @@ func ReleaseBinary() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".komodo", "bin", gate.LocalTarget().Name), nil
+	return filepath.Join(home, ".komodo", "bin", gate.PlatformName()), nil
 }
 
 // ReleaseVersion runs one komodo binary's version command and returns the version it names, with no v.

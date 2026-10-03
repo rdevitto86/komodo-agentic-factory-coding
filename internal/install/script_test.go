@@ -135,7 +135,7 @@ func TestInstallScriptBuildsLinksSetsUpTheRepoAndUpdatesOnASecondRun(t *testing.
 		if err != nil {
 			t.Fatalf("run %d did not link komodo: %v", run, err)
 		}
-		built := strings.HasPrefix(filepath.Base(target), "komodo-"+runtime.GOOS+"-")
+		built := filepath.Base(target) == "komodo"
 		if filepath.Dir(target) != filepath.Join(f.checkout, "bin") || !built {
 			t.Fatalf("run %d linked %s, want the checkout's built binary", run, target)
 		}

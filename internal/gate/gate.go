@@ -10,9 +10,11 @@ import (
 	"komodo/internal/backlog"
 	"komodo/internal/changelog"
 	"komodo/internal/comments"
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/lease"
+	"komodo/internal/mount"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,13 +101,22 @@ func Toolchain(root string) (string, error) {
 	return "", fmt.Errorf("go.mod names no toolchain")
 }
 
-// LocalTarget is the binary this host builds for its own platform.
+// LocalTarget is the binary this host builds for itself: bin/komodo, which Windows names komodo.exe.
 func LocalTarget() Target {
-	name := fmt.Sprintf("komodo-%s-%s", runtime.GOOS, runtime.GOARCH)
+	name := "komodo"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	return Target{Name: name, GOOS: runtime.GOOS, Arch: runtime.GOARCH}
+}
+
+// PlatformName is this platform's release asset name, such as komodo-darwin-arm64.
+func PlatformName() string {
+	name := fmt.Sprintf("komodo-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return name
 }
 
 // buildFlags are the flags that make a rebuild of one commit byte-identical, stamping its version and commit.
@@ -130,7 +141,9 @@ func Build(root, dir string, target Target) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(dir, target.Name)
-	args := append([]string{"build", "-o", path}, buildFlags(root)...)
+	// The compiler writes beside the binary and a rename puts it in place, so no reader sees half a binary.
+	temp := path + ".tmp"
+	args := append([]string{"build", "-o", temp}, buildFlags(root)...)
 	cmd := exec.Command("go", append(args, "./cmd/komodo")...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),
@@ -138,7 +151,12 @@ func Build(root, dir string, target Target) (string, error) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		_ = os.Remove(temp)
 		return "", fmt.Errorf("build %s: %v: %s", target.Name, err, strings.TrimSpace(stderr.String()))
+	}
+	if err := os.Rename(temp, path); err != nil {
+		_ = os.Remove(temp)
+		return "", err
 	}
 	return path, nil
 }
@@ -209,8 +227,11 @@ func Rebuild(root, from, to string, out io.Writer) error {
 	return err
 }
 
-// Stamp builds this host's binary, then on a clean tree installs the git hooks and records to as the
-// built commit; a dirty tracked tree still builds, but installs and stamps nothing.
+// publish puts a stamped build at the one path every hook runs; tests swap it.
+var publish = mount.Publish
+
+// Stamp builds this host's binary; a clean tree also installs the git hooks, records to, and publishes it.
+// A dirty tree's build is no commit's, so it drops the stamp and publishes nothing.
 func Stamp(
 	root, gitDir, to string,
 	build func(string, io.Writer) (string, error),
@@ -221,19 +242,24 @@ func Stamp(
 	if err != nil {
 		return "", false, err
 	}
+	stamp := filepath.Join(root, "bin", BuiltFrom)
 	dirty, err := git.Run(root, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return "", false, err
 	}
 	if dirty != "" {
+		if err := os.Remove(stamp); err != nil && !os.IsNotExist(err) {
+			return "", false, err
+		}
 		return path, false, nil
 	}
 	if _, err := install(gitDir); err != nil {
 		return "", false, err
 	}
-	if err := os.WriteFile(filepath.Join(root, "bin", BuiltFrom), []byte(to+"\n"), 0o644); err != nil {
+	if err := fsx.WriteFile(stamp, []byte(to+"\n"), 0o644); err != nil {
 		return "", false, err
 	}
+	publish(path)
 	return path, true, nil
 }
 
@@ -301,14 +327,9 @@ else
   # The shared git dir sits in the main checkout, where bin/ lives, even when committing from a worktree.
   common=$(git rev-parse --path-format=absolute --git-common-dir)
   root=${common%/.git}
-  case "$(uname -s)-$(uname -m)" in
-    Darwin-arm64) bin="$root/bin/komodo-darwin-arm64" ;;
-    Darwin-x86_64) bin="$root/bin/komodo-darwin-amd64" ;;
-    Linux-x86_64) bin="$root/bin/komodo-linux-amd64" ;;
-    Linux-aarch64) bin="$root/bin/komodo-linux-arm64" ;;
-    MINGW*|MSYS*|CYGWIN*) bin="$root/bin/komodo-windows-amd64.exe" ;;
-    *) echo "gate: no binary for this platform ($(uname -s)-$(uname -m)); run go build ./cmd/komodo yourself" >&2; exit 1 ;;
-  esac
+  # The built binary is bin/komodo on every platform; Windows adds .exe.
+  bin="$root/bin/komodo"
+  [ -x "$bin" ] || [ ! -x "$bin.exe" ] || bin="$bin.exe"
   if [ -x "$bin" ]; then
     cmd="$bin"
   elif command -v komodo >/dev/null 2>&1; then
@@ -415,7 +436,7 @@ func Install(gitDir string) ([]string, error) {
 	var written []string
 	for _, name := range []string{"pre-commit", "commit-msg", "pre-push", "post-commit", "post-merge", "post-checkout", "post-rewrite"} {
 		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(hookScript), 0o755); err != nil {
+		if err := fsx.WriteFile(path, []byte(hookScript), 0o755); err != nil {
 			return nil, err
 		}
 		written = append(written, path)

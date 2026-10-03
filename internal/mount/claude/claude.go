@@ -2,8 +2,6 @@
 package claude
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -140,7 +138,8 @@ const globalSkillsMarker = ".komodo-rendered"
 
 // RenderGlobal plans the user-level orchestrator layer under home: guard, status and prune hooks, and skills.
 func RenderGlobal(root, home, binary string) (install.Plan, error) {
-	plan := install.Plan{Host: "claude", Root: home}
+	plan := install.Plan{Host: "claude", Root: home, Marker: filepath.Join(home, Dir, globalSkillsMarker),
+		Fix: "komodo install --global"}
 	skills, err := mount.LoadSkills(root)
 	if err != nil {
 		return plan, err
@@ -205,7 +204,7 @@ func globalSettings(path, binary string) ([]byte, error) {
 	if events == nil {
 		events = map[string]any{}
 	}
-	named := hookBinary(binary)
+	named := mount.Publish(binary)
 	command := func(line string) []any { return []any{map[string]any{"type": "command", "command": line}} }
 	own := map[string]map[string]any{
 		"PreToolUse": {"matcher": hookMatcher(), "hooks": command(named + " guard")},
@@ -324,31 +323,6 @@ func agentFile(role mount.Role, ollama bool) string {
 	return strings.Join(head, "\n") + "\n" + role.Instructions() + "\n"
 }
 
-// hookBinary names a copy of binary under ~/.komodo/bin, by its own content, so a rebuild elsewhere
-// never moves an already-rendered repo's hook; a binary this cannot read, hash or copy is named directly.
-func hookBinary(binary string) string {
-	data, err := os.ReadFile(binary)
-	if err != nil {
-		return binary
-	}
-	sum := sha256.Sum256(data)
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return binary
-	}
-	target := filepath.Join(home, ".komodo", "bin", "komodo-"+hex.EncodeToString(sum[:])[:12])
-	if _, err := os.Stat(target); err == nil {
-		return target
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return binary
-	}
-	if err := os.WriteFile(target, data, 0o755); err != nil {
-		return binary
-	}
-	return target
-}
-
 // settingsFile renders the hook registration, the permissions convenience layer, and attribution off.
 func settingsFile(root, binary string) ([]byte, error) {
 	policy, err := readPolicy(toolkit.FS(root))
@@ -362,7 +336,7 @@ func settingsFile(root, binary string) ([]byte, error) {
 		"hooks": map[string]any{
 			"PreToolUse": []any{map[string]any{
 				"matcher": hookMatcher(),
-				"hooks":   []any{map[string]any{"type": "command", "command": hookBinary(binary) + " guard"}},
+				"hooks":   []any{map[string]any{"type": "command", "command": mount.Publish(binary) + " guard"}},
 			}},
 		},
 		"permissions": map[string]any{"deny": denyList(root, policy)},
