@@ -240,11 +240,20 @@ func TestGroupBranchNamesItsTypeGroupAndSlug(t *testing.T) {
 	}
 }
 
-func TestLintAcceptsABaseNamingADependencysTitleOnlyBranch(t *testing.T) {
+// TestLintFlagsABaseNamingADependencysTitleOnlyBranch proves lint rejects a base naming a
+// dependency's title-only branch, since a new cut always uses the id form instead.
+func TestLintFlagsABaseNamingADependencysTitleOnlyBranch(t *testing.T) {
 	text := "### [TG-01.0] First group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"### [TG-01.1] Second group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: feat/first-group\ndepends_on: [TG-01.0]\n```\n"
-	if problems := Lint(Parse(text)); len(problems) != 0 {
-		t.Fatalf("problems = %v; a dependency's branch already cut in the title-only form is still its branch", problems)
+	problems := Lint(Parse(text))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-01.1") && strings.Contains(problem, "title-only branch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a problem naming the title-only base; got %v", problems)
 	}
 }
 
@@ -256,20 +265,36 @@ func TestLintAcceptsABaseNamingADependencysBranch(t *testing.T) {
 	}
 }
 
-func TestLintAcceptsAnOmittedOrMainBase(t *testing.T) {
-	text := "### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: main\n```\n"
+func TestLintAcceptsAnOmittedBase(t *testing.T) {
+	text := "### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n"
 	if problems := Lint(Parse(text)); len(problems) != 0 {
 		t.Fatalf("problems = %v", problems)
 	}
 }
 
-func TestLintRejectsABaseThatIsNeitherMainNorADependencysBranch(t *testing.T) {
+// TestLintRejectsABaseOfMain proves main carries no exception; a group cuts from its epic
+// branch or a dependency's branch alone.
+func TestLintRejectsABaseOfMain(t *testing.T) {
+	text := "### [TG-01.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: main\n```\n"
+	problems := Lint(Parse(text))
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-01.1") && strings.Contains(problem, "neither its epic branch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no problem names base: main; got %v", problems)
+	}
+}
+
+func TestLintRejectsABaseThatIsNeitherTheEpicBranchNorADependencysBranch(t *testing.T) {
 	text := "### [TG-01.0] First group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"### [TG-01.1] Second group\n```yaml\ntype: feat\nversion: 1.0.0\nbase: release/2.0\n```\n"
 	problems := Lint(Parse(text))
 	found := false
 	for _, problem := range problems {
-		if strings.Contains(problem, "TG-01.1") && strings.Contains(problem, "neither main nor") {
+		if strings.Contains(problem, "TG-01.1") && strings.Contains(problem, "neither its epic branch") {
 			found = true
 		}
 	}
