@@ -265,10 +265,57 @@ func TestSandboxFailsWhenNoSandboxToolIsOnPath(t *testing.T) {
 	}
 }
 
-func TestSandboxFailsOnNativeWindows(t *testing.T) {
+func TestSandboxWarnsInsteadOfFailingOnNativeWindows(t *testing.T) {
 	withPlatform(t, "windows")
-	if !sandboxFailed(t, clean(t)) {
-		t.Fatal("native Windows has no sandbox, so the run must be refused")
+	root := clean(t)
+	registerHostContract(t, &fakeHostContract{})
+	var notes []string
+	failures, err := Run(root, Options{NoShip: true, Warn: func(note string) { notes = append(notes, note) }})
+	if err != nil {
+		t.Fatalf("Run = %v", err)
+	}
+	for _, failure := range failures {
+		if failure.Name == "sandbox" {
+			t.Fatalf("native Windows has no sandbox, but it must warn, not refuse: %v", failures)
+		}
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "Windows") {
+		t.Fatalf("notes = %v, want one naming Windows", notes)
+	}
+}
+
+// withProcVersion points the WSL check at a file holding body, in place of the real /proc/version.
+func withProcVersion(t *testing.T, body string) {
+	t.Helper()
+	old := procVersionPath
+	t.Cleanup(func() { procVersionPath = old })
+	path := filepath.Join(t.TempDir(), "version")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	procVersionPath = path
+}
+
+func TestSandboxRefusesAWSL2RepoUnderMnt(t *testing.T) {
+	withPlatform(t, "linux")
+	withProcVersion(t, "Linux version 5.15.90.1-microsoft-standard-WSL2")
+	err := checkSandbox("/mnt/c/src/repo", Options{})
+	if err == nil || !strings.Contains(err.Error(), "Linux home") {
+		t.Fatalf("err = %v, want it to refuse and name the Linux home", err)
+	}
+}
+
+func TestSandboxPassesAWSL2RepoOffMnt(t *testing.T) {
+	withPlatform(t, "linux")
+	withProcVersion(t, "Linux version 5.15.90.1-microsoft-standard-WSL2")
+	tools := t.TempDir()
+	write(t, tools, "bwrap", "#!/bin/sh\n")
+	if err := os.Chmod(filepath.Join(tools, "bwrap"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := checkSandbox("/home/a/src/repo", Options{}); err != nil {
+		t.Fatalf("err = %v; a WSL2 repo off /mnt, with bwrap on PATH, must pass", err)
 	}
 }
 

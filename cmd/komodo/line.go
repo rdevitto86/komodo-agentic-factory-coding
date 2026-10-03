@@ -130,6 +130,9 @@ func runStatus(root string, args []string) {
 		show()
 		return
 	}
+	if *interval <= 0 {
+		fail(fmt.Errorf("--interval must be positive, got %s", interval))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	watchStatus(ctx, *interval, show)

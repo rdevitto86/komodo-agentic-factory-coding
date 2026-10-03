@@ -20,6 +20,21 @@ func TestACommandOutsideAGitRepoFails(t *testing.T) {
 	}
 }
 
+// TestGlobalGuardAndHookExitZeroOutsideAGitRepo proves the global guard and status hooks, run in
+// every session by the user-level settings, do nothing instead of failing one started outside a repo.
+func TestGlobalGuardAndHookExitZeroOutsideAGitRepo(t *testing.T) {
+	outside := t.TempDir()
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","cwd":"` + filepath.ToSlash(outside) + `","tool_input":{"command":"echo hi"}}`
+	guard := runCLI(t, outside, payload, "guard")
+	if guard.code != 0 || guard.stdout != "" || guard.stderr != "" {
+		t.Fatalf("guard outside a repo = %+v, want a silent exit 0", guard)
+	}
+	status := runCLI(t, outside, `{"cwd":"`+filepath.ToSlash(outside)+`"}`, "hook", "status", "--host", "claude")
+	if status.code != 0 || status.stdout != "" || status.stderr != "" {
+		t.Fatalf("hook status outside a repo = %+v, want a silent exit 0", status)
+	}
+}
+
 // TestLintFailsOnATaskWithNoDoneWhen proves the group-file grammar's own lint catches a missing done_when.
 func TestLintFailsOnATaskWithNoDoneWhen(t *testing.T) {
 	root := t.TempDir()

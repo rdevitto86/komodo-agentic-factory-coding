@@ -64,3 +64,54 @@ func TestPlanMountedSeesOnlyARenderedFile(t *testing.T) {
 		t.Fatal("a host with its rendered file on disk did not count as mounted")
 	}
 }
+
+// TestInstallGlobalDryRunPrintsTheOrchestratorPlanAndWritesNothing proves install --global --dry-run
+// names the user-level settings it would write and touches neither the repo nor the user's home.
+func TestInstallGlobalDryRunPrintsTheOrchestratorPlanAndWritesNothing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "install", "--global", "--dry-run")
+	if got.code != 0 {
+		t.Fatalf("install --global --dry-run exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if !strings.Contains(got.stdout, filepath.Join(".claude", "settings.json")) {
+		t.Fatalf("stdout = %q, want it to name the user's settings.json", got.stdout)
+	}
+	settings := filepath.Join(home, ".claude", "settings.json")
+	if _, err := os.Stat(settings); !os.IsNotExist(err) {
+		t.Fatalf("install --global --dry-run wrote %s", settings)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatal("install --global --dry-run touched the repo")
+	}
+}
+
+// TestInstallGlobalWritesTheResolvedHookNotTheRawBinary proves install --global renders the user's
+// settings with the published hook's path, not the unresolved binary flag, and leaves the repo alone.
+func TestInstallGlobalWritesTheResolvedHookNotTheRawBinary(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := fixtureRepo(t)
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", "komodo"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "", "install", "--global")
+	if got.code != 0 {
+		t.Fatalf("install --global exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("install --global wrote no settings: %v", err)
+	}
+	published := filepath.Join(home, ".komodo", "bin", "komodo")
+	if !strings.Contains(string(data), published+" guard") {
+		t.Fatalf("settings = %s, want the guard command naming the published hook %s", data, published)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatal("install --global rendered the repo; it must touch only the machine")
+	}
+}
