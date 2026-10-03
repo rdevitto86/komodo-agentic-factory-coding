@@ -9,7 +9,6 @@ Rules for every model and tool on Komodo software.
 - **Never widen scope.** Out-of-task work is a `komodo add` task in `docs/backlog/`, not a change.
 - **Report honestly.** State any failure, skip, or gap, with evidence.
 - **Verify the real source.** Read the file, manifest, or docs, never memory.
-- **Suggested languages; existing code keeps its own.** Zig embedded, C++ robotics and modules, Rust routers and nodes, Go web and cloud, Python AI/ML, TypeScript with Vue or Svelte for UIs; C only when a vendor SDK or a hot path forces it.
 
 ## Git
 - **Inside your worktree you are free.** Reset, restore, rebase, or delete; keep a linked worktree detached.
