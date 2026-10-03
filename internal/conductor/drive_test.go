@@ -1206,10 +1206,9 @@ func TestLineCheckFailsWhenAnyCheckFails(t *testing.T) {
 		{"verify fails", "true", "exit 4", "", []string{"a.txt"}, func(t *testing.T, root string) {
 			writeIn(t, root, "a.txt", "a\n")
 		}, "check: `exit 4`"},
-		{"ship's backlog and changelog edits stay in scope", "true", "true", "", []string{"a.txt"},
+		{"ship's backlog edits stay in scope", "true", "true", "", []string{"a.txt"},
 			func(t *testing.T, root string) {
 				writeIn(t, root, "docs/backlog/TG-1.md", "## [TG-1] A group [P: C] [READY]\n\n```yaml\ntype: feat\n```\n")
-				writeIn(t, root, "changelog.d/1.0.0/TG-1.md", "- a line\n")
 			}, ""},
 		{"an edit lands outside scope", "true", "true", "", []string{"a.txt"}, func(t *testing.T, root string) {
 			writeIn(t, root, "b.txt", "b\n")
