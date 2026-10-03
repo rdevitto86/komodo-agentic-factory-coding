@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fake records the gh invocations a client makes and returns outputs in call order,
@@ -310,6 +311,22 @@ func TestRunWrapsAFailingGh(t *testing.T) {
 	scriptGh(t, "echo boom >&2\nexit 1\n")
 	if _, err := Run(".", "pr", "list"); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRunKillsAHungGhAndItsChildren proves a gh command past Timeout is killed, process group
+// included, so a hung gh never blocks the line.
+func TestRunKillsAHungGhAndItsChildren(t *testing.T) {
+	scriptGh(t, "sleep 30 &\nsleep 30\n")
+	saved := Timeout
+	Timeout = 200 * time.Millisecond
+	t.Cleanup(func() { Timeout = saved })
+	started := time.Now()
+	if _, err := Run(".", "pr", "list"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 

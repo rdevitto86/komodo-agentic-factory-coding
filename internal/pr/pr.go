@@ -2,12 +2,22 @@
 package pr
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
+
+	"komodo/internal/proc"
 )
+
+// Timeout bounds how long one gh command may run before its process group is killed; a test lowers it.
+var Timeout = proc.DefaultTimeout
+
+// waitDelay bounds how long a killed gh command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
 
 // Thread is one unresolved review comment on a pull request.
 type Thread struct {
@@ -30,13 +40,30 @@ type Pull struct {
 // Runner runs one gh invocation, so a test can stand in for the real CLI.
 type Runner func(dir string, args ...string) (string, error)
 
-// Run is the default runner: the gh binary on PATH.
+// Run is the default runner: the gh binary on PATH; a hung gh is killed, process group
+// included, once Timeout passes.
 func Run(dir string, args ...string) (string, error) {
-	cmd := exec.Command("gh", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", args...)
 	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	stdout, stderr := proc.NewBoundedWriter(proc.MaxOutput), proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("gh %s: timed out after %s: %s", strings.Join(args, " "), Timeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
 		return "", fmt.Errorf("gh %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(stdout.String()), nil
