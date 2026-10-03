@@ -62,7 +62,11 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) (code i
 	}
 	root := WorktreeRoot(request.Cwd)
 	branch := CurrentBranch(request.Cwd)
-	decision := check(request, Load(toolkitRoot, root), branch)
+	policy, err := LoadChecked(toolkitRoot, root)
+	if err != nil {
+		fmt.Fprintf(stderr, "guard: judging without a malformed config: %v\n", err)
+	}
+	decision := check(request, policy, branch)
 	if !decision.Deny {
 		return 0
 	}
