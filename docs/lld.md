@@ -98,7 +98,7 @@ Each run writes to `.komodo/runs/<run-id>/`, which is gitignored and local. Each
 | File | Holds |
 |---|---|
 | `state.json` | Each group's state, worktree, branch, last WIP commit, session IDs, open findings and time used |
-| `metrics.jsonl` | One line per stage and session: run, group, stage, start, duration, turns, input, output and cached tokens, cost, outcome (REQ-28) |
+| `line.jsonl` | One line per stage and session: run, group, stage, start, duration, turns, input, output and cached tokens, outcome (REQ-28); archived to `line.<run>.jsonl` when the run ends |
 | `events.jsonl` | Escalations and how they were settled, stops, pauses for usage limits, and resumes |
 
 ### Results

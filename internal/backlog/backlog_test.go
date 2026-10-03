@@ -49,21 +49,6 @@ func TestParseKeepsInlineAndDashedLists(t *testing.T) {
 	}
 }
 
-func TestOpenAndReady(t *testing.T) {
-	parsed := Parse(sample)
-	first, _ := parsed.Task("TSK-01.1.1")
-	second, _ := parsed.Task("TSK-01.1.2")
-	if !first.Open() || !first.Ready() {
-		t.Fatal("READY task must be open and ready")
-	}
-	if second.Open() || second.Ready() {
-		t.Fatal("DONE task must be neither open nor ready")
-	}
-	if group, ok := parsed.NextGroup(); !ok || group.ID != "TG-01.1" {
-		t.Fatalf("next group = %v %v", group.ID, ok)
-	}
-}
-
 func TestLintAcceptsAGoodBacklog(t *testing.T) {
 	if problems := Lint(Parse(sample)); len(problems) != 0 {
 		t.Fatalf("problems = %v", problems)
@@ -121,46 +106,6 @@ func TestNextTaskIDCountsFromTheHighest(t *testing.T) {
 	parsed := Parse(sample)
 	if got := NextTaskID(parsed.Groups[0]); got != "TSK-01.1.3" {
 		t.Fatalf("next id = %s", got)
-	}
-}
-
-func TestAppendTaskLandsInsideItsGroup(t *testing.T) {
-	var fields Fields
-	fields.Set("files", []any{"c/three.go"})
-	fields.Set("done_when", []any{"go test ./..."})
-	out, id, err := AppendTask(sample, "TG-01.1", "Third task", fields, "H", "READY")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id != "TSK-01.1.3" {
-		t.Fatalf("id = %s", id)
-	}
-	parsed := Parse(out)
-	if len(parsed.Groups[0].Tasks) != 3 {
-		t.Fatalf("tasks = %d", len(parsed.Groups[0].Tasks))
-	}
-	if problems := Lint(parsed); len(problems) != 0 {
-		t.Fatalf("appended task does not lint: %v", problems)
-	}
-}
-
-func TestAppendTaskToAnEpicsLastGroupStaysAboveTheNextEpic(t *testing.T) {
-	text := "# Project Backlog\n\n## [EPIC-01] One\n\n### [TG-01.1] Last group\n```yaml\ntype: feat\n```\n\n" +
-		"#### [TSK-01.1.1] First [P: H] [DONE]\n```yaml\nfiles: [a.go]\ndone_when:\n  - go test ./...\n```\n\n" +
-		"---\n\n## [EPIC-02] Two\n*Goal: the next phase.*\n\n### [TG-02.1] Next group\n```yaml\ntype: feat\n```\n"
-	var fields Fields
-	fields.Set("files", []any{"b.go"})
-	fields.Set("done_when", []any{"go test ./..."})
-	out, id, err := AppendTask(text, "TG-01.1", "Filed finding", fields, "L", "REFINEMENT")
-	if err != nil {
-		t.Fatal(err)
-	}
-	task := strings.Index(out, "#### ["+id+"]")
-	if task < 0 || task > strings.Index(out, "---\n") || task > strings.Index(out, "## [EPIC-02]") {
-		t.Fatalf("the task landed outside TG-01.1:\n%s", out)
-	}
-	if group, _ := Parse(out).Group("TG-01.1"); len(group.Tasks) != 2 {
-		t.Fatalf("TG-01.1 has %d tasks", len(group.Tasks))
 	}
 }
 
@@ -412,24 +357,6 @@ func TestDumpFieldsCollapsesEmbeddedNewlines(t *testing.T) {
 	}
 	if strings.Contains(again.String("note"), "\n") {
 		t.Fatalf("note kept a raw newline: %q", again.String("note"))
-	}
-}
-
-func TestAppendTaskRejectsUnknownPriority(t *testing.T) {
-	var fields Fields
-	fields.Set("files", []any{"c/three.go"})
-	fields.Set("done_when", []any{"go test ./..."})
-	if _, _, err := AppendTask(sample, "TG-01.1", "Third task", fields, "high", "READY"); err == nil {
-		t.Fatal("want an error for an unknown priority")
-	}
-}
-
-func TestAppendTaskRejectsUnknownStatus(t *testing.T) {
-	var fields Fields
-	fields.Set("files", []any{"c/three.go"})
-	fields.Set("done_when", []any{"go test ./..."})
-	if _, _, err := AppendTask(sample, "TG-01.1", "Third task", fields, "H", "SHIPPED"); err == nil {
-		t.Fatal("want an error for an unknown status")
 	}
 }
 

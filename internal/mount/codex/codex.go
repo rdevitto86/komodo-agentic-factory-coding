@@ -195,12 +195,3 @@ func init() {
 	})
 }
 
-// Headless returns this host's non-interactive command for one skill and one target; exec
-// defaults to a read-only sandbox, so the line and a builder need workspace-write named explicitly.
-func Headless(skill, target string) (string, []string) {
-	prompt := "/" + skill
-	if target != "" {
-		prompt += " " + target
-	}
-	return "codex", []string{"exec", "--json", "--sandbox", "workspace-write", prompt}
-}
