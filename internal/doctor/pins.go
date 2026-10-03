@@ -16,6 +16,7 @@ import (
 
 	"komodo/internal/gate"
 	"komodo/internal/git"
+	"komodo/internal/mount"
 	"komodo/internal/proc"
 	"komodo/internal/profile"
 	"komodo/internal/toolkit"
@@ -73,20 +74,26 @@ func checkPins(root string) []Problem {
 	return problems
 }
 
-// checkModelIDs reports a role whose resolved machine names a bare alias instead of a full model ID.
+// checkModelIDs reports a tier, including the reviewer's, whose machine names a bare alias instead of a full model ID.
 func checkModelIDs(current profile.Profile) []Problem {
 	if current.Host == "" {
 		return nil
 	}
-	names := make([]string, 0, len(current.Roles))
-	for name := range current.Roles {
+	tiers := map[string]mount.Machine{
+		"light":    current.Tiers.Light,
+		"standard": current.Tiers.Standard,
+		"heavy":    current.Tiers.Heavy,
+		"reviewer": current.Tiers.Reviewer,
+	}
+	names := make([]string, 0, len(tiers))
+	for name := range tiers {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	var problems []Problem
 	for _, name := range names {
-		machine, ok := current.Machine(name)
-		if !ok || machine.Local() {
+		machine := tiers[name]
+		if machine.Local() {
 			continue
 		}
 		if machine.Model == "" || bareModelWords[strings.ToLower(machine.Model)] || !modelHasVersion.MatchString(machine.Model) {

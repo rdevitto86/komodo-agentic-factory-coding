@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/mount"
 )
@@ -42,6 +43,30 @@ func TestABareModelAliasIsFound(t *testing.T) {
 	found := false
 	for _, problem := range got {
 		if strings.Contains(problem.Detail, `"latest" is not a full ID`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pins = %+v", got)
+	}
+}
+
+func TestAReviewerAliasIsFoundWithNoRoleOnThatTier(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/profiles/full.json", `{"roles":{"builder":{"tier":"standard","effort":"medium"}}}`)
+	registerHost(t, mount.Host{
+		Name:      "testhost",
+		Installed: func(string) bool { return true },
+		Tiers: func(string, bool) mount.Tiers {
+			full := mount.Machine{Provider: "testhost", Model: "testhost-1"}
+			return mount.Tiers{Light: full, Standard: full, Heavy: full,
+				Reviewer: mount.Machine{Provider: "testhost", Model: "opus"}}
+		},
+	})
+	got := problemsFrom(t, root)["pins"]
+	found := false
+	for _, problem := range got {
+		if problem.Where == "reviewer" && strings.Contains(problem.Detail, `"opus" is not a full ID`) {
 			found = true
 		}
 	}
@@ -109,6 +134,43 @@ func TestAStaleBuiltBinaryIsFound(t *testing.T) {
 	got := checkRelease(root)
 	if len(got) != 1 || !strings.Contains(got[0].Detail, head) {
 		t.Fatalf("release pin = %+v, HEAD = %s", got, head)
+	}
+}
+
+func TestAGoChangeSinceTheBuiltCommitIsFound(t *testing.T) {
+	root := gitRepo(t)
+	write(t, root, "AGENTS.md", "# Rules\n")
+	commitAll(t, root, "init")
+	built, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, filepath.Join("bin", gate.BuiltFrom), built+"\n")
+	write(t, root, "main.go", "package main\n\nfunc main() {}\n")
+	commitAll(t, root, "add a go file")
+	head, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := checkRelease(root)
+	if len(got) != 1 || !strings.Contains(got[0].Detail, head) {
+		t.Fatalf("release pin = %+v, HEAD = %s", got, head)
+	}
+}
+
+func TestADocsOnlyChangeSinceTheBuiltCommitHasNoPin(t *testing.T) {
+	root := gitRepo(t)
+	write(t, root, "AGENTS.md", "# Rules\n")
+	commitAll(t, root, "init")
+	built, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, filepath.Join("bin", gate.BuiltFrom), built+"\n")
+	write(t, root, "docs/notes.md", "notes\n")
+	commitAll(t, root, "docs only")
+	if got := checkRelease(root); len(got) != 0 {
+		t.Fatalf("release pin = %+v, want none for a docs-only commit", got)
 	}
 }
 

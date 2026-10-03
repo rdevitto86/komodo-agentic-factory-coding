@@ -339,6 +339,45 @@ func TestNoMountInstalledStillLoadsTheFullModeRoles(t *testing.T) {
 	}
 }
 
+func TestAMalformedModeProfileNamesTheLoadErrorInWhy(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "komodo", "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "AGENTS.md"), []byte("# Rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "profiles", "full.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	host := fakeHost("h", true, mount.Usage{}, false)
+	got := SelectWith(root, []mount.Host{host}, false, false)
+	if got.Roles != nil {
+		t.Fatalf("roles = %+v, want nil since the profile never loaded", got.Roles)
+	}
+	if !strings.Contains(got.Why, "did not load") {
+		t.Fatalf("why = %q, want the load error named", got.Why)
+	}
+}
+
+func TestAMissingProfilesDirectoryNamesTheLoadErrorInWhy(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "komodo", "AGENTS.md"), []byte("# Rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	host := fakeHost("h", true, mount.Usage{}, false)
+	got := SelectWith(root, []mount.Host{host}, false, false)
+	if got.Roles != nil {
+		t.Fatalf("roles = %+v, want nil since komodo/ holds no profiles/", got.Roles)
+	}
+	if !strings.Contains(got.Why, "did not load") {
+		t.Fatalf("why = %q, want the load error named", got.Why)
+	}
+}
+
 func TestBaseCarriesThePullRequestSizeCeilings(t *testing.T) {
 	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
 	if got.PRFiles != 20 || got.PRLinesPreferred != 1000 || got.PRLinesMax != 2000 {
