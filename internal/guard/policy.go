@@ -74,10 +74,10 @@ func DefaultPolicy() Policy {
 	policy := Policy{
 		CriticalRefs: []string{"main", "master"},
 		ConfigPaths:  paths,
-		TrailerPatterns: []string{
+		TrailerPatterns: append([]string{
 			`(?im)^co-authored-by\s*[:=]`, `(?im)^generated[ -]with\s*[:=]`,
 			`(?im)^generated[ -]by\s*[:=]`, `\x{1F916}`,
-		},
+		}, mount.GuardPrivatePatterns()...),
 	}
 	policy.compile()
 	return policy
@@ -189,7 +189,7 @@ func matchRef(pattern, ref string) bool {
 	return pattern == ref
 }
 
-// HasTrailer reports whether a commit message carries a co-author or generated-by line.
+// HasTrailer reports whether text carries a co-author or generated-by line, or a host's session link.
 func (p Policy) HasTrailer(text string) bool {
 	for _, pattern := range p.trailers {
 		if pattern.MatchString(text) {

@@ -379,7 +379,7 @@ var kebabName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // TrailerProblem reports why the commit-msg hook refuses message, empty when it may proceed.
 func TrailerProblem(message string, policy guard.Policy) string {
 	if policy.HasTrailer(message) {
-		return "commit message carries a co-author or generated-by trailer; remove it and commit again"
+		return "commit message carries a co-author or generated-by trailer or a session link; remove it and commit again"
 	}
 	return ""
 }
