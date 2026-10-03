@@ -5,7 +5,7 @@
 ## Set up
 
 ```bash
-go run ./cmd/komodo gate --install   # build bin/komodo-<os>-<arch>, write the pre-commit and pre-push hooks
+go run ./cmd/komodo gate --install   # build bin/komodo, write the pre-commit and pre-push hooks
 go run ./cmd/komodo version          # the changelog version and commit this build carries
 ```
 

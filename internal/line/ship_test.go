@@ -14,7 +14,6 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/backlog/backlogtest"
-	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/pr"
 )
@@ -1227,7 +1226,7 @@ func TestReviewSizeCountsNoDeletion(t *testing.T) {
 func TestReviewSizeSkipsTheLinesBookkeeping(t *testing.T) {
 	_, group := shipRepo(t)
 	runGit(t, group, "branch", "main")
-	for _, path := range []string{"docs/backlog/TG-1.md", "changelog.d/1.0.0/TG-1.md", "code.go"} {
+	for _, path := range []string{"docs/backlog/TG-1.md", "code.go"} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(group, path)), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -1432,7 +1431,7 @@ func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
 	}
 }
 
-func TestShipWritesAChangelogFragmentAndLeavesTheChangelogAlone(t *testing.T) {
+func TestShipLeavesTheChangelogToTheRelease(t *testing.T) {
 	worktree := gitRepo(t)
 	commitBacklogText(t, worktree, staleWorktreeBacklog, "the backlog")
 	commit(t, worktree, "CHANGELOG.md", "# Changelog\n", "the changelog")
@@ -1455,15 +1454,11 @@ func TestShipWritesAChangelogFragmentAndLeavesTheChangelogAlone(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, client); err != nil {
 		t.Fatal(err)
 	}
-	fragment, err := os.ReadFile(changelog.FragmentPath(worktree, "2.0.0", "TG-12.1"))
-	if err != nil || !strings.HasPrefix(string(fragment), "- **TG-12.1** A group") {
-		t.Fatalf("fragment = %q, %v", fragment, err)
-	}
 	if data, _ := os.ReadFile(filepath.Join(worktree, "CHANGELOG.md")); string(data) != "# Changelog\n" {
 		t.Fatalf("ship edited CHANGELOG.md:\n%s", data)
 	}
-	if tracked, _ := git.Run(worktree, "ls-files", changelog.Dir); tracked == "" {
-		t.Fatal("the fragment is not in the ship commit")
+	if _, err := os.Stat(filepath.Join(worktree, "changelog.d")); !os.IsNotExist(err) {
+		t.Fatalf("ship wrote a changelog.d: %v; only a release writes the changelog", err)
 	}
 }
 
@@ -1739,7 +1734,7 @@ func stations(t *testing.T, root string) []string {
 	return out
 }
 
-func TestPrepareCommitsTheTickedListAndChangelogLineWithNoTrailers(t *testing.T) {
+func TestPrepareCommitsTheTickedListWithNoTrailers(t *testing.T) {
 	root, group, plan := prepareRepo(t)
 	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package a\n\nconst Built = 1\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -1754,7 +1749,7 @@ func TestPrepareCommitsTheTickedListAndChangelogLineWithNoTrailers(t *testing.T)
 		t.Fatalf("commit = %q with trailers %q; want the conventional subject and no trailers", subject, trailers)
 	}
 	files, _ := git.Run(group, "show", "--name-only", "--format=", "HEAD")
-	for _, want := range []string{"docs/backlog/TG-09.1-a-group.md", "one.go", "changelog.d/2.0.0/TG-09.1.md"} {
+	for _, want := range []string{"docs/backlog/TG-09.1-a-group.md", "one.go"} {
 		if !slices.Contains(strings.Fields(files), want) {
 			t.Fatalf("the commit holds %q, want %s in it", files, want)
 		}
@@ -2428,11 +2423,6 @@ func TestPrepareFailsOnWhatItCannotReadOrWrite(t *testing.T) {
 		name  string
 		spoil func(t *testing.T, root, group string, plan *Plan)
 	}{
-		{"the changelog fragment cannot be written", func(t *testing.T, _, group string, _ *Plan) {
-			if err := os.WriteFile(filepath.Join(group, "changelog.d"), []byte("x\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}},
 		{"a live status names a task neither backlog holds", func(t *testing.T, root, _ string, plan *Plan) {
 			plan.Tasks = append(plan.Tasks, PlanTask{ID: "TSK-09.1.9", Title: "Gone"})
 			if err := RecordStatus(root, "TSK-09.1.9", "DONE"); err != nil {
