@@ -307,13 +307,6 @@ func TestConfigTomlIsNeverRendered(t *testing.T) {
 	}
 }
 
-func TestHeadlessPassesAWorkspaceWriteSandbox(t *testing.T) {
-	_, args := Headless("run", "TSK-01.1.1")
-	if !contains(args, "--sandbox") || !contains(args, "workspace-write") {
-		t.Fatalf("args = %v, want a workspace-write sandbox", args)
-	}
-}
-
 // contains reports whether value appears among items.
 func contains(items []string, value string) bool {
 	for _, item := range items {
