@@ -144,7 +144,7 @@ func stackRepo(t *testing.T) (root, child string, parsed backlog.Backlog) {
 
 func TestRestackLeavesAChildOnItsUnmergedParent(t *testing.T) {
 	root, _, parsed := stackRepo(t)
-	moved, err := Restack(root, nil)
+	moved, err := Restack(root, nil, nil)
 	if err != nil || len(moved) > 0 {
 		t.Fatalf("restack = %v, %v; a parent still open keeps its child", moved, err)
 	}
@@ -163,7 +163,7 @@ func TestRestackRebasesAChildOntoTheEpicOnceItsParentMerges(t *testing.T) {
 		calls = append(calls, strings.Join(args, " "))
 		return "", nil
 	}}
-	moved, err := Restack(root, client)
+	moved, err := Restack(root, client, nil)
 	if err != nil || !slices.Equal(moved, []string{"TG-01.2 onto feat/1.0.0"}) {
 		t.Fatalf("restack = %v, %v; want the child moved onto the epic", moved, err)
 	}
@@ -175,6 +175,28 @@ func TestRestackRebasesAChildOntoTheEpicOnceItsParentMerges(t *testing.T) {
 	}
 	if len(calls) > 0 {
 		t.Fatalf("gh ran %q; a branch never pushed has no PR to retarget", calls)
+	}
+}
+
+func TestRestackSkipsAGroupALaneIsStillBuilding(t *testing.T) {
+	root, child, parsed := stackRepo(t)
+	gitIn(t, root, "checkout", "-q", "feat/1.0.0")
+	gitIn(t, root, "merge", "-q", "--no-ff", "--no-edit", stackGroup(t, parsed, "TG-01.1").Branch())
+	gitIn(t, root, "checkout", "-q", "main")
+	before, err := exec.Command("git", "-C", child, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := Restack(root, nil, []string{"TG-01.2"})
+	if err != nil || len(moved) > 0 {
+		t.Fatalf("restack = %v, %v; a group its own lane still builds keeps its worktree alone", moved, err)
+	}
+	if state, _ := line.LoadRunFor(root, "TG-01.2"); state.Base != stackGroup(t, parsed, "TG-01.1").Branch() {
+		t.Fatalf("base = %q, want the parent's branch kept while the lane runs", state.Base)
+	}
+	after, err := exec.Command("git", "-C", child, "rev-parse", "HEAD").Output()
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("child HEAD = %q, %v, want it untouched while its lane runs", after, err)
 	}
 }
 
@@ -194,7 +216,7 @@ func TestRestackMergesTheEpicIntoAPushedChildPushesItAndRetargetsItsPR(t *testin
 		calls = append(calls, strings.Join(args, " "))
 		return "", nil
 	}}
-	moved, err := Restack(root, client)
+	moved, err := Restack(root, client, nil)
 	if err != nil || !slices.Equal(moved, []string{"TG-01.2 onto feat/1.0.0"}) {
 		t.Fatalf("restack = %v, %v; want the pushed child moved onto the epic", moved, err)
 	}
@@ -220,7 +242,7 @@ func TestRestackReturnsAFailedRetarget(t *testing.T) {
 	client := &pr.Client{Dir: root, Run: func(string, ...string) (string, error) {
 		return "", errors.New("gh is down")
 	}}
-	if _, err := Restack(root, client); err == nil || !strings.Contains(err.Error(), "retargeting TG-01.2") {
+	if _, err := Restack(root, client, nil); err == nil || !strings.Contains(err.Error(), "retargeting TG-01.2") {
 		t.Fatalf("restack = %v, want the failed retarget named", err)
 	}
 	if state, _ := line.LoadRunFor(root, "TG-01.2"); state.Base == "feat/1.0.0" {
@@ -236,7 +258,7 @@ func TestRestackReturnsAChildThatNoLongerRebases(t *testing.T) {
 	gitIn(t, root, "add", "-A")
 	gitIn(t, root, "commit", "-q", "-m", "epic edits b")
 	gitIn(t, root, "checkout", "-q", "main")
-	if _, err := Restack(root, nil); err == nil || !strings.Contains(err.Error(), "restacking TG-01.2") {
+	if _, err := Restack(root, nil, nil); err == nil || !strings.Contains(err.Error(), "restacking TG-01.2") {
 		t.Fatalf("restack = %v, want the conflicting child named", err)
 	}
 	if out, _ := exec.Command("git", "-C", child, "status", "--porcelain").Output(); len(out) != 0 {
@@ -272,7 +294,7 @@ func TestTestMergeFailsWithNoHeadAndStopsWithItsContext(t *testing.T) {
 }
 
 func TestRestackSkipsARepoWithNoBacklog(t *testing.T) {
-	if moved, err := Restack(t.TempDir(), nil); err != nil || len(moved) > 0 {
+	if moved, err := Restack(t.TempDir(), nil, nil); err != nil || len(moved) > 0 {
 		t.Fatalf("restack = %v, %v; want nothing to restack", moved, err)
 	}
 }

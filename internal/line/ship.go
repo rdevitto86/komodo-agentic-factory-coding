@@ -135,7 +135,15 @@ func writeShipHandoff(root string, handoff ShipHandoff) error {
 
 // ShipGroup commits, pushes, opens the pull request, and flips the statuses.
 // A scrubbed environment commits and hands the push off instead of failing on a credential it lacks.
-func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) (result *ShipResult, err error) {
+func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) (*ShipResult, error) {
+	return ShipGroupContext(context.Background(), root, plan, waves, client)
+}
+
+// ShipGroupContext is ShipGroup under ctx: its own commit and its push die once ctx is done, so a stop
+// mid-hook or mid-push never lands either.
+func ShipGroupContext(
+	ctx context.Context, root string, plan *Plan, waves []*WaveResult, client *pr.Client,
+) (result *ShipResult, err error) {
 	if plan.WaitUntil != "" {
 		return nil, fmt.Errorf("%s is paused until %s; a plan whose waves a pause blanked cannot ship",
 			plan.Group, plan.WaitUntil)
@@ -219,7 +227,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	}
 	if staged, _ := git.Run(group, "diff", "--cached", "--name-only"); staged != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
-		if _, err := git.Run(group, "commit", "-m", message); err != nil {
+		if err := commitContext(ctx, group, message); err != nil {
 			return nil, unstageShipWork(group, err)
 		}
 	}
@@ -258,7 +266,7 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		return result, nil
 	}
-	if err := PushFromWorktree(root, group, plan.Branch); err != nil {
+	if err := PushFromWorktreeContext(ctx, root, group, plan.Branch); err != nil {
 		if !errors.Is(err, ErrNoCredential) {
 			return nil, err
 		}
@@ -279,21 +287,13 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		return result, nil
 	}
 	// Every PR opens as a draft, or labelled status: wip where the forge refuses one.
-	url, draft, wip, warnings, err := createEpicPull(client, result.Base, plan.Branch, title, body)
+	url, draft, wip, kept, warnings, err := openDraftPull(
+		client, result.Base, plan.Branch, title, body, wanted, OptionalLabels(root, result.Base), true)
 	if err != nil {
-		// A re-ship after an escalation finds its pull request still open, and refreshes it instead.
-		open, viewErr := client.View(plan.Branch)
-		if viewErr != nil || open.State != "OPEN" {
-			return result, err
-		}
-		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
-			return result, err
-		}
-		url, draft = open.URL, open.Draft
+		return result, err
 	}
 	result.URL, result.Draft = url, draft
-	kept, labelWarnings := ApplyLabelSet(client, url, wanted, OptionalLabels(root, result.Base))
-	result.Warnings = append(warnings, labelWarnings...)
+	result.Warnings = warnings
 	if len(result.Blocked) > 0 || !checksPassed(waves) {
 		result.Labels = append(wip, kept...)
 		return result, nil
@@ -305,6 +305,38 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	}
 	result.Labels, result.Draft, result.Ready = kept, false, true
 	return result, nil
+}
+
+// openOrRefresh returns a pull request create already opened, or refreshes one already OPEN when create
+// failed, editing its title and body first when edit is set; a re-ship finds the PR still open.
+func openOrRefresh(client *pr.Client, branch, title, body string, edit bool, url string, draft bool, createErr error) (string, bool, error) {
+	if createErr == nil {
+		return url, draft, nil
+	}
+	open, viewErr := client.View(branch)
+	if viewErr != nil || open.State != "OPEN" {
+		return "", false, createErr
+	}
+	if edit {
+		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
+			return "", false, err
+		}
+	}
+	return open.URL, open.Draft, nil
+}
+
+// openDraftPull opens branch's pull request as a draft, or refreshes one already open, then applies
+// wanted and optional labels; editOpen also refreshes an open pull request's title and body first.
+func openDraftPull(client *pr.Client, base, branch, title, body string, wanted, optional []string, editOpen bool) (
+	url string, draft bool, wip, kept, warnings []string, err error,
+) {
+	url, draft, wip, warnings, err = createEpicPull(client, base, branch, title, body)
+	url, draft, err = openOrRefresh(client, branch, title, body, editOpen, url, draft, err)
+	if err != nil {
+		return "", false, nil, nil, nil, err
+	}
+	kept, labelWarnings := ApplyLabelSet(client, url, wanted, optional)
+	return url, draft, wip, kept, append(warnings, labelWarnings...), nil
 }
 
 // checksPassed reports whether the group ran its checks and every one passed.
@@ -464,7 +496,7 @@ func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	if err := syncTip(root, group, plan.Branch); err != nil {
 		return nil, err
 	}
-	if err := runPrePush(group, clean, diffTip(root, plan.Branch), "refs/heads/"+plan.Branch); err != nil {
+	if err := runPrePush(context.Background(), group, clean, diffTip(root, plan.Branch), "refs/heads/"+plan.Branch); err != nil {
 		return []string{"the pre-push hook refuses the group: " + redactURL(err.Error(), pushURL)}, nil
 	}
 	return rebaseForRepair(root, group, plan.Branch, base)
@@ -523,28 +555,41 @@ func conflictFixes(files []string, target string) []string {
 // rebaseForRepair rebases the group onto the latest base, or merges it into a pushed branch; a conflict
 // leaves its markers in the worktree and returns one fix per conflicted file.
 func rebaseForRepair(root, group, branch, base string) ([]string, error) {
-	if hasOrigin(group) {
-		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
-		_ = Fetch(group, base)
-	}
-	target := StartRef(group, base)
-	if _, err := git.Run(group, "rev-parse", "--verify", "--quiet", target); err != nil {
+	target, exists := catchUpTarget(group, base)
+	if !exists {
 		return nil, nil
 	}
 	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err == nil {
 		return nil, nil
 	}
-	args, abort := []string{"rebase", "--autostash", target}, []string{"rebase", "--abort"}
-	// A pushed branch is never rewritten, so it takes the base in a merge commit instead.
-	if onOrigin(group, branch) {
-		args, abort = []string{"merge", "--autostash", "--no-edit", target}, []string{"merge", "--abort"}
-	}
+	args, abort := RebaseOrMergeArgs(target, OnOrigin(group, branch))
 	old, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", TipRef(branch))
 	fixes, err := settleCatchUp(group, target, abort, args...)
 	if err != nil || len(fixes) > 0 || tipErr != nil {
 		return fixes, err
 	}
 	return nil, Advance(root, branch, group, old)
+}
+
+// catchUpTarget fetches base from origin when the group has one, then names the ref a group is caught
+// up to; a target no commit names comes back as !exists, so each caller returns with nothing to do.
+func catchUpTarget(group, base string) (target string, exists bool) {
+	if hasOrigin(group) {
+		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
+		_ = Fetch(group, base)
+	}
+	target = StartRef(group, base)
+	_, err := git.Run(group, "rev-parse", "--verify", "--quiet", target)
+	return target, err == nil
+}
+
+// RebaseOrMergeArgs chooses git's rebase or merge arguments, with their abort, for catching a branch up
+// to target: a merge for a pushed branch, since it is never rewritten, else a rebase.
+func RebaseOrMergeArgs(target string, pushed bool) (args, abort []string) {
+	if pushed {
+		return []string{"merge", "--autostash", "--no-edit", "--", target}, []string{"merge", "--abort"}
+	}
+	return []string{"rebase", "--autostash", "--", target}, []string{"rebase", "--abort"}
 }
 
 // settleCatchUp runs one rebase or merge step, returning its conflicted files as fixes; a failure with
@@ -667,16 +712,10 @@ func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.C
 	}
 	title := fmt.Sprintf("%s: %s (%s), blocked", plan.Type, plan.Title, plan.Group)
 	body := note.Render()
-	url, err := client.Create(result.Base, plan.Branch, title, body, true)
+	url, createErr := client.Create(result.Base, plan.Branch, title, body, true)
+	url, _, err = openOrRefresh(client, plan.Branch, title, body, true, url, true, createErr)
 	if err != nil {
-		open, viewErr := client.View(plan.Branch)
-		if viewErr != nil || open.State != "OPEN" {
-			return result, err
-		}
-		if err := client.Edit(open.URL, "--title", title, "--body", body); err != nil {
-			return result, err
-		}
-		url = open.URL
+		return result, err
 	}
 	result.URL = url
 	result.Labels, result.Warnings = labelBlocked(client, url)
@@ -785,17 +824,13 @@ func FinishShip(root, groupID string, client *pr.Client) (*ShipResult, error) {
 		}
 	}
 	if client != nil {
-		url, draft, wip, warnings, err := createEpicPull(client, handoff.Base, handoff.Branch, handoff.Title, handoff.Body)
+		url, draft, wip, kept, warnings, err := openDraftPull(
+			client, handoff.Base, handoff.Branch, handoff.Title, handoff.Body, handoff.Labels, OptionalLabels(root, handoff.Base), false)
 		if err != nil {
-			open, viewErr := client.View(handoff.Branch)
-			if viewErr != nil || open.State != "OPEN" {
-				return result, err
-			}
-			url, draft = open.URL, open.Draft
+			return result, err
 		}
-		kept, labelWarnings := ApplyLabelSet(client, url, handoff.Labels, OptionalLabels(root, handoff.Base))
 		result.URL, result.Draft = url, draft
-		result.Labels, result.Warnings = append(wip, kept...), append(warnings, labelWarnings...)
+		result.Labels, result.Warnings = append(wip, kept...), warnings
 	}
 	Stamp(root, ledger.Entry{Group: groupID, Station: "ship", Outcome: "done"})
 	return result, os.Remove(path)
@@ -878,16 +913,12 @@ func liveBase(root, base string) string {
 // catchUp brings the group onto the latest base keeping edits: a rebase, or merges for a pushed branch.
 // Its tip ref follows; a conflict aborts and names the files.
 func catchUp(root, group, branch, base string) error {
-	if hasOrigin(group) {
-		// A base origin lacks has nothing newer to catch up to; the push reports an unreachable origin.
-		_ = Fetch(group, base)
-	}
-	target := StartRef(group, base)
-	if _, err := git.Run(group, "rev-parse", "--verify", "--quiet", target); err != nil {
+	target, exists := catchUpTarget(group, base)
+	if !exists {
 		return nil
 	}
 	old, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", TipRef(branch))
-	pushed := onOrigin(group, branch)
+	pushed := OnOrigin(group, branch)
 	// A person's push to the branch is merged in before the base, since a pushed branch is never rewritten.
 	if pushed {
 		remote := "origin/" + branch
@@ -898,15 +929,16 @@ func catchUp(root, group, branch, base string) error {
 		}
 	}
 	if _, err := git.Run(group, "merge-base", "--is-ancestor", target, "HEAD"); err != nil {
-		if pushed {
-			if err := mergeStep(group, target, "%s moved and the group no longer merges it; resolve %s on the group branch, then ship"); err != nil {
-				return err
-			}
-		} else if _, err := git.Run(group, "rebase", "--autostash", target); err != nil {
+		args, abort := RebaseOrMergeArgs(target, pushed)
+		if _, err := git.Run(group, args...); err != nil {
 			conflicts, _ := git.Run(group, "diff", "--name-only", "--diff-filter=U")
-			_, _ = git.Run(group, "rebase", "--abort")
-			return fmt.Errorf("%s moved and the group no longer rebases onto it; resolve %s on the group branch, then ship",
-				target, strings.Join(strings.Fields(conflicts), ", "))
+			_, _ = git.Run(group, abort...)
+			verb := "rebases onto"
+			if pushed {
+				verb = "merges"
+			}
+			return fmt.Errorf("%s moved and the group no longer %s it; resolve %s on the group branch, then ship",
+				target, verb, strings.Join(strings.Fields(conflicts), ", "))
 		}
 	}
 	if tipErr != nil {
@@ -989,6 +1021,12 @@ func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
 // PushFromWorktree pushes branch's tip ref from worktree to the root's origin URL, past its refused pushurl.
 // It refuses a critical ref, since the push carries the forge credential and landing is the human's merge.
 func PushFromWorktree(root, worktree, branch string) error {
+	return PushFromWorktreeContext(context.Background(), root, worktree, branch)
+}
+
+// PushFromWorktreeContext is PushFromWorktree under ctx: its pre-push hook and its push die once ctx
+// is done, so a stop mid-push never lands it.
+func PushFromWorktreeContext(ctx context.Context, root, worktree, branch string) error {
 	if guard.Load(root, root).IsCritical(branch) {
 		return fmt.Errorf("git push to origin %s: a critical ref; landing is the human's merge button", branch)
 	}
@@ -996,7 +1034,7 @@ func PushFromWorktree(root, worktree, branch string) error {
 		return err
 	}
 	source := diffTip(root, branch)
-	if err := pushRef(root, worktree, source, branch); err != nil {
+	if err := pushRef(ctx, root, worktree, source, branch); err != nil {
 		return err
 	}
 	DropLease(root, branch)
@@ -1037,8 +1075,9 @@ func syncTip(root, worktree, branch string) error {
 	return Advance(root, branch, worktree, old)
 }
 
-// pushRef pushes source to branch on the root's origin URL, past its refused pushurl, after the pre-push hook.
-func pushRef(root, worktree, source, branch string) error {
+// pushRef pushes source to branch on the root's origin URL, past its refused pushurl, after the pre-push hook;
+// it and the push die once ctx is done.
+func pushRef(ctx context.Context, root, worktree, source, branch string) error {
 	pushURL, err := git.Run(root, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return fmt.Errorf("git push to origin: the root names no origin: %w", err)
@@ -1046,7 +1085,7 @@ func pushRef(root, worktree, source, branch string) error {
 	ref := "refs/heads/" + branch
 	clean, username, password := splitCredential(pushURL)
 	// The hook runs here without the credential, so the push that holds it skips the hook.
-	if err := runPrePush(worktree, clean, source, ref); err != nil {
+	if err := runPrePush(ctx, worktree, clean, source, ref); err != nil {
 		return fmt.Errorf("pre-push hook for %s: %s", branch, redactURL(err.Error(), pushURL))
 	}
 	args := []string{"push", "--no-verify", clean, source + ":" + ref}
@@ -1055,7 +1094,7 @@ func pushRef(root, worktree, source, branch string) error {
 		args = append([]string{"-c", "credential.helper=", "-c", credentialHelperKey(clean) + "=" + pushCredentialHelper}, args...)
 		env = append(env, pushUsernameEnv+"="+username, pushPasswordEnv+"="+password)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	push := exec.CommandContext(ctx, "git", args...)
 	push.Dir = worktree
@@ -1138,8 +1177,9 @@ func splitCredential(raw string) (clean, username, password string) {
 // zeroSHA is the object name a pre-push hook reads for a remote ref it cannot see.
 const zeroSHA = "0000000000000000000000000000000000000000"
 
-// runPrePush runs worktree's pre-push hook, if any, as a push of source to ref at url would, in Scrub's environment.
-func runPrePush(worktree, url, source, ref string) error {
+// runPrePush runs worktree's pre-push hook, if any, as a push of source to ref at url would, in Scrub's
+// environment; it dies once ctx is done.
+func runPrePush(ctx context.Context, worktree, url, source, ref string) error {
 	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", source)
 	if err != nil {
 		return nil
@@ -1156,7 +1196,7 @@ func runPrePush(worktree, url, source, ref string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
 	cmd.Dir = worktree

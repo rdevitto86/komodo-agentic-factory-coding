@@ -718,7 +718,7 @@ func TestAStaleBuildMarkerDuringADriveRunChangesNothingUntilItEnds(t *testing.T)
 
 func TestADrainRestacksNothingInARepoWithNoBacklog(t *testing.T) {
 	var out bytes.Buffer
-	restack(Options{Root: t.TempDir()}, &out)
+	restack(Options{Root: t.TempDir()}, &out, nil)
 	if out.Len() != 0 {
 		t.Fatalf("out = %q, want nothing restacked", out.String())
 	}
@@ -803,7 +803,7 @@ func restackDrain(t *testing.T, clash bool) (string, string) {
 	restack(Options{Root: root, PR: &pr.Client{Dir: root, Run: func(_ string, args ...string) (string, error) {
 		t.Errorf("gh must not run for a branch never pushed: %v", args)
 		return "", nil
-	}}}, &out)
+	}}}, &out, nil)
 	return out.String(), root
 }
 
