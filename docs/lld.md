@@ -89,7 +89,7 @@ The conductor writes each state to `state.json` before starting its work, so a r
 | Context pack | File bodies, signatures of imported packages, callers of changed symbols, neighbouring tests, the spec sections the group cites, and the repo's rules; each capped |
 | Tier | The role's tier; `heavy` only when the group asks for it |
 | Size | Tasks, files, packages and brief bytes |
-| Base | The group's epic branch, `feat/v<epic's version>`, or the branch of a group named in `depends_on` (REQ-13, decision 0006) |
+| Base | The group's epic branch, `feat/<epic's version>`, or the branch of a group named in `depends_on` (REQ-13, decision 0006) |
 
 ### Run state and metrics
 
@@ -121,15 +121,15 @@ Every model session returns JSON checked against its role's schema; the conducto
 |---|---|
 | `komodo install` | Machine setup: links the binary onto PATH, installs the global orchestrator layer, runs doctor |
 | `komodo init` | Writes the starter docs, an empty `docs/backlog/` and optional config into a repo; nothing it writes is required |
-| `komodo run [group…] [--all] [--no-ship]` | Preflight, then drives groups to draft PRs; `--no-ship` stops each at Shipped-ready |
+| `komodo run [group\|task] [--no-ship] [--dry-run] [--budget d]` | Preflight, then drives the next ready group, or the one named, to a draft PR under a budget; `--no-ship` stops it at Shipped-ready |
 | `komodo status [--watch]` | The current run: groups by state, time used and blockers |
-| `komodo stop [group]`, `komodo resume [group…]` | Stops with the work saved, or resumes stopped and edited groups |
+| `komodo resume <group>` | Continues a stopped or killed group from its saved session or WIP |
 | `komodo ship <group>` | Finishes a group stopped before Ship |
 | `komodo worktree add <branch>` | Cuts a detached worktree for ad hoc work, tracking `<branch>` (decision 0012) |
 | `komodo pr create`, `komodo pr label` | Opens a pull request outside the line with its title checked and its labels applied: `@agent`, the scope `.komodo/labels.json` maps, the stage, and `branch/feature` off the default branch |
 | `komodo check <task\|findings\|scope>` | The checks that hooks and agents call |
 | `komodo backlog`, `komodo add <group> "<title>"` | Lists the open groups; adds a group or task |
-| `komodo report [run]` | Summarises a run's metrics |
+| `komodo report` | Summarises the current run's metrics |
 | `komodo sync` | Removes merged groups' worktrees and `refs/komodo` tips, opens a cleanup PR for an epic whose files outlived it, and updates the toolkit between runs |
 | `komodo abandon <group>` | Removes a group's worktree and `refs/komodo` tip on purpose, and marks its file BLOCKED |
 | `komodo lint`, `komodo doctor [--remote]`, `komodo eval` | Backlog grammar, machine and forge health, the golden suite |
@@ -202,7 +202,7 @@ A repo may commit `.komodo/`. Nothing in it is required, a malformed file is ski
 | `commands.json` | Verify, compile, before-review and after-publish commands, each judged by the guard first; verify otherwise resolves by discovery |
 | `policy.json` | Adds critical refs |
 
-Precedence is defaults, then detection, then the machine overlay, then the repo, then the task; each layer can only add. The four founding orchestrator skills, `run`, `review`, `backlog` and `respond`, cannot be appended to by a repo.
+Precedence is defaults, then detection, then the machine overlay, then the repo, then the task; each layer can only add. The four orchestrator skills, `komodo`, `run`, `plan` and `escalate`, cannot be appended to by a repo (see #skills-and-scoping).
 
 ### Build
 
@@ -266,7 +266,7 @@ Prepare runs locally with no model (REQ-24):
 
 Ship is the only stage that reads the forge credential (REQ-26):
 
-1. If the group's epic has no branch yet, cut `feat/v<epic's version>` from `main` and open it as a draft PR to `main`.
+1. If the group's epic has no branch yet, cut `feat/<epic's version>` from `main` and open it as a draft PR to `main`.
 2. Push `refs/komodo/<branch>` to `refs/heads/<branch>` on origin, never a protected one; the push drops the builder's lease.
 3. Open the group's PR against its base from step 5 above. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status: wip` (REQ-25).
 4. Add the labels. Once every check and review has passed, mark the PR ready and remove `status: wip`, then the conductor merges it into its epic branch. Only a person merges an epic branch's own PR into `main` (decision 0006).
