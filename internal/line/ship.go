@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
-	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
@@ -32,7 +31,6 @@ type ShipResult struct {
 	Draft     bool           `json:"draft"`
 	Ready     bool           `json:"ready,omitempty"`
 	Labels    []string       `json:"labels,omitempty"`
-	Changelog string         `json:"changelog,omitempty"`
 	Done      []string       `json:"done,omitempty"`
 	Blocked   []string       `json:"blocked,omitempty"`
 	Filed     []string       `json:"filed,omitempty"`
@@ -130,7 +128,7 @@ func writeShipHandoff(root string, handoff ShipHandoff) error {
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
-// ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
+// ShipGroup commits, pushes, opens the pull request, and flips the statuses.
 // A scrubbed environment commits and hands the push off instead of failing on a credential it lacks.
 func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) (result *ShipResult, err error) {
 	if plan.WaitUntil != "" {
@@ -331,8 +329,8 @@ func markReady(client *pr.Client, url string, draft bool) error {
 	return nil
 }
 
-// tickTasks sorts the plan's tasks into done and blocked, writes each tick and blocker into the
-// group's own backlog, and writes its changelog fragment, so the group's commit carries both.
+// tickTasks sorts the plan's tasks into done and blocked, and writes each tick and blocker into the
+// group's own backlog, so the group's commit carries them.
 func tickTasks(
 	plan *Plan, group string, rootParsed backlog.Backlog, live map[string]TaskStatus, result *ShipResult,
 ) error {
@@ -367,13 +365,6 @@ func tickTasks(
 			}
 		}
 	}
-	// A fragment per group, never an edit to CHANGELOG.md, so two open pull requests never conflict there.
-	if line := ChangelogLine(plan, result); line != "" {
-		if err := changelog.WriteFragment(group, plan.Version, plan.Group, line); err != nil {
-			return err
-		}
-		result.Changelog = line
-	}
 	return nil
 }
 
@@ -401,7 +392,7 @@ func declaredFiles(plan *Plan) []string {
 // StationPrepare is the ledger station Prepare stamps, always before any push.
 const StationPrepare = "prepare"
 
-// PrepareGroup commits the group's work with its ticked tasks and changelog fragment, runs its pre-commit and
+// PrepareGroup commits the group's work with its ticked tasks, runs its pre-commit and
 // pre-push hooks, and rebases it on its base; a hook's refusal and each conflicted file come back as fixes.
 func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	started := time.Now()
@@ -955,9 +946,9 @@ func ReviewSize(dir, base, branch string) (files, added int) {
 	return files, added
 }
 
-// bookkeeping reports a path Ship writes itself: a group file, or a changelog fragment.
+// bookkeeping reports a path Ship writes itself: a group file.
 func bookkeeping(path string) bool {
-	return strings.HasPrefix(path, "docs/backlog/") || strings.HasPrefix(path, "changelog.d/")
+	return strings.HasPrefix(path, "docs/backlog/")
 }
 
 // checkPRSize refuses a diff over either the kept-file or the added-line ceiling, naming a split as the fix.
@@ -975,18 +966,6 @@ func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
 	}
 	return fmt.Errorf("%s's diff has %s; split it into smaller groups before shipping a pull request",
 		group, strings.Join(over, " and "))
-}
-
-// ChangelogLine is the one line a group adds under its version.
-func ChangelogLine(plan *Plan, result *ShipResult) string {
-	if plan.Version == "" {
-		return ""
-	}
-	line := fmt.Sprintf("- **%s** %s (%d task(s))", plan.Group, plan.Title, len(result.Done))
-	if len(result.Blocked) > 0 {
-		line += fmt.Sprintf("; blocked: %s", strings.Join(result.Blocked, ", "))
-	}
-	return line
 }
 
 // PushFromWorktree pushes branch's tip ref from worktree to the root's origin URL, past its refused pushurl.
