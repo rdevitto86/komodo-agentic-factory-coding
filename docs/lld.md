@@ -355,7 +355,7 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 
 | Hook | Session | Checks one thing | On a violation | Limit | If the hook itself fails |
 |---|---|---|---|---|---|
-| Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths, attaching a branch in a linked worktree, a push to a branch a builder's lease holds | Refuses, naming the allowed alternative | — | Allows and logs |
+| Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths, attaching a branch in a linked worktree, a push to a branch a live builder's lease holds | Refuses, naming the allowed alternative | — | Allows and logs |
 | Gate, commit-msg | Every committer, model or not | The message carries no trailer the loaded policy names | Refuses, naming the trailer to remove | — | Fails, naming the missing binary |
 | Gate, pre-commit | Every committer, model or not | The branch, or a detached worktree's tracked branch, is not critical, and is `<type>/<kebab-name>`, an epic branch, a line-cut slug, or detached | Refuses, naming the branch to rename | — | Fails, naming the missing binary |
 | Gate, pre-push | Every pusher, model or not | The pushed ref is not critical, and no builder's lease holds it | Refuses, naming the lease's group, pid and lapse time | — | Fails, naming the missing binary |
