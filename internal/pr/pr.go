@@ -160,12 +160,6 @@ func (c *Client) Labels() ([]string, error) {
 	return names, nil
 }
 
-// Comment posts one comment on a pull request.
-func (c *Client) Comment(number, body string) error {
-	_, err := c.run("pr", "comment", number, "--body", body)
-	return err
-}
-
 // Merge merges a pull request into its base with a merge commit, never a squash or a rebase,
 // so a branch stacked on it keeps the commits its own history was cut from.
 func (c *Client) Merge(number string) error {
@@ -249,12 +243,6 @@ func (c *Client) Threads(number string) ([]Thread, error) {
 		})
 	}
 	return threads, nil
-}
-
-// Reply answers one review thread by posting inside it, not as a new top-level comment.
-func (c *Client) Reply(threadID, body string) error {
-	_, err := c.run("api", "graphql", "-f", "query="+replyMutation, "-f", "id="+threadID, "-f", "body="+body)
-	return err
 }
 
 // resolveMutation marks one review thread resolved.

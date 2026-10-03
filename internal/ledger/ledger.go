@@ -15,10 +15,9 @@ import (
 
 // File names, both under .komodo and both gitignored.
 const (
-	RunFile     = "line.jsonl"
-	AdhocFile   = "adhoc.jsonl"
-	MetricsFile = "metrics.jsonl"
-	EventsFile  = "events.jsonl"
+	RunFile    = "line.jsonl"
+	AdhocFile  = "adhoc.jsonl"
+	EventsFile = "events.jsonl"
 )
 
 // Limits at which the ad hoc file is truncated by its next writer.
@@ -58,21 +57,6 @@ type Check struct {
 	Command  string  `json:"command"`
 	ExitCode int     `json:"exit_code"`
 	Seconds  float64 `json:"seconds,omitempty"`
-}
-
-// Metric is one line of metrics.jsonl: aggregated data for a run/group/stage combination.
-type Metric struct {
-	Run          string    `json:"run"`
-	Group        string    `json:"group"`
-	Stage        string    `json:"stage"`
-	Start        time.Time `json:"start"`
-	Duration     float64   `json:"duration"`
-	Turns        int       `json:"turns"`
-	Input        int       `json:"input"`
-	Output       int       `json:"output"`
-	CachedTokens int       `json:"cached_tokens"`
-	Cost         *float64  `json:"cost,omitempty"`
-	Outcome      string    `json:"outcome"`
 }
 
 // Event is one line of events.jsonl: escalations, stops, pauses for usage limits, and resumes.
@@ -210,56 +194,6 @@ func (l *Ledger) All() ([]Entry, error) {
 		return nil, err
 	}
 	return append(run, adhoc...), nil
-}
-
-// WriteMetrics writes one metrics.jsonl line per stage and session, from qualifying entries.
-func (l *Ledger) WriteMetrics(entries []Entry) error {
-	if err := os.MkdirAll(l.Dir, 0o755); err != nil {
-		return err
-	}
-	metrics := aggregateMetrics(entries)
-	for _, m := range metrics {
-		data, err := json.Marshal(m)
-		if err != nil {
-			return err
-		}
-		handle, err := os.OpenFile(l.path(MetricsFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			return err
-		}
-		_, err = handle.Write(append(data, '\n'))
-		handle.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// ReadMetrics parses metrics.jsonl, skipping any line that is not a metric.
-func (l *Ledger) ReadMetrics() ([]Metric, error) {
-	handle, err := os.Open(l.path(MetricsFile))
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer handle.Close()
-	var metrics []Metric
-	scanner := bufio.NewScanner(handle)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var m Metric
-		if json.Unmarshal([]byte(line), &m) == nil {
-			metrics = append(metrics, m)
-		}
-	}
-	return metrics, scanner.Err()
 }
 
 // WriteEvents writes entries that represent events to events.jsonl.
@@ -568,29 +502,6 @@ func Render(metrics Metrics) string {
 		}
 	}
 	return strings.Join(out, "\n") + "\n"
-}
-
-// aggregateMetrics converts each qualifying entry to its own metric, one line per stage and session.
-func aggregateMetrics(entries []Entry) []Metric {
-	var metrics []Metric
-	for _, e := range entries {
-		if e.Run == "" || e.Group == "" || e.Station == "" {
-			continue
-		}
-		metrics = append(metrics, Metric{
-			Run:          e.Run,
-			Group:        e.Group,
-			Stage:        e.Station,
-			Start:        e.At,
-			Duration:     e.Seconds,
-			Turns:        e.Turns,
-			Input:        e.TokensIn,
-			Output:       e.TokensOut,
-			CachedTokens: e.TokensCached,
-			Outcome:      e.Outcome,
-		})
-	}
-	return metrics
 }
 
 // eventTypes maps an outcome events.jsonl records to the event type it is filed under.
