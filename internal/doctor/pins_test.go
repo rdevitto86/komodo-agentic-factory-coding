@@ -1,12 +1,15 @@
 package doctor
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/mount"
 )
@@ -15,7 +18,7 @@ import (
 func swapGoToolchain(t *testing.T, version string) {
 	t.Helper()
 	previous := goToolchain
-	goToolchain = func(string) string { return version }
+	goToolchain = func(string) (string, error) { return version, nil }
 	t.Cleanup(func() { goToolchain = previous })
 }
 
@@ -48,6 +51,30 @@ func TestABareModelAliasIsFound(t *testing.T) {
 	}
 }
 
+func TestAReviewerAliasIsFoundWithNoRoleOnThatTier(t *testing.T) {
+	root := clean(t)
+	write(t, root, "komodo/profiles/full.json", `{"roles":{"builder":{"tier":"standard","effort":"medium"}}}`)
+	registerHost(t, mount.Host{
+		Name:      "testhost",
+		Installed: func(string) bool { return true },
+		Tiers: func(string, bool) mount.Tiers {
+			full := mount.Machine{Provider: "testhost", Model: "testhost-1"}
+			return mount.Tiers{Light: full, Standard: full, Heavy: full,
+				Reviewer: mount.Machine{Provider: "testhost", Model: "opus"}}
+		},
+	})
+	got := problemsFrom(t, root)["pins"]
+	found := false
+	for _, problem := range got {
+		if problem.Where == "reviewer" && strings.Contains(problem.Detail, `"opus" is not a full ID`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pins = %+v", got)
+	}
+}
+
 func TestAToolchainThatDiffersIsFound(t *testing.T) {
 	root := clean(t)
 	write(t, root, "go.mod", "module fixture\n\ngo 1.22\n\ntoolchain go1.27.1\n")
@@ -57,6 +84,27 @@ func TestAToolchainThatDiffersIsFound(t *testing.T) {
 	for _, problem := range got {
 		if problem.Where == "go.mod" && strings.Contains(problem.Detail, "pinned to go1.27.1") &&
 			strings.Contains(problem.Detail, "runs go1.20.0") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pins = %+v", got)
+	}
+}
+
+// TestAToolchainReadFailureIsFoundNotSilentlySkipped proves checkToolchain reports goToolchain's
+// error, instead of goToolchain returning "" and the problem going unseen.
+func TestAToolchainReadFailureIsFoundNotSilentlySkipped(t *testing.T) {
+	root := clean(t)
+	write(t, root, "go.mod", "module fixture\n\ngo 1.22\n\ntoolchain go1.27.1\n")
+	previous := goToolchain
+	goToolchain = func(string) (string, error) { return "", fmt.Errorf("go env GOVERSION: boom") }
+	t.Cleanup(func() { goToolchain = previous })
+	got := problemsFrom(t, root)["pins"]
+	found := false
+	for _, problem := range got {
+		if problem.Where == "go.mod" && strings.Contains(problem.Detail, "could not read this machine's Go toolchain") &&
+			strings.Contains(problem.Detail, "boom") {
 			found = true
 		}
 	}
@@ -86,6 +134,43 @@ func TestAStaleBuiltBinaryIsFound(t *testing.T) {
 	got := checkRelease(root)
 	if len(got) != 1 || !strings.Contains(got[0].Detail, head) {
 		t.Fatalf("release pin = %+v, HEAD = %s", got, head)
+	}
+}
+
+func TestAGoChangeSinceTheBuiltCommitIsFound(t *testing.T) {
+	root := gitRepo(t)
+	write(t, root, "AGENTS.md", "# Rules\n")
+	commitAll(t, root, "init")
+	built, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, filepath.Join("bin", gate.BuiltFrom), built+"\n")
+	write(t, root, "main.go", "package main\n\nfunc main() {}\n")
+	commitAll(t, root, "add a go file")
+	head, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := checkRelease(root)
+	if len(got) != 1 || !strings.Contains(got[0].Detail, head) {
+		t.Fatalf("release pin = %+v, HEAD = %s", got, head)
+	}
+}
+
+func TestADocsOnlyChangeSinceTheBuiltCommitHasNoPin(t *testing.T) {
+	root := gitRepo(t)
+	write(t, root, "AGENTS.md", "# Rules\n")
+	commitAll(t, root, "init")
+	built, err := git.Run(root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, filepath.Join("bin", gate.BuiltFrom), built+"\n")
+	write(t, root, "docs/notes.md", "notes\n")
+	commitAll(t, root, "docs only")
+	if got := checkRelease(root); len(got) != 0 {
+		t.Fatalf("release pin = %+v, want none for a docs-only commit", got)
 	}
 }
 
@@ -151,6 +236,29 @@ func TestThePinnedReleaseCheck(t *testing.T) {
 				t.Fatalf("pins = %+v, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestReleaseVersionKillsAHungBinaryAndNamesTheTimeout proves a released binary past toolTimeout
+// is killed, process group included, and the error names the command and the timeout.
+func TestReleaseVersionKillsAHungBinaryAndNamesTheTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "komodo-fake")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nsleep 30 &\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := toolTimeout
+	toolTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { toolTimeout = saved })
+	started := time.Now()
+	if _, err := ReleaseVersion(path); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 

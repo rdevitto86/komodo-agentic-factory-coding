@@ -1,7 +1,6 @@
 package guard
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,34 +9,46 @@ import (
 	"komodo/internal/mount"
 )
 
-// isAllowedWrite reports whether a write may always land here: the null device, or a scratch
-// file placed directly in a system temp directory, which cost real time to deny.
-func isAllowedWrite(path string) bool {
-	compare := path
-	if foldsCase() {
-		compare = strings.ToLower(compare)
-	}
-	if compare == os.DevNull {
+// isAllowedWrite reports whether a write may always land here: the null device, or a scratch file in
+// the system temp directory that is not beside a worktree root which itself sits in temp.
+func isAllowedWrite(path, root string) bool {
+	if within(path, os.DevNull) {
 		return true
 	}
-	for _, dir := range []string{os.TempDir(), "/tmp", "/private/tmp"} {
-		dir = strings.TrimRight(dir, string(filepath.Separator))
-		if dir == "" {
-			continue
-		}
-		if foldsCase() {
-			dir = strings.ToLower(dir)
-		}
-		if compare == dir || strings.HasPrefix(compare, dir+string(filepath.Separator)) {
-			return true
-		}
+	real := realPath(path)
+	if !within(real, realPath(os.TempDir())) {
+		return false
 	}
-	return false
+	return root == "" || !within(real, filepath.Dir(realPath(root)))
+}
+
+// within reports whether path is dir or under it, folding case where the filesystem does.
+func within(path, dir string) bool {
+	if foldsCase() {
+		path, dir = strings.ToLower(path), strings.ToLower(dir)
+	}
+	dir = strings.TrimRight(dir, string(filepath.Separator))
+	return dir != "" && (path == dir || strings.HasPrefix(path, dir+string(filepath.Separator)))
+}
+
+// realPath resolves symlinks in path's longest existing prefix, so /var and /private/var compare equal.
+func realPath(path string) string {
+	path = filepath.Clean(path)
+	rest := ""
+	for dir := path; ; dir = filepath.Dir(dir) {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		if filepath.Dir(dir) == dir {
+			return path
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+	}
 }
 
 // pathFindings refuses a write on a config the hosts own, and a line session's write outside its
 // worktree; a resolvable $VAR expands first, an unresolvable one is judged on its literal text.
-func pathFindings(path, cwd, root string, policy Policy) []string {
+func pathFindings(path, cwd, root string, policy Policy) []finding {
 	if path == "" {
 		return nil
 	}
@@ -54,17 +65,17 @@ func pathFindings(path, cwd, root string, policy Policy) []string {
 		return nil
 	}
 	if policy.IsConfigPath(resolved, root) {
-		return []string{fmt.Sprintf("%s is a host or toolkit config; the guard owns it", path)}
+		return []finding{newFinding("%s is a host or toolkit config; the guard owns it", path)}
 	}
-	if isAllowedWrite(resolved) {
+	if isAllowedWrite(resolved, root) {
 		return nil
 	}
 	if root == "" || !IsLineSession() {
 		return nil
 	}
-	relative, err := filepath.Rel(root, resolved)
+	relative, err := filepath.Rel(realPath(root), realPath(resolved))
 	if err != nil || strings.HasPrefix(relative, "..") {
-		return []string{fmt.Sprintf("%s is outside the worktree root %s", path, root)}
+		return []finding{newFinding("%s is outside the worktree root %s", path, root)}
 	}
 	return nil
 }

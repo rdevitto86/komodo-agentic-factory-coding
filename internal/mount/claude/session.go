@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,24 +25,35 @@ func Session(
 	model, effort string,
 	maxTurns int,
 	maxBudgetUSD float64,
-) (argv []string, env []string, prompt string) {
-	prompt = req.Brief
+) ([]string, []string, string, error) {
+	prompt := req.Brief
 	if resumed != "" {
 		prompt = resumeInput
 	}
 	if prompt == "" {
-		prompt = "/"
+		return nil, nil, "", fmt.Errorf("session: role %q has no brief or resume input to send", req.Role)
 	}
 
-	argv = []string{"-p"}
-	argv = append(argv, "--setting-sources", "local")
+	argv := []string{"-p"}
+	argv = append(argv, "--setting-sources", settingSourcesFlag)
 
 	pluginDir := filepath.Join(root, Dir, "plugins", req.Role)
 	argv = append(argv, "--plugin-dir", pluginDir)
 
-	settings := filepath.Join(root, Dir, "settings.json")
+	// --setting-sources local drops CLAUDE.md, carrying the universal rules on its own past that loss.
+	rules, err := mount.Rules(root)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("session: reading the universal rules: %w", err)
+	}
+	argv = append(argv, "--append-system-prompt", rules)
+
+	settings := filepath.Join(root, Dir, LineSettings)
 	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
-		settings = withSandbox(settings, sandbox)
+		merged, err := withSandbox(settings, sandbox)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("session: %w", err)
+		}
+		settings = merged
 	}
 	argv = append(argv, "--settings", settings)
 
@@ -58,7 +70,7 @@ func Session(
 	if effort != "" {
 		argv = append(argv, "--effort", effort)
 	}
-	argv = append(argv, "--strict-mcp-config")
+	argv = append(argv, strictMCPConfigFlag)
 	argv = append(argv, "--output-format", "stream-json")
 	argv = append(argv, "--verbose")
 	argv = append(argv, "--json-schema", string(req.Schema))
@@ -72,8 +84,8 @@ func Session(
 	}
 
 	// The session starts from a scrubbed environment, so no forge credential reaches it.
-	env = scrubEnv(os.Environ())
-	env = removeEnv(env, "CLAUDE_CONFIG_DIR")
+	env := scrubEnv(os.Environ())
+	env = removeEnv(env, claudeConfigDirEnv)
 	env = setEnv(env, "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP", "3")
 	env = setEnv(env, "CLAUDE_CODE_MAX_TURNS", strconv.Itoa(maxTurns))
 	env = setEnv(env, "DISABLE_AUTOUPDATER", "1")
@@ -89,28 +101,32 @@ func Session(
 	env = setEnv(env, "GOFLAGS", "-modcacherw")
 	env = setEnv(env, "CLAUDE_CODE_TMPDIR", SessionTmp(worktree))
 
-	return argv, env, prompt
+	return argv, env, prompt, nil
 }
 
-// withSandbox returns the settings file at path merged with the inline sandbox settings as one inline object,
-// since the host keeps only the last --settings it is given; an unreadable file leaves the sandbox alone.
-func withSandbox(path, sandbox string) string {
+// withSandbox merges the settings file at path with the inline sandbox settings into one inline object,
+// since the host keeps only the last --settings it is given; it errors rather than drop the file's hooks.
+func withSandbox(path, sandbox string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading %s: %w", path, err)
+	}
 	merged := map[string]json.RawMessage{}
-	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &merged)
+	if err := json.Unmarshal(data, &merged); err != nil {
+		return "", fmt.Errorf("parsing %s: %w", path, err)
 	}
 	var overrides map[string]json.RawMessage
-	if json.Unmarshal([]byte(sandbox), &overrides) != nil {
-		return sandbox
+	if err := json.Unmarshal([]byte(sandbox), &overrides); err != nil {
+		return "", fmt.Errorf("parsing the line sandbox: %w", err)
 	}
 	for key, value := range overrides {
 		merged[key] = value
 	}
-	data, err := json.Marshal(merged)
+	out, err := json.Marshal(merged)
 	if err != nil {
-		return sandbox
+		return "", fmt.Errorf("marshalling %s with the sandbox merged in: %w", path, err)
 	}
-	return string(data)
+	return string(out), nil
 }
 
 // SessionTmp is the private temp root a worktree's sessions get, outside any repo, so a test walking up
@@ -119,7 +135,9 @@ func SessionTmp(worktree string) string {
 	sum := sha256.Sum256([]byte(worktree))
 	base := os.TempDir()
 	if rel, err := filepath.Rel(worktree, base); err == nil && !strings.HasPrefix(rel, "..") {
-		base = "/tmp"
+		if cache, err := os.UserCacheDir(); err == nil {
+			base = cache
+		}
 	}
 	return filepath.Join(base, "komodo-"+hex.EncodeToString(sum[:6]))
 }
@@ -132,14 +150,7 @@ func toolNames(verbs []string) string {
 			names = append(names, toolList...)
 		}
 	}
-	if len(names) == 0 {
-		return ""
-	}
-	out := names[0]
-	for _, name := range names[1:] {
-		out += ", " + name
-	}
-	return out
+	return strings.Join(names, ", ")
 }
 
 // removeEnv removes all entries where the key matches name.

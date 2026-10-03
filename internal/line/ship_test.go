@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -14,7 +15,6 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/backlog/backlogtest"
-	"komodo/internal/changelog"
 	"komodo/internal/git"
 	"komodo/internal/pr"
 )
@@ -67,6 +67,9 @@ func shipRepo(t *testing.T) (root, group string) {
 	runGit(t, group, "add", "-A")
 	runGit(t, group, "commit", "-m", "seed")
 	saveReview(t, root, "TG-09.1", `{"findings":[]}`)
+	if err := SaveRun(root, RunState{Run: "TG-09.1-1", Group: "TG-09.1", Base: "main", Branch: "feat/a-group", Worktree: "group"}); err != nil {
+		t.Fatal(err)
+	}
 	return root, group
 }
 
@@ -234,6 +237,44 @@ func TestThePushCredentialHelperAnswersFromThePushEnvironment(t *testing.T) {
 	}
 }
 
+// fillCredential runs the push's own -c registration for clean against a credential request for host,
+// with no askpass or system helper able to answer in its place.
+func fillCredential(t *testing.T, clean, host string) string {
+	t.Helper()
+	cmd := exec.Command("git", "-c", "credential.helper=", "-c", credentialHelperKey(clean)+"="+pushCredentialHelper, "credential", "fill")
+	cmd.Stdin = strings.NewReader("protocol=https\nhost=" + host + "\n\n")
+	cmd.Env = append(Scrub(os.Environ()), pushUsernameEnv+"=x-access-token", pushPasswordEnv+"=tok")
+	out, _ := cmd.CombinedOutput()
+	return string(out)
+}
+
+// TestThePushCredentialHelperNeverAnswersForAnotherHost proves the token the push's -c flags register
+// cannot reach a host other than the push URL's own, such as a redirect or a proxy's 407.
+func TestThePushCredentialHelperNeverAnswersForAnotherHost(t *testing.T) {
+	clean := "https://example.invalid/o/r.git"
+	if out := fillCredential(t, clean, "example.invalid"); !strings.Contains(out, "username=x-access-token\n") ||
+		!strings.Contains(out, "password=tok\n") {
+		t.Fatalf("fill(the push's own host) = %q, want its credential", out)
+	}
+	if out := fillCredential(t, clean, "attacker.invalid"); strings.Contains(out, "x-access-token") || strings.Contains(out, "tok") {
+		t.Fatalf("fill(another host) = %q; the credential must never reach a host that is not the push's own", out)
+	}
+}
+
+func TestCredentialHelperKeyScopesToTheURLsProtocolAndHost(t *testing.T) {
+	cases := []struct{ raw, want string }{
+		{"https://github.com/o/r.git", "credential.https://github.com.helper"},
+		{"http://example.com:8080/o/r.git", "credential.http://example.com:8080.helper"},
+		{"/tmp/origin.git", "credential.helper"},
+		{"git@github.com:o/r.git", "credential.helper"},
+	}
+	for _, tc := range cases {
+		if got := credentialHelperKey(tc.raw); got != tc.want {
+			t.Errorf("credentialHelperKey(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
 func TestSplitCredentialKeepsTheSecretOutOfThePushURL(t *testing.T) {
 	cases := []struct {
 		name, raw, clean, username, password string
@@ -251,6 +292,62 @@ func TestSplitCredentialKeepsTheSecretOutOfThePushURL(t *testing.T) {
 				t.Fatalf("split = %q %q %q, want %q %q %q", clean, username, password, tc.clean, tc.username, tc.password)
 			}
 		})
+	}
+}
+
+// TestRunPrePushTimesOutAndKillsAHungHook proves a pre-push hook past pushTimeout is killed,
+// process group included, so a hung hook never blocks the line.
+func TestRunPrePushTimesOutAndKillsAHungHook(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	root, group := shipRepo(t)
+	hook := "#!/bin/sh\nsleep 30 &\nsleep 30\n"
+	path := filepath.Join(group, ".git", "hooks", "pre-push")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := pushTimeout
+	pushTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { pushTimeout = saved })
+	started := time.Now()
+	if err := PushFromWorktree(root, group, "feat/a-group"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
+	}
+}
+
+// TestPushRefTimesOutAndKillsAHungPush proves a push past pushTimeout is killed, process group
+// included, so a hung push never blocks the line.
+func TestPushRefTimesOutAndKillsAHungPush(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	root, group := shipRepo(t)
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakes := t.TempDir()
+	wrapper := "#!/bin/sh\nif [ \"$1\" = push ]; then sleep 30 & sleep 30; fi\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(fakes, "git"), []byte(wrapper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakes+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := pushTimeout
+	pushTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { pushTimeout = saved })
+	started := time.Now()
+	if err := PushFromWorktree(root, group, "feat/a-group"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 
@@ -503,6 +600,40 @@ func TestFileFindingsBeforePushAndCommit(t *testing.T) {
 	}
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("status = %q; findings filed before push must be in the commit, leaving worktree clean", status)
+	}
+}
+
+func TestAFailedCommitAfterStagingLeavesNothingStaged(t *testing.T) {
+	worktree := gitRepo(t)
+	commitBacklogText(t, worktree, flipBacklog, "the backlog")
+	root := t.TempDir()
+	backlogtest.SeedText(t, root, flipBacklog)
+	saveReview(t, root, "TG-11.1", `{"findings":[]}`)
+	hook := filepath.Join(worktree, ".git", "hooks", "pre-commit")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho 'the gate refuses' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{
+		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
+		Base: "main", Branch: "feat/a-group", Worktree: worktree,
+		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY", Files: []string{"a/one.go"}}},
+	}
+	// The group's own work is what ship stages before the commit the hook refuses.
+	if err := os.MkdirAll(filepath.Join(worktree, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "a", "one.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "the gate refuses") {
+		t.Fatalf("err = %v, want the pre-commit hook's refusal", err)
+	}
+	staged, err := git.Run(worktree, "diff", "--cached", "--name-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if staged != "" {
+		t.Fatalf("staged = %q; a failed ship must leave nothing staged", staged)
 	}
 }
 
@@ -806,6 +937,29 @@ func TestShipsOwnCommitDoesNotRestaleTheReview(t *testing.T) {
 	commitDated(t, worktree, "CHANGELOG.md", "# Changelog\n", message, now)
 	if !reviewed(root, plan) {
 		t.Fatal("ship's own commit must not restale a review that already passed it")
+	}
+}
+
+func TestTheCredentialNoteCommitDoesNotRestaleTheReview(t *testing.T) {
+	worktree := gitRepo(t)
+	now := time.Now()
+	commitDated(t, worktree, "a/one.go", "package a\n", "seed", now.Add(-2*time.Hour))
+	root := t.TempDir()
+	plan := &Plan{Group: "TG-13.1", Title: "A group", Type: "feat", Worktree: worktree}
+	review := ResultPath(root, "TG-13.1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(review, []byte(`{"findings":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reviewTime := now.Add(-time.Hour)
+	if err := os.Chtimes(review, reviewTime, reviewTime); err != nil {
+		t.Fatal(err)
+	}
+	commitDated(t, worktree, "CHANGELOG.md", "# Changelog\n", credentialNoteSubject(plan.Title, plan.Group), now)
+	if !reviewed(root, plan) {
+		t.Fatal("a retry's own credential-note commit must not restale a review that already passed it")
 	}
 }
 
@@ -1133,7 +1287,7 @@ func TestReviewSizeCountsNoDeletion(t *testing.T) {
 func TestReviewSizeSkipsTheLinesBookkeeping(t *testing.T) {
 	_, group := shipRepo(t)
 	runGit(t, group, "branch", "main")
-	for _, path := range []string{"docs/backlog/TG-1.md", "changelog.d/1.0.0/TG-1.md", "code.go"} {
+	for _, path := range []string{"docs/backlog/TG-1.md", "code.go"} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(group, path)), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -1338,7 +1492,7 @@ func TestShipRefusesWhenTaskIsRefinedOnlyAtRoot(t *testing.T) {
 	}
 }
 
-func TestShipWritesAChangelogFragmentAndLeavesTheChangelogAlone(t *testing.T) {
+func TestShipLeavesTheChangelogToTheRelease(t *testing.T) {
 	worktree := gitRepo(t)
 	commitBacklogText(t, worktree, staleWorktreeBacklog, "the backlog")
 	commit(t, worktree, "CHANGELOG.md", "# Changelog\n", "the changelog")
@@ -1361,15 +1515,11 @@ func TestShipWritesAChangelogFragmentAndLeavesTheChangelogAlone(t *testing.T) {
 	if _, err := ShipGroup(root, plan, nil, client); err != nil {
 		t.Fatal(err)
 	}
-	fragment, err := os.ReadFile(changelog.FragmentPath(worktree, "2.0.0", "TG-12.1"))
-	if err != nil || !strings.HasPrefix(string(fragment), "- **TG-12.1** A group") {
-		t.Fatalf("fragment = %q, %v", fragment, err)
-	}
 	if data, _ := os.ReadFile(filepath.Join(worktree, "CHANGELOG.md")); string(data) != "# Changelog\n" {
 		t.Fatalf("ship edited CHANGELOG.md:\n%s", data)
 	}
-	if tracked, _ := git.Run(worktree, "ls-files", changelog.Dir); tracked == "" {
-		t.Fatal("the fragment is not in the ship commit")
+	if _, err := os.Stat(filepath.Join(worktree, "changelog.d")); !os.IsNotExist(err) {
+		t.Fatalf("ship wrote a changelog.d: %v; only a release writes the changelog", err)
 	}
 }
 
@@ -1515,6 +1665,20 @@ func TestScrubKeepsTheModelHostsOwnLoginAndDropsEveryForgeSecret(t *testing.T) {
 	}
 }
 
+// TestScrubDropsAHooksRepoPointers proves a published command started from inside a git hook
+// works on its own directory's repository, not the hook's.
+func TestScrubDropsAHooksRepoPointers(t *testing.T) {
+	scrubbed := Scrub([]string{"GIT_DIR=/elsewhere/.git", "GIT_INDEX_FILE=/elsewhere/.git/index", "PATH=/usr/bin"})
+	for _, key := range []string{"GIT_DIR", "GIT_INDEX_FILE"} {
+		if _, found := envValue(scrubbed, key); found {
+			t.Fatalf("%s reached a scrubbed environment", key)
+		}
+	}
+	if path, _ := envValue(scrubbed, "PATH"); path != "/usr/bin" {
+		t.Fatalf("PATH = %q, want the inherited value", path)
+	}
+}
+
 func TestScrubDoesNotLetAnInheritedOverrideSurvive(t *testing.T) {
 	scrubbed := Scrub([]string{"GIT_TERMINAL_PROMPT=1", "GIT_SSH_COMMAND=ssh -i /home/me/.ssh/id_ed25519"})
 	if got, _ := envValue(scrubbed, "GIT_TERMINAL_PROMPT"); got != "0" {
@@ -1645,7 +1809,7 @@ func stations(t *testing.T, root string) []string {
 	return out
 }
 
-func TestPrepareCommitsTheTickedListAndChangelogLineWithNoTrailers(t *testing.T) {
+func TestPrepareCommitsTheTickedListWithNoTrailers(t *testing.T) {
 	root, group, plan := prepareRepo(t)
 	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package a\n\nconst Built = 1\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -1660,7 +1824,7 @@ func TestPrepareCommitsTheTickedListAndChangelogLineWithNoTrailers(t *testing.T)
 		t.Fatalf("commit = %q with trailers %q; want the conventional subject and no trailers", subject, trailers)
 	}
 	files, _ := git.Run(group, "show", "--name-only", "--format=", "HEAD")
-	for _, want := range []string{"docs/backlog/TG-09.1-a-group.md", "one.go", "changelog.d/2.0.0/TG-09.1.md"} {
+	for _, want := range []string{"docs/backlog/TG-09.1-a-group.md", "one.go"} {
 		if !slices.Contains(strings.Fields(files), want) {
 			t.Fatalf("the commit holds %q, want %s in it", files, want)
 		}
@@ -2024,6 +2188,41 @@ func TestKomodoShipRefusesAHandoffNamingAnotherGroupOrABadBranch(t *testing.T) {
 	}
 }
 
+func TestKomodoShipRefusesAHandoffWhoseWorktreeDiffersFromItsRun(t *testing.T) {
+	root, _ := shipRepo(t)
+	rogue := t.TempDir()
+	handOff(t, root, rogue, "")
+	if _, err := FinishShip(root, "TG-09.1", nil); err == nil || !strings.Contains(err.Error(), "nothing was pushed") {
+		t.Fatalf("finish = %v, want the mismatched worktree refused", err)
+	}
+	bare, err := git.Run(root, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git.Run(bare, "rev-parse", "--verify", "--quiet", "refs/heads/feat/a-group"); err == nil {
+		t.Fatal("a refused mismatch must push nothing")
+	}
+}
+
+func TestKomodoShipRefusesAHandoffWithNoRunRecorded(t *testing.T) {
+	root := t.TempDir()
+	path := HandoffPath(root, "TG-09.1")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	handoff := ShipHandoff{Group: "TG-09.1", Branch: "feat/a-group"}
+	data, err := json.Marshal(handoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FinishShip(root, "TG-09.1", nil); err == nil || !strings.Contains(err.Error(), "no run recorded") {
+		t.Fatalf("finish = %v, want the missing run refused", err)
+	}
+}
+
 // handOff writes the shipRepo group's handoff as a scrubbed ship leaves it, with after_publish as given.
 func handOff(t *testing.T, root, group, afterPublish string) {
 	t.Helper()
@@ -2270,16 +2469,35 @@ func TestKomodoShipKeepsTheHandoffWhileTheCredentialIsStillRefused(t *testing.T)
 	}
 }
 
+func TestAFinishStillRefusedKeepsTheCredentialNoteOnTheBranch(t *testing.T) {
+	root, group := shipRepo(t)
+	runGit(t, root, "remote", "set-url", "--push", "origin", refusingRemote(t))
+	plan := &Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+		Tasks: []PlanTask{{ID: "TSK-09.1.1", Title: "Do it"}},
+	}
+	if _, err := ShipGroup(root, plan, nil, nil); !errors.Is(err, ErrNoCredential) {
+		t.Fatalf("ship = %v, want the push stopped for its credential", err)
+	}
+	backlogPath := filepath.Join(group, "docs", "backlog", "TG-09.1-a-group.md")
+	noted, err := os.ReadFile(backlogPath)
+	if err != nil || !strings.Contains(string(noted), "komodo ship TG-09.1") {
+		t.Fatalf("backlog = %q, %v; the first stop must leave its blocker note", noted, err)
+	}
+	if _, err := FinishShip(root, "TG-09.1", nil); !errors.Is(err, ErrNoCredential) {
+		t.Fatalf("finish = %v, want the still-refused credential", err)
+	}
+	noted, err = os.ReadFile(backlogPath)
+	if err != nil || !strings.Contains(string(noted), "komodo ship TG-09.1") {
+		t.Fatalf("backlog = %q, %v; a group still blocked must keep its note on the branch", noted, err)
+	}
+}
+
 func TestPrepareFailsOnWhatItCannotReadOrWrite(t *testing.T) {
 	cases := []struct {
 		name  string
 		spoil func(t *testing.T, root, group string, plan *Plan)
 	}{
-		{"the changelog fragment cannot be written", func(t *testing.T, _, group string, _ *Plan) {
-			if err := os.WriteFile(filepath.Join(group, "changelog.d"), []byte("x\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}},
 		{"a live status names a task neither backlog holds", func(t *testing.T, root, _ string, plan *Plan) {
 			plan.Tasks = append(plan.Tasks, PlanTask{ID: "TSK-09.1.9", Title: "Gone"})
 			if err := RecordStatus(root, "TSK-09.1.9", "DONE"); err != nil {
@@ -2307,8 +2525,7 @@ func TestPrepareFailsOnWhatItCannotReadOrWrite(t *testing.T) {
 }
 
 func TestTheCredentialNoteNeedsABacklogAndItsRemovalSkipsNone(t *testing.T) {
-	plan := &Plan{Group: "TG-09.1", Title: "A group", Branch: "feat/a-group"}
-	if err := writeCredentialNote(t.TempDir(), plan, t.TempDir(), ErrNoCredential); err == nil {
+	if err := writeCredentialNote(t.TempDir(), t.TempDir(), "TG-09.1", "A group", "feat/a-group", ErrNoCredential); err == nil {
 		t.Fatal("note = nil, want a worktree with no backlog refused")
 	}
 	if err := dropCredentialNote(t.TempDir(), ShipHandoff{Group: "TG-09.1"}); err != nil {

@@ -59,6 +59,14 @@ func TestPRCreateRefusesABadTitleBeforeTouchingTheForge(t *testing.T) {
 	}
 }
 
+func TestPRCreateRefusesATrailerInTheBodyBeforeTouchingTheForge(t *testing.T) {
+	root := emptyRepo(t)
+	got := runCLI(t, root, "", "pr", "create", "--title", "feat: a thing", "--body", "b\n\nCo-authored-by: A <a@b.c>")
+	if got.code == 0 || !strings.Contains(got.stderr, "trailer or a session link") {
+		t.Fatalf("want a trailer refusal, got %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+}
+
 func TestPRCreateRefusesADetachedHeadThatTracksNoBranch(t *testing.T) {
 	root, _ := tagRepo(t, "main", "## 1.0.0\n")
 	runGit(t, root, "checkout", "--detach", "HEAD")

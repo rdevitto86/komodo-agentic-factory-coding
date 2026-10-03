@@ -99,12 +99,21 @@
       "items": {
         "type": "string"
       }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
     }
   },
   "required": [
     "result",
     "summary",
     "changed",
-    "verified"
+    "verified",
+    "confidence"
   ]
 }

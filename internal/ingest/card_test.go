@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"komodo/internal/backlog"
+	"komodo/internal/line"
 )
 
 // writeTree creates each named file, with parent directories, under root.
@@ -79,7 +80,7 @@ func TestBuildAllowsANewFileWhoseParentExists(t *testing.T) {
 	}
 }
 
-func TestBuildDropsANewFileWhoseParentIsMissing(t *testing.T) {
+func TestBuildKeepsANewFileWhoseParentIsMissing(t *testing.T) {
 	root := t.TempDir()
 	text := "### [TG-01.1] A card\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-01.1.1] First task [P: C] [READY]\n```yaml\nfiles: [nope/two.go]\n```\n"
@@ -88,8 +89,22 @@ func TestBuildDropsANewFileWhoseParentIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(card.Files) != 1 || card.Files[0] != "nope/two.go" {
+		t.Fatalf("files = %v, want the new file kept even with no parent directory yet", card.Files)
+	}
+}
+
+func TestExpandFilesRejectsAPatternThatEscapesRoot(t *testing.T) {
+	root := t.TempDir()
+	text := "### [TG-01.1] A card\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+		"#### [TSK-01.1.1] First task [P: C] [READY]\n```yaml\nfiles: [\"../\"]\n```\n"
+	parsed, g := group(t, text)
+	card, err := Build(root, parsed, g)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(card.Files) != 0 {
-		t.Fatalf("files = %v, want none: the parent directory doesn't exist", card.Files)
+		t.Fatalf("files = %v, want none: the pattern resolves outside root", card.Files)
 	}
 }
 
@@ -153,7 +168,7 @@ func TestBuildBaseIsTheExplicitField(t *testing.T) {
 	}
 }
 
-func TestBuildBaseFollowsDependsOnToItsGroupsBranch(t *testing.T) {
+func TestBuildBaseMatchesLinesGroupBaseEvenWithDependsOn(t *testing.T) {
 	root := t.TempDir()
 	text := "### [TG-01.1] Parent group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
 		"#### [TSK-01.1.1] First task [P: C] [READY]\n```yaml\n```\n\n" +
@@ -163,12 +178,13 @@ func TestBuildBaseFollowsDependsOnToItsGroupsBranch(t *testing.T) {
 	if len(parsed.Groups) != 2 {
 		t.Fatalf("groups = %d, want 2", len(parsed.Groups))
 	}
-	card, err := Build(root, parsed, parsed.Groups[1])
+	child := parsed.Groups[1]
+	card, err := Build(root, parsed, child)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if card.Base != "feat/TG-01.1-parent-group" {
-		t.Fatalf("base = %q, want the parent group's branch", card.Base)
+	if want := line.GroupBase(root, parsed, child); card.Base != want {
+		t.Fatalf("base = %q, want line.GroupBase's own %q: depends_on never names a base", card.Base, want)
 	}
 }
 

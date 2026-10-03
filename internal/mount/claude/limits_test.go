@@ -3,7 +3,9 @@ package claude
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestProbeReadsExtraUsageAndTheBillingType(t *testing.T) {
@@ -39,5 +41,25 @@ func TestLoggedInReadsTheAuthStatusReport(t *testing.T) {
 		if got, err := LoggedIn(); err != nil || got != c.want {
 			t.Errorf("LoggedIn(%s) = %v, %v; want %v", c.report, got, err, c.want)
 		}
+	}
+}
+
+// TestAuthStatusKillsAHungClaudeAndNamesTheTimeout proves claude auth status past cliTimeout is
+// killed, process group included, and the error names the command and the timeout.
+func TestAuthStatusKillsAHungClaudeAndNamesTheTimeout(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nsleep 30 &\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	saved := cliTimeout
+	cliTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { cliTimeout = saved })
+	started := time.Now()
+	if _, err := authStatus(); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }

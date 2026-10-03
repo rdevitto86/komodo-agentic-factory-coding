@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"komodo/internal/doctor"
@@ -14,6 +15,7 @@ import (
 	"komodo/internal/guard"
 	"komodo/internal/line"
 	"komodo/internal/mount"
+	"komodo/internal/release"
 )
 
 // runGate runs the local precheck, one of its git-hook checks, or builds and installs the binary.
@@ -24,6 +26,7 @@ func runGate(root string, args []string) {
 	rebuild := set.Bool("rebuild", false, "rebuild the local binary when a Go file, go.mod or go.sum changed between --from and --to")
 	from := set.String("from", "", "the commit before the change, for --rebuild")
 	to := set.String("to", "", "the commit after the change, for --rebuild")
+	at := set.String("at", "", "gate a clean checkout of this commit when the working tree differs, for the pre-push hook")
 	commitMsg := set.String("commit-msg", "", "refuse an attribution trailer in this message file, for the commit-msg hook")
 	checkBranch := set.Bool("check-branch", false, "refuse a critical ref or a branch outside <type>/<kebab-name>, for the pre-commit hook")
 	checkPush := set.String("check-push", "", "refuse a push to a critical ref, a branch outside <type>/<kebab-name>, or one a live builder leases, for the pre-push hook")
@@ -67,6 +70,8 @@ func runGate(root string, args []string) {
 		}
 		if path != "" {
 			fmt.Println("built", path)
+			// The git hooks exec the published binary, so it must exist before they do.
+			fmt.Println("published", mount.Publish(path))
 		}
 		written, err := gate.Install(filepath.Join(root, ".git"))
 		if err != nil {
@@ -77,11 +82,34 @@ func runGate(root string, args []string) {
 		}
 		return
 	}
-	scoped, err := gate.PushChecks(root, *from, *to, fuzzDuration(root, *fuzz), buildChecks(root))
+	checkout, cleanup := root, func() {}
+	if *at != "" {
+		var err error
+		if checkout, cleanup, err = gate.CleanCheckout(root, *at); err != nil {
+			fail(err)
+		}
+		if checkout != root {
+			fmt.Printf("gate: the working tree differs from %s; checking a clean checkout of it\n", *at)
+		}
+	}
+	checks, err := gateChecks(checkout, *from, *to, *fuzz)
+	if err == nil {
+		err = gate.Run(checks, os.Stdout)
+	}
+	cleanup()
 	if err != nil {
 		fail(err)
 	}
-	checks := append(scoped, []gate.Check{
+}
+
+// gateChecks are the precheck's checks for root: its build checks, scoped to a push's commits, then komodo's own.
+func gateChecks(root, from, to, fuzz string) ([]gate.Check, error) {
+	// A push, which fuzzes, also runs the tests uncached and shuffled and vets every release platform.
+	scoped, err := gate.PushChecks(root, from, to, fuzzDuration(root, fuzz), buildChecks(root, fuzz != ""))
+	if err != nil {
+		return nil, err
+	}
+	return append(scoped, []gate.Check{
 		// Rendered host files are gitignored and derived, so the gate refreshes them before doctor judges drift.
 		{Name: "komodo render", Run: func(out io.Writer) error { return rerenderHosts(root, out) }},
 		{Name: "komodo lint", Run: func(_ io.Writer) error {
@@ -98,7 +126,8 @@ func runGate(root string, args []string) {
 			return nil
 		}},
 		{Name: "komodo doctor", Run: func(out io.Writer) error {
-			problems, err := doctor.Run(root, doctor.Options{})
+			problems, err := doctor.Run(root, doctor.Options{RepoOnly: true,
+				Warn: func(note string) { fmt.Fprintln(out, "warning:", note) }})
 			if err != nil {
 				return err
 			}
@@ -117,28 +146,42 @@ func runGate(root string, args []string) {
 			return nil
 		}},
 		gate.CommentsCheck(root, "nonobvious"),
-	}...)
-	if err := gate.Run(checks, os.Stdout); err != nil {
-		fail(err)
-	}
+	}...), nil
 }
 
 // fuzzDuration is the fuzz flag's value, but only in the toolkit's own checkout, whose fuzz targets exist.
 func fuzzDuration(root, requested string) string {
-	if requested != "" && toolkitCheckout(root) {
+	if requested != "" && gate.IsToolkit(root) {
 		return requested
 	}
 	return ""
 }
 
-// buildChecks are the toolkit's own vet and race tests in its checkout, else the compile and verify
-// commands QC runs, so the gate fits any repo's language.
-func buildChecks(root string) []gate.Check {
-	if toolkitCheckout(root) {
-		return []gate.Check{
-			gate.Command("go vet", root, "go", "vet", "./..."),
-			gate.Command("go test", root, gate.TestArgs()...),
+// crossVets vets the module for each release platform other than this one, so a break that only one
+// platform's build tags compile fails on whatever machine pushes it.
+func crossVets(root string) []gate.Check {
+	var checks []gate.Check
+	seen := map[string]bool{runtime.GOOS: true}
+	for _, target := range release.Targets {
+		if seen[target.GOOS] {
+			continue
 		}
+		seen[target.GOOS] = true
+		checks = append(checks, gate.CommandEnv("go vet "+target.GOOS+"/"+target.Arch, root,
+			[]string{"GOOS=" + target.GOOS, "GOARCH=" + target.Arch, "CGO_ENABLED=0"}, "go", "vet", "./..."))
+	}
+	return checks
+}
+
+// buildChecks are the toolkit's own vet and race tests in its checkout, else the compile and verify
+// commands QC runs, so the gate fits any repo's language; thorough adds the push-time checks.
+func buildChecks(root string, thorough bool) []gate.Check {
+	if gate.IsToolkit(root) {
+		checks := []gate.Check{gate.GofmtCheck(root), gate.Command("go vet", root, "go", "vet", "./...")}
+		if thorough {
+			checks = append(checks, crossVets(root)...)
+		}
+		return append(checks, gate.Command("go test", root, gate.TestArgs(thorough)...))
 	}
 	var checks []gate.Check
 	seen := map[string]bool{}
@@ -164,10 +207,4 @@ func buildChecks(root string) []gate.Check {
 		}})
 	}
 	return checks
-}
-
-// toolkitCheckout reports whether root is the toolkit's own source, whose Go checks and fuzz targets the gate runs.
-func toolkitCheckout(root string) bool {
-	_, err := os.Stat(filepath.Join(root, "cmd", "komodo", "main.go"))
-	return err == nil
 }

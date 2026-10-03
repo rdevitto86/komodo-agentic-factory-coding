@@ -5,8 +5,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseWorktrees(t *testing.T) {
@@ -33,6 +35,30 @@ func TestParseWorktrees(t *testing.T) {
 	}
 	if got := ParseWorktrees(""); len(got) != 0 {
 		t.Fatalf("ParseWorktrees of nothing = %+v, want none", got)
+	}
+}
+
+// TestRunKillsAHungGitAndItsChildren proves a git command past Timeout is killed, process group included,
+// so a hung git never blocks the gate or a hook.
+func TestRunKillsAHungGitAndItsChildren(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	dir := t.TempDir()
+	script := "#!/bin/sh\nsleep 30 &\nsleep 30\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	saved := Timeout
+	Timeout = 200 * time.Millisecond
+	t.Cleanup(func() { Timeout = saved })
+	started := time.Now()
+	if _, err := Run(t.TempDir(), "status"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("Run error = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 
@@ -117,5 +143,63 @@ func TestWorktreesReadsADetachedWorktreesTrackedBranch(t *testing.T) {
 	}
 	if got := TrackedBranch(detached); got != "task/x" {
 		t.Fatalf("TrackedBranch(detached) = %q, want task/x", got)
+	}
+}
+
+// TestWorktreesReadsEachTrackedBranchInsideAHook sets GIT_DIR as a git hook does, and still reads
+// each detached worktree's own komodo.branch rather than the hook's.
+func TestWorktreesReadsEachTrackedBranchInsideAHook(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"},
+		{"config", "extensions.worktreeConfig", "true"},
+	} {
+		if _, err := Run(root, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := map[string]string{}
+	for _, branch := range []string{"task/a", "task/b"} {
+		path := filepath.Join(t.TempDir(), "wt")
+		if _, err := Run(root, "worktree", "add", "-q", "--detach", path); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Run(path, "config", "--worktree", "komodo.branch", branch); err != nil {
+			t.Fatal(err)
+		}
+		paths[branch] = path
+	}
+	hookDir, err := Run(paths["task/a"], "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", hookDir)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(hookDir, "index"))
+
+	worktrees, err := Worktrees(paths["task/b"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracked := map[string]bool{}
+	for _, worktree := range worktrees {
+		tracked[worktree.Tracked] = true
+	}
+	if !tracked["task/a"] || !tracked["task/b"] {
+		t.Fatalf("Worktrees = %+v; inside a hook each worktree must keep its own tracked branch", worktrees)
+	}
+	if got := TrackedBranch(paths["task/b"]); got != "task/b" {
+		t.Fatalf("TrackedBranch = %q, want task/b; the hook's GIT_DIR must not redirect it", got)
+	}
+}
+
+func TestWithoutRepoPointersKeepsEverythingElse(t *testing.T) {
+	env := []string{"GIT_DIR=/x/.git", "GIT_WORK_TREE=/x", "GIT_COMMON_DIR=/x/.git", "PATH=/usr/bin", "GIT_AUTHOR_NAME=t"}
+	want := []string{"PATH=/usr/bin", "GIT_AUTHOR_NAME=t"}
+	if got := WithoutRepoPointers(env); !reflect.DeepEqual(got, want) {
+		t.Fatalf("WithoutRepoPointers = %v, want %v", got, want)
 	}
 }

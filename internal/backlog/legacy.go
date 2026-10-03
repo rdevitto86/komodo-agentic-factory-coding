@@ -43,19 +43,18 @@ func Parse(text string) Backlog {
 		if match := epicHeading.FindStringSubmatch(line); match != nil {
 			epicID = match[1]
 			epicTitle := match[2]
-			// Look ahead for the goal line containing "Ships as" information
 			for i := index + 1; i < len(lines) && i < index+5; i++ {
 				nextLine := strings.TrimSpace(lines[i])
 				if nextLine == "" {
 					continue
 				}
-				if strings.HasPrefix(nextLine, "#") || strings.HasPrefix(nextLine, "###") {
-					break // Stop at next heading
-				}
-				if idx := strings.Index(nextLine, "Ships as `"); idx >= 0 {
-					epicTitle = epicTitle + " " + nextLine
+				if strings.HasPrefix(nextLine, "#") {
 					break
 				}
+				if strings.Contains(nextLine, "Ships as `") || strings.HasPrefix(nextLine, "*Goal:") {
+					epicTitle = epicTitle + " " + nextLine
+				}
+				break
 			}
 			epic := Epic{ID: epicID, Title: epicTitle}
 			parsed.Epics = append(parsed.Epics, epic)

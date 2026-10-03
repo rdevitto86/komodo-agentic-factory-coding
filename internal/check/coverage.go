@@ -19,41 +19,61 @@ type AddedLine struct {
 	Text string
 }
 
-// ParseAddedLines reads a unified diff and returns every line it added, skipping the "+++" file headers.
+// ParseAddedLines reads a unified diff, returning every added line.
+// Each hunk's own line counts, not a line's prefix, mark body.
 func ParseAddedLines(diff string) []AddedLine {
 	var added []AddedLine
 	var file string
-	var next int
+	var next, oldLeft, newLeft int
 	for _, line := range strings.Split(diff, "\n") {
 		switch {
+		case oldLeft > 0 || newLeft > 0:
+			switch {
+			case strings.HasPrefix(line, "\\"):
+				// A "\ No newline at end of file" marker names no line in either file.
+			case strings.HasPrefix(line, "+"):
+				added = append(added, AddedLine{File: file, Line: next, Text: strings.TrimPrefix(line, "+")})
+				next++
+				newLeft--
+			case strings.HasPrefix(line, "-"):
+				oldLeft--
+			default:
+				next++
+				oldLeft--
+				newLeft--
+			}
 		case strings.HasPrefix(line, "+++ "):
 			file = strings.TrimPrefix(strings.TrimPrefix(line, "+++ "), "b/")
 		case strings.HasPrefix(line, "@@ "):
-			next = hunkNewStart(line)
-		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
-			added = append(added, AddedLine{File: file, Line: next, Text: strings.TrimPrefix(line, "+")})
-			next++
-		case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
-			// A removed line consumes no line number in the new file.
-		case file != "" && next > 0:
-			next++
+			next, oldLeft, newLeft = hunkHeader(line)
 		}
 	}
 	return added
 }
 
-// hunkNewStart reads the new-file starting line from a "@@ -a,b +c,d @@" hunk header.
-func hunkNewStart(header string) int {
-	fields := strings.Fields(header)
-	for _, field := range fields {
-		if rest, ok := strings.CutPrefix(field, "+"); ok {
-			numeric, _, _ := strings.Cut(rest, ",")
-			if value, err := strconv.Atoi(numeric); err == nil {
-				return value
-			}
+// hunkHeader reads a "@@ -a,b +c,d @@" line into the new file's starting line and both line counts.
+func hunkHeader(header string) (newStart, oldCount, newCount int) {
+	for _, field := range strings.Fields(header) {
+		switch {
+		case strings.HasPrefix(field, "-"):
+			_, oldCount = hunkRange(field)
+		case strings.HasPrefix(field, "+"):
+			newStart, newCount = hunkRange(field)
 		}
 	}
-	return 0
+	return newStart, oldCount, newCount
+}
+
+// hunkRange parses one "-a,b" or "+c,d" hunk field into its start line and count, the count
+// defaulting to 1 when the header omits it.
+func hunkRange(field string) (start, count int) {
+	numeric, countText, hasComma := strings.Cut(field[1:], ",")
+	start, _ = strconv.Atoi(numeric)
+	count = 1
+	if hasComma {
+		count, _ = strconv.Atoi(countText)
+	}
+	return start, count
 }
 
 // block is one cover profile range, inclusive of both its start and end line.

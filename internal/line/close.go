@@ -10,6 +10,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/comments"
+	"komodo/internal/fsx"
 	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
@@ -402,15 +403,11 @@ func bumpAttempt(root, taskID, failure, diff string) (Attempt, error) {
 	attempt.Count++
 	attempt.Failure = failure
 	attempt.Diff = diff
-	path := attemptPath(root, taskID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return attempt, err
-	}
 	data, err := json.MarshalIndent(attempt, "", "  ")
 	if err != nil {
 		return attempt, err
 	}
-	return attempt, os.WriteFile(path, append(data, '\n'), 0o644)
+	return attempt, fsx.WriteFile(attemptPath(root, taskID), append(data, '\n'), 0o644)
 }
 
 // clearAttempt drops a task's failure record once it closes.

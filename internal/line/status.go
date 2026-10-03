@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/fsx"
 )
 
 // TaskStatus is one task's live status in the run.
@@ -84,32 +85,12 @@ func saveStatus(path string, statuses map[string]TaskStatus) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), "status-*.json")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	if _, err := temp.Write(append(data, '\n')); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temp.Name(), path)
+	return fsx.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 // ClearStatus drops the named tasks' live status, once ship has written it into its group file.
 func ClearStatus(root string, taskIDs []string) error {
 	return pruneStatus(root, nil, func(taskID string) bool { return !contains(taskIDs, taskID) })
-}
-
-// KeepStatus drops every task's live status except the named ones, so a new run starts clean.
-func KeepStatus(root string, taskIDs []string) error {
-	return pruneStatus(root, nil, func(taskID string) bool { return contains(taskIDs, taskID) })
 }
 
 // pruneStatus keeps only the live statuses keep accepts in every file whose group spare does not

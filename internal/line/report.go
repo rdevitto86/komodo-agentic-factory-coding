@@ -57,8 +57,7 @@ func BuildReport(root string, plan *Plan) (*Report, error) {
 	return report, nil
 }
 
-// groupTokens sums a group's input and output tokens across the run's own build and repair
-// sessions, excluding brief stamps and ad hoc entries from off-run attempts.
+// groupTokens sums every run-file entry's input and output tokens for the group, except brief stamps.
 func groupTokens(root, group string) (int, error) {
 	entries, err := Book(root).Read(ledger.RunFile)
 	if err != nil {
@@ -66,7 +65,7 @@ func groupTokens(root, group string) (int, error) {
 	}
 	total := 0
 	for _, entry := range entries {
-		if entry.Group == group && entry.Run != "" && entry.Station != "brief" {
+		if entry.Group == group && entry.Station != "brief" {
 			total += entry.TokensIn + entry.TokensOut
 		}
 	}

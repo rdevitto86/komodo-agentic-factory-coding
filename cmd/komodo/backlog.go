@@ -12,6 +12,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/git"
+	"komodo/internal/install"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 )
@@ -26,6 +27,9 @@ func runLint(root string) {
 func lintProblems(root string) ([]string, error) {
 	problems, _, _, err := groupFileLintProblems(root)
 	problems = append(problems, versionProblems(root)...)
+	problems = append(problems, install.ScriptProblems(root)...)
+	problems = append(problems, install.SkillProblems(root)...)
+	problems = append(problems, install.RuleProblems(root)...)
 	return append(problems, backlog.LintDecisions(root)...), err
 }
 
@@ -42,7 +46,7 @@ func versionProblems(root string) []string {
 	return backlog.LintVersions(parsed, strings.Fields(out))
 }
 
-// runLintGroupFiles reports every docs/backlog group file's own problems, plus a group over 12 tasks (REQ-8).
+// runLintGroupFiles reports every docs/backlog group file's own problems, plus a group over the task cap.
 func runLintGroupFiles(root string) {
 	problems, taskCount, groupCount, err := groupFileLintProblems(root)
 	if err != nil {
@@ -93,13 +97,14 @@ func groupFileLintProblems(root string) (problems []string, taskCount, groupCoun
 	for _, file := range files {
 		problems = append(problems, file.Problems...)
 		// Filed findings wait in REFINEMENT and no builder works them, so only the rest count toward the cap.
-		if built := backlog.BuildableGroupFile(file); built > 12 {
-			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", file.ID, built))
+		if built := backlog.BuildableGroupFile(file); built > backlog.MaxGroupTasks {
+			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of %d (suggest a split per REQ-8)", file.ID, built, backlog.MaxGroupTasks))
 		}
 		problems = append(problems, backlog.LintGroupFile(root, file, texts[file.ID], groupIDs, taskIDs, groupVersions)...)
 		taskCount += len(file.Tasks)
 	}
 	problems = append(problems, backlog.LintGroupFileEpics(files)...)
+	problems = append(problems, backlog.LintGroupFileDuplicates(files)...)
 	return problems, taskCount, len(files), nil
 }
 
@@ -156,6 +161,9 @@ func runList(root string, args []string) {
 
 // groupFilesDir is where one file per group lives, named <group-id>-<slug>.md.
 const groupFilesDir = "docs/backlog"
+
+// groupFileStatuses are the statuses valid on a group file's own heading, matching the grammar.
+var groupFileStatuses = []string{"REFINEMENT", "READY", "BLOCKED"}
 
 // runBacklog lists every open group under docs/backlog: there is no index, so the files are the list.
 func runBacklog(root string) {
@@ -263,6 +271,15 @@ func runBacklogAdd(root string, args []string) {
 		fail(fmt.Errorf("usage: komodo add <group> <title> [--files a,b] [--done-when cmd]"))
 	}
 	groupID, title := positional[0], strings.Join(positional[1:], " ")
+	if !backlog.ValidGroupID(groupID) {
+		fail(fmt.Errorf("%q is not a group id of the form TG-<id>", groupID))
+	}
+	if !contains(backlog.Priorities, *priority) {
+		fail(fmt.Errorf("%q is not a priority: use C, H, M, or L", *priority))
+	}
+	if !contains(groupFileStatuses, *status) {
+		fail(fmt.Errorf("%q is not a status: use REFINEMENT, READY, or BLOCKED", *status))
+	}
 	path, text, found, err := findGroupFile(root, groupID)
 	if err != nil {
 		fail(err)

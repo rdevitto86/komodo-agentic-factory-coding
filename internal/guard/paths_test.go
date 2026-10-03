@@ -113,3 +113,33 @@ func TestAConfigPathStillWinsOverADeclaredWritePath(t *testing.T) {
 		t.Fatalf("the declared memory path was still refused: %v", findings)
 	}
 }
+
+// TestAWriteBesideAWorktreeInTempIsRefusedOnEveryPlatform proves a worktree that itself sits in the
+// temp directory gains no sibling writes, whichever spelling of the temp path the root or write uses.
+func TestAWriteBesideAWorktreeInTempIsRefusedOnEveryPlatform(t *testing.T) {
+	t.Setenv(RoleEnv, "builder")
+	parent := t.TempDir()
+	for _, root := range []string{filepath.Join(parent, "wt"), realPath(filepath.Join(parent, "wt"))} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if findings := pathFindings("../outside.txt", root, root, DefaultPolicy()); len(findings) == 0 {
+			t.Fatalf("a write beside %s was allowed", root)
+		}
+		scratch := filepath.Join(os.TempDir(), "komodo-scratch.txt")
+		if findings := pathFindings(scratch, root, root, DefaultPolicy()); len(findings) != 0 {
+			t.Fatalf("scratch %s = %v, want a temp file away from the worktree allowed", scratch, findings)
+		}
+	}
+}
+
+func TestRealPathResolvesTheLongestExistingPrefix(t *testing.T) {
+	dir := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := realPath(filepath.Join(dir, "missing", "file.go")), filepath.Join(resolved, "missing", "file.go"); got != want {
+		t.Fatalf("realPath = %s, want %s", got, want)
+	}
+}

@@ -2,9 +2,7 @@
 package doctor
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,12 +12,14 @@ import (
 	"strings"
 
 	"komodo/internal/backlog"
+	"komodo/internal/fsx"
 	"komodo/internal/git"
+	"komodo/internal/guard"
 	"komodo/internal/mount"
 	"komodo/internal/plugin"
 	"komodo/internal/pr"
-	"komodo/internal/profile"
 	"komodo/internal/release"
+	"komodo/internal/repo"
 	"komodo/internal/toolkit"
 )
 
@@ -41,6 +41,8 @@ type Options struct {
 	NoGit  bool
 	Prune  bool
 	Remote bool
+	// RepoOnly turns machine-scoped problems, such as a stale global layer, into warnings.
+	RepoOnly bool
 	// Warn receives each note that never fails a check, such as what the forge's plan does not offer.
 	Warn func(note string)
 }
@@ -54,7 +56,15 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkBuilderTier(root)...)
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root, rendered)...)
-	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinLocalUp))...)
+	for _, problem := range checkDrift(rendered, renderInstalled(root, pinLocalUp)) {
+		if options.RepoOnly && problem.Check == checkGlobal {
+			if options.Warn != nil {
+				options.Warn(fmt.Sprintf("%s: %s", problem.Where, problem.Detail))
+			}
+			continue
+		}
+		problems = append(problems, problem)
+	}
 	problems = append(problems, checkStaleSkills(rendered)...)
 	problems = append(problems, checkHookBinary(root, rendered)...)
 	problems = append(problems, checkProfileDrift(root)...)
@@ -63,8 +73,10 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkPins(root)...)
 	problems = append(problems, checkPlugins(root)...)
 	problems = append(problems, checkOverlay(mount.OverlayPath())...)
+	problems = append(problems, checkConfig(root)...)
 	problems = append(problems, checkWorkflows(root)...)
 	problems = append(problems, checkLegacyBacklog(root)...)
+	problems = append(problems, checkStalledBacklog(root, now())...)
 	if !options.NoGit {
 		problems = append(problems, checkAGENTSTracked(root)...)
 		if options.Warn != nil {
@@ -159,7 +171,7 @@ func checkPlugins(root string) []Problem {
 	return problems
 }
 
-// PluginStates lists each plugin type with each of its plugins enabled or disabled; it never fails a check.
+// PluginStates lists each plugin type and its plugins, none of which 1.0 runs (decision 0013); it never fails a check.
 func PluginStates(root string) []string {
 	enabled, _ := plugin.Enabled()
 	plugins, _ := plugin.Load(root, enabled)
@@ -172,7 +184,7 @@ func PluginStates(root string) []string {
 			}
 			state := "disabled"
 			if loaded.Enabled {
-				state = "enabled"
+				state = "enabled here, but 1.0 runs no plugin"
 			}
 			notes = append(notes, fmt.Sprintf("plugin %s %s: %s", kind, loaded.Name, state))
 			listed = true
@@ -233,8 +245,8 @@ type ruleset struct {
 	} `json:"bypass_actors"`
 }
 
-// rulesetsUnoffered matches the forge's refusal where its plan offers no rulesets, such as a private repo on a free plan.
-var rulesetsUnoffered = regexp.MustCompile(`Upgrade to GitHub Pro|HTTP 403`)
+// rulesetsUnoffered matches only the forge's plan-upgrade refusal, not a bare HTTP 403 a missing scope also returns.
+var rulesetsUnoffered = regexp.MustCompile(`Upgrade to GitHub Pro`)
 
 // CheckRulesets reports a default branch no bypass-free ruleset protects, or an active ruleset reaching past it,
 // which blocks every group branch's push. A forge offering no rulesets is left to ForgeNotes.
@@ -479,35 +491,46 @@ func checkGitattributes(root string) []Problem {
 		return []Problem{{"gitattributes", ".gitattributes", "add: * text=auto eol=lf"}}
 	}
 
-	// Check if the file has a line with * pattern that sets eol=lf.
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if strings.HasPrefix(trimmed, "* ") && strings.Contains(trimmed, "eol=lf") {
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 || fields[0] != "*" {
+			continue
+		}
+		if contains(fields[1:], "eol=lf") {
 			return nil
 		}
 	}
 	return []Problem{{"gitattributes", ".gitattributes", "add: * text=auto eol=lf"}}
 }
 
-// checkOverlay reports a machine overlay its readers would skip: bad JSON, or a field of the wrong type.
+// checkOverlay reports a machine overlay its readers refuse: bad JSON, an unknown field, or a wrong type.
 func checkOverlay(path string) []Problem {
-	data, err := os.ReadFile(path)
-	if err != nil || len(bytes.TrimSpace(data)) == 0 {
-		return nil
+	if _, err := mount.DecodeOverlayFile(path); err != nil {
+		return []Problem{{"overlay", path, "a command that reads it stops until it decodes: " + err.Error()}}
 	}
-	var guardFields struct {
-		CriticalRefs []string `json:"critical_refs"`
-		Mode         string   `json:"mode"`
+	return nil
+}
+
+// checkConfig reports a present repo config its reader refuses, naming the file and what stops.
+func checkConfig(root string) []Problem {
+	var problems []Problem
+	for _, config := range []struct {
+		rel, effect string
+		into        any
+	}{
+		{filepath.Join(".komodo", "policy.json"), "the guard skips it, so its refs and paths go unenforced", &guard.Policy{}},
+		{repo.LabelsFile, "pull request labels stop until it decodes", &repo.Labels{}},
+	} {
+		path := filepath.Join(root, config.rel)
+		if _, err := fsx.ReadStrictJSON(path, config.into); err != nil {
+			problems = append(problems, Problem{"config", path, config.effect + ": " + err.Error()})
+		}
 	}
-	err = errors.Join(json.Unmarshal(data, &guardFields), json.Unmarshal(data, &mount.Overlay{}),
-		profile.DecodeOverlay(data))
-	if err == nil {
-		return nil
-	}
-	return []Problem{{"overlay", path, "every reader skips it, so its critical_refs and caps are ignored: " + err.Error()}}
+	return problems
 }
 
 // checkGit reports conflict markers and the leftovers a run can strand.

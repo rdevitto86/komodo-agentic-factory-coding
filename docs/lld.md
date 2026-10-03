@@ -31,7 +31,7 @@ A task needs a title and its files (REQ-9). `accept` lines are optional; they fe
 
 ### The backlog
 
-The backlog is a committed plan that keeps agents in sync across workloads (decision 0004). It is one file per group in `docs/backlog/`, named `<group-id>-<slug>.md`, and each file carries its epic's ID. People and the orchestrator write groups through `/plan` or `komodo add`, and plan changes land through pull requests like any other change. The conductor reads groups from the base branch, ticks boxes on each group's own branch, and keeps live progress in run state. A group's PR therefore shows the code and the completed task list together, and adds the group's line as a fragment in `changelog.d/<version>/<group>.md`, so two open PRs never edit the same file. Every reader folds the fragments into `CHANGELOG.md`, the shared history, and `komodo release fold` writes them in on a branch before a release. There is no index and no archive: `komodo backlog` lists the open groups.
+The backlog is a committed plan that keeps agents in sync across workloads (decision 0004). It is one file per group in `docs/backlog/`, named `<group-id>-<slug>.md`, and each file carries its epic's ID. People and the orchestrator write groups through `/plan` or `komodo add`, and plan changes land through pull requests like any other change. The conductor reads groups from the base branch, ticks boxes on each group's own branch, and keeps live progress in run state. A group's PR therefore shows the code and the completed task list together. A group's PR never edits `CHANGELOG.md`; only a release writes it, describing what the version ships. There is no index and no archive: `komodo backlog` lists the open groups.
 
 Cleanup is mechanical (REQ-46):
 
@@ -89,7 +89,7 @@ The conductor writes each state to `state.json` before starting its work, so a r
 | Context pack | File bodies, signatures of imported packages, callers of changed symbols, neighbouring tests, the spec sections the group cites, and the repo's rules; each capped |
 | Tier | The role's tier; `heavy` only when the group asks for it |
 | Size | Tasks, files, packages and brief bytes |
-| Base | The group's epic branch, `feat/v<epic's version>`, or the branch of a group named in `depends_on` (REQ-13, decision 0006) |
+| Base | The group's epic branch, `feat/<epic's version>`, or the branch of a group named in `depends_on` (REQ-13, decision 0006) |
 
 ### Run state and metrics
 
@@ -98,7 +98,7 @@ Each run writes to `.komodo/runs/<run-id>/`, which is gitignored and local. Each
 | File | Holds |
 |---|---|
 | `state.json` | Each group's state, worktree, branch, last WIP commit, session IDs, open findings and time used |
-| `metrics.jsonl` | One line per stage and session: run, group, stage, start, duration, turns, input, output and cached tokens, cost, outcome (REQ-28) |
+| `line.jsonl` | One line per stage and session: run, group, stage, start, duration, turns, input, output and cached tokens, outcome (REQ-28); archived to `line.<run>.jsonl` when the run ends |
 | `events.jsonl` | Escalations and how they were settled, stops, pauses for usage limits, and resumes |
 
 ### Results
@@ -121,15 +121,15 @@ Every model session returns JSON checked against its role's schema; the conducto
 |---|---|
 | `komodo install` | Machine setup: links the binary onto PATH, installs the global orchestrator layer, runs doctor |
 | `komodo init` | Writes the starter docs, an empty `docs/backlog/` and optional config into a repo; nothing it writes is required |
-| `komodo run [group…] [--all] [--no-ship]` | Preflight, then drives groups to draft PRs; `--no-ship` stops each at Shipped-ready |
+| `komodo run [group\|task] [--no-ship] [--dry-run] [--budget d]` | Preflight, then drives the next ready group, or the one named, to a draft PR under a budget; `--no-ship` stops it at Shipped-ready |
 | `komodo status [--watch]` | The current run: groups by state, time used and blockers |
-| `komodo stop [group]`, `komodo resume [group…]` | Stops with the work saved, or resumes stopped and edited groups |
+| `komodo resume <group>` | Continues a stopped or killed group from its saved session or WIP |
 | `komodo ship <group>` | Finishes a group stopped before Ship |
 | `komodo worktree add <branch>` | Cuts a detached worktree for ad hoc work, tracking `<branch>` (decision 0012) |
 | `komodo pr create`, `komodo pr label` | Opens a pull request outside the line with its title checked and its labels applied: `@agent`, the scope `.komodo/labels.json` maps, the stage, and `branch/feature` off the default branch |
 | `komodo check <task\|findings\|scope>` | The checks that hooks and agents call |
 | `komodo backlog`, `komodo add <group> "<title>"` | Lists the open groups; adds a group or task |
-| `komodo report [run]` | Summarises a run's metrics |
+| `komodo report` | Summarises the current run's metrics |
 | `komodo sync` | Removes merged groups' worktrees and `refs/komodo` tips, opens a cleanup PR for an epic whose files outlived it, and updates the toolkit between runs |
 | `komodo abandon <group>` | Removes a group's worktree and `refs/komodo` tip on purpose, and marks its file BLOCKED |
 | `komodo lint`, `komodo doctor [--remote]`, `komodo eval` | Backlog grammar, machine and forge health, the golden suite |
@@ -202,7 +202,7 @@ A repo may commit `.komodo/`. Nothing in it is required, a malformed file is ski
 | `commands.json` | Verify, compile, before-review and after-publish commands, each judged by the guard first; verify otherwise resolves by discovery |
 | `policy.json` | Adds critical refs |
 
-Precedence is defaults, then detection, then the machine overlay, then the repo, then the task; each layer can only add. The four founding orchestrator skills, `run`, `review`, `backlog` and `respond`, cannot be appended to by a repo.
+Precedence is defaults, then detection, then the machine overlay, then the repo, then the task; each layer can only add. The four orchestrator skills, `komodo`, `run`, `plan` and `escalate`, cannot be appended to by a repo (see #skills-and-scoping).
 
 ### Build
 
@@ -258,7 +258,7 @@ A headless run exits non-zero when it ends with any group blocked.
 
 Prepare runs locally with no model (REQ-24):
 
-1. Commit the group's work with its ticked task list and its changelog fragment. When it is the last open group of its epic, also delete the epic's group files. The message is conventional, with no trailers.
+1. Commit the group's work with its ticked task list. When it is the last open group of its epic, also delete the epic's group files. The message is conventional, with no trailers.
 2. Run the pre-commit and pre-push checks.
 3. Rebase on the base. On a conflict, the conductor leaves the conflict markers in the worktree and runs one repair round with the conflicts as the fix list; the builder edits files and never runs git. If the conflict remains, the group stops with a blocker note.
 4. Run the integration build and tests. The conductor also test-merges every group that is ready in the same run, to catch breakage between groups; a failure is a repair round for the group that caused it.
@@ -266,7 +266,7 @@ Prepare runs locally with no model (REQ-24):
 
 Ship is the only stage that reads the forge credential (REQ-26):
 
-1. If the group's epic has no branch yet, cut `feat/v<epic's version>` from `main` and open it as a draft PR to `main`.
+1. If the group's epic has no branch yet, cut `feat/<epic's version>` from `main` and open it as a draft PR to `main`.
 2. Push `refs/komodo/<branch>` to `refs/heads/<branch>` on origin, never a protected one; the push drops the builder's lease.
 3. Open the group's PR against its base from step 5 above. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status: wip` (REQ-25).
 4. Add the labels. Once every check and review has passed, mark the PR ready and remove `status: wip`, then the conductor merges it into its epic branch. Only a person merges an epic branch's own PR into `main` (decision 0006).
@@ -355,7 +355,7 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 
 | Hook | Session | Checks one thing | On a violation | Limit | If the hook itself fails |
 |---|---|---|---|---|---|
-| Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths, attaching a branch in a linked worktree, a push to a branch a builder's lease holds | Refuses, naming the allowed alternative | — | Allows and logs |
+| Guard, PreToolUse, global tier | Every session | Critical refs, force push, `--no-verify`, host and toolkit config paths, attaching a branch in a linked worktree, a push to a branch a live builder's lease holds | Refuses, naming the allowed alternative | — | Allows and logs |
 | Gate, commit-msg | Every committer, model or not | The message carries no trailer the loaded policy names | Refuses, naming the trailer to remove | — | Fails, naming the missing binary |
 | Gate, pre-commit | Every committer, model or not | The branch, or a detached worktree's tracked branch, is not critical, and is `<type>/<kebab-name>`, an epic branch, a line-cut slug, or detached | Refuses, naming the branch to rename | — | Fails, naming the missing binary |
 | Gate, pre-push | Every pusher, model or not | The pushed ref is not critical, and no builder's lease holds it | Refuses, naming the lease's group, pid and lapse time | — | Fails, naming the missing binary |
@@ -365,7 +365,9 @@ Most loops in the first line came from hooks and guards: 187 builder refusals, a
 | Evidence, Stop | Review lens | Every blocking finding carries evidence | Refuses to stop, listing the findings without evidence | 2, then those findings become notes | Allows |
 | Time warning, PostToolUse | Builder, lens | Time and turns used | Never refuses; warns at 80% | — | Skips |
 | Status, SessionStart | Orchestrator | — | Adds the run's status and any blocked groups | — | Skips |
-| Prune, SessionStart | Orchestrator | — | Launches the worktree sweep detached, one at a time, capped at 2 minutes, logged to `.komodo/prune.log`; names the last sweep's failure | — | Skips |
+| Prune, SessionStart | Orchestrator | — | Launches the sweep detached, one at a time, capped at 2 minutes, logged to `.komodo/prune.log`: it publishes the newest binary, re-renders this repo's layer and an installed global layer, then prunes finished worktrees; names the last sweep's failure | — | Skips |
+
+**Every hook registers once, and every hook runs `~/.komodo/bin/komodo`.** An interactive session takes the guard from the user's global layer; the repo's `.claude/settings.json` registers no hook. A line session loads only `.claude/line-settings.json` (`--setting-sources local`), which carries the guard. So no tool call is judged twice.
 
 The boundaries that stop hook loops:
 
@@ -447,15 +449,13 @@ In this repo, the orchestrator may edit the guard, the policy and the skills on 
 
 ### Install
 
-`install.sh` (macOS, Linux, WSL2) and `install.ps1` (native Windows) sit at the repo root (decision 0002). Each is safe to run again, which is also how an update works:
+`komodo install` is the one setup step, the same on every platform, and safe to run again. From a checkout with Go, run it as `go run komodo/cmd/komodo install`; elsewhere `install.sh` (macOS, Linux, WSL2) or `install.ps1` (native Windows) downloads the pinned release, verifies its SHA-256 and runs it. Those two scripts hold no other logic, and `komodo lint` keeps every other committed script to one exec into komodo. The command:
 
-1. Check for git and Claude Code, and say how to install whichever is missing.
-2. Build the binary if Go is present; otherwise download the pinned release and verify its checksum.
-3. Link `komodo` onto PATH: a symlink on macOS and Linux, a small wrapper on Windows, where symlinks need admin rights.
-4. Run `komodo install`: the global orchestrator layer (the guard hook, the orchestrator skills and commands) goes into the user's Claude Code config.
-5. Run `komodo init` when started inside a repo, then `komodo doctor`.
-
-Inside WSL2, the installer also checks that the repo is on the Linux filesystem.
+1. Refuses a repo on the Windows filesystem under WSL2, naming where to clone it.
+2. In the toolkit's own checkout, builds `bin/komodo` when it is missing.
+3. Publishes the binary to `~/.komodo/bin/komodo`, the one path every hook runs, and links `komodo` onto PATH: a symlink in `~/.local/bin` on macOS and Linux; on Windows `install.ps1` puts the binary's own directory on the user PATH.
+4. In the toolkit's own checkout, writes the git hooks: each is one exec into `komodo git-hook <name>`, which holds the hook's logic.
+5. Renders this repo's layer, then the user's global layer. Outside a repo it installs only the global layer; `komodo init` adds the line to a new repo.
 
 ### Binaries and releases
 
@@ -480,7 +480,7 @@ Inside WSL2, the installer also checks that the repo is on the Linux filesystem.
 
 ### Plugins
 
-A plugin is a folder with a manifest naming its type, the roles and stages it attaches to, and its settings. V1 ships the three types, each disabled until enabled per machine (REQ-42):
+A plugin is a folder with a manifest naming its type, the roles and stages it attaches to, and its settings. V1 ships the three types disabled (REQ-42), and runs none of them: a machine may enable one, but its point is wired in only by the release that ships the first real plugin (decision 0013).
 
 - **Notifiers:** copy blocker notes and run summaries somewhere else, such as Slack or Google Chat later. They never decide anything.
 - **Tool packs:** mechanical commands, such as cloud CLIs for AWS, GCP or Azure, added to a role's allow list behind the guard.

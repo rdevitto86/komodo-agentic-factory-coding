@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -612,18 +613,90 @@ func TestALegacyStatusIsMergedIntoItsGroupsAndRemoved(t *testing.T) {
 	}
 }
 
+// TestMigrateRunKeepsTheLegacyFileWhenItsRenameFails blocks the rename into the group's own run
+// directory, so the legacy run.json must survive as the state's one remaining copy.
+func TestMigrateRunKeepsTheLegacyFileWhenItsRenameFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a read-only directory mode does not block a rename on Windows")
+	}
+	root := t.TempDir()
+	state := RunState{Run: "TG-16.2-1", Group: "TG-16.2", Base: "main", Branch: "feat/legacy-keep"}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(root, StateDir, "run.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := RunDir(root, state.Group)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	LoadRuns(root)
+
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatalf("stat = %v; a failed rename must keep the legacy run.json", err)
+	}
+}
+
+// TestSaveRunNeverLeavesLoadRunForReadingATornFile races a writer against a reader on the same
+// run.json, so the reader always sees a whole state, never a truncated or half-written one.
+func TestSaveRunNeverLeavesLoadRunForReadingATornFile(t *testing.T) {
+	root := t.TempDir()
+	states := []RunState{
+		{Run: "TG-17.1-1", Group: "TG-17.1", Base: "main", Branch: "feat/a", Waves: [][]string{{"TSK-17.1.1"}}},
+		{Run: "TG-17.1-2", Group: "TG-17.1", Base: "main", Branch: "feat/b"},
+	}
+	if err := SaveRun(root, states[0]); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	var wait sync.WaitGroup
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := SaveRun(root, states[i%2]); err != nil {
+				t.Errorf("SaveRun = %v", err)
+				return
+			}
+		}
+	}()
+	for i := 0; i < 2000; i++ {
+		if _, err := LoadRunFor(root, "TG-17.1"); err != nil {
+			t.Errorf("LoadRunFor = %v; a concurrent SaveRun must never leave a torn read", err)
+			break
+		}
+	}
+	close(stop)
+	wait.Wait()
+}
+
+// TestAddDetachedCutsFromBaseNotFromStaleOrigin proves a branch that only a stale origin/feat/a still holds
+// is cut fresh from its base, without that origin branch's old commit.
 func TestAddDetachedCutsFromBaseNotFromStaleOrigin(t *testing.T) {
 	root, _ := remotedRepo(t)
-	// Push main to remote, creating origin/main
 	if _, err := git.Run(root, "push", "origin", "main"); err != nil {
 		t.Fatal(err)
 	}
-	// Create a second worktree and push to feat/a
 	worktree1 := filepath.Join(root, StateDir, "wt", "TSK-20.1.1")
 	if err := AddDetached(root, "feat/a", "main", worktree1); err != nil {
 		t.Fatal(err)
 	}
-	// Create a file and commit in the first worktree
 	if err := os.WriteFile(filepath.Join(worktree1, "file.txt"), []byte("old\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -633,34 +706,28 @@ func TestAddDetachedCutsFromBaseNotFromStaleOrigin(t *testing.T) {
 	if _, err := git.Run(worktree1, "commit", "-m", "add file"); err != nil {
 		t.Fatal(err)
 	}
-	// Push feat/a, so now origin/feat/a exists with the old commit
 	if _, err := git.Run(root, "push", "origin", TipRef("feat/a")+":refs/heads/feat/a"); err != nil {
 		t.Fatal(err)
 	}
-	// Clean up the first worktree and tip so they don't interfere
 	if _, err := git.Run(root, "worktree", "remove", worktree1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := git.Run(root, "update-ref", "-d", TipRef("feat/a")); err != nil {
 		t.Fatal(err)
 	}
-	// Confirms feat/a is absent locally while origin/feat/a remains
 	if _, err := git.Run(root, "rev-parse", "--verify", "refs/heads/feat/a"); err == nil {
-		t.Fatal("feat/a should not exist locally")
+		t.Fatal("feat/a exists locally; the scenario needs only origin/feat/a")
 	}
 	if _, err := git.Run(root, "rev-parse", "--verify", "origin/feat/a"); err != nil {
 		t.Fatalf("origin/feat/a must exist: %v", err)
 	}
-	// Cuts a new worktree for feat/a from base, not from stale origin/feat/a
 	worktree2 := filepath.Join(root, StateDir, "wt", "TSK-20.1.2")
 	if err := AddDetached(root, "feat/a", "main", worktree2); err != nil {
 		t.Fatal(err)
 	}
-	// The new worktree should be based on main, not contain the old file from origin/feat/a
 	if _, err := os.Stat(filepath.Join(worktree2, "file.txt")); err == nil {
 		t.Fatal("new worktree must not inherit stale commits from origin/feat/a")
 	}
-	// Verify the base commit is present (from main)
 	if _, err := os.Stat(filepath.Join(worktree2, "a.txt")); err != nil {
 		t.Fatalf("new worktree must have base commit from main: %v", err)
 	}
@@ -734,5 +801,22 @@ func TestWriteBriefCutsATaskFromTheLocalGroupBranchNotStaleOrigin(t *testing.T) 
 	}
 	if _, err := os.Stat(filepath.Join(worktree, "local.txt")); err != nil {
 		t.Fatalf("stat = %v; a task must be cut from the group branch's local tip", err)
+	}
+}
+
+// TestStartNamesAndDatesARunFromOneClockReading fixes the cut's clock and proves the run id and
+// start time both come from that one reading.
+func TestStartNamesAndDatesARunFromOneClockReading(t *testing.T) {
+	root := cutRepo(t, twoGroupBacklog)
+	fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	saved := now
+	t.Cleanup(func() { now = saved })
+	now = func() time.Time { return fixed }
+	state, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "TG-15.1-" + strconv.FormatInt(fixed.Unix(), 10); state.Run != want || !state.Started.Equal(fixed) {
+		t.Fatalf("run = %s started %s, want %s started %s", state.Run, state.Started, want, fixed)
 	}
 }

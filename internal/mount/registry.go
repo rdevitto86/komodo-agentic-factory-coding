@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/install"
 )
@@ -41,6 +42,14 @@ type Host struct {
 	Deferred string
 	// Contract builds this mount's session driver for one worktree; nil when the mount cannot drive the conductor.
 	Contract func(root, worktree string) Contract
+	// FuzzTargets names this mount's own fuzz functions, which the gate runs alongside its own.
+	FuzzTargets []FuzzTarget
+}
+
+// FuzzTarget is one mount's own fuzz function and the package that holds it.
+type FuzzTarget struct {
+	Name    string
+	Package string
 }
 
 // TaskUsage is what one machine spent on one task, filled after the fact or left empty.
@@ -160,12 +169,25 @@ func WritePaths(root string) []string {
 	return out
 }
 
-// ProjectPaths lists every path a registered mount renders under root as a project copy, relative and slash-separated.
+// FuzzTargets are every registered mount's own fuzz target, which the gate runs alongside its own.
+func FuzzTargets() []FuzzTarget {
+	var out []FuzzTarget
+	for _, host := range Hosts() {
+		out = append(out, host.FuzzTargets...)
+	}
+	return out
+}
+
+// ProjectPaths lists every path a registered mount renders under root as a project copy, relative and
+// slash-separated; a deferred or uninstalled host is skipped, so neither is rendered just to be listed.
 func ProjectPaths(root string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, host := range Hosts() {
+	for _, host := range Active() {
 		if host.Render == nil {
+			continue
+		}
+		if host.Installed != nil && !host.Installed(root) {
 			continue
 		}
 		plan, err := host.Render(root, BinaryPath())
@@ -199,7 +221,7 @@ var Executable = func() (string, error) {
 
 // BinaryPath is the running toolkit binary's absolute path, or bin/<name> relative to the main checkout under go run.
 func BinaryPath() string {
-	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
+	name := "komodo"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -404,7 +426,7 @@ func GuardConfigPaths() []string {
 	return out
 }
 
-// GuardPrivatePatterns are every private-text pattern a registered mount's guard refuses to send out.
+// GuardPrivatePatterns are every private-text pattern, such as a session link, a registered mount's guard refuses.
 func GuardPrivatePatterns() []string {
 	var out []string
 	for _, tools := range GuardHosts() {
@@ -413,7 +435,17 @@ func GuardPrivatePatterns() []string {
 	return out
 }
 
-// Overlay is the developer's own ~/.komodo/config.json as the mounts read it.
+// OverlayCaps lowers a profile's brief slot caps; the overlay may only shrink one, never grow it.
+type OverlayCaps struct {
+	RepoRules   int `json:"repo_rules"`
+	RepoContext int `json:"repo_context"`
+	PerFile     int `json:"per_file"`
+	FilesTotal  int `json:"files_total"`
+	Standard    int `json:"standard"`
+	Failure     int `json:"failure"`
+}
+
+// Overlay is ~/.komodo/config.json, the one shape every reader across guard, mount, and profile decodes strictly.
 type Overlay struct {
 	Local               bool              `json:"local"`
 	LocalURL            string            `json:"local_url"`
@@ -429,6 +461,20 @@ type Overlay struct {
 	SandboxWrite []string `json:"sandbox_write"`
 	// SandboxDomains pre-allows network hosts, since a headless run cannot answer the sandbox's prompt.
 	SandboxDomains []string `json:"sandbox_domains"`
+	// CriticalRefs names a ref the guard protects beyond its own defaults.
+	CriticalRefs []string `json:"critical_refs"`
+	// Mode narrows or widens which critical-ref rules the guard enforces.
+	Mode string `json:"mode"`
+	// Caps lowers a profile's brief slot caps; nil leaves every cap at its default.
+	Caps *OverlayCaps `json:"caps"`
+	// MaxParallel lowers a profile's task concurrency; nil leaves it at its default.
+	MaxParallel *int `json:"max_parallel"`
+	// ReviewRepairs lowers how many fix rounds a blocking review earns; nil leaves it at its default.
+	ReviewRepairs *int `json:"review_repairs"`
+	// PauseAt lowers the usage fraction that pauses a wave; nil or non-positive leaves it at its default.
+	PauseAt *float64 `json:"pause_at"`
+	// WarnAt lowers the usage fraction that warns before a wave; nil or non-positive leaves it at its default.
+	WarnAt *float64 `json:"warn_at"`
 }
 
 // OverlayPath is where a developer's own overlay lives, or empty when there is no home.
@@ -440,14 +486,23 @@ func OverlayPath() string {
 	return filepath.Join(home, ".komodo", "config.json")
 }
 
-// LoadOverlay reads the overlay, tolerating a missing or malformed file as an empty one.
-func LoadOverlay() Overlay {
+// DecodeOverlayFile reads one overlay file; an absent file decodes to a zero Overlay with no
+// error, a present but malformed one returns an error naming path.
+func DecodeOverlayFile(path string) (Overlay, error) {
 	var overlay Overlay
-	data, err := os.ReadFile(OverlayPath())
-	if err != nil {
-		return overlay
+	if _, err := fsx.ReadStrictJSON(path, &overlay); err != nil {
+		return Overlay{}, err
 	}
-	_ = json.Unmarshal(data, &overlay)
+	return overlay, nil
+}
+
+// LoadOverlay reads the overlay, tolerating its absence as an empty one; a malformed file panics
+// naming its path, since a developer's own corrupted config must never silently fall back.
+func LoadOverlay() Overlay {
+	overlay, err := DecodeOverlayFile(OverlayPath())
+	if err != nil {
+		panic(err)
+	}
 	return overlay
 }
 

@@ -358,6 +358,17 @@ func TestDoctorReportsAndExitsOnProblems(t *testing.T) {
 	}
 }
 
+// TestDoctorListsEachPluginType proves doctor names each plugin type as disabled when none is installed.
+func TestDoctorListsEachPluginType(t *testing.T) {
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "doctor", "--no-git")
+	for _, kind := range []string{"notifier", "tool-pack", "stage-hook"} {
+		if !strings.Contains(got.stdout, "note plugin "+kind+": disabled, none installed") {
+			t.Fatalf("doctor did not list plugin %s: %s%s", kind, got.stdout, got.stderr)
+		}
+	}
+}
+
 // TestCommentsCheckAndReportRunOnACleanRepo proves the comment lint and the report read a fresh repo.
 func TestCommentsCheckAndReportRunOnACleanRepo(t *testing.T) {
 	root := fixtureRepo(t)
@@ -592,5 +603,40 @@ func TestBareDiffPairsTheOpenGroupWithItsOwnBranch(t *testing.T) {
 	}
 	if got := runCLI(t, root, "", "diff"); got.code != 0 || !strings.Contains(got.stdout, "Review of group TG-91.1") {
 		t.Fatalf("diff = %+v; a bare diff must review the earliest open group", got)
+	}
+}
+
+// TestInstallSetsUpTheRepoAndTheMachineInOneStep proves a plain install renders the repo's layer and the
+// user's global layer, while --global leaves the repo alone.
+func TestInstallSetsUpTheRepoAndTheMachineInOneStep(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := fixtureRepo(t)
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", "komodo"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := runCLI(t, root, "", "install"); got.code != 0 {
+		t.Fatalf("install exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	for _, path := range []string{filepath.Join(root, ".claude", "settings.json"), filepath.Join(home, ".claude", "settings.json")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s: %v; one install must set up the repo and the machine", path, err)
+		}
+	}
+	other := fixtureRepo(t)
+	if err := os.MkdirAll(filepath.Join(other, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "bin", "komodo"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := runCLI(t, other, "", "install", "--global"); got.code != 0 {
+		t.Fatalf("install --global exited %d: %s%s", got.code, got.stdout, got.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(other, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("install --global rendered the repo (%v); it must touch only the machine", err)
 	}
 }

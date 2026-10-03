@@ -153,6 +153,7 @@ func RenderPluginHooks(plan *install.Plan, root, binary string) {
 	if !filepath.IsAbs(binary) {
 		binary = filepath.Join(mount.MainCheckout(root), binary)
 	}
+	binary = mount.Publish(binary)
 	for _, each := range sessionPlugins {
 		dir := filepath.Join(root, Dir, "plugins", each.role)
 		if each.role != "builder" {

@@ -68,6 +68,52 @@ func TestLeaseIsTakenOnlyWhenABuilderWrites(t *testing.T) {
 	}
 }
 
+// sabotageLeases replaces root's git common dir's komodo/leases with a plain file, so any later
+// write under it fails instead of succeeding.
+func sabotageLeases(t *testing.T, root string) {
+	t.Helper()
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(common, "komodo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "leases"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTakeLeasesReturnsTheFailureInsteadOfDiscardingIt(t *testing.T) {
+	root, _, _ := detachedGroup(t, "feat/held")
+	sabotageLeases(t, root)
+	plan := &Plan{Group: "TG-1", Branch: "feat/held"}
+	if err := takeLeases(root, plan, &Action{Action: "spawn", Role: "builder", Task: "TG-1.1"}); err == nil {
+		t.Fatal("takeLeases returned nil though the lease directory cannot be written")
+	}
+}
+
+func TestAFailedLeaseTakeStopsTheBuilderInStep(t *testing.T) {
+	root := stepRepo(t)
+	startRun(t, root)
+	next, err := Step(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	briefPath := filepath.Join(root, StateDir, "briefs", next.Task+".md")
+	if err := os.MkdirAll(filepath.Dir(briefPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(briefPath, []byte("brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sabotageLeases(t, root)
+	if next, err = Step(root, ""); err == nil {
+		t.Fatalf("Step = %+v, nil; a failed lease take must stop the builder with an error", next)
+	}
+}
+
 func TestTheLeaseEnds(t *testing.T) {
 	root, _, worktree := detachedGroup(t, "feat/held")
 	taken := time.Now()
@@ -98,8 +144,8 @@ func TestTheLeaseEnds(t *testing.T) {
 		if _, ok := Lease(root, "feat/held", taken.Add(2*time.Hour+time.Minute)); ok {
 			t.Fatal("a lease taken 2h1m ago still holds")
 		}
-		if held, ok := Lease(root, "feat/held", taken.Add(time.Hour+59*time.Minute)); !ok || !held.Lapses().Equal(taken.Add(LeaseTTL)) {
-			t.Fatalf("a lease taken 1h59m ago = %+v, %v; want it held until %s", held, ok, taken.Add(LeaseTTL))
+		if held, ok := Lease(root, "feat/held", taken.Add(time.Hour+59*time.Minute)); !ok || !held.Lapses().Equal(taken.Add(lease.TTL)) {
+			t.Fatalf("a lease taken 1h59m ago = %+v, %v; want it held until %s", held, ok, taken.Add(lease.TTL))
 		}
 	})
 	t.Run("when its holder exits", func(t *testing.T) {

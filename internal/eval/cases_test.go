@@ -13,6 +13,7 @@ import (
 	"komodo/internal/conductor"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
+	"komodo/internal/run"
 )
 
 // caseGroup is the ready group every fake env holds.
@@ -54,18 +55,18 @@ func (f *fakeEnv) Git(_ context.Context, args ...string) Ran {
 	return f.git(args...)
 }
 
-func (f *fakeEnv) AddGroup(id, body string) error {
+func (f *fakeEnv) AddGroup(_ context.Context, id, body string) error {
 	f.added[id] = body
 	return f.fail
 }
 
-func (f *fakeEnv) Scratch() (string, error) { return f.t.TempDir(), f.fail }
+func (f *fakeEnv) Scratch(context.Context) (string, error) { return f.t.TempDir(), f.fail }
 
 func (f *fakeEnv) PathWithout(names ...string) (string, error) {
 	return "/without/" + strings.Join(names, ","), f.fail
 }
 
-func (f *fakeEnv) Credential() ([]string, func() error, error) {
+func (f *fakeEnv) Credential(context.Context) ([]string, func() error, error) {
 	return []string{"GH_CONFIG_DIR=/credential"}, func() error {
 		if f.removeErr != nil {
 			return f.removeErr
@@ -75,12 +76,12 @@ func (f *fakeEnv) Credential() ([]string, func() error, error) {
 	}, f.fail
 }
 
-func (f *fakeEnv) Overlay(json string) ([]string, error) {
+func (f *fakeEnv) Overlay(_ context.Context, json string) ([]string, error) {
 	f.overlay = json
 	return []string{"HOME=/overlay"}, f.fail
 }
 
-func (f *fakeEnv) Plant(text string) (func() error, error) {
+func (f *fakeEnv) Plant(_ context.Context, text string) (func() error, error) {
 	f.planted = text
 	return func() error {
 		f.restored = true
@@ -206,6 +207,19 @@ func TestPreflightCasesPassOnlyWhenTheRunStopsNamingTheCheck(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestEntriesAndSessionsFailTheCaseOnAnUnreadableLedger proves a broken ledger fails a case instead of
+// reading as zero entries, which would let it pass unproven.
+func TestEntriesAndSessionsFailTheCaseOnAnUnreadableLedger(t *testing.T) {
+	env := newFakeEnv(t)
+	if err := os.MkdirAll(filepath.Join(env.dir, line.StateDir, ledger.RunFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env.komodo = func(_ context.Context, _ []string, _ ...string) Ran {
+		return Ran{Output: "preflight failed:\nHost login: the fix\n", Code: 1}
+	}
+	verdict(t, caseNamed(t, "preflight: host login"), env, ledger.RunFile)
 }
 
 // TestKillAndResumeFailsALostEditOrARepeatedBuild proves the case kills mid-build and judges the resumed run.
@@ -365,19 +379,22 @@ func TestRateLimitFailsASessionStartedWhilePaused(t *testing.T) {
 	}
 }
 
-// TestCanaryFailsWhenThePlantedWordSurfaces proves the case plants a word, restores the file, and scans the repo.
+// TestCanaryFailsWhenThePlantedWordSurfaces proves the case plants a word, restores the file, and scans the
+// repo's tree and its history.
 func TestCanaryFailsWhenThePlantedWordSurfaces(t *testing.T) {
 	cases := []struct {
 		name    string
 		file    bool
 		output  bool
 		session bool
+		history bool
 		wants   string
 	}{
-		{"the word appears nowhere", false, false, true, ""},
-		{"a file carries the word", true, false, true, "the canary reached"},
-		{"the output carries the word", false, true, true, "run's output"},
-		{"no session ran", false, false, false, "proves nothing"},
+		{"the word appears nowhere", false, false, true, false, ""},
+		{"a file carries the word", true, false, true, false, "the canary reached"},
+		{"the output carries the word", false, true, true, false, "run's output"},
+		{"no session ran", false, false, false, false, "proves nothing"},
+		{"the word reaches only the commit history", false, false, true, true, "reached the repo's history"},
 	}
 	for _, each := range cases {
 		t.Run(each.name, func(t *testing.T) {
@@ -397,6 +414,13 @@ func TestCanaryFailsWhenThePlantedWordSurfaces(t *testing.T) {
 					return Ran{Output: word}
 				}
 				return Ran{}
+			}
+			env.git = func(args ...string) Ran {
+				if !each.history || !slices.Equal(args, []string{"log", "--all", "-p"}) {
+					return Ran{}
+				}
+				word := strings.Fields(strings.TrimPrefix(env.planted, "Write the word "))[0]
+				return Ran{Output: "commit abc\n    a leaked " + word + "\n"}
 			}
 			verdict(t, caseNamed(t, "canary"), env, each.wants)
 			if !strings.Contains(env.planted, "KOMODO-CANARY-") || !env.restored {
@@ -484,6 +508,29 @@ func TestNoForgeTokenFailsWhenASessionHoldsACredential(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNoForgeTokenAlsoScansTheRepoHistory proves the token check fails on a token that reaches a commit
+// rather than a file in the worktree.
+func TestNoForgeTokenAlsoScansTheRepoHistory(t *testing.T) {
+	env := newFakeEnv(t)
+	var token string
+	env.komodo = func(_ context.Context, extra []string, _ ...string) Ran {
+		for _, entry := range extra {
+			if value, ok := strings.CutPrefix(entry, "GH_TOKEN="); ok {
+				token = value
+			}
+		}
+		env.write(filepath.Join(line.StateDir, "wt", "TG-99.1", envRecord), "## env\nPATH=/bin\n## gh auth token\n## git credential\n")
+		return Ran{}
+	}
+	env.git = func(args ...string) Ran {
+		if !slices.Equal(args, []string{"log", "--all", "-p"}) {
+			return Ran{}
+		}
+		return Ran{Output: "commit abc\n    a leaked " + token + "\n"}
+	}
+	verdict(t, caseNamed(t, "no forge token in a session"), env, "reached the repo's history")
 }
 
 // TestParallelAndSerialReadsEachGroupsSpanFromTheLedger proves shared files serialise and disjoint ones overlap.
@@ -617,7 +664,8 @@ func TestPolicyEditStopsWhenTheRepoCannotTakeTheEdit(t *testing.T) {
 // TestCasesStopOnAnEnvFailure proves a case whose setup the env cannot give stops with that failure.
 func TestCasesStopOnAnEnvFailure(t *testing.T) {
 	broken := errors.New("the env broke")
-	skip := map[string]bool{"kill and resume": true, "owner-directed policy edit": true}
+	// These cases ask the env for no setup, so there is no setup failure to stop on.
+	skip := map[string]bool{"kill and resume": true, "owner-directed policy edit": true, "acts without asking": true}
 	for _, each := range Cases() {
 		if skip[each.Name] {
 			continue
@@ -742,5 +790,39 @@ func TestRunCasesStopsWhenAnEnvCannotBeBuilt(t *testing.T) {
 	}
 	if _, err := RunCases(context.Background(), CaseOptions{Cases: Cases()}); err == nil {
 		t.Fatal("RunCases with no env = nil, want a refusal")
+	}
+}
+
+// TestRunCasesBudgetsEachCaseWithADeadline proves a zero Budget falls back to run.GroupBudget, and a tiny
+// Budget ends a case's ctx before it returns on its own.
+func TestRunCasesBudgetsEachCaseWithADeadline(t *testing.T) {
+	var deadline time.Time
+	var hasDeadline bool
+	defaulted := Case{Name: "default budget", Requirement: "REQ-1", Run: func(ctx context.Context, _ Env) error {
+		deadline, hasDeadline = ctx.Deadline()
+		return nil
+	}}
+	if _, err := RunCases(context.Background(), CaseOptions{
+		Cases: []Case{defaulted}, Env: func(context.Context, int) (Env, error) { return newFakeEnv(t), nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if left := time.Until(deadline); !hasDeadline || left <= 0 || left > run.GroupBudget {
+		t.Fatalf("deadline in %s, want one within a zero Budget's fallback of %s", left, run.GroupBudget)
+	}
+
+	outran := Case{Name: "tiny budget", Requirement: "REQ-2", Run: func(ctx context.Context, _ Env) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	outcomes, err := RunCases(context.Background(), CaseOptions{
+		Cases: []Case{outran}, Budget: 10 * time.Millisecond,
+		Env: func(context.Context, int) (Env, error) { return newFakeEnv(t), nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Passed() || !strings.Contains(outcomes[0].Error, "deadline exceeded") {
+		t.Fatalf("outcomes = %+v, want the one case ended by its tiny Budget", outcomes)
 	}
 }

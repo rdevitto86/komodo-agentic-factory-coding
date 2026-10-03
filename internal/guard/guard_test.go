@@ -281,6 +281,19 @@ func TestHasTrailerCatchesEveryShippedPattern(t *testing.T) {
 	}
 }
 
+// TestHasTrailerCatchesAHostsSessionLink proves the private pattern a host registers, such as its
+// session link, is refused like a co-author trailer.
+func TestHasTrailerCatchesAHostsSessionLink(t *testing.T) {
+	registerFakeHost()
+	policy := DefaultPolicy()
+	if !policy.HasTrailer("feat: x\n\nSee testhost.example/session_abc123") {
+		t.Fatal("a host's session link was not refused")
+	}
+	if policy.HasTrailer("feat: x\n\nSee testhost.example/docs") {
+		t.Fatal("a link that is not a session was refused")
+	}
+}
+
 func TestWorktreeRootFindsTheNearestGit(t *testing.T) {
 	root := worktree(t)
 	deep := filepath.Join(root, "a", "b")

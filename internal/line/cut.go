@@ -77,6 +77,9 @@ func exactGroup(parsed backlog.Backlog, id string) (backlog.Group, bool) {
 	return backlog.Group{}, false
 }
 
+// now is the one clock a cut reads; a test fixes it to pin a run's id and start.
+var now = func() time.Time { return time.Now().UTC() }
+
 // Start cuts the group branch in its own worktree from the base and records the choice, holding the
 // cut lock from the lock and overlap checks through the saved run; force skips the overlap check.
 func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
@@ -112,12 +115,14 @@ func Start(root string, plan *Plan, base string, force bool) (RunState, error) {
 	if err := RenderProject(root, path); err != nil {
 		return RunState{}, err
 	}
+	// One clock reading names the run and dates its start, so the two can never disagree.
+	started := now()
 	state := RunState{
-		Run:     fmt.Sprintf("%s-%d", plan.Group, time.Now().Unix()),
+		Run:     fmt.Sprintf("%s-%d", plan.Group, started.Unix()),
 		Group:   plan.Group,
 		Base:    plan.Base,
 		Branch:  plan.Branch,
-		Started: time.Now().UTC(),
+		Started: started,
 	}
 	state.Worktree = path
 	state.Waves = plan.Waves

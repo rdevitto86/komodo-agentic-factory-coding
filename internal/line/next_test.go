@@ -2,6 +2,7 @@ package line
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,10 +20,13 @@ const groupText = "### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n`
 	"#### [TSK-05.1.3] Three [P: C] [READY]\n```yaml\nfiles: [a/three.go]\ndone_when: [\"go test ./a/...\"]\ndepends_on: [TSK-05.1.1]\n```\n"
 
 // repo writes a throwaway repo root holding a backlog, seeded from legacy-grammar text as group
-// files, and the role files.
+// files, and the role files; it is a real git repo, so a station that leases a branch finds one.
 func repo(t *testing.T, text string) string {
 	t.Helper()
 	root := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
 	backlogtest.SeedText(t, root, text)
 	writeBuilderRole(t, root)
 	return root
@@ -485,5 +489,24 @@ func TestReadyGroupsCountsAnEarlierGroupsBranchAsABase(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "TG-05.4,TG-05.5" {
 		t.Fatalf("ready = %v; want the default-based group, then the group stacked on it", got)
+	}
+}
+
+const stackedTitleOnlyText = "### [TG-05.4] Off the default\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	"#### [TSK-05.4.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go test ./b/...\"]\n```\n\n" +
+	"### [TG-05.5] Stacked using the title-only form\n```yaml\ntype: feat\nversion: 2.2.0\nbase: feat/off-the-default\ndepends_on: [TG-05.4]\n```\n\n" +
+	"#### [TSK-05.5.1] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
+
+// TestReadyGroupsCountsAnEarlierGroupsTitleOnlyBranchAsABase proves a child stacked on the
+// title-only form of an earlier group's branch is not skipped forever.
+func TestReadyGroupsCountsAnEarlierGroupsTitleOnlyBranchAsABase(t *testing.T) {
+	root := stackedRepo(t)
+	groups := readyGroups(root, backlog.Parse(stackedTitleOnlyText), true)
+	var got []string
+	for _, group := range groups {
+		got = append(got, group.ID)
+	}
+	if strings.Join(got, ",") != "TG-05.4,TG-05.5" {
+		t.Fatalf("ready = %v; want the default-based group, then the group stacked on its title-only branch", got)
 	}
 }

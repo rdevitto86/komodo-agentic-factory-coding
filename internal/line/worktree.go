@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/lease"
@@ -46,9 +47,6 @@ func Fetch(root, base string) error {
 	_, err := git.Run(root, "fetch", "origin", base)
 	return err
 }
-
-// BranchName is the branch a group's work lands on: its type and its slug.
-func BranchName(groupType, slug string) string { return groupType + "/" + slug }
 
 // RefusedPushURL is the pushurl that makes git push origin fail inside a line worktree.
 const RefusedPushURL = "refused://the-line-pushes"
@@ -92,6 +90,14 @@ func enableWorktreeConfig(root string) (bool, error) {
 // TipRef is where the line keeps a detached branch's tip, since it never advances refs/heads/<branch>.
 func TipRef(branch string) string {
 	return "refs/komodo/" + branch
+}
+
+// AllowWorktreePush clears path's refused pushurl, so a person's ad hoc worktree pushes the branch it tracks.
+func AllowWorktreePush(path string) error {
+	if _, err := git.Run(path, "config", "--worktree", "--unset-all", "remote.origin.pushurl"); err != nil {
+		return fmt.Errorf("clear the worktree's refused pushurl: %w", err)
+	}
+	return nil
 }
 
 // AddDetached cuts a detached worktree at path tracking branch, starting at its tip ref when one
@@ -207,15 +213,11 @@ func SaveRun(root string, state RunState) error {
 	if !PlainGroup(state.Group) {
 		return fmt.Errorf("a run needs a plain group id, not %q", state.Group)
 	}
-	dir := RunDir(root, state.Group)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "run.json"), append(data, '\n'), 0o644)
+	return fsx.WriteFile(filepath.Join(RunDir(root, state.Group), "run.json"), append(data, '\n'), 0o644)
 }
 
 // LoadRunFor reads one group's run state, if that group has been cut.
@@ -320,6 +322,7 @@ func migrateRun(root string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
+	runSafe := false
 	for _, name := range []string{"ship.json", "status.json", "run.json"} {
 		from, to := filepath.Join(root, StateDir, name), filepath.Join(dir, name)
 		if _, err := os.Stat(from); err != nil {
@@ -329,12 +332,19 @@ func migrateRun(root string) {
 			if name == "status.json" {
 				mergeLegacyStatus(from, to)
 			}
+			if name == "run.json" {
+				runSafe = true
+			}
 			continue
 		}
-		_ = os.Rename(from, to)
+		if err := os.Rename(from, to); err == nil && name == "run.json" {
+			runSafe = true
+		}
 	}
-	// A group already holding its own record keeps it; the stale legacy copy goes.
-	_ = os.Remove(legacy)
+	// A failed rename of run.json keeps the legacy copy as the state's one remaining copy.
+	if runSafe {
+		_ = os.Remove(legacy)
+	}
 }
 
 // mergeLegacyStatus folds a legacy status file into its group's, the group's own entries winning,

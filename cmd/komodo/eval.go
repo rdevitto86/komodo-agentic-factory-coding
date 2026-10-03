@@ -4,7 +4,9 @@ import (
 	"context"
 	"flag"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"komodo/internal/eval"
 	"komodo/internal/mount"
@@ -52,7 +54,10 @@ func runEval(root string, args []string) {
 	if *cases {
 		options := eval.CaseOptions{Cases: eval.Cases(), Budget: *budget, Stdout: os.Stdout}
 		live := eval.LiveOptions{Suite: suite, Executable: executable, Host: *host, Instructions: *instructions}
-		if err := eval.LiveCases(context.Background(), options, live, *work); err != nil {
+		// An interrupt cancels the cases, which unwinds the canary's restore instead of killing the process first.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := eval.LiveCases(ctx, options, live, *work); err != nil {
 			fail(err)
 		}
 		return
