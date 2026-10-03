@@ -446,3 +446,24 @@ func TestPruneStashesArchivesAWeekOldStashThenDropsIt(t *testing.T) {
 		t.Fatalf("patch = %q, want the stash's own change", body)
 	}
 }
+
+func TestPruneRemovesTheDeadBranchClaims(t *testing.T) {
+	root := gitRepo(t)
+	claims := filepath.Join(root, ".git", "komodo-claims")
+	if err := os.MkdirAll(claims, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claims, "HEAD.json"), []byte(`{"session":"s","branch":"HEAD"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := pruneClaims(root)
+	if _, err := os.Stat(claims); !os.IsNotExist(err) {
+		t.Fatalf("claims still present (%v); nothing reads them since the guard dropped claims", err)
+	}
+	if len(done) != 1 || !strings.Contains(done[0], "removed the dead branch claims") {
+		t.Fatalf("done = %q", done)
+	}
+	if again := pruneClaims(root); len(again) != 0 {
+		t.Fatalf("a second prune reported %q; with no claims it must say nothing", again)
+	}
+}
