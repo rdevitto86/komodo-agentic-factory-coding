@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"komodo/internal/check"
+	"komodo/internal/git"
 	"komodo/internal/proc"
 )
 
@@ -117,7 +118,7 @@ func reproduces(worktree, command string) (bool, string, error) {
 	if err := copyTree(worktree, scratch); err != nil {
 		return false, "", err
 	}
-	env := reproducerEnv(os.Environ())
+	env := git.WithoutRepoPointers(os.Environ())
 	// The copy's own repository stops git's walk up for .git from ever reaching the real one.
 	if ran := proc.ShellEnv(scratch, "git init -q", check.CommandTimeout, env); !ran.OK() {
 		return false, "", fmt.Errorf("the scratch copy's repository did not initialise: %v\n%s", ran.Err(), ran.Output)
@@ -130,21 +131,6 @@ func reproduces(worktree, command string) (bool, string, error) {
 		return false, fmt.Sprintf("the reproducer did not run: %v", ran.Err()), nil
 	}
 	return true, fmt.Sprintf("the reproducer fails on the current tree: %v", ran.Err()), nil
-}
-
-// repoPointers are the variables that aim git at a repository, index or tree other than the working directory's.
-var repoPointers = []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"}
-
-// reproducerEnv is env without any variable that would aim a reproducer's git at the real worktree.
-func reproducerEnv(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, entry := range env {
-		key, _, _ := strings.Cut(entry, "=")
-		if !slices.Contains(repoPointers, key) {
-			out = append(out, entry)
-		}
-	}
-	return out
 }
 
 // copyTree copies src's files, directories and symlinks into dst, leaving out git and line state;

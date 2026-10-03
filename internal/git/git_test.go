@@ -145,3 +145,61 @@ func TestWorktreesReadsADetachedWorktreesTrackedBranch(t *testing.T) {
 		t.Fatalf("TrackedBranch(detached) = %q, want task/x", got)
 	}
 }
+
+// TestWorktreesReadsEachTrackedBranchInsideAHook sets GIT_DIR as a git hook does, and still reads
+// each detached worktree's own komodo.branch rather than the hook's.
+func TestWorktreesReadsEachTrackedBranchInsideAHook(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"},
+		{"config", "extensions.worktreeConfig", "true"},
+	} {
+		if _, err := Run(root, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := map[string]string{}
+	for _, branch := range []string{"task/a", "task/b"} {
+		path := filepath.Join(t.TempDir(), "wt")
+		if _, err := Run(root, "worktree", "add", "-q", "--detach", path); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Run(path, "config", "--worktree", "komodo.branch", branch); err != nil {
+			t.Fatal(err)
+		}
+		paths[branch] = path
+	}
+	hookDir, err := Run(paths["task/a"], "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", hookDir)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(hookDir, "index"))
+
+	worktrees, err := Worktrees(paths["task/b"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracked := map[string]bool{}
+	for _, worktree := range worktrees {
+		tracked[worktree.Tracked] = true
+	}
+	if !tracked["task/a"] || !tracked["task/b"] {
+		t.Fatalf("Worktrees = %+v; inside a hook each worktree must keep its own tracked branch", worktrees)
+	}
+	if got := TrackedBranch(paths["task/b"]); got != "task/b" {
+		t.Fatalf("TrackedBranch = %q, want task/b; the hook's GIT_DIR must not redirect it", got)
+	}
+}
+
+func TestWithoutRepoPointersKeepsEverythingElse(t *testing.T) {
+	env := []string{"GIT_DIR=/x/.git", "GIT_WORK_TREE=/x", "GIT_COMMON_DIR=/x/.git", "PATH=/usr/bin", "GIT_AUTHOR_NAME=t"}
+	want := []string{"PATH=/usr/bin", "GIT_AUTHOR_NAME=t"}
+	if got := WithoutRepoPointers(env); !reflect.DeepEqual(got, want) {
+		t.Fatalf("WithoutRepoPointers = %v, want %v", got, want)
+	}
+}

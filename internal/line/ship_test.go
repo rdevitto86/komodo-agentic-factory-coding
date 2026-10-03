@@ -243,7 +243,7 @@ func fillCredential(t *testing.T, clean, host string) string {
 	t.Helper()
 	cmd := exec.Command("git", "-c", "credential.helper=", "-c", credentialHelperKey(clean)+"="+pushCredentialHelper, "credential", "fill")
 	cmd.Stdin = strings.NewReader("protocol=https\nhost=" + host + "\n\n")
-	cmd.Env = append(hookEnv(os.Environ()), pushUsernameEnv+"=x-access-token", pushPasswordEnv+"=tok")
+	cmd.Env = append(Scrub(os.Environ()), pushUsernameEnv+"=x-access-token", pushPasswordEnv+"=tok")
 	out, _ := cmd.CombinedOutput()
 	return string(out)
 }
@@ -1665,12 +1665,14 @@ func TestScrubKeepsTheModelHostsOwnLoginAndDropsEveryForgeSecret(t *testing.T) {
 	}
 }
 
-// TestHookEnvDropsACustomForgeTokenByItsShape proves hookEnv shares Scrub's pattern match, so a
-// custom forge token such as GITLAB_TOKEN never reaches a pre-push hook.
-func TestHookEnvDropsACustomForgeTokenByItsShape(t *testing.T) {
-	scrubbed := hookEnv([]string{"GITLAB_TOKEN=secret", "PATH=/usr/bin"})
-	if _, found := envValue(scrubbed, "GITLAB_TOKEN"); found {
-		t.Fatal("GITLAB_TOKEN reached a pre-push hook's environment")
+// TestScrubDropsAHooksRepoPointers proves a published command started from inside a git hook
+// works on its own directory's repository, not the hook's.
+func TestScrubDropsAHooksRepoPointers(t *testing.T) {
+	scrubbed := Scrub([]string{"GIT_DIR=/elsewhere/.git", "GIT_INDEX_FILE=/elsewhere/.git/index", "PATH=/usr/bin"})
+	for _, key := range []string{"GIT_DIR", "GIT_INDEX_FILE"} {
+		if _, found := envValue(scrubbed, key); found {
+			t.Fatalf("%s reached a scrubbed environment", key)
+		}
 	}
 	if path, _ := envValue(scrubbed, "PATH"); path != "/usr/bin" {
 		t.Fatalf("PATH = %q, want the inherited value", path)

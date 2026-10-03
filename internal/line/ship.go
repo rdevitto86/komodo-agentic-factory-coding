@@ -77,7 +77,7 @@ func Scrub(base []string) []string {
 	out := make([]string, 0, len(base)+6)
 	for _, entry := range base {
 		key, _, found := strings.Cut(entry, "=")
-		if !found || slices.Contains(dropped, key) || credentialShaped(key) || isOverride(key) {
+		if !found || slices.Contains(dropped, key) || slices.Contains(git.RepoPointers, key) || credentialShaped(key) || isOverride(key) {
 			continue
 		}
 		out = append(out, entry)
@@ -1138,7 +1138,7 @@ func splitCredential(raw string) (clean, username, password string) {
 // zeroSHA is the object name a pre-push hook reads for a remote ref it cannot see.
 const zeroSHA = "0000000000000000000000000000000000000000"
 
-// runPrePush runs worktree's pre-push hook, if any, as a push of source to ref at url would, in hookEnv's environment.
+// runPrePush runs worktree's pre-push hook, if any, as a push of source to ref at url would, in Scrub's environment.
 func runPrePush(worktree, url, source, ref string) error {
 	local, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", source)
 	if err != nil {
@@ -1160,7 +1160,7 @@ func runPrePush(worktree, url, source, ref string) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
 	cmd.Dir = worktree
-	cmd.Env = hookEnv(os.Environ())
+	cmd.Env = Scrub(os.Environ())
 	// The line's own push passes the lease the hook would refuse another writer for.
 	if held, ok := Lease(worktree, strings.TrimPrefix(ref, "refs/heads/"), time.Now()); ok {
 		cmd.Env = append(cmd.Env, LockEnv+"="+strconv.Itoa(held.Holder.PID))
@@ -1185,12 +1185,6 @@ func runPrePush(worktree, url, source, ref string) error {
 		return fmt.Errorf("%v: %s", runErr, Clip(output.String(), 4000, "pre-push"))
 	}
 	return nil
-}
-
-// hookEnv is env with every forge credential dropped, by Scrub's same pattern match, and git's
-// credential helper and prompt switched off.
-func hookEnv(env []string) []string {
-	return Scrub(env)
 }
 
 // credentialRe matches the user and secret a URL can carry before its host.

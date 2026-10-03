@@ -353,6 +353,7 @@ func originLacks(root, branch string) bool {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", "--heads", "origin", branch)
 	cmd.Dir = root
+	cmd.Env = git.WithoutRepoPointers(os.Environ())
 	proc.Group(cmd)
 	cmd.Cancel = func() error {
 		proc.KillGroup(cmd)
