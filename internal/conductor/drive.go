@@ -21,6 +21,7 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 	"komodo/internal/review"
 )
 
@@ -795,7 +796,7 @@ func (l *Line) rerun(ctx context.Context) ([]string, error) {
 	}
 	checks := append(line.CompileCommands(l.Root, worktree), line.VerifyCommand(l.Root, worktree))
 	l.ran = checks
-	fixes := check.RunContext(ctx, check.Group{Worktree: worktree, Base: base, Files: files}, "", "", checks)
+	fixes := check.RunContext(ctx, check.Group{Worktree: worktree, Base: base, Files: files}, checks)
 	if base == "" {
 		return fixes, nil
 	}
@@ -860,7 +861,7 @@ func (l *Line) coverage(ctx context.Context, worktree, diff string) ([]string, e
 	}
 	defer os.Remove(out.Name())
 	args := append([]string{"test", "-count=1", "-coverprofile=" + out.Name()}, packages...)
-	if ran := check.Exec(ctx, worktree, check.CommandTimeout, "go", args...); !ran.OK() {
+	if ran := proc.ExecContext(ctx, worktree, check.CommandTimeout, "go", args...); !ran.OK() {
 		return []string{fmt.Sprintf("coverage: `go %s` %v\n%s", strings.Join(args, " "), ran.Err(), ran.Output)}, nil
 	}
 	text, err := os.ReadFile(out.Name())
