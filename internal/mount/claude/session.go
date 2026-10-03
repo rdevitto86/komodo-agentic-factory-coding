@@ -39,7 +39,7 @@ func Session(
 	pluginDir := filepath.Join(root, Dir, "plugins", req.Role)
 	argv = append(argv, "--plugin-dir", pluginDir)
 
-	settings := filepath.Join(root, Dir, "settings.json")
+	settings := filepath.Join(root, Dir, LineSettings)
 	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
 		settings = withSandbox(settings, sandbox)
 	}

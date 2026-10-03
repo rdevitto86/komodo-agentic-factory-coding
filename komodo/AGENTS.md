@@ -13,6 +13,7 @@ Rules for every model and tool on Komodo software.
 
 ## Git
 - **Inside your worktree you are free.** Reset, restore, rebase, or delete; keep a linked worktree detached.
+- **Set work aside with a WIP commit, never `git stash`.** Every worktree and session shares one stash list; the sweep archives a week-old stash and drops it.
 - **Never rewrite pushed history.** No force push, `--force-with-lease`, or `+refspec`; push a new commit.
 - **Never touch a critical ref.** No commit, push, merge, delete, or force on `main`, `master`, or a `komodo/policy.json` ref; work on a `<type>/<kebab-name>` branch.
 - **Never touch host or toolkit config.** Home dirs, machine overlay, `.git/config`, `.git/hooks`, toolkit binaries.
