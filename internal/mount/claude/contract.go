@@ -3,6 +3,7 @@ package claude
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -13,18 +14,46 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"komodo/internal/mount"
 	"komodo/internal/proc"
 )
 
+// cliTimeout bounds how long a claude status command may run before it is killed; a test lowers it.
+var cliTimeout = 30 * time.Second
+
+// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
+
 // errNotLoggedIn reports that the CLI's auth status holds no login.
 var errNotLoggedIn = errors.New("claude is not logged in")
 
-// versionOutput runs this host's own --version report; a test swaps it.
+// versionOutput runs this host's own --version report, or an error naming the command and its stderr.
 var versionOutput = func() (string, error) {
-	out, err := exec.Command("claude", "--version").Output()
-	return strings.TrimSpace(string(out)), err
+	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "claude", "--version")
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	stdout, stderr := proc.NewBoundedWriter(proc.MaxOutput), proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("claude --version: timed out after %s: %s", cliTimeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
+		return "", fmt.Errorf("claude --version: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // Mount runs Claude Code sessions and implements the host contract.

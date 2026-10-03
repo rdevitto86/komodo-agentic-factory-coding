@@ -1,6 +1,7 @@
 package line
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +20,14 @@ import (
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 )
+
+// pushTimeout bounds how long one push or pre-push hook may run before it is killed; a test lowers it.
+var pushTimeout = proc.DefaultTimeout
+
+// waitDelay bounds how long a killed push or hook's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
 
 // ShipResult is what the ship station did with one group.
 type ShipResult struct {
@@ -1037,12 +1045,31 @@ func pushRef(root, worktree, source, branch string) error {
 		args = append([]string{"-c", "credential.helper=", "-c", "credential.helper=" + pushCredentialHelper}, args...)
 		env = append(env, pushUsernameEnv+"="+username, pushPasswordEnv+"="+password)
 	}
-	push := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
+	defer cancel()
+	push := exec.CommandContext(ctx, "git", args...)
 	push.Dir = worktree
 	push.Env = env
-	if out, err := push.CombinedOutput(); err != nil {
-		failure := redactURL(fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out))), pushURL)
-		if credentialRefused(string(out)) {
+	proc.Group(push)
+	push.Cancel = func() error {
+		proc.KillGroup(push)
+		return nil
+	}
+	push.WaitDelay = waitDelay
+	output := proc.NewBoundedWriter(proc.MaxOutput)
+	push.Stdout, push.Stderr = output, output
+	runErr := push.Run()
+	proc.KillGroup(push)
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		runErr = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("git push to origin %s: timed out after %s: %s", branch, pushTimeout,
+			redactURL(strings.TrimSpace(output.String()), pushURL))
+	}
+	if runErr != nil {
+		failure := redactURL(fmt.Sprintf("%v: %s", runErr, strings.TrimSpace(output.String())), pushURL)
+		if credentialRefused(output.String()) {
 			return fmt.Errorf("git push to origin %s: %w: %s", branch, ErrNoCredential, failure)
 		}
 		return fmt.Errorf("git push to origin %s: %s", branch, failure)
@@ -1109,45 +1136,41 @@ func runPrePush(worktree, url, source, ref string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
+	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "hook", "run", "--ignore-missing", "--to-stdin="+refs.Name(), "pre-push", "--", "origin", url)
 	cmd.Dir = worktree
 	cmd.Env = hookEnv(os.Environ())
 	// The line's own push passes the lease the hook would refuse another writer for.
 	if held, ok := Lease(worktree, strings.TrimPrefix(ref, "refs/heads/"), time.Now()); ok {
 		cmd.Env = append(cmd.Env, LockEnv+"="+strconv.Itoa(held.Holder.PID))
 	}
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%v: %s", err, Clip(string(out), 4000, "pre-push"))
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	output := proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = output, output
+	runErr := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		runErr = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("timed out after %s: %s", pushTimeout, Clip(output.String(), 4000, "pre-push"))
+	}
+	if runErr != nil {
+		return fmt.Errorf("%v: %s", runErr, Clip(output.String(), 4000, "pre-push"))
 	}
 	return nil
 }
 
-// forgeSecrets are the variables that carry a forge credential by name.
-var forgeSecrets = []string{
-	"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK", "GIT_CONFIG_PARAMETERS",
-}
-
-// hookEnv is env with every forge credential dropped, and git's credential helper and prompt switched off.
+// hookEnv is env with every forge credential dropped, by Scrub's same pattern match, and git's
+// credential helper and prompt switched off.
 func hookEnv(env []string) []string {
-	overrides := map[string]string{
-		"GIT_TERMINAL_PROMPT": "0",
-		"GIT_CONFIG_COUNT":    "1",
-		"GIT_CONFIG_KEY_0":    "credential.helper",
-		"GIT_CONFIG_VALUE_0":  "",
-		"GH_CONFIG_DIR":       filepath.Join(os.TempDir(), "komodo-gh-noauth"),
-	}
-	out := make([]string, 0, len(env)+len(overrides))
-	for _, entry := range env {
-		key, _, _ := strings.Cut(entry, "=")
-		if _, set := overrides[key]; set || contains(forgeSecrets, key) {
-			continue
-		}
-		out = append(out, entry)
-	}
-	for key, value := range overrides {
-		out = append(out, key+"="+value)
-	}
-	return out
+	return Scrub(env)
 }
 
 // credentialRe matches the user and secret a URL can carry before its host.

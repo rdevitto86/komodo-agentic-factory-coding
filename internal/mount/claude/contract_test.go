@@ -292,6 +292,26 @@ func TestContractStopKillsTheProcessGroup(t *testing.T) {
 	}
 }
 
+// TestVersionOutputKillsAHungClaudeAndNamesTheTimeout proves claude --version past cliTimeout is
+// killed, process group included, and the error names the command and the timeout.
+func TestVersionOutputKillsAHungClaudeAndNamesTheTimeout(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nsleep 30 &\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	saved := cliTimeout
+	cliTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { cliTimeout = saved })
+	started := time.Now()
+	if _, err := versionOutput(); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
+	}
+}
+
 func TestContractPreflightPassesOnAnyVersionWithALogin(t *testing.T) {
 	setupFakeClaude(t)
 	for _, version := range []string{"2.1.283 (Claude Code)", "9.9.9 (Claude Code)"} {
