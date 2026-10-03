@@ -67,10 +67,12 @@ func HookSteps(dir, name string, args []string, stdin string) ([]HookStep, error
 	return []HookStep{{Args: []string{"gate"}}}, nil
 }
 
-// prePushSteps refuses each pushed ref by the rules, then runs the gate scoped to the first ref's commits.
+// prePushSteps refuses each pushed ref by the rules, then runs the gate scoped to the first ref's commits;
+// a push that only deletes refs carries no commits, so it runs no gate.
 func prePushSteps(stdin string) []HookStep {
 	var steps []HookStep
 	var localSHA, remoteSHA string
+	deletesOnly := strings.TrimSpace(stdin) != ""
 	for index, line := range strings.Split(strings.TrimSpace(stdin), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 4 {
@@ -79,7 +81,13 @@ func prePushSteps(stdin string) []HookStep {
 		if index == 0 {
 			localSHA, remoteSHA = fields[1], fields[3]
 		}
+		if fields[1] != zeroOID {
+			deletesOnly = false
+		}
 		steps = append(steps, HookStep{Args: []string{"gate", "--check-push", fields[2]}, Rules: true})
+	}
+	if deletesOnly {
+		return steps
 	}
 	gate := []string{"gate", "--fuzz", "10s"}
 	if remoteSHA != "" {
