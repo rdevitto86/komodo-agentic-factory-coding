@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -73,6 +74,32 @@ func TestHookEndsTheSessionOnTheThirdIdenticalRefusal(t *testing.T) {
 	}
 }
 
+// pushPayloadWithForce is one hook call denied for the same push-to-main rule, with an extra
+// force-rewrite finding the plain push never carries.
+func pushPayloadWithForce(root, sessionID string) string {
+	return `{"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"` + sessionID +
+		`","cwd":"` + root + `","tool_input":{"command":"git push -f origin main"}}`
+}
+
+// TestHookCountsARefusalByItsRuleNotEveryFindingTogether proves a forced push to main still adds
+// to the plain push-to-main count, rather than starting a key of its own for the extra finding.
+func TestHookCountsARefusalByItsRuleNotEveryFindingTogether(t *testing.T) {
+	registerFakeHost()
+	t.Setenv(RoleEnv, "builder")
+	root := worktree(t)
+	plain := pushPayload(root, "session-mix")
+	forced := pushPayloadWithForce(root, "session-mix")
+	for _, payload := range []string{plain, forced} {
+		if denial := runHook(t, root, payload); denial.Continue != nil && !*denial.Continue {
+			t.Fatalf("a refusal ended the session before the limit: %+v", denial)
+		}
+	}
+	denial := runHook(t, root, plain)
+	if denial.Continue == nil || *denial.Continue {
+		t.Fatalf("the third refusal of the same rule, split across two commands, did not end the session: %+v", denial)
+	}
+}
+
 // TestHookNeverEndsTheOrchestratorsSession proves the refusal limit is the line's: a session with
 // no role is refused every time, but never told to stop.
 func TestHookNeverEndsTheOrchestratorsSession(t *testing.T) {
@@ -111,7 +138,7 @@ func TestHookRefusalNamesTheWayForward(t *testing.T) {
 func TestASessionIDThatClimbsOutIsNeverAPath(t *testing.T) {
 	root := worktree(t)
 	for _, id := range []string{"../../../../escaped", "../escaped", "a/b", ".."} {
-		if last, err := recordRefusal(root, id, "push"); last || err != nil {
+		if last, err := recordRefusal(root, id, []string{"push"}); last || err != nil {
 			t.Fatalf("recordRefusal(%q) = %v, %v, want nothing recorded", id, last, err)
 		}
 	}
@@ -123,6 +150,35 @@ func TestASessionIDThatClimbsOutIsNeverAPath(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("a refusal count landed at %s: %v", path, err)
 		}
+	}
+}
+
+// TestConcurrentRefusalsNeverLoseAnIncrement proves recordRefusal holds a lock across its own
+// read and write, so parallel calls for one session and rule all land, none lost to a stale read.
+func TestConcurrentRefusalsNeverLoseAnIncrement(t *testing.T) {
+	root := worktree(t)
+	const calls = 20
+	var wg sync.WaitGroup
+	for i := 0; i < calls; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := recordRefusal(root, "session-concurrent", []string{"rule"}); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	data, err := os.ReadFile(filepath.Join(root, ".komodo", "runs", "guard-refusals", "session-concurrent.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counts map[string]int
+	if err := json.Unmarshal(data, &counts); err != nil {
+		t.Fatal(err)
+	}
+	if counts["rule"] != calls {
+		t.Fatalf("count = %d, want all %d concurrent calls counted", counts["rule"], calls)
 	}
 }
 

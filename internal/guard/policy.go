@@ -184,7 +184,7 @@ func union(base, extra []string) []string {
 	return base
 }
 
-// epicBranchRe matches an epic branch, feat/ plus a version exactly (decision 0006).
+// epicBranchRe matches an epic branch: feat/ followed by a version number, as a prefix of the ref.
 var epicBranchRe = regexp.MustCompile(`^feat/\d+\.\d+\.\d+`)
 
 // IsCritical reports whether a ref is one the guard protects from every session, model or conductor.
@@ -198,8 +198,8 @@ func (p Policy) IsCritical(ref string) bool {
 	return false
 }
 
-// IsEpicBranch reports whether a ref is an epic branch (decision 0006), which only a model
-// session is refused; the conductor still pushes to and merges it, so IsCritical excludes it.
+// IsEpicBranch reports whether a ref is an epic branch, which only a model session is refused;
+// the conductor still pushes to and merges it, so IsCritical excludes it.
 func IsEpicBranch(ref string) bool {
 	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "origin/")
 	return epicBranchRe.MatchString(ref)
@@ -231,7 +231,7 @@ func foldsCase() bool {
 // RoleEnv is the environment variable a line session's role arrives in; the orchestrator sets none.
 const RoleEnv = "KOMODO_ROLE"
 
-// LineRefusedPaths are refused to every line role, but not the orchestrator (REQ-41).
+// LineRefusedPaths are refused to every line role, but not the orchestrator.
 var LineRefusedPaths = []string{"docs/prd.md", "eval/**", "komodo/policy.json"}
 
 // BranchOnlyPaths are the guard's own policy, which the orchestrator edits only off a critical ref.
@@ -266,14 +266,14 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	return matchesAnyPattern(BranchOnlyPaths, home, compareNormal, compareRelative) && !p.onFeatureBranch(repoRoot)
 }
 
-// onFeatureBranch reports whether repoRoot has a branch checked out that is not a critical ref;
-// CurrentBranch falls back to a detached worktree's tracked branch, and a plain detached HEAD names none.
+// onFeatureBranch reports whether repoRoot has a branch checked out that is neither a critical
+// ref nor an epic branch; a plain detached HEAD, which CurrentBranch may still resolve, names none.
 func (p Policy) onFeatureBranch(repoRoot string) bool {
 	if repoRoot == "" {
 		return false
 	}
 	branch := CurrentBranch(repoRoot)
-	return branch != "" && branch != "HEAD" && !p.IsCritical(branch)
+	return branch != "" && branch != "HEAD" && !p.IsCritical(branch) && !IsEpicBranch(branch)
 }
 
 // matchesAnyPattern reports whether normal or relative matches any pattern, expanding a leading

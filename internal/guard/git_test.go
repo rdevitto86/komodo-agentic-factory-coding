@@ -188,6 +188,138 @@ func TestSwitchDetachInALinkedWorktreeIsAllowed(t *testing.T) {
 	}
 }
 
+// TestAShortForceClusterIsStillRefused proves a packed short-option cluster such as -fu is read
+// as force, the same as the long spelling, since -f never arrives alone on a common push.
+func TestAShortForceClusterIsStillRefused(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git push -fu origin feat/x"}},
+		DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatal("git push -fu is allowed; want the packed force cluster refused")
+	}
+	if !containsAny(decision.Findings, "never rewritten") {
+		t.Fatalf("findings = %v, want the history-rewrite rule named", decision.Findings)
+	}
+}
+
+// TestNoVerifyClustersAndAbbreviationsAreStillCaught proves hasNoVerify reads -n packed ahead of
+// a value-taking short flag and an unambiguous --no-verify prefix, not only the exact spellings.
+func TestNoVerifyClustersAndAbbreviationsAreStillCaught(t *testing.T) {
+	registerFakeHost()
+	for _, command := range []string{"git commit -nm x", "git commit --no-verif -m x"} {
+		decision := Check(
+			Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+				ToolInput: map[string]any{"command": command}},
+			DefaultPolicy(), "feat/x")
+		if !decision.Deny {
+			t.Fatalf("%q is allowed; want the no-verify rule to catch it", command)
+		}
+		if !containsAny(decision.Findings, "skips the gate") {
+			t.Fatalf("%q findings = %v, want the no-verify rule named", command, decision.Findings)
+		}
+	}
+}
+
+// TestNoVerifysNNeverMatchesInsideAValue proves a value-taking flag before n in a short cluster
+// consumes the rest of the cluster, so -mn never reads as a packed -n.
+func TestNoVerifysNNeverMatchesInsideAValue(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git commit -mn"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("git commit -mn is refused: %v", decision.Findings)
+	}
+}
+
+// TestBranchForceOntoACriticalStartPointIsAllowed proves git branch -f judges only the branch it
+// resets, never a critical ref it merely reads as the new start point.
+func TestBranchForceOntoACriticalStartPointIsAllowed(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git branch -f feat/y main"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("git branch -f feat/y main is refused: %v", decision.Findings)
+	}
+}
+
+// TestBranchForceOfACriticalRefIsStillRefused proves git branch -f still refuses resetting the
+// critical ref itself, when it is the branch being force-moved, not merely the start point.
+func TestBranchForceOfACriticalRefIsStillRefused(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git branch -f main feat/y"}},
+		DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatal("git branch -f main feat/y is allowed; want the force-moved critical ref refused")
+	}
+}
+
+// TestBranchCopyFromACriticalRefIsAllowed proves git branch -c judges only the destination it
+// creates, never the critical ref it copies from.
+func TestBranchCopyFromACriticalRefIsAllowed(t *testing.T) {
+	registerFakeHost()
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git branch -c main feat/copy"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("git branch -c main feat/copy is refused: %v", decision.Findings)
+	}
+}
+
+// TestUnsafeModeStillRefusesACriticalRefDelete proves a critical-ref delete is refused in every
+// mode, unsafe included, since unsafe only loosens the plain push-to-critical-ref rule.
+func TestUnsafeModeStillRefusesACriticalRefDelete(t *testing.T) {
+	registerFakeHost()
+	policy := DefaultPolicy()
+	policy.Mode = ModeUnsafe
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git push --delete origin main"}},
+		policy, "feat/x")
+	if !decision.Deny {
+		t.Fatal("an unsafe-mode delete of a critical ref is allowed; want it refused in every mode")
+	}
+}
+
+// TestUnsafeModeStillRefusesAModelsPushToAnEpicBranch proves a line session's push to an epic
+// branch is refused in every mode, unsafe included, since only the conductor ever pushes one.
+func TestUnsafeModeStillRefusesAModelsPushToAnEpicBranch(t *testing.T) {
+	registerFakeHost()
+	t.Setenv(RoleEnv, "builder")
+	policy := DefaultPolicy()
+	policy.Mode = ModeUnsafe
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git push origin feat/1.0.0-alpha.7"}},
+		policy, "feat/x")
+	if !decision.Deny {
+		t.Fatal("an unsafe-mode push to an epic branch from a line session is allowed; want it refused")
+	}
+}
+
+// TestUnsafeModeAllowsAPlainPushToACriticalRef proves unsafe mode still loosens the one rule it
+// names: a plain push landing on a critical ref, with no delete and no epic branch involved.
+func TestUnsafeModeAllowsAPlainPushToACriticalRef(t *testing.T) {
+	registerFakeHost()
+	policy := DefaultPolicy()
+	policy.Mode = ModeUnsafe
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: worktree(t),
+			ToolInput: map[string]any{"command": "git push origin main"}},
+		policy, "feat/x")
+	if decision.Deny {
+		t.Fatalf("an unsafe-mode plain push to main is refused: %v", decision.Findings)
+	}
+}
+
 // leased takes a live lease on branch in repo, held by this test process.
 func leased(t *testing.T, repo, branch string) {
 	t.Helper()

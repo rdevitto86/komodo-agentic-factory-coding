@@ -36,6 +36,12 @@ func asRole(role string, row Case) Case {
 	return row
 }
 
+// asMode sets a table row's policy mode, empty meaning default.
+func asMode(mode Mode, row Case) Case {
+	row.Mode = mode
+	return row
+}
+
 // spawn builds a table row for one agent-spawn call, with or without an isolation option.
 func spawn(name, isolation string, deny bool, finding string) Case {
 	input := map[string]any{}
@@ -63,8 +69,11 @@ func Table(policy Policy) []Case {
 		bash("commit on main", "git commit -m 'feat: thing'", "main", true, "create a branch first"),
 		bash("commit on its own branch", "git commit -m 'feat: thing'", "feat/x", false, ""),
 		bash("push to main", "git push origin main", "feat/x", true, "open a pull request"),
-		bash("a model session's push to main is refused (REQ-26)", "git push origin main", "feat/x", true, "open a pull request"),
 		bash("push its own branch by name", "git push origin feat/x", "feat/x", false, ""),
+		asMode(ModeUnsafe, bash("a critical-ref delete is refused in every mode, unsafe included",
+			"git push --delete origin main", "feat/x", true, "open a pull request")),
+		bash("branch -f onto a critical start point judges only the branch it resets",
+			"git branch -f feat/y main", "feat/x", false, ""),
 		bash("merge on main", "git merge feat/x", "main", true, "merge button"),
 		bash("merge main into its branch", "git merge main", "feat/x", false, ""),
 		bash("gh pr merge", "gh pr merge 12 --squash", "feat/x", true, "merge button"),
@@ -80,6 +89,9 @@ func Table(policy Policy) []Case {
 		bash("a shell -c push to main", "bash -c 'git push origin main'", "feat/x", true, "open a pull request"),
 		bash("an env-prefixed push to main", "FOO=1 env -i git push origin main", "feat/x", true, "open a pull request"),
 		bash("an eval of a push to main", `eval "git push origin main"`, "feat/x", true, "open a pull request"),
+		bash("eval of an unresolved variable is still refused", `eval "$x"`, "feat/x", true, "cannot verify"),
+		bash("a path merely naming eval is never the builtin", "go test ./internal/eval/...", "feat/x", false, ""),
+		bash("a path merely naming eval is never the builtin, even as a git argument", "git add internal/eval/run.go", "feat/x", false, ""),
 		bash("a login shell's -lc push to main", "bash -lc 'git push origin main'", "feat/x", true, "open a pull request"),
 		bash("a -c whose script follows another option", "bash -c -e 'git push origin main'", "feat/x", true, "open a pull request"),
 		bash("a wrapper with a flag argument", "sudo -u root git push origin main", "feat/x", true, "open a pull request"),
@@ -100,16 +112,18 @@ func Table(policy Policy) []Case {
 
 		// Rule 2: pushed history is never rewritten, on any branch.
 		bash("force push to own branch", "git push --force origin feat/x", "feat/x", true, "never rewritten"),
+		bash("a packed short-option cluster is still read as force", "git push -fu origin feat/x", "feat/x", true, "never rewritten"),
 		bash("push -u to own branch", "git push -u origin feat/x", "feat/x", false, ""),
 
 		// Rule 3: git hooks are never skipped.
 		bash("commit --no-verify skips the gate", "git commit --no-verify -m x", "feat/x", true, "skips the gate"),
+		bash("commit -nm packs -n ahead of -m's value and still skips the gate", "git commit -nm x", "feat/x", true, "skips the gate"),
 		bash("commit runs the gate", "git commit -m 'feat: thing'", "feat/x", false, ""),
 
 		// A trailer is now the commit-msg hook's rule, not the guard's; the tool call itself is allowed.
 		bash("a trailer reaches the commit-msg hook, not the guard", "git commit -m 'feat: x\n\nCo-authored-by: A <a@b.c>'", "feat/x", false, ""),
 
-		// Rule 6: a branch is never pinned; komodo worktree add is the one way to cut one (decision 0012).
+		// Rule 6: a branch is never pinned; komodo worktree add is the one way to cut one.
 		bash("worktree add without --detach", "git worktree add ../x feat/y", "feat/x", true, "komodo worktree add"),
 		bash("worktree add -b attaches a branch", "git worktree add --detach -b feat/y ../x", "feat/x", true, "komodo worktree add"),
 		bash("worktree add --detach is free", "git worktree add --detach ../x feat/y", "feat/x", false, ""),
@@ -133,10 +147,14 @@ func Table(policy Policy) []Case {
 		asRole("builder", spawn("a line spawn without isolation is allowed", "", false, "")),
 		spawn("the orchestrator spawns an isolated agent", "worktree", false, ""),
 
-		// Structural, not one of the five: docs/prd.md and eval/** refuse every line role (REQ-41).
+		// Structural, not one of the five: docs/prd.md and eval/** refuse every line role.
 		asRole("builder", write("a line role's write to docs/prd.md is refused (REQ-41)", "docs/prd.md", true, "host or toolkit config")),
 		asRole("builder", write("a line role's write to eval/** is refused (REQ-41)", "eval/probe", true, "host or toolkit config")),
 		asRole("", write("the orchestrator is not a line session and may write docs/prd.md", "docs/prd.md", false, "")),
+		asRole("builder", bash("sed -i edits a protected path in place", "sed -i s/a/b/ eval/golden.json", "feat/x", true, "host or toolkit config")),
+		asRole("builder", bash("tee writes a protected path", "tee docs/prd.md", "feat/x", true, "host or toolkit config")),
+		asRole("builder", bash("cp overwrites a protected path", "cp x eval/case.json", "feat/x", true, "host or toolkit config")),
+		asRole("builder", bash("mv overwrites a protected path", "mv x eval/case.json", "feat/x", true, "host or toolkit config")),
 
 		// Inside the worktree an agent is free.
 		bash("rm -rf a build directory", "rm -rf node_modules", "feat/x", false, ""),
