@@ -189,8 +189,14 @@ func TestFileFindingsAppendsIntoTheGroupsOwnFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	text = string(data)
-	if !strings.Contains(text, "dead branch") || !strings.Contains(text, "status: REFINEMENT") {
-		t.Fatalf("filed task is wrong:\n%s", text)
+	// A filed finding is runnable: READY, its severity's priority, and its package's tests as the proof.
+	for _, want := range []string{"dead branch", "status: READY", "priority: L", "done_when: `go test ./a/...`"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("filed task lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "test -f") {
+		t.Fatalf("filed task proves nothing with test -f:\n%s", text)
 	}
 	if _, err := os.Stat(filepath.Join(root, backlog.LegacyName)); !os.IsNotExist(err) {
 		t.Fatal("FileFindings must never create a legacy backlog file in a group-file repo")
