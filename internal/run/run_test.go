@@ -222,6 +222,10 @@ if [ "$group" = "$FAKE_BLOCK_GROUP" ]; then
   exit 0
 fi
 if [ "$KOMODO_ROLE" = "builder" ]; then
+  if [ "$group" = "$FAKE_WAIT_GROUP" ] && [ -n "$FAKE_WAIT_FILE" ]; then
+    i=0
+    while [ ! -f "$FAKE_WAIT_FILE" ] && [ $i -lt 200 ]; do sleep 0.1; i=$((i+1)); done
+  fi
   if [ -n "$FAKE_PATH_FILE" ] && [ ! -f "$FAKE_PATH_FILE" ]; then echo "$PATH" > "$FAKE_PATH_FILE"; fi
   if [ -n "$FAKE_OVERLAP_DIR" ]; then
     touch "$FAKE_OVERLAP_DIR/$group.started"
@@ -474,6 +478,61 @@ func TestDrainParksAGroupThatEndsUnshippedAndRunsTheNext(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+// TestDrainFinishesEveryRunningLaneAfterADrainGroupsError proves a scheduling error mid-drain still
+// drains each already-running lane to shipped or parked before the drain returns that error.
+func TestDrainFinishesEveryRunningLaneAfterADrainGroupsError(t *testing.T) {
+	root := driveDrainRepo(t, driveDrainText)
+	setupDrainDriveFakeClaude(t)
+	saved := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(saved) })
+	host, _ := mount.Get("claude")
+	host.Probe = func() (mount.Usage, bool) { return mount.Usage{Plan: "max_20x"}, true }
+	mount.Register(host)
+	waitFile := filepath.Join(t.TempDir(), "go")
+	t.Setenv("FAKE_WAIT_GROUP", "TG-07.2")
+	t.Setenv("FAKE_WAIT_FILE", waitFile)
+	backlogDir := filepath.Join(root, "docs", "backlog")
+	t.Cleanup(func() { _ = os.Chmod(backlogDir, 0o755) })
+
+	type outcome struct {
+		code int
+		err  error
+	}
+	done := make(chan outcome, 1)
+	var out bytes.Buffer
+	client := fakeForge(t, root)
+	go func() {
+		code, err := Launch(Options{Root: root, Budget: time.Minute, Stdout: &out, Stderr: &out, PR: client})
+		done <- outcome{code, err}
+	}()
+
+	// The second lane waits on waitFile, so it is still running when the first lane's finish reconsiders scheduling.
+	for i := 0; !shipped(root, "TG-07.1", time.Time{}); i++ {
+		if i >= 300 {
+			t.Fatal("TG-07.1 never shipped")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err := os.Chmod(backlogDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(waitFile, []byte("go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := <-done
+	if result.err == nil {
+		t.Fatalf("drain = %v; a backlog it cannot read must be returned", result.err)
+	}
+	if result.code != 1 {
+		t.Fatalf("code = %d, want 1; out = %s", result.code, out.String())
+	}
+	// The still-running lane's own Preparing reads the same corrupted backlog and parks, but the drain must print it.
+	if !strings.Contains(out.String(), "TG-07.2 parked:") {
+		t.Fatalf("out = %q; a lane still running when the scheduler failed must still reach parked, not be abandoned", out.String())
 	}
 }
 
