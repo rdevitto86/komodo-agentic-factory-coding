@@ -495,7 +495,7 @@ func httpGet(ctx context.Context, url string) ([]byte, error) {
 
 // syncConfig re-renders every installed host's whole config at the root when the doctor reports drift.
 func syncConfig(root string, dryRun bool, out io.Writer, suffix string) error {
-	problems, err := doctor.Run(root, doctor.Options{NoGit: true})
+	problems, err := doctor.Run(root, doctor.Options{NoGit: true, RepoOnly: true})
 	if err != nil {
 		return err
 	}

@@ -36,7 +36,7 @@ func init() {
 		CommandField:    "command",
 		SpawnTools:      guardSpawnTools,
 		IsolationField:  isolationField,
-		ConfigPaths:     []string{filepath.ToSlash(filepath.Join(Dir, "settings.json"))},
+		ConfigPaths:     []string{filepath.ToSlash(filepath.Join(Dir, "settings.json")), filepath.ToSlash(filepath.Join(Dir, LineSettings))},
 		PrivatePatterns: []string{sessionLinkPattern},
 		Deny:            denyPayload,
 	})

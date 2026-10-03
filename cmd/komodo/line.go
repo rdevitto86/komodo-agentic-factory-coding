@@ -291,7 +291,7 @@ func runClose(root string, args []string) {
 	set := flag.NewFlagSet("close", flag.ExitOnError)
 	withGate := set.Bool("gate", false, "run the local gate before the task commit")
 	wave := set.Int("wave", 0, "QC one wave of the named group's run, or the open run, counting from 1")
-	group := set.Bool("group", false, "ship the named group's run, or the open run: commit, push, pull request, changelog")
+	group := set.Bool("group", false, "ship the named group's run, or the open run: commit, push, pull request")
 	fix := set.Bool("fix", false, "gate and commit a review fix round on the named group's branch")
 	base := set.String("base", "", "the branch the pull request targets")
 	task, rest := splitPositional(args, "wave", "base")
@@ -390,7 +390,7 @@ func runWave(root string, number int, group string) {
 	}
 }
 
-// runShip commits, pushes, opens the pull request, and writes the changelog line.
+// runShip commits, pushes, and opens the pull request.
 func runShip(root, base, group string) {
 	plan := runPlan(root, group)
 	if base != "" {
