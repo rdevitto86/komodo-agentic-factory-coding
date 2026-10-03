@@ -3,6 +3,7 @@ package profile
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -207,11 +208,13 @@ func SelectWith(root string, hosts []mount.Host, localSwitch, local bool) Profil
 	return withMode(root, profile)
 }
 
-// withMode sets the profile's mode from its plan and loads that mode's role tiers and efforts.
+// withMode sets the profile's mode from its plan and loads that mode's role tiers and efforts,
+// naming a load failure in Why instead of leaving Roles nil with no trace.
 func withMode(root string, profile Profile) Profile {
 	profile.Mode = mode(profile.Plan)
 	loaded, err := loadMode(root, profile.Mode)
 	if err != nil {
+		profile.Why += fmt.Sprintf("; the %s mode profile did not load: %v", profile.Mode, err)
 		return profile
 	}
 	profile.Roles = loaded.Roles

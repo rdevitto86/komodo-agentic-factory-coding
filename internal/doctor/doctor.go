@@ -243,8 +243,8 @@ type ruleset struct {
 	} `json:"bypass_actors"`
 }
 
-// rulesetsUnoffered matches the forge's refusal where its plan offers no rulesets, such as a private repo on a free plan.
-var rulesetsUnoffered = regexp.MustCompile(`Upgrade to GitHub Pro|HTTP 403`)
+// rulesetsUnoffered matches only the forge's plan-upgrade refusal, not a bare HTTP 403 a missing scope also returns.
+var rulesetsUnoffered = regexp.MustCompile(`Upgrade to GitHub Pro`)
 
 // CheckRulesets reports a default branch no bypass-free ruleset protects, or an active ruleset reaching past it,
 // which blocks every group branch's push. A forge offering no rulesets is left to ForgeNotes.
@@ -489,13 +489,16 @@ func checkGitattributes(root string) []Problem {
 		return []Problem{{"gitattributes", ".gitattributes", "add: * text=auto eol=lf"}}
 	}
 
-	// Check if the file has a line with * pattern that sets eol=lf.
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if strings.HasPrefix(trimmed, "* ") && strings.Contains(trimmed, "eol=lf") {
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 || fields[0] != "*" {
+			continue
+		}
+		if contains(fields[1:], "eol=lf") {
 			return nil
 		}
 	}
