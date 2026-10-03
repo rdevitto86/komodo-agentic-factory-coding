@@ -67,13 +67,13 @@ func stepFrom(root string, snap Snapshot) (*Action, error) {
 	if len(next.Spawns) > 0 {
 		return waveSpawn(root, snap, next), nil
 	}
-	next, tier := taskTier(snap, next)
+	tier := taskTier(snap, next)
 	return actionForTier(root, snap.Plan, next, tier), nil
 }
 
 // taskTier is the tier a task's action resolves on: its own tier key, else the role's.
-func taskTier(snap Snapshot, next Action) (Action, string) {
-	return next, snap.Tasks[next.Task].Tier
+func taskTier(snap Snapshot, next Action) string {
+	return snap.Tasks[next.Task].Tier
 }
 
 // waveSpawn resolves each spawn in a wave like a single one; a spawn that resolves to a local
@@ -83,7 +83,7 @@ func waveSpawn(root string, snap Snapshot, next Action) *Action {
 	next.Spawns = nil
 	wave := actionForTier(root, snap.Plan, next, "")
 	for _, spawn := range spawns {
-		spawn, tier := taskTier(snap, spawn)
+		tier := taskTier(snap, spawn)
 		resolved := actionForTier(root, snap.Plan, spawn, tier)
 		if resolved.Action != "spawn" {
 			return resolved
