@@ -616,7 +616,14 @@ func TestAFailedCommitAfterStagingLeavesNothingStaged(t *testing.T) {
 	plan := &Plan{
 		Group: "TG-11.1", Title: "A group", Type: "feat", Version: "2.0.0",
 		Base: "main", Branch: "feat/a-group", Worktree: worktree,
-		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY"}},
+		Tasks: []PlanTask{{ID: "TSK-11.1.1", Title: "One", Status: "READY", Files: []string{"a/one.go"}}},
+	}
+	// The group's own work is what ship stages before the commit the hook refuses.
+	if err := os.MkdirAll(filepath.Join(worktree, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "a", "one.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := ShipGroup(root, plan, nil, nil); err == nil || !strings.Contains(err.Error(), "the gate refuses") {
 		t.Fatalf("err = %v, want the pre-commit hook's refusal", err)

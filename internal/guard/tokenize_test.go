@@ -2,6 +2,57 @@ package guard
 
 import "testing"
 
+// TestTeeCpMvAndSedInPlaceAreWriteTargets proves REQ-41's refusal holds for the common ways to
+// edit a file besides a shell redirect: tee, cp and mv's destination, and sed -i's own operand.
+func TestTeeCpMvAndSedInPlaceAreWriteTargets(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	t.Setenv(RoleEnv, "builder")
+	for _, command := range []string{
+		"sed -i s/a/b/ eval/golden.json",
+		"tee docs/prd.md",
+		"cp x eval/case.json",
+		"mv x eval/case.json",
+	} {
+		decision := Check(
+			Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}},
+			DefaultPolicy(), "feat/x")
+		if !decision.Deny {
+			t.Fatalf("%q is allowed; want the write-target rule to catch it", command)
+		}
+	}
+}
+
+// TestSedInPlaceWithAnExplicitScriptFlagStillFindsItsFile proves sed -i -e 'script' file reads
+// the file as the write target, not the script the -e flag already consumed.
+func TestSedInPlaceWithAnExplicitScriptFlagStillFindsItsFile(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	t.Setenv(RoleEnv, "builder")
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root,
+			ToolInput: map[string]any{"command": "sed -i -e s/a/b/ eval/golden.json"}},
+		DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatal("sed -i -e s/a/b/ eval/golden.json is allowed; want the file operand caught")
+	}
+}
+
+// TestSedWithoutInPlaceIsNeverAWriteTarget proves a plain sed, printing to stdout, names no write
+// target; only -i or --in-place edits a file.
+func TestSedWithoutInPlaceIsNeverAWriteTarget(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	t.Setenv(RoleEnv, "builder")
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root,
+			ToolInput: map[string]any{"command": "sed s/a/b/ eval/golden.json"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("a plain sed with no -i is refused: %v", decision.Findings)
+	}
+}
+
 // TestAHeredocBodyIsNeverReadAsCommandsOrWrites proves a heredoc's body, carrying prose a commit
 // message writes, never yields a git call, a write target, or any other finding of its own.
 func TestAHeredocBodyIsNeverReadAsCommandsOrWrites(t *testing.T) {
@@ -160,6 +211,69 @@ func TestACatHeredocIntoAProcessSubstitutionIsStillJudged(t *testing.T) {
 		DefaultPolicy(), "feat/x")
 	if !decision.Deny {
 		t.Fatalf("a cat heredoc redirected into a process substitution was allowed")
+	}
+}
+
+// TestAnInterpretersStdinScriptNamingACriticalPushIsRefused proves a python, node, ruby, or perl
+// stdin body is judged for the shell command it hands a system call, such as a hidden push to main.
+func TestAnInterpretersStdinScriptNamingACriticalPushIsRefused(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	for _, command := range []string{
+		"python3 <<EOF\nimport os\nos.system('git push origin main')\nEOF",
+		"node <<EOF\nrequire('child_process').execSync('git push origin main')\nEOF",
+		"ruby <<EOF\nsystem('git push origin main')\nEOF",
+		"perl <<EOF\nsystem('git push origin main')\nEOF",
+	} {
+		decision := Check(
+			Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root, ToolInput: map[string]any{"command": command}},
+			DefaultPolicy(), "feat/x")
+		if !decision.Deny {
+			t.Fatalf("%q is allowed; want the push to main caught inside its stdin script", command)
+		}
+	}
+}
+
+// TestALineSessionsInterpreterStdinScriptIsRefusedOutright proves a line session is refused any
+// python, node, ruby, or perl body read from stdin, whether or not its content names a violation.
+func TestALineSessionsInterpreterStdinScriptIsRefusedOutright(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	t.Setenv(RoleEnv, "builder")
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root,
+			ToolInput: map[string]any{"command": "python3 <<EOF\nprint('hello')\nEOF"}},
+		DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatal("a line session's harmless python stdin script is allowed; want it refused outright")
+	}
+}
+
+// TestTheOrchestratorsHarmlessInterpreterStdinScriptIsAllowed proves the orchestrator's stdin
+// script is still free when it names no critical-ref push or host config path.
+func TestTheOrchestratorsHarmlessInterpreterStdinScriptIsAllowed(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root,
+			ToolInput: map[string]any{"command": "python3 <<EOF\nprint('hello')\nEOF"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("the orchestrator's harmless python stdin script is refused: %v", decision.Findings)
+	}
+}
+
+// TestAnInterpreterGivenAScriptFileIsNeverReadAsStdin proves an interpreter run with a script
+// file argument is left alone; only a bare interpreter reads its program from the heredoc.
+func TestAnInterpreterGivenAScriptFileIsNeverReadAsStdin(t *testing.T) {
+	registerFakeHost()
+	root := worktree(t)
+	decision := Check(
+		Request{HookEventName: "PreToolUse", ToolName: "Bash", Cwd: root,
+			ToolInput: map[string]any{"command": "python3 run.py <<EOF\nignored\nEOF"}},
+		DefaultPolicy(), "feat/x")
+	if decision.Deny {
+		t.Fatalf("python3 run.py with a heredoc is refused: %v", decision.Findings)
 	}
 }
 
