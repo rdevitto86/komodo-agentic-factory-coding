@@ -103,6 +103,15 @@ func groupEnd(lines []string, heading int) int {
 	return len(lines)
 }
 
+// groupFileIDPattern matches a group id's own shape, the same one a group file's heading carries.
+var groupFileIDPattern = regexp.MustCompile(`^TG-[\w.]+$`)
+
+// ValidGroupID reports whether id has a group's own shape, so a path built from it never escapes
+// docs/backlog and a heading built from it still parses.
+func ValidGroupID(id string) bool {
+	return groupFileIDPattern.MatchString(id)
+}
+
 // RenderGroupFile renders a fresh <group-id>-<slug>.md file: its heading and yaml block, with no tasks yet.
 func RenderGroupFile(id, title, priority, status string, fields Fields) string {
 	heading := fmt.Sprintf("## [%s] %s [P: %s] [%s]", id, strings.TrimSpace(title), priority, status)
