@@ -135,7 +135,9 @@ func SessionTmp(worktree string) string {
 	sum := sha256.Sum256([]byte(worktree))
 	base := os.TempDir()
 	if rel, err := filepath.Rel(worktree, base); err == nil && !strings.HasPrefix(rel, "..") {
-		base = "/tmp"
+		if cache, err := os.UserCacheDir(); err == nil {
+			base = cache
+		}
 	}
 	return filepath.Join(base, "komodo-"+hex.EncodeToString(sum[:6]))
 }
