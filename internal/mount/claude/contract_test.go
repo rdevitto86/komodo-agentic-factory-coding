@@ -95,6 +95,7 @@ func newFakeRequest() mount.StartRequest {
 func TestContractStartRunsClaudeAndStreamsTheStartFixture(t *testing.T) {
 	setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(newFakeRequest())
@@ -135,6 +136,7 @@ func TestContractStartRunsClaudeAndStreamsTheStartFixture(t *testing.T) {
 func TestContractResumePassesResumeWithTheFirstSessionsID(t *testing.T) {
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	first, err := m.Start(newFakeRequest())
@@ -188,6 +190,7 @@ func TestContractResumePassesResumeWithTheFirstSessionsID(t *testing.T) {
 func TestContractResumesAHandleFromAnEarlierProcess(t *testing.T) {
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	earlier := NewMount(root, worktree, 10, 0)
 	first, err := earlier.Start(newFakeRequest())
 	if err != nil {
@@ -246,6 +249,7 @@ func mustStream(t *testing.T, m *Mount, handle mount.Handle) <-chan mount.Event 
 func TestContractResumeWithoutADrainedStreamFails(t *testing.T) {
 	setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(newFakeRequest())
@@ -261,6 +265,7 @@ func TestContractStopKillsTheProcessGroup(t *testing.T) {
 	setupFakeClaude(t)
 	t.Setenv("FAKE_CLAUDE_HANG", "1")
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(newFakeRequest())
@@ -347,6 +352,7 @@ func TestContractResultOnAnUnknownHandleFails(t *testing.T) {
 func TestContractStartRunsInTheWorktree(t *testing.T) {
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(newFakeRequest())
@@ -383,7 +389,9 @@ func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
 	saved, savedInterval := proc.DefaultLimits, proc.WatchInterval
 	proc.DefaultLimits, proc.WatchInterval = proc.Limits{Procs: 10}, 50*time.Millisecond
 	t.Cleanup(func() { proc.DefaultLimits, proc.WatchInterval = saved, savedInterval })
-	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
+	root := t.TempDir()
+	withLineSettings(t, root)
+	m := NewMount(root, t.TempDir(), 10, 0)
 
 	handle, err := m.Start(newFakeRequest())
 	if err != nil {
