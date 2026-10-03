@@ -2,12 +2,59 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
+## 1.0.0-beta.4 — 2026-10-02
+
+- **Agent worktrees are detached** and commit onto `refs/komodo` tips; only a live builder's lease locks a branch, ending on its push or after 2 hours (decision 0012).
+- **Doctor, sync and the output check see detached worktrees,** and never delete a person's branch.
+- **A session's start sweeps finished worktrees** in the background, logged to `.komodo/prune.log`.
+- **`komodo pr create` and `komodo pr label`** open and label a pull request outside the line; the guard refuses a model's `gh pr create` (decision 0006).
+- **Specs are `prd.md`, `hld.md`, `lld.md` and `docs/decisions/`,** one file per decision (decision 0011).
+
+## 1.0.0-beta.3 — 2026-09-29
+
+- **One backlog grammar,** and group files are the only backlog.
+- **`komodo init` adopts an existing repo.**
+- **Usage pacing** keeps a run inside the subscription's limits.
+- **Epic branches carry across versions and sessions,** and the planner has a rule for choosing a version.
+- **The orchestrator sits outside a captive line,** and checks resolve the way the line does.
+
+## 1.0.0-beta.2 — 2026-09-27
+
+- **One command installs the line,** and the orchestrator drives it from the primary session.
+- **Releases publish from the owner's machine,** and product repos pin one.
+- **`komodo eval`** runs the golden suite and live eval cases.
+- **Plugin points ship disabled.**
+
+## 1.0.0-alpha.8 — 2026-09-28
+
+- **The backlog is one file per group,** compiled into a card at ingest and scheduled to the plan.
+- **Review runs through parallel lenses,** each finding carrying evidence; repair resumes the builder until it stops progressing.
+- **Escalations go to the orchestrator** and survive a restart; a group can be abandoned.
+- **Prepare, then ship draft-first,** with mechanical cleanup after a merge.
+- **The line is safe to leave unattended.**
+
+## 1.0.0-alpha.7 — 2026-09-27
+
+- **The guard keeps five rules,** and every hook follows one contract.
+- **Check reruns everything after every session.**
+- **The forge credential stays with the conductor,** and Go builds run under the sandbox.
+- **One reviewer stays warm** across a group's review rounds.
+
+## 1.0.0-alpha.6 — 2026-09-27
+
+- **The conductor and its host contract,** with Claude as the first host.
+- **Sessions are pinned, hermetic and role-scoped,** with metrics and a clock.
+- **Every epic has a draft branch, `feat/<version>`,** and group pull requests stack on it.
+- **`komodo run` drives a group end to end.**
+- **Versions go alpha, beta, optional rc, then stable.**
+
 ## 1.0.0-alpha.5 — 2026-09-26
 
-- **TG-04.4** The README hands the design to the specs (1 task(s))
-- **TG-04.3** Every group cuts from `main`, or from a group it depends on (2 task(s))
-- **TG-04.2** Line endings are LF everywhere, and a pull rebuilds the binary (4 task(s))
-- **TG-04.1** The line stops judging its own commands, and the gate fails loudly (2 task(s))
+- **Ship never conflicts on the changelog,** never files a finding in the wrong group, and never ships unreviewed.
+- **Every group cuts from `main`,** or from a group it depends on.
+- **Line endings are LF everywhere,** and a pull rebuilds the binary.
+- **The guard stops judging the line's own commands,** and the gate fails loudly.
+- **The README hands the design to the specs.**
 
 ## The first 1.0.0 line — 2026-09-24
 

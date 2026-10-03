@@ -5,8 +5,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseWorktrees(t *testing.T) {
@@ -33,6 +35,30 @@ func TestParseWorktrees(t *testing.T) {
 	}
 	if got := ParseWorktrees(""); len(got) != 0 {
 		t.Fatalf("ParseWorktrees of nothing = %+v, want none", got)
+	}
+}
+
+// TestRunKillsAHungGitAndItsChildren proves a git command past Timeout is killed, process group included,
+// so a hung git never blocks the gate or a hook.
+func TestRunKillsAHungGitAndItsChildren(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	dir := t.TempDir()
+	script := "#!/bin/sh\nsleep 30 &\nsleep 30\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	saved := Timeout
+	Timeout = 200 * time.Millisecond
+	t.Cleanup(func() { Timeout = saved })
+	started := time.Now()
+	if _, err := Run(t.TempDir(), "status"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("Run error = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 
