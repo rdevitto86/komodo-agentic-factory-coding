@@ -1,9 +1,11 @@
 package guard
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,6 +111,7 @@ func TestOnFeatureBranchReadsADetachedWorktreesTrackedBranch(t *testing.T) {
 
 // TestTheShippedPolicyProtectsEveryCriticalRef proves komodo/policy.json names every ref AGENTS.md forbids.
 func TestTheShippedPolicyProtectsEveryCriticalRef(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	policy := Load(t.TempDir(), t.TempDir())
 	for _, ref := range []string{"main", "master", "trunk", "prod", "production", "release/2.0", "hotfix/urgent"} {
 		if !policy.IsCritical(ref) {
@@ -144,5 +147,89 @@ func TestASharedBranchClaimIsAGlobalTierCheckNotOnlyALineRole(t *testing.T) {
 	t.Setenv(RoleEnv, "builder")
 	if !IsLineSession() {
 		t.Fatal("a builder carries a role; a claim check still applies to it as well")
+	}
+}
+
+// TestAMalformedRepoPolicyPanicsNamingItsPath proves a present but broken .komodo/policy.json
+// fails loudly instead of silently falling back to the shipped defaults.
+func TestAMalformedRepoPolicyPanicsNamingItsPath(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(repo, ".komodo", "policy.json")
+	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a malformed repo policy did not panic")
+		}
+		if !strings.Contains(fmt.Sprint(r), path) {
+			t.Fatalf("panic = %v, want it to name %s", r, path)
+		}
+	}()
+	Load(t.TempDir(), repo)
+}
+
+// TestARepoPolicyWithAnUnknownFieldPanics proves the decode is strict, not merely tolerant of bad JSON.
+func TestARepoPolicyWithAnUnknownFieldPanics(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(repo, ".komodo", "policy.json")
+	if err := os.WriteFile(path, []byte(`{"not_a_real_field":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("an unknown field in the repo policy did not panic")
+		}
+	}()
+	Load(t.TempDir(), repo)
+}
+
+// TestAMalformedMachineOverlayPanicsReachingLoad proves a broken ~/.komodo/config.json fails
+// loudly through Load too, the same as a broken policy file.
+func TestAMalformedMachineOverlayPanicsReachingLoad(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".komodo", "config.json")
+	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a malformed machine overlay did not panic")
+		}
+		if !strings.Contains(fmt.Sprint(r), path) {
+			t.Fatalf("panic = %v, want it to name %s", r, path)
+		}
+	}()
+	Load(t.TempDir(), t.TempDir())
+}
+
+// TestAWriteUnderTheUsersKomodoDirIsRefused proves the shipped policy's ~/.komodo/** rule reaches
+// a real write, under the session's own home, on every platform the guard's paths run on.
+func TestAWriteUnderTheUsersKomodoDirIsRefused(t *testing.T) {
+	registerFakeHost()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(RoleEnv, "builder")
+	root := repoOn(t, "feat/x")
+	target := filepath.Join(home, ".komodo", "recall.json")
+	request := Request{
+		HookEventName: "PreToolUse", ToolName: "Write", Cwd: root,
+		ToolInput: map[string]any{"file_path": target},
+	}
+	decision := Check(request, DefaultPolicy(), "feat/x")
+	if !decision.Deny {
+		t.Fatalf("a write under the user's own ~/.komodo/ was allowed: %v", decision.Findings)
 	}
 }

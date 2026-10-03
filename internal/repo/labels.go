@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -23,11 +25,18 @@ type Labels struct {
 	Default string      `json:"default"`
 }
 
-// LoadLabels reads a repo's labels file; found is false when it is absent or unreadable.
+// LoadLabels reads a repo's labels file; found is false when it is absent. A present but
+// malformed file panics naming its path, since it must never fall back to defaults silently.
 func LoadLabels(root string) (labels Labels, found bool) {
-	data, err := os.ReadFile(filepath.Join(root, LabelsFile))
-	if err != nil || json.Unmarshal(data, &labels) != nil {
+	path := filepath.Join(root, LabelsFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return Labels{}, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&labels); err != nil {
+		panic(fmt.Sprintf("%s: %v", path, err))
 	}
 	return labels, true
 }

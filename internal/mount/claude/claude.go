@@ -510,6 +510,7 @@ func init() {
 		Contract: func(root, worktree string) mount.Contract {
 			return NewMount(root, worktree, profileTurnCap, 0)
 		},
+		FuzzTargets: []mount.FuzzTarget{{Name: "FuzzGlobalSettings", Package: "./internal/mount/claude"}},
 	})
 	install.RegisterGlobal("claude", RenderGlobal)
 }

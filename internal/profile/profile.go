@@ -228,31 +228,18 @@ func installed(root string, hosts []mount.Host) (mount.Host, bool) {
 	return mount.Host{}, false
 }
 
-// overlayFile is the machine overlay, which may only lower a cap or add a critical ref.
-type overlayFile struct {
-	Caps          *Caps    `json:"caps"`
-	MaxParallel   *int     `json:"max_parallel"`
-	ReviewRepairs *int     `json:"review_repairs"`
-	PauseAt       *float64 `json:"pause_at"`
-	WarnAt        *float64 `json:"warn_at"`
-	CriticalRefs  []string `json:"critical_refs"`
-}
-
-// DecodeOverlay reports why the machine overlay's bytes would not decode into the fields a profile reads.
+// DecodeOverlay reports why the machine overlay's bytes would not decode into the fields every reader declares.
 func DecodeOverlay(data []byte) error {
-	var overlay overlayFile
-	return json.Unmarshal(data, &overlay)
+	_, err := mount.DecodeOverlayBytes(data)
+	return err
 }
 
-// Overlay applies ~/.komodo/config.json, which can only tighten what the profile allows.
+// Overlay applies ~/.komodo/config.json, which can only tighten what the profile allows; an
+// absent file changes nothing, a present but malformed one panics naming its path.
 func Overlay(profile Profile, path string) Profile {
-	data, err := os.ReadFile(path)
+	overlay, err := mount.DecodeOverlayFile(path)
 	if err != nil {
-		return profile
-	}
-	var overlay overlayFile
-	if json.Unmarshal(data, &overlay) != nil {
-		return profile
+		panic(err)
 	}
 	if overlay.Caps != nil {
 		profile.Caps.RepoRules = lower(profile.Caps.RepoRules, overlay.Caps.RepoRules)

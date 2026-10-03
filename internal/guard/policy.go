@@ -2,7 +2,9 @@
 package guard
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -107,40 +109,24 @@ func Load(toolkitRoot, repoRoot string) Policy {
 		policy.TrailerPatterns = union(policy.TrailerPatterns, extra.TrailerPatterns)
 		policy.Mode = tightenMode(policy.Mode, extra.Mode)
 	}
-	policy.CriticalRefs = union(policy.CriticalRefs, overlayCriticalRefs(mount.OverlayPath()))
-	policy.Mode = loosenMode(policy.Mode, overlayMode(mount.OverlayPath()))
+	overlay, err := mount.DecodeOverlayFile(mount.OverlayPath())
+	if err != nil {
+		panic(err)
+	}
+	policy.CriticalRefs = union(policy.CriticalRefs, overlay.CriticalRefs)
+	policy.Mode = loosenMode(policy.Mode, Mode(overlay.Mode))
 	policy.compile()
 	return policy
 }
 
-// overlayCriticalRefs reads the machine overlay's critical refs, tolerating its absence.
-func overlayCriticalRefs(path string) []string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
+// decodeStrict parses data into out, rejecting any field it does not declare; a decode failure
+// panics naming path, since a present config file must never fall back to defaults silently.
+func decodeStrict(path string, data []byte, out any) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(out); err != nil {
+		panic(fmt.Sprintf("%s: %v", path, err))
 	}
-	var overlay struct {
-		CriticalRefs []string `json:"critical_refs"`
-	}
-	if json.Unmarshal(data, &overlay) != nil {
-		return nil
-	}
-	return overlay.CriticalRefs
-}
-
-// overlayMode reads the machine overlay's mode, tolerating its absence.
-func overlayMode(path string) Mode {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	var overlay struct {
-		Mode Mode `json:"mode"`
-	}
-	if json.Unmarshal(data, &overlay) != nil {
-		return ""
-	}
-	return overlay.Mode
 }
 
 // readShippedPolicy parses the toolkit's own policy.json, on disk or embedded.
@@ -150,9 +136,7 @@ func readShippedPolicy(toolkitRoot string) (Policy, bool) {
 	if err != nil {
 		return policy, false
 	}
-	if json.Unmarshal(data, &policy) != nil {
-		return policy, false
-	}
+	decodeStrict(filepath.Join(toolkitRoot, "komodo", "policy.json"), data, &policy)
 	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != ""
 }
 
@@ -163,9 +147,7 @@ func readPolicy(path string) (Policy, bool) {
 	if err != nil {
 		return policy, false
 	}
-	if json.Unmarshal(data, &policy) != nil {
-		return policy, false
-	}
+	decodeStrict(path, data, &policy)
 	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != ""
 }
 

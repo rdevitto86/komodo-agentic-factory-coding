@@ -1,12 +1,16 @@
 package mount
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+
+	"komodo/internal/detect"
+	"komodo/internal/install"
 )
 
 // withRegistry swaps in an empty host registry for one test and restores the real one after.
@@ -191,10 +195,96 @@ func TestOverlayReadsTheHomeFileAndToleratesItsAbsence(t *testing.T) {
 	if got.LocalURL != "http://x:1" || !got.LocalReviewer || OverlayModel("heavy") != "mid" || OverlayModel("light") != "" {
 		t.Fatalf("overlay = %+v", got)
 	}
+}
+
+// TestLoadOverlayPanicsOnAMalformedFileNamingItsPath proves a present but broken overlay fails
+// loudly instead of silently falling back, naming the file a developer must fix.
+func TestLoadOverlayPanicsOnAMalformedFileNamingItsPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(OverlayPath(), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := LoadOverlay(); got.LocalURL != "" {
-		t.Fatalf("a malformed overlay = %+v", got)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a malformed overlay did not panic")
+		}
+		if !strings.Contains(fmt.Sprint(r), OverlayPath()) {
+			t.Fatalf("panic = %v, want it to name %s", r, OverlayPath())
+		}
+	}()
+	LoadOverlay()
+}
+
+// TestLoadOverlayRejectsAnUnknownField proves the overlay decode is strict, not merely tolerant of bad JSON.
+func TestLoadOverlayRejectsAnUnknownField(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(OverlayPath(), []byte(`{"not_a_real_field":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("an unknown overlay field did not panic")
+		}
+	}()
+	LoadOverlay()
+}
+
+// TestProjectPathsSkipsADeferredOrUninstalledHostAndNeverWritesTheProfile proves listing a
+// mount's rendered paths never renders a host this repo cannot use, and never touches detect's cache.
+func TestProjectPathsSkipsADeferredOrUninstalledHostAndNeverWritesTheProfile(t *testing.T) {
+	withRegistry(t)
+	root := t.TempDir()
+	cache := filepath.Join(root, ".komodo", "profile.json")
+	rendered := false
+	render := func(name string) func(root, binary string) (install.Plan, error) {
+		return func(root, binary string) (install.Plan, error) {
+			rendered = true
+			detect.Load(root)
+			plan := install.Plan{Host: name, Root: root}
+			plan.AddProject(filepath.Join(root, name+".txt"), []byte("x\n"), "a rendered project file")
+			return plan, nil
+		}
+	}
+	Register(Host{Name: "deferred", Deferred: "kept but unusable", Render: render("deferred")})
+	if got := ProjectPaths(root); len(got) != 0 {
+		t.Fatalf("project paths = %v, want none from a deferred host", got)
+	}
+	if rendered {
+		t.Fatal("a deferred host's render ran")
+	}
+	if _, err := os.Stat(cache); err == nil {
+		t.Fatal("listing project paths wrote the detect cache")
+	}
+
+	withRegistry(t)
+	Register(Host{Name: "uninstalled", Installed: func(string) bool { return false }, Render: render("uninstalled")})
+	if got := ProjectPaths(root); len(got) != 0 {
+		t.Fatalf("project paths = %v, want none from an uninstalled host", got)
+	}
+	if rendered {
+		t.Fatal("an uninstalled host's render ran")
+	}
+	if _, err := os.Stat(cache); err == nil {
+		t.Fatal("listing project paths wrote the detect cache")
+	}
+
+	withRegistry(t)
+	Register(Host{Name: "installed", Installed: func(string) bool { return true }, Render: render("installed")})
+	if got := ProjectPaths(root); !reflect.DeepEqual(got, []string{"installed.txt"}) {
+		t.Fatalf("project paths = %v, want an installed host's own file", got)
+	}
+	if !rendered {
+		t.Fatal("an installed, non-deferred host's render never ran")
 	}
 }

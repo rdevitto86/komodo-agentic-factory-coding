@@ -13,6 +13,7 @@ import (
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/lease"
+	"komodo/internal/mount"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -551,17 +552,26 @@ type FuzzTarget struct {
 	Package string
 }
 
-// FuzzTargets are the parsers the gate fuzzes: shell commands, task grammar, and ledger lines.
-var FuzzTargets = []FuzzTarget{
+// ownFuzzTargets are the parsers the gate itself fuzzes: shell commands, task grammar, and ledger lines.
+var ownFuzzTargets = []FuzzTarget{
 	{Name: "FuzzCheck", Package: "./internal/guard"},
-	{Name: "FuzzLex", Package: "./internal/guard"},
+	{Name: "FuzzTokenize", Package: "./internal/guard"},
 	{Name: "FuzzParse", Package: "./internal/backlog"},
 	{Name: "FuzzRead", Package: "./internal/ledger"},
 }
 
+// FuzzTargets are every fuzz target the gate runs: its own, plus each registered mount's own.
+func FuzzTargets() []FuzzTarget {
+	targets := append([]FuzzTarget{}, ownFuzzTargets...)
+	for _, target := range mount.FuzzTargets() {
+		targets = append(targets, FuzzTarget{Name: target.Name, Package: target.Package})
+	}
+	return targets
+}
+
 // FuzzChecks builds one check per fuzz target, each run for the given duration such as 10s.
 func FuzzChecks(root, duration string) []Check {
-	return FuzzChecksFor(root, duration, FuzzTargets)
+	return FuzzChecksFor(root, duration, FuzzTargets())
 }
 
 // FuzzChecksFor builds one check per named fuzz target, each run for the given duration such as 10s.
@@ -599,7 +609,7 @@ func PushedFiles(root, from, to string) ([]string, error) {
 // PushedFuzzTargets returns the fuzz targets whose package is among a push's changed paths.
 func PushedFuzzTargets(paths []string) []FuzzTarget {
 	var touched []FuzzTarget
-	for _, target := range FuzzTargets {
+	for _, target := range FuzzTargets() {
 		dir := strings.TrimPrefix(target.Package, "./")
 		for _, path := range paths {
 			if path == dir || strings.HasPrefix(path, dir+"/") {
@@ -617,7 +627,7 @@ func PushChecks(root, from, to, fuzzDuration string, build []Check) ([]Check, er
 	if to == "" {
 		checks := append([]Check{}, build...)
 		if fuzzDuration != "" {
-			checks = append(checks, FuzzChecksFor(root, fuzzDuration, FuzzTargets)...)
+			checks = append(checks, FuzzChecksFor(root, fuzzDuration, FuzzTargets())...)
 		}
 		return checks, nil
 	}

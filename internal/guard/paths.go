@@ -19,19 +19,14 @@ func isAllowedWrite(path string) bool {
 	if compare == os.DevNull {
 		return true
 	}
-	for _, dir := range []string{os.TempDir(), "/tmp", "/private/tmp"} {
-		dir = strings.TrimRight(dir, string(filepath.Separator))
-		if dir == "" {
-			continue
-		}
-		if foldsCase() {
-			dir = strings.ToLower(dir)
-		}
-		if compare == dir || strings.HasPrefix(compare, dir+string(filepath.Separator)) {
-			return true
-		}
+	dir := strings.TrimRight(os.TempDir(), string(filepath.Separator))
+	if dir == "" {
+		return false
 	}
-	return false
+	if foldsCase() {
+		dir = strings.ToLower(dir)
+	}
+	return compare == dir || strings.HasPrefix(compare, dir+string(filepath.Separator))
 }
 
 // pathFindings refuses a write on a config the hosts own, and a line session's write outside its
