@@ -241,6 +241,17 @@ func NotesGroupFile(file GroupFile) []string {
 	return notes
 }
 
+// onlyExistence reports whether every done_when command only tests that a path exists, which passes
+// before any change as well as after.
+func onlyExistence(checks []string) bool {
+	for _, check := range checks {
+		if !strings.HasPrefix(strings.TrimSpace(check), "test -f ") && !strings.HasPrefix(strings.TrimSpace(check), "test -e ") {
+			return false
+		}
+	}
+	return len(checks) > 0
+}
+
 // untestedCallerNote is the note text for a task whose done_when tests only its own package.
 func untestedCallerNote(id string) string {
 	return fmt.Sprintf("%s: done_when only runs go test of its own package(s); files name no caller such as cmd/komodo, the conductor, or a hook", id)
@@ -389,6 +400,8 @@ func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs m
 		}
 		if len(task.Checks) == 0 {
 			problems = append(problems, fmt.Sprintf("%s: agent task declares no done_when commands", task.ID))
+		} else if onlyExistence(task.Checks) {
+			problems = append(problems, fmt.Sprintf("%s: done_when only checks that a file exists; name the command that proves the change", task.ID))
 		}
 	}
 	for _, line := range strings.Split(text, "\n") {

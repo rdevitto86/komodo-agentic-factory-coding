@@ -646,3 +646,20 @@ func TestLintAcceptsAStableVersionWhoseEpicHadNoRc(t *testing.T) {
 		}
 	}
 }
+
+// TestLintGroupFileRefusesAProofThatOnlyChecksAFileExists proves a READY task cannot pass on test -f,
+// which holds before the change as well as after.
+func TestLintGroupFileRefusesAProofThatOnlyChecksAFileExists(t *testing.T) {
+	head := "## [TG-63.1] Proofs [P: H] [READY]\n\n```yaml\ntype: fix\nversion: 1.0.0\nepic: EPIC-63\ndepends_on: []\n```\n\n"
+	weak := ParseGroupFile(head + "- [ ] **TSK-63.1.1** A task\n  - files: `a.go`\n  - done_when: `test -f a.go`\n")
+	problems := LintGroupFile(".", weak, "", map[string]bool{"TG-63.1": true}, map[string]bool{"TSK-63.1.1": true}, nil)
+	if !strings.Contains(strings.Join(problems, "\n"), "only checks that a file exists") {
+		t.Fatalf("problems = %v, want the existence-only proof refused", problems)
+	}
+	real := ParseGroupFile(head + "- [ ] **TSK-63.1.1** A task\n  - files: `a.go`\n  - done_when: `test -f a.go`, `go test ./...`\n")
+	for _, problem := range LintGroupFile(".", real, "", map[string]bool{"TG-63.1": true}, map[string]bool{"TSK-63.1.1": true}, nil) {
+		if strings.Contains(problem, "only checks that a file exists") {
+			t.Fatalf("problem = %q; a real command beside test -f is a proof", problem)
+		}
+	}
+}

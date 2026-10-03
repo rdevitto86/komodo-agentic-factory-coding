@@ -31,7 +31,7 @@ Every finding carries its lens, one rule ID from your skill, and `evidence` the 
 - **bug, security**: `evidence` is one shell command, run from the tree's root, that exits non-zero on the current tree because of the defect.
 - **convention and the other quality classes**: the rule ID from your lens, on a line the diff changed.
 - **performance, blast-radius**: `evidence` quotes a validator measurement's line verbatim.
-Anything else becomes a PR note, never a blocker.
+Anything else becomes a PR note, never a blocker. The line files each note as a READY task on its file, proven by that file's tests, so write its `title`, `detail` and `fix` for a builder who has no other context.
 
 # Blast radius
 Score the diff once, on top of the findings: `low`, `low-med`, `med`, `med-high`, `high`, or `critical`. This is what the change could break, not whether it already has a bug; a wide change with no findings still scores high.
