@@ -2,15 +2,25 @@
 package preflight
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strings"
+	"time"
 
 	"komodo/internal/doctor"
 	"komodo/internal/mount"
+	"komodo/internal/proc"
 	"komodo/internal/profile"
 )
+
+// toolTimeout bounds how long a tool's own status check may run before it is killed; a test lowers it.
+var toolTimeout = 30 * time.Second
+
+// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
 
 // Check holds one failed preflight check and the fix the run should name.
 type Check struct {
@@ -26,6 +36,9 @@ type Options struct {
 // Run executes every preflight check and returns what failed.
 func Run(root string, options Options) ([]Check, error) {
 	var failures []Check
+
+	// A missing tool fails fast, with the fix named, before doctor or any check that assumes it runs.
+	failures = append(failures, checkTools()...)
 
 	// Doctor runs first.
 	problems, err := doctor.Run(root, doctor.Options{NoGit: true, RepoOnly: true})
@@ -105,12 +118,52 @@ func checkHostLogin(root string) error {
 	return nil
 }
 
-// checkForgeCredential reports an error if no forge credential is available.
+// requiredTools are the binaries the line needs on PATH, each with the fix a missing one names.
+var requiredTools = []struct{ name, fix string }{
+	{"git", "git is not on PATH; install git and run again"},
+	{"gh", "gh is not on PATH; install the GitHub CLI and run again"},
+	{"go", "go is not on PATH; install Go and run again"},
+}
+
+// checkTools reports a failure naming the fix for every required binary missing from PATH.
+func checkTools() []Check {
+	var failures []Check
+	for _, tool := range requiredTools {
+		if _, err := exec.LookPath(tool.name); err != nil {
+			failures = append(failures, Check{Name: tool.name, Fix: tool.fix})
+		}
+	}
+	return failures
+}
+
+// checkForgeCredential reports an error if no forge credential is available; a hung gh is killed,
+// process group included, once toolTimeout passes, and the error names the command and its stderr.
 func checkForgeCredential() error {
-	// Check if gh is available and authenticated.
-	cmd := exec.Command("gh", "auth", "status")
-	if err := cmd.Run(); err != nil {
-		return errors.New("no forge credential available; run `gh auth login` to authenticate with the forge")
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "auth", "status")
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	stderr := proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stderr = stderr
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("gh auth status: timed out after %s: %s", toolTimeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return fmt.Errorf("gh auth status: no forge credential available; run `gh auth login` to authenticate with the forge: %s", detail)
 	}
 	return nil
 }

@@ -1,7 +1,6 @@
 package eval
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,10 +12,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"komodo/internal/mount"
-	"komodo/internal/proc"
 )
 
 // canaryCase is the case that needs a personal host instructions file to plant its canary in.
@@ -39,24 +36,13 @@ func LiveCases(ctx context.Context, options CaseOptions, live LiveOptions, work 
 				each.Name, each.Requirement)
 			continue
 		}
-		caseRun := each.Run
-		each.Run = func(ctx context.Context, env Env) error {
-			if bound, ok := env.(caseLive); ok {
-				env = caseLive{Live: bound.Live, ctx: ctx}
-			}
-			return caseRun(ctx, env)
-		}
 		cases = append(cases, each)
 	}
 	options.Cases = cases
 	options.Env = func(ctx context.Context, index int) (Env, error) {
 		each := live
 		each.Dir = filepath.Join(work, fmt.Sprintf("case-%d", index))
-		made, err := NewLive(ctx, each)
-		if err != nil {
-			return nil, err
-		}
-		return caseLive{Live: made, ctx: ctx}, nil
+		return NewLive(ctx, each)
 	}
 	outcomes, err := RunCases(ctx, options)
 	if err != nil {
@@ -73,15 +59,6 @@ func LiveCases(ctx context.Context, options CaseOptions, live LiveOptions, work 
 	}
 	return nil
 }
-
-// caseLive is the Env a case drives: a Live whose AddGroup ends with the case's context.
-type caseLive struct {
-	*Live
-	ctx context.Context
-}
-
-// AddGroup adds the group under the case's context.
-func (c caseLive) AddGroup(id, body string) error { return c.Live.AddGroup(c.ctx, id, body) }
 
 // LiveOptions are what a live env needs: the golden group it clones, the komodo it mounts, and where it goes.
 type LiveOptions struct {
@@ -154,7 +131,7 @@ func (l *Live) Git(ctx context.Context, args ...string) Ran {
 
 // AddGroup appends a group's section to the clone's backlog and commits and pushes it on main before ctx ends.
 func (l *Live) AddGroup(ctx context.Context, id, body string) error {
-	scratch, err := l.Scratch()
+	scratch, err := l.Scratch(ctx)
 	if err != nil {
 		return err
 	}
@@ -184,7 +161,10 @@ func (l *Live) commit(ctx context.Context, message string) error {
 }
 
 // Scratch makes a new empty directory beside the clone.
-func (l *Live) Scratch() (string, error) {
+func (l *Live) Scratch(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	return os.MkdirTemp(filepath.Dir(l.dir), filepath.Base(l.dir)+"-scratch-")
 }
 
@@ -203,7 +183,7 @@ func (l *Live) PathWithout(names ...string) (string, error) {
 			kept = append(kept, dir)
 			continue
 		}
-		mirrored, err := l.Scratch()
+		mirrored, err := l.Scratch(context.Background())
 		if err != nil {
 			return "", err
 		}
@@ -216,14 +196,14 @@ func (l *Live) PathWithout(names ...string) (string, error) {
 }
 
 // Credential writes the forge token gh holds into a scratch gh config only the run reads; remove deletes it.
-func (l *Live) Credential() ([]string, func() error, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
+func (l *Live) Credential(ctx context.Context) ([]string, func() error, error) {
+	ctx, cancel := context.WithTimeout(ctx, cloneTimeout)
 	defer cancel()
 	token := invoke(ctx, l.dir, nil, "gh", "auth", "token")
 	if token.Code != 0 || strings.TrimSpace(token.Output) == "" {
 		return nil, nil, fmt.Errorf("gh auth token gave no forge credential to hand the run: %s", token.Output)
 	}
-	config, err := l.Scratch()
+	config, err := l.Scratch(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -237,7 +217,7 @@ func (l *Live) Credential() ([]string, func() error, error) {
 
 // Overlay mirrors this user's home into a scratch one whose komodo overlay is the real one with body's
 // keys laid over it, so the host's own login stays.
-func (l *Live) Overlay(body string) ([]string, error) {
+func (l *Live) Overlay(ctx context.Context, body string) ([]string, error) {
 	given := map[string]any{}
 	if err := json.Unmarshal([]byte(body), &given); err != nil {
 		return nil, fmt.Errorf("the overlay: %w", err)
@@ -258,7 +238,7 @@ func (l *Live) Overlay(body string) ([]string, error) {
 		}
 	}
 	maps.Copy(merged, given)
-	home, err := l.Scratch()
+	home, err := l.Scratch(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +263,10 @@ func (l *Live) Overlay(body string) ([]string, error) {
 }
 
 // Plant appends text to the personal host instructions file; restore puts back what it held, or removes it.
-func (l *Live) Plant(text string) (func() error, error) {
+func (l *Live) Plant(ctx context.Context, text string) (func() error, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	path := l.instructions
 	if path == "" {
 		return nil, errors.New("no personal host instructions file to plant the canary in")
@@ -331,24 +314,13 @@ func mirror(source, target string, skip ...string) error {
 // invoke runs one program in dir with extra appended to this process's environment, killing its process
 // tree when ctx ends, and returns what it printed and its exit code, -1 when it never exited.
 func invoke(ctx context.Context, dir string, extra []string, name string, args ...string) Ran {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), extra...)
-	proc.Group(cmd)
-	cmd.Cancel = func() error {
-		proc.KillGroup(cmd)
-		return nil
-	}
-	cmd.WaitDelay = 5 * time.Second
-	var output bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &output, &output
-	err := cmd.Run()
+	output, err := runProcess(ctx, dir, extra, name, args...)
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
-		return Ran{Output: output.String()}
+		return Ran{Output: output}
 	case errors.As(err, &exit) && exit.ExitCode() >= 0:
-		return Ran{Output: output.String(), Code: exit.ExitCode()}
+		return Ran{Output: output, Code: exit.ExitCode()}
 	}
-	return Ran{Output: output.String() + err.Error(), Code: -1}
+	return Ran{Output: output + err.Error(), Code: -1}
 }

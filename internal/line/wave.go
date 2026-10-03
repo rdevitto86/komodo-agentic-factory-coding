@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -209,11 +210,30 @@ func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 	if !found {
 		return nil, fmt.Errorf("%s is not in %s", groupID, backlog.GroupFilesDir)
 	}
-	return fileGroupFileFindings(groupPath, groupText, findings)
+	return fileGroupFileFindings(root, groupPath, groupText, findings)
 }
 
-// fileGroupFileFindings appends every unfiled finding to one docs/backlog group file, newest last.
-func fileGroupFileFindings(path, text string, findings []Finding) ([]string, error) {
+// findingPriority is the task priority each review severity files at.
+var findingPriority = map[string]string{"critical": "C", "high": "H", "medium": "M", "low": "L"}
+
+// findingProof is the command that proves a filed finding fixed: its Go package's tests, else the
+// repo's verify command, else komodo lint.
+func findingProof(root, file string) string {
+	if strings.HasSuffix(file, ".go") {
+		if dir := filepath.ToSlash(filepath.Dir(file)); dir != "." {
+			return "go test ./" + dir + "/..."
+		}
+		return "go test ."
+	}
+	if verify := VerifyCommand(root, root); verify != "" {
+		return verify
+	}
+	return "komodo lint"
+}
+
+// fileGroupFileFindings appends every unfiled finding to one docs/backlog group file as a READY task with
+// its file and a real proof, so the line runs it instead of leaving it to rot.
+func fileGroupFileFindings(root, path, text string, findings []Finding) ([]string, error) {
 	file := backlog.ParseGroupFile(text)
 	titles := map[string]bool{}
 	for _, task := range file.Tasks {
@@ -225,11 +245,15 @@ func fileGroupFileFindings(path, text string, findings []Finding) ([]string, err
 		if titles[title] {
 			continue
 		}
+		priority := findingPriority[finding.Severity]
+		if priority == "" {
+			priority = "L"
+		}
 		task := backlog.GroupTask{
 			Title: title, Files: []string{finding.File},
-			Checks:   []string{"test -f " + finding.File},
+			Checks:   []string{findingProof(root, finding.File)},
 			Context:  []string{strings.TrimSpace(finding.Detail + " " + finding.Fix)},
-			Priority: "L", Status: "REFINEMENT",
+			Priority: priority, Status: "READY",
 		}
 		next, id, err := backlog.AppendGroupFileTaskWith(text, task)
 		if err != nil {

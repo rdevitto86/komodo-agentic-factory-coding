@@ -3,12 +3,20 @@ package conductor
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/backlog"
 	"komodo/internal/line"
 )
+
+// stopBacklog is a group with one open task a blocker note can mark BLOCKED.
+const stopBacklog = "## [TG-09.1] A group [P: C] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+	"- [ ] **TSK-09.1.1** Do it\n  - files: `a.go`\n"
 
 // blocking wires the rig's driver to record each note Block publishes, failing with err.
 func blocking(r *rig, err error) *[]backlog.BlockerNote {
@@ -66,6 +74,58 @@ func TestLineBlockPublishesNothingOnceStoppedAndReturnsAFailedCommit(t *testing.
 	}
 	if err := stations.Block(context.Background(), backlog.BlockerNote{}); err == nil {
 		t.Fatal("block = nil, want the WIP commit's failure in a worktree with no backlog")
+	}
+}
+
+// TestLineBlockFailsWhenAScrubbedNoteNeverPublishes proves a scrubbed, unpublished blocker fails
+// the group instead of looking published when no draft PR exists.
+func TestLineBlockFailsWhenAScrubbedNoteNeverPublishes(t *testing.T) {
+	worktree := t.TempDir()
+	gitIn := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", worktree}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	gitIn("init", "-b", "main")
+	gitIn("config", "user.email", "a@example.com")
+	gitIn("config", "user.name", "a")
+	writeIn(t, worktree, "docs/backlog/TG-09.1-a-group.md", stopBacklog)
+	if err := os.WriteFile(filepath.Join(worktree, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn("add", "-A")
+	gitIn("commit", "-m", "seed")
+	t.Setenv("GIT_TERMINAL_PROMPT", "0")
+	t.Setenv("GIT_CONFIG_KEY_0", "credential.helper")
+	t.Setenv("GIT_CONFIG_VALUE_0", "")
+	stations := &Line{Root: t.TempDir(), Plan: &line.Plan{
+		Group: "TG-09.1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: worktree,
+		Tasks: []line.PlanTask{{ID: "TSK-09.1.1", Files: []string{"a.go"}}},
+	}}
+	err := stations.Block(context.Background(), backlog.BlockerNote{
+		At: time.Now(), Run: "run-1", State: "Building", Items: []string{"stop"}, Needs: "a decision",
+	})
+	if err == nil || !strings.Contains(err.Error(), "credential") {
+		t.Fatalf("block = %v, want a failure naming the missing credential", err)
+	}
+}
+
+// TestAKilledRunKeepsAnAnsweredStopsNeeds proves a run killed right after a stop was answered
+// still writes the orchestrator's needs once it resumes into Blocked, not the default.
+func TestAKilledRunKeepsAnAnsweredStopsNeeds(t *testing.T) {
+	r := newRig(t)
+	notes := blocking(r, nil)
+	start := State{
+		Group: "TG-1", Current: Escalated, Escalate: true, Answered: true, Stop: true,
+		Left: Building, Needs: "a decision on the clock",
+	}
+	final, err := r.driver.Drive(context.Background(), start)
+	if err != nil || final.Current != Blocked {
+		t.Fatalf("drive = %s, %v; want Blocked", final.Current, err)
+	}
+	if len(*notes) != 1 || (*notes)[0].Needs != "a decision on the clock" {
+		t.Fatalf("notes = %+v, want the saved needs, not the default", *notes)
 	}
 }
 

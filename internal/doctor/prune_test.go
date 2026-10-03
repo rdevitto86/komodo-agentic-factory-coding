@@ -44,6 +44,30 @@ func refExists(root, ref string) bool {
 	return exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", ref).Run() == nil
 }
 
+// TestOriginLacksKillsAHungLsRemoteAndItsChildren proves a ls-remote past toolTimeout is killed,
+// process group included, so a hung origin never blocks a sweep.
+func TestOriginLacksKillsAHungLsRemoteAndItsChildren(t *testing.T) {
+	root := gitRepo(t)
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakes := t.TempDir()
+	wrapper := "#!/bin/sh\nif [ \"$1\" = ls-remote ]; then sleep 30 & sleep 30; fi\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(fakes, "git"), []byte(wrapper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakes+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := toolTimeout
+	toolTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { toolTimeout = saved })
+	started := time.Now()
+	originLacks(root, "feat/x")
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
+	}
+}
+
 func TestPruneRemovesALandedDetachedWorktreeAndItsTipButNotAFreshCut(t *testing.T) {
 	root, run := pruneRepo(t, "# Backlog\n")
 	bare := filepath.Join(t.TempDir(), "origin.git")
@@ -457,5 +481,32 @@ func TestPruneStashesArchivesAWeekOldStashThenDropsIt(t *testing.T) {
 	}
 	if body, _ := os.ReadFile(patches[0]); !strings.Contains(string(body), "old work") {
 		t.Fatalf("patch = %q, want the stash's own change", body)
+	}
+}
+
+func TestPruneRemovesTheDeadBranchClaims(t *testing.T) {
+	root := gitRepo(t)
+	claims := filepath.Join(root, ".git", "komodo-claims")
+	if err := os.MkdirAll(claims, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claims, "HEAD.json"), []byte(`{"session":"s","branch":"HEAD"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dry := pruneClaims(root, false); len(dry) != 1 || !strings.HasPrefix(dry[0], "would remove") {
+		t.Fatalf("dry run = %q, want one would-remove line", dry)
+	}
+	if _, err := os.Stat(claims); err != nil {
+		t.Fatalf("a dry run removed the claims: %v", err)
+	}
+	done := pruneClaims(root, true)
+	if _, err := os.Stat(claims); !os.IsNotExist(err) {
+		t.Fatalf("claims still present (%v); nothing reads them since the guard dropped claims", err)
+	}
+	if len(done) != 1 || !strings.Contains(done[0], "removed the dead branch claims") {
+		t.Fatalf("done = %q", done)
+	}
+	if again := pruneClaims(root, true); len(again) != 0 {
+		t.Fatalf("a second prune reported %q; with no claims it must say nothing", again)
 	}
 }

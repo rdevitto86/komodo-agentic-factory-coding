@@ -63,6 +63,8 @@ type State struct {
 	ColdPass map[review.Lens]bool `json:"cold_pass,omitempty"`
 	// Reason is why the group last escalated, which the orchestrator reads and its blocker note names.
 	Reason string `json:"reason,omitempty"`
+	// Needs is what the stopped group's blocker note says it needs, read once Answered and Stop.
+	Needs string `json:"needs,omitempty"`
 	// Answer is the orchestrator's answer the next builder session reads.
 	Answer string `json:"answer,omitempty"`
 	// Stalls counts the group's stops without progress, across every run that drove it.

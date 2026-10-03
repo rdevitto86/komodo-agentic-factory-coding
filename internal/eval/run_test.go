@@ -368,6 +368,16 @@ func TestCloneAtPinsTheCommitAndHidesTheChange(t *testing.T) {
 	}
 }
 
+// TestCloneAtNeverReadsAnOptionLikeURLAsAnOption proves a url starting with - reaches git fetch as a
+// literal pathname, never as a flag such as --upload-pack.
+func TestCloneAtNeverReadsAnOptionLikeURLAsAnOption(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "clone")
+	err := CloneAt(context.Background(), "--upload-pack=touch", strings.Repeat("a", 40), dir)
+	if err == nil || !strings.Contains(err.Error(), "strange pathname") {
+		t.Fatalf("CloneAt = %v, want git to refuse the url as a blocked pathname, not run it as an option", err)
+	}
+}
+
 // TestLiveEvalAcceptsAGroupThroughRealSessions runs one golden-shaped group through the whole line on this host.
 func TestLiveEvalAcceptsAGroupThroughRealSessions(t *testing.T) {
 	if os.Getenv(liveEnv) != "1" {

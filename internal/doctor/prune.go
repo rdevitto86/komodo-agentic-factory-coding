@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 )
 
 // keptRuns is how many run folders Prune keeps, the newest by start.
@@ -65,6 +67,7 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 	done = append(done, pruneSpentState(root, open, confirm)...)
 	done = append(done, pruneStashes(root, now(), confirm)...)
 	done = append(done, pruneHookCopies(root, confirm)...)
+	done = append(done, pruneClaims(root, confirm)...)
 	return done, nil
 }
 
@@ -201,6 +204,28 @@ func pruneHookCopies(root string, confirm bool) []string {
 		done = append(done, "removed old hook binary "+path)
 	}
 	return done
+}
+
+// claimsDir is where the guard kept branch claims until they were removed; nothing reads it now.
+const claimsDir = "komodo-claims"
+
+// pruneClaims deletes the shared git dir's dead branch-claim directory; unconfirmed, it lists it.
+func pruneClaims(root string, confirm bool) []string {
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(common, claimsDir)
+	if _, err := os.Stat(dir); err != nil {
+		return nil
+	}
+	if !confirm {
+		return []string{"would remove the dead branch claims at " + dir + "; rerun with --confirm to delete"}
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return []string{"could not remove the dead branch claims at " + dir + ": " + err.Error()}
+	}
+	return []string{"removed the dead branch claims at " + dir}
 }
 
 // settleShippedRun sweeps clean, unleased, landed worktrees and orphan landed tips, never an open run's; unconfirmed, it lists.
@@ -343,11 +368,24 @@ func squashLanded(root, branch, tip, pushed string) bool {
 	return mergedOnForge(root, branch)
 }
 
-// originLacks reports whether origin answers and holds no branch of that name.
+// originLacks reports whether origin answers and holds no branch of that name; a hung ls-remote
+// is killed, process group included, once toolTimeout passes.
 func originLacks(root, branch string) bool {
-	cmd := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", branch)
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", "--heads", "origin", branch)
 	cmd.Dir = root
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
 	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
 	var exit *exec.ExitError
 	return errors.As(err, &exit) && exit.ExitCode() == 2
 }
