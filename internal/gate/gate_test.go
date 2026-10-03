@@ -183,9 +183,13 @@ func TestFuzzChecksCoverEveryTarget(t *testing.T) {
 
 // TestTestArgsAlwaysRunsEveryPackage proves the race flag never narrows what the gate tests.
 func TestTestArgsAlwaysRunsEveryPackage(t *testing.T) {
-	args := TestArgs()
+	args := TestArgs(false)
 	if args[0] != "go" || args[1] != "test" || args[len(args)-1] != "./..." {
 		t.Fatalf("args = %q", args)
+	}
+	fresh := strings.Join(TestArgs(true), " ")
+	if !strings.Contains(fresh, "-count=1 -shuffle=on") || !strings.HasSuffix(fresh, "./...") {
+		t.Fatalf("fresh args = %q, want uncached, shuffled tests of every package", fresh)
 	}
 }
 
@@ -442,7 +446,7 @@ func TestTestArgsDropsTheRaceFlagWithoutCgo(t *testing.T) {
 	fakeDir := t.TempDir()
 	fakeGo(t, fakeDir, "#!/bin/sh\necho 0\n")
 	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
-	args := TestArgs()
+	args := TestArgs(false)
 	if strings.Join(args, " ") != "go test ./..." {
 		t.Fatalf("args = %q", args)
 	}

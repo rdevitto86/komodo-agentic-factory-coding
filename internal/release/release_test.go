@@ -2,11 +2,14 @@ package release
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"komodo/internal/gate"
 )
 
 const twoVersions = "# Changelog\n\n## 2.0.0 — 2026-09-21\n\n- the line\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
@@ -142,30 +145,28 @@ func TestTargetsCoverEveryPlatformTheHookRuns(t *testing.T) {
 	}
 }
 
-func TestBuildAssetsIsByteIdenticalPerCommit(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
+func TestBuildAssetsStopsWhenABuildDoesNotReproduce(t *testing.T) {
+	previous := build
+	t.Cleanup(func() { build = previous })
+	calls := 0
+	fake := func(stable bool) func(string, string, gate.Target) (string, error) {
+		return func(_ string, dir string, target gate.Target) (string, error) {
+			calls++
+			body := "same"
+			if !stable {
+				body = fmt.Sprintf("build %d", calls)
+			}
+			path := filepath.Join(dir, target.Name)
+			return path, os.WriteFile(path, []byte(body), 0o755)
+		}
 	}
-	var sums [2]string
-	for index := range sums {
-		dir := t.TempDir()
-		paths, err := BuildAssets(root, dir, io.Discard)
-		if err != nil {
-			t.Fatal(err)
-		}
-		manifest, err := WriteSums(dir, paths)
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(manifest)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sums[index] = string(data)
+	build = fake(true)
+	if paths, err := BuildAssets(t.TempDir(), t.TempDir(), io.Discard); err != nil || len(paths) != len(Targets) {
+		t.Fatalf("paths = %v, %v; identical builds must pass", paths, err)
 	}
-	if sums[0] != sums[1] {
-		t.Fatalf("two builds of one commit differ:\n%s\n%s", sums[0], sums[1])
+	build = fake(false)
+	if _, err := BuildAssets(t.TempDir(), t.TempDir(), io.Discard); err == nil || !strings.Contains(err.Error(), "does not reproduce") {
+		t.Fatalf("err = %v; a build that differs from its twin must stop the release", err)
 	}
 }
 
