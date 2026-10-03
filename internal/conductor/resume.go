@@ -52,7 +52,7 @@ func (d *Driver) Resume(ctx context.Context, s State) (State, error) {
 	}
 	station, req, waiting := pendingSession(d, s)
 	if waiting {
-		handle, err := d.startOrResume(s, req)
+		handle, err := d.startOrResume(ctx, s, req)
 		if err != nil {
 			return s, fmt.Errorf("resuming %s at %s: %w", s.Group, s.Current, err)
 		}
@@ -109,15 +109,15 @@ func pendingSession(d *Driver, s State) (station string, req mount.StartRequest,
 
 // startOrResume resumes the group's last recorded session when the host supports it, else
 // starts a fresh one from the same request, so a killed run never repeats a finished session.
-func (d *Driver) startOrResume(s State, req mount.StartRequest) (mount.Handle, error) {
+func (d *Driver) startOrResume(ctx context.Context, s State, req mount.StartRequest) (mount.Handle, error) {
 	if last := lastSession(s); last != "" && d.Host.Capabilities().Resume {
-		if handle, err := d.Host.Resume(last, ""); err == nil {
+		if handle, err := d.Host.Resume(ctx, last, ""); err == nil {
 			return handle, nil
 		}
 		// The session died with its process; a fresh one continues from the worktree instead of failing the group.
 		req.Brief = continueLead + req.Brief
 	}
-	return d.Host.Start(req)
+	return d.Host.Start(ctx, req)
 }
 
 // lastSession returns the most recent session handle state.json recorded, or none.

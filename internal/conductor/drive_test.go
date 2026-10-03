@@ -95,9 +95,9 @@ func (f *fakeHost) handle(role string, value map[string]any) mount.Handle {
 	return handle
 }
 
-func (f *fakeHost) Preflight() error { return nil }
+func (f *fakeHost) Preflight(ctx context.Context) error { return nil }
 
-func (f *fakeHost) Start(req mount.StartRequest) (mount.Handle, error) {
+func (f *fakeHost) Start(ctx context.Context, req mount.StartRequest) (mount.Handle, error) {
 	f.starts = append(f.starts, req)
 	if f.cancel != nil {
 		f.cancel()
@@ -108,7 +108,7 @@ func (f *fakeHost) Start(req mount.StartRequest) (mount.Handle, error) {
 	return f.handle(req.Role, pop(&f.builds, map[string]any{"result": "DONE"})), nil
 }
 
-func (f *fakeHost) Resume(handle mount.Handle, input string) (mount.Handle, error) {
+func (f *fakeHost) Resume(ctx context.Context, handle mount.Handle, input string) (mount.Handle, error) {
 	if _, ok := f.results[handle]; !ok {
 		return "", errors.New("no such session")
 	}
@@ -121,7 +121,7 @@ func (f *fakeHost) Resume(handle mount.Handle, input string) (mount.Handle, erro
 	return f.handle("builder", pop(&f.repairs, map[string]any{"result": "DONE"})), nil
 }
 
-func (f *fakeHost) Stream(handle mount.Handle) (<-chan mount.Event, error) {
+func (f *fakeHost) Stream(ctx context.Context, handle mount.Handle) (<-chan mount.Event, error) {
 	if f.hang {
 		return make(chan mount.Event), nil
 	}
@@ -144,7 +144,7 @@ func (f *fakeHost) Result(handle mount.Handle) (mount.Result, error) {
 	return result, nil
 }
 
-func (f *fakeHost) Stop(handle mount.Handle) error {
+func (f *fakeHost) Stop(ctx context.Context, handle mount.Handle) error {
 	f.stopMu.Lock()
 	defer f.stopMu.Unlock()
 	f.stopped = append(f.stopped, handle)
