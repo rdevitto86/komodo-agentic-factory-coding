@@ -174,7 +174,11 @@ func TestALightTierSessionRoleRendersAsStandardWithTheLocalMachineUp(t *testing.
 
 func TestSettingsRegisterTheGuardOnceAndNoMCP(t *testing.T) {
 	root := toolkitRepo(t)
-	raw := body(t, root, filepath.Join(Dir, "settings.json"))
+	// An interactive session takes its one guard from the global layer, so the repo's settings register none.
+	if repo := body(t, root, filepath.Join(Dir, "settings.json")); strings.Contains(repo, `"hooks"`) {
+		t.Fatalf("settings.json registers a hook; with the global layer's guard it would run twice:\n%s", repo)
+	}
+	raw := body(t, root, filepath.Join(Dir, LineSettings))
 	var settings struct {
 		Hooks struct {
 			PreToolUse []struct {
@@ -241,7 +245,7 @@ func TestAGlobRefDenyDropsThePrefixSuffix(t *testing.T) {
 
 func TestTheHookCommandIsAnAbsolutePath(t *testing.T) {
 	root := toolkitRepo(t)
-	raw := body(t, root, filepath.Join(Dir, "settings.json"))
+	raw := body(t, root, filepath.Join(Dir, LineSettings))
 	var settings struct {
 		Hooks struct {
 			PreToolUse []struct {
@@ -274,7 +278,7 @@ func TestTheHookCommandStaysAbsoluteWhenTheBinaryAlreadyIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, change := range plan.Changes {
-		if change.Path == filepath.Join(root, Dir, "settings.json") {
+		if change.Path == filepath.Join(root, Dir, LineSettings) {
 			if !strings.Contains(string(change.Body), "/opt/komodo/bin/komodo guard") {
 				t.Fatalf("settings.json = %s", change.Body)
 			}
@@ -299,7 +303,7 @@ func TestTheHookCommandIsTheRunningBinaryInAForeignRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, change := range plan.Changes {
-		if change.Path == filepath.Join(root, Dir, "settings.json") {
+		if change.Path == filepath.Join(root, Dir, LineSettings) {
 			want, _ := json.Marshal(toolkitBinary + " guard")
 			if !strings.Contains(string(change.Body), string(want)) {
 				t.Fatalf("settings.json = %s, want the hook %s", change.Body, want)
@@ -334,7 +338,7 @@ func TestTheHookCommandNamesTheFixedBinary(t *testing.T) {
 		}
 		var settings string
 		for _, change := range plan.Changes {
-			if change.Path == filepath.Join(root, Dir, "settings.json") {
+			if change.Path == filepath.Join(root, Dir, LineSettings) {
 				settings = string(change.Body)
 			}
 		}
@@ -878,7 +882,7 @@ func TestAWorktreesHookPointsAtTheMainCheckoutsBinary(t *testing.T) {
 		}
 	}
 	worktree := filepath.Join(root, ".komodo", "wt", "x")
-	raw, err := settingsFile(worktree, "bin/komodo")
+	raw, err := settingsFile(worktree, "bin/komodo", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -973,7 +977,7 @@ func TestWritePathsNamesTheProjectsMemoryDirectory(t *testing.T) {
 // TestSettingsTurnAttributionOff checks the rendered settings hide the trailer, the PR footer, and the session link.
 func TestSettingsTurnAttributionOff(t *testing.T) {
 	worktree := t.TempDir()
-	raw, err := settingsFile(worktree, "bin/komodo")
+	raw, err := settingsFile(worktree, "bin/komodo", false)
 	if err != nil {
 		t.Fatal(err)
 	}

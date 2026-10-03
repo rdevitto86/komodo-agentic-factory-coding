@@ -129,6 +129,42 @@ func repoIgnores(root string, plans []install.Plan) install.Plan {
 	return ignore
 }
 
+// refreshMachine publishes the newest komodo to every hook, re-renders this repo's layer, and re-renders the
+// user's global layer when one was installed before; it never installs a global layer unasked.
+func refreshMachine(root string) ([]string, error) {
+	latest := mount.LatestBinary(root)
+	done := []string{"binary " + mount.Publish(latest)}
+	var rendered strings.Builder
+	if err := rerenderHosts(root, &rendered); err != nil {
+		return done, err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(rendered.String()), "\n") {
+		if line != "" {
+			done = append(done, line)
+		}
+	}
+	for _, host := range mount.Active() {
+		if _, ok := install.Global(host.Name); !ok || host.Deferred != "" {
+			continue
+		}
+		plan, err := install.GlobalPlan(host.Name, root, latest)
+		if err != nil {
+			return done, err
+		}
+		if !plan.Installed() {
+			continue
+		}
+		applied, err := plan.Apply()
+		if err != nil {
+			return done, err
+		}
+		for _, action := range applied {
+			done = append(done, fmt.Sprintf("%-7s %s", action.Verb, filepath.Join(plan.Root, action.Path)))
+		}
+	}
+	return done, nil
+}
+
 // rerenderHosts re-renders each host this main checkout already mounts, so a merged rule or skill leaves no drift.
 func rerenderHosts(root string, out io.Writer) error {
 	if mount.MainCheckout(root) != root {
