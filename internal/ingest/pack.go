@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"komodo/internal/line"
+	"komodo/internal/mount"
 )
 
 // Context pack caps in bytes, starting values for one item and for the whole pack.
@@ -79,6 +80,10 @@ func BuildPack(root string, card Card) (Pack, error) {
 	module := modulePath(root)
 
 	var items []PackItem
+	// A pack carries the rendered universal rules itself, past a line session's own dropped import of them.
+	if rules, err := mount.Rules(root); err == nil {
+		items = append(items, PackItem{Kind: KindRules, Source: "komodo/AGENTS.md", Body: rules})
+	}
 	if data, err := os.ReadFile(filepath.Join(root, "AGENTS.md")); err == nil {
 		items = append(items, PackItem{Kind: KindRules, Source: "AGENTS.md", Body: string(data)})
 	}
