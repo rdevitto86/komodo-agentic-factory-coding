@@ -1438,7 +1438,7 @@ func builderMachine(t *testing.T, root string) (string, string) {
 
 func TestAOneFileTaskNeverBuildsOnLight(t *testing.T) {
 	for _, files := range []string{"files: [a/one.go]\n", "files: [a/one.go, a/one_test.go]\n"} {
-		root := tieredRepo(t, files, `{"light_builder": true}`)
+		root := tieredRepo(t, files, `{"max_parallel": 1}`)
 		machine, why := builderMachine(t, root)
 		if machine != "vendora/sonnet" || strings.Contains(why, "light") {
 			t.Fatalf("machine = %q, why = %q; a small task builds on the builder's own tier, never light", machine, why)

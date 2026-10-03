@@ -69,14 +69,17 @@ func positionalArgs(words []string) []string {
 // sedValueFlags are sed's own flags that take a separate value, consumed and never read as a file.
 var sedValueFlags = map[string]bool{"-e": true, "-f": true, "--expression": true, "--file": true}
 
-// sedInPlaceTargets returns sed's file operands when -i or --in-place edits them in place; with no
-// -e or -f script flag, the first operand is the script itself, never a file.
+// sedInPlaceTargets returns sed's file operands when -i or --in-place edits them in place, BSD's own
+// empty backup suffix consumed like -e and -f's values; with no script flag, the first operand is the script.
 func sedInPlaceTargets(args []string) []string {
 	inPlace, hasScript := false, false
 	var operands []string
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
+		case arg == "-i" && index+1 < len(args) && args[index+1] == "":
+			inPlace = true
+			index++
 		case arg == "-i" || strings.HasPrefix(arg, "-i") || arg == "--in-place" || strings.HasPrefix(arg, "--in-place="):
 			inPlace = true
 		case sedValueFlags[arg]:
@@ -504,13 +507,24 @@ func skipHeredocBody(runes []rune, start int, delimiter string) (int, string) {
 	return index, body.String()
 }
 
-// rawTokens splits a command line into words and operators, honouring single and double quotes
-// and a backslash escape, the way a shell's own word splitting does before anything else runs.
+// hasClosingBacktick reports whether a closing backtick follows, so a lone one, naming no
+// command, stays a literal character instead of opening a quote that runs to the end.
+func hasClosingBacktick(runes []rune) bool {
+	for _, r := range runes {
+		if r == '`' {
+			return true
+		}
+	}
+	return false
+}
+
+// rawTokens splits a command line into words and operators, honouring single and double quotes, a
+// matched pair of backticks, and a backslash escape, the way a shell's own word splitting does.
 func rawTokens(command string) []string {
 	var tokens []string
 	var buf strings.Builder
 	open := false
-	inSingle, inDouble := false, false
+	inSingle, inDouble, inBacktick := false, false, false
 	flushWord := func() {
 		if open {
 			tokens = append(tokens, buf.String())
@@ -544,10 +558,19 @@ func rawTokens(command string) []string {
 			default:
 				buf.WriteRune(char)
 			}
+		case inBacktick:
+			open = true
+			if char == '`' {
+				inBacktick = false
+			} else {
+				buf.WriteRune(char)
+			}
 		case char == '\'':
 			inSingle, open = true, true
 		case char == '"':
 			inDouble, open = true, true
+		case char == '`' && hasClosingBacktick(runes[index+1:]):
+			inBacktick, open = true, true
 		case char == '\\' && index+1 < len(runes):
 			index++
 			open = true

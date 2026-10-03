@@ -152,9 +152,13 @@ func Table(policy Policy) []Case {
 		asRole("builder", write("a line role's write to eval/** is refused (REQ-41)", "eval/probe", true, "host or toolkit config")),
 		asRole("", write("the orchestrator is not a line session and may write docs/prd.md", "docs/prd.md", false, "")),
 		asRole("builder", bash("sed -i edits a protected path in place", "sed -i s/a/b/ eval/golden.json", "feat/x", true, "host or toolkit config")),
+		asRole("builder", bash("BSD sed -i with its own empty backup suffix still finds the real file",
+			"sed -i '' s/a/b/ eval/golden.json", "feat/x", true, "host or toolkit config")),
 		asRole("builder", bash("tee writes a protected path", "tee docs/prd.md", "feat/x", true, "host or toolkit config")),
 		asRole("builder", bash("cp overwrites a protected path", "cp x eval/case.json", "feat/x", true, "host or toolkit config")),
 		asRole("builder", bash("mv overwrites a protected path", "mv x eval/case.json", "feat/x", true, "host or toolkit config")),
+		bash("a backtick-quoted command inside an interpreter's stdin heredoc is unwrapped and judged",
+			"ruby <<EOF\n`git push origin main`\nEOF", "feat/x", true, "open a pull request"),
 
 		// Inside the worktree an agent is free.
 		bash("rm -rf a build directory", "rm -rf node_modules", "feat/x", false, ""),
