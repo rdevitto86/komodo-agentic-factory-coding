@@ -314,7 +314,7 @@ func TestACreateAgainstAnAlreadyRenderedHostIsDrift(t *testing.T) {
 	}
 }
 
-func TestAHookNamingAMissingBinaryIsFoundAndAnotherKomodoCopyIsNotDrift(t *testing.T) {
+func TestAHookNamingAMissingBinaryIsFoundAndIsDrift(t *testing.T) {
 	root := clean(t)
 	gone, _ := json.Marshal(filepath.Join(root, "gone", "komodo") + " guard")
 	write(t, root, "settings.json", `{"command": `+string(gone)+`}`)
@@ -324,8 +324,8 @@ func TestAHookNamingAMissingBinaryIsFoundAndAnotherKomodoCopyIsNotDrift(t *testi
 		return plan, nil
 	}})
 	found := problemsFrom(t, root)
-	if len(found["drift"]) != 0 {
-		t.Fatalf("drift = %+v; another komodo copy is not drift", found["drift"])
+	if got := found["drift"]; len(got) != 1 || got[0].Where != "settings.json" {
+		t.Fatalf("drift = %+v; a hook naming any binary but the rendered one is drift", got)
 	}
 	if got := found["hook"]; len(got) != 1 || got[0].Where != "settings.json" || !strings.Contains(got[0].Detail, "does not exist") {
 		t.Fatalf("hook = %+v", got)
@@ -1138,5 +1138,40 @@ func TestDoctorListsEveryPluginTypeDisabled(t *testing.T) {
 	write(t, home, ".komodo/plugins.json", `{"enabled":["cloud"]}`)
 	if got := PluginStates(root); got[1] != "plugin tool-pack cloud: enabled" {
 		t.Fatalf("states = %q", got)
+	}
+}
+
+func TestAStaleGlobalLayerFailsDoctorAndWarnsTheGate(t *testing.T) {
+	root := clean(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	marker := filepath.Join(home, ".globalhost", "rendered")
+	settings := filepath.Join(home, ".globalhost", "settings.json")
+	write(t, home, ".globalhost/rendered", "")
+	write(t, home, ".globalhost/settings.json", `{"command": "/old/komodo-0123456789ab guard"}`)
+	registerHost(t, mount.Host{Name: "globalhost", Render: func(root, _ string) (install.Plan, error) {
+		return install.Plan{Host: "globalhost", Root: root}, nil
+	}})
+	install.RegisterGlobal("globalhost", func(_, home, _ string) (install.Plan, error) {
+		plan := install.Plan{Host: "globalhost", Root: home, Marker: marker, Fix: "komodo install --global"}
+		plan.Add(settings, []byte(`{"command": "/home/.komodo/bin/komodo guard"}`), "the guard")
+		return plan, nil
+	})
+	found := problemsFrom(t, root)
+	if got := found["global"]; len(got) != 1 || got[0].Where != settings || !strings.Contains(got[0].Detail, "komodo install --global") {
+		t.Fatalf("global = %+v; a stale global hook must fail doctor and name the fix", got)
+	}
+	var warned []string
+	problems, err := Run(root, Options{NoGit: true, RepoOnly: true, Warn: func(note string) { warned = append(warned, note) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, problem := range problems {
+		if problem.Check == "global" {
+			t.Fatalf("problems = %+v; the gate must never fail on the machine's global layer", problems)
+		}
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], settings) {
+		t.Fatalf("warned = %q, want the stale global settings named", warned)
 	}
 }

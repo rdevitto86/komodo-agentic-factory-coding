@@ -18,6 +18,7 @@ func runHook(root string, args []string) {
 		return
 	}
 	if args[0] == "prune" && os.Getenv(hooks.SweepEnv) == "1" {
+		hooks.Refresh = refreshMachine
 		hooks.Sweep(root)
 		return
 	}

@@ -30,8 +30,18 @@ func CurrentBranch(dir string) string {
 	return git.Or(dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
+// check judges one request; tests swap it to prove the guard fails open.
+var check = Check
+
 // Hook reads one payload, writes the denial the matching host reads, and returns the exit code.
-func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
+// Its own failure allows the call: an unrecovered panic exits 2, which a host reads as a refusal.
+func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			fmt.Fprintf(stderr, "guard: panic: %v; allowing\n", recovered)
+			code = 0
+		}
+	}()
 	raw, err := io.ReadAll(stdin)
 	if err != nil {
 		fmt.Fprintln(stderr, "guard: unreadable payload; allowing")
@@ -43,7 +53,12 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if request.Cwd == "" {
-		request.Cwd, _ = os.Getwd()
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(stderr, "guard: no working directory: %v; allowing\n", err)
+			return 0
+		}
+		request.Cwd = cwd
 	}
 	root := WorktreeRoot(request.Cwd)
 	branch := CurrentBranch(request.Cwd)
@@ -51,7 +66,7 @@ func Hook(toolkitRoot string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "guard: judging without a malformed config: %v\n", err)
 	}
-	decision := Check(request, policy, branch)
+	decision := check(request, policy, branch)
 	if !decision.Deny {
 		return 0
 	}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -45,14 +46,32 @@ func (r Result) Err() error {
 	return fmt.Errorf("exit status %d", r.ExitCode)
 }
 
-// Shell runs one sh -c command in dir under timeout, killing its whole process group when the clock runs out.
+// Shell runs one shell command in dir under timeout, killing its whole process group when the clock runs out.
 func Shell(dir, command string, timeout time.Duration) Result {
 	return ShellEnv(dir, command, timeout, nil)
 }
 
 // ShellEnv is Shell in the given environment, or in this process's own when env is nil.
 func ShellEnv(dir, command string, timeout time.Duration, env []string) Result {
-	return run(dir, timeout, env, "sh", "-c", command)
+	argv := ShellArgv(command)
+	return run(dir, timeout, env, argv[0], argv[1:]...)
+}
+
+// shellGOOS and lookPath are the platform and PATH ShellArgv reads; tests swap them.
+var (
+	shellGOOS = runtime.GOOS
+	lookPath  = exec.LookPath
+)
+
+// ShellArgv runs command through POSIX sh, which native Windows takes from Git for Windows; with no sh
+// on PATH there, it falls back to cmd /C.
+func ShellArgv(command string) []string {
+	if shellGOOS == "windows" {
+		if _, err := lookPath("sh"); err != nil {
+			return []string{"cmd", "/C", command}
+		}
+	}
+	return []string{"sh", "-c", command}
 }
 
 // Exec runs one program in dir under timeout, killing its whole process group when the clock runs out.

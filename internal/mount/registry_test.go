@@ -58,13 +58,13 @@ func TestSnapshotIsACopyTheRegistryCannotChange(t *testing.T) {
 
 func TestBinaryPathNamesThisPlatform(t *testing.T) {
 	got := BinaryPath()
-	if !strings.HasPrefix(got, "bin"+string(filepath.Separator)+"komodo-"+runtime.GOOS+"-"+runtime.GOARCH) {
+	if !strings.HasPrefix(got, "bin"+string(filepath.Separator)+"komodo") {
 		t.Fatalf("binary path = %s", got)
 	}
 }
 
-func TestBinaryPathIsTheRunningBinaryWhenItCarriesThePlatformName(t *testing.T) {
-	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
+func TestBinaryPathIsTheRunningBinaryElseBinKomodo(t *testing.T) {
+	name := "komodo"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
