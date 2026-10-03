@@ -19,3 +19,6 @@ func KillGroup(command *exec.Cmd) {
 	}
 	_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 }
+
+// Started is a no-op here; Setpgid already put the process in its group when it forked.
+func Started(command *exec.Cmd) {}

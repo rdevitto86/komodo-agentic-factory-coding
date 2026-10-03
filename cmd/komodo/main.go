@@ -89,9 +89,16 @@ func main() {
 		return
 	}
 	root, err := repoRoot()
-	// Install also sets up a machine with no repo yet: it then installs only the user's global layer.
-	if err != nil && os.Args[1] != "install" {
-		fail(err)
+	if err != nil {
+		switch os.Args[1] {
+		case "install":
+			// Install also sets up a machine with no repo yet: it then installs only the user's global layer.
+		case "guard", "hook":
+			// The global settings run these in every session on the machine; outside a repo they do nothing.
+			exit(0)
+		default:
+			fail(err)
+		}
 	}
 	switch os.Args[1] {
 	case "init":

@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
 
 	"komodo/internal/doctor"
+	"komodo/internal/install"
 	"komodo/internal/mount"
 	"komodo/internal/proc"
 	"komodo/internal/profile"
@@ -31,6 +33,8 @@ type Check struct {
 // Options are the flags that affect which checks run.
 type Options struct {
 	NoShip bool
+	// Warn, when set, receives a non-blocking notice, such as no sandbox existing on native Windows.
+	Warn func(string)
 }
 
 // Run executes every preflight check and returns what failed.
@@ -70,8 +74,8 @@ func Run(root string, options Options) ([]Check, error) {
 		}
 	}
 
-	// The sandbox is required; a platform without one refuses the run.
-	if err := checkSandbox(); err != nil {
+	// The sandbox is required on a platform that has one; native Windows has none and only warns.
+	if err := checkSandbox(root, options); err != nil {
 		failures = append(failures, Check{
 			Name: "sandbox",
 			Fix:  err.Error(),
@@ -171,17 +175,27 @@ func checkForgeCredential() error {
 // goos is the platform the sandbox check judges; a test swaps it.
 var goos = runtime.GOOS
 
-// checkSandbox reports an error when this platform has no OS sandbox or its tool is not on PATH,
-// since every line session runs sandboxed and the line refuses to run without it.
-func checkSandbox() error {
+// procVersionPath is where the Linux check reads the kernel banner WSL names itself in; a test swaps it.
+var procVersionPath = "/proc/version"
+
+// checkSandbox reports an error when this platform has no OS sandbox or its tool is not on PATH;
+// native Windows has none and runs unsandboxed instead of refusing, noted through options.Warn.
+func checkSandbox(root string, options Options) error {
 	switch goos {
 	case "darwin":
 		if _, err := exec.LookPath("sandbox-exec"); err != nil {
 			return errors.New("line sessions run sandboxed, but sandbox-exec is not on PATH")
 		}
 	case "linux":
+		if data, err := os.ReadFile(procVersionPath); err == nil && install.OnWindowsDrive(root, string(data)) {
+			return fmt.Errorf("%s is on the Windows filesystem under WSL; clone it under your Linux home, such as ~/src, and run again", root)
+		}
 		if _, err := exec.LookPath("bwrap"); err != nil {
 			return errors.New("line sessions run sandboxed, but bubblewrap (bwrap) is not on PATH; install it")
+		}
+	case "windows":
+		if options.Warn != nil {
+			options.Warn("native Windows has no sandbox; line sessions run unsandboxed")
 		}
 	default:
 		return fmt.Errorf("line sessions run sandboxed, but %s has none; run the line on macOS, Linux or WSL2", goos)
