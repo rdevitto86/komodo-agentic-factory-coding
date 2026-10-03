@@ -208,9 +208,15 @@ func resolveCommit(root, ref string) string {
 	return ref
 }
 
+// SyncEnv marks a merge sync drives, so the post-merge hook's own rebuild step no-ops.
+const SyncEnv = "KOMODO_SYNC"
+
 // Rebuild builds this host's binary and stamps bin/.built-from with to, only when a .go file,
 // go.mod or go.sum differs between from and to.
 func Rebuild(root, from, to string, out io.Writer) error {
+	if os.Getenv(SyncEnv) != "" {
+		return nil
+	}
 	from, to = resolveCommit(root, from), resolveCommit(root, to)
 	changed, err := changedBuildInputs(root, from, to)
 	if err != nil {
