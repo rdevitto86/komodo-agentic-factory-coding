@@ -233,3 +233,21 @@ func TestReadChangelogFoldsTheFragmentsBesideIt(t *testing.T) {
 		t.Fatalf("drift = %v; a version only a fragment names is still named", drift)
 	}
 }
+
+func TestCheckReportsADatedHeadingWithNoBody(t *testing.T) {
+	text := "# Changelog\n\n## 1.0.1 — 2026-10-02\n\n## 1.0.0 — 2026-09-30\n\n- shipped\n"
+	drift := Check(text, nil, nil)
+	if len(drift) != 1 || drift[0].Subject != "1.0.1" || !strings.Contains(drift[0].Detail, "no body") {
+		t.Fatalf("drift = %+v; a dated heading with nothing under it has no body", drift)
+	}
+	if versions := Versions(text); versions[1].Body != "- shipped" {
+		t.Fatalf("body = %q; a heading's date is not its body", versions[1].Body)
+	}
+}
+
+func TestATagThatIsNoVersionIsNeverCompared(t *testing.T) {
+	text := "## 1.0.0 — 2026-09-30\n\n- shipped\n"
+	if got := Unreleased(text, []string{"prototype-final", "v0.9.0"}); len(got) != 1 || got[0] != "1.0.0" {
+		t.Fatalf("unreleased = %v; prototype-final is no version and must not count", got)
+	}
+}

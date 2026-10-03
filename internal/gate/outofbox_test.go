@@ -48,6 +48,10 @@ func hookCommands(t *testing.T, dir string) map[string][]string {
 	t.Helper()
 	found := map[string][]string{}
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		// Test fixtures, golden renders among them, are not files a host reads.
+		if err == nil && info.IsDir() && info.Name() == "testdata" {
+			return filepath.SkipDir
+		}
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".json") {
 			return nil
 		}
