@@ -53,11 +53,16 @@ func Run(checks []Check, out io.Writer) error {
 
 // Command builds a check that runs one command in the repo root, pinned to the repo's toolchain.
 func Command(name, root string, args ...string) Check {
+	return CommandEnv(name, root, nil, args...)
+}
+
+// CommandEnv is Command with env appended to the child's environment, such as GOOS for a cross-platform vet.
+func CommandEnv(name, root string, env []string, args ...string) Check {
 	return Check{Name: name, Run: func(out io.Writer) error {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = root
 		cmd.Stdout, cmd.Stderr = out, out
-		cmd.Env = childEnv()
+		cmd.Env = append(childEnv(), env...)
 		if toolchain, err := Toolchain(root); err == nil {
 			cmd.Env = append(cmd.Env, "GOTOOLCHAIN="+toolchain)
 		}
@@ -560,11 +565,15 @@ func PushChecks(root, from, to, fuzzDuration string, build []Check) ([]Check, er
 	return checks, nil
 }
 
-// TestArgs is the go test command line: under the race detector when cgo can build it, else plain.
-func TestArgs() []string {
-	out, err := exec.Command("go", "env", "CGO_ENABLED").Output()
-	if err == nil && strings.TrimSpace(string(out)) == "1" {
-		return []string{"go", "test", "-race", "./..."}
+// TestArgs is the go test command line: under the race detector when cgo can build it, and, when fresh,
+// uncached and in shuffled order, so a result never leans on a cache or on the order tests ran in.
+func TestArgs(fresh bool) []string {
+	args := []string{"go", "test"}
+	if out, err := exec.Command("go", "env", "CGO_ENABLED").Output(); err == nil && strings.TrimSpace(string(out)) == "1" {
+		args = append(args, "-race")
 	}
-	return []string{"go", "test", "./..."}
+	if fresh {
+		args = append(args, "-count=1", "-shuffle=on")
+	}
+	return append(args, "./...")
 }

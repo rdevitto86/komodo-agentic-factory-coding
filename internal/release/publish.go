@@ -132,7 +132,7 @@ func sessionEnv() bool {
 
 // goTest runs the whole test suite pinned to the repo's toolchain, with every forge credential scrubbed.
 func goTest(root string, out io.Writer) error {
-	args := gate.TestArgs()
+	args := gate.TestArgs(true)
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = root
 	cmd.Env = line.Scrub(os.Environ())
