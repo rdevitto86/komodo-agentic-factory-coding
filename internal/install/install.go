@@ -35,6 +35,19 @@ type Plan struct {
 	Host    string
 	Root    string
 	Changes []Change
+	// Marker is the file whose presence means this plan's layer is already installed, or "" for a repo plan.
+	Marker string
+	// Fix is the command that reapplies the plan, named in a drift report.
+	Fix string
+}
+
+// Installed reports whether the plan's layer was installed before: always for a repo plan, else when its marker exists.
+func (p Plan) Installed() bool {
+	if p.Marker == "" {
+		return true
+	}
+	_, err := os.Stat(p.Marker)
+	return err == nil
 }
 
 // Add appends one rendered file to the plan.
@@ -118,22 +131,6 @@ func HookBinaries(body []byte) []string {
 // komodoCommand matches a JSON "command" string that runs some binary's guard or hook subcommand, with its arguments.
 var komodoCommand = regexp.MustCompile(`"command"\s*:\s*"((?:[^"\\]|\\.)*?) ((?:guard|hook)(?: (?:[^"\\]|\\.)*)?)"`)
 
-// normaliseHooks rewrites a guard or hook command that runs any komodo binary to one fixed name, so drift ignores
-// which copy runs while its arguments still count.
-func normaliseHooks(body []byte) []byte {
-	return komodoCommand.ReplaceAllFunc(body, func(match []byte) []byte {
-		parts := komodoCommand.FindSubmatch(match)
-		path, err := strconv.Unquote(`"` + string(parts[1]) + `"`)
-		if err != nil {
-			return match
-		}
-		if !komodoBinary(path) {
-			return match
-		}
-		return []byte(`"command": "komodo ` + string(parts[2]) + `"`)
-	})
-}
-
 // komodoBinary reports whether a path's file name is some komodo binary.
 func komodoBinary(path string) bool {
 	return strings.HasPrefix(path[strings.LastIndexAny(path, `/\`)+1:], "komodo")
@@ -203,11 +200,6 @@ type Action struct {
 // Actions describes the plan against the current tree without touching it.
 func (p Plan) Actions() []Action {
 	return p.actions(func(body []byte) []byte { return body })
-}
-
-// Drift describes the plan like Actions, but a guard hook naming any komodo binary matches any other.
-func (p Plan) Drift() []Action {
-	return p.actions(normaliseHooks)
 }
 
 // actions compares each change to the tree after passing both sides through normalise.
