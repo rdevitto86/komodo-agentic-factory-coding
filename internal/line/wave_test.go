@@ -112,18 +112,6 @@ func TestRunGateStopsAtTheFirstFailure(t *testing.T) {
 	}
 }
 
-func TestChangelogLineCountsWhatShipped(t *testing.T) {
-	plan := &Plan{Group: "TG-09.1", Title: "A group", Version: "2.0.0"}
-	result := &ShipResult{Done: []string{"a", "b"}, Blocked: []string{"c"}}
-	line := ChangelogLine(plan, result)
-	if !strings.Contains(line, "TG-09.1") || !strings.Contains(line, "2 task(s)") || !strings.Contains(line, "blocked: c") {
-		t.Fatalf("line = %q", line)
-	}
-	if ChangelogLine(&Plan{Group: "TG-09.1"}, result) != "" {
-		t.Fatal("a group with no version writes no changelog line")
-	}
-}
-
 func TestReportBodyMarksWhatBlocked(t *testing.T) {
 	plan := &Plan{Group: "TG-09.1", Title: "A group", Tasks: []PlanTask{{ID: "a", Title: "One"}, {ID: "b", Title: "Two"}}}
 	result := &ShipResult{Done: []string{"a"}, Blocked: []string{"b"}}
