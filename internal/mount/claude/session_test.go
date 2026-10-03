@@ -481,7 +481,7 @@ func TestSessionSettingsPath(t *testing.T) {
 
 	expected := "--settings /my/repo/.claude/settings.json"
 	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
-		expected = "--settings " + withSandbox("/my/repo/.claude/settings.json", sandbox)
+		expected = "--settings " + withSandbox("/my/repo/.claude/line-settings.json", sandbox)
 	}
 	if !strings.Contains(joined, expected) {
 		t.Errorf("argv missing correct settings path: %s\nfull: %s", expected, joined)
@@ -496,10 +496,10 @@ func TestTheSandboxMergesIntoTheRolesRenderedSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := `{"hooks":{"PreToolUse":[{"matcher":"Bash"}]},"permissions":{"deny":["Edit(~/.claude/**)"]}}`
-	if err := os.WriteFile(filepath.Join(root, Dir, "settings.json"), []byte(rendered), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, Dir, LineSettings), []byte(rendered), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	merged := withSandbox(filepath.Join(root, Dir, "settings.json"), sandbox)
+	merged := withSandbox(filepath.Join(root, Dir, LineSettings), sandbox)
 	var settings map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(merged), &settings); err != nil {
 		t.Fatalf("settings %q: %v", merged, err)
@@ -688,7 +688,7 @@ func TestARoleSessionCarriesTheLineSandbox(t *testing.T) {
 	want := lineSandbox(mount.LoadOverlay(), runtime.GOOS)
 	carried := false
 	for i, arg := range argv[:len(argv)-1] {
-		carried = carried || (arg == "--settings" && argv[i+1] == withSandbox("/repo/.claude/settings.json", want))
+		carried = carried || (arg == "--settings" && argv[i+1] == withSandbox("/repo/.claude/line-settings.json", want))
 	}
 	if want != "" && !carried {
 		t.Fatalf("argv = %v; a role session must carry the line sandbox as inline settings", argv)

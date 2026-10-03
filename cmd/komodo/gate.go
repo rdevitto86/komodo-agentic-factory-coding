@@ -67,6 +67,8 @@ func runGate(root string, args []string) {
 		}
 		if path != "" {
 			fmt.Println("built", path)
+			// The git hooks exec the published binary, so it must exist before they do.
+			fmt.Println("published", mount.Publish(path))
 		}
 		written, err := gate.Install(filepath.Join(root, ".git"))
 		if err != nil {
@@ -98,7 +100,8 @@ func runGate(root string, args []string) {
 			return nil
 		}},
 		{Name: "komodo doctor", Run: func(out io.Writer) error {
-			problems, err := doctor.Run(root, doctor.Options{})
+			problems, err := doctor.Run(root, doctor.Options{RepoOnly: true,
+				Warn: func(note string) { fmt.Fprintln(out, "warning:", note) }})
 			if err != nil {
 				return err
 			}

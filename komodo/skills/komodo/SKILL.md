@@ -19,7 +19,7 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo ingest [group]       Compile each READY group into a card under .komodo/queue
   komodo close <task>         Validate the result, rerun the checks, flip the status
   komodo close --wave N [g]   QC: merge the group's wave, compile, verify
-  komodo close --group [g]    Ship: commit, push, the pull request, the changelog
+  komodo close --group [g]    Ship: commit, push, the pull request
   komodo check <kind> <id>    The checks hooks and agents call: task, scope, or a review's findings
   komodo comments check       The mechanical comment lint
   komodo diff                 The reviewer's whole input: tasks, standards, diff
@@ -28,7 +28,6 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo rephase <e> <v>      Move an open epic to a new version: branch, pull requests, backlog
   komodo release check        Audit the drift between changelog, tags, and groups
   komodo release build        Build the per-platform binaries as release assets
-  komodo release fold         Fold every changelog fragment into CHANGELOG.md
   komodo release publish      Build, test, checksum and publish the newest version as a release
   komodo install --host X     Mount this repo on a host, or on both
   komodo detect [--json]      The cached repo profile: languages, cloud, data, CI, commands
@@ -53,5 +52,6 @@ Every command the binary takes. `komodo help --skill` writes this file; never ed
   komodo eval [--list|--cases|--runs N]  The golden suite: list it, run the eval cases, or drive each group N times
   komodo version              The changelog version and commit this binary was built from
   komodo gate [--install]     The local precheck: vet, race tests, doctor, guard, comments; --fuzz 10s adds fuzzing
+  komodo git-hook <name>      One git hook's checks; each installed hook is one exec into this
   komodo help [--skill]       This list, or the komodo skill generated from it
 ```
