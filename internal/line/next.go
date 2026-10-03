@@ -115,11 +115,6 @@ func PlanForRun(root string) (*Plan, error) {
 	return PlanForStation(root, "")
 }
 
-// RunIsOpen reports whether any recorded run still has stations left; an unreadable plan counts as open.
-func RunIsOpen(root string) bool {
-	return len(OpenRuns(root)) > 0
-}
-
 // OpenRuns are the recorded runs that still have stations left, oldest start first.
 func OpenRuns(root string) []RunState {
 	var open []RunState
@@ -372,6 +367,7 @@ func readyGroups(root string, parsed backlog.Backlog, stacked bool) []backlog.Gr
 			return out
 		}
 		ahead[BranchName(group.Type(), group.Slug())] = true
+		ahead[group.TitleBranch()] = true
 	}
 	return out
 }

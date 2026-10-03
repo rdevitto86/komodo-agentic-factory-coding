@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -164,17 +163,13 @@ func Check(changelog string, tags, groupVersions []string) []Drift {
 	return drift
 }
 
-// ReadChangelog reads a changelog file with the fragments beside it folded in, or the empty string when there is none.
+// ReadChangelog reads a changelog file, or the empty string when there is none.
 func ReadChangelog(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-	fragments, err := changelog.Fragments(filepath.Dir(path))
-	if err != nil {
-		return "", err
-	}
-	return changelog.Fold(string(data), fragments), nil
+	return string(data), nil
 }
 
 // TagName is the annotated tag name for one version.

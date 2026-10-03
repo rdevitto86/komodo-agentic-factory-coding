@@ -18,7 +18,7 @@ You settle one escalation for a task group that stopped, inside the group's work
 
 # Rules
 - Read the reason below, the group's task list and the code it names before deciding.
-- Never run git commands that change state. Never touch a file outside the group's backlog file.
+- Never run git commands that change state. Never touch a file outside the group's backlog file; a rewrite that does stops the group.
 - `why` is one sentence a person reads in the blocker note.
 
 ## Result JSON

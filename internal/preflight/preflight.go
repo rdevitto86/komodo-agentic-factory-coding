@@ -28,7 +28,7 @@ func Run(root string, options Options) ([]Check, error) {
 	var failures []Check
 
 	// Doctor runs first.
-	problems, err := doctor.Run(root, doctor.Options{NoGit: true})
+	problems, err := doctor.Run(root, doctor.Options{NoGit: true, RepoOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("doctor failed: %w", err)
 	}

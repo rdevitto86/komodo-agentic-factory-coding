@@ -355,20 +355,20 @@ type lensHost struct {
 	starts []mount.StartRequest
 }
 
-func (h *lensHost) Preflight() error { return nil }
+func (h *lensHost) Preflight(context.Context) error { return nil }
 
-func (h *lensHost) Start(req mount.StartRequest) (mount.Handle, error) {
+func (h *lensHost) Start(ctx context.Context, req mount.StartRequest) (mount.Handle, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.starts = append(h.starts, req)
 	return mount.Handle(fmt.Sprintf("session-%d", len(h.starts))), nil
 }
 
-func (h *lensHost) Resume(mount.Handle, string) (mount.Handle, error) {
+func (h *lensHost) Resume(context.Context, mount.Handle, string) (mount.Handle, error) {
 	return "", errors.New("no session resumes here")
 }
 
-func (h *lensHost) Stream(mount.Handle) (<-chan mount.Event, error) {
+func (h *lensHost) Stream(context.Context, mount.Handle) (<-chan mount.Event, error) {
 	out := make(chan mount.Event)
 	close(out)
 	return out, nil
@@ -378,7 +378,7 @@ func (h *lensHost) Result(mount.Handle) (mount.Result, error) {
 	return mount.Result{Value: map[string]any{"findings": []any{}}}, nil
 }
 
-func (h *lensHost) Stop(mount.Handle) error { return nil }
+func (h *lensHost) Stop(context.Context, mount.Handle) error { return nil }
 
 func (h *lensHost) Capabilities() mount.Capabilities { return mount.Capabilities{Structured: true} }
 

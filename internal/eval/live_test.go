@@ -207,7 +207,7 @@ func TestLiveCasesAddGroupEndsWithTheCase(t *testing.T) {
 	var added error
 	late := Case{Name: "late", Requirement: "REQ-1", Run: func(ctx context.Context, env Env) error {
 		<-ctx.Done()
-		added = env.AddGroup("TG-99.1", probeGroup("TG-99.1", "Probe", "p.txt", "write p.txt"))
+		added = env.AddGroup(ctx, "TG-99.1", probeGroup("TG-99.1", "Probe", "p.txt", "write p.txt"))
 		return nil
 	}}
 	options := CaseOptions{Cases: []Case{late}, Budget: 50 * time.Millisecond}
@@ -253,7 +253,7 @@ func TestLiveHidesCommandsFromPathAndLaysAnOverlayOverTheHome(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	extra, err := live.Overlay(`{"pause_at": 0.01}`)
+	extra, err := live.Overlay(context.Background(), `{"pause_at": 0.01}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,11 +275,11 @@ func TestLiveHidesCommandsFromPathAndLaysAnOverlayOverTheHome(t *testing.T) {
 		!strings.Contains(string(real), "0.9") {
 		t.Fatalf("the real overlay changed: %q, %v", real, err)
 	}
-	if _, err := live.Overlay("{"); err == nil {
+	if _, err := live.Overlay(context.Background(), "{"); err == nil {
 		t.Fatal("Overlay with broken JSON = nil, want a refusal")
 	}
 	t.Setenv("HOME", t.TempDir())
-	extra, err = live.Overlay(`{"pause_at": 0.01}`)
+	extra, err = live.Overlay(context.Background(), `{"pause_at": 0.01}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,14 +300,14 @@ func TestLiveHelpersStopWhenTheirFilesCannotBeMade(t *testing.T) {
 	if _, err := homeless.PathWithout("bwrap"); err == nil {
 		t.Fatal("PathWithout with nowhere to mirror = nil, want the failure")
 	}
-	if _, err := homeless.Overlay("{}"); err == nil {
+	if _, err := homeless.Overlay(context.Background(), "{}"); err == nil {
 		t.Fatal("Overlay with nowhere for the home = nil, want the failure")
 	}
 	if err := homeless.AddGroup(context.Background(), "TG-99.1", "x"); err == nil {
 		t.Fatal("AddGroup with nowhere for the section = nil, want the failure")
 	}
 	t.Setenv("HOME", "")
-	if _, err := (&Live{dir: filepath.Join(t.TempDir(), "case-0")}).Overlay("{}"); err == nil {
+	if _, err := (&Live{dir: filepath.Join(t.TempDir(), "case-0")}).Overlay(context.Background(), "{}"); err == nil {
 		t.Fatal("Overlay with no home = nil, want the failure")
 	}
 	home := t.TempDir()
@@ -315,7 +315,7 @@ func TestLiveHelpersStopWhenTheirFilesCannotBeMade(t *testing.T) {
 	if err := copyBytes(filepath.Join(home, ".komodo", "config.json"), "{"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (&Live{dir: filepath.Join(t.TempDir(), "case-0")}).Overlay("{}"); err == nil ||
+	if _, err := (&Live{dir: filepath.Join(t.TempDir(), "case-0")}).Overlay(context.Background(), "{}"); err == nil ||
 		!strings.Contains(err.Error(), "config.json") {
 		t.Fatalf("Overlay over a broken real overlay = %v, want it named", err)
 	}
@@ -323,7 +323,7 @@ func TestLiveHelpersStopWhenTheirFilesCannotBeMade(t *testing.T) {
 	if err := copyBytes(file, "x\n"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (&Live{instructions: filepath.Join(file, "instructions.md")}).Plant("x"); err == nil {
+	if _, err := (&Live{instructions: filepath.Join(file, "instructions.md")}).Plant(context.Background(), "x"); err == nil {
 		t.Fatal("Plant under a file = nil, want the failure")
 	}
 	unborn := &Live{dir: filepath.Join(t.TempDir(), "case-0")}
@@ -338,7 +338,7 @@ func TestLiveHelpersStopWhenTheirFilesCannotBeMade(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", notDir)
-	if _, err := (&Live{dir: filepath.Join(t.TempDir(), "case-0")}).Overlay("{}"); err == nil {
+	if _, err := (&Live{dir: filepath.Join(t.TempDir(), "case-0")}).Overlay(context.Background(), "{}"); err == nil {
 		t.Fatal("Overlay over a .komodo that is a file = nil, want the failure")
 	}
 }
@@ -369,7 +369,7 @@ func TestLiveHelpersStopOnADirectoryTheyCannotReadOrWrite(t *testing.T) {
 	home := t.TempDir()
 	locked(home)
 	t.Setenv("HOME", home)
-	if _, err := live.Overlay("{}"); err == nil {
+	if _, err := live.Overlay(context.Background(), "{}"); err == nil {
 		t.Fatal("Overlay over an unlistable home = nil, want the failure")
 	}
 	readOnly := t.TempDir()
@@ -378,7 +378,7 @@ func TestLiveHelpersStopOnADirectoryTheyCannotReadOrWrite(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(readOnly, 0o755) })
 	for _, path := range []string{filepath.Join(readOnly, "instructions.md"), filepath.Join(readOnly, "sub", "instructions.md")} {
-		if _, err := (&Live{instructions: path}).Plant("x"); err == nil {
+		if _, err := (&Live{instructions: path}).Plant(context.Background(), "x"); err == nil {
 			t.Fatalf("Plant at %s = nil, want the failure", path)
 		}
 	}
@@ -395,7 +395,7 @@ func TestLiveHelpersStopOnADirectoryTheyCannotReadOrWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
-	if _, _, err := (&Live{dir: filepath.Join(parent, "case-0")}).Credential(); err == nil {
+	if _, _, err := (&Live{dir: filepath.Join(parent, "case-0")}).Credential(context.Background()); err == nil {
 		t.Fatal("Credential with nowhere for the gh config = nil, want the failure")
 	}
 }
@@ -417,7 +417,7 @@ func TestLiveKomodoKillsARunWhenItsContextEnds(t *testing.T) {
 
 // TestLivePlantsAndRestoresThePersonalInstructions proves Plant restores a file it found and removes one it made.
 func TestLivePlantsAndRestoresThePersonalInstructions(t *testing.T) {
-	if _, err := (&Live{}).Plant("x"); err == nil {
+	if _, err := (&Live{}).Plant(context.Background(), "x"); err == nil {
 		t.Fatal("Plant with no instructions file = nil, want a refusal")
 	}
 	for _, was := range []string{"", "# mine\n"} {
@@ -427,7 +427,7 @@ func TestLivePlantsAndRestoresThePersonalInstructions(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		restore, err := (&Live{instructions: path}).Plant("say CANARY")
+		restore, err := (&Live{instructions: path}).Plant(context.Background(), "say CANARY")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -454,7 +454,7 @@ func TestLiveCredentialHandsTheRunATokenItCanTakeAway(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-		extra, remove, err := live.Credential()
+		extra, remove, err := live.Credential(context.Background())
 		if token == "" {
 			if err == nil {
 				t.Fatal("Credential with no token = nil, want a refusal")

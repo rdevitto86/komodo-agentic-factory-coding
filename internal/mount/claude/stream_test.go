@@ -1,10 +1,16 @@
 package claude
 
 import (
+	"context"
+	"errors"
+	"io"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"komodo/internal/mount"
 )
 
 func TestParseReportsTheResultEventsTotals(t *testing.T) {
@@ -34,6 +40,33 @@ func TestParseReportsARateLimitEventsWindows(t *testing.T) {
 	wantReset, _ := time.Parse(time.RFC3339, "2026-09-26T18:00:00Z")
 	if limit.FiveHour != 0.18 || limit.SevenDay != 0.06 || !limit.ResetsAt.Equal(wantReset) {
 		t.Fatalf("rate limit = %+v", limit)
+	}
+}
+
+func TestParseReportsARateLimitEventWithAnEpochSecondsReset(t *testing.T) {
+	body := `{"type":"rate_limit_event","five_hour":{"utilization":18,"resetsAt":1758909600},` +
+		`"seven_day":{"utilization":6,"resetsAt":1759449600}}`
+	events := drain(t, body)
+	if len(events) != 1 || events[0].RateLimit == nil {
+		t.Fatalf("events = %+v", events)
+	}
+	limit := events[0].RateLimit
+	want := time.Unix(1758909600, 0)
+	if limit.FiveHour != 0.18 || limit.SevenDay != 0.06 || !limit.ResetsAt.Equal(want) {
+		t.Fatalf("rate limit = %+v", limit)
+	}
+}
+
+func TestParseKeepsUtilisationWhenResetsAtFailsToParse(t *testing.T) {
+	body := `{"type":"rate_limit_event","five_hour":{"utilization":18,"resetsAt":"not a time"},` +
+		`"seven_day":{"utilization":6,"resetsAt":"not a time"}}`
+	events := drain(t, body)
+	if len(events) != 1 || events[0].RateLimit == nil {
+		t.Fatalf("events = %+v", events)
+	}
+	limit := events[0].RateLimit
+	if limit.FiveHour != 0.18 || limit.SevenDay != 0.06 || !limit.ResetsAt.IsZero() {
+		t.Fatalf("rate limit = %+v, want the utilisation kept and a zero reset", limit)
 	}
 }
 
@@ -81,26 +114,84 @@ func TestParseHandlesTheRecordedStartAndResumeStreams(t *testing.T) {
 	}
 }
 
+// boomReader yields body once, then fails every further read with err instead of io.EOF.
+type boomReader struct {
+	body []byte
+	err  error
+}
+
+func (r *boomReader) Read(p []byte) (int, error) {
+	if len(r.body) > 0 {
+		n := copy(p, r.body)
+		r.body = r.body[n:]
+		return n, nil
+	}
+	return 0, r.err
+}
+
+func TestParseReportsAScannerErrorAsTheFinalEvent(t *testing.T) {
+	boom := errors.New("boom")
+	body := `{"type":"result","num_turns":1,"session_id":"abc","total_cost_usd":0.1,"usage":{}}` + "\n"
+	events := drainReader(t, &boomReader{body: []byte(body), err: boom})
+	if len(events) != 2 {
+		t.Fatalf("events = %+v, want the result event and the scanner error", events)
+	}
+	if events[0].SessionID != "abc" {
+		t.Fatalf("result event = %+v", events[0])
+	}
+	if !errors.Is(events[1].Err, boom) {
+		t.Fatalf("final event err = %v, want %v", events[1].Err, boom)
+	}
+}
+
+func TestParseStopsItsGoroutineOnceCtxIsCancelled(t *testing.T) {
+	body := strings.Join([]string{
+		`{"type":"result","num_turns":1,"session_id":"a","total_cost_usd":0,"usage":{}}`,
+		`{"type":"result","num_turns":2,"session_id":"b","total_cost_usd":0,"usage":{}}`,
+	}, "\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	before := runtime.NumGoroutine()
+	out := Parse(ctx, strings.NewReader(body))
+	if event := <-out; event.SessionID != "a" {
+		t.Fatalf("first event = %+v", event)
+	}
+	cancel()
+	// The consumer never reads again; a leaked goroutine would stay blocked sending the second event.
+	deadline := time.Now().Add(2 * time.Second)
+	for runtime.NumGoroutine() > before {
+		if time.Now().After(deadline) {
+			t.Fatal("Parse's goroutine outlived a cancelled ctx with no reader left; it leaked")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // drain parses body and collects every event Parse reports.
-func drain(t *testing.T, body string) []Event {
+func drain(t *testing.T, body string) []mount.Event {
 	t.Helper()
-	var events []Event
-	for event := range Parse(strings.NewReader(body)) {
+	return drainReader(t, strings.NewReader(body))
+}
+
+// drainReader parses r and collects every event Parse reports.
+func drainReader(t *testing.T, r io.Reader) []mount.Event {
+	t.Helper()
+	var events []mount.Event
+	for event := range Parse(context.Background(), r) {
 		events = append(events, event)
 	}
 	return events
 }
 
 // drainFile parses one fixture file and collects every event Parse reports.
-func drainFile(t *testing.T, path string) []Event {
+func drainFile(t *testing.T, path string) []mount.Event {
 	t.Helper()
 	handle, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer handle.Close()
-	var events []Event
-	for event := range Parse(handle) {
+	var events []mount.Event
+	for event := range Parse(context.Background(), handle) {
 		events = append(events, event)
 	}
 	return events

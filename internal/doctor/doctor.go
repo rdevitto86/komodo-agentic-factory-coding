@@ -41,6 +41,8 @@ type Options struct {
 	NoGit  bool
 	Prune  bool
 	Remote bool
+	// RepoOnly turns machine-scoped problems, such as a stale global layer, into warnings.
+	RepoOnly bool
 	// Warn receives each note that never fails a check, such as what the forge's plan does not offer.
 	Warn func(note string)
 }
@@ -54,7 +56,15 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkBuilderTier(root)...)
 	problems = append(problems, checkLeaks(root)...)
 	problems = append(problems, checkBudgets(root, rendered)...)
-	problems = append(problems, checkDrift(rendered, renderInstalled(root, pinLocalUp))...)
+	for _, problem := range checkDrift(rendered, renderInstalled(root, pinLocalUp)) {
+		if options.RepoOnly && problem.Check == checkGlobal {
+			if options.Warn != nil {
+				options.Warn(fmt.Sprintf("%s: %s", problem.Where, problem.Detail))
+			}
+			continue
+		}
+		problems = append(problems, problem)
+	}
 	problems = append(problems, checkStaleSkills(rendered)...)
 	problems = append(problems, checkHookBinary(root, rendered)...)
 	problems = append(problems, checkProfileDrift(root)...)
@@ -65,6 +75,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkOverlay(mount.OverlayPath())...)
 	problems = append(problems, checkWorkflows(root)...)
 	problems = append(problems, checkLegacyBacklog(root)...)
+	problems = append(problems, checkStalledBacklog(root, now())...)
 	if !options.NoGit {
 		problems = append(problems, checkAGENTSTracked(root)...)
 		if options.Warn != nil {
