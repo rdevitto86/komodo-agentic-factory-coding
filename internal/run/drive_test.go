@@ -437,7 +437,7 @@ func (passingStations) Head() (string, error)                     { return "revi
 func (passingStations) Diff(string) (string, error)               { return "", nil }
 func (passingStations) Merge() (bool, error)                      { return false, nil }
 
-// TestRunStartsOneReviewerSessionPerLens is REQ-19: the ledger shows three lens sessions in full mode
+// TestRunStartsOneReviewerSessionPerLens: the ledger shows three lens sessions in full mode
 // and one in economy mode, each bound to its lens's skill on the reviewer tier.
 func TestRunStartsOneReviewerSessionPerLens(t *testing.T) {
 	cases := []struct {

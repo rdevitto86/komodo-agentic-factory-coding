@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -395,21 +396,6 @@ func TestDriveNeverReviewsBeforeCheckPasses(t *testing.T) {
 		t.Fatalf("drive = %s, %v; want Shipped", final.Current, err)
 	}
 	sessions := r.sessions(t)
-	reviewIndex := -1
-	for i, station := range sessions {
-		if station == StationReview {
-			reviewIndex = i
-			break
-		}
-	}
-	if reviewIndex == -1 {
-		t.Fatalf("ledger sessions = %v, want a review session", sessions)
-	}
-	for _, station := range sessions[:reviewIndex] {
-		if station == StationReview {
-			t.Fatalf("ledger sessions = %v, want no review before %d", sessions, reviewIndex)
-		}
-	}
 	checkCalls := 0
 	for _, call := range r.stations.calledAt {
 		if strings.HasPrefix(call, "check@") {
@@ -536,6 +522,39 @@ func TestDriveBuildsEachReviewFromItsWiredRequests(t *testing.T) {
 	}
 	if len(r.host.reReviews) != 1 || !strings.HasPrefix(r.host.reReviews[0], "since commit-") {
 		t.Fatalf("re-review inputs = %q, want the one ReReview built from the reviewed commit", r.host.reReviews)
+	}
+}
+
+// TestDriveStampsAReReviewLedgerRowWithTheReviewersRoleAndModel matches production's wiring, which
+// leaves Driver.Reviewer empty and builds every request through Review.
+func TestDriveStampsAReReviewLedgerRowWithTheReviewersRoleAndModel(t *testing.T) {
+	r := newRig(t)
+	r.driver.Reviewer = mount.StartRequest{}
+	r.driver.Review = func(review.Lens) (mount.StartRequest, error) {
+		return mount.StartRequest{Role: "reviewer", Model: "opus"}, nil
+	}
+	r.host.reviews = []map[string]any{
+		{"findings": []any{map[string]any{"severity": "high", "file": "a.go", "line": 3, "title": "nil map", "fix": "make it"}}},
+	}
+	if _, err := r.drive(t); err != nil {
+		t.Fatalf("drive = %v", err)
+	}
+	entries, err := r.driver.Ledger.Read(ledger.RunFile)
+	if err != nil {
+		t.Fatalf("reading the ledger: %v", err)
+	}
+	var found bool
+	for _, entry := range entries {
+		if entry.Station != StationReReview {
+			continue
+		}
+		found = true
+		if entry.Role != "reviewer" || entry.Model != "opus" {
+			t.Fatalf("re-review row = %+v, want the role and model the reviewer was started with", entry)
+		}
+	}
+	if !found {
+		t.Fatal("ledger holds no re-review row")
 	}
 }
 
@@ -794,6 +813,13 @@ func TestDriveResumesAReviewerSavedBeforeLensesAsTheEconomyLens(t *testing.T) {
 			}
 			if tc.resumed == 1 && (r.host.resumed[0] != "reviewer-9" || !strings.Contains(r.host.reReviews[0], "`a.go:3`")) {
 				t.Fatalf("resumed %v with %q, want the saved reviewer given its open finding", r.host.resumed, r.host.reReviews)
+			}
+			if tc.starts == 3 {
+				for _, start := range r.host.starts {
+					if !strings.Contains(start.Brief, "`a.go:3`") {
+						t.Fatalf("cold brief = %q, want the pre-lens record's open finding carried forward", start.Brief)
+					}
+				}
 			}
 			if len(final.Findings) != len(tc.lenses) {
 				t.Fatalf("findings = %v, want one entry per lens the driver runs", final.Findings)
@@ -1097,6 +1123,20 @@ func TestDriveLeavesAGroupOffItsEpicForAPersonToMerge(t *testing.T) {
 	}
 }
 
+func TestDriveResumedAtShippedRetriesTheMerge(t *testing.T) {
+	r := newRig(t)
+	r.stations.merged = true
+	start := State{Group: "TG-1", Current: Shipped, Merged: false}
+	*r.saved = append(*r.saved, start)
+	final, err := r.driver.Drive(context.Background(), start)
+	if err != nil || final.Current != Shipped || !final.Merged {
+		t.Fatalf("drive = %+v, %v; a run resumed at Shipped must retry the merge", final, err)
+	}
+	if !equal(r.stations.calledAt, []string{"merge@Shipped"}) {
+		t.Fatalf("stations ran at %v, want the merge retried once", r.stations.calledAt)
+	}
+}
+
 func TestDriveEscalatesAFailedMerge(t *testing.T) {
 	r := newRig(t)
 	r.stations.mergeErr = errors.New("a failed check")
@@ -1188,6 +1228,50 @@ func checkRepo(t *testing.T) string {
 	gitIn(t, root, "add", "-A")
 	gitIn(t, root, "commit", "-q", "-m", "base")
 	return root
+}
+
+// shipGroupBacklog is the one group shipRepo's root and group both carry, done already so Ship never refuses it.
+const shipGroupBacklog = "### [TG-1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n\n" +
+	"#### [TSK-1] Do it [P: C] [DONE]\n```yaml\nfiles: [a.txt]\ndone_when:\n  - true\n```\n"
+
+// shipRepo builds a group worktree cut from main, both remoted at a bare origin, with a clean review
+// result staged, so a real Ship can push the group's branch.
+func shipRepo(t *testing.T) (root, group string) {
+	t.Helper()
+	root = t.TempDir()
+	backlogtest.SeedText(t, root, shipGroupBacklog)
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	gitIn(t, root, "init", "-q", "--bare", bare)
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "config", "user.email", "a@example.com")
+	gitIn(t, root, "config", "user.name", "a")
+	gitIn(t, root, "remote", "add", "origin", bare)
+	group = filepath.Join(root, "group")
+	if err := os.MkdirAll(group, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, group, "init", "-q", "-b", "main")
+	gitIn(t, group, "config", "user.email", "a@example.com")
+	gitIn(t, group, "config", "user.name", "a")
+	gitIn(t, group, "remote", "add", "origin", bare)
+	writeIn(t, group, "a.txt", "a\n")
+	backlogtest.SeedText(t, group, shipGroupBacklog)
+	gitIn(t, group, "add", "-A")
+	gitIn(t, group, "commit", "-q", "-m", "seed")
+	gitIn(t, group, "checkout", "-q", "-b", "feat/a-group")
+	review := line.ResultPath(root, "TG-1-review")
+	if err := os.MkdirAll(filepath.Dir(review), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(review, []byte(`{"findings":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Commit stamps are whole seconds, so the review must never read as older than the seed commit.
+	ahead := time.Now().Add(time.Minute)
+	if err := os.Chtimes(review, ahead, ahead); err != nil {
+		t.Fatal(err)
+	}
+	return root, group
 }
 
 func TestLineCheckTurnsARefusedCommitIntoAFix(t *testing.T) {
@@ -1287,6 +1371,28 @@ func TestLineCheckFailsWhenAnyCheckFails(t *testing.T) {
 				t.Fatalf("body = %q; a passed Check's gates and verify must be reported", body)
 			}
 		})
+	}
+}
+
+// TestLineCheckNeverChargesTheRerunCommandsOwnGitSideEffectsToTheModel proves a verify command that
+// itself moves HEAD, as installing a git hook would, is never read back as a model fault.
+func TestLineCheckNeverChargesTheRerunCommandsOwnGitSideEffectsToTheModel(t *testing.T) {
+	root := checkRepo(t)
+	writeIn(t, root, ".komodo/commands.json",
+		`{"compile": "true", "verify": "git commit -q --allow-empty -m rerun"}`)
+	stations := &Line{Root: root, Plan: &line.Plan{
+		Group: "TG-1", Version: "1.0.0", Base: "main", Tasks: []line.PlanTask{{ID: "TSK-1", Files: []string{"a.txt"}}},
+	}}
+	if err := stations.Snapshot(); err != nil {
+		t.Fatalf("snapshot = %v", err)
+	}
+	writeIn(t, root, "a.txt", "a\n")
+	fixes, err := stations.Check(context.Background())
+	if err != nil {
+		t.Fatalf("check = %v", err)
+	}
+	if len(fixes) != 0 {
+		t.Fatalf("fixes = %q, want none; the verify command's own commit is not the model's", fixes)
 	}
 }
 
@@ -1439,6 +1545,47 @@ func TestALineStationStoppedBeforeItRunsNeverCommitsOrShips(t *testing.T) {
 			}
 			if after, err := stations.Head(); err != nil || after != before {
 				t.Fatalf("HEAD = %s (%v), want %s; a stopped station must never commit", after, err, before)
+			}
+		})
+	}
+}
+
+// TestLineShipResumedWithNoCheckRerunsItAndReportsEitherOutcome drives Ship with checked unset, as a
+// run resumed straight at Shipping leaves it, and proves both a failing and a passing rerun are reported.
+func TestLineShipResumedWithNoCheckRerunsItAndReportsEitherOutcome(t *testing.T) {
+	cases := []struct {
+		name    string
+		compile string
+		wantErr string
+	}{
+		{"a failing rerun refuses to ship", "exit 3", "the checks fail at ship"},
+		{"a passing rerun ships and reports it", "true", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, _ := shipRepo(t)
+			writeIn(t, root, ".komodo/commands.json", fmt.Sprintf(`{"compile": %q, "verify": "true"}`, tc.compile))
+			stations := &Line{Root: root, Plan: &line.Plan{
+				Group: "TG-1", Title: "A group", Type: "feat", Base: "main", Branch: "feat/a-group", Worktree: "group",
+				Tasks: []line.PlanTask{{ID: "TSK-1", Files: []string{"a.txt"}}},
+			}}
+			if stations.checked != nil {
+				t.Fatal("checked must start unset, as a run resumed at Shipping finds it")
+			}
+			err := stations.Ship(context.Background())
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("ship = %v, want it to report %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ship = %v", err)
+			}
+			plan := &line.Plan{Group: "TG-1", Title: "A group"}
+			body := line.ReportBody(plan, stations.shipped, []*line.WaveResult{stations.checked}, line.BodyContext{})
+			if !strings.Contains(body, "- `true` passed") || strings.Contains(body, "Unproven") {
+				t.Fatalf("body = %q; a resumed Ship's own rerun must be reported, never Unproven", body)
 			}
 		})
 	}
