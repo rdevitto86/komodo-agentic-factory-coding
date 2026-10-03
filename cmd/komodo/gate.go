@@ -177,7 +177,7 @@ func crossVets(root string) []gate.Check {
 // commands QC runs, so the gate fits any repo's language; thorough adds the push-time checks.
 func buildChecks(root string, thorough bool) []gate.Check {
 	if gate.IsToolkit(root) {
-		checks := []gate.Check{gate.Command("go vet", root, "go", "vet", "./...")}
+		checks := []gate.Check{gate.GofmtCheck(root), gate.Command("go vet", root, "go", "vet", "./...")}
 		if thorough {
 			checks = append(checks, crossVets(root)...)
 		}

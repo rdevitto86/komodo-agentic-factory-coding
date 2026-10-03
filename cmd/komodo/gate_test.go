@@ -174,7 +174,7 @@ func TestGateStillRunsToolkitChecksWhenNoCommandsJsonExists(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
@@ -182,7 +182,7 @@ func TestGateStillRunsToolkitChecksWhenNoCommandsJsonExists(t *testing.T) {
 	}
 	got := runCLI(t, root, "", "gate")
 	// Only the toolkit branch names its checks bare; generic detection prints the commands it runs.
-	for _, line := range []string{"gate: go vet\n", "gate: go test\n"} {
+	for _, line := range []string{"gate: gofmt\n", "gate: go vet\n", "gate: go test\n"} {
 		if !strings.Contains(got.stdout, line) {
 			t.Fatalf("stdout %q, want the toolkit's own %q check", got.stdout, strings.TrimSpace(line))
 		}
