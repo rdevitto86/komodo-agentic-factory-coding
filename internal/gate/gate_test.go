@@ -495,6 +495,35 @@ func TestRebuildStampsTheNewHeadWhenAGoFileChanged(t *testing.T) {
 	}
 }
 
+// TestRebuildSkipsWhileSyncEnvIsSet proves a merge komodo sync drives rebuilds the binary once,
+// through syncBinary, never again through the post-merge hook it triggers.
+func TestRebuildSkipsWhileSyncEnvIsSet(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	from := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "add a go file")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	t.Setenv(SyncEnv, "1")
+
+	if err := Rebuild(root, from, to, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("want no marker written while sync drives the merge, err = %v", err)
+	}
+}
+
 // TestRebuildResolvesHEADToItsFullCommitSHA proves --to HEAD is never stamped literally, so doctor
 // never reads bin/.built-from as a name git cannot compare to a real commit.
 func TestRebuildResolvesHEADToItsFullCommitSHA(t *testing.T) {
