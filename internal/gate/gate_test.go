@@ -169,8 +169,8 @@ func TestCommandDropsTheGitEnvironmentAHookSets(t *testing.T) {
 
 // TestFuzzChecksCoverEveryTarget proves the gate builds one named check per fuzz target.
 func TestFuzzChecksCoverEveryTarget(t *testing.T) {
-	checks := FuzzChecks(t.TempDir(), "1s")
 	targets := FuzzTargets()
+	checks := FuzzChecksFor(t.TempDir(), "1s", targets)
 	if len(checks) != len(targets) {
 		t.Fatalf("checks = %d, targets = %d", len(checks), len(targets))
 	}
@@ -249,6 +249,26 @@ func TestCommandPinsTheGoToolchainWhenGoModNamesOne(t *testing.T) {
 	}
 }
 
+// TestCommandKillsAHungCommandAndItsChildren proves a command past CommandTimeout is killed,
+// process group included, so a hung check never blocks the gate.
+func TestCommandKillsAHungCommandAndItsChildren(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	saved := CommandTimeout
+	CommandTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { CommandTimeout = saved })
+	var out bytes.Buffer
+	check := Command("hang", t.TempDir(), "sh", "-c", "sleep 30 & sleep 30")
+	started := time.Now()
+	if err := check.Run(&out); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
+	}
+}
+
 // TestBuildWritesTheOutputABuildProduces proves a successful go build lands at the target path.
 func TestBuildWritesTheOutputABuildProduces(t *testing.T) {
 	root := t.TempDir()
@@ -276,6 +296,29 @@ func TestBuildFailsWithoutAPinnedToolchain(t *testing.T) {
 	}
 	if _, err := Build(root, t.TempDir(), LocalTarget()); err == nil {
 		t.Fatal("want an error when go.mod names no toolchain")
+	}
+}
+
+// TestBuildKillsAHungCompilerAndItsChildren proves a build past CommandTimeout is killed,
+// process group included, so a hung compiler never blocks the gate.
+func TestBuildKillsAHungCompilerAndItsChildren(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then sleep 30 & sleep 30; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	saved := CommandTimeout
+	CommandTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { CommandTimeout = saved })
+	started := time.Now()
+	if _, err := Build(root, t.TempDir(), Target{Name: "komodo-fake", GOOS: "linux", Arch: "amd64"}); err == nil ||
+		!strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 
@@ -446,6 +489,35 @@ func TestRebuildStampsTheNewHeadWhenAGoFileChanged(t *testing.T) {
 	}
 	if strings.TrimSpace(string(marker)) != to {
 		t.Fatalf("marker = %q, want %q", marker, to)
+	}
+}
+
+// TestRebuildSkipsWhileSyncEnvIsSet proves a merge komodo sync drives rebuilds the binary once,
+// through syncBinary, never again through the post-merge hook it triggers.
+func TestRebuildSkipsWhileSyncEnvIsSet(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	from := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "add a go file")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	t.Setenv(SyncEnv, "1")
+
+	if err := Rebuild(root, from, to, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("want no marker written while sync drives the merge, err = %v", err)
 	}
 }
 

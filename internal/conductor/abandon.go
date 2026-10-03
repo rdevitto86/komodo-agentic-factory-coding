@@ -1,6 +1,7 @@
 package conductor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,10 +38,25 @@ func Abandon(root, group string, at time.Time) error {
 		Items: []string{"abandoned on purpose with `komodo abandon`; its worktree and tip are removed"},
 		Needs: "a person to rework the group and set it READY",
 	}
-	path, noted, err := abandonNote(root, group, note)
+	path, before, noted, err := abandonNote(root, group, note)
 	if err != nil {
 		return err
 	}
+	// The note is written before the worktree and tip are gone, and restored if removing either fails.
+	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
+		return err
+	}
+	if err := removeWorktreeAndTip(root, group, run); err != nil {
+		if restoreErr := os.WriteFile(path, []byte(before), 0o644); restoreErr != nil {
+			return errors.Join(err, restoreErr)
+		}
+		return err
+	}
+	return os.RemoveAll(line.RunDir(root, group))
+}
+
+// removeWorktreeAndTip force-removes the group's worktree, prunes it, and drops its tip ref.
+func removeWorktreeAndTip(root, group string, run line.RunState) error {
 	worktree := run.Worktree
 	if worktree == "" {
 		worktree = filepath.Join(line.StateDir, "wt", group)
@@ -55,29 +71,26 @@ func Abandon(root, group string, at time.Time) error {
 	if _, err := git.Run(root, "worktree", "prune"); err != nil {
 		return err
 	}
-	if run.Branch != "" {
-		if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", line.TipRef(run.Branch)); err == nil {
-			if _, err := git.Run(root, "update-ref", "-d", line.TipRef(run.Branch)); err != nil {
-				return err
-			}
-		}
+	if run.Branch == "" {
+		return nil
 	}
-	if err := os.WriteFile(path, []byte(noted), 0o644); err != nil {
-		return err
+	if _, err := git.Run(root, "rev-parse", "--verify", "--quiet", line.TipRef(run.Branch)); err != nil {
+		return nil
 	}
-	return os.RemoveAll(line.RunDir(root, group))
+	_, err := git.Run(root, "update-ref", "-d", line.TipRef(run.Branch))
+	return err
 }
 
-// abandonNote writes note into the group's own docs/backlog file, returning the path and the text
-// to write there.
-func abandonNote(root, group string, note backlog.BlockerNote) (path, noted string, err error) {
+// abandonNote renders note into the group's own docs/backlog file, returning its path, its text
+// before the note, and the text to write there.
+func abandonNote(root, group string, note backlog.BlockerNote) (path, before, noted string, err error) {
 	groupPath, text, found, err := backlog.FindGroupFile(root, group)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if !found {
-		return "", "", fmt.Errorf("%s is not in %s", group, backlog.GroupFilesDir)
+		return "", "", "", fmt.Errorf("%s is not in %s", group, backlog.GroupFilesDir)
 	}
 	out, err := backlog.AddGroupFileNote(text, note)
-	return groupPath, out, err
+	return groupPath, text, out, err
 }

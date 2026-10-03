@@ -426,15 +426,6 @@ func GuardConfigPaths() []string {
 	return out
 }
 
-// GuardPrivatePatterns are every private-text pattern a registered mount's guard refuses to send out.
-func GuardPrivatePatterns() []string {
-	var out []string
-	for _, tools := range GuardHosts() {
-		out = append(out, tools.PrivatePatterns...)
-	}
-	return out
-}
-
 // OverlayCaps lowers a profile's brief slot caps; the overlay may only shrink one, never grow it.
 type OverlayCaps struct {
 	RepoRules   int `json:"repo_rules"`

@@ -1,7 +1,9 @@
 package claude
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +12,7 @@ import (
 
 	"komodo/internal/mount"
 	"komodo/internal/mount/ollama"
+	"komodo/internal/proc"
 )
 
 // minRecallCases is the fewest scored cases a recall reading needs before the reviewer trusts it.
@@ -167,8 +170,32 @@ func modelFor(tier string) string {
 	return models[tier]
 }
 
-// authStatus runs the CLI's own login report; a test swaps it.
-var authStatus = func() ([]byte, error) { return exec.Command("claude", "auth", "status").Output() }
+// authStatus runs the CLI's own login report, or an error naming the command and its stderr.
+var authStatus = func() ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "claude", "auth", "status")
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	stdout, stderr := proc.NewBoundedWriter(proc.MaxOutput), proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("claude auth status: timed out after %s: %s", cliTimeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
+		return []byte(stdout.String()), fmt.Errorf("claude auth status: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return []byte(stdout.String()), nil
+}
 
 // LoggedIn reports whether the CLI holds a login, by subscription or by key, from its auth status report.
 func LoggedIn() (bool, error) {

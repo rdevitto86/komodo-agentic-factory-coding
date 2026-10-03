@@ -2,7 +2,7 @@
 
 Komodo's code assembly line. Work enters as tasks in `docs/backlog/` and leaves as reviewed pull requests. The line is one static binary and a set of markdown files; the machines on it are whatever models you mount today. Swap a model and the line does not change. Swap the host and one mount changes.
 
-This README describes the line as it runs today. The V1 target is `docs/prd.md`, the requirements, with `docs/hld.md`, `docs/lld.md` and `docs/decisions/`. V1 restarts at `1.0.0-alpha.5` and moves through `1.0.0-beta.2` to the `1.0.0` LTS release the human cuts (decision 0010); the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `docs/backlog/`.
+This README is the day-to-day guide; each Design bullet points into the specs that define V1: `docs/prd.md`, the requirements, with `docs/hld.md`, `docs/lld.md` and `docs/decisions/`. V1 restarts at `1.0.0-alpha.5` and moves through its betas to the `1.0.0` LTS release the human cuts (decision 0010); the Versions section below defines each stage. Everything before it was a prototype: the 0.x experiments and the Python orchestrator, now tagged `1.0.0-alpha.1` through `1.0.0-alpha.4`, preserved whole at the tag `prototype-final`. The repo was cleared to the markdown source on 2026-09-21, and the prototype's run state did not survive the clear. Tasks are in `docs/backlog/`.
 
 ## Design
 
@@ -20,7 +20,7 @@ The full design lives in `docs/hld.md` and `docs/lld.md`; `docs/decisions/` hold
 - **The repo layer.** A repo may commit context, standards, skills and command overrides under `.komodo/`; see `docs/lld.md#the-repo-layer`.
 - **Detection and facets.** Cloud facet work beyond the shipped set is out of scope until after 1.0.0; see `docs/prd.md#product-scope`.
 - **Local machines.** A local model is out of scope until after 1.0.0; see `docs/prd.md#product-scope`.
-- **Hot swap.** A machine, skill or external dependency swaps without touching the line; MCP is out of scope until after 1.0.0; see `docs/lld.md#profiles-and-economy-mode` and `docs/prd.md#product-scope`.
+- **Hot swap.** A role's model swaps through its profile without touching the line; MCP is out of scope until after 1.0.0; see `docs/lld.md#profiles-and-economy-mode` and `docs/prd.md#product-scope`.
 - **The non-proprietary day.** 1.0.0 proves one host; a second host is out of scope until after 1.0.0; see `docs/prd.md#product-scope`.
 
 ## Pull requests

@@ -9,7 +9,7 @@
 - **A group holds 1 to 12 tasks,** and `komodo lint` refuses more.
 - **Each group gets one worktree, and one builder session is bound to that worktree,** not to the group file. Repair resumes the same session in the same worktree.
 - **Ingest compiles each READY group into a card with no model calls:** tasks, files, derived checks, context and base. The conductor ticks a task's box only after its checks pass.
-- **Each group is a committed file in `docs/backlog/`,** and its finished file goes when its epic ends. Each group's PR adds a `changelog.d/` fragment.
+- **Each group is a committed file in `docs/backlog/`,** and its finished file goes when its epic ends.
 - **Groups that share no file run in parallel.**
 
 **Alternatives.**

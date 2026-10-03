@@ -20,11 +20,16 @@ import (
 	"komodo/internal/run"
 )
 
-// HiddenTestTimeout is how long a group's hidden tests may run before they count as failed.
-const HiddenTestTimeout = 10 * time.Minute
-
-// cloneTimeout bounds each git command that builds a run's fresh clone.
-const cloneTimeout = 10 * time.Minute
+const (
+	// HiddenTestTimeout is how long a group's hidden tests may run before they count as failed.
+	HiddenTestTimeout = 10 * time.Minute
+	// cloneTimeout bounds each git command that builds a run's fresh clone.
+	cloneTimeout = 10 * time.Minute
+	// waitDelay is how long a killed process tree gets to exit before its pipes are force-closed.
+	waitDelay = 5 * time.Second
+	// outputClip bounds how much of a failed command's output its error keeps.
+	outputClip = 4000
+)
 
 // evalIdentity is who commits the group file and the mount into a run's clone.
 var evalIdentity = []string{"-c", "user.name=komodo eval", "-c", "user.email=eval@komodo.invalid"}
@@ -316,7 +321,7 @@ func CloneAt(ctx context.Context, url, commit, dir string) error {
 	origin := dir + ".origin.git"
 	steps := [][]string{
 		{"init", "-q", dir},
-		{"-C", dir, "fetch", "-q", url, commit},
+		{"-C", dir, "fetch", "-q", "--", url, commit},
 		{"-C", dir, "checkout", "-q", "-B", "main", "FETCH_HEAD"},
 		{"clone", "-q", "--bare", dir, origin},
 		{"-C", dir, "remote", "add", "origin", origin},
@@ -367,18 +372,29 @@ func command(ctx context.Context, dir string, timeout time.Duration, name string
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
+	output, err := runProcess(ctx, dir, nil, name, args...)
+	if err != nil {
+		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, line.Clip(output, outputClip, "output"))
+	}
+	return nil
+}
+
+// runProcess runs name in dir with env appended to this process's environment when set, killing its
+// process tree when ctx ends, and returns what it printed and the error cmd.Run gave.
+func runProcess(ctx context.Context, dir string, env []string, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	proc.Group(cmd)
 	cmd.Cancel = func() error {
 		proc.KillGroup(cmd)
 		return nil
 	}
-	cmd.WaitDelay = 5 * time.Second
+	cmd.WaitDelay = waitDelay
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, line.Clip(output.String(), 4000, "output"))
-	}
-	return nil
+	err := cmd.Run()
+	return output.String(), err
 }
