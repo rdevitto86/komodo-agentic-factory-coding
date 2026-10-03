@@ -9,63 +9,37 @@ import (
 	"komodo/internal/mount"
 )
 
-// TestSessionCanaryInPersonalConfigDoesNotLeakToArgv verifies that personal config
-// canary strings never appear in session argv.
-func TestSessionCanaryInPersonalConfigDoesNotLeakToArgv(t *testing.T) {
+// TestRenderNeverLeaksAPersonalConfigCanaryIntoAPlannedFile verifies that a canary planted in the
+// machine's own personal Claude config never reaches a file Render plans to write (REQ-3).
+func TestRenderNeverLeaksAPersonalConfigCanaryIntoAPlannedFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	// Create a fake personal CLAUDE.md with a canary string.
 	claudeLocal := filepath.Join(home, ".claude", "CLAUDE.local.md")
 	if err := os.MkdirAll(filepath.Dir(claudeLocal), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	canary := "CANARY_STRING_FOR_TESTING_TSK_05_3_2"
-	content := "# Personal overlay\n\n" + canary + "\n"
-	if err := os.WriteFile(claudeLocal, []byte(content), 0o644); err != nil {
+	mdCanary := "CANARY_STRING_FOR_TESTING_TSK_05_3_2"
+	if err := os.WriteFile(claudeLocal, []byte("# Personal overlay\n\n"+mdCanary+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	req := mount.StartRequest{
-		Role:   "builder",
-		Tools:  []string{"read"},
-		Schema: []byte(`{}`),
-	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
-	joined := strings.Join(argv, " ")
-
-	if strings.Contains(joined, canary) {
-		t.Fatalf("argv should not contain personal config canary: %s", joined)
-	}
-}
-
-// TestSessionCanaryInPersonalSettingsDoesNotLeakToArgv verifies that a canary line
-// in a fake personal settings file never appears in the session's argv.
-func TestSessionCanaryInPersonalSettingsDoesNotLeakToArgv(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	// Create a fake personal settings.json with a canary string.
 	settingsLocal := filepath.Join(home, ".claude", "settings.local.json")
-	if err := os.MkdirAll(filepath.Dir(settingsLocal), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	canary := "CANARY_TEST_STRING_SETTINGS"
-	content := `{"permissions": {"allow": ["` + canary + `"]}}`
-	if err := os.WriteFile(settingsLocal, []byte(content), 0o644); err != nil {
+	settingsCanary := "CANARY_TEST_STRING_SETTINGS"
+	if err := os.WriteFile(settingsLocal, []byte(`{"permissions": {"allow": ["`+settingsCanary+`"]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	req := mount.StartRequest{
-		Role:   "builder",
-		Tools:  []string{"read"},
-		Schema: []byte(`{}`),
+	plan, err := Render(toolkitRepo(t), "bin/komodo-darwin-arm64")
+	if err != nil {
+		t.Fatal(err)
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
-	joined := strings.Join(argv, " ")
-
-	if strings.Contains(joined, canary) {
-		t.Fatalf("argv should not contain personal settings canary: %s", joined)
+	for _, canary := range []string{mdCanary, settingsCanary} {
+		for _, change := range plan.Changes {
+			if strings.Contains(string(change.Body), canary) {
+				t.Fatalf("%s carries the personal config canary %q", change.Path, canary)
+			}
+		}
 	}
 }
 
@@ -76,10 +50,14 @@ func TestSessionCLAUDEConfigDirNotInEnvironment(t *testing.T) {
 
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	_, env, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "CLAUDE_CONFIG_DIR=") {
@@ -93,10 +71,14 @@ func TestSessionCLAUDEConfigDirNotInEnvironment(t *testing.T) {
 func TestSessionLoadsOnlyLocalSettings(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--setting-sources local") {
@@ -109,10 +91,14 @@ func TestSessionLoadsOnlyLocalSettings(t *testing.T) {
 func TestSessionUsesStrictMcpConfig(t *testing.T) {
 	req := mount.StartRequest{
 		Role:   "builder",
+		Brief:  "b",
 		Tools:  []string{},
 		Schema: []byte(`{}`),
 	}
-	argv, _, _ := Session("/repo", "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	argv, _, _, err := Session(sandboxedSessionRoot(t), "/worktree", req, "", "", "sonnet", "extended", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 
 	if !strings.Contains(joined, "--strict-mcp-config") {

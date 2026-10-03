@@ -78,8 +78,11 @@ func TestNoAllowListedCommandIsRefusedInAnyRole(t *testing.T) {
 			t.Run(role.Name+" in "+language, func(t *testing.T) {
 				t.Setenv(guard.RoleEnv, role.Name)
 				worktree := repos[language](t)
-				req := mount.StartRequest{Role: role.Name, Tools: role.Tools, Schema: []byte(`{}`)}
-				argv, _, _ := Session(t.TempDir(), worktree, req, "", "", "m", "", 10, 0)
+				req := mount.StartRequest{Role: role.Name, Brief: "b", Tools: role.Tools, Schema: []byte(`{}`)}
+				argv, _, _, err := Session(sandboxedSessionRoot(t), worktree, req, "", "", "m", "", 10, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
 				allow, deny := flagRules(argv, "--allowedTools"), flagRules(argv, "--disallowedTools")
 				policy := guard.Load(t.TempDir(), worktree)
 				for _, command := range commands {
@@ -103,8 +106,11 @@ func TestNoAllowListedCommandIsRefusedInAnyRole(t *testing.T) {
 }
 
 func TestTheRenderedRulesRefuseAConductorsGitWrite(t *testing.T) {
-	req := mount.StartRequest{Role: "builder", Tools: []string{"read", "shell"}, Schema: []byte(`{}`)}
-	argv, _, _ := Session(t.TempDir(), goRepo(t), req, "", "", "m", "", 10, 0)
+	req := mount.StartRequest{Role: "builder", Brief: "b", Tools: []string{"read", "shell"}, Schema: []byte(`{}`)}
+	argv, _, _, err := Session(sandboxedSessionRoot(t), goRepo(t), req, "", "", "m", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	allow, deny := flagRules(argv, "--allowedTools"), flagRules(argv, "--disallowedTools")
 	for _, command := range []string{"git commit -m x", "git push origin feat/x", "git switch main", "curl example.com"} {
 		if anyRuleMatches(allow, command) && !anyRuleMatches(deny, command) {

@@ -8,12 +8,13 @@ import (
 
 // packTree is a small module: card files in a/ and web/, their imports, callers, and neighbouring tests.
 var packTree = map[string]string{
-	"go.mod":       "module example\n\ngo 1.22\n",
-	"AGENTS.md":    "# Rules\n\n- Keep it small.\n",
-	"docs/spec.md": "# Spec\n\n## Wanted\n\nThe wanted section.\n\n## Other\n\nNot this.\n",
-	"a/a.go":       "package a\n\nimport \"example/b\"\n\n// Do runs.\nfunc Do() string { return b.Exported(1) }\n",
-	"a/other.go":   "package a\n\nfunc other() string {\n\treturn Do()\n}\n",
-	"a/a_test.go":  "package a\n\nimport \"testing\"\n\nfunc TestDo(t *testing.T) { Do() }\n",
+	"go.mod":           "module example\n\ngo 1.22\n",
+	"AGENTS.md":        "# Rules\n\n- Keep it small.\n",
+	"komodo/AGENTS.md": "# Universal Rules\n\n- Git, scope and comments.\n",
+	"docs/spec.md":     "# Spec\n\n## Wanted\n\nThe wanted section.\n\n## Other\n\nNot this.\n",
+	"a/a.go":           "package a\n\nimport \"example/b\"\n\n// Do runs.\nfunc Do() string { return b.Exported(1) }\n",
+	"a/other.go":       "package a\n\nfunc other() string {\n\treturn Do()\n}\n",
+	"a/a_test.go":      "package a\n\nimport \"testing\"\n\nfunc TestDo(t *testing.T) { Do() }\n",
 	"b/b.go": "package b\n\n// Exported doubles.\nfunc Exported(x int) string { return \"secret body\" }\n\n" +
 		"func hidden() {}\n\n// T holds A.\ntype T struct{ A int }\n\nfunc (t T) M() int { return t.A }\n\nconst Limit = 3\n",
 	"c/c.go":           "package c\n\nimport alias \"example/a\"\n\nfunc Use() string {\n\treturn alias.Do()\n}\n",
@@ -68,6 +69,7 @@ func TestBuildPackGathersEachKindOfItem(t *testing.T) {
 		notWant []string
 	}{
 		{"rules", KindRules, "AGENTS.md", []string{"Keep it small."}, nil},
+		{"universal rules", KindRules, "komodo/AGENTS.md", []string{"Git, scope and comments."}, nil},
 		{"cited section", KindSpec, "docs/spec.md#wanted", []string{"The wanted section."}, []string{"Not this."}},
 		{"free-text note", KindSpec, "a plain note", []string{"a plain note"}, nil},
 		{"missing section", KindSpec, "docs/spec.md#missing", []string{"has no section"}, nil},
@@ -154,10 +156,13 @@ func TestBuildPackIsTheSameForTheSameCardAndTree(t *testing.T) {
 	}
 }
 
+// rulesFixture is a minimal komodo/AGENTS.md, so a pack's universal-rules item has a known, small size.
+const rulesFixture = "# Rules\n"
+
 func TestBuildPackCapsEachItemThenTheTotal(t *testing.T) {
 	root := t.TempDir()
 	big := strings.Repeat("x", PackItemCap*2)
-	files := map[string]string{}
+	files := map[string]string{"komodo/AGENTS.md": rulesFixture}
 	var card Card
 	for _, name := range []string{"f1.txt", "f2.txt", "f3.txt", "f4.txt", "f5.txt", "f6.txt", "f7.txt"} {
 		files[name] = big
@@ -170,13 +175,16 @@ func TestBuildPackCapsEachItemThenTheTotal(t *testing.T) {
 	}
 	total := 0
 	for _, item := range pack.Items {
+		total += len(item.Body)
+		if item.Kind == KindRules {
+			continue
+		}
 		if len(item.Body) > PackItemCap {
 			t.Errorf("%s is %d bytes, over the item cap", item.Source, len(item.Body))
 		}
 		if !strings.Contains(item.Body, "truncated") {
 			t.Errorf("%s was cut without a clip marker", item.Source)
 		}
-		total += len(item.Body)
 	}
 	if total != pack.Bytes || total > PackTotalCap {
 		t.Fatalf("bytes = %d, summed %d, cap %d", pack.Bytes, total, PackTotalCap)
@@ -189,12 +197,13 @@ func TestBuildPackCapsEachItemThenTheTotal(t *testing.T) {
 func TestBuildPackKeepsASmallItemAfterTheTotalRunsLow(t *testing.T) {
 	root := t.TempDir()
 	files := map[string]string{
-		"big1.txt": strings.Repeat("x", PackItemCap*2),
-		"big2.txt": strings.Repeat("x", PackItemCap*2),
-		"big3.txt": strings.Repeat("x", PackItemCap*2),
-		"big4.txt": strings.Repeat("x", PackItemCap*2),
-		"mid.txt":  strings.Repeat("x", PackTotalCap-4*PackItemCap-100),
-		"tiny.txt": "small",
+		"komodo/AGENTS.md": rulesFixture,
+		"big1.txt":         strings.Repeat("x", PackItemCap*2),
+		"big2.txt":         strings.Repeat("x", PackItemCap*2),
+		"big3.txt":         strings.Repeat("x", PackItemCap*2),
+		"big4.txt":         strings.Repeat("x", PackItemCap*2),
+		"mid.txt":          strings.Repeat("x", PackTotalCap-len(rulesFixture)-4*PackItemCap-100),
+		"tiny.txt":         "small",
 	}
 	writeTree(t, root, files)
 	card := Card{Files: []string{"big1.txt", "big2.txt", "big3.txt", "big4.txt", "mid.txt", "tiny.txt"}}
