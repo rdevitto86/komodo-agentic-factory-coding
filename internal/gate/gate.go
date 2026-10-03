@@ -2,9 +2,10 @@
 package gate
 
 import (
-	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"komodo/internal/backlog"
@@ -15,6 +16,7 @@ import (
 	"komodo/internal/guard"
 	"komodo/internal/lease"
 	"komodo/internal/mount"
+	"komodo/internal/proc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +41,12 @@ type Check struct {
 	Run  func(io.Writer) error
 }
 
+// CommandTimeout bounds how long one gate command or build may run before it is killed; a test lowers it.
+var CommandTimeout = proc.DefaultTimeout
+
+// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
+
 // Run executes every check in order and stops at the first failure.
 func Run(checks []Check, out io.Writer) error {
 	for _, check := range checks {
@@ -51,17 +59,34 @@ func Run(checks []Check, out io.Writer) error {
 	return nil
 }
 
-// Command builds a check that runs one command in the repo root, pinned to the repo's toolchain.
+// Command builds a check that runs one command in the repo root, pinned to the repo's toolchain,
+// killed with its whole process group once CommandTimeout passes.
 func Command(name, root string, args ...string) Check {
 	return Check{Name: name, Run: func(out io.Writer) error {
-		cmd := exec.Command(args[0], args[1:]...)
+		ctx, cancel := context.WithTimeout(context.Background(), CommandTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		cmd.Dir = root
 		cmd.Stdout, cmd.Stderr = out, out
 		cmd.Env = childEnv()
 		if toolchain, err := Toolchain(root); err == nil {
 			cmd.Env = append(cmd.Env, "GOTOOLCHAIN="+toolchain)
 		}
-		return cmd.Run()
+		proc.Group(cmd)
+		cmd.Cancel = func() error {
+			proc.KillGroup(cmd)
+			return nil
+		}
+		cmd.WaitDelay = waitDelay
+		err := cmd.Run()
+		proc.KillGroup(cmd)
+		if errors.Is(err, exec.ErrWaitDelay) {
+			err = nil
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("%s: timed out after %s", name, CommandTimeout)
+		}
+		return err
 	}}
 }
 
@@ -134,7 +159,8 @@ func buildFlags(root string) []string {
 	return []string{"-trimpath", "-buildvcs=false", "-ldflags", ldflags}
 }
 
-// Build compiles one target into dir, pinned to the repo's toolchain, and returns the path it wrote.
+// Build compiles one target into dir, pinned to the repo's toolchain, and returns the path it wrote;
+// a hung compiler is killed, process group included, once CommandTimeout passes.
 func Build(root, dir string, target Target) (string, error) {
 	toolchain, err := Toolchain(root)
 	if err != nil {
@@ -144,15 +170,32 @@ func Build(root, dir string, target Target) (string, error) {
 	// The compiler writes beside the binary and a rename puts it in place, so no reader sees half a binary.
 	temp := path + ".tmp"
 	args := append([]string{"build", "-o", temp}, buildFlags(root)...)
-	cmd := exec.Command("go", append(args, "./cmd/komodo")...)
+	ctx, cancel := context.WithTimeout(context.Background(), CommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", append(args, "./cmd/komodo")...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0", "GOOS="+target.GOOS, "GOARCH="+target.Arch, "GOTOOLCHAIN="+toolchain)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	stderr := proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stderr = stderr
+	runErr := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		runErr = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		_ = os.Remove(temp)
-		return "", fmt.Errorf("build %s: %v: %s", target.Name, err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("build %s: timed out after %s: %s", target.Name, CommandTimeout, strings.TrimSpace(stderr.String()))
+	}
+	if runErr != nil {
+		_ = os.Remove(temp)
+		return "", fmt.Errorf("build %s: %v: %s", target.Name, runErr, strings.TrimSpace(stderr.String()))
 	}
 	if err := os.Rename(temp, path); err != nil {
 		_ = os.Remove(temp)

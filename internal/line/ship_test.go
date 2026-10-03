@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -251,6 +252,62 @@ func TestSplitCredentialKeepsTheSecretOutOfThePushURL(t *testing.T) {
 				t.Fatalf("split = %q %q %q, want %q %q %q", clean, username, password, tc.clean, tc.username, tc.password)
 			}
 		})
+	}
+}
+
+// TestRunPrePushTimesOutAndKillsAHungHook proves a pre-push hook past pushTimeout is killed,
+// process group included, so a hung hook never blocks the line.
+func TestRunPrePushTimesOutAndKillsAHungHook(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	root, group := shipRepo(t)
+	hook := "#!/bin/sh\nsleep 30 &\nsleep 30\n"
+	path := filepath.Join(group, ".git", "hooks", "pre-push")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := pushTimeout
+	pushTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { pushTimeout = saved })
+	started := time.Now()
+	if err := PushFromWorktree(root, group, "feat/a-group"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
+	}
+}
+
+// TestPushRefTimesOutAndKillsAHungPush proves a push past pushTimeout is killed, process group
+// included, so a hung push never blocks the line.
+func TestPushRefTimesOutAndKillsAHungPush(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	root, group := shipRepo(t)
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakes := t.TempDir()
+	wrapper := "#!/bin/sh\nif [ \"$1\" = push ]; then sleep 30 & sleep 30; fi\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(fakes, "git"), []byte(wrapper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakes+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := pushTimeout
+	pushTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { pushTimeout = saved })
+	started := time.Now()
+	if err := PushFromWorktree(root, group, "feat/a-group"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 
@@ -1512,6 +1569,18 @@ func TestScrubKeepsTheModelHostsOwnLoginAndDropsEveryForgeSecret(t *testing.T) {
 		if _, found := envValue(scrubbed, key); found {
 			t.Fatalf("%s survived the scrub", key)
 		}
+	}
+}
+
+// TestHookEnvDropsACustomForgeTokenByItsShape proves hookEnv shares Scrub's pattern match, so a
+// custom forge token such as GITLAB_TOKEN never reaches a pre-push hook.
+func TestHookEnvDropsACustomForgeTokenByItsShape(t *testing.T) {
+	scrubbed := hookEnv([]string{"GITLAB_TOKEN=secret", "PATH=/usr/bin"})
+	if _, found := envValue(scrubbed, "GITLAB_TOKEN"); found {
+		t.Fatal("GITLAB_TOKEN reached a pre-push hook's environment")
+	}
+	if path, _ := envValue(scrubbed, "PATH"); path != "/usr/bin" {
+		t.Fatalf("PATH = %q, want the inherited value", path)
 	}
 }
 

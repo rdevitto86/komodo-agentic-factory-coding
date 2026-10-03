@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 )
 
 // keptRuns is how many run folders Prune keeps, the newest by start; a starting value.
@@ -343,11 +345,24 @@ func squashLanded(root, branch, tip, pushed string) bool {
 	return mergedOnForge(root, branch)
 }
 
-// originLacks reports whether origin answers and holds no branch of that name.
+// originLacks reports whether origin answers and holds no branch of that name; a hung ls-remote
+// is killed, process group included, once toolTimeout passes.
 func originLacks(root, branch string) bool {
-	cmd := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", branch)
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", "--heads", "origin", branch)
 	cmd.Dir = root
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
 	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
 	var exit *exec.ExitError
 	return errors.As(err, &exit) && exit.ExitCode() == 2
 }
