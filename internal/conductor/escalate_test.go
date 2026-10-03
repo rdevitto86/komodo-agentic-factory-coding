@@ -18,9 +18,9 @@ type orchestratorHost struct {
 	startErr error
 }
 
-func (o *orchestratorHost) Start(req mount.StartRequest) (mount.Handle, error) {
+func (o *orchestratorHost) Start(ctx context.Context, req mount.StartRequest) (mount.Handle, error) {
 	if req.Role != "orchestrator" {
-		return o.fakeHost.Start(req)
+		return o.fakeHost.Start(ctx, req)
 	}
 	if o.startErr != nil {
 		return "", o.startErr

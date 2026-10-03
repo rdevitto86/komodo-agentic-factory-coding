@@ -284,6 +284,8 @@ func TestAggregateMeasuresThroughput(t *testing.T) {
 	}
 }
 
+// TestWriteEventsCreatesFile proves a done entry never leaks in as an event, and the one
+// escalation that does write keeps its own type.
 func TestWriteEventsCreatesFile(t *testing.T) {
 	book := New(t.TempDir())
 	entries := []Entry{
@@ -297,7 +299,36 @@ func TestWriteEventsCreatesFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) == 0 {
-		t.Fatal("events.jsonl was not written")
+	if len(events) != 1 || events[0].Type != "escalation" {
+		t.Fatalf("events = %+v, want exactly one escalation", events)
+	}
+}
+
+// TestWriteEventsTypesEveryOutcome proves each outcome events.jsonl records keeps its own type.
+func TestWriteEventsTypesEveryOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		outcome string
+		want    string
+	}{
+		{"paused", "pause"},
+		{"resumed", "resume"},
+		{"stopped", "stop"},
+	} {
+		t.Run(tc.outcome, func(t *testing.T) {
+			book := New(t.TempDir())
+			entries := []Entry{
+				{At: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Run: "r1", Group: "TG-1", Station: "close", Outcome: tc.outcome},
+			}
+			if err := book.WriteEvents(entries); err != nil {
+				t.Fatal(err)
+			}
+			events, err := book.ReadEvents()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 1 || events[0].Type != tc.want {
+				t.Fatalf("events = %+v, want exactly one %q", events, tc.want)
+			}
+		})
 	}
 }

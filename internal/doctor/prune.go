@@ -5,13 +5,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
+	"komodo/internal/install"
 	"komodo/internal/lease"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 	"komodo/internal/pr"
 )
 
@@ -57,7 +62,168 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 		done = append(done, "merged local branch "+branch+"; komodo never deletes it, run git branch -d "+branch+" to")
 	}
 	done = append(done, pruneRuns(root, open)...)
+	done = append(done, pruneSpentState(root, open, confirm)...)
+	done = append(done, pruneStashes(root, now(), confirm)...)
+	done = append(done, pruneHookCopies(root, confirm)...)
+	done = append(done, pruneClaims(root, confirm)...)
 	return done, nil
+}
+
+// spentDirs are the state folders that hold one file per task or group: briefs and results.
+var spentDirs = []string{"briefs", "results"}
+
+// pruneSpentState deletes briefs, results and run archives of each group with no run folder, open run or
+// group file; an unreadable backlog deletes nothing.
+func pruneSpentState(root string, open []line.RunState, confirm bool) []string {
+	parsed, _, err := line.LoadBacklog(root)
+	if err != nil {
+		return nil
+	}
+	live := map[string]bool{}
+	for _, group := range parsed.Groups {
+		live[group.ID] = true
+	}
+	for _, state := range append(line.LoadRuns(root), open...) {
+		live[state.Group] = true
+	}
+	var spent []string
+	state := filepath.Join(root, line.StateDir)
+	for _, dir := range spentDirs {
+		entries, _ := os.ReadDir(filepath.Join(state, dir))
+		for _, entry := range entries {
+			if group := groupOf(entry.Name()); group != "" && !live[group] {
+				spent = append(spent, filepath.Join(state, dir, entry.Name()))
+			}
+		}
+	}
+	archives, _ := filepath.Glob(filepath.Join(state, "line.*.jsonl"))
+	for _, archive := range archives {
+		if group := groupOf(strings.TrimPrefix(filepath.Base(archive), "line.")); group != "" && !live[group] {
+			spent = append(spent, archive)
+		}
+	}
+	var done []string
+	for _, path := range spent {
+		if !confirm {
+			done = append(done, "would remove "+rel(root, path)+", state of a group the line no longer records")
+			continue
+		}
+		if err := os.RemoveAll(path); err == nil {
+			done = append(done, "removed "+rel(root, path))
+		}
+	}
+	return done
+}
+
+// runSuffix is the start time a run id appends to its group id.
+var runSuffix = regexp.MustCompile(`-\d+$`)
+
+// groupOf is the group id a state file's name carries through a task, group or run id, else "".
+func groupOf(name string) string {
+	for _, ext := range []string{".jsonl", ".json", ".md"} {
+		name = strings.TrimSuffix(name, ext)
+	}
+	if task, ok := strings.CutPrefix(name, "TSK-"); ok {
+		if cut := strings.LastIndex(task, "."); cut > 0 {
+			return "TG-" + task[:cut]
+		}
+		return ""
+	}
+	if !strings.HasPrefix(name, "TG-") {
+		return ""
+	}
+	name = runSuffix.ReplaceAllString(name, "")
+	if id, _, found := strings.Cut(name[len("TG-"):], "-"); found {
+		return "TG-" + id
+	}
+	return name
+}
+
+// stashAge is how old a stash grows before the sweep archives it as a patch and drops it.
+const stashAge = 7 * 24 * time.Hour
+
+// pruneStashes writes each stash older than stashAge to .komodo/stash-archive as a patch, then drops it;
+// a stash whose patch cannot be written stays.
+func pruneStashes(root string, at time.Time, confirm bool) []string {
+	list := lines(git.Run(root, "stash", "list", "--format=%gd %ct %H"))
+	var done []string
+	// Dropping from the highest index down keeps every lower stash@{n} pointing where it did.
+	for index := len(list) - 1; index >= 0; index-- {
+		fields := strings.Fields(list[index])
+		if len(fields) != 3 {
+			continue
+		}
+		seconds, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil || at.Sub(time.Unix(seconds, 0)) < stashAge {
+			continue
+		}
+		patch := filepath.Join(root, line.StateDir, "stash-archive", time.Unix(seconds, 0).UTC().Format("2006-01-02")+"-"+fields[2][:12]+".patch")
+		if !confirm {
+			done = append(done, "would archive "+fields[0]+" to "+rel(root, patch)+" and drop it")
+			continue
+		}
+		body, err := git.Run(root, "stash", "show", "-p", "--include-untracked", fields[2])
+		if err != nil {
+			continue
+		}
+		if err := fsx.WriteFile(patch, []byte(body+"\n"), 0o644); err != nil {
+			continue
+		}
+		if _, err := git.Run(root, "stash", "drop", "--quiet", fields[0]); err == nil {
+			done = append(done, "archived "+fields[0]+" to "+rel(root, patch)+" and dropped it")
+		}
+	}
+	return done
+}
+
+// pruneHookCopies deletes the hook binary copies earlier installs left, keeping any an installed hook still runs.
+func pruneHookCopies(root string, confirm bool) []string {
+	keep := map[string]bool{}
+	for _, host := range renderInstalled(root, func() func() { return func() {} }) {
+		for _, change := range host.Plan.Changes {
+			installed, err := os.ReadFile(change.Path)
+			if err != nil {
+				continue
+			}
+			for _, binary := range install.HookBinaries(installed) {
+				keep[filepath.Clean(binary)] = true
+			}
+		}
+	}
+	if !confirm {
+		return nil
+	}
+	removed, err := mount.PruneHookCopies(keep)
+	if err != nil {
+		return []string{"could not prune old hook binaries: " + err.Error()}
+	}
+	var done []string
+	for _, path := range removed {
+		done = append(done, "removed old hook binary "+path)
+	}
+	return done
+}
+
+// claimsDir is where the guard kept branch claims until they were removed; nothing reads it now.
+const claimsDir = "komodo-claims"
+
+// pruneClaims deletes the shared git dir's dead branch-claim directory; unconfirmed, it lists it.
+func pruneClaims(root string, confirm bool) []string {
+	common, err := git.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(common, claimsDir)
+	if _, err := os.Stat(dir); err != nil {
+		return nil
+	}
+	if !confirm {
+		return []string{"would remove the dead branch claims at " + dir + "; rerun with --confirm to delete"}
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return []string{"could not remove the dead branch claims at " + dir + ": " + err.Error()}
+	}
+	return []string{"removed the dead branch claims at " + dir}
 }
 
 // settleShippedRun sweeps clean, unleased, landed worktrees and orphan landed tips, never an open run's; unconfirmed, it lists.

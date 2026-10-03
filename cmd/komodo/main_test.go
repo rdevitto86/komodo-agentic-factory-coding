@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"komodo/internal/testhome"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	"testing"
 
 	"komodo/internal/backlog/backlogtest"
-	"komodo/internal/changelog"
 	"komodo/internal/line"
 	"komodo/internal/mount"
 	"komodo/internal/profile"
@@ -25,7 +25,10 @@ func TestMain(m *testing.M) {
 	os.Setenv("GIT_CONFIG_VALUE_0", "0")
 	os.Setenv("GIT_CONFIG_KEY_1", "maintenance.auto")
 	os.Setenv("GIT_CONFIG_VALUE_1", "false")
-	os.Exit(m.Run())
+	cleanup := testhome.Isolate()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 func TestSplitTaskArgFindsTheTaskAfterTheRoleFlag(t *testing.T) {
@@ -264,28 +267,6 @@ func tagRepo(t *testing.T, branch, changelog string) (root, bare string) {
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-m", "seed")
 	return root, bare
-}
-
-func TestFoldRefusesTheDefaultBranchAndFoldsOnAnother(t *testing.T) {
-	root, _ := tagRepo(t, "main", releaseChangelog)
-	if err := changelog.WriteFragment(root, "2.1.0", "TG-05.2", "- **TG-05.2** The host contract (3 task(s))"); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := fold(root, &out); err == nil || !strings.Contains(err.Error(), "refusing to fold") {
-		t.Fatalf("err = %v; fold must refuse the default branch", err)
-	}
-	runGit(t, root, "checkout", "-q", "-b", "chore/fold-the-changelog")
-	if err := fold(root, &out); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(filepath.Join(root, "CHANGELOG.md"))
-	if !strings.HasPrefix(string(data), "# Changelog\n\n## 2.1.0 — ") || !strings.Contains(string(data), "- **TG-05.2** The host contract") {
-		t.Fatalf("CHANGELOG.md after the fold:\n%s", data)
-	}
-	if _, err := os.Stat(filepath.Join(root, changelog.Dir)); !os.IsNotExist(err) {
-		t.Fatalf("the fragments are still there: %v", err)
-	}
 }
 
 func TestUntaggedVersionsNamesAChangelogVersionOriginHasNoTagFor(t *testing.T) {

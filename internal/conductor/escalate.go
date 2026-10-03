@@ -45,7 +45,7 @@ func (d *Driver) escalate(ctx context.Context, s *State, r *round) error {
 	if err != nil {
 		return err
 	}
-	handle, err := d.Host.Start(req)
+	handle, err := d.Host.Start(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -135,19 +135,19 @@ func (d *Driver) builderRequest(r *round) mount.StartRequest {
 
 // startBuilder resumes the blocked builder with the orchestrator's answer when the host can, else starts a
 // fresh builder whose brief ends with that answer; with no answer it starts a fresh builder.
-func (d *Driver) startBuilder(req mount.StartRequest, r *round) (mount.StartRequest, mount.Handle, error) {
+func (d *Driver) startBuilder(ctx context.Context, req mount.StartRequest, r *round) (mount.StartRequest, mount.Handle, error) {
 	answer := r.answer
 	r.answer = ""
 	if answer == "" {
-		handle, err := d.Host.Start(req)
+		handle, err := d.Host.Start(ctx, req)
 		return req, handle, err
 	}
 	if r.builder != "" && d.Host.Capabilities().Resume {
-		if handle, err := d.Host.Resume(r.builder, answerLead+answer); err == nil {
+		if handle, err := d.Host.Resume(ctx, r.builder, answerLead+answer); err == nil {
 			return req, handle, nil
 		}
 	}
 	req.Brief += "\n\n" + answerLead + answer
-	handle, err := d.Host.Start(req)
+	handle, err := d.Host.Start(ctx, req)
 	return req, handle, err
 }
