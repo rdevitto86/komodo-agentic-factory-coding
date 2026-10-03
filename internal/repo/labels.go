@@ -1,12 +1,9 @@
 package repo
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"os"
 	"path/filepath"
 
+	"komodo/internal/fsx"
 	"komodo/internal/glob"
 )
 
@@ -28,17 +25,11 @@ type Labels struct {
 // LoadLabels reads a repo's labels file; found is false when it is absent. A present but
 // malformed file panics naming its path, since it must never fall back to defaults silently.
 func LoadLabels(root string) (labels Labels, found bool) {
-	path := filepath.Join(root, LabelsFile)
-	data, err := os.ReadFile(path)
+	found, err := fsx.ReadStrictJSON(filepath.Join(root, LabelsFile), &labels)
 	if err != nil {
-		return Labels{}, false
+		panic(err.Error())
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&labels); err != nil {
-		panic(fmt.Sprintf("%s: %v", path, err))
-	}
-	return labels, true
+	return labels, found
 }
 
 // Scope is the first rule's label whose paths match a changed file, else the default.

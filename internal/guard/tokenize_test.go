@@ -41,7 +41,7 @@ func TestSedInPlaceWithAnExplicitScriptFlagStillFindsItsFile(t *testing.T) {
 	}
 }
 
-// TestBSDSedsEmptyBackupSuffixIsNeverReadAsTheFile proves sed -i '' names its own backup suffix
+// TestBSDSedsEmptyBackupSuffixIsNeverReadAsTheFile proves BSD sed -i with an empty backup suffix reads that suffix
 // as a separate argument, consumed the way -e and -f's values already are, not read as the file.
 func TestBSDSedsEmptyBackupSuffixIsNeverReadAsTheFile(t *testing.T) {
 	cases := []struct {
@@ -59,7 +59,7 @@ func TestBSDSedsEmptyBackupSuffixIsNeverReadAsTheFile(t *testing.T) {
 	}
 }
 
-// TestBSDSedInPlaceWithItsOwnBackupSuffixIsStillCaught proves the guard still refuses sed -i ''
+// TestBSDSedInPlaceWithItsOwnBackupSuffixIsStillCaught proves the guard still refuses BSD sed -i with an empty suffix
 // editing a protected path, the empty suffix never swallowing or masking the real target.
 func TestBSDSedInPlaceWithItsOwnBackupSuffixIsStillCaught(t *testing.T) {
 	registerFakeHost()

@@ -1,10 +1,8 @@
 package mount
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/install"
 )
@@ -487,27 +486,12 @@ func OverlayPath() string {
 	return filepath.Join(home, ".komodo", "config.json")
 }
 
-// DecodeOverlayBytes parses one overlay's bytes, rejecting a field none of its readers declare.
-func DecodeOverlayBytes(data []byte) (Overlay, error) {
-	var overlay Overlay
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	return overlay, decoder.Decode(&overlay)
-}
-
 // DecodeOverlayFile reads one overlay file; an absent file decodes to a zero Overlay with no
 // error, a present but malformed one returns an error naming path.
 func DecodeOverlayFile(path string) (Overlay, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return Overlay{}, nil
-		}
+	var overlay Overlay
+	if _, err := fsx.ReadStrictJSON(path, &overlay); err != nil {
 		return Overlay{}, err
-	}
-	overlay, err := DecodeOverlayBytes(data)
-	if err != nil {
-		return Overlay{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return overlay, nil
 }

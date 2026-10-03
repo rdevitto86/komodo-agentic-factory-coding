@@ -1,7 +1,6 @@
 package guard
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -150,69 +149,66 @@ func TestASharedBranchClaimIsAGlobalTierCheckNotOnlyALineRole(t *testing.T) {
 	}
 }
 
-// TestAMalformedRepoPolicyPanicsNamingItsPath proves a present but broken .komodo/policy.json
-// fails loudly instead of silently falling back to the shipped defaults.
-func TestAMalformedRepoPolicyPanicsNamingItsPath(t *testing.T) {
-	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".komodo"), 0o755); err != nil {
+// writeConfig writes body to rel under dir, making its parent directories, and returns its path.
+func writeConfig(t *testing.T, dir, rel, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(repo, ".komodo", "policy.json")
-	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("a malformed repo policy did not panic")
-		}
-		if !strings.Contains(fmt.Sprint(r), path) {
-			t.Fatalf("panic = %v, want it to name %s", r, path)
-		}
-	}()
-	Load(t.TempDir(), repo)
+	return path
 }
 
-// TestARepoPolicyWithAnUnknownFieldPanics proves the decode is strict, not merely tolerant of bad JSON.
-func TestARepoPolicyWithAnUnknownFieldPanics(t *testing.T) {
-	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".komodo"), 0o755); err != nil {
-		t.Fatal(err)
+// TestAMalformedConfigIsNamedAndSkippedWhileTheShippedPolicyHolds proves a present but broken
+// policy or overlay is reported by path, and the guard still protects every shipped critical ref.
+func TestAMalformedConfigIsNamedAndSkippedWhileTheShippedPolicyHolds(t *testing.T) {
+	cases := []struct {
+		name, rel, body string
+		inHome          bool
+	}{
+		{"bad JSON in the repo policy", filepath.Join(".komodo", "policy.json"), "{broken", false},
+		{"an unknown field in the repo policy", filepath.Join(".komodo", "policy.json"), `{"not_a_real_field":true}`, false},
+		{"bad JSON in the machine overlay", filepath.Join(".komodo", "config.json"), "{broken", true},
 	}
-	path := filepath.Join(repo, ".komodo", "policy.json")
-	if err := os.WriteFile(path, []byte(`{"not_a_real_field":true}`), 0o644); err != nil {
-		t.Fatal(err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home, repo := t.TempDir(), t.TempDir()
+			t.Setenv("HOME", home)
+			dir := repo
+			if tc.inHome {
+				dir = home
+			}
+			path := writeConfig(t, dir, tc.rel, tc.body)
+			policy, err := LoadChecked(t.TempDir(), repo)
+			if err == nil || !strings.Contains(err.Error(), path) {
+				t.Fatalf("LoadChecked error = %v, want one naming %s", err, path)
+			}
+			if !policy.IsCritical("main") || !Load(t.TempDir(), repo).IsCritical("main") {
+				t.Fatal("a malformed config must never drop the shipped critical refs")
+			}
+		})
 	}
-	defer func() {
-		if recover() == nil {
-			t.Fatal("an unknown field in the repo policy did not panic")
-		}
-	}()
-	Load(t.TempDir(), repo)
 }
 
-// TestAMalformedMachineOverlayPanicsReachingLoad proves a broken ~/.komodo/config.json fails
-// loudly through Load too, the same as a broken policy file.
-func TestAMalformedMachineOverlayPanicsReachingLoad(t *testing.T) {
+// TestHookStillRefusesAPushToMainWithAMalformedOverlay proves a broken machine overlay never
+// turns the guard off: the hook warns, names the file, and still denies.
+func TestHookStillRefusesAPushToMainWithAMalformedOverlay(t *testing.T) {
+	registerFakeHost()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if err := os.MkdirAll(filepath.Join(home, ".komodo"), 0o755); err != nil {
-		t.Fatal(err)
+	path := writeConfig(t, home, filepath.Join(".komodo", "config.json"), "{broken")
+	root := worktree(t)
+	var out, errOut strings.Builder
+	Hook(root, strings.NewReader(pushPayload(root, "session-m")), &out, &errOut)
+	if !strings.Contains(out.String(), "deny") {
+		t.Fatalf("hook output = %q, want a denial of the push to main", out.String())
 	}
-	path := filepath.Join(home, ".komodo", "config.json")
-	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(errOut.String(), path) {
+		t.Fatalf("hook stderr = %q, want it to name %s", errOut.String(), path)
 	}
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("a malformed machine overlay did not panic")
-		}
-		if !strings.Contains(fmt.Sprint(r), path) {
-			t.Fatalf("panic = %v, want it to name %s", r, path)
-		}
-	}()
-	Load(t.TempDir(), t.TempDir())
 }
 
 // TestAWriteUnderTheUsersKomodoDirIsRefused proves the shipped policy's ~/.komodo/** rule reaches

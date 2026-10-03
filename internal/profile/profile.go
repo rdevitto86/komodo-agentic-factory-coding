@@ -228,12 +228,6 @@ func installed(root string, hosts []mount.Host) (mount.Host, bool) {
 	return mount.Host{}, false
 }
 
-// DecodeOverlay reports why the machine overlay's bytes would not decode into the fields every reader declares.
-func DecodeOverlay(data []byte) error {
-	_, err := mount.DecodeOverlayBytes(data)
-	return err
-}
-
 // Overlay applies ~/.komodo/config.json, which can only tighten what the profile allows; an
 // absent file changes nothing, a present but malformed one panics naming its path.
 func Overlay(profile Profile, path string) Profile {

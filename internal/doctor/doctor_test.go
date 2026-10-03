@@ -78,6 +78,27 @@ func TestACleanRepoHasNoProblems(t *testing.T) {
 	}
 }
 
+// TestAMalformedRepoConfigIsFound proves doctor names a present policy or labels file its reader
+// refuses, and stays quiet when both are absent.
+func TestAMalformedRepoConfigIsFound(t *testing.T) {
+	root := t.TempDir()
+	if got := checkConfig(root); len(got) != 0 {
+		t.Fatalf("absent configs = %+v, want nothing", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{filepath.Join(".komodo", "policy.json"), filepath.Join(".komodo", "labels.json")} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(`{"not_a_field": 1}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := checkConfig(root)
+	if len(got) != 2 || got[0].Check != "config" || got[1].Check != "config" {
+		t.Fatalf("problems = %+v, want one config problem per file", got)
+	}
+}
+
 func TestAMalformedOverlayIsFound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -92,7 +113,7 @@ func TestAMalformedOverlayIsFound(t *testing.T) {
 			t.Fatalf("an empty overlay %q = %+v, want nothing", body, got)
 		}
 	}
-	for _, body := range []string{`{"critical_refs": ["prod"],}`, `{"critical_refs": "prod"}`, `[]`, `{"max_parallel": "2"}`} {
+	for _, body := range []string{`{"critical_refs": ["prod"],}`, `{"critical_refs": "prod"}`, `[]`, `{"max_parallel": "2"}`, `{"not_a_field": 1}`, `{} junk`} {
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}

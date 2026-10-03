@@ -2,9 +2,7 @@
 package guard
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"komodo/internal/fsx"
 	"komodo/internal/mount"
 	"komodo/internal/toolkit"
 )
@@ -96,59 +95,54 @@ func (p *Policy) compile() {
 
 // Load reads the toolkit's policy and merges the repo's and the machine's, which may only add.
 func Load(toolkitRoot, repoRoot string) Policy {
+	policy, _ := LoadChecked(toolkitRoot, repoRoot)
+	return policy
+}
+
+// LoadChecked is Load plus an error naming each present file that failed to decode and was skipped.
+func LoadChecked(toolkitRoot, repoRoot string) (Policy, error) {
 	policy := DefaultPolicy()
-	if shipped, ok := readShippedPolicy(toolkitRoot); ok {
+	shipped, ok, shippedErr := readShippedPolicy(toolkitRoot)
+	if ok {
 		policy.CriticalRefs = union(policy.CriticalRefs, shipped.CriticalRefs)
 		policy.ConfigPaths = union(policy.ConfigPaths, shipped.ConfigPaths)
 		policy.TrailerPatterns = union(policy.TrailerPatterns, shipped.TrailerPatterns)
 		policy.Mode = tightenMode(policy.Mode, shipped.Mode)
 	}
-	if extra, ok := readPolicy(filepath.Join(repoRoot, ".komodo", "policy.json")); ok {
+	extra, ok, repoErr := readPolicy(filepath.Join(repoRoot, ".komodo", "policy.json"))
+	if ok {
 		policy.CriticalRefs = union(policy.CriticalRefs, extra.CriticalRefs)
 		policy.ConfigPaths = union(policy.ConfigPaths, extra.ConfigPaths)
 		policy.TrailerPatterns = union(policy.TrailerPatterns, extra.TrailerPatterns)
 		policy.Mode = tightenMode(policy.Mode, extra.Mode)
 	}
-	overlay, err := mount.DecodeOverlayFile(mount.OverlayPath())
-	if err != nil {
-		panic(err)
-	}
+	overlay, overlayErr := mount.DecodeOverlayFile(mount.OverlayPath())
 	policy.CriticalRefs = union(policy.CriticalRefs, overlay.CriticalRefs)
 	policy.Mode = loosenMode(policy.Mode, Mode(overlay.Mode))
 	policy.compile()
-	return policy
-}
-
-// decodeStrict parses data into out, rejecting any field it does not declare; a decode failure
-// panics naming path, since a present config file must never fall back to defaults silently.
-func decodeStrict(path string, data []byte, out any) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(out); err != nil {
-		panic(fmt.Sprintf("%s: %v", path, err))
-	}
+	return policy, errors.Join(shippedErr, repoErr, overlayErr)
 }
 
 // readShippedPolicy parses the toolkit's own policy.json, on disk or embedded.
-func readShippedPolicy(toolkitRoot string) (Policy, bool) {
+func readShippedPolicy(toolkitRoot string) (Policy, bool, error) {
 	var policy Policy
 	data, err := fs.ReadFile(toolkit.FS(toolkitRoot), "policy.json")
 	if err != nil {
-		return policy, false
+		return policy, false, nil
 	}
-	decodeStrict(filepath.Join(toolkitRoot, "komodo", "policy.json"), data, &policy)
-	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != ""
+	if _, err := fsx.DecodeStrictJSON(filepath.Join(toolkitRoot, "komodo", "policy.json"), data, &policy); err != nil {
+		return Policy{}, false, err
+	}
+	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != "", nil
 }
 
-// readPolicy parses one policy file, reporting whether it was usable.
-func readPolicy(path string) (Policy, bool) {
+// readPolicy parses one policy file, reporting whether it was usable and why a present one was not.
+func readPolicy(path string) (Policy, bool, error) {
 	var policy Policy
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return policy, false
+	if _, err := fsx.ReadStrictJSON(path, &policy); err != nil {
+		return Policy{}, false, err
 	}
-	decodeStrict(path, data, &policy)
-	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != ""
+	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != "", nil
 }
 
 // union adds what the repo names without dropping anything the toolkit names.
