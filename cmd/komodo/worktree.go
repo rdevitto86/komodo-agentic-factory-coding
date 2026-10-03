@@ -45,6 +45,10 @@ func runWorktreeAdd(root string, args []string) {
 	if err := line.AddDetached(root, branch, start, path); err != nil {
 		fail(err)
 	}
+	// A builder's worktree never pushes; a person's does, by the command printed below.
+	if err := line.AllowWorktreePush(path); err != nil {
+		fail(err)
+	}
 	fmt.Println(path)
 	fmt.Printf("git -C %s push origin HEAD:refs/heads/%s\n", path, branch)
 }

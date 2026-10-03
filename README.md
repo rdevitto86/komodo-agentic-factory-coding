@@ -64,11 +64,10 @@ Requirements: git, `gh` authenticated, and the host CLI on PATH. Ollama is optio
 ```bash
 git clone <this repo> ~/komodo/ai/komodo-agentic-factory-coding
 cd ~/komodo/ai/komodo-agentic-factory-coding
-go run ./cmd/komodo gate --install                # builds bin/komodo-<os>-<arch>, then the git hooks
-bin/komodo-<os>-<arch> install --host claude       # the one host mounted today; Codex is deferred
+go run komodo/cmd/komodo install                  # the one step: binary, git hooks, this repo, and your machine
 ```
 
-The install is a copy. After editing anything under `komodo/`, run it again. `komodo doctor` says when you forgot. `komodo gate --install` builds this host's own binary into `bin/` and puts the gate on pre-commit and pre-push once; run it again after editing Go source.
+That one command builds `bin/komodo`, publishes it to `~/.komodo/bin/komodo`, which every hook runs, links `komodo` onto PATH, writes the git hooks, and installs this repo's and your user's Claude layers. It is the same on macOS, Linux and Windows. After that nothing needs rerunning: each rebuild republishes the binary, and each session start re-renders a stale layer in the background. Without Go, `install.sh` or `install.ps1` downloads and verifies a release and runs the same `komodo install`.
 
 ### Start a new repo
 

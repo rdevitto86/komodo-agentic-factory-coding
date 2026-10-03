@@ -1,5 +1,5 @@
 // Package ingest compiles each READY backlog group into a card: its task list, files, checks,
-// context references and a stable hash, with zero model calls (REQ-7).
+// context references and a stable hash, with zero model calls.
 package ingest
 
 import (
@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -87,7 +88,7 @@ func Build(root string, parsed backlog.Backlog, group backlog.Group) (Card, erro
 		Title:   group.Title,
 		Type:    group.Type(),
 		Version: group.Version(),
-		Base:    resolveBase(root, parsed, group),
+		Base:    line.GroupBase(root, parsed, group),
 		Tier:    tier,
 		Tasks:   cardTasks(group),
 		Files:   files,
@@ -97,7 +98,7 @@ func Build(root string, parsed backlog.Backlog, group backlog.Group) (Card, erro
 	card.Size = Size{
 		Tasks:      len(card.Tasks),
 		Files:      len(card.Files),
-		Packages:   countPackages(card.Files),
+		Packages:   len(extractGoPackages(card.Files)),
 		BriefBytes: briefBytes(parsed, group),
 	}
 	card.Hash = hash(card)
@@ -133,55 +134,40 @@ func cardTasks(group backlog.Group) []CardTask {
 	return tasks
 }
 
-// taskFiles collects every file pattern the group's tasks declare, in first-seen order.
-func taskFiles(group backlog.Group) []string {
+// dedupeTaskField collects every value a group's tasks return from field, in first-seen order.
+func dedupeTaskField(group backlog.Group, field func(backlog.Task) []string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, task := range group.Tasks {
-		for _, file := range task.Files() {
-			if !seen[file] {
-				seen[file] = true
-				out = append(out, file)
+		for _, value := range field(task) {
+			if !seen[value] {
+				seen[value] = true
+				out = append(out, value)
 			}
 		}
 	}
 	return out
+}
+
+// taskFiles collects every file pattern the group's tasks declare, in first-seen order.
+func taskFiles(group backlog.Group) []string {
+	return dedupeTaskField(group, backlog.Task.Files)
 }
 
 // handWrittenChecks collects every done_when command the group's tasks declare, in first-seen
 // order; per-language derived checks are added alongside these, never replacing them.
 func handWrittenChecks(group backlog.Group) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, task := range group.Tasks {
-		for _, check := range task.DoneWhen() {
-			if !seen[check] {
-				seen[check] = true
-				out = append(out, check)
-			}
-		}
-	}
-	return out
+	return dedupeTaskField(group, backlog.Task.DoneWhen)
 }
 
 // taskContext collects every context reference the group's tasks cite, in first-seen order; the
 // context pack later renders each into its section, file bodies, and callers.
 func taskContext(group backlog.Group) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, task := range group.Tasks {
-		for _, ref := range task.Context() {
-			if !seen[ref] {
-				seen[ref] = true
-				out = append(out, ref)
-			}
-		}
-	}
-	return out
+	return dedupeTaskField(group, backlog.Task.Context)
 }
 
-// expandFiles turns each glob or directory into the files it names on disk; a plain path that
-// doesn't exist is kept only when its parent directory does.
+// expandFiles turns each glob or directory into the files it names on disk, keeps a plain path
+// verbatim whether or not it exists yet, and rejects any pattern that resolves outside root.
 func expandFiles(root string, patterns []string) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string
@@ -192,7 +178,10 @@ func expandFiles(root string, patterns []string) ([]string, error) {
 		}
 	}
 	for _, pattern := range patterns {
-		clean := strings.TrimSuffix(filepath.ToSlash(pattern), "/")
+		clean := strings.TrimSuffix(path.Clean(filepath.ToSlash(pattern)), "/")
+		if !withinRoot(clean) {
+			continue
+		}
 		info, err := os.Stat(filepath.Join(root, clean))
 		switch {
 		case err == nil && info.IsDir():
@@ -213,12 +202,18 @@ func expandFiles(root string, patterns []string) ([]string, error) {
 			for _, match := range matches {
 				add(match)
 			}
-		case parentExists(root, clean):
+		default:
 			add(clean)
 		}
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// withinRoot reports whether a cleaned relative pattern stays under root, rejecting an absolute
+// path or a ../ escape before it ever reaches stat or walk.
+func withinRoot(clean string) bool {
+	return clean != ".." && !strings.HasPrefix(clean, "../") && !path.IsAbs(clean)
 }
 
 // filesUnder lists every file under a declared directory, relative to root.
@@ -273,28 +268,6 @@ func filesMatching(root, pattern string) ([]string, error) {
 	return out, err
 }
 
-// parentExists reports whether path's parent directory exists under root, allowing a new file
-// only where the directory it belongs in is already real.
-func parentExists(root, path string) bool {
-	dir := filepath.Dir(path)
-	if dir == "." {
-		return true
-	}
-	info, err := os.Stat(filepath.Join(root, dir))
-	return err == nil && info.IsDir()
-}
-
-// countPackages counts the distinct directories a card's Go files sit in.
-func countPackages(files []string) int {
-	dirs := map[string]bool{}
-	for _, file := range files {
-		if strings.HasSuffix(file, ".go") {
-			dirs[filepath.Dir(file)] = true
-		}
-	}
-	return len(dirs)
-}
-
 // briefBytes sums the raw byte size of each task's title and its own yaml block, an estimate of
 // what the card's task list costs a brief before the context pack adds its own bytes.
 func briefBytes(parsed backlog.Backlog, group backlog.Group) int {
@@ -308,20 +281,6 @@ func briefBytes(parsed backlog.Backlog, group backlog.Group) int {
 		}
 	}
 	return total
-}
-
-// resolveBase is the branch a group's work targets: an explicit base, the branch of a group named
-// in depends_on, or the repo's default.
-func resolveBase(root string, parsed backlog.Backlog, group backlog.Group) string {
-	if base := group.Base(); base != "" {
-		return base
-	}
-	for _, id := range group.DependsOn() {
-		if other, ok := parsed.Group(id); ok {
-			return other.Branch()
-		}
-	}
-	return line.DefaultBase(root)
 }
 
 // builderTier is the builder role's tier, overridden to heavy only when a task in the group asks for it.
@@ -339,7 +298,7 @@ func builderTier(root string, group backlog.Group) (string, error) {
 }
 
 // hash returns the sha256 of the card's own JSON, computed with the hash field blank, so the same
-// content always gives the same card hash (REQ-7).
+// content always gives the same card hash.
 func hash(card Card) string {
 	card.Hash = ""
 	data, err := json.Marshal(card)

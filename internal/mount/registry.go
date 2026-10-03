@@ -199,7 +199,7 @@ var Executable = func() (string, error) {
 
 // BinaryPath is the running toolkit binary's absolute path, or bin/<name> relative to the main checkout under go run.
 func BinaryPath() string {
-	name := "komodo-" + runtime.GOOS + "-" + runtime.GOARCH
+	name := "komodo"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -400,15 +400,6 @@ func GuardConfigPaths() []string {
 	var out []string
 	for _, tools := range GuardHosts() {
 		out = append(out, tools.ConfigPaths...)
-	}
-	return out
-}
-
-// GuardPrivatePatterns are every private-text pattern a registered mount's guard refuses to send out.
-func GuardPrivatePatterns() []string {
-	var out []string
-	for _, tools := range GuardHosts() {
-		out = append(out, tools.PrivatePatterns...)
 	}
 	return out
 }

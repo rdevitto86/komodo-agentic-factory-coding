@@ -3,6 +3,7 @@ package backlog
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +37,18 @@ func TestFindLooksAtTheRootThenDocs(t *testing.T) {
 	}
 	if _, err := Load(filepath.Join(root, "missing.md")); err == nil {
 		t.Fatal("Load read a file that does not exist")
+	}
+}
+
+// TestParseKeepsAGoalLineWithNoShipsAsClause proves a goal line with no inline version still
+// reaches the epic's title, instead of being dropped by the lookahead.
+func TestParseKeepsAGoalLineWithNoShipsAsClause(t *testing.T) {
+	text := "## [EPIC-09] Nine\n*Goal: ship the thing.*\n\n### [TG-09.1] A group\n```yaml\ntype: feat\nversion: 1.0.0\n```\n"
+	epic, ok := Parse(text).Epic("EPIC-09")
+	if !ok {
+		t.Fatal("EPIC-09 not parsed")
+	}
+	if !strings.Contains(epic.Title, "ship the thing") {
+		t.Fatalf("title = %q, want it to carry the goal line", epic.Title)
 	}
 }

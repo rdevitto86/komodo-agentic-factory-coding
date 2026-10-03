@@ -114,7 +114,7 @@ func pinRelease(t *testing.T, root, version string, body []byte, sum string) (st
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("KOMODO_RELEASE_URL", "https://example.test/download")
-	name := gate.LocalTarget().Name
+	name := gate.PlatformName()
 	base := "https://example.test/download/v" + strings.TrimPrefix(version, "v") + "/"
 	served := map[string][]byte{
 		base + name:         body,
@@ -153,7 +153,7 @@ func TestSyncFetchesThePinnedReleaseOutsideTheToolkit(t *testing.T) {
 		{name: "a release with no manifest installs nothing", pin: "1.0.0-beta.2", sum: good, drop: "SHA256SUMS",
 			wantErr: "404"},
 		{name: "a release with no binary installs nothing", pin: "1.0.0-beta.2", sum: good,
-			drop: gate.LocalTarget().Name, wantErr: "404"},
+			drop: gate.PlatformName(), wantErr: "404"},
 		{name: "no home installs nothing", pin: "1.0.0-beta.2", sum: good, noHome: true, wantErr: "HOME"},
 		{name: "a pinned release installs once its checksum matches", pin: "1.0.0-beta.2", sum: good,
 			wantLine: "binary: fetched release 1.0.0-beta.2, checksum verified", wantBody: true},
@@ -692,7 +692,7 @@ func TestSyncCleanupReturnsAForgeThatRefusesThePR(t *testing.T) {
 	}
 }
 
-func TestSyncBinaryDoesNotStampDirtyTree(t *testing.T) {
+func TestSyncBinaryDropsTheStampOnADirtyTree(t *testing.T) {
 	root, ahead := syncRepo(t)
 	builds, installs := fakeBuild(t)
 	toolkitCheckout(t, root, ahead)
@@ -710,11 +710,8 @@ func TestSyncBinaryDoesNotStampDirtyTree(t *testing.T) {
 	if *installs != 0 {
 		t.Fatalf("installs = %d, want 0; out = %s", *installs, out.String())
 	}
-	recorded, err := os.ReadFile(filepath.Join(root, "bin", BuiltFrom))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(recorded)) != ahead {
-		t.Fatalf("marker = %q, want %q (unchanged)", recorded, ahead)
+	// A dirty tree's build is no commit's, so the stamp goes and the next clean sync rebuilds.
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("marker still present (%v); a dirty build must drop it", err)
 	}
 }

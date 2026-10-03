@@ -12,6 +12,7 @@ import (
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/conductor"
 	"komodo/internal/line"
+	"komodo/internal/mount"
 )
 
 // escalateBacklog is a one-group backlog whose group declares its version and its tasks their proof.
@@ -88,7 +89,9 @@ func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 		}
 		writeFile(t, root, filepath.Join(line.RolesDir, name), string(data))
 	}
-	driver, err := newDriver(root, requestsPlan(), "run-1", nil, nil, false)
+	plan := requestsPlan()
+	plan.Profile.Tiers.Heavy = mount.Machine{Provider: "anthropic", Model: "claude-opus-4-heavy"}
+	driver, err := newDriver(root, plan, "run-1", nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +104,14 @@ func TestNewDriverWiresTheOrchestratorLintAndBlock(t *testing.T) {
 	}
 	if _, err := driver.Lint(); err != nil {
 		t.Fatalf("lint = %v, want the worktree's backlog linted", err)
+	}
+	builder, ok := plan.Profile.Machine("builder")
+	if !ok {
+		t.Fatal("the plan's builder role has no machine; the fixture must name one")
+	}
+	if driver.Heavy.Model != plan.Profile.Tiers.Heavy.Model || driver.Heavy.Effort != builder.Effort {
+		t.Fatalf("heavy = %+v, want the profile's heavy model at the builder machine's effort %q",
+			driver.Heavy, builder.Effort)
 	}
 }
 
