@@ -75,6 +75,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkOverlay(mount.OverlayPath())...)
 	problems = append(problems, checkWorkflows(root)...)
 	problems = append(problems, checkLegacyBacklog(root)...)
+	problems = append(problems, checkStalledBacklog(root, now())...)
 	if !options.NoGit {
 		problems = append(problems, checkAGENTSTracked(root)...)
 		if options.Warn != nil {
