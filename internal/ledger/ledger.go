@@ -15,9 +15,9 @@ import (
 
 // File names, both under .komodo and both gitignored.
 const (
-	RunFile     = "line.jsonl"
-	AdhocFile   = "adhoc.jsonl"
-	EventsFile  = "events.jsonl"
+	RunFile    = "line.jsonl"
+	AdhocFile  = "adhoc.jsonl"
+	EventsFile = "events.jsonl"
 )
 
 // Limits at which the ad hoc file is truncated by its next writer.
