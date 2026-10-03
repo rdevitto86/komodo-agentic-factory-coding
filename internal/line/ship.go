@@ -17,6 +17,7 @@ import (
 
 	"komodo/internal/backlog"
 	"komodo/internal/changelog"
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
 	"komodo/internal/ledger"
@@ -127,15 +128,11 @@ func writeShipHandoff(root string, handoff ShipHandoff) error {
 	if !PlainGroup(handoff.Group) {
 		return fmt.Errorf("a ship handoff needs a plain group id, not %q", handoff.Group)
 	}
-	path := HandoffPath(root, handoff.Group)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(handoff, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return fsx.WriteFile(HandoffPath(root, handoff.Group), append(data, '\n'), 0o644)
 }
 
 // ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.

@@ -2,6 +2,7 @@
 package lease
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/proc"
 )
@@ -58,20 +60,33 @@ func path(dir, branch string) (string, error) {
 	return filepath.Join(leases, url.PathEscape(branch)+".json"), nil
 }
 
-// Take writes a lease on branch for holder, replacing any earlier one.
+// afterTake lets a test land a second writer between Take's write and its reread.
+var afterTake = func() {}
+
+// Take writes a lease on branch for holder atomically, replacing any earlier one; a second Take
+// that lands on the file before this one rereads it fails this call instead of a false success.
 func Take(dir, group, branch string, holder proc.Process, now time.Time) error {
 	file, err := path(dir, branch)
 	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return err
 	}
 	data, err := json.Marshal(Lease{Group: group, Branch: branch, Holder: holder, Taken: now})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(file, append(data, '\n'), 0o644)
+	data = append(data, '\n')
+	if err := fsx.WriteFile(file, data, 0o644); err != nil {
+		return err
+	}
+	afterTake()
+	after, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(after, data) {
+		return fmt.Errorf("%s: another holder took the lease while this one wrote it", branch)
+	}
+	return nil
 }
 
 // Held returns branch's lease while it is under TTL old and its holder still runs.

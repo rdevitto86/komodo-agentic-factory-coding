@@ -2,6 +2,7 @@ package line
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,10 +20,13 @@ const groupText = "### [TG-05.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n`
 	"#### [TSK-05.1.3] Three [P: C] [READY]\n```yaml\nfiles: [a/three.go]\ndone_when: [\"go test ./a/...\"]\ndepends_on: [TSK-05.1.1]\n```\n"
 
 // repo writes a throwaway repo root holding a backlog, seeded from legacy-grammar text as group
-// files, and the role files.
+// files, and the role files; it is a real git repo, so a station that leases a branch finds one.
 func repo(t *testing.T, text string) string {
 	t.Helper()
 	root := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
 	backlogtest.SeedText(t, root, text)
 	writeBuilderRole(t, root)
 	return root

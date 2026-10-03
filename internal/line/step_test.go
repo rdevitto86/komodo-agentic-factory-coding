@@ -431,11 +431,14 @@ func TestEveryActionNamesItsResolvedParts(t *testing.T) {
 	}
 }
 
-// noKomodoRepo writes only a backlog for the text given, so the toolkit falls back to the
-// embedded komodo/ tree for its roles, skills, and facets, unlike stepRepo's own overrides.
+// noKomodoRepo is a real git repo holding only a backlog for the text given, so the toolkit falls
+// back to the embedded komodo/ tree for its roles, skills, and facets, unlike stepRepo's own overrides.
 func noKomodoRepo(t *testing.T, text string) string {
 	t.Helper()
 	root := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
 	backlogtest.SeedText(t, root, text)
 	return root
 }

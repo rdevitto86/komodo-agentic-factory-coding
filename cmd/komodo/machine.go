@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"komodo/internal/fsx"
 	"komodo/internal/ledger"
 	"komodo/internal/line"
 	"komodo/internal/mount"
@@ -90,14 +91,11 @@ func runMachine(root string, args []string) {
 	if err != nil {
 		fail(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(line.ResultPath(root, taskID)), 0o755); err != nil {
-		fail(err)
-	}
 	data, err := json.MarshalIndent(result.Value, "", "  ")
 	if err != nil {
 		fail(err)
 	}
-	if err := os.WriteFile(line.ResultPath(root, taskID), data, 0o644); err != nil {
+	if err := fsx.WriteFile(line.ResultPath(root, taskID), data, 0o644); err != nil {
 		fail(err)
 	}
 	entry := ledger.Entry{
