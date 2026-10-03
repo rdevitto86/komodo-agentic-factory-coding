@@ -77,11 +77,6 @@ func checkEpicsWithRunners(root string, defaultBranch string, gitRun GitRunner, 
 	return problems
 }
 
-// hasDraftPRForBranch reports whether a draft PR exists for the given branch on the remote.
-func hasDraftPRForBranch(root, branch string, run pr.Runner) bool {
-	return hasDraftPRForBranchWithRunner(root, branch, run)
-}
-
 // hasDraftPRForBranchWithRunner reports whether a draft PR exists for the given branch on the remote.
 func hasDraftPRForBranchWithRunner(root, branch string, run pr.Runner) bool {
 	out, err := run(root, "pr", "list", "--head", branch, "--state", "open", "--json", "number,isDraft")
@@ -101,11 +96,6 @@ func hasDraftPRForBranchWithRunner(root, branch string, run pr.Runner) bool {
 		}
 	}
 	return false
-}
-
-// checkGroupPRBases reports group PRs whose base is main while their epic branch exists.
-func checkGroupPRBases(root, defaultBranch string, parsed backlog.Backlog, run pr.Runner) []Problem {
-	return checkGroupPRBasesWithRunners(root, defaultBranch, parsed, git.Run, run)
 }
 
 // checkGroupPRBasesWithRunners reports group PRs whose base is main while their epic branch exists.
