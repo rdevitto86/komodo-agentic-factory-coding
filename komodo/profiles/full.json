@@ -7,6 +7,6 @@
     "quality": { "tier": "standard", "effort": "medium" },
     "planner": { "tier": "heavy", "effort": "high" },
     "scout": { "tier": "light", "effort": "low" },
-    "orchestrator": { "tier": "standard", "effort": "medium" }
+    "escalation": { "tier": "standard", "effort": "medium" }
   }
 }
