@@ -2,6 +2,9 @@ package conductor
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"komodo/internal/backlog"
@@ -26,12 +29,21 @@ func (d *Driver) stop(ctx context.Context, s *State, r *round) error {
 	})
 }
 
-// Block saves the group's work as a WIP commit, writes its blocker note on its branch, and publishes the branch
-// as a draft PR labelled status: blocked; once ctx is done it publishes nothing.
+// Block saves the group's work as a WIP commit, writes its blocker note, and publishes a draft PR
+// labelled status: blocked; a note that never publishes fails, one missing only its label warns.
 func (l *Line) Block(ctx context.Context, note backlog.BlockerNote) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := line.ShipBlocked(l.Root, l.Plan, note, l.Client)
-	return err
+	result, err := line.ShipBlocked(l.Root, l.Plan, note, l.Client)
+	if err != nil {
+		return err
+	}
+	if result.URL == "" && len(result.Warnings) > 0 {
+		return fmt.Errorf("%s's blocker note stayed local: %s", l.Plan.Group, strings.Join(result.Warnings, "; "))
+	}
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(os.Stderr, "komodo: %s's blocker note: %s\n", l.Plan.Group, warning)
+	}
+	return nil
 }

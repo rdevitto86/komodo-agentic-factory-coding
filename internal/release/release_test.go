@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"komodo/internal/gate"
-
-	"komodo/internal/changelog"
 )
 
 const twoVersions = "# Changelog\n\n## 2.0.0 — 2026-09-21\n\n- the line\n\n## 1.3.0 — 2026-09-01\n\n- old\n"
@@ -213,24 +211,17 @@ func TestAPrereleaseSortsBeforeItsReleaseAndByItsNumber(t *testing.T) {
 	}
 }
 
-func TestReadChangelogFoldsTheFragmentsBesideIt(t *testing.T) {
+func TestReadChangelogReadsTheFileAsWritten(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "CHANGELOG.md")
+	if text, err := ReadChangelog(path); err != nil || text != "" {
+		t.Fatalf("a missing changelog read %q, %v", text, err)
+	}
 	if err := os.WriteFile(path, []byte(twoVersions), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := changelog.WriteFragment(root, "2.1.0", "TG-05.2", "- **TG-05.2** The host contract (3 task(s))"); err != nil {
-		t.Fatal(err)
-	}
-	text, err := ReadChangelog(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := Latest(text); got != "2.1.0" {
-		t.Fatalf("latest = %s; a fragment's version must count", got)
-	}
-	if drift := Check(text, nil, []string{"2.1.0"}); len(drift) != 0 {
-		t.Fatalf("drift = %v; a version only a fragment names is still named", drift)
+	if text, err := ReadChangelog(path); err != nil || text != twoVersions {
+		t.Fatalf("read %q, %v", text, err)
 	}
 }
 

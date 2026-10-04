@@ -1,6 +1,7 @@
 package mount
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -27,12 +28,14 @@ type RateLimit struct {
 	ResetsAt time.Time
 }
 
-// Event is one line a running session's stream reports: a turn's usage and cost, or a rate limit.
+// Event is one line a stream reports: a turn's usage, a rate limit, a session ID, or a read error.
 type Event struct {
 	Turns     int
 	Usage     TaskUsage
 	CostUSD   float64
 	RateLimit *RateLimit
+	SessionID string
+	Err       error
 }
 
 // liveRateLimit is the freshest rate_limit_event any session reported, pace's only live source.
@@ -82,17 +85,17 @@ type Capabilities struct {
 // Contract is the host contract every mount implements.
 type Contract interface {
 	// Preflight reports whether the host is installed, pinned and logged in, or the fix when not.
-	Preflight() error
+	Preflight(ctx context.Context) error
 	// Start runs a role headless and returns the handle its session runs under.
-	Start(req StartRequest) (Handle, error)
+	Start(ctx context.Context, req StartRequest) (Handle, error)
 	// Resume continues a stopped session with new input, under the same or a fresh handle.
-	Resume(handle Handle, input string) (Handle, error)
+	Resume(ctx context.Context, handle Handle, input string) (Handle, error)
 	// Stream reports a running session's turns, usage, cost and rate limits as they happen.
-	Stream(handle Handle) (<-chan Event, error)
+	Stream(ctx context.Context, handle Handle) (<-chan Event, error)
 	// Result returns a finished session's schema-checked JSON.
 	Result(handle Handle) (Result, error)
 	// Stop ends a session and its whole process tree.
-	Stop(handle Handle) error
+	Stop(ctx context.Context, handle Handle) error
 	// Capabilities declares what this mount's sessions can do.
 	Capabilities() Capabilities
 }

@@ -515,6 +515,25 @@ func TestBuildBriefFallsBackToTheTaskWithoutAQueueCard(t *testing.T) {
 // machine: building twice from the same root must never depend on map iteration or a clock.
 func TestBuildBriefIsDeterministic(t *testing.T) {
 	root := briefRepo(t)
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The task declares a glob; the card carries its multi-file expansion from disk.
+	globBacklog := "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-07.1.1] Build the thing [P: C] [READY]\n```yaml\nfiles: [a/*.go]\n" +
+		"done_when:\n  - go test ./a/...\ncontext:\n  - docs/spec/SDD.md#The plan\n```\n"
+	reseedGroupFiles(t, root, globBacklog)
+	write("a/two.go", "package a\n\nfunc Two() {}\n")
+	write("a/three.go", "package a\n\nfunc Three() {}\n")
+	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
+		`{"group":"TG-07.1","files":["a/one.go","a/three.go","a/two.go"],"context":["docs/spec/SDD.md#The plan"]}`)
+
 	first, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
 	if err != nil {
 		t.Fatal(err)
@@ -525,6 +544,37 @@ func TestBuildBriefIsDeterministic(t *testing.T) {
 	}
 	if first.Text != second.Text {
 		t.Fatalf("brief bytes differ between two builds of the same card and tree:\n%s\n---\n%s", first.Text, second.Text)
+	}
+}
+
+// TestBuildBriefTreatsANewContextRefAsCardDivergence proves a card written before a task gained a
+// second context reference cannot silently narrow the brief to its own stale, partial list.
+func TestBuildBriefTreatsANewContextRefAsCardDivergence(t *testing.T) {
+	root := briefRepo(t)
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The task now cites a second context ref; the card below predates it and never saw it.
+	text := "### [TG-07.1] A group\n```yaml\ntype: feat\nversion: 2.0.0\n```\n\n" +
+		"#### [TSK-07.1.1] Build the thing [P: C] [READY]\n```yaml\nfiles: [a/one.go, bin/komodo-linux-amd64]\n" +
+		"done_when:\n  - go test ./a/...\ncontext:\n  - docs/spec/SDD.md#The plan\n  - docs/spec/SDD.md#Other\n```\n"
+	reseedGroupFiles(t, root, text)
+	write(filepath.Join(StateDir, "queue", "TG-07.1.json"),
+		`{"group":"TG-07.1","files":["a/one.go","bin/komodo-linux-amd64"],"context":["docs/spec/SDD.md#The plan"],`+
+			`"tasks":[{"id":"TSK-07.1.1","title":"Build the thing"}]}`)
+
+	brief, err := BuildBrief(root, root, "TSK-07.1.1", "builder", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Text, "Build it.") || !strings.Contains(brief.Text, "No.") {
+		t.Fatalf("a card predating a new context ref must fall back to the task's own full list:\n%s", brief.Text)
 	}
 }
 

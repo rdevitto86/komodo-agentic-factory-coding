@@ -12,6 +12,9 @@ import (
 	"komodo/internal/changelog"
 )
 
+// MaxGroupTasks is the most buildable tasks one group holds before lint suggests a split.
+const MaxGroupTasks = 12
+
 var slugDrop = regexp.MustCompile(`[^a-z0-9_ -]+`)
 
 // Slug is the anchor form of a heading, matching GitHub: lower case, punctuation
@@ -72,18 +75,18 @@ func Lint(parsed Backlog) []string {
 		}
 		seen[group.ID] = group.Heading
 		// Filed findings wait in REFINEMENT and no builder works them, so only the rest count toward the cap.
-		if built := buildable(group); built > 12 {
-			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of 12 (suggest a split per REQ-8)", group.ID, built))
+		if built := buildable(group); built > MaxGroupTasks {
+			problems = append(problems, fmt.Sprintf("%s: %d tasks exceeds limit of %d (suggest a split per REQ-8)", group.ID, built, MaxGroupTasks))
 		}
-		var depBranches []string
+		var depBranches, depTitleBranches []string
 		for _, dep := range group.DependsOn() {
 			if !groupIDs[dep] {
 				problems = append(problems, fmt.Sprintf("%s: depends_on names unknown group %s", group.ID, dep))
 				continue
 			}
 			if depGroup, ok := parsed.Group(dep); ok {
-				// A dependency's branch already on origin may carry the title-only form, which still counts.
-				depBranches = append(depBranches, depGroup.Branch(), depGroup.TitleBranch())
+				depBranches = append(depBranches, depGroup.Branch())
+				depTitleBranches = append(depTitleBranches, depGroup.TitleBranch())
 				if own, later := group.Version(), depGroup.Version(); own != "" && later != "" && changelog.Compare(own, later) < 0 {
 					problems = append(problems, fmt.Sprintf(
 						"%s: depends_on names %s at a later version (%s depends on %s)", group.ID, dep, own, later))
@@ -91,9 +94,14 @@ func Lint(parsed Backlog) []string {
 			}
 		}
 		epicBranch := group.EpicBranch()
-		if base := group.Base(); base != "" && base != "main" && base != epicBranch && !contains(depBranches, base) {
+		switch base := group.Base(); {
+		case base == "" || base == epicBranch || contains(depBranches, base):
+		case contains(depTitleBranches, base):
 			problems = append(problems, fmt.Sprintf(
-				"%s: base %q is neither main nor its epic branch %q nor the branch of a group named in depends_on", group.ID, base, epicBranch))
+				"%s: base %q names a dependency's title-only branch, which a new cut never creates; use its id form instead", group.ID, base))
+		default:
+			problems = append(problems, fmt.Sprintf(
+				"%s: base %q is neither its epic branch %q nor the branch of a group named in depends_on", group.ID, base, epicBranch))
 		}
 	}
 	for _, epicID := range mismatchEpics {
@@ -233,6 +241,17 @@ func NotesGroupFile(file GroupFile) []string {
 	return notes
 }
 
+// onlyExistence reports whether every done_when command only tests that a path exists, which passes
+// before any change as well as after.
+func onlyExistence(checks []string) bool {
+	for _, check := range checks {
+		if !strings.HasPrefix(strings.TrimSpace(check), "test -f ") && !strings.HasPrefix(strings.TrimSpace(check), "test -e ") {
+			return false
+		}
+	}
+	return len(checks) > 0
+}
+
 // untestedCallerNote is the note text for a task whose done_when tests only its own package.
 func untestedCallerNote(id string) string {
 	return fmt.Sprintf("%s: done_when only runs go test of its own package(s); files name no caller such as cmd/komodo, the conductor, or a hook", id)
@@ -346,6 +365,12 @@ func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs m
 			"%s: version %q must be x.y.z, or x.y.z-alpha.n, -beta.n or -rc.n, the four phases alpha, beta, rc, stable",
 			file.ID, version))
 	}
+	switch groupType := file.Type; {
+	case groupType == "":
+		problems = append(problems, fmt.Sprintf("%s: no type; a group declares its branch and commit type `type: feat`", file.ID))
+	case !contains(Types, groupType):
+		problems = append(problems, fmt.Sprintf("%s: type must be one of %s", file.ID, strings.Join(Types, "|")))
+	}
 	for _, dep := range file.DependsOn {
 		if !groupIDs[dep] && !taskIDs[dep] {
 			problems = append(problems, fmt.Sprintf("%s: depends_on names unknown group or task %s", file.ID, dep))
@@ -375,6 +400,8 @@ func LintGroupFile(root string, file GroupFile, text string, groupIDs, taskIDs m
 		}
 		if len(task.Checks) == 0 {
 			problems = append(problems, fmt.Sprintf("%s: agent task declares no done_when commands", task.ID))
+		} else if onlyExistence(task.Checks) {
+			problems = append(problems, fmt.Sprintf("%s: done_when only checks that a file exists; name the command that proves the change", task.ID))
 		}
 	}
 	for _, line := range strings.Split(text, "\n") {
@@ -430,6 +457,32 @@ func LintGroupFileEpics(files []GroupFile) []string {
 		}
 		problems = append(problems, fmt.Sprintf("%s: version %q disagrees with groups %s; split the epic per version",
 			epicID, entry.version, strings.Join(entry.groups, ", ")))
+	}
+	return problems
+}
+
+// LintGroupFileDuplicates reports a problem for every group or task id more than one docs/backlog
+// file declares, so findGroupFile never appends to whichever file happens to sort first.
+func LintGroupFileDuplicates(files []GroupFile) []string {
+	var problems []string
+	groupSeen := map[string]bool{}
+	for _, file := range files {
+		if file.ID == "" {
+			continue
+		}
+		if groupSeen[file.ID] {
+			problems = append(problems, fmt.Sprintf("%s: duplicate group id, declared by more than one file", file.ID))
+		}
+		groupSeen[file.ID] = true
+	}
+	taskSeen := map[string]bool{}
+	for _, file := range files {
+		for _, task := range file.Tasks {
+			if taskSeen[task.ID] {
+				problems = append(problems, fmt.Sprintf("%s: duplicate task id, declared by more than one file", task.ID))
+			}
+			taskSeen[task.ID] = true
+		}
 	}
 	return problems
 }
