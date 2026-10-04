@@ -132,8 +132,11 @@ func TestEveryLineRoleIsDeniedThePRDTheGoldenSuiteAndThePolicy(t *testing.T) {
 }
 
 func TestARoleNamingCommandClassesRunsThemInAShellItDoesNotDeclare(t *testing.T) {
-	req := mount.StartRequest{Role: "reviewer", Tools: []string{"read", "search"}, Schema: []byte(`{}`)}
-	argv, _, _ := Session(t.TempDir(), goRepo(t), req, "", "", "m", "", 10, 0)
+	req := mount.StartRequest{Role: "reviewer", Brief: "b", Tools: []string{"read", "search"}, Schema: []byte(`{}`)}
+	argv, _, _, err := Session(sandboxedSessionRoot(t), goRepo(t), req, "", "", "m", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(argv, " ")
 	for _, want := range []string{"--tools Read, Grep, Glob, Bash", "Bash(git diff:*)", "Bash(git commit:*)"} {
 		if !strings.Contains(joined, want) {

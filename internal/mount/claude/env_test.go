@@ -48,7 +48,10 @@ func TestALaunchedSessionStartsFromAScrubbedEnvironment(t *testing.T) {
 	t.Setenv("GH_TOKEN", token)
 	t.Setenv("GITLAB_TOKEN", token)
 	t.Setenv(subprocessScrubEnv, "1")
-	_, env, _ := Session("/repo", "/worktree", mount.StartRequest{Role: "builder"}, "", "", "sonnet", "", 10, 0)
+	_, env, _, err := Session(sandboxedSessionRoot(t), "/worktree", mount.StartRequest{Role: "builder", Brief: "b"}, "", "", "sonnet", "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, entry := range env {
 		if strings.Contains(entry, token) {
 			t.Fatalf("%s reached the session", entry)

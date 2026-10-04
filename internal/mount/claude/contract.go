@@ -119,7 +119,10 @@ func (m *Mount) Preflight(ctx context.Context) error {
 // Start runs a role headless with Session's argv and environment, in the worktree, in its own
 // process group, and returns the handle its session runs under: the host's own session ID.
 func (m *Mount) Start(ctx context.Context, req mount.StartRequest) (mount.Handle, error) {
-	argv, env, prompt := Session(m.root, m.worktree, req, "", "", req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
+	argv, env, prompt, err := Session(m.root, m.worktree, req, "", "", req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
+	if err != nil {
+		return "", err
+	}
 	return m.spawn(ctx, argv, env, prompt, req)
 }
 
@@ -130,7 +133,10 @@ func (m *Mount) Resume(ctx context.Context, handle mount.Handle, input string) (
 	if err != nil {
 		return "", err
 	}
-	argv, env, prompt := Session(m.root, m.worktree, req, handle, input, req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
+	argv, env, prompt, err := Session(m.root, m.worktree, req, handle, input, req.Model, req.Effort, m.maxTurns, m.maxBudgetUSD)
+	if err != nil {
+		return "", err
+	}
 	return m.spawn(ctx, append(argv, "--fork-session"), env, prompt, req)
 }
 

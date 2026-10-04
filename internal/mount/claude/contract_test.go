@@ -97,6 +97,7 @@ func TestContractStartRunsClaudeAndStreamsTheStartFixture(t *testing.T) {
 	ctx := context.Background()
 	setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(ctx, newFakeRequest())
@@ -141,6 +142,7 @@ func TestContractResumePassesResumeWithTheFirstSessionsID(t *testing.T) {
 	ctx := context.Background()
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	first, err := m.Start(ctx, newFakeRequest())
@@ -195,6 +197,7 @@ func TestContractResumesAHandleFromAnEarlierProcess(t *testing.T) {
 	ctx := context.Background()
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	earlier := NewMount(root, worktree, 10, 0)
 	first, err := earlier.Start(ctx, newFakeRequest())
 	if err != nil {
@@ -255,6 +258,7 @@ func TestContractResumeWithoutADrainedStreamFails(t *testing.T) {
 	ctx := context.Background()
 	setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(ctx, newFakeRequest())
@@ -271,6 +275,7 @@ func TestContractStopKillsTheProcessGroup(t *testing.T) {
 	setupFakeClaude(t)
 	t.Setenv("FAKE_CLAUDE_HANG", "1")
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(ctx, newFakeRequest())
@@ -380,6 +385,7 @@ func TestContractStartRunsInTheWorktree(t *testing.T) {
 	ctx := context.Background()
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(ctx, newFakeRequest())
@@ -417,7 +423,9 @@ func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
 	saved, savedInterval := proc.DefaultLimits, proc.WatchInterval
 	proc.DefaultLimits, proc.WatchInterval = proc.Limits{Procs: 10}, 50*time.Millisecond
 	t.Cleanup(func() { proc.DefaultLimits, proc.WatchInterval = saved, savedInterval })
-	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
+	root := t.TempDir()
+	withLineSettings(t, root)
+	m := NewMount(root, t.TempDir(), 10, 0)
 
 	handle, err := m.Start(ctx, newFakeRequest())
 	if err != nil {

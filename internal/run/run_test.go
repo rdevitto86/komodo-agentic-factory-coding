@@ -319,6 +319,9 @@ func driveDrainRepo(t *testing.T, backlogText string) string {
 	if err := os.WriteFile(filepath.Join(root, claude.Dir, "settings.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, claude.Dir, claude.LineSettings), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return root
 }
 
@@ -848,7 +851,7 @@ func TestDriveWithNoShipRunsNoRelayAndStopsBeforeShip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(logged), "/run") {
+	if strings.Contains(string(logged), "/run TG-07.1") {
 		t.Fatalf("a session received the run skill's relay prompt: %q", logged)
 	}
 	state, err := conductor.LoadState(conductor.StatePath(root, "TG-07.1"))

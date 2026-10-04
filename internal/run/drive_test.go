@@ -78,6 +78,9 @@ func driveRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, claude.Dir, "settings.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, claude.Dir, claude.LineSettings), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return root
 }
 
