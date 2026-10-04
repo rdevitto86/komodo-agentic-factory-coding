@@ -144,6 +144,15 @@ func TestStreamClosesTheSessionsLogFiles(t *testing.T) {
 	ctx := context.Background()
 	setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
+	settings := filepath.Join(root, Dir, LineSettings)
+	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"permissions":{"deny":["Edit(~/.claude/**)"]},"hooks":{"PreToolUse":[{"matcher":"*","hooks":[` +
+		`{"type":"command","command":"komodo guard"}]}]}}`
+	if err := os.WriteFile(settings, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	m := NewMount(root, worktree, 10, 0)
 
 	handle, err := m.Start(ctx, newFakeRequest())
