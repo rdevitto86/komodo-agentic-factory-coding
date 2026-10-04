@@ -53,6 +53,20 @@ func TestOrchestratorRequestFillsTheRoleWithTheEscalation(t *testing.T) {
 	}
 }
 
+// TestOrchestratorRequestNeverStartsWithAnEmptyModel proves a profile with no escalation machine
+// still starts the session on the role's own tier, where an empty model crashes the host.
+func TestOrchestratorRequestNeverStartsWithAnEmptyModel(t *testing.T) {
+	plan := &line.Plan{Group: "TG-40.1"}
+	plan.Profile.Tiers = mount.Tiers{Standard: mount.Machine{Model: "standard-model"}, Heavy: mount.Machine{Model: "heavy-model"}}
+	req, err := orchestratorRequest(t.TempDir(), plan, conductor.Escalation{Group: "TG-40.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Model != "standard-model" {
+		t.Fatalf("model = %q, want the escalation role's standard tier", req.Model)
+	}
+}
+
 func TestOrchestratorRequestFailsWithNoOrchestratorRole(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, filepath.Join(line.RolesDir, "builder.md"), "---\nname: builder\n---\n")

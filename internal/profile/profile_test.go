@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -440,5 +441,31 @@ func TestAnUnknownRoleHasNoMachine(t *testing.T) {
 	got := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
 	if _, ok := got.Machine("nobody"); ok {
 		t.Fatal("a role the profile does not name must have no machine")
+	}
+}
+
+// TestEveryShippedProfileNamesTheConductorsRoles proves each shipped profile gives the builder and
+// the escalation session a machine, so a renamed role never starts a session with no model.
+func TestEveryShippedProfileNamesTheConductorsRoles(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", "komodo", "profiles", "*.json"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("profiles = %v, %v", paths, err)
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var shipped struct {
+			Roles map[string]RoleProfile `json:"roles"`
+		}
+		if err := json.Unmarshal(data, &shipped); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		for _, role := range []string{"builder", "escalation"} {
+			if _, ok := shipped.Roles[role]; !ok {
+				t.Errorf("%s names no %s machine", filepath.Base(path), role)
+			}
+		}
 	}
 }

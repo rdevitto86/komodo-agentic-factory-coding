@@ -4,6 +4,6 @@
     "review-economy": { "tier": "standard", "effort": "high" },
     "planner": { "tier": "standard", "effort": "high" },
     "scout": { "tier": "light", "effort": "low" },
-    "orchestrator": { "tier": "standard", "effort": "medium" }
+    "escalation": { "tier": "standard", "effort": "medium" }
   }
 }
