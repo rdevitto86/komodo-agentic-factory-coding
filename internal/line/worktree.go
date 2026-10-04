@@ -47,9 +47,6 @@ func Fetch(root, base string) error {
 	return err
 }
 
-// BranchName is the branch a group's work lands on: its type and its slug.
-func BranchName(groupType, slug string) string { return groupType + "/" + slug }
-
 // RefusedPushURL is the pushurl that makes git push origin fail inside a line worktree.
 const RefusedPushURL = "refused://the-line-pushes"
 

@@ -464,7 +464,7 @@ func gitCommand(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// TestRebuildStampsTheNewHeadWhenAGoFileChanged proves REQ-5: after a pull that changes a Go file,
+// TestRebuildStampsTheNewHeadWhenAGoFileChanged proves that after a pull that changes a Go file,
 // bin/.built-from equals the new HEAD.
 func TestRebuildStampsTheNewHeadWhenAGoFileChanged(t *testing.T) {
 	root := t.TempDir()
