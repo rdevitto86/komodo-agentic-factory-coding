@@ -188,3 +188,45 @@ func TestGateStillRunsToolkitChecksWhenNoCommandsJsonExists(t *testing.T) {
 		}
 	}
 }
+
+// TestGateCommitRunsNoTests proves the pre-commit gate builds and vets but leaves the tests to the push.
+func TestGateCommitRunsNoTests(t *testing.T) {
+	root := emptyRepo(t)
+	if err := os.MkdirAll(filepath.Join(root, ".komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commands := []byte(`{"compile": "echo compile-ran", "verify": "echo verify-ran"}`)
+	if err := os.WriteFile(filepath.Join(root, ".komodo", "commands.json"), commands, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "", "gate", "--commit")
+	if !strings.Contains(got.stdout, "compile-ran") || strings.Contains(got.stdout, "verify-ran") {
+		t.Fatalf("stdout %q, want the compile command and not the verify command", got.stdout)
+	}
+	if got = runCLI(t, root, "", "gate"); !strings.Contains(got.stdout, "verify-ran") {
+		t.Fatalf("stdout %q, want a plain gate to still run the verify command", got.stdout)
+	}
+}
+
+// TestGateCommitRunsNoToolkitTests proves the toolkit's pre-commit gate keeps gofmt and vet and drops go test.
+func TestGateCommitRunsNoToolkitTests(t *testing.T) {
+	root := emptyRepo(t)
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "komodo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "komodo", "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module komodo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runCLI(t, root, "", "gate", "--commit")
+	for _, line := range []string{"gate: gofmt\n", "gate: go vet\n"} {
+		if !strings.Contains(got.stdout, line) {
+			t.Fatalf("stdout %q, want the commit gate's %q check", got.stdout, strings.TrimSpace(line))
+		}
+	}
+	if strings.Contains(got.stdout, "gate: go test\n") {
+		t.Fatalf("stdout %q, want no go test on commit", got.stdout)
+	}
+}
