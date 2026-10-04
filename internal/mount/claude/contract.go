@@ -278,7 +278,7 @@ func (m *Mount) spawn(ctx context.Context, argv, env []string, prompt string, re
 	}
 	if err := cmd.Start(); err != nil {
 		for _, file := range logFiles {
-			_ = file.Close()
+			file.Close()
 		}
 		return "", fmt.Errorf("starting claude: %w", err)
 	}

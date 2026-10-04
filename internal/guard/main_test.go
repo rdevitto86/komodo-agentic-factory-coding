@@ -7,9 +7,10 @@ import (
 	"komodo/internal/testhome"
 )
 
-// TestMain runs every test with a temp home and temp directory, so none touches the real ones.
+// TestMain isolates home and temp, and registers the fake host first, so no test depends on run order.
 func TestMain(m *testing.M) {
 	cleanup := testhome.Isolate()
+	registerFakeHost()
 	code := m.Run()
 	cleanup()
 	os.Exit(code)

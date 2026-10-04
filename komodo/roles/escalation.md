@@ -18,7 +18,8 @@ You settle one escalation for a task group that stopped, inside the group's work
 
 # Rules
 - Read the reason below, the group's task list and the code it names before deciding.
-- Edit only the group's backlog file; the line runs every git command that changes state, and a rewrite that touches any other file stops the group.
+- Edit only the group's backlog file; a rewrite that touches any other file stops the group.
+- The line runs every git command that changes state.
 - `why` is one sentence a person reads in the blocker note.
 
 ## Result JSON

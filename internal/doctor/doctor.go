@@ -171,7 +171,7 @@ func checkPlugins(root string) []Problem {
 	return problems
 }
 
-// PluginStates lists each plugin type with each of its plugins enabled or disabled; it never fails a check.
+// PluginStates lists each plugin type and its plugins, none of which 1.0 runs (decision 0013); it never fails a check.
 func PluginStates(root string) []string {
 	enabled, _ := plugin.Enabled()
 	plugins, _ := plugin.Load(root, enabled)
@@ -184,7 +184,7 @@ func PluginStates(root string) []string {
 			}
 			state := "disabled"
 			if loaded.Enabled {
-				state = "enabled"
+				state = "enabled here, but 1.0 runs no plugin"
 			}
 			notes = append(notes, fmt.Sprintf("plugin %s %s: %s", kind, loaded.Name, state))
 			listed = true

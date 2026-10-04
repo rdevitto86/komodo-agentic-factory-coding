@@ -197,8 +197,8 @@ func SplitFindings(findings []Finding, floor string) (repair, file []Finding) {
 	return repair, file
 }
 
-// FileFindings appends the findings under the floor as low-priority tasks, newest last, into the
-// group's own docs/backlog file.
+// FileFindings appends the findings under the floor as READY tasks at their severity's priority, newest
+// last, into the group's own docs/backlog file.
 func FileFindings(root, groupID string, findings []Finding) ([]string, error) {
 	if len(findings) == 0 {
 		return nil, nil

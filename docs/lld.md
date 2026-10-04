@@ -480,7 +480,7 @@ In this repo, the orchestrator may edit the guard, the policy and the skills on 
 
 ### Plugins
 
-A plugin is a folder with a manifest naming its type, the roles and stages it attaches to, and its settings. V1 ships the three types, each disabled until enabled per machine (REQ-42):
+A plugin is a folder with a manifest naming its type, the roles and stages it attaches to, and its settings. V1 ships the three types disabled (REQ-42), and runs none of them: a machine may enable one, but its point is wired in only by the release that ships the first real plugin (decision 0013).
 
 - **Notifiers:** copy blocker notes and run summaries somewhere else, such as Slack or Google Chat later. They never decide anything.
 - **Tool packs:** mechanical commands, such as cloud CLIs for AWS, GCP or Azure, added to a role's allow list behind the guard.
