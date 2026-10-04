@@ -193,7 +193,7 @@ func drain(options Options) (int, error) {
 		}
 		fmt.Fprintf(stdout, "%s shipped: %s\n", result.group, url)
 		shippedGroups = append(shippedGroups, result.group)
-		restack(options, stdout)
+		restack(options, stdout, runningGroups(running))
 	}
 	// Sync once more after the run ends, so a binary gone stale mid-run rebuilds only once every group is done.
 	_, syncErr := Sync(SyncOptions{Root: options.Root, Stdout: stdout})
@@ -207,19 +207,28 @@ func drain(options Options) (int, error) {
 }
 
 // restack moves each group stacked on a parent that has since merged onto its new base, printing each move;
-// a failure is printed and leaves the drain running.
-func restack(options Options, stdout io.Writer) {
+// a failure is printed and leaves the drain running. A group named in running keeps its own lane's worktree.
+func restack(options Options, stdout io.Writer, running []string) {
 	client := options.PR
 	if client == nil {
 		client = pr.New(options.Root)
 	}
-	moved, err := conductor.Restack(options.Root, client)
+	moved, err := conductor.Restack(options.Root, client, running)
 	for _, each := range moved {
 		fmt.Fprintf(stdout, "restacked %s\n", each)
 	}
 	if err != nil {
 		fmt.Fprintf(stdout, "restack: %v\n", err)
 	}
+}
+
+// runningGroups is the IDs of every group a lane is still building, so a restack never rebases their worktrees.
+func runningGroups(running map[string]backlog.Group) []string {
+	ids := make([]string, 0, len(running))
+	for id := range running {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // laneResult is how one group's lane ended: its exit code, the pull request it opened, and when it launched.

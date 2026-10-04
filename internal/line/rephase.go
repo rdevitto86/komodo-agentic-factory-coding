@@ -1,6 +1,7 @@
 package line
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -101,7 +102,7 @@ func pushRephasedBranch(root, oldBranch, newBranch string) error {
 	if err := Fetch(root, oldBranch); err != nil {
 		return err
 	}
-	return pushRef(root, root, "origin/"+oldBranch, newBranch)
+	return pushRef(context.Background(), root, root, "origin/"+oldBranch, newBranch)
 }
 
 // retargetPulls moves every open pull request based on oldBranch onto newBranch, returning each

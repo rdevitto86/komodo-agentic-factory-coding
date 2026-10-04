@@ -1,6 +1,7 @@
 package line
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -82,7 +83,7 @@ func cutEpicBranch(root, branch string) error {
 	if err := Fetch(root, "main"); err != nil {
 		return err
 	}
-	return pushRef(root, root, "origin/main", branch)
+	return pushRef(context.Background(), root, root, "origin/main", branch)
 }
 
 // createEpicPull opens head's pull request to base as a draft, or a normal one labelled

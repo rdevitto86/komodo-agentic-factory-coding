@@ -2359,6 +2359,89 @@ func TestMarkReadyDropsStatusWipFromANormalPullRequest(t *testing.T) {
 	}
 }
 
+func TestOpenOrRefreshRefreshesAnOpenPullRequestOnACreateFailure(t *testing.T) {
+	createErr := errors.New("a pull request already exists")
+	cases := []struct {
+		name    string
+		edit    bool
+		view    string
+		viewErr error
+		wantErr bool
+	}{
+		{"an open PR is refreshed and edited", true,
+			`{"number":7,"url":"https://example.com/pull/7","state":"OPEN","isDraft":true}`, nil, false},
+		{"edit is skipped when the caller asks none", false,
+			`{"number":7,"url":"https://example.com/pull/7","state":"OPEN","isDraft":true}`, nil, false},
+		{"a closed PR keeps the create's own failure", true,
+			`{"number":7,"url":"https://example.com/pull/7","state":"CLOSED"}`, nil, true},
+		{"a view failure keeps the create's own failure", true, "", errors.New("gh is down"), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			client := &pr.Client{Dir: ".", Run: func(_ string, args ...string) (string, error) {
+				calls = append(calls, strings.Join(args, " "))
+				if tc.viewErr != nil {
+					return "", tc.viewErr
+				}
+				return tc.view, nil
+			}}
+			url, draft, err := openOrRefresh(client, "feat/a", "t", "b", tc.edit, "", false, createErr)
+			if tc.wantErr {
+				if !errors.Is(err, createErr) {
+					t.Fatalf("err = %v, want the create's own failure kept", err)
+				}
+				return
+			}
+			if err != nil || url != "https://example.com/pull/7" || !draft {
+				t.Fatalf("open = %q, %v, %v; want the open draft reused", url, draft, err)
+			}
+			if edited := slices.Contains(calls, "pr edit https://example.com/pull/7 --title t --body b"); edited != tc.edit {
+				t.Fatalf("calls = %q, want edit called = %v", calls, tc.edit)
+			}
+		})
+	}
+}
+
+func TestOpenDraftPullAppliesLabelsOnceItOpensOrRefreshes(t *testing.T) {
+	cases := []struct {
+		name     string
+		editOpen bool
+		wantEdit bool
+	}{
+		{"ShipGroup refreshes the open pull's title and body", true, true},
+		{"FinishShip reuses the open pull as it already reads", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			client := &pr.Client{Dir: ".", Run: func(_ string, args ...string) (string, error) {
+				calls = append(calls, strings.Join(args, " "))
+				switch {
+				case args[0] == "pr" && args[1] == "create":
+					return "", errors.New("a pull request already exists")
+				case args[0] == "pr" && args[1] == "view":
+					return `{"number":7,"url":"https://example.com/pull/7","state":"OPEN","isDraft":true}`, nil
+				case args[0] == "label":
+					return `[{"name":"@agent"}]`, nil
+				}
+				return "", nil
+			}}
+			url, draft, wip, kept, warnings, err := openDraftPull(
+				client, "main", "feat/a", "t", "b", []string{"@agent"}, nil, tc.editOpen)
+			if err != nil || url != "https://example.com/pull/7" || !draft || len(wip) > 0 {
+				t.Fatalf("open = %q, %v, %v, %v; want the open draft reused with no wip label", url, draft, wip, err)
+			}
+			if !slices.Contains(kept, "@agent") || len(warnings) > 0 {
+				t.Fatalf("kept = %q, warnings = %q; want its label applied and no warning", kept, warnings)
+			}
+			if edited := slices.Contains(calls, "pr edit https://example.com/pull/7 --title t --body b"); edited != tc.wantEdit {
+				t.Fatalf("calls = %q, want edit called = %v", calls, tc.wantEdit)
+			}
+		})
+	}
+}
+
 func TestPrepareStopsOnAConflictThatHasNoConflictedFile(t *testing.T) {
 	root, group, plan := prepareRepo(t)
 	if err := os.WriteFile(filepath.Join(group, "one.go"), []byte("package a\n\nconst Built = 1\n"), 0o644); err != nil {

@@ -58,7 +58,7 @@ func TestMerge(ctx context.Context, worktree string, ready []line.RunState, comm
 	defer func() { _, _ = git.Run(worktree, "worktree", "remove", "--force", scratch) }()
 	var fixes []string
 	for _, other := range ready {
-		if _, err := git.Run(scratch, "merge", "--no-edit", other.Branch); err != nil {
+		if _, err := git.Run(scratch, "merge", "--no-edit", "--", other.Branch); err != nil {
 			conflicts, _ := git.Run(scratch, "diff", "--name-only", "--diff-filter=U")
 			_, _ = git.Run(scratch, "merge", "--abort")
 			fixes = append(fixes, fmt.Sprintf("integration: the group no longer merges with %s's branch %s; it conflicts in %s",
@@ -113,9 +113,9 @@ func mergedInto(root, branch, epic string) bool {
 	return err == nil
 }
 
-// Restack moves each open group stacked on a parent that has since merged onto its new base: it takes the
-// base in, pushes a pushed branch, points its PR there and records the base, returning each move.
-func Restack(root string, client *pr.Client) ([]string, error) {
+// Restack takes a merged parent's base into each group stacked on it, pushing and retargeting a pushed
+// branch's PR, skipping any group running names, since that lane's worktree is not its own to rebase.
+func Restack(root string, client *pr.Client, running []string) ([]string, error) {
 	if !backlog.Exists(root) {
 		return nil, nil
 	}
@@ -125,6 +125,9 @@ func Restack(root string, client *pr.Client) ([]string, error) {
 	}
 	var moved []string
 	for _, state := range line.LoadRuns(root) {
+		if slices.Contains(running, state.Group) {
+			continue
+		}
 		group, ok := parsed.Group(state.Group)
 		epic := group.EpicBranch()
 		stacked := slices.ContainsFunc(group.DependsOn(), func(id string) bool {
@@ -163,23 +166,18 @@ func Restack(root string, client *pr.Client) ([]string, error) {
 func restackOnto(root, worktree, branch, base string) (bool, error) {
 	_ = line.Fetch(worktree, base)
 	target := line.StartRef(worktree, base)
-	_, err := git.Run(worktree, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
-	pushed := err == nil
+	pushed := line.OnOrigin(worktree, branch)
+	args, abort := line.RebaseOrMergeArgs(target, pushed)
 	old, tipErr := git.Run(root, "rev-parse", "--verify", "--quiet", line.TipRef(branch))
+	if _, err := git.Run(worktree, args...); err != nil {
+		_, _ = git.Run(worktree, abort...)
+		return pushed, err
+	}
 	if !pushed {
-		if _, err := git.Run(worktree, "rebase", "--autostash", target); err != nil {
-			_, _ = git.Run(worktree, "rebase", "--abort")
-			return false, err
-		}
 		if tipErr == nil {
 			return false, line.Advance(root, branch, worktree, old)
 		}
 		return false, nil
-	}
-	// A pushed branch is never rewritten, so it takes the base in a merge commit instead.
-	if _, err := git.Run(worktree, "merge", "--autostash", "--no-edit", target); err != nil {
-		_, _ = git.Run(worktree, "merge", "--abort")
-		return true, err
 	}
 	if tipErr == nil {
 		if err := line.Advance(root, branch, worktree, old); err != nil {
