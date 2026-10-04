@@ -445,6 +445,15 @@ func TestAGitattributesWithProperEollfPasses(t *testing.T) {
 	}
 }
 
+func TestAGitattributesWithATabBeforeEollfPasses(t *testing.T) {
+	root := clean(t)
+	write(t, root, ".gitattributes", "*\ttext=auto eol=lf\n")
+	got := problemsFrom(t, root)["gitattributes"]
+	if len(got) != 0 {
+		t.Fatalf("gitattributes = %+v, want none", got)
+	}
+}
+
 func TestTokensCountFourCharacters(t *testing.T) {
 	if tokens(400) != 100 {
 		t.Fatalf("tokens = %d", tokens(400))
@@ -859,6 +868,20 @@ func TestAForgeThatOffersNoRulesetsIsANoteNotAProblem(t *testing.T) {
 	offered := func(_ string, args ...string) (string, error) { return `[]`, nil }
 	if notes := ForgeNotes(t.TempDir(), offered); len(notes) != 0 {
 		t.Fatalf("notes = %v; a forge that offers rulesets and drafts has nothing to warn of", notes)
+	}
+}
+
+func TestABareHTTP403StillReportsAProblem(t *testing.T) {
+	scopeless := func(_ string, args ...string) (string, error) {
+		return "", errors.New("gh: Resource not accessible by integration (HTTP 403)")
+	}
+	problems := CheckRulesets(t.TempDir(), "main", scopeless)
+	if len(problems) != 1 || !strings.Contains(problems[0].Detail, "could not list rulesets") {
+		t.Fatalf("problems = %+v; a scopeless or unauthorised-SSO 403 must still be a problem", problems)
+	}
+	notes := ForgeNotes(t.TempDir(), scopeless)
+	if len(notes) != 0 {
+		t.Fatalf("notes = %v; a bare 403 is a problem, not a plan note", notes)
 	}
 }
 

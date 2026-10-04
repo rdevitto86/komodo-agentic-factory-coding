@@ -20,6 +20,7 @@ import (
 	"komodo/internal/line"
 	"komodo/internal/pr"
 	"komodo/internal/profile"
+	"komodo/internal/release"
 )
 
 // BuiltFrom is the file beside the built binary that records the commit it was built from.
@@ -28,8 +29,6 @@ const BuiltFrom = ".built-from"
 const (
 	// releaseURL is where published releases download from; KOMODO_RELEASE_URL overrides it, as install does.
 	releaseURL = "https://github.com/rdevitto86/komodo-agentic-factory-coding/releases/download"
-	// releaseSums is the checksum manifest every published release carries.
-	releaseSums = "SHA256SUMS"
 	// fetchTimeout bounds one release download.
 	fetchTimeout = 5 * time.Minute
 	// fetchLimit bounds one downloaded asset, in bytes.
@@ -463,7 +462,7 @@ func syncRelease(root string, dryRun bool, out io.Writer, suffix string) (string
 	name := filepath.Base(path)
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
-	sums, err := fetch(ctx, base+"/"+releaseSums)
+	sums, err := fetch(ctx, base+"/"+release.SumsFile)
 	if err != nil {
 		return "", err
 	}
@@ -474,7 +473,7 @@ func syncRelease(root string, dryRun bool, out io.Writer, suffix string) (string
 		}
 	}
 	if want == "" {
-		return "", fmt.Errorf("%s for release %s lists no %s; nothing was installed", releaseSums, pin, name)
+		return "", fmt.Errorf("%s for release %s lists no %s; nothing was installed", release.SumsFile, pin, name)
 	}
 	body, err := fetch(ctx, base+"/"+name)
 	if err != nil {

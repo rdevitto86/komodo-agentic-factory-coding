@@ -358,6 +358,17 @@ func TestDoctorReportsAndExitsOnProblems(t *testing.T) {
 	}
 }
 
+// TestDoctorListsEachPluginType proves doctor names each plugin type as disabled when none is installed.
+func TestDoctorListsEachPluginType(t *testing.T) {
+	root := fixtureRepo(t)
+	got := runCLI(t, root, "", "doctor", "--no-git")
+	for _, kind := range []string{"notifier", "tool-pack", "stage-hook"} {
+		if !strings.Contains(got.stdout, "note plugin "+kind+": disabled, none installed") {
+			t.Fatalf("doctor did not list plugin %s: %s%s", kind, got.stdout, got.stderr)
+		}
+	}
+}
+
 // TestCommentsCheckAndReportRunOnACleanRepo proves the comment lint and the report read a fresh repo.
 func TestCommentsCheckAndReportRunOnACleanRepo(t *testing.T) {
 	root := fixtureRepo(t)

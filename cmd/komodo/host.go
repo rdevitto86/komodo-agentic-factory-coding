@@ -346,6 +346,9 @@ func runDoctor(root string, args []string) {
 		for _, note := range doctor.StrayWorktrees(root) {
 			fmt.Println("note " + note)
 		}
+		for _, note := range doctor.PluginStates(root) {
+			fmt.Println("note " + note)
+		}
 		fmt.Printf("%d problem(s)\n", len(problems))
 	}
 	if len(problems) > 0 {
