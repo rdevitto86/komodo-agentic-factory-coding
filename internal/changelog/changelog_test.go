@@ -70,3 +70,17 @@ func TestValidAcceptsOnlyWholeVersions(t *testing.T) {
 		}
 	}
 }
+
+func TestCompareSortsAMalformedVersionBeforeEveryValidOne(t *testing.T) {
+	for _, bad := range []string{"1.x.0", "1.0", "1.0.0.0", "1..0", "+1.0.0", "1.+2.0"} {
+		if got := Compare(bad, "0.0.1"); got != -1 {
+			t.Errorf("Compare(%q, 0.0.1) = %d, want -1; a malformed version never reads as zeros", bad, got)
+		}
+		if got := Compare("0.0.1", bad); got != 1 {
+			t.Errorf("Compare(0.0.1, %q) = %d, want 1", bad, got)
+		}
+	}
+	if got := Compare("1.2.3", "v1.2.3"); got != 0 {
+		t.Errorf("Compare(1.2.3, v1.2.3) = %d, want 0", got)
+	}
+}

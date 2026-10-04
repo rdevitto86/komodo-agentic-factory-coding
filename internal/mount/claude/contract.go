@@ -64,6 +64,8 @@ type Mount struct {
 
 	mu       sync.Mutex
 	sessions map[mount.Handle]*session
+	// running counts sessions holding the worktree's temp root; the last to end removes it.
+	running int
 }
 
 // session is one running or finished claude process, and what Result and Resume read once it ends.
@@ -79,6 +81,7 @@ type session struct {
 
 	waitOnce sync.Once
 	waitErr  error
+	endOnce  sync.Once
 
 	done chan struct{}
 
@@ -101,6 +104,34 @@ func (s *session) closeLogs() {
 	for _, closer := range s.logs {
 		_ = closer.Close()
 	}
+}
+
+// holdTmp makes the worktree's private temp root and counts one more session holding it.
+func (m *Mount) holdTmp() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := os.MkdirAll(SessionTmp(m.worktree), 0o700); err != nil {
+		return fmt.Errorf("making the session's temp root: %w", err)
+	}
+	m.running++
+	return nil
+}
+
+// releaseTmp counts one session fewer, removing the temp root once none still holds it.
+func (m *Mount) releaseTmp() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.running--; m.running == 0 {
+		_ = os.RemoveAll(SessionTmp(m.worktree))
+	}
+}
+
+// ended closes a finished session's logs and releases its temp root, once however it ended.
+func (m *Mount) ended(sess *session) {
+	sess.endOnce.Do(func() {
+		sess.closeLogs()
+		m.releaseTmp()
+	})
 }
 
 // NewMount builds a Claude Code mount that starts every session in worktree, with root naming the
@@ -210,9 +241,15 @@ func (m *Mount) spawn(ctx context.Context, argv, env []string, prompt string, re
 	cmd.Stdin = strings.NewReader(prompt)
 	proc.Group(cmd)
 	// The session's temp root must exist and be private before the host puts its TMPDIR there.
-	if err := os.MkdirAll(SessionTmp(m.worktree), 0o700); err != nil {
-		return "", fmt.Errorf("making the session's temp root: %w", err)
+	if err := m.holdTmp(); err != nil {
+		return "", err
 	}
+	started := false
+	defer func() {
+		if !started {
+			m.releaseTmp()
+		}
+	}()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -253,6 +290,7 @@ func (m *Mount) spawn(ctx context.Context, argv, env []string, prompt string, re
 	m.mu.Lock()
 	m.sessions[handle] = sess
 	m.mu.Unlock()
+	started = true
 	return handle, nil
 }
 
@@ -276,7 +314,7 @@ func (m *Mount) Stream(ctx context.Context, handle mount.Handle) (<-chan mount.E
 		// Nothing the session started may outlive it; a tree that ran away is the session's error.
 		proc.KillGroup(sess.cmd)
 		sess.watcher.Stop()
-		sess.closeLogs()
+		m.ended(sess)
 		if breach := sess.watcher.Breach(); breach != "" {
 			waitErr = fmt.Errorf("the session's process tree ran away (%s) and was killed", breach)
 		}
@@ -310,7 +348,10 @@ func (m *Mount) Stop(ctx context.Context, handle mount.Handle) error {
 		return fmt.Errorf("stop: unknown session %q", handle)
 	}
 	proc.KillGroup(sess.cmd)
-	go func() { _ = sess.wait() }()
+	go func() {
+		_ = sess.wait()
+		m.ended(sess)
+	}()
 	return nil
 }
 

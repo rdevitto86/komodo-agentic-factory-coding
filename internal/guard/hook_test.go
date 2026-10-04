@@ -2,6 +2,7 @@ package guard
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -247,5 +248,21 @@ func TestHookAllowsTheCallWhenItPanics(t *testing.T) {
 	}
 	if out.Len() != 0 || !strings.Contains(errOut.String(), "panic: a guard bug; allowing") {
 		t.Fatalf("stdout = %q, stderr = %q", out.String(), errOut.String())
+	}
+}
+
+// TestHookAllowsAndSaysSoWhenTheWorkingDirectoryIsUnreadable proves a payload with no cwd, from a
+// process that cannot read its own directory, is allowed with a message rather than refused.
+func TestHookAllowsAndSaysSoWhenTheWorkingDirectoryIsUnreadable(t *testing.T) {
+	saved := getwd
+	t.Cleanup(func() { getwd = saved })
+	getwd = func() (string, error) { return "", errors.New("getwd: no such file or directory") }
+	var out, errOut strings.Builder
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git push origin main"}}`
+	if code := Hook(t.TempDir(), strings.NewReader(payload), &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want 0; an unreadable working directory allows the call", code)
+	}
+	if out.Len() != 0 || !strings.Contains(errOut.String(), "no working directory") {
+		t.Fatalf("stdout %q, stderr %q; want no denial and a message naming the cause", out.String(), errOut.String())
 	}
 }

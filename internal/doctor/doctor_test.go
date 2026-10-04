@@ -1159,7 +1159,7 @@ func TestDoctorListsEveryPluginTypeDisabled(t *testing.T) {
 		t.Fatalf("states = %q", got)
 	}
 	write(t, home, ".komodo/plugins.json", `{"enabled":["cloud"]}`)
-	if got := PluginStates(root); got[1] != "plugin tool-pack cloud: enabled" {
+	if got := PluginStates(root); got[1] != "plugin tool-pack cloud: enabled here, but 1.0 runs no plugin" {
 		t.Fatalf("states = %q", got)
 	}
 }

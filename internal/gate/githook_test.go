@@ -108,7 +108,7 @@ func TestHookStepsPlanEveryHook(t *testing.T) {
 			[][]string{{"rules", "gate", "--check-branch"}, {"gate"}}},
 		{"pre-push checks every pushed ref and scopes the gate to the first", "pre-push", main, twoRefs, nil,
 			[][]string{{"rules", "gate", "--check-push", "refs/heads/feat/a"}, {"rules", "gate", "--check-push", "refs/heads/feat/b"},
-				{"gate", "--fuzz", "10s", "--from", "def", "--to", "abc"}}},
+				{"gate", "--fuzz", "10s", "--from", "def", "--to", "abc", "--at", "abc"}}},
 		{"pre-push with no stdin fuzzes unscoped", "pre-push", main, "", nil, [][]string{{"gate", "--fuzz", "10s"}}},
 		{"pre-push of a branch delete checks the ref and runs no gate", "pre-push", main,
 			"(delete) " + zeroOID + " refs/heads/feat/gone abc\n", nil,

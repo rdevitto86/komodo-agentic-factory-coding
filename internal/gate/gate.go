@@ -73,7 +73,7 @@ func CommandEnv(name, root string, env []string, args ...string) Check {
 		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		cmd.Dir = root
 		cmd.Stdout, cmd.Stderr = out, out
-		cmd.Env = append(childEnv(), env...)
+		cmd.Env = append(git.WithoutRepoPointers(os.Environ()), env...)
 		if toolchain, err := Toolchain(root); err == nil {
 			cmd.Env = append(cmd.Env, "GOTOOLCHAIN="+toolchain)
 		}
@@ -93,28 +93,6 @@ func CommandEnv(name, root string, env []string, args ...string) Check {
 		}
 		return err
 	}}
-}
-
-// hookGitVars are the variables git sets for a hook; a child inheriting them aims every git call at this repo.
-var hookGitVars = []string{"GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR"}
-
-// childEnv is this process's environment without the git variables a hook sets.
-func childEnv() []string {
-	var env []string
-	for _, pair := range os.Environ() {
-		name, _, _ := strings.Cut(pair, "=")
-		dropped := false
-		for _, gitVar := range hookGitVars {
-			if name == gitVar {
-				dropped = true
-				break
-			}
-		}
-		if !dropped {
-			env = append(env, pair)
-		}
-	}
-	return env
 }
 
 // Toolchain reads the toolchain version go.mod pins, for example "go1.27.1".
@@ -401,7 +379,7 @@ var kebabName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // TrailerProblem reports why the commit-msg hook refuses message, empty when it may proceed.
 func TrailerProblem(message string, policy guard.Policy) string {
 	if policy.HasTrailer(message) {
-		return "commit message carries a co-author or generated-by trailer; remove it and commit again"
+		return "commit message carries a co-author or generated-by trailer or a session link; remove it and commit again"
 	}
 	return ""
 }

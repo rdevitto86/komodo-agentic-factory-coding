@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -733,6 +734,9 @@ func TestWriteBriefCutsATaskFromTheLocalGroupBranchNotStaleOrigin(t *testing.T) 
 // TestMigrateRunKeepsTheLegacyFileWhenItsRenameFails blocks the rename into the group's own run
 // directory, so the legacy run.json must survive as the state's one remaining copy.
 func TestMigrateRunKeepsTheLegacyFileWhenItsRenameFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a read-only directory mode does not block a rename on Windows")
+	}
 	root := t.TempDir()
 	state := RunState{Run: "TG-16.2-1", Group: "TG-16.2", Base: "main", Branch: "feat/legacy-keep"}
 	data, err := json.Marshal(state)
@@ -798,4 +802,21 @@ func TestSaveRunNeverLeavesLoadRunForReadingATornFile(t *testing.T) {
 	}
 	close(stop)
 	wait.Wait()
+}
+
+// TestStartNamesAndDatesARunFromOneClockReading fixes the cut's clock and proves the run id and
+// start time both come from that one reading.
+func TestStartNamesAndDatesARunFromOneClockReading(t *testing.T) {
+	root := cutRepo(t, twoGroupBacklog)
+	fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	saved := now
+	t.Cleanup(func() { now = saved })
+	now = func() time.Time { return fixed }
+	state, err := Start(root, freshPlan(t, root, "TG-15.1"), "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "TG-15.1-" + strconv.FormatInt(fixed.Unix(), 10); state.Run != want || !state.Started.Equal(fixed) {
+		t.Fatalf("run = %s started %s, want %s started %s", state.Run, state.Started, want, fixed)
+	}
 }

@@ -14,8 +14,7 @@ import (
 	"komodo/internal/mount"
 )
 
-// freshClone copies every file this checkout tracks, as it stands in the working tree, into a new repo on a
-// feature branch, so a commit's own gate proves the commit being made rather than the one before it.
+// freshClone copies the working tree's tracked and addable files into a new repo, so the gate proves this commit.
 func freshClone(t *testing.T) string {
 	t.Helper()
 	source, err := filepath.Abs(filepath.Join("..", ".."))
@@ -26,7 +25,7 @@ func freshClone(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range strings.Split(strings.TrimSpace(gitCommand(t, source, "ls-files")), "\n") {
+	for _, rel := range strings.Split(strings.TrimSpace(gitCommand(t, source, "ls-files", "--cached", "--others", "--exclude-standard")), "\n") {
 		data, err := os.ReadFile(filepath.Join(source, rel))
 		if os.IsNotExist(err) {
 			continue

@@ -179,6 +179,32 @@ func TestStreamClosesTheSessionsLogFiles(t *testing.T) {
 	}
 }
 
+// TestTheSessionTempRootGoesWithTheLastSession proves a worktree's private temp root is removed
+// once its last session ends, so finished worktrees leave nothing in the temp dir.
+func TestTheSessionTempRootGoesWithTheLastSession(t *testing.T) {
+	setupFakeClaude(t)
+	root, worktree := t.TempDir(), t.TempDir()
+	withLineSettings(t, root)
+	m := NewMount(root, worktree, 10, 0)
+	ctx := context.Background()
+	first, err := m.Start(ctx, newFakeRequest())
+	if err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	second, err := m.Start(ctx, newFakeRequest())
+	if err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	drainMountEvents(t, mustStream(t, ctx, m, first))
+	if _, err := os.Stat(SessionTmp(worktree)); err != nil {
+		t.Fatalf("stat = %v; the temp root must stay while a session still runs", err)
+	}
+	drainMountEvents(t, mustStream(t, ctx, m, second))
+	if _, err := os.Stat(SessionTmp(worktree)); !os.IsNotExist(err) {
+		t.Fatalf("stat = %v; the last session's end must remove the temp root", err)
+	}
+}
+
 func TestContractResumePassesResumeWithTheFirstSessionsID(t *testing.T) {
 	ctx := context.Background()
 	logPath := setupFakeClaude(t)

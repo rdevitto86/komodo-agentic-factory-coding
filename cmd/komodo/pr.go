@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"komodo/internal/git"
+	"komodo/internal/guard"
 	"komodo/internal/line"
 	"komodo/internal/pr"
 )
@@ -63,6 +64,9 @@ func runPRCreate(root string, args []string) {
 	text, err := prBody(*body, *bodyFile)
 	if err != nil {
 		fail(err)
+	}
+	if guard.Load(root, root).HasTrailer(*title + "\n" + text) {
+		fail(errors.New("the pull request carries a co-author or generated-by trailer or a session link; remove it"))
 	}
 	head := git.TrackedBranch(root)
 	if head == "" {

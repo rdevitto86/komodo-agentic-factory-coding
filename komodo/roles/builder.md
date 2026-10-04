@@ -38,7 +38,7 @@ This frame repeats above every brief. Read it once; the rules hold for every tas
 - Follow `standards-comments` in the standards below, in the convention of each language you touch; `komodo comments check` enforces it at close.
 
 ## Result JSON
-Write one result per task, where its brief says, as the JSON object the schema describes. `result` is DONE only when every one of that task's `done_when` exit codes is zero. `verified` lists each check you ran with its exit code. `question`, on a BLOCKED task, is the one thing a person must answer. `changed` lists each file you edited with one sentence of what changed. `notes` carries assumptions and anything you saw but did not touch.
+Write one result per task, where its brief says, as the JSON object the schema describes. `result` is DONE only when every one of that task's `done_when` exit codes is zero. `verified` lists each check you ran with its exit code. `question`, on a BLOCKED task, is the one thing a person must answer. `changed` lists each file you edited with one sentence of what changed. `notes` carries assumptions and anything you saw but did not touch. `confidence` is high when every check ran and passed, medium when a result rests on a stated assumption, low when a check could not run.
 
 When the session itself returns JSON, return the same object once for the whole list: `result` is DONE only when every task is, and `tasks` holds each task's own result, in order.
 
