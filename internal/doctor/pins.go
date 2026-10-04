@@ -16,8 +16,8 @@ import (
 
 	"komodo/internal/gate"
 	"komodo/internal/git"
-	"komodo/internal/profile"
 	"komodo/internal/proc"
+	"komodo/internal/profile"
 	"komodo/internal/toolkit"
 )
 

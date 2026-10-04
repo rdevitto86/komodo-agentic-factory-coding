@@ -175,6 +175,43 @@ func TestPruneKeepsOnlyTheNewestRunFolders(t *testing.T) {
 	}
 }
 
+// TestPruneNeverRemovesOutsideARunsOwnGroupDirectory proves a run.json whose group escapes its own
+// directory, such as "..", is skipped rather than handed to os.RemoveAll.
+func TestPruneNeverRemovesOutsideARunsOwnGroupDirectory(t *testing.T) {
+	root, _ := pruneRepo(t, openBacklog)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	evil := filepath.Join(root, ".komodo", "runs", "evil")
+	if err := os.MkdirAll(evil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"run":"r","group":"..","base":"main","started":%q}`, start.Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(evil, "run.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= keptRuns; index++ {
+		group := fmt.Sprintf("TG-02.%d", index)
+		state := line.RunState{Run: "r", Group: group, Base: "main", Started: start.Add(time.Duration(index) * time.Hour)}
+		if err := line.SaveRun(root, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sentinel := filepath.Join(root, ".komodo", "sentinel.txt")
+	if err := os.WriteFile(sentinel, []byte("still here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Prune(root, "main", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("a run.json naming %q deleted past its own directory; done = %v", "..", got)
+	}
+	if _, err := os.Stat(evil); err != nil {
+		t.Fatalf("the evil run's own folder should stay, untouched; done = %v", got)
+	}
+}
+
 // noForge keeps every prune test off the real gh unless it names its own forge.
 func init() {
 	mergedOnForge = func(string, string) bool { return false }
@@ -444,5 +481,32 @@ func TestPruneStashesArchivesAWeekOldStashThenDropsIt(t *testing.T) {
 	}
 	if body, _ := os.ReadFile(patches[0]); !strings.Contains(string(body), "old work") {
 		t.Fatalf("patch = %q, want the stash's own change", body)
+	}
+}
+
+func TestPruneRemovesTheDeadBranchClaims(t *testing.T) {
+	root := gitRepo(t)
+	claims := filepath.Join(root, ".git", "komodo-claims")
+	if err := os.MkdirAll(claims, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claims, "HEAD.json"), []byte(`{"session":"s","branch":"HEAD"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dry := pruneClaims(root, false); len(dry) != 1 || !strings.HasPrefix(dry[0], "would remove") {
+		t.Fatalf("dry run = %q, want one would-remove line", dry)
+	}
+	if _, err := os.Stat(claims); err != nil {
+		t.Fatalf("a dry run removed the claims: %v", err)
+	}
+	done := pruneClaims(root, true)
+	if _, err := os.Stat(claims); !os.IsNotExist(err) {
+		t.Fatalf("claims still present (%v); nothing reads them since the guard dropped claims", err)
+	}
+	if len(done) != 1 || !strings.Contains(done[0], "removed the dead branch claims") {
+		t.Fatalf("done = %q", done)
+	}
+	if again := pruneClaims(root, true); len(again) != 0 {
+		t.Fatalf("a second prune reported %q; with no claims it must say nothing", again)
 	}
 }

@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -94,15 +95,16 @@ func newFakeRequest() mount.StartRequest {
 }
 
 func TestContractStartRunsClaudeAndStreamsTheStartFixture(t *testing.T) {
+	ctx := context.Background()
 	setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
 	m := NewMount(root, worktree, 10, 0)
 
-	handle, err := m.Start(newFakeRequest())
+	handle, err := m.Start(ctx, newFakeRequest())
 	if err != nil {
 		t.Fatalf("Start = %v", err)
 	}
-	events, err := m.Stream(handle)
+	events, err := m.Stream(ctx, handle)
 	if err != nil {
 		t.Fatalf("Stream = %v", err)
 	}
@@ -113,6 +115,9 @@ func TestContractStartRunsClaudeAndStreamsTheStartFixture(t *testing.T) {
 	result := got[1]
 	if result.Turns != 5 || result.CostUSD != 0.0842 {
 		t.Fatalf("result event = %+v", result)
+	}
+	if result.SessionID != "ffffffff-ffff-ffff-ffff-ffffffffffff" {
+		t.Fatalf("result event's session id = %q; the contract's Stream must carry it", result.SessionID)
 	}
 
 	value, err := m.Result(handle)
@@ -136,11 +141,12 @@ func TestContractStartRunsClaudeAndStreamsTheStartFixture(t *testing.T) {
 // TestStreamClosesTheSessionsLogFiles proves the stream and stderr log files a session opens are
 // closed once it ends, instead of left open for the mount's whole lifetime.
 func TestStreamClosesTheSessionsLogFiles(t *testing.T) {
+	ctx := context.Background()
 	setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
 	m := NewMount(root, worktree, 10, 0)
 
-	handle, err := m.Start(newFakeRequest())
+	handle, err := m.Start(ctx, newFakeRequest())
 	if err != nil {
 		t.Fatalf("Start = %v", err)
 	}
@@ -151,7 +157,7 @@ func TestStreamClosesTheSessionsLogFiles(t *testing.T) {
 	if len(sess.logs) == 0 {
 		t.Fatal("spawn opened no log files to close")
 	}
-	drainMountEvents(t, mustStream(t, m, handle))
+	drainMountEvents(t, mustStream(t, ctx, m, handle))
 	for _, closer := range sess.logs {
 		file, ok := closer.(*os.File)
 		if !ok {
@@ -164,28 +170,29 @@ func TestStreamClosesTheSessionsLogFiles(t *testing.T) {
 }
 
 func TestContractResumePassesResumeWithTheFirstSessionsID(t *testing.T) {
+	ctx := context.Background()
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
 	m := NewMount(root, worktree, 10, 0)
 
-	first, err := m.Start(newFakeRequest())
+	first, err := m.Start(ctx, newFakeRequest())
 	if err != nil {
 		t.Fatalf("Start = %v", err)
 	}
-	events, err := m.Stream(first)
+	events, err := m.Stream(ctx, first)
 	if err != nil {
 		t.Fatalf("Stream = %v", err)
 	}
 	drainMountEvents(t, events)
 
-	resumed, err := m.Resume(first, "fix the failing test")
+	resumed, err := m.Resume(ctx, first, "fix the failing test")
 	if err != nil {
 		t.Fatalf("Resume = %v", err)
 	}
 	if resumed == first {
 		t.Fatal("Resume should hand back a fresh handle")
 	}
-	resumedEvents, err := m.Stream(resumed)
+	resumedEvents, err := m.Stream(ctx, resumed)
 	if err != nil {
 		t.Fatalf("Stream(resumed) = %v", err)
 	}
@@ -217,25 +224,26 @@ func TestContractResumePassesResumeWithTheFirstSessionsID(t *testing.T) {
 }
 
 func TestContractResumesAHandleFromAnEarlierProcess(t *testing.T) {
+	ctx := context.Background()
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
 	earlier := NewMount(root, worktree, 10, 0)
-	first, err := earlier.Start(newFakeRequest())
+	first, err := earlier.Start(ctx, newFakeRequest())
 	if err != nil {
 		t.Fatalf("Start = %v", err)
 	}
-	events, err := earlier.Stream(first)
+	events, err := earlier.Stream(ctx, first)
 	if err != nil {
 		t.Fatalf("Stream = %v", err)
 	}
 	drainMountEvents(t, events)
 
 	restarted := NewMount(root, worktree, 10, 0)
-	resumed, err := restarted.Resume(first, "fix the failing test")
+	resumed, err := restarted.Resume(ctx, first, "fix the failing test")
 	if err != nil {
 		t.Fatalf("Resume after a restart = %v; the handle is the host's session ID", err)
 	}
-	drainMountEvents(t, mustStream(t, restarted, resumed))
+	drainMountEvents(t, mustStream(t, ctx, restarted, resumed))
 	if value, err := restarted.Result(resumed); err != nil || value.Value["result"] != "DONE" {
 		t.Fatalf("Result = %+v, %v", value, err)
 	}
@@ -257,17 +265,18 @@ func TestContractResumesAHandleFromAnEarlierProcess(t *testing.T) {
 }
 
 func TestContractResumeOfAHandleNoProcessStartedFails(t *testing.T) {
+	ctx := context.Background()
 	setupFakeClaude(t)
 	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
-	if _, err := m.Resume(mount.Handle("no-such-session"), "input"); err == nil {
+	if _, err := m.Resume(ctx, mount.Handle("no-such-session"), "input"); err == nil {
 		t.Fatal("Resume should fail on a handle with no saved request")
 	}
 }
 
 // mustStream opens handle's stream on m, failing the test on error.
-func mustStream(t *testing.T, m *Mount, handle mount.Handle) <-chan mount.Event {
+func mustStream(t *testing.T, ctx context.Context, m *Mount, handle mount.Handle) <-chan mount.Event {
 	t.Helper()
-	events, err := m.Stream(handle)
+	events, err := m.Stream(ctx, handle)
 	if err != nil {
 		t.Fatalf("Stream = %v", err)
 	}
@@ -275,37 +284,39 @@ func mustStream(t *testing.T, m *Mount, handle mount.Handle) <-chan mount.Event 
 }
 
 func TestContractResumeWithoutADrainedStreamFails(t *testing.T) {
+	ctx := context.Background()
 	setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
 	m := NewMount(root, worktree, 10, 0)
 
-	handle, err := m.Start(newFakeRequest())
+	handle, err := m.Start(ctx, newFakeRequest())
 	if err != nil {
 		t.Fatalf("Start = %v", err)
 	}
-	if _, err := m.Resume(handle, "input"); err == nil {
+	if _, err := m.Resume(ctx, handle, "input"); err == nil {
 		t.Fatal("Resume should fail when the prior session's stream was never drained")
 	}
 }
 
 func TestContractStopKillsTheProcessGroup(t *testing.T) {
+	ctx := context.Background()
 	setupFakeClaude(t)
 	t.Setenv("FAKE_CLAUDE_HANG", "1")
 	root, worktree := t.TempDir(), t.TempDir()
 	m := NewMount(root, worktree, 10, 0)
 
-	handle, err := m.Start(newFakeRequest())
+	handle, err := m.Start(ctx, newFakeRequest())
 	if err != nil {
 		t.Fatalf("Start = %v", err)
 	}
-	events, err := m.Stream(handle)
+	events, err := m.Stream(ctx, handle)
 	if err != nil {
 		t.Fatalf("Stream = %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)
 
 	started := time.Now()
-	if err := m.Stop(handle); err != nil {
+	if err := m.Stop(ctx, handle); err != nil {
 		t.Fatalf("Stop = %v", err)
 	}
 	done := make(chan struct{})
@@ -344,22 +355,24 @@ func TestVersionOutputKillsAHungClaudeAndNamesTheTimeout(t *testing.T) {
 }
 
 func TestContractPreflightPassesOnAnyVersionWithALogin(t *testing.T) {
+	ctx := context.Background()
 	setupFakeClaude(t)
 	for _, version := range []string{"2.1.283 (Claude Code)", "9.9.9 (Claude Code)"} {
 		t.Setenv("FAKE_CLAUDE_VERSION", version)
 		m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
-		if err := m.Preflight(); err != nil {
+		if err := m.Preflight(ctx); err != nil {
 			t.Fatalf("Preflight on %s = %v", version, err)
 		}
 	}
 }
 
 func TestContractPreflightFailsWhenNotLoggedIn(t *testing.T) {
+	ctx := context.Background()
 	setupFakeClaude(t)
 	t.Setenv("FAKE_CLAUDE_AUTH", `{"loggedIn":false}`)
 	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
-	if !errorsIsNotLoggedIn(m.Preflight()) {
-		t.Fatalf("Preflight = %v, want errNotLoggedIn", m.Preflight())
+	if !errorsIsNotLoggedIn(m.Preflight(ctx)) {
+		t.Fatalf("Preflight = %v, want errNotLoggedIn", m.Preflight(ctx))
 	}
 }
 
@@ -376,14 +389,14 @@ func TestContractCapabilitiesDeclaresAllFour(t *testing.T) {
 
 func TestContractStreamOnAnUnknownHandleFails(t *testing.T) {
 	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
-	if _, err := m.Stream(mount.Handle("no-such-session")); err == nil {
+	if _, err := m.Stream(context.Background(), mount.Handle("no-such-session")); err == nil {
 		t.Fatal("Stream should fail on an unknown handle")
 	}
 }
 
 func TestContractStopOnAnUnknownHandleFails(t *testing.T) {
 	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
-	if err := m.Stop(mount.Handle("no-such-session")); err == nil {
+	if err := m.Stop(context.Background(), mount.Handle("no-such-session")); err == nil {
 		t.Fatal("Stop should fail on an unknown handle")
 	}
 }
@@ -396,15 +409,16 @@ func TestContractResultOnAnUnknownHandleFails(t *testing.T) {
 }
 
 func TestContractStartRunsInTheWorktree(t *testing.T) {
+	ctx := context.Background()
 	logPath := setupFakeClaude(t)
 	root, worktree := t.TempDir(), t.TempDir()
 	m := NewMount(root, worktree, 10, 0)
 
-	handle, err := m.Start(newFakeRequest())
+	handle, err := m.Start(ctx, newFakeRequest())
 	if err != nil {
 		t.Fatalf("Start = %v", err)
 	}
-	events, err := m.Stream(handle)
+	events, err := m.Stream(ctx, handle)
 	if err != nil {
 		t.Fatalf("Stream = %v", err)
 	}
@@ -427,6 +441,7 @@ func TestContractStartRunsInTheWorktree(t *testing.T) {
 }
 
 func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
+	ctx := context.Background()
 	setupFakeClaude(t)
 	t.Setenv("FAKE_CLAUDE_FORK", "1")
 	sleep := uniqueSleep(53)
@@ -436,11 +451,11 @@ func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
 	t.Cleanup(func() { proc.DefaultLimits, proc.WatchInterval = saved, savedInterval })
 	m := NewMount(t.TempDir(), t.TempDir(), 10, 0)
 
-	handle, err := m.Start(newFakeRequest())
+	handle, err := m.Start(ctx, newFakeRequest())
 	if err != nil {
 		t.Fatalf("Start = %v", err)
 	}
-	events, err := m.Stream(handle)
+	events, err := m.Stream(ctx, handle)
 	if err != nil {
 		t.Fatalf("Stream = %v", err)
 	}
@@ -465,4 +480,34 @@ func TestContractStopsASessionWhoseProcessTreeRunsAway(t *testing.T) {
 // uniqueSleep is a sleep duration no other test process uses, so pgrep finds only this test's children.
 func uniqueSleep(seconds int) string {
 	return fmt.Sprintf("%d.%d", seconds, os.Getpid())
+}
+
+func TestContractStartLeavesNoLogFilesWhenSavingTheRequestFails(t *testing.T) {
+	setupFakeClaude(t)
+	root, worktree := t.TempDir(), t.TempDir()
+	m := NewMount(root, worktree, 10, 0)
+
+	const fixedID = "11111111-1111-1111-1111-111111111111"
+	old := newSessionID
+	newSessionID = func() (string, error) { return fixedID, nil }
+	t.Cleanup(func() { newSessionID = old })
+
+	logs := filepath.Join(worktree, ".komodo", "sessions")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A directory sitting at the request's own path makes the save fail without touching the log files.
+	if err := os.Mkdir(filepath.Join(logs, fixedID+".request.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := m.Start(context.Background(), newFakeRequest()); err == nil {
+		t.Fatal("Start should fail when saving the session's request fails")
+	}
+	if _, err := os.Stat(filepath.Join(logs, fixedID+".jsonl")); err == nil {
+		t.Fatal("the stream log must not be created when saving the request fails")
+	}
+	if _, err := os.Stat(filepath.Join(logs, fixedID+".err")); err == nil {
+		t.Fatal("the stderr log must not be created when saving the request fails")
+	}
 }

@@ -169,12 +169,13 @@ func TestCommandDropsTheGitEnvironmentAHookSets(t *testing.T) {
 
 // TestFuzzChecksCoverEveryTarget proves the gate builds one named check per fuzz target.
 func TestFuzzChecksCoverEveryTarget(t *testing.T) {
-	checks := FuzzChecks(t.TempDir(), "1s")
-	if len(checks) != len(FuzzTargets) {
-		t.Fatalf("checks = %d, targets = %d", len(checks), len(FuzzTargets))
+	targets := FuzzTargets()
+	checks := FuzzChecksFor(t.TempDir(), "1s", targets)
+	if len(checks) != len(targets) {
+		t.Fatalf("checks = %d, targets = %d", len(checks), len(targets))
 	}
 	for index, check := range checks {
-		if check.Name != "fuzz "+FuzzTargets[index].Name {
+		if check.Name != "fuzz "+targets[index].Name {
 			t.Fatalf("check %d is named %q", index, check.Name)
 		}
 	}
@@ -182,9 +183,13 @@ func TestFuzzChecksCoverEveryTarget(t *testing.T) {
 
 // TestTestArgsAlwaysRunsEveryPackage proves the race flag never narrows what the gate tests.
 func TestTestArgsAlwaysRunsEveryPackage(t *testing.T) {
-	args := TestArgs()
+	args := TestArgs(false)
 	if args[0] != "go" || args[1] != "test" || args[len(args)-1] != "./..." {
 		t.Fatalf("args = %q", args)
+	}
+	fresh := strings.Join(TestArgs(true), " ")
+	if !strings.Contains(fresh, "-count=1 -shuffle=on") || !strings.HasSuffix(fresh, "./...") {
+		t.Fatalf("fresh args = %q, want uncached, shuffled tests of every package", fresh)
 	}
 }
 
@@ -441,7 +446,7 @@ func TestTestArgsDropsTheRaceFlagWithoutCgo(t *testing.T) {
 	fakeDir := t.TempDir()
 	fakeGo(t, fakeDir, "#!/bin/sh\necho 0\n")
 	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
-	args := TestArgs()
+	args := TestArgs(false)
 	if strings.Join(args, " ") != "go test ./..." {
 		t.Fatalf("args = %q", args)
 	}
@@ -488,6 +493,35 @@ func TestRebuildStampsTheNewHeadWhenAGoFileChanged(t *testing.T) {
 	}
 	if strings.TrimSpace(string(marker)) != to {
 		t.Fatalf("marker = %q, want %q", marker, to)
+	}
+}
+
+// TestRebuildSkipsWhileSyncEnvIsSet proves a merge komodo sync drives rebuilds the binary once,
+// through syncBinary, never again through the post-merge hook it triggers.
+func TestRebuildSkipsWhileSyncEnvIsSet(t *testing.T) {
+	root := t.TempDir()
+	gitCommand(t, root, "init", "-q")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "seed")
+	from := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, root, "add", "main.go")
+	gitCommand(t, root, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "-m", "add a go file")
+	to := gitCommand(t, root, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n\ngo 1.22\n\ntoolchain go1.27.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	fakeGo(t, fakeDir, "#!/bin/sh\nif [ \"$1\" = build ]; then shift 2; echo built > \"$1\"; exit 0; fi\nexit 1\n")
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	t.Setenv(SyncEnv, "1")
+
+	if err := Rebuild(root, from, to, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", BuiltFrom)); !os.IsNotExist(err) {
+		t.Fatalf("want no marker written while sync drives the merge, err = %v", err)
 	}
 }
 
@@ -925,7 +959,7 @@ func TestPushChecksRunsEverythingWithoutATo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(checks) != 1+len(FuzzTargets) || checks[0].Name != "go test" {
+	if len(checks) != 1+len(FuzzTargets()) || checks[0].Name != "go test" {
 		t.Fatalf("checks = %v, want go test plus every fuzz target", checks)
 	}
 }

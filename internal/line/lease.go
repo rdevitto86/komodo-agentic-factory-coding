@@ -9,15 +9,12 @@ import (
 	"komodo/internal/proc"
 )
 
-// LeaseTTL is how long a builder's lease holds its branch before it lapses.
-const LeaseTTL = lease.TTL
-
 // TakeLease leases branch to the process running this stage, as of now.
 func TakeLease(root, group, branch string, now time.Time) error {
 	return lease.Take(root, group, branch, leaseHolder(), now)
 }
 
-// Lease returns branch's lease while it is under LeaseTTL old and its holder still runs.
+// Lease returns branch's lease while it is under lease.TTL old and its holder still runs.
 func Lease(root, branch string, now time.Time) (lease.Lease, bool) {
 	return lease.Held(root, branch, now)
 }

@@ -144,8 +144,8 @@ func TestTheLeaseEnds(t *testing.T) {
 		if _, ok := Lease(root, "feat/held", taken.Add(2*time.Hour+time.Minute)); ok {
 			t.Fatal("a lease taken 2h1m ago still holds")
 		}
-		if held, ok := Lease(root, "feat/held", taken.Add(time.Hour+59*time.Minute)); !ok || !held.Lapses().Equal(taken.Add(LeaseTTL)) {
-			t.Fatalf("a lease taken 1h59m ago = %+v, %v; want it held until %s", held, ok, taken.Add(LeaseTTL))
+		if held, ok := Lease(root, "feat/held", taken.Add(time.Hour+59*time.Minute)); !ok || !held.Lapses().Equal(taken.Add(lease.TTL)) {
+			t.Fatalf("a lease taken 1h59m ago = %+v, %v; want it held until %s", held, ok, taken.Add(lease.TTL))
 		}
 	})
 	t.Run("when its holder exits", func(t *testing.T) {

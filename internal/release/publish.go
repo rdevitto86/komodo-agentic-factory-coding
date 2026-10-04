@@ -140,7 +140,7 @@ func sessionEnv() bool {
 // goTest runs the whole test suite pinned to the repo's toolchain, with every forge credential
 // scrubbed; a hung suite is killed, process group included, once gate.CommandTimeout passes.
 func goTest(root string, out io.Writer) error {
-	args := gate.TestArgs()
+	args := gate.TestArgs(true)
 	ctx, cancel := context.WithTimeout(context.Background(), gate.CommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)

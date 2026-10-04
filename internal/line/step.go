@@ -301,7 +301,7 @@ func stampReview(root string, plan *Plan) {
 }
 
 // staleReview reports whether a group commit past the base, by the author date a rebase keeps, postdates the review;
-// ship's own status-and-changelog commit is excluded, since it never invalidates a review already past it.
+// ship's own status-and-changelog commit and its credential-note commit are excluded, since neither is new work.
 func staleReview(root string, plan *Plan) bool {
 	_, path, err := ReadResultFile(root, plan.Group+"-review")
 	if err != nil {
@@ -325,9 +325,10 @@ func staleReview(root string, plan *Plan) bool {
 		return false
 	}
 	shipSubject := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
+	noteSubject := credentialNoteSubject(plan.Title, plan.Group)
 	for _, entry := range strings.Split(log, "\n") {
 		stamp, subject, found := strings.Cut(entry, "\t")
-		if !found || subject == shipSubject {
+		if !found || subject == shipSubject || subject == noteSubject {
 			continue
 		}
 		committed, err := time.Parse(time.RFC3339, stamp)

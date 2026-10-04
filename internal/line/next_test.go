@@ -491,3 +491,22 @@ func TestReadyGroupsCountsAnEarlierGroupsBranchAsABase(t *testing.T) {
 		t.Fatalf("ready = %v; want the default-based group, then the group stacked on it", got)
 	}
 }
+
+const stackedTitleOnlyText = "### [TG-05.4] Off the default\n```yaml\ntype: feat\nversion: 2.1.0\n```\n\n" +
+	"#### [TSK-05.4.1] Two [P: C] [READY]\n```yaml\nfiles: [b/two.go]\ndone_when: [\"go test ./b/...\"]\n```\n\n" +
+	"### [TG-05.5] Stacked using the title-only form\n```yaml\ntype: feat\nversion: 2.2.0\nbase: feat/off-the-default\ndepends_on: [TG-05.4]\n```\n\n" +
+	"#### [TSK-05.5.1] Three [P: C] [READY]\n```yaml\nfiles: [c/three.go]\ndone_when: [\"go test ./c/...\"]\n```\n"
+
+// TestReadyGroupsCountsAnEarlierGroupsTitleOnlyBranchAsABase proves a child stacked on the
+// title-only form of an earlier group's branch is not skipped forever.
+func TestReadyGroupsCountsAnEarlierGroupsTitleOnlyBranchAsABase(t *testing.T) {
+	root := stackedRepo(t)
+	groups := readyGroups(root, backlog.Parse(stackedTitleOnlyText), true)
+	var got []string
+	for _, group := range groups {
+		got = append(got, group.ID)
+	}
+	if strings.Join(got, ",") != "TG-05.4,TG-05.5" {
+		t.Fatalf("ready = %v; want the default-based group, then the group stacked on its title-only branch", got)
+	}
+}

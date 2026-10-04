@@ -62,13 +62,18 @@ func Run(checks []Check, out io.Writer) error {
 // Command builds a check that runs one command in the repo root, pinned to the repo's toolchain,
 // killed with its whole process group once CommandTimeout passes.
 func Command(name, root string, args ...string) Check {
+	return CommandEnv(name, root, nil, args...)
+}
+
+// CommandEnv is Command with env appended to the child's environment, such as GOOS for a cross-platform vet.
+func CommandEnv(name, root string, env []string, args ...string) Check {
 	return Check{Name: name, Run: func(out io.Writer) error {
 		ctx, cancel := context.WithTimeout(context.Background(), CommandTimeout)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		cmd.Dir = root
 		cmd.Stdout, cmd.Stderr = out, out
-		cmd.Env = childEnv()
+		cmd.Env = append(childEnv(), env...)
 		if toolchain, err := Toolchain(root); err == nil {
 			cmd.Env = append(cmd.Env, "GOTOOLCHAIN="+toolchain)
 		}
@@ -251,9 +256,15 @@ func resolveCommit(root, ref string) string {
 	return ref
 }
 
+// SyncEnv marks a merge sync drives, so the post-merge hook's own rebuild step no-ops.
+const SyncEnv = "KOMODO_SYNC"
+
 // Rebuild builds this host's binary and stamps bin/.built-from with to, only when a .go file,
 // go.mod or go.sum differs between from and to.
 func Rebuild(root, from, to string, out io.Writer) error {
+	if os.Getenv(SyncEnv) != "" {
+		return nil
+	}
 	from, to = resolveCommit(root, from), resolveCommit(root, to)
 	changed, err := changedBuildInputs(root, from, to)
 	if err != nil {
@@ -512,17 +523,21 @@ type FuzzTarget struct {
 	Package string
 }
 
-// FuzzTargets are the parsers the gate fuzzes: shell commands, task grammar, and ledger lines.
-var FuzzTargets = []FuzzTarget{
+// ownFuzzTargets are the parsers the gate itself fuzzes: shell commands, task grammar, and ledger lines.
+var ownFuzzTargets = []FuzzTarget{
 	{Name: "FuzzCheck", Package: "./internal/guard"},
-	{Name: "FuzzLex", Package: "./internal/guard"},
+	{Name: "FuzzTokenize", Package: "./internal/guard"},
 	{Name: "FuzzParse", Package: "./internal/backlog"},
 	{Name: "FuzzRead", Package: "./internal/ledger"},
 }
 
-// FuzzChecks builds one check per fuzz target, each run for the given duration such as 10s.
-func FuzzChecks(root, duration string) []Check {
-	return FuzzChecksFor(root, duration, FuzzTargets)
+// FuzzTargets are every fuzz target the gate runs: its own, plus each registered mount's own.
+func FuzzTargets() []FuzzTarget {
+	targets := append([]FuzzTarget{}, ownFuzzTargets...)
+	for _, target := range mount.FuzzTargets() {
+		targets = append(targets, FuzzTarget{Name: target.Name, Package: target.Package})
+	}
+	return targets
 }
 
 // FuzzChecksFor builds one check per named fuzz target, each run for the given duration such as 10s.
@@ -560,7 +575,7 @@ func PushedFiles(root, from, to string) ([]string, error) {
 // PushedFuzzTargets returns the fuzz targets whose package is among a push's changed paths.
 func PushedFuzzTargets(paths []string) []FuzzTarget {
 	var touched []FuzzTarget
-	for _, target := range FuzzTargets {
+	for _, target := range FuzzTargets() {
 		dir := strings.TrimPrefix(target.Package, "./")
 		for _, path := range paths {
 			if path == dir || strings.HasPrefix(path, dir+"/") {
@@ -578,7 +593,7 @@ func PushChecks(root, from, to, fuzzDuration string, build []Check) ([]Check, er
 	if to == "" {
 		checks := append([]Check{}, build...)
 		if fuzzDuration != "" {
-			checks = append(checks, FuzzChecksFor(root, fuzzDuration, FuzzTargets)...)
+			checks = append(checks, FuzzChecksFor(root, fuzzDuration, FuzzTargets())...)
 		}
 		return checks, nil
 	}
@@ -603,11 +618,15 @@ func PushChecks(root, from, to, fuzzDuration string, build []Check) ([]Check, er
 	return checks, nil
 }
 
-// TestArgs is the go test command line: under the race detector when cgo can build it, else plain.
-func TestArgs() []string {
-	out, err := exec.Command("go", "env", "CGO_ENABLED").Output()
-	if err == nil && strings.TrimSpace(string(out)) == "1" {
-		return []string{"go", "test", "-race", "./..."}
+// TestArgs is the go test command line: under the race detector when cgo can build it, and, when fresh,
+// uncached and in shuffled order, so a result never leans on a cache or on the order tests ran in.
+func TestArgs(fresh bool) []string {
+	args := []string{"go", "test"}
+	if out, err := exec.Command("go", "env", "CGO_ENABLED").Output(); err == nil && strings.TrimSpace(string(out)) == "1" {
+		args = append(args, "-race")
 	}
-	return []string{"go", "test", "./..."}
+	if fresh {
+		args = append(args, "-count=1", "-shuffle=on")
+	}
+	return append(args, "./...")
 }

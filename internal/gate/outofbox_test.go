@@ -14,7 +14,8 @@ import (
 	"komodo/internal/mount"
 )
 
-// freshClone checks this checkout's HEAD out into a new repo on a feature branch, as a person's clone would be.
+// freshClone copies every file this checkout tracks, as it stands in the working tree, into a new repo on a
+// feature branch, so a commit's own gate proves the commit being made rather than the one before it.
 func freshClone(t *testing.T) string {
 	t.Helper()
 	source, err := filepath.Abs(filepath.Join("..", ".."))
@@ -25,9 +26,28 @@ func freshClone(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gitCommand(t, clone, "init", "-q", "-b", "main")
-	gitCommand(t, clone, "fetch", "-q", source, "HEAD")
-	gitCommand(t, clone, "checkout", "-q", "-b", "feat/out-of-box", "FETCH_HEAD")
+	for _, rel := range strings.Split(strings.TrimSpace(gitCommand(t, source, "ls-files")), "\n") {
+		data, err := os.ReadFile(filepath.Join(source, rel))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(filepath.Join(source, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(clone, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(clone, rel), data, info.Mode().Perm()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitCommand(t, clone, "init", "-q", "-b", "feat/out-of-box")
+	gitCommand(t, clone, "add", "-A")
+	gitCommand(t, clone, "-c", "user.email=a@example.com", "-c", "user.name=a", "commit", "-q", "--no-verify", "-m", "clone")
 	return clone
 }
 
@@ -48,6 +68,10 @@ func hookCommands(t *testing.T, dir string) map[string][]string {
 	t.Helper()
 	found := map[string][]string{}
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		// Test fixtures, golden renders among them, are not files a host reads.
+		if err == nil && info.IsDir() && info.Name() == "testdata" {
+			return filepath.SkipDir
+		}
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".json") {
 			return nil
 		}

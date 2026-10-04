@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
-	"komodo/internal/changelog"
 	"komodo/internal/fsx"
 	"komodo/internal/git"
 	"komodo/internal/guard"
@@ -41,7 +40,6 @@ type ShipResult struct {
 	Draft     bool           `json:"draft"`
 	Ready     bool           `json:"ready,omitempty"`
 	Labels    []string       `json:"labels,omitempty"`
-	Changelog string         `json:"changelog,omitempty"`
 	Done      []string       `json:"done,omitempty"`
 	Blocked   []string       `json:"blocked,omitempty"`
 	Filed     []string       `json:"filed,omitempty"`
@@ -135,7 +133,7 @@ func writeShipHandoff(root string, handoff ShipHandoff) error {
 	return fsx.WriteFile(HandoffPath(root, handoff.Group), append(data, '\n'), 0o644)
 }
 
-// ShipGroup commits, pushes, opens the pull request, writes the changelog, and flips the statuses.
+// ShipGroup commits, pushes, opens the pull request, and flips the statuses.
 // A scrubbed environment commits and hands the push off instead of failing on a credential it lacks.
 func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) (result *ShipResult, err error) {
 	if plan.WaitUntil != "" {
@@ -206,23 +204,23 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 	// File findings before push so they are in the ship commit.
 	filed, err := FileFindings(group, plan.Group, minor)
 	if err != nil {
-		return result, err
+		return result, unstageShipWork(group, err)
 	}
 	result.Filed = filed
 	if len(filed) > 0 {
 		// Stage whichever backlog file the findings landed in for commit.
 		stagePath, err := findingsPath(group, plan.Group)
 		if err != nil {
-			return nil, err
+			return nil, unstageShipWork(group, err)
 		}
 		if err := stageWork(group, []string{stagePath}); err != nil {
-			return nil, err
+			return nil, unstageShipWork(group, err)
 		}
 	}
 	if staged, _ := git.Run(group, "diff", "--cached", "--name-only"); staged != "" {
 		message := fmt.Sprintf("%s: %s (%s)", plan.Type, plan.Title, plan.Group)
 		if _, err := git.Run(group, "commit", "-m", message); err != nil {
-			return nil, err
+			return nil, unstageShipWork(group, err)
 		}
 	}
 	if err := ClearStatus(root, shippedIDs); err != nil {
@@ -266,7 +264,8 @@ func ShipGroup(root string, plan *Plan, waves []*WaveResult, client *pr.Client) 
 		}
 		// The group keeps its commits and stops before Ship; komodo ship finishes it once a credential is back.
 		outcome = "handoff"
-		return result, errors.Join(err, writeShipHandoff(root, handoff), writeCredentialNote(root, plan, group, err))
+		return result, errors.Join(err, writeShipHandoff(root, handoff),
+			writeCredentialNote(root, group, plan.Group, plan.Title, plan.Branch, err))
 	}
 	// The credential stays with the push; after_publish is repo-written, so it runs scrubbed.
 	if command := AfterPublishCommand(root, group); command != "" {
@@ -336,8 +335,8 @@ func markReady(client *pr.Client, url string, draft bool) error {
 	return nil
 }
 
-// tickTasks sorts the plan's tasks into done and blocked, writes each tick and blocker into the
-// group's own backlog, and writes its changelog fragment, so the group's commit carries both.
+// tickTasks sorts the plan's tasks into done and blocked, and writes each tick and blocker into the
+// group's own backlog, so the group's commit carries them.
 func tickTasks(
 	plan *Plan, group string, rootParsed backlog.Backlog, live map[string]TaskStatus, result *ShipResult,
 ) error {
@@ -372,13 +371,6 @@ func tickTasks(
 			}
 		}
 	}
-	// A fragment per group, never an edit to CHANGELOG.md, so two open pull requests never conflict there.
-	if line := ChangelogLine(plan, result); line != "" {
-		if err := changelog.WriteFragment(group, plan.Version, plan.Group, line); err != nil {
-			return err
-		}
-		result.Changelog = line
-	}
 	return nil
 }
 
@@ -403,10 +395,19 @@ func declaredFiles(plan *Plan) []string {
 	return declared
 }
 
+// unstageShipWork undoes ship's own staging when err is set, so a step that fails after stageWork
+// leaves the group's index as it found it instead of blocking the next commit or merge.
+func unstageShipWork(group string, err error) error {
+	if err != nil {
+		_, _ = git.Run(group, "reset")
+	}
+	return err
+}
+
 // StationPrepare is the ledger station Prepare stamps, always before any push.
 const StationPrepare = "prepare"
 
-// PrepareGroup commits the group's work with its ticked tasks and changelog fragment, runs its pre-commit and
+// PrepareGroup commits the group's work with its ticked tasks, runs its pre-commit and
 // pre-push hooks, and rebases it on its base; a hook's refusal and each conflicted file come back as fixes.
 func PrepareGroup(root string, plan *Plan) (fixes []string, err error) {
 	started := time.Now()
@@ -682,21 +683,26 @@ func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.C
 	return result, nil
 }
 
+// credentialNoteSubject is the subject writeCredentialNote commits, so staleReview can skip its own commits too.
+func credentialNoteSubject(title, group string) string {
+	return fmt.Sprintf("docs: %s waits on a forge credential (%s)", title, group)
+}
+
 // writeCredentialNote commits a blocker note on the group's branch naming the refused push and komodo ship as the fix.
-func writeCredentialNote(root string, plan *Plan, worktree string, cause error) error {
+func writeCredentialNote(root, worktree, group, title, branch string, cause error) error {
 	head, err := git.Run(worktree, "rev-parse", "--short", "HEAD")
 	if err != nil {
 		return err
 	}
-	state, _ := RunFor(root, plan.Group)
-	if _, err := addBlockerNote(worktree, plan.Group, backlog.BlockerNote{
+	state, _ := RunFor(root, group)
+	if _, err := addBlockerNote(worktree, group, backlog.BlockerNote{
 		At: time.Now().UTC(), Run: state.Run, State: "Shipping", Items: []string{cause.Error()},
-		Needs: "a valid forge credential, then `komodo ship " + plan.Group + "`",
-		Saved: fmt.Sprintf("commit `%s` on `%s`", head, plan.Branch),
+		Needs: "a valid forge credential, then `komodo ship " + group + "`",
+		Saved: fmt.Sprintf("commit `%s` on `%s`", head, branch),
 	}); err != nil {
 		return err
 	}
-	return commitStaged(worktree, nil, fmt.Sprintf("docs: %s waits on a forge credential (%s)", plan.Title, plan.Group))
+	return commitStaged(worktree, nil, credentialNoteSubject(title, group))
 }
 
 // addBlockerNote writes note into the group's own docs/backlog file, returning every task the note
@@ -748,14 +754,26 @@ func FinishShip(root, groupID string, client *pr.Client) (*ShipResult, error) {
 	if _, err := git.Run(root, "check-ref-format", "--branch", handoff.Branch); err != nil {
 		return nil, fmt.Errorf("the handoff names %q, which is not a valid branch; nothing was pushed", handoff.Branch)
 	}
-	worktree := handoff.Worktree
-	if worktree == "" {
-		worktree = root
+	// ship.json is agent-writable; its own worktree is trusted only once it matches the group's saved run.
+	state, err := LoadRunFor(root, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("%s has no run recorded for its handoff; nothing was pushed: %w", groupID, err)
+	}
+	worktree := WorktreePath(root, state.Worktree)
+	if handoff.Worktree != "" && handoff.Worktree != worktree {
+		return nil, fmt.Errorf("the handoff under %s names worktree %q, which differs from its run's %q; nothing was pushed",
+			groupID, handoff.Worktree, worktree)
 	}
 	if err := dropCredentialNote(worktree, handoff); err != nil {
 		return nil, err
 	}
 	if err := PushFromWorktree(root, worktree, handoff.Branch); err != nil {
+		if errors.Is(err, ErrNoCredential) {
+			// The push still lacks its credential, so the note dropCredentialNote removed must come back.
+			if noteErr := writeCredentialNote(root, worktree, handoff.Group, handoff.Title, handoff.Branch, err); noteErr != nil {
+				return nil, errors.Join(err, noteErr)
+			}
+		}
 		return nil, err
 	}
 	result := &ShipResult{Group: groupID, Branch: handoff.Branch, Base: handoff.Base, Draft: true}
@@ -814,28 +832,9 @@ func commitStaged(worktree string, declared []string, message string) error {
 	return err
 }
 
-// labelBlocked adds the status: blocked label the repo defines; a label whose name holds a space never
-// matches KeepKnown's rule, so it is matched here by its whole name.
+// labelBlocked adds the repo's status: blocked label through the shared labelNamed helper.
 func labelBlocked(client *pr.Client, url string) (labels, warnings []string) {
-	known, err := client.Labels()
-	if err != nil {
-		return nil, []string{fmt.Sprintf("could not list labels: %v", err)}
-	}
-	for _, label := range known {
-		if label != blockedLabel && !strings.HasPrefix(label, blockedLabel+" ") {
-			continue
-		}
-		if err := client.Label(url, []string{label}); err != nil {
-			return nil, []string{fmt.Sprintf("could not add label(s): %v", err)}
-		}
-		return []string{label}, nil
-	}
-	return nil, []string{"the repo has no " + blockedLabel + " label"}
-}
-
-// ApplyLabels adds the repo labels matching wanted to the pull request, warning on each miss or failure.
-func ApplyLabels(client *pr.Client, url string, wanted []string) (kept, warnings []string) {
-	return ApplyLabelSet(client, url, wanted, nil)
+	return labelNamed(client, url, blockedLabel)
 }
 
 // ApplyLabelSet adds the repo labels matching wanted and optional, warning only on a missing wanted one.
@@ -965,9 +964,9 @@ func ReviewSize(dir, base, branch string) (files, added int) {
 	return files, added
 }
 
-// bookkeeping reports a path Ship writes itself: a group file, or a changelog fragment.
+// bookkeeping reports a path Ship writes itself: a group file.
 func bookkeeping(path string) bool {
-	return strings.HasPrefix(path, "docs/backlog/") || strings.HasPrefix(path, "changelog.d/")
+	return strings.HasPrefix(path, "docs/backlog/")
 }
 
 // checkPRSize refuses a diff over either the kept-file or the added-line ceiling, naming a split as the fix.
@@ -985,18 +984,6 @@ func checkPRSize(group string, files, lines, filesCap, linesMax int) error {
 	}
 	return fmt.Errorf("%s's diff has %s; split it into smaller groups before shipping a pull request",
 		group, strings.Join(over, " and "))
-}
-
-// ChangelogLine is the one line a group adds under its version.
-func ChangelogLine(plan *Plan, result *ShipResult) string {
-	if plan.Version == "" {
-		return ""
-	}
-	line := fmt.Sprintf("- **%s** %s (%d task(s))", plan.Group, plan.Title, len(result.Done))
-	if len(result.Blocked) > 0 {
-		line += fmt.Sprintf("; blocked: %s", strings.Join(result.Blocked, ", "))
-	}
-	return line
 }
 
 // PushFromWorktree pushes branch's tip ref from worktree to the root's origin URL, past its refused pushurl.
@@ -1065,7 +1052,7 @@ func pushRef(root, worktree, source, branch string) error {
 	args := []string{"push", "--no-verify", clean, source + ":" + ref}
 	env := os.Environ()
 	if username != "" || password != "" {
-		args = append([]string{"-c", "credential.helper=", "-c", "credential.helper=" + pushCredentialHelper}, args...)
+		args = append([]string{"-c", "credential.helper=", "-c", credentialHelperKey(clean) + "=" + pushCredentialHelper}, args...)
 		env = append(env, pushUsernameEnv+"="+username, pushPasswordEnv+"="+password)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
@@ -1125,6 +1112,16 @@ const (
 // pushCredentialHelper answers git's credential get from the push's own environment, so no URL or argument holds it.
 const pushCredentialHelper = `!f() { test "$1" = get || exit 0; echo "username=$` + pushUsernameEnv +
 	`"; echo "password=$` + pushPasswordEnv + `"; }; f`
+
+// credentialHelperKey is the config key that scopes a credential helper to clean's own protocol and host, so
+// a redirect or proxy asking for another host's credential is answered by no helper this push configures.
+func credentialHelperKey(clean string) string {
+	parsed, err := url.Parse(clean)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "credential.helper"
+	}
+	return "credential." + parsed.Scheme + "://" + parsed.Host + ".helper"
+}
 
 // splitCredential returns an http(s) URL without its user and secret, and those two apart; other URLs pass unchanged.
 func splitCredential(raw string) (clean, username, password string) {
