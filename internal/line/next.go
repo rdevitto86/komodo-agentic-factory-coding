@@ -132,11 +132,7 @@ func openRun(root, groupID string) (*Plan, error) {
 	if err != nil || plan == nil {
 		return nil, err
 	}
-	parsed, _, err := LoadBacklog(root)
-	if err != nil {
-		return nil, err
-	}
-	if shipped(root, plan, parsed) {
+	if shipped(root, plan) {
 		return nil, nil
 	}
 	return plan, nil

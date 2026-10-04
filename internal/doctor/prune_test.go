@@ -175,6 +175,32 @@ func TestPruneKeepsOnlyTheNewestRunFolders(t *testing.T) {
 	}
 }
 
+func TestPruneDryRunLeavesEveryRunFolderInPlace(t *testing.T) {
+	root, _ := pruneRepo(t, openBacklog)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var groups []string
+	for index := 1; index <= keptRuns+2; index++ {
+		group := fmt.Sprintf("TG-02.%d", index)
+		groups = append(groups, group)
+		state := line.RunState{Run: "r", Group: group, Base: "main", Started: start.Add(time.Duration(index) * time.Hour)}
+		if err := line.SaveRun(root, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := Prune(root, "main", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range groups {
+		if !exists(line.RunDir(root, group)) {
+			t.Fatalf("a dry run removed %s's folder; done = %v", group, got)
+		}
+	}
+	if !strings.Contains(strings.Join(got, "\n"), "would remove run folder") {
+		t.Fatalf("done = %v, want the old run folders listed", got)
+	}
+}
+
 // TestPruneNeverRemovesOutsideARunsOwnGroupDirectory proves a run.json whose group escapes its own
 // directory, such as "..", is skipped rather than handed to os.RemoveAll.
 func TestPruneNeverRemovesOutsideARunsOwnGroupDirectory(t *testing.T) {

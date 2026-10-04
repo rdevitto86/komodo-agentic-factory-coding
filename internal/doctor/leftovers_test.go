@@ -138,6 +138,16 @@ func TestDoctorNamesADetachedWorktreeNoGroupOwnsByItsTrackedBranch(t *testing.T)
 	}
 }
 
+func TestDoctorNamesADetachedWorktreeTrackingNoBranchAsDetached(t *testing.T) {
+	root, run := pruneRepo(t, openBacklog)
+	orphan := filepath.Join(root, ".komodo", "wt", "TG-09.9")
+	run(root, "worktree", "add", "-q", "--detach", orphan, "main")
+	notes := Leftovers(root)
+	if len(notes) != 1 || !strings.Contains(notes[0], "TG-09.9 detached") || strings.Contains(notes[0], "on branch") {
+		t.Fatalf("notes = %v, want one note naming the worktree detached and no empty branch", notes)
+	}
+}
+
 func TestDoctorNamesARunsTipRefWhoseGroupIsNoLongerOpen(t *testing.T) {
 	root, run := pruneRepo(t, openBacklog)
 	run(root, "update-ref", line.TipRef("feat/old"), "main")
