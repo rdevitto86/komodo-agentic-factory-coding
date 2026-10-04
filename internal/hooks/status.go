@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -40,7 +41,7 @@ func RunStatus(root string) []GroupStatus {
 	for _, run := range runs {
 		status := GroupStatus{Group: run.Group, State: stateOpen}
 		if s, err := conductor.LoadState(conductor.StatePath(root, run.Group)); err == nil {
-			status.State, status.TimeUsed = string(s.Current), s.TimeUsed
+			status.State, status.TimeUsed = string(s.Current), s.TimeUsed+liveStage(root, run.Group, s)
 			if s.Current == conductor.Escalated || s.Current == conductor.Blocked {
 				status.Blocker = conductor.Next(s).Why
 			}
@@ -48,6 +49,19 @@ func RunStatus(root string) []GroupStatus {
 		groups = append(groups, status)
 	}
 	return groups
+}
+
+// liveStage is a live run's time in the group's current state; a settled or unheld group adds none.
+func liveStage(root, group string, s conductor.State) time.Duration {
+	if s.Current == conductor.Shipped || s.Current == conductor.Blocked || line.CheckLock(root, group) == nil {
+		return 0
+	}
+	// The conductor saves state.json as it enters a state, so its modification time is when the stage began.
+	info, err := os.Stat(conductor.StatePath(root, group))
+	if err != nil {
+		return 0
+	}
+	return max(time.Since(info.ModTime()), 0)
 }
 
 // StatusText renders the groups by state, one line each, then every blocker; empty when no run is recorded.
