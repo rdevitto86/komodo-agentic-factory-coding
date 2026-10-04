@@ -1,6 +1,8 @@
 package release
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,12 +10,17 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/line"
 	"komodo/internal/pr"
+	"komodo/internal/proc"
 )
+
+// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
 
 // SumsFile is the checksum manifest a release ships beside its binaries, which install verifies.
 const SumsFile = "SHA256SUMS"
@@ -130,18 +137,38 @@ func sessionEnv() bool {
 		os.Getenv("GIT_CONFIG_VALUE_0") == ""
 }
 
-// goTest runs the whole test suite pinned to the repo's toolchain, with every forge credential scrubbed.
+// goTest runs the whole test suite pinned to the repo's toolchain, with every forge credential
+// scrubbed; a hung suite is killed, process group included, once gate.CommandTimeout passes.
 func goTest(root string, out io.Writer) error {
-	args := gate.TestArgs()
-	cmd := exec.Command(args[0], args[1:]...)
+	args := gate.TestArgs(true)
+	ctx, cancel := context.WithTimeout(context.Background(), gate.CommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = root
 	cmd.Env = line.Scrub(os.Environ())
 	if toolchain, err := gate.Toolchain(root); err == nil {
 		cmd.Env = append(cmd.Env, "GOTOOLCHAIN="+toolchain)
 	}
-	cmd.Stdout, cmd.Stderr = out, out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s: %w", strings.Join(args, " "), err)
+	captured := proc.NewBoundedWriter(proc.MaxOutput)
+	// Stdout and Stderr share one writer value, so the exec package serializes both through it.
+	combined := io.MultiWriter(out, captured)
+	cmd.Stdout, cmd.Stderr = combined, combined
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%s: timed out after %s: %s", strings.Join(args, " "), gate.CommandTimeout, strings.TrimSpace(captured.String()))
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(captured.String()))
 	}
 	return nil
 }

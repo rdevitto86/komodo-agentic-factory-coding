@@ -1,11 +1,13 @@
 package doctor
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/git"
 	"komodo/internal/mount"
@@ -15,7 +17,7 @@ import (
 func swapGoToolchain(t *testing.T, version string) {
 	t.Helper()
 	previous := goToolchain
-	goToolchain = func(string) string { return version }
+	goToolchain = func(string) (string, error) { return version, nil }
 	t.Cleanup(func() { goToolchain = previous })
 }
 
@@ -57,6 +59,27 @@ func TestAToolchainThatDiffersIsFound(t *testing.T) {
 	for _, problem := range got {
 		if problem.Where == "go.mod" && strings.Contains(problem.Detail, "pinned to go1.27.1") &&
 			strings.Contains(problem.Detail, "runs go1.20.0") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pins = %+v", got)
+	}
+}
+
+// TestAToolchainReadFailureIsFoundNotSilentlySkipped proves checkToolchain reports goToolchain's
+// error, instead of goToolchain returning "" and the problem going unseen.
+func TestAToolchainReadFailureIsFoundNotSilentlySkipped(t *testing.T) {
+	root := clean(t)
+	write(t, root, "go.mod", "module fixture\n\ngo 1.22\n\ntoolchain go1.27.1\n")
+	previous := goToolchain
+	goToolchain = func(string) (string, error) { return "", fmt.Errorf("go env GOVERSION: boom") }
+	t.Cleanup(func() { goToolchain = previous })
+	got := problemsFrom(t, root)["pins"]
+	found := false
+	for _, problem := range got {
+		if problem.Where == "go.mod" && strings.Contains(problem.Detail, "could not read this machine's Go toolchain") &&
+			strings.Contains(problem.Detail, "boom") {
 			found = true
 		}
 	}
@@ -151,6 +174,29 @@ func TestThePinnedReleaseCheck(t *testing.T) {
 				t.Fatalf("pins = %+v, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestReleaseVersionKillsAHungBinaryAndNamesTheTimeout proves a released binary past toolTimeout
+// is killed, process group included, and the error names the command and the timeout.
+func TestReleaseVersionKillsAHungBinaryAndNamesTheTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "komodo-fake")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nsleep 30 &\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := toolTimeout
+	toolTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { toolTimeout = saved })
+	started := time.Now()
+	if _, err := ReleaseVersion(path); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want it to name the timeout", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 

@@ -194,13 +194,3 @@ func init() {
 		Deferred:    "the Codex mount is deferred to a later version; its setup stays in the code, and nothing installs or selects it",
 	})
 }
-
-// Headless returns this host's non-interactive command for one skill and one target; exec
-// defaults to a read-only sandbox, so the line and a builder need workspace-write named explicitly.
-func Headless(skill, target string) (string, []string) {
-	prompt := "/" + skill
-	if target != "" {
-		prompt += " " + target
-	}
-	return "codex", []string{"exec", "--json", "--sandbox", "workspace-write", prompt}
-}

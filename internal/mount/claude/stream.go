@@ -2,6 +2,7 @@ package claude
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"time"
@@ -9,17 +10,8 @@ import (
 	"komodo/internal/mount"
 )
 
-// streamLineCap bounds one stream-json line this mount reads, as sumTranscript does for a transcript line.
+// streamLineCap bounds one stream-json line this mount reads.
 const streamLineCap = 8 << 20
-
-// Event is one line the stream reports: the result event's totals and session ID, or a rate limit window.
-type Event struct {
-	Turns     int
-	Usage     mount.TaskUsage
-	CostUSD   float64
-	RateLimit *mount.RateLimit
-	SessionID string
-}
 
 // kindLine is the only field this mount reads before it knows which line it has.
 type kindLine struct {
@@ -41,8 +33,8 @@ type resultLine struct {
 
 // rateWindow is one rate-limit window's utilisation and when it next resets.
 type rateWindow struct {
-	Utilization float64   `json:"utilization"`
-	ResetsAt    time.Time `json:"resetsAt"`
+	Utilization float64         `json:"utilization"`
+	ResetsAt    json.RawMessage `json:"resetsAt"`
 }
 
 // rateLimitLine is the rate_limit_event's fields: the five-hour and seven-day windows.
@@ -51,10 +43,10 @@ type rateLimitLine struct {
 	SevenDay rateWindow `json:"seven_day"`
 }
 
-// Parse reads one stream-json session and reports the result event's totals and session ID, and
-// every rate_limit_event, in order; any other line, such as a turn's message, is skipped.
-func Parse(r io.Reader) <-chan Event {
-	out := make(chan Event)
+// Parse reads one stream-json session and reports the result event's totals and every
+// rate_limit_event; a cancelled ctx stops it mid-send, and a scanner error ends it as the final Err.
+func Parse(ctx context.Context, r io.Reader) <-chan mount.Event {
+	out := make(chan mount.Event)
 	go func() {
 		defer close(out)
 		scanner := bufio.NewScanner(r)
@@ -68,17 +60,33 @@ func Parse(r io.Reader) <-chan Event {
 			if json.Unmarshal(line, &kind) != nil {
 				continue
 			}
+			var event mount.Event
 			switch kind.Type {
 			case "result":
 				var parsed resultLine
-				if json.Unmarshal(line, &parsed) == nil {
-					out <- resultEvent(parsed)
+				if json.Unmarshal(line, &parsed) != nil {
+					continue
 				}
+				event = resultEvent(parsed)
 			case "rate_limit_event":
 				var parsed rateLimitLine
-				if json.Unmarshal(line, &parsed) == nil {
-					out <- rateLimitEvent(parsed)
+				if json.Unmarshal(line, &parsed) != nil {
+					continue
 				}
+				event = rateLimitEvent(parsed)
+			default:
+				continue
+			}
+			select {
+			case out <- event:
+			case <-ctx.Done():
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			select {
+			case out <- mount.Event{Err: err}:
+			case <-ctx.Done():
 			}
 		}
 	}()
@@ -86,8 +94,8 @@ func Parse(r io.Reader) <-chan Event {
 }
 
 // resultEvent turns a result line's totals into the stream's event.
-func resultEvent(parsed resultLine) Event {
-	return Event{
+func resultEvent(parsed resultLine) mount.Event {
+	return mount.Event{
 		Turns: parsed.NumTurns,
 		Usage: mount.TaskUsage{
 			TokensIn:     parsed.Usage.InputTokens + parsed.Usage.CacheCreationTokens,
@@ -100,14 +108,27 @@ func resultEvent(parsed resultLine) Event {
 	}
 }
 
-// rateLimitEvent turns a rate_limit_event line into the stream's event, keyed to the five-hour reset,
-// since the plan probe (limits.go) tracks only that window's reset too.
-func rateLimitEvent(parsed rateLimitLine) Event {
-	return Event{
+// rateLimitEvent turns a rate_limit_event line into the stream's event, keyed to the five-hour reset.
+func rateLimitEvent(parsed rateLimitLine) mount.Event {
+	return mount.Event{
 		RateLimit: &mount.RateLimit{
 			FiveHour: parsed.FiveHour.Utilization / 100,
 			SevenDay: parsed.SevenDay.Utilization / 100,
-			ResetsAt: parsed.FiveHour.ResetsAt,
+			ResetsAt: parseResetsAt(parsed.FiveHour.ResetsAt),
 		},
 	}
+}
+
+// parseResetsAt reads a reset time from an RFC3339 string or epoch seconds, zero when neither parses.
+func parseResetsAt(raw json.RawMessage) time.Time {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		parsed, _ := time.Parse(time.RFC3339, text)
+		return parsed
+	}
+	var epoch int64
+	if json.Unmarshal(raw, &epoch) == nil {
+		return time.Unix(epoch, 0)
+	}
+	return time.Time{}
 }

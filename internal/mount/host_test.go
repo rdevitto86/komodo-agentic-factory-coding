@@ -1,6 +1,7 @@
 package mount
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -18,7 +19,6 @@ type fakeHost struct {
 	preflightErr error
 	capabilities Capabilities
 	sessions     map[Handle]*fakeSession
-	next         int
 }
 
 // newFakeHost returns a fake host with no sessions and every capability declared.
@@ -29,10 +29,9 @@ func newFakeHost() *fakeHost {
 	}
 }
 
-func (f *fakeHost) Preflight() error { return f.preflightErr }
+func (f *fakeHost) Preflight(ctx context.Context) error { return f.preflightErr }
 
-func (f *fakeHost) Start(req StartRequest) (Handle, error) {
-	f.next++
+func (f *fakeHost) Start(ctx context.Context, req StartRequest) (Handle, error) {
 	handle := Handle(req.Role)
 	f.sessions[handle] = &fakeSession{
 		events: []Event{{Turns: 1, Usage: TaskUsage{TokensIn: 10, TokensOut: 5, Turns: 1}, CostUSD: 0.01}},
@@ -41,7 +40,7 @@ func (f *fakeHost) Start(req StartRequest) (Handle, error) {
 	return handle, nil
 }
 
-func (f *fakeHost) Resume(handle Handle, input string) (Handle, error) {
+func (f *fakeHost) Resume(ctx context.Context, handle Handle, input string) (Handle, error) {
 	session, ok := f.sessions[handle]
 	if !ok {
 		return "", errors.New("no such session")
@@ -51,7 +50,7 @@ func (f *fakeHost) Resume(handle Handle, input string) (Handle, error) {
 	return handle, nil
 }
 
-func (f *fakeHost) Stream(handle Handle) (<-chan Event, error) {
+func (f *fakeHost) Stream(ctx context.Context, handle Handle) (<-chan Event, error) {
 	session, ok := f.sessions[handle]
 	if !ok {
 		return nil, errors.New("no such session")
@@ -72,7 +71,7 @@ func (f *fakeHost) Result(handle Handle) (Result, error) {
 	return session.result, nil
 }
 
-func (f *fakeHost) Stop(handle Handle) error {
+func (f *fakeHost) Stop(ctx context.Context, handle Handle) error {
 	session, ok := f.sessions[handle]
 	if !ok {
 		return errors.New("no such session")
@@ -83,12 +82,13 @@ func (f *fakeHost) Stop(handle Handle) error {
 
 func (f *fakeHost) Capabilities() Capabilities { return f.capabilities }
 
-// asContract confirms the type satisfies the interface every mount implements.
+// fakeHost satisfies Contract at compile time; the assignment itself is the test.
 var _ Contract = (*fakeHost)(nil)
 
 func TestFakeHostDrivesTheWholeContract(t *testing.T) {
+	ctx := context.Background()
 	host := newFakeHost()
-	if err := host.Preflight(); err != nil {
+	if err := host.Preflight(ctx); err != nil {
 		t.Fatalf("preflight = %v", err)
 	}
 	got := host.Capabilities()
@@ -97,12 +97,12 @@ func TestFakeHostDrivesTheWholeContract(t *testing.T) {
 		t.Fatalf("capabilities = %+v, want %+v", got, want)
 	}
 
-	handle, err := host.Start(StartRequest{Role: "builder", Model: "sonnet", Effort: "medium"})
+	handle, err := host.Start(ctx, StartRequest{Role: "builder", Model: "sonnet", Effort: "medium"})
 	if err != nil {
 		t.Fatalf("start = %v", err)
 	}
 
-	events, err := host.Stream(handle)
+	events, err := host.Stream(ctx, handle)
 	if err != nil {
 		t.Fatalf("stream = %v", err)
 	}
@@ -119,7 +119,7 @@ func TestFakeHostDrivesTheWholeContract(t *testing.T) {
 		t.Fatalf("result = %+v, %v", result, err)
 	}
 
-	resumed, err := host.Resume(handle, "fix the lint error")
+	resumed, err := host.Resume(ctx, handle, "fix the lint error")
 	if err != nil {
 		t.Fatalf("resume = %v", err)
 	}
@@ -128,7 +128,7 @@ func TestFakeHostDrivesTheWholeContract(t *testing.T) {
 		t.Fatalf("resumed result = %+v, %v", result, err)
 	}
 
-	if err := host.Stop(resumed); err != nil {
+	if err := host.Stop(ctx, resumed); err != nil {
 		t.Fatalf("stop = %v", err)
 	}
 	if !host.sessions[resumed].stopped {
@@ -139,23 +139,24 @@ func TestFakeHostDrivesTheWholeContract(t *testing.T) {
 func TestFakeHostReportsAPreflightFailure(t *testing.T) {
 	host := newFakeHost()
 	host.preflightErr = errors.New("not logged in")
-	if err := host.Preflight(); err == nil {
+	if err := host.Preflight(context.Background()); err == nil {
 		t.Fatal("a failed login passed preflight")
 	}
 }
 
 func TestFakeHostRefusesAnUnknownHandle(t *testing.T) {
+	ctx := context.Background()
 	host := newFakeHost()
-	if _, err := host.Stream("missing"); err == nil {
+	if _, err := host.Stream(ctx, "missing"); err == nil {
 		t.Fatal("streaming an unknown handle succeeded")
 	}
 	if _, err := host.Result("missing"); err == nil {
 		t.Fatal("reading the result of an unknown handle succeeded")
 	}
-	if err := host.Stop("missing"); err == nil {
+	if err := host.Stop(ctx, "missing"); err == nil {
 		t.Fatal("stopping an unknown handle succeeded")
 	}
-	if _, err := host.Resume("missing", "input"); err == nil {
+	if _, err := host.Resume(ctx, "missing", "input"); err == nil {
 		t.Fatal("resuming an unknown handle succeeded")
 	}
 }

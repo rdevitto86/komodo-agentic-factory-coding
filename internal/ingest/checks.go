@@ -16,23 +16,16 @@ func allChecks(group backlog.Group, files []string) []string {
 
 	seen := map[string]bool{}
 	var out []string
-
-	// Add hand-written checks first.
 	for _, check := range handWritten {
-		if !seen[check] {
-			seen[check] = true
-			out = append(out, check)
-		}
+		seen[check] = true
+		out = append(out, check)
 	}
-
-	// Add derived checks that aren't already present.
 	for _, check := range derived {
 		if !seen[check] {
 			seen[check] = true
 			out = append(out, check)
 		}
 	}
-
 	return out
 }
 
@@ -44,15 +37,13 @@ func derivedChecks(files []string) []string {
 
 	var checks []string
 
-	// Go: build, vet, and test for each touched package.
 	for _, pkg := range goPackages {
-		pattern := "./" + pkg + "/..."
+		pattern := goPattern(pkg)
 		checks = append(checks, "go build "+pattern)
 		checks = append(checks, "go vet "+pattern)
 		checks = append(checks, "go test "+pattern)
 	}
 
-	// TypeScript: type check and test script.
 	if hasTS {
 		checks = append(checks, "tsc --noEmit")
 		checks = append(checks, "npm test")
@@ -61,16 +52,21 @@ func derivedChecks(files []string) []string {
 	return checks
 }
 
-// extractGoPackages returns the distinct directories containing Go files, sorted.
+// goPattern is the go command target for a package directory, the repo root a bare dot.
+func goPattern(pkg string) string {
+	if pkg == "." {
+		return "."
+	}
+	return "./" + pkg + "/..."
+}
+
+// extractGoPackages returns the distinct directories containing Go files, including the repo
+// root, sorted.
 func extractGoPackages(files []string) []string {
 	pkgs := map[string]bool{}
 	for _, file := range files {
 		if strings.HasSuffix(file, ".go") {
-			dir := filepath.Dir(file)
-			if dir == "." {
-				continue // skip root-level Go files
-			}
-			pkgs[dir] = true
+			pkgs[filepath.Dir(file)] = true
 		}
 	}
 	var out []string
