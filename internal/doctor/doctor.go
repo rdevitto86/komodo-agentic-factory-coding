@@ -55,7 +55,7 @@ func Run(root string, options Options) ([]Problem, error) {
 	problems = append(problems, checkRoles(root)...)
 	problems = append(problems, checkBuilderTier(root)...)
 	problems = append(problems, checkLeaks(root)...)
-	problems = append(problems, checkBudgets(root, rendered)...)
+	problems = append(problems, checkBudgets(root, renderActive(root))...)
 	for _, problem := range checkDrift(rendered, renderInstalled(root, pinLocalUp)) {
 		if options.RepoOnly && problem.Check == checkGlobal {
 			if options.Warn != nil {

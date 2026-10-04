@@ -100,17 +100,7 @@ type renderedHost struct {
 func renderInstalled(root string, pin func() func()) []renderedHost {
 	defer freezeProfile(root)()
 	defer pin()()
-	var out []renderedHost
-	for _, host := range mount.Active() {
-		if host.Render == nil {
-			continue
-		}
-		if host.Installed != nil && !host.Installed(root) {
-			continue
-		}
-		plan, err := host.Render(root, mount.BinaryPath())
-		out = append(out, renderedHost{Name: host.Name, Plan: plan, Err: err})
-	}
+	out := renderProject(root, true)
 	// The user's global layer drifts too: a stale hook there runs on every session, in every repo.
 	for _, host := range mount.Active() {
 		if _, ok := install.Global(host.Name); !ok {
@@ -121,6 +111,29 @@ func renderInstalled(root string, pin func() func()) []renderedHost {
 			continue
 		}
 		out = append(out, renderedHost{Name: host.Name + " global", Plan: plan, Err: err})
+	}
+	return out
+}
+
+// renderActive renders every active host's project files, installed here or not, so the budget holds for a fresh clone.
+func renderActive(root string) []renderedHost {
+	defer freezeProfile(root)()
+	defer pinLocalDown()()
+	return renderProject(root, false)
+}
+
+// renderProject renders each active host's project files; installedOnly skips a host not installed in root.
+func renderProject(root string, installedOnly bool) []renderedHost {
+	var out []renderedHost
+	for _, host := range mount.Active() {
+		if host.Render == nil {
+			continue
+		}
+		if installedOnly && host.Installed != nil && !host.Installed(root) {
+			continue
+		}
+		plan, err := host.Render(root, mount.BinaryPath())
+		out = append(out, renderedHost{Name: host.Name, Plan: plan, Err: err})
 	}
 	return out
 }
