@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/review"
 )
@@ -127,6 +129,24 @@ func TestAStateKeyedByLensSurvivesARoundTrip(t *testing.T) {
 	gotJSON, _ := json.Marshal(got)
 	if string(gotJSON) != string(wantJSON) {
 		t.Fatalf("round trip = %s, want %s", gotJSON, wantJSON)
+	}
+}
+
+func TestTimeUsedSavesUnderItsUnitAndAnUnitlessRecordStillLoads(t *testing.T) {
+	data, err := json.Marshal(State{Group: "TG-1", TimeUsed: 90 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"time_used_ns":90000000000`) || strings.Contains(string(data), `"time_used":`) {
+		t.Fatalf("json = %s, want time used under time_used_ns alone", data)
+	}
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{"group":"TG-1","time_used":90000000000}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadState(path)
+	if err != nil || s.TimeUsed != 90*time.Second {
+		t.Fatalf("time used = %s (%v), want an old record's 1m30s", s.TimeUsed, err)
 	}
 }
 

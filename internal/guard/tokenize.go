@@ -101,12 +101,14 @@ func sedInPlaceTargets(args []string) []string {
 }
 
 // commandWrites returns the extra paths a known command writes to, beyond a shell redirect: every
-// tee operand, cp and mv's destination, and sed -i's file operands.
+// tee operand, cp and mv's destination, sed -i's file operands, and git's --output or -o target.
 func commandWrites(words []string) []string {
 	if len(words) == 0 {
 		return nil
 	}
 	switch commandName(words[0]) {
+	case "git":
+		return gitOutputTargets(words[1:])
 	case "tee":
 		return positionalArgs(words[1:])
 	case "cp", "mv":
@@ -119,6 +121,39 @@ func commandWrites(words []string) []string {
 		return sedInPlaceTargets(words[1:])
 	}
 	return nil
+}
+
+// gitOutputCommands are the git subcommands whose --output or -o writes a file or directory.
+var gitOutputCommands = map[string]bool{"diff": true, "log": true, "show": true, "format-patch": true}
+
+// gitOutputTargets returns every --output, --output-directory or -o value a git call's subcommand
+// carries, wherever it sits before a bare --.
+func gitOutputTargets(args []string) []string {
+	args = skipGlobalFlags(args)
+	if len(args) == 0 || !gitOutputCommands[args[0]] {
+		return nil
+	}
+	var targets []string
+	rest := args[1:]
+	for index := 0; index < len(rest); index++ {
+		arg := rest[index]
+		switch {
+		case arg == "--":
+			return targets
+		case arg == "--output" || arg == "--output-directory" || arg == "-o":
+			if index+1 < len(rest) {
+				index++
+				targets = append(targets, rest[index])
+			}
+		case strings.HasPrefix(arg, "--output="):
+			targets = append(targets, strings.TrimPrefix(arg, "--output="))
+		case strings.HasPrefix(arg, "--output-directory="):
+			targets = append(targets, strings.TrimPrefix(arg, "--output-directory="))
+		case strings.HasPrefix(arg, "-o") && !strings.HasPrefix(arg, "--"):
+			targets = append(targets, strings.TrimPrefix(arg, "-o"))
+		}
+	}
+	return targets
 }
 
 // isHeredocControl reports whether char ends one simple command and starts the next, outside quotes.

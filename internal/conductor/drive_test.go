@@ -409,7 +409,7 @@ func TestDriveRepairsAFailedCheckByResumingTheBuilder(t *testing.T) {
 	}
 }
 
-// TestDriveNeverReviewsBeforeCheckPasses is REQ-17: the ledger records no review session until
+// TestDriveNeverReviewsBeforeCheckPasses proves the ledger records no review session until
 // Check has passed, even across repeated failed checks and their repair rounds.
 func TestDriveNeverReviewsBeforeCheckPasses(t *testing.T) {
 	r := newRig(t)
