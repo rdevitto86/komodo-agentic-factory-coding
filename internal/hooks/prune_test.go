@@ -148,8 +148,14 @@ func TestSweepClearsALockACrashedSweepLeft(t *testing.T) {
 
 func TestSweepStopsAtItsLimitAndLogsTheFailure(t *testing.T) {
 	root := sweepRepo(t)
-	release := make(chan struct{})
-	t.Cleanup(func() { close(release) })
+	release, closed := make(chan struct{}), false
+	closeRelease := func() {
+		if !closed {
+			closed = true
+			close(release)
+		}
+	}
+	t.Cleanup(closeRelease)
 	swapPrune(t, func() ([]string, error) { <-release; return nil, nil })
 	old := sweepLimit
 	sweepLimit = 50 * time.Millisecond
@@ -162,6 +168,25 @@ func TestSweepStopsAtItsLimitAndLogsTheFailure(t *testing.T) {
 	}
 	if got := readLog(root); !strings.HasPrefix(got, "failed: it ran past") {
 		t.Fatalf("log = %q, want the overrun named", got)
+	}
+
+	// The first sweep's goroutine is still blocked on prune, so the lock must still record it as going.
+	lock := filepath.Join(root, ".komodo", sweepLock)
+	if _, err := os.Stat(lock); err != nil {
+		t.Fatalf("stat = %v; the lock must survive a timed-out select while the sweep still works", err)
+	}
+	if takeLock(lock) {
+		t.Fatal("a second sweep took the lock while the first's goroutine still holds it")
+	}
+
+	closeRelease()
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(lock); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the lock was never freed once the overrun goroutine finished")
+		}
 	}
 }
 
