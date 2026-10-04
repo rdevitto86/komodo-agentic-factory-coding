@@ -107,11 +107,6 @@ func ClearStatus(root string, taskIDs []string) error {
 	return pruneStatus(root, nil, func(taskID string) bool { return !contains(taskIDs, taskID) })
 }
 
-// KeepStatus drops every task's live status except the named ones, so a new run starts clean.
-func KeepStatus(root string, taskIDs []string) error {
-	return pruneStatus(root, nil, func(taskID string) bool { return contains(taskIDs, taskID) })
-}
-
 // pruneStatus keeps only the live statuses keep accepts in every file whose group spare does not
 // name, writing nothing when none change.
 func pruneStatus(root string, spare map[string]bool, keep func(taskID string) bool) error {

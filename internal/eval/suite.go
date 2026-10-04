@@ -77,6 +77,9 @@ func Load(dir string) (Suite, error) {
 		if repo.Name == "" || repo.URL == "" || repo.Language == "" {
 			return Suite{}, fmt.Errorf("repo %q needs a name, a url and a language", repo.Name)
 		}
+		if strings.HasPrefix(repo.URL, "-") {
+			return Suite{}, fmt.Errorf("repo %q names a url starting with -, which git would read as an option", repo.Name)
+		}
 		if repos[repo.Name] {
 			return Suite{}, fmt.Errorf("repo %q is named twice", repo.Name)
 		}

@@ -2,7 +2,7 @@
 package guard
 
 import (
-	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"komodo/internal/fsx"
 	"komodo/internal/mount"
 	"komodo/internal/toolkit"
 )
@@ -94,79 +95,54 @@ func (p *Policy) compile() {
 
 // Load reads the toolkit's policy and merges the repo's and the machine's, which may only add.
 func Load(toolkitRoot, repoRoot string) Policy {
+	policy, _ := LoadChecked(toolkitRoot, repoRoot)
+	return policy
+}
+
+// LoadChecked is Load plus an error naming each present file that failed to decode and was skipped.
+func LoadChecked(toolkitRoot, repoRoot string) (Policy, error) {
 	policy := DefaultPolicy()
-	if shipped, ok := readShippedPolicy(toolkitRoot); ok {
+	shipped, ok, shippedErr := readShippedPolicy(toolkitRoot)
+	if ok {
 		policy.CriticalRefs = union(policy.CriticalRefs, shipped.CriticalRefs)
 		policy.ConfigPaths = union(policy.ConfigPaths, shipped.ConfigPaths)
 		policy.TrailerPatterns = union(policy.TrailerPatterns, shipped.TrailerPatterns)
 		policy.Mode = tightenMode(policy.Mode, shipped.Mode)
 	}
-	if extra, ok := readPolicy(filepath.Join(repoRoot, ".komodo", "policy.json")); ok {
+	extra, ok, repoErr := readPolicy(filepath.Join(repoRoot, ".komodo", "policy.json"))
+	if ok {
 		policy.CriticalRefs = union(policy.CriticalRefs, extra.CriticalRefs)
 		policy.ConfigPaths = union(policy.ConfigPaths, extra.ConfigPaths)
 		policy.TrailerPatterns = union(policy.TrailerPatterns, extra.TrailerPatterns)
 		policy.Mode = tightenMode(policy.Mode, extra.Mode)
 	}
-	policy.CriticalRefs = union(policy.CriticalRefs, overlayCriticalRefs(mount.OverlayPath()))
-	policy.Mode = loosenMode(policy.Mode, overlayMode(mount.OverlayPath()))
+	overlay, overlayErr := mount.DecodeOverlayFile(mount.OverlayPath())
+	policy.CriticalRefs = union(policy.CriticalRefs, overlay.CriticalRefs)
+	policy.Mode = loosenMode(policy.Mode, Mode(overlay.Mode))
 	policy.compile()
-	return policy
-}
-
-// overlayCriticalRefs reads the machine overlay's critical refs, tolerating its absence.
-func overlayCriticalRefs(path string) []string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var overlay struct {
-		CriticalRefs []string `json:"critical_refs"`
-	}
-	if json.Unmarshal(data, &overlay) != nil {
-		return nil
-	}
-	return overlay.CriticalRefs
-}
-
-// overlayMode reads the machine overlay's mode, tolerating its absence.
-func overlayMode(path string) Mode {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	var overlay struct {
-		Mode Mode `json:"mode"`
-	}
-	if json.Unmarshal(data, &overlay) != nil {
-		return ""
-	}
-	return overlay.Mode
+	return policy, errors.Join(shippedErr, repoErr, overlayErr)
 }
 
 // readShippedPolicy parses the toolkit's own policy.json, on disk or embedded.
-func readShippedPolicy(toolkitRoot string) (Policy, bool) {
+func readShippedPolicy(toolkitRoot string) (Policy, bool, error) {
 	var policy Policy
 	data, err := fs.ReadFile(toolkit.FS(toolkitRoot), "policy.json")
 	if err != nil {
-		return policy, false
+		return policy, false, nil
 	}
-	if json.Unmarshal(data, &policy) != nil {
-		return policy, false
+	if _, err := fsx.DecodeStrictJSON(filepath.Join(toolkitRoot, "komodo", "policy.json"), data, &policy); err != nil {
+		return Policy{}, false, err
 	}
-	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != ""
+	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != "", nil
 }
 
-// readPolicy parses one policy file, reporting whether it was usable.
-func readPolicy(path string) (Policy, bool) {
+// readPolicy parses one policy file, reporting whether it was usable and why a present one was not.
+func readPolicy(path string) (Policy, bool, error) {
 	var policy Policy
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return policy, false
+	if _, err := fsx.ReadStrictJSON(path, &policy); err != nil {
+		return Policy{}, false, err
 	}
-	if json.Unmarshal(data, &policy) != nil {
-		return policy, false
-	}
-	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != ""
+	return policy, len(policy.CriticalRefs) > 0 || len(policy.ConfigPaths) > 0 || policy.Mode != "", nil
 }
 
 // union adds what the repo names without dropping anything the toolkit names.
@@ -184,7 +160,7 @@ func union(base, extra []string) []string {
 	return base
 }
 
-// epicBranchRe matches an epic branch, feat/ plus a version exactly (decision 0006).
+// epicBranchRe matches an epic branch: feat/ followed by a version number, as a prefix of the ref.
 var epicBranchRe = regexp.MustCompile(`^feat/\d+\.\d+\.\d+`)
 
 // IsCritical reports whether a ref is one the guard protects from every session, model or conductor.
@@ -198,8 +174,8 @@ func (p Policy) IsCritical(ref string) bool {
 	return false
 }
 
-// IsEpicBranch reports whether a ref is an epic branch (decision 0006), which only a model
-// session is refused; the conductor still pushes to and merges it, so IsCritical excludes it.
+// IsEpicBranch reports whether a ref is an epic branch, which only a model session is refused;
+// the conductor still pushes to and merges it, so IsCritical excludes it.
 func IsEpicBranch(ref string) bool {
 	ref = strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "origin/")
 	return epicBranchRe.MatchString(ref)
@@ -231,7 +207,7 @@ func foldsCase() bool {
 // RoleEnv is the environment variable a line session's role arrives in; the orchestrator sets none.
 const RoleEnv = "KOMODO_ROLE"
 
-// LineRefusedPaths are refused to every line role, but not the orchestrator (REQ-41).
+// LineRefusedPaths are refused to every line role, but not the orchestrator.
 var LineRefusedPaths = []string{"docs/prd.md", "eval/**", "komodo/policy.json"}
 
 // BranchOnlyPaths are the guard's own policy, which the orchestrator edits only off a critical ref.
@@ -266,14 +242,14 @@ func (p Policy) IsConfigPath(path, repoRoot string) bool {
 	return matchesAnyPattern(BranchOnlyPaths, home, compareNormal, compareRelative) && !p.onFeatureBranch(repoRoot)
 }
 
-// onFeatureBranch reports whether repoRoot has a branch checked out that is not a critical ref;
-// CurrentBranch falls back to a detached worktree's tracked branch, and a plain detached HEAD names none.
+// onFeatureBranch reports whether repoRoot has a branch checked out that is neither a critical
+// ref nor an epic branch; a plain detached HEAD, which CurrentBranch may still resolve, names none.
 func (p Policy) onFeatureBranch(repoRoot string) bool {
 	if repoRoot == "" {
 		return false
 	}
 	branch := CurrentBranch(repoRoot)
-	return branch != "" && branch != "HEAD" && !p.IsCritical(branch)
+	return branch != "" && branch != "HEAD" && !p.IsCritical(branch) && !IsEpicBranch(branch)
 }
 
 // matchesAnyPattern reports whether normal or relative matches any pattern, expanding a leading

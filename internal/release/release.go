@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -30,14 +29,45 @@ func BuildAssets(root, dir string, out io.Writer) ([]string, error) {
 	}
 	var paths []string
 	for _, target := range Targets {
-		path, err := gate.Build(root, dir, target)
+		path, err := build(root, dir, target)
 		if err != nil {
 			return nil, err
 		}
-		fmt.Fprintf(out, "built %s\n", target.Name)
+		if err := reproduces(root, path, target); err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(out, "built %s, and a second build matched it byte for byte\n", target.Name)
 		paths = append(paths, path)
 	}
 	return paths, nil
+}
+
+// build compiles one target; tests swap it.
+var build = gate.Build
+
+// reproduces builds target a second time in a scratch dir and fails unless the binary matches path exactly.
+func reproduces(root, path string, target gate.Target) error {
+	scratch, err := os.MkdirTemp("", "komodo-reproduce-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(scratch)
+	again, err := build(root, scratch, target)
+	if err != nil {
+		return err
+	}
+	first, err := gate.Sum(path)
+	if err != nil {
+		return err
+	}
+	second, err := gate.Sum(again)
+	if err != nil {
+		return err
+	}
+	if first != second {
+		return fmt.Errorf("%s does not reproduce: two builds of one commit differ (%s, %s); the release stops", target.Name, first, second)
+	}
+	return nil
 }
 
 // semver matches x.y.z with an optional prerelease such as -alpha.1.
@@ -164,17 +194,13 @@ func Check(changelog string, tags, groupVersions []string) []Drift {
 	return drift
 }
 
-// ReadChangelog reads a changelog file with the fragments beside it folded in, or the empty string when there is none.
+// ReadChangelog reads a changelog file, or the empty string when there is none.
 func ReadChangelog(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-	fragments, err := changelog.Fragments(filepath.Dir(path))
-	if err != nil {
-		return "", err
-	}
-	return changelog.Fold(string(data), fragments), nil
+	return string(data), nil
 }
 
 // TagName is the annotated tag name for one version.

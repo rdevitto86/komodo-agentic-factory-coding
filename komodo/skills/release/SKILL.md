@@ -21,11 +21,12 @@ You drive one release from the orchestrator, on the owner's machine. The binary 
 
 - **A heading is `## <version> — <YYYY-MM-DD>`,** with no `v` and no brackets, newest first, in SemVer order.
 - **A version is never reused.** Two headings never name one version, and a titled history section carries no version.
-- **Shipped groups write fragments under `changelog.d/`.** You never hand-edit a version's lines.
+- **Only a release writes the changelog.** A group's pull request never touches it.
+- **A version's body describes what shipped,** up to five bullets a user would care about; never a list of groups or tasks.
 
 ## The steps
 
-1. On a branch, never the default one, run `komodo release fold`. It writes every fragment into `CHANGELOG.md` under its heading. Open a pull request; the human merges it.
+1. On a branch, never the default one, read `git log --oneline v<last-tag>..` and write the version's heading and body into `CHANGELOG.md`. Open a pull request; the human merges it.
 2. On the default branch, up to date with origin, run `komodo release check`. Zero drift, or stop and report each line.
 3. Ask the human before tagging. Then run `komodo tag`; it tags the newest untagged version at HEAD and pushes it.
 4. Ask the human before publishing. Then run `komodo release publish` at the tag. It builds every platform into `dist/`, runs the tests, writes `SHA256SUMS`, and publishes the release. It prints the release URL.
