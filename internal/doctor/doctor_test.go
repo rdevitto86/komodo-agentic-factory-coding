@@ -283,6 +283,19 @@ func TestTheAlwaysOnBudgetTracksTheRenderedSkillsNotTheShippedOnes(t *testing.T)
 	}
 }
 
+// TestTheAlwaysOnBudgetCountsAHostNotYetInstalled proves a fresh clone, where no host is installed yet,
+// still sums the skills every host would render, so the gate catches an overrun before any install.
+func TestTheAlwaysOnBudgetCountsAHostNotYetInstalled(t *testing.T) {
+	root := clean(t)
+	huge := "---\nname: standards-huge\ndescription: " + strings.Repeat("word ", 1600) + "\n---\n\n# Huge\n"
+	host := hostRenderingSkills(root, map[string]string{"standards-huge": huge})
+	host.Installed = func(string) bool { return false }
+	registerHost(t, host)
+	if got := problemsFrom(t, root)["budgets"]; !alwaysOnFired(got) {
+		t.Fatalf("budgets = %+v; a host not installed yet must still count toward the always-on total", got)
+	}
+}
+
 func TestARolesScopedSkillIsNoPartOfTheAlwaysOnBudget(t *testing.T) {
 	root := clean(t)
 	huge := "---\nname: standards-huge\ndescription: " + strings.Repeat("word ", 1600) + "\n---\n\n# Huge\n"
