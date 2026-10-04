@@ -64,8 +64,8 @@ func parseRecordedStream(path string) (mount.TaskUsage, bool) {
 	return usage, true
 }
 
-// TestReportSumsASessionsRecordedTokens proves a recorded stream's result totals, parsed
-// through the mount's own usage path, equal the report's line for that session.
+// TestReportSumsASessionsRecordedTokens proves a recorded stream's result totals equal the
+// report's line for that session.
 func TestReportSumsASessionsRecordedTokens(t *testing.T) {
 	root := reportRepo(t)
 	stream := filepath.Join(root, "stream.jsonl")

@@ -613,79 +613,6 @@ func TestALegacyStatusIsMergedIntoItsGroupsAndRemoved(t *testing.T) {
 	}
 }
 
-// TestMigrateRunKeepsTheLegacyFileWhenItsRenameFails blocks the rename into the group's own run
-// directory, so the legacy run.json must survive as the state's one remaining copy.
-func TestMigrateRunKeepsTheLegacyFileWhenItsRenameFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a read-only directory mode does not block a rename on Windows")
-	}
-	root := t.TempDir()
-	state := RunState{Run: "TG-16.2-1", Group: "TG-16.2", Base: "main", Branch: "feat/legacy-keep"}
-	data, err := json.Marshal(state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := filepath.Join(root, StateDir, "run.json")
-	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacy, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	dir := RunDir(root, state.Group)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
-
-	LoadRuns(root)
-
-	if _, err := os.Stat(legacy); err != nil {
-		t.Fatalf("stat = %v; a failed rename must keep the legacy run.json", err)
-	}
-}
-
-// TestSaveRunNeverLeavesLoadRunForReadingATornFile races a writer against a reader on the same
-// run.json, so the reader always sees a whole state, never a truncated or half-written one.
-func TestSaveRunNeverLeavesLoadRunForReadingATornFile(t *testing.T) {
-	root := t.TempDir()
-	states := []RunState{
-		{Run: "TG-17.1-1", Group: "TG-17.1", Base: "main", Branch: "feat/a", Waves: [][]string{{"TSK-17.1.1"}}},
-		{Run: "TG-17.1-2", Group: "TG-17.1", Base: "main", Branch: "feat/b"},
-	}
-	if err := SaveRun(root, states[0]); err != nil {
-		t.Fatal(err)
-	}
-	stop := make(chan struct{})
-	var wait sync.WaitGroup
-	wait.Add(1)
-	go func() {
-		defer wait.Done()
-		for i := 0; ; i++ {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			if err := SaveRun(root, states[i%2]); err != nil {
-				t.Errorf("SaveRun = %v", err)
-				return
-			}
-		}
-	}()
-	for i := 0; i < 2000; i++ {
-		if _, err := LoadRunFor(root, "TG-17.1"); err != nil {
-			t.Errorf("LoadRunFor = %v; a concurrent SaveRun must never leave a torn read", err)
-			break
-		}
-	}
-	close(stop)
-	wait.Wait()
-}
-
 // TestAddDetachedCutsFromBaseNotFromStaleOrigin proves a branch that only a stale origin/feat/a still holds
 // is cut fresh from its base, without that origin branch's old commit.
 func TestAddDetachedCutsFromBaseNotFromStaleOrigin(t *testing.T) {
@@ -802,6 +729,79 @@ func TestWriteBriefCutsATaskFromTheLocalGroupBranchNotStaleOrigin(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(worktree, "local.txt")); err != nil {
 		t.Fatalf("stat = %v; a task must be cut from the group branch's local tip", err)
 	}
+}
+
+// TestMigrateRunKeepsTheLegacyFileWhenItsRenameFails blocks the rename into the group's own run
+// directory, so the legacy run.json must survive as the state's one remaining copy.
+func TestMigrateRunKeepsTheLegacyFileWhenItsRenameFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a read-only directory mode does not block a rename on Windows")
+	}
+	root := t.TempDir()
+	state := RunState{Run: "TG-16.2-1", Group: "TG-16.2", Base: "main", Branch: "feat/legacy-keep"}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(root, StateDir, "run.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := RunDir(root, state.Group)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	LoadRuns(root)
+
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatalf("stat = %v; a failed rename must keep the legacy run.json", err)
+	}
+}
+
+// TestSaveRunNeverLeavesLoadRunForReadingATornFile races a writer against a reader on the same
+// run.json, so the reader always sees a whole state, never a truncated or half-written one.
+func TestSaveRunNeverLeavesLoadRunForReadingATornFile(t *testing.T) {
+	root := t.TempDir()
+	states := []RunState{
+		{Run: "TG-17.1-1", Group: "TG-17.1", Base: "main", Branch: "feat/a", Waves: [][]string{{"TSK-17.1.1"}}},
+		{Run: "TG-17.1-2", Group: "TG-17.1", Base: "main", Branch: "feat/b"},
+	}
+	if err := SaveRun(root, states[0]); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	var wait sync.WaitGroup
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := SaveRun(root, states[i%2]); err != nil {
+				t.Errorf("SaveRun = %v", err)
+				return
+			}
+		}
+	}()
+	for i := 0; i < 2000; i++ {
+		if _, err := LoadRunFor(root, "TG-17.1"); err != nil {
+			t.Errorf("LoadRunFor = %v; a concurrent SaveRun must never leave a torn read", err)
+			break
+		}
+	}
+	close(stop)
+	wait.Wait()
 }
 
 // TestStartNamesAndDatesARunFromOneClockReading fixes the cut's clock and proves the run id and

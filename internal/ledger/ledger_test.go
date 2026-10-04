@@ -284,6 +284,8 @@ func TestAggregateMeasuresThroughput(t *testing.T) {
 	}
 }
 
+// TestWriteEventsCreatesFile proves a done entry never leaks in as an event, and the one
+// escalation that does write keeps its own type.
 func TestWriteEventsCreatesFile(t *testing.T) {
 	book := New(t.TempDir())
 	entries := []Entry{
