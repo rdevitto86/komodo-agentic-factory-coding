@@ -340,8 +340,8 @@ func staleReview(root string, plan *Plan) bool {
 	return false
 }
 
-// shipped reports whether every task in the group is closed out.
-func shipped(root string, plan *Plan, parsed backlog.Backlog) bool {
+// shipped reports whether the ledger holds a done ship entry for the group; it reads nothing else.
+func shipped(root string, plan *Plan) bool {
 	entries, err := Book(root).Read("line.jsonl")
 	if err != nil {
 		return false

@@ -7,8 +7,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"komodo/internal/backlog"
 	"komodo/internal/git"
 	"komodo/internal/proc"
 )
@@ -70,7 +72,7 @@ func Scope(worktree, base string, files []string) []string {
 	for _, name := range changed {
 		// A declared file's own test is in scope too, as the builder's rules allow.
 		if allowed[name] || allowed[testedBy(name)] || allowed[untagged(testedBy(name))] ||
-			underDeclared(name, files) || testsDeclaredPackage(name, files) {
+			underDeclared(name, files) || testsDeclaredPackage(name, files) || onlyTicks(worktree, base, name) {
 			continue
 		}
 		problems = append(problems, fmt.Sprintf("scope: %s is edited outside the group's declared files", name))
@@ -167,9 +169,58 @@ func changedFiles(worktree, base string) ([]string, error) {
 	return append(splitLines(tracked), untracked...), nil
 }
 
-// mergeBase is the commit HEAD forked from base, so commits landing on base since never count as edits.
+// onlyTicks reports whether name is a backlog group file whose every change since the fork flips a task's checkbox.
+func onlyTicks(worktree, base, name string) bool {
+	if path.Dir(name) != backlog.GroupFilesDir || path.Ext(name) != ".md" {
+		return false
+	}
+	fork, err := mergeBase(worktree, base)
+	if err != nil {
+		return false
+	}
+	out, err := git.Run(worktree, diffArgs("--unified=0", fork, "--", name)...)
+	if err != nil || out == "" {
+		return false
+	}
+	var removed, added []string
+	inHunk := false
+	for _, text := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(text, "@@"):
+			inHunk = true
+		case !inHunk:
+		case strings.HasPrefix(text, "-"):
+			removed = append(removed, strings.Replace(text[1:], "- [ ]", "- [x]", 1))
+		case strings.HasPrefix(text, "+"):
+			added = append(added, text[1:])
+		}
+	}
+	return len(removed) > 0 && slices.Equal(removed, added)
+}
+
+// mergeBase is the newest commit HEAD forked from base, its origin copy, or the line's tip of it,
+// so commits landing on base since never count as edits.
 func mergeBase(worktree, base string) (string, error) {
-	return git.Run(worktree, "merge-base", base, "HEAD")
+	var fork string
+	var firstErr error
+	for _, ref := range []string{base, "refs/remotes/origin/" + base, "refs/komodo/" + base} {
+		candidate, err := git.Run(worktree, "merge-base", ref, "HEAD")
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if fork == "" {
+			fork = candidate
+		} else if _, err := git.Run(worktree, "merge-base", "--is-ancestor", fork, candidate); err == nil {
+			fork = candidate
+		}
+	}
+	if fork == "" {
+		return "", firstErr
+	}
+	return fork, nil
 }
 
 // untrackedFiles lists the files git does not track and does not ignore.

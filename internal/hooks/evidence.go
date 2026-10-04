@@ -3,7 +3,6 @@ package hooks
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,7 +73,7 @@ func checkEvidence(_ context.Context, in Input) (Outcome, error) {
 	}, nil
 }
 
-// lensTree is the worktree, its diff against the group's base, and the validators' report when one was saved.
+// lensTree is the worktree and its diff against the group's base; no validator report exists to read.
 func lensTree(root, group string) (review.Tree, error) {
 	base := line.DefaultBase(root)
 	if parsed, err := backlog.LoadRoot(root); err == nil {
@@ -86,16 +85,5 @@ func lensTree(root, group string) (review.Tree, error) {
 	if err != nil {
 		return review.Tree{}, err
 	}
-	tree := review.Tree{Worktree: root, Diff: diff}
-	data, err := os.ReadFile(filepath.Join(root, line.StateDir, "results", group+"-validators.json"))
-	if errors.Is(err, os.ErrNotExist) {
-		return tree, nil
-	}
-	if err != nil {
-		return review.Tree{}, err
-	}
-	if err := json.Unmarshal(data, &tree.Report); err != nil {
-		return review.Tree{}, fmt.Errorf("the validators' report is not JSON: %w", err)
-	}
-	return tree, nil
+	return review.Tree{Worktree: root, Diff: diff}, nil
 }
