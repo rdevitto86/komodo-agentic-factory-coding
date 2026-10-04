@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/gate"
 )
@@ -206,6 +207,36 @@ func TestGoTestReportsTheSuitesOutcome(t *testing.T) {
 				t.Fatalf("err = %v, want failure %v; out = %s", err, tc.fail, out.String())
 			}
 		})
+	}
+}
+
+// TestGoTestKillsAHungSuiteAndNamesTheTimeout proves a suite past gate.CommandTimeout is killed,
+// process group included, and the error names the command, the timeout and its stderr.
+func TestGoTestKillsAHungSuiteAndNamesTheTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module fixture\n\ngo 1.22\n\ntoolchain "+runtime.Version()+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeDir := t.TempDir()
+	script := "#!/bin/sh\nif [ \"$1\" = test ]; then echo boom >&2; sleep 30 & sleep 30; fi\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(fakeDir, "go"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeDir+":"+os.Getenv("PATH"))
+	saved := gate.CommandTimeout
+	gate.CommandTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { gate.CommandTimeout = saved })
+	var out bytes.Buffer
+	started := time.Now()
+	err := goTest(root, &out)
+	if err == nil || !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v, want it to name the timeout and stderr", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatalf("the kill took %s; the group was not killed", time.Since(started))
 	}
 }
 

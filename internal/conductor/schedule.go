@@ -26,9 +26,12 @@ func Startable(pending, running []backlog.Group, capacity int) []backlog.Group {
 		if lanes >= capacity {
 			break
 		}
-		free := !waitsOnParent(group, unfinished) && !sharesFile(group, claimed)
-		// A group that cannot start still claims its files, so a later group never jumps a file's queue.
-		claimed = append(claimed, group)
+		waiting := waitsOnParent(group, unfinished)
+		free := !waiting && !sharesFile(group, claimed)
+		if !waiting {
+			// A group held only by a file still claims it, so a later group never jumps the queue.
+			claimed = append(claimed, group)
+		}
 		if free {
 			out = append(out, group)
 			lanes++

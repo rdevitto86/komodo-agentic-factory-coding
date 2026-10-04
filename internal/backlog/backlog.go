@@ -278,16 +278,6 @@ func (b Backlog) Epic(id string) (Epic, bool) {
 	return Epic{}, false
 }
 
-// NextGroup is the first group in file order holding at least one ready agent task.
-func (b Backlog) NextGroup() (Group, bool) {
-	for _, group := range b.Groups {
-		if group.HasReadyTask() {
-			return group, true
-		}
-	}
-	return Group{}, false
-}
-
 // HasReadyTask reports whether the group holds a ready task an agent owns.
 func (g Group) HasReadyTask() bool {
 	for _, task := range g.Tasks {
