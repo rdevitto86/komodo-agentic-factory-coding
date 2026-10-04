@@ -108,6 +108,8 @@ func Cases() []Case {
 			"groups sharing a file run one after another, and a group sharing none overlaps them", parallelAndSerial},
 		{"owner-directed policy edit", "REQ-40",
 			"an owner's edit to komodo/policy.json commits on a branch and leaves the default branch as it was", policyEdit},
+		{"acts without asking", "REQ-47",
+			"a fully specified group finishes with no question asked and no hedge in any result", actsWithoutAsking},
 	}
 	cases := make([]Case, 0, len(preflightChecks)+len(rest))
 	for _, check := range preflightChecks {
