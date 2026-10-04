@@ -111,7 +111,7 @@ func LoadSnapshot(root, needle string) (Snapshot, error) {
 	snap.Blocking, _ = SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)
 	_, err = os.Stat(HandoffPath(root, plan.Group))
 	snap.Handoff = err == nil
-	snap.Shipped = shipped(root, plan, parsed)
+	snap.Shipped = shipped(root, plan)
 	return snap, nil
 }
 

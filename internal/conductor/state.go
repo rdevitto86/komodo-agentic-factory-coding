@@ -46,7 +46,7 @@ type State struct {
 	Sessions []string   `json:"sessions"`
 	// Findings holds each lens's findings from its last round.
 	Findings map[review.Lens][]Finding `json:"findings"`
-	TimeUsed time.Duration             `json:"time_used"`
+	TimeUsed time.Duration             `json:"time_used_ns"`
 	// Fixes is the open fix list the next repair round works.
 	Fixes []string `json:"fixes,omitempty"`
 	// Builder is the builder session a repair round resumes.
@@ -96,7 +96,8 @@ type State struct {
 	Edited bool `json:"edited"`
 }
 
-// UnmarshalJSON reads state.json, filing a record written with one reviewer under the economy lens.
+// UnmarshalJSON reads state.json, filing a record written with one reviewer under the economy lens,
+// and a unitless time_used as nanoseconds.
 func (s *State) UnmarshalJSON(data []byte) error {
 	type record State
 	raw := struct {
@@ -105,9 +106,13 @@ func (s *State) UnmarshalJSON(data []byte) error {
 		Reviewer     json.RawMessage `json:"reviewer"`
 		ReviewRounds json.RawMessage `json:"review_rounds"`
 		ColdPass     json.RawMessage `json:"cold_pass"`
+		LegacyTime   *time.Duration  `json:"time_used"`
 	}{record: (*record)(s)}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
+	}
+	if raw.LegacyTime != nil && s.TimeUsed == 0 {
+		s.TimeUsed = *raw.LegacyTime
 	}
 	var err error
 	if s.Findings, err = byLens[[]Finding](raw.Findings); err != nil {

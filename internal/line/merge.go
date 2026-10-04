@@ -27,11 +27,7 @@ func MergeGroup(root string, plan *Plan, client *pr.Client) (*MergeResult, error
 	if guard.Load(root, root).IsCritical(plan.Base) {
 		return nil, fmt.Errorf("%s targets the critical ref %q; landing is the human's merge button", plan.Group, plan.Base)
 	}
-	parsed, _, err := LoadBacklog(root)
-	if err != nil {
-		return nil, err
-	}
-	if !shipped(root, plan, parsed) {
+	if !shipped(root, plan) {
 		return nil, fmt.Errorf("%s has not shipped; ship it, then merge", plan.Group)
 	}
 	blocking, _ := SplitFindings(ReviewFindings(root, plan.Group), plan.Profile.SeverityFloor)

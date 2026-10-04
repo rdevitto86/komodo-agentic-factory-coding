@@ -132,6 +132,10 @@ func orphanWorktrees(root string, open, epics map[string]bool) ([]string, map[st
 			continue
 		}
 		branch := TrackedOf(current)
+		if branch == "" {
+			notes = append(notes, current.Path+" detached: no open group owns this worktree")
+			continue
+		}
 		if epics[branch] {
 			continue
 		}

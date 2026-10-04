@@ -259,6 +259,67 @@ func advanceBase(t *testing.T, worktree, base string) string {
 	return "trunk"
 }
 
+// commitAll stages every change in dir and commits it under message.
+func commitAll(t *testing.T, dir, message string) {
+	t.Helper()
+	mustOutput(t, dir, "add", "-A")
+	mustOutput(t, dir, "commit", "-q", "-m", message)
+}
+
+func TestScopeRunsAgainstTheBranchsOwnForkPoint(t *testing.T) {
+	cases := []struct {
+		name string
+		refs func(t *testing.T, worktree, seed, integration string)
+	}{
+		{"a stale local base behind its origin copy", func(t *testing.T, worktree, seed, integration string) {
+			mustOutput(t, worktree, "branch", "stack", seed)
+			mustOutput(t, worktree, "update-ref", "refs/remotes/origin/stack", integration)
+		}},
+		{"a stack branch held only on origin", func(t *testing.T, worktree, _, integration string) {
+			mustOutput(t, worktree, "update-ref", "refs/remotes/origin/stack", integration)
+		}},
+		{"an integration branch held only at the line's tip", func(t *testing.T, worktree, _, integration string) {
+			mustOutput(t, worktree, "update-ref", "refs/komodo/stack", integration)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			worktree, seed := initRepo(t, map[string]string{"z.go": "package z\n"})
+			integration := strings.TrimSpace(mustOutput(t, worktree, "rev-parse", "HEAD"))
+			tc.refs(t, worktree, seed, integration)
+			writeFile(t, worktree, "a.go", "package a\n")
+			commitAll(t, worktree, "group work")
+			if problems := Scope(worktree, "stack", []string{"a.go"}); len(problems) != 0 {
+				t.Fatalf("problems = %v, want none; z.go is the integration branch's, not the group's", problems)
+			}
+		})
+	}
+}
+
+func TestScopeNeverCountsABacklogTick(t *testing.T) {
+	const open = "## [TG-1] G\n\n- [ ] **TSK-1.1** One\n- [ ] **TSK-1.2** Two\n"
+	cases := []struct {
+		name     string
+		edited   string
+		problems int
+	}{
+		{"a tick", "## [TG-1] G\n\n- [x] **TSK-1.1** One\n- [ ] **TSK-1.2** Two\n", 0},
+		{"a tick and a retitled task", "## [TG-1] G\n\n- [x] **TSK-1.1** One\n- [ ] **TSK-1.2** Renamed\n", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			worktree, _ := initRepo(t, map[string]string{"docs/backlog/TG-1-g.md": open})
+			base := strings.TrimSpace(mustOutput(t, worktree, "rev-parse", "HEAD"))
+			writeFile(t, worktree, "docs/backlog/TG-1-g.md", tc.edited)
+			writeFile(t, worktree, "a.go", "package a\n")
+			commitAll(t, worktree, "close TSK-1.1")
+			if problems := Scope(worktree, base, []string{"a.go"}); len(problems) != tc.problems {
+				t.Fatalf("problems = %v, want %d", problems, tc.problems)
+			}
+		})
+	}
+}
+
 func TestScopeAndDiffIgnoreCommitsLandingOnBaseAfterTheFork(t *testing.T) {
 	worktree, base := initRepo(t, map[string]string{"a.go": "package a\n"})
 	trunk := advanceBase(t, worktree, base)
