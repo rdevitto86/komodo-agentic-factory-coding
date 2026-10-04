@@ -71,16 +71,13 @@ func TestEvidenceAllowsALensStopWhenEveryBlockingFindingIsVerified(t *testing.T)
 	}
 }
 
-func TestEvidenceAllowsAMeasurementFromTheValidatorsReport(t *testing.T) {
+func TestEvidenceChecksAMeasurementFindingsEvidenceAgainstNoReport(t *testing.T) {
 	root := lensRoot(t, `{"findings":[{"lens":"quality","rule_id":"QUA-5","severity":"medium",`+
-		`"class":"blast-radius","file":"a.go","line":3,"evidence":"Bad: 12 references in 4 files"}]}`)
-	report := `{"measurements":[{"kind":"callers","passed":true,"detail":"Bad: 12 references in 4 files"}]}`
-	if err := os.WriteFile(filepath.Join(root, ".komodo", "results", "TG-90.1-validators.json"), []byte(report), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got := dispatch(t, root, "evidence", map[string]any{"session_id": "measured", "cwd": root})
-	if got.code != 0 || got.stderr != "" {
-		t.Fatalf("a measured finding was refused: %+v", got)
+		`"class":"blast-radius","file":"a.go","line":3,"title":"wide change","evidence":"Bad: 12 references in 4 files"}]}`)
+	got := dispatch(t, root, "evidence", map[string]any{"session_id": "unmeasured", "cwd": root})
+	want := "a.go:3 QUA-5 wide change: the evidence quotes no validator's measurement"
+	if got.code != ExitRefuse || !strings.Contains(got.stderr, want) {
+		t.Fatalf("the finding's evidence did not reach the measurement check: %+v", got)
 	}
 }
 
@@ -109,17 +106,6 @@ func TestEvidenceRefusesAFindingWithoutEvidenceTwiceThenAllows(t *testing.T) {
 	}
 }
 
-func TestEvidenceFailsOpenOnAValidatorsReportThatIsNotJSON(t *testing.T) {
-	root := lensRoot(t, `{"findings":[{"severity":"high","class":"performance","evidence":"slow"}]}`)
-	if err := os.WriteFile(filepath.Join(root, ".komodo", "results", "TG-90.1-validators.json"), []byte("{"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got := dispatch(t, root, "evidence", map[string]any{"session_id": "bad-report", "cwd": root})
-	if got.code != 0 || !strings.Contains(got.stderr, "the validators' report is not JSON") {
-		t.Fatalf("a broken report did not fail open: %+v", got)
-	}
-}
-
 func TestEvidenceFailsOpenWhenItCannotReadWhatItChecks(t *testing.T) {
 	bug := `{"findings":[{"severity":"high","class":"bug","evidence":"exit 1"}]}`
 	cases := []struct {
@@ -128,11 +114,6 @@ func TestEvidenceFailsOpenWhenItCannotReadWhatItChecks(t *testing.T) {
 	}{
 		{"a result that is a directory", func(t *testing.T, root string) {
 			if err := os.MkdirAll(filepath.Join(root, ".komodo", "results", "TG-90.1-review-x.json"), 0o755); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"a validators report that is a directory", func(t *testing.T, root string) {
-			if err := os.MkdirAll(filepath.Join(root, ".komodo", "results", "TG-90.1-validators.json"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}},
