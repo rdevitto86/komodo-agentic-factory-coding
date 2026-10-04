@@ -217,6 +217,25 @@ func TestCompareCatchesAMovedLocalBranchAndTheLanesOwnTip(t *testing.T) {
 	}
 }
 
+func TestCompareIgnoresAStashFromAnotherLane(t *testing.T) {
+	repo := newRepo(t)
+	before, err := TakeSnapshot(repo)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "seed.txt"), []byte("sneaky\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, repo, "stash")
+	after, err := TakeSnapshot(repo)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if problems := Compare(before, after); len(problems) != 0 {
+		t.Fatalf("problems = %v, want none from another lane's stash", problems)
+	}
+}
+
 func TestCompareCatchesADetachedWorktreeAttaching(t *testing.T) {
 	repo := newRepo(t)
 	lane := filepath.Join(t.TempDir(), "lane")

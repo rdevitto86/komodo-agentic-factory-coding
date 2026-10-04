@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"komodo/internal/backlog"
 	"komodo/internal/check"
@@ -60,7 +61,7 @@ func checkTask(root, taskID, base string) []string {
 		fail(fmt.Errorf("no task %s", taskID))
 	}
 	group := check.Group{Worktree: root, Base: checkBase(root, parsed, task.GroupID, base), Files: task.Files()}
-	return check.Run(group, "", "", task.DoneWhen())
+	return check.Run(group, task.DoneWhen())
 }
 
 // checkScope names every edit outside a task's files, or outside every file its group's tasks declare.
@@ -109,14 +110,44 @@ func checkFindings(root, path, base string) []string {
 		}
 		added[change.File][change.Line] = true
 	}
+	files := diffFiles(diff)
 	var problems []string
 	for _, finding := range result.Findings {
+		if finding.Line == 0 {
+			if !files[finding.File] {
+				problems = append(problems, fmt.Sprintf("findings: %s %s is not a file the diff changes",
+					finding.File, finding.Title))
+			}
+			continue
+		}
 		if !added[finding.File][finding.Line] {
 			problems = append(problems, fmt.Sprintf("findings: %s:%d %s is not on a changed line",
 				finding.File, finding.Line, finding.Title))
 		}
 	}
 	return problems
+}
+
+// diffFiles is the set of file names a diff's "+++" or "---" headers name, old or new, skipping /dev/null.
+func diffFiles(diff string) map[string]bool {
+	files := map[string]bool{}
+	for _, text := range strings.Split(diff, "\n") {
+		switch {
+		case strings.HasPrefix(text, "+++ "):
+			diffFile(files, strings.TrimPrefix(text, "+++ "), "b/")
+		case strings.HasPrefix(text, "--- "):
+			diffFile(files, strings.TrimPrefix(text, "--- "), "a/")
+		}
+	}
+	return files
+}
+
+// diffFile records name in files, its diff prefix stripped, unless it names /dev/null.
+func diffFile(files map[string]bool, name, prefix string) {
+	name = strings.TrimPrefix(name, prefix)
+	if name != "/dev/null" {
+		files[name] = true
+	}
 }
 
 // checkBase is the explicit base, else the base the line cuts the group from, its epic's branch included.

@@ -95,7 +95,7 @@ func Verify(tree Tree, findings []Finding) ([]Checked, error) {
 		case ruleOnChangedLine:
 			checked.Blocks, checked.Why = citesRuleOnChangedLine(finding, added)
 		case validatorMeasured:
-			checked.Blocks, checked.Why = citesMeasurement(finding.Evidence, tree.Report)
+			checked.Blocks, checked.Why = citesMeasurement(finding.Class, finding.Evidence, tree.Report)
 		default:
 			checked.Why = fmt.Sprintf("class %q needs no evidence the binary can verify", finding.Class)
 		}
@@ -202,9 +202,21 @@ func citesRuleOnChangedLine(finding Finding, added map[string]map[int]bool) (boo
 	return true, fmt.Sprintf("%s on changed line %s:%d", finding.RuleID, finding.File, finding.Line)
 }
 
-// citesMeasurement reports whether evidence quotes a line of some validator's measurement.
-func citesMeasurement(evidence string, report Report) (bool, string) {
+// measurementKinds names the validator kinds whose measurement can back each finding class.
+var measurementKinds = map[string][]Kind{
+	"blast-radius": {KindCallers},
+}
+
+// citesMeasurement reports whether evidence quotes a line of a measurement of a kind that backs class.
+func citesMeasurement(class, evidence string, report Report) (bool, string) {
+	kinds := measurementKinds[class]
+	if len(kinds) == 0 {
+		return false, fmt.Sprintf("no validator measures the %q class", class)
+	}
 	for _, each := range report.Measurements {
+		if !slices.Contains(kinds, each.Kind) {
+			continue
+		}
 		for _, line := range strings.Split(each.Detail, "\n") {
 			if line = strings.TrimSpace(line); line != "" && strings.Contains(evidence, line) {
 				return true, fmt.Sprintf("the %s validator measured it: %s", each.Kind, line)

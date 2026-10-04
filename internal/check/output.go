@@ -29,6 +29,9 @@ const (
 	tipRefs    = "refs/komodo/"
 )
 
+// stashRef is git's single stash ref, shared by every worktree through the common git dir.
+const stashRef = "refs/stash"
+
 // branchSection prefixes the config keys git keeps per branch, as branch.<name>.<key>.
 const branchSection = "branch."
 
@@ -62,7 +65,7 @@ func TakeSnapshot(worktree string) (Snapshot, error) {
 	return Snapshot{Head: head, Branch: branch, Attached: attached, Refs: refs, Hooks: hooks, Config: config}, nil
 }
 
-// snapshotRefs reads the commit hash of every ref but the remotes and the komodo tips of lanes other than branch.
+// snapshotRefs reads every ref's commit hash but the stash, the remotes, and other lanes' komodo tips.
 func snapshotRefs(worktree, branch string) (map[string]string, error) {
 	out, err := git.Run(worktree, "for-each-ref", "--format=%(refname) %(objectname)")
 	if err != nil {
@@ -76,6 +79,8 @@ func snapshotRefs(worktree, branch string) (map[string]string, error) {
 		}
 		name := fields[0]
 		switch {
+		case name == stashRef:
+			continue
 		case strings.HasPrefix(name, remoteRefs):
 			continue
 		case strings.HasPrefix(name, tipRefs) && name != tipRefs+branch:

@@ -36,6 +36,67 @@ func TestParseAddedLinesReadsTheNewFileLineNumbers(t *testing.T) {
 	}
 }
 
+const dashRemovalDiff = `diff --git a/doc.md b/doc.md
+index abc..def 100644
+--- a/doc.md
++++ b/doc.md
+@@ -1,3 +1,3 @@
+ title
+----
++kept
+ after
+`
+
+func TestParseAddedLinesCountsARemovedDashDashDashLine(t *testing.T) {
+	added := ParseAddedLines(dashRemovalDiff)
+	want := []AddedLine{{File: "doc.md", Line: 2, Text: "kept"}}
+	if len(added) != len(want) || added[0] != want[0] {
+		t.Fatalf("added = %v, want %v", added, want)
+	}
+}
+
+const noNewlineDiff = `diff --git a/x.txt b/x.txt
+index abc..def 100644
+--- a/x.txt
++++ b/x.txt
+@@ -1,2 +1,3 @@
+ first
+-second
+\ No newline at end of file
++second
++third
+`
+
+func TestParseAddedLinesSkipsTheNoNewlineMarker(t *testing.T) {
+	added := ParseAddedLines(noNewlineDiff)
+	want := []AddedLine{{File: "x.txt", Line: 2, Text: "second"}, {File: "x.txt", Line: 3, Text: "third"}}
+	if len(added) != len(want) {
+		t.Fatalf("added = %v, want %v", added, want)
+	}
+	for i, line := range added {
+		if line != want[i] {
+			t.Fatalf("added[%d] = %v, want %v", i, line, want[i])
+		}
+	}
+}
+
+const doublePlusDiff = `diff --git a/z.txt b/z.txt
+index abc..def 100644
+--- a/z.txt
++++ b/z.txt
+@@ -1,1 +1,2 @@
+ x
++++ y
+`
+
+func TestParseAddedLinesReadsALineStartingWithPlusPlusAsContent(t *testing.T) {
+	added := ParseAddedLines(doublePlusDiff)
+	want := []AddedLine{{File: "z.txt", Line: 2, Text: "++ y"}}
+	if len(added) != len(want) || added[0] != want[0] {
+		t.Fatalf("added = %v, want %v", added, want)
+	}
+}
+
 const sampleProfile = `mode: set
 example.com/mod/pkg/thing.go:2.1,3.20 1 1
 example.com/mod/pkg/thing.go:4.1,4.10 1 0
