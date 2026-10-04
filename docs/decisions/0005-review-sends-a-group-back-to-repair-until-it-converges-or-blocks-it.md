@@ -14,7 +14,7 @@
 
 **The cold pass.** Once a lens has run 2 warm rounds and every lens passes, that lens gets one fresh session over the final diff. A warm reviewer anchors on its own earlier findings; one fresh look catches what it stopped seeing, and only one, so it can't restart the loop.
 
-**When it can't converge.** A round that closes nothing ends the loop and escalates to the orchestrator. What it can't settle goes BLOCKED: a note in the group's backlog file, on its branch, published as a draft PR labelled `status: blocked`. Other groups continue, and `komodo resume` picks it up once a person marks it READY.
+**When it can't converge.** A round that closes nothing ends the loop and escalates to the orchestrator. What it can't settle goes BLOCKED: a note in the group's backlog file, on its branch, published as a draft PR labelled `status/blocked`. Other groups continue, and `komodo resume` picks it up once a person marks it READY.
 
 **Alternatives.**
 

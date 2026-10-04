@@ -30,7 +30,7 @@ func (d *Driver) stop(ctx context.Context, s *State, r *round) error {
 }
 
 // Block saves the group's work as a WIP commit, writes its blocker note, and publishes a draft PR
-// labelled status: blocked; a note that never publishes fails, one missing only its label warns.
+// labelled status/blocked; a note that never publishes fails, one missing only its label warns.
 func (l *Line) Block(ctx context.Context, note backlog.BlockerNote) error {
 	if err := ctx.Err(); err != nil {
 		return err

@@ -875,7 +875,7 @@ func TestAForgeThatOffersNoRulesetsIsANoteNotAProblem(t *testing.T) {
 		t.Fatalf("problems = %+v; a forge with no rulesets to offer is a warning", problems)
 	}
 	notes := ForgeNotes(t.TempDir(), unoffered)
-	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status: wip") {
+	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status/wip") {
 		t.Fatalf("notes = %v, want a warning for rulesets and one for drafts", notes)
 	}
 	offered := func(_ string, args ...string) (string, error) { return `[]`, nil }
@@ -916,7 +916,7 @@ func TestARemoteAuditWarnsOfAForgeWithNoRulesets(t *testing.T) {
 	if _, err := Run(clean(t), options); err != nil {
 		t.Fatal(err)
 	}
-	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status: wip") {
+	if len(notes) != 2 || !strings.Contains(notes[0], "no rulesets") || !strings.Contains(notes[1], "status/wip") {
 		t.Fatalf("notes = %v; a remote audit must warn of a forge with no rulesets or drafts", notes)
 	}
 }

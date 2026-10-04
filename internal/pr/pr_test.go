@@ -129,10 +129,10 @@ func TestUnlabelRemovesEachLabelAndSkipsAnEmptyList(t *testing.T) {
 	if err := client.Unlabel("7", nil); err != nil || len(*calls) != 0 {
 		t.Fatalf("unlabel = %v with calls %q; no label means no call", err, *calls)
 	}
-	if err := client.Unlabel("7", []string{"status: wip"}); err != nil {
+	if err := client.Unlabel("7", []string{"status/wip"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := (*calls)[0]; got != "pr edit 7 --remove-label status: wip" {
+	if got := (*calls)[0]; got != "pr edit 7 --remove-label status/wip" {
 		t.Fatalf("call = %q, want the label removed", got)
 	}
 }
@@ -142,7 +142,7 @@ func TestReadyAndUnlabelReturnAnAPIError(t *testing.T) {
 	if err := client.Ready("7"); err == nil {
 		t.Fatal("ready: want an error")
 	}
-	if err := client.Unlabel("7", []string{"status: wip"}); err == nil {
+	if err := client.Unlabel("7", []string{"status/wip"}); err == nil {
 		t.Fatal("unlabel: want an error")
 	}
 }

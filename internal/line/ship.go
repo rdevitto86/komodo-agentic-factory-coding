@@ -286,7 +286,7 @@ func ShipGroupContext(
 	if client == nil {
 		return result, nil
 	}
-	// Every PR opens as a draft, or labelled status: wip where the forge refuses one.
+	// Every PR opens as a draft, or labelled status/wip where the forge refuses one.
 	url, draft, wip, kept, warnings, err := openDraftPull(
 		client, result.Base, plan.Branch, title, body, wanted, OptionalLabels(root, result.Base), true)
 	if err != nil {
@@ -352,7 +352,7 @@ func checksPassed(waves []*WaveResult) bool {
 	return true
 }
 
-// markReady turns a PR ready for review: a draft leaves draft, and a normal PR drops the status: wip label.
+// markReady turns a PR ready for review: a draft leaves draft, and a normal PR drops the status/wip label.
 func markReady(client *pr.Client, url string, draft bool) error {
 	if draft {
 		return client.Ready(url)
@@ -671,10 +671,10 @@ func markedFiles(group, target string) ([]string, error) {
 }
 
 // blockedLabel is the label a stopped group's draft pull request carries.
-const blockedLabel = "status: blocked"
+const blockedLabel = "status/blocked"
 
 // ShipBlocked commits a stopped group's work as WIP, then its blocker note with open tasks BLOCKED, and publishes
-// the branch as a draft PR labelled status: blocked; a scrubbed environment keeps both commits local.
+// the branch as a draft PR with the usual labels plus status/blocked; a scrubbed environment keeps both commits local.
 func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.Client) (*ShipResult, error) {
 	worktree := WorktreePath(root, plan.Worktree)
 	result := &ShipResult{Group: plan.Group, Branch: plan.Branch, Base: plan.Base, Draft: true}
@@ -718,7 +718,9 @@ func ShipBlocked(root string, plan *Plan, note backlog.BlockerNote, client *pr.C
 		return result, err
 	}
 	result.URL = url
-	result.Labels, result.Warnings = labelBlocked(client, url)
+	kept, warnings := ApplyLabelSet(client, url, []string{"@agent", ScopeLabel(root, declared)}, OptionalLabels(root, result.Base))
+	blockedLabels, blockedWarnings := labelBlocked(client, url)
+	result.Labels, result.Warnings = append(kept, blockedLabels...), append(warnings, blockedWarnings...)
 	return result, nil
 }
 
@@ -867,7 +869,7 @@ func commitStaged(worktree string, declared []string, message string) error {
 	return err
 }
 
-// labelBlocked adds the repo's status: blocked label through the shared labelNamed helper.
+// labelBlocked adds the repo's status/blocked label through the shared labelNamed helper.
 func labelBlocked(client *pr.Client, url string) (labels, warnings []string) {
 	return labelNamed(client, url, blockedLabel)
 }
