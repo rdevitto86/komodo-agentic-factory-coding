@@ -1,7 +1,9 @@
 package doctor
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -10,13 +12,21 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"komodo/internal/gate"
 	"komodo/internal/git"
 	"komodo/internal/mount"
+	"komodo/internal/proc"
 	"komodo/internal/profile"
 	"komodo/internal/toolkit"
 )
+
+// waitDelay bounds how long a killed command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
+
+// toolTimeout bounds how long a host tool may run before its process group is killed; a test lowers it.
+var toolTimeout = proc.DefaultTimeout
 
 // modelHasVersion matches a digit, which every full model ID carries and a bare alias never does.
 var modelHasVersion = regexp.MustCompile(`[0-9]`)
@@ -24,15 +34,32 @@ var modelHasVersion = regexp.MustCompile(`[0-9]`)
 // bareModelWords are generic, vendor-free words that name no version, such as an alias would use.
 var bareModelWords = map[string]bool{"latest": true, "default": true}
 
-// goToolchain is the Go toolchain the machine's go command runs in root, "go1.27.1"; a test swaps it.
-var goToolchain = func(root string) string {
-	cmd := exec.Command("go", "env", "GOVERSION")
+// goToolchain is the machine's Go toolchain in root, "go1.27.1", or an error naming the command and its stderr.
+var goToolchain = func(root string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "env", "GOVERSION")
 	cmd.Dir = root
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
 	}
-	return strings.TrimSpace(string(out))
+	cmd.WaitDelay = waitDelay
+	stdout, stderr := proc.NewBoundedWriter(proc.MaxOutput), proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("go env GOVERSION: timed out after %s: %s", toolTimeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
+		return "", fmt.Errorf("go env GOVERSION: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // checkPins reports the profile's model IDs, the go.mod toolchain and the built komodo binary
@@ -77,13 +104,18 @@ func checkModelIDs(current profile.Profile) []Problem {
 	return problems
 }
 
-// checkToolchain reports when this machine's Go toolchain differs from go.mod's toolchain pin.
+// checkToolchain reports when this machine's Go toolchain differs from go.mod's toolchain pin,
+// or when this machine's toolchain could not be read at all.
 func checkToolchain(root string) []Problem {
 	declared, err := gate.Toolchain(root)
 	if err != nil {
 		return nil
 	}
-	if running := goToolchain(root); running != "" && running != declared {
+	running, err := goToolchain(root)
+	if err != nil {
+		return []Problem{{"pins", "go.mod", "could not read this machine's Go toolchain: " + err.Error()}}
+	}
+	if running != "" && running != declared {
 		return []Problem{{"pins", "go.mod",
 			fmt.Sprintf("the toolchain is pinned to %s; this machine runs %s", declared, running)}}
 	}
@@ -136,13 +168,32 @@ func ReleaseBinary() (string, error) {
 	return filepath.Join(home, ".komodo", "bin", gate.PlatformName()), nil
 }
 
-// ReleaseVersion runs one komodo binary's version command and returns the version it names, with no v.
+// ReleaseVersion runs one komodo binary's version command and returns the version it names, with
+// no v, or an error naming the command and its stderr.
 func ReleaseVersion(path string) (string, error) {
-	out, err := exec.Command(path, "version").Output()
-	if err != nil {
-		return "", err
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "version")
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
 	}
-	fields := strings.Fields(string(out))
+	cmd.WaitDelay = waitDelay
+	stdout, stderr := proc.NewBoundedWriter(proc.MaxOutput), proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("%s version: timed out after %s: %s", path, toolTimeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s version: %v: %s", path, err, strings.TrimSpace(stderr.String()))
+	}
+	fields := strings.Fields(stdout.String())
 	if len(fields) < 2 {
 		return "", fmt.Errorf("%s printed no version", path)
 	}

@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,6 +181,56 @@ func TestAMissingOverlayChangesNothing(t *testing.T) {
 	after := Overlay(before, filepath.Join(t.TempDir(), "absent.json"))
 	if after.MaxParallel != before.MaxParallel || after.Caps.PerFile != before.Caps.PerFile {
 		t.Fatal("an absent overlay changed the profile")
+	}
+}
+
+// TestOverlayPanicsOnAMalformedFileNamingItsPath proves a present but broken overlay fails
+// loudly instead of silently leaving the profile unchanged.
+func TestOverlayPanicsOnAMalformedFileNamingItsPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a malformed overlay did not panic")
+		}
+		if !strings.Contains(fmt.Sprint(r), path) {
+			t.Fatalf("panic = %v, want it to name %s", r, path)
+		}
+	}()
+	Overlay(before, path)
+}
+
+// TestOverlayRejectsAnUnknownField proves the decode is strict, not merely tolerant of bad JSON.
+func TestOverlayRejectsAnUnknownField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"not_a_real_field":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	defer func() {
+		if recover() == nil {
+			t.Fatal("an unknown overlay field did not panic")
+		}
+	}()
+	Overlay(before, path)
+}
+
+// TestOverlayAcceptsAFieldAnotherReaderOwns proves the overlay's one shape lets a profile-only
+// field share a config.json with a mount-only field, neither tripping the other's decode.
+func TestOverlayAcceptsAFieldAnotherReaderOwns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"local":true,"max_parallel":1,"critical_refs":["release"]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := SelectWith(t.TempDir(), []mount.Host{fakeHost("h", true, mount.Usage{Plan: "max_5x"}, true)}, false, false)
+	got := Overlay(before, path)
+	if got.MaxParallel != 1 || len(got.CriticalRefs) != 1 || got.CriticalRefs[0] != "release" {
+		t.Fatalf("overlay = %+v, want the mount-only field to pass through unnoticed", got)
 	}
 }
 

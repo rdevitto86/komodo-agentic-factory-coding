@@ -114,6 +114,30 @@ func TestAbandonFindsTheDefaultWorktreeOfARunWithNoSavedState(t *testing.T) {
 	}
 }
 
+// TestAbandonNeverRemovesTheWorktreeWhenItCannotWriteTheNote proves the note is written before any
+// destructive git step, so a failed write leaves the worktree, branch and run record all in place.
+func TestAbandonNeverRemovesTheWorktreeWhenItCannotWriteTheNote(t *testing.T) {
+	root, worktree := abandonRepo(t)
+	path := filepath.Join(root, "docs", "backlog", "TG-1-a-group.md")
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	if err := Abandon(root, "TG-1", time.Now()); err == nil {
+		t.Fatal("abandon = nil, want the note write's failure")
+	}
+	if _, err := os.Stat(worktree); err != nil {
+		t.Fatalf("worktree stat = %v, want it kept since nothing was written yet", err)
+	}
+	if out, err := exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", line.TipRef("feat/a-group")).
+		CombinedOutput(); err != nil {
+		t.Fatalf("tip ref = %v, %s; want it kept since nothing was written yet", err, out)
+	}
+	if _, err := os.Stat(line.RunDir(root, "TG-1")); err != nil {
+		t.Fatalf("run dir stat = %v, want the run record kept since nothing finished", err)
+	}
+}
+
 func TestAbandonRefusesWhatItCannotNoteAndRemovesNothing(t *testing.T) {
 	cases := []struct {
 		name  string

@@ -1,13 +1,18 @@
 package line
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"komodo/internal/backlog"
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/ledger"
+	"komodo/internal/mount"
 )
 
 var reportGroup = backlog.GroupFile{
@@ -28,13 +33,68 @@ func reportRepo(t *testing.T) string {
 	return root
 }
 
-// TestReportSumsASessionsRecordedTokens proves REQ-28: a recorded stream's result totals equal the
-// report's line for that session.
+// turnUsage parses one recorded stream line: an assistant turn's own token counts.
+type turnUsage struct {
+	Type  string `json:"type"`
+	Usage struct {
+		TokensIn  int `json:"input_tokens"`
+		TokensOut int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+// parseRecordedStream sums a recorded stream's assistant turns into one session's usage, the
+// shape a mount's own Usage field returns.
+func parseRecordedStream(path string) (mount.TaskUsage, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return mount.TaskUsage{}, false
+	}
+	var usage mount.TaskUsage
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var turn turnUsage
+		if json.Unmarshal([]byte(line), &turn) != nil || turn.Type != "assistant" {
+			continue
+		}
+		usage.TokensIn += turn.Usage.TokensIn
+		usage.TokensOut += turn.Usage.TokensOut
+	}
+	if usage.TokensIn == 0 && usage.TokensOut == 0 {
+		return mount.TaskUsage{}, false
+	}
+	return usage, true
+}
+
+// TestReportSumsASessionsRecordedTokens proves REQ-28: a recorded stream's result totals, parsed
+// through the mount's own usage path, equal the report's line for that session.
 func TestReportSumsASessionsRecordedTokens(t *testing.T) {
 	root := reportRepo(t)
+	stream := filepath.Join(root, "stream.jsonl")
+	body := strings.Join([]string{
+		`{"type":"user"}`,
+		`{"type":"assistant","usage":{"input_tokens":420,"output_tokens":180}}`,
+	}, "\n")
+	if err := os.WriteFile(stream, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := mount.Snapshot()
+	t.Cleanup(func() { mount.Restore(snapshot) })
+	mount.Register(mount.Host{
+		Name: "fakehost-usage",
+		Usage: func(string, string, time.Time, time.Time) (mount.TaskUsage, bool) {
+			return parseRecordedStream(stream)
+		},
+	})
+	host, ok := mount.Get("fakehost-usage")
+	if !ok {
+		t.Fatal("the fake host did not register")
+	}
+	usage, ok := host.Usage(root, "TSK-09.1.1", time.Time{}, time.Time{})
+	if !ok {
+		t.Fatal("the recorded stream was not parsed into usage")
+	}
 	entry := ledger.Entry{
 		Run: "run-1", Group: "TG-09.1", Station: "build",
-		TokensIn: 420, TokensOut: 180, TokensCached: 50,
+		TokensIn: usage.TokensIn, TokensOut: usage.TokensOut,
 	}
 	if err := Book(root).Stamp(entry); err != nil {
 		t.Fatal(err)
@@ -44,7 +104,7 @@ func TestReportSumsASessionsRecordedTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := entry.TokensIn + entry.TokensOut
+	want := usage.TokensIn + usage.TokensOut
 	if report.Tokens != want {
 		t.Fatalf("tokens = %d, want %d (the session's own recorded totals)", report.Tokens, want)
 	}

@@ -42,9 +42,9 @@ type liveHost struct {
 	resumed   int
 }
 
-func (h *liveHost) Start(req mount.StartRequest) (mount.Handle, error) {
+func (h *liveHost) Start(ctx context.Context, req mount.StartRequest) (mount.Handle, error) {
 	req.Model, req.Effort = h.light.Model, h.light.Effort
-	handle, err := h.Contract.Start(req)
+	handle, err := h.Contract.Start(ctx, req)
 	if err == nil && req.Role == "reviewer" {
 		h.mu.Lock()
 		h.reviewers[handle] = true
@@ -53,11 +53,11 @@ func (h *liveHost) Start(req mount.StartRequest) (mount.Handle, error) {
 	return handle, err
 }
 
-func (h *liveHost) Resume(handle mount.Handle, input string) (mount.Handle, error) {
+func (h *liveHost) Resume(ctx context.Context, handle mount.Handle, input string) (mount.Handle, error) {
 	h.mu.Lock()
 	h.resumed++
 	h.mu.Unlock()
-	return h.Contract.Resume(handle, input)
+	return h.Contract.Resume(ctx, handle, input)
 }
 
 func (h *liveHost) Result(handle mount.Handle) (mount.Result, error) {
