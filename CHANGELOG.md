@@ -2,6 +2,14 @@
 
 Notable changes to komodo-agentic-factory-coding, formerly komodo-agentic-toolkit-coding and, in turn, komodo-agentic-coding-assembly-line and komodo-agentic-factory-code. Format follows Keep a Changelog; versions follow SemVer.
 
+## 1.0.0-beta.5 — 2026-10-04
+
+- **Every hook runs one fixed, always-current binary,** registered once per event, with one-step setup on macOS, Linux, Windows and WSL2.
+- **The line finishes what it starts:** state survives a crash, an escalation gets its own model and budget, and a blocked group's pull request carries its labels.
+- **No subprocess can hang, flood memory or leak a secret,** and the guard is fuzzed, fails safe, and refuses only what its rules name.
+- **Agents act with confidence:** the always-on rules fit their token cap, and doctor counts them for every host.
+- **Commits run no tests;** the pre-push gate runs the race suite, the fuzzers and every platform's vet.
+
 ## 1.0.0-beta.4 — 2026-10-02
 
 - **Agent worktrees are detached** and commit onto `refs/komodo` tips; only a live builder's lease locks a branch, ending on its push or after 2 hours (decision 0012).
