@@ -114,17 +114,25 @@ func (l *Ledger) TruncateRun() error {
 	if err := os.MkdirAll(l.Dir, 0o755); err != nil {
 		return err
 	}
-	if entries, err := l.Read(RunFile); err == nil && len(entries) > 0 && entries[0].Run != "" {
-		if err := l.archive(entries[0].Run); err != nil {
+	// Renaming the run file away first sends a racing Stamp to a fresh file, never one being emptied.
+	closing := RunFile + ".closing"
+	if err := os.Rename(l.path(RunFile), l.path(closing)); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if entries, err := l.Read(closing); err == nil && len(entries) > 0 && entries[0].Run != "" {
+		if err := l.archive(closing, entries[0].Run); err != nil {
 			return err
 		}
 	}
-	return os.WriteFile(l.path(RunFile), nil, 0o644)
+	return os.Remove(l.path(closing))
 }
 
-// archive appends the run file's bytes to line.<run>.jsonl, creating it when absent.
-func (l *Ledger) archive(run string) error {
-	data, err := os.ReadFile(l.path(RunFile))
+// archive appends the named run file's bytes to line.<run>.jsonl, creating it when absent.
+func (l *Ledger) archive(name, run string) error {
+	data, err := os.ReadFile(l.path(name))
 	if err != nil {
 		return err
 	}

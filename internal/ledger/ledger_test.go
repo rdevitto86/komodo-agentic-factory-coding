@@ -332,3 +332,31 @@ func TestWriteEventsTypesEveryOutcome(t *testing.T) {
 		})
 	}
 }
+
+func TestTruncateRunArchivesTheRunAndLeavesAFreshFileForTheNextStamp(t *testing.T) {
+	dir := t.TempDir()
+	book := New(dir)
+	for _, station := range []string{"brief", "build"} {
+		if err := book.Stamp(Entry{Run: "r1", Station: station}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := book.TruncateRun(); err != nil {
+		t.Fatal(err)
+	}
+	if archived, err := book.Read("line.r1.jsonl"); err != nil || len(archived) != 2 {
+		t.Fatalf("archive = %v, %v; want both entries", archived, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, RunFile+".closing")); !os.IsNotExist(err) {
+		t.Fatalf("the closing file is left behind: %v", err)
+	}
+	if err := book.Stamp(Entry{Run: "r2", Station: "brief"}); err != nil {
+		t.Fatal(err)
+	}
+	if current, err := book.Read(RunFile); err != nil || len(current) != 1 || current[0].Run != "r2" {
+		t.Fatalf("run file = %v, %v; want only the next run's entry", current, err)
+	}
+	if err := New(t.TempDir()).TruncateRun(); err != nil {
+		t.Fatalf("truncating with no run file = %v, want nothing to do", err)
+	}
+}
