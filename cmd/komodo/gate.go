@@ -29,6 +29,7 @@ func runGate(root string, args []string) {
 	at := set.String("at", "", "gate a clean checkout of this commit when the working tree differs, for the pre-push hook")
 	commitMsg := set.String("commit-msg", "", "refuse an attribution trailer in this message file, for the commit-msg hook")
 	checkBranch := set.Bool("check-branch", false, "refuse a critical ref or a branch outside <type>/<kebab-name>, for the pre-commit hook")
+	commit := set.Bool("commit", false, "skip the tests, for the pre-commit hook; the pre-push gate runs them")
 	checkPush := set.String("check-push", "", "refuse a push to a critical ref, a branch outside <type>/<kebab-name>, or one a live builder leases, for the pre-push hook")
 	_ = set.Parse(args)
 	if *commitMsg != "" {
@@ -92,7 +93,7 @@ func runGate(root string, args []string) {
 			fmt.Printf("gate: the working tree differs from %s; checking a clean checkout of it\n", *at)
 		}
 	}
-	checks, err := gateChecks(checkout, *from, *to, *fuzz)
+	checks, err := gateChecks(checkout, *from, *to, *fuzz, !*commit)
 	if err == nil {
 		err = gate.Run(checks, os.Stdout)
 	}
@@ -103,9 +104,9 @@ func runGate(root string, args []string) {
 }
 
 // gateChecks are the precheck's checks for root: its build checks, scoped to a push's commits, then komodo's own.
-func gateChecks(root, from, to, fuzz string) ([]gate.Check, error) {
+func gateChecks(root, from, to, fuzz string, tests bool) ([]gate.Check, error) {
 	// A push, which fuzzes, also runs the tests uncached and shuffled and vets every release platform.
-	scoped, err := gate.PushChecks(root, from, to, fuzzDuration(root, fuzz), buildChecks(root, fuzz != ""))
+	scoped, err := gate.PushChecks(root, from, to, fuzzDuration(root, fuzz), buildChecks(root, fuzz != "", tests))
 	if err != nil {
 		return nil, err
 	}
@@ -174,12 +175,15 @@ func crossVets(root string) []gate.Check {
 }
 
 // buildChecks are the toolkit's own vet and race tests in its checkout, else the compile and verify
-// commands QC runs, so the gate fits any repo's language; thorough adds the push-time checks.
-func buildChecks(root string, thorough bool) []gate.Check {
+// commands QC runs, so the gate fits any repo's language; thorough adds the push-time checks, and no tests drops them.
+func buildChecks(root string, thorough, tests bool) []gate.Check {
 	if gate.IsToolkit(root) {
 		checks := []gate.Check{gate.GofmtCheck(root), gate.Command("go vet", root, "go", "vet", "./...")}
 		if thorough {
 			checks = append(checks, crossVets(root)...)
+		}
+		if !tests {
+			return checks
 		}
 		return append(checks, gate.Command("go test", root, gate.TestArgs(thorough)...))
 	}
@@ -187,8 +191,14 @@ func buildChecks(root string, thorough bool) []gate.Check {
 	seen := map[string]bool{}
 	// A line worktree reads the main checkout's gitignored commands.json, as QC does.
 	config := mount.MainCheckout(root)
-	for _, command := range append(line.CompileCommands(config, root), line.VerifyCommand(config, root)) {
+	verify := line.VerifyCommand(config, root)
+	var found bool
+	for _, command := range append(line.CompileCommands(config, root), verify) {
 		if command == "" || seen[command] {
+			continue
+		}
+		found = true
+		if command == verify && !tests {
 			continue
 		}
 		seen[command] = true
@@ -201,7 +211,7 @@ func buildChecks(root string, thorough bool) []gate.Check {
 			return nil
 		}})
 	}
-	if len(checks) == 0 {
+	if !found {
 		checks = append(checks, gate.Check{Name: "detect build checks", Run: func(_ io.Writer) error {
 			return fmt.Errorf("no build checks found; add compile or verify to .komodo/commands.json")
 		}})
