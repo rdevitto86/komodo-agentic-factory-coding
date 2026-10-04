@@ -36,7 +36,8 @@ func HookSteps(dir, name string, args []string, stdin string) ([]HookStep, error
 		}
 		return []HookStep{{Args: []string{"gate", "--commit-msg", args[0]}, Rules: true}}, nil
 	case "pre-commit":
-		return []HookStep{{Args: []string{"gate", "--check-branch"}, Rules: true}, {Args: []string{"gate"}}}, nil
+		// Tests run on push, not on every commit.
+		return []HookStep{{Args: []string{"gate", "--check-branch"}, Rules: true}, {Args: []string{"gate", "--commit"}}}, nil
 	case "pre-push":
 		return prePushSteps(stdin), nil
 	case "post-merge":

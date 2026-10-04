@@ -16,7 +16,7 @@ Go only, standard library only. The toolchain is pinned in `go.mod`; `GOTOOLCHAI
 1. **Branch.** Name it `<type>/<kebab-name>`. Never commit to `main` or `master`; the guard refuses it.
 2. **Find or add the task.** Work enters as a task under `docs/backlog/`, added by hand or with `komodo add`. Run `komodo lint` after every backlog edit.
 3. **Write the test first.** Every station has a test. A guard change adds a row to one of `internal/guard/table*.go`, denied or allowed, before the code.
-4. **Run the gate.** `komodo gate` runs vet, race tests, doctor, the guard table, and the comment lint. The pre-commit hook runs it for you.
+4. **Run the gate.** `komodo gate` runs vet, race tests, doctor, the guard table, and the comment lint. The pre-commit hook runs it without the tests; the pre-push hook runs them.
 5. **Push.** The pre-push hook adds `--fuzz 10s`. Open a pull request; merging is a human's button.
 
 ## Rules that fail the gate

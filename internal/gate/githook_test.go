@@ -104,8 +104,8 @@ func TestHookStepsPlanEveryHook(t *testing.T) {
 	}{
 		{"commit-msg checks the trailer in the installed binary", "commit-msg", main, "", []string{"MSG"},
 			[][]string{{"rules", "gate", "--commit-msg", "MSG"}}},
-		{"pre-commit checks the branch, then gates", "pre-commit", main, "", nil,
-			[][]string{{"rules", "gate", "--check-branch"}, {"gate"}}},
+		{"pre-commit checks the branch, then gates without the tests", "pre-commit", main, "", nil,
+			[][]string{{"rules", "gate", "--check-branch"}, {"gate", "--commit"}}},
 		{"pre-push checks every pushed ref and scopes the gate to the first", "pre-push", main, twoRefs, nil,
 			[][]string{{"rules", "gate", "--check-push", "refs/heads/feat/a"}, {"rules", "gate", "--check-push", "refs/heads/feat/b"},
 				{"gate", "--fuzz", "10s", "--from", "def", "--to", "abc", "--at", "abc"}}},

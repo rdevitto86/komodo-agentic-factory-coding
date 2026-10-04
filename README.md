@@ -92,7 +92,7 @@ komodo run TG-03.5          # headless, one group
 komodo next --json          # what would run, and why
 komodo lint                 # after every backlog edit
 komodo doctor               # references, portability, drift, prune; --remote audits the forge's rulesets
-komodo gate                 # build checks, lint, doctor, guard table, comments; pre-commit and pre-push run it here
+komodo gate                 # build checks, lint, doctor, guard table, comments; pre-commit skips tests, pre-push runs all
 ```
 
 With no target, `komodo run` drains every ready group in order: for each it builds
