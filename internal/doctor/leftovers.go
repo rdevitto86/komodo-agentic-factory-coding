@@ -87,7 +87,7 @@ func endedEpicFiles(root string, paths []string, files map[string]backlog.GroupF
 		if !ok || file.EpicID == "" || running[file.EpicID] {
 			continue
 		}
-		notes = append(notes, rel(root, path)+": "+file.EpicID+" has ended; komodo sync opens its cleanup PR")
+		notes = append(notes, rel(root, path)+": "+file.EpicID+" has ended; once it reaches the default branch, komodo sync opens its cleanup PR")
 	}
 	return notes
 }
