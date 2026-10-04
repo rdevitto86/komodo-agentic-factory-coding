@@ -193,7 +193,7 @@ func TestAConventionFindingBlocksOnlyWithItsLensRuleOnAChangedLine(t *testing.T)
 func TestAPerformanceOrBlastRadiusFindingBlocksOnlyOnAValidatorMeasurement(t *testing.T) {
 	report := Report{Measurements: []Measurement{
 		{Kind: KindCallers, Passed: true, Detail: "Load: 14 references in 6 files"},
-		{Kind: KindTests, Passed: true, Detail: "ok  komodo/internal/hooks 1.2s\nPASS"},
+		{Kind: Kind("tests"), Passed: true, Detail: "ok  komodo/internal/hooks 1.2s\nPASS"},
 	}}
 	cases := []struct {
 		name     string

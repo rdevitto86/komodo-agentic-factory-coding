@@ -95,6 +95,24 @@ func TestAWatcherKillsATreeOverTheMemoryCap(t *testing.T) {
 	}
 }
 
+// awaitSample blocks until the watcher has sampled its tree at least once, bounded by a deadline.
+func awaitSample(t *testing.T, w *Watcher) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		w.mu.Lock()
+		seen := len(w.seen) > 0
+		w.mu.Unlock()
+		if seen {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the watcher never sampled the tree")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestStopReapsAStragglerButNotAReusedPid(t *testing.T) {
 	table := &fakeTable{procs: map[int]proc{
 		100: {ppid: 1, pgid: 100, comm: "claude"},
@@ -102,7 +120,7 @@ func TestStopReapsAStragglerButNotAReusedPid(t *testing.T) {
 		102: {ppid: 100, pgid: 301, comm: "sleep"},
 	}}
 	w := watchWith(100, Limits{Procs: 50}, 10*time.Millisecond, table.list, table.kill)
-	time.Sleep(50 * time.Millisecond)
+	awaitSample(t, w)
 	table.mu.Lock()
 	delete(table.procs, 100)
 	table.procs[101] = proc{ppid: 1, pgid: 300, comm: "go"}
@@ -124,17 +142,28 @@ func TestShellStopsARunawayTreeAndLeavesNothingBehind(t *testing.T) {
 	if result.ExitCode != ExitRunaway || !strings.Contains(result.Output, "runaway") {
 		t.Fatalf("result = %+v; thirty sleeps over a cap of ten must be stopped as a runaway", result)
 	}
-	time.Sleep(200 * time.Millisecond)
-	procs, err := listProcs()
-	if err != nil {
-		t.Skip("no process listing here")
-	}
-	for pid, p := range procs {
-		if strings.Contains(p.comm, "sleep") && p.ppid == 1 {
-			if out := Exec("", time.Second, "ps", "-o", "args=", "-p", strconv.Itoa(pid)); strings.TrimSpace(out.Output) == "sleep "+sleep {
-				t.Fatalf("pid %d outlived the runaway: %s", pid, out.Output)
+	// A killed child takes a moment to be reaped, so the process table is polled until none remains.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		procs, err := listProcs()
+		if err != nil {
+			t.Skip("no process listing here")
+		}
+		stuck := false
+		for pid, p := range procs {
+			if strings.Contains(p.comm, "sleep") && p.ppid == 1 {
+				if out := Exec("", time.Second, "ps", "-o", "args=", "-p", strconv.Itoa(pid)); strings.TrimSpace(out.Output) == "sleep "+sleep {
+					stuck = true
+				}
 			}
 		}
+		if !stuck {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a runaway session's children outlived it")
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

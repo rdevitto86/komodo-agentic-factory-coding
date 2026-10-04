@@ -12,6 +12,14 @@ import (
 	"komodo/internal/proc"
 )
 
+// checkCommand judges a shell command the way a real host's hook would, through Check.
+func checkCommand(command, cwd string, policy Policy) Decision {
+	return Check(Request{
+		HookEventName: "PreToolUse", ToolName: "Bash", Cwd: cwd,
+		ToolInput: map[string]any{"command": command},
+	}, policy, CurrentBranch(cwd))
+}
+
 // gitRepo builds a real git repository on branch, so a -C or cd into it resolves a real branch.
 func gitRepo(t *testing.T, branch string) string {
 	t.Helper()
@@ -38,7 +46,7 @@ func TestGitDashCIsJudgedByTheTargetDirsBranch(t *testing.T) {
 	session := gitRepo(t, "feat/x")
 	other := gitRepo(t, "main")
 	command := "git -C " + other + " commit -m x"
-	decision := CheckCommand(command, session, DefaultPolicy())
+	decision := checkCommand(command, session, DefaultPolicy())
 	if !decision.Deny {
 		t.Fatalf("a -C commit on main is allowed; want it refused")
 	}
@@ -51,7 +59,7 @@ func TestGitDashCOntoANonCriticalWorktreeIsAllowed(t *testing.T) {
 	session := gitRepo(t, "main")
 	other := gitRepo(t, "chore/komodo-line-prep")
 	command := "git -C " + other + " commit -m x"
-	decision := CheckCommand(command, session, DefaultPolicy())
+	decision := checkCommand(command, session, DefaultPolicy())
 	if decision.Deny {
 		t.Fatalf("a -C commit on a non-critical worktree is refused: %v", decision.Findings)
 	}
@@ -64,7 +72,7 @@ func TestCDThenGitIsJudgedByTheNewDirsBranch(t *testing.T) {
 	session := gitRepo(t, "feat/x")
 	other := gitRepo(t, "main")
 	command := "cd " + other + " && git commit -m x"
-	decision := CheckCommand(command, session, DefaultPolicy())
+	decision := checkCommand(command, session, DefaultPolicy())
 	if !decision.Deny {
 		t.Fatalf("a cd then commit on main is allowed; want it refused")
 	}
@@ -146,7 +154,7 @@ func TestCheckoutOntoAnExistingBranchInALinkedWorktreeIsRefused(t *testing.T) {
 		t.Fatalf("git branch feat/y: %v: %s", err, out)
 	}
 	linked := linkedWorktree(t, root)
-	decision := CheckCommand("git checkout feat/y", linked, DefaultPolicy())
+	decision := checkCommand("git checkout feat/y", linked, DefaultPolicy())
 	if !decision.Deny {
 		t.Fatalf("a checkout onto an existing branch in a linked worktree is allowed; want it refused")
 	}
@@ -165,7 +173,7 @@ func TestCheckoutInTheMainCheckoutStaysFree(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git branch feat/y: %v: %s", err, out)
 	}
-	decision := CheckCommand("git checkout feat/y", root, DefaultPolicy())
+	decision := checkCommand("git checkout feat/y", root, DefaultPolicy())
 	if decision.Deny {
 		t.Fatalf("a checkout in the main checkout is refused: %v", decision.Findings)
 	}
@@ -182,7 +190,7 @@ func TestSwitchDetachInALinkedWorktreeIsAllowed(t *testing.T) {
 		t.Fatalf("git branch feat/y: %v: %s", err, out)
 	}
 	linked := linkedWorktree(t, root)
-	decision := CheckCommand("git switch --detach feat/y", linked, DefaultPolicy())
+	decision := checkCommand("git switch --detach feat/y", linked, DefaultPolicy())
 	if decision.Deny {
 		t.Fatalf("a detached switch in a linked worktree is refused: %v", decision.Findings)
 	}
@@ -345,7 +353,7 @@ func TestASessionsPushOrTipWriteToALeasedBranchIsRefused(t *testing.T) {
 		"git push origin feat/held",
 		"git update-ref refs/komodo/feat/held HEAD",
 	} {
-		decision := CheckCommand(command, repo, DefaultPolicy())
+		decision := checkCommand(command, repo, DefaultPolicy())
 		if !decision.Deny {
 			t.Fatalf("%q is allowed; want it refused", command)
 		}
@@ -355,7 +363,7 @@ func TestASessionsPushOrTipWriteToALeasedBranchIsRefused(t *testing.T) {
 		}
 	}
 	for _, command := range []string{"git push origin feat/free", "git update-ref refs/komodo/feat/free HEAD"} {
-		if decision := CheckCommand(command, repo, DefaultPolicy()); decision.Deny {
+		if decision := checkCommand(command, repo, DefaultPolicy()); decision.Deny {
 			t.Fatalf("%q refused: %v", command, decision.Findings)
 		}
 	}
@@ -368,7 +376,7 @@ func TestTheLeasesOwnRunAndAnExpiredLeasePassTheGuard(t *testing.T) {
 	repo := gitRepo(t, "feat/me")
 	leased(t, repo, "feat/held")
 	t.Setenv(lease.RunEnv, strconv.Itoa(os.Getpid()))
-	if decision := CheckCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
+	if decision := checkCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
 		t.Fatalf("the lease's own run is refused: %v", decision.Findings)
 	}
 	t.Setenv(lease.RunEnv, "")
@@ -376,7 +384,7 @@ func TestTheLeasesOwnRunAndAnExpiredLeasePassTheGuard(t *testing.T) {
 	if err := lease.Take(repo, "TG-1", "feat/held", holder, time.Now().Add(-lease.TTL-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if decision := CheckCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
+	if decision := checkCommand("git push origin feat/held", repo, DefaultPolicy()); decision.Deny {
 		t.Fatalf("an expired lease refuses: %v", decision.Findings)
 	}
 }

@@ -21,8 +21,8 @@ import (
 	"komodo/internal/profile"
 )
 
-// GroupBudget is how long one headless group may run before the launcher kills it.
-const GroupBudget = 90 * time.Minute
+// GroupBudget is how long one headless group may run before it stops and escalates to the orchestrator.
+const GroupBudget = 60 * time.Minute
 
 // Options are what one headless run needs: where, what, and how long.
 type Options struct {

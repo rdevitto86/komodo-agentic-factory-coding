@@ -162,6 +162,33 @@ func TestReportExcludesBriefAndAdhocTokens(t *testing.T) {
 	}
 }
 
+// TestReportSumsASessionsCostFromTheHostsResultTotals proves the report's headline carries the
+// group's own sessions' cost, read from the ledger's own entries, never a brief's estimate.
+func TestReportSumsASessionsCostFromTheHostsResultTotals(t *testing.T) {
+	root := reportRepo(t)
+	session := ledger.Entry{Run: "run-1", Group: "TG-09.1", Station: "build", TokensIn: 420, TokensOut: 180, Cost: 0.05}
+	if err := Book(root).Stamp(session); err != nil {
+		t.Fatal(err)
+	}
+	if err := Book(root).Stamp(ledger.Entry{Run: "run-1", Group: "TG-09.1", Station: "review", Cost: 0.03}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Book(root).Stamp(ledger.Entry{Run: "run-1", Group: "TG-09.1", Station: "brief", Cost: 9}); err != nil {
+		t.Fatal(err)
+	}
+	plan := &Plan{Group: "TG-09.1", Title: "A group", Tasks: []PlanTask{{ID: "TSK-09.1.1"}}}
+	report, err := BuildReport(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Cost != 0.08 {
+		t.Fatalf("cost = %v, want 0.08 (the sessions' own totals, never the brief's)", report.Cost)
+	}
+	if !strings.Contains(report.Text, "$0.08 spent") {
+		t.Fatalf("report text = %q, want it to hold the spent cost", report.Text)
+	}
+}
+
 var twoTaskGroup = backlog.GroupFile{
 	ID: "TG-09.2", Title: "A group", Priority: "C", Status: "READY", Type: "feat", Version: "2.0.0",
 	Tasks: []backlog.GroupTask{

@@ -618,7 +618,17 @@ func TestSessionPluginDirPath(t *testing.T) {
 	}
 }
 
+// fixedSandboxMerge is withSandbox's merged value for the fixture, with HOME fixed for a stable credential path.
+const fixedSandboxMerge = `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"komodo guard"}]}]},` +
+	`"permissions":{"deny":["Edit(~/.claude/**)"]},"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,` +
+	`"failIfUnavailable":true,"filesystem":{"denyRead":["/home/komodo-fixed-test/.git-credentials",` +
+	`"/home/komodo-fixed-test/.config/git/credentials","/home/komodo-fixed-test/.config/gh"]},` +
+	`"network":{"allowedDomains":[]}}}`
+
 func TestSessionSettingsPath(t *testing.T) {
+	t.Setenv("HOME", "/home/komodo-fixed-test")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GH_CONFIG_DIR", "")
 	req := mount.StartRequest{
 		Role:   "builder",
 		Brief:  "b",
@@ -634,12 +644,8 @@ func TestSessionSettingsPath(t *testing.T) {
 
 	settingsPath := filepath.Join(root, Dir, LineSettings)
 	expected := "--settings " + settingsPath
-	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
-		merged, err := withSandbox(settingsPath, sandbox)
-		if err != nil {
-			t.Fatal(err)
-		}
-		expected = "--settings " + merged
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		expected = "--settings " + fixedSandboxMerge
 	}
 	if !strings.Contains(joined, expected) {
 		t.Errorf("argv missing correct settings path: %s\nfull: %s", expected, joined)

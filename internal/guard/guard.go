@@ -92,12 +92,6 @@ func Check(request Request, policy Policy, branch string) Decision {
 	return decide(findings)
 }
 
-// CheckCommand judges a shell command the line runs for a model, as the hook judges one an agent runs.
-func CheckCommand(command, cwd string, policy Policy) Decision {
-	root := WorktreeRoot(cwd)
-	return decide(commandFindings(command, cwd, root, CurrentBranch(cwd), policy))
-}
-
 // commandFindings checks each git, gh, and write target in one command, through wrappers, sh -c,
 // and eval; a git call is judged on the branch its -C, cd, or a switch left current.
 func commandFindings(command, cwd, root, branch string, policy Policy) []finding {
