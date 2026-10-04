@@ -302,6 +302,7 @@ func TestALineSessionsInterpreterStdinScriptIsRefusedOutright(t *testing.T) {
 // TestTheOrchestratorsHarmlessInterpreterStdinScriptIsAllowed proves the orchestrator's stdin
 // script is still free when it names no critical-ref push or host config path.
 func TestTheOrchestratorsHarmlessInterpreterStdinScriptIsAllowed(t *testing.T) {
+	t.Setenv(RoleEnv, "")
 	registerFakeHost()
 	root := worktree(t)
 	decision := Check(

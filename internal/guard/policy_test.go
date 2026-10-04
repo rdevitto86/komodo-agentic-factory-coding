@@ -94,6 +94,7 @@ func detachedWorktreeOn(t *testing.T, root, branch string) string {
 // TestOnFeatureBranchReadsADetachedWorktreesTrackedBranch proves the orchestrator may edit
 // komodo/policy.json in a detached worktree tracking a feature branch, not only an attached one.
 func TestOnFeatureBranchReadsADetachedWorktreesTrackedBranch(t *testing.T) {
+	t.Setenv(RoleEnv, "")
 	registerFakeHost()
 	toolkit := toolkitWithoutPolicyPath(t)
 	root := gitRepo(t, "main")

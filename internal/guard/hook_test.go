@@ -104,6 +104,7 @@ func TestHookCountsARefusalByItsRuleNotEveryFindingTogether(t *testing.T) {
 // TestHookNeverEndsTheOrchestratorsSession proves the refusal limit is the line's: a session with
 // no role is refused every time, but never told to stop.
 func TestHookNeverEndsTheOrchestratorsSession(t *testing.T) {
+	t.Setenv(RoleEnv, "")
 	registerFakeHost()
 	root := worktree(t)
 	payload := pushPayload(root, "session-orchestrator")
