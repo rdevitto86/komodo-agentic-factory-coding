@@ -1968,7 +1968,7 @@ func draftForge(dir string, noDrafts, noLabels bool, calls *[]string) *pr.Client
 		case noDrafts && strings.HasPrefix(joined, "pr create") && slices.Contains(args, "--draft"):
 			return "", errors.New("Draft pull requests are not supported for this repository")
 		case args[0] == "label":
-			return `[{"name":"@agent"},{"name":"scope/harness"},{"name":"scope/agents"},{"name":"status: wip"}]`, nil
+			return `[{"name":"@agent"},{"name":"scope/harness"},{"name":"scope/agents"},{"name":"status/wip"}]`, nil
 		case noLabels && slices.Contains(args, "--add-label"):
 			return "", errors.New("label service unavailable")
 		}
@@ -2006,8 +2006,8 @@ func TestEveryPullRequestOpensAsADraftAndTurnsReadyOnlyOnceItsChecksPassed(t *te
 		{"a draft whose checks passed turns ready", false, passed, false, true, false},
 		{"a draft with no passed checks stays a draft", false, nil, true, false, false},
 		{"a draft with a failed check stays a draft", false, []*WaveResult{{OK: false}}, true, false, false},
-		{"a refused draft opens labelled status: wip, dropped once its checks passed", true, passed, false, true, false},
-		{"a refused draft keeps status: wip while its checks are unproven", true, nil, false, false, true},
+		{"a refused draft opens labelled status/wip, dropped once its checks passed", true, passed, false, true, false},
+		{"a refused draft keeps status/wip while its checks are unproven", true, nil, false, false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2031,14 +2031,14 @@ func TestEveryPullRequestOpensAsADraftAndTurnsReadyOnlyOnceItsChecksPassed(t *te
 			if readied := called(calls, "pr ready"); readied != (tc.wantReady && !tc.noDrafts) {
 				t.Fatalf("calls = %q; pr ready ran = %v", calls, readied)
 			}
-			if tc.noDrafts && !called(calls, "pr edit", "--add-label", "status: wip") {
-				t.Fatalf("calls = %q; a refused draft must be labelled status: wip", calls)
+			if tc.noDrafts && !called(calls, "pr edit", "--add-label", "status/wip") {
+				t.Fatalf("calls = %q; a refused draft must be labelled status/wip", calls)
 			}
-			if dropped := called(calls, "pr edit", "--remove-label", "status: wip"); dropped != (tc.noDrafts && tc.wantReady) {
-				t.Fatalf("calls = %q; status: wip removed = %v", calls, dropped)
+			if dropped := called(calls, "pr edit", "--remove-label", "status/wip"); dropped != (tc.noDrafts && tc.wantReady) {
+				t.Fatalf("calls = %q; status/wip removed = %v", calls, dropped)
 			}
-			if hasWip := slices.Contains(result.Labels, "status: wip"); hasWip != tc.wantWip {
-				t.Fatalf("labels = %v; status: wip kept = %v, want %v", result.Labels, hasWip, tc.wantWip)
+			if hasWip := slices.Contains(result.Labels, "status/wip"); hasWip != tc.wantWip {
+				t.Fatalf("labels = %v; status/wip kept = %v, want %v", result.Labels, hasWip, tc.wantWip)
 			}
 		})
 	}
@@ -2330,8 +2330,8 @@ func TestMarkReadyDropsStatusWipFromANormalPullRequest(t *testing.T) {
 		fail   bool
 		want   string
 	}{
-		{"the repo defines status: wip", `[{"name":"status: wip 🚧"}]`, false, "pr edit u --remove-label status: wip 🚧"},
-		{"the repo has no status: wip", `[{"name":"@agent"}]`, false, ""},
+		{"the repo defines status/wip", `[{"name":"status/wip 🚧"}]`, false, "pr edit u --remove-label status/wip 🚧"},
+		{"the repo has no status/wip", `[{"name":"@agent"}]`, false, ""},
 		{"the labels cannot be listed", "", true, ""},
 	}
 	for _, tc := range cases {
@@ -2630,8 +2630,8 @@ func TestLabelWipWarnsOnEachFailure(t *testing.T) {
 		want   string
 	}{
 		{"the labels cannot be listed", "", errors.New("offline"), nil, "could not list labels"},
-		{"the repo has no such label", `[{"name":"status: blocked"}]`, nil, nil, "the repo has no status: wip label"},
-		{"the label cannot be added", `[{"name":"status: wip 🚧"}]`, nil, errors.New("forbidden"), "could not add label(s)"},
+		{"the repo has no such label", `[{"name":"status/blocked"}]`, nil, nil, "the repo has no status/wip label"},
+		{"the label cannot be added", `[{"name":"status/wip 🚧"}]`, nil, errors.New("forbidden"), "could not add label(s)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

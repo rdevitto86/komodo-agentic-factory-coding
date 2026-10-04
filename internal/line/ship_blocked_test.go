@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -96,7 +97,7 @@ func TestShipBlockedCommitsTheWorkAndNoteThenOpensABlockedDraft(t *testing.T) {
 		calls = append(calls, strings.Join(args, " "))
 		switch {
 		case args[0] == "label":
-			return `[{"name":"status: blocked"}]`, nil
+			return `[{"name":"@agent 🤖"},{"name":"scope/harness ⚙️"},{"name":"status/blocked ⛔"}]`, nil
 		case args[1] == "create":
 			return "https://example.com/pull/7", nil
 		}
@@ -106,9 +107,12 @@ func TestShipBlockedCommitsTheWorkAndNoteThenOpensABlockedDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.URL != "https://example.com/pull/7" || !result.Draft || len(result.Labels) != 1 ||
-		result.Labels[0] != blockedLabel || len(result.Blocked) != 1 {
-		t.Fatalf("result = %+v, want a draft labelled %s with its open task blocked", result, blockedLabel)
+	if result.URL != "https://example.com/pull/7" || !result.Draft || len(result.Blocked) != 1 {
+		t.Fatalf("result = %+v, want a draft with its open task blocked", result)
+	}
+	// A blocked PR carries the labels every shipped PR earns, plus the blocked one.
+	if want := []string{"@agent 🤖", "scope/harness ⚙️", "status/blocked ⛔"}; !slices.Equal(result.Labels, want) {
+		t.Fatalf("labels = %v, want %v", result.Labels, want)
 	}
 	joined := strings.Join(calls, "\n")
 	if !strings.Contains(joined, "--draft") || !strings.Contains(joined, "Needs: a decision on the clock") {
@@ -208,7 +212,7 @@ func TestLabelBlockedAddsOnlyTheLabelTheRepoDefines(t *testing.T) {
 		fail   error
 		want   int
 	}{
-		{"the repo defines it", `[{"name":"bug"},{"name":"status: blocked"}]`, nil, 1},
+		{"the repo defines it", `[{"name":"bug"},{"name":"status/blocked"}]`, nil, 1},
 		{"the repo lacks it", `[{"name":"bug"}]`, nil, 0},
 		{"the labels cannot be listed", "", errors.New("gh: offline"), 0},
 	} {
@@ -225,8 +229,8 @@ func TestLabelBlockedAddsOnlyTheLabelTheRepoDefines(t *testing.T) {
 			if len(labels) != tc.want || (tc.want == 0) != (len(warnings) == 1) {
 				t.Fatalf("labels %v, warnings %v; want %d label(s)", labels, warnings, tc.want)
 			}
-			if tc.want == 1 && !strings.Contains(strings.Join(added, " "), "--add-label status: blocked") {
-				t.Fatalf("gh edit = %v, want the status: blocked label added", added)
+			if tc.want == 1 && !strings.Contains(strings.Join(added, " "), "--add-label status/blocked") {
+				t.Fatalf("gh edit = %v, want the status/blocked label added", added)
 			}
 		})
 	}

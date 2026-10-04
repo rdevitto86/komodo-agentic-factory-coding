@@ -327,7 +327,7 @@ func ForgeNotes(root string, run pr.Runner) []string {
 	}
 	return []string{
 		"the forge offers no rulesets here, so only the human merge keeps the default branch behind a pull request",
-		"the forge offers no draft pull requests here, so each opens labelled status: wip",
+		"the forge offers no draft pull requests here, so each opens labelled status/wip",
 	}
 }
 

@@ -81,7 +81,7 @@ func TestOpenEpicLabelsStatusWipWhenDraftsAreUnavailable(t *testing.T) {
 		case strings.HasPrefix(joined, "pr create"):
 			return "https://example.com/pull/9", nil
 		case strings.HasPrefix(joined, "label list"):
-			return `[{"name":"status: wip"}]`, nil
+			return `[{"name":"status/wip"}]`, nil
 		default:
 			return "", nil
 		}
@@ -97,8 +97,8 @@ func TestOpenEpicLabelsStatusWipWhenDraftsAreUnavailable(t *testing.T) {
 	if result.URL != "https://example.com/pull/9" {
 		t.Fatalf("url = %q", result.URL)
 	}
-	if len(result.Labels) != 1 || result.Labels[0] != "status: wip" {
-		t.Fatalf("labels = %v, want status: wip", result.Labels)
+	if len(result.Labels) != 1 || result.Labels[0] != "status/wip" {
+		t.Fatalf("labels = %v, want status/wip", result.Labels)
 	}
 }
 

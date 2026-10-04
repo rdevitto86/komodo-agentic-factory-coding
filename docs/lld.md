@@ -49,7 +49,7 @@ A PR closed without merging gets a blocker note, and its group stays open.
 
 ### Blocker notes
 
-When the orchestrator can't settle an escalation, the conductor stops the group and sets it BLOCKED. It writes a note under the group heading on the group's branch, then publishes the branch as a draft PR labelled `status: blocked`, so every developer and agent sees it (decision 0005):
+When the orchestrator can't settle an escalation, the conductor stops the group and sets it BLOCKED. It writes a note under the group heading on the group's branch, then publishes the branch as a draft PR labelled `status/blocked`, so every developer and agent sees it (decision 0005):
 
 ```markdown
 > **Blocked** 2026-09-25 14:02, run r-0142, at Review.
@@ -75,7 +75,7 @@ The conductor writes each state to `state.json` before starting its work, so a r
 | Shipping | Push, draft PR and labels | Shipped |
 | Shipped | The PR is open and waits for a person to merge | Removed after the merge |
 | Escalated | Waiting on the orchestrator | Back to the state it left, or Blocked |
-| Blocked | Stopped, with a blocker note on its branch and a draft PR labelled `status: blocked` | Ready, once a person edits the group |
+| Blocked | Stopped, with a blocker note on its branch and a draft PR labelled `status/blocked` | Ready, once a person edits the group |
 
 ### Group cards
 
@@ -268,12 +268,12 @@ Ship is the only stage that reads the forge credential (REQ-26):
 
 1. If the group's epic has no branch yet, cut `feat/<epic's version>` from `main` and open it as a draft PR to `main`.
 2. Push `refs/komodo/<branch>` to `refs/heads/<branch>` on origin, never a protected one; the push drops the builder's lease.
-3. Open the group's PR against its base from step 5 above. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status: wip` (REQ-25).
-4. Add the labels. Once every check and review has passed, mark the PR ready and remove `status: wip`, then the conductor merges it into its epic branch. Only a person merges an epic branch's own PR into `main` (decision 0006).
+3. Open the group's PR against its base from step 5 above. If the forge refuses a draft, as GitHub Free does for private repos, open a normal PR labelled `status/wip` (REQ-25).
+4. Add the labels. Once every check and review has passed, mark the PR ready and remove `status/wip`, then the conductor merges it into its epic branch. Only a person merges an epic branch's own PR into `main` (decision 0006).
 5. When a stacked parent merges, rebase the child and point its PR at the new base.
 6. Remove the group's worktree, its `refs/komodo` tip and sessions.
 
-Ship also publishes a blocked group: it pushes the group's branch with its blocker note and opens a draft PR labelled `status: blocked`.
+Ship also publishes a blocked group: it pushes the group's branch with its blocker note and opens a draft PR labelled `status/blocked`.
 
 ## User interface
 
@@ -519,7 +519,7 @@ Whatever stops a group, the conductor first saves it. It commits the worktree's 
 | Stop | Worktree and branch | Backlog | Dependents | What resumes it |
 |---|---|---|---|---|
 | Blocked, and the orchestrator settled it | Kept | Unchanged | Wait briefly | The orchestrator's action |
-| Blocked, and the orchestrator couldn't settle it | Kept, with a WIP commit, pushed as a draft PR labelled `status: blocked` | BLOCKED, with a blocker note on the group's branch | Wait | A person edits the group and sets it READY |
+| Blocked, and the orchestrator couldn't settle it | Kept, with a WIP commit, pushed as a draft PR labelled `status/blocked` | BLOCKED, with a blocker note on the group's branch | Wait | A person edits the group and sets it READY |
 | Time limit reached | Kept, with a WIP commit | A blocker note, unless the orchestrator settles it | Wait | As above |
 | Host error or crash | Kept, with a WIP commit | Unchanged | Wait | `komodo resume`: the session is resumed, or a fresh one starts from the WIP commit and the task list |
 | Run killed | Kept, with a WIP commit where possible | Unchanged | Wait | `komodo resume` (REQ-14) |
