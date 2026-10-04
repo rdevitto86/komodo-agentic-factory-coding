@@ -3,6 +3,7 @@ package claude
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -17,12 +18,15 @@ import (
 // shellVerb is the Komodo verb a role names to run shell commands.
 const shellVerb = "shell"
 
-// commandClasses are the fixed shell command prefixes each class a role names allows.
+// commandClasses are the fixed shell command prefixes each class allows; find is never one, since its -exec runs anything.
 var commandClasses = map[string][]string{
-	"files":        {"ls", "cat", "head", "tail", "wc", "find", "mkdir", "touch", "cp", "mv", "rm"},
+	"files":        {"ls", "cat", "head", "tail", "wc", "mkdir", "touch", "cp", "mv", "rm"},
 	"git-read":     {"git status", "git diff", "git log", "git show", "git blame"},
 	"komodo-check": {"komodo check"},
 }
+
+// gitReadWrites are the git-read subcommands' own write flag, denied to every role with a shell.
+var gitReadWrites = []string{"git diff --output", "git log --output", "git show --output"}
 
 // languageCommands are the build, test, lint and format prefixes a detected language adds to those classes.
 var languageCommands = map[string]map[string][]string{
@@ -70,7 +74,11 @@ func rolePermissions(root, worktree string, req mount.StartRequest) (allow, deny
 		if verb == shellVerb {
 			shell = true
 			if len(classes) > 0 {
-				profile, _ := detect.Detect(worktree)
+				profile, manifests := detect.Detect(worktree)
+				if len(manifests) == 0 && len(profile.Languages) == 0 {
+					fmt.Fprintf(os.Stderr, "rolePermissions: %s detects no language or manifest in %s; "+
+						"%s renders only its fixed command classes\n", req.Role, worktree, req.Role)
+				}
 				allow = append(allow, shellRules(classes, profile)...)
 				continue
 			}
@@ -83,6 +91,9 @@ func rolePermissions(root, worktree string, req mount.StartRequest) (allow, deny
 	if shell {
 		for _, sub := range gitWrites {
 			deny = append(deny, fmt.Sprintf("%s(git %s:*)", shellTool, sub))
+		}
+		for _, prefix := range gitReadWrites {
+			deny = append(deny, fmt.Sprintf("%s(%s:*)", shellTool, prefix))
 		}
 	}
 	return unique(allow), deny

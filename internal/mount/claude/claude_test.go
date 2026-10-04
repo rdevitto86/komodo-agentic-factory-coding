@@ -69,6 +69,18 @@ func TestRenderWritesTheIncludeAndTheRules(t *testing.T) {
 	}
 }
 
+// TestRenderNeverWritesTheDetectCache proves building the plan is read-only: detect.Detect, not
+// detect.Load, backs the profile facetSkills reads, so listing project paths writes nothing.
+func TestRenderNeverWritesTheDetectCache(t *testing.T) {
+	root := toolkitRepo(t)
+	if _, err := Render(root, "bin/komodo-darwin-arm64"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".komodo", "profile.json")); err == nil {
+		t.Fatal("Render wrote the detect cache, a side effect a plain render must not have")
+	}
+}
+
 func TestRenderAddsTheImportToAnExistingCLAUDEmd(t *testing.T) {
 	root := toolkitRepo(t)
 	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# My project\n\nOwn notes.\n"), 0o644); err != nil {

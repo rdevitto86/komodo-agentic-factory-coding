@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -17,8 +18,19 @@ const stateOpen = "open"
 type GroupStatus struct {
 	Group    string        `json:"group"`
 	State    string        `json:"state"`
-	TimeUsed time.Duration `json:"time_used"`
+	TimeUsed time.Duration `json:"-"`
 	Blocker  string        `json:"blocker,omitempty"`
+}
+
+// MarshalJSON names TimeUsed in whole seconds under its own key, so a reader is never off by a
+// nanosecond's billion reading it as a unit the key never named.
+func (g GroupStatus) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Group           string `json:"group"`
+		State           string `json:"state"`
+		TimeUsedSeconds int64  `json:"time_used_seconds"`
+		Blocker         string `json:"blocker,omitempty"`
+	}{g.Group, g.State, int64(g.TimeUsed.Seconds()), g.Blocker})
 }
 
 // RunStatus reads every group a run has recorded under root, oldest first, with its saved state.
