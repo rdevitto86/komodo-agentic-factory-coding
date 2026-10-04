@@ -164,6 +164,8 @@ func run(ctx context.Context, dir string, timeout time.Duration, env []string, n
 	err := cmd.Start()
 	var breach string
 	if err == nil {
+		// A process group forms atomically at fork on Unix; Windows can only join its job once the process exists.
+		Started(cmd)
 		watcher := Watch(cmd.Process.Pid, DefaultLimits)
 		err = cmd.Wait()
 		// A background child left in the group outlives the command; nothing a station ran may keep running.

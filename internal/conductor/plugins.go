@@ -105,7 +105,20 @@ func pluginEnv(found plugin.Plugin, values map[string]string) []string {
 		env = append(env, "KOMODO_"+key+"="+value)
 	}
 	for name, value := range found.Settings {
-		env = append(env, "KOMODO_SETTING_"+strings.ToUpper(name)+"="+value)
+		env = append(env, "KOMODO_SETTING_"+shellIdentifier(name)+"="+value)
 	}
 	return env
+}
+
+// shellIdentifier upper-cases name and turns every character sh cannot read in a variable name into _.
+func shellIdentifier(name string) string {
+	var out strings.Builder
+	for _, r := range strings.ToUpper(name) {
+		if r == '_' || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			out.WriteRune(r)
+		} else {
+			out.WriteByte('_')
+		}
+	}
+	return out.String()
 }
