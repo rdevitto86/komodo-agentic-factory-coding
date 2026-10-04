@@ -44,6 +44,29 @@ func TestLoadRootReadsGroupFilesWhenPresent(t *testing.T) {
 	}
 }
 
+// TestATasksOwnStatusAndPriorityOverrideItsGroups proves a task's status and priority lines win over
+// the group heading's, so a BLOCKED task in a READY group never reaches the line's queue.
+func TestATasksOwnStatusAndPriorityOverrideItsGroups(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "docs", "backlog", "TG-01.1-example.md"),
+		"## [TG-01.1] Example group [P: M] [READY]\n\n"+
+			"```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** Wait for a person\n  - files: `a.go`\n  - priority: H\n  - status: BLOCKED\n"+
+			"- [ ] **TSK-01.1.2** Do the thing\n  - files: `b.go`\n")
+	parsed, err := LoadRoot(root)
+	if err != nil {
+		t.Fatalf("LoadRoot: %v", err)
+	}
+	blocked, _ := parsed.Task("TSK-01.1.1")
+	if blocked.Status != "BLOCKED" || blocked.Priority != "H" || blocked.Ready() {
+		t.Fatalf("blocked = %+v; its own status and priority must win", blocked)
+	}
+	plain, _ := parsed.Task("TSK-01.1.2")
+	if plain.Status != "READY" || plain.Priority != "M" {
+		t.Fatalf("plain = %+v; a task with neither line inherits its group's", plain)
+	}
+}
+
 func TestLoadRootCarriesModeBaseTierAndFacets(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "docs", "backlog", "TG-01.1-example.md"),

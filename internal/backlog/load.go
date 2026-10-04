@@ -93,9 +93,15 @@ func groupFileToGroup(file GroupFile) Group {
 }
 
 // groupTaskToTask converts one group file checkbox task into the Task shape the line already runs
-// on, done once its checkbox is ticked, else its group's own status.
+// on: done once ticked, else its own status and priority when set, else its group's.
 func groupTaskToTask(file GroupFile, task GroupTask) Task {
-	status := file.Status
+	status, priority := file.Status, file.Priority
+	if task.Status != "" {
+		status = task.Status
+	}
+	if task.Priority != "" {
+		priority = task.Priority
+	}
 	if task.Done {
 		status = "DONE"
 	}
@@ -120,7 +126,7 @@ func groupTaskToTask(file GroupFile, task GroupTask) Task {
 		fields.Set("facets", toAnyList(task.Facets))
 	}
 	return Task{
-		ID: task.ID, Title: task.Title, Priority: file.Priority, Status: status,
+		ID: task.ID, Title: task.Title, Priority: priority, Status: status,
 		Fields: fields, Heading: task.Line, BlockStart: task.Line, BlockEnd: task.Line, GroupID: file.ID,
 	}
 }
