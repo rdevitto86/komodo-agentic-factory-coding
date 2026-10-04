@@ -1,7 +1,6 @@
 package guard
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,24 +19,19 @@ func isAllowedWrite(path string) bool {
 	if compare == os.DevNull {
 		return true
 	}
-	for _, dir := range []string{os.TempDir(), "/tmp", "/private/tmp"} {
-		dir = strings.TrimRight(dir, string(filepath.Separator))
-		if dir == "" {
-			continue
-		}
-		if foldsCase() {
-			dir = strings.ToLower(dir)
-		}
-		if compare == dir || strings.HasPrefix(compare, dir+string(filepath.Separator)) {
-			return true
-		}
+	dir := strings.TrimRight(os.TempDir(), string(filepath.Separator))
+	if dir == "" {
+		return false
 	}
-	return false
+	if foldsCase() {
+		dir = strings.ToLower(dir)
+	}
+	return compare == dir || strings.HasPrefix(compare, dir+string(filepath.Separator))
 }
 
 // pathFindings refuses a write on a config the hosts own, and a line session's write outside its
 // worktree; a resolvable $VAR expands first, an unresolvable one is judged on its literal text.
-func pathFindings(path, cwd, root string, policy Policy) []string {
+func pathFindings(path, cwd, root string, policy Policy) []finding {
 	if path == "" {
 		return nil
 	}
@@ -54,7 +48,7 @@ func pathFindings(path, cwd, root string, policy Policy) []string {
 		return nil
 	}
 	if policy.IsConfigPath(resolved, root) {
-		return []string{fmt.Sprintf("%s is a host or toolkit config; the guard owns it", path)}
+		return []finding{newFinding("%s is a host or toolkit config; the guard owns it", path)}
 	}
 	if isAllowedWrite(resolved) {
 		return nil
@@ -64,7 +58,7 @@ func pathFindings(path, cwd, root string, policy Policy) []string {
 	}
 	relative, err := filepath.Rel(root, resolved)
 	if err != nil || strings.HasPrefix(relative, "..") {
-		return []string{fmt.Sprintf("%s is outside the worktree root %s", path, root)}
+		return []finding{newFinding("%s is outside the worktree root %s", path, root)}
 	}
 	return nil
 }

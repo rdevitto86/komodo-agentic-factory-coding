@@ -20,11 +20,11 @@ func TestExtractGoPackagesDeduplicates(t *testing.T) {
 	}
 }
 
-func TestExtractGoPackagesSkipsRootLevel(t *testing.T) {
+func TestExtractGoPackagesIncludesRootLevel(t *testing.T) {
 	files := []string{"root.go", "a/x.go"}
 	got := extractGoPackages(files)
-	if len(got) != 1 || got[0] != "a" {
-		t.Fatalf("packages = %v, want [a], skip root.go", got)
+	if len(got) != 2 || got[0] != "." || got[1] != "a" {
+		t.Fatalf("packages = %v, want [. a]", got)
 	}
 }
 
@@ -83,6 +83,20 @@ func TestDerivedChecksGeneratesVetAndTestForGo(t *testing.T) {
 	files := []string{"a/x.go"}
 	got := derivedChecks(files)
 	expected := []string{"go build ./a/...", "go vet ./a/...", "go test ./a/..."}
+	if len(got) != len(expected) {
+		t.Fatalf("checks = %v, want %v", got, expected)
+	}
+	for i, check := range expected {
+		if got[i] != check {
+			t.Fatalf("check[%d] = %q, want %q", i, got[i], check)
+		}
+	}
+}
+
+func TestDerivedChecksTargetsTheRootForARootLevelGoFile(t *testing.T) {
+	files := []string{"main.go"}
+	got := derivedChecks(files)
+	expected := []string{"go build .", "go vet .", "go test ."}
 	if len(got) != len(expected) {
 		t.Fatalf("checks = %v, want %v", got, expected)
 	}

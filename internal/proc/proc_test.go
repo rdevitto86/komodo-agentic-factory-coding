@@ -2,6 +2,7 @@ package proc
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -97,6 +98,30 @@ func TestShellEnvRunsInOnlyTheGivenEnvironment(t *testing.T) {
 
 func TestKillGroupIgnoresACommandThatNeverStarted(t *testing.T) {
 	KillGroup(exec.Command("true"))
+}
+
+func TestBoundedWriterDiscardsPastItsLimit(t *testing.T) {
+	writer := NewBoundedWriter(5)
+	n, err := writer.Write([]byte("hello world"))
+	if n != 11 || err != nil {
+		t.Fatalf("Write = %d, %v; want every byte reported written", n, err)
+	}
+	if got := writer.String(); got != "hello" {
+		t.Fatalf("String = %q, want the first 5 bytes kept", got)
+	}
+	if n, err := writer.Write([]byte("more")); n != 4 || err != nil {
+		t.Fatalf("Write past the limit = %d, %v; want no error and no growth", n, err)
+	}
+	if got := writer.String(); got != "hello" {
+		t.Fatalf("String = %q, want the limit held", got)
+	}
+}
+
+func TestShellBoundsAFloodingCommandsOutput(t *testing.T) {
+	result := Shell(t.TempDir(), fmt.Sprintf("yes | head -c %d", MaxOutput+1<<20), 5*time.Second)
+	if len(result.Output) > MaxOutput {
+		t.Fatalf("output len = %d, want it capped at MaxOutput = %d", len(result.Output), MaxOutput)
+	}
 }
 
 func TestShellArgvUsesShEverywhereAndCmdOnlyOnWindowsWithoutIt(t *testing.T) {

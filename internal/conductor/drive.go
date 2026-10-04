@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"komodo/internal/backlog"
-	"komodo/internal/changelog"
 	"komodo/internal/check"
 	"komodo/internal/git"
 	"komodo/internal/ledger"
@@ -149,14 +148,14 @@ type round struct {
 func newRound(s State) round {
 	return round{
 		fixes: s.Fixes, builder: mount.Handle(s.Builder), repairs: s.Repairs,
-		reason: s.Reason, answer: s.Answer, stalls: s.Stalls, heavy: s.Heavy,
+		reason: s.Reason, needs: s.Needs, answer: s.Answer, stalls: s.Stalls, heavy: s.Heavy,
 	}
 }
 
 // keep writes the round into s, so the next save of s carries it.
 func (r *round) keep(s *State) {
 	s.Fixes, s.Builder, s.Repairs = r.fixes, string(r.builder), r.repairs
-	s.Reason, s.Answer, s.Stalls, s.Heavy = r.reason, r.answer, r.stalls, r.heavy
+	s.Reason, s.Needs, s.Answer, s.Stalls, s.Heavy = r.reason, r.needs, r.answer, r.stalls, r.heavy
 }
 
 // Drive moves a group from s until it waits on something outside the conductor, and returns that state.
@@ -238,7 +237,7 @@ func (d *Driver) work(ctx context.Context, s *State, r *round) error {
 		if err := d.Stations.Snapshot(); err != nil {
 			return err
 		}
-		req, handle, err := d.startBuilder(d.builderRequest(r), r)
+		req, handle, err := d.startBuilder(ctx, d.builderRequest(r), r)
 		if err != nil {
 			return err
 		}
@@ -375,16 +374,16 @@ func (d *Driver) reviewRound(
 	since, warm := s.Reviewed, false
 	sessions := make([]lensSession, 0, len(lenses))
 	for _, lens := range lenses {
-		session, err := d.openLens(s, lens)
+		session, err := d.openLens(ctx, s, lens)
 		if err != nil {
-			return errors.Join(err, d.stopAll(sessions))
+			return errors.Join(err, d.stopAll(ctx, sessions))
 		}
 		sessions = append(sessions, session)
 		warm = warm || session.station == StationReReview
 	}
 	head, err := d.Stations.Head()
 	if err != nil {
-		return errors.Join(err, d.stopAll(sessions))
+		return errors.Join(err, d.stopAll(ctx, sessions))
 	}
 	s.Reviewed = head
 	for _, each := range sessions {
@@ -393,7 +392,7 @@ func (d *Driver) reviewRound(
 		s.Sessions = append(s.Sessions, string(each.handle))
 	}
 	if err := d.Save(*s); err != nil {
-		return errors.Join(err, d.stopAll(sessions))
+		return errors.Join(err, d.stopAll(ctx, sessions))
 	}
 	group := s.Group
 	drained := make([]mount.Result, len(sessions))
@@ -436,7 +435,7 @@ func (d *Driver) reviewRound(
 
 // openLens resumes a lens's reviewer with its re-review input, or starts a cold one carrying the lens's
 // open findings when it has none, the host cannot resume, or the resume fails.
-func (d *Driver) openLens(s *State, lens review.Lens) (lensSession, error) {
+func (d *Driver) openLens(ctx context.Context, s *State, lens review.Lens) (lensSession, error) {
 	session := lensSession{lens: lens, station: StationReReview, request: d.Reviewer}
 	var err error
 	if previous := s.Reviewer[lens]; previous != "" && d.Host.Capabilities().Resume {
@@ -446,7 +445,7 @@ func (d *Driver) openLens(s *State, lens review.Lens) (lensSession, error) {
 				return session, err
 			}
 		}
-		session.handle, err = d.Host.Resume(mount.Handle(previous), input)
+		session.handle, err = d.Host.Resume(ctx, mount.Handle(previous), input)
 	}
 	// A reviewer from an earlier process is gone after a restart; a cold one gets the open findings.
 	if session.handle == "" {
@@ -459,16 +458,16 @@ func (d *Driver) openLens(s *State, lens review.Lens) (lensSession, error) {
 		if open := s.Open(lens); len(open) > 0 {
 			session.request.Brief += "\n\n" + line.OpenFindings(open)
 		}
-		session.handle, err = d.Host.Start(session.request)
+		session.handle, err = d.Host.Start(ctx, session.request)
 	}
 	return session, err
 }
 
 // stopAll stops every lens session a failed round already opened.
-func (d *Driver) stopAll(sessions []lensSession) error {
+func (d *Driver) stopAll(ctx context.Context, sessions []lensSession) error {
 	errs := make([]error, 0, len(sessions))
 	for _, each := range sessions {
-		errs = append(errs, d.Host.Stop(each.handle))
+		errs = append(errs, d.Host.Stop(ctx, each.handle))
 	}
 	return errors.Join(errs...)
 }
@@ -604,12 +603,12 @@ func (d *Driver) repair(ctx context.Context, s *State, r *round) error {
 	req := d.builderRequest(r)
 	var handle mount.Handle
 	if r.builder != "" && d.Host.Capabilities().Resume {
-		handle, err = d.Host.Resume(r.builder, input)
+		handle, err = d.Host.Resume(ctx, r.builder, input)
 	}
 	// A builder from an earlier process is gone after a restart; a fresh one gets the brief and fixes.
 	if handle == "" {
 		req.Brief = repairBrief(input, req.Brief)
-		handle, err = d.Host.Start(req)
+		handle, err = d.Host.Start(ctx, req)
 	}
 	if err != nil {
 		return err
@@ -645,7 +644,7 @@ func (d *Driver) drain(
 	ctx context.Context, group, station string, req mount.StartRequest, handle mount.Handle,
 ) (mount.Result, error) {
 	started := time.Now()
-	events, err := d.Host.Stream(handle)
+	events, err := d.Host.Stream(ctx, handle)
 	if err != nil {
 		return mount.Result{}, err
 	}
@@ -653,7 +652,7 @@ func (d *Driver) drain(
 	for open := true; open; {
 		select {
 		case <-ctx.Done():
-			return mount.Result{}, errors.Join(ctx.Err(), d.Host.Stop(handle))
+			return mount.Result{}, errors.Join(ctx.Err(), d.Host.Stop(ctx, handle))
 		case event, ok := <-events:
 			open = ok
 			entry.Turns += event.Turns
@@ -789,8 +788,8 @@ func (l *Line) Check(ctx context.Context) ([]string, error) {
 func (l *Line) rerun(ctx context.Context) ([]string, error) {
 	worktree := line.WorktreePath(l.Root, l.Plan.Worktree)
 	base := line.StartRef(worktree, l.Plan.Base)
-	// Ship stages, or removes, the group's own file and its release note, so both stay in scope.
-	files := []string{filepath.ToSlash(changelog.FragmentPath("", l.Plan.Version, l.Plan.Group)), backlog.GroupFilesDir}
+	// Ship stages, or removes, the group's own file, so it stays in scope.
+	files := []string{backlog.GroupFilesDir}
 	for _, task := range l.Plan.Tasks {
 		files = append(files, task.Files...)
 	}

@@ -15,11 +15,41 @@ import (
 // DefaultTimeout is how long a station command may run when nothing narrower is set.
 const DefaultTimeout = 10 * time.Minute
 
+// MaxOutput is how many bytes of a subprocess's output any BoundedWriter keeps.
+const MaxOutput = 4 << 20
+
 // ExitTimeout is the exit code a timed-out command reports, the same one timeout(1) uses.
 const ExitTimeout = 124
 
 // ExitRunaway is the exit code a command reports when its process tree broke DefaultLimits and was killed.
 const ExitRunaway = 125
+
+// BoundedWriter keeps up to Limit bytes of what it is written, discarding the rest.
+type BoundedWriter struct {
+	Limit int
+	buf   bytes.Buffer
+}
+
+// NewBoundedWriter returns a writer that keeps at most limit bytes of what it is written.
+func NewBoundedWriter(limit int) *BoundedWriter {
+	return &BoundedWriter{Limit: limit}
+}
+
+// Write keeps up to the writer's limit and reports every byte as written, so a caller never blocks or errors.
+func (w *BoundedWriter) Write(p []byte) (int, error) {
+	if room := w.Limit - w.buf.Len(); room > 0 {
+		if room > len(p) {
+			room = len(p)
+		}
+		w.buf.Write(p[:room])
+	}
+	return len(p), nil
+}
+
+// String returns the bytes the writer has kept so far.
+func (w *BoundedWriter) String() string {
+	return w.buf.String()
+}
 
 // Result is one command's outcome: its combined output, exit code, and whether the clock cut it.
 type Result struct {
@@ -101,8 +131,8 @@ func run(ctx context.Context, dir string, timeout time.Duration, env []string, n
 		return nil
 	}
 	cmd.WaitDelay = 5 * time.Second
-	var output bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &output, &output
+	output := NewBoundedWriter(MaxOutput)
+	cmd.Stdout, cmd.Stderr = output, output
 	started := time.Now()
 	err := cmd.Start()
 	var breach string

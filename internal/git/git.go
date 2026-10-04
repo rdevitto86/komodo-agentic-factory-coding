@@ -2,11 +2,21 @@
 package git
 
 import (
-	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
+
+	"komodo/internal/proc"
 )
+
+// Timeout bounds how long one git command may run before its process group is killed; a test lowers it.
+var Timeout = proc.DefaultTimeout
+
+// waitDelay bounds how long a killed git command's output pipes may stay open after it exits.
+const waitDelay = 5 * time.Second
 
 // Worktree is one entry of worktree list --porcelain.
 type Worktree struct {
@@ -17,13 +27,30 @@ type Worktree struct {
 	Tracked  string
 }
 
-// Run runs one git command in dir and returns its trimmed stdout, or an error naming the command and stderr.
+// Run runs one git command in dir and returns its trimmed stdout, or an error naming the
+// command and stderr; a hung git is killed, process group included, once Timeout passes.
 func Run(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	stdout, stderr := proc.NewBoundedWriter(proc.MaxOutput), proc.NewBoundedWriter(proc.MaxOutput)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	proc.Group(cmd)
+	cmd.Cancel = func() error {
+		proc.KillGroup(cmd)
+		return nil
+	}
+	cmd.WaitDelay = waitDelay
+	err := cmd.Run()
+	proc.KillGroup(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("git %s: timed out after %s: %s", strings.Join(args, " "), Timeout, strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
 		return "", fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(stdout.String()), nil

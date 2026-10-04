@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -134,6 +135,55 @@ func TestLintProblemsReportsAnEpicVersionDisagreementAcrossGroupFiles(t *testing
 	}
 }
 
+// TestLintProblemsReportsTwoFilesDeclaringTheSameGroupID proves lint catches a duplicate group id
+// instead of leaving findGroupFile to append to whichever file sorts first.
+func TestLintProblemsReportsTwoFilesDeclaringTheSameGroupID(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFile(t, root, "TG-01.1-first.md",
+		"## [TG-01.1] First group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.1** A task\n  - files: `a.go`\n")
+	writeGroupFile(t, root, "TG-01.1-second.md",
+		"## [TG-01.1] Same id again [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-01\ndepends_on: []\n```\n\n"+
+			"- [ ] **TSK-01.1.2** Another task\n  - files: `b.go`\n")
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-01.1") && strings.Contains(problem, "duplicate group id") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want a duplicate group id problem; got %v", problems)
+	}
+}
+
+// TestLintProblemsRejectsAGroupFileWithMoreThan12Tasks proves the task cap also runs over a group
+// file's own tasks, not only a legacy backlog's.
+func TestLintProblemsRejectsAGroupFileWithMoreThan12Tasks(t *testing.T) {
+	root := t.TempDir()
+	text := "## [TG-63.1] Large group [P: H] [READY]\n\n```yaml\ntype: feat\nversion: 1.0.0\nepic: EPIC-63\ndepends_on: []\n```\n\n"
+	for i := 1; i <= 13; i++ {
+		text += fmt.Sprintf("- [ ] **TSK-63.1.%d** Task %d\n  - files: `a/t%d.go`\n  - done_when: `go test ./...`\n\n", i, i, i)
+	}
+	writeGroupFile(t, root, "TG-63.1-large-group.md", text)
+	problems, err := lintProblems(root)
+	if err != nil {
+		t.Fatalf("lintProblems: %v", err)
+	}
+	found := false
+	for _, problem := range problems {
+		if strings.Contains(problem, "TG-63.1") && strings.Contains(problem, "exceeds limit of 12") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no problem mentions exceeding 12 tasks; got %v", problems)
+	}
+}
+
 // TestRunBacklogOnAnEmptyRepoPrintsNoGroups proves backlog tolerates a repo with no docs/backlog yet.
 func TestRunBacklogOnAnEmptyRepoPrintsNoGroups(t *testing.T) {
 	root := t.TempDir()
@@ -260,6 +310,39 @@ func TestRunBacklogAddRejectsAMissingTitle(t *testing.T) {
 		}
 	}()
 	runBacklogAdd(root, []string{"TG-08.1"})
+}
+
+// TestRunBacklogAddRejectsInvalidGroupPriorityOrStatus proves add validates its own inputs before
+// writing a group file, instead of writing a heading lint can never parse back.
+func TestRunBacklogAddRejectsInvalidGroupPriorityOrStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"lowercase group id", []string{"tg-08.1", "Auth"}},
+		{"group id escaping the backlog dir", []string{"../x", "Auth"}},
+		{"unknown priority", []string{"TG-08.1", "Auth", "--priority", "high"}},
+		{"unknown status", []string{"TG-08.1", "Auth", "--status", "in_progress"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			oldExit := exit
+			defer func() { exit = oldExit }()
+			var code int
+			exit = func(c int) { code = c; panic("exit") }
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					t.Fatal("want a panic from exit")
+				}
+				if code != 1 {
+					t.Fatalf("exit code = %d, want 1", code)
+				}
+			}()
+			runBacklogAdd(root, tc.args)
+		})
+	}
 }
 
 // TestLintProblemsRefusesAnOpenGroupAtATaggedVersion proves lint reads the repo's own tags.

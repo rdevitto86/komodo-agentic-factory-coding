@@ -39,8 +39,8 @@ func loadCard(root, groupID string) (queueCard, bool) {
 	return card, true
 }
 
-// cardStale reports whether the card's task ids and titles differ from the group's; a card with
-// no task list at all is trusted, so a hand-written queue fixture keeps working.
+// cardStale reports whether the card's task ids, titles, files, or context diverge from the
+// group's current declarations; a card with no task list at all is trusted.
 func cardStale(card queueCard, group backlog.Group) bool {
 	if len(card.Tasks) == 0 {
 		return false
@@ -52,9 +52,23 @@ func cardStale(card queueCard, group backlog.Group) bool {
 	for _, entry := range card.Tasks {
 		byID[entry.ID] = entry.Title
 	}
+	cardContext := make(map[string]bool, len(card.Context))
+	for _, ref := range card.Context {
+		cardContext[ref] = true
+	}
 	for _, task := range group.Tasks {
 		if byID[task.ID] != task.Title {
 			return true
+		}
+		for _, file := range task.Files() {
+			if len(ownFiles(card.Files, []string{file})) == 0 {
+				return true
+			}
+		}
+		for _, ref := range task.Context() {
+			if !cardContext[ref] {
+				return true
+			}
 		}
 	}
 	return false
@@ -76,19 +90,40 @@ func cardTask(root string, task backlog.Task, group backlog.Group) backlog.Task 
 	return task
 }
 
-// ownFiles keeps the card's expanded files that match one of the given patterns, in the card's
-// order, so a sibling's files never reach a brief that never declared them.
+// ownFiles keeps every declared plain path verbatim, so ingest never drops one a card missed, and
+// expands the card's matches for a glob or directory pattern, in the task's own pattern order.
 func ownFiles(cardFiles, patterns []string) []string {
+	seen := map[string]bool{}
 	var out []string
-	for _, file := range cardFiles {
-		for _, pattern := range patterns {
+	add := func(file string) {
+		if !seen[file] {
+			seen[file] = true
+			out = append(out, file)
+		}
+	}
+	for _, pattern := range patterns {
+		clean := strings.TrimSuffix(pattern, "/")
+		if !strings.ContainsAny(pattern, "*?[") && !hasDirMatch(cardFiles, clean) {
+			add(clean)
+			continue
+		}
+		for _, file := range cardFiles {
 			if matchesPattern(pattern, file) {
-				out = append(out, file)
-				break
+				add(file)
 			}
 		}
 	}
 	return out
+}
+
+// hasDirMatch reports whether any card file sits nested under clean, marking it a directory pattern.
+func hasDirMatch(cardFiles []string, clean string) bool {
+	for _, file := range cardFiles {
+		if strings.HasPrefix(file, clean+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // matchesPattern reports whether file is the pattern itself, sits under it as a directory, or
