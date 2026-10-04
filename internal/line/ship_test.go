@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"komodo/internal/backlog"
 	"komodo/internal/backlog/backlogtest"
 	"komodo/internal/git"
 	"komodo/internal/pr"
@@ -699,7 +698,7 @@ func TestAFailedGateRecordsShipAsFailedNotDone(t *testing.T) {
 			t.Fatal("a failed gate must not stamp the ship entry as done")
 		}
 	}
-	if shipped(root, plan, backlog.Backlog{}) {
+	if shipped(root, plan) {
 		t.Fatal("a failed gate must not release the line to the next group")
 	}
 }

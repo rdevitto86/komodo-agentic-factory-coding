@@ -38,7 +38,11 @@ func runWorktreeAdd(root string, args []string) {
 		fail(fmt.Errorf("usage: komodo worktree add <branch> [--from <ref>]; unexpected %q", set.Arg(0)))
 	}
 	start := *from
-	if start == "" {
+	switch {
+	case start != "":
+	case line.OnOrigin(root, branch):
+		start = "origin/" + branch
+	default:
 		start = line.StartRef(root, line.DefaultBase(root))
 	}
 	path := filepath.Join(root, line.StateDir, "wt", worktreeSlug(branch))

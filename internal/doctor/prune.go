@@ -46,11 +46,17 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
+		if !confirm {
+			done = append(done, "would remove vanished worktree "+rel(root, path))
+			continue
+		}
 		if _, err := git.Run(root, "worktree", "remove", "--force", path); err == nil {
 			done = append(done, "removed worktree "+rel(root, path))
 		}
 	}
-	if _, err := git.Run(root, "worktree", "prune"); err == nil {
+	if !confirm {
+		done = append(done, "would prune the worktree list")
+	} else if _, err := git.Run(root, "worktree", "prune"); err == nil {
 		done = append(done, "pruned the worktree list")
 	}
 	open := line.OpenRuns(root)
@@ -63,7 +69,7 @@ func Prune(root, base string, confirm bool) ([]string, error) {
 		}
 		done = append(done, "merged local branch "+branch+"; komodo never deletes it, run git branch -d "+branch+" to")
 	}
-	done = append(done, pruneRuns(root, open)...)
+	done = append(done, pruneRuns(root, open, confirm)...)
 	done = append(done, pruneSpentState(root, open, confirm)...)
 	done = append(done, pruneStashes(root, now(), confirm)...)
 	done = append(done, pruneHookCopies(root, confirm)...)
@@ -391,8 +397,8 @@ func originLacks(root, branch string) bool {
 	return errors.As(err, &exit) && exit.ExitCode() == 2
 }
 
-// pruneRuns removes every run folder older than the newest keptRuns, never an open run's.
-func pruneRuns(root string, open []line.RunState) []string {
+// pruneRuns removes every run folder older than the newest keptRuns, never an open run's; unconfirmed, it lists them.
+func pruneRuns(root string, open []line.RunState, confirm bool) []string {
 	runs := line.LoadRuns(root)
 	if len(runs) <= keptRuns {
 		return nil
@@ -407,6 +413,10 @@ func pruneRuns(root string, open []line.RunState) []string {
 			continue
 		}
 		dir := line.RunDir(root, state.Group)
+		if !confirm {
+			done = append(done, "would remove run folder "+rel(root, dir))
+			continue
+		}
 		if err := os.RemoveAll(dir); err == nil {
 			done = append(done, "removed run folder "+rel(root, dir))
 		}
