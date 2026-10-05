@@ -48,7 +48,7 @@ func Session(
 	argv = append(argv, "--append-system-prompt", rules)
 
 	settings := filepath.Join(root, Dir, LineSettings)
-	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS); sandbox != "" {
+	if sandbox := lineSandbox(mount.LoadOverlay(), runtime.GOOS, SessionTmp(worktree)); sandbox != "" {
 		merged, err := withSandbox(settings, sandbox)
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("session: %w", err)

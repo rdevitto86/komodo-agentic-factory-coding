@@ -659,12 +659,16 @@ func TestSessionPluginDirPath(t *testing.T) {
 	}
 }
 
-// fixedSandboxMerge is withSandbox's merged value for the fixture, with HOME fixed for a stable credential path.
-const fixedSandboxMerge = `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"komodo guard"}]}]},` +
-	`"permissions":{"deny":["Edit(~/.claude/**)"]},"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,` +
-	`"failIfUnavailable":true,"filesystem":{"denyRead":["/home/komodo-fixed-test/.git-credentials",` +
-	`"/home/komodo-fixed-test/.config/git/credentials","/home/komodo-fixed-test/.config/gh"]},` +
-	`"network":{"allowLocalBinding":true,"allowedDomains":[]}}}`
+// fixedSandboxMerge is withSandbox's merged value for the fixture at /worktree, with HOME fixed for a stable credential
+// path, read when the test runs so the temp root follows its TMPDIR.
+func fixedSandboxMerge() string {
+	return `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"komodo guard"}]}]},` +
+		`"permissions":{"deny":["Edit(~/.claude/**)"]},"sandbox":{"allowUnsandboxedCommands":false,"enabled":true,` +
+		`"failIfUnavailable":true,"filesystem":{"allowWrite":["` + SessionTmp("/worktree") + `"],` +
+		`"denyRead":["/home/komodo-fixed-test/.git-credentials",` +
+		`"/home/komodo-fixed-test/.config/git/credentials","/home/komodo-fixed-test/.config/gh"]},` +
+		`"network":{"allowLocalBinding":true,"allowedDomains":[]}}}`
+}
 
 func TestSessionSettingsPath(t *testing.T) {
 	t.Setenv("HOME", "/home/komodo-fixed-test")
@@ -686,7 +690,7 @@ func TestSessionSettingsPath(t *testing.T) {
 	settingsPath := filepath.Join(root, Dir, LineSettings)
 	expected := "--settings " + settingsPath
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-		expected = "--settings " + fixedSandboxMerge
+		expected = "--settings " + fixedSandboxMerge()
 	}
 	if !strings.Contains(joined, expected) {
 		t.Errorf("argv missing correct settings path: %s\nfull: %s", expected, joined)
@@ -695,7 +699,7 @@ func TestSessionSettingsPath(t *testing.T) {
 
 func TestTheSandboxMergesIntoTheRolesRenderedSettings(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	sandbox := lineSandbox(mount.Overlay{}, "linux")
+	sandbox := lineSandbox(mount.Overlay{}, "linux", "")
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, Dir), 0o755); err != nil {
 		t.Fatal(err)
@@ -725,7 +729,7 @@ func TestTheSandboxMergesIntoTheRolesRenderedSettings(t *testing.T) {
 func TestWithSandboxRefusesAMissingSettingsFile(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, Dir, LineSettings)
-	sandbox := lineSandbox(mount.Overlay{}, "linux")
+	sandbox := lineSandbox(mount.Overlay{}, "linux", "")
 	if _, err := withSandbox(path, sandbox); err == nil {
 		t.Fatal("a missing settings file must refuse, not drop its hooks and denies")
 	}
@@ -740,14 +744,14 @@ func TestWithSandboxRefusesMalformedSettings(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sandbox := lineSandbox(mount.Overlay{}, "linux")
+	sandbox := lineSandbox(mount.Overlay{}, "linux", "")
 	if _, err := withSandbox(path, sandbox); err == nil {
 		t.Fatal("malformed settings must refuse, not drop its hooks and denies")
 	}
 }
 
 func TestSessionRefusesToLaunchWhenTheLineSettingsFileIsMissing(t *testing.T) {
-	if lineSandbox(mount.LoadOverlay(), runtime.GOOS) == "" {
+	if lineSandbox(mount.LoadOverlay(), runtime.GOOS, "") == "" {
 		t.Skip("this platform has no sandbox to merge")
 	}
 	req := mount.StartRequest{Role: "builder", Brief: "b", Tools: []string{"read"}, Schema: []byte(`{}`)}
@@ -964,7 +968,7 @@ func TestARoleSessionCarriesTheLineSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := lineSandbox(mount.LoadOverlay(), runtime.GOOS)
+	want := lineSandbox(mount.LoadOverlay(), runtime.GOOS, SessionTmp("/worktree"))
 	if want != "" {
 		merged, err := withSandbox(filepath.Join(root, Dir, LineSettings), want)
 		if err != nil {

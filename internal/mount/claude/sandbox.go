@@ -16,15 +16,20 @@ func platformSandbox(goos string) bool {
 	return goos == "darwin" || goos == "linux"
 }
 
-// lineSandbox is a line session's inline sandbox settings on goos, or empty where it has none: no unsandboxed
-// retry, no start without it, credential paths unreadable, the forge off the network, and local ports bindable.
-func lineSandbox(overlay mount.Overlay, goos string) string {
+// lineSandbox is a line session's inline sandbox settings on goos, or empty where it has none: no unsandboxed retry
+// or start without it, credential paths unreadable, the forge off the network, ports bindable, tmp writable.
+func lineSandbox(overlay mount.Overlay, goos, tmp string) string {
 	if !platformSandbox(goos) {
 		return ""
 	}
 	filesystem := map[string]any{"denyRead": credentialPaths()}
-	if len(overlay.SandboxWrite) > 0 {
-		filesystem["allowWrite"] = overlay.SandboxWrite
+	var writable []string
+	if tmp != "" {
+		writable = append(writable, tmp)
+	}
+	writable = append(writable, overlay.SandboxWrite...)
+	if len(writable) > 0 {
+		filesystem["allowWrite"] = writable
 	}
 	sandbox := map[string]any{
 		"enabled":                  true,
